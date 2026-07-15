@@ -59,14 +59,13 @@
 import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
-import { SenderActionRow } from '../action-row';
+import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
 import { adaptSenderListRow } from '../api/adapters';
-import { EPOCH_GUARD_DAYS } from '../data';
+import { EPOCH_GUARD_DAYS, isStandingProtected } from '../data';
 import type { ActionVerb, Sender } from '../data';
 import { ReadBucketText, TrendChip } from '../fact-language';
-import { UNSUB_PILL } from '../grid/sender-card';
+import { unsubscribeStatusCopy } from '../grid/sender-card';
 import { SenderRowDetailLive } from '../table/sender-row-detail';
-import { intentOf, type SenderIntent } from '../uplift-d/intent';
 
 import type {
   SenderListDirection,
@@ -389,13 +388,11 @@ function SenderRow({
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  // Intent tone — drives the left-edge tone stripe + magnitude-bar
-  // accent so the table row visually rhymes with the grid SenderCard
-  // and the Hero Bloc cards. Same predicate (`intentOf`) feeds the
-  // chip count, so row tone and chip count cannot disagree.
+  // Fact-derived primary tone — drives the left-edge stripe and
+  // magnitude-bar accent. The same derivation feeds SenderActionRow,
+  // so presentation and the primary CTA cannot disagree (D245).
   const adapted = useMemo(() => adaptSenderListRow(sender), [sender]);
-  const intent = intentOf(adapted);
-  const toneAccent = ROW_TONE_ACCENT[intent];
+  const toneAccent = primaryToneAccent(adapted);
 
   const cellStyle: CSSProperties = {
     padding: pad,
@@ -429,8 +426,8 @@ function SenderRow({
             paddingLeft: pad,
           }}
         >
-          {/* Tone stripe — 3px left edge, intent-colored. Subtle but
-              makes every row instantly readable by bucket. */}
+          {/* Tone stripe — 3px left edge, colored only by the factual
+              primary action or standing protection state. */}
           <span
             aria-hidden="true"
             style={{
@@ -471,7 +468,7 @@ function SenderRow({
               }}
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                <ProtectStar flags={sender.protectionFlags} />
+                <ProtectIndicator flags={sender.protectionFlags} />
                 <span
                   // Full identity on hover — duplicate display names
                   // ("Amazon.com" ×5) are only distinguishable by the
@@ -492,25 +489,32 @@ function SenderRow({
                   as the grid card so list ↔ grid never contradict:
                   shown while a standing unsubscribe policy exists,
                   copy keyed by the execution outcome. */}
-                {sender.policyType === 'unsubscribe' && (
-                  <span
-                    title={UNSUB_PILL[sender.unsubStatus ?? 'none'].title}
-                    style={{
-                      fontFamily: font.mono,
-                      fontSize: 9.5,
-                      letterSpacing: '0.10em',
-                      textTransform: 'uppercase',
-                      color: color.primary,
-                      background: color.primarySoft,
-                      border: `1px solid ${color.primaryBorder}`,
-                      borderRadius: 999,
-                      padding: '1px 6px',
-                      flex: '0 0 auto',
-                    }}
-                  >
-                    {UNSUB_PILL[sender.unsubStatus ?? 'none'].label}
-                  </span>
-                )}
+                {sender.policyType === 'unsubscribe' &&
+                  (() => {
+                    const copy = unsubscribeStatusCopy(
+                      sender.unsubStatus,
+                      sender.unsubscribeMethod,
+                    );
+                    return (
+                      <span
+                        title={copy.title}
+                        style={{
+                          fontFamily: font.mono,
+                          fontSize: 9.5,
+                          letterSpacing: '0.10em',
+                          textTransform: 'uppercase',
+                          color: color.primary,
+                          background: color.primarySoft,
+                          border: `1px solid ${color.primaryBorder}`,
+                          borderRadius: 999,
+                          padding: '1px 6px',
+                          flex: '0 0 auto',
+                        }}
+                      >
+                        {copy.label}
+                      </span>
+                    );
+                  })()}
               </span>
               <span
                 style={{
@@ -659,17 +663,14 @@ function TotalCell({ value, max, accent }: { value: number; max: number; accent?
   );
 }
 
-/**
- * Per-row tone-stripe accent — same intent-to-tone mapping the grid
- * `SenderCard` and Hero `Bloc` use. Cleanup = amber, Protect = primary,
- * Later = subtle neutral, People = transparent (no stripe).
- */
-const ROW_TONE_ACCENT: Record<SenderIntent, string> = {
-  cleanup: color.amber,
-  later: color.fgMuted,
-  protect: color.primary,
-  people: 'transparent',
-};
+/** Per-row accent from the same observed-fact primary rule as the CTA. */
+function primaryToneAccent(sender: Sender): string {
+  if (isStandingProtected(sender)) return color.primary;
+  const primary = derivePrimaryVerbId(sender);
+  if (primary === 'unsubscribe') return color.amber;
+  if (primary === 'archive') return color.fgMuted;
+  return 'transparent';
+}
 
 // Trend + read-state rendering moved to `../fact-language.tsx`
 // (2026-07-03 consistency pass) — the table, the grid card stat strip,
@@ -710,7 +711,7 @@ function UnsubGlyph({ method }: { method: UnsubscribeMethod | null }) {
  * canonical-cased verbs ('Archive' / 'Keep' / …); the table's public
  * `onAction` speaks the lowercase `SenderTableVerb` union. Keep routes
  * through (non-destructive, consumer applies immediately per D40);
- * Protect stays a status star (D42/D43), never a row verb.
+ * Protect stays a shield status (D245), never a row verb.
  */
 const ROW_VERB_TO_TABLE: Record<ActionVerb, SenderTableVerb | null> = {
   Keep: 'keep',
@@ -722,26 +723,38 @@ const ROW_VERB_TO_TABLE: Record<ActionVerb, SenderTableVerb | null> = {
 };
 
 /**
- * Read-only standing-protection indicator (D42/D43). Protect is a *status*,
- * not a triage verb (D227), so it renders as a ⭐ on protected / VIP rows —
+ * Read-only standing-protection indicator (D245). Protect is a *status*,
+ * not a triage verb (D227), so it renders as a shield on protected rows —
  * never a verb button. It is intentionally non-interactive here BY DESIGN:
  * the Protect write endpoint exists (`PATCH /api/senders/:id/policy` via
  * `useSetSenderPolicy`), but toggling a standing policy is a deliberate
  * per-sender decision that lives on the Sender Detail page — a one-click
- * row star invites accidental flips mid-scan. Renders nothing for
+ * row icon invites accidental flips mid-scan. Renders nothing for
  * unprotected rows so the name column stays quiet.
  */
-function ProtectStar({ flags }: { flags: SenderListRow['protectionFlags'] }) {
-  if (!flags.isVip && !flags.isProtected) return null;
-  const label = flags.isVip ? 'VIP — protected' : 'Protected';
+function ProtectIndicator({ flags }: { flags: SenderListRow['protectionFlags'] }) {
+  if (!flags.isProtected) return null;
+  const label = 'Protected';
   return (
     <span
       role="img"
       aria-label={label}
       title={label}
-      style={{ color: color.amber, fontSize: text.sm, flexShrink: 0, lineHeight: 1 }}
+      style={{ color: color.primary, display: 'inline-flex', flexShrink: 0, lineHeight: 1 }}
     >
-      ★
+      <svg
+        width={13}
+        height={13}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth={1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      </svg>
     </span>
   );
 }

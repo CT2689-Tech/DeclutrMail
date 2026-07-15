@@ -84,7 +84,6 @@ const SAMPLE_PAYLOAD: BriefPayload = {
       senderName: 'Boss',
       senderEmail: 'boss@example.com',
       subject: 'Q4 plans',
-      isVip: true,
       messageIds: ['gmail-1', 'gmail-2'],
     },
   ],
@@ -94,7 +93,6 @@ const SAMPLE_PAYLOAD: BriefPayload = {
       senderName: 'Bank',
       senderEmail: 'noreply@bank.com',
       subject: 'Statement available',
-      isVip: false,
       messageIds: ['gmail-3'],
     },
   ],
@@ -171,7 +169,7 @@ describe('brief_runs integration', () => {
       );
     expect(row!.briefPayload).toEqual(SAMPLE_PAYLOAD);
     // Drizzle preserves the typed shape on select.
-    expect(row!.briefPayload.reply[0]!.isVip).toBe(true);
+    expect(row!.briefPayload.reply[0]!.senderName).toBe('Boss');
     expect(row!.briefPayload.noise[0]!.messageCount).toBe(4);
   });
 

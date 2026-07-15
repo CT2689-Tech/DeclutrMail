@@ -64,7 +64,10 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Database-backed API and worker suites run concurrently on shared CI
+    # hardware and now sit near 15 minutes under contention. Keep a real
+    # ceiling while leaving enough headroom to avoid runner-speed flakes.
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
@@ -90,3 +93,110 @@ jobs:
       - run: pnpm test
         env:
           CLEANUP_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/declutrmail_quota_test
+
+  accessibility:
+    name: Authenticated accessibility smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: declutrmail
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d declutrmail"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/declutrmail
+      REDIS_URL: redis://127.0.0.1:6379/12
+      RATE_LIMIT_ENABLED: 'false'
+      JWT_ACCESS_SECRET: e2e-access-secret-is-longer-than-thirty-two-bytes
+      JWT_REFRESH_SECRET: e2e-refresh-secret-is-different-and-long-enough
+      GOOGLE_CLIENT_ID: e2e-google-client
+      GOOGLE_CLIENT_SECRET: e2e-google-secret
+      GOOGLE_REDIRECT_URI: http://127.0.0.1:4104/api/auth/google/callback
+      ENCRYPTION_LOCAL_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+      DEV_AUTH_ENABLED: 'true'
+      DEV_AUTH_EMAIL_PREFIX: chintan.e2e.
+      WEB_URL: http://127.0.0.1:3104
+      CORS_ORIGIN: http://127.0.0.1:3104
+      E2E_WEB_URL: http://127.0.0.1:3104
+      E2E_API_URL: http://127.0.0.1:4104
+      E2E_LOGIN_EMAIL: chintan.e2e.billing@synthetic.test
+      E2E_BILLING_LOGIN_EMAIL: chintan.e2e.billing@synthetic.test
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:4104
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter @declutrmail/e2e exec playwright install --with-deps chromium
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-client
+      - name: Apply migrations to the disposable database
+        run: |
+          for migration in packages/db/migrations/*.sql; do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$migration"
+          done
+      - name: Start the API and web app
+        run: |
+          PORT=4104 pnpm --filter @declutrmail/api start > api-e2e.log 2>&1 &
+          API_PID=$!
+          PORT=3104 pnpm --filter @declutrmail/web dev > web-e2e.log 2>&1 &
+          WEB_PID=$!
+
+          for attempt in $(seq 1 90); do
+            api_ready=false
+            web_ready=false
+            if curl --silent --output /dev/null http://127.0.0.1:4104/api/not-a-route; then
+              api_ready=true
+            fi
+            if curl --silent --output /dev/null http://127.0.0.1:3104; then
+              web_ready=true
+            fi
+            if [[ "$api_ready" == true && "$web_ready" == true ]]; then
+              exit 0
+            fi
+            if ! kill -0 "$API_PID" || ! kill -0 "$WEB_PID"; then
+              sed -n '1,240p' api-e2e.log
+              sed -n '1,240p' web-e2e.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+          sed -n '1,240p' api-e2e.log
+          sed -n '1,240p' web-e2e.log
+          exit 1
+      - name: Run the authenticated accessibility gate
+        run: pnpm e2e:a11y
+      - name: Upload accessibility diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: accessibility-diagnostics
+          if-no-files-found: ignore
+          path: |
+            api-e2e.log
+            web-e2e.log
+            packages/e2e/test-results/

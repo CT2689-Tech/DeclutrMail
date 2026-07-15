@@ -3,8 +3,8 @@
  *
  * Covers the three first-class edge branches per D211 / D212 (loading,
  * error, empty) and the populated-list branch with priority grouping.
- * Also pins the D91 empty-state copy so a future microcopy edit can
- * only land via a deliberate test update.
+ * Also pins D245's observation-window and resolution copy so the screen
+ * cannot drift back to implying live Gmail or confirmed recipient state.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -100,7 +100,7 @@ describe('FollowupsScreen — edge states', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('D91 — renders the empty state with the canonical copy when no followups await', async () => {
+  it('renders the observation window in the empty state when no followups await', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -111,12 +111,12 @@ describe('FollowupsScreen — edge states', () => {
 
     renderScreen();
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /no follow-ups waiting\./i })).toBeInTheDocument(),
+      expect(
+        screen.getByRole('heading', { name: /no follow-ups observed\./i }),
+      ).toBeInTheDocument(),
     );
-    expect(
-      screen.getByText(/we watch your sent folder for emails that haven/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/nothing.s overdue right now\./i)).toBeInTheDocument();
+    expect(screen.getByText(/current 60-day window/i)).toBeInTheDocument();
+    expect(screen.getByText(/next check runs within about six hours/i)).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
@@ -137,7 +137,9 @@ describe('FollowupsScreen — populated list', () => {
     renderScreen();
 
     // Stats summary line — total + "over a week" counts.
-    await waitFor(() => expect(screen.getByText(/2 threads awaiting reply/i)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/2 threads with no later reply observed/i)).toBeInTheDocument(),
+    );
     expect(screen.getByText(/1 over a week/i)).toBeInTheDocument();
 
     // Both priority group headings render.
@@ -155,6 +157,38 @@ describe('FollowupsScreen — populated list', () => {
       'https://mail.google.com/mail/?authuser=active%2Bmailbox%40example.com#all/thread-h1',
     );
     expect(links[0]?.getAttribute('href')).not.toContain('/u/0');
+    const sentTime = document.querySelector(`time[datetime="${ROW_HIGH.sentAt}"]`);
+    expect(sentTime).toHaveTextContent(/^Sent /);
+  });
+
+  it('explains observed state, refresh timing, and the false-positive control', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () => jsonOk({ data: [ROW_HIGH] }),
+      },
+    ]);
+
+    renderScreen();
+
+    expect(await screen.findByText(/observed from indexed sent mail/i)).toBeInTheDocument();
+    expect(screen.getByText(/not live gmail status/i)).toBeInTheDocument();
+    const disclosure = screen
+      .getByText('Why a thread may still appear — and how to hide it')
+      .closest('details');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure).toHaveTextContent(/checks run about every six hours/i);
+    expect(disclosure).toHaveTextContent(/sent mail from the last 60 days/i);
+    expect(disclosure).toHaveTextContent(/does not mark a recipient reply or change Gmail/i);
+    expect(
+      screen.getByRole('button', {
+        name: /mark resolved in declutrmail — big boss; does not mark a recipient reply/i,
+      }),
+    ).toHaveAttribute(
+      'title',
+      'Mark resolved in DeclutrMail — this does not mark a recipient reply',
+    );
   });
 });
 
@@ -198,7 +232,9 @@ describe('FollowupsScreen — D88 dismiss', () => {
     renderScreen();
     await waitFor(() => expect(screen.getByText('Big Boss')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: /mark resolved — big boss/i }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /mark resolved in declutrmail — big boss/i }),
+    );
 
     // Optimistic removal — the row leaves without waiting for the POST.
     await waitFor(() => expect(screen.queryByText('Big Boss')).not.toBeInTheDocument());
@@ -209,7 +245,7 @@ describe('FollowupsScreen — D88 dismiss', () => {
     await waitFor(() => expect(dismissCalls).toBe(1));
     await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2));
     // Stats summary reflects the surviving row.
-    expect(screen.getByText(/1 thread awaiting reply/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 thread with no later reply observed/i)).toBeInTheDocument();
   });
 
   it('transitions to the D91 empty state when the last row is dismissed', async () => {
@@ -233,10 +269,12 @@ describe('FollowupsScreen — D88 dismiss', () => {
     renderScreen();
     await waitFor(() => expect(screen.getByText('Big Boss')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: /mark resolved/i }));
+    fireEvent.click(screen.getByRole('button', { name: /mark resolved in declutrmail/i }));
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /no follow-ups waiting\./i })).toBeInTheDocument(),
+      expect(
+        screen.getByRole('heading', { name: /no follow-ups observed\./i }),
+      ).toBeInTheDocument(),
     );
     expect(screen.queryByText('Big Boss')).not.toBeInTheDocument();
   });
@@ -267,7 +305,9 @@ describe('FollowupsScreen — D88 dismiss', () => {
     renderScreen();
     await waitFor(() => expect(screen.getByText('Big Boss')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: /mark resolved — big boss/i }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /mark resolved in declutrmail — big boss/i }),
+    );
 
     // Optimistic removal first…
     await waitFor(() => expect(screen.queryByText('Big Boss')).not.toBeInTheDocument());
@@ -275,7 +315,7 @@ describe('FollowupsScreen — D88 dismiss', () => {
     // …then the 500 rolls the snapshot back — the row returns, nothing
     // pretends to have worked.
     await waitFor(() => expect(screen.getByText('Big Boss')).toBeInTheDocument());
-    expect(screen.getByText(/2 threads awaiting reply/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 threads with no later reply observed/i)).toBeInTheDocument();
   });
 });
 

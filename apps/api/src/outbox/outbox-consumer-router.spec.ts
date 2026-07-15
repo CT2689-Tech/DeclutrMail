@@ -44,6 +44,7 @@ async function freshDb(): Promise<DrizzleDb> {
 }
 
 const SENDER_KEY_A = 'a'.repeat(64);
+const SENDER_KEY_B = 'b'.repeat(64);
 
 describe('OutboxConsumerRouter — D204 senders projection', () => {
   let db: DrizzleDb;
@@ -89,6 +90,7 @@ describe('OutboxConsumerRouter — D204 senders projection', () => {
         senderKey: SENDER_KEY_A,
         activityLogId: '00000000-0000-4000-8000-000000000001',
         recordedAt: new Date().toISOString(),
+        method: 'one_click',
       },
       attempts: 1,
       createdAt: new Date(),
@@ -100,6 +102,60 @@ describe('OutboxConsumerRouter — D204 senders projection', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.policyType).toBe('unsubscribe');
     expect(rows[0]!.senderKey).toBe(SENDER_KEY_A);
+    expect(rows[0]!.unsubStatus).toBe('requested');
+  });
+
+  it('projects explicit mailto/none initial states', async () => {
+    for (const [method, expected] of [
+      ['mailto', 'action_required'],
+      ['none', 'unavailable'],
+    ] as const) {
+      await consume({
+        id: `evt-${method}`,
+        topic: TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED,
+        aggregateId:
+          method === 'mailto'
+            ? '00000000-0000-4000-8000-000000000011'
+            : '00000000-0000-4000-8000-000000000012',
+        payload: {
+          mailboxAccountId: mailboxId,
+          senderKey: method === 'mailto' ? SENDER_KEY_A : SENDER_KEY_B,
+          activityLogId:
+            method === 'mailto'
+              ? '00000000-0000-4000-8000-000000000011'
+              : '00000000-0000-4000-8000-000000000012',
+          recordedAt: new Date().toISOString(),
+          method,
+        },
+        attempts: 1,
+        createdAt: new Date(),
+      });
+      const [row] = await db
+        .select()
+        .from(senderPolicies)
+        .where(eq(senderPolicies.senderKey, method === 'mailto' ? SENDER_KEY_A : SENDER_KEY_B));
+      expect(row!.unsubStatus).toBe(expected);
+    }
+  });
+
+  it('projects canonical terminal unsubscribe outcomes', async () => {
+    await consume({
+      id: 'evt-unsub-failed',
+      topic: TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED,
+      aggregateId: '00000000-0000-4000-8000-000000000013',
+      payload: {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY_A,
+        actionId: '00000000-0000-4000-8000-000000000013',
+        outcome: 'unconfirmed',
+        httpStatus: 302,
+        executedAt: new Date().toISOString(),
+      },
+      attempts: 1,
+      createdAt: new Date(),
+    });
+    const [row] = await db.select().from(senderPolicies);
+    expect(row!.unsubStatus).toBe('unconfirmed');
   });
 
   it('is idempotent on redelivery — same event twice → ONE row', async () => {
@@ -125,12 +181,11 @@ describe('OutboxConsumerRouter — D204 senders projection', () => {
     expect(rows).toHaveLength(1);
   });
 
-  it('preserves existing is_protected / is_vip / protection_reason', async () => {
+  it('preserves existing protection state and reason', async () => {
     await db.insert(senderPolicies).values({
       mailboxAccountId: mailboxId,
       senderKey: SENDER_KEY_A,
       isProtected: true,
-      isVip: true,
       protectionReason: 'user_defined',
     });
     await consume({
@@ -153,7 +208,6 @@ describe('OutboxConsumerRouter — D204 senders projection', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.policyType).toBe('unsubscribe');
     expect(rows[0]!.isProtected).toBe(true);
-    expect(rows[0]!.isVip).toBe(true);
     expect(rows[0]!.protectionReason).toBe('user_defined');
   });
 
@@ -196,7 +250,6 @@ describe('OutboxConsumerRouter — D204 senders projection', () => {
     expect(rows[0]!.policyType).toBe('keep');
     // Keep ≠ Protect (manifest keep docstring) — modifiers untouched.
     expect(rows[0]!.isProtected).toBe(false);
-    expect(rows[0]!.isVip).toBe(false);
   });
 
   it('a non-keep verdict event is valid but projects nothing', async () => {

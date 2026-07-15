@@ -1,10 +1,10 @@
 // Contract test for the shared Button's toggle semantics (D42/D43).
 //
-// VIP/Protect chips on the sender detail page passed `aria-pressed`
+// Protected chips on the sender detail page pass `aria-pressed`
 // straight through JSX, but Button only forwards destructured props —
 // the attribute silently never reached the DOM (caught live
 // 2026-06-11: screen readers saw no toggle state and the Playwright
-// VIP spec had to match on label text). `ariaPressed` is now a real
+// component spec had to match on label text). `ariaPressed` is now a real
 // prop; this test pins the forwarding so it cannot regress.
 //
 // Rendered via react-dom/server, matching the shared package's
@@ -17,12 +17,12 @@ import { color } from '../tokens/tokens';
 
 describe('Button — ariaPressed forwarding (D43)', () => {
   it('renders aria-pressed="true" when ariaPressed is true', () => {
-    const html = renderToStaticMarkup(<Button ariaPressed={true}>VIP</Button>);
+    const html = renderToStaticMarkup(<Button ariaPressed={true}>Protected</Button>);
     expect(html).toContain('aria-pressed="true"');
   });
 
   it('renders aria-pressed="false" when ariaPressed is false', () => {
-    const html = renderToStaticMarkup(<Button ariaPressed={false}>VIP</Button>);
+    const html = renderToStaticMarkup(<Button ariaPressed={false}>Protected</Button>);
     expect(html).toContain('aria-pressed="false"');
   });
 
@@ -33,11 +33,11 @@ describe('Button — ariaPressed forwarding (D43)', () => {
 
   it('still forwards aria-label alongside aria-pressed', () => {
     const html = renderToStaticMarkup(
-      <Button ariaPressed={true} ariaLabel="Toggle VIP">
-        ★ VIP
+      <Button ariaPressed={true} ariaLabel="Toggle protection">
+        Protected
       </Button>,
     );
-    expect(html).toContain('aria-label="Toggle VIP"');
+    expect(html).toContain('aria-label="Toggle protection"');
     expect(html).toContain('aria-pressed="true"');
   });
 });

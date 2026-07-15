@@ -139,6 +139,7 @@ export function TriageQueue({
                   // it must retain the safe no-secondary default.
                   archiveHistoric: false,
                   inboxCount: previewInboxCount,
+                  wakeAt: pendingAction.wakeAt,
                 }
               : null;
           return (

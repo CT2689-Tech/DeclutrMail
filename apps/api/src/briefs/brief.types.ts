@@ -1,4 +1,26 @@
-import type { BriefGeneratedBy, BriefItem, BriefPayload, BriefSenderGroup } from '@declutrmail/db';
+import type { BriefGeneratedBy } from '@declutrmail/db';
+
+export interface BriefItem {
+  senderKey: string;
+  senderName: string;
+  senderEmail: string;
+  subject: string;
+  messageIds: string[];
+}
+
+export interface BriefSenderGroup {
+  senderKey: string;
+  senderName: string;
+  messageCount: number;
+  messageIds: string[];
+}
+
+export interface BriefPayload {
+  reply: BriefItem[];
+  fyi: BriefItem[];
+  noise: BriefSenderGroup[];
+  narrative: string;
+}
 
 /**
  * Wire types for the Brief HTTP surface (D61, D62, D69).
@@ -34,7 +56,3 @@ export interface BriefMarkOpenedResult {
   /** ISO-8601 — the timestamp now persisted on `brief_runs.opened_at`. */
   openedAt: string;
 }
-
-// Re-export the payload shape so FE imports are one-stop from
-// `@declutrmail/api`-typing without reaching into `@declutrmail/db`.
-export type { BriefItem, BriefPayload, BriefSenderGroup };

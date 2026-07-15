@@ -187,6 +187,7 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('heading', { name: 'Quiet hours' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Standing policies' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Privacy & Data' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Product glossary' })).toBeInTheDocument();
     // D147 cookie change/withdrawal card, with the effective default
     // (no stored choice → essential-only) selected.
     expect(screen.getByRole('heading', { name: 'Cookie preferences' })).toBeInTheDocument();
@@ -204,6 +205,14 @@ describe('SettingsScreen', () => {
       '#notifications',
     );
     expect(within(nav).getByRole('link', { name: 'Account' })).toHaveAttribute('href', '#account');
+    expect(within(nav).getByRole('link', { name: 'Help & glossary' })).toHaveAttribute(
+      'href',
+      '#help',
+    );
+    expect(screen.getByRole('link', { name: 'Open product glossary' })).toHaveAttribute(
+      'href',
+      '/settings/help',
+    );
     // Plan summary resolves from the billing read.
     await waitFor(() => expect(screen.getByText('Pro')).toBeInTheDocument());
     // Humanized last-synced stamps resolve from the per-mailbox
@@ -268,10 +277,43 @@ describe('SettingsScreen', () => {
     });
     // One active of two allowed — reconnecting is allowed.
     expect(reconnect).toBeEnabled();
-    expect(screen.getByText('Disconnected')).toBeInTheDocument();
+    expect(screen.getByText('Disconnected · data kept')).toBeInTheDocument();
     await userEvent.click(reconnect);
     expect(startMailboxReactivationSpy).toHaveBeenCalledWith(MAILBOX_B);
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
+  });
+
+  it('shows mailbox-data deletion lifecycle and blocks reconnect until completion', async () => {
+    me = makeMe([
+      {
+        ...mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
+        status: 'disconnected',
+        indexedDataState: 'deletion_delayed',
+      },
+    ]);
+    const { unmount } = renderScreen();
+
+    expect(await screen.findByText('Deletion delayed')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Reconnect chintan.a.thakkar.crypt@gmail.com' }),
+    ).toBeDisabled();
+    unmount();
+
+    me = makeMe([
+      {
+        ...mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
+        status: 'disconnected',
+        indexedDataState: 'deleted',
+      },
+    ]);
+    renderScreen();
+    expect(await screen.findByText('Data deleted')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Reconnect chintan.a.thakkar.crypt@gmail.com' }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole('button', { name: 'Reconnect chintan.a.thakkar.crypt@gmail.com' }),
+    ).toHaveTextContent(/reconnect · new index/i);
   });
 
   it('keeps a disconnected reconnect limit-gated when all active slots are occupied', async () => {
@@ -319,7 +361,7 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     const toggle = await screen.findByRole('switch', {
-      name: /skip the action sheet for unsubscribe/i,
+      name: /show the unsubscribe preview in the row/i,
     });
     expect(toggle).toHaveAttribute('aria-checked', 'false');
 

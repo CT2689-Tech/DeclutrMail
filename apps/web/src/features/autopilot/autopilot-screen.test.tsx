@@ -28,8 +28,10 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AutopilotRoute, AutopilotScreen } from './autopilot-screen';
+import { ActivateRuleModal } from './activate-rule-modal';
 import {
   AUTO_ARCHIVE_LOW_ENGAGEMENT,
+  AUTO_UNSUBSCRIBE_NOISY,
   PENDING_SUGGESTIONS,
   PRESET_RULES_ALL_FIVE,
   PRESET_RULES_ALL_PAUSED,
@@ -138,6 +140,10 @@ describe('AutopilotScreen — edge states', () => {
 
   it('groups pending suggestions under their rule (D104)', () => {
     renderScreen(ready());
+    expect(screen.getByText('What changes between Observe and Active?')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Active applies future matches automatically after you review/i),
+    ).toBeInTheDocument();
     // Two groups — auto-archive (2 rows) + newsletter graveyard (1 row).
     const archiveGroup = screen.getByRole('list', {
       name: /pending suggestions from auto-archive low-engagement — rows/i,
@@ -182,6 +188,22 @@ describe('AutopilotScreen — rules management (D101)', () => {
     // D227 — the screen-new-senders preset surfaces as Later, never "Screen".
     expect(within(rulesList).getByText(/later for new senders/i)).toBeInTheDocument();
     expect(within(rulesList).queryByText(/auto-screen/i)).not.toBeInTheDocument();
+  });
+
+  it('explains Observe, Active, Paused, and Off consequences at rule level', () => {
+    const active = { ...PRESET_RULES_OBSERVE[0]!, id: 'active-rule', mode: 'active' as const };
+    const paused = { ...PRESET_RULES_ALL_PAUSED[0]!, id: 'paused-rule' };
+    const off = { ...PRESET_RULES_ALL_FIVE[4]!, id: 'off-rule' };
+    renderScreen({
+      kind: 'ready',
+      rules: [PRESET_RULES_OBSERVE[0]!, active, paused, off],
+      suggestions: [],
+    });
+
+    expect(screen.getByText(/observe — matches become suggestions/i)).toBeInTheDocument();
+    expect(screen.getByText(/active — future matches run automatically/i)).toBeInTheDocument();
+    expect(screen.getByText(/paused — this rule records no new matches/i)).toBeInTheDocument();
+    expect(screen.getByText(/off — this rule records no new matches/i)).toBeInTheDocument();
   });
 
   it('renders the observe digest on enabled observe-mode cards, verb-honest (D10/D101)', () => {
@@ -277,7 +299,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
       expect(screen.getByText(/senders would match if this rule were active now/i)).toBeVisible(),
     );
     expect(screen.getByText('12')).toBeInTheDocument();
-    expect(screen.getByText(/dry-run only — nothing changed/i)).toBeInTheDocument();
+    expect(screen.getByText(/observe preview — this check is read-only/i)).toBeInTheDocument();
   });
 });
 
@@ -402,6 +424,18 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     expect(
       within(dialog).getByText(/senders would match if this rule were active now/i),
     ).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: /activation report/i })).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/10 senders and 74 inbox messages actionable now/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/3 additional matching senders are Protected/i),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/7-day observed volume: 34 matches/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/daily safety cap: 100 actions/i)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/archive results can be undone from Activity for 30 days/i),
+    ).toBeInTheDocument();
 
     await userEvent.click(confirm);
     await waitFor(() => expect(observed).toHaveLength(1));
@@ -427,13 +461,58 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     );
 
     const dialog = screen.getByRole('dialog', { name: /switch .* to active/i });
-    await waitFor(() => expect(within(dialog).getByText(/dry-run failed/i)).toBeInTheDocument());
+    await waitFor(() => expect(within(dialog).getByText(/preview failed/i)).toBeInTheDocument());
     const confirm = within(dialog).getByRole('button', { name: /switch to active/i });
     expect(confirm).toBeDisabled();
 
     await userEvent.click(within(dialog).getByRole('button', { name: /try again/i }));
     await waitFor(() => expect(confirm).toBeEnabled());
     expect(previewCalls).toBe(2);
+  });
+});
+
+describe('ActivateRuleModal — action-specific recovery', () => {
+  it('states that unsubscribe is irreversible and does not remove existing mail', () => {
+    render(
+      <ActivateRuleModal
+        rule={AUTO_UNSUBSCRIBE_NOISY}
+        pendingCount={3}
+        pendingApproximate={false}
+        preview={{
+          status: 'ready',
+          result: {
+            ...RULE_PREVIEW_RESULT,
+            ruleId: AUTO_UNSUBSCRIBE_NOISY.id,
+            actionableSenderCount: 2,
+            actionableMessageCount: 11,
+            protectedWouldMatchCount: 1,
+            dailyActionCap: 25,
+            weeklyVolume: {
+              observedMatches: 3,
+              observedDays: 2,
+              estimatedMatches: 11,
+              basis: 'early_estimate',
+            },
+          },
+        }}
+        onRetryPreview={() => undefined}
+        isActivating={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/2 unsubscribe requests actionable now/i)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/unsubscribing does not remove existing mail/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/early weekly estimate: about 11 matches/i),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/unsubscribe requests cannot be undone/i)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/unsubscribe.*can be undone/i)).not.toBeInTheDocument();
   });
 });
 
@@ -538,14 +617,14 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     expect(observed).toHaveLength(0);
   });
 
-  it('orphan groups (rule missing) expose Dismiss only — no approve without a truthful verb', () => {
+  it('orphan groups expose Skip suggestion only — no approve without a truthful verb', () => {
     const orphanState: AutopilotScreenState = {
       kind: 'ready',
       rules: [],
       suggestions: [{ match: PENDING_SUGGESTIONS[0]!, rule: null }],
     };
     renderScreen(orphanState);
-    expect(screen.getByRole('button', { name: /dismiss suggestion/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /skip suggestion/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument();
   });
 });
@@ -554,7 +633,7 @@ describe('AutopilotScreen — dismiss (D104)', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
-  it('POSTs the dismiss endpoint when the row Dismiss button is clicked', async () => {
+  it('POSTs the dismiss endpoint when the row Skip suggestion button is clicked', async () => {
     const observed: string[] = [];
     installFetchStub([
       {
@@ -571,7 +650,7 @@ describe('AutopilotScreen — dismiss (D104)', () => {
 
     renderScreen(ready());
 
-    const dismissButtons = screen.getAllByRole('button', { name: /^dismiss suggestion/i });
+    const dismissButtons = screen.getAllByRole('button', { name: /^skip suggestion/i });
     expect(dismissButtons.length).toBeGreaterThan(0);
     await userEvent.click(dismissButtons[0]!);
 

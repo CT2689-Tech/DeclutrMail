@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Button, EmptyState, tokens } from '@declutrmail/shared';
 
 import { useAuth } from '@/features/auth/auth-provider';
+import type { MeMailbox } from '@/features/auth/api/use-me';
 import { useLogout } from '@/features/auth/api/use-logout';
 import { startMailboxConnect, startMailboxReactivation } from './connect-mailbox-url';
 
@@ -32,7 +33,11 @@ export function NoActiveMailbox() {
 
   const disconnectedMailboxes = me.mailboxes
     .filter((m) => m.status === 'disconnected')
-    .map(({ id, email }) => ({ id, email }));
+    .map(({ id, email, indexedDataState }) => ({
+      id,
+      email,
+      indexedDataState: indexedDataState ?? 'retained',
+    }));
 
   return (
     <NoActiveMailboxView
@@ -49,6 +54,7 @@ export interface DisconnectedMailbox {
   /** Opaque mailbox identifier used only to bind the OAuth recovery request. */
   id: string;
   email: string;
+  indexedDataState?: MeMailbox['indexedDataState'];
 }
 
 export interface NoActiveMailboxViewProps {
@@ -67,9 +73,17 @@ export function NoActiveMailboxView({
   onReactivate,
   onSignOut,
 }: NoActiveMailboxViewProps) {
+  const deletingMailboxes = disconnectedMailboxes.filter((mailbox) =>
+    ['deletion_pending', 'deleting', 'deletion_delayed'].includes(mailbox.indexedDataState ?? ''),
+  );
+  const reconnectableMailboxes = disconnectedMailboxes.filter(
+    (mailbox) => !deletingMailboxes.includes(mailbox),
+  );
   const hasDisconnected = disconnectedMailboxes.length > 0;
   const onlyDisconnected =
-    disconnectedMailboxes.length === 1 ? disconnectedMailboxes[0] : undefined;
+    reconnectableMailboxes.length === 1 && deletingMailboxes.length === 0
+      ? reconnectableMailboxes[0]
+      : undefined;
 
   return (
     <main
@@ -102,11 +116,15 @@ export function NoActiveMailboxView({
                   {onlyDisconnected.email}
                 </span>
                 <span style={{ display: 'block', marginTop: 4 }}>
-                  Reconnect to pick up where you left off. Your sender history is preserved.
+                  {onlyDisconnected.indexedDataState === 'deleted'
+                    ? 'Reconnect to build a new index from Gmail. Deleted history does not return.'
+                    : 'Reconnect to pick up where you left off. Your sender history is preserved.'}
                 </span>
               </>
-            ) : hasDisconnected ? (
+            ) : reconnectableMailboxes.length > 0 ? (
               'Choose the Gmail account you want to reconnect. Your sender history is preserved.'
+            ) : deletingMailboxes.length > 0 ? (
+              'Indexed data deletion is in progress. Gmail access stays disconnected; reconnect becomes available after deletion completes.'
             ) : (
               'Connect a Gmail account to start cleaning up your inbox.'
             )
@@ -121,7 +139,7 @@ export function NoActiveMailboxView({
               >
                 Reconnect Gmail
               </Button>
-            ) : hasDisconnected ? (
+            ) : reconnectableMailboxes.length > 0 ? (
               <ul
                 aria-label="Disconnected Gmail accounts"
                 style={{
@@ -133,7 +151,7 @@ export function NoActiveMailboxView({
                   listStyle: 'none',
                 }}
               >
-                {disconnectedMailboxes.map((mailbox) => (
+                {reconnectableMailboxes.map((mailbox) => (
                   <li
                     key={mailbox.id}
                     style={{
@@ -180,6 +198,12 @@ export function NoActiveMailboxView({
           }
         />
       </div>
+
+      {deletingMailboxes.length > 0 && (
+        <p role="status" style={{ margin: '14px 0 0', color: color.fgMuted, fontSize: 12 }}>
+          Deleting indexed data: {deletingMailboxes.map((mailbox) => mailbox.email).join(' · ')}
+        </p>
+      )}
 
       {hasDisconnected && (
         <Button

@@ -542,7 +542,6 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     const [policy] = await this.deps.db
       .select({
         isProtected: senderPolicies.isProtected,
-        isVip: senderPolicies.isVip,
         protectionReason: senderPolicies.protectionReason,
       })
       .from(senderPolicies)
@@ -651,7 +650,6 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       signals: {
         isProtected: Boolean(policy?.isProtected),
         ...(policy?.protectionReason ? { protectionReason: policy.protectionReason } : {}),
-        isVip: Boolean(policy?.isVip),
         hasReplied: replies90 > 0,
         gmailCategory: sender.gmailCategory,
         starredInLastYear,

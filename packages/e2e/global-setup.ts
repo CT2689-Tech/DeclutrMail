@@ -60,7 +60,14 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
   // auth-agnostic, so plain GETs are enough. Best-effort — a prod-built
   // web server answers instantly and a failure surfaces in the spec.
   const warm = await request.newContext({ baseURL: E2E_ENV.webUrl });
-  for (const route of ['/triage', '/senders', '/senders/00000000-0000-0000-0000-000000000000']) {
+  for (const route of [
+    '/triage',
+    '/senders',
+    '/activity',
+    '/billing',
+    '/settings/privacy',
+    '/senders/00000000-0000-0000-0000-000000000000',
+  ]) {
     try {
       await warm.get(route, { timeout: 600_000 });
     } catch {

@@ -1,4 +1,5 @@
 import { tokens } from '@declutrmail/shared';
+import { buildActionPresentation } from '@declutrmail/shared/actions';
 import type { CSSProperties, ReactNode } from 'react';
 
 import type { TriageDecisionRow } from './data';
@@ -26,6 +27,8 @@ export interface ActionPreviewPresentationProps {
   archiveHistoric: boolean;
   /** Live inbox count for the sender — see {@link PreviewCount}. */
   inboxCount: PreviewCount;
+  /** Exact Later return time carried by the pending action. */
+  wakeAt?: string | null;
   /** Chrome variant — modal (inside sheet) vs inline (no chrome). */
   mode: 'modal' | 'inline';
   /** Optional app-owned context shown before the action copy. */
@@ -51,10 +54,22 @@ export function ActionPreviewPresentation({
   row,
   archiveHistoric,
   inboxCount,
+  wakeAt = null,
   mode,
   accountContext,
 }: ActionPreviewPresentationProps) {
   const subject = row.senderName;
+  const actionVerb = verb.toLowerCase() as 'keep' | 'archive' | 'unsubscribe' | 'later';
+  const liveCount = typeof inboxCount === 'number' ? inboxCount : null;
+  const presentation = buildActionPresentation({
+    verb: actionVerb,
+    liveCount: actionVerb === 'keep' || actionVerb === 'unsubscribe' ? 0 : liveCount,
+    planUndoDeadline: null,
+    wakeAt: actionVerb === 'later' ? wakeAt : null,
+    unsubscribeChannel: actionVerb === 'unsubscribe' ? row.unsubscribeMethod : null,
+    secondaryAction:
+      actionVerb === 'unsubscribe' && archiveHistoric ? { verb: 'archive', liveCount } : null,
+  });
 
   // Copy per verb — literal, and TRUE to the pipeline each verb rides:
   // Archive/Later move the sender's current inbox mail via the worker;
@@ -70,21 +85,7 @@ export function ActionPreviewPresentation({
           ? `Unsubscribe from ${subject}`
           : `Keep ${subject}`;
 
-  const lead =
-    verb === 'Archive'
-      ? `Matching inbox mail from ${subject} moves into Gmail's archive when the action runs. Nothing is deleted; Activity shows your plan's undo window.`
-      : verb === 'Later'
-        ? `Matching inbox mail from ${subject} moves into the DeclutrMail/Later label when the action runs. Nothing is unsubscribed or deleted; Activity shows your plan's undo window.`
-        : verb === 'Unsubscribe'
-          ? row.unsubscribeMethod === 'one_click'
-            ? // Locked-copy ban per spec v1.2 Decision 15: "RFC 8058
-              // one-click" jargon → "one-click unsubscribe." D58: the
-              // request can't be recalled once their list takes it.
-              `DeclutrMail sends ${subject}'s one-click request and records whether the endpoint accepted it. The sender controls whether and when mail stops. The request itself can't be undone. Nothing already in your inbox moves unless you ask below.`
-            : row.unsubscribeMethod === 'mailto'
-              ? `Their list takes unsubscribes by email, so you send the final request from your mailbox — after you confirm, a button opens a prefilled Gmail compose and you hit Send. DeclutrMail never auto-sends from a no-reply address.`
-              : `${subject} publishes no unsubscribe channel. No request can be sent; use Archive to move existing mail instead.`
-          : `${subject} stays in the inbox. No mail is moved.`;
+  const lead = presentation.previewCopy;
 
   // What actually moves: Archive + Later act on the sender's current
   // inbox mail; Unsubscribe only when the historic toggle is on;

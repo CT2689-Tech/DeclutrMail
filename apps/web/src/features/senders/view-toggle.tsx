@@ -30,7 +30,7 @@ export function ViewToggle() {
   return (
     <div
       role="group"
-      aria-label="View"
+      aria-label="Senders display view"
       style={{
         display: 'inline-flex',
         background: color.card,

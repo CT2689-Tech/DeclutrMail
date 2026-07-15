@@ -18,10 +18,13 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import {
+  ActionLabelAppliedPayloadSchema,
+  ActionsUnsubscribeExecutedPayloadSchema,
   ActionsUnsubscribeIntentRecordedPayloadSchema,
   AutopilotActionIntentEmittedPayloadSchema,
   TOPICS,
 } from '@declutrmail/events';
+import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import { hasCapability } from '@declutrmail/shared/entitlements';
 
 import { AUTOPILOT_PRESETS } from './autopilot-presets.js';
@@ -102,10 +105,10 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  *   3. RULE STATE: matches whose rule is now disabled or paused are
  *      skipped (left pending) — D105's pause must stop execution even
  *      for already-approved matches.
- *   4. PROTECT RE-CHECK: `sender_policies.is_protected` / `is_vip` is
+ *   4. PROTECT RE-CHECK: `sender_policies.is_protected` is
  *      re-read at EXECUTION time (the apply worker filtered at match
  *      time, but the user may have protected the sender since). A
- *      protected/VIP sender's match resolves to `dismissed` — a rule
+ *      protected sender's match resolves to `dismissed` — a rule
  *      must NEVER act on a protected sender (D43, defense-in-depth).
  *   5. ALREADY-UNSUBSCRIBED: an unsub match whose sender already has
  *      the `sender_policies.policy_type='unsubscribe'` projection
@@ -159,7 +162,7 @@ export interface AutopilotActionResult {
   unsubscribeIntentsRecorded: number;
   /** Subset of intents that enqueued an RFC 8058 execution job. */
   unsubscribeExecutionsEnqueued: number;
-  /** Matches dismissed because the sender is now Protected/VIP. */
+  /** Matches dismissed because the sender is now Protected. */
   skippedProtected: number;
   /** Unsub matches no-opped because the sender is already unsubscribed. */
   skippedAlreadyUnsubscribed: number;
@@ -182,7 +185,7 @@ export interface AutopilotActionDeps {
   lock: MailboxActionLock;
   /**
    * Enqueue an RFC 8058 one-click unsub execution job on the
-   * `unsub-execution` queue. REQUIRED — recording a `pending`
+   * `unsub-execution` queue. REQUIRED — recording a `requested`
    * unsub_status with no job behind it is the stuck state CLAUDE.md
    * §10 bans, so the dependency cannot be optional. The composition
    * root wires `(data) => queue.add(UNSUB_EXECUTION_JOB, data,
@@ -407,7 +410,6 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
         senderKey: senderPolicies.senderKey,
         policyType: senderPolicies.policyType,
         isProtected: senderPolicies.isProtected,
-        isVip: senderPolicies.isVip,
       })
       .from(senderPolicies)
       .where(
@@ -416,7 +418,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           inArray(senderPolicies.senderKey, senderKeys),
         ),
       );
-    const shieldedBy = new Map(policyRows.map((r) => [r.senderKey, r.isProtected || r.isVip]));
+    const shieldedBy = new Map(policyRows.map((r) => [r.senderKey, r.isProtected]));
     const alreadyUnsubscribed = new Set(
       policyRows.filter((r) => r.policyType === 'unsubscribe').map((r) => r.senderKey),
     );
@@ -598,7 +600,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
   }
 
   /**
-   * A sender that became Protected/VIP after the match was logged:
+   * A sender that became Protected after the match was logged:
    * never act (D43). The match resolves to `dismissed` — terminal,
    * auditable, and out of the pending sweep.
    */
@@ -665,6 +667,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           requestedCount: 0,
           status: 'queued',
           idempotencyKey,
+          ...(verb === 'later' ? { wakeAt: new Date(defaultLaterWakeAtIso(now)) } : {}),
         })
         .onConflictDoNothing({ target: actionJobs.idempotencyKey });
       [job] = await db
@@ -785,6 +788,25 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
         schema: AutopilotActionIntentEmittedPayloadSchema,
       });
 
+      // The sender-owned Later timer is projected only after Gmail has
+      // confirmed the move, matching the manual action pipeline (D245).
+      await this.deps.outbox.publish(tx, {
+        topic: TOPICS.ACTION_LABEL_APPLIED,
+        aggregateId: job.id,
+        payload: {
+          mailboxAccountId,
+          actionId: job.id,
+          verb,
+          senderKey: match.senderKey,
+          undoToken: issued.token,
+          affectedCount: ids.length,
+          compositeId: job.compositeId,
+          wakeAt: verb === 'later' ? (job.wakeAt?.toISOString() ?? null) : null,
+          appliedAt: now.toISOString(),
+        },
+        schema: ActionLabelAppliedPayloadSchema,
+      });
+
       await tx
         .update(actionJobs)
         .set({
@@ -834,6 +856,18 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
         .returning({ id: activityLog.id, occurredAt: activityLog.occurredAt });
       if (!audit) {
         throw new Error('activity_log insert returned no row');
+      }
+
+      if (method !== 'one_click') {
+        await tx.insert(activityLog).values({
+          mailboxAccountId,
+          senderKey: match.senderKey,
+          source: 'autopilot',
+          action: method === 'mailto' ? 'unsubscribe_action_required' : 'unsubscribe_unavailable',
+          affectedCount: 0,
+          undoToken: null,
+          ruleId: match.ruleId,
+        });
       }
 
       // D204 boundary — sender_policies is senders-owned; this event is
@@ -901,13 +935,43 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           actionId: executionActionId,
           mailboxAccountId,
           idempotencyKey: executionKey,
+          source: 'autopilot',
+          ruleId: match.ruleId,
         });
         return { executionEnqueued: true };
       } catch (err) {
-        await db
-          .update(actionJobs)
-          .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
-          .where(eq(actionJobs.id, executionActionId));
+        const failedAt = new Date();
+        await db.transaction(async (tx) => {
+          const [failedJob] = await tx
+            .update(actionJobs)
+            .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
+            .where(eq(actionJobs.id, executionActionId))
+            .returning({ id: actionJobs.id });
+          if (failedJob) {
+            await tx.insert(activityLog).values({
+              mailboxAccountId,
+              senderKey: match.senderKey,
+              source: 'autopilot',
+              action: 'unsubscribe_failed',
+              affectedCount: 0,
+              undoToken: null,
+              ruleId: match.ruleId,
+            });
+            await this.deps.outbox.publish(tx, {
+              topic: TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED,
+              aggregateId: executionActionId,
+              payload: {
+                mailboxAccountId,
+                senderKey: match.senderKey,
+                actionId: executionActionId,
+                outcome: 'failed',
+                httpStatus: null,
+                executedAt: failedAt.toISOString(),
+              },
+              schema: ActionsUnsubscribeExecutedPayloadSchema,
+            });
+          }
+        });
         console.error(
           JSON.stringify({
             level: 'error',

@@ -23,7 +23,7 @@ describe('/how-it-works', () => {
     const copy = container.textContent ?? '';
 
     expect(copy).toContain('Keep is not Protect');
-    expect(copy).toContain('not a timed Snooze');
+    expect(copy).toContain('chosen sender-level return time');
     expect(copy).toContain('DeclutrMail/Later');
     expect(copy).toContain('cannot be recalled');
     expect(copy).toContain('Delete is available from Senders and Sender Detail');

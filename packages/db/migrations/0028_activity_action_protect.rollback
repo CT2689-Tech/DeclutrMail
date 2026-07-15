@@ -1,7 +1,7 @@
--- Rollback for 0028_activity_action_vip_protect.sql
+-- Rollback for 0028_activity_action_protect.sql
 --
 -- Postgres has no `ALTER TYPE DROP VALUE`, so the rollback recreates
--- the enum without the four D43 VIP/Protect audit values. Procedure
+-- the enum without the two Protect audit values. Procedure
 -- (mirrors 0013's rollback):
 --
 --   1. Switch `activity_log.action` to plain text so the enum type can

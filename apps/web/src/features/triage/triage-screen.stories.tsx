@@ -199,7 +199,12 @@ export const ActionSheetOpen: Story<typeof TriageScreen> = {
     resetTriageStore();
     useTriageStore.setState({
       expandedRowId: TRIAGE_QUEUE[0]!.id,
-      pendingAction: { verb: 'Archive', rowId: TRIAGE_QUEUE[0]!.id, surface: 'sheet' },
+      pendingAction: {
+        verb: 'Archive',
+        rowId: TRIAGE_QUEUE[0]!.id,
+        surface: 'sheet',
+        wakeAt: null,
+      },
     });
     return frame(<TriageScreen {...args} />);
   },
@@ -222,7 +227,12 @@ export const InlinePreview: Story<typeof TriageScreen> = {
     resetTriageStore();
     useTriageStore.setState({
       expandedRowId: TRIAGE_QUEUE[1]!.id,
-      pendingAction: { verb: 'Unsubscribe', rowId: TRIAGE_QUEUE[1]!.id, surface: 'inline' },
+      pendingAction: {
+        verb: 'Unsubscribe',
+        rowId: TRIAGE_QUEUE[1]!.id,
+        surface: 'inline',
+        wakeAt: null,
+      },
       rememberPreference: { Archive: false, Unsubscribe: true, Later: false },
     });
     return frame(<TriageScreen {...args} />);

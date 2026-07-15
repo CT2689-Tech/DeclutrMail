@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react';
 
 import { Button } from '../button';
 import { color, font, radius, shadow } from '../../tokens/tokens';
+import { getActionSemantics } from '../../actions/action-semantics';
 import type { UndoActionKind, UndoTrayDataSource } from './undo-tray.types';
 
 /**
@@ -178,7 +179,20 @@ export function UndoTray({
               gap: 12,
             }}
           >
-            <span style={{ color: color.fgSoft }}>{verbLabel(entry.actionKind)}</span>
+            <span style={{ color: color.fgSoft }}>
+              {resultLabel(entry.actionKind)}
+              <span
+                style={{
+                  display: 'block',
+                  color: color.fgMuted,
+                  fontFamily: font.mono,
+                  fontSize: 10,
+                }}
+              >
+                Activity Undo until {formatExpiry(entry.expiresAt)}
+                {entry.actionKind === 'delete' ? ' · Gmail Trash recovery is separate' : ''}
+              </span>
+            </span>
             <Button
               size="sm"
               tone="ghost"
@@ -213,6 +227,33 @@ export function UndoTray({
       ) : null}
     </aside>
   );
+}
+
+function resultLabel(kind: UndoActionKind): string {
+  switch (kind) {
+    case 'archive':
+    case 'later':
+    case 'unsubscribe':
+    case 'delete':
+      return getActionSemantics(kind).resultLabel;
+    case 'apply-rule':
+      return 'Rule applied';
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
+}
+
+function formatExpiry(value: string): string {
+  return new Intl.DateTimeFormat('en', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'UTC',
+    timeZoneName: 'short',
+  }).format(new Date(value));
 }
 
 /** "3 decisions applied" — the D35 leading-edge label. */

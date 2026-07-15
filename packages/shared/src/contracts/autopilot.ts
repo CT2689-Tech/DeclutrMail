@@ -88,6 +88,21 @@ export const AutopilotPreviewSampleSchema = z
   .strict();
 export type AutopilotPreviewSample = z.infer<typeof AutopilotPreviewSampleSchema>;
 
+/** Evidence behind the pre-activation weekly-volume estimate. */
+export const AutopilotWeeklyVolumeSchema = z
+  .object({
+    /** Observe-mode matches actually recorded inside the measurement window. */
+    observedMatches: z.number().int().nonnegative(),
+    /** Calendar days represented by the window (1–7). */
+    observedDays: z.number().int().min(1).max(7),
+    /** Seven-day match volume: observed directly or extrapolated from an early window. */
+    estimatedMatches: z.number().int().nonnegative(),
+    /** Makes an early extrapolation impossible to mistake for seven days of evidence. */
+    basis: z.enum(['observed_7d', 'early_estimate']),
+  })
+  .strict();
+export type AutopilotWeeklyVolume = z.infer<typeof AutopilotWeeklyVolumeSchema>;
+
 /**
  * Dry-run preview result (D103's "If active now, this rule would have
  * affected: X senders" — scoped to the preset surface at V2 per D192).
@@ -95,10 +110,20 @@ export type AutopilotPreviewSample = z.infer<typeof AutopilotPreviewSampleSchema
 export const AutopilotRulePreviewResultSchema = z
   .object({
     ruleId: UuidSchema,
-    /** Senders the rule's matcher matches against CURRENT signals. */
+    /** Unprotected senders the rule's matcher matches against CURRENT signals. */
     wouldMatchCount: z.number().int().nonnegative(),
+    /** Matching, unprotected senders whose configured action would do work now. */
+    actionableSenderCount: z.number().int().nonnegative(),
+    /** Current INBOX messages belonging to those actionable senders. */
+    actionableMessageCount: z.number().int().nonnegative(),
+    /** Matching senders excluded because they are Protected. */
+    protectedWouldMatchCount: z.number().int().nonnegative(),
     /** Senders evaluated (post protect-filter). */
     evaluatedSenders: z.number().int().nonnegative(),
+    /** Per-rule rolling 24-hour execution guard enforced by the action worker. */
+    dailyActionCap: z.number().int().positive(),
+    /** Match volume learned during Observe, with an explicit evidence basis. */
+    weeklyVolume: AutopilotWeeklyVolumeSchema,
     /** Up to 10 sample matches, metadata only. */
     sample: z.array(AutopilotPreviewSampleSchema).max(10),
   })

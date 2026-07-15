@@ -10,10 +10,9 @@
 // file.
 //
 // Ladder locked by the founder's 2026-06-11 launch-buildout spec (D19,
-// with D17–D21 / D77 / D81 context). NOTE for the founder: the plan
-// carries a D126 inline patch that sweetens Pro annual to $149/yr; the
-// locked spec keeps D19's $190/yr. If D126 pricing is adopted, the
-// `pro.prices.annual.usdCents` value below is the one value to change.
+// with D17–D21 / D77 / D81 context). The founder reconfirmed standard
+// Pro at $19/mo or $190/yr on 2026-07-14; the $129/yr Founding Pro
+// launch offer remains distinct.
 
 import type { Capability, TierManifest } from './types';
 
@@ -54,7 +53,7 @@ export const TIER_MANIFEST: TierManifest = {
     prices: {
       // $0 — a price point so the pricing page renders the amount from
       // the manifest; no checkout SKU ever exists for $0 (ids stay null).
-      monthly: { usdCents: 0, paddlePriceId: null, razorpayPlanId: null },
+      monthly: { usdCents: 0, inrPaise: 0, paddlePriceId: null, razorpayPlanId: null },
       annual: null,
     },
     inboxLimit: 1,
@@ -69,9 +68,9 @@ export const TIER_MANIFEST: TierManifest = {
     id: 'plus',
     name: 'Plus',
     prices: {
-      monthly: { usdCents: 900, paddlePriceId: null, razorpayPlanId: null },
+      monthly: { usdCents: 900, inrPaise: 74_900, paddlePriceId: null, razorpayPlanId: null },
       // $90/yr — 2 months free vs monthly (D19).
-      annual: { usdCents: 9000, paddlePriceId: null, razorpayPlanId: null },
+      annual: { usdCents: 9000, inrPaise: 749_900, paddlePriceId: null, razorpayPlanId: null },
     },
     inboxLimit: 1,
     undoWindowDays: 7,
@@ -83,9 +82,9 @@ export const TIER_MANIFEST: TierManifest = {
     id: 'pro',
     name: 'Pro',
     prices: {
-      monthly: { usdCents: 1900, paddlePriceId: null, razorpayPlanId: null },
-      // $190/yr per the locked D19 ladder (see file header re: D126).
-      annual: { usdCents: 19000, paddlePriceId: null, razorpayPlanId: null },
+      monthly: { usdCents: 1900, inrPaise: 159_900, paddlePriceId: null, razorpayPlanId: null },
+      // $190/yr — 2 months free vs monthly (founder-confirmed 2026-07-14).
+      annual: { usdCents: 19000, inrPaise: 1_599_900, paddlePriceId: null, razorpayPlanId: null },
     },
     inboxLimit: 2,
     // D19 — Pro extends the undo window to 30 days.
@@ -99,7 +98,7 @@ export const TIER_MANIFEST: TierManifest = {
       // $129/yr, first 250 paying users; grants pro (its host tier)
       // capabilities. Price locked while the subscription stays active
       // (`workspaces.founding_member`).
-      annual: { usdCents: 12900, paddlePriceId: null, razorpayPlanId: null },
+      annual: { usdCents: 12900, inrPaise: 1_099_900, paddlePriceId: null, razorpayPlanId: null },
       maxRedemptions: 250,
     },
   },

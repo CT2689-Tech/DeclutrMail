@@ -3,12 +3,14 @@ import 'reflect-metadata';
 import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker } from 'bullmq';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { OAuth2Client } from 'google-auth-library';
 import postgres from 'postgres';
 import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
 import {
   AccountDeletionPurgeWorker,
+  ACTION_RECOVERY_QUEUE,
+  ActionRecoveryWorker,
   AUTOPILOT_ACTION_QUEUE,
   AUTOPILOT_APPLY_QUEUE,
   BRIEF_SNAPSHOT_INTERVAL_MS,
@@ -44,6 +46,7 @@ import {
   InvalidGrantError,
   LABEL_ACTION_QUEUE,
   LabelActionWorker,
+  MAILBOX_ACTION_LOCK_NS,
   OUTBOX_NOTIFY_CHANNEL,
   OutboxDispatcherWorker,
   OutboxPublisher,
@@ -75,6 +78,8 @@ import {
   workerTuningOptions,
 } from '@declutrmail/workers';
 import type {
+  ActionRecoveryJobData,
+  ActionRecoveryResult,
   AutopilotActionJobData,
   AutopilotActionResult,
   AutopilotApplyJobData,
@@ -365,8 +370,6 @@ async function bootstrap(): Promise<void> {
     max: LABEL_ACTION_CONCURRENCY,
     prepare: false,
   });
-  /** Advisory-lock namespace (first key) — isolates label-action locks. */
-  const LABEL_ACTION_LOCK_NS = 0x4c41; // 'LA'
   // D181 audit writer. The worker is standalone (no Nest DI), so the
   // service is constructed directly against the worker's own `db`. The
   // service swallows its own insert failures so audit downtime never
@@ -539,11 +542,11 @@ async function bootstrap(): Promise<void> {
     async run(mailboxAccountId, fn) {
       const reserved = await lockPg.reserve();
       try {
-        await reserved`SELECT pg_advisory_lock(${LABEL_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
+        await reserved`SELECT pg_advisory_lock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
         return await fn();
       } finally {
         try {
-          await reserved`SELECT pg_advisory_unlock(${LABEL_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
+          await reserved`SELECT pg_advisory_unlock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
         } catch {
           // Best-effort unlock; the session ending releases it regardless.
         }
@@ -866,6 +869,36 @@ async function bootstrap(): Promise<void> {
         level: 'error',
         kind: 'bullmq.error',
         queue: LABEL_ACTION_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  /**
+   * Read-only recovery verifier (D169/D170). Failed Archive, Later,
+   * and Delete actions are never blindly replayed: this consumer reads
+   * fresh Gmail metadata and persists an expiring consequence preview.
+   * A separate, explicit confirmation creates the linked label action.
+   */
+  const actionRecoveryWorker = new ActionRecoveryWorker({
+    db,
+    gmail: gmailAccess,
+  });
+  actionRecoveryWorker.setObserver(observer);
+  actionRecoveryWorker.setDeadLetterRecorder(deadLetterRecorder);
+
+  const actionRecoveryBullWorker = new Worker<ActionRecoveryJobData, ActionRecoveryResult>(
+    ACTION_RECOVERY_QUEUE,
+    (job) => actionRecoveryWorker.run(job),
+    { connection, concurrency: 10, ...userFacingTuning },
+  );
+
+  actionRecoveryBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: ACTION_RECOVERY_QUEUE,
         message: err.message,
       }),
     );
@@ -1351,8 +1384,12 @@ async function bootstrap(): Promise<void> {
           lastHistoryId: providerSyncState.lastHistoryId,
         })
         .from(providerSyncState)
+        .innerJoin(mailboxAccounts, eq(providerSyncState.mailboxAccountId, mailboxAccounts.id))
         .where(
-          sql`${providerSyncState.lastHistoryId} IS NOT NULL AND ${providerSyncState.historyIdUpdatedAt} < ${cutoff}`,
+          and(
+            eq(mailboxAccounts.status, 'active'),
+            sql`${providerSyncState.lastHistoryId} IS NOT NULL AND ${providerSyncState.historyIdUpdatedAt} < ${cutoff}`,
+          ),
         )
         .limit(INCREMENTAL_DRIFT_BATCH);
 
@@ -1569,6 +1606,7 @@ async function bootstrap(): Promise<void> {
     db,
     gmailMutation: gmailMutationAccess,
     labelMap: new RedisSnoozeLabelMapStore(connection),
+    lock: mailboxLock,
   });
   snoozeWakeWorker.setObserver(observer);
   snoozeWakeWorker.setDeadLetterRecorder(deadLetterRecorder);
@@ -1683,6 +1721,7 @@ async function bootstrap(): Promise<void> {
     topicName: gmailPubsubTopic,
     emailQueue: emailSendQueue,
     renderReceiptEmail: deletionReceiptEmail,
+    mailboxLock,
     observer,
   });
   deletionPurgeWorker.setObserver(observer);
@@ -1789,6 +1828,9 @@ async function bootstrap(): Promise<void> {
   );
   console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INCREMENTAL_SYNC_QUEUE }),
+  );
+  console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: ACTION_RECOVERY_QUEUE }),
   );
   console.log(
     JSON.stringify({
@@ -1936,6 +1978,7 @@ async function bootstrap(): Promise<void> {
       await briefSchedulerQueue.close();
       await scoreBullWorker.close();
       await labelActionBullWorker.close();
+      await actionRecoveryBullWorker.close();
       await unsubExecutionBullWorker.close();
       await undoExpiryBullWorker.close();
       await undoExpirySchedulerQueue.close();

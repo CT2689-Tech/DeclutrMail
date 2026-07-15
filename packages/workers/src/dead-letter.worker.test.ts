@@ -4,7 +4,14 @@ import { join } from 'node:path';
 import type { Job } from 'bullmq';
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
-import { deadLetterJobs, schema } from '@declutrmail/db';
+import {
+  deadLetterJobs,
+  mailboxAccounts,
+  mailboxDataDeletionRequests,
+  schema,
+  users,
+  workspaces,
+} from '@declutrmail/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
@@ -140,6 +147,43 @@ describe('dead-letter pipeline (D225)', () => {
   });
 
   describe('recorder write-boundary sanitization (D7)', () => {
+    it('does not recreate a mailbox-linked row after indexed-data deletion completed', async () => {
+      const db = await freshDb();
+      const [workspace] = await db
+        .insert(workspaces)
+        .values({ name: 'Deleted mailbox fixture' })
+        .returning({ id: workspaces.id });
+      const [user] = await db
+        .insert(users)
+        .values({ workspaceId: workspace!.id, email: 'deleted-mailbox@example.test' })
+        .returning({ id: users.id });
+      const [mailbox] = await db
+        .insert(mailboxAccounts)
+        .values({
+          workspaceId: workspace!.id,
+          userId: user!.id,
+          provider: 'gmail',
+          providerAccountId: 'deleted-mailbox@gmail.test',
+          status: 'disconnected',
+        })
+        .returning({ id: mailboxAccounts.id });
+      await db.insert(mailboxDataDeletionRequests).values({
+        mailboxAccountId: mailbox!.id,
+        status: 'completed',
+        completedAt: new Date(),
+      });
+      const recorder = new DrizzleDeadLetterRecorder({ db: db as never });
+
+      await recorder.record({
+        queue: 'incremental-sync',
+        jobId: `stale-${mailbox!.id}`,
+        payload: { mailboxAccountId: mailbox!.id, startHistoryId: '10', endHistoryId: '11' },
+        error: 'stale job failed after purge',
+      });
+
+      expect(await db.select().from(deadLetterJobs)).toHaveLength(0);
+    });
+
     it('drops non-allowlisted keys and records them under __redacted_keys', async () => {
       const db = await freshDb();
       const recorder = new DrizzleDeadLetterRecorder({ db: db as never });

@@ -1,6 +1,7 @@
 'use client';
 
-import { tokens } from '@declutrmail/shared';
+import { TIER_MANIFEST, tokens } from '@declutrmail/shared';
+import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { ConfirmModalFrame } from './confirm-modal-frame';
 import { presetDisplayName } from './preset-labels';
@@ -8,6 +9,7 @@ import { RulePreviewPanel } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
 const { color, font } = tokens;
+const AUTOPILOT_UNDO_WINDOW_DAYS = TIER_MANIFEST.pro.undoWindowDays;
 
 /**
  * D226 mandatory preview for switching a rule Observe → Active — the
@@ -85,14 +87,14 @@ export function ActivateRuleModal({
         <li>{goingForwardCopy(rule)}</li>
         <li>
           {pendingApproximate
-            ? 'Suggestions already collected stay pending below — activating does not approve them. Approve or dismiss them separately.'
+            ? 'Suggestions already collected stay pending below — activating does not approve them. Approve or skip them separately.'
             : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
                 pendingCount === 1 ? 'stays' : 'stay'
               } pending below — activating does not approve ${
                 pendingCount === 1 ? 'it' : 'them'
-              }. Approve or dismiss ${pendingCount === 1 ? 'it' : 'them'} separately.`}
+              }. Approve or skip ${pendingCount === 1 ? 'it' : 'them'} separately.`}
         </li>
-        <li>Senders you mark Protected or VIP are always skipped.</li>
+        <li>Senders you mark Protected are always skipped.</li>
       </ul>
 
       {/* D226 — what the FIRST active sweep would do right now (same
@@ -112,19 +114,103 @@ export function ActivateRuleModal({
           First sweep, right now
         </span>
         <RulePreviewPanel ruleName={name} state={preview} onRetry={onRetryPreview} />
+        <ActivationReport rule={rule} preview={preview} />
       </div>
     </ConfirmModalFrame>
   );
 }
 
+/** Decision-grade report shown only after the server dry-run resolves. */
+function ActivationReport({
+  rule,
+  preview,
+}: {
+  rule: AutopilotRuleDto;
+  preview: RulePreviewState;
+}) {
+  if (preview.status !== 'ready') return null;
+  const { result } = preview;
+  const weeklyCopy =
+    result.weeklyVolume.basis === 'observed_7d'
+      ? `7-day observed volume: ${result.weeklyVolume.observedMatches.toLocaleString()} match${
+          result.weeklyVolume.observedMatches === 1 ? '' : 'es'
+        }.`
+      : `Early weekly estimate: about ${result.weeklyVolume.estimatedMatches.toLocaleString()} match${
+          result.weeklyVolume.estimatedMatches === 1 ? '' : 'es'
+        }, extrapolated from ${result.weeklyVolume.observedMatches.toLocaleString()} over ${
+          result.weeklyVolume.observedDays
+        } day${result.weeklyVolume.observedDays === 1 ? '' : 's'}.`;
+
+  return (
+    <section
+      aria-labelledby="dm-activation-report-title"
+      style={{
+        border: `1px solid ${color.line}`,
+        borderRadius: 9,
+        padding: '12px 14px',
+        background: color.paper,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        fontFamily: font.sans,
+      }}
+    >
+      <h3
+        id="dm-activation-report-title"
+        style={{ margin: 0, fontSize: 12.5, color: color.fg, fontFamily: font.sans }}
+      >
+        Activation report
+      </h3>
+      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
+        {actionableNowCopy(rule, result.actionableSenderCount, result.actionableMessageCount)}
+      </div>
+      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
+        {result.protectedWouldMatchCount.toLocaleString()} additional matching sender
+        {result.protectedWouldMatchCount === 1 ? ' is' : 's are'} Protected and will be skipped.
+      </div>
+      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>{weeklyCopy}</div>
+      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
+        Daily safety cap: {result.dailyActionCap.toLocaleString()} action
+        {result.dailyActionCap === 1 ? '' : 's'}. Extra matches wait for a later sweep.
+      </div>
+      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>{recoveryCopy(rule)}</div>
+    </section>
+  );
+}
+
+function actionableNowCopy(
+  rule: AutopilotRuleDto,
+  senderCount: number,
+  messageCount: number,
+): string {
+  if (rule.actionKind === 'unsubscribe') {
+    return `${senderCount.toLocaleString()} unsubscribe request${
+      senderCount === 1 ? '' : 's'
+    } actionable now. Those senders currently account for ${messageCount.toLocaleString()} inbox message${
+      messageCount === 1 ? '' : 's'
+    }; unsubscribing does not remove existing mail.`;
+  }
+  return `${senderCount.toLocaleString()} sender${senderCount === 1 ? '' : 's'} and ${messageCount.toLocaleString()} inbox message${messageCount === 1 ? '' : 's'} actionable now.`;
+}
+
+function recoveryCopy(rule: AutopilotRuleDto): string {
+  if (rule.actionKind === 'archive') {
+    return `Recovery: archive results can be undone from Activity for ${AUTOPILOT_UNDO_WINDOW_DAYS} days.`;
+  }
+  if (rule.actionKind === 'later') {
+    return `Recovery: Later results return automatically at their scheduled time and can be undone from Activity for ${AUTOPILOT_UNDO_WINDOW_DAYS} days.`;
+  }
+  return 'Recovery: unsubscribe requests cannot be undone. Existing messages stay in your inbox unless a separate archive action applies.';
+}
+
 /** Verb-honest description of Active mode (D227 canonical verbs; D230 mailto stays manual). */
 function goingForwardCopy(rule: AutopilotRuleDto): string {
-  switch (rule.actionKind) {
-    case 'archive':
-      return 'New matches have their inbox mail archived automatically. Nothing is deleted, and each archive can be undone from the Activity feed.';
-    case 'unsubscribe':
-      return 'New matches trigger an unsubscribe request automatically where the sender supports one-click unsubscribe. The sender controls whether and when delivery stops. Senders that only take requests by email are queued for you to send manually — DeclutrMail never auto-sends from a no-reply address. Delivered requests cannot be recalled.';
-    case 'later':
-      return 'New matches have their inbox mail moved to the DeclutrMail/Later label automatically — out of your way, one click away, undoable from the Activity feed.';
-  }
+  const presentation = buildActionPresentation({
+    verb: rule.actionKind,
+    liveCount: null,
+    planUndoDeadline: null,
+    wakeAt: rule.actionKind === 'later' ? defaultLaterWakeAtIso() : null,
+    unsubscribeChannel: null,
+  });
+  return `For each new match: ${presentation.previewCopy}`;
 }

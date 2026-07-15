@@ -56,23 +56,16 @@ function pickUnsubscribeMethod(s: Sender): UnsubscribeMethod | null {
 /**
  * Project a fixture `Sender`'s standing-policy flags to the wire shape.
  * Shared by the list + detail projections so both agree (the BE now
- * carries `protectionFlags` on the list row too). VIP is honored when the
- * fixture sets `isVip`; auto-protected senders project to
- * `engagement_based` (closest BE bucket for "system-pinned"), VIPs to
- * `vip`. Non-protected senders carry null reason + null timestamp.
+ * carries `protectionFlags` on the list row too). Auto-protected senders
+ * project to `starred` as an explicit automatic-protection fixture.
+ * Non-protected senders carry null reason + null timestamp.
  */
 function fixtureProtectionFlags(s: Sender, now: number): SenderListRow['protectionFlags'] {
-  // VIP and Protect are INDEPENDENT on the real BE wire (D42/D43) — keep
-  // them decoupled here so a fixture can produce the `isVip && !isProtected`
-  // row the BE can send (the case the VIP-only bulk-action gap turned on).
-  const isVip = s.isVip === true;
   const isProtected = s.protected === true;
-  const hasPolicy = isVip || isProtected;
   return {
-    isVip,
     isProtected,
-    protectionReason: isProtected ? 'engagement_based' : isVip ? 'vip' : null,
-    protectionSetAt: hasPolicy ? new Date(now).toISOString() : null,
+    protectionReason: isProtected ? 'starred' : null,
+    protectionSetAt: isProtected ? new Date(now).toISOString() : null,
   };
 }
 
@@ -158,7 +151,7 @@ export function fixtureToTimeseries(s: Sender): TimeseriesPointDto[] {
 export function fixtureToDecisionHistoryRows(s: Sender): DecisionHistoryRowDto[] {
   const detail = buildSenderDetail(s);
   // The wire schema only carries `keep | archive | unsubscribe | later`.
-  // Fixture rows include richer actions (VIP toggles, Restored, Protected,
+  // Fixture rows include richer actions (Restored, Protected,
   // etc.) — those don't map to a verdict so we drop them. The remaining
   // rows project cleanly.
   const verdictMap: Record<string, DecisionHistoryRowDto['verdict']> = {

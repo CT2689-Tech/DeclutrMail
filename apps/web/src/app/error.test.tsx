@@ -65,13 +65,17 @@ describe('AppError boundary — D167', () => {
     await waitFor(() => expect(captureSpy).toHaveBeenCalled());
   });
 
-  it('surfaces the error digest as a "Reference" code so support can grep Sentry', () => {
+  it('keeps the support reference behind a technical-details disclosure', () => {
     render(
       <AppError
         error={Object.assign(new Error('Boom'), { digest: '7f2a9100' })}
         reset={() => undefined}
       />,
     );
+    const disclosure = screen.getByText('Show support reference');
+    expect(disclosure.closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(disclosure);
+    expect(disclosure.closest('details')).toHaveAttribute('open');
     expect(screen.getByText(/Reference: 7f2a9100/i)).toBeInTheDocument();
   });
 

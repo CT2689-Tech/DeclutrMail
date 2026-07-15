@@ -14,7 +14,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
@@ -52,11 +52,22 @@ describe('PrivacyDataView', () => {
     const { container } = renderView();
 
     expect(screen.getByText(PRIVACY_BADGE_HEADLINE)).toBeInTheDocument();
+    const badge = container.querySelector('[data-dm-privacy-badge="card"]');
+    expect(badge).not.toBeNull();
     for (const item of PRIVACY_STORAGE_ITEMS) {
-      expect(screen.getByText(item)).toBeInTheDocument();
+      expect(within(badge as HTMLElement).getByText(item)).toBeInTheDocument();
     }
     // The banned pre-D228 phrase must appear nowhere (CLAUDE.md §2.1).
     expect(container.innerHTML).not.toMatch(/Bodies read: 0/i);
+  });
+
+  it('explains the difference between Google access and stored data in context', () => {
+    renderView();
+
+    expect(
+      screen.getByText('How is Google access different from stored data?'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/separates what is fetched.*what stays/i)).toBeInTheDocument();
   });
 
   it('lists the indexed mailboxes, marking disconnected ones', () => {
@@ -65,6 +76,21 @@ describe('PrivacyDataView', () => {
     });
     expect(screen.getByText('chintan.a.thakkar@gmail.com')).toBeInTheDocument();
     expect(screen.getByText(/disconnected — sync stopped/i)).toBeInTheDocument();
+  });
+
+  it('states removal triggers and distinguishes one-mailbox purge from account deletion', () => {
+    renderView();
+
+    expect(
+      screen.getAllByText(/removed when this Gmail account is disconnected/i).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Disconnect & delete indexed data/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Operational audit data retained under policy/i)).toBeInTheDocument();
+    expect(screen.getByText(/Disconnect & delete one mailbox's indexed data/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/other mailboxes.*disconnected Gmail address.*remain/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Delete account and data/i)).toBeInTheDocument();
   });
 
   it('renders the no-mailboxes empty state', () => {
@@ -81,13 +107,15 @@ describe('PrivacyDataView', () => {
     // Generic free/pro copy straight off the entitlements manifest.
     expect(screen.getByText(/7 days \(\s*30 days on Pro\)/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/Delete has an Activity undo token for up to 30 days/i),
+      screen.getByText(/Delete also uses your plan's Activity Undo window/i),
     ).toBeInTheDocument();
+    expect(screen.getByText(/Gmail Trash recovery is separate/i)).toBeInTheDocument();
   });
 
   it('states that encrypted OAuth credentials are excluded from exports', () => {
     renderView();
-    expect(screen.getByText(/encrypted OAuth credentials are not included/i)).toBeInTheDocument();
+    const credentialRow = screen.getByText('Encrypted Google OAuth credential').closest('li');
+    expect(credentialRow).toHaveTextContent('Not currently included in a data export.');
     expect(screen.queryByText(/we don't store them/i)).not.toBeInTheDocument();
   });
 
@@ -95,10 +123,10 @@ describe('PrivacyDataView', () => {
     const { container } = renderView();
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
-    expect(text).toContain('mailbox email, connection status and date');
-    expect(text).toContain('sender records with standing policies');
-    expect(text).toContain('decision/activity history');
-    expect(text).toContain('app preferences, billing records');
+    expect(text).toContain('Mailbox addresses and status');
+    expect(text).toContain('sender profiles with selected policy fields');
+    expect(text).toContain('Activity rows');
+    expect(text).toContain('App preferences and billing records are not included');
     expect(text).not.toMatch(/download everything/i);
     expect(text).not.toMatch(/full export/i);
   });

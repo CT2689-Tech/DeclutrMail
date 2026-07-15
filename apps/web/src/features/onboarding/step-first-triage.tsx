@@ -72,7 +72,7 @@ export function StepFirstTriage({
     return (
       <PanelShell corner={corner}>
         <p role="status" style={{ color: color.fgMuted, fontSize: 14 }}>
-          Preparing your guided 3-decision preview…
+          Finding a useful first sender decision…
         </p>
       </PanelShell>
     );
@@ -94,11 +94,11 @@ export function StepFirstTriage({
             margin: '6px 0 4px',
           }}
         >
-          {meta.pinned === 0 ? 'Your inbox is ready.' : "That's it — first triage done."}
+          {meta.pinned === 0 ? 'Your inbox is ready.' : 'Your first sender decisions are saved.'}
         </h1>
         <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
           {meta.pinned === 0
-            ? "We didn't find practice candidates right now — head straight in and meet your senders."
+            ? "We didn't find a useful first decision right now — open Senders to review the inbox DeclutrMail indexed."
             : `You made ${meta.decided} sender ${meta.decided === 1 ? 'decision' : 'decisions'}. Manual Archive and Later affected matching inbox mail when they ran; they did not create future-mail rules. A delivered unsubscribe request is one-way. Reversible moves remain available in Activity while their token is live. Welcome aboard.`}
         </p>
         <p style={{ color: color.fgMuted, fontSize: 13, margin: '-12px 0 24px', maxWidth: 500 }}>
@@ -140,10 +140,10 @@ export function StepFirstTriage({
         <div>
           <Eyebrow>Step 5 of 5 · Guided 3-decision preview</Eyebrow>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: color.fgMuted, maxWidth: 560 }}>
-            We&rsquo;ll guide you through up to three real sender decisions. Start with your{' '}
-            {meta.pinned === 1 ? 'noisiest sender' : `${meta.pinned} noisiest senders`} — decision{' '}
+            We&rsquo;ll guide you through up to three real sender decisions. Start with{' '}
+            {meta.pinned === 1 ? 'this sender' : `these ${meta.pinned} senders`} — decision{' '}
             {Math.min(meta.decided + 1, meta.pinned)} of {meta.pinned}. These are real actions with
-            a current-scope preview and Activity undo wherever an inverse exists.
+            a preview of the affected mail and any available recovery.
           </p>
         </div>
         {corner}

@@ -32,11 +32,8 @@
  * screen mechanical — the page shell does not move when the feature
  * lands.
  *
- * `decisions` is the trace back to the plan. The plan numbers are
- * surfaced inline as a mono eyebrow so a future agent reading the
- * route file can find the D-rows in seconds. They are also rendered
- * in the page for the founder — small enough to ignore, present
- * enough to confirm the right surface is being scoped.
+ * `decisions` remains internal trace metadata for route call sites. Plan
+ * identifiers are never rendered to users.
  */
 
 import type { ReactNode } from 'react';
@@ -128,7 +125,6 @@ export function RoutePlaceholder({
   status,
   title,
   description,
-  decisions,
   primaryCta,
   secondaryCta,
 }: RoutePlaceholderProps) {
@@ -188,24 +184,6 @@ export function RoutePlaceholder({
           </div>
         }
       />
-
-      {decisions.length > 0 && (
-        <p
-          // Trace back to the plan. Small enough to ignore once the
-          // feature lands; valuable for the next agent or session
-          // confirming the right scope.
-          style={{
-            alignSelf: 'center',
-            margin: 0,
-            fontFamily: font.mono,
-            fontSize: 10.5,
-            color: color.fgMuted,
-            letterSpacing: '0.06em',
-          }}
-        >
-          Plan refs: {decisions.join(' · ')}
-        </p>
-      )}
     </section>
   );
 }

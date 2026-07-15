@@ -65,7 +65,6 @@ function row(overrides: Partial<SenderListRow> = {}): SenderListRow {
     unsubscribeMethod: overrides.unsubscribeMethod ?? 'none',
     lastReview: overrides.lastReview ?? null,
     protectionFlags: overrides.protectionFlags ?? {
-      isVip: false,
       isProtected: false,
       protectionReason: null,
       protectionSetAt: null,
@@ -143,7 +142,6 @@ const DEFAULT_ROWS: SenderListRow[] = [
     volumeTrend: 'steady',
     unsubscribeMethod: 'one_click',
     protectionFlags: {
-      isVip: false,
       isProtected: true,
       protectionReason: 'user_defined',
       protectionSetAt: '2026-01-01T00:00:00.000Z',
@@ -322,9 +320,8 @@ export const HighlyProtected: Story<typeof SenderTable> = {
           volumeTrend: 'steady',
           unsubscribeMethod: 'none',
           protectionFlags: {
-            isVip: true,
             isProtected: true,
-            protectionReason: 'vip',
+            protectionReason: 'user_defined',
             protectionSetAt: '2025-12-01T00:00:00.000Z',
           },
         }),
@@ -340,7 +337,7 @@ export const SingleRow: Story<typeof SenderTable> = {
 /**
  * D227 verb-row de-confliction (F3). The action row is Archive / Later /
  * Unsubscribe ONLY — Keep lives in the Triage ritual, never here — and
- * Protect is a read-only ⭐ status on the name cell (rendered on the VIP +
+ * Protect is a read-only shield status on the name cell (rendered on the
  * Protected rows below), not a verb button. Pins the row's verb set + the
  * status indicator against regression now that design is frozen.
  */
@@ -350,21 +347,19 @@ export const ProtectStatusAndMoveVerbs: Story<typeof SenderTable> = {
       rows={[
         row({
           id: 'v-1',
-          displayName: 'Spouse (VIP ⭐)',
+          displayName: 'Spouse (Protected)',
           domain: 'gmail.com',
           protectionFlags: {
-            isVip: true,
-            isProtected: false,
-            protectionReason: 'vip',
+            isProtected: true,
+            protectionReason: 'user_defined',
             protectionSetAt: '2025-12-01T00:00:00.000Z',
           },
         }),
         row({
           id: 'v-2',
-          displayName: 'Bank (Protected ⭐)',
+          displayName: 'Bank (Protected)',
           domain: 'bank.example',
           protectionFlags: {
-            isVip: false,
             isProtected: true,
             protectionReason: 'user_defined',
             protectionSetAt: '2025-12-01T00:00:00.000Z',

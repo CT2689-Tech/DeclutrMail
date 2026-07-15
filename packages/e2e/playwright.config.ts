@@ -68,15 +68,16 @@ import { E2E_ENV, loadRootEnvLocal } from './helpers/env';
  * Each runtime-probes the stack via `requireLiveStack()` and skips
  * with an explicit reason when the stack/mailbox is absent.
  *
- * `billing-upgrade.spec.ts` is the exception: it runs GMAIL-FREE.
+ * `billing-upgrade.spec.ts` and `a11y-smoke.spec.ts` are the exceptions:
+ * both run GMAIL-FREE.
  * `global-setup` applies an idempotent synthetic-workspace seed
  * (helpers/seed-billing.ts — fixed `e2eb…` ids, never the founder's
- * rows) and the spec drives paywall → signed Paddle webhook → tier
- * flip → gates open with no Gmail API involvement and no worker. A
- * future CI job can run JUST this spec against a booted
- * postgres+redis+api+web stack (env recipe in the spec header; set
- * `E2E_LOGIN_EMAIL` to the synthetic user so no founder account is
- * needed — the seed runs before the dev-login).
+ * rows). The billing spec drives paywall → signed Paddle webhook →
+ * tier flip → gates open; the accessibility projects scan representative
+ * authenticated routes at desktop and 375×812/reduced-motion. The CI lane
+ * runs only the accessibility spec against postgres+redis+api+web and sets
+ * `E2E_LOGIN_EMAIL` to the synthetic user, so no founder account, Gmail
+ * credential, Gmail API call, or worker is involved.
  */
 loadRootEnvLocal();
 
@@ -92,10 +93,29 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   reporter: [['list']],
   globalSetup: './global-setup.ts',
+  projects: [
+    {
+      name: 'default',
+      testIgnore: /a11y-smoke\.spec\.ts/,
+    },
+    {
+      name: 'a11y-desktop',
+      testMatch: /a11y-smoke\.spec\.ts/,
+      use: { viewport: { width: 1280, height: 800 } },
+    },
+    {
+      name: 'a11y-mobile-reduced-motion',
+      testMatch: /a11y-smoke\.spec\.ts/,
+      use: {
+        viewport: { width: 375, height: 812 },
+        contextOptions: { reducedMotion: 'reduce' },
+      },
+    },
+  ],
   use: {
     baseURL: E2E_ENV.webUrl,
     storageState: E2E_ENV.storageStatePath,
-    trace: 'on-first-retry',
+    trace: process.env.CI ? 'retain-on-failure' : 'on-first-retry',
     /* Real stack ≠ instant: action enqueue → worker → poll cycles.
      * Navigation headroom covers Next dev-server on-demand compiles
      * (global-setup pre-warms routes, but keep margin for re-compiles). */

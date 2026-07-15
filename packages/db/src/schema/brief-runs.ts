@@ -38,10 +38,6 @@ import { workspaces } from './workspaces';
  *   - `'template'`   — the deterministic template fallback ran (LLM
  *                      timed out, failed, or no API key configured)
  *
- * D67 VIP marker: each `BriefItem` carries `isVip` so the UI can render
- * the ⭐ inline; VIPs auto-elevate to Reply (handled at generation time,
- * not at render time — the stored payload IS the final layout).
- *
  * D61 channel:
  *   - `opened_at`     — first time the user viewed the in-app Brief
  *   - `email_sent_at` — when the optional email digest went out (null
@@ -74,7 +70,7 @@ export const briefGeneratedBy = pgEnum('brief_generated_by', ['llm_haiku', 'temp
 
 /**
  * One Brief row in the Reply or FYI section. Carries sender identity,
- * subject, the VIP marker (D67), and the Gmail message ids the row
+ * subject and the Gmail message ids the row
  * refers to (a Brief row can collapse multiple messages from the same
  * sender — D63 caps reply at 6 distinct senders).
  *
@@ -90,8 +86,6 @@ export interface BriefItem {
   senderEmail: string;
   /** From a single representative message; allowlisted by D7. */
   subject: string;
-  /** D67 — render the ⭐ inline; auto-elevation already applied. */
-  isVip: boolean;
   /**
    * Gmail message ids this row refers to (one or more). The D65 noise-
    * archive flow does NOT touch reply/fyi rows; this list is provided
@@ -120,7 +114,7 @@ export interface BriefSenderGroup {
  * even though the storage is opaque jsonb.
  */
 export interface BriefPayload {
-  /** D63 Reply section — max 6. VIPs auto-elevated here (D67). */
+  /** D63 Reply section — max 6. */
   reply: BriefItem[];
   /** D63 FYI section — max 4. */
   fyi: BriefItem[];

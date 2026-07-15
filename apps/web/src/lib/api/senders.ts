@@ -20,7 +20,11 @@
  * the server gave us on the previous response.
  */
 
-import type { Envelope, PaginatedEnvelope } from '@declutrmail/shared/contracts';
+import type {
+  Envelope,
+  PaginatedEnvelope,
+  UnsubscribeLifecycleStatus,
+} from '@declutrmail/shared/contracts';
 import { apiGet, apiPatch } from './client';
 
 // ── BE contract types (mirrors the WT-B PR) ─────────────────────────
@@ -33,15 +37,8 @@ import type { GmailCategory } from '@declutrmail/shared/contracts';
 /** How a sender can be unsubscribed — drives the V2 unsubscribe flow (D230). */
 export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 
-/**
- * RFC 8058 execution outcome from `sender_policies.unsub_status`
- * (D9 Wave 2): `pending` (job in flight) → `done` (2xx; unsubscribed)
- * / `failed` (target refused or unreachable — recorded honestly) /
- * `ambiguous` (3xx; redirects never followed, may have worked).
- * `null` = no tracked execution (mailto-manual per D230, method
- * `none`, or no unsub intent yet).
- */
-export type UnsubStatus = 'pending' | 'done' | 'failed' | 'ambiguous';
+/** Truthful one-click/manual/unavailable unsubscribe lifecycle (D9/D245). */
+export type UnsubStatus = UnsubscribeLifecycleStatus;
 
 /**
  * Bucketed volume trend mirrored from `senders.types.ts:VolumeTrendBucket`.
@@ -132,16 +129,8 @@ export interface SenderListRow {
   unsubscribeMethod: UnsubscribeMethod | null;
   /** Most-recent triage decision summary. `null` when never reviewed. */
   lastReview: LastReviewWire | null;
-  /**
-   * Standing VIP / Protect policy flags (D42, D43) — mirrors the BE
-   * `SenderListRow.protectionFlags`. Present on every list row (not just
-   * detail) so the Senders screen can render the "Protected" chip,
-   * populate the "Protected" KPI, and route VIPs / protected senders to
-   * the "Protect" intent bucket. Defaults to all-false / null when the
-   * sender has no `sender_policies` row (engine default).
-   */
+  /** Standing protection state for destructive and automatic-action gates. */
   protectionFlags: {
-    isVip: boolean;
     isProtected: boolean;
     protectionReason: ProtectionReasonWire | null;
     protectionSetAt: string | null;
@@ -156,10 +145,10 @@ export interface SenderListRow {
    */
   policyType?: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
   /**
-   * RFC 8058 execution outcome (D9 Wave 2) — see `UnsubStatus`.
-   * Drives the per-row unsub chip copy (confirming / unsubscribed /
-   * failed / unconfirmed). Optional for fixture compatibility;
-   * absent ⇒ `null`.
+   * Truthful unsubscribe lifecycle (D9/D245) — see `UnsubStatus`.
+   * Endpoint acceptance, manual Gmail progress, failure, uncertainty,
+   * and unavailable channels remain distinct. Optional for fixture
+   * compatibility; absent ⇒ `null`.
    */
   unsubStatus?: UnsubStatus | null;
 }
@@ -167,17 +156,17 @@ export interface SenderListRow {
 /**
  * Why a sender is protected. Mirrors the BE `protection_reason` enum
  * (see `apps/api/src/senders/senders.types.ts`):
- *   - `user_defined` — founder toggled Protect on
- *   - `engagement_based` — engagement signals pinned the sender
- *   - `vip` — protection inherited from VIP status
+ *   - `user_defined` — the user toggled Protect on
+ *   - `replied` — the user replied at least three times
+ *   - `starred` — the user starred a message in the past year
+ *   - `gmail_important` — Gmail marked at least three recent messages important
  *   - `null` — not protected
  */
-export type ProtectionReasonWire = 'user_defined' | 'engagement_based' | 'vip';
+export type ProtectionReasonWire = 'user_defined' | 'replied' | 'starred' | 'gmail_important';
 
 /**
  * Detail shape on `GET /api/senders/:id` — extends the list row with
- * the protection-flag block. VIP and Protect are separate user-driven
- * policies (D42 / D43); both are mutually independent of each other.
+ * the protection-flag block.
  *
  * Field names mirror the BE source-of-truth (`SenderDetail.protectionFlags`
  * in `apps/api/src/senders/senders.types.ts`). Drift between FE and BE
@@ -186,7 +175,6 @@ export type ProtectionReasonWire = 'user_defined' | 'engagement_based' | 'vip';
  */
 export interface SenderDetailDto extends SenderListRow {
   protectionFlags: {
-    isVip: boolean;
     isProtected: boolean;
     /** Why the sender is protected — null when `isProtected` is false. */
     protectionReason: ProtectionReasonWire | null;
@@ -424,12 +412,6 @@ export interface ListSendersParams {
    * contract.
    */
   isProtected?: TriStateFilter | undefined;
-  /**
-   * VIP filter (U23 settings VIP list). `true` = only VIP senders
-   * (`sender_policies.is_vip`). Maps to wire `?vip=true`. No negated
-   * form (not a product surface).
-   */
-  isVip?: boolean | undefined;
   /** Sortable column. Omit to take the BE default (`total`). */
   sort?: SenderListSort | undefined;
   /** Sort direction. Omit to take the BE's sane per-sort default. */
@@ -551,7 +533,6 @@ export function fetchSenders(
       // wire reads as the compose-strip negation primitive.
       protected:
         params.isProtected === true ? 'true' : params.isProtected === false ? 'not' : undefined,
-      vip: params.isVip === true ? 'true' : undefined,
       sort: params.sort,
       direction: params.direction,
       // Empty string collapses to omitted so a cleared search keys the
@@ -595,7 +576,6 @@ export function fetchSenderDetail(
 export interface SenderPolicyPatch {
   /** Only `'keep'` is writable on this route (D40). */
   policyType?: 'keep';
-  isVip?: boolean;
   isProtected?: boolean;
 }
 
@@ -609,7 +589,6 @@ export interface SenderPolicyPatch {
 export interface SenderPolicyResultDto {
   senderId: string;
   policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
-  isVip: boolean;
   isProtected: boolean;
   protectionReason: ProtectionReasonWire | null;
   protectionSetAt: string | null;
@@ -621,8 +600,8 @@ export interface SenderPolicyResultDto {
  * PATCH /api/senders/:id/policy — standing-policy write (D40, D42, D43).
  *
  * Non-destructive (no Gmail mutation, no undo token) — Keep applies
- * immediately per D40 and the VIP / Protect chips are plain set-state
- * toggles per D42/D43, so this does NOT ride the D226 destructive
+ * immediately per D40 and the Protect chip is a plain set-state toggle,
+ * so this does NOT ride the D226 destructive
  * lifecycle (no preview, no Idempotency-Key header; idempotency is the
  * set-state semantics).
  */

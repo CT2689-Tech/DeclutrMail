@@ -55,12 +55,6 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
     );
   });
 
-  it('VIP wins over unsub-ready — VIP rides the same standing-protect input', () => {
-    expect(derivePrimaryVerbId(sender({ unsubscribeMethod: 'one_click', isVip: true }))).toBe(
-      'keep',
-    );
-  });
-
   it("one-click in group 'primary' never derives Unsubscribe — the primary CTA must agree with the popover's canUnsubscribe gate", () => {
     expect(derivePrimaryVerbId(sender({ unsubscribeMethod: 'one_click', group: 'primary' }))).toBe(
       'keep',
@@ -75,11 +69,11 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
     expect(derivePrimaryVerbId(sender({ lastDays: 250 }))).toBe('archive');
   });
 
-  it('no method + recent falls to Keep (fact rule 4 via legacy people intent)', () => {
+  it('no method + recent falls to Keep (fact rule 4)', () => {
     expect(derivePrimaryVerbId(sender())).toBe('keep');
   });
 
-  it('legacy fallback preserved: a high-confidence engine cleanup verdict still leads Unsubscribe when no fact rule fires', () => {
+  it('ignores a high-confidence engine verdict when observed facts derive Keep (D245)', () => {
     expect(
       derivePrimaryVerbId(
         sender({
@@ -91,7 +85,7 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
           },
         }),
       ),
-    ).toBe('unsubscribe');
+    ).toBe('keep');
   });
 });
 
@@ -106,8 +100,8 @@ describe('SenderActionRow — one-click unsub-ready row', () => {
     expect(onAction).toHaveBeenCalledWith({ verb: 'Unsubscribe', senders: [row] });
 
     // The ⋯ popover still renders the full canonical verb set (D227).
-    fireEvent.click(screen.getByRole('button', { name: /more actions/i }));
-    const menu = screen.getByRole('menu');
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for Acme Deals' }));
+    const menu = screen.getByRole('menu', { name: 'Actions for Acme Deals' });
     for (const label of ['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete']) {
       expect(within(menu).getByRole('menuitem', { name: label })).toBeInTheDocument();
     }

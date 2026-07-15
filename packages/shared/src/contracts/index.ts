@@ -5,6 +5,34 @@
 
 export type { KmsProvider } from './kms-provider';
 
+// D245 cumulative Gmail-data lifecycle registry. This contract generates
+// privacy copy and the Gmail metadata-header allowlist.
+export {
+  GMAIL_CONNECTION_DATA_INVENTORY,
+  GMAIL_DATA_PROCESSORS,
+  GMAIL_DATA_INVENTORY,
+  GMAIL_DATA_RETENTION,
+  GMAIL_DERIVED_DATA_INVENTORY,
+  GMAIL_DISCONNECT_DATA_INVENTORY,
+  GMAIL_INDEXED_DATA_DELETION_INVENTORY,
+  GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY,
+  GMAIL_MESSAGE_DATA_INVENTORY,
+  GMAIL_MESSAGE_STORAGE_LABELS,
+  GMAIL_METADATA_HEADERS,
+  GMAIL_OAUTH_ACCESS,
+  GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY,
+  gmailDataInventoryItem,
+} from './gmail-data-inventory';
+export type {
+  GmailDataCategory,
+  GmailDataExportFormat,
+  GmailDataInventoryItem,
+  GmailDataProcessor,
+  GmailDataRemovalTrigger,
+} from './gmail-data-inventory';
+
+export { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from './data-export';
+
 // D202 API response envelope — shared between NestJS controllers and
 // FE TanStack Query hooks so the wire shape is typed end-to-end.
 export type { DecodedCursor, Envelope, PaginatedEnvelope, PaginationMeta } from './envelope';
@@ -80,6 +108,24 @@ export type { UndoActionKind } from './undo-action-kind';
 // Contract-tested in apps/api/src/actions/actions.types.ts.
 export type { ActionJobStatus } from './action-job-status';
 
+// D245 unsubscribe truthfulness — one-click endpoint acceptance,
+// manual-mailto progress, and unavailable channels are distinct states.
+export {
+  initialUnsubscribeLifecycleStatus,
+  normalizeUnsubscribeLifecycleStatus,
+  UNSUBSCRIBE_LIFECYCLE_STATUSES,
+  UNSUBSCRIBE_MANUAL_TRANSITIONS,
+  UnsubscribeLifecycleStatusSchema,
+  UnsubscribeManualStatusRequestSchema,
+  UnsubscribeManualTransitionSchema,
+} from './unsubscribe-lifecycle';
+export type {
+  LegacyUnsubscribeLifecycleStatus,
+  UnsubscribeLifecycleStatus,
+  UnsubscribeManualStatusRequest,
+  UnsubscribeManualTransition,
+} from './unsubscribe-lifecycle';
+
 // Gmail category mirror — `gmail_category` pg_enum. Contract-tested in
 // apps/api/src/senders/senders.types.ts.
 export type { GmailCategory } from './gmail-category';
@@ -91,12 +137,14 @@ export {
   AutopilotApproveResultSchema,
   AutopilotPreviewSampleSchema,
   AutopilotRulePreviewResultSchema,
+  AutopilotWeeklyVolumeSchema,
 } from './autopilot';
 export type {
   AutopilotApproveMatchesRequest,
   AutopilotApproveResult,
   AutopilotPreviewSample,
   AutopilotRulePreviewResult,
+  AutopilotWeeklyVolume,
 } from './autopilot';
 
 // D19 waitlist capture — POST /api/waitlist (pricing Team row +
@@ -192,8 +240,15 @@ export type { ActivityRuleRef } from './activity';
 
 // D78–D80 Snoozed/Later review surface — list row + snooze/wake wire
 // shapes shared between the snoozed controller and the FE screen.
-export { SNOOZE_REASON_MAX_LENGTH, SnoozeUpdateRequestSchema } from './snoozed';
+export {
+  LATER_RETURN_MISSED_AFTER_MS,
+  SNOOZE_REASON_MAX_LENGTH,
+  SnoozeUpdateRequestSchema,
+} from './snoozed';
 export type {
+  LaterReturnFailureKind,
+  LaterReturnRecoverySummary,
+  LaterReturnStatus,
   SnoozedSenderRow,
   SnoozeUpdateRequest,
   SnoozeUpdateResult,
@@ -230,3 +285,20 @@ export type {
   AccountDeletionRequest,
   AccountDeletionStatus,
 } from './account-deletion';
+
+// D245 mailbox-only indexed-data deletion — explicit disconnect vs purge.
+export {
+  MAILBOX_DATA_DELETION_CONFIRM_PREFIX,
+  mailboxDataDeletionConfirmPhrase,
+  MailboxDataDeletionRequestSchema,
+  MailboxDataDeletionStatusSchema,
+  MailboxDataDeletionViewSchema,
+  MailboxIndexedDataStateSchema,
+} from './mailbox-data-deletion';
+export type {
+  MailboxDataDeletionReceipt,
+  MailboxDataDeletionRequest,
+  MailboxDataDeletionStatus,
+  MailboxDataDeletionView,
+  MailboxIndexedDataState,
+} from './mailbox-data-deletion';

@@ -16,7 +16,8 @@
 
 import { z } from 'zod';
 
-import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
+import type { ProtectionReason, TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
+import type { UnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
 
 /**
  * Bucketed month-over-month volume trend, computed BE-side from
@@ -137,9 +138,8 @@ export interface SenderListRow {
    * the engine default (no replies seen); never `null` because
    * `senders.replied_count` is `NOT NULL DEFAULT 0`.
    *
-   * The auto-protect rule fires at `repliedCount >= 3` —
-   * `protectionFlags.isProtected = true, protectionReason =
-   * 'engagement_based'` follow.
+   * Replies are one conservative automatic-protection signal; starred
+   * and Gmail-important messages are evaluated from message labels.
    */
   repliedCount: number;
   monthlyVolume: number | null;
@@ -167,11 +167,11 @@ export interface SenderListRow {
    */
   lastReview: LastReview | null;
   /**
-   * Standing VIP / Protect policy flags (D42, D43) — mirrors
+   * Standing Protect policy state (D42, D43) — mirrors
    * `sender_policies`. Surfaced on the LIST row (not just detail) so the
    * Senders screen can render the "Protected" chip, populate the
-   * "Protected" KPI, and route VIPs / protected senders to the "Protect"
-   * intent bucket. Defaults (`isVip: false, isProtected: false,
+   * "Protected" KPI, and route protected senders to the "Protect"
+   * intent bucket. Defaults (`isProtected: false,
    * protectionReason: null, protectionSetAt: null`) when the sender has
    * no `sender_policies` row — i.e. engine-default, not pinned.
    */
@@ -185,34 +185,29 @@ export interface SenderListRow {
    */
   policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
   /**
-   * RFC 8058 execution outcome from `sender_policies.unsub_status`
-   * (D9 Wave 2, migration 0029):
-   *   - `pending`   — execution job queued / in flight.
-   *   - `done`      — the list processor answered 2xx.
-   *   - `failed`    — terminal failure, recorded honestly.
-   *   - `ambiguous` — the target answered 3xx (redirects never
-   *                   followed); may have worked.
-   * `null` = no tracked execution: mailto senders (manual per D230),
-   * method `none`, or no unsub intent yet. Drives the per-row chip copy.
+   * Truthful unsubscribe lifecycle from `sender_policies.unsub_status`.
+   * One-click endpoint acceptance, manual mailto progress, terminal
+   * failure/uncertainty, and unavailable channels are distinct. Legacy
+   * DB values are normalized before they reach the wire. `null` means
+   * the sender has no recorded unsubscribe intent yet.
    */
   unsubStatus: UnsubExecutionStatus | null;
 }
 
-/** `sender_policies.unsub_status` pg_enum mirror (migration 0029). */
-export type UnsubExecutionStatus = 'pending' | 'done' | 'failed' | 'ambiguous';
+/** Canonical external lifecycle; legacy DB spellings never reach clients. */
+export type UnsubExecutionStatus = UnsubscribeLifecycleStatus;
 
 /**
- * Standing protection / VIP flags for `GET /api/senders/:id` (D42).
+ * Standing protection state for `GET /api/senders/:id` (D42).
  *
- * `isProtected`, `isVip`, `protectionReason`, and `protectionSetAt`
+ * `isProtected`, `protectionReason`, and `protectionSetAt`
  * mirror the columns on `sender_policies`. NULL `protectionReason`
  * and `protectionSetAt` are valid when `isProtected = false` —
  * documented at the schema column.
  */
 export interface ProtectionFlags {
-  isVip: boolean;
   isProtected: boolean;
-  protectionReason: 'user_defined' | 'engagement_based' | 'vip' | null;
+  protectionReason: ProtectionReason | null;
   /** ISO-8601 — when `is_protected` last flipped true; null otherwise. */
   protectionSetAt: string | null;
 }
@@ -251,8 +246,7 @@ export interface SenderDetail extends SenderListRow {
  *     keep)"). `unsubscribe` has its own intent endpoint
  *     (`POST /api/actions/unsubscribe-intent`); `archive` / `later`
  *     standing policies have no write semantics yet — fail-closed.
- *   - `isVip` / `isProtected` — the two distinct standing modifiers
- *     (D42). Independent: a sender can be neither, either, or both.
+ *   - `isProtected` — the sole manual safety state (D42).
  *
  * `.strict()` rejects unknown keys so a future field can't silently
  * no-op; the refine requires at least one field so an empty body 400s
@@ -261,14 +255,12 @@ export interface SenderDetail extends SenderListRow {
 export const senderPolicyPatchSchema = z
   .object({
     policyType: z.literal('keep').optional(),
-    isVip: z.boolean().optional(),
     isProtected: z.boolean().optional(),
   })
   .strict()
-  .refine(
-    (p) => p.policyType !== undefined || p.isVip !== undefined || p.isProtected !== undefined,
-    { message: 'At least one of policyType, isVip, isProtected is required.' },
-  );
+  .refine((p) => p.policyType !== undefined || p.isProtected !== undefined, {
+    message: 'At least one of policyType, isProtected is required.',
+  });
 export type SenderPolicyPatch = z.infer<typeof senderPolicyPatchSchema>;
 
 /**
@@ -283,9 +275,8 @@ export type SenderPolicyPatch = z.infer<typeof senderPolicyPatchSchema>;
 export interface SenderPolicyResult {
   senderId: string;
   policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
-  isVip: boolean;
   isProtected: boolean;
-  protectionReason: 'user_defined' | 'engagement_based' | 'vip' | null;
+  protectionReason: ProtectionReason | null;
   /** ISO-8601 — when `is_protected` last flipped true; null otherwise. */
   protectionSetAt: string | null;
   /**

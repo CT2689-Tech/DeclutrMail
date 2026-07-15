@@ -35,7 +35,8 @@ export function PricingTeaser() {
             <li>{free.cleanupActionsLifetime} cleanup actions to taste the ritual</li>
             <li>Full sender ledger + activity journal</li>
             <li>
-              {free.inboxLimit} inbox · {free.undoWindowDays}-day Archive/Later Activity undo
+              {free.inboxLimit} inbox · {free.undoWindowDays}-day Activity Undo for Archive, Later,
+              and Delete
             </li>
           </ul>
         </div>
@@ -53,7 +54,8 @@ export function PricingTeaser() {
             <li>Unlimited cleanup actions</li>
             <li>The full Triage ritual</li>
             <li>
-              {plus.inboxLimit} inbox · {plus.undoWindowDays}-day Archive/Later Activity undo
+              {plus.inboxLimit} inbox · {plus.undoWindowDays}-day Activity Undo for Archive, Later,
+              and Delete
             </li>
           </ul>
         </div>
@@ -72,7 +74,8 @@ export function PricingTeaser() {
             <li>Everything in {plus.name}, plus automation</li>
             <li>Autopilot rules, Brief, Screener</li>
             <li>
-              {pro.inboxLimit} inboxes · {pro.undoWindowDays}-day Archive/Later Activity undo
+              {pro.inboxLimit} inboxes · {pro.undoWindowDays}-day Activity Undo for Archive, Later,
+              and Delete
             </li>
           </ul>
         </div>

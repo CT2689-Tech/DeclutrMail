@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -9,12 +10,19 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { and, count, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
-// `senderPolicies` is imported for READ-ONLY queries (Protect/VIP guards
+// `senderPolicies` is imported for READ-ONLY queries (Protect guards
 // on enqueueArchive / preview). D204 forbids cross-feature WRITES; reads
 // are explicitly allowed.
-import { actionJobs, activityLog, mailMessages, senderPolicies, senders } from '@declutrmail/db';
+import {
+  actionJobs,
+  activityLog,
+  mailMessages,
+  senderPolicies,
+  senders,
+  undoJournal,
+} from '@declutrmail/db';
 import type { LabelActionSelector } from '@declutrmail/db';
 import {
   LABEL_ACTION_JOB,
@@ -29,6 +37,11 @@ import {
   TOPICS,
   TriageVerdictAppliedPayloadSchema,
 } from '@declutrmail/events';
+import {
+  initialUnsubscribeLifecycleStatus,
+  normalizeUnsubscribeLifecycleStatus,
+  type UnsubscribeManualTransition,
+} from '@declutrmail/shared/contracts';
 
 import {
   EntitlementsService,
@@ -52,6 +65,7 @@ import type {
   CompositeSecondaryVerb,
   KeepIntentResult,
   UnsubscribeIntentResult,
+  UnsubscribeManualStatusResult,
 } from './actions.types.js';
 
 /** NestJS DI token for the label-action BullMQ queue (D226). */
@@ -174,7 +188,7 @@ export class ActionsService {
       const senderKey = await this.resolveSenderKey(mailboxAccountId, selector.senderId);
 
       const [policy] = await this.db
-        .select({ isProtected: senderPolicies.isProtected, isVip: senderPolicies.isVip })
+        .select({ isProtected: senderPolicies.isProtected })
         .from(senderPolicies)
         .where(
           and(
@@ -183,10 +197,10 @@ export class ActionsService {
           ),
         )
         .limit(1);
-      if (policy && (policy.isProtected || policy.isVip) && !override) {
+      if (policy?.isProtected && !override) {
         throw new ConflictException({
           code: 'PROTECTED_SENDER',
-          message: 'This sender is Protected or VIP. Confirm to archive anyway.',
+          message: 'This sender is Protected. Confirm to archive anyway.',
         });
       }
 
@@ -323,7 +337,7 @@ export class ActionsService {
     }
 
     const [policy] = await this.db
-      .select({ isProtected: senderPolicies.isProtected, isVip: senderPolicies.isVip })
+      .select({ isProtected: senderPolicies.isProtected })
       .from(senderPolicies)
       .where(
         and(
@@ -440,7 +454,7 @@ export class ActionsService {
       },
       unsubAvailable:
         sender.unsubscribeMethod === 'one_click' || sender.unsubscribeMethod === 'mailto',
-      protected: Boolean(policy?.isProtected || policy?.isVip),
+      protected: Boolean(policy?.isProtected),
     };
   }
 
@@ -477,13 +491,27 @@ export class ActionsService {
   async enqueueComposite(input: {
     mailboxAccountId: string;
     selector: ArchiveSelector;
-    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null | undefined };
+    primary: {
+      type: CompositePrimaryVerb;
+      olderThanDays?: number | null | undefined;
+      wakeAt?: Date | null | undefined;
+    };
     secondary?:
       { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined } | undefined;
     idempotencyKey: string;
     override: boolean;
   }): Promise<CompositeActionEnqueueResult> {
     const { mailboxAccountId, selector, primary, secondary, idempotencyKey, override } = input;
+    // Validate the action's domain shape before entitlement or infrastructure
+    // checks so an impossible Later request never presents as an upgrade or
+    // queue-availability problem.
+    this.assertValidWakeAt(primary.type, primary.wakeAt ?? null);
+    if (primary.type === 'later' && selector.type !== 'sender') {
+      throw new BadRequestException({
+        code: 'LATER_SENDER_REQUIRED',
+        message: 'Later is scheduled per sender, not per message selection.',
+      });
+    }
     if (selector.type === 'messages') {
       // Message-id selectors are bulk capability, not a Free
       // single-sender action. Enforce every verb before resolving ids or
@@ -528,7 +556,7 @@ export class ActionsService {
     if (selector.type === 'sender') {
       const senderKey = await this.resolveSenderKey(mailboxAccountId, selector.senderId);
       const [policy] = await this.db
-        .select({ isProtected: senderPolicies.isProtected, isVip: senderPolicies.isVip })
+        .select({ isProtected: senderPolicies.isProtected })
         .from(senderPolicies)
         .where(
           and(
@@ -537,10 +565,10 @@ export class ActionsService {
           ),
         )
         .limit(1);
-      if (policy && (policy.isProtected || policy.isVip) && !override) {
+      if (policy?.isProtected && !override) {
         throw new ConflictException({
           code: 'PROTECTED_SENDER',
-          message: 'This sender is Protected or VIP. Confirm to apply the action anyway.',
+          message: 'This sender is Protected. Confirm to apply the action anyway.',
         });
       }
       primaryCount = await this.countSenderInboxWithWindow(
@@ -610,6 +638,7 @@ export class ActionsService {
           requestedCount: primaryCount,
           idempotencyKey: primaryStorageKey,
           olderThanDays: primary.olderThanDays ?? null,
+          wakeAt: primary.wakeAt ?? null,
         },
         tx,
       );
@@ -672,6 +701,7 @@ export class ActionsService {
       status: persisted.primaryRow.row.status,
       primaryCount: persisted.primaryRow.row.requestedCount,
       secondaryCount: persisted.secondaryRow?.row.requestedCount ?? null,
+      wakeAt: persisted.primaryRow.row.wakeAt?.toISOString() ?? null,
     };
   }
 
@@ -682,7 +712,7 @@ export class ActionsService {
    *
    * Ownership: ids are resolved against the current mailbox; unknown /
    * cross-mailbox ids drop silently (the forged-id-drop convention).
-   * `totals` excludes Protected/VIP senders because `enqueueBulkComposite`
+   * `totals` excludes Protected senders because `enqueueBulkComposite`
    * skips them — the preview must equal what the mutation will do. The
    * per-sender rows keep protected senders (flagged) so the modal can
    * show WHY a sender is excluded.
@@ -799,7 +829,7 @@ export class ActionsService {
    * `getBatchStatus` aggregates it with one query.
    *
    * Per-sender failure isolation at the ENQUEUE boundary: a sender that
-   * is Protected/VIP or no longer resolvable is SKIPPED (reported in
+   * is Protected or no longer resolvable is SKIPPED (reported in
    * `skipped`), never a batch-wide 409 — the single-sender override
    * affordance does not exist on the bulk surface, and one stale row in
    * the selection must not block the other N-1 decisions. When the
@@ -815,7 +845,11 @@ export class ActionsService {
   async enqueueBulkComposite(input: {
     mailboxAccountId: string;
     senderIds: string[];
-    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null | undefined };
+    primary: {
+      type: CompositePrimaryVerb;
+      olderThanDays?: number | null | undefined;
+      wakeAt?: Date | null | undefined;
+    };
     secondary?:
       { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined } | undefined;
     idempotencyKey: string;
@@ -839,6 +873,7 @@ export class ActionsService {
         message: 'Action queue unavailable — REDIS_URL is not set.',
       });
     }
+    this.assertValidWakeAt(primary.type, primary.wakeAt ?? null);
 
     // Sorted + deduped — the anchor must be deterministic across a
     // network-retried POST with the same Idempotency-Key.
@@ -868,7 +903,7 @@ export class ActionsService {
     if (actionable.length === 0) {
       throw new ConflictException({
         code: 'NO_ACTIONABLE_SENDERS',
-        message: 'Every selected sender is Protected/VIP or no longer exists.',
+        message: 'Every selected sender is Protected or no longer exists.',
       });
     }
 
@@ -900,6 +935,7 @@ export class ActionsService {
     let anchorId: string | null = null;
     let status: ActionJobStatus = 'queued';
     let requestedTotal = 0;
+    let persistedWakeAt: Date | null = null;
 
     for (const sender of actionable) {
       const primaryKey = `${primary.type}-${safeKey}-${sender.id}`;
@@ -912,11 +948,13 @@ export class ActionsService {
         requestedCount: primaryCounts.get(sender.senderKey) ?? 0,
         idempotencyKey: primaryKey,
         olderThanDays: primary.olderThanDays ?? null,
+        wakeAt: primary.wakeAt ?? null,
         compositeId: anchorId, // null only for the anchor itself
       });
       if (anchorId === null) {
         anchorId = primaryRow.row.id;
         status = primaryRow.row.status;
+        persistedWakeAt = primaryRow.row.wakeAt;
       }
       if (!primaryRow.existing) {
         await this.enqueueJob(primaryRow.row.id, mailboxAccountId, primaryKey);
@@ -947,6 +985,7 @@ export class ActionsService {
       status,
       senderCount: actionable.length,
       requestedTotal,
+      wakeAt: persistedWakeAt?.toISOString() ?? null,
       skipped,
     };
   }
@@ -1000,7 +1039,7 @@ export class ActionsService {
   }
 
   /**
-   * The Protected/VIP `sender_key`s among `senderKeys` for this mailbox
+   * The Protected `sender_key`s among `senderKeys` for this mailbox
    * (D42 defense-in-depth, read-only per D204). One query for the whole
    * selection — shared by the bulk preview + bulk enqueue so the two
    * can never disagree on who is skipped.
@@ -1014,7 +1053,6 @@ export class ActionsService {
       .select({
         senderKey: senderPolicies.senderKey,
         isProtected: senderPolicies.isProtected,
-        isVip: senderPolicies.isVip,
       })
       .from(senderPolicies)
       .where(
@@ -1023,7 +1061,7 @@ export class ActionsService {
           inArray(senderPolicies.senderKey, senderKeys),
         ),
       );
-    return new Set(rows.filter((r) => r.isProtected || r.isVip).map((r) => r.senderKey));
+    return new Set(rows.filter((r) => r.isProtected).map((r) => r.senderKey));
   }
 
   /**
@@ -1094,8 +1132,8 @@ export class ActionsService {
    * D9 Wave 2 — turn it into execution where a tracked channel exists:
    *
    *   1. Upsert `sender_policies.policy_type='unsubscribe'`, with
-   *      `unsub_status='pending'` when the sender is `one_click`
-   *      (the senders list/detail chips read this).
+   *      a method-specific lifecycle state: `requested`,
+   *      `action_required`, or `unavailable`.
    *   2. Write a 0-affected `activity_log` row (`action='unsubscribe'`,
    *      `source='manual'`, `undo_token=null`) so /activity reflects
    *      the DECISION — same precedent as Keep.
@@ -1115,7 +1153,7 @@ export class ActionsService {
    *
    * D58: no undo token is ever issued for the unsub itself.
    *
-   * Autopilot is NOT blocked — pending unsub ≠ guaranteed unsub. If the
+   * Autopilot is NOT blocked — a requested unsub ≠ guaranteed unsub. If the
    * brand ignores the unsub, Autopilot still archives the new mail.
    *
    * Privacy (D7, D228). No body, snippet, or non-allowlisted header —
@@ -1156,6 +1194,7 @@ export class ActionsService {
           ? 'mailto'
           : 'none';
     const mailtoUrl = method === 'mailto' ? senderRow.unsubscribeUrl : null;
+    const initialLifecycleStatus = initialUnsubscribeLifecycleStatus(method);
 
     // The intent and its optional execution each have a globally-unique
     // storage key. Before projecting a cached response, bind BOTH rows
@@ -1214,7 +1253,7 @@ export class ActionsService {
     assertKeyOwners(occupiedKeys);
 
     // Fail BEFORE any write when the execution can't be enqueued —
-    // recording a 'pending' status with no job behind it would be the
+    // recording a 'requested' status with no job behind it would be the
     // exact stuck-state CLAUDE.md §10 bans.
     if (method === 'one_click' && !this.unsubQueue) {
       throw new ServiceUnavailableException({
@@ -1284,7 +1323,7 @@ export class ActionsService {
       if (method === 'one_click' && execution && execution.status === 'queued') {
         // Crash-window self-heal: the original request can commit the
         // execution row, then die BEFORE the post-commit enqueue below —
-        // leaving a permanently-'pending' chip with no BullMQ job behind
+        // leaving a permanently-'requested' chip with no BullMQ job behind
         // it (the exact stuck state the QUEUE_UNAVAILABLE pre-check
         // guards against). A retried POST lands here, so re-enqueue when
         // the row is still 'queued': BullMQ's jobId dedup makes the
@@ -1292,10 +1331,22 @@ export class ActionsService {
         // self-heals.
         await this.enqueueUnsubExecution(execution.id, mailboxAccountId, senderKey, executionKey);
       }
+      const [policy] = await this.db
+        .select({ unsubStatus: senderPolicies.unsubStatus })
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, senderKey),
+          ),
+        )
+        .limit(1);
       return {
         senderId,
         recordedAt: cached.createdAt.toISOString(),
         activityLogId,
+        lifecycleStatus:
+          normalizeUnsubscribeLifecycleStatus(policy?.unsubStatus) ?? initialLifecycleStatus,
         method,
         executionActionId: execution?.id ?? null,
         mailtoUrl,
@@ -1489,23 +1540,21 @@ export class ActionsService {
       // Architecture-guardian: the cross-feature signal IS the event;
       // the direct write below is a temporary backstop, not the
       // permanent contract.
-      // `unsub_status` (D9 Wave 2): 'pending' when a one-click execution
-      // is about to be enqueued; NULL otherwise (the mailto path is
-      // manual per D230 — no claimed outcome — and re-intents reset any
-      // stale status from a prior derivation era).
+      // D245 lifecycle: every method gets an explicit honest state.
+      // one_click=requested; mailto=action_required; none=unavailable.
       await tx
         .insert(senderPolicies)
         .values({
           mailboxAccountId,
           senderKey,
           policyType: 'unsubscribe',
-          unsubStatus: method === 'one_click' ? 'pending' : null,
+          unsubStatus: initialLifecycleStatus,
         })
         .onConflictDoUpdate({
           target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
           set: {
             policyType: 'unsubscribe',
-            unsubStatus: method === 'one_click' ? 'pending' : null,
+            unsubStatus: initialLifecycleStatus,
             updatedAt: sql`now()`,
           },
         });
@@ -1529,6 +1578,21 @@ export class ActionsService {
 
       if (!inserted) {
         throw new Error('activity_log insert returned no row');
+      }
+
+      // The intent row above remains the single K/A/U/L/D decision.
+      // Non-executable methods additionally get an outcome/progress row
+      // so Activity can say what is required without presenting the
+      // decision itself as completed.
+      if (method !== 'one_click') {
+        await tx.insert(activityLog).values({
+          mailboxAccountId,
+          senderKey,
+          source: 'manual',
+          action: method === 'mailto' ? 'unsubscribe_action_required' : 'unsubscribe_unavailable',
+          affectedCount: 0,
+          undoToken: null,
+        });
       }
 
       // Complete the reserved dedup row with the activity id. The row is
@@ -1558,7 +1622,7 @@ export class ActionsService {
           activityLogId: inserted.id,
           recordedAt: inserted.occurredAt.toISOString(),
           // D9 Wave 2 — lets the senders-owned consumer project
-          // `unsub_status='pending'` for one_click intents.
+          // the same method-specific initial lifecycle status.
           method,
         },
         schema: ActionsUnsubscribeIntentRecordedPayloadSchema,
@@ -1595,6 +1659,7 @@ export class ActionsService {
       senderId,
       recordedAt: txResult.recordedAt,
       activityLogId: txResult.activityLogId,
+      lifecycleStatus: initialLifecycleStatus,
       method,
       executionActionId,
       mailtoUrl,
@@ -1605,7 +1670,7 @@ export class ActionsService {
    * Enqueue the RFC 8058 execution job (D9 Wave 2). On a Redis
    * failure the durable rows are already committed, so record the
    * honest terminal state — exec row 'failed' + `unsub_status='failed'`
-   * (never a 'pending' chip with no job behind it) — then 503.
+   * (never a 'requested' chip with no job behind it) — then 503.
    */
   private async enqueueUnsubExecution(
     actionId: string,
@@ -1623,28 +1688,171 @@ export class ActionsService {
     try {
       await this.unsubQueue.add(
         UNSUB_EXECUTION_JOB,
-        { actionId, mailboxAccountId, idempotencyKey },
+        { actionId, mailboxAccountId, idempotencyKey, source: 'manual' },
         unsubExecutionJobOptions(idempotencyKey),
       );
     } catch (err) {
-      await this.db
-        .update(actionJobs)
-        .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
-        .where(and(eq(actionJobs.id, actionId), eq(actionJobs.mailboxAccountId, mailboxAccountId)));
-      await this.db
-        .update(senderPolicies)
-        .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-            eq(senderPolicies.senderKey, senderKey),
-          ),
-        );
+      await this.db.transaction(async (tx) => {
+        const [failedJob] = await tx
+          .update(actionJobs)
+          .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(actionJobs.id, actionId),
+              eq(actionJobs.mailboxAccountId, mailboxAccountId),
+              inArray(actionJobs.status, ['queued', 'executing']),
+            ),
+          )
+          .returning({ id: actionJobs.id });
+        await tx
+          .update(senderPolicies)
+          .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+              eq(senderPolicies.senderKey, senderKey),
+              inArray(senderPolicies.unsubStatus, ['pending', 'requested']),
+            ),
+          );
+        if (failedJob) {
+          await tx.insert(activityLog).values({
+            mailboxAccountId,
+            senderKey,
+            source: 'manual',
+            action: 'unsubscribe_failed',
+            affectedCount: 0,
+            undoToken: null,
+          });
+        }
+      });
       throw new ServiceUnavailableException({
         code: 'ENQUEUE_FAILED',
         message: `Could not enqueue the unsubscribe: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
+  }
+
+  /**
+   * Record explicit progress on the manual mailto path. Opening a draft
+   * is not sending it; "sent" is stored as user_marked_sent because the
+   * app cannot observe Gmail delivery. Transitions are monotonic and an
+   * idempotent replay never appends a duplicate Activity row.
+   */
+  async recordUnsubscribeManualStatus(input: {
+    mailboxAccountId: string;
+    senderId: string;
+    status: UnsubscribeManualTransition;
+  }): Promise<UnsubscribeManualStatusResult> {
+    const { mailboxAccountId, senderId, status } = input;
+    const [sender] = await this.db
+      .select({ senderKey: senders.senderKey, unsubscribeMethod: senders.unsubscribeMethod })
+      .from(senders)
+      .where(and(eq(senders.id, senderId), eq(senders.mailboxAccountId, mailboxAccountId)))
+      .limit(1);
+    if (!sender) {
+      throw new NotFoundException({
+        code: 'SENDER_NOT_FOUND',
+        message: 'Sender not found in the current mailbox.',
+      });
+    }
+    if (sender.unsubscribeMethod !== 'mailto') {
+      throw new ConflictException({
+        code: 'UNSUBSCRIBE_MANUAL_NOT_AVAILABLE',
+        message: 'Manual unsubscribe progress is available only for a mailto unsubscribe.',
+      });
+    }
+
+    return this.db.transaction(async (tx) => {
+      const [policy] = await tx
+        .select({
+          id: senderPolicies.id,
+          policyType: senderPolicies.policyType,
+          unsubStatus: senderPolicies.unsubStatus,
+          updatedAt: senderPolicies.updatedAt,
+        })
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, sender.senderKey),
+          ),
+        )
+        .limit(1);
+      if (!policy || policy.policyType !== 'unsubscribe') {
+        throw new ConflictException({
+          code: 'UNSUBSCRIBE_INTENT_REQUIRED',
+          message: 'Record an unsubscribe intent before updating manual progress.',
+        });
+      }
+
+      // Pre-0037 mailto intents stored NULL. Treat that as the canonical
+      // action_required state so users can continue without a backfill.
+      const current = normalizeUnsubscribeLifecycleStatus(policy.unsubStatus) ?? 'action_required';
+      if (current === status) {
+        return {
+          senderId,
+          status,
+          recordedAt: policy.updatedAt.toISOString(),
+          activityLogId: null,
+          changed: false,
+          irreversible: status === 'user_marked_sent',
+        };
+      }
+
+      const transitionAllowed =
+        (status === 'draft_opened' && current === 'action_required') ||
+        (status === 'user_marked_sent' &&
+          (current === 'action_required' || current === 'draft_opened'));
+      if (!transitionAllowed) {
+        throw new ConflictException({
+          code: 'UNSUBSCRIBE_INVALID_TRANSITION',
+          message: `Cannot move manual unsubscribe progress from ${current} to ${status}.`,
+        });
+      }
+
+      const [updated] = await tx
+        .update(senderPolicies)
+        .set({ unsubStatus: status, updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(senderPolicies.id, policy.id),
+            policy.unsubStatus === null
+              ? isNull(senderPolicies.unsubStatus)
+              : eq(senderPolicies.unsubStatus, policy.unsubStatus),
+          ),
+        )
+        .returning({ updatedAt: senderPolicies.updatedAt });
+      if (!updated) {
+        throw new ConflictException({
+          code: 'UNSUBSCRIBE_CONCURRENT_TRANSITION',
+          message: 'Unsubscribe progress changed concurrently. Refresh and try again.',
+        });
+      }
+
+      const [activity] = await tx
+        .insert(activityLog)
+        .values({
+          mailboxAccountId,
+          senderKey: sender.senderKey,
+          source: 'manual',
+          action:
+            status === 'draft_opened' ? 'unsubscribe_draft_opened' : 'unsubscribe_user_marked_sent',
+          affectedCount: 0,
+          undoToken: null,
+        })
+        .returning({ id: activityLog.id, occurredAt: activityLog.occurredAt });
+      if (!activity) {
+        throw new Error('activity_log insert returned no row');
+      }
+      return {
+        senderId,
+        status,
+        recordedAt: activity.occurredAt.toISOString(),
+        activityLogId: activity.id,
+        changed: true,
+        irreversible: status === 'user_marked_sent',
+      };
+    });
   }
 
   /**
@@ -1900,6 +2108,8 @@ export class ActionsService {
         token: sibling.undoToken,
         verb: sibling.verb,
         messageIds: sibling.resolvedMessageIds,
+        selector: sibling.selector,
+        wakeAt: sibling.wakeAt,
       });
       results.push({
         token: sibling.undoToken,
@@ -1916,6 +2126,10 @@ export class ActionsService {
     token: string;
     verb: 'archive' | 'later' | 'delete';
     messageIds: string[];
+    /** Preserve sender scope so Later Undo can cancel its matching timer. */
+    selector?: LabelActionSelector;
+    /** Original forward Later schedule; null for legacy/other verbs. */
+    wakeAt?: Date | null;
   }): Promise<{ actionId: string; status: ActionJobStatus }> {
     if (!this.queue) {
       throw new ServiceUnavailableException({
@@ -1931,12 +2145,13 @@ export class ActionsService {
     const inserted = await this.insertJob({
       mailboxAccountId: input.mailboxAccountId,
       direction: 'reverse',
-      selector: { type: 'messages' },
+      selector: input.selector ?? { type: 'messages' },
       resolvedMessageIds: input.messageIds,
       requestedCount: input.messageIds.length,
       idempotencyKey,
       verb: input.verb,
       undoToken: input.token,
+      wakeAt: input.wakeAt ?? null,
     });
     if (inserted.existing) {
       // Existing revert row found. Dispatch by status:
@@ -2028,19 +2243,45 @@ export class ActionsService {
   /** Poll a job's status (scoped to the current mailbox → 404 if not owned). */
   async getStatus(actionId: string, mailboxAccountId: string): Promise<ActionStatusResult> {
     const [row] = await this.db
-      .select()
+      .select({
+        actionId: actionJobs.id,
+        verb: actionJobs.verb,
+        direction: actionJobs.direction,
+        status: actionJobs.status,
+        requestedCount: actionJobs.requestedCount,
+        affectedCount: actionJobs.affectedCount,
+        wakeAt: actionJobs.wakeAt,
+        undoToken: actionJobs.undoToken,
+        undoExpiresAt: undoJournal.expiresAt,
+        undoExecutedAt: undoJournal.executedAt,
+        undoRevertedAt: undoJournal.revertedAt,
+        errorCode: actionJobs.errorCode,
+      })
       .from(actionJobs)
+      .leftJoin(
+        undoJournal,
+        and(
+          eq(actionJobs.undoToken, undoJournal.token),
+          eq(undoJournal.mailboxAccountId, mailboxAccountId),
+        ),
+      )
       .where(and(eq(actionJobs.id, actionId), eq(actionJobs.mailboxAccountId, mailboxAccountId)))
       .limit(1);
     if (!row) {
       throw new NotFoundException({ code: 'ACTION_NOT_FOUND', message: 'Action not found.' });
     }
     return {
-      actionId: row.id,
+      actionId: row.actionId,
+      verb: row.verb,
+      direction: row.direction,
       status: row.status,
       requestedCount: row.requestedCount,
       affectedCount: row.affectedCount,
+      wakeAt: row.wakeAt?.toISOString() ?? null,
       undoToken: row.undoToken,
+      undoExpiresAt: row.undoExpiresAt?.toISOString() ?? null,
+      undoExecutedAt: row.undoExecutedAt?.toISOString() ?? null,
+      undoRevertedAt: row.undoRevertedAt?.toISOString() ?? null,
       errorCode: row.errorCode,
     };
   }
@@ -2083,6 +2324,8 @@ export class ActionsService {
       undoToken?: string;
       /** ADR-0020 time-window filter (1..3650 days; null = un-windowed). */
       olderThanDays?: number | null;
+      /** D245 required schedule for new forward Later actions. */
+      wakeAt?: Date | null;
       /**
        * ADR-0020 composite linkage — set on a secondary row to the
        * primary's `id`. NULL for single-verb actions + primary of a
@@ -2106,6 +2349,7 @@ export class ActionsService {
         ...(input.olderThanDays !== undefined && input.olderThanDays !== null
           ? { olderThanDays: input.olderThanDays }
           : {}),
+        ...(input.wakeAt ? { wakeAt: input.wakeAt } : {}),
         ...(input.compositeId ? { compositeId: input.compositeId } : {}),
       })
       .onConflictDoNothing({ target: actionJobs.idempotencyKey })
@@ -2132,6 +2376,31 @@ export class ActionsService {
       });
     }
     return { existing: true, row: existing };
+  }
+
+  /** Enforce the D245 action contract at every service entry point. */
+  private assertValidWakeAt(verb: CompositePrimaryVerb, wakeAt: Date | null): void {
+    if (verb === 'later') {
+      if (wakeAt === null || Number.isNaN(wakeAt.getTime())) {
+        throw new BadRequestException({
+          code: 'LATER_WAKE_TIME_REQUIRED',
+          message: 'Later requires a wake time.',
+        });
+      }
+      if (wakeAt.getTime() <= Date.now()) {
+        throw new BadRequestException({
+          code: 'LATER_WAKE_TIME_INVALID',
+          message: 'Wake time must be in the future.',
+        });
+      }
+      return;
+    }
+    if (wakeAt !== null) {
+      throw new BadRequestException({
+        code: 'WAKE_TIME_NOT_APPLICABLE',
+        message: 'wakeAt is only valid for Later.',
+      });
+    }
   }
 
   /** Enqueue the job; mark the row failed + surface 503 if Redis rejects. */

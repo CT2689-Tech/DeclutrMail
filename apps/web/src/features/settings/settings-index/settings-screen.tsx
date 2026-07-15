@@ -144,9 +144,10 @@ function reconnectMailboxIdFromHash(hash: string): string | null {
  *   5. Quiet hours    — link to /quiet (D114 "Quiet schedules")
  *   6. Senders        — link to /settings/senders (D114 "Sender lists")
  *   7. Privacy & Data — link to /settings/privacy (D116/D217)
- *   8. Cookies        — D147 consent change/withdrawal card
- *   9. Plan & Billing — current plan summary + /billing link
- *  10. Account        — signed-in row + #218's deletion section (last)
+ *   8. Help            — compact D245 product glossary
+ *   9. Cookies         — D147 consent change/withdrawal card
+ *  10. Plan & Billing  — current plan summary + /billing link
+ *  11. Account         — signed-in row + #218's deletion section (last)
  *
  * Deep link: `?cancelDeletion=1` (from the D216 "deletion scheduled"
  * email) scrolls to + highlights the Account section so the cancel
@@ -162,6 +163,7 @@ const NAV_SECTIONS = [
   { id: 'quiet-hours', label: 'Quiet hours' },
   { id: 'senders', label: 'Senders' },
   { id: 'privacy', label: 'Privacy & data' },
+  { id: 'help', label: 'Help & glossary' },
   { id: 'cookies', label: 'Cookies' },
   { id: 'billing', label: 'Plan & billing' },
   { id: 'account', label: 'Account' },
@@ -426,7 +428,7 @@ export function SettingsScreen() {
         <SectionLabel id="senders">Senders</SectionLabel>
         <LinkCard
           title="Standing policies"
-          description="VIP and Protected sender lists — review or remove standing rules, jump to any sender's detail page."
+          description="Review Protected senders and manage their standing safety rule from each sender's detail page."
           href="/settings/senders"
           cta="Open sender policies"
         />
@@ -437,6 +439,14 @@ export function SettingsScreen() {
           description="Exactly what DeclutrMail stores (and never stores), your data export, and retention details."
           href="/settings/privacy"
           cta="Open Privacy & Data"
+        />
+
+        <SectionLabel id="help">Help &amp; glossary</SectionLabel>
+        <LinkCard
+          title="Product glossary"
+          description="Plain-language definitions for sender controls, Autopilot modes, Later, Activity Undo, and Gmail Trash recovery."
+          href="/settings/help"
+          cta="Open product glossary"
         />
 
         <SectionLabel id="cookies">Cookies</SectionLabel>

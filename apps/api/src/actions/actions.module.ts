@@ -2,16 +2,22 @@ import { Module } from '@nestjs/common';
 import { Queue } from 'bullmq';
 
 import {
+  ACTION_RECOVERY_QUEUE,
   createRedisConnection,
   LABEL_ACTION_QUEUE,
   UNSUB_EXECUTION_QUEUE,
 } from '@declutrmail/workers';
-import type { LabelActionJobData, UnsubExecutionJobData } from '@declutrmail/workers';
+import type {
+  ActionRecoveryJobData,
+  LabelActionJobData,
+  UnsubExecutionJobData,
+} from '@declutrmail/workers';
 
 import { AuthModule } from '../auth/auth.module.js';
 import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { ActionsController } from './actions.controller.js';
+import { ACTION_RECOVERY_QUEUE_TOKEN, ActionRecoveryService } from './action-recovery.service.js';
 import { ACTION_QUEUE_TOKEN, ActionsService, UNSUB_QUEUE_TOKEN } from './actions.service.js';
 
 /**
@@ -45,6 +51,18 @@ import { ACTION_QUEUE_TOKEN, ActionsService, UNSUB_QUEUE_TOKEN } from './actions
       },
     },
     {
+      provide: ACTION_RECOVERY_QUEUE_TOKEN,
+      useFactory: (): Queue<ActionRecoveryJobData> | null => {
+        const url = process.env.REDIS_URL;
+        if (!url) {
+          return null;
+        }
+        return new Queue<ActionRecoveryJobData>(ACTION_RECOVERY_QUEUE, {
+          connection: createRedisConnection(url),
+        });
+      },
+    },
+    {
       // Unsub-execution queue producer (D9 Wave 2). Consumer is
       // `UnsubExecutionWorker` in the worker process. Same fail-open
       // contract as the label queue.
@@ -60,6 +78,7 @@ import { ACTION_QUEUE_TOKEN, ActionsService, UNSUB_QUEUE_TOKEN } from './actions
       },
     },
     ActionsService,
+    ActionRecoveryService,
   ],
   exports: [ActionsService],
 })

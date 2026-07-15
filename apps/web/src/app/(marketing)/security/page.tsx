@@ -33,7 +33,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/security',
 });
 
-const LAST_UPDATED = '2026-07-13';
+const LAST_UPDATED = '2026-07-14';
 
 const TOC = [
   { id: 'the-boundary', label: 'The boundary: what we store, what we never store' },
@@ -120,21 +120,23 @@ export default function SecurityPage() {
 
       <LegalSection id="no-prediction" title="No ML category prediction">
         <p>
-          DeclutrMail does not use machine learning to predict email categories or to auto-protect
-          or auto-route senders. Decisions are yours, or they follow preset rules you explicitly
-          enabled — never a model&rsquo;s guess. We also do not use Gmail data to train generalized
-          AI or machine-learning models.
+          DeclutrMail does not use machine learning to predict email categories or route senders. It
+          can automatically protect a sender using deterministic product rules when strong
+          engagement signals, such as your reply history, cross the documented threshold; you can
+          review and change that protection. Mail-changing automation follows preset rules you
+          explicitly enable — never a model&rsquo;s guess. We also do not use Gmail data to train
+          generalized AI or machine-learning models.
         </p>
       </LegalSection>
 
       <LegalSection id="deletion" title="Leaving cleanly">
         <p>
           You can disconnect an inbox (which revokes our Google access, stops syncing, and preserves
-          its historical DeclutrMail record for reconnection) or schedule deletion of your whole
-          account from Settings. Account deletion has a 7-day grace period, and if you have actions
-          still inside a longer undo window, deletion is scheduled after the latest window expires
-          so undo keeps working for its full window. Details are in the{' '}
-          <a href="/privacy">Privacy Policy</a>.
+          its historical DeclutrMail record for reconnection), delete one inbox&rsquo;s indexed
+          data, or schedule deletion of your whole account from Settings. Account deletion has a
+          7-day grace period, and if you have actions still inside a longer undo window, deletion is
+          scheduled after the latest window expires so undo keeps working for its full window.
+          Details are in the <a href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
 

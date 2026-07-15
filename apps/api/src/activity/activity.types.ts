@@ -61,7 +61,35 @@ export interface ActivityRow {
   rule: ActivityRuleRef | null;
   /** D58 undo affordance state — see {@link UndoState}. */
   undoState: UndoState;
+  /**
+   * Durable execution truth for an action that has not produced an
+   * `activity_log` completion row yet. Null for the append-only audit rows
+   * that represent confirmed outcomes.
+   */
+  executionState: ActivityExecutionState | null;
 }
+
+/**
+ * Current state of one root action lineage. Recovery attempts remain linked
+ * to the original failed action, while `actionId` always names the attempt
+ * whose state is currently rendered.
+ */
+export type ActivityExecutionState =
+  | {
+      kind: 'in_progress';
+      actionId: string;
+      requestedCount: number;
+      isRecovery: boolean;
+      status: 'queued' | 'executing';
+    }
+  | {
+      kind: 'failed';
+      actionId: string;
+      rootActionId: string;
+      requestedCount: number;
+      errorCode: string | null;
+      resolution: 'review' | 'support';
+    };
 
 export interface ActivitySender {
   /** sha256(...) of the normalized email; matches `senders.sender_key`. */
@@ -106,17 +134,14 @@ export interface ActivityStats {
   deleted: number;
   followupsDismissed: number;
   /**
-   * D59 "needing attention" — reserved for the failed-action surface
-   * that lands with the action_jobs join (deferred). Zero for now.
+   * D59 "needing attention" — truthful unsubscribe terminal outcomes
+   * that failed or could not be confirmed in the selected window.
    */
   needsAttention: number;
   /**
-   * D33 payoff — estimated emails/month of future noise prevented by
-   * the window's archive/unsubscribe/later decisions: the decided
-   * senders' summed last-90d inbound volume ÷ 3 (the same rolling
-   * window every other volume signal uses). `null` when the window has
-   * no deflecting decisions. A rough projection against CURRENT
-   * mail_messages, same imprecision `projectImpact` accepts.
+   * Historic monthly volume for senders represented by actions in the
+   * selected window. This is contextual sender history, not proof that
+   * Archive, Later, or an unsubscribe request prevented future mail.
    */
   noisePreventedPerMonth: number | null;
 }
@@ -137,7 +162,7 @@ export type ActivityVerbFilter = ActivityLogEntry['action'];
  * pending founder ratification — see docs/execution/decision-queue.md).
  *
  * Counts only the five canonical verbs (K/A/U/L/D, D227 + ADR-0019);
- * feature-specific actions (`followup-dismiss`, VIP/Protect toggles)
+ * feature-specific actions (`followup-dismiss`, Protect toggles)
  * are not cleanup decisions and are excluded from every field.
  *
  * Derived from existing tables only (`activity_log` + `undo_journal`);

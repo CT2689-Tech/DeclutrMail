@@ -93,10 +93,11 @@ export type ScreenId =
   | 'autopilot'
   | 'brief'
   | 'followups'
-  | 'snoozed'
+  | 'later'
   | 'settings-senders'
   | 'settings-index'
   | 'settings-privacy'
+  | 'settings-help'
   | 'admin-security'
   | 'quiet'
   // Graduated from `RoutePlaceholder` stubs: billing in #219 (D119/
@@ -127,11 +128,12 @@ export const SCREEN_ROUTES: Record<ScreenId, string | null> = {
   'settings-senders': 'settings/senders',
   'settings-index': 'settings',
   'settings-privacy': 'settings/privacy',
+  'settings-help': 'settings/help',
   'admin-security': 'admin/security',
   billing: 'billing',
   quiet: 'quiet',
   screener: 'screener',
-  snoozed: 'snoozed',
+  later: 'later',
   'app-error-boundary': null,
   'app-not-found': null,
   'app-global-error': null,
@@ -792,9 +794,27 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     placeholder: { required: false, status: 'n/a' },
   },
 
-  // Snoozed/Later review surface (D78–D80) — real loading/empty/error
+  // Authenticated glossary/help is intentionally static. It remains
+  // reachable without an active mailbox and has no data edge states.
+  'settings-help': {
+    loading: { required: false, status: 'n/a' },
+    empty: { required: false, status: 'n/a' },
+    error: { required: false, status: 'n/a' },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'n/a' },
+    unauthorized: { required: false, status: 'n/a' },
+    'sync-in-progress': { required: false, status: 'n/a' },
+    'sync-failed-transient': { required: false, status: 'n/a' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
+  // Later review surface (D78–D80, renamed by D245) — real loading/empty/error
   // variants; no placeholder phase.
-  snoozed: {
+  later: {
     loading: {
       required: true,
       storybook: 'apps/web/src/features/snoozed/snoozed-screen.stories.tsx',

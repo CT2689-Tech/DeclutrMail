@@ -125,7 +125,7 @@ export function ScreenIntro({
       </div>
       <button
         onClick={() => setDismissed(true)}
-        aria-label="Dismiss intro"
+        aria-label={`Dismiss ${title} intro`}
         style={{
           background: 'transparent',
           border: 'none',

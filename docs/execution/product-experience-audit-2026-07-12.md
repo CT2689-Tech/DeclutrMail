@@ -205,9 +205,9 @@ HEAD. That run and live OAuth/deployment smoke remain release gates.
   billing/customer/subscription references. Surrounding policy copy now names
   operational classes and processors, but only a founder-ratified D-decision
   can reconcile the locked artifact. Until then, this is a launch blocker.
-- **Annual Pro price:** D126 says $149/year while the current manifest says
-  $190/year. Public pricing continues to derive from the manifest; the conflict
-  remains explicit.
+- **Annual Pro price (resolved 2026-07-14):** standard Pro is $190/year. Public
+  and authenticated pricing derive from the canonical tier manifest; Founding
+  Pro remains $129/year for the first 250 paying users.
 - **Canonical host:** apex `declutrmail.com` versus `app.declutrmail.com` must
   be settled before indexing and OAuth redirect review.
 - **Paid conversion is operationally disabled:** deploy configuration still
@@ -249,10 +249,11 @@ HEAD. That run and live OAuth/deployment smoke remain release gates.
 
 ## Actionable Recommendations (Priority-Ordered):
 
-1. **Resolve the six founder product decisions:** the locked privacy allowlist,
-   manual future-mail scope, Later recovery access, progressive sync
-   onboarding, default plain/power labels, and the $149/$190 annual Pro
-   conflict. Canonical host is a seventh launch-operational decision.
+1. **Resolve the remaining founder product decisions:** the locked privacy
+   allowlist, manual future-mail scope, Later recovery access, progressive sync
+   onboarding, and default plain/power labels. The annual Pro price was resolved
+   at $190/year on 2026-07-14. Canonical host remains a launch-operational
+   decision.
 2. **Re-prove the integrated branch:** run the complete test/typecheck/lint/
    format/build suite and the 390/768/1440 browser smoke on exact HEAD, then
    exercise production OAuth, a two-Gmail-account round trip, target-bound

@@ -9,11 +9,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  defaultLaterWakeAt,
+  enqueueCompositeAction,
   enqueueArchiveSender,
   getActionStatus,
   getBulkActionPreview,
   isTerminalStatus,
   newIdempotencyKey,
+  recordUnsubscribeManualStatus,
   recordUnsubscribeIntent,
   revertUndo,
 } from './actions';
@@ -85,9 +88,15 @@ describe('getActionStatus', () => {
             data: {
               actionId: 'a-1',
               status: 'done',
+              verb: 'archive',
+              direction: 'forward',
               requestedCount: 12,
               affectedCount: 12,
+              wakeAt: null,
               undoToken: 'tok-1',
+              undoExpiresAt: '2026-07-21T16:00:00.000Z',
+              undoExecutedAt: null,
+              undoRevertedAt: null,
               errorCode: null,
             },
           });
@@ -100,6 +109,7 @@ describe('getActionStatus', () => {
     expect(observedPath).toBe('/api/actions/a-1');
     expect(res.status).toBe('done');
     expect(res.undoToken).toBe('tok-1');
+    expect(res.undoExpiresAt).toBe('2026-07-21T16:00:00.000Z');
   });
 });
 
@@ -214,12 +224,84 @@ describe('revertUndo', () => {
   });
 });
 
+describe('recordUnsubscribeManualStatus', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  it('persists the explicit user step instead of inferring delivery', async () => {
+    let observedBody: unknown = null;
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-manual-status',
+        respond: async (req) => {
+          observedBody = await req.json();
+          return jsonOk({
+            data: {
+              senderId: 'snd-1',
+              status: 'user_marked_sent',
+              recordedAt: '2026-07-14T16:00:00.000Z',
+              activityLogId: 'activity-1',
+              changed: true,
+              irreversible: true,
+            },
+          });
+        },
+      },
+    ]);
+
+    const result = await recordUnsubscribeManualStatus('snd-1', 'user_marked_sent');
+
+    expect(observedBody).toEqual({ senderId: 'snd-1', status: 'user_marked_sent' });
+    expect(result.status).toBe('user_marked_sent');
+    expect(result.irreversible).toBe(true);
+  });
+});
+
 describe('newIdempotencyKey', () => {
   it('returns a unique key that satisfies the BE ≥8-char minimum', () => {
     const a = newIdempotencyKey();
     const b = newIdempotencyKey();
     expect(a.length).toBeGreaterThanOrEqual(8);
     expect(a).not.toBe(b);
+  });
+});
+
+describe('Later scheduling', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  it('selects the one-week wake preset when the caller does not override it', async () => {
+    let observedBody: { primary?: { wakeAt?: string } } = {};
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          observedBody = (await req.json()) as typeof observedBody;
+          return jsonOk({
+            data: {
+              actionId: 'a-later',
+              compositeId: 'a-later',
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 3,
+              secondaryCount: null,
+              wakeAt: observedBody.primary?.wakeAt ?? null,
+            },
+          });
+        },
+      },
+    ]);
+
+    await enqueueCompositeAction({
+      senderId: 'sender-1',
+      primary: { type: 'later' },
+      idempotencyKey: 'later-key-123',
+    });
+
+    expect(Date.parse(observedBody.primary!.wakeAt!)).toBeGreaterThan(Date.now());
+    expect(defaultLaterWakeAt(new Date('2026-07-14T09:00:00Z'))).toBe('2026-07-21T09:00:00.000Z');
   });
 });
 

@@ -122,7 +122,7 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: false,
     message:
-      "You've used all 5 free cleanup actions. Upgrade to keep cleaning — everything you've already done stays done.",
+      "You've used all 5 free sender actions. Upgrade for unlimited actions — everything you've already done stays done.",
   },
   ACTION_TIER_REQUIRED: {
     status: 402,
@@ -208,6 +208,20 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: false,
     message: 'There is no scheduled deletion to cancel.',
+  },
+
+  // --- domain: mailbox indexed-data deletion (D245) ---
+  MAILBOX_DATA_DELETION_CONFIRM_MISMATCH: {
+    status: 400,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'The confirmation phrase did not match this Gmail account.',
+  },
+  MAILBOX_DATA_DELETION_IN_PROGRESS: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'Indexed data deletion is still in progress. Reconnect after it finishes.',
   },
 } as const satisfies Record<string, ErrorCodeSpec>;
 

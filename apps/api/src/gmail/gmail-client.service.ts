@@ -1,4 +1,5 @@
 import { OAuth2Client } from 'google-auth-library';
+import { GMAIL_METADATA_HEADERS } from '@declutrmail/shared/contracts';
 import {
   AuthExpiredError,
   InvalidGrantError,
@@ -28,7 +29,8 @@ import type {
  *
  * PRIVACY — D7 / D228. `getMessageMetadata` calls `messages.get` with
  * `format=metadata` and the six-header allowlist defined in
- * `METADATA_HEADERS` below (founder-approved per ADR-0004:
+ * `GMAIL_METADATA_HEADERS` from D245's cumulative registry (founder-approved
+ * per ADR-0004:
  * `From`, `Subject`, `To`, `Cc`, `List-Unsubscribe`,
  * `List-Unsubscribe-Post`). It NEVER uses `format=full` or
  * `format=raw`, so message bodies, attachments, inline images, and
@@ -65,14 +67,6 @@ const METADATA_FORMAT = 'metadata';
  *   - `List-Unsubscribe`, `List-Unsubscribe-Post` — RFC 8058 unsubscribe
  *     capability (D9 auto-unsubscribe).
  */
-const METADATA_HEADERS = [
-  'From',
-  'Subject',
-  'To',
-  'Cc',
-  'List-Unsubscribe',
-  'List-Unsubscribe-Post',
-];
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const PAGE_SIZE = 500;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -243,7 +237,7 @@ export class GmailClientService
   async getMessageMetadata(messageId: string): Promise<GmailMessageMetadata | null> {
     const params = new URLSearchParams();
     params.set('format', METADATA_FORMAT);
-    for (const header of METADATA_HEADERS) {
+    for (const header of GMAIL_METADATA_HEADERS) {
       params.append('metadataHeaders', header);
     }
     const json = await this.get<GmailGetResponse>(
@@ -273,6 +267,21 @@ export class GmailClientService
         ? { sizeBytes: json.sizeEstimate }
         : {}),
     };
+  }
+
+  /**
+   * Read only one message's labels for recovery verification. `format=minimal`
+   * plus a fields mask keeps snippets, headers, bodies, and attachment data
+   * out of the response entirely.
+   */
+  async getMessageLabelIds(messageId: string): Promise<string[] | null> {
+    const params = new URLSearchParams({ format: 'minimal', fields: 'id,labelIds' });
+    const json = await this.get<GmailGetResponse>(
+      `/messages/${encodeURIComponent(messageId)}?${params.toString()}`,
+      true,
+    );
+    if (json === null) return null;
+    return Array.isArray(json.labelIds) ? json.labelIds : [];
   }
 
   /**
@@ -538,6 +547,20 @@ export class GmailClientService
   }
 
   /**
+   * Resolve an existing USER label without creating it. This is the
+   * read-only sibling of `ensureLabelId`, used by consequence previews.
+   */
+  async findLabelId(name: string): Promise<string | null> {
+    const cached = this.labelIdCache.get(name);
+    if (cached) return cached;
+    const listed = await this.get<GmailLabelsListResponse>('/labels', false);
+    const match = (listed?.labels ?? []).find((label) => label.name === name);
+    if (!match?.id) return null;
+    this.labelIdCache.set(name, match.id);
+    return match.id;
+  }
+
+  /**
    * Resolve a USER label name to its Gmail label id, creating the label
    * if it does not exist (the `GmailMutationClient` port's name→id
    * resolution boundary — see the port doc for the system-label
@@ -549,16 +572,8 @@ export class GmailClientService
    * batches resolve each name once. D7-safe: label ids + names only.
    */
   async ensureLabelId(name: string): Promise<string> {
-    const cached = this.labelIdCache.get(name);
-    if (cached) {
-      return cached;
-    }
-    const listed = await this.get<GmailLabelsListResponse>('/labels', false);
-    const match = (listed?.labels ?? []).find((l) => l.name === name);
-    if (match?.id) {
-      this.labelIdCache.set(name, match.id);
-      return match.id;
-    }
+    const existing = await this.findLabelId(name);
+    if (existing) return existing;
     const created = await this.postJson<GmailLabelCreateResponse>('/labels', {
       name,
       labelListVisibility: 'labelShow',

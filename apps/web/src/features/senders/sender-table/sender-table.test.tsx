@@ -48,7 +48,6 @@ function row(overrides: Partial<SenderListRow> = {}): SenderListRow {
     unsubscribeMethod: overrides.unsubscribeMethod ?? 'none',
     lastReview: overrides.lastReview ?? null,
     protectionFlags: overrides.protectionFlags ?? {
-      isVip: false,
       isProtected: false,
       protectionReason: null,
       protectionSetAt: null,
@@ -190,7 +189,7 @@ describe('SenderTable', () => {
     // No inline three-button strip anymore — one primary + one trigger.
     expect(screen.queryByRole('button', { name: /^archive$/i })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /more actions/i }));
-    const menu = screen.getByRole('menu', { name: /sender actions/i });
+    const menu = screen.getByRole('menu', { name: 'Actions for Bank of America' });
     expect(menu).toBeTruthy();
     // Full registry set present as menu items.
     for (const verb of [/keep/i, /archive/i, /unsubscribe/i, /later/i, /delete/i]) {
@@ -211,7 +210,6 @@ describe('SenderTable', () => {
         rows={[
           row({
             protectionFlags: {
-              isVip: false,
               isProtected: true,
               protectionReason: null,
               protectionSetAt: null,
@@ -228,19 +226,18 @@ describe('SenderTable', () => {
     expect(screen.getByRole('menuitem', { name: /keep/i })).not.toBeDisabled();
   });
 
-  it('renders the read-only Protect ⭐ status for standing-protected / VIP rows only', () => {
-    // Unprotected row (the default) → no star.
+  it('renders the read-only Protected shield status only for protected rows', () => {
+    // Unprotected row (the default) → no shield.
     const { unmount } = render(<Harness {...{}} />);
     expect(screen.queryByRole('img', { name: /protected/i })).toBeNull();
     unmount();
 
-    // Protected (non-VIP) row → "Protected" star.
+    // Protected row → labelled shield.
     render(
       <Harness
         rows={[
           row({
             protectionFlags: {
-              isVip: false,
               isProtected: true,
               protectionReason: null,
               protectionSetAt: null,

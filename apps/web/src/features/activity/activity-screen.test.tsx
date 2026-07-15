@@ -20,9 +20,12 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { ActivityScreen, relativeTime, rowsToCsv } from './activity-screen';
 import type { ActivityRowWire, ActivityStatsWire } from '@/lib/api/activity';
+import type { ActionRecoveryPreviewResult } from '@/lib/api/actions';
 
 vi.mock('@/features/auth/auth-provider', () => ({
-  useOptionalAuth: () => ({ me: {} }),
+  useOptionalAuth: () => ({
+    me: { activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+  }),
   getActiveMailboxEmail: () => 'active+mailbox@example.com',
 }));
 
@@ -66,6 +69,7 @@ function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
       } as ActivityRowWire['sender']),
     rule: partial.rule ?? null,
     undoState: partial.undoState ?? { kind: 'unavailable' },
+    executionState: partial.executionState ?? null,
   };
 }
 
@@ -86,7 +90,10 @@ beforeEach(() => {
   replaceMock.mockReset();
   currentSearch = '';
 });
-afterEach(() => resetFetchStub());
+afterEach(() => {
+  resetFetchStub();
+  vi.restoreAllMocks();
+});
 
 describe('ActivityScreen — edge states', () => {
   it('shows loading skeleton while the fetch is in-flight', () => {
@@ -364,6 +371,20 @@ describe('ActivityScreen — edge states', () => {
 });
 
 describe('ActivityScreen — populated', () => {
+  it('explains the difference between Activity Undo and provider recovery', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+
+    expect(await screen.findByText('Which Undo or recovery option applies?')).toBeInTheDocument();
+    expect(screen.getByText(/Gmail Trash recovery is a separate fallback/i)).toBeInTheDocument();
+  });
+
   it('renders the D59 stats line with verb counts', async () => {
     installFetchStub([
       {
@@ -504,7 +525,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
     await waitFor(() => expect(screen.getByText(/^Undone$/)).toBeInTheDocument());
   });
 
-  it('D56 — renders a distinct "Request accepted" row for the endpoint outcome', async () => {
+  it('D56 — renders a distinct endpoint-accepted row for the outcome action', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -523,12 +544,14 @@ describe('ActivityScreen — D58 undo affordances', () => {
     ]);
     renderScreen();
     // The outcome row renders its own label, distinct from the intent's
-    // "Unsubscribe requested" — and the accepted row shows no count (0 affected).
-    await waitFor(() => expect(screen.getByText(/^Request accepted$/)).toBeInTheDocument());
+    // "Unsubscribe requested" — and the confirmed row shows no count (0 affected).
+    await waitFor(() =>
+      expect(screen.getByText(/^Unsubscribe endpoint accepted request$/)).toBeInTheDocument(),
+    );
     expect(screen.queryByText(/email/)).not.toBeInTheDocument();
   });
 
-  it('D9 — the intent row records the ATTEMPT, never success ("Unsubscribe requested")', async () => {
+  it('D9 — the intent row records the request, never success', async () => {
     // A one-click POST can still fail and a mailto is manual (D230), so the
     // intent row must not claim completion — otherwise a FAILED unsubscribe
     // reads as done. The intent renders "Unsubscribe requested"; only the
@@ -553,7 +576,9 @@ describe('ActivityScreen — D58 undo affordances', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/^Unsubscribe requested$/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/^Unsubscribe request recorded$/)).toBeInTheDocument(),
+    );
   });
 
   it('renders UNDO EXPIRED for `expired`', async () => {
@@ -643,12 +668,44 @@ describe('ActivityScreen — pure helpers', () => {
     const csv = rowsToCsv(rows);
     const lines = csv.split('\n');
     expect(lines[0]).toBe(
-      'Occurred At,Verb,Source,Sender Name,Sender Email,Affected Messages,Undo State',
+      'Occurred At,Verb,Source,Sender Name,Sender Email,Affected Messages,Execution Status,Undo State',
     );
     expect(lines[1]).toContain('"Smith, John"');
     expect(lines[2]).toContain('"Quote ""Co"""');
     expect(lines[1]).toContain('Archived');
-    expect(lines[2]).toContain('Deleted');
+    expect(lines[2]).toContain('Moved to Gmail Trash');
+  });
+
+  it('exports unresolved rows with execution-aware labels and status', () => {
+    const csv = rowsToCsv([
+      row({
+        action: 'archive',
+        executionState: {
+          kind: 'in_progress',
+          actionId: '11111111-1111-1111-1111-111111111111',
+          requestedCount: 2,
+          isRecovery: true,
+          status: 'queued',
+        },
+      }),
+      row({
+        id: 'failed-later',
+        action: 'later',
+        executionState: {
+          kind: 'failed',
+          actionId: '22222222-2222-2222-2222-222222222222',
+          rootActionId: '22222222-2222-2222-2222-222222222222',
+          requestedCount: 1,
+          errorCode: null,
+          resolution: 'review',
+        },
+      }),
+    ]);
+
+    expect(csv).toContain('Archiving…');
+    expect(csv).toContain('Recovery queued');
+    expect(csv).toContain('Later failed');
+    expect(csv).toContain('Failed · review available');
   });
 });
 
@@ -665,6 +722,464 @@ const META_BASE = {
   dateFrom: null,
   dateTo: null,
 };
+
+describe('ActivityScreen — outcome-aware recovery', () => {
+  it('uses progress and failed labels instead of completed-outcome copy', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                id: 'queued-archive',
+                action: 'archive',
+                executionState: {
+                  kind: 'in_progress',
+                  actionId: '11111111-1111-1111-1111-111111111111',
+                  requestedCount: 2,
+                  isRecovery: false,
+                  status: 'queued',
+                },
+              }),
+              row({
+                id: 'failed-delete',
+                action: 'delete',
+                executionState: {
+                  kind: 'failed',
+                  actionId: '22222222-2222-2222-2222-222222222222',
+                  rootActionId: '22222222-2222-2222-2222-222222222222',
+                  requestedCount: 1,
+                  errorCode: null,
+                  resolution: 'support',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+
+    expect(await screen.findByText('Archiving…')).toBeInTheDocument();
+    expect(screen.getByText('Delete failed')).toBeInTheDocument();
+    expect(screen.getByText('Running…')).toBeInTheDocument();
+  });
+
+  it('verifies provider state before enqueueing one idempotent recovery attempt', async () => {
+    let recoveryPosts = 0;
+    const idempotencyKeys: string[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                action: 'archive',
+                affectedCount: 3,
+                executionState: {
+                  kind: 'failed',
+                  actionId: '11111111-1111-1111-1111-111111111111',
+                  rootActionId: '11111111-1111-1111-1111-111111111111',
+                  requestedCount: 3,
+                  errorCode: 'GMAIL_RATE_LIMITED',
+                  resolution: 'review',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/11111111-1111-1111-1111-111111111111/recovery-preview',
+        respond: () =>
+          jsonOk({
+            data: recoveryPreview({ status: 'verifying', outcome: null }),
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222',
+        respond: () =>
+          jsonOk({
+            data: recoveryPreview({
+              status: 'ready',
+              outcome: 'partial',
+              remainingCount: 2,
+              alreadyAppliedCount: 1,
+            }),
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222/retry',
+        respond: async (req) => {
+          recoveryPosts += 1;
+          idempotencyKeys.push(req.headers.get('Idempotency-Key') ?? '');
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          if (recoveryPosts === 1) return jsonServerError('queue_unavailable');
+          return jsonOk({
+            data: {
+              previewId: '22222222-2222-2222-2222-222222222222',
+              rootActionId: '11111111-1111-1111-1111-111111111111',
+              actionId: '33333333-3333-3333-3333-333333333333',
+              attempt: 1,
+              status: 'queued',
+              replayed: false,
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+
+    await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
+    const dialog = await screen.findByRole('dialog', { name: /review failed archived/i });
+    expect(within(dialog).getByText(/checks Gmail's current label state/i)).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByText('2')).toBeInTheDocument());
+    expect(within(dialog).getByText('1')).toBeInTheDocument();
+
+    const confirm = within(dialog).getByRole('button', { name: /try this action again/i });
+    await userEvent.dblClick(confirm);
+    await waitFor(() => expect(recoveryPosts).toBe(1));
+    expect(idempotencyKeys[0]!.length).toBeGreaterThanOrEqual(8);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      /could not confirm that the queued attempt reached the worker/i,
+    );
+    await userEvent.click(confirm);
+    await waitFor(() => expect(recoveryPosts).toBe(2));
+    expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
+    await waitFor(() =>
+      expect(screen.queryByTestId('action-recovery-dialog')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('requires a future return time when the failed Later schedule has passed', async () => {
+    let confirmedWakeAt: string | undefined;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                action: 'later',
+                executionState: {
+                  kind: 'failed',
+                  actionId: '11111111-1111-1111-1111-111111111111',
+                  rootActionId: '11111111-1111-1111-1111-111111111111',
+                  requestedCount: 1,
+                  errorCode: 'GMAIL_PROVIDER_ERROR',
+                  resolution: 'review',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/11111111-1111-1111-1111-111111111111/recovery-preview',
+        respond: () =>
+          jsonOk({
+            data: recoveryPreview({
+              verb: 'later',
+              status: 'ready',
+              outcome: 'not_applied',
+              requiresNewWakeAt: true,
+            }),
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222',
+        respond: () =>
+          jsonOk({
+            data: recoveryPreview({
+              verb: 'later',
+              status: 'ready',
+              outcome: 'not_applied',
+              requiresNewWakeAt: true,
+            }),
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222/retry',
+        respond: async (req) => {
+          confirmedWakeAt = ((await req.json()) as { wakeAt?: string }).wakeAt;
+          return jsonOk({
+            data: {
+              previewId: '22222222-2222-2222-2222-222222222222',
+              rootActionId: '11111111-1111-1111-1111-111111111111',
+              actionId: '33333333-3333-3333-3333-333333333333',
+              attempt: 1,
+              status: 'queued',
+              replayed: false,
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+
+    await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
+    const dialog = await screen.findByRole('dialog', { name: /review failed moved to later/i });
+    const wakeInput = within(dialog).getByLabelText(/new return time/i);
+    expect((wakeInput as HTMLInputElement).value.length).toBeGreaterThan(0);
+    await userEvent.click(within(dialog).getByRole('button', { name: /try this action again/i }));
+    await waitFor(() => expect(confirmedWakeAt).toBeDefined());
+    expect(new Date(confirmedWakeAt!).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('rechecks Gmail and requests a new return time when a ready Later preview expires', async () => {
+    let previewStarts = 0;
+    const previewResult = () =>
+      recoveryPreview({
+        verb: 'later',
+        status: 'ready',
+        outcome: 'not_applied',
+        requiresNewWakeAt: previewStarts > 1,
+        wakeAt: previewStarts > 1 ? null : new Date(Date.now() + 60_000).toISOString(),
+      });
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                action: 'later',
+                executionState: {
+                  kind: 'failed',
+                  actionId: '11111111-1111-1111-1111-111111111111',
+                  rootActionId: '11111111-1111-1111-1111-111111111111',
+                  requestedCount: 1,
+                  errorCode: 'GMAIL_PROVIDER_ERROR',
+                  resolution: 'review',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/11111111-1111-1111-1111-111111111111/recovery-preview',
+        respond: () => {
+          previewStarts += 1;
+          return jsonOk({ data: previewResult() });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222',
+        respond: () => jsonOk({ data: previewResult() }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222/retry',
+        respond: () =>
+          new Response(JSON.stringify({ code: 'LATER_WAKE_TIME_REQUIRED' }), {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
+    const dialog = await screen.findByRole('dialog', { name: /review failed moved to later/i });
+    await userEvent.click(within(dialog).getByRole('button', { name: /try this action again/i }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      /saved return time has passed.*nothing was queued/i,
+    );
+    expect(within(dialog).getByRole('button', { name: /try this action again/i })).toBeDisabled();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: /check Gmail again/i }));
+    await waitFor(() => expect(previewStarts).toBe(2));
+    expect(await within(dialog).findByLabelText(/new return time/i)).toBeInTheDocument();
+  });
+
+  it('shows a no-change outcome without a blind retry', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                id: 'no-change',
+                action: 'archive',
+                executionState: {
+                  kind: 'failed',
+                  actionId: '11111111-1111-1111-1111-111111111111',
+                  rootActionId: '11111111-1111-1111-1111-111111111111',
+                  requestedCount: 1,
+                  errorCode: null,
+                  resolution: 'review',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/11111111-1111-1111-1111-111111111111/recovery-preview',
+        respond: () =>
+          jsonOk({
+            data: recoveryPreview({
+              status: 'consumed',
+              outcome: 'no_change_needed',
+              targetCount: 0,
+              verifiedCount: 0,
+              remainingCount: 0,
+            }),
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222',
+        respond: () =>
+          jsonOk({
+            data: recoveryPreview({
+              status: 'consumed',
+              outcome: 'no_change_needed',
+              targetCount: 0,
+              verifiedCount: 0,
+              remainingCount: 0,
+            }),
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/nothing is left to retry/i)).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: /try this action again/i })).toBeNull();
+  });
+
+  it('never exposes generic recovery for an unsubscribe failure', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                action: 'unsubscribe_failed',
+                executionState: {
+                  kind: 'failed',
+                  actionId: '55555555-5555-5555-5555-555555555555',
+                  rootActionId: '55555555-5555-5555-5555-555555555555',
+                  requestedCount: 1,
+                  errorCode: 'UNSUB_PROVIDER_ERROR',
+                  resolution: 'support',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+
+    expect(await screen.findByText('Needs attention')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /review and try again/i })).toBeNull();
+  });
+
+  it('offers the real Gmail reconnect flow after fresh verification requires it', async () => {
+    const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                action: 'archive',
+                executionState: {
+                  kind: 'failed',
+                  actionId: '11111111-1111-1111-1111-111111111111',
+                  rootActionId: '11111111-1111-1111-1111-111111111111',
+                  requestedCount: 1,
+                  errorCode: 'GMAIL_REAUTH_REQUIRED',
+                  resolution: 'review',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/11111111-1111-1111-1111-111111111111/recovery-preview',
+        respond: () =>
+          jsonOk({
+            data: recoveryPreview({ status: 'verifying', outcome: null }),
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222',
+        respond: () =>
+          jsonOk({
+            data: recoveryPreview({
+              status: 'failed',
+              outcome: 'reconnect_required',
+              errorCode: 'GMAIL_REAUTH_REQUIRED',
+            }),
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/return to Activity/i)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: /reconnect Gmail/i }));
+    expect(assignSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '/api/auth/google/connect-mailbox/start?reconnectMailboxId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      ),
+    );
+  });
+});
+
+function recoveryPreview(
+  partial: Partial<ActionRecoveryPreviewResult>,
+): ActionRecoveryPreviewResult {
+  return {
+    previewId: '22222222-2222-2222-2222-222222222222',
+    actionId: '11111111-1111-1111-1111-111111111111',
+    rootActionId: '11111111-1111-1111-1111-111111111111',
+    verb: 'archive',
+    status: 'ready',
+    outcome: 'not_applied',
+    targetCount: 3,
+    remainingCount: 3,
+    alreadyAppliedCount: 0,
+    unavailableCount: 0,
+    verifiedCount: 3,
+    errorCode: null,
+    wakeAt: null,
+    requiresNewWakeAt: false,
+    expiresAt: new Date(NOW + 10 * 60 * 1000).toISOString(),
+    recoveryActionId: null,
+    ...partial,
+  };
+}
 
 describe('ActivityScreen — B8 verb filter', () => {
   it('verb chip click drives router.replace with ?verb=', async () => {
@@ -1075,11 +1590,11 @@ describe('ActivityScreen — D60 mobile filter drawer', () => {
 
     await userEvent.click(trigger);
 
-    // Drawer is a modal dialog holding the bands + a Done button.
+    // Drawer is a modal dialog holding the bands + an explicit results button.
     const dialog = await screen.findByRole('dialog', { name: /activity filters/i });
     expect(within(dialog).getByRole('button', { name: 'Autopilot' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Archived' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: /^done$/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /view results/i })).toBeInTheDocument();
   });
 
   it('a source chip inside the drawer drives the filter URL', async () => {

@@ -481,14 +481,14 @@ Bulk variant: `POST /api/actions/preview` w/ filter body.
 
 ### Accent semantic map (LOCKED)
 
-| Hue     | Token            | Semantic                                                       |
-| ------- | ---------------- | -------------------------------------------------------------- |
-| Teal    | `color.primary`  | Keep verb tone, Protect status, VIP active, filter-chip active |
-| Amber   | `color.amber`    | Unsubscribe verb tone, recommendation-action-available         |
-| Emerald | `color.emerald`  | Privacy / trust, success toast, live/active dot                |
-| Dark    | `color.fg`       | Archive verb tone, neutral primary                             |
-| **Red** | NEW (Decision 1) | Delete verb tone, irrecoverable-action warnings                |
-| Violet  | RETIRED          | All uses forbidden                                             |
+| Hue     | Token            | Semantic                                               |
+| ------- | ---------------- | ------------------------------------------------------ |
+| Teal    | `color.primary`  | Keep verb tone, Protect status, filter-chip active     |
+| Amber   | `color.amber`    | Unsubscribe verb tone, recommendation-action-available |
+| Emerald | `color.emerald`  | Privacy / trust, success toast, live/active dot        |
+| Dark    | `color.fg`       | Archive verb tone, neutral primary                     |
+| **Red** | NEW (Decision 1) | Delete verb tone, irrecoverable-action warnings        |
+| Violet  | RETIRED          | All uses forbidden                                     |
 
 ### Trust-canary CI fixture (fact-based)
 

@@ -83,7 +83,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         title: 'Recommendations should narrow attention, not claim certainty',
         paragraphs: [
           'Sender volume and engagement are falsifiable facts. Category labels such as “promotional,” “financial,” or “security-sensitive” are model judgments that can sound more certain than their evidence. DeclutrMail deliberately avoids machine-learning category prediction and auto-protection based on guessed content classes.',
-          'The recommendation system can say that a sender arrived often, was rarely opened, and received no replies. It cannot conclude that the sender is safe to delete. The product can propose Archive or Unsubscribe while keeping the user’s Protect and VIP decisions above the recommendation.',
+          'The recommendation system can say that a sender arrived often, was rarely opened, and received no replies. It cannot conclude that the sender is safe to delete. The product can propose Archive or Unsubscribe while keeping the user’s Protected decisions above the recommendation.',
           'This hierarchy matters most in automation. One mistaken suggestion is inconvenient; one mistaken recurring rule compounds. Observe mode exists so a user can see multiple would-be matches before an Autopilot preset becomes Active.',
         ],
       },
@@ -158,7 +158,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'derived-facts',
         title: 'Derived facts need their own threat model',
         paragraphs: [
-          'A system can avoid bodies and still accumulate a revealing behavioral graph. Sender frequency, read rate, replies, last-seen dates, VIP status, decisions, and activity history describe relationships and habits. Data minimization must therefore cover retention, access, logs, exports, and deletion for derived records as well as raw API fields.',
+          'A system can avoid bodies and still accumulate a revealing behavioral graph. Sender frequency, read rate, replies, last-seen dates, Protected status, decisions, and activity history describe relationships and habits. Data minimization must therefore cover retention, access, logs, exports, and deletion for derived records as well as raw API fields.',
           'DeclutrMail’s product needs those aggregates to rank senders and explain recommendations. Observability payloads, worker logs, and error reports are separately barred from carrying email addresses, subjects, snippets, bodies, or OAuth tokens. The principle is containment: a field belongs only in the narrow path that needs it.',
           'Exports similarly separate datasets. A sender decision export should not quietly become a second message-content archive.',
         ],
@@ -168,7 +168,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         title: 'External processors are part of the boundary',
         paragraphs: [
           'It is not enough to say what is stored in the primary database. Users also deserve to know what reaches an error service, analytics system, email provider, or language model. The answer may differ by feature.',
-          'DeclutrMail’s sender-reasoning path sends Anthropic precomputed aggregate facts without subjects or snippets. Daily Brief has a different contract: its bounded narrative input can include sender identity, subject, Gmail preview snippet, and VIP marker. Full bodies and attachments are never included, and deterministic templates are the fallback when the adapter fails or is unavailable.',
+          'DeclutrMail’s sender-reasoning path sends Anthropic precomputed aggregate facts without subjects or snippets. Daily Brief has a different contract: its bounded narrative input can include sender identity, subject, and Gmail preview snippet. Full bodies and attachments are never included, and deterministic templates are the fallback when the adapter fails or is unavailable.',
           'Those two paths should never be compressed into “AI never sees email data” or “AI reads your inbox.” Both slogans are false. Field-level disclosure is the useful middle.',
         ],
         callout: {
@@ -230,7 +230,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'different-meanings',
         title: '“Reversible” means different things for different verbs',
         paragraphs: [
-          'Archive is a label change: remove Inbox, then add it back. Later is two label changes: remove Inbox and add DeclutrMail/Later, then invert both. Delete moves mail to Gmail Trash, where Gmail supplies a temporary recovery period. Keep, VIP, and Protect are settings that can be changed again.',
+          'Archive is a label change: remove Inbox, then add it back. Later is two label changes: remove Inbox and add DeclutrMail/Later, then invert both. Delete moves mail to Gmail Trash, where Gmail supplies a temporary recovery period. Keep and Protected are sender settings that can be changed again.',
           'Unsubscribe is categorically different. Once a standards request or a user-sent mailto message reaches another organization, DeclutrMail cannot pull it back. A user may subscribe again later, but that is a new request rather than an inverse operation.',
           'Putting all five under one “Everything is undoable” message makes the easiest promise win over the actual system. A trustworthy interface names the recovery mechanism beside the action.',
         ],
@@ -273,7 +273,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         paragraphs: [
           'A manual mistake affects one reviewed set. An active rule can repeat the mistake every time the condition matches. Undoing yesterday’s messages does not correct tomorrow’s rule unless the automation state is also paused or changed.',
           'DeclutrMail’s presets begin in Observe for seven days. Would-be matches accumulate without moving mail. Activation has its own dry run and explicit state. The safety model is not “the rule is fine because actions can be undone”; it is “the user saw representative matches before the rule began, and can still audit each result.”',
-          'Unsubscribe automation deserves extra caution because delivered requests have no inverse. Protect and VIP controls sit above recommendations so known exceptions do not enter the automation path.',
+          'Unsubscribe automation deserves extra caution because delivered requests have no inverse. Protected senders are excluded before recommendations so known exceptions do not enter the automation path.',
         ],
       },
       {

@@ -8,7 +8,11 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import type { SyncReadiness } from '@declutrmail/shared/contracts';
+import type {
+  MailboxDataDeletionView,
+  MailboxIndexedDataState,
+  SyncReadiness,
+} from '@declutrmail/shared/contracts';
 import type { TierId } from '@declutrmail/shared/entitlements';
 import { apiGet, ApiError } from '@/lib/api/client';
 
@@ -32,6 +36,14 @@ export interface MeMailbox {
   connectedAt: string | null;
   /** Initial-sync readiness; `null` until the first sync row exists (D116). */
   readiness: SyncReadiness | null;
+  /**
+   * D245 local-data lifecycle. Optional during the rolling API/web deploy;
+   * callers treat an omitted active mailbox as indexed and an omitted
+   * disconnected mailbox as retained.
+   */
+  indexedDataState?: MailboxIndexedDataState;
+  /** Latest in-flight/completed indexed-data deletion request, when any. */
+  dataDeletion?: MailboxDataDeletionView | null;
 }
 
 export interface Me {
@@ -64,6 +76,14 @@ export function meHasSyncingMailbox(data: Me | undefined): boolean {
   );
 }
 
+/** True while a durable mailbox-data purge can still advance in the background. */
+export function meHasDataDeletionInFlight(data: Me | undefined): boolean {
+  if (!data) return false;
+  return data.mailboxes.some((m) =>
+    ['deletion_pending', 'deleting', 'deletion_delayed'].includes(m.indexedDataState ?? ''),
+  );
+}
+
 /**
  * Returns the authenticated identity + connected mailboxes, or `null`
  * data + `error` set to an ApiError(401) when the session is missing.
@@ -87,6 +107,9 @@ export function useMe() {
       return failureCount < 2;
     },
     staleTime: 60_000,
-    refetchInterval: (query) => (meHasSyncingMailbox(query.state.data) ? ME_SYNC_POLL_MS : false),
+    refetchInterval: (query) =>
+      meHasSyncingMailbox(query.state.data) || meHasDataDeletionInFlight(query.state.data)
+        ? ME_SYNC_POLL_MS
+        : false,
   });
 }

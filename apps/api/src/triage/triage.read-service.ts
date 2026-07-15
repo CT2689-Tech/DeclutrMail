@@ -40,7 +40,7 @@ export interface TriageQueueRow {
   confidence: number;
   reasoning: string;
   signals: string[];
-  protectionReason: 'vip' | 'engagement' | 'auto-receipts' | 'auto-financial' | null;
+  protectionReason: 'manual' | 'replied' | 'starred' | 'gmail-important' | null;
   monthlyVolume: number;
   /**
    * Raw last-90-day message count. Used by the FE to render an honest
@@ -117,13 +117,8 @@ const SECONDS_SAVED_PER_DEFLECTED_EMAIL = 6;
  * listed (D7 § 2.1) but THIS read path doesn't need it — the queue
  * row shows reasoning + signals, not the snippet.
  *
- * The protectionReason mapping is intentional: the DB enum is
- * `user_defined | engagement_based | vip`; the FE enum is
- * `vip | engagement | auto-receipts | auto-financial`. Today we map
- * `user_defined → null` (no UX surface for it), `engagement_based →
- * engagement`, and `vip → vip`. The auto-receipts / auto-financial
- * paths land with the D21 Phase-A receipt detector — when it ships
- * the DB enum gains those values and this mapper extends.
+ * The protectionReason mapping retains the exact observed evidence so
+ * the UI can explain every automatic protection and offer an override.
  */
 @Injectable()
 export class TriageReadService {
@@ -199,7 +194,6 @@ export class TriageReadService {
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
         protectionReason: senderPolicies.protectionReason,
-        isVip: senderPolicies.isVip,
         isProtected: senderPolicies.isProtected,
       })
       .from(triageDecisions)
@@ -283,7 +277,7 @@ export class TriageReadService {
       // engine's verdict stays in `triage_decisions` untouched, every
       // K/A/U/L action remains available on the row, and the override
       // is annotated in the reasoning so the user sees why.
-      const protectionReason = mapProtectionReason(r.isVip, r.isProtected, r.protectionReason);
+      const protectionReason = mapProtectionReason(r.isProtected, r.protectionReason);
       const isProtected = protectionReason !== null;
 
       return {
@@ -615,13 +609,13 @@ function buildSignals(input: {
  * explicitly demoted.
  */
 function mapProtectionReason(
-  isVip: boolean | null | undefined,
   isProtected: boolean | null | undefined,
-  reason: 'user_defined' | 'engagement_based' | 'vip' | null | undefined,
+  reason: string | null | undefined,
 ): TriageQueueRow['protectionReason'] {
-  if (isVip) return 'vip';
   if (!isProtected) return null;
-  if (reason === 'vip') return 'vip';
-  if (reason === 'engagement_based') return 'engagement';
+  if (reason === 'user_defined') return 'manual';
+  if (reason === 'replied') return 'replied';
+  if (reason === 'starred') return 'starred';
+  if (reason === 'gmail_important') return 'gmail-important';
   return null;
 }

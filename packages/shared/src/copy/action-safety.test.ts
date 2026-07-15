@@ -14,7 +14,7 @@ describe('canonical public product-truth copy', () => {
     expect(ACTION_SAFETY_SUMMARY).toContain('Manual sender cleanup');
     expect(ACTION_SAFETY_SUMMARY).toContain('Observe-mode Autopilot approvals');
     expect(ACTION_SAFETY_SUMMARY).toContain('without a new per-message approval');
-    expect(ACTION_SAFETY_SUMMARY).toContain('emptying Trash can end recovery sooner');
+    expect(ACTION_SAFETY_SUMMARY).toContain('emptying Trash can end that separate fallback sooner');
     expect(ACTION_SAFETY_SUMMARY).not.toMatch(/every action (?:is )?(?:reversible|undoable)/i);
   });
 

@@ -196,7 +196,7 @@ describe('D211 — edge-state inventory contract', () => {
   it('records no remaining RoutePlaceholder stubs — every route is a real screen', () => {
     // The last 2 stubs graduated: billing in #219 (D119/D120),
     // screener in #220 (D71–D77) — after `quiet` (U18 — D92/D95),
-    // `snoozed` (U19 — D78) and `settings-index` (U23 — D34/D116/
+    // `later` (U19/D78, renamed by D245) and `settings-index` (U23 — D34/D116/
     // D216). A graduated screen must declare real loading + error
     // coverage and drop its placeholder claim; a NEW placeholder
     // route would legitimately flip this test and gets re-asserted

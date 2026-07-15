@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
@@ -29,22 +30,27 @@ export function BatchActionSheet({
   verb,
   batch,
   preview,
+  wakeAt = null,
   mailboxEmail,
   onCancel,
   onConfirm,
+  onRetryPreview,
 }: {
   open: boolean;
   verb: BatchVerb;
   batch: DomainBatch | null;
   /** Aggregated preview — `null` while loading, `'unavailable'` on failure. */
   preview: BulkActionPreviewResult | 'loading' | 'unavailable';
+  /** Exact Later return time carried through confirmation. */
+  wakeAt?: string | null;
   /** Explicit override for isolated previews; app surfaces use active auth context. */
   mailboxEmail?: string | undefined;
   onCancel: () => void;
   onConfirm: () => void;
+  onRetryPreview?: (() => void) | undefined;
 }) {
-  const confirmDisabled = preview === 'loading' || preview === 'unavailable';
-
+  const wakeAtInvalid = verb === 'Later' && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
+  const confirmDisabled = preview === 'loading' || preview === 'unavailable' || wakeAtInvalid;
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -65,14 +71,18 @@ export function BatchActionSheet({
   if (!open || !batch) return null;
 
   const eligible = batch.rows.filter((r) => r.protectionReason === null);
+  const presentation = buildActionPresentation({
+    verb: verb === 'Archive' ? 'archive' : 'later',
+    liveCount: typeof preview === 'object' ? preview.totals.all : null,
+    planUndoDeadline: null,
+    wakeAt: verb === 'Later' ? wakeAt : null,
+    unsubscribeChannel: null,
+  });
   const title =
     verb === 'Archive'
       ? `Archive all inbox mail from ${eligible.length} senders`
       : `Move ${eligible.length} senders to Later`;
-  const lead =
-    verb === 'Archive'
-      ? `Matching inbox mail from these ${batch.domain} senders moves into Gmail's archive when the batch runs. Nothing is deleted, and one Activity undo reverses the whole batch during your plan's window.`
-      : `Matching inbox mail from these ${batch.domain} senders moves into DeclutrMail/Later when the batch runs. One Activity undo reverses the whole batch during your plan's window.`;
+  const lead = presentation.previewCopy;
 
   return (
     <>
@@ -108,7 +118,7 @@ export function BatchActionSheet({
         }}
       >
         <div style={{ padding: '20px 24px 8px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow tone="primary">Action sheet · {verb} · batch</Eyebrow>
+          <Eyebrow tone="primary">Preview · {verb} · multiple senders</Eyebrow>
           <h2
             id="dm-triage-batch-sheet-title"
             style={{
@@ -240,12 +250,19 @@ export function BatchActionSheet({
         >
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
             {confirmDisabled
-              ? preview === 'unavailable'
-                ? 'Preview unavailable — close and retry before confirming.'
-                : 'Counting inbox mail — confirm unlocks after the live preview loads.'
+              ? wakeAtInvalid
+                ? 'Choose a future return time before confirming Later.'
+                : preview === 'unavailable'
+                  ? 'Preview unavailable — close and retry before confirming.'
+                  : 'Counting inbox mail — confirm unlocks after the live preview loads.'
               : "One undo reverses the whole batch during your plan's Activity window."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
+            {preview === 'unavailable' && onRetryPreview && (
+              <Button tone="default" onClick={onRetryPreview}>
+                Retry preview
+              </Button>
+            )}
             <Button tone="default" onClick={onCancel}>
               Cancel
             </Button>

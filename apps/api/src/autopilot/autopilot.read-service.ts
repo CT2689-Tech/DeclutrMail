@@ -125,7 +125,7 @@ export class AutopilotReadService {
 
   /**
    * D10/D101 — per-rule Observe-mode digest, one grouped query for the
-   * mailbox. For every rule with pending Observe-mode matches:
+   * mailbox. For every rule with Observe-mode match history:
    *
    *   - `pendingTotal` — all pending Observe rows (uncapped; the
    *     honest gate for the day-7 prompt, unlike the 50-row page).
@@ -134,8 +134,9 @@ export class AutopilotReadService {
    *     mail_messages, same resolution the action sweep uses) — the
    *     "would have archived N emails" number.
    *
-   * The pending-dedup unique index guarantees one pending row per
-   * (rule, sender), so the message join cannot double-count a sender.
+   * Resolved rows remain evidence for the 7-day totals. The message id
+   * count is distinct so repeated matches for one resolved sender do
+   * not duplicate its current INBOX messages.
    * Metadata only (D7): counts of ids, never content.
    */
   private async observeDigests(
@@ -144,12 +145,13 @@ export class AutopilotReadService {
   ): Promise<Map<string, AutopilotObserveDigest>> {
     const cutoff = new Date(Date.now() - OBSERVE_WINDOW_MS).toISOString();
     const recent: SQL = sql`${ruleMatchLog.matchedAt} >= ${cutoff}::timestamptz`;
+    const pending: SQL = sql`${ruleMatchLog.resolution} = 'pending'`;
     const rows = await this.db
       .select({
         ruleId: ruleMatchLog.ruleId,
-        pendingTotal: sql<number>`count(distinct ${ruleMatchLog.id})::int`,
+        pendingTotal: sql<number>`count(distinct ${ruleMatchLog.id}) filter (where ${pending})::int`,
         senders7d: sql<number>`count(distinct ${ruleMatchLog.senderKey}) filter (where ${recent})::int`,
-        messages7d: sql<number>`count(${mailMessages.id}) filter (where ${recent})::int`,
+        messages7d: sql<number>`count(distinct ${mailMessages.id}) filter (where ${recent})::int`,
       })
       .from(ruleMatchLog)
       .leftJoin(
@@ -164,7 +166,6 @@ export class AutopilotReadService {
         and(
           eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
           eq(ruleMatchLog.modeAtMatch, 'observe'),
-          eq(ruleMatchLog.resolution, 'pending'),
           ...(ruleId ? [eq(ruleMatchLog.ruleId, ruleId)] : []),
         ),
       )
@@ -575,15 +576,60 @@ export class AutopilotReadService {
       threshold = Number.isFinite(parsed) ? parsed : null;
     }
 
-    const signalRows = await materializeAutopilotSignals(this.db, mailboxAccountId, new Date());
+    const now = new Date();
+    const signalRows = await materializeAutopilotSignals(this.db, mailboxAccountId, now);
     const eligible = signalRows.filter((s) => !s.signals.isProtected);
 
-    const matched: Array<{ senderKey: string; reason: string }> = [];
-    for (const { senderKey, signals, decision } of eligible) {
+    const matched: Array<{
+      senderKey: string;
+      reason: string;
+      inboxCount: number;
+      isUnsubscribed: boolean;
+    }> = [];
+    let protectedWouldMatchCount = 0;
+    for (const { senderKey, signals, decision, inboxCount, isUnsubscribed } of signalRows) {
       const input: PresetInput = { signals, triageDecision: decision };
       const result = def.match(input, threshold);
-      if (result.matched) matched.push({ senderKey, reason: result.reason });
+      if (!result.matched) continue;
+      if (signals.isProtected) {
+        protectedWouldMatchCount += 1;
+        continue;
+      }
+      matched.push({ senderKey, reason: result.reason, inboxCount, isUnsubscribed });
     }
+
+    const actionable = matched.filter((m) =>
+      def.actionKind === 'unsubscribe' ? !m.isUnsubscribed : m.inboxCount > 0,
+    );
+
+    // Pre-activation volume is learned from every Observe resolution:
+    // approving, dismissing, or leaving a suggestion pending must not
+    // erase evidence that the rule matched. A shorter Observe window is
+    // extrapolated and labelled as an early estimate; after seven days
+    // the number is the observed count itself.
+    const sevenDaysAgo = new Date(now.getTime() - OBSERVE_WINDOW_MS);
+    const modeChangedAt = rule.modeChangedAt;
+    const observationStart = modeChangedAt > sevenDaysAgo ? modeChangedAt : sevenDaysAgo;
+    const [volume] = await this.db
+      .select({
+        observedMatches: sql<number>`count(distinct ${ruleMatchLog.id})::int`,
+      })
+      .from(ruleMatchLog)
+      .where(
+        and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          eq(ruleMatchLog.ruleId, ruleId),
+          eq(ruleMatchLog.modeAtMatch, 'observe'),
+          sql`${ruleMatchLog.matchedAt} >= ${observationStart.toISOString()}::timestamptz`,
+        ),
+      );
+    const elapsedMs = Math.max(0, now.getTime() - modeChangedAt.getTime());
+    const observedDays = Math.min(7, Math.max(1, Math.ceil(elapsedMs / (24 * 60 * 60 * 1000))));
+    const observedMatches = volume?.observedMatches ?? 0;
+    const hasFullObservation = elapsedMs >= OBSERVE_WINDOW_MS;
+    const estimatedMatches = hasFullObservation
+      ? observedMatches
+      : Math.ceil((observedMatches * 7) / observedDays);
 
     // Sample sender identities (D7 allowlist) for the first N matches.
     const sampleMatches = matched.slice(0, PREVIEW_SAMPLE_SIZE);
@@ -616,7 +662,17 @@ export class AutopilotReadService {
     return {
       ruleId,
       wouldMatchCount: matched.length,
+      actionableSenderCount: actionable.length,
+      actionableMessageCount: actionable.reduce((total, m) => total + m.inboxCount, 0),
+      protectedWouldMatchCount,
       evaluatedSenders: eligible.length,
+      dailyActionCap: def.dailyActionCap,
+      weeklyVolume: {
+        observedMatches,
+        observedDays,
+        estimatedMatches,
+        basis: hasFullObservation ? 'observed_7d' : 'early_estimate',
+      },
       sample: sampleMatches.map((m) => ({
         senderKey: m.senderKey,
         senderName: identityBy.get(m.senderKey)?.name ?? null,

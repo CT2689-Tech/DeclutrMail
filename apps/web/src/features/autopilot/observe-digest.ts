@@ -4,7 +4,7 @@
  *
  * Shared by the RuleCard meta row and the day-7 ObserveWindowBanner so
  * the two surfaces can never disagree on the numbers or the verb.
- * Canonical K/A/U/L/D verbs only (D227): archived / unsubscribed /
+ * Canonical K/A/U/L/D verbs only (D227): archived / requested unsubscribe /
  * moved to Later.
  */
 

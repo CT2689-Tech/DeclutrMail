@@ -8,6 +8,7 @@ import {
   senderPolicies,
   senders,
 } from '@declutrmail/db';
+import { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
@@ -57,7 +58,7 @@ export class DataExportService {
 
   /**
    * Senders + standing policies for one mailbox, batched by id.
-   * Includes the user's verdict state (policyType / VIP / Protect) —
+   * Includes the user's verdict state (policyType / Protect) —
    * the "decisions about senders" half of the export.
    */
   private async senderBatch(mailboxId: string, afterId: string | null) {
@@ -74,7 +75,6 @@ export class DataExportService {
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
         policyType: senderPolicies.policyType,
-        isVip: senderPolicies.isVip,
         isProtected: senderPolicies.isProtected,
         snoozedUntil: senderPolicies.snoozedUntil,
       })
@@ -146,14 +146,20 @@ export class DataExportService {
   }
 
   /**
-   * Full JSON export. Yields a valid JSON document chunk-by-chunk:
+   * JSON subset export. Yields a valid JSON document chunk-by-chunk:
    * `{ exportedAt, format, mailboxes: [ { …, senders, messages,
    * activity } ] }`. Arrays are streamed element-wise so memory stays
    * bounded at one batch.
    */
   async *streamJson(workspaceId: string): AsyncGenerator<string> {
     const mailboxes = await this.listMailboxes(workspaceId);
-    yield `{"exportedAt":${JSON.stringify(new Date().toISOString())},"format":"declutrmail-export-v1","mailboxes":[`;
+    const scope = {
+      completeAccountExport: DATA_EXPORT_FORMAT_MANIFEST.json.completeAccountExport,
+      description: DATA_EXPORT_FORMAT_MANIFEST.json.description,
+      limitation: DATA_EXPORT_LIMITATION,
+      includedInventoryIds: DATA_EXPORT_FORMAT_MANIFEST.json.includedInventoryIds,
+    };
+    yield `{"exportedAt":${JSON.stringify(new Date().toISOString())},"format":"declutrmail-export-v1","scope":${JSON.stringify(scope)},"mailboxes":[`;
     for (let i = 0; i < mailboxes.length; i++) {
       const mb = mailboxes[i]!;
       if (i > 0) yield ',';
@@ -172,7 +178,6 @@ export class DataExportService {
             lastSeenAt: row.lastSeenAt.toISOString(),
             totalReceived: Number(row.totalReceived ?? 0),
             policyType: row.policyType ?? null,
-            isVip: row.isVip ?? false,
             isProtected: row.isProtected ?? false,
             snoozedUntil: row.snoozedUntil?.toISOString() ?? null,
           }),
@@ -245,7 +250,7 @@ export class DataExportService {
    * the spec pins the header to exactly these columns.
    */
   async *streamSendersCsv(workspaceId: string): AsyncGenerator<string> {
-    yield 'mailbox_email,sender_email,sender_name,domain,gmail_category,first_seen_at,last_seen_at,total_received,policy_type,is_vip,is_protected,snoozed_until\n';
+    yield 'mailbox_email,sender_email,sender_name,domain,gmail_category,first_seen_at,last_seen_at,total_received,policy_type,is_protected,snoozed_until\n';
     const mailboxes = await this.listMailboxes(workspaceId);
     for (const mb of mailboxes) {
       yield* this.streamCsvRows(
@@ -261,7 +266,6 @@ export class DataExportService {
             csvField(row.lastSeenAt.toISOString()),
             csvField(String(Number(row.totalReceived ?? 0))),
             csvField(row.policyType ?? ''),
-            csvField(row.isVip ? 'true' : 'false'),
             csvField(row.isProtected ? 'true' : 'false'),
             csvField(row.snoozedUntil?.toISOString() ?? ''),
           ].join(',') + '\n',

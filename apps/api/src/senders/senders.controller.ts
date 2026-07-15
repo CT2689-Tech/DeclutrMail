@@ -122,10 +122,6 @@ export class SendersController {
    *                   whole mailbox client-side and filter (see ADR-0014
    *                   + the senders list contract). Any value other than
    *                   `true` (including `false`, missing) → no filter.
-   *   - `vip`       — optional `true` to return only VIP senders
-   *                   (`sender_policies.is_vip`, D42/D43). Backs the
-   *                   Settings VIP list (U23). Any other value → no
-   *                   filter.
    *   - `limit`     — page size (default 25, max 100).
    *   - `cursor`    — opaque continuation token from a prior page's
    *                   `meta.pagination.nextCursor`.
@@ -141,7 +137,10 @@ export class SendersController {
     @Query('limit') rawLimit: string | undefined,
     @Query('cursor') rawCursor: string | undefined,
     @Query('protected') rawProtected: string | undefined,
-    @Query('vip') rawVip: string | undefined,
+    // Intentionally undecorated positional slot. Existing direct unit-test
+    // callers predate the removed query axis; Nest supplies `undefined`
+    // here and no HTTP query parameter maps to it.
+    _removedQuerySlot: undefined,
     @Query('sort') rawSort: string | undefined,
     @Query('direction') rawDirection: string | undefined,
     @Query('q') rawQ: string | undefined,
@@ -155,7 +154,6 @@ export class SendersController {
     const accountId = mailbox.id;
     const category = parseCategory(rawCategory);
     const isProtected = parseProtectedFlag(rawProtected);
-    const isVip = parseVipFlag(rawVip);
     const limit = clampLimit(rawLimit, LIST_LIMIT);
     const sort = parseSort(rawSort);
     const direction = parseDirection(rawDirection);
@@ -167,7 +165,7 @@ export class SendersController {
     const quietForDays = parseWindow(rawWindow);
     const domain = parseSearch(rawDomain); // share the search trimmer
     // D51 — "unsub'd, still emailing". `true`-only (no negated surface),
-    // mirroring `parseVipFlag`'s stance.
+    // mirroring the protected flag's stance.
     const unsubIgnored = rawUnsubIgnored === 'true' ? true : null;
 
     const cursorRaw = decodeCursor(rawCursor);
@@ -188,7 +186,6 @@ export class SendersController {
         mailboxAccountId: accountId,
         category,
         isProtected,
-        isVip,
         sort,
         direction,
         cursor,
@@ -205,7 +202,6 @@ export class SendersController {
         mailboxAccountId: accountId,
         category,
         isProtected,
-        isVip,
         q,
         activity,
         unsubReady,
@@ -350,9 +346,9 @@ export class SendersController {
   }
 
   /**
-   * PATCH /api/senders/:id/policy — standing-policy write (D40, D42,
-   * D43). Set-state patch over `policy_type='keep'` / `is_vip` /
-   * `is_protected`; the service diffs against the current row, upserts
+   * PATCH /api/senders/:id/policy — standing-policy write (D40, D245).
+   * Set-state patch over `policy_type='keep'` / `is_protected`; the
+   * service diffs against the current row, upserts
    * only actual changes, and appends the D43 audit rows in the same
    * transaction. Naturally idempotent — see `senderPolicyPatchSchema`.
    *
@@ -634,18 +630,6 @@ function parseProtectedFlag(raw: string | undefined): boolean | null {
   if (raw === 'true') return true;
   if (raw === 'not' || raw === 'false') return false;
   return null;
-}
-
-/**
- * Coerce a raw `?vip=` to a boolean filter or `null` (no filter).
- *
- * Only the literal string `'true'` enables the VIP filter — it backs
- * the Settings → Standing Policies VIP list (U23 — D114 "Sender
- * lists"). The negated form is not a product surface, so it stays off
- * the wire (mirrors `parseProtectedFlag`'s original stance).
- */
-function parseVipFlag(raw: string | undefined): boolean | null {
-  return raw === 'true' ? true : null;
 }
 
 /**

@@ -49,7 +49,6 @@ function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
     unsubscribeMethod: 'one_click',
     lastReview: null,
     protectionFlags: {
-      isVip: false,
       isProtected: false,
       protectionReason: null,
       protectionSetAt: null,
@@ -469,41 +468,6 @@ describe('SendersController', () => {
       );
     });
 
-    it('parses ?vip= — only the literal "true" filters (U23 VIP list)', async () => {
-      reads.listSenders.mockResolvedValue([]);
-      const cases: Array<[string | undefined, boolean | null]> = [
-        ['true', true],
-        ['false', null],
-        ['garbage', null],
-        [undefined, null],
-      ];
-      for (const [raw, expected] of cases) {
-        await ctrl.list(
-          MAILBOX,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          raw,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-        );
-        expect(reads.listSenders).toHaveBeenCalledWith(
-          expect.objectContaining({ isVip: expected }),
-        );
-        expect(reads.getSenderListQueryMeta).toHaveBeenCalledWith(
-          expect.objectContaining({ isVip: expected }),
-        );
-      }
-    });
-
     it('surfaces meta.query alongside the page rows', async () => {
       reads.listSenders.mockResolvedValue([makeSenderRow()]);
       reads.getSenderListQueryMeta.mockResolvedValue({
@@ -578,7 +542,6 @@ describe('SendersController', () => {
       const detail: SenderDetail = {
         ...makeSenderRow(),
         protectionFlags: {
-          isVip: false,
           isProtected: false,
           protectionReason: null,
           protectionSetAt: null,
@@ -824,7 +787,6 @@ describe('SendersController', () => {
     const RESULT: SenderPolicyResult = {
       senderId: SENDER_ID,
       policyType: 'keep',
-      isVip: true,
       isProtected: false,
       protectionReason: null,
       protectionSetAt: null,
@@ -832,7 +794,7 @@ describe('SendersController', () => {
     };
 
     it('throws 400 when the sender id is not a UUID', async () => {
-      await expect(ctrl.patchPolicy(MAILBOX, 'not-a-uuid', { isVip: true })).rejects.toThrow(
+      await expect(ctrl.patchPolicy(MAILBOX, 'not-a-uuid', { isProtected: true })).rejects.toThrow(
         /UUID/,
       );
       expect(policies.setPolicy).not.toHaveBeenCalled();
@@ -845,7 +807,7 @@ describe('SendersController', () => {
 
     it('throws 400 for an unknown key (strict schema)', async () => {
       await expect(
-        ctrl.patchPolicy(MAILBOX, SENDER_ID, { isVip: true, nope: 1 }),
+        ctrl.patchPolicy(MAILBOX, SENDER_ID, { isProtected: true, nope: 1 }),
       ).rejects.toThrow();
       expect(policies.setPolicy).not.toHaveBeenCalled();
     });
@@ -859,17 +821,17 @@ describe('SendersController', () => {
 
     it('forwards the parsed patch + mailbox scope and wraps the result in the D202 envelope', async () => {
       policies.setPolicy.mockResolvedValue(RESULT);
-      const res = await ctrl.patchPolicy(MAILBOX, SENDER_ID, { isVip: true });
+      const res = await ctrl.patchPolicy(MAILBOX, SENDER_ID, { isProtected: true });
       expect(policies.setPolicy).toHaveBeenCalledWith({
         mailboxAccountId: MAILBOX_ID,
         senderId: SENDER_ID,
-        patch: { isVip: true },
+        patch: { isProtected: true },
       });
       expect(res.data).toEqual(RESULT);
     });
 
     it('accepts the keep verb patch (D40 — policy-only Keep)', async () => {
-      policies.setPolicy.mockResolvedValue({ ...RESULT, isVip: false });
+      policies.setPolicy.mockResolvedValue(RESULT);
       await ctrl.patchPolicy(MAILBOX, SENDER_ID, { policyType: 'keep' });
       expect(policies.setPolicy).toHaveBeenCalledWith({
         mailboxAccountId: MAILBOX_ID,

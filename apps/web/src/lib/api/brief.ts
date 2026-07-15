@@ -31,11 +31,8 @@ import { apiGet, apiPost } from './client';
 export type BriefGeneratedByWire = 'llm_haiku' | 'template';
 
 /**
- * One Reply or FYI row (D63). Sender identity + subject + VIP marker
- * (D67) + Gmail message ids for deep-link click-through to Gmail (D41).
- *
- * VIP auto-elevation is baked in at generation time — `isVip=true` on a
- * Reply row simply renders the ⭐; the FE does no re-categorization.
+ * One Reply or FYI row (D63). Sender identity + subject + Gmail message
+ * ids for deep-link click-through to Gmail (D41).
  */
 export interface BriefItemWire {
   /** sha256("v1|" + normalized_email), hex — matches `senders.sender_key`. */
@@ -43,8 +40,6 @@ export interface BriefItemWire {
   senderName: string;
   senderEmail: string;
   subject: string;
-  /** D67 — render the ⭐ inline. Engine-controlled, not user-toggleable. */
-  isVip: boolean;
   /** Gmail message ids this row collapses; D41 deep-link target. */
   messageIds: string[];
 }

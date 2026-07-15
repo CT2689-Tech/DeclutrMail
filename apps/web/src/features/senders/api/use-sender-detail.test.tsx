@@ -26,7 +26,6 @@ const DETAIL = {
   readRate: 0,
   unsubscribeMethod: 'mailto' as const,
   protectionFlags: {
-    isVip: false,
     isProtected: false,
     protectionReason: null,
     protectionSetAt: null,

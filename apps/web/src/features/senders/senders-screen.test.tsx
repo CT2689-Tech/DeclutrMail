@@ -62,12 +62,39 @@ const ROW = {
   unsubscribeMethod: 'one_click' as const,
   lastReview: null,
   protectionFlags: {
-    isVip: false,
     isProtected: false,
     protectionReason: null,
     protectionSetAt: null,
   },
 };
+
+function archiveStatus(
+  overrides: Partial<{
+    actionId: string;
+    status: 'queued' | 'executing' | 'done' | 'failed';
+    requestedCount: number;
+    affectedCount: number;
+    undoToken: string | null;
+    undoExpiresAt: string | null;
+    errorCode: string | null;
+  }> = {},
+) {
+  return {
+    actionId: 'act-1',
+    verb: 'archive',
+    direction: 'forward',
+    status: 'done',
+    requestedCount: 12,
+    affectedCount: 12,
+    wakeAt: null,
+    undoToken: 'tok-1',
+    undoExpiresAt: '2027-06-16T14:35:00.000Z',
+    undoExecutedAt: null,
+    undoRevertedAt: null,
+    errorCode: null,
+    ...overrides,
+  };
+}
 
 beforeEach(() => {
   mockAuth.tier = 'plus';
@@ -325,6 +352,109 @@ describe('SendersScreen — edge states', () => {
     expect(lastQ).toBe('dealskhoj');
   });
 
+  it('shows the server snapshot time and mailbox scope beside sender counts', async () => {
+    installFetchStub([oneSenderHandler(), sendersSummaryHandler()]);
+
+    renderScreen();
+
+    await screen.findAllByText(/Sender A/);
+    const freshness = screen.getByTestId('sender-results-freshness');
+    expect(freshness).toHaveTextContent(/matching count and rows for me@example\.com/i);
+    expect(freshness).toHaveTextContent(/snapshot/i);
+    expect(
+      freshness.querySelector('time[datetime="2026-05-29T12:00:00.000Z"]'),
+    ).toBeInTheDocument();
+    // One responsive line serves both desktop and mobile; it wraps instead
+    // of being hidden behind either view's layout breakpoint.
+    expect(freshness).toHaveStyle({ display: 'flex', flexWrap: 'wrap' });
+  });
+
+  it('makes placeholder rows read-only and announces the query transition', async () => {
+    const FILTERED_ROW = {
+      ...ROW,
+      id: 'filtered',
+      displayName: 'Filtered Sender',
+      email: 'filtered@example.com',
+    };
+    let resolveFiltered: ((response: Response) => void) | null = null;
+    const filteredResponse = new Promise<Response>((resolve) => {
+      resolveFiltered = resolve;
+    });
+
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          if (url.searchParams.get('q') === 'filtered') return filteredResponse;
+          return jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: {
+                totalMatching: 1,
+                globalMaxTotal: 120,
+                asOf: '2026-05-29T12:00:00.000Z',
+              },
+            },
+          });
+        },
+      },
+      sendersSummaryHandler(),
+    ]);
+
+    renderScreen();
+    const oldCheckbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(oldCheckbox);
+    expect(screen.getByText(/sender selected/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /search senders/i }), {
+      target: { value: 'filtered' },
+    });
+
+    expect(await screen.findByText('Updating results…', {}, { timeout: 2000 })).toBeInTheDocument();
+    const region = screen.getByTestId('sender-results-region');
+    expect(region).toHaveAttribute('aria-busy', 'true');
+    expect(region).toHaveAttribute('aria-disabled', 'true');
+    expect(region).toHaveAttribute('inert');
+    expect(region).toHaveStyle({ opacity: '0.55', pointerEvents: 'none' });
+    expect(oldCheckbox).toBeDisabled();
+    await waitFor(() => expect(oldCheckbox).not.toBeChecked());
+    await waitFor(() => expect(screen.queryByText(/sender selected/i)).not.toBeInTheDocument());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // Even a synthetic shortcut cannot act on the retained prior rows.
+    fireEvent.keyDown(document.body, { key: 'a' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveFiltered?.(
+        jsonOk({
+          data: [FILTERED_ROW],
+          meta: {
+            pagination: { nextCursor: null, hasMore: false, limit: 50 },
+            query: {
+              totalMatching: 1,
+              globalMaxTotal: 120,
+              asOf: '2026-06-02T09:30:00.000Z',
+            },
+          },
+        }),
+      );
+    });
+
+    expect(await screen.findAllByText(/Filtered Sender/)).not.toHaveLength(0);
+    await waitFor(() => expect(region).toHaveAttribute('aria-busy', 'false'));
+    const freshCheckbox = screen.getByRole('checkbox', { name: /select filtered sender/i });
+    expect(freshCheckbox).not.toBeDisabled();
+    expect(screen.queryByText('Updating results…')).not.toBeInTheDocument();
+    expect(
+      screen
+        .getByTestId('sender-results-freshness')
+        .querySelector('time[datetime="2026-06-02T09:30:00.000Z"]'),
+    ).toBeInTheDocument();
+  });
+
   it('narrows the list server-side when the "you replied" chip is toggled (D38)', async () => {
     // Regression: the chip wrote URL state and the BE accepted ?replied=,
     // but the FE never sent it — a silent no-op. The stub returns the
@@ -396,7 +526,7 @@ describe('SendersScreen — edge states', () => {
 
     // Pressing `A` opens the mandatory preview — never a direct mutation.
     fireEvent.keyDown(document.body, { key: 'a' });
-    expect(await screen.findByText(/archive all mail from 1 sender/i)).toBeInTheDocument();
+    expect(await screen.findByText(/archive mail from 1 sender/i)).toBeInTheDocument();
   });
 
   it('archives a single sender for real (enqueue → poll → receipt → working undo) (D226, P6)', async () => {
@@ -437,14 +567,11 @@ describe('SendersScreen — edge states', () => {
         path: /^\/api\/actions\/[^/]+$/,
         respond: (_req, url) =>
           jsonOk({
-            data: {
+            data: archiveStatus({
               actionId: url.pathname.endsWith('rev-1') ? 'rev-1' : 'act-1',
-              status: 'done',
-              requestedCount: 12,
-              affectedCount: 12,
               undoToken: url.pathname.endsWith('rev-1') ? null : 'tok-1',
-              errorCode: null,
-            },
+              undoExpiresAt: url.pathname.endsWith('rev-1') ? null : '2027-06-16T14:35:00.000Z',
+            }),
           }),
       },
       {
@@ -472,16 +599,17 @@ describe('SendersScreen — edge states', () => {
 
     // Intent → preview (mandatory, D226) → confirm via ⌘⏎.
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive all mail from 1 sender/i);
-    // Wait for the current-match preview to unlock confirm.
-    await screen.findByText(/emails currently match.*Archive/i);
+    await screen.findByText(/archive mail from 1 sender/i);
+    // Wait for the REAL inbox count to load so confirm is no longer gated.
+    await screen.findByText(/currently match.*Archive/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // The real endpoint was hit, and the REAL receipt appears only after the
     // worker reports `done` (never optimistically).
     const receipt = await screen.findByRole('status');
     expect(archivePosted).toBe(true);
-    expect(receipt).toHaveTextContent(/archived 1 sender/i);
+    expect(receipt).toHaveTextContent(/archived/i);
+    expect(receipt).toHaveTextContent(/1 sender/i);
     const undoBtn = screen.getByRole('button', { name: /^undo$/i });
 
     // Undo reverses for real (token → reverse job → poll) and clears the receipt.
@@ -527,14 +655,13 @@ describe('SendersScreen — edge states', () => {
         respond: () => {
           statusPolled = true;
           return jsonOk({
-            data: {
+            data: archiveStatus({
               actionId: 'act-0',
-              status: 'done',
               requestedCount: 0,
               affectedCount: 0,
               undoToken: null,
-              errorCode: null,
-            },
+              undoExpiresAt: null,
+            }),
           });
         },
       },
@@ -544,16 +671,15 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive all mail from 1 sender/i);
-    await screen.findByText(/emails currently match.*Archive/i);
+    await screen.findByText(/archive mail from 1 sender/i);
+    await screen.findByText(/currently match.*Archive/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(statusPolled).toBe(true));
-    // Let the terminal-status effect run, then assert no receipt was shown.
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 0));
-    });
-    expect(screen.queryByRole('status')).toBeNull();
+    // The canonical result preserves the no-op, but never offers a dead Undo.
+    const noOp = await screen.findByRole('status');
+    expect(noOp).toHaveTextContent(/no matching inbox mail moved/i);
+    expect(screen.queryByRole('button', { name: /^undo$/i })).toBeNull();
   });
 
   it('disables Archive confirm when the sender has 0 mail in the inbox (D226)', async () => {
@@ -594,7 +720,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
 
     // Preview resolves to 0 current matches and the confirm is disabled.
     await screen.findByText(/emails currently match.*Archive/i);
@@ -609,11 +735,11 @@ describe('SendersScreen — edge states', () => {
     expect(archivePosted).toBe(false);
   });
 
-  it('fails closed when the required live preview fetch fails', async () => {
-    // A failed preview must say so honestly and block both pointer and
-    // keyboard confirmation. The worker may re-resolve the set, but no
-    // mail-moving request starts without a preview.
+  it('blocks Archive and offers retry when the live preview fails', async () => {
+    // A failed count check must say so honestly, never fall back to a
+    // historic estimate, and never let a mail-changing action proceed.
     let archivePosted = false;
+    let previewRequests = 0;
     installFetchStub([
       {
         method: 'GET',
@@ -630,7 +756,10 @@ describe('SendersScreen — edge states', () => {
       {
         method: 'GET',
         path: '/api/actions/archive/preview',
-        respond: () => jsonServerError(),
+        respond: () => {
+          previewRequests++;
+          return jsonServerError();
+        },
       },
       {
         method: 'GET',
@@ -650,14 +779,7 @@ describe('SendersScreen — edge states', () => {
         path: /^\/api\/actions\/[^/]+$/,
         respond: () =>
           jsonOk({
-            data: {
-              actionId: 'act-1',
-              status: 'done',
-              requestedCount: 3,
-              affectedCount: 3,
-              undoToken: 'tok-1',
-              errorCode: null,
-            },
+            data: archiveStatus({ requestedCount: 3, affectedCount: 3 }),
           }),
       },
     ]);
@@ -666,11 +788,14 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
 
+    // Count check failed → explicit no-change state and a blocked confirm.
     await screen.findAllByText(/close and retry/i);
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: /retry preview/i }));
+    await waitFor(() => expect(previewRequests).toBeGreaterThan(1));
 
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     await act(async () => {
@@ -783,14 +908,12 @@ describe('SendersScreen — edge states', () => {
         path: '/api/actions/action-backlog',
         respond: () =>
           jsonOk({
-            data: {
+            data: archiveStatus({
               actionId: 'action-backlog',
-              status: 'done',
               requestedCount: 3,
               affectedCount: 3,
               undoToken: 'undo-backlog',
-              errorCode: null,
-            },
+            }),
           }),
       },
     ]);
@@ -867,7 +990,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
 
     // X = sample rows actually shown, Y = the real total; X <= Y always.
     const disclosure = await screen.findByText(/show what currently matches \(3 of 3\)/i);
@@ -898,7 +1021,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
 
     // A second verb key with the preview open must not stack a new modal.
     fireEvent.keyDown(document.body, { key: 'u' });
@@ -929,7 +1052,7 @@ describe('SendersScreen — edge states', () => {
     const search = screen.getByRole('combobox', { name: /search senders/i });
     search.focus();
     fireEvent.keyDown(search, { key: 'a' });
-    expect(screen.queryByText(/archive all mail from 1 sender/i)).toBeNull();
+    expect(screen.queryByText(/archive mail from 1 sender/i)).toBeNull();
   });
 
   it('does not fire a verb shortcut while the cheatsheet is open', async () => {
@@ -941,7 +1064,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.keyDown(document.body, { key: '?' }); // open cheatsheet
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     fireEvent.keyDown(document.body, { key: 'a' });
-    expect(screen.queryByText(/archive all mail from 1 sender/i)).toBeNull();
+    expect(screen.queryByText(/archive mail from 1 sender/i)).toBeNull();
   });
 
   it('does not stack the cheatsheet on top of an open preview', async () => {
@@ -951,7 +1074,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' }); // open the preview
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
 
     // `?` while the preview is open must not pop a second modal over it.
     fireEvent.keyDown(document.body, { key: '?' });
@@ -1072,6 +1195,15 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(document.body, { key });
   }
 
+  it('qualifies bulk selection as the currently loaded rows', async () => {
+    installFetchStub([TWO_SENDER_LIST]);
+    renderScreen();
+
+    const selectLoaded = await screen.findByRole('button', { name: /select loaded 2/i });
+    fireEvent.click(selectLoaded);
+    expect(screen.getByRole('button', { name: /deselect loaded 2/i })).toBeInTheDocument();
+  });
+
   it('gates Free multi-sender actions in the bar and shortcuts while preserving one-sender actions', async () => {
     mockAuth.tier = 'free';
     installFetchStub([TWO_SENDER_LIST]);
@@ -1178,7 +1310,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await selectBothAndPress('a');
     // Mandatory D226 preview with the AGGREGATED real count (never the
     // fabricated tracer numbers).
-    await screen.findByText(/archive all mail from 2 senders/i);
+    await screen.findByText(/archive mail from 2 senders/i);
     await screen.findByText(/currently match.*Archive/i);
     // The aggregated total (12 + 18) renders in the modal — headline +
     // the "All inbox" chip count both read 30.
@@ -1193,8 +1325,10 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     // Real receipt appears only after the batch poll reports done.
     const receipt = await screen.findByRole('status');
-    expect(receipt).toHaveTextContent(/archived 2 senders/i);
-    expect(receipt).toHaveTextContent(/30 emails archived/i);
+    expect(receipt).toHaveTextContent(/archived/i);
+    expect(receipt).toHaveTextContent(/30 emails/i);
+    expect(receipt).toHaveTextContent(/2 senders/i);
+    expect(receipt).toHaveTextContent(/2 selected · 2 accepted · 0 skipped/i);
     // Wire shape — ONE bulk POST carrying the senders selector.
     expect(bulkBody).toMatchObject({
       selector: { type: 'senders', senderIds: ['a', 'b'] },
@@ -1370,7 +1504,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     // One sender failing never hides the other's real result — the
     // receipt reflects what DID move and stays undoable.
     const receipt = await screen.findByRole('status');
-    expect(receipt).toHaveTextContent(/12 emails archived/i);
+    expect(receipt).toHaveTextContent(/12 of 30 emails changed/i);
     expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
   });
 
@@ -1431,9 +1565,47 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
           }),
       },
       {
-        method: 'GET',
-        path: '/api/actions/archive/preview',
-        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 12 } }),
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () =>
+          jsonOk({
+            data: {
+              senders: [
+                {
+                  senderId: 'a',
+                  name: 'Sender A',
+                  counts: {
+                    all: 12,
+                    olderThan30d: 8,
+                    olderThan90d: 5,
+                    olderThan180d: 3,
+                    olderThan365d: 1,
+                  },
+                  protected: false,
+                },
+                {
+                  senderId: 'b',
+                  name: 'Protected Co',
+                  counts: {
+                    all: 0,
+                    olderThan30d: 0,
+                    olderThan90d: 0,
+                    olderThan180d: 0,
+                    olderThan365d: 0,
+                  },
+                  protected: true,
+                },
+              ],
+              totals: {
+                all: 12,
+                olderThan30d: 8,
+                olderThan90d: 5,
+                olderThan180d: 3,
+                olderThan365d: 1,
+              },
+              protectedCount: 1,
+            },
+          }),
       },
     ]);
 
@@ -1444,10 +1616,13 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(document.body, { key: 'a' });
 
     // The preview covers the 1 eligible sender AND says what it dropped.
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
     expect(
       screen.getByText(/1 protected sender skipped — unprotect to include it/i),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText('Bulk action scope')).toHaveTextContent(
+      '2 selected · 1 eligible · 1 skipped',
+    );
   });
 
   it('toasts instead of opening a preview when the whole selection is protected', async () => {

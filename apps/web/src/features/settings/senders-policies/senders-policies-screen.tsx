@@ -5,14 +5,10 @@
 // senders that have standing policies in one place + jump to the
 // detail page to toggle them off.
 //
-// Two standing-policy sections ship here:
-//   - Protected: server-filtered via `?protected=true`. User clicks
+// The standing-policy section is server-filtered via `?protected=true`.
+// User clicks
 //     "Manage" -> jumps to /senders/[id], toggles Protect off via the
 //     existing detail-page chip (D42/D43).
-//   - VIP (U23): server-filtered via `?vip=true` with an inline
-//     "Remove" affordance — reuses the existing policy PATCH
-//     (`useSetSenderPolicy`, SET-STATE `isVip:false`). Non-destructive
-//     (no preview/undo lifecycle per the hook's contract).
 //
 // Lazy-promoted per ADR-0007: lives in apps/web/src/features/settings/
 // because settings is the only consumer. Move to packages/shared/ if
@@ -27,11 +23,9 @@ import {
   EmptyState,
   ErrorState as RecoverableErrorState,
   Eyebrow,
-  toast,
   tokens,
 } from '@declutrmail/shared';
 import { useSenders } from '@/features/senders/api/use-senders';
-import { useSetSenderPolicy } from '@/features/senders/api/use-sender-policy';
 import { adaptSenderListRow } from '@/features/senders/api/adapters';
 import type { Sender } from '@/features/senders/data';
 import { ApiError } from '@/lib/api/client';
@@ -40,7 +34,7 @@ const { color, font, space, radius } = tokens;
 
 /**
  * Settings → Senders → standing policies view. Lists every sender with
- * a non-default disposition (Protected + VIP).
+ * the standing Protected safety state.
  *
  * Pagination (Slice 0 of the senders redesign — ADR-0014 + senders list
  * contract). The BE supports `GET /api/senders?protected=true` so this
@@ -52,7 +46,6 @@ const { color, font, space, radius } = tokens;
  */
 export function SendersPoliciesScreen() {
   const sendersQuery = useSenders({ isProtected: true, limit: 50 });
-  const vipQuery = useSenders({ isVip: true, limit: 50 });
   const { fetchNextPage, hasNextPage, isFetchingNextPage, data } = sendersQuery;
 
   // Every row the server returns is already a Protected sender — we
@@ -65,13 +58,6 @@ export function SendersPoliciesScreen() {
       .flatMap((p) => p.data.map((row) => adaptSenderListRow(row)))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [data]);
-
-  const vipSenders = useMemo<Sender[]>(() => {
-    const pages = vipQuery.data?.pages ?? [];
-    return pages
-      .flatMap((p) => p.data.map((row) => adaptSenderListRow(row)))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [vipQuery.data]);
 
   if (sendersQuery.isLoading) return <LoadingState />;
   if (sendersQuery.isError) {
@@ -104,9 +90,9 @@ export function SendersPoliciesScreen() {
           Standing policies
         </h1>
         <p style={{ fontSize: 13.5, color: color.fgSoft, marginTop: 6, maxWidth: 640 }}>
-          Senders you've pinned with a standing rule. Protected senders skip auto-rules so they
-          always stay in your inbox; VIP senders get priority treatment. Manage either from the
-          sender's detail page — VIPs can also be removed right here.
+          Senders you&apos;ve protected with a standing safety rule. Protected senders skip
+          auto-rules and bulk actions so their mail stays in your inbox. Manage protection from each
+          sender&apos;s detail page.
         </p>
       </div>
 
@@ -194,190 +180,7 @@ export function SendersPoliciesScreen() {
           </footer>
         )}
       </section>
-
-      {/* VIP section (U23) — server-filtered `?vip=true` + inline remove. */}
-      <section
-        style={{
-          background: color.card,
-          border: `1px solid ${color.line}`,
-          borderRadius: radius.lg,
-          padding: '0',
-          overflow: 'hidden',
-        }}
-      >
-        <header
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'baseline',
-            padding: `${space[4]}px ${space[5]}px`,
-            borderBottom: `1px solid ${color.lineSoft}`,
-          }}
-        >
-          <div>
-            <h2
-              style={{
-                fontSize: 15,
-                fontWeight: 600,
-                letterSpacing: '-0.012em',
-                margin: 0,
-              }}
-            >
-              VIP
-            </h2>
-            <p
-              style={{
-                fontSize: 12.5,
-                color: color.fgMuted,
-                margin: '4px 0 0',
-              }}
-            >
-              Senders you starred as VIP. Quiet hours and Autopilot treat their mail as priority.
-            </p>
-          </div>
-          {!vipQuery.isLoading && !vipQuery.isError && (
-            <span
-              style={{
-                fontFamily: font.mono,
-                fontSize: 11,
-                color: color.fgMuted,
-              }}
-            >
-              {vipSenders.length} {vipSenders.length === 1 ? 'sender' : 'senders'}
-            </span>
-          )}
-        </header>
-
-        {vipQuery.isLoading ? (
-          <div
-            role="status"
-            aria-live="polite"
-            style={{ padding: `${space[4]}px ${space[5]}px`, fontSize: 12.5, color: color.fgMuted }}
-          >
-            Loading VIP senders…
-          </div>
-        ) : vipQuery.isError ? (
-          <div
-            style={{
-              padding: `${space[4]}px ${space[5]}px`,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              fontSize: 12.5,
-              color: color.fgMuted,
-            }}
-          >
-            <span>We couldn&apos;t load your VIP senders.</span>
-            <Button size="sm" onClick={() => void vipQuery.refetch()}>
-              Try again
-            </Button>
-          </div>
-        ) : vipSenders.length === 0 ? (
-          <div style={{ padding: `${space[5]}px ${space[5]}px` }}>
-            <EmptyState
-              title="No VIP senders yet"
-              description="Mark a sender as VIP from their detail page and they'll appear here for quick review or removal."
-            />
-          </div>
-        ) : (
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {vipSenders.map((s, i) => (
-              <VipRow key={s.id} sender={s} isLast={i === vipSenders.length - 1} />
-            ))}
-          </ul>
-        )}
-        {vipQuery.hasNextPage && (
-          <footer
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              padding: `${space[3]}px ${space[5]}px`,
-              borderTop: `1px solid ${color.lineSoft}`,
-            }}
-          >
-            <Button
-              size="sm"
-              onClick={() => void vipQuery.fetchNextPage()}
-              disabled={vipQuery.isFetchingNextPage}
-              ariaLabel="Show more VIP senders"
-            >
-              {vipQuery.isFetchingNextPage ? 'Loading…' : 'Show more'}
-            </Button>
-          </footer>
-        )}
-      </section>
     </div>
-  );
-}
-
-/**
- * One VIP sender row — inline Remove (SET-STATE `isVip:false` via the
- * existing policy PATCH) + the jump-to-detail Manage link.
- */
-function VipRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
-  const setPolicy = useSetSenderPolicy();
-
-  return (
-    <li
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '40px minmax(0, 1fr) auto auto',
-        gap: space[3],
-        alignItems: 'center',
-        padding: `${space[3]}px ${space[5]}px`,
-        borderBottom: isLast ? 'none' : `1px solid ${color.lineSoft}`,
-      }}
-    >
-      <Avatar name={sender.name} domain={sender.domain} size={32} />
-      <div style={{ minWidth: 0 }}>
-        <div
-          style={{
-            fontWeight: 500,
-            fontSize: 14,
-            letterSpacing: '-0.005em',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {sender.name}
-        </div>
-        <div
-          style={{
-            fontFamily: font.mono,
-            fontSize: 11,
-            color: color.fgMuted,
-            marginTop: 2,
-          }}
-        >
-          {sender.domain} · {sender.monthly}/mo
-        </div>
-      </div>
-      <Button
-        size="sm"
-        disabled={setPolicy.isPending}
-        ariaLabel={`Remove VIP from ${sender.name}`}
-        onClick={() =>
-          setPolicy.mutate(
-            { senderId: sender.id, patch: { isVip: false } },
-            {
-              onSuccess: () => toast(`Removed VIP from ${sender.name}.`, 'success'),
-              onError: () =>
-                toast(`Could not remove VIP from ${sender.name}. Try again.`, 'danger'),
-            },
-          )
-        }
-      >
-        {setPolicy.isPending ? 'Removing…' : 'Remove'}
-      </Button>
-      <Link
-        href={`/senders/${sender.id}`}
-        style={{ textDecoration: 'none' }}
-        aria-label={`Manage ${sender.name}`}
-      >
-        <Button size="sm">Manage</Button>
-      </Link>
-    </li>
   );
 }
 

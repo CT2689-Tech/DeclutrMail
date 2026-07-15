@@ -26,6 +26,23 @@ import { track } from '@/lib/posthog';
  * strips the query param so a refresh doesn't re-fire it.
  */
 export default function TriagePage() {
+  return (
+    <TierGate
+      capability="triage"
+      title="Triage"
+      pitch="Review a short queue of sender decisions with an exact action preview before Gmail changes."
+      bullets={[
+        'A focused daily sender queue',
+        'Keep, Archive, Unsubscribe, Later, and Delete previews',
+        'Activity records and eligible Undo controls',
+      ]}
+    >
+      <TriageRoute />
+    </TierGate>
+  );
+}
+
+function TriageRoute() {
   useConnectResultToast();
 
   return (

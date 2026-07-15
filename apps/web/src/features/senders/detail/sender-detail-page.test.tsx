@@ -3,7 +3,7 @@
  * sender-scoped queries.
  *
  * Covers:
- *   • All-four-succeed → ready state with header + recommendation
+ *   • All-four-succeed → ready state with factual wire data and no fixture suggestion
  *   • Detail 404 → not-found UI
  *   • Detail 500 → error UI with retry copy
  */
@@ -82,7 +82,6 @@ const DETAIL = {
   readRate: 0,
   unsubscribeMethod: 'mailto' as const,
   protectionFlags: {
-    isVip: false,
     isProtected: false,
     protectionReason: null,
     protectionSetAt: null,
@@ -171,8 +170,13 @@ describe('SenderDetailRoute', () => {
     renderDetail();
 
     await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
-    // The recent-messages subject from the wire is present.
+    // Wire-backed category and recent-message subject are present. The
+    // endpoint has no recommendation payload, so no fixture suggestion
+    // may appear even though this sender's facts used to synthesize one.
+    expect(screen.getByText('Gmail: Social')).toBeInTheDocument();
     expect(screen.getByText(/top notifications this week/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Optional suggestion/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/confidence \d+%/i)).not.toBeInTheDocument();
   });
 
   it('renders the not-found UI when the detail endpoint returns 404', async () => {
@@ -348,7 +352,7 @@ describe('SenderDetailRoute', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   }, 15000);
 
-  // D40 / D42 / D43 — standing-policy writes (Keep + VIP/Protect chips).
+  // Standing-policy writes (Keep + Protect).
 
   describe('standing-policy writes', () => {
     function installPolicyPatch(respond: (req: Request) => Response | Promise<Response>) {
@@ -361,50 +365,6 @@ describe('SenderDetailRoute', () => {
       ]);
     }
 
-    it('VIP chip PATCHes { isVip: true } and keeps the optimistic flip on success', async () => {
-      installHappyPath();
-      let capturedBody: unknown = null;
-      installPolicyPatch(async (req) => {
-        capturedBody = await req.json();
-        return jsonOk({
-          data: {
-            senderId: 'linkedin',
-            policyType: null,
-            isVip: true,
-            isProtected: false,
-            protectionReason: null,
-            protectionSetAt: null,
-            changed: true,
-          },
-        });
-      });
-      renderDetail();
-
-      const vipButton = await waitFor(() => screen.getByRole('button', { name: 'VIP' }));
-      fireEvent.click(vipButton);
-
-      // Optimistic flip is immediate (non-destructive policy toggle —
-      // standard mutation UX, not the D226 destructive lifecycle).
-      expect(screen.getByRole('button', { name: '★ VIP' })).toBeInTheDocument();
-
-      await waitFor(() => expect(capturedBody).toEqual({ isVip: true }));
-      // Server confirmed — the flip stays.
-      expect(screen.getByRole('button', { name: '★ VIP' })).toBeInTheDocument();
-    });
-
-    it('VIP chip rolls the optimistic flip back when the PATCH fails', async () => {
-      installHappyPath();
-      installPolicyPatch(() => jsonServerError());
-      renderDetail();
-
-      const vipButton = await waitFor(() => screen.getByRole('button', { name: 'VIP' }));
-      fireEvent.click(vipButton);
-      expect(screen.getByRole('button', { name: '★ VIP' })).toBeInTheDocument();
-
-      // Failure → rollback to the unset chip.
-      await waitFor(() => expect(screen.getByRole('button', { name: 'VIP' })).toBeInTheDocument());
-    });
-
     it('Protect chip PATCHes { isProtected: true } and rolls back on failure', async () => {
       installHappyPath();
       const bodies: unknown[] = [];
@@ -416,7 +376,6 @@ describe('SenderDetailRoute', () => {
           data: {
             senderId: 'linkedin',
             policyType: null,
-            isVip: false,
             isProtected: true,
             protectionReason: 'user_defined',
             protectionSetAt: '2026-06-09T00:00:00.000Z',
@@ -442,10 +401,10 @@ describe('SenderDetailRoute', () => {
     });
 
     it('re-seeds header policy state when a refetch returns diverged data (cross-tab change)', async () => {
-      // Another tab / session marks this sender VIP. The detail query
+      // Another tab / session protects this sender. The detail query
       // refetch must surface the server value without a remount —
       // `useState(initial)` alone would silently drop it.
-      let serverIsVip = false;
+      let serverIsProtected = false;
       installFetchStub([
         {
           method: 'GET',
@@ -454,7 +413,11 @@ describe('SenderDetailRoute', () => {
             jsonOk({
               data: {
                 ...DETAIL,
-                protectionFlags: { ...DETAIL.protectionFlags, isVip: serverIsVip },
+                protectionFlags: {
+                  ...DETAIL.protectionFlags,
+                  isProtected: serverIsProtected,
+                  protectionReason: serverIsProtected ? 'user_defined' : null,
+                },
               },
             }),
         },
@@ -489,14 +452,14 @@ describe('SenderDetailRoute', () => {
           <SenderDetailRoute id="linkedin" />
         </QueryWrapper>,
       );
-      await waitFor(() => screen.getByRole('button', { name: 'VIP' }));
+      await waitFor(() => screen.getByRole('button', { name: 'Protect' }));
 
       // Server diverges, then any invalidation-driven refetch lands.
-      serverIsVip = true;
+      serverIsProtected = true;
       await client.invalidateQueries();
 
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: '★ VIP' })).toBeInTheDocument(),
+        expect(screen.getByRole('button', { name: '◆ Protect' })).toBeInTheDocument(),
       );
     });
 
@@ -509,7 +472,6 @@ describe('SenderDetailRoute', () => {
           data: {
             senderId: 'linkedin',
             policyType: 'keep',
-            isVip: false,
             isProtected: false,
             protectionReason: null,
             protectionSetAt: null,

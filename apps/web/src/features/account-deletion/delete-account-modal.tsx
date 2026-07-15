@@ -139,7 +139,16 @@ export function DeleteAccountModal({
             <div>
               <div style={listHeadStyle}>What is NOT touched</div>
               <ul style={listStyle}>
-                <li>Emails in your actual Gmail account — DeclutrMail never deletes your mail</li>
+                <li>Deleting your DeclutrMail account does not delete emails in Gmail</li>
+              </ul>
+            </div>
+            <div>
+              <div style={listHeadStyle}>What is retained under policy</div>
+              <ul style={listStyle}>
+                <li>
+                  Narrowly scoped pseudonymous security and deletion evidence, without message
+                  bodies or attachments
+                </li>
               </ul>
             </div>
             <label
@@ -159,8 +168,9 @@ export function DeleteAccountModal({
                 onChange={(e) => setAcknowledged(e.target.checked)}
                 style={{ marginTop: 2 }}
               />
-              I understand this permanently deletes everything DeclutrMail stores about my
-              mailboxes, and that my Gmail account itself is not affected.
+              I understand this permanently deletes my DeclutrMail account and mailbox product data,
+              does not delete Gmail mail, and retains the minimal pseudonymous security and deletion
+              evidence described above under its operational policy.
             </label>
           </div>
         ) : (
@@ -289,7 +299,7 @@ export function DeleteAccountModal({
             </Button>
             {step === 1 ? (
               <Button tone="primary" onClick={() => setStep(2)} disabled={!acknowledged}>
-                Continue
+                Review deletion timing
               </Button>
             ) : (
               <Button

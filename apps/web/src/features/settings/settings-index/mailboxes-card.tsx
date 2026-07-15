@@ -67,7 +67,18 @@ export function MailboxesCard({
               const health = healthById[m.id];
               const needsReconnect = m.status === 'active' && health?.needsReconnect === true;
               const showReconnect = m.status === 'disconnected' || needsReconnect;
-              const reconnectBlocked = atLimit && !needsReconnect;
+              const indexedDataState =
+                m.indexedDataState ?? (m.status === 'active' ? 'indexed' : 'retained');
+              const deletionInFlight =
+                indexedDataState === 'deletion_pending' ||
+                indexedDataState === 'deleting' ||
+                indexedDataState === 'deletion_delayed';
+              const reconnectTitle = deletionInFlight
+                ? indexedDataState === 'deletion_delayed'
+                  ? 'Indexed-data deletion is delayed and will retry. Reconnect becomes available after deletion completes.'
+                  : 'Reconnect becomes available after indexed-data deletion completes.'
+                : undefined;
+              const reconnectBlocked = deletionInFlight || (atLimit && !needsReconnect);
               const reconnectHighlighted = m.id === highlightMailboxId;
               return (
                 <li
@@ -142,7 +153,11 @@ export function MailboxesCard({
                       <StatusTag tone="primary">{needsReconnect ? 'Selected' : 'Active'}</StatusTag>
                     )}
                     {m.status === 'disconnected' ? (
-                      <StatusTag tone="muted">Disconnected</StatusTag>
+                      <StatusTag
+                        tone={indexedDataState === 'deletion_delayed' ? 'danger' : 'muted'}
+                      >
+                        {mailboxDataStatusLabel(indexedDataState)}
+                      </StatusTag>
                     ) : needsReconnect ? (
                       <StatusTag tone="danger">Needs reconnect</StatusTag>
                     ) : m.readiness === 'queued' || m.readiness === 'syncing' ? (
@@ -155,8 +170,16 @@ export function MailboxesCard({
                     {showReconnect && (
                       <ReconnectButton
                         disabled={reconnectBlocked}
-                        describedBy={reconnectBlocked ? MAILBOX_LIMIT_EXPLANATION_ID : undefined}
+                        describedBy={
+                          atLimit && !needsReconnect && !deletionInFlight
+                            ? MAILBOX_LIMIT_EXPLANATION_ID
+                            : undefined
+                        }
                         email={m.email}
+                        label={
+                          indexedDataState === 'deleted' ? 'Reconnect · new index' : 'Reconnect'
+                        }
+                        title={reconnectTitle}
                         onClick={() => (needsReconnect ? onConnect(m.id) : onReactivate(m.id))}
                       />
                     )}
@@ -194,15 +217,36 @@ export function MailboxesCard({
   );
 }
 
+function mailboxDataStatusLabel(state: NonNullable<MeMailbox['indexedDataState']>): string {
+  switch (state) {
+    case 'deletion_pending':
+      return 'Deletion queued';
+    case 'deleting':
+      return 'Deleting data…';
+    case 'deletion_delayed':
+      return 'Deletion delayed';
+    case 'deleted':
+      return 'Data deleted';
+    case 'retained':
+      return 'Disconnected · data kept';
+    default:
+      return 'Disconnected';
+  }
+}
+
 function ReconnectButton({
   disabled,
   describedBy,
   email,
+  label,
+  title,
   onClick,
 }: {
   disabled: boolean;
   describedBy: string | undefined;
   email: string;
+  label: string;
+  title: string | undefined;
   onClick: () => void;
 }) {
   return (
@@ -211,6 +255,7 @@ function ReconnectButton({
       disabled={disabled}
       aria-label={`Reconnect ${email}`}
       aria-describedby={describedBy}
+      title={title}
       onClick={onClick}
       style={{
         display: 'inline-flex',
@@ -231,7 +276,7 @@ function ReconnectButton({
         flexShrink: 0,
       }}
     >
-      Reconnect
+      {label}
     </button>
   );
 }

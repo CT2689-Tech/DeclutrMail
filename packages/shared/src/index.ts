@@ -44,6 +44,7 @@ export { Pill } from './components/pill';
 export type { PillTone } from './components/pill';
 export { PrivacyBadge } from './components/privacy-badge';
 export type { PrivacyBadgeVariant } from './components/privacy-badge';
+export { TechnicalDetails } from './components/technical-details';
 export { Card } from './components/card';
 export { Spark } from './components/spark';
 export { Avatar } from './components/avatar';
@@ -176,6 +177,45 @@ export {
   PRIVACY_NEVER_LABEL,
   GMAIL_PREVIEW_FIELD_LABEL,
 } from './copy/privacy';
+export {
+  GMAIL_CONNECTION_DATA_INVENTORY,
+  GMAIL_DATA_PROCESSORS,
+  GMAIL_DATA_INVENTORY,
+  GMAIL_DATA_RETENTION,
+  GMAIL_DERIVED_DATA_INVENTORY,
+  GMAIL_DISCONNECT_DATA_INVENTORY,
+  GMAIL_INDEXED_DATA_DELETION_INVENTORY,
+  GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY,
+  GMAIL_MESSAGE_DATA_INVENTORY,
+  GMAIL_MESSAGE_STORAGE_LABELS,
+  GMAIL_METADATA_HEADERS,
+  GMAIL_OAUTH_ACCESS,
+  GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY,
+  gmailDataInventoryItem,
+} from './contracts/gmail-data-inventory';
+export type {
+  GmailDataCategory,
+  GmailDataExportFormat,
+  GmailDataInventoryItem,
+  GmailDataProcessor,
+  GmailDataRemovalTrigger,
+} from './contracts/gmail-data-inventory';
+export { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from './contracts/data-export';
+export {
+  MAILBOX_DATA_DELETION_CONFIRM_PREFIX,
+  mailboxDataDeletionConfirmPhrase,
+  MailboxDataDeletionRequestSchema,
+  MailboxDataDeletionStatusSchema,
+  MailboxDataDeletionViewSchema,
+  MailboxIndexedDataStateSchema,
+} from './contracts/mailbox-data-deletion';
+export type {
+  MailboxDataDeletionReceipt,
+  MailboxDataDeletionRequest,
+  MailboxDataDeletionStatus,
+  MailboxDataDeletionView,
+  MailboxIndexedDataState,
+} from './contracts/mailbox-data-deletion';
 export {
   ACTION_SAFETY_SUMMARY,
   ACTION_PREVIEW_CLAIM,

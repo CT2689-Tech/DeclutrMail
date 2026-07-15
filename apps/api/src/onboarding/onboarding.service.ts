@@ -225,8 +225,8 @@ export class OnboardingService {
  * amended lineup picks one row per teaching slot:
  *
  *   1. payoff   — highest-confidence `unsubscribe` (the win)
- *   2. trust    — the obvious KEEP: `keep` verdict or an engagement/
- *                 vip-protected sender, highest read-rate (shows the
+ *   2. trust    — the obvious KEEP: `keep` verdict or an engagement-
+ *                 protected sender, highest read-rate (shows the
  *                 engine can tell what matters — the reason to trust
  *                 slot 1)
  *   3. judgment — highest-confidence `archive`/`later` (the middle
@@ -259,10 +259,7 @@ export function pickFirstTriageCandidates(queue: TriageQueueRow[]): TriageQueueR
   };
 
   take(byConfidence(eligible.filter((r) => r.verdict === 'unsubscribe'))[0]);
-  const keeps = queue.filter(
-    (r) =>
-      r.verdict === 'keep' || r.protectionReason === 'engagement' || r.protectionReason === 'vip',
-  );
+  const keeps = queue.filter((r) => r.verdict === 'keep' || r.protectionReason !== null);
   take([...keeps].sort((a, b) => b.readRate - a.readRate)[0]);
   take(byConfidence(eligible.filter((r) => r.verdict === 'archive' || r.verdict === 'later'))[0]);
 

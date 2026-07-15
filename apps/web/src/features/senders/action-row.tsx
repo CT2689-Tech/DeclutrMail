@@ -31,7 +31,6 @@ import {
   type ActionVerb,
   type Sender,
 } from './data';
-import { intentOf, type SenderIntent } from './uplift-d/intent';
 
 const ARROW = (
   <svg
@@ -50,18 +49,6 @@ const ARROW = (
 );
 
 /**
- * Lead-verb map keyed by intent (ADR-0016 §B3 — `intentOf` retains the
- * semantic role of deriving the primary CTA per row/card). Chrome tones
- * stay out of it — intent drives the verb, never the chrome.
- */
-const LEAD_VERB_BY_INTENT: Record<SenderIntent, 'Unsubscribe' | 'Later' | 'Keep' | 'Archive'> = {
-  cleanup: 'Unsubscribe',
-  later: 'Later',
-  protect: 'Keep',
-  people: 'Keep',
-};
-
-/**
  * Fact-rule primary derivation (ADR-0019) for a row's lead CTA.
  *
  * `unsub_ready` = the wire List-Unsubscribe method is `'one_click'`
@@ -73,19 +60,16 @@ const LEAD_VERB_BY_INTENT: Record<SenderIntent, 'Unsubscribe' | 'Later' | 'Keep'
  * Registry rule order guarantees protected → Keep wins over unsub-ready
  * (`deriveDefaultPrimary` checks `protected` first — D42/D43).
  *
- * Falls back to the legacy `intentOf` lead verb when neither rule's
- * antecedent fires — preserves continuity until Phase 2 PR-FE2 lands
- * the fact-first cut.
+ * No recommendation or confidence value participates in this choice.
+ * D245 makes observed facts authoritative; an optional suggestion may
+ * be disclosed separately but never selects the primary action.
  */
 export function derivePrimaryVerbId(sender: Sender): VerbId {
-  const factPrimary = deriveDefaultPrimary({
-    protected: sender.protected === true || sender.isVip === true,
+  return deriveDefaultPrimary({
+    protected: sender.protected === true,
     unsubReady: sender.unsubscribeMethod === 'one_click' && canUnsubscribe(sender),
     lastSeenDays: sender.lastDays,
   });
-  return factPrimary === 'keep'
-    ? mapLegacyVerb(LEAD_VERB_BY_INTENT[intentOf(sender)])
-    : factPrimary;
 }
 
 export function SenderActionRow({
@@ -115,6 +99,7 @@ export function SenderActionRow({
   };
 
   const primaryLegacy = legacyVerbFromId(primaryVerbId);
+  const senderLabel = sender.name.trim() || sender.domain;
 
   return (
     <div
@@ -145,10 +130,14 @@ export function SenderActionRow({
           onClick re-opens). Open-only + ESC/click-outside close is the
           standard menu-button affordance (silent-failure-hunter
           2026-06-03 advisory). */}
-      <ActionPopoverTrigger onClick={() => setPopoverOpen(true)} />
+      <ActionPopoverTrigger
+        onClick={() => setPopoverOpen(true)}
+        ariaLabel={`More actions for ${senderLabel}`}
+      />
       {popoverOpen && (
         <div style={{ position: 'absolute', bottom: 'calc(100% + 4px)', right: 0, zIndex: 50 }}>
           <ActionPopover
+            ariaLabel={`Actions for ${senderLabel}`}
             capabilities={capabilities}
             dimmedVerb={primaryVerbId}
             onPick={(verbId) => {

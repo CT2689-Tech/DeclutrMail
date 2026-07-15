@@ -37,6 +37,7 @@ const startMailboxConnectSpy = vi.fn();
 const startMailboxReactivationSpy = vi.fn();
 const setActiveMutateSpy = vi.fn();
 const disconnectMutateSpy = vi.fn();
+const deleteIndexedDataMutateSpy = vi.fn();
 const logoutMutateSpy = vi.fn();
 const useMailboxesHealthSpy = vi.fn();
 
@@ -61,6 +62,12 @@ vi.mock('./api/use-set-active-mailbox', () => ({
 }));
 vi.mock('./api/use-disconnect-mailbox', () => ({
   useDisconnectMailbox: () => ({ isPending: false, mutate: disconnectMutateSpy }),
+}));
+vi.mock('./api/use-delete-mailbox-indexed-data', () => ({
+  useDeleteMailboxIndexedData: () => ({
+    isPending: false,
+    mutate: deleteIndexedDataMutateSpy,
+  }),
 }));
 vi.mock('@/features/auth/api/use-logout', () => ({
   useLogout: () => ({ isPending: false, mutate: logoutMutateSpy }),
@@ -100,11 +107,12 @@ describe('AccountMenu Gmail reconnect health', () => {
     startMailboxReactivationSpy.mockClear();
     setActiveMutateSpy.mockClear();
     disconnectMutateSpy.mockClear();
+    deleteIndexedDataMutateSpy.mockClear();
     logoutMutateSpy.mockClear();
     useMailboxesHealthSpy.mockClear();
   });
 
-  it('shows selected revoked health, target reconnect at 2/2, and keeps Disconnect reachable', async () => {
+  it('shows selected revoked health, target reconnect at 2/2, and keeps data controls reachable', async () => {
     me = makeMe([{ ...MAILBOX_A, readiness: 'failed' }, MAILBOX_B]);
     healthById[MAILBOX_A.id] = { lastSyncedAt: null, needsReconnect: true };
     const { user } = await renderOpenMenu();
@@ -125,10 +133,12 @@ describe('AccountMenu Gmail reconnect health', () => {
     await user.click(reconnect);
     expect(startMailboxConnectSpy).toHaveBeenCalledWith(MAILBOX_A.id);
 
-    await user.click(within(row).getByRole('button', { name: `Disconnect ${MAILBOX_A.email}` }));
-    expect(
-      within(row).getByRole('button', { name: `Confirm disconnect ${MAILBOX_A.email}` }),
-    ).toBeInTheDocument();
+    await user.click(
+      within(row).getByRole('button', {
+        name: `Manage connection and data for ${MAILBOX_A.email}`,
+      }),
+    );
+    expect(screen.getByRole('dialog', { name: `Disconnect ${MAILBOX_A.email}?` })).toBeVisible();
   });
 
   it('keeps another revoked mailbox selectable and reconnects its exact target at the limit', async () => {
@@ -227,7 +237,11 @@ describe('AccountMenu Gmail reconnect health', () => {
       screen.getByRole('button', { name: `Selected mailbox ${MAILBOX_A.email}` }),
     ).toHaveFocus();
     await user.tab();
-    expect(screen.getByRole('button', { name: `Disconnect ${MAILBOX_A.email}` })).toHaveFocus();
+    expect(
+      screen.getByRole('button', {
+        name: `Manage connection and data for ${MAILBOX_A.email}`,
+      }),
+    ).toHaveFocus();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Gmail accounts' })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();

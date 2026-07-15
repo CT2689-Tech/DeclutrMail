@@ -563,8 +563,9 @@ upgrade affordance to the user: the global `UpgradeModal` opening on an
 entitlement 402 — `FREE_CAP_REACHED`, `INBOX_LIMIT_REACHED`, or
 `ACTION_TIER_REQUIRED` — routed
 through the MutationCache handler (`source: 'upgrade_modal'`, U13), the
-`TierGate` placeholder replacing a Pro feature screen for an under-tier
-workspace (`source: 'tier_gate'`, `reason: 'pro_feature'`, D68/D77),
+`TierGate` placeholder replacing a paid feature screen for an under-tier
+workspace (`source: 'tier_gate'`, with `reason: 'feature_tier'` or
+`'pro_feature'`, D68/D77),
 the AccountMenu inbox-limit row replacing "Connect another"
 (`source: 'account_menu'`), or the Triage empty-state free-cap nudge.
 One emit per appearance, not per render. (`source: 'actions_402'` was

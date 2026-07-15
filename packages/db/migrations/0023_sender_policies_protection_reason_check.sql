@@ -9,8 +9,8 @@
 -- WHY ONLY ONE DIRECTION (and not the strict
 -- `is_protected = (protection_reason IS NOT NULL)` biconditional):
 --   The user-agency-wins semantic shipped in 0022 / spec v1.3 L488
---   DELIBERATELY leaves a manually-demoted engagement_based row in
---   the state `(is_protected=false, protection_reason='engagement_based')`.
+--   DELIBERATELY leaves a manually-demoted automatically protected row
+--   with its non-null reason as a memory pin.
 --   The lingering reason is a "memory pin" — the auto-protect worker
 --   reads it as "user already said no to this; do not re-protect"
 --   (initial-sync.worker.ts:660-705, incremental-sync.worker.ts §3,

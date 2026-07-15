@@ -21,11 +21,12 @@ import { useMailboxSyncToasts } from '@/features/mailboxes/use-mailbox-sync-toas
 import { useOnboardingGate } from '@/features/onboarding/use-onboarding-gate';
 import { useScreenerCount } from '@/features/screener/api/use-screener';
 import { ScreenerBadge } from '@/features/screener/screener-badge';
+import { LaterReturnAlert } from '@/features/snoozed/later-return-alert';
 import { useSenders } from '@/features/senders/api/use-senders';
 import { SyncErrorBanner } from '@/features/sync/sync-error-banner';
 import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
 import { ThemeToggle } from '@/features/theme/theme-toggle';
-import { TriageUndoTray } from '@/features/triage/triage-undo-tray';
+import { ProductUndoTray } from '@/features/triage/triage-undo-tray';
 import { isFeatureEnabled } from '@/lib/flags';
 
 /**
@@ -52,7 +53,8 @@ import { isFeatureEnabled } from '@/lib/flags';
  *   5. no active mailbox  — last mailbox disconnected → full-screen
  *                           reconnect gate instead of a data-less shell.
  *                           EXCEPTION: workspace-scoped routes
- *                           (`/settings`, `/settings/privacy`, `/billing`)
+ *                           (`/settings`, `/settings/privacy`,
+ *                           `/settings/help`, `/billing`)
  *                           render through the gate — account deletion
  *                           (D216), data export, and billing/refunds (D121)
  *                           must stay reachable with zero mailboxes.
@@ -111,7 +113,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
  * safe to the gate.
  */
 function isUserScopedRoute(pathname: string): boolean {
-  return pathname === '/settings' || pathname === '/settings/privacy' || pathname === '/billing';
+  return (
+    pathname === '/settings' ||
+    pathname === '/settings/privacy' ||
+    pathname === '/settings/help' ||
+    pathname === '/billing'
+  );
 }
 
 function AppChrome({ children }: { children: ReactNode }) {
@@ -119,7 +126,10 @@ function AppChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { me } = useAuth();
   useAnalyticsIdentity(me.user.id);
-  const active = pathname.split('/')[1] || 'senders';
+  // D245: `snoozed` remains the internal capability/nav key, while
+  // `/later` is the canonical user-facing route.
+  const routeSegment = pathname.split('/')[1] || 'senders';
+  const active = routeSegment === 'later' ? 'snoozed' : routeSegment;
   const hasActiveMailbox = me.activeMailboxId != null;
   const userScopedRoute = isUserScopedRoute(pathname);
 
@@ -215,10 +225,13 @@ function AppChrome({ children }: { children: ReactNode }) {
             it stays off on the user-scoped-route fallback (settings/billing
             rendered with no active mailbox). */}
         {me.activeMailboxId !== null && <SyncErrorBanner mailboxId={me.activeMailboxId} />}
+        {/* Return recovery is an all-tier safety guarantee. Successful
+            returns stay silent; only missed/failed timers surface. */}
+        <LaterReturnAlert enabled={hasActiveMailbox} />
         <div style={{ flex: 1, minHeight: 0 }}>
           <AppShell
             active={active}
-            onNavigate={(id) => router.push(`/${id}`)}
+            onNavigate={(id) => router.push(id === 'snoozed' ? '/later' : `/${id}`)}
             counts={{
               ...tierChips,
               ...(sendersCount === undefined ? {} : { senders: sendersCount }),
@@ -243,17 +256,19 @@ function AppChrome({ children }: { children: ReactNode }) {
           </AppShell>
         </div>
       </div>
-      {/* D35 — recent reversible actions follow the user across every
-          mailbox-scoped app route. Mount once in the shell so leaving
-          Triage never hides recovery; keep it off user-scoped routes
-          rendered without an active mailbox to avoid a guarded 409. */}
-      {hasActiveMailbox && (
-        <TriageUndoTray key={me.activeMailboxId} mailboxId={me.activeMailboxId ?? undefined} />
-      )}
       {/* D19/D77/D81 — entitlement-402 upgrade flow. Mounted ONCE in
           the authed chrome; fed by the global MutationCache handler
           (lib/query-client) so every mutation surface is covered. */}
       <UpgradeModal />
+      {/* D245 — one receipt/undo host survives navigation between every
+          mailbox-backed product surface. The Z shortcut remains a Triage
+          affordance; other screens still show the same server-backed tray. */}
+      {hasActiveMailbox && (
+        <ProductUndoTray
+          enableShortcut={active === 'triage'}
+          mailboxId={me.activeMailboxId ?? undefined}
+        />
+      )}
       <ToastHost />
     </>
   );

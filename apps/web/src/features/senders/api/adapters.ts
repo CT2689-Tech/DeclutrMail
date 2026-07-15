@@ -42,7 +42,6 @@ import type {
   TimeseriesPoint,
   Verdict,
 } from '../detail/types';
-import { buildSenderDetail } from '../detail/data';
 
 /** Maps Gmail category → component-side `SenderGroup` (they're synonyms today). */
 const CATEGORY_TO_GROUP: Record<GmailCategory, SenderGroup> = {
@@ -51,6 +50,15 @@ const CATEGORY_TO_GROUP: Record<GmailCategory, SenderGroup> = {
   social: 'social',
   updates: 'updates',
   forums: 'forums',
+};
+
+/** Display labels derived directly from the Gmail category on the wire. */
+const CATEGORY_TO_LABEL: Record<GmailCategory, string> = {
+  primary: 'Gmail: Primary',
+  promotions: 'Gmail: Promotions',
+  social: 'Gmail: Social',
+  updates: 'Gmail: Updates',
+  forums: 'Gmail: Forums',
 };
 
 /** Computes days between an ISO date and "now" — clamped to 0. */
@@ -164,12 +172,11 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
     lastReview: row.lastReview,
     // Standing policy flags now ride the list row (BE
     // `SenderListRow.protectionFlags`). `protected` drives the row's
-    // "Protected" chip + the "Protected" KPI; `isVip` is OR-ed into the
-    // "Protect" intent bucket (intentOf) so VIPs never land in Cleanup.
+    // "Protected" chip + the fact-derived Keep rule so protected senders
+    // never receive a destructive primary.
     // Optional-chained so a malformed / older response that omits the
     // block degrades to "not protected" rather than crashing the list.
     protected: row.protectionFlags?.isProtected ?? false,
-    isVip: row.protectionFlags?.isVip ?? false,
     // Standing-policy unsub state (D38 + 2026-06-05 brainstorm). True
     // when the BE has the sender's policy at `'unsubscribe'`. Drives
     // the unsub pill on the sender card; `unsubStatus` (D9 Wave 2)
@@ -187,34 +194,34 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
  * Adapt the wire `SenderDetailDto` + paginated child responses into the
  * FE `SenderDetail` model the page already consumes.
  *
- * `buildSenderDetail` (the existing fixture helper) already synthesises
- * the recommendation / stats / timeseries / history from a `Sender`.
- * For now we layer the wire data ON TOP of that synthesis — wire-driven
- * recent messages, timeseries, and history override the synthesised
- * ones; recommendation + stats fall back to the synthesised values
- * (the BE doesn't return a recommendation row yet — that lands in a
- * later iteration of the Sender Detail API).
+ * Every field in the returned live model comes from the wire or from an
+ * explicit presentation derivation of a wire field. Fixture builders
+ * must not participate in this path: the detail endpoint currently has
+ * no recommendation payload, so live recommendations stay `null` until
+ * that contract exists.
  */
 /**
  * Map the wire `protection_reason` enum (BE source-of-truth) onto the
  * narrower FE `ProtectionReason` union used by the header chip + banner:
- *   user_defined     → user-marked
- *   engagement_based → auto-receipts (closest existing FE bucket today;
- *                       a richer enum lands when the BE adds more reasons)
- *   vip              → user-marked (header already renders the VIP chip
- *                       separately from the Protect chip)
+ *   user_defined    → user-marked
+ *   replied         → replied
+ *   starred         → starred
+ *   gmail_important → gmail-important
  * If `isProtected` is true but the wire omits the reason, fall back to
  * `user-marked` so the chip renders something rather than nothing.
  *
  * Shared by `adaptSenderDetail` (query path) and the Sender Detail
- * VIP/Protect toggle `onSuccess` reconcile (mutation path) so both
+ * Protect toggle `onSuccess` reconcile (mutation path) so both
  * derive the header chip from the same mapping.
  */
 export function adaptProtectionReason(
   isProtected: boolean,
   wireReason: ProtectionReasonWire | null,
 ): ProtectionReason | null {
-  return isProtected ? (wireReason === 'engagement_based' ? 'auto-receipts' : 'user-marked') : null;
+  if (!isProtected) return null;
+  if (wireReason === 'replied' || wireReason === 'starred') return wireReason;
+  if (wireReason === 'gmail_important') return 'gmail-important';
+  return 'user-marked';
 }
 
 export function adaptSenderDetail(args: {
@@ -225,18 +232,11 @@ export function adaptSenderDetail(args: {
   now?: number;
 }): SenderDetail {
   const sender = adaptSenderListRow(args.detail, args.now);
-  const isVip = args.detail.protectionFlags.isVip;
   const isProtected = args.detail.protectionFlags.isProtected;
   const protectionReason: ProtectionReason | null = adaptProtectionReason(
     isProtected,
     args.detail.protectionFlags.protectionReason,
   );
-
-  // Use the existing fixture-builder for the synthesised fields
-  // (recommendation only — stats are now wire-driven), then overlay
-  // wire-derived lists. When the BE PR adds richer recommendation rows
-  // we delete the fallback and pass the wire values through directly.
-  const seeded = buildSenderDetail(sender, { isVip, isProtected });
 
   const stats: SenderStats = {
     // Both BE fields are nullable when sender has no timeseries; coerce
@@ -255,8 +255,8 @@ export function adaptSenderDetail(args: {
     // Sender.name may be the display name ("Robinhood") so we keep the
     // raw email separate (FOUNDER-FOLLOWUPS 2026-06-06 Q3.2).
     email: args.detail.email,
-    gmailCategory: seeded.gmailCategory,
-    isVip,
+    // Presentation-only formatting of the real Gmail category enum.
+    gmailCategory: CATEGORY_TO_LABEL[args.detail.gmailCategory],
     isProtected,
     protectionReason,
     // Standing-policy pill on Sender Detail (FOUNDER-FOLLOWUPS
@@ -270,7 +270,9 @@ export function adaptSenderDetail(args: {
     unsubStatus: args.detail.unsubStatus ?? null,
     unsubscribeMethod: args.detail.unsubscribeMethod ?? null,
     unsubscribeMailtoUrl: args.detail.unsubscribeMailtoUrl ?? null,
-    recommendation: seeded.recommendation,
+    // The detail wire contract has no recommendation field. Do not
+    // manufacture one from fixture heuristics for connected accounts.
+    recommendation: null,
     recentMessages: args.messages.map(adaptMailMessageRow),
     stats,
     timeseries: args.timeseries.map(adaptTimeseriesPoint),
@@ -328,7 +330,7 @@ export function adaptTimeseriesPoint(p: TimeseriesPointDto): TimeseriesPoint {
 const VERDICT_TO_ACTION: Record<DecisionHistoryRowDto['verdict'], DecisionAction> = {
   keep: 'Kept',
   archive: 'Archived',
-  unsubscribe: 'Unsubscribe recommended',
+  unsubscribe: 'Unsubscribe requested',
   later: 'Moved to Later',
 };
 
@@ -340,7 +342,7 @@ const GENERATED_BY_TO_SOURCE: Record<DecisionHistoryRowDto['generatedBy'], Decis
 /**
  * Wire history row → FE history row. The wire schema is narrower (just
  * the engine's recorded decisions) than the FE component supports (the
- * component renders any `activity_log` row, including VIP toggles and
+ * component renders any `activity_log` row, including protection and
  * Restore actions). The component handles a degenerate `count` of 0 by
  * omitting the email-count span, so we leave it unset.
  */

@@ -15,6 +15,7 @@
 
 import type {
   Envelope,
+  LaterReturnRecoverySummary,
   SnoozedSenderRow,
   SnoozeUpdateRequest,
   SnoozeUpdateResult,
@@ -25,12 +26,19 @@ import { apiGet, apiPatch, apiPost } from './client';
 
 export type { SnoozedSenderRow };
 
+/** GET /api/snoozed/recovery — all-tier stuck-return safety summary. */
+export function fetchLaterRecovery(
+  signal?: AbortSignal,
+): Promise<Envelope<LaterReturnRecoverySummary, unknown>> {
+  return apiGet<LaterReturnRecoverySummary>('/api/snoozed/recovery', { signal });
+}
+
 /** GET /api/snoozed — the Later bucket for the current mailbox. */
 export function fetchSnoozed(signal?: AbortSignal): Promise<Envelope<SnoozedSenderRow[], unknown>> {
   return apiGet<SnoozedSenderRow[]>('/api/snoozed', { signal });
 }
 
-/** PATCH /api/snoozed/:senderId — set / extend / cancel the wake timer. */
+/** PATCH /api/snoozed/:senderId — set or extend the required wake time. */
 export async function patchSnooze(
   senderId: string,
   body: SnoozeUpdateRequest,
@@ -45,5 +53,14 @@ export async function patchSnooze(
 /** POST /api/snoozed/:senderId/wake — D80 "Wake now" (queued restore). */
 export async function wakeNow(senderId: string): Promise<WakeNowResult> {
   const env = await apiPost<WakeNowResult>(`/api/snoozed/${encodeURIComponent(senderId)}/wake`, {});
+  return env.data;
+}
+
+/** POST all-tier retry for a failed/missed return (healthy timers reject). */
+export async function wakeRecoveryNow(senderId: string): Promise<WakeNowResult> {
+  const env = await apiPost<WakeNowResult>(
+    `/api/snoozed/recovery/${encodeURIComponent(senderId)}/wake`,
+    {},
+  );
   return env.data;
 }

@@ -18,10 +18,18 @@ import {
   keepPreviousData,
   useInfiniteQuery,
   useMutation,
+  useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
 
 import { fetchActivity, revertActivityUndo, type ActivityFilters } from '@/lib/api/activity';
+import {
+  confirmActionRecovery,
+  createActionRecoveryPreview,
+  getActionRecoveryPreview,
+  type ActionRecoveryEnqueueResult,
+  type ActionRecoveryPreviewResult,
+} from '@/lib/api/actions';
 
 import { activityKeys } from './query-keys';
 
@@ -87,6 +95,43 @@ export function useRevertActivity() {
     onSuccess: () => {
       // Invalidate every Activity list cache — the mailbox switcher's
       // `resetMailboxScopedCache` walks the same prefix.
+      void queryClient.invalidateQueries({ queryKey: activityKeys.all });
+    },
+  });
+}
+
+/** Starts a read-only, metadata-only provider verification pass. */
+export function useCreateActionRecoveryPreview() {
+  return useMutation<ActionRecoveryPreviewResult, Error, string>({
+    mutationFn: (actionId) => createActionRecoveryPreview(actionId),
+  });
+}
+
+/** Poll only while the provider verification is in progress. */
+export function useActionRecoveryPreview(previewId: string | null) {
+  return useQuery({
+    queryKey: activityKeys.recoveryPreview(previewId ?? 'closed'),
+    queryFn: ({ signal }) => getActionRecoveryPreview(previewId!, { signal }),
+    enabled: previewId !== null,
+    refetchInterval: (query) => (query.state.data?.status === 'verifying' ? 1000 : false),
+    refetchOnWindowFocus: true,
+  });
+}
+
+/** Enqueue one linked recovery attempt and refresh the Activity lineage. */
+export function useConfirmActionRecovery() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    ActionRecoveryEnqueueResult,
+    Error,
+    { previewId: string; idempotencyKey: string; wakeAt?: string }
+  >({
+    mutationFn: ({ previewId, idempotencyKey, wakeAt }) =>
+      confirmActionRecovery(previewId, {
+        idempotencyKey,
+        ...(wakeAt ? { wakeAt } : {}),
+      }),
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: activityKeys.all });
     },
   });

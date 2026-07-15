@@ -80,9 +80,9 @@ side:
    sync against D6's strict blockade.
 5. **Plain versus power labels:** default Gmail immigrants to familiar labels
    or retain the current power vocabulary behind an explicit choice.
-6. **Annual Pro conflict:** D126 says $149/year; the later buildout manifest
-   locks $190/year. This branch does not alter billing and leaves that founder
-   decision explicit.
+6. **Annual Pro price (resolved 2026-07-14):** standard Pro is $190/year; the
+   $129/year Founding Pro offer remains limited to the first 250 paying users.
+   Product surfaces derive both values from the canonical tier manifest.
 7. **Canonical production host:** apex `declutrmail.com` versus
    `app.declutrmail.com` must be resolved before indexing; code cannot infer
    DNS cutover state.

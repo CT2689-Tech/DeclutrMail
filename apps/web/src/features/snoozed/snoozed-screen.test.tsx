@@ -41,6 +41,9 @@ const ROW_TODAY: SnoozedSenderRow = {
   snoozedUntil: LATER_TODAY,
   snoozedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
   reason: 'after launch week',
+  returnStatus: 'scheduled',
+  lastReturnAttemptAt: null,
+  returnFailureKind: null,
 };
 
 const ROW_EVENTUALLY: SnoozedSenderRow = {
@@ -52,17 +55,9 @@ const ROW_EVENTUALLY: SnoozedSenderRow = {
   snoozedUntil: IN_30_DAYS,
   snoozedAt: new Date().toISOString(),
   reason: null,
-};
-
-const ROW_NO_TIMER: SnoozedSenderRow = {
-  senderId: '6f1f2f3a-0000-4000-8000-000000000003',
-  displayName: '',
-  email: 'noreply@tools.example.com',
-  domain: 'tools.example.com',
-  laterCount: 9,
-  snoozedUntil: null,
-  snoozedAt: null,
-  reason: null,
+  returnStatus: 'scheduled',
+  lastReturnAttemptAt: null,
+  returnFailureKind: null,
 };
 
 function listHandler(rows: SnoozedSenderRow[]): FetchStubHandler {
@@ -99,7 +94,7 @@ describe('SnoozedScreen — edge states', () => {
       },
     ]);
     renderScreen();
-    expect(screen.getByText('Loading snoozed senders')).toBeInTheDocument();
+    expect(screen.getByText('Loading Later senders')).toBeInTheDocument();
   });
 
   it('shows the error state with a retry affordance on a 500', async () => {
@@ -115,7 +110,7 @@ describe('SnoozedScreen — edge states', () => {
       },
     ]);
     renderScreen();
-    expect(await screen.findByText(/couldn't load Snoozed/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn't load Later/i)).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Needs attention');
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
@@ -123,13 +118,13 @@ describe('SnoozedScreen — edge states', () => {
   it('shows the empty state pointing at the Later verb', async () => {
     installFetchStub([listHandler([])]);
     renderScreen();
-    expect(await screen.findByText('Nothing snoozed.')).toBeInTheDocument();
-    expect(screen.getByText('Later')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing in Later.')).toBeInTheDocument();
+    expect(screen.getAllByText('Later').length).toBeGreaterThan(0);
   });
 });
 
 describe('SnoozedScreen — populated (D80 grouping)', () => {
-  beforeEach(() => installFetchStub([listHandler([ROW_TODAY, ROW_EVENTUALLY, ROW_NO_TIMER])]));
+  beforeEach(() => installFetchStub([listHandler([ROW_TODAY, ROW_EVENTUALLY])]));
   afterEach(() => resetFetchStub());
 
   it('groups rows into wake-time buckets with real counts', async () => {
@@ -138,12 +133,9 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
 
     expect(screen.getByRole('heading', { name: /later today/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /eventually/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /no wake time/i })).toBeInTheDocument();
-
     expect(screen.getByText('12 in Later')).toBeInTheDocument();
     expect(screen.getByText('“after launch week”')).toBeInTheDocument();
-    // Display-name-less sender falls back to its email.
-    expect(screen.getByText('noreply@tools.example.com')).toBeInTheDocument();
+    expect(screen.queryByText(/needs (scheduling|a wake time)/i)).not.toBeInTheDocument();
   });
 
   it('renders honest copy when the mirror count is unknown', async () => {
@@ -151,6 +143,25 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
     installFetchStub([listHandler([{ ...ROW_TODAY, laterCount: null }])]);
     renderScreen();
     expect(await screen.findByText('count syncing…')).toBeInTheDocument();
+  });
+
+  it('surfaces a failed return without implying the mail was lost', async () => {
+    resetFetchStub();
+    installFetchStub([
+      listHandler([
+        {
+          ...ROW_TODAY,
+          returnStatus: 'retrying',
+          lastReturnAttemptAt: new Date().toISOString(),
+          returnFailureKind: 'temporary',
+        },
+      ]),
+    ]);
+    renderScreen();
+    expect(await screen.findByText('Return retrying')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/could not confirm/i);
+    expect(screen.getByText(/automatic retry remains active/i)).toBeInTheDocument();
+    expect(screen.getByText(/Last tried/i)).toBeInTheDocument();
   });
 });
 
@@ -222,16 +233,16 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
   it('PATCHes the picked preset with the note attached', async () => {
     const bodies: unknown[] = [];
     installFetchStub([
-      listHandler([ROW_NO_TIMER]),
+      listHandler([ROW_EVENTUALLY]),
       {
         method: 'PATCH',
-        path: new RegExp(`^/api/snoozed/${ROW_NO_TIMER.senderId}$`),
+        path: new RegExp(`^/api/snoozed/${ROW_EVENTUALLY.senderId}$`),
         respond: async (req) => {
           bodies.push(await req.json());
           return new Response(
             JSON.stringify({
               data: {
-                senderId: ROW_NO_TIMER.senderId,
+                senderId: ROW_EVENTUALLY.senderId,
                 snoozedUntil: IN_30_DAYS,
                 snoozedAt: new Date().toISOString(),
                 reason: 'travel',
@@ -245,9 +256,14 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     ]);
     const user = userEvent.setup();
     renderScreen();
-    await screen.findByText('noreply@tools.example.com');
+    await screen.findByText('Quarterly Newsletter');
 
-    await user.click(screen.getByRole('button', { name: 'Snooze ▾' }));
+    await user.click(screen.getByRole('button', { name: 'Change wake time ▾' }));
+    expect(
+      screen.getByRole('button', {
+        name: 'Cancel wake-time changes for Quarterly Newsletter',
+      }),
+    ).toHaveTextContent('Cancel');
     await user.type(screen.getByPlaceholderText('Note (optional)'), 'travel');
     await user.click(screen.getByRole('button', { name: 'Tomorrow (9:00 AM)' }));
 
@@ -257,38 +273,13 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     expect(new Date(body.until).getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('offers Cancel snooze only when a timer exists, and clears it', async () => {
-    const bodies: unknown[] = [];
-    installFetchStub([
-      listHandler([ROW_TODAY]),
-      {
-        method: 'PATCH',
-        path: new RegExp(`^/api/snoozed/${ROW_TODAY.senderId}$`),
-        respond: async (req) => {
-          bodies.push(await req.json());
-          return new Response(
-            JSON.stringify({
-              data: {
-                senderId: ROW_TODAY.senderId,
-                snoozedUntil: null,
-                snoozedAt: null,
-                reason: null,
-                changed: true,
-              },
-            }),
-            { status: 200, headers: { 'content-type': 'application/json' } },
-          );
-        },
-      },
-    ]);
+  it('never offers an indefinite Later state', async () => {
+    installFetchStub([listHandler([ROW_TODAY])]);
     const user = userEvent.setup();
     renderScreen();
     await screen.findByText('Daily Digest');
 
-    await user.click(screen.getByRole('button', { name: 'Snooze ▾' }));
-    await user.click(screen.getByRole('button', { name: 'Cancel snooze' }));
-
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ until: null });
+    await user.click(screen.getByRole('button', { name: 'Change wake time ▾' }));
+    expect(screen.queryByRole('button', { name: /clear wake time/i })).not.toBeInTheDocument();
   });
 });

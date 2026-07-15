@@ -45,7 +45,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
       const onConfirm = vi.fn();
       render(
         <BatchActionSheet
-          open={true}
+          open
           verb="Archive"
           batch={batch}
           preview={preview}
@@ -62,11 +62,29 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     },
   );
 
+  it('offers an explicit retry when the preview is unavailable', () => {
+    const onRetryPreview = vi.fn();
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview="unavailable"
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        onRetryPreview={onRetryPreview}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /retry preview/i }));
+    expect(onRetryPreview).toHaveBeenCalledTimes(1);
+  });
+
   it('allows click and keyboard confirmation after the live preview resolves', () => {
     const onConfirm = vi.fn();
     render(
       <BatchActionSheet
-        open={true}
+        open
         verb="Archive"
         batch={batch}
         preview={readyPreview}
@@ -84,5 +102,34 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     expect(screen.getByText(/Gmail is checked again at execution/i)).toBeInTheDocument();
     expect(screen.queryByText(/will move out of the inbox/i)).not.toBeInTheDocument();
     expect(screen.getByRole('note', { name: 'Gmail account: active@gmail.com' })).toBeVisible();
+  });
+
+  it('requires an exact future return time for Later', () => {
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <BatchActionSheet
+        open
+        verb="Later"
+        batch={batch}
+        preview={readyPreview}
+        wakeAt={null}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /later for all/i })).toBeDisabled();
+
+    rerender(
+      <BatchActionSheet
+        open
+        verb="Later"
+        batch={batch}
+        preview={readyPreview}
+        wakeAt={new Date(Date.now() + 86_400_000).toISOString()}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /later for all/i })).not.toBeDisabled();
   });
 });

@@ -19,7 +19,7 @@ describe('ActionsController.unsubscribeIntent', () => {
     [{ senderId: SENDER_ID, includesBacklogAction: true }, true],
   ] as const)('forwards the parsed backlog flag (%s)', async (body, expected) => {
     const recordUnsubscribeIntent = vi.fn().mockResolvedValue(RESULT);
-    const controller = new ActionsController({ recordUnsubscribeIntent } as never);
+    const controller = new ActionsController({ recordUnsubscribeIntent } as never, {} as never);
 
     await expect(
       controller.unsubscribeIntent({ id: MAILBOX_ID }, 'idempotency-key-123', body),

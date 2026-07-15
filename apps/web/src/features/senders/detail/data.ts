@@ -152,9 +152,9 @@ function seedFor(id: string): number {
   return h >>> 0;
 }
 
-/** Map the parent module's recommended verb onto the closed `Verdict` union. */
-function inferVerdict(s: Sender, isVip: boolean, isProtected: boolean): Verdict {
-  if (isVip || isProtected) return 'keep';
+/** Fixture-only suggestion derivation for stories and mock handlers. */
+function inferVerdict(s: Sender, isProtected: boolean): Verdict {
+  if (isProtected) return 'keep';
   if (s.group === 'primary') return 'keep';
   const { read, monthly, spike } = s;
   if (read === 0 && monthly >= 25) return 'archive';
@@ -177,48 +177,33 @@ function inferConfidence(s: Sender, verdict: Verdict): number {
 
 function buildReasoning(s: Sender, verdict: Verdict): string {
   const read = Math.round(s.read * 100);
-  if (verdict === 'archive') {
-    return `You open ${read}% of ${s.name}'s ${s.monthly}/mo. Volume is high and they send most days.`;
-  }
-  if (verdict === 'unsubscribe') {
-    return s.spike
-      ? `Volume spiked ${s.spike}× while you almost never opened (${read}% read).`
-      : `${s.monthly}/mo at ${read}% read — this sender mostly fills the inbox without being seen.`;
-  }
-  if (verdict === 'later') {
-    return `${s.monthly}/mo at ${read}% read. "Later" keeps the mail in Gmail but stops surfacing it in your daily queue.`;
-  }
-  return `You read ${read}% of ${s.name}'s mail. No change recommended.`;
+  const action = verdict[0]!.toUpperCase() + verdict.slice(1);
+  return `${action} is suggested from ${s.monthly} messages received in the last 30 days and ${read}% marked read.`;
 }
 
-function buildSignals(s: Sender, verdict: Verdict): string[] {
-  const out: string[] = [];
-  out.push(`Read rate: ${Math.round(s.read * 100)}% over the last 90 days`);
-  out.push(`Volume: ${s.monthly} messages/month (4-week trailing average)`);
-  if (s.spike != null) {
-    out.push(`Volume spike: ${s.spike}× the sender's usual cadence`);
-  }
-  out.push(`Relationship: ${Math.round((s.firstSeenMo / 12) * 10) / 10} years since first message`);
-  if (verdict === 'archive' || verdict === 'unsubscribe') {
-    out.push('No reply from you to this sender in the last 12 months');
-  }
+function buildSignals(s: Sender): string[] {
+  const out = [
+    `${s.monthly} messages received in the last 30 days`,
+    `${Math.round(s.read * 100)}% marked read in the last 30 days`,
+    s.lastDays === 0
+      ? 'Last message received today'
+      : `Last message received ${s.lastDays} days ago`,
+  ];
+  if (s.repliedCount !== undefined) out.push(`You replied ${s.repliedCount} times`);
   return out;
 }
 
-function buildRecommendation(
-  s: Sender,
-  isVip: boolean,
-  isProtected: boolean,
-): Recommendation | null {
-  if (isVip || isProtected) return null;
-  const verdict = inferVerdict(s, isVip, isProtected);
+function buildRecommendation(s: Sender, isProtected: boolean): Recommendation | null {
+  if (isProtected) return null;
+  const verdict = inferVerdict(s, isProtected);
   if (verdict === 'keep' && s.group !== 'primary') {
-    // For non-Primary senders with no strong signal, surface a low-confidence Keep.
+    // For non-Primary senders with no strong signal, Keep may appear only
+    // inside the collapsed optional-suggestion disclosure.
     return {
       verdict,
       confidence: inferConfidence(s, verdict),
       reasoning: buildReasoning(s, verdict),
-      signals: buildSignals(s, verdict),
+      signals: buildSignals(s),
     };
   }
   if (verdict === 'keep') return null;
@@ -226,7 +211,7 @@ function buildRecommendation(
     verdict,
     confidence: inferConfidence(s, verdict),
     reasoning: buildReasoning(s, verdict),
-    signals: buildSignals(s, verdict),
+    signals: buildSignals(s),
   };
 }
 
@@ -307,7 +292,7 @@ function buildHistory(s: Sender): DecisionHistoryRow[] {
   } else if (s.read < 0.2 && s.monthly >= 6) {
     candidates.push({ source: 'Autopilot', action: 'Moved to Later', count: s.monthly });
   } else if (s.group === 'primary') {
-    candidates.push({ source: 'Manual', action: 'Marked VIP' });
+    candidates.push({ source: 'You', action: 'Kept' });
   } else {
     candidates.push({ source: 'You', action: 'Kept' });
   }
@@ -318,8 +303,7 @@ function buildHistory(s: Sender): DecisionHistoryRow[] {
     { source: 'Autopilot', action: 'Moved to Later', count: s.monthly },
     { source: 'Screener', action: 'Kept' },
     { source: 'Manual', action: 'Restored' },
-    { source: 'System', action: 'Marked VIP' },
-    { source: 'You', action: 'Unmarked VIP' },
+    { source: 'System', action: 'Protected' },
     { source: 'Manual', action: 'Unprotected' },
     { source: 'Triage', action: 'Archived', count: Math.round(s.monthly * 3) },
   ];
@@ -339,23 +323,22 @@ function buildHistory(s: Sender): DecisionHistoryRow[] {
 }
 
 /**
- * Build a complete `SenderDetail` from a sender + posture overrides.
- * Useful for both the page (live data) and Storybook (variants).
+ * Build a complete fixture `SenderDetail` from a sender + posture
+ * overrides. Production API adapters must map live DTOs directly and
+ * never call this synthetic story/mock helper.
  */
 export function buildSenderDetail(
   sender: Sender,
   overrides: Partial<{
-    isVip: boolean;
     isProtected: boolean;
     protectionReason: ProtectionReason;
     recentMessages: RecentMessage[];
     history: DecisionHistoryRow[];
   }> = {},
 ): SenderDetail {
-  const isVip = overrides.isVip ?? false;
   const isProtected = overrides.isProtected ?? sender.protected === true;
   const protectionReason: ProtectionReason | null = isProtected
-    ? (overrides.protectionReason ?? (sender.protected ? 'auto-receipts' : 'user-marked'))
+    ? (overrides.protectionReason ?? (sender.protected ? 'starred' : 'user-marked'))
     : null;
 
   return {
@@ -373,10 +356,9 @@ export function buildSenderDetail(
     unsubscribeMethod: null,
     unsubscribeMailtoUrl: null,
     gmailCategory: GMAIL_CATEGORY[sender.group],
-    isVip,
     isProtected,
     protectionReason,
-    recommendation: buildRecommendation(sender, isVip, isProtected),
+    recommendation: buildRecommendation(sender, isProtected),
     recentMessages: overrides.recentMessages ?? buildRecentMessages(sender),
     stats: buildStats(sender),
     timeseries: buildTimeseries(sender),

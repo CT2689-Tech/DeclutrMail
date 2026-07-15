@@ -7,6 +7,7 @@
  * narrow — no `string` fallback.
  */
 
+import type { UnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
 import type { Sender } from '../data';
 
 /**
@@ -25,13 +26,12 @@ export type Verdict = 'keep' | 'archive' | 'unsubscribe' | 'later';
  * Why a sender is protected. Each variant has a different copy in
  * the header tooltip and the recommendation banner.
  *
- * VIP is a SEPARATE standing policy (D42, D43) — its own header chip
- * and its own tooltip — never a protection reason.
  */
 export type ProtectionReason =
-  | 'user-marked' // founder toggled Protect on
-  | 'auto-receipts' // receipts / statements auto-protected (default)
-  | 'auto-financial'; // financial-institution sender auto-protected
+  | 'user-marked' // user toggled Protect on
+  | 'replied' // user replied at least three times
+  | 'starred' // user starred a message in the past year
+  | 'gmail-important'; // Gmail marked at least three recent messages important
 
 /**
  * Source of a decision-history row (D46).
@@ -44,16 +44,14 @@ export type DecisionSource = 'You' | 'Triage' | 'Manual' | 'Autopilot' | 'Screen
 
 /**
  * Past-tense action labels surfaced in the decision-history list.
- * The set spans all V2 actions (D46) — including VIP/Protect toggles
+ * The set spans all V2 actions (D46) — including Protect toggles
  * and the lifecycle actions (Restored, Snoozed).
  */
 export type DecisionAction =
   | 'Archived'
   | 'Kept'
-  | 'Unsubscribe recommended'
+  | 'Unsubscribe requested'
   | 'Moved to Later'
-  | 'Marked VIP'
-  | 'Unmarked VIP'
   | 'Protected'
   | 'Unprotected'
   | 'Restored';
@@ -73,12 +71,12 @@ export interface DecisionHistoryRow {
   undoExpiresAt?: string;
 }
 
-/** Recommendation banner payload, returned by the engine per sender. */
+/** Optional secondary suggestion payload, returned by the engine per sender. */
 export interface Recommendation {
   verdict: Verdict;
-  /** 0–1, displayed as percentage. ≥0.85 highlights the verb (D31). */
+  /** 0–1 engine metadata. D245 forbids using it to select or style actions. */
   confidence: number;
-  /** One-sentence rationale — shown inline + in the popover header. */
+  /** One-sentence factual basis shown only inside the optional disclosure. */
   reasoning: string;
   /** Supporting signals — bullet list in the popover. */
   signals: string[];
@@ -171,7 +169,6 @@ export interface SenderDetail {
   email: string;
   /** Verbose Gmail-side category — e.g. "Gmail: Social". */
   gmailCategory: string;
-  isVip: boolean;
   isProtected: boolean;
   /** Why the sender is protected — only set when `isProtected` is true. */
   protectionReason: ProtectionReason | null;
@@ -184,16 +181,14 @@ export interface SenderDetail {
    * removal. The pill mirrors the senders-list row so the user knows
    * the request is in flight regardless of which surface they land on.
    *
-   * `null` = no standing policy; the engine recommendation drives the UI.
+   * `null` = no standing policy. Observed facts still drive the primary action.
    */
   policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
   /**
-   * RFC 8058 execution outcome (D9 Wave 2) — refines the unsub pill:
-   * `pending` (confirming) / `done` / `failed` / `ambiguous`. `null`
-   * = no tracked execution (mailto-manual per D230, method none, or
-   * no unsub intent yet).
+   * Truthful unsubscribe lifecycle (D9/D245); `null` means no recorded
+   * unsubscribe intent yet.
    */
-  unsubStatus: 'pending' | 'done' | 'failed' | 'ambiguous' | null;
+  unsubStatus: UnsubscribeLifecycleStatus | null;
   /**
    * The sender's unsubscribe channel (ADR-0006 derivation). Drives
    * which post-intent affordance the page renders.
@@ -205,7 +200,7 @@ export interface SenderDetail {
    * Gmail" callout. `null` unless `unsubscribeMethod === 'mailto'`.
    */
   unsubscribeMailtoUrl: string | null;
-  /** Engine recommendation. `null` = no recommendation (VIP / Protected). */
+  /** Optional engine suggestion. `null` for Protected senders. */
   recommendation: Recommendation | null;
   recentMessages: RecentMessage[];
   stats: SenderStats;

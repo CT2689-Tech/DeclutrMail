@@ -11,14 +11,15 @@ import {
   toast,
   tokens,
 } from '@declutrmail/shared';
-import { ApiError } from '@/lib/api/client';
 import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
+import { ApiError } from '@/lib/api/client';
 
 import type {
   AutopilotMatchDto,
   AutopilotRuleDto,
   AutopilotRulePreviewResultDto,
 } from '@/lib/api/autopilot';
+import { ContextualHelp } from '@/features/help/contextual-help';
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
 import { useApproveMatches } from './api/use-approve-matches';
 import { useAutopilotRules } from './api/use-autopilot-rules';
@@ -70,7 +71,7 @@ const PENDING_BUFFER_CAP = AUTOPILOT_PENDING_PAGE_SIZE;
  *      summary, pending counts, dry-run preview (D103 scoped per
  *      D192), and Resume for paused rules.
  *   2. **D104 observe-mode buffer** — pending suggestions grouped by
- *      rule with Approve all / Approve selected / per-row Dismiss.
+ *      rule with Approve all / Approve selected / per-row Skip suggestion.
  *      Every approve goes through the mandatory D226 preview modal.
  *   3. **D104 day-7 banner** — rules whose observe window elapsed get
  *      an explicit "Switch to Active" prompt. NO auto-promotion.
@@ -415,7 +416,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     'Activation failed. Please retry.',
   );
 
-  // ── Dismiss (D104) ─────────────────────────────────────────────────
+  // ── Skip suggestion (D104; API state remains `dismissed`) ──────────
 
   const onDismiss = (matchId: string) => {
     void track('autopilot_suggestion_decided', {
@@ -436,11 +437,10 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
           next.delete(matchId);
           return next;
         });
-        toast('Suggestion dismissed', 'info');
+        toast('Suggestion skipped — Gmail was not changed', 'info');
       },
       onError: (err) => {
-        const msg = err instanceof ApiError ? `Dismiss failed (${err.status})` : 'Dismiss failed';
-        toast(msg, 'warn');
+        toast("Couldn't skip the suggestion. Try again.", 'warn');
         captureFeatureException(err, { surface: 'autopilot', reason: 'dismiss_failed' });
       },
     });
@@ -490,12 +490,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     });
   };
 
-  const pauseErrorMessage =
-    pauseAll.error == null
-      ? null
-      : pauseAll.error instanceof ApiError
-        ? `Pause failed (${pauseAll.error.status}). Please retry.`
-        : 'Pause failed. Please retry.';
+  const pauseErrorMessage = pauseAll.error == null ? null : 'Pause failed. Please retry.';
 
   return (
     <div
@@ -529,7 +524,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
               margin: '4px 0 0',
             }}
           >
-            Suggestions, not actions.
+            Observe first. Activate when ready.
           </h1>
         </div>
         <Button
@@ -545,9 +540,15 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       <ScreenIntro
         id="autopilot"
         title="How Autopilot works"
-        body="Each rule watches a slice of your inbox and proposes actions. Until you switch a rule to Active it stays in Observe mode — every match lands here for you to approve or dismiss. Pause all stops every rule across every inbox at once."
-        tip="Custom rules ship in a later release. The five rules at launch cover the common cleanup patterns."
+        body="Observe and Active are set per rule. Observe records matches as suggestions and changes no mail until you approve one. Active applies future matches automatically; every result is recorded in Activity. Pause all stops every rule across every inbox at once."
+        tip="Custom rule creation is not available for this workspace. Only the launch preset rules can be enabled."
       />
+
+      <ContextualHelp question="What changes between Observe and Active?">
+        Observe records matches as suggestions and changes no Gmail mail until you approve them.
+        Active applies future matches automatically after you review the first-sweep preview.
+        Suggestions already collected in Observe stay pending for you to approve or skip.
+      </ContextualHelp>
 
       {allPaused && <PausedBanner rules={rules} />}
 
@@ -587,7 +588,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
             {state.kind === 'empty' && (
               <EmptyState
                 title="No Autopilot rules yet"
-                description="The five preset rules are seeded when your mailbox finishes its first sync. Once they land, they observe quietly and their suggestions appear here."
+                description="The five preset rules appear after your mailbox finishes its first sync. Matching senders then appear here as suggestions."
               />
             )}
             {state.kind === 'ready' && rules.length > 0 && (
@@ -734,8 +735,8 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
 }
 
 /** PATCH failure toast copy — shared by toggle/threshold/resume. */
-function patchFailureMessage(err: unknown): string {
-  return err instanceof ApiError ? `Couldn't save (${err.status})` : "Couldn't save the rule";
+function patchFailureMessage(_err: unknown): string {
+  return "Couldn't save the rule";
 }
 
 /**
@@ -755,13 +756,9 @@ function derivePreviewState(
 ): RulePreviewState {
   if (mutation.isPending) return { status: 'loading' };
   if (mutation.isError) {
-    const err = mutation.error;
     return {
       status: 'error',
-      message:
-        err instanceof ApiError
-          ? `Dry-run failed (HTTP ${err.status}).`
-          : 'Dry-run failed. Please retry.',
+      message: 'Preview failed. Please retry.',
     };
   }
   if (mutation.data != null && mutation.data.ruleId === ruleId) {
@@ -773,7 +770,7 @@ function derivePreviewState(
 /** Modal-error string from a mutation error (null when no error). */
 function mutationErrorMessage(err: unknown, fallback: string): string | null {
   if (err == null) return null;
-  return err instanceof ApiError ? `${fallback.replace('.', '')} (HTTP ${err.status}).` : fallback;
+  return fallback;
 }
 
 /** Loading skeleton — rule-card-sized stripes. */
@@ -814,14 +811,14 @@ function SuggestionsEmptyState({ hasAnyRules }: { hasAnyRules: boolean }) {
     return (
       <EmptyState
         title="No pending suggestions"
-        description="Suggestions appear here once your preset rules are seeded and start observing your inbox."
+        description="Suggestions appear here after your preset rules are created and matching senders are found."
       />
     );
   }
   return (
     <EmptyState
       title="No pending suggestions"
-      description="Every rule is watching but nothing has matched recently. Suggestions will appear here as Autopilot observes your inbox."
+      description="No sender currently matches an enabled rule. New matches will appear here."
     />
   );
 }

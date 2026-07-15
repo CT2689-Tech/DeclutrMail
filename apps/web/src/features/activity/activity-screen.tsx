@@ -10,6 +10,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useIsFetching } from '@tanstack/react-query';
 
 import {
@@ -18,14 +19,19 @@ import {
   EmptyState,
   ErrorState as RecoverableErrorState,
   ScreenIntro,
+  TechnicalDetails,
   tokens,
   useFocusTrap,
   useIsAtMost,
 } from '@declutrmail/shared';
+import { getActionSemantics } from '@declutrmail/shared/actions';
 
+import { ContextualHelp } from '@/features/help/contextual-help';
 import { ApiError } from '@/lib/api/client';
+import { getActionFailureCopy, technicalErrorDetails } from '@/lib/action-error-copy';
 import type {
   ActivityActionWire,
+  ActivityExecutionStateWire,
   ActivityFilters,
   ActivityRowWire,
   ActivitySourceFilterWire,
@@ -33,10 +39,18 @@ import type {
   ActivityVerbFilterWire,
   ActivityWindowWire,
 } from '@/lib/api/activity';
+import { newIdempotencyKey, type ActionRecoveryPreviewResult } from '@/lib/api/actions';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
-import { useActivity, useRevertActivity } from './api/use-activity';
+import {
+  useActionRecoveryPreview,
+  useActivity,
+  useConfirmActionRecovery,
+  useCreateActionRecoveryPreview,
+  useRevertActivity,
+} from './api/use-activity';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
 
@@ -77,6 +91,7 @@ export function ActivityScreen() {
   const params = useSearchParams();
   const auth = useOptionalAuth();
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
+  const activeMailboxId = auth?.me.activeMailboxId ?? null;
 
   const dateFilters = readDateFiltersFromUrl(params);
   const filters = readFiltersFromUrl(params, dateFilters);
@@ -268,9 +283,16 @@ export function ActivityScreen() {
       <ScreenIntro
         id="activity"
         title="Activity"
-        body="Every decision taken on your mail — by you, by Autopilot, by your rules. Filter by source, verb, sender, or date. Each reversible row shows its exact Activity window; Delete can be undone for up to 30 days while Gmail still retains Trash."
+        body="Every decision taken on your mail — by you, by Autopilot, by your rules. Filter by source, verb, sender, or date. Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery for Delete is separate and normally lasts up to 30 days."
         tip="An empty list within a short window is fine — it means nothing changed. Widen the window to see history."
       />
+
+      <ContextualHelp question="Which Undo or recovery option applies?">
+        Activity Undo uses your DeclutrMail plan&apos;s window for Archive, Later, and Delete. Gmail
+        Trash recovery is a separate fallback for Delete and normally lasts up to 30 days. A
+        delivered unsubscribe request cannot be recalled; only an associated archive may have
+        Activity Undo.
+      </ContextualHelp>
 
       {!invalidActiveFilters && (
         <MetricsHeader
@@ -357,6 +379,7 @@ export function ActivityScreen() {
                 failedTokens={failedTokens}
                 isMobile={isMobile}
                 mailboxEmail={activeMailboxEmail}
+                mailboxId={activeMailboxId}
               />
             ) : (
               <ul
@@ -378,6 +401,7 @@ export function ActivityScreen() {
                     failedTokens={failedTokens}
                     isMobile={isMobile}
                     mailboxEmail={activeMailboxEmail}
+                    mailboxId={activeMailboxId}
                   />
                 ))}
               </ul>
@@ -595,13 +619,6 @@ function MetricsHeader({
         {stats.needsAttention > 0 && (
           <span style={{ color: color.amber, fontWeight: 600 }}>
             {stats.needsAttention} need attention
-          </span>
-        )}
-        {(stats.noisePreventedPerMonth ?? 0) > 0 && (
-          /* D33 payoff — real projection from the window's decisions,
-             computed server-side (activity.read-service). */
-          <span style={{ color: color.primary, fontWeight: 600 }}>
-            ~{stats.noisePreventedPerMonth!.toLocaleString()}/mo of noise prevented
           </span>
         )}
       </header>
@@ -1129,7 +1146,7 @@ function FilterDrawer({
         </div>
         <FilterBands {...bands} />
         <Button tone="primary" onClick={onClose}>
-          Done
+          View results
         </Button>
       </div>
     </>
@@ -1392,7 +1409,11 @@ function BulkActionBar({
     });
     if (failedTokenList.length > 0) {
       onSetBulkError(
-        `${failedTokenList.length} of ${targets.length} undo${targets.length === 1 ? '' : 's'} failed. Failed rows show "Try again".`,
+        getActionFailureCopy('revert-terminal', {
+          whatChanged: `${targets.length - failedTokenList.length} of ${targets.length} undo${targets.length === 1 ? '' : 's'} completed.`,
+          whatDidNotChange: `${failedTokenList.length} original action${failedTokenList.length === 1 ? ' was' : 's were'} not reversed.`,
+          nextStep: 'Use Try again on each failed row.',
+        }).message,
       );
       // Persist failed tokens to ActivityScreen state so per-row
       // UndoCell renders the "Try again" pill on each failed row
@@ -1548,6 +1569,7 @@ function GroupedList({
   failedTokens,
   isMobile,
   mailboxEmail,
+  mailboxId,
 }: {
   rows: readonly ActivityRowWire[];
   selectedIds: Set<string>;
@@ -1555,6 +1577,7 @@ function GroupedList({
   failedTokens?: Set<string> | undefined;
   isMobile: boolean;
   mailboxEmail: string | null;
+  mailboxId: string | null;
 }) {
   const groups = useMemo(() => groupBySender(rows), [rows]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -1694,6 +1717,7 @@ function GroupedList({
                     failedTokens={failedTokens}
                     isMobile={isMobile}
                     mailboxEmail={mailboxEmail}
+                    mailboxId={mailboxId}
                   />
                 ))}
               </ul>
@@ -1716,14 +1740,19 @@ const VERB_DOT: Record<ActivityActionWire, string> = {
   // D56 — the confirmed outcome reads as a completion; emerald (the
   // "done/kept" accent) sets it apart from the primary-accent intent row.
   unsubscribe_confirmed: color.emerald,
+  unsubscribe_endpoint_accepted: color.emerald,
+  unsubscribe_failed: color.red,
+  unsubscribe_unconfirmed: color.amber,
+  unsubscribe_action_required: color.amber,
+  unsubscribe_draft_opened: color.primary,
+  unsubscribe_user_marked_sent: color.emerald,
+  unsubscribe_unavailable: color.fgMuted,
   later: color.dashboard.accent,
   keep: color.emerald,
   'followup-dismiss': color.fgMuted,
-  // D43 VIP/Protect toggle audit rows — quiet (muted) accents: these
+  // Protect toggle audit rows — quiet (muted) accents: these
   // are standing-policy flips, not mail-moving verbs, so they read as
   // secondary entries alongside the K/A/U/L/D rows.
-  marked_vip: color.fgMuted,
-  unmarked_vip: color.fgMuted,
   marked_protected: color.fgMuted,
   unmarked_protected: color.fgMuted,
 };
@@ -1736,6 +1765,7 @@ function ActivityRow({
   failedTokens,
   isMobile = false,
   mailboxEmail,
+  mailboxId,
 }: {
   row: ActivityRowWire;
   isSelected: boolean;
@@ -1750,11 +1780,13 @@ function ActivityRow({
   isMobile?: boolean;
   /** Active Gmail account. Null in isolated stories, where links fail closed. */
   mailboxEmail: string | null;
+  /** Active mailbox target for reconnect. Null in isolated stories. */
+  mailboxId: string | null;
 }) {
   const senderName = row.sender?.displayName ?? 'Account-scoped action';
   const senderEmail = row.sender?.email ?? '';
   const senderDomain = row.sender?.domain ?? '';
-  const verbLabel = ACTION_LABEL[row.action];
+  const verbLabel = activityRowActionLabel(row);
   const sourceLabel = SOURCE_LABEL[row.source];
   const relative = relativeTime(row.occurredAt);
   const dotColor = VERB_DOT[row.action];
@@ -1891,7 +1923,12 @@ function ActivityRow({
           >
             {sourceAttribution}
           </span>
-          <RowActions row={row} failedTokens={failedTokens} mailboxEmail={mailboxEmail} />
+          <RowActions
+            row={row}
+            failedTokens={failedTokens}
+            mailboxEmail={mailboxEmail}
+            mailboxId={mailboxId}
+          />
         </div>
       </li>
     );
@@ -2039,7 +2076,12 @@ function ActivityRow({
             : `via ${sourceLabel}`}
         </span>
       </div>
-      <RowActions row={row} failedTokens={failedTokens} mailboxEmail={mailboxEmail} />
+      <RowActions
+        row={row}
+        failedTokens={failedTokens}
+        mailboxEmail={mailboxEmail}
+        mailboxId={mailboxId}
+      />
       <div
         style={{
           fontSize: 11.5,
@@ -2064,10 +2106,12 @@ function RowActions({
   row,
   failedTokens,
   mailboxEmail,
+  mailboxId,
 }: {
   row: ActivityRowWire;
   failedTokens?: Set<string> | undefined;
   mailboxEmail: string | null;
+  mailboxId: string | null;
 }) {
   return (
     <div
@@ -2082,10 +2126,607 @@ function RowActions({
         overflow: 'hidden',
       }}
     >
+      {row.executionState && (
+        <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
+      )}
       <UndoCell row={row} bulkFailedTokens={failedTokens} />
       <OpenInGmailLink row={row} mailboxEmail={mailboxEmail} />
     </div>
   );
+}
+
+/**
+ * Outcome-aware recovery entry point for failed label actions. A click starts
+ * a metadata-only Gmail verification pass; the mutation is offered only
+ * after the provider state has been inspected. Unsubscribe failures never
+ * enter this path because their irreversible remote outcome is ambiguous.
+ */
+function RecoveryCell({
+  row,
+  execution,
+  mailboxId,
+}: {
+  row: ActivityRowWire;
+  execution: ActivityExecutionStateWire;
+  mailboxId: string | null;
+}) {
+  const createPreview = useCreateActionRecoveryPreview();
+  const confirmRecovery = useConfirmActionRecovery();
+  const [open, setOpen] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const previewQuery = useActionRecoveryPreview(open ? previewId : null);
+  const confirmationRef = useRef<{
+    previewId: string;
+    wakeAt: string | null;
+    key: string;
+  } | null>(null);
+  const confirmationLockedRef = useRef(false);
+
+  const preview =
+    previewQuery.data ??
+    (createPreview.data?.previewId === previewId ? createPreview.data : undefined);
+
+  const isUnsubscribe = row.action.startsWith('unsubscribe');
+  const resetConfirmation = () => {
+    confirmationRef.current = null;
+    confirmationLockedRef.current = false;
+    confirmRecovery.reset();
+  };
+
+  const startReview = async () => {
+    if (createPreview.isPending) return;
+    setOpen(true);
+    setPreviewId(null);
+    createPreview.reset();
+    resetConfirmation();
+    try {
+      const result = await createPreview.mutateAsync(execution.actionId);
+      setPreviewId(result.previewId);
+    } catch {
+      // The modal owns the actionable, non-destructive failure copy.
+    }
+  };
+
+  const close = () => {
+    if (confirmRecovery.isPending) return;
+    setOpen(false);
+    setPreviewId(null);
+    createPreview.reset();
+    resetConfirmation();
+  };
+
+  const confirm = async (wakeAt?: string) => {
+    if (!preview || preview.status !== 'ready' || confirmationLockedRef.current) return;
+    confirmationLockedRef.current = true;
+    const identity = confirmationRef.current;
+    const confirmationWakeAt = wakeAt ?? null;
+    const idempotencyKey =
+      identity?.previewId === preview.previewId && identity.wakeAt === confirmationWakeAt
+        ? identity.key
+        : newIdempotencyKey();
+    confirmationRef.current = {
+      previewId: preview.previewId,
+      wakeAt: confirmationWakeAt,
+      key: idempotencyKey,
+    };
+    try {
+      await confirmRecovery.mutateAsync({
+        previewId: preview.previewId,
+        idempotencyKey,
+        ...(wakeAt ? { wakeAt } : {}),
+      });
+      setOpen(false);
+      setPreviewId(null);
+    } catch {
+      // Retain the SAME key for a safe user/network replay of this confirm.
+      confirmationLockedRef.current = false;
+    }
+  };
+
+  const retryVerification = async () => {
+    if (createPreview.isPending) return;
+    createPreview.reset();
+    setPreviewId(null);
+    resetConfirmation();
+    try {
+      const result = await createPreview.mutateAsync(execution.actionId);
+      setPreviewId(result.previewId);
+    } catch {
+      // The modal remains open with the start-review error state.
+    }
+  };
+
+  const baseStyle: CSSProperties = {
+    fontSize: 12,
+    fontFamily: font.sans,
+    fontWeight: 500,
+    padding: '6px 12px',
+    background: 'transparent',
+    border: 'none',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    whiteSpace: 'nowrap',
+  };
+
+  if (execution.kind === 'in_progress') {
+    return (
+      <span
+        role="status"
+        style={{ ...baseStyle, color: color.fgMuted, fontFamily: font.mono, fontSize: 10.5 }}
+      >
+        {execution.isRecovery ? 'Retrying…' : 'Running…'}
+      </span>
+    );
+  }
+
+  if (execution.resolution === 'support' || isUnsubscribe) {
+    return (
+      <span
+        title={
+          isUnsubscribe
+            ? 'DeclutrMail cannot safely repeat an unsubscribe request without confirming its remote outcome.'
+            : 'This action cannot be retried safely from Activity.'
+        }
+        style={{ ...baseStyle, color: color.amber, cursor: 'help' }}
+      >
+        Needs attention
+      </span>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => void startReview()}
+        disabled={createPreview.isPending}
+        style={{
+          ...baseStyle,
+          color: color.amber,
+          cursor: createPreview.isPending ? 'wait' : 'pointer',
+          fontWeight: 600,
+        }}
+      >
+        {createPreview.isPending ? 'Checking…' : 'Review and try again'}
+      </button>
+      {open && typeof document !== 'undefined'
+        ? createPortal(
+            <ActionRecoveryDialog
+              row={row}
+              preview={preview}
+              isStarting={createPreview.isPending || (previewId !== null && previewQuery.isPending)}
+              startError={createPreview.error ?? (previewQuery.data ? null : previewQuery.error)}
+              confirmError={confirmRecovery.error}
+              isConfirming={confirmRecovery.isPending || confirmationLockedRef.current}
+              onRetryVerification={() => void retryVerification()}
+              onConfirm={(wakeAt) => void confirm(wakeAt)}
+              onReconnect={() => startMailboxConnect(mailboxId ?? undefined)}
+              onClose={close}
+            />,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
+function ActionRecoveryDialog({
+  row,
+  preview,
+  isStarting,
+  startError,
+  confirmError,
+  isConfirming,
+  onRetryVerification,
+  onConfirm,
+  onReconnect,
+  onClose,
+}: {
+  row: ActivityRowWire;
+  preview: ActionRecoveryPreviewResult | undefined;
+  isStarting: boolean;
+  startError: Error | null;
+  confirmError: Error | null;
+  isConfirming: boolean;
+  onRetryVerification: () => void;
+  onConfirm: (wakeAt?: string) => void;
+  onReconnect: () => void;
+  onClose: () => void;
+}) {
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const [wakeAtLocal, setWakeAtLocal] = useState('');
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isConfirming) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isConfirming, onClose]);
+
+  useEffect(() => {
+    if (!preview?.requiresNewWakeAt) {
+      setWakeAtLocal('');
+      return;
+    }
+    const defaultWake = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    setWakeAtLocal(toLocalDateTimeInput(defaultWake));
+  }, [preview?.previewId, preview?.requiresNewWakeAt]);
+
+  const wakeAt = wakeAtLocal ? new Date(wakeAtLocal) : null;
+  const wakeAtValid =
+    !preview?.requiresNewWakeAt ||
+    (wakeAt !== null && Number.isFinite(wakeAt.getTime()) && wakeAt.getTime() > Date.now());
+  const ready = preview?.status === 'ready';
+  const confirmNeedsRecheck = confirmError ? recoveryConfirmNeedsRecheck(confirmError) : false;
+  const canConfirm = ready && wakeAtValid && !isConfirming && !confirmNeedsRecheck;
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(14,20,19,0.45)',
+          backdropFilter: 'blur(3px)',
+          zIndex: 170,
+        }}
+      />
+      <div
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="action-recovery-title"
+        data-testid="action-recovery-dialog"
+        style={{
+          position: 'fixed',
+          top: '12vh',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 'min(520px, calc(100vw - 32px))',
+          maxHeight: '78vh',
+          overflow: 'auto',
+          background: color.card,
+          borderRadius: 14,
+          border: `1px solid ${color.border}`,
+          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
+          zIndex: 171,
+          fontFamily: font.sans,
+        }}
+      >
+        <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
+          <div
+            style={{
+              fontFamily: font.mono,
+              fontSize: 10.5,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color: color.fgMuted,
+            }}
+          >
+            Verify first · nothing changes yet
+          </div>
+          <h2
+            id="action-recovery-title"
+            style={{ fontSize: 19, fontWeight: 600, margin: '6px 0 0', color: color.fg }}
+          >
+            Review failed {ACTION_LABEL[row.action].toLowerCase()}
+          </h2>
+          <p style={{ margin: '8px 0 0', color: color.fgSoft, fontSize: 13, lineHeight: 1.5 }}>
+            DeclutrMail checks Gmail&apos;s current label state before offering another attempt.
+            This check reads only the current Gmail label state.
+          </p>
+        </div>
+
+        <div style={{ padding: '18px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <RecoveryPreviewBody
+            preview={preview}
+            isStarting={isStarting}
+            startError={startError}
+            onRetryVerification={onRetryVerification}
+            onReconnect={onReconnect}
+          />
+
+          {ready && preview && (
+            <>
+              <RecoveryConsequence preview={preview} />
+              {preview.requiresNewWakeAt ? (
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
+                  <span style={{ color: color.fgMuted }}>New return time</span>
+                  <input
+                    type="datetime-local"
+                    value={wakeAtLocal}
+                    min={toLocalDateTimeInput(new Date(Date.now() + 60_000))}
+                    onChange={(event) => setWakeAtLocal(event.target.value)}
+                    style={{
+                      border: `1px solid ${color.border}`,
+                      borderRadius: 8,
+                      background: color.bg,
+                      color: color.fg,
+                      fontFamily: font.sans,
+                      fontSize: 13,
+                      padding: '8px 10px',
+                    }}
+                  />
+                  {!wakeAtValid && (
+                    <span role="alert" style={{ color: color.red, fontSize: 12 }}>
+                      Choose a future return time.
+                    </span>
+                  )}
+                </label>
+              ) : preview.verb === 'later' && preview.wakeAt ? (
+                <p style={{ margin: 0, color: color.fgMuted, fontSize: 12.5 }}>
+                  Return time: {formatRecoveryDate(preview.wakeAt)}
+                </p>
+              ) : null}
+            </>
+          )}
+
+          {confirmError && (
+            <div
+              role="alert"
+              style={{
+                border: `1px solid ${color.red}`,
+                borderRadius: 8,
+                background: 'rgba(239,68,68,0.07)',
+                color: color.red,
+                fontSize: 12.5,
+                lineHeight: 1.45,
+                padding: '9px 11px',
+              }}
+            >
+              {recoveryConfirmErrorMessage(confirmError)}
+              {confirmNeedsRecheck && (
+                <div style={{ marginTop: 8 }}>
+                  <Button tone="default" onClick={onRetryVerification}>
+                    Check Gmail again
+                  </Button>
+                </div>
+              )}
+              <TechnicalDetails summary="Show support details" style={{ marginTop: 6 }}>
+                {technicalErrorDetails(confirmError)}
+              </TechnicalDetails>
+            </div>
+          )}
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 8,
+            padding: '14px 24px 18px',
+            borderTop: `1px solid ${color.line}`,
+          }}
+        >
+          <Button tone="default" onClick={onClose} disabled={isConfirming}>
+            Close
+          </Button>
+          {ready && preview && (
+            <Button
+              tone="primary"
+              onClick={() =>
+                onConfirm(preview.requiresNewWakeAt && wakeAt ? wakeAt.toISOString() : undefined)
+              }
+              disabled={!canConfirm}
+            >
+              {isConfirming
+                ? 'Queuing…'
+                : preview.outcome === 'already_applied'
+                  ? 'Reconcile Activity'
+                  : 'Try this action again'}
+            </Button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function RecoveryPreviewBody({
+  preview,
+  isStarting,
+  startError,
+  onRetryVerification,
+  onReconnect,
+}: {
+  preview: ActionRecoveryPreviewResult | undefined;
+  isStarting: boolean;
+  startError: Error | null;
+  onRetryVerification: () => void;
+  onReconnect: () => void;
+}) {
+  if (startError) {
+    return <RecoveryVerificationFailure error={startError} onRetry={onRetryVerification} />;
+  }
+
+  if (isStarting || preview?.status === 'verifying') {
+    return (
+      <div role="status" aria-live="polite" style={{ color: color.fgSoft, fontSize: 13 }}>
+        Checking Gmail&apos;s current state…
+      </div>
+    );
+  }
+
+  if (!preview) {
+    return <RecoveryVerificationFailure error={null} onRetry={onRetryVerification} />;
+  }
+
+  if (preview.status === 'consumed' && preview.outcome === 'no_change_needed') {
+    return (
+      <div role="status" style={{ color: color.emerald, fontSize: 13, lineHeight: 1.5 }}>
+        <strong>Nothing is left to retry.</strong> Gmail no longer has an applicable message in this
+        action&apos;s verified set, so no new action was queued.
+      </div>
+    );
+  }
+
+  if (preview.status === 'failed') {
+    if (preview.outcome === 'reconnect_required') {
+      return (
+        <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
+          DeclutrMail could not verify Gmail because access needs attention. Reconnect the account,
+          wait for its sync to finish, then return to Activity and choose Review and try again.
+          <div style={{ marginTop: 10 }}>
+            <Button tone="primary" onClick={onReconnect}>
+              Reconnect Gmail
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    if (preview.outcome === 'blocked') {
+      return (
+        <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
+          This action cannot be recovered safely from Activity. No new action was queued.
+        </div>
+      );
+    }
+    return <RecoveryVerificationFailure error={null} onRetry={onRetryVerification} />;
+  }
+
+  if (preview.status === 'consumed') {
+    return (
+      <div role="status" style={{ color: color.emerald, fontSize: 13 }}>
+        This verified review has already been used.
+      </div>
+    );
+  }
+
+  const applied = preview.alreadyAppliedCount;
+  return (
+    <div
+      style={{
+        border: `1px solid ${color.lineSoft}`,
+        borderRadius: 10,
+        background: color.bg,
+        padding: '12px 14px',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+        gap: 10,
+      }}
+    >
+      <RecoveryCount label="Will be reconciled" value={preview.remainingCount} />
+      <RecoveryCount label="Already applied" value={applied} />
+      <RecoveryCount label="No longer available" value={preview.unavailableCount} />
+      <RecoveryCount label="Verified set" value={preview.targetCount} />
+    </div>
+  );
+}
+
+function RecoveryVerificationFailure({
+  error,
+  onRetry,
+}: {
+  error: Error | null;
+  onRetry: () => void;
+}) {
+  return (
+    <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
+      Gmail&apos;s current state could not be verified. Nothing changed.
+      <div style={{ marginTop: 10 }}>
+        <Button tone="default" onClick={onRetry}>
+          Check again
+        </Button>
+      </div>
+      {error && (
+        <TechnicalDetails summary="Show support details" style={{ marginTop: 8 }}>
+          {technicalErrorDetails(error)}
+        </TechnicalDetails>
+      )}
+    </div>
+  );
+}
+
+function RecoveryCount({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <div style={{ fontFamily: font.mono, fontSize: 18, color: color.fg }}>{value}</div>
+      <div style={{ color: color.fgMuted, fontSize: 11.5 }}>{label}</div>
+    </div>
+  );
+}
+
+function RecoveryConsequence({ preview }: { preview: ActionRecoveryPreviewResult }) {
+  const actionCopy =
+    preview.verb === 'archive'
+      ? 'Archive removes Inbox from the verified messages. It does not delete them.'
+      : preview.verb === 'delete'
+        ? 'Delete moves the verified messages to Gmail Trash. Gmail Trash recovery remains separate.'
+        : 'Later removes Inbox now and returns the verified messages at the confirmed time.';
+  const outcomeCopy =
+    preview.outcome === 'already_applied'
+      ? 'Gmail already reflects this action. Confirming reconciles DeclutrMail’s Activity and Undo record without creating a duplicate provider effect.'
+      : preview.outcome === 'partial'
+        ? 'Gmail reflects only part of the original action. Confirming safely reconciles the entire verified set.'
+        : 'Gmail does not yet reflect the failed action for this verified set.';
+  return (
+    <div
+      style={{
+        borderLeft: `3px solid ${color.amber}`,
+        background: color.paper,
+        padding: '10px 12px',
+        color: color.fgSoft,
+        fontSize: 12.5,
+        lineHeight: 1.5,
+      }}
+    >
+      <div>{outcomeCopy}</div>
+      <div style={{ marginTop: 4 }}>{actionCopy}</div>
+      {preview.unavailableCount > 0 && (
+        <div style={{ marginTop: 4 }}>
+          {preview.unavailableCount} unavailable message
+          {preview.unavailableCount === 1 ? '' : 's'} will not be changed.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function toLocalDateTimeInput(date: Date): string {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function formatRecoveryDate(iso: string): string {
+  const date = new Date(iso);
+  return Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+    : iso;
+}
+
+function recoveryConfirmErrorMessage(error: Error): string {
+  const code = apiErrorCode(error);
+  if (code === 'RECOVERY_PREVIEW_EXPIRED') {
+    return 'This review expired. Check Gmail again before trying the action.';
+  }
+  if (code === 'LATER_TIMER_SUPERSEDED') {
+    return 'This sender already has a newer Later schedule. The failed schedule was not replayed.';
+  }
+  if (code === 'LATER_WAKE_TIME_REQUIRED') {
+    return 'The saved return time has passed. Nothing was queued. Check Gmail again, then choose a new future return time.';
+  }
+  if (code === 'ACTION_NO_LONGER_FAILED') {
+    return 'This action no longer needs recovery. Refresh Activity to see its current state.';
+  }
+  if (code === 'IDEMPOTENCY_KEY_CONFLICT' || code === 'RECOVERY_ALREADY_REQUESTED') {
+    return 'This recovery review was already used. Refresh Activity to see the current attempt.';
+  }
+  return 'DeclutrMail could not confirm that the queued attempt reached the worker. Gmail may not have changed yet. Try the same confirmation again; it will not create a duplicate.';
+}
+
+function recoveryConfirmNeedsRecheck(error: Error): boolean {
+  const code = apiErrorCode(error);
+  return code === 'RECOVERY_PREVIEW_EXPIRED' || code === 'LATER_WAKE_TIME_REQUIRED';
+}
+
+function apiErrorCode(error: Error): string | null {
+  const body = error instanceof ApiError ? error.body : null;
+  return body && typeof body === 'object' && 'code' in body && typeof body.code === 'string'
+    ? body.code
+    : null;
 }
 
 /**
@@ -2198,7 +2839,9 @@ function UndoCell({
         disabled={isPendingHere}
         title={
           failed
-            ? `Last attempt failed: ${revert.error?.message ?? 'click failed in a bulk undo'}. Click to retry.`
+            ? getActionFailureCopy('revert-enqueue', {
+                nextStep: 'Click to try again.',
+              }).message
             : 'Revert this action.'
         }
         style={{
@@ -2319,10 +2962,10 @@ function ActivityErrorState({
   const isClientInput = isFilterError || isActivityFilterValidationError(error);
   const title = isClientInput ? 'Check your activity filters' : "We couldn't load your activity";
   const message = isClientInput
-    ? 'Use valid dates and make sure From is earlier than To, or reset the date range and try again.'
+    ? 'Nothing changed. Activity could not load this filter. Use valid dates and make sure From is earlier than To, or reset the date range and try again.'
     : error instanceof ApiError
-      ? `We couldn't load your activity (${error.status}). Try again in a moment.`
-      : "We couldn't load your activity right now. Try again in a moment.";
+      ? `Your mailbox and actions are unchanged. Activity could not load (${error.status}). Try again in a moment.`
+      : 'Your mailbox and actions are unchanged. Activity could not load right now. Try again in a moment.';
   return (
     <div
       style={{
@@ -2338,6 +2981,10 @@ function ActivityErrorState({
         onRetry={onRecover}
         retryLabel={recoveryLabel}
       />
+      <TechnicalDetails summary="Show support details" style={{ marginTop: 12 }}>
+        {error instanceof ApiError ? `HTTP ${error.status}: ` : ''}
+        {technicalErrorDetails(error)}
+      </TechnicalDetails>
     </div>
   );
 }
@@ -2432,30 +3079,62 @@ function Chip({
 // ── Helpers ───────────────────────────────────────────────────────────
 
 const ACTION_LABEL: Record<ActivityActionWire, string> = {
-  keep: 'Kept',
-  archive: 'Archived',
+  keep: getActionSemantics('keep').resultLabel,
+  archive: getActionSemantics('archive').resultLabel,
   // D9 — the intent row records the ATTEMPT, never success: "UI copy is
   // deliberately uncertain — never promise." A one-click POST may still
   // fail and a mailto is manual (D230), so at click time the outcome is
   // unknown. "Unsubscribe requested" (not "Unsubscribed") keeps the row
-  // honest; the separate `unsubscribe_confirmed` row records only that
-  // the sender endpoint accepted the request with a 2xx response.
-  unsubscribe: 'Unsubscribe requested',
-  // D56 — the endpoint accepted the request. The sender still controls
-  // whether and when future delivery stops.
-  unsubscribe_confirmed: 'Request accepted',
-  later: 'Later',
+  // honest; the separate `unsubscribe_confirmed` row is the only place
+  // that promises success, and it is written only on a 2xx accept.
+  unsubscribe: getActionSemantics('unsubscribe').resultLabel,
+  // D56 — the confirmed OUTCOME row (brand's endpoint accepted). This is
+  // the one row that states the unsubscribe actually went through.
+  unsubscribe_confirmed: 'Unsubscribe endpoint accepted request',
+  unsubscribe_endpoint_accepted: 'Unsubscribe endpoint accepted request',
+  unsubscribe_failed: 'Unsubscribe request failed',
+  unsubscribe_unconfirmed: 'Unsubscribe result unconfirmed',
+  unsubscribe_action_required: 'Email request required',
+  unsubscribe_draft_opened: 'Gmail draft opened',
+  unsubscribe_user_marked_sent: 'Marked unsubscribe email sent',
+  unsubscribe_unavailable: 'No unsubscribe channel available',
+  later: getActionSemantics('later').resultLabel,
   // D227 K/A/U/L/D — Delete verb (ADR-0019). The audit copy uses
   // "Deleted" rather than "Trashed" to stay verb-symmetric with
   // "Archived"; spec L312 confirms "Delete" is the user-facing verb.
-  delete: 'Deleted',
+  delete: getActionSemantics('delete').resultLabel,
   'followup-dismiss': 'Followup resolved',
-  // D43 VIP/Protect toggle audit rows (senders policy write path).
-  marked_vip: 'Marked VIP',
-  unmarked_vip: 'VIP removed',
+  // Protect toggle audit rows (senders policy write path).
   marked_protected: 'Protected',
   unmarked_protected: 'Unprotected',
 };
+
+/** Synthetic action-job rows describe intent/progress, never a completed outcome. */
+function activityRowActionLabel(row: ActivityRowWire): string {
+  if (!row.executionState) return ACTION_LABEL[row.action];
+  if (row.action !== 'archive' && row.action !== 'later' && row.action !== 'delete') {
+    return ACTION_LABEL[row.action];
+  }
+  if (row.executionState.kind === 'failed') {
+    if (row.action === 'archive') return 'Archive failed';
+    if (row.action === 'later') return 'Later failed';
+    return 'Delete failed';
+  }
+  if (row.action === 'archive') return 'Archiving…';
+  if (row.action === 'later') return 'Moving to Later…';
+  return 'Deleting…';
+}
+
+function activityRowExecutionLabel(row: ActivityRowWire): string {
+  const execution = row.executionState;
+  if (!execution) return 'Completed';
+  if (execution.kind === 'in_progress') {
+    const prefix = execution.isRecovery ? 'Recovery ' : '';
+    return `${prefix}${execution.status === 'queued' ? 'queued' : 'in progress'}`;
+  }
+  if (execution.resolution === 'review') return 'Failed · review available';
+  return 'Failed · support required';
+}
 
 const SOURCE_LABEL: Record<ActivityRowWire['source'], string> = {
   triage: 'Triage',
@@ -2633,16 +3312,18 @@ export function rowsToCsv(rows: readonly ActivityRowWire[]): string {
     'Sender Name',
     'Sender Email',
     'Affected Messages',
+    'Execution Status',
     'Undo State',
   ].join(',');
   const lines = rows.map((row) =>
     [
       row.occurredAt,
-      ACTION_LABEL[row.action],
+      activityRowActionLabel(row),
       SOURCE_LABEL[row.source],
       row.sender?.displayName ?? '',
       row.sender?.email ?? '',
       String(row.affectedCount),
+      activityRowExecutionLabel(row),
       row.undoState.kind,
     ]
       .map(csvField)

@@ -47,7 +47,7 @@ const noop = (): void => undefined;
 export const Default: Story = {
   render: () => (
     <Container>
-      <ActionPopover onPick={noop} onClose={noop} />
+      <ActionPopover ariaLabel="Actions for Acme Deals" onPick={noop} onClose={noop} />
     </Container>
   ),
 };
@@ -57,7 +57,12 @@ export const Default: Story = {
 export const DimmedPrimary: Story = {
   render: () => (
     <Container>
-      <ActionPopover dimmedVerb="unsubscribe" onPick={noop} onClose={noop} />
+      <ActionPopover
+        ariaLabel="Actions for Acme Deals"
+        dimmedVerb="unsubscribe"
+        onPick={noop}
+        onClose={noop}
+      />
     </Container>
   ),
 };
@@ -69,6 +74,7 @@ export const PartialCapabilities: Story = {
   render: () => (
     <Container>
       <ActionPopover
+        ariaLabel="Actions for Acme Deals"
         capabilities={{
           keep: true,
           archive: true,
@@ -90,6 +96,7 @@ export const DeleteSuppressed: Story = {
   render: () => (
     <Container>
       <ActionPopover
+        ariaLabel="Actions for Acme Deals"
         verbs={['keep', 'archive', 'unsubscribe', 'later']}
         onPick={noop}
         onClose={noop}
@@ -119,7 +126,7 @@ export const BulkSelection: Story = {
 export const Trigger: Story = {
   render: () => (
     <div style={{ padding: 24, background: color.bg, fontFamily: font.sans }}>
-      <ActionPopoverTrigger onClick={noop} />
+      <ActionPopoverTrigger onClick={noop} ariaLabel="More actions for Acme Deals" />
     </div>
   ),
 };

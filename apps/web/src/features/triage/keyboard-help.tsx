@@ -148,7 +148,7 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
           <ShortcutRow keys="Z" label="Undo the last decision" />
 
           <SectionLabel>In a preview</SectionLabel>
-          <ShortcutRow keys="⌘⏎" label="Confirm the action sheet" />
+          <ShortcutRow keys="⌘⏎" label="Confirm the preview" />
           <ShortcutRow keys="Esc" label="Cancel the sheet / dismiss an inline preview" />
           <ShortcutRow keys="?" label="Toggle this overlay" />
         </div>

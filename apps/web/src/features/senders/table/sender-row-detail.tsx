@@ -1,6 +1,5 @@
 'use client';
 
-import { useMemo } from 'react';
 import { Button, Eyebrow, tokens } from '@declutrmail/shared';
 import type { TimeseriesPointDto } from '@/lib/api/senders';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
@@ -8,14 +7,14 @@ import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { useSenderMessages } from '../api/use-sender-messages';
 import { useSenderTimeseries } from '../api/use-sender-timeseries';
 import {
+  canArchive,
   canLater,
   canUnsubscribe,
-  isStandingProtected,
-  recommendAction,
   relTimeLabel,
   type ActionRequest,
   type Sender,
 } from '../data';
+import { derivePrimaryVerbId, leadButtonTone } from '../action-row';
 
 const { color, font } = tokens;
 
@@ -110,6 +109,7 @@ export function SenderRowDetail({
    */
   variant?: 'row' | 'panel';
 }) {
+  const primary = derivePrimaryVerbId(s);
   const auth = useOptionalAuth();
   const gmailUrl = auth
     ? GmailOpenLinkService.buildFromSearchLink({
@@ -117,53 +117,18 @@ export function SenderRowDetail({
         from: `@${s.domain}`,
       })
     : null;
-  const rec = recommendAction(s);
-  const recLabel = rec ?? 'Keep';
-
-  const recTone: 'warn' | 'dark' | null =
-    rec === 'Unsubscribe' ? 'warn' : rec === 'Later' ? 'dark' : null;
-  const calloutBg =
-    recTone === 'warn'
-      ? `linear-gradient(180deg, ${color.amberBg}, transparent 60%), ${color.card}`
-      : recTone === 'dark'
-        ? `linear-gradient(180deg, rgba(14,20,19,0.04), transparent 60%), ${color.card}`
-        : `linear-gradient(180deg, ${color.primarySoft}, transparent 60%), ${color.card}`;
-  const calloutBorder =
-    recTone === 'warn'
-      ? 'rgba(245,158,11,0.35)'
-      : recTone === 'dark'
-        ? color.line
-        : color.primaryBorder;
-
-  const why = useMemo(() => {
-    const read = Math.round(s.read * 100);
-    if (rec === 'Unsubscribe') {
-      return s.spike
-        ? `Volume spike (${s.spike}× usual) on a sender you almost never open (${read}% read).`
-        : `${s.monthly} emails per month at ${read}% read — this sender mostly fills the inbox without being seen.`;
-    }
-    if (rec === 'Later') {
-      return `${s.monthly}/mo at ${read}% read. "Later" keeps the mail in Gmail but stops surfacing it in the daily queue.`;
-    }
-    if (isStandingProtected(s)) {
-      return "Protected — bulk actions can't touch this sender. Remove protection from its detail page to change that.";
-    }
-    if (s.read >= 0.7) return `You read ${read}% of ${s.name}'s mail. No action recommended.`;
-    return `${s.monthly}/mo at ${read}% read — no strong signal either way.`;
-  }, [s, rec]);
-
   const lastBarColor =
-    recTone === 'warn' ? color.amber : recTone === 'dark' ? color.fg : color.primary;
+    primary === 'unsubscribe' ? color.amber : primary === 'archive' ? color.fg : color.primary;
 
   const stats: { k: string; v: string; small?: string; valueColor?: string }[] = [
     { k: 'Total ever', v: s.total != null ? s.total.toLocaleString() : '—', small: 'emails' },
-    { k: 'Last opened', v: relTimeLabel(s.lastDays) },
+    { k: 'Last received', v: relTimeLabel(s.lastDays) },
     {
-      k: 'Read rate',
+      k: 'Marked read',
       v: `${Math.round(s.read * 100)}%`,
       valueColor: s.read >= 0.5 ? color.primary : s.read >= 0.2 ? color.fg : color.amber,
     },
-    { k: 'Volume', v: s.monthly.toLocaleString(), small: '/mo' },
+    { k: 'Last 30 days', v: s.monthly.toLocaleString(), small: 'messages' },
   ];
 
   return (
@@ -178,48 +143,6 @@ export function SenderRowDetail({
         gap: 16,
       }}
     >
-      {/* Why we recommend */}
-      <div
-        style={{
-          background: calloutBg,
-          border: `1px solid ${calloutBorder}`,
-          borderRadius: 12,
-          padding: '16px 20px',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 16,
-          alignItems: 'center',
-        }}
-      >
-        {/* 34ch basis: full sentence + button share the row at table
-            width; the button wraps below inside the narrow sheet. */}
-        <div style={{ minWidth: 0, flex: '1 1 34ch' }}>
-          <Eyebrow tone={recTone === 'warn' ? 'amber' : recTone === 'dark' ? 'default' : 'primary'}>
-            {rec ? `Recommended · ${recLabel}` : 'No recommendation · Keep'}
-          </Eyebrow>
-          <p
-            style={{
-              margin: '6px 0 0',
-              color: color.fg,
-              fontSize: 14,
-              lineHeight: 1.55,
-              maxWidth: '62ch',
-            }}
-          >
-            {why}
-          </p>
-        </div>
-        {rec && (
-          <Button
-            tone={rec === 'Unsubscribe' ? 'warn' : 'dark'}
-            size="md"
-            onClick={() => onAction({ verb: rec, senders: [s] })}
-          >
-            {recLabel}
-          </Button>
-        )}
-      </div>
-
       {/* Stat cards — auto-fit: 4-across at table width (unchanged),
           2×2 inside the narrow SenderPeek sheet. */}
       <div
@@ -313,26 +236,34 @@ export function SenderRowDetail({
           <div style={{ display: 'flex', gap: 6 }}>
             <Button
               size="sm"
-              tone={!rec ? 'dark' : 'default'}
+              tone={primary === 'keep' ? leadButtonTone('Keep') : 'default'}
               onClick={() => onAction({ verb: 'Keep', senders: [s] })}
             >
               Keep
             </Button>
             <Button
               size="sm"
-              tone={rec === 'Later' ? 'dark' : 'default'}
-              disabled={!canLater(s)}
-              onClick={() => onAction({ verb: 'Later', senders: [s] })}
+              tone={primary === 'archive' ? leadButtonTone('Archive') : 'default'}
+              disabled={!canArchive(s)}
+              onClick={() => onAction({ verb: 'Archive', senders: [s] })}
             >
-              Later
+              Archive
             </Button>
             <Button
               size="sm"
-              tone={rec === 'Unsubscribe' ? 'warn' : 'default'}
+              tone={primary === 'unsubscribe' ? leadButtonTone('Unsubscribe') : 'default'}
               disabled={!canUnsubscribe(s)}
               onClick={() => onAction({ verb: 'Unsubscribe', senders: [s] })}
             >
               Unsubscribe
+            </Button>
+            <Button
+              size="sm"
+              tone={primary === 'later' ? leadButtonTone('Later') : 'default'}
+              disabled={!canLater(s)}
+              onClick={() => onAction({ verb: 'Later', senders: [s] })}
+            >
+              Later
             </Button>
           </div>
         </div>

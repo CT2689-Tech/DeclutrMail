@@ -154,7 +154,7 @@ export function cardBullets(tier: TierDefinition): readonly string[] {
     bullets.push(`${tier.inboxLimit} connected ${tier.inboxLimit === 1 ? 'inbox' : 'inboxes'}`);
   }
   if (!prev || tier.undoWindowDays !== prev.undoWindowDays) {
-    bullets.push(`${tier.undoWindowDays}-day Archive/Later Activity undo`);
+    bullets.push(`${tier.undoWindowDays}-day Activity Undo for Archive, Later, and Delete`);
   }
 
   return bullets;
@@ -201,7 +201,7 @@ export function compareRows(): readonly CompareRow[] {
       values: tiers.map((tier) => String(tier.inboxLimit)),
     },
     {
-      label: 'Archive/Later Activity undo',
+      label: 'Activity Undo for Archive, Later, and Delete',
       values: tiers.map((tier) => `${tier.undoWindowDays} days`),
     },
   ];

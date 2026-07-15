@@ -10,4 +10,6 @@ export const snoozedKeys = {
   all: ['snoozed'] as const,
   /** The Later-bucket list — the only Snoozed read endpoint at launch. */
   list: () => ['snoozed', 'list'] as const,
+  /** Small all-tier summary for the persistent app-shell recovery alert. */
+  recovery: () => ['snoozed', 'recovery'] as const,
 };

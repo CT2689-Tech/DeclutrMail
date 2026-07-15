@@ -87,7 +87,8 @@ const VERB_EXPLAINERS: Record<(typeof VERB_REGISTRY)[number]['id'], string> = {
   archive: 'Move matching inbox messages out of Inbox. They remain searchable in All Mail.',
   unsubscribe:
     'Request that the sender stop future mail. Existing messages stay put unless you choose another action.',
-  later: 'Move matching inbox messages to DeclutrMail/Later. This is not Gmail’s timed Snooze.',
+  later:
+    'Move matching inbox messages to DeclutrMail/Later until a chosen sender-level return time.',
   delete:
     'Move matching inbox messages to Gmail Trash, normally for up to 30 days unless Trash is emptied sooner.',
 };
@@ -267,7 +268,9 @@ export function GmailCompanion() {
         </div>
         <div role="row">
           <b role="cell">Later</b>
-          <span role="cell">Move existing inbox mail to DeclutrMail/Later · not timed Snooze</span>
+          <span role="cell">
+            Move current sender mail to DeclutrMail/Later · return it at the chosen time
+          </span>
         </div>
         <div role="row">
           <b role="cell">Delete</b>

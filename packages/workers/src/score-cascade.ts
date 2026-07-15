@@ -1,4 +1,4 @@
-import type { TriageVerdict } from '@declutrmail/db';
+import type { ProtectionReason, TriageVerdict } from '@declutrmail/db';
 
 /**
  * The deterministic decision engine cascade (D20, D21, D22).
@@ -46,8 +46,9 @@ import type { TriageVerdict } from '@declutrmail/db';
 export type CascadeRuleId =
   // Phase A — protection / engagement rules (always Keep).
   | 'protect_user_defined'
-  | 'protect_vip'
-  | 'protect_engagement_based'
+  | 'protect_replied'
+  | 'protect_starred'
+  | 'protect_gmail_important'
   | 'replied_at_least_once'
   | 'gmail_primary'
   | 'starred_recently'
@@ -124,9 +125,7 @@ export interface SenderSignals {
    * Provenance of `isProtected` — drives the cascade audit copy. Undefined
    * when `isProtected = false`.
    */
-  protectionReason?: 'user_defined' | 'engagement_based' | 'vip';
-  /** The user has set `sender_policies.is_vip = true`. */
-  isVip: boolean;
+  protectionReason?: ProtectionReason;
   /** D21 rule 2 — user has replied to this sender at least once. */
   hasReplied: boolean;
   /**
@@ -232,21 +231,21 @@ export function runCascade(s: SenderSignals): CascadeResult {
   };
 
   // ─── Phase A — protection / engagement (Keep, exit) ────────────────────
-  // Rule 1 — user-set protect policy. The cascade splits by reason so the
-  // audit copy can say which kind of protect fired ("you marked them VIP"
-  // vs "we kept them because you reply to them").
+  // Rule 1 — protection policy. The cascade splits manual protection from
+  // engagement-derived protection so the audit copy stays factual.
   if (s.isProtected) {
     const reason = s.protectionReason ?? 'user_defined';
+    const ruleId = {
+      user_defined: 'protect_user_defined',
+      replied: 'protect_replied',
+      starred: 'protect_starred',
+      gmail_important: 'protect_gmail_important',
+    } as const satisfies Record<ProtectionReason, CascadeRuleId>;
     return {
       verdict: 'keep',
       confidence: 1.0,
       phase: 'A',
-      ruleId:
-        reason === 'vip'
-          ? 'protect_vip'
-          : reason === 'engagement_based'
-            ? 'protect_engagement_based'
-            : 'protect_user_defined',
+      ruleId: ruleId[reason],
       facts,
     };
   }

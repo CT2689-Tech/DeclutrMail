@@ -79,17 +79,22 @@ DeclutrMail **never** fetches or stores:
 - Raw MIME
 - Headers other than the explicit allowlist
 
-DeclutrMail stores ONLY:
-- Sender (name + email)
-- Subject
-- Gmail's `snippet` (short preview)
-- Dates (received / internalDate)
-- Gmail labels
-- Read/unread state
+The cumulative Gmail-data lifecycle registry lives in
+`packages/shared/src/contracts/gmail-data-inventory.ts` (D245). It is the
+source of truth for fetched fields, persisted and derived datasets, purposes,
+retention, exports, processors, and the generated public storage list.
+
+The message adapter may fetch only the registry-generated metadata envelope
+fields and these headers: `From`, `Subject`, `To`, `Cc`, `List-Unsubscribe`,
+and `List-Unsubscribe-Post`. Accepted allowlist amendments include outbound
+recipient addresses, parsed unsubscribe channels/one-click support, outbound
+state, Gmail message/thread identifiers, and Gmail's size estimate. Adding a
+Gmail field requires updating the typed registry and its adapter/schema
+contract tests in the same change.
 
 Enforced by `privacy-auditor` subagent + `verify-no-body-storage.sh` hook.
 
-The trust badge copy is: **"Full bodies fetched: 0"** + explicit storage list.
+The trust badge copy is: **"Full bodies fetched: 0"** + the generated storage list.
 **Never:** "Bodies read: 0 forever."
 
 ### 2.2 Canonical verbs — K/A/U/L/D (D227)
@@ -145,6 +150,19 @@ Enforced by `webhook-security-auditor` subagent.
 - **Custom Autopilot rules API rejects `is_preset=false`** at V2 (D234).
 - **Account deletion respects undo windows** (D232) — `max(now+7d, latest_undo_expires_at)`.
 - **Postgres partitioning deferred** (D235) until 25M rows OR 2M/mailbox OR p95 > 150ms.
+- **Protected is the sole visible safety state** (D245) — Protected senders are
+  excluded from bulk and automatic mail-changing actions. VIP is retired; do
+  not add it back as a ranking or safety alias. Brief priority uses observed
+  engagement and Gmail importance. A future manual ranking control must be a
+  separate **Pin in Brief** concept. Automatic protection is limited to
+  explainable strong signals: at least three replies, a message starred in the
+  past year, or at least three Gmail-important messages in the past year. Never
+  auto-protect from read/open rate. Show the exact reason and preserve a manual
+  Unprotect as a sticky override.
+- **Prelaunch means no hypothetical compatibility** (D245) — DeclutrMail is not
+  live and has no production users or production data. Remove superseded
+  routes, columns, contracts, fixtures, and docs directly unless a current
+  technical invariant—not an imagined legacy user—requires them.
 
 ---
 

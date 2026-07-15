@@ -1746,13 +1746,6 @@
           "notNull": true,
           "default": "'keep'"
         },
-        "is_vip": {
-          "name": "is_vip",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "is_protected": {
           "name": "is_protected",
           "type": "boolean",
@@ -2710,8 +2703,9 @@
       "schema": "public",
       "values": [
         "user_defined",
-        "engagement_based",
-        "vip"
+        "replied",
+        "starred",
+        "gmail_important"
       ]
     },
     "public.sender_policy_type": {

@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS "mailbox_data_deletion_requests";--> statement-breakpoint
+DROP TYPE IF EXISTS "mailbox_data_deletion_status";

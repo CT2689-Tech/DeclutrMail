@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
 // Cross-feature query-key imports are the invalidation contract (D200)
 // — only the keys cross the boundary, never behavior (same precedent
@@ -14,7 +15,7 @@ import { sendersKeys } from '@/features/senders/api/query-keys';
 import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
 import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
-import { isTerminalStatus } from '@/lib/api/actions';
+import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
@@ -81,7 +82,11 @@ export function ScreenerScreen({
 
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   /** The verb awaiting preview-confirm (D226) — one row at a time. */
-  const [pending, setPending] = useState<{ rowId: string; verb: ScreenerDecideVerb } | null>(null);
+  const [pending, setPending] = useState<{
+    rowId: string;
+    verb: ScreenerDecideVerb;
+    wakeAt: string | null;
+  } | null>(null);
   /** The enqueued label-modify action being polled to terminal. */
   const [activeAction, setActiveAction] = useState<{
     actionId: string;
@@ -93,6 +98,7 @@ export function ScreenerScreen({
   const [decidingRowId, setDecidingRowId] = useState<string | null>(null);
   /** D230 manual path — "finish in Gmail" callout after a mailto unsub. */
   const [mailtoFollowup, setMailtoFollowup] = useState<{
+    senderId: string;
     senderName: string;
     mailtoUrl: string;
   } | null>(null);
@@ -195,10 +201,19 @@ export function ScreenerScreen({
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
+      toast(
+        `${unsubWatch.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
+        'success',
+      );
       invalidateAfterDecision(qc);
+    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
+      toast(
+        `${unsubWatch.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
+        'warn',
+      );
     } else {
       toast(
-        `${unsubWatch.senderName}'s list refused the unsubscribe — Archive is the reliable fallback`,
+        `${unsubWatch.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
         'warn',
       );
     }
@@ -212,7 +227,11 @@ export function ScreenerScreen({
     (verb: ScreenerDecideVerb, row: ScreenerQueueRow) => {
       if (row.id === busyRowId) return;
       if (verb === 'unsubscribe' && !canScreenerUnsubscribe(row)) return;
-      setPending({ rowId: row.id, verb });
+      setPending({
+        rowId: row.id,
+        verb,
+        wakeAt: verb === 'later' ? defaultLaterWakeAtIso() : null,
+      });
       setExpandedRowId(row.id);
     },
     [busyRowId],
@@ -231,7 +250,11 @@ export function ScreenerScreen({
       setPending(null);
       setDecidingRowId(row.id);
       decide.mutate(
-        { senderId: row.senderId, verb },
+        {
+          senderId: row.senderId,
+          verb,
+          ...(verb === 'later' && pending.wakeAt ? { wakeAt: pending.wakeAt } : {}),
+        },
         {
           onSuccess: (res) => {
             void track('screener_decision_taken', { verb, sender_id: row.senderId });
@@ -253,6 +276,7 @@ export function ScreenerScreen({
                 });
               } else if (res.execution.method === 'mailto' && res.execution.mailtoUrl) {
                 setMailtoFollowup({
+                  senderId: row.senderId,
                   senderName: row.senderName,
                   mailtoUrl: res.execution.mailtoUrl,
                 });
@@ -369,12 +393,13 @@ export function ScreenerScreen({
         id="screener"
         title="How the Screener works"
         body="First-time senders are collected here for review — their mail still arrives in your inbox until you decide. One decision per sender: Keep, Archive, Unsubscribe, Later, or Delete. Every destructive action shows a preview before anything changes."
-        tip="We never read message bodies. The engine reasons from sender, subject, Gmail's preview snippet, dates, and aggregate stats — that's it."
+        tip="Suggestions use sender, subject, Gmail's short preview, dates, and aggregate activity. Full message bodies are never fetched."
       />
 
       {/* D230 manual path — after Unsubscribe on a mailto sender. */}
       {mailtoFollowup && (
         <UnsubMailtoCallout
+          senderId={mailtoFollowup.senderId}
           senderName={mailtoFollowup.senderName}
           mailtoUrl={mailtoFollowup.mailtoUrl}
           onDismiss={() => setMailtoFollowup(null)}
@@ -399,6 +424,7 @@ export function ScreenerScreen({
                 busy={busyRowId === row.id}
                 pendingVerb={pending?.rowId === row.id ? pending.verb : null}
                 previewInboxCount={previewInboxCount}
+                wakeAt={pending?.rowId === row.id ? pending.wakeAt : null}
                 onToggleExpand={() => setExpandedRowId((cur) => (cur === row.id ? null : row.id))}
                 onVerbClick={(verb) => onVerbClick(verb, row)}
                 onConfirm={() => onConfirm(row)}

@@ -26,7 +26,7 @@ describe('AppShell mobile drawer', () => {
     expect(opener).toHaveFocus();
   });
 
-  it('routes recovery to Activity and the metadata claim to Settings', () => {
+  it('routes Undo windows to Activity and Stored Gmail data to Settings', () => {
     const onNavigate = vi.fn();
     render(
       <AppShell active="senders" onNavigate={onNavigate}>
@@ -34,8 +34,8 @@ describe('AppShell mobile drawer', () => {
       </AppShell>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Recovery' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Metadata only' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo windows' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stored Gmail data' }));
     expect(onNavigate.mock.calls).toEqual([['activity'], ['settings']]);
   });
 });

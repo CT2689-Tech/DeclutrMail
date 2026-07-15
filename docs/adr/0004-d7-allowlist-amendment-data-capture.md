@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-05-22
 - **Deciders:** founder (interview answers 2026-05-22), Claude (agent)
-- **Related D-decisions:** D7 / D228 (privacy posture + body-storage allowlist), D9 (RFC 8058 auto-unsubscribe), D5 (Gmail quota + PR-D incremental sync cursor), D44/D45/D67/D84–D91 (future reply-attribution, VIP, Followups)
+- **Related D-decisions:** D7 / D228 (privacy posture + body-storage allowlist), D9 (RFC 8058 auto-unsubscribe), D5 (Gmail quota + PR-D incremental sync cursor), D44/D45/D67/D84–D91 (future reply-attribution, Brief priority, Followups)
 
 ## Context
 

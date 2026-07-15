@@ -33,6 +33,7 @@ import {
   isTerminalStatus,
   newIdempotencyKey,
   recordUnsubscribeIntent,
+  recordUnsubscribeManualStatus,
   revertUndo,
   type ActionEnqueueResult,
   type ActionStatusResult,
@@ -45,7 +46,9 @@ import {
   type CompositeSecondaryVerb,
   type UndoRevertResult,
   type UnsubscribeIntentResult,
+  type UnsubscribeManualStatusResult,
 } from './actions';
+import type { UnsubscribeManualTransition } from '@declutrmail/shared/contracts';
 
 /** Poll cadence in ms while an action job is in flight. */
 export const ACTION_POLL_MS = 1_000;
@@ -145,7 +148,7 @@ export function useEnqueueComposite() {
     Error,
     {
       senderId: string;
-      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
       secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
       override?: boolean;
     }
@@ -190,7 +193,7 @@ export function useEnqueueBulkAction() {
     Error,
     {
       senderIds: string[];
-      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
       secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
     }
   >({
@@ -273,6 +276,17 @@ export function useRecordUnsubscribeIntent() {
       recordUnsubscribeIntent(senderId, {
         ...(includesBacklogAction !== undefined ? { includesBacklogAction } : {}),
       }),
+  });
+}
+
+/** Persist explicit progress in the user-sent Gmail unsubscribe handoff. */
+export function useRecordUnsubscribeManualStatus() {
+  return useMutation<
+    UnsubscribeManualStatusResult,
+    Error,
+    { senderId: string; status: UnsubscribeManualTransition }
+  >({
+    mutationFn: ({ senderId, status }) => recordUnsubscribeManualStatus(senderId, status),
   });
 }
 

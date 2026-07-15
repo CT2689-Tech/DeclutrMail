@@ -63,7 +63,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Know where metadata is processed',
         paragraphs: [
           'Most sender scoring uses aggregate facts rather than message content. The reasoning path that explains a sender decision receives precomputed facts and does not receive subject or snippet text.',
-          'Daily Brief is a narrower exception that should be stated plainly: when its narrative provider is configured, it sends sender identity, subject, Gmail preview snippet, and VIP marker to Anthropic within a bounded prompt. It never sends a full message body or attachment, and it falls back to a deterministic template when that provider is unavailable.',
+          'Daily Brief is a narrower exception that should be stated plainly: when its narrative provider is configured, it sends sender identity, subject, and Gmail preview snippet to Anthropic within a bounded prompt. It never sends a full message body or attachment, and it falls back to a deterministic template when that provider is unavailable.',
         ],
       },
       {
@@ -71,7 +71,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Evaluate mutation risk separately from data risk',
         paragraphs: [
           'An app can minimize stored data and still move the wrong messages. Look for a preview that names the sender, action, and count; an activity record; idempotent execution; and verb-specific recovery rather than one universal undo promise.',
-          'In DeclutrMail, Archive and Later have Activity undo while their token is live. Delete relies on Gmail Trash recovery as well as any active journal entry. A delivered unsubscribe request is one-way. Manual Archive, Later, and Delete affect current matched mail and do not silently become future sender rules.',
+          'In DeclutrMail, Archive, Later, and Delete have Activity Undo while their plan-window token is live. Delete also has separate Gmail Trash recovery. A delivered unsubscribe request is one-way. Manual Archive, Later, and Delete affect current matched mail and do not silently become future sender rules.',
         ],
       },
       {
@@ -157,7 +157,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'external-processing',
         title: 'External processing still belongs in the disclosure',
         paragraphs: [
-          'DeclutrMail’s sender-reasoning adapter receives aggregate facts and no subject or snippet. Daily Brief uses a different bounded input: sender identity, subject, Gmail snippet, and VIP marker may be sent to Anthropic to compose a short narrative when the adapter is configured.',
+          'DeclutrMail’s sender-reasoning adapter receives aggregate facts and no subject or snippet. Daily Brief uses a different bounded input: sender identity, subject, and Gmail snippet may be sent to Anthropic to compose a short narrative when the adapter is configured.',
           'That input remains body-free, and the stored Brief payload intentionally omits the snippets used in the prompt. Even so, sending allowlisted metadata to a processor is processing and should not be hidden behind “no full bodies.”',
         ],
       },
@@ -215,7 +215,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     intro:
       'There is no honest universal undo for email cleanup. Some actions are reversible label changes, some rely on Gmail Trash, some are standing settings you can change again, and some leave the system entirely.',
     quickAnswer:
-      'Archive and Later create inverse label changes and expose Activity undo while the token is active. Delete is recoverable in Gmail Trash for up to about 30 days unless Trash is emptied sooner. Keep can be changed as a policy. A delivered unsubscribe request cannot be recalled.',
+      'Archive, Later, and Delete expose Activity Undo while the plan-window token is active. Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Keep can be changed as a policy. A delivered unsubscribe request cannot be recalled.',
     readingMinutes: 7,
     sections: [
       {
@@ -257,9 +257,9 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
       },
       {
         id: 'policies',
-        title: 'Keep, VIP, and Protect are settings, not journaled mail moves',
+        title: 'Keep and Protected are settings, not journaled mail moves',
         paragraphs: [
-          'Keep records a sender policy. VIP and Protect are separate standing controls. They move no messages, so they do not create the same undo-journal token as Archive or Later. You reverse their effect by changing the sender policy again.',
+          'Keep records your current sender decision. Protected is the standing safety control. Neither moves messages, so they do not create the same undo-journal token as Archive or Later. You reverse their effect by changing the sender policy again.',
           'That distinction matters because a toast saying “undo” can imply a transactional rollback when the real mechanism is simply another settings write.',
         ],
       },

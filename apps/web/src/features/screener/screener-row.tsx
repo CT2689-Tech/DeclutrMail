@@ -39,6 +39,7 @@ export function ScreenerRow({
   busy = false,
   pendingVerb = null,
   previewInboxCount = 'loading',
+  wakeAt = null,
   onToggleExpand,
   onVerbClick,
   onConfirm,
@@ -51,6 +52,7 @@ export function ScreenerRow({
   /** Verb awaiting confirmation in this row's preview (D226). */
   pendingVerb?: ScreenerDecideVerb | null;
   previewInboxCount?: DecidePreviewCount;
+  wakeAt?: string | null;
   onToggleExpand: () => void;
   onVerbClick: (verb: ScreenerDecideVerb) => void;
   onConfirm: () => void;
@@ -270,7 +272,9 @@ export function ScreenerRow({
             </span>
             {row.recommendation != null && (
               <span style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>
-                <span style={{ fontWeight: 600, color: color.fgSoft }}>Engine's read: </span>
+                <span style={{ fontWeight: 600, color: color.fgSoft }}>
+                  Why this is suggested:{' '}
+                </span>
                 {row.recommendation.reasoning}
               </span>
             )}
@@ -294,6 +298,7 @@ export function ScreenerRow({
               verb={pendingVerb}
               row={row}
               inboxCount={previewInboxCount}
+              wakeAt={wakeAt}
               confirming={busy}
               onConfirm={onConfirm}
               onCancel={onCancel}

@@ -1,6 +1,7 @@
 'use client';
 
 import { Button, tokens } from '@declutrmail/shared';
+import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 
 import type { ScreenerDecideVerb, ScreenerQueueRow } from './data';
@@ -24,16 +25,17 @@ export type DecidePreviewCount = number | 'loading' | 'unavailable';
  * the verb rides:
  *
  *   - Keep        → nothing in Gmail changes (D72 soft quarantine).
- *   - Archive     → inbox mail moves to Gmail archive, undoable 7d.
- *   - Later       → inbox mail moves to DeclutrMail/Later, undoable 7d.
+ *   - Archive     → inbox mail moves to Gmail archive; plan-based Activity Undo.
+ *   - Later       → inbox mail moves to DeclutrMail/Later; exact return time required.
  *   - Unsubscribe → one-click sends the real request (one-way, D58);
  *                   mailto is the manual compose path (D230).
- *   - Delete      → Gmail Trash; 30-day recovery window.
+ *   - Delete      → Activity Undo plus a separate Gmail Trash recovery path.
  */
 export function DecidePreview({
   verb,
   row,
   inboxCount,
+  wakeAt,
   confirming,
   mailboxEmail,
   onConfirm,
@@ -42,6 +44,7 @@ export function DecidePreview({
   verb: ScreenerDecideVerb;
   row: ScreenerQueueRow;
   inboxCount: DecidePreviewCount;
+  wakeAt?: string | null;
   /** True while the decide POST / worker confirmation is in flight. */
   confirming: boolean;
   /** Explicit override for isolated previews; app surfaces use active auth context. */
@@ -50,6 +53,14 @@ export function DecidePreview({
   onCancel: () => void;
 }) {
   const name = row.senderName;
+  const liveCount = typeof inboxCount === 'number' ? inboxCount : null;
+  const presentation = buildActionPresentation({
+    verb,
+    liveCount: verb === 'keep' || verb === 'unsubscribe' ? 0 : liveCount,
+    planUndoDeadline: null,
+    wakeAt: verb === 'later' ? (wakeAt ?? null) : null,
+    unsubscribeChannel: verb === 'unsubscribe' ? row.unsubscribeMethod : null,
+  });
 
   const title =
     verb === 'keep'
@@ -62,20 +73,7 @@ export function DecidePreview({
             ? `Unsubscribe from ${name}`
             : `Delete ${name}'s inbox mail`;
 
-  const lead =
-    verb === 'keep'
-      ? `${name} stays exactly where it is — nothing in Gmail changes. We just remember your decision and stop asking about this sender.`
-      : verb === 'archive'
-        ? `Matching inbox mail from ${name} moves into Gmail's archive when the action runs. Nothing is deleted; Activity shows your plan's undo window.`
-        : verb === 'later'
-          ? `Matching inbox mail from ${name} moves into DeclutrMail/Later when the action runs. Activity shows your plan's undo window.`
-          : verb === 'unsubscribe'
-            ? row.unsubscribeMethod === 'one_click'
-              ? `DeclutrMail sends ${name}'s one-click request and records whether the endpoint accepted it. The sender controls whether and when mail stops. The request itself can't be undone. Nothing already in your inbox moves.`
-              : row.unsubscribeMethod === 'mailto'
-                ? `Their list takes unsubscribes by email, so you send the final request from your mailbox — after you confirm, a button opens a prefilled Gmail compose and you hit Send. DeclutrMail never auto-sends from a no-reply address.`
-                : `${name} advertises no unsubscribe channel. We record your decision; Archive is the reliable fallback if mail keeps coming.`
-            : `Matching inbox mail from ${name} moves to Gmail Trash when the action runs. Activity can undo while Gmail retains the message, up to 30 days; emptying Trash can end recovery sooner.`;
+  const lead = presentation.previewCopy;
 
   // What actually moves — only the label-modify verbs touch the inbox.
   const moves = verb === 'archive' || verb === 'later' || verb === 'delete';
@@ -139,7 +137,7 @@ export function DecidePreview({
       {/* Engine recap — why the engine queued this sender. */}
       {row.recommendation != null && (
         <div style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>
-          <span style={{ fontWeight: 600, color: color.fgSoft }}>Engine's read: </span>
+          <span style={{ fontWeight: 600, color: color.fgSoft }}>Why this is suggested: </span>
           {row.recommendation.reasoning}
         </div>
       )}

@@ -32,7 +32,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/help',
 });
 
-const LAST_UPDATED = '2026-07-12';
+const LAST_UPDATED = '2026-07-14';
 
 /**
  * One source for the rendered Q&A and the FAQPage JSON-LD. Answers are
@@ -70,7 +70,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'undo-windows',
     q: 'What can I undo, and for how long?',
-    a: `${ACTION_SAFETY_SUMMARY} The Archive/Later Activity undo window is 7 days on Free and Plus and 30 days on Pro.`,
+    a: `${ACTION_SAFETY_SUMMARY} The Archive, Later, and Delete Activity Undo window is 7 days on Free and Plus and 30 days on Pro.`,
   },
   {
     id: 'disconnect-mailbox',
@@ -91,7 +91,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'pricing-tiers',
     q: 'What do the plans include?',
-    a: 'Free shows you what’s noisy and includes five lifetime cleanup actions. Plus adds unlimited manual actions and Triage. Pro adds preset automation, two inboxes, and a 30-day Archive/Later Activity window. Delete uses its separate up-to-30-day Gmail Trash recovery boundary on every plan. The pricing page has the current comparison.',
+    a: 'Free shows you what’s noisy and includes five lifetime cleanup actions. Plus adds unlimited manual actions and Triage. Pro adds preset automation, two inboxes, and a 30-day Activity Undo window for Archive, Later, and Delete. Delete also has separate Gmail Trash recovery, normally up to 30 days on every plan. The pricing page has the current comparison.',
     link: { href: '/pricing', label: 'Pricing →' },
   },
   {

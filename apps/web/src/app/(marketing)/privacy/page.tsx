@@ -32,7 +32,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/privacy',
 });
 
-const LAST_UPDATED = '2026-07-13';
+const LAST_UPDATED = '2026-07-14';
 
 const TOC = [
   { id: 'who-we-are', label: 'Who we are' },
@@ -181,8 +181,10 @@ export default function PrivacyPolicyPage() {
           <li>
             Show you a per-sender view of your inbox and recommend cleanup decisions — driven by
             volume, your engagement, and rules you set. DeclutrMail does not use machine learning to
-            predict email categories or auto-protect senders; decisions are yours or follow rules
-            you explicitly enabled.
+            predict email categories. Deterministic product rules can automatically protect a sender
+            when strong engagement signals, such as your reply history, cross the documented
+            threshold; you can review and change that protection. Mail-changing automation follows
+            rules you explicitly enabled.
           </li>
           <li>
             Execute the actions you approve (archive, unsubscribe, delete, label) on your Gmail.
@@ -215,11 +217,17 @@ export default function PrivacyPolicyPage() {
       </LegalSection>
 
       <LegalSection id="retention-deletion" title="7. Data retention and deletion">
-        <p>You can leave cleanly through two self-serve controls in Settings:</p>
+        <p>You can leave cleanly through three self-serve controls in Settings:</p>
         <ul>
           <li>
             <strong>Disconnect an inbox</strong> — revokes our Google access and stops all syncing
             for that inbox. Your historical activity log is kept so you can reconnect later.
+          </li>
+          <li>
+            <strong>Delete an inbox&rsquo;s data</strong> — disconnects that inbox and permanently
+            removes its indexed message data and derived product data. Gmail itself is unchanged;
+            narrowly scoped pseudonymous security and deletion evidence remains under its stated
+            retention policy.
           </li>
           <li>
             <strong>Delete your DeclutrMail account</strong> — removes all inboxes, all activity,

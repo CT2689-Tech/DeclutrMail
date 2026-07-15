@@ -3,7 +3,7 @@
  *
  * - `useSnoozed` — the Later-bucket list. Plain `useQuery`; the set is
  *   bounded by the user's Later'd senders, no pagination at launch.
- * - `useSetSnooze` — PATCH set/extend/cancel; invalidates the list on
+ * - `useSetSnooze` — PATCH set/extend; invalidates the list on
  *   settle so the row's wake-time bucket updates.
  * - `useWakeNow` — POST wake; the restore runs in the worker, so the
  *   hook invalidates AND the screen keeps a short refetch window open
@@ -12,7 +12,14 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { fetchSnoozed, patchSnooze, wakeNow, type SnoozedSenderRow } from '@/lib/api/snoozed';
+import {
+  fetchLaterRecovery,
+  fetchSnoozed,
+  patchSnooze,
+  wakeNow,
+  wakeRecoveryNow,
+  type SnoozedSenderRow,
+} from '@/lib/api/snoozed';
 import type {
   SnoozeUpdateRequest,
   SnoozeUpdateResult,
@@ -38,6 +45,19 @@ export function useSnoozed(options?: { refetchInterval?: number | false }) {
   });
 }
 
+/** Passive all-tier recovery check; errors fail quiet in app chrome. */
+export function useLaterRecovery(options: { enabled: boolean }) {
+  return useQuery({
+    queryKey: snoozedKeys.recovery(),
+    queryFn: ({ signal }) => fetchLaterRecovery(signal),
+    select: (envelope) => envelope.data,
+    enabled: options.enabled,
+    retry: false,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useSetSnooze() {
   const qc = useQueryClient();
   return useMutation<SnoozeUpdateResult, Error, { senderId: string; body: SnoozeUpdateRequest }>({
@@ -50,6 +70,15 @@ export function useWakeNow() {
   const qc = useQueryClient();
   return useMutation<WakeNowResult, Error, { senderId: string }>({
     mutationFn: ({ senderId }) => wakeNow(senderId),
+    onSettled: () => qc.invalidateQueries({ queryKey: snoozedKeys.all }),
+  });
+}
+
+/** All-tier retry for a return already classified failed/missed by the server. */
+export function useWakeRecoveryNow() {
+  const qc = useQueryClient();
+  return useMutation<WakeNowResult, Error, { senderId: string }>({
+    mutationFn: ({ senderId }) => wakeRecoveryNow(senderId),
     onSettled: () => qc.invalidateQueries({ queryKey: snoozedKeys.all }),
   });
 }

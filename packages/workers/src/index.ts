@@ -50,6 +50,7 @@ export type {
 export {
   LABEL_ACTION_JOB,
   LABEL_ACTION_QUEUE,
+  MAILBOX_ACTION_LOCK_NS,
   LabelActionWorker,
   labelActionJobOptions,
   labelChangeForVerb,
@@ -61,6 +62,18 @@ export type {
   LabelActionResult,
   MailboxActionLock,
 } from './label-action.worker.js';
+export { ActionRecoveryWorker } from './action-recovery.worker.js';
+export type {
+  ActionRecoveryDeps,
+  ActionRecoveryJobData,
+  ActionRecoveryResult,
+} from './action-recovery.worker.js';
+export {
+  ACTION_RECOVERY_JOB,
+  ACTION_RECOVERY_QUEUE,
+  actionRecoveryJobOptions,
+  enqueueActionRecoveryPreview,
+} from './action-recovery.queue.js';
 export {
   FETCH_UNSUB_HTTP_PORT,
   UNSUB_EXECUTION_JOB,
@@ -284,9 +297,13 @@ export {
 export {
   deletionPendingSql,
   hasInFlightDeletion,
+  hasInFlightMailboxDataDeletion,
   isSyncPausedForDeletion,
 } from './deletion-pause.js';
-export { AccountDeletionPurgeWorker } from './deletion.worker.js';
+export {
+  AccountDeletionPurgeWorker,
+  MAILBOX_PURGE_DIRECT_CHILD_TABLES,
+} from './deletion.worker.js';
 export type {
   DeletionPurgeDeps,
   DeletionSweepJobData,

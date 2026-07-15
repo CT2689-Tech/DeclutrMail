@@ -23,7 +23,7 @@ import { SendersPolicyService } from './senders-policy.service.js';
  * SendersPolicyService integration tests (D40, D42, D43).
  *
  * Real service against in-process PGlite with every migration applied —
- * covers the three standing-policy mutations (Keep / VIP / Protect):
+ * covers the two standing-policy mutations (Keep / Protect):
  * upsert semantics, the D43 audit rows, set-state idempotency (a
  * repeat patch is a no-op with no phantom audit row), the D22
  * protection provenance + user-agency memory pin, tenant ownership,
@@ -149,13 +149,12 @@ describe('SendersPolicyService', () => {
       expect(res).toMatchObject({
         senderId,
         policyType: 'keep',
-        isVip: false,
         isProtected: false,
         changed: true,
       });
 
       const row = await policyRow(db, mailboxId);
-      expect(row).toMatchObject({ policyType: 'keep', isVip: false, isProtected: false });
+      expect(row).toMatchObject({ policyType: 'keep', isProtected: false });
 
       const audit = await auditRows(db, mailboxId);
       expect(audit).toEqual([
@@ -203,82 +202,6 @@ describe('SendersPolicyService', () => {
     });
   });
 
-  describe('VIP toggle (D42, D43)', () => {
-    it('flips is_vip true with a marked_vip audit row; protection fields untouched', async () => {
-      const res = await svc.setPolicy({
-        mailboxAccountId: mailboxId,
-        senderId,
-        patch: { isVip: true },
-      });
-
-      expect(res).toMatchObject({ isVip: true, isProtected: false, changed: true });
-
-      const row = await policyRow(db, mailboxId);
-      // VIP is its own modifier (D42 four-state matrix) — it must NOT
-      // set is_protected / protection_reason; the engine cascade reads
-      // `is_vip OR is_protected` so VIP alone already locks Keep.
-      expect(row).toMatchObject({
-        isVip: true,
-        isProtected: false,
-        protectionReason: null,
-        protectionSetAt: null,
-      });
-
-      const audit = await auditRows(db, mailboxId);
-      expect(audit.map((a) => a.action)).toEqual(['marked_vip']);
-    });
-
-    it('flips is_vip false with an unmarked_vip audit row', async () => {
-      await svc.setPolicy({ mailboxAccountId: mailboxId, senderId, patch: { isVip: true } });
-      const res = await svc.setPolicy({
-        mailboxAccountId: mailboxId,
-        senderId,
-        patch: { isVip: false },
-      });
-
-      expect(res.isVip).toBe(false);
-      expect(res.changed).toBe(true);
-      const audit = await auditRows(db, mailboxId);
-      expect(audit.map((a) => a.action)).toEqual(['marked_vip', 'unmarked_vip']);
-    });
-
-    it('no-op un-VIP on a sender with no policy row creates NOTHING', async () => {
-      const res = await svc.setPolicy({
-        mailboxAccountId: mailboxId,
-        senderId,
-        patch: { isVip: false },
-      });
-
-      expect(res).toMatchObject({ isVip: false, policyType: null, changed: false });
-      expect(await policyRow(db, mailboxId)).toBeNull();
-      expect(await auditRows(db, mailboxId)).toHaveLength(0);
-    });
-
-    it('does not clobber a standing unsubscribe verdict or Protect state', async () => {
-      await db.insert(senderPolicies).values({
-        mailboxAccountId: mailboxId,
-        senderKey: SENDER_KEY,
-        policyType: 'unsubscribe',
-        isProtected: true,
-        protectionReason: 'engagement_based',
-        protectionSetAt: new Date('2026-05-01'),
-      });
-
-      const res = await svc.setPolicy({
-        mailboxAccountId: mailboxId,
-        senderId,
-        patch: { isVip: true },
-      });
-
-      expect(res).toMatchObject({
-        policyType: 'unsubscribe',
-        isVip: true,
-        isProtected: true,
-        protectionReason: 'engagement_based',
-      });
-    });
-  });
-
   describe('Protect toggle (D42, D43, D22)', () => {
     it('protects with user_defined provenance + protection_set_at + audit row', async () => {
       const res = await svc.setPolicy({
@@ -305,7 +228,7 @@ describe('SendersPolicyService', () => {
         senderKey: SENDER_KEY,
         policyType: 'keep',
         isProtected: true,
-        protectionReason: 'engagement_based',
+        protectionReason: 'replied',
         protectionSetAt: new Date('2026-05-01'),
       });
 
@@ -318,9 +241,9 @@ describe('SendersPolicyService', () => {
       expect(res.isProtected).toBe(false);
       expect(res.protectionSetAt).toBeNull();
       // The pin: reason survives the demote so the sync workers'
-      // re-protect guard (`reason <> 'engagement_based'`) skips this
+      // re-protect guard (non-null reason memory pin) skips this
       // row instead of silently re-protecting on the next sync.
-      expect(res.protectionReason).toBe('engagement_based');
+      expect(res.protectionReason).toBe('replied');
 
       const audit = await auditRows(db, mailboxId);
       expect(audit.map((a) => a.action)).toEqual(['unmarked_protected']);
@@ -332,7 +255,7 @@ describe('SendersPolicyService', () => {
         senderKey: SENDER_KEY,
         policyType: 'keep',
         isProtected: false,
-        protectionReason: 'engagement_based',
+        protectionReason: 'replied',
       });
 
       const res = await svc.setPolicy({
@@ -362,19 +285,18 @@ describe('SendersPolicyService', () => {
       const res = await svc.setPolicy({
         mailboxAccountId: mailboxId,
         senderId,
-        patch: { policyType: 'keep', isVip: true, isProtected: true },
+        patch: { policyType: 'keep', isProtected: true },
       });
 
       expect(res).toMatchObject({
         policyType: 'keep',
-        isVip: true,
         isProtected: true,
         protectionReason: 'user_defined',
         changed: true,
       });
 
       const audit = await auditRows(db, mailboxId);
-      expect(audit.map((a) => a.action).sort()).toEqual(['keep', 'marked_protected', 'marked_vip']);
+      expect(audit.map((a) => a.action).sort()).toEqual(['keep', 'marked_protected']);
     });
   });
 

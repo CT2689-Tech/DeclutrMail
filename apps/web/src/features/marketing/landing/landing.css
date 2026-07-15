@@ -360,6 +360,16 @@
   margin-right: 8px;
 }
 
+.dm-mkt-ledger-demo-label {
+  padding: 3px 7px;
+  border: 1px solid var(--mkt-accent-border);
+  border-radius: 9999px;
+  background: var(--mkt-accent-soft);
+  color: var(--mkt-accent);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
 .dm-mkt-ledger-body {
   padding: 18px 16px 16px;
   flex: 1;

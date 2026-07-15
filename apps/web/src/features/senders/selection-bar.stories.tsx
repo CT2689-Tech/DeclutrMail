@@ -104,7 +104,7 @@ export const AllProtected: Story<typeof SelectionBar> = {
   args: {
     senders: [
       sender({ id: 'Bank Statements', protected: true }),
-      sender({ id: 'VIP Client', isVip: true, group: 'primary' }),
+      sender({ id: 'Protected Client', protected: true, group: 'primary' }),
     ],
     onClear: noop,
     onAct: noop,

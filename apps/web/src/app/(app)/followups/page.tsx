@@ -17,7 +17,7 @@ export default function FollowupsPage() {
     <TierGate
       capability="followups"
       title="Follow-ups"
-      pitch="Threads where you sent the last message and haven't heard back. We watch your Sent folder and surface what's overdue — sorted oldest first, so nothing you're waiting on slips."
+      pitch="Threads where you sent the last message and haven't heard back, sorted oldest first."
       bullets={[
         'Grouped by how overdue they are',
         'Open the thread in Gmail in one click',

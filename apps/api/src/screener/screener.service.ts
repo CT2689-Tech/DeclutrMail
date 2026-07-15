@@ -69,9 +69,10 @@ export class ScreenerService {
     senderId: string;
     verb: ScreenerDecideVerb;
     olderThanDays: number | null;
+    wakeAt?: Date | null;
     idempotencyKey: string;
   }): Promise<ScreenerDecideResult> {
-    const { mailboxAccountId, senderId, verb, olderThanDays, idempotencyKey } = input;
+    const { mailboxAccountId, senderId, verb, olderThanDays, wakeAt, idempotencyKey } = input;
 
     // Ownership + senderKey resolution (needed for the quarantine row;
     // also fails fast before any delegation on a forged id).
@@ -124,7 +125,7 @@ export class ScreenerService {
       const res = await this.actions.enqueueComposite({
         mailboxAccountId,
         selector: { type: 'sender', senderId },
-        primary: { type: verb, olderThanDays },
+        primary: { type: verb, olderThanDays, wakeAt: wakeAt ?? null },
         idempotencyKey,
         override: false,
       });

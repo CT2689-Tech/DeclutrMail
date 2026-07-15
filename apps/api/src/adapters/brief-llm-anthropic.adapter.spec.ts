@@ -29,7 +29,6 @@ const SAMPLE_INPUT: BriefNarrativeInput = {
       senderEmail: 'boss@example.com',
       subject: 'Q4 plans',
       snippet: 'Can we move the Q4 sync to Thursday?',
-      isVip: true,
     },
   ],
   fyi: [
@@ -38,7 +37,6 @@ const SAMPLE_INPUT: BriefNarrativeInput = {
       senderEmail: 'no-reply@bank.example',
       subject: 'Statement available',
       snippet: 'Your April statement is ready to view.',
-      isVip: false,
     },
   ],
   noise: [
@@ -71,12 +69,6 @@ describe('renderBriefUserPrompt', () => {
     expect(out).toContain('News Daily (2 messages)');
   });
 
-  it('marks VIP items with a [VIP] prefix', () => {
-    const out = renderBriefUserPrompt(SAMPLE_INPUT);
-    expect(out).toMatch(/\[VIP\] Boss/);
-    expect(out).not.toMatch(/\[VIP\] Bank/);
-  });
-
   it('renders "(none)" for empty sections', () => {
     const out = renderBriefUserPrompt({ reply: [], fyi: [], noise: [] });
     expect(out).toContain('Reply section (0 items):\n  (none)');
@@ -106,7 +98,6 @@ describe('renderBriefUserPrompt', () => {
           senderEmail: 's@example.com',
           subject: 'subj',
           snippet: longSnippet,
-          isVip: false,
         },
       ],
     });
@@ -123,7 +114,6 @@ describe('renderBriefUserPrompt', () => {
           senderEmail: 'boss@example.com',
           subject: 's',
           snippet: '',
-          isVip: false,
         },
       ],
       fyi: [],
@@ -140,7 +130,6 @@ describe('renderBriefUserPrompt', () => {
           senderEmail: 's@example.com',
           subject: '',
           snippet: '',
-          isVip: false,
         },
       ],
       fyi: [],

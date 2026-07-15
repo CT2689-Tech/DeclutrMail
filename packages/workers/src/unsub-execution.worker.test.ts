@@ -121,13 +121,13 @@ async function seedSender(
   });
 }
 
-/** The pending policy row the intent path upserts before enqueue. */
+/** The requested policy row the intent path upserts before enqueue. */
 async function seedPendingPolicy(db: Db, mailboxAccountId: string): Promise<void> {
   await db.insert(senderPolicies).values({
     mailboxAccountId,
     senderKey: SENDER_KEY,
     policyType: 'unsubscribe',
-    unsubStatus: 'pending',
+    unsubStatus: 'requested',
   });
 }
 
@@ -235,7 +235,7 @@ describe('UnsubExecutionWorker', () => {
     return { job: job!, policy: policy!, activities, events };
   }
 
-  it('2xx → done: action row, policy status, 0-affected unsubscribe_confirmed row with NO undo token (D56/D58), outbox event', async () => {
+  it('2xx → endpoint accepted: action row, truthful Activity outcome, no undo, outbox event', async () => {
     await seedSender(db, mailboxId);
     await seedPendingPolicy(db, mailboxId);
     const actionId = await seedExecutionJob(db, mailboxId);
@@ -254,7 +254,7 @@ describe('UnsubExecutionWorker', () => {
       ctx(1),
     );
 
-    expect(result).toEqual({ outcome: 'done', httpStatus: 200, alreadyDone: false });
+    expect(result).toEqual({ outcome: 'endpoint_accepted', httpStatus: 200, alreadyDone: false });
     // RFC 8058 request shape — the exact URL, once.
     expect(http.calls).toEqual([
       { url: 'https://unsub.shop.example/oneclick?u=42', timeoutMs: 10_000 },
@@ -265,16 +265,19 @@ describe('UnsubExecutionWorker', () => {
     expect(state.job.affectedCount).toBe(1); // the SENDER, not messages
     expect(state.job.errorCode).toBeNull();
     expect(state.job.undoToken).toBeNull(); // D58 — one-way
-    expect(state.policy.unsubStatus).toBe('done');
+    expect(state.policy.unsubStatus).toBe('endpoint_accepted');
     expect(state.activities).toHaveLength(1);
-    // D56 — the worker writes the CONFIRMED outcome row, distinct from
+    // D56 — the worker writes the endpoint-accepted outcome, distinct from
     // the intent 'unsubscribe' row the enqueuer wrote (not seeded here).
-    expect(state.activities[0]!.action).toBe('unsubscribe_confirmed');
+    expect(state.activities[0]!.action).toBe('unsubscribe_endpoint_accepted');
     expect(state.activities[0]!.affectedCount).toBe(0); // no mail moved
     expect(state.activities[0]!.undoToken).toBeNull(); // D58
     expect(state.events).toHaveLength(1);
     expect(state.events[0]!.topic).toBe('actions.unsubscribe_executed');
-    expect(state.events[0]!.payload).toMatchObject({ outcome: 'done', httpStatus: 200 });
+    expect(state.events[0]!.payload).toMatchObject({
+      outcome: 'endpoint_accepted',
+      httpStatus: 200,
+    });
   });
 
   it('4xx → failed terminally on the FIRST response (no retry — retrying spams the target)', async () => {
@@ -303,10 +306,8 @@ describe('UnsubExecutionWorker', () => {
     expect(state.job.errorCode).toBe('UNSUB_TARGET_REJECTED');
     expect(state.job.affectedCount).toBe(0);
     expect(state.policy.unsubStatus).toBe('failed');
-    // D56 — a FAILED attempt writes NO activity row: the intent row +
-    // policy status record it, and a 'confirmed' row would be a lie
-    // (D226 no fake success). The outbox event still fires for observability.
-    expect(state.activities).toHaveLength(0);
+    expect(state.activities).toHaveLength(1);
+    expect(state.activities[0]!.action).toBe('unsubscribe_failed');
     expect(state.events).toHaveLength(1);
     expect(state.events[0]!.topic).toBe('actions.unsubscribe_executed');
     expect(state.events[0]!.payload).toMatchObject({ outcome: 'failed', httpStatus: 404 });
@@ -338,7 +339,7 @@ describe('UnsubExecutionWorker', () => {
     expect(state.policy.unsubStatus).toBe('failed');
   });
 
-  it('3xx → ambiguous (redirects are never followed)', async () => {
+  it('3xx → unconfirmed (redirects are never followed)', async () => {
     await seedSender(db, mailboxId);
     await seedPendingPolicy(db, mailboxId);
     const actionId = await seedExecutionJob(db, mailboxId);
@@ -357,14 +358,15 @@ describe('UnsubExecutionWorker', () => {
       ctx(1),
     );
 
-    expect(result).toEqual({ outcome: 'ambiguous', httpStatus: 302, alreadyDone: false });
+    expect(result).toEqual({ outcome: 'unconfirmed', httpStatus: 302, alreadyDone: false });
     const state = await readState(actionId);
     // Job is terminal-failed at the poll surface; the durable nuance is
     // the policy status + error code the FE reads.
     expect(state.job.status).toBe('failed');
     expect(state.job.errorCode).toBe('UNSUB_AMBIGUOUS_REDIRECT');
-    expect(state.policy.unsubStatus).toBe('ambiguous');
-    expect(state.events[0]!.payload).toMatchObject({ outcome: 'ambiguous', httpStatus: 302 });
+    expect(state.policy.unsubStatus).toBe('unconfirmed');
+    expect(state.activities[0]!.action).toBe('unsubscribe_unconfirmed');
+    expect(state.events[0]!.payload).toMatchObject({ outcome: 'unconfirmed', httpStatus: 302 });
   });
 
   it('network error on attempt 1 → rethrows TransientError (BullMQ retries); nothing recorded yet', async () => {
@@ -387,7 +389,7 @@ describe('UnsubExecutionWorker', () => {
 
     const state = await readState(actionId);
     expect(state.job.status).toBe('executing'); // mid-flight, retry pending
-    expect(state.policy.unsubStatus).toBe('pending');
+    expect(state.policy.unsubStatus).toBe('requested');
     expect(state.activities).toHaveLength(0);
   });
 
@@ -442,7 +444,7 @@ describe('UnsubExecutionWorker', () => {
       ctx(2),
     );
     expect(replay.alreadyDone).toBe(true);
-    expect(replay.outcome).toBe('done');
+    expect(replay.outcome).toBe('endpoint_accepted');
     expect(http.calls).toHaveLength(1); // the wire saw exactly one POST
 
     const state = await readState(actionId);
@@ -569,7 +571,7 @@ describe('UnsubExecutionWorker', () => {
       const { result, http } = await runAgainst('http://127.0.0.1:4999/unsub', {
         allowInsecure: true,
       });
-      expect(result.outcome).toBe('done');
+      expect(result.outcome).toBe('endpoint_accepted');
       expect(http.calls).toEqual([{ url: 'http://127.0.0.1:4999/unsub', timeoutMs: 10_000 }]);
     });
 
@@ -618,7 +620,7 @@ describe('UnsubExecutionWorker', () => {
       const { result, http } = await runAgainst('https://unsub.shop.example/oneclick?u=42', {
         resolveHost: async () => ['93.184.216.34'],
       });
-      expect(result.outcome).toBe('done');
+      expect(result.outcome).toBe('endpoint_accepted');
       expect(http.pinCalls).toEqual([
         {
           url: 'https://unsub.shop.example/oneclick?u=42',
@@ -635,14 +637,14 @@ describe('UnsubExecutionWorker', () => {
       const { result, http } = await runAgainst('https://multi.shop.example/x', {
         resolveHost: async () => ['203.0.113.7', '198.51.100.9'],
       });
-      expect(result.outcome).toBe('done');
+      expect(result.outcome).toBe('endpoint_accepted');
       expect(http.pinCalls[0]!.pinnedAddress).toBe('203.0.113.7');
       expect(http.pinCalls[0]!.family).toBe(4);
     });
 
     it('pins an IPv6 literal host with family 6', async () => {
       const { result, http } = await runAgainst('https://[2606:4700::6810:84e5]/x');
-      expect(result.outcome).toBe('done');
+      expect(result.outcome).toBe('endpoint_accepted');
       expect(http.pinCalls[0]!.pinnedAddress).toBe('2606:4700::6810:84e5');
       expect(http.pinCalls[0]!.family).toBe(6);
     });

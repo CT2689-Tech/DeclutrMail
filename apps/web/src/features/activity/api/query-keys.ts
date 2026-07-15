@@ -39,4 +39,5 @@ export function normalizeFilters(filters: ActivityFilters): ActivityFilterKey {
 export const activityKeys = {
   all: ['activity'] as const,
   list: (filters: ActivityFilters) => ['activity', 'list', normalizeFilters(filters)] as const,
+  recoveryPreview: (previewId: string) => ['activity', 'recovery-preview', previewId] as const,
 };

@@ -96,7 +96,7 @@ describe('ActionToolbar — render (D29, D31)', () => {
   });
 
   it('disables Archive / Unsubscribe / Later for a protected row but keeps Keep enabled', () => {
-    const row = rowById('t-sarah'); // VIP-protected
+    const row = rowById('t-sarah'); // user-protected
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
     // The Button component sets `disabled` and lowers opacity — both
     // surface in the SSR markup. We assert the disabled attribute
@@ -115,7 +115,7 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
   it('verbDisabledReason truth-table — reason exactly when a gate is off', () => {
     const noChannel = rowById('t-shipping'); // unsubscribeMethod 'none', unprotected
     const oneClick = rowById('t-linkedin'); // unsubscribeMethod 'one_click'
-    const vip = rowById('t-sarah'); // protected
+    const protectedRow = rowById('t-sarah');
 
     expect(verbDisabledReason('Unsubscribe', noChannel)).toBe(NO_CHANNEL_COPY);
     expect(verbDisabledReason('Archive', noChannel)).toBeNull();
@@ -124,10 +124,10 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
 
     expect(verbDisabledReason('Unsubscribe', oneClick)).toBeNull();
 
-    expect(verbDisabledReason('Unsubscribe', vip)).toBe(PROTECTED_COPY);
-    expect(verbDisabledReason('Archive', vip)).toBe(PROTECTED_COPY);
-    expect(verbDisabledReason('Later', vip)).toBe(PROTECTED_COPY);
-    expect(verbDisabledReason('Keep', vip)).toBeNull();
+    expect(verbDisabledReason('Unsubscribe', protectedRow)).toBe(PROTECTED_COPY);
+    expect(verbDisabledReason('Archive', protectedRow)).toBe(PROTECTED_COPY);
+    expect(verbDisabledReason('Later', protectedRow)).toBe(PROTECTED_COPY);
+    expect(verbDisabledReason('Keep', protectedRow)).toBeNull();
   });
 
   it('the disabled Unsubscribe pill carries the reason as title + aria-label', () => {
@@ -162,7 +162,7 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
     const html = renderToStaticMarkup(
       <ActionToolbar row={rowById('t-sarah')} onAction={() => {}} />,
     );
-    // The row header's Protected/VIP badge explains the row; the
+    // The row header's Protected badge explains the row; the
     // toolbar only mirrors the copy into the disabled pills' titles.
     expect(html).toContain(`title="${PROTECTED_COPY}"`);
     expect(html).not.toContain('role="note"');
@@ -251,11 +251,11 @@ describe('ActionToolbar — onAction callback wiring (the test the task asks for
     // gate's truth-table here directly.
     const protectedRow = rowById('t-sarah');
     expect(protectedRow.protectionReason).not.toBeNull();
-    // The disabled set for a VIP row is {Archive, Unsubscribe, Later}.
+    // The disabled set for a protected row is {Archive, Unsubscribe, Later}.
     // Keep is always allowed.
     const allowed = (['Keep', 'Archive', 'Unsubscribe', 'Later'] as const).filter((v) => {
       if (v === 'Keep') return true;
-      return false; // all other verbs are gated off for VIP per data.ts
+      return false; // all other verbs are gated off for protection per data.ts
     });
     expect(allowed).toEqual(['Keep']);
   });

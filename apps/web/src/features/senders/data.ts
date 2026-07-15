@@ -11,6 +11,7 @@ import {
   type ActionVerb as RegistryActionVerb,
   type SelectorType,
 } from '@declutrmail/shared/actions';
+import type { UnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
 import { satisfiesActionTier, type TierId } from '@declutrmail/shared/entitlements';
 
 export type SenderGroup = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
@@ -37,16 +38,9 @@ export interface SenderLastReview {
   /** Provenance — LLM call vs deterministic template fallback. */
   generatedBy: 'llm_haiku' | 'template';
   /**
-   * Engine confidence, 0..1. Drives the confidence gate in
-   * `uplift-d/intent.ts` — low-confidence verdicts are suppressed from
-   * the action buckets (sender stays in the catch-all rather than
-   * showing a "Cleanup recommendation" the engine isn't sure about).
-   *
-   * Optional for backward compatibility — when omitted (older wire
-   * payloads), defaults to `1.0` (full confidence) so existing
-   * behavior is preserved. BE adapter
-   * (`apps/api/src/senders/senders.service.ts`) should populate from
-   * `triage_decisions.confidence` once a follow-up PR wires that.
+   * Engine confidence, 0..1. Retained as decision-history metadata;
+   * D245 forbids it from choosing or styling the primary action.
+   * Optional for backward compatibility with older wire payloads.
    */
   confidence?: number;
 }
@@ -102,12 +96,11 @@ export interface Sender {
    */
   unsubPending?: boolean;
   /**
-   * RFC 8058 execution outcome (D9 Wave 2) — refines the unsub pill:
-   * `pending` "confirming…" / `done` "Request accepted" / `failed`
-   * "Unsub failed" / `ambiguous` "Unsub unconfirmed". `null`/absent =
-   * no tracked execution (mailto-manual per D230, or method none).
+   * Truthful unsubscribe lifecycle (D9/D245). A remote endpoint accepting
+   * a request is not presented as proof that future mail stopped; manual
+   * Gmail progress and unavailable channels have their own states.
    */
-  unsubStatus?: 'pending' | 'done' | 'failed' | 'ambiguous' | null;
+  unsubStatus?: UnsubscribeLifecycleStatus | null;
   /**
    * List-Unsubscribe method from the sender's headers — mirrors the
    * wire `SenderListRow.unsubscribeMethod`. `'one_click'` is the
@@ -117,12 +110,6 @@ export interface Sender {
    * absent ⇒ not unsub-ready.
    */
   unsubscribeMethod?: 'one_click' | 'mailto' | 'none' | null;
-  /**
-   * Standing VIP policy (D42/D43). Distinct from `protected`, but both
-   * route a sender into the "Protect" intent bucket (intentOf OR-s
-   * them) — a VIP must never surface as a Cleanup recommendation.
-   */
-  isVip?: boolean;
   /** Volume spike multiplier vs. the sender's usual rate. */
   spike?: number;
   /**
@@ -684,13 +671,13 @@ export const SENDERS: Sender[] = [
 
 /**
  * A sender is shielded from destructive / bulk actions when it carries a
- * standing policy — either Protect OR VIP (D42/D43, independent flags).
+ * standing Protect policy.
  * The single predicate every "can this be bulk-acted?" surface reads, so
  * the row chip, the action CTAs, the KPI count, and the intent bucket can
- * never disagree (the disagreement was the VIP-only-bulk-actionable gap).
+ * never disagree.
  */
-export function isStandingProtected(s: Pick<Sender, 'protected' | 'isVip'>): boolean {
-  return s.protected === true || s.isVip === true;
+export function isStandingProtected(s: Pick<Sender, 'protected'>): boolean {
+  return s.protected === true;
 }
 
 export function canUnsubscribe(s: Sender): boolean {
@@ -705,8 +692,8 @@ export function canArchive(s: Sender): boolean {
   return !isStandingProtected(s);
 }
 
-/** "Later" routes a sender's future mail to a DeclutrMail/Later label
- * (skips the inbox) — safe for anyone not standing-protected. */
+/** "Later" moves a sender's current inbox mail to the
+ * DeclutrMail/Later label — safe for anyone not standing-protected. */
 export function canLater(s: Sender): boolean {
   return !isStandingProtected(s);
 }
@@ -752,7 +739,7 @@ export function relTimeLabel(days: number): string {
 
 // ─── Actions ───────────────────────────────────────────────────
 // Canonical verbs (D227: Keep / Archive / Unsubscribe / Later) plus
-// Protect — a distinct VIP/lock operation, not a triage verb.
+// Protect — a distinct safety operation, not a triage verb.
 
 export type ActionVerb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Protect' | 'Delete';
 
@@ -765,14 +752,14 @@ export const VERB_PAST: Record<ActionVerb, string> = {
   Protect: 'Protected',
   // Spec v1.2 Decision 1 — Delete = Gmail Trash (recoverable 30 days).
   // Past-tense surfaces in the receipt strip after the worker completes.
-  Delete: 'Deleted',
+  Delete: 'Moved to Gmail Trash',
 };
 
 /**
  * Bridge the senders-feature's capitalized verb labels to the lowercase
  * Action Registry verbs (ADR-0015) so every action surface sources its
  * button label + shortcut from the ONE registry instead of a local
- * hardcode (P4). `Protect` is a VIP/lock op with no registry verb.
+ * hardcode (P4). `Protect` is a safety operation with no registry verb.
  */
 const VERB_TO_REGISTRY: Partial<Record<ActionVerb, RegistryActionVerb>> = {
   Keep: 'keep',
@@ -816,6 +803,8 @@ export function canUseActionSelector(
 export interface ActionRequest {
   verb: ActionVerb;
   senders: Sender[];
+  /** Original user selection before any eligibility narrowing. */
+  selectedCount?: number;
   /**
    * Senders the eligibility gate dropped from the user's selection
    * before this request was built (D226 honesty — the preview must say
@@ -828,24 +817,6 @@ export interface ActionRequest {
     protectedCount: number;
     peopleCount: number;
   };
-}
-
-// ─── Recommendation engine ─────────────────────────────────────
-// The action we think the user should take. Canonical verbs only
-// (D227): the prototype's "Mute" maps to "Later".
-
-export type RecommendedVerb = 'Unsubscribe' | 'Later' | null;
-
-export function recommendAction(s: Sender): RecommendedVerb {
-  // A standing-protected sender (Protect OR VIP) never gets a cleanup
-  // recommendation — same predicate the row chip / CTA / intent bucket use.
-  if (isStandingProtected(s) || s.group === 'primary') return null;
-  const { read, monthly } = s;
-  if (read === 0 && monthly >= 8) return 'Unsubscribe';
-  if (read < 0.2 && s.spike) return 'Unsubscribe';
-  if (read < 0.2 && monthly >= 4) return 'Later';
-  if (read >= 0.2 && read < 0.6 && monthly >= 6) return 'Later';
-  return null;
 }
 
 /** Which curated slice the focused review session is working on. */

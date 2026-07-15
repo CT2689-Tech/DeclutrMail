@@ -10,6 +10,7 @@ import {
   tokens,
   toast,
 } from '@declutrmail/shared';
+import { buildActionReceiptResult } from '@declutrmail/shared/actions';
 import {
   canArchive,
   canDelete,
@@ -59,7 +60,7 @@ import { ViewToggle } from './view-toggle';
 import { SenderTable, type SenderTableVerb } from './sender-table';
 import { rollupByDomain } from './domain-rollup';
 import { useSendersStore } from './store';
-import type { SenderListRow } from '@/lib/api/senders';
+import type { SenderListDirection, SenderListRow, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
 import { track } from '@/lib/posthog';
@@ -123,13 +124,11 @@ const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
   delete: 'Delete',
 };
 
-let receiptSeq = 0;
-
 /**
  * The Senders screen — lean power-surface composition (spec v1.2).
  *
  * Composition:
- *   1. Brand header + search (Add-VIP CTA hidden until the flow ships)
+ *   1. Brand header + search
  *   2. Hero number (`meta.query.totalMatching`, BE-honest) + ComposeStrip
  *      — multi-axis fact filters + sort (D38); state is URL-backed
  *   3. Grid of SenderCards (D49 — the single adaptive surface; the
@@ -169,19 +168,28 @@ export function SendersScreen() {
   useEffect(() => {
     void track('page_viewed', { page: 'senders', mailbox_id: null });
   }, []);
-  // Sort + direction come from the Zustand store (D200 client-state)
-  // so the ComposeStrip's sort chip and a future sort-shortcut/keyboard
-  // surface both write through one seam.
-  const sort = useSendersStore((s) => s.sort);
-  const direction = useSendersStore((s) => s.direction);
-  // Search lives here (above the fetch) so it drives the server query
-  // (#145) — debounced so typing doesn't fire a request per keystroke.
+  // Search, temporary filters, and sort form one URL-backed scope. This
+  // restores shared/refreshed links exactly and lets saved views replace
+  // the whole scope without leaving a hidden search term behind.
+  const {
+    compose,
+    setCompose,
+    clearCompose,
+    query,
+    setQuery,
+    sort,
+    direction,
+    setSort,
+    applySavedScope,
+    clearSearchAndFilters,
+  } = useComposeState();
+  // Search drives the server query (#145) — debounced so typing doesn't
+  // fire a request per keystroke.
   // `keepPreviousData` (in useSenders) holds the list while the new term
   // resolves, so the screen never blanks to a skeleton mid-search.
   // 150ms (was 300): SenderSearch now debounces its own notify by
   // 150ms before this state even updates (keystroke-eating fix), so
   // the stacked total keystroke→fetch stays ~300ms.
-  const [query, setQuery] = useState('');
   const debouncedQuery = useDebouncedValue(query.trim(), 150);
   // `limit: 50` matches the app-shell's `useSenders({ limit: 50 })` so
   // the two share ONE infinite-query cache entry per (category, limit,
@@ -189,7 +197,6 @@ export function SendersScreen() {
   // surface as the user pulls more pages here.
   // D38 compose state — every axis lives on the URL. Wired to the BE
   // list query below so chips narrow mailbox-wide (not loaded-page).
-  const { compose, setCompose, clearCompose } = useComposeState();
   const sendersQuery = useSenders({
     limit: 50,
     sort,
@@ -221,16 +228,22 @@ export function SendersScreen() {
   // authoritative for the duration of a scroll: subsequent pages
   // recompute server-side but the client preserves the page-1 number
   // so bars do not animate / replace counts as the user pages.
-  const globalMaxTotal = sendersQuery.data?.pages[0]?.meta.query?.globalMaxTotal ?? 0;
+  const queryMeta = sendersQuery.data?.pages[0]?.meta.query;
+  const globalMaxTotal = queryMeta?.globalMaxTotal ?? 0;
   // D38 — mailbox-wide absolute counts per compose axis. Page-1 wins
   // and is preserved across the scroll (subsequent pages recompute on
   // the server but the FE caches the page-1 snapshot so chip counts
   // don't shift mid-scroll).
-  const filterCounts = sendersQuery.data?.pages[0]?.meta.query?.filterCounts;
+  const filterCounts = queryMeta?.filterCounts;
   // D38 — total mailbox-wide matching count for the active compose
   // (the BE-honest "X senders match"). Falls back to the loaded length
   // while page 1 is in flight.
-  const totalMatching = sendersQuery.data?.pages[0]?.meta.query?.totalMatching ?? undefined;
+  const totalMatching = queryMeta?.totalMatching ?? undefined;
+  // D245 — the server computes counts + rows against one observational
+  // snapshot. Surface that scope and make keepPreviousData transitions
+  // explicitly read-only so prior-query rows cannot receive actions.
+  const asOf = queryMeta?.asOf;
+  const showingStaleRows = sendersQuery.isPlaceholderData;
   // Mailbox-wide aggregates (#145, real-data counts) — drives the hero,
   // KPI strip, and intent chips so headline numbers reflect the WHOLE
   // mailbox, not the loaded ≤50-row page. Honors the same debounced `q`
@@ -276,10 +289,15 @@ export function SendersScreen() {
       onQueryChange={setQuery}
       summaryFailed={summaryFailed}
       totalMatching={totalMatching}
+      asOf={asOf}
+      showingStaleRows={showingStaleRows}
       filterCounts={filterCounts}
       compose={compose}
       setCompose={setCompose}
       clearCompose={clearCompose}
+      setSort={setSort}
+      applySavedScope={applySavedScope}
+      clearSearchAndFilters={clearSearchAndFilters}
     />
   );
 }
@@ -302,10 +320,15 @@ function SendersScreenContent({
   onQueryChange: setQuery,
   summaryFailed,
   totalMatching,
+  asOf,
+  showingStaleRows,
   filterCounts,
   compose,
   setCompose,
   clearCompose,
+  setSort,
+  applySavedScope,
+  clearSearchAndFilters,
 }: {
   senders: Sender[];
   /** Raw wire rows (BE order) for the flat-table view (D49). Grid mode
@@ -328,6 +351,10 @@ function SendersScreenContent({
   summaryFailed: boolean;
   /** D38 — BE-honest count for the active compose (page-1 snapshot). */
   totalMatching: number | undefined;
+  /** D245 — server time for the count + row snapshot currently rendered. */
+  asOf: string | undefined;
+  /** Prior query's pages retained while the active search/filter resolves. */
+  showingStaleRows: boolean;
   /** D38 — mailbox-wide absolute counts per axis (page-1 snapshot). */
   filterCounts:
     | {
@@ -345,6 +372,13 @@ function SendersScreenContent({
   compose: ComposeState;
   setCompose: (next: ComposeState) => void;
   clearCompose: () => void;
+  setSort: (next: { sort: SenderListSort; direction: SenderListDirection }) => void;
+  applySavedScope: (next: {
+    compose: ComposeState;
+    sort: SavedSenderView['sort'];
+    direction: SavedSenderView['direction'];
+  }) => void;
+  clearSearchAndFilters: () => void;
 }) {
   const { me } = useAuth();
   const tier = me.tier ?? 'free';
@@ -386,14 +420,15 @@ function SendersScreenContent({
     // a verb-correct receipt + toast (Delete must NOT say "Archived",
     // Later must NOT say "Archived" — composite path mistake 2026-06-05).
     verb: 'Archive' | 'Delete' | 'Later';
-    /** Sender's monthly volume at dispatch — the "~N/mo prevented" payoff (D33). */
-    monthly: number;
   } | null>(null);
   // D52 — the in-flight bulk batch the status effect polls to terminal.
   const [activeBatch, setActiveBatch] = useState<{
     batchId: string;
     verb: 'Archive' | 'Delete' | 'Later';
     senderCount: number;
+    selectedCount: number;
+    skippedCount: number;
+    wakeAt: string | null;
   } | null>(null);
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
   // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution (single-
@@ -409,6 +444,7 @@ function SendersScreenContent({
   // D230 manual path — the post-confirm "finish in Gmail" callout for
   // a mailto sender. Dismissible; rendered next to the receipt strip.
   const [mailtoFollowup, setMailtoFollowup] = useState<{
+    senderId: string;
     senderName: string;
     mailtoUrl: string;
   } | null>(null);
@@ -508,7 +544,6 @@ function SendersScreenContent({
   // written by it + the saved-views apply path below.
   const sortCol = useSendersStore((s) => s.sort);
   const sortDirection = useSendersStore((s) => s.direction);
-  const setSortState = useSendersStore((s) => s.setSort);
   // Per-session grid/table view (D49). Default is grid; the segmented
   // ViewToggle in the header flips it. Deliberately non-persistent.
   const view = useSendersStore((s) => s.view);
@@ -532,8 +567,18 @@ function SendersScreenContent({
   // the 2026-06-11 smoke). Updaters must stay pure; the closure over
   // `selected` is safe because each call rides a discrete user click.
   const selectionAnchorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!showingStaleRows) return;
+    // The active URL/search scope has changed. Any selection or preview
+    // belongs to the previous query and must not survive under the new
+    // scope, even though keepPreviousData still paints those old rows.
+    selectionAnchorRef.current = null;
+    setSelected(new Set());
+    setPendingAction(null);
+  }, [showingStaleRows]);
   const toggleWithRange = useCallback(
     (orderedIds: readonly string[], id: string, shiftKey: boolean) => {
+      if (showingStaleRows) return;
       const next = new Set(selected);
       const checked = !selected.has(id);
       const anchor = selectionAnchorRef.current;
@@ -560,7 +605,7 @@ function SendersScreenContent({
       selectionAnchorRef.current = id;
       setSelected(next);
     },
-    [selected],
+    [selected, showingStaleRows],
   );
 
   // D51 brand rollup — group loaded senders by registrable domain
@@ -589,9 +634,12 @@ function SendersScreenContent({
   // Search suggestion picked. The BE typeahead spans the whole mailbox,
   // so the chosen sender may not be on the current list page. Set the
   // query to its name (BE list narrows to that single row).
-  const onSearchPick = useCallback((s: { id: string; name: string; domain: string }) => {
-    setQuery(s.name);
-  }, []);
+  const onSearchPick = useCallback(
+    (s: { id: string; name: string; domain: string }) => {
+      setQuery(s.name);
+    },
+    [setQuery],
+  );
 
   const performAction = useCallback(
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
@@ -644,7 +692,6 @@ function SendersScreenContent({
               actionId: res.actionId,
               senderName: sender.name,
               verb: 'Archive',
-              monthly: sender.monthly,
             }),
           onError: (err) => {
             // 402 FREE_CAP_REACHED is a designed state — the
@@ -698,6 +745,7 @@ function SendersScreenContent({
             primary: {
               type: primaryType,
               olderThanDays: opts?.olderThanDays ?? null,
+              ...(primaryType === 'later' && opts?.wakeAt ? { wakeAt: opts.wakeAt } : {}),
             },
             ...(opts?.secondary
               ? {
@@ -713,7 +761,6 @@ function SendersScreenContent({
               setActiveAction({
                 actionId: res.actionId,
                 senderName: sender.name,
-                monthly: sender.monthly,
                 verb:
                   primaryType === 'delete'
                     ? 'Delete'
@@ -785,7 +832,11 @@ function SendersScreenContent({
                 } else if (res.method === 'mailto' && res.mailtoUrl) {
                   // The callout is the feedback — it carries the manual
                   // step the toast can't (a compose link).
-                  setMailtoFollowup({ senderName: sref.name, mailtoUrl: res.mailtoUrl });
+                  setMailtoFollowup({
+                    senderId: sref.id,
+                    senderName: sref.name,
+                    mailtoUrl: res.mailtoUrl,
+                  });
                 } else {
                   toast(
                     `${sref.name} offers no unsubscribe channel — Archive is the reliable fallback`,
@@ -812,9 +863,6 @@ function SendersScreenContent({
                           actionId: cres.actionId,
                           senderName: sref.name,
                           verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
-                          // Follow-on of an unsubscribe that already
-                          // carried the payoff — don't double-claim.
-                          monthly: 0,
                         }),
                       onError: (err) => {
                         // 402 FREE_CAP_REACHED — the upgrade prompt
@@ -923,6 +971,9 @@ function SendersScreenContent({
                   batchId: res.batchId,
                   verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
                   senderCount: res.senderCount,
+                  selectedCount: succeededIds.length,
+                  skippedCount: res.skipped.length,
+                  wakeAt: null,
                 }),
               onError: (err) => {
                 // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
@@ -1020,7 +1071,11 @@ function SendersScreenContent({
         enqueueBulk.mutate(
           {
             senderIds: senders.map((s) => s.id),
-            primary: { type: primaryType, olderThanDays: opts?.olderThanDays ?? null },
+            primary: {
+              type: primaryType,
+              olderThanDays: opts?.olderThanDays ?? null,
+              ...(primaryType === 'later' && opts?.wakeAt ? { wakeAt: opts.wakeAt } : {}),
+            },
             ...(opts?.secondary
               ? {
                   secondary: {
@@ -1040,7 +1095,14 @@ function SendersScreenContent({
                   'warn',
                 );
               }
-              setActiveBatch({ batchId: res.batchId, verb, senderCount: res.senderCount });
+              setActiveBatch({
+                batchId: res.batchId,
+                verb,
+                senderCount: res.senderCount,
+                selectedCount: senders.length,
+                skippedCount: res.skipped.length,
+                wakeAt: verb === 'Later' ? (opts?.wakeAt ?? null) : null,
+              });
             },
             onError: (err) => {
               // 402 FREE_CAP_REACHED — a bulk of N needs N free units;
@@ -1107,6 +1169,7 @@ function SendersScreenContent({
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    setReceipt({ ...buildActionReceiptResult(data), senderCount: 1 });
     if (data.status === 'done') {
       // Verb-correct copy — the composite path runs the SAME done-handler
       // for Archive / Delete / Later, so the receipt + toast must read
@@ -1125,19 +1188,8 @@ function SendersScreenContent({
         // to /activity sees the audit row instead of an empty feed.
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
-        setReceipt({
-          id: `r${++receiptSeq}`,
-          verb: activeAction.verb,
-          count: 1,
-          historicTotal: data.affectedCount,
-          timeLeft: '',
-          undoToken: data.undoToken,
-        });
         toast(
-          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}` +
-            (activeAction.monthly > 0
-              ? ` — ~${activeAction.monthly.toLocaleString()}/mo of noise prevented`
-              : ''),
+          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
           'success',
         );
         // Invalidate BOTH surfaces — Senders rows (counts moved) AND the
@@ -1173,17 +1225,17 @@ function SendersScreenContent({
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
       toast(
-        `${activeUnsub.senderName}'s endpoint accepted the unsubscribe request — watch for new mail`,
+        `${activeUnsub.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
         'success',
       );
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `Couldn't confirm ${activeUnsub.senderName}'s unsubscribe — it may have worked. Watch for new mail.`,
+        `${activeUnsub.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
         'warn',
       );
     } else {
       toast(
-        `${activeUnsub.senderName}'s list refused the unsubscribe — Archive is the reliable fallback`,
+        `${activeUnsub.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
         'warn',
       );
     }
@@ -1212,6 +1264,25 @@ function SendersScreenContent({
     }
     const data = batchStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    setReceipt({
+      ...buildActionReceiptResult({
+        actionId: data.batchId,
+        verb: activeBatch.verb.toLowerCase() as 'archive' | 'later' | 'delete',
+        direction: 'forward',
+        status: data.status,
+        requestedCount: data.requestedCount,
+        affectedCount: data.affectedCount,
+        wakeAt: activeBatch.wakeAt,
+        undoToken: data.undoToken,
+        undoExpiresAt: null,
+        undoExecutedAt: null,
+        undoRevertedAt: null,
+        errorCode: data.status === 'failed' ? 'BATCH_FAILED' : null,
+      }),
+      senderCount: activeBatch.senderCount,
+      selectedCount: activeBatch.selectedCount,
+      skippedCount: activeBatch.skippedCount,
+    });
     const verbPast = VERB_PAST[activeBatch.verb];
     const verbLowercase = activeBatch.verb.toLowerCase();
     if (data.status === 'failed') {
@@ -1233,14 +1304,6 @@ function SendersScreenContent({
         toast(`No inbox mail from these senders to ${verbLowercase}`, 'info');
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
-        setReceipt({
-          id: `r${++receiptSeq}`,
-          verb: activeBatch.verb,
-          count: activeBatch.senderCount,
-          historicTotal: data.affectedCount,
-          timeLeft: '',
-          undoToken: data.undoToken,
-        });
         toast(
           `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeBatch.senderCount} senders`,
           'success',
@@ -1291,7 +1354,7 @@ function SendersScreenContent({
   // an already-reverted token resolves immediately. Tracer receipts (no
   // token) keep the old log-only behavior.
   const onUndo = useCallback(() => {
-    const token = receipt?.undoToken;
+    const token = receipt?.activityUndo.token;
     if (!token) {
       // Tokenless receipts shouldn't surface a fake "Reverted" — the
       // unsub-intent path makes a real BE call and supplies a token; the
@@ -1338,6 +1401,7 @@ function SendersScreenContent({
   // Protect change nothing and fire directly.
   const requestAction = useCallback(
     (req: ActionRequest) => {
+      if (showingStaleRows) return;
       if (req.senders.length === 0) return;
       if (
         req.verb === 'Archive' ||
@@ -1350,7 +1414,7 @@ function SendersScreenContent({
         performAction(req.verb, req.senders);
       }
     },
-    [performAction],
+    [performAction, showingStaleRows],
   );
 
   // Bulk verbs (SelectionBar buttons + the selection-scoped shortcuts)
@@ -1361,6 +1425,7 @@ function SendersScreenContent({
   // opening an empty preview.
   const requestBulkAction = useCallback(
     (verb: 'Keep' | keyof typeof ELIGIBLE) => {
+      if (showingStaleRows) return;
       if (selectedSenders.length > 1 && !canUseActionSelector(tier, verb, 'multi-sender')) {
         toast('Multi-sender actions require Plus — select one sender or see plans.', 'info');
         return;
@@ -1395,7 +1460,7 @@ function SendersScreenContent({
       }
       const skippedTotal = selectedSenders.length - eligible.length;
       if (skippedTotal === 0) {
-        requestAction({ verb, senders: eligible });
+        requestAction({ verb, senders: eligible, selectedCount: selectedSenders.length });
         return;
       }
       const protectedCount = selectedSenders.filter(
@@ -1403,19 +1468,25 @@ function SendersScreenContent({
       ).length;
       requestAction({
         verb,
-        senders: eligible,
+        // A/L/D keep the original selection so preview and receipt can
+        // report protected/raced rows individually. Unsubscribe fans
+        // intent requests and therefore remains client-narrowed.
+        senders: verb === 'Unsubscribe' ? eligible : selectedSenders,
+        selectedCount: selectedSenders.length,
         skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
       });
     },
-    [selectedSenders, requestAction, tier],
+    [selectedSenders, requestAction, showingStaleRows, tier],
   );
 
   const closePending = useCallback(() => setPendingAction(null), []);
   const confirmPending = useCallback(
     (opts: ConfirmOptions) => {
-      if (pendingAction) performAction(pendingAction.verb, pendingAction.senders, opts);
+      if (pendingAction && !showingStaleRows) {
+        performAction(pendingAction.verb, pendingAction.senders, opts);
+      }
     },
-    [pendingAction, performAction],
+    [pendingAction, performAction, showingStaleRows],
   );
 
   // D51 saved views — apply / save-current / delete. The contract's
@@ -1425,10 +1496,18 @@ function SendersScreenContent({
     (name: string) => {
       const view = savedViews.find((v) => v.name === name);
       if (!view) return;
-      setCompose({ ...view.compose });
-      setSortState({ sort: view.sort, direction: view.direction });
+      const clearedSearch = query.trim().length > 0;
+      applySavedScope({
+        compose: { ...view.compose },
+        sort: view.sort,
+        direction: view.direction,
+      });
+      toast(
+        clearedSearch ? `Applied view "${name}" · search cleared` : `Applied view "${name}"`,
+        'success',
+      );
     },
-    [savedViews, setCompose, setSortState],
+    [savedViews, query, applySavedScope],
   );
   const saveCurrentView = useCallback(
     (name: string) => {
@@ -1482,6 +1561,7 @@ function SendersScreenContent({
   // is open, and only when at least one sender is selected.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (showingStaleRows) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (selectedSenders.length === 0) return;
@@ -1501,7 +1581,7 @@ function SendersScreenContent({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedSenders, requestBulkAction]);
+  }, [selectedSenders, requestBulkAction, showingStaleRows]);
 
   return (
     <div
@@ -1542,17 +1622,14 @@ function SendersScreenContent({
           {/* The Grid/Table toggle was retired (founder-approved,
               2026-07-08 senders suite) — the grid is the single adaptive
               surface; sorting lives on the ComposeStrip sort chip. */}
-          {/* "+ Add VIP" header CTA is hidden until the real Add-VIP flow
-              ships (2026-07-07 audit, founder call: hide now, build later)
-              — a toast stub as a primary CTA violates §10 no-fake-completion. */}
         </div>
       </div>
 
       <ScreenIntro
         id="senders"
         title="How Senders works"
-        body="Every account, list, and service that mails you, regrouped by a recommended next step. Manual Archive, Later, and Delete affect matching inbox mail when they run; future matches change only through Pro Autopilot rules you explicitly enable."
-        tip="Recommendations use bounded metadata signals such as sender identity, volume, read and reply history, recency, and protection settings. Full message bodies and attachments are never fetched."
+        body="Every account, list, person, and service that mails you, grouped by sender and a recommended next step. Manual Archive, Later, and Delete affect only matching inbox mail when they run; future matches change only through Pro Autopilot rules you explicitly enable."
+        tip="Recommendations use sender identity, subject, Gmail's short preview, dates, volume, read and reply history, recency, and protection settings. Full message bodies and attachments are never fetched."
       />
 
       <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
@@ -1561,6 +1638,7 @@ function SendersScreenContent({
           a mailto sender. The user sends the opt-out; never auto-sent. */}
       {mailtoFollowup && (
         <UnsubMailtoCallout
+          senderId={mailtoFollowup.senderId}
           senderName={mailtoFollowup.senderName}
           mailtoUrl={mailtoFollowup.mailtoUrl}
           onDismiss={() => setMailtoFollowup(null)}
@@ -1640,6 +1718,14 @@ function SendersScreenContent({
         </div>
       )}
 
+      {asOf && (
+        <SenderResultsFreshness
+          asOf={asOf}
+          mailboxEmail={activeEmail}
+          updating={showingStaleRows}
+        />
+      )}
+
       {/* D38 compose strip — 6 axes, AND across, multi-state per chip.
           Counts on chips are mailbox-wide absolutes (filterCounts),
           NOT loaded-page derivations. URL state via useComposeState
@@ -1666,7 +1752,7 @@ function SendersScreenContent({
           domainSuggestions={topDomains(senders)}
           sort={sortCol}
           direction={sortDirection}
-          onSortChange={(next) => setSortState(next)}
+          onSortChange={setSort}
           views={{
             names: savedViews.map((v) => v.name),
             onApply: applySavedView,
@@ -1718,7 +1804,7 @@ function SendersScreenContent({
               alignItems: 'baseline',
             }}
           >
-            {senders.length > 0 && (
+            {senders.length > 0 && !showingStaleRows && (
               <BulkSelectButton senders={senders} selected={selected} setSelected={setSelected} />
             )}
             {/* D49 — segmented [Grid | Table] switch. Per-session,
@@ -1733,68 +1819,87 @@ function SendersScreenContent({
           not "not synced yet". (The no-match branch was unreachable
           before this split: the not-synced branch keyed on the same
           `senders.length === 0` and always won.) */}
-      {senders.length === 0 && (query || hasAnyFilter(compose)) ? (
-        <EmptyState
-          title={query ? `No senders match "${query}"` : 'No senders match these filters'}
-          body="Try a different search or clear the filters."
-          action={
-            <Button
-              onClick={() => {
-                setQuery('');
-                clearCompose();
-              }}
-            >
-              Clear search & filters
-            </Button>
-          }
-        />
-      ) : senders.length === 0 ? (
-        <EmptyState
-          title="No senders yet"
-          body="Once your mailbox finishes syncing, the senders who mail you will appear here."
-        />
-      ) : view === 'grid' ? (
-        // D49 default — grid of cards. `senders` arrives already
-        // BE-filtered for the active compose (D38); D51 brand rollup
-        // groups ≥3 senders sharing a registrable domain into one
-        // expandable group row.
-        <SenderGrid
-          entries={gridEntries}
-          selectedIds={selected}
-          onToggleSelect={(id, shiftKey) => toggleWithRange(gridOrderedIds, id, shiftKey ?? false)}
-          onAction={requestAction}
-          globalMaxTotal={globalMaxTotal}
-        />
-      ) : (
-        // D49 Table — flat, sortable list over the wire rows (ADR-0014).
-        // BE sort order (sort + direction) is the canonical row order;
-        // the table does NOT intent-bucket. Row verbs bridge into the
-        // shared `requestAction` shape so ConfirmActionModal / receipt /
-        // undo stay identical to Grid mode (D226).
-        <SenderTable
-          rows={wireRows}
-          globalMaxTotal={globalMaxTotal}
-          sort={sortCol}
-          direction={sortDirection}
-          onSortChange={(next) => setSortState(next)}
-          selectedIds={selected}
-          onSelectionChange={(next) => setSelected(new Set(next))}
-          onRowToggle={({ id, shiftKey }) => toggleWithRange(tableOrderedIds, id, shiftKey)}
-          onAction={({ verb, sender }) => {
-            const adapted = adaptSenderListRow(sender);
-            requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
-          }}
-          emptyKind={
-            query.trim() !== ''
-              ? 'no-search-match'
-              : hasAnyFilter(compose)
-                ? 'no-filter-match'
-                : 'no-senders'
-          }
-        />
-      )}
+      <fieldset
+        data-testid="sender-results-region"
+        disabled={showingStaleRows}
+        inert={showingStaleRows ? true : undefined}
+        aria-busy={showingStaleRows}
+        aria-disabled={showingStaleRows}
+        style={{
+          border: 0,
+          margin: 0,
+          minWidth: 0,
+          padding: 0,
+          opacity: showingStaleRows ? 0.55 : 1,
+          pointerEvents: showingStaleRows ? 'none' : undefined,
+          transition: 'opacity 120ms ease',
+        }}
+      >
+        {senders.length === 0 && (query || hasAnyFilter(compose)) ? (
+          <EmptyState
+            title={query ? `No senders match "${query}"` : 'No senders match these filters'}
+            body="Try a different search or clear the filters."
+            action={
+              <Button
+                onClick={() => {
+                  clearSearchAndFilters();
+                }}
+              >
+                Clear search & filters
+              </Button>
+            }
+          />
+        ) : senders.length === 0 ? (
+          <EmptyState
+            title="No senders yet"
+            body="Once your mailbox finishes syncing, the senders who mail you will appear here."
+          />
+        ) : view === 'grid' ? (
+          // D49 default — grid of cards. `senders` arrives already
+          // BE-filtered for the active compose (D38); D51 brand rollup
+          // groups ≥3 senders sharing a registrable domain into one
+          // expandable group row.
+          <SenderGrid
+            entries={gridEntries}
+            selectedIds={selected}
+            onToggleSelect={(id, shiftKey) =>
+              toggleWithRange(gridOrderedIds, id, shiftKey ?? false)
+            }
+            onAction={requestAction}
+            globalMaxTotal={globalMaxTotal}
+          />
+        ) : (
+          // D49 Table — flat, sortable list over the wire rows (ADR-0014).
+          // BE sort order (sort + direction) is the canonical row order;
+          // the table does NOT intent-bucket. Row verbs bridge into the
+          // shared `requestAction` shape so ConfirmActionModal / receipt /
+          // undo stay identical to Grid mode (D226).
+          <SenderTable
+            rows={wireRows}
+            globalMaxTotal={globalMaxTotal}
+            sort={sortCol}
+            direction={sortDirection}
+            onSortChange={setSort}
+            selectedIds={selected}
+            onSelectionChange={(next) => {
+              if (!showingStaleRows) setSelected(new Set(next));
+            }}
+            onRowToggle={({ id, shiftKey }) => toggleWithRange(tableOrderedIds, id, shiftKey)}
+            onAction={({ verb, sender }) => {
+              const adapted = adaptSenderListRow(sender);
+              requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
+            }}
+            emptyKind={
+              query.trim() !== ''
+                ? 'no-search-match'
+                : hasAnyFilter(compose)
+                  ? 'no-filter-match'
+                  : 'no-senders'
+            }
+          />
+        )}
 
-      {/*
+        {/*
         Load more (D202 cursor pagination). The list endpoint returns one
         page at a time; without this control a mailbox with more senders
         than a page silently truncated at the first page. Shown only when
@@ -1807,26 +1912,27 @@ function SendersScreenContent({
         the keyboard/AT affordance and the no-IntersectionObserver
         fallback.
       */}
-      {hasNextPage && senders.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 0 4px',
-          }}
-        >
-          {infiniteScrollEnabled && (
-            <LoadMoreSentinel onVisible={onLoadMore} busy={isFetchingNextPage} />
-          )}
-          <Button onClick={onLoadMore} disabled={isFetchingNextPage}>
-            {isFetchingNextPage ? 'Loading…' : 'Load more senders'}
-          </Button>
-        </div>
-      )}
+        {hasNextPage && senders.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 0 4px',
+            }}
+          >
+            {infiniteScrollEnabled && (
+              <LoadMoreSentinel onVisible={onLoadMore} busy={isFetchingNextPage} />
+            )}
+            <Button onClick={onLoadMore} disabled={isFetchingNextPage}>
+              {isFetchingNextPage ? 'Loading…' : 'Load more senders'}
+            </Button>
+          </div>
+        )}
+      </fieldset>
 
-      {selectedSenders.length > 0 && (
+      {selectedSenders.length > 0 && !showingStaleRows && (
         <SelectionBar
           senders={selectedSenders}
           onClear={() => setSelected(new Set())}
@@ -1837,11 +1943,12 @@ function SendersScreenContent({
       )}
 
       <ConfirmActionModal
-        request={pendingAction}
+        request={showingStaleRows ? null : pendingAction}
         onCancel={closePending}
         onConfirm={confirmPending}
         archivePreview={archivePreview}
         compositePreview={compositePreviewQuery.data}
+        compositePreviewLoading={compositePreviewQuery.isLoading}
         compositePreviewError={compositePreviewQuery.isError}
         mailboxEmail={activeEmail}
         bulkPreview={
@@ -1853,6 +1960,11 @@ function SendersScreenContent({
               }
             : undefined
         }
+        onRetryPreview={() => {
+          void archivePreviewQuery.refetch();
+          void compositePreviewQuery.refetch();
+          if (bulkPreviewSenderIds != null) void bulkPreviewQuery.refetch();
+        }}
       />
 
       {/* `?` reveals the K/A/U/L shortcut reference (registry-sourced). */}
@@ -1862,6 +1974,70 @@ function SendersScreenContent({
 }
 
 /* ────────────────── HELPERS ────────────────── */
+
+/** D245 — query scope + server snapshot time beside the matching count. */
+function SenderResultsFreshness({
+  asOf,
+  mailboxEmail,
+  updating,
+}: {
+  asOf: string;
+  mailboxEmail: string;
+  updating: boolean;
+}) {
+  const label = formatSenderSnapshotTime(asOf);
+  return (
+    <div
+      data-testid="sender-results-freshness"
+      role={updating ? 'status' : undefined}
+      aria-live={updating ? 'polite' : undefined}
+      aria-atomic={updating ? 'true' : undefined}
+      style={{
+        alignItems: 'baseline',
+        color: updating ? color.amber : color.fgMuted,
+        display: 'flex',
+        flexWrap: 'wrap',
+        fontFamily: font.mono,
+        fontSize: 11,
+        gap: 5,
+        lineHeight: 1.5,
+        margin: '-2px 0 2px',
+      }}
+    >
+      {updating ? (
+        <>
+          <strong style={{ fontWeight: 600 }}>Updating results…</strong>
+          <span>Previous count and rows are read-only.</span>
+          <span>
+            Previous snapshot <time dateTime={asOf}>{label}</time>.
+          </span>
+        </>
+      ) : (
+        <>
+          <span>Matching count and rows for {mailboxEmail}</span>
+          <span aria-hidden="true">·</span>
+          <span>
+            Snapshot <time dateTime={asOf}>{label}</time>
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function formatSenderSnapshotTime(iso: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return 'time unavailable';
+  return new Intl.DateTimeFormat('en-US', {
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: 'short',
+    timeZone: 'UTC',
+    timeZoneName: 'short',
+    year: 'numeric',
+  }).format(date);
+}
 
 /**
  * D38 — derive the top-N domain suggestions for the ComposeStrip's
@@ -1885,7 +2061,8 @@ function topDomains(senders: readonly Sender[]): string[] {
 /**
  * D38 — bulk-select toggle on the compose summary line. Acts on the
  * currently loaded senders (BE-filtered, so the set already matches
- * the active compose). `select all N` ↔ `deselect all N`.
+ * the active compose). The visible "loaded" qualifier prevents this
+ * from being mistaken for filter-wide selection across unloaded pages.
  */
 function BulkSelectButton({
   senders,
@@ -1928,7 +2105,9 @@ function BulkSelectButton({
         letterSpacing: '0.04em',
       }}
     >
-      {allSelected ? `deselect all ${senders.length} [⌫]` : `select all ${senders.length} [+]`}
+      {allSelected
+        ? `deselect loaded ${senders.length} [⌫]`
+        : `select loaded ${senders.length} [+]`}
     </button>
   );
 }

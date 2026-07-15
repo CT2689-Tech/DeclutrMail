@@ -29,7 +29,6 @@ import {
 function baseSignals(): SenderSignals {
   return {
     isProtected: false,
-    isVip: false,
     hasReplied: false,
     gmailCategory: 'promotions',
     starredInLastYear: false,
@@ -64,14 +63,26 @@ describe('runCascade — Phase A (protection / engagement)', () => {
     expect(result.ruleId).toBe('protect_user_defined');
   });
 
-  it('protected VIP → keep at 1.0, ruleId reflects VIP provenance', () => {
+  it('reply-protected sender → keep with exact provenance', () => {
     const result = runCascade({
       ...baseSignals(),
       isProtected: true,
-      protectionReason: 'vip',
-      isVip: true,
+      protectionReason: 'replied',
     });
-    expect(result.ruleId).toBe('protect_vip');
+    expect(result.ruleId).toBe('protect_replied');
+    expect(result.verdict).toBe('keep');
+  });
+
+  it.each([
+    ['starred', 'protect_starred'],
+    ['gmail_important', 'protect_gmail_important'],
+  ] as const)('maps %s protection to its exact audit rule', (protectionReason, ruleId) => {
+    const result = runCascade({
+      ...baseSignals(),
+      isProtected: true,
+      protectionReason,
+    });
+    expect(result.ruleId).toBe(ruleId);
     expect(result.verdict).toBe('keep');
   });
 

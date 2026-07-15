@@ -1,5 +1,6 @@
 export * from './_custom-types';
 export * from './account-deletion-requests';
+export * from './action-recovery-previews';
 export * from './action-jobs';
 export * from './active-sessions';
 export * from './activity-log';
@@ -11,6 +12,7 @@ export * from './dead-letter-jobs';
 export * from './followup-tracker';
 export * from './mail-messages';
 export * from './mailbox-accounts';
+export * from './mailbox-data-deletion-requests';
 export * from './outbox-events';
 export * from './provider-sync-state';
 export * from './rule-match-log';

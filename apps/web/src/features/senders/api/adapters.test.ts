@@ -6,16 +6,15 @@
 // blank / mis-buckets in production — these tests catch that class.
 
 import { describe, expect, it } from 'vitest';
-import { adaptDecisionHistoryRow, adaptSenderListRow } from './adapters';
 import {
-  canArchive,
-  canLater,
-  canUnsubscribe,
-  isStandingProtected,
-  recommendAction,
-} from '../data';
-import { intentOf } from '../uplift-d/intent';
-import type { DecisionHistoryRowDto, SenderListRow } from '@/lib/api/senders';
+  adaptDecisionHistoryRow,
+  adaptProtectionReason,
+  adaptSenderDetail,
+  adaptSenderListRow,
+} from './adapters';
+import { canArchive, canLater, canUnsubscribe, isStandingProtected } from '../data';
+import { derivePrimaryVerbId } from '../action-row';
+import type { DecisionHistoryRowDto, SenderDetailDto, SenderListRow } from '@/lib/api/senders';
 
 function listRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
   return {
@@ -34,7 +33,6 @@ function listRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
     unsubscribeMethod: 'one_click',
     lastReview: null,
     protectionFlags: {
-      isVip: false,
       isProtected: false,
       protectionReason: null,
       protectionSetAt: null,
@@ -53,6 +51,10 @@ function historyRow(overrides: Partial<DecisionHistoryRowDto> = {}): DecisionHis
     generatedBy: 'llm_haiku',
     ...overrides,
   };
+}
+
+function detailRow(overrides: Partial<SenderDetailDto> = {}): SenderDetailDto {
+  return { ...listRow(), ...overrides };
 }
 
 describe('adaptDecisionHistoryRow — provenance label (generatedBy)', () => {
@@ -77,25 +79,22 @@ describe('adaptDecisionHistoryRow — provenance label (generatedBy)', () => {
 });
 
 describe('adaptSenderListRow — protection flags (D42/D43)', () => {
-  it('surfaces isProtected → Sender.protected and isVip → Sender.isVip', () => {
+  it('surfaces isProtected → Sender.protected', () => {
     const s = adaptSenderListRow(
       listRow({
         protectionFlags: {
-          isVip: true,
           isProtected: true,
-          protectionReason: 'vip',
+          protectionReason: 'user_defined',
           protectionSetAt: '2026-04-01T00:00:00.000Z',
         },
       }),
     );
     expect(s.protected).toBe(true);
-    expect(s.isVip).toBe(true);
   });
 
-  it('defaults protected/isVip to false when the policy is empty', () => {
+  it('defaults protected to false when the policy is empty', () => {
     const s = adaptSenderListRow(listRow());
     expect(s.protected).toBe(false);
-    expect(s.isVip).toBe(false);
   });
 
   it('carries unsubscribeMethod through so the row can derive unsub-ready (ADR-0019)', () => {
@@ -119,35 +118,28 @@ describe('adaptSenderListRow — protection flags (D42/D43)', () => {
     expect(s.total).toBe(144);
   });
 
-  it('shields a VIP-only sender (isVip && !isProtected) from every destructive action', () => {
-    // The real BE sends VIP and Protect independently (D42/D43). A VIP
-    // that is not also `isProtected` must STILL be untouchable by bulk
-    // actions and route to the Protect bucket — the gap the design gate
-    // caught: the surfaces must agree on one `isStandingProtected` predicate.
-    const vipOnly = adaptSenderListRow(
+  it('shields a Protected sender from every destructive action', () => {
+    const protectedSender = adaptSenderListRow(
       listRow({
         protectionFlags: {
-          isVip: true,
-          isProtected: false,
-          protectionReason: 'vip',
+          isProtected: true,
+          protectionReason: 'user_defined',
           protectionSetAt: '2026-04-01T00:00:00.000Z',
         },
       }),
     );
-    expect(vipOnly.isVip).toBe(true);
-    expect(vipOnly.protected).toBe(false);
-    expect(isStandingProtected(vipOnly)).toBe(true);
-    expect(canArchive(vipOnly)).toBe(false);
-    expect(canLater(vipOnly)).toBe(false);
-    expect(canUnsubscribe(vipOnly)).toBe(false);
-    expect(intentOf(vipOnly)).toBe('protect');
-    // A VIP must never get a cleanup recommendation either (row-detail callout).
-    expect(recommendAction(vipOnly)).toBeNull();
+    expect(protectedSender.protected).toBe(true);
+    expect(isStandingProtected(protectedSender)).toBe(true);
+    expect(canArchive(protectedSender)).toBe(false);
+    expect(canLater(protectedSender)).toBe(false);
+    expect(canUnsubscribe(protectedSender)).toBe(false);
+    expect(derivePrimaryVerbId(protectedSender)).toBe('keep');
   });
 
-  it('passes the confidence through on lastReview so the intent gate can read it', () => {
+  it('retains confidence as review metadata without using it for the primary action', () => {
     const s = adaptSenderListRow(
       listRow({
+        unsubscribeMethod: 'none',
         lastReview: {
           at: '2026-05-01T00:00:00.000Z',
           verdict: 'unsubscribe',
@@ -157,5 +149,46 @@ describe('adaptSenderListRow — protection flags (D42/D43)', () => {
       }),
     );
     expect(s.lastReview?.confidence).toBe(0.6);
+    expect(derivePrimaryVerbId(s)).toBe('keep');
+  });
+});
+
+describe('adaptProtectionReason — explainable automatic protection', () => {
+  it.each([
+    ['user_defined', 'user-marked'],
+    ['replied', 'replied'],
+    ['starred', 'starred'],
+    ['gmail_important', 'gmail-important'],
+  ] as const)('maps %s to %s', (wire, expected) => {
+    expect(adaptProtectionReason(true, wire)).toBe(expected);
+  });
+
+  it('hides the retained memory-pin reason after manual Unprotect', () => {
+    expect(adaptProtectionReason(false, 'replied')).toBeNull();
+  });
+});
+
+describe('adaptSenderDetail — live data never falls back to fixtures', () => {
+  it('maps the real wire category and withholds recommendations absent from the contract', () => {
+    // These facts would make the old fixture builder synthesize a
+    // recommendation. The live DTO does not carry one, so the adapter
+    // must return null rather than presenting invented product data.
+    const detail = adaptSenderDetail({
+      detail: detailRow({
+        gmailCategory: 'social',
+        monthlyVolume: 40,
+        readRate: 0,
+      }),
+      messages: [],
+      timeseries: [],
+      history: [],
+      now: new Date('2026-06-01T00:00:00.000Z').getTime(),
+    });
+
+    expect(detail.gmailCategory).toBe('Gmail: Social');
+    expect(detail.recommendation).toBeNull();
+    expect(detail.recentMessages).toEqual([]);
+    expect(detail.timeseries).toEqual([]);
+    expect(detail.history).toEqual([]);
   });
 });

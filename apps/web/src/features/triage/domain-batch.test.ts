@@ -160,7 +160,7 @@ describe('findVerdictBatch — same-recommendation batch (2026-07-10)', () => {
   });
 
   it('excludes protected rows from the batch and the threshold', () => {
-    const rows = [vrow('a', 'archive'), vrow('b', 'archive', 'engagement'), vrow('c', 'archive')];
+    const rows = [vrow('a', 'archive'), vrow('b', 'archive', 'replied'), vrow('c', 'archive')];
     expect(findVerdictBatch(rows)).toBeNull();
   });
 

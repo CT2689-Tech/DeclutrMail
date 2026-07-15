@@ -30,7 +30,7 @@ export type ActivitySourceWire = 'triage' | 'manual' | 'autopilot' | 'screener';
 export type ActivitySourceFilterWire = 'all' | ActivitySourceWire;
 
 /** Canonical verbs (D227 → K/A/U/L/D after ADR-0019) plus the D88
- *  followup-dismiss row variant and the D43 VIP/Protect toggle audit
+ *  followup-dismiss row variant and the Protect toggle audit
  *  entries (written by the senders policy write path; snake_case
  *  spelling follows D43's literal enum strings). */
 export type ActivityActionWire =
@@ -43,11 +43,16 @@ export type ActivityActionWire =
   // K/A/U/L/D canonical verb (D227) and not offered as a filter chip —
   // it renders as a feed row only.
   | 'unsubscribe_confirmed'
+  | 'unsubscribe_endpoint_accepted'
+  | 'unsubscribe_failed'
+  | 'unsubscribe_unconfirmed'
+  | 'unsubscribe_action_required'
+  | 'unsubscribe_draft_opened'
+  | 'unsubscribe_user_marked_sent'
+  | 'unsubscribe_unavailable'
   | 'later'
   | 'delete'
   | 'followup-dismiss'
-  | 'marked_vip'
-  | 'unmarked_vip'
   | 'marked_protected'
   | 'unmarked_protected';
 
@@ -71,6 +76,28 @@ export type ActivityUndoStateWire =
   | { kind: 'executed'; executedAt: string }
   | { kind: 'unavailable' };
 
+/**
+ * Durable state for an action lineage that has not produced a confirmed
+ * Activity outcome. Failed label actions can be reviewed safely; an
+ * unsubscribe failure never exposes a blind retry.
+ */
+export type ActivityExecutionStateWire =
+  | {
+      kind: 'in_progress';
+      actionId: string;
+      requestedCount: number;
+      isRecovery: boolean;
+      status: 'queued' | 'executing';
+    }
+  | {
+      kind: 'failed';
+      actionId: string;
+      rootActionId: string;
+      requestedCount: number;
+      errorCode: string | null;
+      resolution: 'review' | 'support';
+    };
+
 export interface ActivityRowWire {
   id: string;
   occurredAt: string;
@@ -85,6 +112,8 @@ export interface ActivityRowWire {
    */
   rule: ActivityRuleRef | null;
   undoState: ActivityUndoStateWire;
+  /** Null for confirmed append-only Activity rows. */
+  executionState: ActivityExecutionStateWire | null;
 }
 
 export interface ActivityStatsWire {
@@ -99,9 +128,8 @@ export interface ActivityStatsWire {
   /** D59 — failed-action surface; 0 until the action_jobs join lands. */
   needsAttention: number;
   /**
-   * D33 payoff — estimated emails/month of future noise prevented by
-   * the window's archive/unsubscribe/later decisions. `null` when the
-   * window has no deflecting decisions.
+   * Historic monthly volume for senders represented by actions in the
+   * selected window. This is not proof that future mail was prevented.
    */
   noisePreventedPerMonth: number | null;
 }

@@ -107,7 +107,6 @@ function rowToSignals(row: Record<string, string>): SenderSignals {
   return {
     // No sender_policies seeded in the eval DB — defaults match cold-start.
     isProtected: false,
-    isVip: false,
     hasReplied: Number(row.replies_sent) > 0,
     gmailCategory: row.gmail_category as SenderSignals['gmailCategory'],
     starredInLastYear: Number(row.starred_year) > 0,
@@ -144,12 +143,13 @@ function cascadeToBucket(verdict: string, ruleId: string): Bucket {
     case 'replied_at_least_once':
     case 'gmail_primary':
     case 'protect_user_defined':
-    case 'protect_vip':
       return 'people';
     case 'high_read_rate':
     case 'starred_recently':
     case 'long_relationship_engaged':
-    case 'protect_engagement_based':
+    case 'protect_replied':
+    case 'protect_starred':
+    case 'protect_gmail_important':
       return 'engaged';
     default:
       return 'engaged';

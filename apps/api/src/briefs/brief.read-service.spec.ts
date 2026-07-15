@@ -5,7 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   briefRuns,
-  type BriefPayload,
+  type BriefPayload as PersistedBriefPayload,
   mailboxAccounts,
   schema,
   users,
@@ -17,6 +17,7 @@ import { BadRequestException } from '@nestjs/common';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { BriefReadService } from './brief.read-service.js';
+import type { BriefPayload } from './brief.types.js';
 
 /**
  * BriefReadService integration tests (D61, D69, D70).
@@ -86,7 +87,6 @@ const SAMPLE_PAYLOAD: BriefPayload = {
       senderName: 'Boss',
       senderEmail: 'boss@example.com',
       subject: 'Q4 plans',
-      isVip: true,
       messageIds: ['gmail-1'],
     },
   ],
@@ -109,7 +109,7 @@ async function seedBrief(
       mailboxAccountId,
       runDateLocal,
       generatedBy: 'template',
-      briefPayload: opts.payload ?? SAMPLE_PAYLOAD,
+      briefPayload: (opts.payload ?? SAMPLE_PAYLOAD) as unknown as PersistedBriefPayload,
       ...(opts.openedAt !== undefined ? { openedAt: opts.openedAt } : {}),
     })
     .returning({ id: briefRuns.id });
@@ -137,7 +137,7 @@ describe('BriefReadService', () => {
       expect(brief!.runDateLocal).toBe('2026-05-25');
       expect(brief!.generatedBy).toBe('template');
       expect(brief!.briefPayload.reply).toHaveLength(1);
-      expect(brief!.briefPayload.reply[0]!.isVip).toBe(true);
+      expect(brief!.briefPayload.reply[0]!.senderName).toBe('Boss');
     });
 
     it('returns null when no brief exists for the date', async () => {

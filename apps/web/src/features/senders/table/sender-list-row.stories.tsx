@@ -12,7 +12,7 @@
 //   • Action button + chevron always visible regardless of width
 //   • Every trend bucket renders deterministically
 //   • Long sender / domain strings ellipsis without breaking grid
-//   • VIP + Protected co-occur cleanly
+//   • Protected state renders cleanly
 //   • Side-by-side current vs trimmed row variants (founder eyeball)
 //
 // Each story renders the row inside a column-strip frame so the

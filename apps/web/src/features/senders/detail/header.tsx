@@ -51,36 +51,32 @@ function fmtLastReview(review: SenderLastReview | null, now: number = Date.now()
 /**
  * Sender Detail header (D39 #1).
  *
- * Renders: avatar · sender name · domain · Gmail category · VIP/Protect
- * toggle chips beneath the name (D43). VIP and Protect are two
- * distinct standing policies (D42) — the icons + tooltips communicate
- * that distinction. Filled = active; outlined = inactive.
+ * Renders: avatar · sender name · domain · Gmail category · Protect
+ * toggle beneath the name. Filled = active; outlined = inactive.
  */
 export function SenderDetailHeader({
   sender,
   gmailCategory,
-  isVip,
   isProtected,
   protectionReason,
-  onToggleVip,
   onToggleProtect,
 }: {
   sender: Sender;
   gmailCategory: string;
-  isVip: boolean;
   isProtected: boolean;
   protectionReason: ProtectionReason | null;
-  onToggleVip: () => void;
   onToggleProtect: () => void;
 }) {
   const protectTooltip =
-    protectionReason === 'auto-receipts'
-      ? "Auto-protected — receipts and statements aren't acted on in bulk."
-      : protectionReason === 'auto-financial'
-        ? "Auto-protected — financial-institution sender. Bulk actions won't apply."
-        : isProtected
-          ? 'Protect — never re-suggested. A silent guard against accidental bulk action.'
-          : 'Protect — never re-suggested. A silent guard against accidental bulk action.';
+    protectionReason === 'replied'
+      ? 'Automatically protected because you replied at least three times. Select to remove protection.'
+      : protectionReason === 'starred'
+        ? 'Automatically protected because you starred a message this year. Select to remove protection.'
+        : protectionReason === 'gmail-important'
+          ? 'Automatically protected because Gmail marked at least three messages important this year. Select to remove protection.'
+          : isProtected
+            ? 'Protected by you. Select to remove protection.'
+            : 'Protect this sender from bulk and automatic mail-changing actions.';
 
   return (
     <header
@@ -120,7 +116,7 @@ export function SenderDetailHeader({
               variant="display"
               style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}
             />
-            {/* D43 — small VIP/Protect icons sit next to the name, not in the toolbar. */}
+            {/* Protection is the sole standing safety state. */}
             <span
               style={{
                 display: 'inline-flex',
@@ -130,20 +126,7 @@ export function SenderDetailHeader({
               }}
             >
               <PolicyChip
-                active={isVip}
-                tone="vip"
-                label="VIP"
-                icon={<StarIcon filled={isVip} />}
-                onToggle={onToggleVip}
-                tooltip={
-                  isVip
-                    ? 'VIP — elevated in the Morning Brief and notifications. Click to unmark.'
-                    : 'Mark VIP — elevate in Brief and notifications.'
-                }
-              />
-              <PolicyChip
                 active={isProtected}
-                tone="protect"
                 label="Protect"
                 icon={<ShieldIcon filled={isProtected} />}
                 onToggle={onToggleProtect}
@@ -181,24 +164,20 @@ export function SenderDetailHeader({
 
 function PolicyChip({
   active,
-  tone,
   label,
   icon,
   onToggle,
   tooltip,
 }: {
   active: boolean;
-  tone: 'vip' | 'protect';
   label: string;
   icon: React.ReactNode;
   onToggle: () => void;
   tooltip: string;
 }) {
-  const fillBg = tone === 'vip' ? 'rgba(180, 83, 9, 0.12)' : color.primarySoft;
-  // color.amber (themed), not the old '#92400E' literal — dark brown
-  // text vanished on the dark theme's amber wash.
-  const fillFg = tone === 'vip' ? color.amber : color.primary;
-  const fillBr = tone === 'vip' ? 'rgba(180, 83, 9, 0.40)' : color.primaryBorder;
+  const fillBg = color.primarySoft;
+  const fillFg = color.primary;
+  const fillBr = color.primaryBorder;
   return (
     <button
       type="button"
@@ -225,24 +204,6 @@ function PolicyChip({
       {icon}
       {label}
     </button>
-  );
-}
-
-function StarIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg
-      width={12}
-      height={12}
-      viewBox="0 0 24 24"
-      fill={filled ? 'currentColor' : 'none'}
-      stroke="currentColor"
-      strokeWidth={1.6}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-    </svg>
   );
 }
 

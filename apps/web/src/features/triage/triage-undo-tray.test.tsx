@@ -163,7 +163,7 @@ describe('TriageUndoTray (D35)', () => {
     await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
 
     useTriageStore.setState({
-      pendingAction: { verb: 'Archive', rowId: 'row-1', surface: 'sheet' },
+      pendingAction: { verb: 'Archive', rowId: 'row-1', surface: 'sheet', wakeAt: null },
     });
     // Re-render tick so the tray sees the store change.
     await waitFor(() => expect(useTriageStore.getState().pendingAction).not.toBeNull());

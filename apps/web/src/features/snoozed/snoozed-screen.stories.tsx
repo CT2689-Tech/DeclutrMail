@@ -47,6 +47,9 @@ const FIXTURES: SnoozedSenderRow[] = [
     snoozedUntil: isoInHours(3),
     snoozedAt: isoInHours(-24),
     reason: 'after launch week',
+    returnStatus: 'scheduled',
+    lastReturnAttemptAt: null,
+    returnFailureKind: null,
   },
   {
     senderId: '6f1f2f3a-0000-4000-8000-000000000002',
@@ -57,6 +60,9 @@ const FIXTURES: SnoozedSenderRow[] = [
     snoozedUntil: isoInHours(30),
     snoozedAt: isoInHours(-2),
     reason: null,
+    returnStatus: 'scheduled',
+    lastReturnAttemptAt: null,
+    returnFailureKind: null,
   },
   {
     senderId: '6f1f2f3a-0000-4000-8000-000000000003',
@@ -67,6 +73,9 @@ const FIXTURES: SnoozedSenderRow[] = [
     snoozedUntil: isoInHours(24 * 5),
     snoozedAt: isoInHours(-48),
     reason: 'until the schedule is final',
+    returnStatus: 'scheduled',
+    lastReturnAttemptAt: null,
+    returnFailureKind: null,
   },
   {
     senderId: '6f1f2f3a-0000-4000-8000-000000000004',
@@ -77,16 +86,9 @@ const FIXTURES: SnoozedSenderRow[] = [
     snoozedUntil: isoInHours(24 * 30),
     snoozedAt: isoInHours(-1),
     reason: null,
-  },
-  {
-    senderId: '6f1f2f3a-0000-4000-8000-000000000005',
-    displayName: '',
-    email: 'noreply@tools.example.com',
-    domain: 'tools.example.com',
-    laterCount: 9,
-    snoozedUntil: null,
-    snoozedAt: null,
-    reason: null,
+    returnStatus: 'scheduled',
+    lastReturnAttemptAt: null,
+    returnFailureKind: null,
   },
 ];
 
@@ -119,14 +121,14 @@ function frame(client: QueryClient) {
 }
 
 const meta: StoryMeta<typeof SnoozedScreen> = {
-  title: 'Features/Snoozed/SnoozedScreen',
+  title: 'Features/Later/LaterScreen',
   component: SnoozedScreen,
   parameters: {
     layout: 'fullscreen',
     docs: {
       description: {
         component:
-          'Snoozed screen (D78–D80). Senders sent to Later, grouped by wake-time bucket, with Wake-now and D82 snooze presets. Canonical verb is "Later" (D227); "Snoozed" is the feature name.',
+          'Later screen (D78–D80, D245). Senders sent to Later, grouped by wake-time bucket, with Wake-now and scheduling presets.',
       },
     },
   },
@@ -135,12 +137,12 @@ const meta: StoryMeta<typeof SnoozedScreen> = {
 
 export default meta;
 
-/** Populated — every D80 wake bucket plus a timer-less Later row. */
+/** Populated — every D80 wake bucket, each with a required return time. */
 export const Populated: Story<typeof SnoozedScreen> = {
   render: (_args: ComponentProps<typeof SnoozedScreen>) => frame(makeClient(FIXTURES)),
 };
 
-/** Empty — nothing snoozed; points the user at the Later verb. */
+/** Empty — nothing in Later; points the user at the Later verb. */
 export const Empty: Story<typeof SnoozedScreen> = {
   render: (_args: ComponentProps<typeof SnoozedScreen>) => frame(makeClient([])),
 };

@@ -13,6 +13,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PrivacyBadge } from './privacy-badge';
+import { GMAIL_MESSAGE_DATA_INVENTORY } from '../contracts/gmail-data-inventory';
 import {
   GMAIL_PREVIEW_FIELD_LABEL,
   PRIVACY_BADGE_HEADLINE,
@@ -25,17 +26,20 @@ describe('PrivacyBadge — D7 + D228 copy contract', () => {
     expect(PRIVACY_BADGE_HEADLINE).toBe('Full bodies fetched: 0');
   });
 
-  it('enumerates the exact storage allowlist (sender, subject, snippet, dates, labels, read/unread)', () => {
-    // The list must be these exact items in this exact order — every
-    // surface (landing, onboarding, settings) reads from the same const.
-    expect([...PRIVACY_STORAGE_ITEMS]).toEqual([
-      'Sender (name + email)',
-      'Subject',
-      'Gmail Preview (the short snippet shown in your inbox list)',
-      'Dates (received)',
-      'Gmail labels',
-      'Read/unread state',
-    ]);
+  it('generates the cumulative message-storage list from the D245 registry', () => {
+    expect([...PRIVACY_STORAGE_ITEMS]).toEqual(
+      GMAIL_MESSAGE_DATA_INVENTORY.filter((item) => item.showInMessageStorageList).map(
+        (item) => item.label,
+      ),
+    );
+    expect(PRIVACY_STORAGE_ITEMS).toEqual(
+      expect.arrayContaining([
+        'Gmail message and thread IDs',
+        'Recipient email addresses from To and Cc on mail you sent',
+        'Unsubscribe links and whether one-click unsubscribe is supported',
+        'Gmail message size estimate',
+      ]),
+    );
   });
 
   it('uses the "Gmail Preview" framing for the snippet field (D7)', () => {

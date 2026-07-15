@@ -25,10 +25,13 @@ and rollback ownership live in `docs/execution/d-break-ledger-2026-07-11.md`.
 
 ## Remaining release work
 
+Standard Pro annual pricing was resolved on 2026-07-14 at **$190/year**;
+Founding Pro remains **$129/year** for the first 250 paying users. Pricing is no
+longer a release decision.
+
 | Priority | Owner                 | Gate                                                                                                                                   | Next evidence/action                                                                       |
 | -------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | P0       | Founder               | Ratify the “exact” privacy contract against ADR-0004/ADR-0021 and the actual schema                                                    | One accepted D-decision plus synchronized locked copy                                      |
-| P0       | Founder               | Resolve D126 `$149/year` versus the tier manifest `$190/year`                                                                          | One canonical manifest/decision and pricing regression                                     |
 | P0       | Founder + billing ops | Paid catalog IDs are absent and deploy sets `BILLING_ENABLED=false`                                                                    | Configure sandbox catalog, enable intentionally, verify checkout/webhook/cancel/refund     |
 | P0       | Founder + platform    | Choose apex versus `app` canonical host; redeploy the corrected CORS value; restore D193 API `--min-instances=1`                       | Production redirect/CORS/cold-start smoke with redacted evidence                           |
 | P0       | Security/ops          | Live OAuth/CASA, two-account Gmail round trip, support/privacy mailboxes, and current CASA letter are not repository-provable          | Run the live launch checklist without committing credentials or mailbox content            |

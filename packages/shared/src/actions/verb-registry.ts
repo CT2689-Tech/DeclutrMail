@@ -41,6 +41,8 @@
 // surfaces consume the same registry once they adopt the v2 verb
 // pipeline (see docs/spec/senders-v2.md v1.2 Phase 4).
 
+import { ACTION_SEMANTICS, actionHasRecovery } from './action-semantics';
+
 /**
  * The five canonical verbs (D227 amended via ADR-0019 — Delete
  * added). New verbs require:
@@ -112,10 +114,9 @@ export interface VerbSpec {
   destructive: boolean;
 
   /**
-   * `false` if the verb's effect becomes permanent after a recovery
-   * window (Delete: 30 days, then Gmail Trash auto-empties).
-   * `true` if undo always restores prior state cleanly via the
-   * D232 undo journal.
+   * Generated from D245 action semantics. True when the saved decision can
+   * be changed, Activity Undo exists, or provider recovery exists. A delivered
+   * unsubscribe request is the canonical false case.
    *
    * Surface uses: undo banner copy in `ConfirmActionModal` ("Reversible
    * 7 days" vs "Recoverable 30 days"), undo affordance enable/disable
@@ -159,52 +160,52 @@ export interface VerbSpec {
 export const VERB_REGISTRY = [
   {
     id: 'keep',
-    label: 'Keep',
+    label: ACTION_SEMANTICS.keep.label,
     shortcut: 'K',
     icon: '✓',
     tone: 'neutral',
     destructive: false,
-    reversible: true,
+    reversible: actionHasRecovery('keep'),
     canBePrimary: true,
   },
   {
     id: 'archive',
-    label: 'Archive',
+    label: ACTION_SEMANTICS.archive.label,
     shortcut: 'A',
     icon: '📥',
     tone: 'dark',
     destructive: true,
-    reversible: true,
+    reversible: actionHasRecovery('archive'),
     canBePrimary: true,
   },
   {
     id: 'unsubscribe',
-    label: 'Unsubscribe',
+    label: ACTION_SEMANTICS.unsubscribe.label,
     shortcut: 'U',
     icon: '🚫',
     tone: 'amber',
     destructive: true,
-    reversible: true,
+    reversible: actionHasRecovery('unsubscribe'),
     canBePrimary: true,
   },
   {
     id: 'later',
-    label: 'Later',
+    label: ACTION_SEMANTICS.later.label,
     shortcut: 'L',
     icon: '⏰',
     tone: 'neutral',
     destructive: true,
-    reversible: true,
+    reversible: actionHasRecovery('later'),
     canBePrimary: true,
   },
   {
     id: 'delete',
-    label: 'Delete',
+    label: ACTION_SEMANTICS.delete.label,
     shortcut: 'D',
     icon: '🗑',
     tone: 'danger',
     destructive: true,
-    reversible: true, // recoverable for 30d from Gmail Trash
+    reversible: actionHasRecovery('delete'),
     separator: true,
     canBePrimary: false,
   },

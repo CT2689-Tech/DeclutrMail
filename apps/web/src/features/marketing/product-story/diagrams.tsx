@@ -22,7 +22,7 @@ const ACTION_CLARIFIERS: Readonly<Record<VerbId, string>> = {
   unsubscribe:
     'A delivered one-click unsubscribe cannot be recalled. Existing inbox mail stays put unless you separately choose a backlog action.',
   later:
-    'Later moves the current messages in the preview into DeclutrMail/Later. It is not a timed Snooze and does not silently create a future rule.',
+    'Later moves the current messages in the preview into DeclutrMail/Later until the chosen sender-level return time. It does not silently create a future rule.',
   delete:
     'Delete is available from Senders and Sender Detail, not the daily Triage toolbar. It moves the previewed mail to Gmail Trash.',
 };
@@ -151,8 +151,8 @@ export function GmailBridgeTable() {
             <td>Moves previewed current mail to Gmail Trash.</td>
             <td>Unaffected unless a separate Pro rule is enabled.</td>
             <td>
-              Activity can undo for up to 30 days while Gmail retains the message; emptying Trash
-              can end recovery sooner.
+              Activity Undo: {freeDays} days on Free/Plus, {proDays} on Pro. Gmail Trash is a
+              separate fallback, normally up to 30 days unless emptied sooner.
             </td>
           </tr>
         </tbody>
@@ -263,7 +263,7 @@ export function RecommendationCascadeFigure() {
   const steps = [
     [
       'User agency first',
-      'A Protect or VIP choice wins first. Reply, star, and long-term engagement signals also bias toward Keep.',
+      'A Protected sender is excluded first. Reply, star, and strong engagement signals can also mark a sender Protected.',
     ],
     [
       'Enough evidence?',

@@ -15,14 +15,19 @@ import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
+import { ActionRecoveryService } from './action-recovery.service.js';
 import { ActionsService } from './actions.service.js';
 import {
+  actionRecoveryConfirmRequestSchema,
   archiveRequestSchema,
   bulkPreviewRequestSchema,
   compositeActionRequestSchema,
   keepIntentRequestSchema,
   unsubscribeIntentRequestSchema,
+  unsubscribeManualStatusRequestSchema,
   type ActionEnqueueResult,
+  type ActionRecoveryEnqueueResult,
+  type ActionRecoveryPreviewResult,
   type ActionStatusResult,
   type ArchivePreviewResult,
   type BatchStatusResult,
@@ -32,6 +37,7 @@ import {
   type CompositeActionPreviewResult,
   type KeepIntentResult,
   type UnsubscribeIntentResult,
+  type UnsubscribeManualStatusResult,
 } from './actions.types.js';
 
 /**
@@ -55,7 +61,10 @@ import {
 @Controller('actions')
 @UseGuards(JwtGuard, CurrentMailboxGuard)
 export class ActionsController {
-  constructor(private readonly actions: ActionsService) {}
+  constructor(
+    private readonly actions: ActionsService,
+    private readonly recovery: ActionRecoveryService,
+  ) {}
 
   /**
    * POST /api/actions/archive — resolve the target set, enqueue, return
@@ -131,7 +140,7 @@ export class ActionsController {
    * Errors:
    *   - 400 INVALID_REQUEST / IDEMPOTENCY_KEY_REQUIRED
    *   - 404 SENDER_NOT_FOUND (sender selector, ownership mismatch)
-   *   - 409 PROTECTED_SENDER (sender is Protected/VIP, `override:false`)
+   *   - 409 PROTECTED_SENDER (sender is Protected, `override:false`)
    *   - 409 IDEMPOTENCY_KEY_CONFLICT (key reused across mailboxes)
    *   - 503 QUEUE_UNAVAILABLE (REDIS_URL unset)
    */
@@ -165,7 +174,11 @@ export class ActionsController {
       const result = await this.actions.enqueueBulkComposite({
         mailboxAccountId: mailbox.id,
         senderIds: req.selector.senderIds,
-        primary: { type: req.primary.type, olderThanDays: req.primary.olderThanDays ?? null },
+        primary: {
+          type: req.primary.type,
+          olderThanDays: req.primary.olderThanDays ?? null,
+          wakeAt: req.primary.wakeAt ? new Date(req.primary.wakeAt) : null,
+        },
         secondary: req.secondary
           ? { type: req.secondary.type, olderThanDays: req.secondary.olderThanDays ?? null }
           : undefined,
@@ -176,7 +189,11 @@ export class ActionsController {
     const result = await this.actions.enqueueComposite({
       mailboxAccountId: mailbox.id,
       selector: req.selector,
-      primary: { type: req.primary.type, olderThanDays: req.primary.olderThanDays ?? null },
+      primary: {
+        type: req.primary.type,
+        olderThanDays: req.primary.olderThanDays ?? null,
+        wakeAt: req.primary.wakeAt ? new Date(req.primary.wakeAt) : null,
+      },
       secondary: req.secondary
         ? { type: req.secondary.type, olderThanDays: req.secondary.olderThanDays ?? null }
         : undefined,
@@ -190,16 +207,13 @@ export class ActionsController {
    * POST /api/actions/unsubscribe-intent — record the user's intent to
    * unsubscribe from a sender (D38 + 2026-06-05 founder brainstorm).
    *
-   * Unlike Archive/Delete/Later, this does NOT enqueue a Gmail
-   * mutation; the real unsub pipeline (RFC8058 + mailto + manual
-   * fallback per D230) lands later. The endpoint just:
+   * Unlike Archive/Delete/Later, this does not enqueue a Gmail label
+   * mutation. It records the decision, then routes by capability:
    *
-   *   1. Upserts `sender_policies.policy_type='unsubscribe'` so the
-   *      Sender Detail "Unsub queued" pill has its source-of-truth.
-   *   2. Writes a 0-affected `activity_log` row so the user sees their
-   *      decision in /activity — replaces the prior tracer toast that
-   *      LIED ("Unsubscribed from DKNY") with no BE call (CLAUDE.md §10
-   *      no-fake-completion violation).
+   *   1. one_click → requested + an RFC 8058 execution job.
+   *   2. mailto → action_required; the client opens compose and reports
+   *      explicit progress through the manual-status route.
+   *   3. none → unavailable. All paths append truthful Activity rows.
    *
    * Idempotency (D202). Requires `Idempotency-Key` header (≥8 chars)
    * matching the sibling routes. A network-retried POST with the same
@@ -236,6 +250,34 @@ export class ActionsController {
       senderId: parsed.data.senderId,
       idempotencyKey: idempotencyKey.trim(),
       includesBacklogAction: parsed.data.includesBacklogAction,
+    });
+    return ok(result);
+  }
+
+  /**
+   * POST /api/actions/unsubscribe-manual-status — explicitly record
+   * progress on a mailto unsubscribe. The client calls draft_opened
+   * immediately before opening compose and user_marked_sent only after
+   * an explicit user confirmation. Neither state claims delivery.
+   */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post('unsubscribe-manual-status')
+  @UseGuards(CsrfGuard)
+  async unsubscribeManualStatus(
+    @CurrentMailbox() mailbox: { id: string },
+    @Body() body: unknown,
+  ): Promise<Envelope<UnsubscribeManualStatusResult>> {
+    const parsed = unsubscribeManualStatusRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid manual unsubscribe status request.',
+      });
+    }
+    const result = await this.actions.recordUnsubscribeManualStatus({
+      mailboxAccountId: mailbox.id,
+      senderId: parsed.data.senderId,
+      status: parsed.data.status,
     });
     return ok(result);
   }
@@ -303,6 +345,78 @@ export class ActionsController {
       senderId,
     });
     return ok(result);
+  }
+
+  /**
+   * Start a metadata-only Gmail verification for a failed forward
+   * Archive/Later/Delete attempt. Verification is asynchronous because
+   * an ambiguous batch outcome can require one messages.get per frozen
+   * target. It never mutates mail.
+   */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post(':id/recovery-preview')
+  @UseGuards(CsrfGuard)
+  async createRecoveryPreview(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('id') id: string,
+  ): Promise<Envelope<ActionRecoveryPreviewResult>> {
+    if (!isUuid(id)) {
+      throw new BadRequestException({ code: 'INVALID_ID', message: 'id must be a UUID.' });
+    }
+    return ok(await this.recovery.createPreview({ mailboxAccountId: mailbox.id, actionId: id }));
+  }
+
+  /** Poll one durable recovery verification. */
+  @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
+  @Get('recovery-previews/:previewId')
+  async recoveryPreview(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('previewId') previewId: string,
+  ): Promise<Envelope<ActionRecoveryPreviewResult>> {
+    if (!isUuid(previewId)) {
+      throw new BadRequestException({ code: 'INVALID_ID', message: 'previewId must be a UUID.' });
+    }
+    return ok(await this.recovery.getPreview(mailbox.id, previewId));
+  }
+
+  /**
+   * Confirm a ready preview. A fresh recovery action is linked to the
+   * failed lineage and freezes the verified target set. The caller's
+   * Idempotency-Key dedups double-clicks, two tabs, and network retries.
+   */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post('recovery-previews/:previewId/retry')
+  @UseGuards(CsrfGuard)
+  async retryRecoveryPreview(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('previewId') previewId: string,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() body: unknown,
+  ): Promise<Envelope<ActionRecoveryEnqueueResult>> {
+    if (!isUuid(previewId)) {
+      throw new BadRequestException({ code: 'INVALID_ID', message: 'previewId must be a UUID.' });
+    }
+    if (!idempotencyKey || idempotencyKey.trim().length < 8) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_REQUIRED',
+        message: 'An Idempotency-Key header (≥8 chars) is required for recovery.',
+      });
+    }
+    const parsed = actionRecoveryConfirmRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid recovery request.',
+      });
+    }
+    return ok(
+      await this.recovery.confirmPreview({
+        mailboxAccountId: mailbox.id,
+        previewId,
+        idempotencyKey: idempotencyKey.trim(),
+        wakeAt: parsed.data.wakeAt ? new Date(parsed.data.wakeAt) : null,
+      }),
+    );
   }
 
   /**

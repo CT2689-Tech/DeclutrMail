@@ -107,7 +107,7 @@ const DECLUTR = {
   recovery: {
     summary: 'Journaled for reversible label actions',
     detail:
-      'Archive and Later use the plan window. Delete has an up-to-30-day Activity token while Gmail retains Trash. Unsubscribe is not a reversible DeclutrMail action.',
+      'Archive, Later, and Delete use the plan Activity Undo window. Delete also has separate Gmail Trash recovery, normally up to 30 days. Unsubscribe is not a reversible DeclutrMail action.',
     state: 'limited',
   },
   data: {

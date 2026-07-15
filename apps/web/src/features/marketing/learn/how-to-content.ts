@@ -117,11 +117,11 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Know what each decision actually means',
         paragraphs: [
           'Archive removes the Inbox label from the matching mail that exists now. Later removes Inbox and adds DeclutrMail/Later to that current mail. Delete moves current matching mail to Gmail Trash. None of those manual actions creates a standing rule for future messages.',
-          'Unsubscribe is different: it asks the sender to stop future delivery and leaves existing mail where it is unless you separately approve a cleanup action. Keep records a sender decision, while VIP and Protect are separate standing controls.',
+          'Unsubscribe is different: it asks the sender to stop future delivery and leaves existing mail where it is unless you separately approve a cleanup action. Keep records your current sender decision, while Protected is the standing safety control.',
         ],
         callout: {
           title: 'Undo is verb-specific',
-          body: 'Archive and Later can be reversed from Activity while their token is live. Delete is recoverable through Gmail Trash for up to about 30 days unless Trash is emptied sooner. Once an unsubscribe request is delivered, that request is one-way.',
+          body: 'Archive, Later, and Delete can be reversed from Activity while their plan-window token is live. Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Once an unsubscribe request is delivered, that request is one-way.',
           tone: 'truth',
         },
       },
@@ -376,7 +376,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Review names, counts, and exceptions',
-            text: 'Inspect the dry-run sample. Mark important senders VIP or Protect when they should never be handled by cleanup automation.',
+            text: 'Inspect the dry-run sample. Mark important senders Protected when they should never be handled by cleanup automation.',
           },
           {
             name: 'Activate only if the sample is acceptable',

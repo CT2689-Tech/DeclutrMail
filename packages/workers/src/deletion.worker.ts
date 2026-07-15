@@ -4,11 +4,29 @@ import type { Queue } from 'bullmq';
 
 import {
   accountDeletionRequests,
+  actionJobs,
+  actionRecoveryPreviews,
+  activityLog,
+  automationRules,
+  briefRuns,
   cronRuns,
+  deadLetterJobs,
+  followupTracker,
   mailboxAccounts,
+  mailboxDataDeletionRequests,
   mailMessages,
+  outboxEvents,
+  providerSyncState,
+  ruleMatchLog,
+  screenerQuarantine,
   securityEvents,
+  senderPolicies,
+  senderTimeseries,
+  senders,
+  triageDecisions,
+  undoJournal,
   users,
+  webhookDedup,
   workspaces,
 } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
@@ -16,6 +34,7 @@ import type { schema } from '@declutrmail/db';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { enqueueEmailSend } from './email-send.queue.js';
 import type { EmailSendJobData } from './email-send.worker.js';
+import { PASSTHROUGH_MAILBOX_LOCK, type MailboxActionLock } from './label-action.worker.js';
 import { TransientError } from './worker-errors.js';
 import type { GmailWatchAccess } from './ports.js';
 import type { WorkerContext } from './worker-context.js';
@@ -76,6 +95,13 @@ export interface DeletionPurgeDeps {
    * `deletionReceiptEmail` from `email-templates.ts`.
    */
   renderReceiptEmail: (input: { deletedAt: string }) => { subject: string; text: string };
+  /**
+   * Shared destructive-action mutex. Optional keeps existing composition
+   * roots source-compatible; production should pass the label-action
+   * advisory lock so an in-flight Gmail action cannot race the final
+   * indexed-data scrub.
+   */
+  mailboxLock?: MailboxActionLock;
   /** D159 seam for per-request failures (sweep records-and-continues). */
   observer?: WorkerObserver;
 }
@@ -88,6 +114,38 @@ interface DueRequest {
   requestedAt: Date;
   effectiveAt: Date;
 }
+
+/** One retryable mailbox-index deletion request. */
+interface DueMailboxRequest {
+  id: string;
+  mailboxAccountId: string;
+}
+
+/**
+ * Every table with a direct mailbox_accounts FK that the mailbox purge
+ * erases. The request table is deliberately absent because it is the
+ * durable receipt/status record. An integration test compares this
+ * registry with pg_constraint so a new mailbox-scoped table cannot be
+ * added without an explicit purge decision.
+ */
+export const MAILBOX_PURGE_DIRECT_CHILD_TABLES = [
+  'action_jobs',
+  'action_recovery_previews',
+  'activity_log',
+  'automation_rules',
+  'brief_runs',
+  'followup_tracker',
+  'mail_messages',
+  'provider_sync_state',
+  'rule_match_log',
+  'screener_quarantine',
+  'sender_policies',
+  'sender_timeseries',
+  'senders',
+  'triage_decisions',
+  'undo_journal',
+  'webhook_dedup',
+] as const;
 
 /** Chunk size for the mail_messages bulk delete (the big table). */
 const MAIL_MESSAGES_DELETE_CHUNK = 5_000;
@@ -102,6 +160,12 @@ const EXECUTING_TAKEOVER_AFTER_MS = 10 * 60 * 1_000;
 /** Single source for the stranded-takeover cutoff (due-scan AND claim). */
 function executingTakeoverCutoff(): Date {
   return new Date(Date.now() - EXECUTING_TAKEOVER_AFTER_MS);
+}
+
+/** Persist/log a bounded classification, never arbitrary error text. */
+function controlledErrorCode(error: unknown): string {
+  const candidate = error instanceof Error ? error.name : '';
+  return /^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(candidate) ? candidate : 'Error';
 }
 
 /**
@@ -230,7 +294,36 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
       }
     }
 
-    const allFailed = due.length > 0 && purged === 0;
+    // Account purges run first. They may cascade-delete mailbox requests;
+    // querying only now avoids attempting a stale mailbox request whose
+    // user/account was removed earlier in this same sweep.
+    const mailboxDue = await this.findDueMailboxRequests();
+    for (const request of mailboxDue) {
+      try {
+        const didPurge = await this.purgeMailboxRequest(request);
+        if (didPurge) purged += 1;
+      } catch (err) {
+        failed += 1;
+        const error = err instanceof Error ? err : new Error(String(err));
+        await this.markMailboxRequestFailed(request, error);
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'mailbox_data_deletion.purge_failed',
+            requestId: request.id,
+            mailboxAccountId: request.mailboxAccountId,
+            error: error.name,
+          }),
+        );
+        this.deps.observer?.captureBackgroundFailure(error, {
+          kind: 'mailbox_data_deletion.purge_failed',
+          tags: { requestId: request.id, worker: this.workerName },
+        });
+      }
+    }
+
+    const totalDue = due.length + mailboxDue.length;
+    const allFailed = totalDue > 0 && purged === 0 && failed > 0;
     await this.deps.db
       .update(cronRuns)
       .set({ status: allFailed ? 'failed' : 'succeeded', finishedAt: sql`now()` })
@@ -238,13 +331,13 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
 
     if (allFailed) {
       throw new TransientError(
-        `AccountDeletionPurgeWorker: all ${due.length} due deletion requests failed to purge`,
+        `AccountDeletionPurgeWorker: all ${totalDue} due deletion requests failed to purge`,
       );
     }
 
     return {
       outcome: 'swept',
-      due: due.length,
+      due: totalDue,
       purged,
       failed,
       durationMs: Date.now() - startedAt,
@@ -279,6 +372,292 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
         ),
       )
       .orderBy(accountDeletionRequests.effectiveAt);
+  }
+
+  /**
+   * Mailbox requests are immediate. Failed requests retry on the next
+   * sweep; executing requests retry only after the same stranded-run
+   * cutoff used by account deletion.
+   */
+  private async findDueMailboxRequests(): Promise<DueMailboxRequest[]> {
+    return this.deps.db
+      .select({
+        id: mailboxDataDeletionRequests.id,
+        mailboxAccountId: mailboxDataDeletionRequests.mailboxAccountId,
+      })
+      .from(mailboxDataDeletionRequests)
+      .where(
+        or(
+          eq(mailboxDataDeletionRequests.status, 'pending'),
+          eq(mailboxDataDeletionRequests.status, 'failed'),
+          and(
+            eq(mailboxDataDeletionRequests.status, 'executing'),
+            lt(mailboxDataDeletionRequests.executedAt, executingTakeoverCutoff()),
+          ),
+        ),
+      )
+      .orderBy(mailboxDataDeletionRequests.requestedAt);
+  }
+
+  /** Claim and erase one mailbox index while preserving its identity stub. */
+  private async purgeMailboxRequest(request: DueMailboxRequest): Promise<boolean> {
+    const [claimed] = await this.deps.db
+      .update(mailboxDataDeletionRequests)
+      .set({
+        status: 'executing',
+        executedAt: sql`now()`,
+        failedAt: null,
+        lastError: null,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(mailboxDataDeletionRequests.id, request.id),
+          or(
+            eq(mailboxDataDeletionRequests.status, 'pending'),
+            eq(mailboxDataDeletionRequests.status, 'failed'),
+            and(
+              eq(mailboxDataDeletionRequests.status, 'executing'),
+              lt(mailboxDataDeletionRequests.executedAt, executingTakeoverCutoff()),
+            ),
+          ),
+        ),
+      )
+      .returning({ id: mailboxDataDeletionRequests.id });
+    if (!claimed) {
+      this.logMailbox('claim_lost', request, {});
+      return false;
+    }
+
+    const lock = this.deps.mailboxLock ?? PASSTHROUGH_MAILBOX_LOCK;
+    return lock.run(request.mailboxAccountId, async () => {
+      const [mailbox] = await this.deps.db
+        .select({
+          id: mailboxAccounts.id,
+          userId: mailboxAccounts.userId,
+          workspaceId: mailboxAccounts.workspaceId,
+          encryptedRefreshToken: mailboxAccounts.encryptedRefreshToken,
+          dekEncrypted: mailboxAccounts.dekEncrypted,
+        })
+        .from(mailboxAccounts)
+        .where(eq(mailboxAccounts.id, request.mailboxAccountId))
+        .limit(1);
+      if (!mailbox) {
+        // The request FK cascades with the mailbox, so this is normally a
+        // claim-lost race with account deletion. Treat it as a no-op.
+        this.logMailbox('mailbox_already_gone', request, {});
+        return false;
+      }
+
+      const watch =
+        mailbox.encryptedRefreshToken && mailbox.dekEncrypted
+          ? await this.stopMailboxWatch(request)
+          : 'skipped';
+
+      // Make the mailbox ineligible before the chunked phase. This early
+      // update is deliberately durable: if a later chunk/final transaction
+      // fails, no queued sync can repopulate the partially erased index.
+      await this.deps.db
+        .update(mailboxAccounts)
+        .set({
+          status: 'disconnected',
+          quietState: sql`'{}'::jsonb`,
+          encryptedRefreshToken: null,
+          dekEncrypted: null,
+          keyVersion: null,
+          connectedAt: null,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(mailboxAccounts.id, request.mailboxAccountId));
+      await this.clearMailboxPreferences(mailbox.userId, request.mailboxAccountId);
+
+      const messagesDeleted = await this.deleteMailboxMessagesChunked(request.mailboxAccountId);
+
+      // All small deletes + completion are atomic. A crash before commit
+      // leaves the request executing and the next sweep safely retries.
+      await this.deps.db.transaction(async (tx) => {
+        // The dead-letter recorder takes this same row lock across its
+        // completed-check + insert. Records committed before this lock are
+        // deleted below; later recorders wait and observe `completed`.
+        await tx
+          .select({ id: mailboxDataDeletionRequests.id })
+          .from(mailboxDataDeletionRequests)
+          .where(eq(mailboxDataDeletionRequests.id, request.id))
+          .limit(1)
+          .for('update');
+
+        // Close the narrow tail between the last chunk and this final
+        // transaction. Normally empty; catches a row committed by sync
+        // work that was already in flight when the request was created.
+        await tx
+          .delete(mailMessages)
+          .where(eq(mailMessages.mailboxAccountId, request.mailboxAccountId));
+        // Delete FK dependants before their referenced rows so the purge
+        // does not rely on SET NULL side effects and count drift.
+        await tx
+          .delete(ruleMatchLog)
+          .where(eq(ruleMatchLog.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(activityLog)
+          .where(eq(activityLog.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(actionRecoveryPreviews)
+          .where(eq(actionRecoveryPreviews.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(actionJobs)
+          .where(eq(actionJobs.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(automationRules)
+          .where(eq(automationRules.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(undoJournal)
+          .where(eq(undoJournal.mailboxAccountId, request.mailboxAccountId));
+
+        await tx.delete(briefRuns).where(eq(briefRuns.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(followupTracker)
+          .where(eq(followupTracker.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(screenerQuarantine)
+          .where(eq(screenerQuarantine.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(triageDecisions)
+          .where(eq(triageDecisions.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(senderPolicies)
+          .where(eq(senderPolicies.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(senderTimeseries)
+          .where(eq(senderTimeseries.mailboxAccountId, request.mailboxAccountId));
+        await tx.delete(senders).where(eq(senders.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(webhookDedup)
+          .where(eq(webhookDedup.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(providerSyncState)
+          .where(eq(providerSyncState.mailboxAccountId, request.mailboxAccountId));
+
+        // These operational stores intentionally have no mailbox FK, so
+        // cascade cannot clean them. Every typed payload carries the id.
+        await tx
+          .delete(outboxEvents)
+          .where(sql`${outboxEvents.payload}->>'mailboxAccountId' = ${request.mailboxAccountId}`);
+        await tx
+          .delete(deadLetterJobs)
+          .where(sql`${deadLetterJobs.payload}->>'mailboxAccountId' = ${request.mailboxAccountId}`);
+
+        await tx.insert(securityEvents).values({
+          eventType: 'mailbox.indexed_data_deleted',
+          severity: 'warning',
+          userId: mailbox.userId,
+          workspaceId: mailbox.workspaceId,
+          payload: { requestId: request.id, mailboxAccountId: request.mailboxAccountId },
+        });
+        await tx
+          .update(mailboxDataDeletionRequests)
+          .set({
+            status: 'completed',
+            completedAt: sql`now()`,
+            failedAt: null,
+            lastError: null,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(mailboxDataDeletionRequests.id, request.id));
+      });
+
+      this.logMailbox('purged', request, { messagesDeleted, watch });
+      return true;
+    });
+  }
+
+  /** Best-effort users.stop while credentials still exist. */
+  private async stopMailboxWatch(
+    request: DueMailboxRequest,
+  ): Promise<'stopped' | 'failed' | 'skipped'> {
+    if (!this.deps.topicName) return 'skipped';
+    try {
+      const client = await this.deps.gmailWatch.getClient(request.mailboxAccountId);
+      await client.stopWatch();
+      return 'stopped';
+    } catch (err) {
+      this.logMailbox('watch_stop_failed', request, {
+        error: controlledErrorCode(err),
+      });
+      return 'failed';
+    }
+  }
+
+  /** Clear mailbox-derived onboarding pins and only the matching active id. */
+  private async clearMailboxPreferences(userId: string, mailboxAccountId: string): Promise<void> {
+    await this.deps.db
+      .update(users)
+      .set({
+        preferences: sql`(${users.preferences} - 'onboardingFirstTriageKeys') || CASE WHEN ${users.preferences}->>'activeMailboxId' = ${mailboxAccountId} THEN '{"activeMailboxId":null}'::jsonb ELSE '{}'::jsonb END`,
+      })
+      .where(eq(users.id, userId));
+  }
+
+  /** Chunk the one target mailbox's large message table. */
+  private async deleteMailboxMessagesChunked(mailboxAccountId: string): Promise<number> {
+    let total = 0;
+    for (;;) {
+      const chunk = this.deps.db
+        .select({ id: mailMessages.id })
+        .from(mailMessages)
+        .where(eq(mailMessages.mailboxAccountId, mailboxAccountId))
+        .limit(MAIL_MESSAGES_DELETE_CHUNK);
+      const deleted = await this.deps.db
+        .delete(mailMessages)
+        .where(inArray(mailMessages.id, chunk))
+        .returning({ id: mailMessages.id });
+      total += deleted.length;
+      if (deleted.length < MAIL_MESSAGES_DELETE_CHUNK) return total;
+    }
+  }
+
+  /** Persist a retryable terminal state without masking the original error. */
+  private async markMailboxRequestFailed(request: DueMailboxRequest, error: Error): Promise<void> {
+    try {
+      await this.deps.db
+        .update(mailboxDataDeletionRequests)
+        .set({
+          status: 'failed',
+          failedAt: sql`now()`,
+          lastError: controlledErrorCode(error),
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(mailboxDataDeletionRequests.id, request.id),
+            eq(mailboxDataDeletionRequests.status, 'executing'),
+          ),
+        );
+    } catch (recordError) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'mailbox_data_deletion.failure_record_failed',
+          requestId: request.id,
+          error: controlledErrorCode(recordError),
+        }),
+      );
+    }
+  }
+
+  private logMailbox(
+    event: string,
+    request: DueMailboxRequest,
+    extra: Record<string, unknown>,
+  ): void {
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: `mailbox_data_deletion.${event}`,
+        requestId: request.id,
+        mailboxAccountId: request.mailboxAccountId,
+        ...extra,
+      }),
+    );
   }
 
   /** Execute one purge end-to-end. Every step is idempotent (resume-safe). */

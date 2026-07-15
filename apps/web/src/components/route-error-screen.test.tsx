@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const captureSpy = vi.fn(async (..._args: unknown[]) => {});
 vi.mock('@/lib/sentry', () => ({ initSentryBrowser: async () => {} }));
@@ -29,6 +29,10 @@ describe('RouteErrorScreen', () => {
     );
 
     expect(screen.getByRole('heading', { name: /couldn't load your settings/i })).toBeVisible();
+    const disclosure = screen.getByText('Show support reference');
+    expect(disclosure.closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(disclosure);
+    expect(disclosure.closest('details')).toHaveAttribute('open');
     expect(screen.getByText(/DIGEST123/)).toBeVisible();
     // Privacy: raw error message must never reach the DOM.
     expect(document.body.textContent).not.toContain('secret internals');

@@ -49,6 +49,8 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     // verb + sender. That label is the load-bearing signal the sheet
     // can't silently strip.
     expect(html).toContain(`aria-label="Preview · Archive ${row.senderName}"`);
+    expect(html).toContain('Why do I review this before confirming?');
+    expect(html).toContain('Cancel changes nothing');
     expect(html).toContain('aria-label="Gmail account: active@gmail.com"');
   });
 
@@ -79,6 +81,39 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     );
     expect(html).toBe('');
   });
+
+  it('blocks confirmation and offers retry when the live preview is unavailable', () => {
+    const html = renderToStaticMarkup(
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount="unavailable"
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        onRetryPreview={() => {}}
+      />,
+    );
+
+    expect(html).toContain('Retry preview');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
+  });
+
+  it('blocks confirmation while the live preview is still loading', () => {
+    const html = renderToStaticMarkup(
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount="loading"
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+
+    expect(html).toContain('Counting the inbox');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
+  });
 });
 
 describe('ActionSheet — D34 remember-preference toggle copy', () => {
@@ -94,7 +129,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
           onConfirm={() => {}}
         />,
       );
-      expect(html).toContain(`Remember this for ${verb}`);
+      expect(html).toContain('Show this in the row next time');
     }
   });
 
@@ -111,7 +146,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
     );
     // The toggle's body copy must mention the inline preview — that's
     // the D226 guarantee the toggle can't silently break.
-    expect(html.toLowerCase()).toContain('preview still shows inline');
+    expect(html.toLowerCase()).toContain('same preview will appear below the sender');
   });
 });
 
@@ -120,12 +155,14 @@ describe('ActionSheet — live-preview confirm gate', () => {
     'blocks %s click and keyboard confirmation until the live preview resolves',
     (verb) => {
       const onConfirm = vi.fn();
+      const wakeAt = verb === 'Later' ? new Date(Date.now() + 86_400_000).toISOString() : undefined;
       const { rerender } = render(
         <ActionSheet
           open={true}
           verb={verb}
           row={row}
           inboxCount="loading"
+          wakeAt={wakeAt ?? null}
           onCancel={() => {}}
           onConfirm={onConfirm}
         />,
@@ -143,6 +180,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
           verb={verb}
           row={row}
           inboxCount={2}
+          wakeAt={wakeAt ?? null}
           onCancel={() => {}}
           onConfirm={onConfirm}
         />,
@@ -177,6 +215,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
     expect(onConfirm).toHaveBeenLastCalledWith({
       archiveHistoric: false,
       rememberPreference: false,
+      wakeAt: null,
     });
 
     fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
@@ -201,6 +240,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
     expect(onConfirm).toHaveBeenLastCalledWith({
       archiveHistoric: true,
       rememberPreference: false,
+      wakeAt: null,
     });
     expect(screen.getByText(/uses a second cleanup action/i)).toBeInTheDocument();
   });

@@ -10,6 +10,7 @@ import {
   mailMessages,
   ruleMatchLog,
   schema,
+  senderPolicies,
   senders,
   triageDecisions,
   users,
@@ -650,41 +651,148 @@ describe('AutopilotReadService', () => {
   });
 
   describe('previewRule (U14)', () => {
-    it('runs the matcher against current signals and returns a metadata-only sample', async () => {
+    it('reports actionable, Protected, cap, and early observed volume without mutation', async () => {
       const senderKey = 'a1'.repeat(32);
-      await db.insert(senders).values({
+      const protectedSenderKey = 'b1'.repeat(32);
+      await db.insert(senders).values([
+        {
+          mailboxAccountId: mailboxA,
+          senderKey,
+          displayName: 'Shop Inc',
+          email: 'deals@shop.com',
+          domain: 'shop.com',
+          gmailCategory: 'promotions',
+          firstSeenAt: new Date('2024-01-01'),
+          lastSeenAt: new Date(),
+        },
+        {
+          mailboxAccountId: mailboxA,
+          senderKey: protectedSenderKey,
+          displayName: 'Important Shop',
+          email: 'important@shop.com',
+          domain: 'shop.com',
+          gmailCategory: 'promotions',
+          firstSeenAt: new Date('2024-01-01'),
+          lastSeenAt: new Date(),
+        },
+      ]);
+      await db.insert(triageDecisions).values(
+        [senderKey, protectedSenderKey].map((key) => ({
+          mailboxAccountId: mailboxA,
+          senderKey: key,
+          verdict: 'archive' as const,
+          confidence: '0.92',
+          reasoning: 'test',
+          generatedBy: 'template' as const,
+          producedAt: new Date(),
+          expiresAt: new Date(Date.now() + 86_400_000),
+        })),
+      );
+      await db.insert(senderPolicies).values({
         mailboxAccountId: mailboxA,
-        senderKey,
-        displayName: 'Shop Inc',
-        email: 'deals@shop.com',
-        domain: 'shop.com',
-        gmailCategory: 'promotions',
-        firstSeenAt: new Date('2024-01-01'),
-        lastSeenAt: new Date(),
+        senderKey: protectedSenderKey,
+        isProtected: true,
+        protectionReason: 'user_defined',
       });
-      await db.insert(triageDecisions).values({
-        mailboxAccountId: mailboxA,
-        senderKey,
-        verdict: 'archive',
-        confidence: '0.92',
-        reasoning: 'test',
-        generatedBy: 'template',
-        producedAt: new Date(),
-        expiresAt: new Date(Date.now() + 86_400_000),
-      });
+      await db.insert(mailMessages).values([
+        {
+          mailboxAccountId: mailboxA,
+          providerMessageId: 'preview-inbox-1',
+          providerThreadId: 'preview-thread-1',
+          senderKey,
+          internalDate: new Date(),
+          labelIds: ['INBOX'],
+          isUnread: false,
+        },
+        {
+          mailboxAccountId: mailboxA,
+          providerMessageId: 'preview-inbox-2',
+          providerThreadId: 'preview-thread-2',
+          senderKey,
+          internalDate: new Date(),
+          labelIds: ['INBOX'],
+          isUnread: false,
+        },
+      ]);
 
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await db
+        .update(automationRules)
+        .set({ modeChangedAt: new Date(Date.now() - 60 * 60 * 60 * 1000) })
+        .where(eq(automationRules.id, ruleId));
+      await db.insert(ruleMatchLog).values([
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: 'c1'.repeat(32),
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'pending evidence',
+          resolution: 'pending',
+        },
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: 'c2'.repeat(32),
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'approved evidence',
+          resolution: 'approved',
+        },
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: 'c3'.repeat(32),
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'dismissed evidence',
+          resolution: 'dismissed',
+        },
+      ]);
       const result = await service.previewRule(mailboxA, ruleId);
       expect(result).not.toBeNull();
       expect(result!.wouldMatchCount).toBe(1);
+      expect(result!.actionableSenderCount).toBe(1);
+      expect(result!.actionableMessageCount).toBe(2);
+      expect(result!.protectedWouldMatchCount).toBe(1);
       expect(result!.evaluatedSenders).toBe(1);
+      expect(result!.dailyActionCap).toBe(100);
+      expect(result!.weeklyVolume).toEqual({
+        observedMatches: 3,
+        observedDays: 3,
+        estimatedMatches: 7,
+        basis: 'early_estimate',
+      });
       expect(result!.sample).toHaveLength(1);
       expect(result!.sample[0]!.senderName).toBe('Shop Inc');
       expect(result!.sample[0]!.senderEmail).toBe('deals@shop.com');
       expect(result!.sample[0]!.reason).toContain('Archive');
 
       // No mutation: preview writes no match rows.
-      expect(await db.select().from(ruleMatchLog)).toHaveLength(0);
+      expect(await db.select().from(ruleMatchLog)).toHaveLength(3);
+
+      // Once the Observe window is complete, the report stops
+      // extrapolating and uses only matches inside the latest 7 days.
+      await db
+        .update(automationRules)
+        .set({ modeChangedAt: new Date(Date.now() - 8 * 86_400_000) })
+        .where(eq(automationRules.id, ruleId));
+      const [oldest] = await db
+        .select({ id: ruleMatchLog.id })
+        .from(ruleMatchLog)
+        .where(eq(ruleMatchLog.reason, 'pending evidence'));
+      await db
+        .update(ruleMatchLog)
+        .set({ matchedAt: new Date(Date.now() - 8 * 86_400_000) })
+        .where(eq(ruleMatchLog.id, oldest!.id));
+
+      const fullWindow = await service.previewRule(mailboxA, ruleId);
+      expect(fullWindow!.weeklyVolume).toEqual({
+        observedMatches: 2,
+        observedDays: 7,
+        estimatedMatches: 2,
+        basis: 'observed_7d',
+      });
     });
 
     it('returns null for cross-tenant and custom rules (D234)', async () => {
@@ -800,7 +908,7 @@ describe('AutopilotReadService', () => {
       });
     }
 
-    it('counts pending observe matches joined to INBOX messages, scoped to the last 7 days', async () => {
+    it('counts pending backlog but includes every resolution in the 7-day history', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const now = Date.now();
       const oneDayAgo = new Date(now - 1 * 86_400_000);
@@ -812,7 +920,7 @@ describe('AutopilotReadService', () => {
       await seedPending(mailboxA, ruleId, SENDER_2, twoDaysAgo);
       // Out-of-window pending match — in pendingTotal, out of the 7d counts.
       await seedPending(mailboxA, ruleId, SENDER_3, tenDaysAgo);
-      // Dismissed match — excluded everywhere.
+      // Dismissed match — not pending, but still evidence in the 7-day totals.
       await seedPending(mailboxA, ruleId, SENDER_4, oneDayAgo, 'dismissed');
 
       // Messages: only INBOX-labelled rows count; archived rows do not.
@@ -830,8 +938,8 @@ describe('AutopilotReadService', () => {
       const rule = rules.find((r) => r.id === ruleId);
       expect(rule!.observeDigest).toEqual({
         pendingTotal: 3,
-        senders7d: 2,
-        messages7d: 4, // 3 (sender 1) + 1 (sender 2); archived + out-of-window excluded
+        senders7d: 3,
+        messages7d: 8, // includes dismissed sender 4; archived + out-of-window excluded
       });
 
       // Tenant isolation — B sees only its own row.

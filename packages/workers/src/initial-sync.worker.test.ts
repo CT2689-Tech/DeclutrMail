@@ -172,6 +172,33 @@ describe('InitialSyncWorker', () => {
     mailboxAccountId = await seedMailbox(db);
   });
 
+  it('no-ops a disconnected mailbox before Gmail access or sync-state writes', async () => {
+    await db
+      .update(mailboxAccounts)
+      .set({ status: 'disconnected' })
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+    const getClient = vi.fn(async () => {
+      throw new Error('disconnected sync must not request a Gmail client');
+    });
+
+    const result = await new InitialSyncWorker({
+      db,
+      gmailAccess: { getClient },
+    }).processJob({ mailboxAccountId }, CTX);
+
+    expect(result).toMatchObject({
+      messagesSynced: 0,
+      sendersIndexed: 0,
+      gmailApiCalls: 0,
+      stageTimings: {},
+      mailboxInactive: true,
+    });
+    expect(result.deletionPaused).toBeUndefined();
+    expect(getClient).not.toHaveBeenCalled();
+    expect(await db.select().from(providerSyncState)).toHaveLength(0);
+    expect(await db.select().from(mailMessages)).toHaveLength(0);
+  });
+
   it("first_seen_at / last_seen_at span every sender's actual MIN / MAX internal_date (regression: 2026-06-09 prod data integrity bug)", async () => {
     // Prod sync 2026-06-09 produced senders.last_seen_at = first_seen_at
     // for 99.94% of senders despite each sender having multiple unique
@@ -771,10 +798,10 @@ describe('InitialSyncWorker', () => {
 
   // Senders V2 spec v1.3 §"Trust-canary CI fixture" L488-494 — the
   // auto-protect-on-replied-≥3 rule, encoded as worker integration:
-  //   - 0 replies + N msgs + unsub-link → no engagement_based protect
+  //   - 0 replies + N msgs + unsub-link → no automatic protection
   //     (the cascade will recommend Unsubscribe)
   //   - ≥3 replies → sender_policies.is_protected=true,
-  //     protection_reason=engagement_based, regardless of unsub presence
+  //     protection_reason=replied, regardless of unsub presence
   //   - boundary at exactly =2 stays unprotected (engagement threshold
   //     is GE 3, not GT 2; documented at L488)
   describe('trust-canary (spec v1.3 L488-494) — auto-protect on replied ≥ 3', () => {
@@ -822,7 +849,25 @@ describe('InitialSyncWorker', () => {
       return [inbound, ...replies];
     }
 
-    it('replied ≥ 3 → senders.replied_count >= 3 + sender_policies engagement_based protected', async () => {
+    function makeLabeledSender(senderIndex: number, labelSets: string[][]): GmailMessageMetadata[] {
+      const base = Date.UTC(2026, 0, 1) + senderIndex * 86_400_000;
+      const senderEmail = `sender${senderIndex}@example.com`;
+      return labelSets.map((labelIds, i) => ({
+        id: `labeled-${senderIndex}-${i}`,
+        threadId: `labeled-thread-${senderIndex}-${i}`,
+        labelIds,
+        snippet: `signal ${i}`,
+        internalDate: String(base + i * 60_000),
+        from: `Sender ${senderIndex} <${senderEmail}>`,
+        subject: `Signal ${i}`,
+        to: null,
+        cc: null,
+        listUnsubscribe: null,
+        listUnsubscribePost: null,
+      }));
+    }
+
+    it('replied ≥ 3 → sender is protected with replied provenance', async () => {
       // Sender 0 has 5 replies (above threshold), sender 1 has exactly 2
       // (at boundary — still below), sender 2 has 0 (no engagement).
       const fixture = [
@@ -857,10 +902,10 @@ describe('InitialSyncWorker', () => {
           { isProtected: p.isProtected, reason: p.protectionReason },
         ]),
       );
-      // Sender 0 (5 replies) is auto-protected with engagement_based.
+      // Sender 0 (5 replies) is auto-protected with exact provenance.
       const s0 = protectedBySender.get(deriveSenderKey('sender0@example.com'));
       expect(s0?.isProtected).toBe(true);
-      expect(s0?.reason).toBe('engagement_based');
+      expect(s0?.reason).toBe('replied');
       // Sender 1 (2 replies) stays below the threshold — no auto-protect row.
       expect(protectedBySender.has(deriveSenderKey('sender1@example.com'))).toBe(false);
       // Sender 2 (0 replies + unsub link) — same: not auto-protected (the
@@ -869,9 +914,38 @@ describe('InitialSyncWorker', () => {
       expect(protectedBySender.has(deriveSenderKey('sender2@example.com'))).toBe(false);
     });
 
-    it('user-agency-wins — manually demoted engagement_based row stays demoted on re-run (founder default 2026-06-05)', async () => {
+    it('protects explicit stars and repeated Gmail importance, but not one weak importance signal', async () => {
+      const fixture = [
+        ...makeLabeledSender(10, [['INBOX', 'STARRED']]),
+        ...makeLabeledSender(11, [
+          ['INBOX', 'IMPORTANT'],
+          ['INBOX', 'IMPORTANT'],
+          ['INBOX', 'IMPORTANT'],
+        ]),
+        ...makeLabeledSender(12, [['INBOX', 'IMPORTANT']]),
+      ];
+
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(fixture)),
+      }).processJob({ mailboxAccountId }, CTX);
+
+      const rows = await db
+        .select({
+          senderKey: schema.senderPolicies.senderKey,
+          reason: schema.senderPolicies.protectionReason,
+        })
+        .from(schema.senderPolicies);
+      const reasons = new Map(rows.map((row) => [row.senderKey, row.reason]));
+
+      expect(reasons.get(deriveSenderKey('sender10@example.com'))).toBe('starred');
+      expect(reasons.get(deriveSenderKey('sender11@example.com'))).toBe('gmail_important');
+      expect(reasons.has(deriveSenderKey('sender12@example.com'))).toBe(false);
+    });
+
+    it('user-agency-wins — manually demoted automatic row stays demoted on re-run', async () => {
       // flow-completeness-auditor 🔴-3 resolution: if the user manually
-      // flips an engagement_based-protected row to `is_protected=false`,
+      // flips an automatically protected row to `is_protected=false`,
       // subsequent worker passes MUST respect the demote — never
       // silently re-protect on the next sync.
       const fixture = makeRepliedSender(0, 5, false);
@@ -887,7 +961,7 @@ describe('InitialSyncWorker', () => {
         .from(schema.senderPolicies)
         .where(eq(schema.senderPolicies.senderKey, senderKey));
       expect(firstRun?.isProtected).toBe(true);
-      expect(firstRun?.protectionReason).toBe('engagement_based');
+      expect(firstRun?.protectionReason).toBe('replied');
 
       // User manually demotes — leaves the row but flips the flag off.
       // (Production demote path may NULL the reason too; we test the
@@ -912,7 +986,7 @@ describe('InitialSyncWorker', () => {
         .where(eq(schema.senderPolicies.senderKey, senderKey));
       // STAYED demoted — user agency preserved.
       expect(secondRun?.isProtected).toBe(false);
-      expect(secondRun?.protectionReason).toBe('engagement_based'); // reason retained as audit trail
+      expect(secondRun?.protectionReason).toBe('replied'); // reason retained as audit trail
     });
 
     it('user-agency-wins — manually demoted user_defined row stays demoted on re-run (D40/D42 unprotect)', async () => {
@@ -954,8 +1028,8 @@ describe('InitialSyncWorker', () => {
       expect(row?.protectionSetAt).toBeNull();
     });
 
-    it('idempotent — second run preserves engagement_based provenance + does not overwrite user_defined', async () => {
-      // Run 1: sender 0 gets engagement_based protect (5 replies).
+    it('idempotent — second run preserves automatic provenance + does not overwrite user_defined', async () => {
+      // Run 1: sender 0 gets replied protection (5 replies).
       const fixture = makeRepliedSender(0, 5, false);
       const client = new FakeGmailClient(fixture);
       await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
@@ -967,7 +1041,7 @@ describe('InitialSyncWorker', () => {
         .select()
         .from(schema.senderPolicies)
         .where(eq(schema.senderPolicies.senderKey, senderKey));
-      expect(firstRun?.protectionReason).toBe('engagement_based');
+      expect(firstRun?.protectionReason).toBe('replied');
       const firstSetAt = firstRun!.protectionSetAt;
 
       // Manually elevate to user_defined (simulating a user later marking

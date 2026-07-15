@@ -15,7 +15,14 @@
  * archive-only undo). `later` / `unsubscribe` have no enqueue route yet.
  */
 
-import type { ActionJobStatus, UndoActionKind } from '@declutrmail/shared/contracts';
+import type {
+  ActionJobStatus,
+  UndoActionKind,
+  UnsubscribeLifecycleStatus,
+  UnsubscribeManualTransition,
+} from '@declutrmail/shared/contracts';
+import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import type { ActionStatusSnapshot } from '@declutrmail/shared/actions';
 
 import { apiGet, apiPost } from './client';
 
@@ -34,16 +41,89 @@ export interface ActionEnqueueResult {
   status: ActionJobStatus;
 }
 
-/** Returned by `GET /api/actions/:id` — the polled action state. */
-export interface ActionStatusResult {
+/* ────────── Outcome-aware Activity recovery ────────── */
+
+export type ActionRecoveryPreviewStatus = 'verifying' | 'ready' | 'failed' | 'consumed';
+
+export type ActionRecoveryOutcome =
+  | 'not_applied'
+  | 'partial'
+  | 'already_applied'
+  | 'no_change_needed'
+  | 'uncertain'
+  | 'reconnect_required'
+  | 'blocked';
+
+/** Provider-verified consequence preview for one failed label action. */
+export interface ActionRecoveryPreviewResult {
+  previewId: string;
   actionId: string;
-  status: ActionJobStatus;
-  requestedCount: number;
-  affectedCount: number;
-  /** Present once `status === 'done'` for a reversible verb; else null. */
-  undoToken: string | null;
+  rootActionId: string;
+  verb: 'archive' | 'later' | 'delete';
+  status: ActionRecoveryPreviewStatus;
+  outcome: ActionRecoveryOutcome | null;
+  targetCount: number;
+  remainingCount: number;
+  alreadyAppliedCount: number;
+  unavailableCount: number;
+  verifiedCount: number;
   errorCode: string | null;
+  wakeAt: string | null;
+  requiresNewWakeAt: boolean;
+  expiresAt: string;
+  recoveryActionId: string | null;
 }
+
+export interface ActionRecoveryEnqueueResult {
+  previewId: string;
+  rootActionId: string;
+  actionId: string;
+  attempt: number;
+  status: ActionJobStatus;
+  replayed: boolean;
+}
+
+/** Begin metadata-only Gmail verification; this call never mutates mail. */
+export async function createActionRecoveryPreview(
+  actionId: string,
+): Promise<ActionRecoveryPreviewResult> {
+  const env = await apiPost<ActionRecoveryPreviewResult>(
+    `/api/actions/${encodeURIComponent(actionId)}/recovery-preview`,
+  );
+  return env.data;
+}
+
+/** Poll a durable recovery preview until verification reaches a terminal state. */
+export async function getActionRecoveryPreview(
+  previewId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<ActionRecoveryPreviewResult> {
+  const env = await apiGet<ActionRecoveryPreviewResult>(
+    `/api/actions/recovery-previews/${encodeURIComponent(previewId)}`,
+    options.signal ? { signal: options.signal } : {},
+  );
+  return env.data;
+}
+
+/**
+ * Confirm the verified consequence preview. The same key is retained for
+ * every network replay of this confirmation so double-clicks enqueue one
+ * recovery attempt.
+ */
+export async function confirmActionRecovery(
+  previewId: string,
+  input: { idempotencyKey: string; wakeAt?: string },
+): Promise<ActionRecoveryEnqueueResult> {
+  const env = await apiPost<ActionRecoveryEnqueueResult>(
+    `/api/actions/recovery-previews/${encodeURIComponent(previewId)}/retry`,
+    input.wakeAt ? { wakeAt: input.wakeAt } : {},
+    { headers: { 'Idempotency-Key': input.idempotencyKey } },
+  );
+  return env.data;
+}
+
+/** Returned by `GET /api/actions/:id` — canonical shared poll snapshot. */
+export type ActionStatusResult = ActionStatusSnapshot;
 
 /** Returned by `GET /api/actions/archive/preview` — the REAL inbox count. */
 export interface ArchivePreviewResult {
@@ -89,7 +169,7 @@ interface ActionRequestOptions {
  * resolves the sender's current INBOX ids server-side (the `sender`
  * selector), so the client sends only the sender id.
  *
- * `override` is required to act on a Protected / VIP sender (D42).
+ * `override` is required to act on a Protected sender.
  */
 export async function enqueueArchiveSender(
   senderId: string,
@@ -166,6 +246,7 @@ export interface CompositeActionEnqueueResult {
   status: ActionJobStatus;
   primaryCount: number;
   secondaryCount: number | null;
+  wakeAt: string | null;
 }
 
 /** Returned by `GET /api/actions/preview` — composite preview shape. */
@@ -213,7 +294,7 @@ export interface CompositeActionPreviewResult {
 export async function enqueueCompositeAction(
   input: {
     senderId: string;
-    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
     secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
     override?: boolean;
     idempotencyKey: string;
@@ -223,7 +304,7 @@ export async function enqueueCompositeAction(
     '/api/actions',
     {
       selector: { type: 'sender', senderId: input.senderId },
-      primary: input.primary,
+      primary: withRequiredLaterWakeAt(input.primary),
       ...(input.secondary ? { secondary: input.secondary } : {}),
       override: input.override ?? false,
     },
@@ -253,6 +334,8 @@ export interface UnsubscribeIntentResult {
   recordedAt: string;
   /** activity_log.id of the freshly-written row. */
   activityLogId: string;
+  /** Method-specific progress; never implies future delivery has stopped. */
+  lifecycleStatus: UnsubscribeLifecycleStatus;
   /**
    * The sender's unsubscribe capability at intent time:
    *   - `one_click` → an execution job is in flight; poll
@@ -273,6 +356,15 @@ export interface UnsubscribeIntentResult {
   executionActionId: string | null;
   /** Raw `mailto:` URL for the manual path. Null unless `method === 'mailto'`. */
   mailtoUrl: string | null;
+}
+
+export interface UnsubscribeManualStatusResult {
+  senderId: string;
+  status: UnsubscribeManualTransition;
+  recordedAt: string;
+  activityLogId: string | null;
+  changed: boolean;
+  irreversible: boolean;
 }
 
 /** `action_jobs.error_code` marking a 3xx (unconfirmed) unsub outcome. */
@@ -315,6 +407,20 @@ export async function recordUnsubscribeIntent(
   return env.data;
 }
 
+/** Persist an explicit step in the user-sent mailto unsubscribe flow. */
+export async function recordUnsubscribeManualStatus(
+  senderId: string,
+  status: UnsubscribeManualTransition,
+  options: ActionRequestOptions = {},
+): Promise<UnsubscribeManualStatusResult> {
+  const env = await apiPost<UnsubscribeManualStatusResult>(
+    '/api/actions/unsubscribe-manual-status',
+    { senderId, status },
+    { ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}) },
+  );
+  return env.data;
+}
+
 export async function getCompositePreview(
   senderId: string,
   options: ActionRequestOptions = {},
@@ -340,7 +446,7 @@ export interface BulkPreviewBuckets {
 /**
  * Returned by `POST /api/actions/preview/bulk` — per-sender breakdown +
  * aggregate bucket counts across the selection (D52: the action sheet
- * shows AGGREGATED impact). `totals` excludes Protected/VIP senders
+ * shows AGGREGATED impact). `totals` excludes Protected senders
  * because the bulk enqueue skips them — the preview equals what will
  * actually move.
  */
@@ -365,6 +471,7 @@ export interface BulkActionEnqueueResult {
   status: ActionJobStatus;
   senderCount: number;
   requestedTotal: number;
+  wakeAt: string | null;
   skipped: Array<{ senderId: string; reason: 'protected' | 'not_found' }>;
 }
 
@@ -412,7 +519,7 @@ export async function getBulkActionPreview(
 export async function enqueueBulkAction(
   input: {
     senderIds: string[];
-    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
     secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
     idempotencyKey: string;
   } & ActionRequestOptions,
@@ -421,7 +528,7 @@ export async function enqueueBulkAction(
     '/api/actions',
     {
       selector: { type: 'senders', senderIds: input.senderIds },
-      primary: input.primary,
+      primary: withRequiredLaterWakeAt(input.primary),
       ...(input.secondary ? { secondary: input.secondary } : {}),
     },
     {
@@ -430,6 +537,19 @@ export async function enqueueBulkAction(
     },
   );
   return env.data;
+}
+
+/** Public web-client alias for the canonical D245 one-week preset. */
+export const defaultLaterWakeAt = defaultLaterWakeAtIso;
+
+function withRequiredLaterWakeAt(primary: {
+  type: CompositePrimaryVerb;
+  olderThanDays?: number | null;
+  wakeAt?: string;
+}): typeof primary {
+  return primary.type === 'later' && primary.wakeAt === undefined
+    ? { ...primary, wakeAt: defaultLaterWakeAt() }
+    : primary;
 }
 
 /** Poll a batch's aggregate status. Mailbox-scoped → 404 if not owned. */

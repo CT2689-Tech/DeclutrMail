@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
 import {
   useActionStatus,
@@ -15,6 +16,7 @@ import {
 } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { ApiError } from '@/lib/api/client';
+import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
 // Cross-feature component import per ADR-0007's second-consumer rule —
@@ -178,6 +180,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
   // D230 manual path — the "finish in Gmail" callout for a mailto
   // sender, rendered above the queue after U confirms. Dismissible.
   const [mailtoFollowup, setMailtoFollowup] = useState<{
+    senderId: string;
     senderName: string;
     mailtoUrl: string;
   } | null>(null);
@@ -189,6 +192,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
   const [pendingBatch, setPendingBatch] = useState<{
     verb: BatchVerb;
     batch: DomainBatch;
+    wakeAt: string | null;
   } | null>(null);
   const [batchAction, setBatchAction] = useState<{
     batchId: string;
@@ -223,7 +227,10 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         surface: 'triage',
         reason: 'batch_status_poll',
       });
-      toast(`Couldn't confirm the ${batchAction.domain} batch — see Activity`, 'warn');
+      toast(
+        getActionFailureCopy('status', { action: `the ${batchAction.domain} batch` }).message,
+        'warn',
+      );
       setBatchAction(null);
       return;
     }
@@ -235,7 +242,12 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       // toast; clean success stays silent per D35).
       if (data.failed > 0) {
         toast(
-          `Couldn't move ${data.failed} of ${data.total} ${batchAction.domain} senders — see Activity`,
+          getActionFailureCopy('terminal', {
+            action: `${batchAction.verb.toLowerCase()} the ${batchAction.domain} batch`,
+            whatChanged: `${data.done} of ${data.total} senders completed.`,
+            whatDidNotChange: `${data.failed} senders did not complete.`,
+            nextStep: 'Check Activity for the affected senders, then retry if needed.',
+          }).message,
           'warn',
         );
       }
@@ -245,7 +257,9 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       setExpandedRow(null);
     } else {
       toast(
-        `Couldn't ${batchAction.verb.toLowerCase()} the ${batchAction.domain} batch — see Activity`,
+        getActionFailureCopy('terminal', {
+          action: `${batchAction.verb.toLowerCase()} the ${batchAction.domain} batch`,
+        }).message,
         'warn',
       );
     }
@@ -274,16 +288,19 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
-      // Silent success (D35) — refresh Activity so the outcome row shows.
+      toast(
+        `${unsubWatch.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
+        'success',
+      );
       invalidateAfterDecision(qc);
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `Couldn't confirm ${unsubWatch.senderName}'s unsubscribe — it may have worked. Watch for new mail.`,
+        `${unsubWatch.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
         'warn',
       );
     } else {
       toast(
-        `${unsubWatch.senderName}'s list refused the unsubscribe — Archive is the reliable fallback`,
+        `${unsubWatch.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
         'warn',
       );
     }
@@ -337,7 +354,12 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         surface: 'triage',
         reason: 'action_status_poll',
       });
-      toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
+      toast(
+        getActionFailureCopy('status', {
+          action: `${activeAction.verb.toLowerCase()} ${activeAction.senderName}`,
+        }).message,
+        'warn',
+      );
       setActiveAction(null);
       return;
     }
@@ -355,7 +377,9 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       setExpandedRow(null);
     } else {
       toast(
-        `Couldn't ${activeAction.verb.toLowerCase()} ${activeAction.senderName} — see Activity`,
+        getActionFailureCopy('terminal', {
+          action: `${activeAction.verb.toLowerCase()} ${activeAction.senderName}`,
+        }).message,
         'warn',
       );
     }
@@ -427,7 +451,13 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
             },
             onError: (err) => {
               captureFeatureException(err, { surface: 'triage', reason: 'keep_intent' });
-              toast(`Couldn't keep ${row.senderName} — try again`, 'warn');
+              toast(
+                getActionFailureCopy('enqueue', {
+                  action: `keep ${row.senderName}`,
+                  whatDidNotChange: 'The Keep policy was not saved.',
+                }).message,
+                'warn',
+              );
             },
             onSettled: () => setIntentRowId(null),
           },
@@ -467,9 +497,16 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
               incrementSessionDecided();
               setExpandedRow(null);
               if (res.method === 'one_click' && res.executionActionId) {
-                setUnsubWatch({ actionId: res.executionActionId, senderName: row.senderName });
+                setUnsubWatch({
+                  actionId: res.executionActionId,
+                  senderName: row.senderName,
+                });
               } else if (res.method === 'mailto' && res.mailtoUrl) {
-                setMailtoFollowup({ senderName: row.senderName, mailtoUrl: res.mailtoUrl });
+                setMailtoFollowup({
+                  senderId: row.senderId,
+                  senderName: row.senderName,
+                  mailtoUrl: res.mailtoUrl,
+                });
               }
               if (details?.archiveHistoric) {
                 enqueueComposite.mutate(
@@ -495,7 +532,13 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
                         reason: 'enqueue_archive_after_unsub',
                       });
                       toast(
-                        `Unsubscribe queued, but couldn't archive the backlog from ${row.senderName}`,
+                        getActionFailureCopy('enqueue', {
+                          action: `archive the backlog from ${row.senderName}`,
+                          whatChanged: 'The unsubscribe request was queued.',
+                          whatDidNotChange: 'The backlog was not archived.',
+                          nextStep:
+                            'Archive the backlog from Senders if you still want to move it.',
+                        }).message,
                         'warn',
                       );
                     },
@@ -505,7 +548,13 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
             },
             onError: (err) => {
               captureFeatureException(err, { surface: 'triage', reason: 'record_unsub' });
-              toast(`Couldn't queue unsubscribe for ${row.senderName}`, 'warn');
+              toast(
+                getActionFailureCopy('enqueue', {
+                  action: `unsubscribe from ${row.senderName}`,
+                  whatDidNotChange: 'No unsubscribe request was recorded or sent.',
+                }).message,
+                'warn',
+              );
             },
             onSettled: () => setIntentRowId(null),
           },
@@ -518,7 +567,14 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       // rendered busy, until the worker confirms.
       const primaryType = verb === 'Archive' ? 'archive' : 'later';
       enqueueComposite.mutate(
-        { senderId: row.senderId, primary: { type: primaryType, olderThanDays: null } },
+        {
+          senderId: row.senderId,
+          primary: {
+            type: primaryType,
+            olderThanDays: null,
+            ...(primaryType === 'later' && details?.wakeAt ? { wakeAt: details.wakeAt } : {}),
+          },
+        },
         {
           onSuccess: (res) => {
             // `primaryCount` is the server's real coverage count from
@@ -552,7 +608,9 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
             toast(
               err instanceof ApiError && err.status === 409
                 ? `${row.senderName} is protected — unprotect it first`
-                : `Couldn't ${verb.toLowerCase()} ${row.senderName}`,
+                : getActionFailureCopy('enqueue', {
+                    action: `${verb.toLowerCase()} ${row.senderName}`,
+                  }).message,
               'warn',
             );
           },
@@ -644,7 +702,16 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       ) {
         if (inlinePreviewBlocked) return;
         // Second click on the same verb confirms.
-        dispatchAction(verb, row, { archiveHistoric: false, rememberPreference: true }, 'inline');
+        dispatchAction(
+          verb,
+          row,
+          {
+            archiveHistoric: false,
+            rememberPreference: true,
+            wakeAt: pendingAction.wakeAt,
+          },
+          'inline',
+        );
         return;
       }
       onRowAction(verb, row);
@@ -672,7 +739,11 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         return;
       }
       clearPending();
-      setPendingBatch({ verb, batch });
+      setPendingBatch({
+        verb,
+        batch,
+        wakeAt: verb === 'Later' ? defaultLaterWakeAtIso() : null,
+      });
     },
     [
       activeAction,
@@ -694,13 +765,17 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
    */
   const onBatchConfirm = useCallback(() => {
     if (pendingBatch == null) return;
-    const { verb, batch } = pendingBatch;
+    const { verb, batch, wakeAt } = pendingBatch;
     const eligible = batch.rows.filter((r) => r.protectionReason === null);
     setPendingBatch(null);
     enqueueBulk.mutate(
       {
         senderIds: eligible.map((r) => r.senderId),
-        primary: { type: verb === 'Archive' ? 'archive' : 'later', olderThanDays: null },
+        primary: {
+          type: verb === 'Archive' ? 'archive' : 'later',
+          olderThanDays: null,
+          ...(verb === 'Later' && wakeAt ? { wakeAt } : {}),
+        },
       },
       {
         onSuccess: (res) => {
@@ -727,7 +802,12 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
             surface: 'triage',
             reason: 'enqueue_domain_batch',
           });
-          toast(`Couldn't ${verb.toLowerCase()} the ${batch.domain} batch — try again`, 'warn');
+          toast(
+            getActionFailureCopy('enqueue', {
+              action: `${verb.toLowerCase()} the ${batch.domain} batch`,
+            }).message,
+            'warn',
+          );
         },
       },
     );
@@ -827,6 +907,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
           the opt-out from a prefilled Gmail compose. Never auto-sent. */}
       {mailtoFollowup && (
         <UnsubMailtoCallout
+          senderId={mailtoFollowup.senderId}
           senderName={mailtoFollowup.senderName}
           mailtoUrl={mailtoFollowup.mailtoUrl}
           onDismiss={() => setMailtoFollowup(null)}
@@ -888,9 +969,11 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         verb={(pendingAction?.verb ?? 'Archive') as SheetableVerb}
         row={pendingRow}
         inboxCount={previewInboxCount}
+        wakeAt={pendingAction?.wakeAt ?? null}
         mailboxEmail={activeEmail}
         onCancel={clearPending}
         onConfirm={onSheetConfirm}
+        onRetryPreview={() => void compositePreview.refetch()}
       />
 
       {/* Batch sheet — the D226 preview for a domain-batch decision. */}
@@ -899,9 +982,11 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         verb={pendingBatch?.verb ?? 'Archive'}
         batch={pendingBatch?.batch ?? null}
         preview={bulkPreview.isError ? 'unavailable' : (bulkPreview.data ?? 'loading')}
+        wakeAt={pendingBatch?.wakeAt ?? null}
         mailboxEmail={activeEmail}
         onCancel={() => setPendingBatch(null)}
         onConfirm={onBatchConfirm}
+        onRetryPreview={() => void bulkPreview.refetch()}
       />
 
       {/* `?` reveals the shortcut overlay — real bindings only. */}

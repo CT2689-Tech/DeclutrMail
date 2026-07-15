@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { ContextualHelp } from '@/features/help/contextual-help';
 import { ActionPreview, type PreviewCount } from './action-preview';
 import type { TriageDecisionRow } from './data';
 import type { SheetableVerb } from './store';
@@ -10,6 +11,8 @@ const { color, font } = tokens;
 
 export interface ConfirmDetails {
   archiveHistoric: boolean;
+  /** Exact return time confirmed for Later; null for other verbs. */
+  wakeAt: string | null;
   /** Final value of the remember-preference toggle when confirming. */
   rememberPreference: boolean;
 }
@@ -36,9 +39,11 @@ export function ActionSheet({
   verb,
   row,
   inboxCount,
+  wakeAt = null,
   mailboxEmail,
   onCancel,
   onConfirm,
+  onRetryPreview,
 }: {
   open: boolean;
   /** Sheetable verbs only — Keep is never previewed. */
@@ -46,10 +51,12 @@ export function ActionSheet({
   row: TriageDecisionRow | null;
   /** Live inbox count for the preview's impact figure (D226). */
   inboxCount: PreviewCount;
+  wakeAt?: string | null;
   /** Explicit override for isolated previews; app surfaces use active auth context. */
   mailboxEmail?: string | undefined;
   onCancel: () => void;
   onConfirm: (details: ConfirmDetails) => void;
+  onRetryPreview?: (() => void) | undefined;
 }) {
   // Unsubscribe defaults to leaving the backlog alone. It is a separate
   // Gmail mutation and a second cleanup unit on Free, so it must be an
@@ -59,6 +66,7 @@ export function ActionSheet({
   // toggle would be a no-op lie.
   const [archiveHistoric, setArchiveHistoric] = useState(false);
   const [rememberPreference, setRememberPreference] = useState(false);
+  const [selectedWakeAt, setSelectedWakeAt] = useState<string | null>(wakeAt);
   const actionKey = open && row ? `${verb}:${row.id}` : null;
   const [initializedActionKey, setInitializedActionKey] = useState<string | null>(null);
   // The first render of a newly opened Unsubscribe sheet must use its safe
@@ -73,8 +81,12 @@ export function ActionSheet({
   // keyboard submission alike.
   const requiresLivePreview =
     verb === 'Archive' || verb === 'Later' || (verb === 'Unsubscribe' && effectiveArchiveHistoric);
+  const previewUnavailable = inboxCount === 'unavailable';
+  const previewPending = inboxCount === 'loading';
+  const wakeAtInvalid =
+    verb === 'Later' && (selectedWakeAt === null || Date.parse(selectedWakeAt) <= Date.now());
   const confirmDisabled =
-    requiresLivePreview && (inboxCount === 'loading' || inboxCount === 'unavailable');
+    (requiresLivePreview && (previewPending || previewUnavailable)) || wakeAtInvalid;
 
   useEffect(() => {
     if (!open || actionKey === null) {
@@ -83,8 +95,9 @@ export function ActionSheet({
     }
     setArchiveHistoric(false);
     setRememberPreference(false);
+    setSelectedWakeAt(verb === 'Later' ? wakeAt : null);
     setInitializedActionKey(actionKey);
-  }, [open, verb, actionKey]);
+  }, [open, verb, wakeAt, actionKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -94,12 +107,25 @@ export function ActionSheet({
         onCancel();
       } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
-        onConfirm({ archiveHistoric: effectiveArchiveHistoric, rememberPreference });
+        onConfirm({
+          archiveHistoric: effectiveArchiveHistoric,
+          rememberPreference,
+          wakeAt: verb === 'Later' ? selectedWakeAt : null,
+        });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, effectiveArchiveHistoric, rememberPreference, onCancel, onConfirm, confirmDisabled]);
+  }, [
+    open,
+    verb,
+    effectiveArchiveHistoric,
+    rememberPreference,
+    selectedWakeAt,
+    onCancel,
+    onConfirm,
+    confirmDisabled,
+  ]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
 
@@ -145,7 +171,7 @@ export function ActionSheet({
         }}
       >
         <div style={{ padding: '20px 24px 8px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow tone={danger ? 'amber' : 'primary'}>Action sheet · {verb}</Eyebrow>
+          <Eyebrow tone={danger ? 'amber' : 'primary'}>Preview · {verb}</Eyebrow>
           <h2
             id="dm-triage-sheet-title"
             style={{
@@ -167,9 +193,41 @@ export function ActionSheet({
             row={row}
             archiveHistoric={effectiveArchiveHistoric}
             inboxCount={inboxCount}
+            wakeAt={selectedWakeAt}
             mode="modal"
             mailboxEmail={mailboxEmail}
           />
+
+          <ContextualHelp question="Why do I review this before confirming?">
+            The preview uses the current mailbox count and separates what will change from what will
+            stay unchanged. DeclutrMail sends the action only after this preview loads and you
+            confirm; Cancel changes nothing.
+          </ContextualHelp>
+
+          {verb === 'Later' && selectedWakeAt !== null && (
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
+              <span style={{ color: color.fg, fontWeight: 600 }}>Return to Inbox</span>
+              <input
+                type="datetime-local"
+                aria-label="Later return time"
+                value={toLocalDateTimeInput(selectedWakeAt)}
+                min={toLocalDateTimeInput(new Date(Date.now() + 60_000).toISOString())}
+                onChange={(event) => {
+                  const next = new Date(event.currentTarget.value);
+                  setSelectedWakeAt(Number.isNaN(next.getTime()) ? null : next.toISOString());
+                }}
+                style={{
+                  border: `1px solid ${color.line}`,
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  background: color.card,
+                  color: color.fg,
+                  fontFamily: font.sans,
+                  fontSize: 13,
+                }}
+              />
+            </label>
+          )}
 
           {showHistoricToggle && (
             <button
@@ -222,7 +280,7 @@ export function ActionSheet({
           <button
             onClick={() => setRememberPreference((v) => !v)}
             type="button"
-            aria-label="Remember this preference and skip the action sheet next time"
+            aria-label="Show this preview in the row next time"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -238,9 +296,10 @@ export function ActionSheet({
           >
             <CheckSquare on={rememberPreference} muted />
             <span style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
-              <strong style={{ color: color.fg, fontWeight: 600 }}>Remember this for {verb}</strong>{' '}
-              — skip the sheet next time. The preview still shows inline below the row, and you can
-              flip this back from Settings.
+              <strong style={{ color: color.fg, fontWeight: 600 }}>
+                Show this in the row next time
+              </strong>{' '}
+              — the same preview will appear below the sender. You can change this in Settings.
             </span>
           </button>
         </div>
@@ -261,9 +320,11 @@ export function ActionSheet({
                 it by design. Only the archived backlog is undoable.
                 Archive/Later are fully reversible (D232). */}
             {confirmDisabled
-              ? inboxCount === 'unavailable'
-                ? "Couldn't load a live preview. Close and retry — no inbox mail can move without one."
-                : 'Counting inbox mail — confirm unlocks after the live preview loads.'
+              ? wakeAtInvalid
+                ? 'Choose a future return time before confirming Later.'
+                : inboxCount === 'unavailable'
+                  ? "Couldn't load a live preview. Close and retry — no inbox mail can move without one."
+                  : 'Counting inbox mail — confirm unlocks after the live preview loads.'
               : verb === 'Unsubscribe'
                 ? effectiveArchiveHistoric
                   ? "The unsubscribe itself can't be undone — the archived backlog uses your plan's Activity undo window."
@@ -271,6 +332,11 @@ export function ActionSheet({
                 : "Reversible for your plan's undo window from Activity."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
+            {previewUnavailable && onRetryPreview && (
+              <Button tone="default" onClick={onRetryPreview}>
+                Retry preview
+              </Button>
+            )}
             <Button tone="default" onClick={onCancel}>
               Cancel
             </Button>
@@ -278,7 +344,11 @@ export function ActionSheet({
               tone={danger ? 'warn' : 'primary'}
               disabled={confirmDisabled}
               onClick={() =>
-                onConfirm({ archiveHistoric: effectiveArchiveHistoric, rememberPreference })
+                onConfirm({
+                  archiveHistoric: effectiveArchiveHistoric,
+                  rememberPreference,
+                  wakeAt: verb === 'Later' ? selectedWakeAt : null,
+                })
               }
               iconRight={
                 <Kbd
@@ -299,6 +369,12 @@ export function ActionSheet({
       </div>
     </>
   );
+}
+
+function toLocalDateTimeInput(iso: string): string {
+  const date = new Date(iso);
+  const two = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}T${two(date.getHours())}:${two(date.getMinutes())}`;
 }
 
 /** Inline checkbox glyph — matches `confirm-action-modal.tsx` shape. */

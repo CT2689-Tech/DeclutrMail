@@ -33,7 +33,6 @@ const SENDER_ROW = {
   lastSeenAt: new Date('2026-06-01T00:00:00.000Z'),
   totalReceived: 12n as unknown as number,
   policyType: 'archive',
-  isVip: false,
   isProtected: null,
   snoozedUntil: null,
 };
@@ -103,6 +102,8 @@ describe('DataExportService.streamJson', () => {
     });
     const doc = JSON.parse(await collect(service.streamJson('ws-1')));
     expect(doc.format).toBe('declutrmail-export-v1');
+    expect(doc.scope.completeAccountExport).toBe(false);
+    expect(doc.scope.limitation).toMatch(/not a complete copy/i);
     expect(doc.mailboxes).toHaveLength(1);
     const mb = doc.mailboxes[0];
     expect(mb.email).toBe('user@example.com');
@@ -142,7 +143,6 @@ describe('DataExportService.streamJson', () => {
       'firstSeenAt',
       'gmailCategory',
       'isProtected',
-      'isVip',
       'lastSeenAt',
       'name',
       'policyType',
@@ -209,13 +209,13 @@ describe('DataExportService.streamSendersCsv', () => {
     // standing decisions ONLY. A subject/snippet/body column appearing
     // here must fail this test before it reaches review.
     expect(lines[0]).toBe(
-      'mailbox_email,sender_email,sender_name,domain,gmail_category,first_seen_at,last_seen_at,total_received,policy_type,is_vip,is_protected,snoozed_until',
+      'mailbox_email,sender_email,sender_name,domain,gmail_category,first_seen_at,last_seen_at,total_received,policy_type,is_protected,snoozed_until',
     );
     expect(lines[0]).not.toMatch(/subject|snippet|preview|body/);
     expect(lines).toHaveLength(2);
     expect(lines[1]).toBe(
       'user@example.com,news@acme.com,Acme,acme.com,promotions,' +
-        '2025-01-01T00:00:00.000Z,2026-06-01T00:00:00.000Z,12,archive,false,false,',
+        '2025-01-01T00:00:00.000Z,2026-06-01T00:00:00.000Z,12,archive,false,',
     );
   });
 

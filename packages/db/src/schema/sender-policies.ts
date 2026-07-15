@@ -1,7 +1,9 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
+  integer,
   pgEnum,
   pgTable,
   text,
@@ -21,16 +23,13 @@ import { mailboxAccounts } from './mailbox-accounts';
  * `policy_type` is the standing verdict — the four canonical verbs of
  * D227 (Keep / Archive / Unsubscribe / Later).
  *
- * `is_vip` and `is_protected` are the two distinct standing modifiers of
- * D42. Both override the engine verdict to Keep when true:
- *   - VIP      — elevational: badge + always in Brief.
- *   - Protect  — defensive: silent guard, no badge, not in Brief.
- * They are independent — a sender can be neither, either, or both.
+ * `is_protected` is the standing defensive modifier. It overrides the
+ * engine verdict to Keep and prevents accidental bulk actions.
  *
  * `protection_reason` + `protection_set_at` (D22) record HOW protection
  * was granted — the decision engine reads `(is_protected, protection_reason)`
- * as cascade rule #1 (D21 Phase A) and the value drives the audit copy
- * ("Protected because you marked them VIP"). NULL when `is_protected =
+ * as cascade rule #1 (D21 Phase A) and the value drives the audit copy.
+ * NULL when `is_protected =
  * false`; populated whenever `is_protected` flips true.
  *
  * `(mailbox_account_id, sender_key)` is unique — one policy row per
@@ -49,38 +48,61 @@ export const senderPolicyType = pgEnum('sender_policy_type', [
 /**
  * Provenance of a `is_protected=true` flag (D22).
  *
- * Three sources, used by the cascade audit copy:
- *   - `user_defined`     — explicit Always-Keep toggle on Sender Detail.
- *   - `engagement_based` — derived from D21 Phase A rules (replied,
- *                          starred, high read rate, long relationship).
- *   - `vip`              — auto-applied when `is_vip` flips true.
+ * Exact sources, used by the cascade and user-facing explanation:
+ *   - `user_defined`    — explicit Protect toggle on Sender Detail.
+ *   - `replied`         — at least three replies to the sender.
+ *   - `starred`         — a message starred in the past year.
+ *   - `gmail_important` — at least three Gmail-important messages in
+ *                         the past year.
  *
  * No `ml_predicted` value — D222 bans ML category prediction; protection
  * is always observed (engagement) or user-set, never inferred.
  */
 export const protectionReason = pgEnum('protection_reason', [
   'user_defined',
-  'engagement_based',
-  'vip',
+  'replied',
+  'starred',
+  'gmail_important',
 ]);
 
 /**
- * Unsubscribe execution status (D9 Wave 2, migration 0029).
+ * Truthful unsubscribe lifecycle (D9 Wave 2 + D245, migrations 0029/0037).
  *
- * Tracks the RFC 8058 one-click execution outcome for a sender whose
- * intent was recorded with `policy_type = 'unsubscribe'`:
- *   - `pending`   — execution job queued / in flight.
- *   - `done`      — target answered 2xx; unsubscribed.
- *   - `failed`    — terminal: target 4xx/5xx, blocked URL, or network
- *                   retries exhausted. Never auto-retried past that.
- *   - `ambiguous` — target answered 3xx; redirects are not followed
- *                   (SSRF posture), so the outcome is unknown.
+ * Canonical values:
+ *   - `requested`          — RFC 8058 execution queued / in flight.
+ *   - `endpoint_accepted`  — target answered 2xx. This proves request
+ *                            delivery/acceptance, NOT that mail stopped.
+ *   - `failed`             — terminal 4xx/5xx, blocked URL, or exhausted
+ *                            network retry.
+ *   - `unconfirmed`        — target answered 3xx; redirects are not
+ *                            followed, so the result is unknown.
+ *   - `action_required`    — mailto channel; the user must send a draft.
+ *   - `draft_opened`       — the compose affordance was opened.
+ *   - `user_marked_sent`   — the user explicitly reports sending it;
+ *                            delivery remains unverified.
+ *   - `unavailable`        — the sender published no usable channel.
  *
- * NULL = no tracked execution (mailto-manual per D230, method 'none',
- * or a policy row that predates the pipeline). No undo linkage (D58) —
- * a delivered network unsubscribe is one-way by design.
+ * `pending`, `done`, and `ambiguous` remain in the DB enum for additive
+ * rollout compatibility. API read boundaries normalize them to
+ * `requested`, `endpoint_accepted`, and `unconfirmed`; new writes never
+ * emit the legacy values. NULL is reserved for policy rows that predate
+ * lifecycle tracking. No undo linkage (D58).
  */
-export const unsubStatus = pgEnum('unsub_status', ['pending', 'done', 'failed', 'ambiguous']);
+export const unsubStatus = pgEnum('unsub_status', [
+  // Legacy values retained for rolling-deploy/backfill compatibility.
+  'pending',
+  'done',
+  'failed',
+  'ambiguous',
+  // Canonical lifecycle values (0037).
+  'requested',
+  'endpoint_accepted',
+  'unconfirmed',
+  'action_required',
+  'draft_opened',
+  'user_marked_sent',
+  'unavailable',
+]);
 
 export const senderPolicies = pgTable(
   'sender_policies',
@@ -92,18 +114,15 @@ export const senderPolicies = pgTable(
     /** sha256("v1|" + normalized_email), hex — matches senders.sender_key. */
     senderKey: text('sender_key').notNull(),
     policyType: senderPolicyType('policy_type').notNull().default('keep'),
-    isVip: boolean('is_vip').notNull().default(false),
     isProtected: boolean('is_protected').notNull().default(false),
     /**
      * Why protection is set (D22). Populated whenever `is_protected = true`.
      *
      * MAY be non-NULL while `is_protected = false` — the
      * **user-agency-wins memory pin**: when the user manually demotes
-     * an `engagement_based`-protected row, the worker leaves
-     * `protection_reason='engagement_based'` so the next sync skips
-     * re-protect (initial-sync.worker.ts:660-705,
-     * incremental-sync.worker.ts §3, schema/senders.ts:133-142,
-     * MISTAKES.md 2026-06-05 🔴-3).
+     * an automatically protected row, the worker leaves its exact
+     * `protection_reason` so the next sync skips re-protect
+     * (`automatic-protection.ts`, MISTAKES.md 2026-06-05 🔴-3).
      *
      * **DB INVARIANT** (migration 0023): a one-way CHECK enforces the
      * only impossible-by-code state:
@@ -118,25 +137,37 @@ export const senderPolicies = pgTable(
     /** When `is_protected` last flipped true. NULL when not protected. */
     protectionSetAt: timestamp('protection_set_at', { withTimezone: true, mode: 'date' }),
     /**
-     * RFC 8058 one-click execution outcome (migration 0029). See the
-     * `unsub_status` enum doc. Written 'pending' when an unsubscribe
-     * intent is recorded for a `one_click` sender; flipped to its
-     * terminal value by `UnsubExecutionWorker`. NULL for mailto/none
-     * senders (D230 manual path — no claimed outcome).
+     * Unsubscribe lifecycle (migrations 0029/0037). See `unsub_status`
+     * above. New intents always write a method-specific initial state;
+     * one-click results and explicit manual-mailto progress advance it.
      */
     unsubStatus: unsubStatus('unsub_status'),
     /**
      * Sender snooze wake time (D78/D79 — sender-level only at launch).
-     * Non-null = the sender is actively snoozed: new arrivals route to
-     * the snooze label instead of INBOX, and the hourly
+     * Non-null = current Later-labeled mail has a scheduled return.
+     * Future arrivals are unchanged (D245); the 15-minute
      * `SnoozeRestoreWorker` wake-scan (`WHERE snoozed_until <= now()`)
      * restores the label's messages and nulls all three snooze columns.
      */
     snoozedUntil: timestamp('snoozed_until', { withTimezone: true, mode: 'date' }),
     /** When the snooze was set; null when not snoozed (D79). */
     snoozedAt: timestamp('snoozed_at', { withTimezone: true, mode: 'date' }),
-    /** Optional user note shown on the Snoozed screen row (D79/D80). */
+    /** Optional user note shown on the Later screen row (D79/D80). */
     snoozedReason: text('snoozed_reason'),
+    /** Last time a scheduled/explicit return was attempted. */
+    snoozeWakeLastAttemptAt: timestamp('snooze_wake_last_attempt_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    /** Last failed return attempt; cleared by reschedule or successful return. */
+    snoozeWakeLastFailedAt: timestamp('snooze_wake_last_failed_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    /** Consecutive failed return attempts for the active Later timer. */
+    snoozeWakeFailureCount: integer('snooze_wake_failure_count').notNull().default(0),
+    /** Safe product category only — never a provider error message. */
+    snoozeWakeFailureKind: text('snooze_wake_failure_kind'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -150,13 +181,29 @@ export const senderPolicies = pgTable(
       table.senderKey,
     ),
     /**
-     * Hourly wake-scan (D79): `WHERE snoozed_until <= now()` across all
+     * 15-minute wake-scan (D79): `WHERE snoozed_until <= now()` across all
      * mailboxes. Partial — only actively-snoozed rows are indexed, so
      * the index stays tiny relative to the policy table.
      */
     snoozeWakeIdx: index('sender_policies_snooze_wake_idx')
       .on(table.snoozedUntil)
       .where(sql`${table.snoozedUntil} IS NOT NULL`),
+    snoozeWakeFailureCountCheck: check(
+      'sender_policies_snooze_wake_failure_count_check',
+      sql`${table.snoozeWakeFailureCount} >= 0`,
+    ),
+    snoozeWakeFailureKindCheck: check(
+      'sender_policies_snooze_wake_failure_kind_check',
+      sql`${table.snoozeWakeFailureKind} IS NULL OR ${table.snoozeWakeFailureKind} IN ('temporary', 'reauthorize', 'needs_attention')`,
+    ),
+    snoozeWakeFailureStateCheck: check(
+      'sender_policies_snooze_wake_failure_state_check',
+      sql`(${table.snoozeWakeFailureCount} = 0 AND ${table.snoozeWakeLastFailedAt} IS NULL AND ${table.snoozeWakeFailureKind} IS NULL) OR (${table.snoozeWakeFailureCount} > 0 AND ${table.snoozeWakeLastAttemptAt} IS NOT NULL AND ${table.snoozeWakeLastFailedAt} IS NOT NULL AND ${table.snoozeWakeFailureKind} IS NOT NULL)`,
+    ),
+    snoozeWakeClearedStateCheck: check(
+      'sender_policies_snooze_wake_cleared_state_check',
+      sql`${table.snoozedUntil} IS NOT NULL OR (${table.snoozeWakeLastAttemptAt} IS NULL AND ${table.snoozeWakeLastFailedAt} IS NULL AND ${table.snoozeWakeFailureCount} = 0 AND ${table.snoozeWakeFailureKind} IS NULL)`,
+    ),
   }),
 );
 

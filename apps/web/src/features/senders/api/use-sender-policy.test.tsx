@@ -23,10 +23,9 @@ const SENDER_ID = '22222222-2222-2222-2222-222222222222';
 const RESULT = {
   senderId: SENDER_ID,
   policyType: 'keep' as const,
-  isVip: true,
-  isProtected: false,
-  protectionReason: null,
-  protectionSetAt: null,
+  isProtected: true,
+  protectionReason: 'user_defined' as const,
+  protectionSetAt: '2026-04-01T00:00:00.000Z',
   changed: true,
 };
 
@@ -52,10 +51,10 @@ describe('useSetSenderPolicy', () => {
       wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
     });
 
-    result.current.mutate({ senderId: SENDER_ID, patch: { isVip: true } });
+    result.current.mutate({ senderId: SENDER_ID, patch: { isProtected: true } });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(capturedBody).toEqual({ isVip: true });
+    expect(capturedBody).toEqual({ isProtected: true });
     expect(result.current.data).toEqual(RESULT);
   });
 

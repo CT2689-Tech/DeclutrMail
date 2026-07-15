@@ -226,6 +226,9 @@ describe('BillingScreen — free tier (billing live)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Change plan' }));
     const modal = screen.getByTestId('plan-change-modal');
+    expect(within(modal).getByRole('button', { name: 'Keep current plan' })).toHaveTextContent(
+      'Keep current plan',
+    );
     fireEvent.click(within(modal).getByTestId('plan-option-pro'));
 
     const panel = within(modal).getByTestId('checkout-panel');

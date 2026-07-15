@@ -29,6 +29,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
@@ -48,7 +49,7 @@ vi.mock('next/navigation', () => ({
   usePathname: () => pathnameRef.current,
 }));
 vi.mock('@/features/triage/triage-undo-tray', () => ({
-  TriageUndoTray: (props: { mailboxId?: string }) => {
+  ProductUndoTray: (props: { enableShortcut?: boolean; mailboxId?: string }) => {
     undoTrayPropsSpy(props);
     return <div data-testid="triage-undo-tray" />;
   },
@@ -90,6 +91,7 @@ function authedHandlers(opts: {
   onboardedAt: string | null;
   deletionRequest?: { effectiveAt: string; status: 'pending' | 'executing' };
   tier?: 'free' | 'plus' | 'pro';
+  laterRecovery?: unknown;
 }): FetchStubHandler[] {
   return [
     {
@@ -148,6 +150,14 @@ function authedHandlers(opts: {
               projectedBasis: 'flat-grace',
             },
           },
+        }),
+    },
+    {
+      method: 'GET',
+      path: '/api/snoozed/recovery',
+      respond: () =>
+        ok({
+          data: opts.laterRecovery ?? { affectedCount: 0, firstIssue: null },
         }),
     },
   ];
@@ -237,9 +247,32 @@ describe('(app) layout integration mounts — U-NAV', () => {
     // Recovery follows the active mailbox across the whole app shell,
     // not only the Triage route.
     expect(screen.getByTestId('triage-undo-tray')).toBeInTheDocument();
-    expect(undoTrayPropsSpy).toHaveBeenCalledWith({ mailboxId: 'mb-1' });
+    expect(undoTrayPropsSpy).toHaveBeenCalledWith({
+      enableShortcut: false,
+      mailboxId: 'mb-1',
+    });
     // No deletion pending → no banner.
     expect(screen.queryByTestId('deletion-grace-banner')).not.toBeInTheDocument();
+  });
+
+  it('maps the internal snoozed nav key to canonical /later and keeps it active', async () => {
+    pathnameRef.current = '/later';
+    installFetchStub([
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => ok({ data: { pending: 0 } }),
+      },
+    ]);
+
+    const user = userEvent.setup();
+    renderLayout();
+
+    const laterNav = await screen.findByRole('button', { name: 'Later' });
+    expect(laterNav).toHaveAttribute('aria-current', 'page');
+    await user.click(laterNav);
+    expect(pushSpy).toHaveBeenCalledWith('/later');
   });
 
   it('mounts the grace-period banner above the shell while a deletion is pending (D216)', async () => {
@@ -383,6 +416,36 @@ describe('(app) layout — passive sync-error banner (D224)', () => {
     ).not.toBeInTheDocument();
     // Banner + topbar consume the same mailbox-keyed React Query entry.
     expect(syncStatusSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('(app) layout — Later return recovery', () => {
+  it('mounts the missed-return alert for an affected Free workspace', async () => {
+    installFetchStub(
+      authedHandlers({
+        onboardedAt: '2026-01-02T00:00:00.000Z',
+        tier: 'free',
+        laterRecovery: {
+          affectedCount: 1,
+          firstIssue: {
+            senderId: 'sender-1',
+            displayName: 'Daily Digest',
+            email: 'digest@example.test',
+            snoozedUntil: '2026-07-14T10:00:00.000Z',
+            returnStatus: 'missed',
+            lastReturnAttemptAt: null,
+            returnFailureKind: null,
+          },
+        },
+      }),
+    );
+
+    renderLayout();
+
+    expect(await screen.findByTestId('later-return-alert')).toHaveTextContent(
+      /could not be confirmed/i,
+    );
+    expect(screen.getByText('authed app body')).toBeInTheDocument();
   });
 });
 

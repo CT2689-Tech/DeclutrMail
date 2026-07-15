@@ -156,19 +156,22 @@ describe('onboarding page — pre-auth boundary (D107/D108)', () => {
     installFetchStub([me401]);
     renderPage();
 
-    expect(await screen.findByText('Clean Gmail by sender, not by email.')).toBeInTheDocument();
+    expect(await screen.findByText('Control Gmail by sender, not by email.')).toBeInTheDocument();
     expect(screen.getByText('Full bodies fetched: 0')).toBeInTheDocument();
     // The banned pre-D228 phrasing must not exist anywhere on step 1.
     expect(screen.queryByText(/Bodies read: 0/)).not.toBeInTheDocument();
   });
 
-  it('promise → connect is a local hop; step 2 explains the single scope', async () => {
+  it('promise → connect is a local hop; step 2 explains access and data use', async () => {
     installFetchStub([me401]);
     renderPage();
 
     await userEvent.click(await screen.findByRole('button', { name: /Connect Gmail/ }));
     expect(await screen.findByText('Connect your Gmail.')).toBeInTheDocument();
-    expect(screen.getByText('One Gmail permission.')).toBeInTheDocument();
+    expect(screen.getByText('Access')).toBeInTheDocument();
+    expect(screen.getByText('Fetched during the scan')).toBeInTheDocument();
+    expect(screen.getByText('Stored in DeclutrMail')).toBeInTheDocument();
+    expect(screen.getByText('Actions you approve')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue to Google' })).toBeInTheDocument();
   });
 });

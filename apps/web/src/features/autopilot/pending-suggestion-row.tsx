@@ -11,7 +11,7 @@ const { color, font } = tokens;
  *
  * Each row is one (rule, sender) pair: a select checkbox (feeds the
  * group's "Approve selected"), sender identity + the verb phrase the
- * rule would emit ("would archive") + a per-row Dismiss. Approving
+ * rule would emit ("would archive") + a per-row Skip suggestion. Approving
  * goes through the group's Approve buttons + the D226 preview modal —
  * never a one-click mutation on the row itself. The rule name renders
  * once in the group header, not per row.
@@ -40,10 +40,9 @@ export function PendingSuggestionRow({
   isDismissing: boolean;
 }) {
   const wouldVerb = rule ? describeWouldAction(rule.actionKind) : 'would act';
-  const senderPreview = match.senderKey.slice(0, 8);
   const confidencePct = Math.round(match.confidence * 100);
   const hasName = match.senderName != null && match.senderName.length > 0;
-  const senderLabel = hasName ? (match.senderName ?? senderPreview) : `sender ${senderPreview}`;
+  const senderLabel = hasName ? (match.senderName ?? 'Sender') : 'Sender details still syncing';
 
   return (
     <li
@@ -85,7 +84,7 @@ export function PendingSuggestionRow({
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }}
-              title={match.senderEmail ?? match.senderKey}
+              title={match.senderEmail ?? match.senderName ?? 'Sender'}
             >
               {match.senderName}
             </span>
@@ -101,9 +100,9 @@ export function PendingSuggestionRow({
                 border: `1px solid ${color.line}`,
                 borderRadius: 5,
               }}
-              title={`Sender not yet materialised in the senders index (race) — key (sha256, truncated): ${match.senderKey}`}
+              title="Sender details still syncing"
             >
-              sender·{senderPreview}
+              Sender details still syncing
             </span>
           )}
           <span style={{ fontSize: 13, color: color.fg, fontWeight: 500 }}>{wouldVerb}</span>
@@ -134,7 +133,7 @@ export function PendingSuggestionRow({
               <span aria-hidden="true">·</span>
             </>
           )}
-          <span title="Engine confidence at match time">{confidencePct}% confidence</span>
+          <span title="How closely this sender matched the rule">{confidencePct}% match</span>
           <span aria-hidden="true">·</span>
           <span>{match.reason}</span>
         </div>
@@ -144,9 +143,9 @@ export function PendingSuggestionRow({
         size="sm"
         onClick={() => onDismiss(match.id)}
         disabled={isDismissing}
-        ariaLabel={`Dismiss suggestion for sender ${senderPreview}`}
+        ariaLabel={`Skip suggestion for ${senderLabel} without changing Gmail`}
       >
-        {isDismissing ? 'Dismissing…' : 'Dismiss'}
+        {isDismissing ? 'Skipping…' : 'Skip suggestion'}
       </Button>
     </li>
   );

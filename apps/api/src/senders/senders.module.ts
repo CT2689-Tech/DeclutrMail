@@ -31,7 +31,7 @@ import { SNOOZE_LABEL_MAP_TOKEN, SNOOZE_WAKE_QUEUE_TOKEN } from './snoozed.token
  * endpoint.
  *
  * Write surface (D40, D42, D43): `SendersPolicyService` owns the
- * `sender_policies` standing-policy mutations (Keep / VIP / Protect)
+ * `sender_policies` standing-policy mutations (Keep / Protect)
  * behind `PATCH :id/policy`. The senders feature OWNS that table per
  * D204, so the upsert lives here directly — no outbox indirection
  * (contrast the actions feature's unsubscribe-intent, which publishes

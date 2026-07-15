@@ -30,7 +30,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
 
 import { TierGate } from './tier-gate';
 
-function renderGate() {
+function renderGate(capability: 'brief' | 'triage' = 'brief') {
   let childMounted = false;
   function Child() {
     childMounted = true;
@@ -38,7 +38,7 @@ function renderGate() {
   }
   const result = render(
     <TierGate
-      capability="brief"
+      capability={capability}
       title="Your Morning Brief"
       pitch="A daily summary."
       bullets={['REPLY — what actually needs you']}
@@ -71,6 +71,17 @@ describe('TierGate', () => {
     mockTier = 'plus';
     renderGate();
     expect(screen.getByTestId('tier-gate-placeholder')).toBeInTheDocument();
+  });
+
+  it('names Plus and its manifest price for a Plus capability', () => {
+    mockTier = 'free';
+    renderGate('triage');
+
+    expect(screen.getByText('Plus feature')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Upgrade to Plus → $9/mo' })).toHaveAttribute(
+      'href',
+      '/billing',
+    );
   });
 
   it('pro tier: children render, no placeholder', () => {

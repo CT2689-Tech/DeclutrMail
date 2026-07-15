@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import type { ActionStatusSnapshot } from '@declutrmail/shared/actions';
+import {
+  UnsubscribeManualStatusRequestSchema,
+  type UnsubscribeLifecycleStatus,
+  type UnsubscribeManualStatusRequest,
+  type UnsubscribeManualTransition,
+} from '@declutrmail/shared/contracts';
 
 /**
  * Action API contracts (D226).
@@ -30,7 +37,7 @@ export type ArchiveSelector = z.infer<typeof archiveSelectorSchema>;
 export const archiveRequestSchema = z
   .object({
     selector: archiveSelectorSchema,
-    /** Required to act on a Protected / VIP sender (defense-in-depth, D42). */
+    /** Required to act on a Protected sender (defense-in-depth, D42). */
     override: z.boolean().optional(),
   })
   .strict();
@@ -59,6 +66,10 @@ export const unsubscribeIntentRequestSchema = z
   .strict();
 export type UnsubscribeIntentRequest = z.infer<typeof unsubscribeIntentRequestSchema>;
 
+/** Explicit progress update for the manual mailto unsubscribe path. */
+export const unsubscribeManualStatusRequestSchema = UnsubscribeManualStatusRequestSchema;
+export type { UnsubscribeManualStatusRequest };
+
 /**
  * Unsubscribe-intent response — `POST /api/actions/unsubscribe-intent`.
  *
@@ -71,6 +82,8 @@ export interface UnsubscribeIntentResult {
   recordedAt: string;
   /** activity_log.id of the freshly-written row. */
   activityLogId: string;
+  /** Truthful method-specific state after recording (or replaying) the intent. */
+  lifecycleStatus: UnsubscribeLifecycleStatus;
   /**
    * The sender's unsubscribe capability at intent time (ADR-0006
    * derivation; `none` when the sender carries no method). Drives the
@@ -95,6 +108,19 @@ export interface UnsubscribeIntentResult {
    * into a Gmail compose deep link — DeclutrMail never auto-sends.
    */
   mailtoUrl: string | null;
+}
+
+/** Result of an explicit manual-mailto progress transition. */
+export interface UnsubscribeManualStatusResult {
+  senderId: string;
+  status: UnsubscribeManualTransition;
+  /** ISO timestamp of the transition, or the current policy update on an idempotent replay. */
+  recordedAt: string;
+  /** Fresh Activity outcome row; null when the requested state already held. */
+  activityLogId: string | null;
+  changed: boolean;
+  /** True only for user_marked_sent, which cannot be regressed in-app. */
+  irreversible: boolean;
 }
 
 /**
@@ -163,15 +189,73 @@ export interface ActionEnqueueResult {
   status: ActionJobStatus;
 }
 
-export interface ActionStatusResult {
+/* ───────────────────── Outcome-aware Activity recovery ───────────────────── */
+
+/** A durable verification pass over one failed label-action attempt. */
+export type ActionRecoveryPreviewStatus = 'verifying' | 'ready' | 'failed' | 'consumed';
+
+/** Provider-state conclusion produced by the metadata-only verifier. */
+export type ActionRecoveryOutcome =
+  | 'not_applied'
+  | 'partial'
+  | 'already_applied'
+  | 'no_change_needed'
+  | 'uncertain'
+  | 'reconnect_required'
+  | 'blocked';
+
+export interface ActionRecoveryPreviewResult {
+  previewId: string;
+  /** Current failed attempt being reviewed. */
   actionId: string;
-  status: ActionJobStatus;
-  /** Same semantics as `ActionEnqueueResult.requestedCount` — see above. */
-  requestedCount: number;
-  affectedCount: number;
-  undoToken: string | null;
+  /** First action in the logical recovery lineage. */
+  rootActionId: string;
+  verb: 'archive' | 'later' | 'delete';
+  status: ActionRecoveryPreviewStatus;
+  outcome: ActionRecoveryOutcome | null;
+  /** Exact frozen set this confirmation will reconcile. */
+  targetCount: number;
+  /** Targets that do not yet have the intended Gmail label state. */
+  remainingCount: number;
+  /** Targets already in the intended Gmail label state. */
+  alreadyAppliedCount: number;
+  /** Targets no longer present in Gmail. */
+  unavailableCount: number;
+  verifiedCount: number;
   errorCode: string | null;
+  /** Existing Later schedule; null for Archive/Delete. */
+  wakeAt: string | null;
+  /** A failed Later whose old time passed requires a new explicit schedule. */
+  requiresNewWakeAt: boolean;
+  expiresAt: string;
+  recoveryActionId: string | null;
 }
+
+export const actionRecoveryConfirmRequestSchema = z
+  .object({
+    /** Required only when a failed Later schedule is no longer in the future. */
+    wakeAt: z.string().datetime({ offset: true }).optional(),
+  })
+  .strict();
+
+export type ActionRecoveryConfirmRequest = z.infer<typeof actionRecoveryConfirmRequestSchema>;
+
+export interface ActionRecoveryEnqueueResult {
+  previewId: string;
+  rootActionId: string;
+  actionId: string;
+  attempt: number;
+  status: ActionJobStatus;
+  /** True for an HTTP/network replay of the same confirmation key. */
+  replayed: boolean;
+}
+
+/**
+ * Poll result shared with the web client. The original fields remain intact;
+ * verb/schedule/Undo timing are additive facts used to derive the canonical
+ * D245 receipt without another request.
+ */
+export type ActionStatusResult = ActionStatusSnapshot;
 
 /**
  * Non-mutating archive preview (D226). `inboxCount` is the REAL number of
@@ -282,6 +366,8 @@ export const compositeActionRequestSchema = z
       .object({
         type: compositePrimaryVerbSchema,
         olderThanDays: z.number().int().min(1).max(3650).nullable().optional(),
+        /** D245: Later is always scheduled; other verbs cannot carry a wake time. */
+        wakeAt: z.string().datetime({ offset: true }).optional(),
       })
       .strict(),
     secondary: z
@@ -291,10 +377,40 @@ export const compositeActionRequestSchema = z
       })
       .strict()
       .optional(),
-    /** Required to act on a Protected / VIP sender (defense-in-depth, D42). */
+    /** Required to act on a Protected sender (defense-in-depth, D42). */
     override: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((body, ctx) => {
+    if (body.primary.type === 'later') {
+      if (body.selector.type === 'messages') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['selector'],
+          message: 'Later is scheduled per sender, not per message selection.',
+        });
+      }
+      if (body.primary.wakeAt === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['primary', 'wakeAt'],
+          message: 'Later requires a wake time.',
+        });
+      } else if (Date.parse(body.primary.wakeAt) <= Date.now()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['primary', 'wakeAt'],
+          message: 'Wake time must be in the future.',
+        });
+      }
+    } else if (body.primary.wakeAt !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['primary', 'wakeAt'],
+        message: 'wakeAt is only valid for Later.',
+      });
+    }
+  });
 export type CompositeActionRequest = z.infer<typeof compositeActionRequestSchema>;
 
 /**
@@ -312,6 +428,8 @@ export interface CompositeActionEnqueueResult {
   primaryCount: number;
   /** Resolved secondary count, or null when no secondary fired. */
   secondaryCount: number | null;
+  /** Selected Later wake time; null for Archive/Delete. */
+  wakeAt: string | null;
 }
 
 /**
@@ -322,7 +440,7 @@ export interface CompositeActionEnqueueResult {
  * token) cascade-reverts the batch.
  *
  * `skipped` reports senders the fan-out did NOT enqueue — per-sender
- * failure isolation at the enqueue boundary: a Protected/VIP or
+ * failure isolation at the enqueue boundary: a Protected or
  * unknown sender never poisons the rest of the selection.
  */
 export interface BulkActionEnqueueResult {
@@ -332,6 +450,8 @@ export interface BulkActionEnqueueResult {
   senderCount: number;
   /** Sum of per-sender primary `requestedCount`s. */
   requestedTotal: number;
+  /** Shared Later wake time for every sender in this batch. */
+  wakeAt: string | null;
   skipped: Array<{ senderId: string; reason: 'protected' | 'not_found' }>;
 }
 
@@ -360,7 +480,7 @@ export interface BulkPreviewBuckets {
 /**
  * Bulk preview response (D52): per-sender breakdown + aggregate counts
  * across the selection so the D226 preview states REAL numbers, never a
- * client estimate. `totals` excludes Protected/VIP senders — the
+ * client estimate. `totals` excludes Protected senders — the
  * enqueue skips them, so the preview must match what will actually
  * move. Unknown / cross-mailbox ids are dropped (ownership), mirroring
  * the messages-selector forged-id drop.

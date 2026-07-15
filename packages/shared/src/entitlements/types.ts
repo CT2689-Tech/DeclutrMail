@@ -76,7 +76,8 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number];
 
 /**
- * One billing price point: the USD amount plus the provider catalog ids
+ * One billing price point: canonical USD and INR amounts plus provider
+ * catalog ids
  * (D117 — Paddle + Razorpay, no Stripe). Catalog ids per PRICE POINT,
  * not per tier, because each interval is its own provider SKU (e.g.
  * `plus_monthly` and `plus_annual` are distinct Paddle prices). Ids stay
@@ -86,6 +87,8 @@ export type Capability = (typeof CAPABILITIES)[number];
 export interface PricePoint {
   /** Price in USD cents ($9/mo = 900). */
   readonly usdCents: number;
+  /** Price in Indian paise (₹749/mo = 74_900). */
+  readonly inrPaise: number;
   /** Paddle catalog price id — null until catalog provisioning (D117). */
   readonly paddlePriceId: string | null;
   /** Razorpay plan id — null until catalog provisioning (D117). */

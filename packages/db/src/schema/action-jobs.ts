@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
+  check,
   index,
   integer,
   jsonb,
@@ -149,6 +150,30 @@ export const actionJobs = pgTable(
     /** Classified failure code, set when `status='failed'`. */
     errorCode: text('error_code'),
     /**
+     * Recovery lineage. Attempt 0 is the original action and keeps both
+     * references NULL. Every recovery attempt points to the attempt-0 root
+     * and to the immediately preceding failed attempt. Recovery is therefore
+     * append-only: it never rewrites or blindly replays the original row.
+     */
+    rootActionId: uuid('root_action_id').references((): AnyPgColumn => actionJobs.id, {
+      onDelete: 'cascade',
+    }),
+    retryOfActionId: uuid('retry_of_action_id').references((): AnyPgColumn => actionJobs.id, {
+      onDelete: 'cascade',
+    }),
+    recoveryAttempt: integer('recovery_attempt').notNull().default(0),
+    /**
+     * When the recovery preview's complete provider-message target set was
+     * frozen onto `resolved_message_ids`. Required for recovery attempts and
+     * NULL for attempt-0 actions. Reapplying the complete set is intentional:
+     * provider label mutations are idempotent, and this also repairs a lost
+     * Activity/Undo commit after Gmail already applied the original action.
+     */
+    selectionFrozenAt: timestamp('selection_frozen_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    /**
      * Composite action linkage (ADR-0020). For a composite secondary
      * action (e.g. the Delete part of "Unsubscribe + Delete past"),
      * `compositeId` references the primary row's `id` so the cascade-
@@ -180,6 +205,15 @@ export const actionJobs = pgTable(
      * 1–3650 days enforced by DB CHECK constraint (0020 migration).
      */
     olderThanDays: integer('older_than_days'),
+    /**
+     * D245 Later schedule, captured with the action intent. Required for
+     * every Later job and forbidden for every other verb by the table
+     * CHECK below. Reverse Later rows copy the original value so Undo can
+     * cancel only its matching timer. The column remains nullable because
+     * non-Later jobs store NULL. The successful worker event projects this
+     * onto sender_policies only after Gmail confirms the move.
+     */
+    wakeAt: timestamp('wake_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -200,6 +234,27 @@ export const actionJobs = pgTable(
     undoTokenIdx: index('action_jobs_undo_token_idx').on(table.undoToken),
     /** Composite cascade-undo lookup (ADR-0020). */
     compositeIdIdx: index('action_jobs_composite_id_idx').on(table.compositeId),
+    /** One immutable attempt number per logical action lineage. */
+    rootRecoveryAttemptUniq: uniqueIndex('action_jobs_root_recovery_attempt_uniq')
+      .on(table.rootActionId, table.recoveryAttempt)
+      .where(sql`${table.rootActionId} IS NOT NULL`),
+    /** One direct recovery child per failed attempt (confirmation replay guard). */
+    retryOfActionIdUniq: uniqueIndex('action_jobs_retry_of_action_id_uniq')
+      .on(table.retryOfActionId)
+      .where(sql`${table.retryOfActionId} IS NOT NULL`),
+    /**
+     * Attempt 0 is always a lineage root. Recovery attempts always carry a
+     * root, a predecessor, and the timestamp of their frozen selection.
+     */
+    recoveryLineageCheck: check(
+      'action_jobs_recovery_lineage_check',
+      sql`(${table.recoveryAttempt} = 0 AND ${table.rootActionId} IS NULL AND ${table.retryOfActionId} IS NULL AND ${table.selectionFrozenAt} IS NULL) OR (${table.recoveryAttempt} > 0 AND ${table.rootActionId} IS NOT NULL AND ${table.retryOfActionId} IS NOT NULL AND ${table.selectionFrozenAt} IS NOT NULL AND ${table.rootActionId} <> ${table.id} AND ${table.retryOfActionId} <> ${table.id})`,
+    ),
+    /** Later always has a wake time; no other verb may carry one. */
+    wakeAtVerbCheck: check(
+      'action_jobs_wake_at_verb_check',
+      sql`(${table.verb} = 'later' AND ${table.wakeAt} IS NOT NULL) OR (${table.verb} <> 'later' AND ${table.wakeAt} IS NULL)`,
+    ),
   }),
 );
 

@@ -8,6 +8,17 @@ export type {
   AccountDeletionRequest,
   NewAccountDeletionRequest,
 } from './schema/account-deletion-requests';
+export {
+  actionRecoveryOutcome,
+  actionRecoveryPreviews,
+  actionRecoveryPreviewStatus,
+} from './schema/action-recovery-previews';
+export type {
+  ActionRecoveryOutcome,
+  ActionRecoveryPreview,
+  ActionRecoveryPreviewStatus,
+  NewActionRecoveryPreview,
+} from './schema/action-recovery-previews';
 export { actionDirection, actionJobStatus, actionJobs, actionVerb } from './schema/action-jobs';
 export type { ActionJob, LabelActionSelector, NewActionJob } from './schema/action-jobs';
 // Closed enums derived from the canonical pg_enum — adding a value to
@@ -64,6 +75,15 @@ export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
 export type { MailboxAccount, NewMailboxAccount } from './schema/mailbox-accounts';
+export {
+  mailboxDataDeletionRequests,
+  mailboxDataDeletionStatus,
+} from './schema/mailbox-data-deletion-requests';
+export type {
+  MailboxDataDeletionRequest,
+  MailboxDataDeletionStatus,
+  NewMailboxDataDeletionRequest,
+} from './schema/mailbox-data-deletion-requests';
 export { outboxEvents, outboxStatus } from './schema/outbox-events';
 export type { NewOutboxEvent, OutboxEvent, OutboxStatus } from './schema/outbox-events';
 export { providerSyncState, syncReadiness, syncStage } from './schema/provider-sync-state';
@@ -88,6 +108,8 @@ export { securityEvents } from './schema/security-events';
 export type { NewSecurityEvent, SecurityEvent } from './schema/security-events';
 export { protectionReason, senderPolicies, senderPolicyType } from './schema/sender-policies';
 export type { NewSenderPolicy, SenderPolicy } from './schema/sender-policies';
+import type { protectionReason as _protectionReason } from './schema/sender-policies';
+export type ProtectionReason = (typeof _protectionReason.enumValues)[number];
 export { senderTimeseries } from './schema/sender-timeseries';
 export type { NewSenderTimeseries, SenderTimeseries } from './schema/sender-timeseries';
 export { gmailCategory, gmailUnsubscribeMethod, senders } from './schema/senders';

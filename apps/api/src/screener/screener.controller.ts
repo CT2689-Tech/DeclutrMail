@@ -115,6 +115,7 @@ export class ScreenerController {
       senderId: parsed.data.senderId,
       verb: parsed.data.verb,
       olderThanDays: parsed.data.olderThanDays ?? null,
+      wakeAt: parsed.data.wakeAt ? new Date(parsed.data.wakeAt) : null,
       idempotencyKey: idempotencyKey.trim(),
     });
     return ok(result);

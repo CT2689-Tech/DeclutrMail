@@ -27,10 +27,16 @@ import {
 function status(s: ActionStatusResult['status']): ActionStatusResult {
   return {
     actionId: 'a-1',
+    verb: 'archive',
+    direction: 'forward',
     status: s,
     requestedCount: 1,
     affectedCount: 1,
+    wakeAt: null,
     undoToken: s === 'done' ? 'tok-1' : null,
+    undoExpiresAt: null,
+    undoExecutedAt: null,
+    undoRevertedAt: null,
     errorCode: null,
   };
 }

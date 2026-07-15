@@ -72,7 +72,10 @@ export function useDismissFollowup() {
       if (ctx?.previous) {
         qc.setQueryData(followupsKeys.list(), ctx.previous);
       }
-      toast("Couldn't mark resolved — try again.", 'danger');
+      toast(
+        "Couldn't mark resolved in DeclutrMail — the item is still listed. Try again.",
+        'danger',
+      );
     },
     onSuccess: (result, row) => {
       void track('followup_dismissed', {
@@ -80,7 +83,7 @@ export function useDismissFollowup() {
         priority: row.priority,
         already_dismissed: result.alreadyDismissed,
       });
-      toast('Marked resolved', 'success');
+      toast('Marked resolved in DeclutrMail', 'success');
       void qc.invalidateQueries({ queryKey: followupsKeys.all });
       void qc.invalidateQueries({ queryKey: activityKeys.all });
     },

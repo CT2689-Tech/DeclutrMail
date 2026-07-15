@@ -33,10 +33,10 @@ const VERDICT_TONE: Record<TriageVerdict, PillTone> = {
  */
 function whyLine(row: TriageDecisionRow): string {
   const pct = Math.round(row.readRate * 100);
-  if (row.protectionReason === 'vip') return 'VIP — always kept';
-  if (row.protectionReason === 'engagement') return `${pct}% read · engagement-protected`;
-  if (row.protectionReason === 'auto-receipts') return 'Auto-protected receipts sender';
-  if (row.protectionReason === 'auto-financial') return 'Auto-protected financial sender';
+  if (row.protectionReason === 'user-marked') return 'Protected — always kept';
+  if (row.protectionReason === 'replied') return 'Protected · you replied at least 3 times';
+  if (row.protectionReason === 'starred') return 'Protected · you starred a message';
+  if (row.protectionReason === 'gmail-important') return 'Protected · Gmail importance';
   if (row.last90dMessages === 0) {
     // Quiet within the rolling window — say so plainly. Lifetime total
     // carries the "they DID mail you" context without faking cadence.
@@ -107,7 +107,12 @@ export function TriageRow({
    * expanded row body — the D34 remember-preference path where the
    * sheet is suppressed but D226's preview is still mandatory.
    */
-  inlinePreview?: { verb: ActionVerb; archiveHistoric: boolean; inboxCount: PreviewCount } | null;
+  inlinePreview?: {
+    verb: ActionVerb;
+    archiveHistoric: boolean;
+    inboxCount: PreviewCount;
+    wakeAt?: string | null;
+  } | null;
   /** Authenticated queues inject the active Gmail account note; public demos omit it. */
   inlinePreviewAccountContext?: ReactNode;
 }) {
@@ -234,7 +239,7 @@ export function TriageRow({
                   flexShrink: 0,
                 }}
               >
-                {row.protectionReason === 'vip' ? 'VIP' : 'Protected'}
+                Protected
               </span>
             )}
           </div>
@@ -408,6 +413,7 @@ export function TriageRow({
                 row={row}
                 archiveHistoric={inlinePreview.archiveHistoric}
                 inboxCount={inlinePreview.inboxCount}
+                wakeAt={inlinePreview.wakeAt ?? null}
                 mode="inline"
                 accountContext={inlinePreviewAccountContext}
               />

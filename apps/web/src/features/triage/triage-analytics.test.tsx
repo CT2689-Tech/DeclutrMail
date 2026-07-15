@@ -16,7 +16,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import {
   addFetchHandlers,
@@ -47,35 +47,25 @@ vi.mock('@declutrmail/shared', async (importOriginal) => {
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
-// The route reads `activeMailboxId`; its TierGate also reads tier +
-// connected mailboxes. The provider itself is exercised in auth tests.
+const authMe = vi.hoisted(() => ({
+  user: { id: 'user-1', email: 'user@example.com', workspaceId: 'workspace-1' },
+  activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  mailboxes: [
+    {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      email: 'user@example.com',
+      status: 'active',
+      connectedAt: '2026-07-14T00:00:00.000Z',
+      readiness: 'ready',
+    },
+  ],
+  tier: 'pro',
+  cleanupRemaining: null,
+}));
 vi.mock('@/features/auth/auth-provider', () => ({
-  getActiveMailboxEmail: () => 'me@example.com',
-  useAuth: () => ({
-    me: {
-      activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      tier: 'plus',
-      mailboxes: [
-        {
-          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-          email: 'me@example.com',
-          status: 'active',
-        },
-      ],
-    },
-  }),
-  useOptionalAuth: () => ({
-    me: {
-      activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      user: { email: 'me@example.com' },
-      mailboxes: [
-        {
-          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-          email: 'me@example.com',
-        },
-      ],
-    },
-  }),
+  getActiveMailboxEmail: () => 'user@example.com',
+  useAuth: () => ({ me: authMe }),
+  useOptionalAuth: () => ({ me: authMe }),
 }));
 
 const GROUPON = TRIAGE_QUEUE[0]!; // verdict: archive
@@ -154,8 +144,12 @@ function expandRow(senderName: string) {
   fireEvent.click(screen.getByRole('button', { name: `${senderName} — expand triage detail` }));
 }
 
-async function waitForLivePreview() {
+async function confirmOpenSheet(verb: 'Archive' | 'Unsubscribe') {
+  const dialog = await screen.findByRole('dialog');
   await screen.findByText(/emails currently match in Inbox/i);
+  const confirm = within(dialog).getByRole('button', { name: new RegExp(`^${verb}`, 'i') });
+  await waitFor(() => expect(confirm).not.toBeDisabled());
+  fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 }
 
 beforeEach(() => {
@@ -184,12 +178,12 @@ describe('triage_action_taken (D159)', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    await waitForLivePreview();
+    await screen.findByText(/emails currently match in Inbox/i);
 
     // Preview open alone fires nothing.
     expect(actionTakenCalls()).toHaveLength(0);
 
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Archive');
 
     await waitFor(() => expect(actionTakenCalls()).toHaveLength(1));
     expect(h.track).toHaveBeenCalledWith('triage_action_taken', {
@@ -215,7 +209,7 @@ describe('triage_action_taken (D159)', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await screen.findByText('Preview · before anything changes');
-    await waitForLivePreview();
+    await screen.findByText(/emails currently match in Inbox/i);
     expect(actionTakenCalls()).toHaveLength(0);
 
     // Second press of the same verb confirms the inline preview.
@@ -286,8 +280,7 @@ describe('triage_action_taken (D159)', () => {
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
     // Backlog is a separate Gmail mutation, so opt in explicitly.
     fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
-    await waitForLivePreview();
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Unsubscribe');
 
     await waitFor(() => expect(actionTakenCalls()).toHaveLength(1));
     expect(h.track).toHaveBeenCalledWith('triage_action_taken', {
@@ -310,12 +303,13 @@ describe('triage_action_taken (D159)', () => {
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    await waitForLivePreview();
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Archive');
 
     await waitFor(() =>
-      expect(h.toast).toHaveBeenCalledWith(`Couldn't archive ${GROUPON.senderName}`, 'warn'),
+      expect(h.toast).toHaveBeenCalledWith(
+        `Couldn't start archive ${GROUPON.senderName}. Nothing changed. The request was not accepted, so Gmail was not changed. Try again.`,
+        'warn',
+      ),
     );
     expect(actionTakenCalls()).toHaveLength(0);
   });

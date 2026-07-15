@@ -93,7 +93,7 @@ export const NoHeading: StoryFn = () => (
   <div style={{ padding: 24, background: '#FAFAF7', maxWidth: 720 }}>
     <DecisionTimeline
       items={[
-        { id: '1', when: 'today', current: true, what: 'Unsubscribed via one-click' },
+        { id: '1', when: 'today', current: true, what: 'Endpoint accepted unsubscribe request' },
         { id: '2', when: 'yesterday', what: 'Engine recommended Unsubscribe' },
       ]}
     />

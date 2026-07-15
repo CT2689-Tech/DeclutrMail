@@ -153,13 +153,13 @@ export const WithProtected: Story<typeof BatchActionSheet> = {
     verb: 'Archive',
     batch: mkBatch('substack.com', [
       { name: 'Money Stuff' },
-      { name: 'Stratechery', protection: 'vip' },
+      { name: 'Stratechery', protection: 'user-marked' },
       { name: 'Lenny’s Newsletter' },
     ]),
     preview: (() => {
       const b = mkBatch('substack.com', [
         { name: 'Money Stuff' },
-        { name: 'Stratechery', protection: 'vip' },
+        { name: 'Stratechery', protection: 'user-marked' },
         { name: 'Lenny’s Newsletter' },
       ]);
       return preview(b, [64, 0, 22], [1]);

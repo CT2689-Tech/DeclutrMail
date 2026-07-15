@@ -13,8 +13,8 @@ describe('SnoozeUpdateRequestSchema (D79/D82)', () => {
     ).toBe(true);
   });
 
-  it('accepts until: null (cancel snooze) without a reason', () => {
-    expect(SnoozeUpdateRequestSchema.safeParse({ until: null }).success).toBe(true);
+  it('rejects an indefinite Later schedule', () => {
+    expect(SnoozeUpdateRequestSchema.safeParse({ until: null }).success).toBe(false);
   });
 
   it('rejects a past until', () => {
@@ -23,10 +23,6 @@ describe('SnoozeUpdateRequestSchema (D79/D82)', () => {
     if (!result.success) {
       expect(result.error.issues[0]?.message).toMatch(/future/i);
     }
-  });
-
-  it('rejects reason alongside until: null', () => {
-    expect(SnoozeUpdateRequestSchema.safeParse({ until: null, reason: 'x' }).success).toBe(false);
   });
 
   it('rejects non-ISO until, empty reason, over-long reason, unknown keys', () => {

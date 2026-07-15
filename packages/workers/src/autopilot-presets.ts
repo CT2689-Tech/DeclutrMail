@@ -27,7 +27,7 @@ import type { AutopilotActionKind, AutopilotPresetKey, TriageVerdict } from '@de
  *
  *   5. `long_dormant_unsubscribe`      — Read rate < 5% AND last seen
  *      > 180 days. Action: unsubscribe. D124 replaces preset #5 (was
- *      "VIP Brief priority") with this — VIP elevation is now
+ *      manual safety-based Brief priority) with this — Brief priority is
  *      hard-coded engine behavior, not a user-toggleable rule.
  *
  * Protected senders (`signals.isProtected = true`) are filtered out by

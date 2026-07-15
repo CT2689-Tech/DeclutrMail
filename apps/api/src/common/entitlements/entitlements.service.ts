@@ -138,6 +138,9 @@ export class EntitlementsService {
    *     the derived count never decrements.
    *   - A `failed` forward row is excluded: an action that never
    *     mutated anything must not consume the taste quota.
+   *   - Recovery attempts share the original action's lineage group,
+   *     so recovering one failed click never charges the same user
+   *     intent twice.
    *   - A terminally-`done` label-action row that moved ZERO messages
    *     (`affected_count = 0` — e.g. a 365d-delete on a sender with no
    *     aged INBOX mail) is likewise excluded: a no-op consumed no
@@ -148,7 +151,7 @@ export class EntitlementsService {
    *     represent intent that is about to move mail.
    *
    * Derivation is purely from existing `action_jobs` data (no schema
-   * change): group id = `COALESCE(composite_id, id)`, sender unit =
+   * change): group id = `COALESCE(composite_id, root_action_id, id)`, sender unit =
    * the selector's `senderId` (rows with a messages selector fall back
    * to their own id — each is its own unit). The scan walks the
    * workspace's mailboxes via `action_jobs_account_status_created_idx`
@@ -160,7 +163,7 @@ export class EntitlementsService {
   ): Promise<number> {
     const [row] = await executor
       .select({
-        used: sql<number>`count(DISTINCT (COALESCE(${actionJobs.compositeId}, ${actionJobs.id}), COALESCE(${actionJobs.selector}->>'senderId', ${actionJobs.id}::text)))::int`,
+        used: sql<number>`count(DISTINCT (COALESCE(${actionJobs.compositeId}, ${actionJobs.rootActionId}, ${actionJobs.id}), COALESCE(${actionJobs.selector}->>'senderId', ${actionJobs.id}::text)))::int`,
       })
       .from(actionJobs)
       .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, actionJobs.mailboxAccountId))
@@ -271,8 +274,8 @@ export class EntitlementsService {
         code: 'FREE_CAP_REACHED',
         message:
           remaining > 0
-            ? `This needs ${unitsNeeded} cleanup actions but only ${remaining} of your ${limit} free ones are left. Upgrade for unlimited cleanup.`
-            : `You've used all ${limit} free cleanup actions. Upgrade to keep cleaning — everything you've already done stays done.`,
+            ? `This needs ${unitsNeeded} sender actions but only ${remaining} of your ${limit} free ones are left. Upgrade for unlimited actions.`
+            : `You've used all ${limit} free sender actions. Upgrade for unlimited actions — everything you've already done stays done.`,
         details: { remaining, limit, used, requiredUnits: unitsNeeded },
       });
     }
@@ -408,7 +411,7 @@ const CAPABILITY_UPGRADE_MESSAGES: Partial<Record<Capability, string>> = {
   brief: 'The Daily Brief is part of the Pro plan. Upgrade to get your morning inbox summary.',
   quiet: 'Quiet hours are part of the Pro plan. Upgrade to schedule when Autopilot acts.',
   snoozed:
-    'The Snoozed list is part of the Pro plan. Upgrade to manage every Later sender in one place.',
+    'The Later list is part of the Pro plan. Upgrade to manage every Later sender in one place.',
   followups:
     'Follow-ups are part of the Pro plan. Upgrade to track threads still waiting on a reply.',
 };

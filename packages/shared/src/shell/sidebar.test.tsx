@@ -19,7 +19,7 @@ const KEPT_LABELS = [
   'Triage',
   'Brief',
   'Follow-ups',
-  'Snoozed',
+  'Later',
   'Screener',
   'Quiet',
   'Activity',
@@ -55,7 +55,7 @@ describe('Sidebar — honest nav (D207)', () => {
       'Review',
       'Brief',
       'Follow-ups',
-      'Snoozed',
+      'Later',
       'Activity',
       'Account',
       'Billing',
@@ -78,7 +78,7 @@ describe('Sidebar — honest nav (D207)', () => {
     const groups = [
       { heading: 'decide', items: ['Senders', 'Triage', 'Screener'] },
       { heading: 'automate', items: ['Autopilot', 'Quiet'] },
-      { heading: 'review', items: ['Brief', 'Follow-ups', 'Snoozed', 'Activity'] },
+      { heading: 'review', items: ['Brief', 'Follow-ups', 'Later', 'Activity'] },
       { heading: 'account', items: ['Billing', 'Settings'] },
     ] as const;
     for (const [index, group] of groups.entries()) {

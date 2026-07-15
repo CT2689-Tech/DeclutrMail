@@ -13,6 +13,7 @@ import { undoKeys } from '@/features/undo/query-keys';
 import { useActionStatus, useRevertUndo } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
 import { isTerminalStatus } from '@/lib/api/actions';
+import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
@@ -63,7 +64,7 @@ function useUndoEntries(mailboxId?: string) {
 }
 
 /**
- * The persistent undo tray across authenticated mailbox surfaces (D35).
+ * The persistent product-wide undo tray (D35, D245).
  *
  *   - Lists active undo tokens via `GET /api/undo`, newest first.
  *   - Per-row Undo reverses by token: `POST /api/undo/:token` enqueues
@@ -79,7 +80,13 @@ function useUndoEntries(mailboxId?: string) {
  * tray IS the decision feedback. Undo completion and failures DO
  * toast: the tray row is already gone, so there is no other channel.
  */
-export function TriageUndoTray({ mailboxId }: { mailboxId?: string | undefined } = {}) {
+export function ProductUndoTray({
+  enableShortcut = false,
+  mailboxId,
+}: {
+  enableShortcut?: boolean;
+  mailboxId?: string | undefined;
+}) {
   const qc = useQueryClient();
   const router = useRouter();
   const entriesQuery = useUndoEntries(mailboxId);
@@ -148,7 +155,7 @@ export function TriageUndoTray({ mailboxId }: { mailboxId?: string | undefined }
         toast(
           err instanceof ApiError && err.status === 410
             ? 'Undo window has expired'
-            : "Couldn't undo — see Activity",
+            : getActionFailureCopy('revert-enqueue').message,
           'warn',
         );
         setInFlight(null);
@@ -165,7 +172,7 @@ export function TriageUndoTray({ mailboxId }: { mailboxId?: string | undefined }
   useEffect(() => {
     if (!inFlight?.actionId) return;
     if (revertStatus.isError) {
-      toast("Couldn't confirm undo — see Activity", 'warn');
+      toast(getActionFailureCopy('revert-status').message, 'warn');
       setInFlight(null);
       void qc.invalidateQueries({ queryKey: undoKeys.all });
       return;
@@ -176,7 +183,7 @@ export function TriageUndoTray({ mailboxId }: { mailboxId?: string | undefined }
       toast('Restored to your inbox', 'success');
       invalidateAfterUndo(qc);
     } else {
-      toast("Couldn't undo — see Activity", 'warn');
+      toast(getActionFailureCopy('revert-terminal').message, 'warn');
       void qc.invalidateQueries({ queryKey: undoKeys.all });
     }
     setInFlight(null);
@@ -199,6 +206,7 @@ export function TriageUndoTray({ mailboxId }: { mailboxId?: string | undefined }
         const tag = target.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
       }
+      if (!enableShortcut) return;
       if (overlayOwnsKeyboard(target)) return;
       if (pendingAction != null) return;
       const newest = entries[0];
@@ -208,7 +216,7 @@ export function TriageUndoTray({ mailboxId }: { mailboxId?: string | undefined }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [entries, pendingAction, revertToken]);
+  }, [enableShortcut, entries, pendingAction, revertToken]);
 
   const dataSource: UndoTrayDataSource = {
     entries,
@@ -247,4 +255,9 @@ function overlayOwnsKeyboard(target: HTMLElement | null): boolean {
     // keeps one mounted, hidden/aria-hidden above is its closed contract.
     return true;
   });
+}
+
+/** Triage/onboarding wrapper retains the original Z-key behavior. */
+export function TriageUndoTray({ mailboxId }: { mailboxId?: string | undefined } = {}) {
+  return <ProductUndoTray enableShortcut mailboxId={mailboxId} />;
 }

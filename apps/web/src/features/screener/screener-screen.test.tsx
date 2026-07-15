@@ -174,7 +174,7 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
         onCancel={noop}
       />,
     );
-    expect(html).toContain('nothing in Gmail changes');
+    expect(html).toContain('Gmail labels and delivery settings are unchanged');
     expect(html).toContain('emails move — everything in the inbox stays where it is.');
     assertNoScreenVerb(html);
   });

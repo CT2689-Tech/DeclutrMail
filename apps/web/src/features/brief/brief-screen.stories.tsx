@@ -46,7 +46,6 @@ const BASE: BriefWire = {
         senderName: 'Big Boss',
         senderEmail: 'boss@example.com',
         subject: 'Q4 plans — please review when you get a chance',
-        isVip: true,
         messageIds: ['m-boss-1'],
       },
       {
@@ -54,7 +53,6 @@ const BASE: BriefWire = {
         senderName: 'Vendor Finance',
         senderEmail: 'finance@vendor.io',
         subject: 'Invoice #4471 — net-30 question',
-        isVip: false,
         messageIds: ['m-vendor-1'],
       },
     ],
@@ -64,7 +62,6 @@ const BASE: BriefWire = {
         senderName: 'First National',
         senderEmail: 'noreply@first.example',
         subject: 'May statement is ready',
-        isVip: false,
         messageIds: ['m-bank-1'],
       },
     ],
@@ -120,7 +117,7 @@ const meta: StoryMeta<typeof BriefScreen> = {
     docs: {
       description: {
         component:
-          'Daily Brief screen (D61, D63, D67, D69, D70). 3 sections — Reply, FYI, Noise — rendered from the frozen 8am snapshot. VIP star (D67) on Reply rows; D70 quiet-inbox copy on empty days; "via template" provenance marker (D62) when Haiku fell back.',
+          'Daily Brief screen (D61, D63, D69, D70). 3 sections — Reply, FYI, Noise — rendered from the frozen 8am snapshot. D70 quiet-inbox copy appears on empty days; the provenance marker identifies template fallback.',
       },
     },
   },

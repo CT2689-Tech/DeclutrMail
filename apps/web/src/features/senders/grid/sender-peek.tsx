@@ -142,7 +142,7 @@ export function SenderPeek({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label="Close sender preview"
             style={{
               width: 28,
               height: 28,

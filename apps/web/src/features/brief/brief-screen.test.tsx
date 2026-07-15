@@ -5,7 +5,6 @@
  *   - D211 / D212 edge branches: loading, error, 404-not-yet, populated,
  *     D70 quiet-inbox.
  *   - D63 — 3 sections render with correct headings + counts.
- *   - D67 — VIP star renders inline on a Reply row.
  *   - D62 — `via template` provenance marker shown when fallback ran;
  *     happy-path Haiku case stays silent.
  *   - D61 — mark-opened mutation fires exactly once when `openedAt` is
@@ -20,7 +19,14 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
-import { BriefScreen, domainOf, formatRunDate, gmailHref, truncate } from './brief-screen';
+import {
+  BriefScreen,
+  domainOf,
+  formatRunDate,
+  gmailHref,
+  senderSearchHref,
+  truncate,
+} from './brief-screen';
 import type { BriefWire } from '@/lib/api/brief';
 
 vi.mock('@/features/auth/auth-provider', () => ({
@@ -40,7 +46,6 @@ const BASE_BRIEF: BriefWire = {
         senderName: 'Boss',
         senderEmail: 'boss@example.com',
         subject: 'Q4 plan review',
-        isVip: true,
         messageIds: ['m-boss-1'],
       },
       {
@@ -48,7 +53,6 @@ const BASE_BRIEF: BriefWire = {
         senderName: 'Vendor Co',
         senderEmail: 'billing@vendor.com',
         subject: 'Invoice attached',
-        isVip: false,
         messageIds: ['m-vendor-1'],
       },
     ],
@@ -58,7 +62,6 @@ const BASE_BRIEF: BriefWire = {
         senderName: 'Bank',
         senderEmail: 'noreply@bank.com',
         subject: 'Statement ready',
-        isVip: false,
         messageIds: ['m-bank-1'],
       },
     ],
@@ -186,19 +189,6 @@ describe('BriefScreen — populated', () => {
     expect(screen.getByRole('heading', { name: /noise · 1 · 4 messages/i })).toBeInTheDocument();
   });
 
-  it('D67 — VIP star renders on the Reply row marked isVip', async () => {
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/briefs/today',
-        respond: () => jsonOk({ data: BASE_BRIEF }),
-      },
-    ]);
-
-    renderScreen();
-    await waitFor(() => expect(screen.getByLabelText('VIP sender')).toBeInTheDocument());
-  });
-
   it('renders the narrative pre-amble when non-empty', async () => {
     installFetchStub([
       {
@@ -223,7 +213,7 @@ describe('BriefScreen — populated', () => {
     ]);
 
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/via template/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/standard summary/i)).toBeInTheDocument());
   });
 
   it('D62 — `via template` marker hidden on the Haiku happy path', async () => {
@@ -260,6 +250,26 @@ describe('BriefScreen — populated', () => {
       'https://mail.google.com/mail/?authuser=active%2Bmailbox%40example.com#all/m-boss-1',
     );
     expect(links[0]?.getAttribute('href')).not.toContain('/u/0');
+  });
+
+  it('links the frozen snapshot to Activity and every item to a relevant sender search', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => jsonOk({ data: BASE_BRIEF }),
+      },
+    ]);
+
+    renderScreen();
+    expect(await screen.findByRole('link', { name: /see what changed/i })).toHaveAttribute(
+      'href',
+      '/activity',
+    );
+    const senderLinks = screen.getAllByRole('link', { name: /review sender/i });
+    expect(senderLinks).toHaveLength(4);
+    expect(senderLinks[0]).toHaveAttribute('href', '/senders?q=boss%40example.com');
+    expect(senderLinks[3]).toHaveAttribute('href', '/senders?q=Newsletter%20Daily');
   });
 });
 
@@ -356,5 +366,9 @@ describe('BriefScreen — pure helpers', () => {
     );
     expect(gmailHref('active+mailbox@example.com', undefined)).toBeNull();
     expect(gmailHref(null, 'm-abc')).toBeNull();
+  });
+
+  it('senderSearchHref preserves an exact shareable sender query', () => {
+    expect(senderSearchHref('Billing + Reports')).toBe('/senders?q=Billing%20%2B%20Reports');
   });
 });

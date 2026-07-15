@@ -22,7 +22,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/refunds',
 });
 
-const LAST_UPDATED = '2026-07-08';
+const LAST_UPDATED = '2026-07-14';
 
 const TOC = [
   { id: 'summary', label: 'The short version' },

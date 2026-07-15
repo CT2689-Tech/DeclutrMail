@@ -5,14 +5,14 @@ import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect, getSenderPolicy, senderKeyById, type SenderPolicyRow } from '../helpers/db';
 
 /**
- * Golden spec 2 — Sender standing policy: the VIP toggle (D183 / D42 / D43).
+ * Golden spec 2 — Sender standing policy: the Protect toggle (D183 / D42 / D43).
  *
- * Walks senders list → sender detail → VIP chip:
+ * Walks senders list → sender detail → Protect chip:
  *
  *   1. /senders renders the live grid; the first card supplies the
  *      target sender id (list → detail walk).
- *   2. On /senders/:id the VIP chip flips ('VIP' ↔ '★ VIP') and writes
- *      `sender_policies.is_vip` via `PATCH /api/senders/:id/policy`
+ *   2. On /senders/:id the Protect chip flips ('Protect' ↔ '◆ Protect') and writes
+ *      `sender_policies.is_protected` via `PATCH /api/senders/:id/policy`
  *      (SET-STATE — non-destructive, no D226 preview by design).
  *   3. Persistence is asserted by RELOADING the page between toggles —
  *      the chip state must come back from the server, not local state.
@@ -49,8 +49,9 @@ test.afterAll(async () => {
     } else {
       await sql`
         UPDATE sender_policies
-        SET is_vip = ${prePolicy.is_vip},
-            is_protected = ${prePolicy.is_protected},
+        SET is_protected = ${prePolicy.is_protected},
+            protection_reason = ${prePolicy.protection_reason}::protection_reason,
+            protection_set_at = ${prePolicy.protection_set_at},
             policy_type = ${prePolicy.policy_type}::sender_policy_type
         WHERE mailbox_account_id = ${mailboxId} AND sender_key = ${senderKey}
       `;
@@ -59,7 +60,7 @@ test.afterAll(async () => {
       DELETE FROM activity_log
       WHERE mailbox_account_id = ${mailboxId}
         AND sender_key = ${senderKey}
-        AND action IN ('marked_vip', 'unmarked_vip')
+        AND action IN ('marked_protected', 'unmarked_protected')
         AND occurred_at >= ${testStart.toISOString()}
     `;
   }
@@ -67,7 +68,7 @@ test.afterAll(async () => {
   await api.dispose();
 });
 
-test('VIP toggle persists across reload and restores on toggle-back', async ({ page }) => {
+test('Protect toggle persists across reload and restores on toggle-back', async ({ page }) => {
   testStart = new Date();
 
   // ---- Senders list — the entry point of the walk.
@@ -82,31 +83,31 @@ test('VIP toggle persists across reload and restores on toggle-back', async ({ p
   const prePolicy = await getSenderPolicy(sql, mailboxId, senderKey);
   target = { senderKey, prePolicy };
 
-  // ---- Detail page — the VIP toggle. Button now forwards
+  // ---- Detail page — the Protect toggle. Button forwards
   // `ariaPressed` to the DOM (D43 fix), so state reads from the
-  // toggle semantics; the visible label ('VIP' ↔ '★ VIP') is kept as
+  // toggle semantics; the visible label ('Protect' ↔ '◆ Protect') is kept as
   // a secondary assertion.
   await page.goto(`/senders/${senderId}`);
-  const vipChip = page.getByRole('button', { name: /^(★ )?VIP$/ });
-  await expect(vipChip).toBeVisible({ timeout: 30_000 });
-  await expect(vipChip).toHaveAttribute('aria-pressed', /true|false/);
-  const initialPressed = (await vipChip.getAttribute('aria-pressed')) === 'true';
-  const labelFor = (pressed: boolean) => (pressed ? '★ VIP' : 'VIP');
+  const protectChip = page.getByRole('button', { name: /^(◆ )?Protect$/ });
+  await expect(protectChip).toBeVisible({ timeout: 30_000 });
+  await expect(protectChip).toHaveAttribute('aria-pressed', /true|false/);
+  const initialPressed = (await protectChip.getAttribute('aria-pressed')) === 'true';
+  const labelFor = (pressed: boolean) => (pressed ? '◆ Protect' : 'Protect');
 
-  // ---- Toggle ON (or off, if the sender is already VIP).
-  await vipChip.click();
-  await expect(vipChip).toHaveText(labelFor(!initialPressed));
-  await expect(page.getByText(initialPressed ? 'Removed VIP mark' : 'Marked VIP')).toBeVisible();
+  // ---- Toggle ON (or off, if the sender is already protected).
+  await protectChip.click();
+  await expect(protectChip).toHaveText(labelFor(!initialPressed));
+  await expect(page.getByText(initialPressed ? 'Unprotected' : 'Protected')).toBeVisible();
 
   // Server durability — the SET-STATE patch landed in sender_policies.
   await expect
-    .poll(async () => (await getSenderPolicy(sql, mailboxId, senderKey))?.is_vip ?? false)
+    .poll(async () => (await getSenderPolicy(sql, mailboxId, senderKey))?.is_protected ?? false)
     .toBe(!initialPressed);
 
   // ---- Reload: the flipped state must come back from the server.
   await page.reload();
-  await expect(vipChip).toBeVisible({ timeout: 30_000 });
-  await expect(vipChip).toHaveText(labelFor(!initialPressed));
+  await expect(protectChip).toBeVisible({ timeout: 30_000 });
+  await expect(protectChip).toHaveText(labelFor(!initialPressed));
 
   // ---- Toggle back (self-restoring). Server durability is asserted
   // via the DB poll below rather than a second reload — one reload
@@ -114,13 +115,13 @@ test('VIP toggle persists across reload and restores on toggle-back', async ({ p
   // costs ~6 reads from the shared 30/min `triage-load` budget when
   // a stack runs with the limiter on (bucket tuning flagged
   // separately; the documented e2e stack disables the limiter).
-  await vipChip.click();
-  await expect(vipChip).toHaveText(labelFor(initialPressed));
+  await protectChip.click();
+  await expect(protectChip).toHaveText(labelFor(initialPressed));
 
   await expect
-    .poll(async () => (await getSenderPolicy(sql, mailboxId, senderKey))?.is_vip ?? null)
-    // A pre-existing row keeps its original is_vip; a row the PATCH
-    // created on first toggle survives with is_vip back to false
+    .poll(async () => (await getSenderPolicy(sql, mailboxId, senderKey))?.is_protected ?? null)
+    // A pre-existing row keeps its original is_protected; a row the PATCH
+    // created on first toggle survives with is_protected back to false
     // (teardown deletes it for the exact restore).
-    .toBe(prePolicy === null ? false : prePolicy.is_vip);
+    .toBe(prePolicy === null ? false : prePolicy.is_protected);
 });

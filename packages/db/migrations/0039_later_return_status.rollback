@@ -1,0 +1,15 @@
+ALTER TABLE "sender_policies" DROP CONSTRAINT IF EXISTS "sender_policies_snooze_wake_cleared_state_check";
+--> statement-breakpoint
+ALTER TABLE "sender_policies" DROP CONSTRAINT IF EXISTS "sender_policies_snooze_wake_failure_state_check";
+--> statement-breakpoint
+ALTER TABLE "sender_policies" DROP CONSTRAINT IF EXISTS "sender_policies_snooze_wake_failure_kind_check";
+--> statement-breakpoint
+ALTER TABLE "sender_policies" DROP CONSTRAINT IF EXISTS "sender_policies_snooze_wake_failure_count_check";
+--> statement-breakpoint
+ALTER TABLE "sender_policies" DROP COLUMN IF EXISTS "snooze_wake_failure_kind";
+--> statement-breakpoint
+ALTER TABLE "sender_policies" DROP COLUMN IF EXISTS "snooze_wake_failure_count";
+--> statement-breakpoint
+ALTER TABLE "sender_policies" DROP COLUMN IF EXISTS "snooze_wake_last_failed_at";
+--> statement-breakpoint
+ALTER TABLE "sender_policies" DROP COLUMN IF EXISTS "snooze_wake_last_attempt_at";

@@ -1,29 +1,24 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
-import { VERB_PAST, type ActionVerb } from './data';
+import { getActionSemantics, type ActionReceiptResult } from '@declutrmail/shared/actions';
 
 const { color, font } = tokens;
 
-export interface ActionReceipt {
-  id: string;
-  verb: ActionVerb;
-  count: number;
-  historicTotal: number;
-  timeLeft: string;
-  /**
-   * Real undo token from a completed action (D226). Present for the
-   * server-wired Archive path; null/undefined for tracer receipts whose
-   * Undo has no BE token yet. When set, the strip's Undo reverses for real
-   * via `POST /api/undo/:token`.
-   */
-  undoToken?: string | null;
-}
+/** Product-wide D245 result contract plus sender scope for this surface. */
+export type ActionReceipt = ActionReceiptResult & {
+  /** Senders accepted into the action pipeline. */
+  senderCount: number;
+  /** Original bulk selection, when different from accepted scope. */
+  selectedCount?: number;
+  /** Protected or no-longer-present senders skipped at enqueue time. */
+  skippedCount?: number;
+};
 
 /**
- * Persistent reversible-action receipt. Sits at the top of the screen
- * until dismissed or the 7-day undo window expires — the visible safety
- * net the toast (transient) can't be.
+ * Persistent action result. Unlike the old strip, it does not assume every
+ * result succeeded or can be undone: partial, no-op, failed, expired, wake,
+ * Activity Undo, and Gmail recovery states all render from one shared model.
  */
 export function ReceiptStrip({
   receipt,
@@ -36,27 +31,28 @@ export function ReceiptStrip({
 }) {
   if (!receipt) return null;
 
-  const { verb, count, historicTotal, timeLeft } = receipt;
-  const headline =
-    verb === 'Archive' || verb === 'Unsubscribe' || verb === 'Protect' || verb === 'Keep'
-      ? `${VERB_PAST[verb]} ${count} sender${count === 1 ? '' : 's'}`
-      : `${VERB_PAST[verb]} · ${count} sender${count === 1 ? '' : 's'}`;
-  // Where the historic mail went — verb-correct (a Delete receipt must
-  // never claim the mail was "archived"; D52 bulk wired Delete/Later
-  // receipts through this strip).
-  const historicSuffix =
-    verb === 'Delete' ? 'moved to Trash' : verb === 'Later' ? 'moved to Later' : 'archived';
+  const semantics = getActionSemantics(receipt.verb);
+  const undo = receipt.activityUndo;
+  const canUndo = undo.state === 'available' || undo.state === 'unknown';
+  const countCopy = receiptCountCopy(receipt);
+  const statusCopy = receiptStatusCopy(receipt);
+  const wakeCopy =
+    receipt.wake.kind === 'scheduled'
+      ? `Returns to Inbox ${formatDateTime(receipt.wake.at)}.`
+      : null;
+  const providerCopy =
+    receipt.providerRecovery.kind === 'gmail-trash' ? receipt.providerRecovery.summary : null;
 
   return (
     <div
-      role="status"
+      role={receipt.state === 'failed' ? 'alert' : 'status'}
       style={{
         display: 'flex',
         alignItems: 'center',
         gap: 12,
         padding: '10px 12px 10px 14px',
-        background: color.emeraldBg,
-        border: `1px solid rgba(5,150,105,0.25)`,
+        background: receipt.state === 'failed' ? color.redBg : color.emeraldBg,
+        border: `1px solid ${receipt.state === 'failed' ? color.redBorder : 'rgba(5,150,105,0.25)'}`,
         borderRadius: 10,
       }}
     >
@@ -66,37 +62,23 @@ export function ReceiptStrip({
           width: 22,
           height: 22,
           borderRadius: 9999,
-          background: color.emerald,
+          background: receipt.state === 'failed' ? color.red : color.emerald,
           color: color.fgInverse,
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
           flexShrink: 0,
+          fontWeight: 700,
         }}
       >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
+        {receipt.state === 'failed' ? '!' : '✓'}
       </span>
 
-      <span style={{ flex: 1, fontSize: 13, color: color.fg }}>
-        <strong style={{ fontWeight: 600 }}>{headline}</strong>
-        {historicTotal > 0 && (
-          <span style={{ color: color.fgSoft }}>
-            {' '}
-            · {historicTotal.toLocaleString()} email{historicTotal === 1 ? '' : 's'}{' '}
-            {historicSuffix}
-          </span>
-        )}
+      <span style={{ flex: 1, fontSize: 13, color: color.fg, lineHeight: 1.45 }}>
+        <strong style={{ fontWeight: 600 }}>
+          {receipt.state === 'failed' ? `${semantics.label} failed` : semantics.resultLabel}
+        </strong>{' '}
+        <span style={{ color: color.fgSoft }}>{countCopy}</span>
         <span
           style={{
             marginLeft: 8,
@@ -104,32 +86,45 @@ export function ReceiptStrip({
             fontSize: 10.5,
             color: color.fgMuted,
             textTransform: 'uppercase',
-            letterSpacing: '0.08em',
+            letterSpacing: '0.06em',
           }}
         >
-          reversible{timeLeft ? ` ${timeLeft}` : ''}
+          {statusCopy}
         </span>
+        {(wakeCopy || providerCopy) && (
+          <span style={{ display: 'block', color: color.fgMuted, fontSize: 11.5, marginTop: 2 }}>
+            {[wakeCopy, providerCopy].filter(Boolean).join(' ')}
+          </span>
+        )}
+        {receipt.selectedCount !== undefined && (
+          <span style={{ display: 'block', color: color.fgMuted, fontSize: 11.5, marginTop: 2 }}>
+            {receipt.selectedCount} selected · {receipt.senderCount} accepted ·{' '}
+            {receipt.skippedCount ?? 0} skipped
+          </span>
+        )}
       </span>
 
-      <button
-        onClick={onUndo}
-        style={{
-          background: color.card,
-          border: `1px solid ${color.emerald}`,
-          color: color.emerald,
-          borderRadius: 6,
-          padding: '4px 12px',
-          fontFamily: font.sans,
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: 'pointer',
-        }}
-      >
-        Undo
-      </button>
+      {canUndo && (
+        <button
+          onClick={onUndo}
+          style={{
+            background: color.card,
+            border: `1px solid ${color.emerald}`,
+            color: color.emerald,
+            borderRadius: 6,
+            padding: '4px 12px',
+            fontFamily: font.sans,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          Undo
+        </button>
+      )}
       <button
         onClick={onDismiss}
-        aria-label="Dismiss"
+        aria-label={`Dismiss ${semantics.label} result`}
         style={{
           background: 'transparent',
           border: 'none',
@@ -144,4 +139,52 @@ export function ReceiptStrip({
       </button>
     </div>
   );
+}
+
+function receiptCountCopy(receipt: ActionReceipt): string {
+  const senderCopy = `${receipt.senderCount} sender${receipt.senderCount === 1 ? '' : 's'}`;
+  if (receipt.outcome === 'no-op') return `· No matching inbox mail moved · ${senderCopy}`;
+  if (receipt.outcome === 'partial') {
+    return `· ${receipt.affectedCount.toLocaleString()} of ${receipt.requestedCount.toLocaleString()} emails changed · ${senderCopy}`;
+  }
+  if (receipt.affectedCount > 0) {
+    return `· ${receipt.affectedCount.toLocaleString()} email${receipt.affectedCount === 1 ? '' : 's'} · ${senderCopy}`;
+  }
+  return `· ${senderCopy}`;
+}
+
+function receiptStatusCopy(receipt: ActionReceipt): string {
+  if (receipt.state === 'pending') return 'Confirming';
+  if (receipt.state === 'failed') return 'Nothing else will be retried automatically';
+  switch (receipt.activityUndo.state) {
+    case 'available':
+      return `Activity Undo until ${formatDateTime(receipt.activityUndo.deadline)}`;
+    case 'expired':
+      return 'Activity Undo expired';
+    case 'reverting':
+      return 'Undo in progress';
+    case 'revert-failed':
+      return 'Undo failed · Try Activity';
+    case 'reverted':
+      return 'Undone';
+    case 'not-applicable':
+      return 'Final after delivery';
+    case 'pending':
+      return 'Undo details pending';
+    case 'unknown':
+      return 'Activity Undo available';
+    case 'unavailable':
+      return 'No Activity Undo available';
+  }
+}
+
+function formatDateTime(iso: string): string {
+  return new Intl.DateTimeFormat('en', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(new Date(iso));
 }

@@ -39,7 +39,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'anthropic',
     question: 'Is any Gmail metadata sent to an AI provider?',
     answer:
-      'The sender-reasoning path sends Anthropic precomputed aggregate facts without subjects or snippets. Daily Brief has a narrower bounded path that may send sender identity, subject, Gmail preview snippet, and VIP marker to Anthropic to compose its narrative. Neither path sends a full message body or attachment, and Brief falls back to a deterministic template when the provider is unavailable.',
+      'The sender-reasoning path sends Anthropic precomputed aggregate facts without subjects or snippets. Daily Brief has a narrower bounded path that may send sender identity, subject, and Gmail preview snippet to Anthropic to compose its narrative. Neither path sends a full message body or attachment, and Brief falls back to a deterministic template when the provider is unavailable.',
     link: {
       href: '/answers/what-is-metadata-only-email-analysis',
       label: 'Understand the processing boundary',
@@ -67,7 +67,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'undo',
     question: 'Can every DeclutrMail action be undone?',
     answer:
-      'No. Archive and Later expose Activity undo while their journal token is active. Delete can also be recovered from Gmail Trash for up to about 30 days unless Trash is emptied sooner. Keep, VIP, and Protect are settings you can change again. A delivered unsubscribe request cannot be recalled.',
+      'No. Archive, Later, and Delete expose Activity Undo while their plan-window token is active. Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Keep and Protected are sender settings you can change again. A delivered unsubscribe request cannot be recalled.',
     link: {
       href: '/answers/how-undo-works-for-gmail-cleanup',
       label: 'See every recovery path',
@@ -108,7 +108,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'later-vs-snooze',
     question: 'Is DeclutrMail Later the same as Gmail Snooze?',
     answer:
-      'No. Later moves matching current mail out of Inbox and adds the DeclutrMail/Later label. Gmail Snooze hides a message until a selected time and then returns it. DeclutrMail has a separate scheduling surface for sender-level wake times; the underlying concepts should not be treated as interchangeable.',
+      'No. Gmail Snooze schedules one message. DeclutrMail Later moves the current matching mail for a sender out of Inbox, adds the DeclutrMail/Later label, and requires a sender-level return time. It does not create a rule for future mail.',
   },
   {
     id: 'plans',

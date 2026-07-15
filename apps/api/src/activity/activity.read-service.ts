@@ -12,11 +12,6 @@
 //   - Per-sender feed (`GET /senders/:senderKey/activity`) — deferred to a
 //     follow-up PR; the current Sender Detail decision-history reads
 //     `triage_decisions`, not `activity_log`.
-//   - Action-job status join (D56 status filter: In progress / Failed) —
-//     the join path is `activity_log → undo_journal → action_jobs` which
-//     hits the schema gap noted in the gap map; deferred until the
-//     `action_jobs.activity_log_id` denormalization or the read-time
-//     join lands.
 //   - "Senders" + "Brief" source chips — there is no `'senders'` or
 //     `'brief'` value on `activity_source`; would need an enum migration
 //     + a corresponding writer change. See FOUNDER-FOLLOWUPS.
@@ -32,6 +27,7 @@ import {
   ilike,
   inArray,
   isNotNull,
+  isNull,
   lt,
   min,
   or,
@@ -41,11 +37,19 @@ import {
 
 import { CANONICAL_SHORTCUTS, type CanonicalVerb } from '@declutrmail/shared/contracts';
 
-import { activityLog, automationRules, mailMessages, senders, undoJournal } from '@declutrmail/db';
+import {
+  actionJobs,
+  activityLog,
+  automationRules,
+  mailMessages,
+  senders,
+  undoJournal,
+} from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   ActivityRow,
+  ActivityExecutionState,
   ActivityStats,
   ActivitySummary,
   ActivityVerbFilter,
@@ -74,10 +78,31 @@ export const ACTIVITY_LIMIT = { def: 25, min: 1, max: 100 };
  * summary counts. Derived from `CANONICAL_SHORTCUTS` (the verb
  * registry's letter map) so a future verb addition propagates here
  * without a parallel literal list. Feature-specific `activity_action`
- * values (`followup-dismiss`, VIP/Protect toggles) are intentionally
+ * values (`followup-dismiss`, Protect toggles) are intentionally
  * outside this set — they are not cleanup decisions.
  */
 const SUMMARY_VERBS = Object.keys(CANONICAL_SHORTCUTS) as CanonicalVerb[];
+
+const EXECUTION_VERBS = ['archive', 'later', 'delete'] as const;
+type ExecutionVerb = (typeof EXECUTION_VERBS)[number];
+type ExecutionAttempt = Pick<
+  typeof actionJobs.$inferSelect,
+  | 'id'
+  | 'rootActionId'
+  | 'verb'
+  | 'status'
+  | 'selector'
+  | 'requestedCount'
+  | 'errorCode'
+  | 'createdAt'
+  | 'recoveryAttempt'
+>;
+
+interface ExecutionLineage {
+  root: ExecutionAttempt;
+  current: ExecutionAttempt;
+  sender: ActivityRow['sender'];
+}
 
 export interface SummarizeActivityParams {
   mailboxAccountId: string;
@@ -208,47 +233,50 @@ export class ActivityReadService {
       );
     }
 
-    const rows = await this.db
-      .select({
-        id: activityLog.id,
-        occurredAt: activityLog.occurredAt,
-        source: activityLog.source,
-        action: activityLog.action,
-        affectedCount: activityLog.affectedCount,
-        senderKey: activityLog.senderKey,
-        undoToken: activityLog.undoToken,
-        ruleId: activityLog.ruleId,
-        ruleName: automationRules.name,
-        senderDisplayName: senders.displayName,
-        senderEmail: senders.email,
-        undoCreatedAt: undoJournal.createdAt,
-        undoExpiresAt: undoJournal.expiresAt,
-        undoExecutedAt: undoJournal.executedAt,
-        undoRevertedAt: undoJournal.revertedAt,
-      })
-      .from(activityLog)
-      .leftJoin(
-        senders,
-        and(
-          eq(senders.mailboxAccountId, activityLog.mailboxAccountId),
-          // sender_key is nullable; the join naturally drops to null
-          // for account-scoped rows, which is what `ActivityRow.sender`
-          // null encodes. Drizzle column refs emit fully-qualified
-          // `"table"."col"` SQL — the correlated-subquery footgun
-          // from MISTAKES.md 2026-05-23 does not apply here because
-          // we're not using `sql.raw`.
-          eq(senders.senderKey, activityLog.senderKey),
-        ),
-      )
-      .leftJoin(undoJournal, eq(undoJournal.token, activityLog.undoToken))
-      // D57 rule attribution — `rule_id` is non-null only for
-      // autopilot-attributed rows, and the FK's `onDelete: 'set null'`
-      // keeps a non-null id resolvable; LEFT JOIN stays the defensive
-      // shape (a null id simply yields no rule).
-      .leftJoin(automationRules, eq(automationRules.id, activityLog.ruleId))
-      .where(and(...whereParts))
-      .orderBy(desc(activityLog.occurredAt), desc(activityLog.id))
-      .limit(limit + 1);
+    const [rows, executionLineages] = await Promise.all([
+      this.db
+        .select({
+          id: activityLog.id,
+          occurredAt: activityLog.occurredAt,
+          source: activityLog.source,
+          action: activityLog.action,
+          affectedCount: activityLog.affectedCount,
+          senderKey: activityLog.senderKey,
+          undoToken: activityLog.undoToken,
+          ruleId: activityLog.ruleId,
+          ruleName: automationRules.name,
+          senderDisplayName: senders.displayName,
+          senderEmail: senders.email,
+          undoCreatedAt: undoJournal.createdAt,
+          undoExpiresAt: undoJournal.expiresAt,
+          undoExecutedAt: undoJournal.executedAt,
+          undoRevertedAt: undoJournal.revertedAt,
+        })
+        .from(activityLog)
+        .leftJoin(
+          senders,
+          and(
+            eq(senders.mailboxAccountId, activityLog.mailboxAccountId),
+            // sender_key is nullable; the join naturally drops to null
+            // for account-scoped rows, which is what `ActivityRow.sender`
+            // null encodes. Drizzle column refs emit fully-qualified
+            // `"table"."col"` SQL — the correlated-subquery footgun
+            // from MISTAKES.md 2026-05-23 does not apply here because
+            // we're not using `sql.raw`.
+            eq(senders.senderKey, activityLog.senderKey),
+          ),
+        )
+        .leftJoin(undoJournal, eq(undoJournal.token, activityLog.undoToken))
+        // D57 rule attribution — `rule_id` is non-null only for
+        // autopilot-attributed rows, and the FK's `onDelete: 'set null'`
+        // keeps a non-null id resolvable; LEFT JOIN stays the defensive
+        // shape (a null id simply yields no rule).
+        .leftJoin(automationRules, eq(automationRules.id, activityLog.ruleId))
+        .where(and(...whereParts))
+        .orderBy(desc(activityLog.occurredAt), desc(activityLog.id))
+        .limit(limit + 1),
+      this.loadExecutionLineages(mailboxAccountId),
+    ]);
 
     const projected = rows.map((row): ActivityRow => {
       const sender =
@@ -276,8 +304,21 @@ export class ActivityReadService {
           revertedAt: row.undoRevertedAt,
           nowMs,
         }),
+        executionState: null,
       };
     });
+
+    const executionRows = projectExecutionRows(executionLineages, {
+      source,
+      verbs,
+      senderQuery,
+      lowerBound: dateFrom ?? windowStart,
+      upperBound: dateTo,
+      cursor,
+    });
+    const mergedRows = [...projected, ...executionRows]
+      .sort(compareActivityRowsNewestFirst)
+      .slice(0, limit + 1);
 
     // Stats follow the same window/date bound as the rows query, but
     // IGNORE source/verb/sender so the line stays stable as chips toggle
@@ -291,15 +332,128 @@ export class ActivityReadService {
         mailboxAccountId,
         lowerBound: statsLowerBound,
         upperBound: statsUpperBound,
+        executionLineages,
       }),
       this.aggregateStats({
         mailboxAccountId,
         lowerBound: null,
         upperBound: null,
+        executionLineages,
       }),
     ]);
 
-    return { rows: projected, stats, allTimeStats };
+    return { rows: mergedRows, stats, allTimeStats };
+  }
+
+  /**
+   * Load each unresolved forward label-action lineage once. Root rows own
+   * the original intent; recovery rows point back through `root_action_id`.
+   * A successful recovery resolves the lineage and removes it from Activity,
+   * while the latest non-successful attempt supplies the visible state.
+   */
+  private async loadExecutionLineages(mailboxAccountId: string): Promise<ExecutionLineage[]> {
+    const roots = await this.db
+      .select({
+        id: actionJobs.id,
+        rootActionId: actionJobs.rootActionId,
+        verb: actionJobs.verb,
+        status: actionJobs.status,
+        selector: actionJobs.selector,
+        requestedCount: actionJobs.requestedCount,
+        errorCode: actionJobs.errorCode,
+        createdAt: actionJobs.createdAt,
+        recoveryAttempt: actionJobs.recoveryAttempt,
+      })
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          isNull(actionJobs.rootActionId),
+          eq(actionJobs.direction, 'forward'),
+          inArray(actionJobs.verb, EXECUTION_VERBS),
+          inArray(actionJobs.status, ['queued', 'executing', 'failed']),
+        ),
+      );
+    if (roots.length === 0) return [];
+
+    const rootIds = roots.map((root) => root.id);
+    const senderKeys = roots.flatMap((root) =>
+      root.selector.type === 'sender' ? [root.selector.senderKey] : [],
+    );
+    const [recoveries, senderRows] = await Promise.all([
+      this.db
+        .select({
+          id: actionJobs.id,
+          rootActionId: actionJobs.rootActionId,
+          verb: actionJobs.verb,
+          status: actionJobs.status,
+          selector: actionJobs.selector,
+          requestedCount: actionJobs.requestedCount,
+          errorCode: actionJobs.errorCode,
+          createdAt: actionJobs.createdAt,
+          recoveryAttempt: actionJobs.recoveryAttempt,
+        })
+        .from(actionJobs)
+        .where(
+          and(
+            eq(actionJobs.mailboxAccountId, mailboxAccountId),
+            eq(actionJobs.direction, 'forward'),
+            inArray(actionJobs.rootActionId, rootIds),
+          ),
+        ),
+      senderKeys.length === 0
+        ? Promise.resolve([])
+        : this.db
+            .select({
+              senderKey: senders.senderKey,
+              displayName: senders.displayName,
+              email: senders.email,
+            })
+            .from(senders)
+            .where(
+              and(
+                eq(senders.mailboxAccountId, mailboxAccountId),
+                inArray(senders.senderKey, senderKeys),
+              ),
+            ),
+    ]);
+
+    const recoveriesByRoot = new Map<string, ExecutionAttempt[]>();
+    for (const recovery of recoveries) {
+      if (!recovery.rootActionId) continue;
+      const attempts = recoveriesByRoot.get(recovery.rootActionId) ?? [];
+      attempts.push(recovery);
+      recoveriesByRoot.set(recovery.rootActionId, attempts);
+    }
+    const senderByKey = new Map(
+      senderRows.map((sender) => [
+        sender.senderKey,
+        {
+          senderKey: sender.senderKey,
+          displayName: sender.displayName ?? sender.email,
+          email: sender.email,
+          domain: domainOf(sender.email),
+        },
+      ]),
+    );
+
+    const lineages: ExecutionLineage[] = [];
+    for (const root of roots) {
+      const attempts = recoveriesByRoot.get(root.id) ?? [];
+      if (attempts.some((attempt) => attempt.status === 'done')) continue;
+      const current = attempts.reduce<ExecutionAttempt>(
+        (latest, attempt) => (compareExecutionAttempts(attempt, latest) > 0 ? attempt : latest),
+        root,
+      );
+      if (!isUnresolvedExecutionStatus(current.status)) continue;
+      const senderKey = root.selector.type === 'sender' ? root.selector.senderKey : null;
+      lineages.push({
+        root,
+        current,
+        sender: senderKey ? (senderByKey.get(senderKey) ?? null) : null,
+      });
+    }
+    return lineages;
   }
 
   /**
@@ -308,14 +462,14 @@ export class ActivityReadService {
    * chips — it represents the bucket the rows are drawn from, not the
    * currently-visible subset.
    *
-   * Schema gap: D59 "needing attention" maps to failed `action_jobs`
-   * rows that the current schema does not surface alongside
-   * activity_log; we return 0 until the join lands.
+   * Failed label-action lineages are counted from the same synthetic
+   * execution projection as the rows, once per original user intent.
    */
   private async aggregateStats(args: {
     mailboxAccountId: string;
     lowerBound: Date | null;
     upperBound: Date | null;
+    executionLineages: ExecutionLineage[];
   }): Promise<ActivityStats> {
     const whereParts = [eq(activityLog.mailboxAccountId, args.mailboxAccountId)];
     if (args.lowerBound) whereParts.push(gte(activityLog.occurredAt, args.lowerBound));
@@ -370,7 +524,10 @@ export class ActivityReadService {
       kept: byVerb.get('keep') ?? 0,
       later: byVerb.get('later') ?? 0,
       followupsDismissed: byVerb.get('followup-dismiss') ?? 0,
-      needsAttention: 0,
+      needsAttention:
+        (byVerb.get('unsubscribe_failed') ?? 0) +
+        (byVerb.get('unsubscribe_unconfirmed') ?? 0) +
+        countFailedExecutionLineages(args.executionLineages, args.lowerBound, args.upperBound),
       noisePreventedPerMonth,
     };
   }
@@ -462,6 +619,121 @@ export class ActivityReadService {
       undoCount: Number(undoRows[0]?.n ?? 0),
     };
   }
+}
+
+function projectExecutionRows(
+  lineages: ExecutionLineage[],
+  filters: {
+    source: ActivityLogEntry['source'] | null;
+    verbs: ActivityVerbFilter[];
+    senderQuery: string;
+    lowerBound: Date | null;
+    upperBound: Date | null;
+    cursor: { occurredAt: Date; id: string } | null;
+  },
+): ActivityRow[] {
+  if (filters.source !== null && filters.source !== 'manual') return [];
+  const senderNeedle = filters.senderQuery.toLocaleLowerCase();
+
+  return lineages.flatMap((lineage): ActivityRow[] => {
+    const { root, current, sender } = lineage;
+    if (!EXECUTION_VERBS.includes(root.verb as ExecutionVerb)) return [];
+    const action = root.verb as ExecutionVerb;
+    if (filters.verbs.length > 0 && !filters.verbs.includes(action)) return [];
+    if (filters.lowerBound && current.createdAt < filters.lowerBound) return [];
+    if (filters.upperBound && current.createdAt >= filters.upperBound) return [];
+    if (senderNeedle.length > 0) {
+      if (!sender) return [];
+      const matchesSender =
+        sender.displayName.toLocaleLowerCase().includes(senderNeedle) ||
+        sender.email.toLocaleLowerCase().includes(senderNeedle);
+      if (!matchesSender) return [];
+    }
+    if (filters.cursor && !isStrictlyAfterCursor(current, filters.cursor)) return [];
+
+    return [
+      {
+        id: current.id,
+        occurredAt: current.createdAt.toISOString(),
+        source: 'manual',
+        action,
+        affectedCount: 0,
+        sender,
+        rule: null,
+        undoState: { kind: 'unavailable' },
+        executionState: executionStateFor(lineage),
+      },
+    ];
+  });
+}
+
+function executionStateFor(lineage: ExecutionLineage): ActivityExecutionState {
+  const { root, current } = lineage;
+  if (current.status === 'queued' || current.status === 'executing') {
+    return {
+      kind: 'in_progress',
+      actionId: current.id,
+      requestedCount: current.requestedCount,
+      isRecovery: current.rootActionId !== null,
+      status: current.status,
+    };
+  }
+  return {
+    kind: 'failed',
+    actionId: current.id,
+    rootActionId: root.id,
+    requestedCount: current.requestedCount,
+    errorCode: current.errorCode,
+    resolution: failureResolution(current.errorCode),
+  };
+}
+
+function failureResolution(errorCode: string | null): 'review' | 'support' {
+  if (errorCode === 'ValidationError' || errorCode === 'PermanentError') return 'support';
+  return 'review';
+}
+
+function countFailedExecutionLineages(
+  lineages: ExecutionLineage[],
+  lowerBound: Date | null,
+  upperBound: Date | null,
+): number {
+  return lineages.filter(({ current }) => {
+    if (current.status !== 'failed') return false;
+    if (lowerBound && current.createdAt < lowerBound) return false;
+    if (upperBound && current.createdAt >= upperBound) return false;
+    return true;
+  }).length;
+}
+
+function compareExecutionAttempts(left: ExecutionAttempt, right: ExecutionAttempt): number {
+  if (left.recoveryAttempt !== right.recoveryAttempt) {
+    return left.recoveryAttempt - right.recoveryAttempt;
+  }
+  const timeDelta = left.createdAt.getTime() - right.createdAt.getTime();
+  if (timeDelta !== 0) return timeDelta;
+  return left.id > right.id ? 1 : left.id < right.id ? -1 : 0;
+}
+
+function isUnresolvedExecutionStatus(
+  status: (typeof actionJobs.$inferSelect)['status'],
+): status is 'queued' | 'executing' | 'failed' {
+  return status === 'queued' || status === 'executing' || status === 'failed';
+}
+
+function isStrictlyAfterCursor(
+  attempt: Pick<ExecutionAttempt, 'id' | 'createdAt'>,
+  cursor: { occurredAt: Date; id: string },
+): boolean {
+  const attemptTime = attempt.createdAt.getTime();
+  const cursorTime = cursor.occurredAt.getTime();
+  return attemptTime < cursorTime || (attemptTime === cursorTime && attempt.id < cursor.id);
+}
+
+function compareActivityRowsNewestFirst(left: ActivityRow, right: ActivityRow): number {
+  const timeDelta = Date.parse(right.occurredAt) - Date.parse(left.occurredAt);
+  if (timeDelta !== 0) return timeDelta;
+  return left.id < right.id ? 1 : left.id > right.id ? -1 : 0;
 }
 
 /**

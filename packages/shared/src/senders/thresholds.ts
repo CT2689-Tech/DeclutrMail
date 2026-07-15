@@ -221,7 +221,7 @@ export type SenderBucket =
  *
  * Reading top-to-bottom:
  *   1. one_time   — total ≤ 2 lifetime msgs (noise floor, hidden default)
- *   2. protect    — explicit user marking (is_protected OR is_vip)
+ *   2. protect    — active Protected safety state
  *   3. people     — score ≥ threshold (replied / free-mail / own-domain
  *                   minus bulk signals)
  *   4. needs_review — engine: cleanup/later verdict at confidence ≥ gate

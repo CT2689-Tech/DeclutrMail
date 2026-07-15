@@ -18,7 +18,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/terms',
 });
 
-const LAST_UPDATED = '2026-07-12';
+const LAST_UPDATED = '2026-07-14';
 
 const TOC = [
   { id: 'service', label: 'The service' },
@@ -45,10 +45,10 @@ export default function TermsOfServicePage() {
           cleanup service. It shows you your inbox organized by sender, recommends cleanup
           decisions, and — when you approve them — performs actions on your Gmail on your behalf:
           Keep, Archive, Unsubscribe, Later, or Delete. Manual mail-moving actions are previewed
-          before they run and recorded in an activity log. Archive and Later use your plan&rsquo;s
-          undo window; Delete has a separate up-to-30-day recovery boundary while Gmail retains the
-          message. By creating an account or using DeclutrMail you agree to these terms and to our{' '}
-          <a href="/privacy">Privacy Policy</a>.
+          before they run and recorded in an activity log. Archive, Later, and Delete use your
+          plan&rsquo;s Activity Undo window. Delete also has separate Gmail Trash recovery, normally
+          up to 30 days unless Trash is emptied sooner. By creating an account or using DeclutrMail
+          you agree to these terms and to our <a href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
 

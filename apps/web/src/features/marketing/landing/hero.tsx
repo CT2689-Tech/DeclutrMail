@@ -26,7 +26,8 @@ export function Hero() {
           </h1>
           <p className="dm-mkt-hero-sub dm-mkt-reveal-2 dm-mkt-reveal">
             DeclutrMail turns thousands of emails into a handful of sender decisions — with
-            automation, privacy-first indexing, and 7-day Archive/Later Activity undo on Free.
+            automation, privacy-first indexing, and 7-day Activity Undo for Archive, Later, and
+            Delete on Free.
           </p>
           <div className="dm-mkt-hero-ctas dm-mkt-reveal-3 dm-mkt-reveal">
             <TrackedCta

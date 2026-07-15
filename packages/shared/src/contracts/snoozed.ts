@@ -3,13 +3,15 @@
 // Wire contract for the Snoozed review screen:
 //
 //   GET   /api/snoozed              → Envelope<SnoozedSenderRow[]>
+//   GET   /api/snoozed/recovery     → Envelope<LaterReturnRecoverySummary>
 //   PATCH /api/snoozed/:senderId    → Envelope<SnoozeUpdateResult>
 //   POST  /api/snoozed/:senderId/wake → Envelope<WakeNowResult>
+//   POST  /api/snoozed/recovery/:senderId/wake → Envelope<WakeNowResult>
 //
 // Scope is SENDER-level only (D78) — there is no message-level snooze
 // at launch. "Later" is the canonical user-facing verb (D227); the
-// screen/feature name is "Snoozed" (the D78–D83 topic name, like
-// "Screener" for the screen feature).
+// user-facing screen/feature name is "Later"; Snoozed remains only in
+// internal API and implementation names.
 //
 // PRIVACY (D7, D228): rows carry sender display metadata (name, email,
 // domain — all from the `senders` projection), counts, and timestamps.
@@ -18,16 +20,9 @@
 import { z } from 'zod';
 
 /**
- * One sender on the Snoozed screen. A sender is listed when EITHER:
- *
- *   - it currently has ≥1 message carrying the DeclutrMail/Later Gmail
- *     label (`laterCount > 0`) — the durable ground truth written by
- *     the Later verb's label-action pipeline and mirrored into
- *     `mail_messages.label_ids`; OR
- *   - it has an active snooze timer (`snoozedUntil` non-null) set via
- *     `PATCH /api/snoozed/:senderId` (D79 schema columns).
- *
- * Both can hold at once (the normal case: Later'd mail + a wake time).
+ * One sender on the Later screen. A sender is listed only while it has
+ * an active Later timer. Its matching Gmail label mirror supplies the
+ * real message count but does not create timerless rows (D245).
  */
 export interface SnoozedSenderRow {
   /** `senders.id` — the selector for PATCH / wake. */
@@ -44,12 +39,41 @@ export interface SnoozedSenderRow {
    * mirror cannot be queried for this mailbox).
    */
   laterCount: number | null;
-  /** ISO-8601 wake time; null = no wake time set (stays until woken). */
-  snoozedUntil: string | null;
+  /** Required ISO-8601 wake time. Later is never indefinite (D245). */
+  snoozedUntil: string;
   /** ISO-8601 — when the timer was last set; null when no timer. */
   snoozedAt: string | null;
   /** Optional user note (D79/D80); null when unset. */
   reason: string | null;
+  /** Truthful state of this timer's scheduled return. */
+  returnStatus: LaterReturnStatus;
+  /** Last attempt to restore this sender, or null before the first attempt. */
+  lastReturnAttemptAt: string | null;
+  /** Safe recovery category; never a raw Gmail/provider error. */
+  returnFailureKind: LaterReturnFailureKind;
+}
+
+export type LaterReturnStatus = 'scheduled' | 'returning' | 'retrying' | 'missed';
+export type LaterReturnFailureKind = 'temporary' | 'reauthorize' | 'needs_attention' | null;
+
+/** Two missed 15-minute sweeps before an unattempted return is called missed. */
+export const LATER_RETURN_MISSED_AFTER_MS = 30 * 60 * 1_000;
+
+/**
+ * Small all-tier safety surface used by the app chrome. Full Later
+ * management remains tiered; recovery from a failed product action does not.
+ */
+export interface LaterReturnRecoverySummary {
+  affectedCount: number;
+  firstIssue: {
+    senderId: string;
+    displayName: string;
+    email: string;
+    snoozedUntil: string;
+    returnStatus: 'retrying' | 'missed';
+    lastReturnAttemptAt: string | null;
+    returnFailureKind: LaterReturnFailureKind;
+  } | null;
 }
 
 /** Snooze reason length cap — one short note, not a journal (D79). */
@@ -58,33 +82,25 @@ export const SNOOZE_REASON_MAX_LENGTH = 200;
 /**
  * PATCH /api/snoozed/:senderId body.
  *
- * `until: <ISO datetime>` sets or extends the wake timer (must be in
- * the future at request time). `until: null` clears the timer AND the
- * reason ("Cancel snooze" per D80 — the Later'd mail stays where it is;
- * only the wake schedule is removed).
+ * `until: <ISO datetime>` sets or extends the wake timer and must be in
+ * the future at request time. A Later item cannot be made indefinite;
+ * Wake now is the explicit way to return it immediately.
  *
- * `reason` is optional and only meaningful alongside a non-null
- * `until`; it is stored verbatim (trimmed) and shown on the row.
+ * `reason` is optional; it is stored verbatim (trimmed) and shown on
+ * the row.
  */
 export const SnoozeUpdateRequestSchema = z
   .object({
-    until: z.string().datetime({ offset: true }).nullable(),
+    until: z.string().datetime({ offset: true }),
     reason: z.string().trim().min(1).max(SNOOZE_REASON_MAX_LENGTH).optional(),
   })
   .strict()
   .superRefine((body, ctx) => {
-    if (body.until !== null && Date.parse(body.until) <= Date.now()) {
+    if (Date.parse(body.until) <= Date.now()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['until'],
         message: 'Wake time must be in the future.',
-      });
-    }
-    if (body.until === null && body.reason !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['reason'],
-        message: 'reason cannot be set when clearing the timer.',
       });
     }
   });
@@ -94,7 +110,8 @@ export type SnoozeUpdateRequest = z.infer<typeof SnoozeUpdateRequestSchema>;
 /** PATCH result — the row's post-write snooze state. */
 export interface SnoozeUpdateResult {
   senderId: string;
-  snoozedUntil: string | null;
+  snoozedUntil: string;
+  /** ISO-8601 time when the timer was last set. */
   snoozedAt: string | null;
   reason: string | null;
   /** False when the write was an idempotent no-op (already at target). */

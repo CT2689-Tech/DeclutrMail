@@ -2,7 +2,7 @@
  * Centralised TanStack Query keys for the Senders surface (D200).
  *
  * Why a key module? So invalidations after mutations (Archive,
- * Unsubscribe, Later, VIP toggle, etc.) can target the right cache
+ * Unsubscribe, Later, Protect toggle, etc.) can target the right cache
  * entries without stringly-typed keys scattered across hooks. Each
  * factory returns an array literal that's both readable as a hierarchy
  * (e.g. `senders → detail → id → messages`) and stable across
@@ -43,8 +43,6 @@ export const sendersKeys = {
       category?: GmailCategory | undefined;
       limit?: number | undefined;
       isProtected?: TriStateFilter | undefined;
-      /** VIP filter (U23 settings VIP list) — keyed like isProtected. */
-      isVip?: boolean | undefined;
       sort?: SenderListSort | undefined;
       direction?: SenderListDirection | undefined;
       /** Search term (#145) — in the key so each query caches separately

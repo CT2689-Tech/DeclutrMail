@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { PRIVACY_STORAGE_ITEMS } from '../copy/privacy';
 import { color, font } from '../tokens/tokens';
 import { useFocusTrap } from '../hooks/use-focus-trap';
 import { Sidebar } from './sidebar';
@@ -9,19 +10,20 @@ const TRUST_CLAIMS = [
   // D227 K/A/U/L/D — Delete IS a verb. The prior "Nothing deleted"
   // claim was a flat lie once ADR-0019 landed Delete. Per CLAUDE.md
   // §2.1, the canonical claim is the storage allowlist, not the
-  // mutation surface. "Recoverable" covers both Archive/Later (7d
-  // Activity undo) and Delete (30d Gmail Trash retention).
+  // mutation surface. Archive/Later/Delete share the plan Activity Undo
+  // window; Delete also has Gmail's separate Trash-retention fallback.
   {
-    label: 'Recovery',
+    label: 'Undo windows',
+    destination: 'activity',
     title:
-      "Archive and Later use your plan's Activity window. Delete can be undone while Gmail retains Trash, up to 30 days. A delivered unsubscribe request is one-way.",
+      "Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery is separate and normally lasts up to 30 days. Delivered unsubscribe requests can't be recalled.",
   },
   {
-    label: 'Metadata only',
-    title:
-      'We act on labels and message states. Stored: sender, subject, snippet, dates, labels — never message bodies or attachments.',
+    label: 'Stored Gmail data',
+    destination: 'settings',
+    title: `Stored message data: ${PRIVACY_STORAGE_ITEMS.join(', ')}. Full message bodies and attachments are never fetched.`,
   },
-];
+] as const;
 
 /**
  * App chrome: sidebar + a topbar trust strip + a scrollable content
@@ -231,7 +233,7 @@ export function AppShell({
                 {i > 0 && <span style={{ opacity: 0.35 }}>·</span>}
                 <button
                   type="button"
-                  onClick={() => onNavigate(claim.label === 'Recovery' ? 'activity' : 'settings')}
+                  onClick={() => onNavigate(claim.destination)}
                   title={claim.title}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.color = color.primary;

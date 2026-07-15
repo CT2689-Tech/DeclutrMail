@@ -126,7 +126,7 @@ Per existing `packages/workers/` patterns:
 
 - Single-verb row enqueues via existing per-verb queues (`label-modify`, `policy-only`, `unsubscribe`, plus new `delete` queue routing to Gmail Trash worker)
 - Composite secondary enqueues w/ a **`waitForCompositeId` DAG hint** — the BullMQ job waits for the primary's `status='done'` before starting. Implemented via `Job.opts.dependencies[]` or a small composite-orchestrator worker that polls primary state.
-- **Failure cascade:** primary fails → secondary skipped (BullMQ dependency failure semantics). Toast: "Couldn't unsubscribe. Past emails untouched." Secondary remains in `queued` state and can be retried alone via `POST /api/actions/:secondaryId/retry` (future endpoint, not in this ADR).
+- **Failure cascade:** primary fails → secondary skipped (BullMQ dependency failure semantics). Toast: "Couldn't unsubscribe. Past emails untouched." A failed idempotent label action may be recovered from Activity only after a fresh provider-state preview creates a new linked attempt. Unsubscribe delivery is never blindly retried from this surface.
 - **Idempotency:** `idempotencyKey` (future client field) ensures retried requests don't double-enqueue. Existing D225 retry semantics apply.
 - **Observability (D159):** TWO `worker.succeeded` events fire (primary + secondary), each tagged with `composite_id` so analytics can group them.
 

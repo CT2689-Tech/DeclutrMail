@@ -117,10 +117,9 @@ describe('fetchSenderDetail', () => {
     const detail = {
       ...LIST_ROW,
       protectionFlags: {
-        isVip: true,
-        isProtected: false,
-        protectionReason: null,
-        protectionSetAt: null,
+        isProtected: true,
+        protectionReason: 'user_defined' as const,
+        protectionSetAt: '2026-04-01T00:00:00.000Z',
       },
     };
     installFetchStub([
@@ -136,7 +135,7 @@ describe('fetchSenderDetail', () => {
 
     const env = await fetchSenderDetail('s-1');
     expect(observedUrl!.pathname).toBe('/api/senders/s-1');
-    expect(env.data.protectionFlags.isVip).toBe(true);
+    expect(env.data.protectionFlags.isProtected).toBe(true);
   });
 
   it('URL-encodes the id', async () => {
@@ -151,7 +150,6 @@ describe('fetchSenderDetail', () => {
             data: {
               ...LIST_ROW,
               protectionFlags: {
-                isVip: false,
                 isProtected: false,
                 protectionReason: null,
                 protectionSetAt: null,
