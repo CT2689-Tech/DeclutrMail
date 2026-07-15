@@ -64,7 +64,10 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Database-backed API and worker suites run concurrently on shared CI
+    # hardware and now sit near 15 minutes under contention. Keep a real
+    # ceiling while leaving enough headroom to avoid runner-speed flakes.
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
