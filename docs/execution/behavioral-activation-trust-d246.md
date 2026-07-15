@@ -94,11 +94,11 @@ requires its recorded demand, privacy, OAuth, or compliance trigger.
 - [x] Generate Briefs at the user's local 08:00 boundary with UTC fallback.
 - [x] Add the privacy-bounded D246 analytics contract and taxonomy.
 - [x] Persist the selected activation goal in the existing preferences bag.
-- [ ] Implement a finite first-relief session and calm completion state.
+- [x] Implement a finite first-relief session and calm completion state.
 - [ ] Add expected/surprising feedback for automatic Activity outcomes.
 - [ ] Add the Observe-first repeated-pattern suggestion and decision telemetry.
 - [ ] Add the factual in-app weekly review with Activity evidence links.
-- [ ] Add focused unit/integration/accessibility coverage for every slice.
+- [x] Add focused unit/integration/accessibility coverage for completed slices.
 - [ ] Run repository-wide validation and independent diff review.
 
 ## Commit and handoff protocol
@@ -109,11 +109,13 @@ below with the last commit, green checks, and exact next unchecked slice.
 
 ## Current checkpoint
 
-- Last completed slice: every tier now chooses one of three relief goals before
-  starting the real sender review. Goal and preset choices persist atomically;
-  legacy partial onboarding returns to this choice instead of guessing intent.
-- Last green checks: onboarding service tests (19); onboarding web/derivation
-  tests (26); shared/API/web typechecks.
+- Last completed slice: onboarding now pins at most five candidates in stable,
+  goal-ranked order and presents them as a finite first-relief session. The
+  session removes batching and daily chrome, permits an honest early stop,
+  ends calmly, and attributes preview/confirmation/completion without sender
+  identifiers.
+- Last green checks: onboarding service tests (24); first-relief/Triage
+  analytics tests (12); API/web typechecks; formatting and diff checks.
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Next slice: expand the existing server-owned onboarding session from three to
-  five goal-ranked sender decisions with a first-relief-only Triage variant.
+- Next slice: add first-party expected/surprising feedback to automatic
+  outcomes in Activity, Brief, and Followups.

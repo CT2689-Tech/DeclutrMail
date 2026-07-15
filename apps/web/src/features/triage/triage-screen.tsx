@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
@@ -118,7 +118,13 @@ function openPricing(): void {
   window.location.assign('/pricing');
 }
 
-export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageScreenState }) {
+export function TriageScreen({
+  state = DEFAULT_TRIAGE_STATE,
+  journey = 'daily',
+}: {
+  state?: TriageScreenState;
+  journey?: 'daily' | 'first_relief';
+}) {
   const qc = useQueryClient();
   const auth = useOptionalAuth();
   const activeEmail = auth ? getActiveMailboxEmail(auth.me) : undefined;
@@ -337,6 +343,17 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     : compositePreview.data != null
       ? compositePreview.data.counts.all
       : 'loading';
+  const trackedPreviews = useRef(new Set<string>());
+  useEffect(() => {
+    if (pendingAction == null || typeof previewInboxCount !== 'number') return;
+    const key = `${pendingAction.rowId}:${pendingAction.verb}`;
+    if (trackedPreviews.current.has(key)) return;
+    trackedPreviews.current.add(key);
+    void track('action_preview_viewed', {
+      journey,
+      verb: pendingAction.verb.toLowerCase() as 'archive' | 'unsubscribe' | 'later',
+    });
+  }, [journey, pendingAction, previewInboxCount]);
   const inlinePreviewBlocked =
     pendingAction?.surface === 'inline' &&
     (pendingAction.verb === 'Archive' || pendingAction.verb === 'Later') &&
@@ -445,6 +462,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
                 requested_messages: 0,
                 source,
               });
+              void track('action_confirmed', { journey, verb: 'keep' });
               invalidateAfterDecision(qc);
               incrementSessionDecided();
               setExpandedRow(null);
@@ -493,6 +511,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
                 requested_messages: 0,
                 source,
               });
+              void track('action_confirmed', { journey, verb: 'unsubscribe' });
               invalidateAfterDecision(qc);
               incrementSessionDecided();
               setExpandedRow(null);
@@ -586,6 +605,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
               requested_messages: res.primaryCount,
               source,
             });
+            void track('action_confirmed', { journey, verb: primaryType });
             setActiveAction({
               actionId: res.actionId,
               rowId: row.id,
@@ -629,6 +649,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       clearPending,
       setExpandedRow,
       incrementSessionDecided,
+      journey,
     ],
   );
 
@@ -853,55 +874,59 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       {/* Header — matches Senders screen typography. The session
           burn-down sits opposite the title (renders only after the
           first confirmed decision). */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-          gap: 16,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div>
-          <Eyebrow>Triage · {activeEmail ?? 'active Gmail account'}</Eyebrow>
-          <h1
-            style={{
-              fontFamily: font.display,
-              fontSize: 26,
-              fontWeight: 600,
-              letterSpacing: '-0.018em',
-              margin: '4px 0 0',
-            }}
-          >
-            {state.kind === 'ready'
-              ? `${state.rows.length} decisions, one at a time.`
-              : state.kind === 'empty'
-                ? 'All caught up.'
-                : state.kind === 'error'
-                  ? "Couldn't load your decisions."
-                  : 'Loading your decisions…'}
-          </h1>
+      {journey === 'daily' && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'space-between',
+            gap: 16,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <Eyebrow>Triage · {activeEmail ?? 'active Gmail account'}</Eyebrow>
+            <h1
+              style={{
+                fontFamily: font.display,
+                fontSize: 26,
+                fontWeight: 600,
+                letterSpacing: '-0.018em',
+                margin: '4px 0 0',
+              }}
+            >
+              {state.kind === 'ready'
+                ? `${state.rows.length} decisions, one at a time.`
+                : state.kind === 'empty'
+                  ? 'All caught up.'
+                  : state.kind === 'error'
+                    ? "Couldn't load your decisions."
+                    : 'Loading your decisions…'}
+            </h1>
+          </div>
+          {(state.kind === 'ready' || state.kind === 'empty') && (
+            <SessionProgress
+              messagesMoved={sessionMessagesMoved}
+              decided={sessionDecidedCount}
+              remaining={state.kind === 'ready' ? state.rows.length : 0}
+            />
+          )}
         </div>
-        {(state.kind === 'ready' || state.kind === 'empty') && (
-          <SessionProgress
-            messagesMoved={sessionMessagesMoved}
-            decided={sessionDecidedCount}
-            remaining={state.kind === 'ready' ? state.rows.length : 0}
-          />
-        )}
-      </div>
+      )}
 
       {/* D214 — the "Today" strip: situational awareness above the
           decision queue. Self-fetching; renders nothing while loading
           or when the mailbox has no signal yet. */}
-      <TodayStrip />
+      {journey === 'daily' && <TodayStrip />}
 
-      <ScreenIntro
-        id="triage"
-        title="How Triage works"
-        body="One row, one decision. K keeps, A archives, U unsubscribes, L moves to Later. Every destructive action shows a preview before anything changes."
-        tip="We never read message bodies. The triage engine reasons from sender, subject, Gmail's preview snippet, dates, and aggregate read/volume stats — that's it."
-      />
+      {journey === 'daily' && (
+        <ScreenIntro
+          id="triage"
+          title="How Triage works"
+          body="One row, one decision. K keeps, A archives, U unsubscribes, L moves to Later. Every destructive action shows a preview before anything changes."
+          tip="We never read message bodies. The triage engine reasons from sender, subject, Gmail's preview snippet, dates, and aggregate read/volume stats — that's it."
+        />
+      )}
 
       {/* D230 manual path — after U on a mailto sender, the user sends
           the opt-out from a prefilled Gmail compose. Never auto-sent. */}
@@ -928,6 +953,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       )}
       {state.kind === 'ready' &&
         state.rows.length > 0 &&
+        journey === 'daily' &&
         (() => {
           // Same-verdict batch banner (2026-07-10) — mounts when ≥3
           // unprotected rows share an Archive/Later recommendation.
@@ -958,6 +984,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
           onAction={onRowActionWithInlineConfirm}
           busyRowId={busyRowId}
           previewInboxCount={previewInboxCount}
+          allowBatching={journey === 'daily'}
           onBatchVerb={onBatchVerb}
           batchBusyDomain={batchAction?.domain ?? null}
         />
