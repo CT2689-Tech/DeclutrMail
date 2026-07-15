@@ -23,7 +23,7 @@ import {
   type ActivityIterationSnapshot,
   type IterateActivityParams,
 } from './activity.read-service.js';
-import type { ActivityRow, ActivityVerbFilter } from './activity.types.js';
+import type { ActivityRow } from './activity.types.js';
 
 export interface CreateActivitySupportBundleParams {
   workspaceId: string;

@@ -24,10 +24,7 @@ import {
   useFocusTrap,
   useIsAtMost,
 } from '@declutrmail/shared';
-import {
-  activityActionLabel as sharedActivityActionLabel,
-  activityExecutionLabel as sharedActivityExecutionLabel,
-} from '@declutrmail/shared/actions';
+import { activityActionLabel as sharedActivityActionLabel } from '@declutrmail/shared/actions';
 
 import { ContextualHelp } from '@/features/help/contextual-help';
 import { ApiError } from '@/lib/api/client';
@@ -3401,10 +3398,6 @@ function Chip({
 
 function activityRowActionLabel(row: ActivityRowWire): string {
   return sharedActivityActionLabel(row.action, row.executionState);
-}
-
-function activityRowExecutionLabel(row: ActivityRowWire): string {
-  return sharedActivityExecutionLabel(row.executionState);
 }
 
 const SOURCE_LABEL: Record<ActivityRowWire['source'], string> = {
