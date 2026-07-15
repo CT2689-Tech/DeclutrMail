@@ -45,6 +45,7 @@ describe('D245 Activity support bundle contract', () => {
       'verbs',
       'dateFrom',
       'dateTo',
+      'outcomes',
     ]);
     expect(ACTIVITY_SUPPORT_TECHNICAL_RECORD_KEYS).toEqual([
       'activityId',

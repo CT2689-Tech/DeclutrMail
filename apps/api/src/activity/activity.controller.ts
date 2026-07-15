@@ -124,6 +124,7 @@ export class ActivityController {
     @Query('date_to') rawDateTo: string | undefined,
     @Query('sender_addresses') rawSenderAddresses: string | undefined,
     @Query('include_technical') rawIncludeTechnical: string | undefined,
+    @Query('outcome') rawOutcome: string | string[] | undefined,
   ): Promise<StreamableFile> {
     const filters = resolveActivityFilters({
       rawWindow,
@@ -132,6 +133,7 @@ export class ActivityController {
       rawSenderQuery,
       rawDateFrom,
       rawDateTo,
+      rawOutcome,
     });
     const stream = await this.bundles.createBundle({
       workspaceId: principal.workspaceId,
@@ -143,6 +145,7 @@ export class ActivityController {
         senderQuery: filters.senderQuery,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
+        outcomes: filters.outcomes,
       },
       includeFullSenderAddresses: resolveSenderAddressMode(rawSenderAddresses),
       includeTechnicalDetails: resolveTechnicalDetails(rawIncludeTechnical),

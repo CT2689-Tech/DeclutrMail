@@ -1383,6 +1383,7 @@ interface EditableActivityFilters {
   senderQuery: string;
   dateFrom: string | null;
   dateTo: string | null;
+  outcomes: ActivityReviewOutcomeWire[];
 }
 
 function ExportSupportBundleButton({
@@ -1453,6 +1454,7 @@ function ActivitySupportBundleDialog({
     senderQuery: initialFilters.senderQuery ?? '',
     dateFrom: initialFilters.dateFrom ?? null,
     dateTo: initialFilters.dateTo ?? null,
+    outcomes: [...(initialFilters.outcomes ?? [])],
   }));
   const [includeFullSenderAddresses, setIncludeFullSenderAddresses] = useState(false);
   const [includeTechnicalDetails, setIncludeTechnicalDetails] = useState(false);
@@ -1581,6 +1583,33 @@ function ActivitySupportBundleDialog({
                 }
                 senderSearchDebounceMs={0}
               />
+              {draft.outcomes.length > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    marginTop: 10,
+                    color: color.fgSoft,
+                    fontSize: 12,
+                  }}
+                >
+                  <span>Review outcome: {draft.outcomes.join(', ')}</span>
+                  <button
+                    type="button"
+                    onClick={() => setDraft((current) => ({ ...current, outcomes: [] }))}
+                    style={{
+                      color: color.primary,
+                      background: 'none',
+                      border: 0,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Include all outcomes
+                  </button>
+                </div>
+              )}
             </div>
             {invalidRange && (
               <div role="alert" style={{ marginTop: 8, color: color.danger, fontSize: 12 }}>

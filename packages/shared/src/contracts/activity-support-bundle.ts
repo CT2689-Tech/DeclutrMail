@@ -33,6 +33,7 @@ export const ACTIVITY_SUPPORT_TECHNICAL_FILTER_KEYS = [
   'verbs',
   'dateFrom',
   'dateTo',
+  'outcomes',
 ] as const;
 
 export const ACTIVITY_SUPPORT_TECHNICAL_RECORD_KEYS = [

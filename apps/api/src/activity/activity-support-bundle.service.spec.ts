@@ -104,6 +104,7 @@ const FILTERS: CreateActivitySupportBundleParams['filters'] = {
   senderQuery: 'private-search@example.com',
   dateFrom: null,
   dateTo: null,
+  outcomes: ['failed'],
 };
 
 describe('ActivitySupportBundleService', () => {
@@ -131,6 +132,7 @@ describe('ActivitySupportBundleService', () => {
     expect(files['summary.txt']).toContain('Mailbox: owner@example.com');
     expect(files['summary.txt']).toContain('Records: 2');
     expect(files['summary.txt']).toContain('Sender search: Applied');
+    expect(files['summary.txt']).toContain('Outcomes: failed');
     expect(files['summary.txt']).not.toContain('private-search@example.com');
   });
 
@@ -152,6 +154,7 @@ describe('ActivitySupportBundleService', () => {
     expect(Object.keys(technical.filters as object)).toEqual(
       ACTIVITY_SUPPORT_TECHNICAL_FILTER_KEYS,
     );
+    expect(technical.filters).toMatchObject({ outcomes: ['failed'] });
     const records = technical.records as Array<Record<string, unknown>>;
     expect(records).toHaveLength(2);
     for (const record of records) {

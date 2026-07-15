@@ -215,6 +215,7 @@ export class ActivitySupportBundleService {
       `Actions: ${actionFilter}`,
       `Date from: ${filters.dateFrom?.toISOString() ?? 'Not set'}`,
       `Date to: ${filters.dateTo?.toISOString() ?? 'Not set'}`,
+      `Outcomes: ${filters.outcomes?.length ? filters.outcomes.join(', ') : 'All'}`,
       `Sender search: ${filters.senderQuery ? 'Applied' : 'Not applied'}`,
       `Sender addresses: ${context.includeFullSenderAddresses ? 'Full (explicitly included)' : 'Masked'}`,
       `Technical details: ${context.includeTechnicalDetails ? 'Included' : 'Not included'}`,
@@ -300,6 +301,7 @@ function technicalHeader(context: {
     verbs: readParams.verbs ?? [],
     dateFrom: readParams.dateFrom?.toISOString() ?? null,
     dateTo: readParams.dateTo?.toISOString() ?? null,
+    outcomes: readParams.outcomes ?? [],
   };
   return `{"bundleFormat":${JSON.stringify(ACTIVITY_SUPPORT_BUNDLE_FORMAT)},"generatedAt":${JSON.stringify(context.generatedAt.toISOString())},"mailboxId":${JSON.stringify(context.mailbox.id)},"filters":${JSON.stringify(filters)},"records":[`;
 }

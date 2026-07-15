@@ -77,6 +77,7 @@ describe('ActivityController support bundle', () => {
       '2026-07-01T00:00:00.000Z',
       'full',
       'true',
+      'failed,protected',
     );
 
     expect(bundles.createBundle).toHaveBeenCalledWith({
@@ -89,6 +90,7 @@ describe('ActivityController support bundle', () => {
         senderQuery: 'sender search',
         dateFrom: new Date('2026-06-01T00:00:00.000Z'),
         dateTo: new Date('2026-07-01T00:00:00.000Z'),
+        outcomes: ['failed', 'protected'],
       },
       includeFullSenderAddresses: true,
       includeTechnicalDetails: true,
@@ -114,6 +116,7 @@ describe('ActivityController support bundle', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
     );
 
     expect(bundles.createBundle).toHaveBeenCalledWith(
@@ -125,6 +128,7 @@ describe('ActivityController support bundle', () => {
           senderQuery: '',
           dateFrom: null,
           dateTo: null,
+          outcomes: [],
         },
         includeFullSenderAddresses: false,
         includeTechnicalDetails: false,
@@ -149,6 +153,7 @@ describe('ActivityController support bundle', () => {
         undefined,
         flags.senderAddresses,
         flags.technical,
+        undefined,
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
   });

@@ -597,7 +597,7 @@ describe('ActivityScreen — populated', () => {
   });
 
   it('sends edited filters and independent privacy opt-ins, then shows a recoverable error', async () => {
-    currentSearch = 'verb=archive';
+    currentSearch = 'verb=archive&outcome=failed';
     let exportUrl: URL | null = null;
     let exportRequest: Request | null = null;
     installFetchStub([
@@ -620,6 +620,7 @@ describe('ActivityScreen — populated', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Export support bundle' }));
     const dialog = screen.getByRole('dialog', { name: 'Export Activity support bundle' });
+    expect(within(dialog).getByText(/review outcome: failed/i)).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Autopilot' }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Archived' }));
     const senderSearch = within(dialog).getByRole('searchbox', { name: 'Search sender' });
@@ -639,6 +640,7 @@ describe('ActivityScreen — populated', () => {
     expect(exportUrl!.searchParams.get('source')).toBe('autopilot');
     expect(exportUrl!.searchParams.has('verb')).toBe(false);
     expect(exportUrl!.searchParams.get('sender_q')).toBe('edited@example.com');
+    expect(exportUrl!.searchParams.get('outcome')).toBe('failed');
     expect(exportUrl!.searchParams.get('sender_addresses')).toBe('full');
     expect(exportUrl!.searchParams.get('include_technical')).toBe('true');
     expect(exportRequest!.headers.get('x-active-mailbox-id')).toBe(

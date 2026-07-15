@@ -25,6 +25,9 @@ export async function downloadActivitySupportBundle(
   if (request.filters.senderQuery) query.set('sender_q', request.filters.senderQuery);
   if (request.filters.dateFrom) query.set('date_from', request.filters.dateFrom);
   if (request.filters.dateTo) query.set('date_to', request.filters.dateTo);
+  if (request.filters.outcomes && request.filters.outcomes.length > 0) {
+    query.set('outcome', request.filters.outcomes.join(','));
+  }
   query.set('sender_addresses', request.includeFullSenderAddresses ? 'full' : 'masked');
   query.set('include_technical', request.includeTechnicalDetails ? 'true' : 'false');
 
