@@ -13,7 +13,11 @@ import type {
 
 import { AutopilotReadService } from '../autopilot/autopilot.read-service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { TriageReadService, type TriageQueueRow } from '../triage/triage.read-service.js';
+import {
+  TriageReadService,
+  type TriageQueueOrdering,
+  type TriageQueueRow,
+} from '../triage/triage.read-service.js';
 import { ONBOARDING_PRESET_CATALOG } from './onboarding.types.js';
 
 /**
@@ -163,6 +167,7 @@ export class OnboardingService {
     const queue = await this.triageReads.listQueue({
       mailboxAccountId,
       limit: FIRST_TRIAGE_POOL_LIMIT,
+      ordering: firstTriageQueueOrdering(readGoal(prefs)),
     });
 
     let pinnedKeys = readStringArray(prefs[PREF_FIRST_TRIAGE_KEYS]);
@@ -222,6 +227,19 @@ export class OnboardingService {
     const current = await this.findUser(userId);
     const merged = { ...(current.preferences as Record<string, unknown>), ...patch };
     await this.db.update(users).set({ preferences: merged }).where(eq(users.id, userId));
+  }
+}
+
+function firstTriageQueueOrdering(goal: OnboardingGoal | null): TriageQueueOrdering {
+  switch (goal) {
+    case 'protect_important':
+      return 'important-first';
+    case 'reduce_newsletters':
+      return 'newsletter-first';
+    case 'clear_old_promotions':
+      return 'promotions-first';
+    case null:
+      return 'actionable';
   }
 }
 

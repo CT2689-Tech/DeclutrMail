@@ -54,6 +54,10 @@ export interface TriageQueueRow {
   totalAllTime: number;
 }
 
+/** Optional presentation ordering applied before the queue limit. */
+export type TriageQueueOrdering =
+  'actionable' | 'important-first' | 'newsletter-first' | 'promotions-first';
+
 /**
  * D214 — the "Today" strip atop Triage. Situational awareness for the
  * daily ritual, computed from real rows (no fake completion §10):
@@ -100,6 +104,37 @@ export interface TriageSessionStats {
 export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
 
 /**
+ * Retrieval priority for finite, goal-led queue windows. The normal
+ * Triage surface keeps its destructive-first D227 order; onboarding
+ * can move the evidence relevant to the selected relief goal ahead of
+ * the SQL limit, then apply its richer signal ordering in memory.
+ */
+function queueGoalPriority(ordering: TriageQueueOrdering) {
+  switch (ordering) {
+    case 'important-first':
+      return sql`CASE
+        WHEN ${senderPolicies.isProtected} = true
+          OR ${senderPolicies.protectionReason} IS NOT NULL
+          OR ${triageDecisions.verdict} = 'keep'
+        THEN 0 ELSE 1 END`;
+    case 'newsletter-first':
+      return sql`CASE
+        WHEN ${triageDecisions.verdict} = 'unsubscribe' THEN 0
+        WHEN ${senders.gmailCategory} = 'promotions' THEN 1
+        ELSE 2 END`;
+    case 'promotions-first':
+      return sql`CASE
+        WHEN ${senders.gmailCategory} = 'promotions'
+          AND ${triageDecisions.verdict} IN ('archive', 'later') THEN 0
+        WHEN ${senders.gmailCategory} = 'promotions' THEN 1
+        WHEN ${triageDecisions.verdict} IN ('archive', 'later') THEN 2
+        ELSE 3 END`;
+    case 'actionable':
+      return null;
+  }
+}
+
+/**
  * TriageReadService (D20, D29, D33, D204).
  *
  * READ-ONLY per D204: this service NEVER mutates `triage_decisions`.
@@ -139,7 +174,11 @@ export class TriageReadService {
    * verbs first so the user makes the highest-impact decisions while
    * attention is fresh.
    */
-  async listQueue(input: { mailboxAccountId: string; limit: number }): Promise<TriageQueueRow[]> {
+  async listQueue(input: {
+    mailboxAccountId: string;
+    limit: number;
+    ordering?: TriageQueueOrdering;
+  }): Promise<TriageQueueRow[]> {
     // The CASE ordering encodes the verdict priority. `confidence` is
     // a numeric text on the wire — cast to numeric so DESC sorts as a
     // number, not lex.
@@ -150,6 +189,10 @@ export class TriageReadService {
         WHEN 'later'       THEN 2
         WHEN 'keep'        THEN 3
       END`;
+    const goalPriority = queueGoalPriority(input.ordering ?? 'actionable');
+    const queueOrder = goalPriority
+      ? [goalPriority, verdictPriority, desc(triageDecisions.confidence), triageDecisions.senderKey]
+      : [verdictPriority, desc(triageDecisions.confidence)];
 
     // Exclude senders the user has already decided on within the D30
     // window — the "decided" record is the K/A/U/L/D `activity_log` row
@@ -206,7 +249,7 @@ export class TriageReadService {
         ),
       )
       .where(and(eq(triageDecisions.mailboxAccountId, input.mailboxAccountId), notDecidedRecently))
-      .orderBy(verdictPriority, desc(triageDecisions.confidence))
+      .orderBy(...queueOrder)
       .limit(input.limit);
 
     if (rows.length === 0) {

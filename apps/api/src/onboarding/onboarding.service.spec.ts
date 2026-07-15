@@ -318,6 +318,26 @@ describe('OnboardingService', () => {
       expect(read.rows.map((r) => r.senderKey)).toEqual(['k1', 'u1']);
     });
 
+    it('finds important senders beyond the default destructive-first queue window', async () => {
+      await service.submitPresetPicks(userId, mailboxId, 'protect_important', []);
+      for (let index = 0; index < 51; index += 1) {
+        await seedDecision(db, mailboxId, {
+          senderKey: `archive-${index.toString().padStart(2, '0')}`,
+          verdict: 'archive',
+          confidence: 0.99,
+        });
+      }
+      await seedDecision(db, mailboxId, {
+        senderKey: 'important-keep',
+        verdict: 'keep',
+        confidence: 0.4,
+      });
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      expect(read.rows[0]?.senderKey).toBe('important-keep');
+      expect(read.rows).toHaveLength(5);
+    });
+
     it('the pinned set survives a new higher-confidence decision appearing', async () => {
       await seedDecision(db, mailboxId, { senderKey: 'a1', verdict: 'archive', confidence: 0.8 });
       await seedDecision(db, mailboxId, { senderKey: 'a2', verdict: 'archive', confidence: 0.7 });
