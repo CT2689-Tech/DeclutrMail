@@ -142,7 +142,23 @@ below with the last commit, green checks, and exact next unchecked slice.
   edit introduced after this dev DB had already applied the old 0006 —
   this also cleared the failing auto-protect sweep / red sync banner.
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Last commit: `df8af6aa` (`fix(activity): export review rows truthfully
-(D246)`).
-- Next slice: founder review of the smoke report, then move draft PR #334
-  to ready.
+- Follow-up slice (2026-07-15, founder go-ahead): fixed the smoke's
+  non-blocking observations, each with red→green coverage and a dev
+  re-smoke:
+  - weekly review / evidence links no longer count user-reverted (Undo)
+    actions as completed or recovered (the undo-journal join is durable
+    for every 7-day review window; older custom ranges lose provenance
+    at journal prune, by design);
+  - onboarding completion copy is tier-aware (Free caveat only on Free;
+    tier-unknown makes no capability claim) — smoked as the Pro user via
+    a reversible onboarding reset (state restored byte-exact);
+  - Activity mobile cards use longhand borders (clears the D60
+    border/borderBottom React dev warning; console clean on mobile);
+  - `codex/<kebab>` sanctioned in `.husky/pre-push` +
+    `branch-name.yml` (founder call — closes the FOUNDER-FOLLOWUPS
+    entry and the PR's only red CI check).
+    The fourth observation — 187 `gmail_important` auto-protections
+    including promos — is spec-faithful D245 behavior (an allowed strong
+    signal), left unchanged; tuning it is a plan decision, not a defect.
+- Next slice: merge PR #334 (founder-approved once these fixes are
+  green).
