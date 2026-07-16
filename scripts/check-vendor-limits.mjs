@@ -198,7 +198,23 @@ async function checkUpstash() {
   if (!Array.isArray(dbs) || dbs.length === 0) {
     return { status: 'ERROR', detail: 'no Redis databases visible to this API key' };
   }
-  // Single prod Redis today — check the first database.
+  // Lifecycle state FIRST — a budget-suspended DB reports 0 commands, so a
+  // volume-only gauge reads it as "0% OK" while production drowns in
+  // "database has been suspended" ReplyErrors (prod incident 2026-07-15:
+  // login + all sync down for hours, watchdog stayed green). Upstash marks
+  // a healthy DB `state: 'active'`; anything else (suspended/disabled/
+  // deleted) is a hard BREACH regardless of usage. Scan EVERY DB so a
+  // non-first prod database can't hide behind an idle one.
+  const notActive = dbs.filter((db) => (db.state ?? 'active') !== 'active');
+  if (notActive.length > 0) {
+    return {
+      status: 'BREACH',
+      detail: notActive
+        .map((db) => `${db.database_name ?? db.database_id}: state=${db.state}`)
+        .join('; '),
+    };
+  }
+  // All active — gauge command volume on the primary (single prod Redis).
   const db = dbs[0];
   const stats = await httpJson(`https://api.upstash.com/v2/redis/stats/${db.database_id}`, {
     headers,
@@ -423,10 +439,18 @@ async function runVendor(vendor) {
   try {
     return { name: vendor.name, ...(await vendor.check()) };
   } catch (err) {
+    // A request TIMEOUT is transient degraded-observability, not a
+    // breach — classify it WARN so one flaky vendor API (e.g. Vercel's
+    // billing endpoint, which times out most days) can't turn the whole
+    // run red daily and train the operator to ignore it. That habitual
+    // red is exactly what masked the 2026-07-15 Upstash suspension. A
+    // real limit breach returns BREACH from its gauge and still exits 1;
+    // a genuine config/auth failure still surfaces as ERROR below.
+    const isTimeout = err?.name === 'TimeoutError' || /timeout|aborted/i.test(String(err?.message));
     return {
       name: vendor.name,
-      status: 'ERROR',
-      detail: String(err?.message ?? err).slice(0, 300),
+      status: isTimeout ? 'WARN' : 'ERROR',
+      detail: `${isTimeout ? 'transient: ' : ''}${String(err?.message ?? err).slice(0, 300)}`,
     };
   }
 }

@@ -26,6 +26,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-15 — Un-suspend prod Upstash Redis (login + all sync are DOWN)
+**Source:** session (prod login incident triage)
+**Why:** Prod Upstash Redis is budget-suspended — the API logs flood with `ReplyError: ERR This database has been suspended for exceeding the defined budget limit` (30,597 in one hour). With Redis dead, BullMQ enqueue fails and the worker processes zero jobs, so no mailbox ever reaches `readiness = ready`; the onboarding sync gate spins forever, presenting as "can't log in / stuck at spinner." No code change substitutes for a suspended external Redis — this is a billing action only the founder can take.
+**How:** Open https://console.upstash.com → the prod Redis DB (`declutrmail-v2-bullmq`) → raise the budget limit, OR switch it to a **Fixed plan**. It resumes immediately once budget is cleared. Then confirm a real login completes and a fresh sync reaches ready.
+**Verifies by:** API logs stop emitting the "suspended" ReplyError; `applyAutomaticProtection` sweeps succeed; a test-login onboarding gate advances to /senders. (PR #337 makes the daily watchdog BREACH on this state so the next suspension pages instead of hiding.)
+**Status:** Open
+
 ### 2026-07-13 — Ratify `ErrorState` onto the D220 launch allowlist
 **Source:** PR #325 design-system gate review
 **Why:** The branch promotes a shared `ErrorState` component
