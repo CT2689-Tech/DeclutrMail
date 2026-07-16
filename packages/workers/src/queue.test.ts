@@ -196,7 +196,7 @@ describe('ensureInitialSyncJob', () => {
 describe('workerTuningOptions', () => {
   it('returns safe defaults per profile when env is unset', () => {
     expect(workerTuningOptions('user-facing', {})).toEqual({
-      drainDelay: 10,
+      drainDelay: 60,
       stalledInterval: 60_000,
     });
     expect(workerTuningOptions('cron', {})).toEqual({
@@ -205,7 +205,7 @@ describe('workerTuningOptions', () => {
     });
   });
 
-  it('parses env overrides, clamps user-facing drainDelay to 10s, falls back on garbage', () => {
+  it('parses env overrides, clamps user-facing drainDelay to 60s, falls back on garbage', () => {
     const env = {
       WORKER_DRAIN_DELAY_SEC: '5',
       WORKER_STALLED_INTERVAL_MS: 'not-a-number',
@@ -220,9 +220,11 @@ describe('workerTuningOptions', () => {
       drainDelay: 120,
       stalledInterval: 600_000,
     });
-    // Snappy-pickup invariant: env can never push user-facing past 10s.
-    expect(workerTuningOptions('user-facing', { WORKER_DRAIN_DELAY_SEC: '60' }).drainDelay).toBe(
-      10,
+    // Fat-finger ceiling: env can never push user-facing past 60s
+    // (raised from 10s in the 2026-07-15 Upstash cost cut). Pickup is
+    // marker-driven, so the ceiling only bounds the idle-repoll fallback.
+    expect(workerTuningOptions('user-facing', { WORKER_DRAIN_DELAY_SEC: '600' }).drainDelay).toBe(
+      60,
     );
   });
 
