@@ -1,13 +1,13 @@
 'use client';
 
-import { Avatar, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Avatar, Button, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 import type { ReactNode } from 'react';
 
 import { ActionPreviewPresentation, type PreviewCount } from './action-preview-presentation';
 import { ActionToolbar } from './action-toolbar';
 import { canArchive, canLater, type TriageDecisionRow } from './data';
-import { verdictToVerb, type ActionVerb, type TriageVerdict } from './types';
+import { VERB_SHORTCUT, verdictToVerb, type ActionVerb, type TriageVerdict } from './types';
 import { TriageRowExpanded } from './triage-row-expanded';
 import { useSwipeVerb, type SwipeVerb } from './use-swipe-verb';
 
@@ -364,14 +364,18 @@ export function TriageRow({
 
       {/* D37 mobile card — the four verb buttons render full-width at
           the bottom of the card, collapsed AND expanded (the desktop
-          toolbar only mounts on expand). One toolbar instance either
-          way, so the K/A/U/L key listener never doubles up. */}
+          toolbar only mounts on expand). Keyboard is EXPANDED-ROW ONLY:
+          every narrow row mounts a toolbar, so an unconditional
+          keyboardEnabled put one window keydown listener PER ROW — a
+          single 'K' press dispatched Keep for the whole queue
+          (2026-07-16 audit). Buttons stay live on collapsed rows;
+          only the key listener is gated. */}
       {isNarrow && (
         <div style={{ padding: expanded ? '12px 14px 0' : '0 14px 12px' }}>
           <ActionToolbar
             row={row}
             onAction={onAction}
-            keyboardEnabled={!actionsDisabled}
+            keyboardEnabled={expanded && !actionsDisabled}
             disabled={actionsDisabled}
           />
           {/* D37 hint layer — gestures are invisible without it. */}
@@ -417,6 +421,33 @@ export function TriageRow({
                 mode="inline"
                 accountContext={inlinePreviewAccountContext}
               />
+              {/* Explicit confirm affordance (2026-07-16 audit): before
+                  this bar, confirming meant an UNDOCUMENTED second click
+                  on the same verb — users read the preview and believed
+                  the action fired. The button routes through the same
+                  onAction path, so the screen's same-verb confirm logic
+                  is unchanged. */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  marginTop: 10,
+                }}
+              >
+                <Button tone="primary" size="sm" onClick={() => onAction(inlinePreview.verb)}>
+                  Confirm {inlinePreview.verb}
+                </Button>
+                <span
+                  style={{
+                    fontFamily: font.mono,
+                    fontSize: 11,
+                    color: color.fgMuted,
+                  }}
+                >
+                  or press {VERB_SHORTCUT[inlinePreview.verb]} again · Esc cancels
+                </span>
+              </div>
             </div>
           )}
         </div>

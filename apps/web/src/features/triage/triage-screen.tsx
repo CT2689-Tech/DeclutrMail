@@ -344,6 +344,8 @@ export function TriageScreen({
       ? compositePreview.data.counts.all
       : 'loading';
   const trackedPreviews = useRef(new Set<string>());
+  /** Same-tick dispatch latch — see dispatchAction. */
+  const dispatchLatchRef = useRef(false);
   useEffect(() => {
     if (pendingAction == null || typeof previewInboxCount !== 'number') return;
     const key = `${pendingAction.rowId}:${pendingAction.verb}`;
@@ -428,6 +430,19 @@ export function TriageScreen({
       details: ConfirmDetails | undefined,
       source: 'sheet' | 'inline',
     ) => {
+      // Synchronous same-tick latch. The state/isPending guard below
+      // reads the RENDER snapshot, so N handlers firing in one keydown
+      // dispatch (e.g. stacked listeners) would all pass it before any
+      // re-render. The ref flips immediately and resets on the next
+      // microtask — same-tick duplicates die here, sequential use is
+      // unaffected. (2026-07-16 audit: one 'K' press dispatched Keep
+      // for every queue row on narrow viewports.)
+      if (dispatchLatchRef.current) return;
+      dispatchLatchRef.current = true;
+      queueMicrotask(() => {
+        dispatchLatchRef.current = false;
+      });
+
       clearPending();
 
       // Re-entry guard — one decision confirms at a time (mirrors the
