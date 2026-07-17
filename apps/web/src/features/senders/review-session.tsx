@@ -522,8 +522,9 @@ function ReviewRow({
   onFocus: () => void;
 }) {
   const why = [
-    `${Math.round(s.read * 100)}% read`,
-    `${s.monthly}/mo`,
+    // `null` readRate = no timeseries yet — omit rather than claim 0%.
+    s.readRate !== null ? `${Math.round(s.readRate * 100)}% read` : null,
+    `${s.monthlyVolume ?? 0}/mo`,
     s.lastDays > 14 ? `last open ${Math.round(s.lastDays / 7)}w ago` : null,
   ]
     .filter((b): b is string => b != null)
@@ -579,7 +580,7 @@ function ReviewRow({
           color: color.fg,
         }}
       >
-        {s.monthly}
+        {s.monthlyVolume ?? 0}
         <small
           style={{
             display: 'block',

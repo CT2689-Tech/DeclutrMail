@@ -4,42 +4,22 @@
 // the FE literal maps EXACTLY. A drift here (e.g. `'llm'` vs the real
 // `'llm_haiku'`, or a dropped protection flag) compiles fine but renders
 // blank / mis-buckets in production — these tests catch that class.
+//
+// The list-row adapter is GONE (2026-07-16 wire unification):
+// `enrichSenderRow` spreads the wire row, covered by
+// `../data.test.ts`. What remains here is the Sender Detail
+// composition + the small per-row adapters it folds in.
 
 import { describe, expect, it } from 'vitest';
+import type { DecisionHistoryRowDto, MailMessageRow, TimeseriesPointDto } from '@/lib/api/senders';
+import { makeSenderRow } from '../testing/make-sender';
 import {
   adaptDecisionHistoryRow,
+  adaptMailMessageRow,
   adaptProtectionReason,
   adaptSenderDetail,
-  adaptSenderListRow,
+  adaptTimeseriesPoint,
 } from './adapters';
-import { canArchive, canLater, canUnsubscribe, isStandingProtected } from '../data';
-import { derivePrimaryVerbId } from '../action-row';
-import type { DecisionHistoryRowDto, SenderDetailDto, SenderListRow } from '@/lib/api/senders';
-
-function listRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
-  return {
-    id: 's1',
-    displayName: 'Acme',
-    email: 'hello@acme.com',
-    domain: 'acme.com',
-    gmailCategory: 'promotions',
-    firstSeenAt: '2025-01-01T00:00:00.000Z',
-    lastSeenAt: '2026-05-01T00:00:00.000Z',
-    totalReceived: 144,
-    repliedCount: 0,
-    monthlyVolume: 12,
-    readRate: 0.1,
-    volumeTrend: 'steady',
-    unsubscribeMethod: 'one_click',
-    lastReview: null,
-    protectionFlags: {
-      isProtected: false,
-      protectionReason: null,
-      protectionSetAt: null,
-    },
-    ...overrides,
-  };
-}
 
 function historyRow(overrides: Partial<DecisionHistoryRowDto> = {}): DecisionHistoryRowDto {
   return {
@@ -53,8 +33,18 @@ function historyRow(overrides: Partial<DecisionHistoryRowDto> = {}): DecisionHis
   };
 }
 
-function detailRow(overrides: Partial<SenderDetailDto> = {}): SenderDetailDto {
-  return { ...listRow(), ...overrides };
+function messageRow(overrides: Partial<MailMessageRow> = {}): MailMessageRow {
+  return {
+    id: 'm1',
+    providerMessageId: 'prov-m1',
+    providerThreadId: 'thread-m1',
+    subject: 'Your statement is ready',
+    snippet: 'Charges totaled $42.18 across 3 transactions.',
+    internalDate: '2026-06-20T10:00:00.000Z',
+    isUnread: true,
+    sizeBytes: 8742,
+    ...overrides,
+  };
 }
 
 describe('adaptDecisionHistoryRow — provenance label (generatedBy)', () => {
@@ -71,6 +61,15 @@ describe('adaptDecisionHistoryRow — provenance label (generatedBy)', () => {
     expect(row.source).toBe('System');
   });
 
+  it('maps every verdict to its past-tense action label', () => {
+    expect(adaptDecisionHistoryRow(historyRow({ verdict: 'keep' })).action).toBe('Kept');
+    expect(adaptDecisionHistoryRow(historyRow({ verdict: 'archive' })).action).toBe('Archived');
+    expect(adaptDecisionHistoryRow(historyRow({ verdict: 'unsubscribe' })).action).toBe(
+      'Unsubscribe requested',
+    );
+    expect(adaptDecisionHistoryRow(historyRow({ verdict: 'later' })).action).toBe('Moved to Later');
+  });
+
   it('never produces an undefined source', () => {
     for (const generatedBy of ['llm_haiku', 'template'] as const) {
       expect(adaptDecisionHistoryRow(historyRow({ generatedBy })).source).toBeDefined();
@@ -78,78 +77,34 @@ describe('adaptDecisionHistoryRow — provenance label (generatedBy)', () => {
   });
 });
 
-describe('adaptSenderListRow — protection flags (D42/D43)', () => {
-  it('surfaces isProtected → Sender.protected', () => {
-    const s = adaptSenderListRow(
-      listRow({
-        protectionFlags: {
-          isProtected: true,
-          protectionReason: 'user_defined',
-          protectionSetAt: '2026-04-01T00:00:00.000Z',
-        },
-      }),
-    );
-    expect(s.protected).toBe(true);
+describe('adaptMailMessageRow — recent-message projection', () => {
+  it('maps the wire fields onto the FE row (thread id, unread flag, received-at)', () => {
+    const row = adaptMailMessageRow(messageRow());
+    expect(row).toEqual({
+      id: 'm1',
+      providerMessageId: 'prov-m1',
+      threadId: 'thread-m1',
+      subject: 'Your statement is ready',
+      snippet: 'Charges totaled $42.18 across 3 transactions.',
+      receivedAt: '2026-06-20T10:00:00.000Z',
+      sizeBytes: 8742,
+      hasAttachment: false,
+      unread: true,
+    });
   });
 
-  it('defaults protected to false when the policy is empty', () => {
-    const s = adaptSenderListRow(listRow());
-    expect(s.protected).toBe(false);
+  it('forwards a null sizeBytes verbatim — the renderer owns the em-dash', () => {
+    expect(adaptMailMessageRow(messageRow({ sizeBytes: null })).sizeBytes).toBeNull();
   });
+});
 
-  it('carries unsubscribeMethod through so the row can derive unsub-ready (ADR-0019)', () => {
-    // Regression: the adapter used to drop this field, leaving the
-    // action row's `unsub_ready` fact permanently false — the primary
-    // CTA could never derive Unsubscribe from the wire.
-    expect(adaptSenderListRow(listRow({ unsubscribeMethod: 'one_click' })).unsubscribeMethod).toBe(
-      'one_click',
-    );
-    expect(adaptSenderListRow(listRow({ unsubscribeMethod: 'mailto' })).unsubscribeMethod).toBe(
-      'mailto',
-    );
-    expect(adaptSenderListRow(listRow({ unsubscribeMethod: null })).unsubscribeMethod).toBeNull();
-  });
-
-  it('carries the REAL total_received to Sender.total — never monthly × 12', () => {
-    // Regression guard for the fabrication removal: `total` must be the
-    // factual all-time count, not the old `monthly × 12` synthesis (which
-    // would have produced 36 here, not 144).
-    const s = adaptSenderListRow(listRow({ totalReceived: 144, monthlyVolume: 3 }));
-    expect(s.total).toBe(144);
-  });
-
-  it('shields a Protected sender from every destructive action', () => {
-    const protectedSender = adaptSenderListRow(
-      listRow({
-        protectionFlags: {
-          isProtected: true,
-          protectionReason: 'user_defined',
-          protectionSetAt: '2026-04-01T00:00:00.000Z',
-        },
-      }),
-    );
-    expect(protectedSender.protected).toBe(true);
-    expect(isStandingProtected(protectedSender)).toBe(true);
-    expect(canArchive(protectedSender)).toBe(false);
-    expect(canLater(protectedSender)).toBe(false);
-    expect(canUnsubscribe(protectedSender)).toBe(false);
-    expect(derivePrimaryVerbId(protectedSender)).toBe('keep');
-  });
-
-  it('retains confidence as review metadata without using it for the primary action', () => {
-    const s = adaptSenderListRow(
-      listRow({
-        unsubscribeMethod: 'none',
-        lastReview: {
-          at: '2026-05-01T00:00:00.000Z',
-          verdict: 'unsubscribe',
-          generatedBy: 'llm_haiku',
-          confidence: 0.6,
-        },
-      }),
-    );
-    expect(s.lastReview?.confidence).toBe(0.6);
-    expect(derivePrimaryVerbId(s)).toBe('keep');
+describe('adaptTimeseriesPoint — readCount → opens', () => {
+  it('maps the wire point onto the FE chart point', () => {
+    expect(adaptTimeseriesPoint({ yearMonth: '2026-06-01', volume: 20, readCount: 3 })).toEqual({
+      yearMonth: '2026-06-01',
+      volume: 20,
+      opens: 3,
+    });
   });
 });
 
@@ -163,26 +118,28 @@ describe('adaptProtectionReason — explainable automatic protection', () => {
     expect(adaptProtectionReason(true, wire)).toBe(expected);
   });
 
+  it('falls back to user-marked when protected but the wire omits the reason', () => {
+    expect(adaptProtectionReason(true, null)).toBe('user-marked');
+  });
+
   it('hides the retained memory-pin reason after manual Unprotect', () => {
     expect(adaptProtectionReason(false, 'replied')).toBeNull();
   });
 });
 
-describe('adaptSenderDetail — live data never falls back to fixtures', () => {
+describe('adaptSenderDetail — honest wire composition', () => {
+  const NOW = Date.parse('2026-06-01T00:00:00.000Z');
+
   it('maps the real wire category and withholds recommendations absent from the contract', () => {
     // These facts would make the old fixture builder synthesize a
     // recommendation. The live DTO does not carry one, so the adapter
     // must return null rather than presenting invented product data.
     const detail = adaptSenderDetail({
-      detail: detailRow({
-        gmailCategory: 'social',
-        monthlyVolume: 40,
-        readRate: 0,
-      }),
+      detail: makeSenderRow({ gmailCategory: 'social', monthlyVolume: 40, readRate: 0 }),
       messages: [],
       timeseries: [],
       history: [],
-      now: new Date('2026-06-01T00:00:00.000Z').getTime(),
+      now: NOW,
     });
 
     expect(detail.gmailCategory).toBe('Gmail: Social');
@@ -190,5 +147,60 @@ describe('adaptSenderDetail — live data never falls back to fixtures', () => {
     expect(detail.recentMessages).toEqual([]);
     expect(detail.timeseries).toEqual([]);
     expect(detail.history).toEqual([]);
+  });
+
+  it('preserves readRate: null — "we don\'t know" never becomes 0%', () => {
+    const detail = adaptSenderDetail({
+      detail: makeSenderRow({ readRate: null }),
+      messages: [],
+      timeseries: [],
+      history: [],
+      now: NOW,
+    });
+    expect(detail.stats.readRate).toBeNull();
+    expect(detail.sender.readRate).toBeNull();
+  });
+
+  it('rides repliedCount through to the sender model (the old adapter dropped it)', () => {
+    const detail = adaptSenderDetail({
+      detail: makeSenderRow({ repliedCount: 7 }),
+      messages: [],
+      timeseries: [],
+      history: [],
+      now: NOW,
+    });
+    expect(detail.sender.repliedCount).toBe(7);
+  });
+
+  it('surfaces the protection flags through the reason mapping', () => {
+    const detail = adaptSenderDetail({
+      detail: makeSenderRow({
+        protectionFlags: {
+          isProtected: true,
+          protectionReason: 'gmail_important',
+          protectionSetAt: '2026-04-01T00:00:00.000Z',
+        },
+      }),
+      messages: [],
+      timeseries: [],
+      history: [],
+      now: NOW,
+    });
+    expect(detail.isProtected).toBe(true);
+    expect(detail.protectionReason).toBe('gmail-important');
+    expect(detail.sender.protectionFlags.isProtected).toBe(true);
+  });
+
+  it('folds the child responses through the per-row adapters', () => {
+    const detail = adaptSenderDetail({
+      detail: makeSenderRow(),
+      messages: [messageRow()],
+      timeseries: [{ yearMonth: '2026-05-01', volume: 8, readCount: 2 } as TimeseriesPointDto],
+      history: [historyRow()],
+      now: NOW,
+    });
+    expect(detail.recentMessages[0]?.threadId).toBe('thread-m1');
+    expect(detail.timeseries[0]?.opens).toBe(2);
+    expect(detail.history[0]?.action).toBe('Unsubscribe requested');
   });
 });

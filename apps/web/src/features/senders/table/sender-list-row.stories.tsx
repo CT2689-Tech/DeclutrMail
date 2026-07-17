@@ -20,7 +20,8 @@
 
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
-import type { Sender, VolumeTrend, SenderLastReview } from '../data';
+import type { VolumeTrend, SenderLastReview } from '../data';
+import { makeSender } from '../testing/make-sender';
 import { SenderListRow } from './sender-list-row';
 
 const { color } = tokens;
@@ -58,23 +59,15 @@ export default meta;
 type RowArgs = ComponentProps<typeof SenderListRow>;
 
 /** Build a deterministic sender for the row stories. */
-function sender(overrides: Partial<Sender> = {}): Sender {
-  return {
+const sender: typeof makeSender = (overrides = {}) =>
+  makeSender({
     id: 'story-sender',
-    name: 'Acme Newsletter',
-    domain: 'acme.com',
-    monthly: 12,
-    group: 'updates',
-    read: 0.2,
-    spark: [3, 3, 3, 3],
+    displayName: 'Acme Newsletter',
+    gmailCategory: 'updates',
     lastDays: 4,
-    unread: 0,
     firstSeenMo: 18,
-    volumeTrend: 'steady',
-    lastReview: null,
     ...overrides,
-  };
-}
+  });
 
 /** Default row container — gives the row visible chrome at full width. */
 function frame(args: RowArgs, width: number | string = '100%') {
@@ -113,7 +106,7 @@ export const Default: Story<typeof SenderListRow> = {
 export const TrendUp: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,
-    s: sender({ name: 'Ramping Inc', monthly: 22, volumeTrend: 'up' }),
+    s: sender({ displayName: 'Ramping Inc', monthlyVolume: 22, volumeTrend: 'up' }),
   },
   render: (args: RowArgs) => frame(args),
 };
@@ -122,7 +115,7 @@ export const TrendUp: Story<typeof SenderListRow> = {
 export const TrendDown: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,
-    s: sender({ name: 'Fading Co', monthly: 5, volumeTrend: 'down' }),
+    s: sender({ displayName: 'Fading Co', monthlyVolume: 5, volumeTrend: 'down' }),
   },
   render: (args: RowArgs) => frame(args),
 };
@@ -132,8 +125,8 @@ export const TrendDormant: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,
     s: sender({
-      name: 'Gone Silent',
-      monthly: 0,
+      displayName: 'Gone Silent',
+      monthlyVolume: 0,
       lastDays: 95,
       volumeTrend: 'dormant',
     }),
@@ -146,8 +139,8 @@ export const TrendNew: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,
     s: sender({
-      name: 'Fresh Sender',
-      monthly: 3,
+      displayName: 'Fresh Sender',
+      monthlyVolume: 3,
       firstSeenMo: 0,
       lastDays: 2,
       volumeTrend: 'new',
@@ -161,9 +154,9 @@ export const ReadStateLow: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,
     s: sender({
-      name: 'Loud Promotions',
-      monthly: 47,
-      read: 0,
+      displayName: 'Loud Promotions',
+      monthlyVolume: 47,
+      readRate: 0,
       volumeTrend: 'steady',
     }),
   },
@@ -175,24 +168,27 @@ export const ReadStateHigh: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,
     s: sender({
-      name: 'Personal Friend',
-      monthly: 4,
-      read: 0.92,
-      group: 'primary',
+      displayName: 'Personal Friend',
+      monthlyVolume: 4,
+      readRate: 0.92,
+      gmailCategory: 'primary',
     }),
   },
   render: (args: RowArgs) => frame(args),
 };
 
-/** Volume spike — overrides read-state phrasing. */
+/**
+ * Volume spike — overrides read-state phrasing. The fixture-only
+ * `spike` multiplier is gone; a spike on the wire IS a high cadence +
+ * `up` trend bucket.
+ */
 export const VolumeSpike: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,
     s: sender({
-      name: 'BlackFridayDealsCo',
-      monthly: 80,
-      read: 0.1,
-      spike: 4,
+      displayName: 'BlackFridayDealsCo',
+      monthlyVolume: 80,
+      readRate: 0.1,
       volumeTrend: 'up',
     }),
   },
@@ -204,27 +200,34 @@ export const Protected: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,
     s: sender({
-      name: 'IRS Payments',
-      monthly: 2,
-      read: 0.9,
-      protected: true,
-      group: 'updates',
+      displayName: 'IRS Payments',
+      monthlyVolume: 2,
+      readRate: 0.9,
+      protectionFlags: {
+        isProtected: true,
+        protectionReason: 'user_defined',
+        protectionSetAt: '2026-06-01T00:00:00.000Z',
+      },
+      gmailCategory: 'updates',
     }),
   },
   render: (args: RowArgs) => frame(args),
 };
 
 /**
- * No timeseries history yet — `volumeTrend: null`. The chip is
- * omitted; cadence falls back to `0/mo`. Mirrors first-sync state.
+ * No timeseries history yet — every timeseries-derived wire fact is
+ * `null` (never a fabricated 0): the trend chip is omitted, the
+ * cadence token drops, and the read-state line stays silent. Mirrors
+ * first-sync state.
  */
 export const NoHistory: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,
     s: sender({
-      name: 'Just-Synced Sender',
-      monthly: 0,
-      read: 0,
+      displayName: 'Just-Synced Sender',
+      monthlyVolume: null,
+      readRate: null,
+      sparkline: null,
       lastDays: 1,
       firstSeenMo: 0,
       volumeTrend: null,
@@ -238,8 +241,8 @@ export const RecentlyReviewed: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,
     s: sender({
-      name: 'Recently Decided',
-      monthly: 10,
+      displayName: 'Recently Decided',
+      monthlyVolume: 10,
       lastReview: {
         at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
         verdict: 'archive',
@@ -259,9 +262,9 @@ export const LongNameAndDomain: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,
     s: sender({
-      name: 'Some Very Lengthy Sender Name That Exceeds Typical Length',
+      displayName: 'Some Very Lengthy Sender Name That Exceeds Typical Length',
       domain: 'mail.subdomain.example-corp-marketing-platform.com',
-      monthly: 14,
+      monthlyVolume: 14,
       volumeTrend: 'up',
     }),
   },
@@ -270,7 +273,7 @@ export const LongNameAndDomain: Story<typeof SenderListRow> = {
 
 /** Mobile narrow width — evidence line drops, action + chevron stay. */
 export const MobileNarrow: Story<typeof SenderListRow> = {
-  args: { ...baseArgs, s: sender({ monthly: 12, volumeTrend: 'up' }) },
+  args: { ...baseArgs, s: sender({ monthlyVolume: 12, volumeTrend: 'up' }) },
   render: (args: RowArgs) => frame(args, 360),
   parameters: { viewport: { defaultViewport: 'mobile1' } },
 };
@@ -301,9 +304,9 @@ export const TrendBucketGrid: Story<typeof SenderListRow> = {
               ...baseArgs,
               s: sender({
                 id: `bucket-${bucket}`,
-                name: `Sender (${bucket})`,
+                displayName: `Sender (${bucket})`,
                 volumeTrend: bucket,
-                monthly: bucket === 'dormant' ? 0 : 12,
+                monthlyVolume: bucket === 'dormant' ? 0 : 12,
               }),
             })}
           </div>

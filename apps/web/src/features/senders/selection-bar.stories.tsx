@@ -9,8 +9,8 @@
 
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
-import type { Sender } from './data';
 import { SelectionBar } from './selection-bar';
+import { makeSender } from './testing/make-sender';
 
 const { color } = tokens;
 
@@ -48,20 +48,21 @@ type BarArgs = ComponentProps<typeof SelectionBar>;
 
 const noop = () => undefined;
 
-function sender(overrides: Partial<Sender> & { id: string }): Sender {
-  return {
-    name: overrides.id,
+const sender: typeof makeSender = (overrides = {}) =>
+  makeSender({
+    displayName: overrides.id ?? 'story-sender',
     domain: 'acme.com',
-    monthly: 12,
-    group: 'promotions',
-    read: 0.2,
-    spark: [3, 3, 3, 3],
+    gmailCategory: 'promotions',
     lastDays: 4,
-    unread: 0,
-    firstSeenMo: 12,
     ...overrides,
-  };
-}
+  });
+
+/** Standing-protection wire flags (D42/D43) for story-seed brevity. */
+const PROTECTED = {
+  isProtected: true,
+  protectionReason: 'user_defined',
+  protectionSetAt: '2026-06-01T00:00:00.000Z',
+} as const;
 
 /** Frame the bar against the page background so the dark pill reads correctly. */
 function frame(args: BarArgs) {
@@ -103,8 +104,8 @@ export const SingleSelection: Story<typeof SelectionBar> = {
 export const AllProtected: Story<typeof SelectionBar> = {
   args: {
     senders: [
-      sender({ id: 'Bank Statements', protected: true }),
-      sender({ id: 'Protected Client', protected: true, group: 'primary' }),
+      sender({ id: 'Bank Statements', protectionFlags: PROTECTED }),
+      sender({ id: 'Protected Client', protectionFlags: PROTECTED, gmailCategory: 'primary' }),
     ],
     onClear: noop,
     onAct: noop,
@@ -119,8 +120,8 @@ export const AllProtected: Story<typeof SelectionBar> = {
 export const PeopleSelected: Story<typeof SelectionBar> = {
   args: {
     senders: [
-      sender({ id: 'Jane Doe', group: 'primary', domain: 'gmail.com' }),
-      sender({ id: 'John Smith', group: 'primary', domain: 'outlook.com' }),
+      sender({ id: 'Jane Doe', gmailCategory: 'primary', domain: 'gmail.com' }),
+      sender({ id: 'John Smith', gmailCategory: 'primary', domain: 'outlook.com' }),
     ],
     onClear: noop,
     onAct: noop,

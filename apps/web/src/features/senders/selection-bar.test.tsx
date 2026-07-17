@@ -3,21 +3,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
-import type { Sender } from './data';
 import { SelectionBar } from './selection-bar';
+import { makeSender } from './testing/make-sender';
 
-const SENDER: Sender = {
-  id: 'sender-1',
-  name: 'Acme Updates',
+const SENDER = makeSender({
+  displayName: 'Acme Updates',
   domain: 'acme.test',
-  monthly: 12,
-  group: 'updates',
-  read: 0.5,
-  spark: [3, 3, 3, 3],
+  gmailCategory: 'updates',
+  readRate: 0.5,
   lastDays: 1,
-  unread: 2,
-  firstSeenMo: 12,
-};
+});
 
 describe('<SelectionBar /> floating-surface contract', () => {
   it('pins its footprint and stack order below the global undo tray offset', () => {

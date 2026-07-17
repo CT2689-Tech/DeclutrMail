@@ -27,6 +27,7 @@ import {
   canDelete,
   canLater,
   canUnsubscribe,
+  isStandingProtected,
   type ActionRequest,
   type ActionVerb,
   type Sender,
@@ -66,7 +67,7 @@ const ARROW = (
  */
 export function derivePrimaryVerbId(sender: Sender): VerbId {
   return deriveDefaultPrimary({
-    protected: sender.protected === true,
+    protected: isStandingProtected(sender),
     unsubReady: sender.unsubscribeMethod === 'one_click' && canUnsubscribe(sender),
     lastSeenDays: sender.lastDays,
   });

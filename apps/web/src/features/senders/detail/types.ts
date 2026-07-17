@@ -138,9 +138,10 @@ export interface SenderStats {
    * Read-state proxy — 0..1. Gmail `!UNREAD` flag rate, NOT real
    * opens. The detail surface MUST label this as "marked read" and
    * explicitly caveat the source; never call it "opens" or
-   * "opened" — Gmail exposes no open events.
+   * "opened" — Gmail exposes no open events. `null` when the sender
+   * has no timeseries yet — renders as "—", never a fabricated 0%.
    */
-  readRate: number;
+  readRate: number | null;
   /** Relationship age in months. */
   relationshipMonths: number;
   /** Days since the most recent message. */

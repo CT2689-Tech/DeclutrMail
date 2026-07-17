@@ -150,8 +150,8 @@ export function rollupByDomain(senders: readonly Sender[], minGroupSize = 3): Ro
       domain: key,
       senders: members,
       senderCount: members.length,
-      volume30d: members.reduce((sum, m) => sum + m.monthly, 0),
-      totalReceived: members.reduce((sum, m) => sum + (m.total ?? 0), 0),
+      volume30d: members.reduce((sum, m) => sum + (m.monthlyVolume ?? 0), 0),
+      totalReceived: members.reduce((sum, m) => sum + m.totalReceived, 0),
     });
   }
   return entries;

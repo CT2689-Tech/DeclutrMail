@@ -26,6 +26,20 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-16 — Post-launch chore: 6 render-body `Date.now()` sites (hydration-warning risk)
+**Source:** session (prelaunch product audit, wire-model refactor sweep)
+**Why:** Six components call `Date.now()` (directly or via a defaulted param) in the render body, so a server render and the client hydration can compute different relative-time labels — a React hydration warning at worst, no data corruption. All render client-fetched data, so real-world impact is cosmetic; explicitly NOT launch-blocking.
+**How:** Batch chore PR: `apps/web/src/features/sync/sync-now-button.tsx:216`, `apps/web/src/features/autopilot/rule-card.tsx:228`, `apps/web/src/features/autopilot/suggestion-group.tsx:46,136`, `apps/web/src/features/activity/activity-screen.tsx:2173`, `apps/web/src/features/followups/followups-screen.tsx:337`, `apps/web/src/features/settings/settings-index/mailboxes-card.tsx:137,286`. Standard fix: compute in an effect/`useSyncExternalStore` tick or pass `now` from a per-render `useMemo` seeded client-side.
+**Verifies by:** No hydration warnings in dev console on those routes; labels still tick.
+**Status:** Open
+
+### 2026-07-16 — Plan patch: D49 rationale is stale + dead Weekly-Hero stack
+**Source:** session (senders smoke triage)
+**Why:** Two doc/code truths drifted. (1) D49's rationale ("grid surfaces decisions — card format with verdict badge visible") describes the pre-D245 card; D245 removed engine-verdict presentation from cards. The DECISION (grid default, table toggle) still stands — only the reasoning is stale, and a future agent could "restore" verdict badges to match the text. (2) The Weekly-Hero stack is dead code: `useWeeklyHero` (apps/web/src/features/senders/api/use-weekly-hero.ts) has zero consumers; the BE endpoint (senders.controller.ts weekly-hero), `fetchWeeklyHero`, and the `WeeklyHero*Dto` wire types survive as orphans of the retired editorial-hero era. D245 prelaunch says remove directly — flagged rather than deleted because it predates the current change (CLAUDE.md §1.3).
+**How:** (1) Add `[AUDIT PATCH on D49]` note to the plan: decision unchanged; rationale now "brand rollup + fact stat strip", not verdict badges. (2) Approve a `chore/` PR deleting the Weekly-Hero endpoint + hook + DTOs + `sendersKeys.weeklyHero()`.
+**Verifies by:** Plan shows the patch marker; `rg -i weeklyhero` returns nothing after the chore PR.
+**Status:** Open
+
 ### 2026-07-15 — Un-suspend prod Upstash Redis (login + all sync are DOWN)
 **Source:** session (prod login incident triage)
 **Why:** Prod Upstash Redis is budget-suspended — the API logs flood with `ReplyError: ERR This database has been suspended for exceeding the defined budget limit` (30,597 in one hour). With Redis dead, BullMQ enqueue fails and the worker processes zero jobs, so no mailbox ever reaches `readiness = ready`; the onboarding sync gate spins forever, presenting as "can't log in / stuck at spinner." No code change substitutes for a suspended external Redis — this is a billing action only the founder can take.

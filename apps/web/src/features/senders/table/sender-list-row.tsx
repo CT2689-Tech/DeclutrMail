@@ -51,23 +51,25 @@ function trendToken(s: Sender): string | null {
 function buildEvidenceTokens(s: Sender): string[] {
   const tokens: string[] = [];
 
-  if (s.monthly > 0) {
-    tokens.push(`${s.monthly}/mo`);
+  const monthly = s.monthlyVolume ?? 0;
+  if (monthly > 0) {
+    tokens.push(`${monthly}/mo`);
   }
 
   const trend = trendToken(s);
   if (trend) tokens.push(trend);
 
   // Read-state phrase — only emit when it's strong enough to drive a
-  // decision. Otherwise the line goes silent and the recency token
-  // gets the slot.
-  const read = Math.round(s.read * 100);
-  if (s.spike) {
-    tokens.push('Volume spike');
-  } else if (read <= 5 && s.monthly >= 8) {
-    tokens.push('Almost never marked read');
-  } else if (read >= 70) {
-    tokens.push(`${read}% marked read`);
+  // decision. A `null` readRate means "no timeseries yet" — that is
+  // never evidence, so the line stays silent rather than claiming
+  // "never read" from missing data.
+  if (s.readRate !== null) {
+    const read = Math.round(s.readRate * 100);
+    if (read <= 5 && monthly >= 8) {
+      tokens.push('Almost never marked read');
+    } else if (read >= 70) {
+      tokens.push(`${read}% marked read`);
+    }
   }
 
   // Recency token — last because narrow widths drop it first.

@@ -60,8 +60,7 @@ import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
 import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
-import { adaptSenderListRow } from '../api/adapters';
-import { EPOCH_GUARD_DAYS, isStandingProtected } from '../data';
+import { enrichSenderRow, EPOCH_GUARD_DAYS, isStandingProtected } from '../data';
 import type { ActionVerb, Sender } from '../data';
 import { ReadBucketText, TrendChip } from '../fact-language';
 import { unsubscribeStatusCopy } from '../grid/sender-card';
@@ -391,7 +390,7 @@ function SenderRow({
   // Fact-derived primary tone — drives the left-edge stripe and
   // magnitude-bar accent. The same derivation feeds SenderActionRow,
   // so presentation and the primary CTA cannot disagree (D245).
-  const adapted = useMemo(() => adaptSenderListRow(sender), [sender]);
+  const adapted = useMemo(() => enrichSenderRow(sender), [sender]);
   const toneAccent = primaryToneAccent(adapted);
 
   const cellStyle: CSSProperties = {
@@ -782,7 +781,7 @@ function ExpandedRow({
 }) {
   // Adapt the wire row to the FE `Sender` shape SenderRowDetail expects.
   // Memoised on the row id since adaptation is identity-stable per row.
-  const adapted = useMemo(() => adaptSenderListRow(sender), [sender]);
+  const adapted = useMemo(() => enrichSenderRow(sender), [sender]);
   // Bridge — SenderRowDetail emits canonical-cased verbs; the parent's
   // `onAction` expects lowercase `SenderTableVerb`. Shared module-scope
   // map (also used by the row's SenderActionRow) — Keep now routes

@@ -38,6 +38,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
 import { installFetchStub, jsonNotFound, jsonOk } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import type { Sender } from '../data';
+import { makeSender } from '../testing/make-sender';
 import {
   SenderRowDetail,
   SenderRowDetailLive,
@@ -45,23 +46,13 @@ import {
   type RowDetailTimeseries,
 } from './sender-row-detail';
 
-function sender(overrides: Partial<Sender> = {}): Sender {
-  return {
-    id: 'sender-1',
-    name: 'Acme Newsletter',
-    domain: 'acme.com',
-    monthly: 12,
-    group: 'updates',
-    read: 0.2,
-    spark: [3, 3, 3, 3],
+const sender: typeof makeSender = (overrides = {}) =>
+  makeSender({
+    gmailCategory: 'updates',
     lastDays: 4,
-    unread: 0,
     firstSeenMo: 18,
-    volumeTrend: 'steady',
-    lastReview: null,
     ...overrides,
-  };
-}
+  });
 
 const TIMESERIES = [
   { yearMonth: '2026-05-01', volume: 8, readCount: 2 },
@@ -204,13 +195,17 @@ describe('SenderRowDetail recent subjects', () => {
 });
 
 describe('SenderRowDetail Gmail round trip', () => {
-  it('binds the domain search to the active Gmail account without /u/0', () => {
+  // Intent updated with the wire unification: `email` is now a required
+  // wire fact, so the search is ADDRESS-scoped (`from:"news@acme.com"`)
+  // — a domain-scoped `from:@gmail.com` would surface every human at
+  // that provider (2026-07-16 smoke).
+  it('binds the sender-address search to the active Gmail account without /u/0', () => {
     renderDetail({ status: 'ready', points: TIMESERIES });
     const link = screen.getByRole('link', { name: 'View in Gmail ↗' });
     expect(link).toHaveAttribute(
       'href',
       'https://mail.google.com/mail/?authuser=work%2Bdeclutr%40example.com#search/' +
-        'from%3A%22%40acme.com%22',
+        'from%3A%22news%40acme.com%22',
     );
     expect(link.getAttribute('href')).not.toContain('/u/0');
   });

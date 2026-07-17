@@ -114,21 +114,32 @@ export function SenderRowDetail({
   const gmailUrl = auth
     ? GmailOpenLinkService.buildFromSearchLink({
         mailboxEmail: getActiveMailboxEmail(auth.me),
-        from: `@${s.domain}`,
+        // Address-scoped, never domain-scoped — `from:@gmail.com` would
+        // surface every human at that provider (2026-07-16 smoke).
+        from: s.email,
       })
     : null;
   const lastBarColor =
     primary === 'unsubscribe' ? color.amber : primary === 'archive' ? color.fg : color.primary;
 
   const stats: { k: string; v: string; small?: string; valueColor?: string }[] = [
-    { k: 'Total ever', v: s.total != null ? s.total.toLocaleString() : '—', small: 'emails' },
+    { k: 'Total ever', v: s.totalReceived.toLocaleString(), small: 'emails' },
     { k: 'Last received', v: relTimeLabel(s.lastDays) },
     {
+      // `null` readRate = no timeseries yet — "—" is the honest render,
+      // never a fabricated 0%.
       k: 'Marked read',
-      v: `${Math.round(s.read * 100)}%`,
-      valueColor: s.read >= 0.5 ? color.primary : s.read >= 0.2 ? color.fg : color.amber,
+      v: s.readRate !== null ? `${Math.round(s.readRate * 100)}%` : '—',
+      valueColor:
+        s.readRate === null
+          ? color.fgMuted
+          : s.readRate >= 0.5
+            ? color.primary
+            : s.readRate >= 0.2
+              ? color.fg
+              : color.amber,
     },
-    { k: 'Last 30 days', v: s.monthly.toLocaleString(), small: 'messages' },
+    { k: 'Last 30 days', v: (s.monthlyVolume ?? 0).toLocaleString(), small: 'messages' },
   ];
 
   return (
