@@ -57,7 +57,7 @@ const baseArgs: CardArgs = {
   pendingApproximate: false,
   isSaving: false,
   onToggleEnabled: noop,
-  onCommitThreshold: noop,
+  onCommitThreshold: () => Promise.resolve(true),
   onResume: noop,
   previewOpen: false,
   preview: null,
