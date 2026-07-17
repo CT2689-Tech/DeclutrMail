@@ -61,6 +61,27 @@ describe('ScreenerScreen — ready state', () => {
     expect(renderState(state)).toContain(`${SCREENER_QUEUE.length} new senders waiting.`);
   });
 
+  it('states the TRUE pending count in the heading, not the loaded page size', () => {
+    // The queue loads a working window (top N); `totalPending` is the
+    // badge's authoritative count. A heading that says "5 waiting" when
+    // 3,259 do is the page-count-as-total truth bug — assert the total
+    // wins and the page size does NOT appear as the headline number.
+    const html = render(
+      <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} totalPending={3259} />,
+    );
+    expect(html).toContain('3259 new senders waiting.');
+    expect(html).not.toContain(`${SCREENER_QUEUE.length} new senders waiting.`);
+  });
+
+  it('falls back to the loaded window when the count has not resolved', () => {
+    // totalPending null (count query in flight) → show what we loaded
+    // rather than nothing; the number is honest for the rows on screen.
+    const html = render(
+      <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} totalPending={null} />,
+    );
+    expect(html).toContain(`${SCREENER_QUEUE.length} new senders waiting.`);
+  });
+
   it('states the D72 soft-quarantine truth in the intro (mail still arrives)', () => {
     const html = renderState(state);
     expect(html).toContain('their mail still arrives in your inbox until you decide');

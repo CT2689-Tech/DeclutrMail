@@ -12,7 +12,7 @@
 import { hasCapability } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
-import { useScreenerQueue } from '@/features/screener/api/use-screener';
+import { useScreenerCount, useScreenerQueue } from '@/features/screener/api/use-screener';
 import { composeScreenerState } from '@/features/screener/compose-state';
 import { ScreenerProUpsell } from '@/features/screener/pro-upsell';
 import { ScreenerScreen } from '@/features/screener/screener-screen';
@@ -43,6 +43,10 @@ export default function ScreenerPage() {
  */
 function ScreenerQueueRoute() {
   const queue = useScreenerQueue();
+  // The badge's authoritative pending count (D74) — the queue only
+  // loads a working window, so this is what the heading must state, not
+  // the loaded row count. Same cached query the sidebar badge uses.
+  const count = useScreenerCount();
   const state = composeScreenerState({
     rows: queue.data,
     isLoading: queue.isLoading,
@@ -52,5 +56,5 @@ function ScreenerQueueRoute() {
       void queue.refetch();
     },
   });
-  return <ScreenerScreen state={state} />;
+  return <ScreenerScreen state={state} totalPending={count.data?.pending ?? null} />;
 }
