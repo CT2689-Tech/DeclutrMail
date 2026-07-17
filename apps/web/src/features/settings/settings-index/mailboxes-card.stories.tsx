@@ -6,6 +6,10 @@
 //                        humanized last-synced stamps
 //   • Syncing          — second account mid initial-sync
 //   • SyncFailed       — readiness failed tag
+//   • NotSyncedYet     — readiness null (no sync row yet), stated as
+//                        unknown rather than folded into "Ready"
+//   • ReconnectBlockedByDeletion — disabled Reconnect states its reason
+//                        in visible text beside the control
 //   • NeedsReconnect   — OAuth grant gone on an active account
 //                        (danger tag + Reconnect affordance)
 //   • NeedsReconnectAtLimit — active revoked account can reauthorize
@@ -108,6 +112,55 @@ export const SyncFailed: Story<typeof MailboxesCard> = {
     ...baseArgs,
     inboxLimit: 3,
     mailboxes: [MAILBOX_A, { ...MAILBOX_B, readiness: 'failed' as const }],
+    healthById: { [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id] },
+  },
+};
+
+/**
+ * `readiness: null` — no sync row exists yet (D116). The card must say so
+ * rather than fall through to "Ready", which would assert a completed
+ * scan it has no evidence of.
+ */
+export const NotSyncedYet: Story<typeof MailboxesCard> = {
+  args: {
+    ...baseArgs,
+    inboxLimit: 3,
+    mailboxes: [MAILBOX_A, { ...MAILBOX_B, readiness: null }],
+    healthById: { [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id] },
+  },
+};
+
+/**
+ * Reconnect is disabled while indexed-data deletion is still in flight.
+ * The reason renders as visible text next to the control (and is wired to
+ * it via aria-describedby) — a `title` tooltip reaches neither touch nor
+ * keyboard nor a screen reader.
+ */
+export const ReconnectBlockedByDeletion: Story<typeof MailboxesCard> = {
+  args: {
+    ...baseArgs,
+    inboxLimit: 3,
+    mailboxes: [
+      MAILBOX_A,
+      { ...MAILBOX_B, status: 'disconnected' as const, indexedDataState: 'deleting' as const },
+    ],
+    healthById: { [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id] },
+  },
+};
+
+/** The delayed variant carries its own, distinct reason copy. */
+export const ReconnectBlockedByDelayedDeletion: Story<typeof MailboxesCard> = {
+  args: {
+    ...baseArgs,
+    inboxLimit: 3,
+    mailboxes: [
+      MAILBOX_A,
+      {
+        ...MAILBOX_B,
+        status: 'disconnected' as const,
+        indexedDataState: 'deletion_delayed' as const,
+      },
+    ],
     healthById: { [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id] },
   },
 };

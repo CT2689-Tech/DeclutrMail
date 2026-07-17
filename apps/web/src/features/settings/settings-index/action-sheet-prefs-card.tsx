@@ -157,8 +157,12 @@ function SkipSwitch({
         fontFamily: font.sans,
       }}
     >
-      <span style={{ fontSize: 11, color: color.fgMuted, minWidth: 34, textAlign: 'right' }}>
-        {pending ? 'Saving…' : on ? 'Skip' : 'Show'}
+      {/* States where the preview lands, matching the card's own
+          vocabulary. The legacy 'Skip'/'Show' named the SHEET — a word
+          this card never shows — so it read as the inverse of the
+          switch's "…in the row" label. */}
+      <span style={{ fontSize: 11, color: color.fgMuted, minWidth: 44, textAlign: 'right' }}>
+        {pending ? 'Saving…' : on ? 'Row' : 'Window'}
       </span>
       <span
         aria-hidden="true"

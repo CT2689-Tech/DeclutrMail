@@ -80,6 +80,116 @@ describe('SendersPoliciesScreen', () => {
     expect(screen.getByRole('heading', { name: /standing policies/i })).toBeInTheDocument();
   });
 
+  it('routes out of the empty state instead of dead-ending', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-07-17T00:00:00.000Z' },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText(/No protected senders yet/i)).toBeInTheDocument());
+    // Protecting a sender happens on /senders — the empty state must
+    // offer the way there, not just describe it.
+    expect(screen.getByRole('link', { name: /browse senders/i })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
+  });
+
+  it('counts protected senders from the server total, not the loaded page', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [{ ...BASE_ROW, id: 'a', displayName: 'Stripe' }],
+            meta: {
+              // One row loaded of 137 matching — the header must report the
+              // BE-honest query-wide total, never the cursor-scoped page.
+              pagination: { nextCursor: 'page-2', hasMore: true, limit: 50 },
+              query: { totalMatching: 137, globalMaxTotal: 900, asOf: '2026-07-17T00:00:00.000Z' },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText('Stripe')).toBeInTheDocument());
+    expect(screen.getByText('137 senders')).toBeInTheDocument();
+    expect(screen.queryByText('1 sender')).not.toBeInTheDocument();
+  });
+
+  it('singularizes the server total', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [{ ...BASE_ROW, id: 'a', displayName: 'Stripe' }],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: { totalMatching: 1, globalMaxTotal: 900, asOf: '2026-07-17T00:00:00.000Z' },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText('1 sender')).toBeInTheDocument());
+  });
+
+  it('does not present a capped page as a total when the server sends no total', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [{ ...BASE_ROW, id: 'a', displayName: 'Stripe' }],
+            // No meta.query — with more pages outstanding, "1 sender" would
+            // be a page-cap artifact dressed up as a total.
+            meta: { pagination: { nextCursor: 'page-2', hasMore: true, limit: 50 } },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText('Stripe')).toBeInTheDocument());
+    expect(screen.getByText('Showing 1')).toBeInTheDocument();
+    expect(screen.queryByText('1 sender')).not.toBeInTheDocument();
+  });
+
+  it('reports the loaded count as the total once the last page has landed', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [{ ...BASE_ROW, id: 'a', displayName: 'Stripe' }],
+            // No meta.query, but hasMore=false — everything matching is on
+            // screen, so the loaded count IS the total.
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText('1 sender')).toBeInTheDocument());
+  });
+
   it('fires exactly one server-filtered request for protected senders', async () => {
     const seenUrls: URL[] = [];
     installFetchStub([
