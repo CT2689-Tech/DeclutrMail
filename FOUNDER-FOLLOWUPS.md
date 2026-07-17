@@ -26,6 +26,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-17 — Plan decision: 5 merged PRs carry wrong `Closes D###` trailers
+**Source:** session (senders/settings/autopilot fix wave — #339, #340, #341, #343, #346)
+**Why:** I sourced D-numbers from CLAUDE.md §4's topic table ("Senders & screener | D38–D43") instead of the plan's decision text, so the merge auto-flip will write false state into IMPLEMENTATION-LOG.md — the file that is supposed to be the source of truth for what is built. Specifically: **D38** is "First-time education: Onboarding-only tour + tooltips" (no such code exists; its row already documents earlier umbrella mis-tags — I repeated them) and now reads as shipped via #339/#343; **D51** is "Filter UI: Hybrid — 4 quick-filter chips + More filters drawer", not the rollup/parity work in #340/#341; **D47/D48** (Weekly Hero) were closed by #346, which **deleted** the feature, so a retirement reads as a delivery — and those rows sit at 🟢 citing `senders.controller.spec.ts — Weekly Hero contract`, a spec #346 removes, so the log now cites evidence that no longer exists. Not self-resolved: correcting D-rows and choosing retire semantics is a plan decision (CLAUDE.md §3). Full write-up in MISTAKES.md 2026-07-17.
+**How:** Decide per row: (1) **D38** — does the ADR-0012 patch mean the senders wire-model work legitimately belongs here, or does the senders work need its own D-number and D38 revert to ⬜ for the unbuilt tour? (2) **D51** — likely revert to its pre-#340 state; the filter drawer is a separate question. (3) **D47/D48** — add a reversal/retire marker (the plan already uses these) instead of 🔵/🟢, and clear the dead spec evidence. Then `pnpm generate-impl-log`.
+**Verifies by:** No IMPLEMENTATION-LOG row claims a feature that does not exist in code, and no row cites a spec file that has been deleted.
+**Status:** Open
+
 ### 2026-07-17 — Needs a BE endpoint: failed INITIAL sync has no retry CTA
 **Source:** session (settings truth batch, PR #344)
 **Why:** A mailbox whose INITIAL sync failed is a dead end in Settings → Mailboxes: the card says "Sync failed" and offers nothing. The only sync route (`POST /api/v1/sync/incremental`) 409s `SYNC_NOT_READY` in exactly that state, so there is no endpoint an honest retry button could call. Initial sync is enqueued only from the OAuth connect path; the sync gate's own "Try again" is just `window.location.reload()`. NOT stubbed in #344 per CLAUDE.md §10 — a button that cannot work is worse than no button. Mitigating: the worker DOES auto-retry, so this is a missing CTA, not stuck data. Not launch-blocking on its own, but it is the one remaining dead end on the Settings surface.
