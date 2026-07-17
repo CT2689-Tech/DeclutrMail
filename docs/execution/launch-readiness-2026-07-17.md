@@ -15,33 +15,46 @@ state with:
 ./scripts/launch-preflight.sh dns mail   # dns mail web api env pubsub secrets
 ```
 
-Last run (2026-07-17, this laptop): **26 passed · 0 failed · 3 skipped**. The
-3 skips are `env` (Cloud Run), `pubsub`, and `secrets` — all skipped because
-`gcloud` is not authenticated locally, **not** because they passed. Someone with
-`gcloud auth login` must run those three before launch.
+Last run (2026-07-17, authenticated `gcloud`): **38 passed · 0 failed · 3
+warned · 1 skipped**. `env`, `pubsub`, and `secrets` now actually ran (they
+were skipped in the earlier unauthenticated run, **not** passed). The 3 warns
+are known, documented posture — billing secrets unbound (billing is OFF), and
+the shared API/worker service-account + project-wide secret read (FOUNDER-
+FOLLOWUPS). The skip is per-secret reader checks, moot under the project-wide
+grant. No launch-blocking infra failure remains.
 
 ---
 
-## 1. The one thing that blocks launch outright
+## 1. Prod Redis — VERIFIED UP (was flagged as the launch blocker; it is not)
 
-### Prod Upstash Redis is budget-suspended (as of 2026-07-15)
+**Status: RESOLVED / not a blocker (verified 2026-07-17, authenticated `gcloud`).**
 
-Only the founder can fix this — it is a billing action, not code.
+Earlier this doc led with "prod Upstash Redis is budget-suspended → presents as
+'I can't log in'." Both halves were wrong, and I verified it two independent ways:
 
-With Redis suspended, BullMQ enqueue fails, the worker processes zero jobs, no
-mailbox ever reaches `readiness = ready`, and the onboarding sync gate spins
-forever. **It presents to a user as "I can't log in."** A public launch in this
-state means every new signup hits a spinner.
+1. **Redis is up.** The prod `declutrmail-worker` (Cloud Run, us-central1) is
+   dequeuing real BullMQ jobs live — `worker.succeeded` every ~60s, including
+   `gmail.getClient.kms_decrypt` + a real Gmail fetch for a live mailbox at
+   19:16 UTC today. BullMQ dequeues off Redis; if Redis were suspended these
+   jobs could not run. Reproduce:
+   ```bash
+   gcloud logging read 'resource.type=cloud_run_revision AND
+     resource.labels.service_name=declutrmail-worker' --limit=20 --freshness=1h \
+     --format=json | python3 -c "import sys,json;[print((e.get('jsonPayload') or {}).get('kind')) for e in json.load(sys.stdin)]"
+   ```
+2. **Login does not depend on Redis anyway.** Auth is stateless JWT-in-cookies
+   (`apps/api/src/auth/session-cookies.ts` — access/refresh/CSRF cookies, no
+   server-side session store; `csrf.service.ts` touches no Redis/DB). The rate
+   limiter **fails open** on a store error (`rate-limit.interceptor.ts` L130-143:
+   `catch (err) { /* Fail-open */ return next.handle() }`). So even with Redis
+   down, sign-in and all read/write API keep working.
 
-- **Fix:** https://console.upstash.com → `declutrmail-v2-bullmq` → raise the
-  budget limit or move to a Fixed plan. Resumes immediately.
-- **Verify:** API logs stop emitting `ERR This database has been suspended…`;
-  a dev test-login onboarding gate advances to `/senders`.
-- **Status: UNVERIFIED as of this session.** There is no health endpoint that
-  reports Redis, and `gcloud` was unavailable here, so I could not confirm
-  whether it is still suspended. **Confirm before launching.** PR #337's daily
-  watchdog now BREACHes on this state, so the next suspension pages instead of
-  hiding.
+**The real failure mode if Redis ever does go down** is narrower and quieter:
+BullMQ workers stall, so a _new_ signup's mailbox never reaches
+`readiness = ready` and the onboarding sync gate spins — the app looks alive and
+silently does nothing. That is the UI-truth bug class at the infra layer, not a
+login outage. PR #337's daily watchdog BREACHes on the suspended-Redis state, so
+a future suspension pages instead of hiding.
 
 Full entry: `FOUNDER-FOLLOWUPS.md` → 2026-07-15.
 
@@ -111,11 +124,12 @@ a single click.
 
 ## 6. Pre-launch sequence
 
-1. **Un-suspend prod Redis** and confirm a real login reaches `/senders`. Nothing
-   else matters until this is true.
-2. Merge **#345** (data-destruction preview), then #344, then #346.
-3. Run `./scripts/launch-preflight.sh` from a machine with `gcloud auth login`
-   so `env`, `pubsub`, and `secrets` actually execute rather than skip.
+1. ~~Un-suspend prod Redis~~ — **done: verified UP (§1), not a blocker.**
+2. ~~Merge #345 → #344 → #346~~ — **done: all eight fix PRs (#339–#346) plus the
+   D-trailer flag (#348) are merged.** No open PRs remain.
+3. ~~Run preflight with `gcloud auth login`~~ — **done: 38 passed · 0 failed · 3
+   warned · 1 skipped** (2026-07-17). The 3 warns are known posture, not
+   failures (see §1). Re-run before the actual launch to catch drift.
 4. Decide the §4 gaps — at minimum the failed-initial-sync CTA, which is the last
    dead end on the Settings surface.
 5. Either resume the audit tail (§5) or launch knowingly accepting that those

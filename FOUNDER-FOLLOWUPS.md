@@ -61,13 +61,6 @@ section to the Done section. Do not delete entries — the trail matters.
 **Verifies by:** Plan shows the patch marker; `rg -i weeklyhero` returns nothing after the chore PR.
 **Status:** Open
 
-### 2026-07-15 — Un-suspend prod Upstash Redis (login + all sync are DOWN)
-**Source:** session (prod login incident triage)
-**Why:** Prod Upstash Redis is budget-suspended — the API logs flood with `ReplyError: ERR This database has been suspended for exceeding the defined budget limit` (30,597 in one hour). With Redis dead, BullMQ enqueue fails and the worker processes zero jobs, so no mailbox ever reaches `readiness = ready`; the onboarding sync gate spins forever, presenting as "can't log in / stuck at spinner." No code change substitutes for a suspended external Redis — this is a billing action only the founder can take.
-**How:** Open https://console.upstash.com → the prod Redis DB (`declutrmail-v2-bullmq`) → raise the budget limit, OR switch it to a **Fixed plan**. It resumes immediately once budget is cleared. Then confirm a real login completes and a fresh sync reaches ready.
-**Verifies by:** API logs stop emitting the "suspended" ReplyError; `applyAutomaticProtection` sweeps succeed; a test-login onboarding gate advances to /senders. (PR #337 makes the daily watchdog BREACH on this state so the next suspension pages instead of hiding.)
-**Status:** Open
-
 ### 2026-07-13 — Ratify `ErrorState` onto the D220 launch allowlist
 **Source:** PR #325 design-system gate review
 **Why:** The branch promotes a shared `ErrorState` component
@@ -1663,6 +1656,13 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-07-15 — Un-suspend prod Upstash Redis (login + all sync are DOWN)
+**Source:** session (prod login incident triage)
+**Why:** Prod Upstash Redis is budget-suspended — the API logs flood with `ReplyError: ERR This database has been suspended for exceeding the defined budget limit` (30,597 in one hour). With Redis dead, BullMQ enqueue fails and the worker processes zero jobs, so no mailbox ever reaches `readiness = ready`; the onboarding sync gate spins forever, presenting as "can't log in / stuck at spinner." No code change substitutes for a suspended external Redis — this is a billing action only the founder can take.
+**How:** Open https://console.upstash.com → the prod Redis DB (`declutrmail-v2-bullmq`) → raise the budget limit, OR switch it to a **Fixed plan**. It resumes immediately once budget is cleared. Then confirm a real login completes and a fresh sync reaches ready.
+**Verifies by:** API logs stop emitting the "suspended" ReplyError; `applyAutomaticProtection` sweeps succeed; a test-login onboarding gate advances to /senders. (PR #337 makes the daily watchdog BREACH on this state so the next suspension pages instead of hiding.)
+**Status:** Done 2026-07-17 — verified UP with authenticated `gcloud`. Prod `declutrmail-worker` is dequeuing real BullMQ jobs live (`worker.succeeded` every ~60s, incl. `gmail.getClient.kms_decrypt` + Gmail fetch at 19:16 UTC 2026-07-17); jobs cannot dequeue if Redis is suspended, so it has resumed since the 07-15 incident. **Correction to the original triage:** the "can't log in" framing was wrong — auth is stateless JWT-in-cookies and the rate limiter fails open (`rate-limit.interceptor.ts` L130-143), so a Redis outage does NOT block login. The real failure mode is narrower: new-signup sync gate stalls (workers can't reach `readiness=ready`) while the app otherwise looks alive. Watchdog (PR #337) covers future recurrence.
 
 ### 2026-07-15 — Decide the `codex/*` branch-name exemption (hooks reject the Codex workflow)
 **Source:** session (PR #334 smoke — pushing the regression fixes)
