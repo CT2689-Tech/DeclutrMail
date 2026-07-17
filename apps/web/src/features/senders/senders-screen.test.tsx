@@ -188,7 +188,23 @@ function oneSenderHandler() {
         data: [ROW],
         meta: {
           pagination: { nextCursor: null, hasMore: false, limit: 25 },
-          query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+          query: {
+            totalMatching: 1,
+            globalMaxTotal: 120,
+            asOf: '2026-05-29T12:00:00.000Z',
+            // Real responses always carry mailbox-wide filterCounts —
+            // the coverage line renders the indexed total from it.
+            filterCounts: {
+              total: 7887,
+              active: 1,
+              quiet: 0,
+              dormant: 0,
+              unsubReady: 0,
+              repliedTo: 0,
+              protected: 0,
+              unsubIgnored: 0,
+            },
+          },
         },
       }),
   };
@@ -359,8 +375,10 @@ describe('SendersScreen — edge states', () => {
 
     await screen.findAllByText(/Sender A/);
     const freshness = screen.getByTestId('sender-results-freshness');
-    expect(freshness).toHaveTextContent(/matching count and rows for me@example\.com/i);
-    expect(freshness).toHaveTextContent(/snapshot/i);
+    // Coverage line answers "am I looking at everything?" — indexed
+    // total + synced-through time (2026-07-16 founder smoke).
+    expect(freshness).toHaveTextContent(/senders indexed for me@example\.com/i);
+    expect(freshness).toHaveTextContent(/synced through/i);
     expect(
       freshness.querySelector('time[datetime="2026-05-29T12:00:00.000Z"]'),
     ).toBeInTheDocument();
