@@ -24,7 +24,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import { ContextualHelp } from '@/features/help/contextual-help';
 import { track } from '@/lib/posthog';
-import { useBillingSubscription } from '../api/use-billing-subscription';
+import { useBillingSubscription } from '@/features/billing/api/use-billing-subscription';
 import { useDataExport } from '../api/use-data-export';
 
 const { color, font } = tokens;
