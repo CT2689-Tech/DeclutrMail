@@ -628,7 +628,12 @@ describe('SettingsScreen', () => {
         path: '/api/billing/subscription',
         respond: () => {
           attempts += 1;
-          return attempts <= 3
+          // Settings now shares the single billing-read hook (retry:
+          // false — designed-503 and transient-5xx both surface
+          // immediately, §8 read-guard). So mount burns exactly one
+          // attempt and the manual Retry click is the second: fail
+          // once, succeed on the retry.
+          return attempts <= 1
             ? new Response(JSON.stringify({ error: { code: 'INTERNAL' } }), {
                 status: 500,
                 headers: { 'content-type': 'application/json' },

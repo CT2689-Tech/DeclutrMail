@@ -15,14 +15,16 @@ import {
   startMailboxConnect,
   startMailboxReactivation,
 } from '@/features/mailboxes/connect-mailbox-url';
-import { isBillingDisabledError } from '@/features/billing/api/use-billing-subscription';
+import {
+  isBillingDisabledError,
+  useBillingSubscription,
+} from '@/features/billing/api/use-billing-subscription';
 import { track } from '@/lib/posthog';
 import {
   useMeSettings,
   useUpdateActionSheetPrefs,
   useUpdateEmailPrefs,
 } from '../api/use-me-settings';
-import { useBillingSubscription } from '../api/use-billing-subscription';
 import { useMailboxesHealth } from '../api/use-mailbox-health';
 import { ActionSheetPrefsCard, type ActionSheetPrefsCardState } from './action-sheet-prefs-card';
 import { EmailPrefsCard, type EmailPrefsCardState } from './email-prefs-card';
