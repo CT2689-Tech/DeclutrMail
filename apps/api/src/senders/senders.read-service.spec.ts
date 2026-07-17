@@ -172,6 +172,18 @@ async function seedTimeseries(
 }
 
 /**
+ * First-of-month `YYYY-MM-DD` for `sender_timeseries.year_month`, in
+ * UTC (the column is timezone-agnostic). Mirrors the service-side
+ * `startOfMonthIso` so a test can seed "the current calendar month"
+ * without importing a non-exported helper.
+ */
+function startOfMonthIsoForTest(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}-01`;
+}
+
+/**
  * Compact triage_decisions seeder for the last-reviewed regression
  * specs. Defaults track the schema's documented shape so callers can
  * focus on the fields the test actually cares about.
@@ -1508,125 +1520,141 @@ describe('SendersReadService', () => {
       expect(JSON.stringify(oneClickDetail)).not.toContain('SECRET');
     });
 
+    /**
+     * Seed `count` inbound messages dated `daysAgo` ago, `readCount` of
+     * them read. The rolling-window subqueries filter on SQL `now()`,
+     * so these must be anchored to the real clock (same pattern as the
+     * `getSenderSummary (rolling 30d + 8 buckets)` tests below), NOT to
+     * an injected `now`.
+     */
+    async function seedRollingMessages(args: {
+      mailboxAccountId: string;
+      senderKey: string;
+      count: number;
+      daysAgo: number;
+      readCount?: number;
+    }): Promise<void> {
+      const read = args.readCount ?? 0;
+      for (let i = 0; i < args.count; i++) {
+        await seedMessage(db, {
+          mailboxAccountId: args.mailboxAccountId,
+          senderKey: args.senderKey,
+          internalDate: new Date(Date.now() - args.daysAgo * 86400_000),
+          isUnread: i >= read,
+        });
+      }
+    }
+
     // Regression — MISTAKES.md 2026-05-23. Mirror of the `listSenders`
     // regression: `getSenderDetail` runs the same correlated subquery,
-    // so a second sender with its own timeseries row must NOT leak
-    // through into the queried sender's stats.
-    it('isolates monthlyVolume + readRate when another sender has its own timeseries (correlated-subquery regression)', async () => {
+    // so a second sender's own messages must NOT leak through into the
+    // queried sender's stats. Both sides are seeded with ≥2 rows so a
+    // tautological predicate fails this test instead of passing it.
+    it('isolates monthlyVolume + readRate when another sender has its own messages (correlated-subquery regression)', async () => {
       const target = await seedSender(db, {
         mailboxAccountId: mailboxId,
         email: 'target@x.com',
-        lastSeenAt: new Date('2026-05-02T00:00:00Z'),
+        lastSeenAt: new Date(Date.now() - 1 * 86400_000),
       });
       const other = await seedSender(db, {
         mailboxAccountId: mailboxId,
         email: 'other@x.com',
-        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        lastSeenAt: new Date(Date.now() - 1 * 86400_000),
       });
-      await seedTimeseries(db, {
+      await seedRollingMessages({
         mailboxAccountId: mailboxId,
         senderKey: target.senderKey,
-        yearMonth: '2026-05-01',
-        volume: 12,
-        readCount: 3,
+        count: 4,
+        daysAgo: 5,
+        readCount: 1,
       });
       // Distinct values for the other sender — if the predicate were a
-      // tautology the planner could pick this row for `target`.
-      await seedTimeseries(db, {
+      // tautology the planner could fold these into `target`'s counts.
+      await seedRollingMessages({
         mailboxAccountId: mailboxId,
         senderKey: other.senderKey,
-        yearMonth: '2026-05-01',
-        volume: 99,
-        readCount: 99,
+        count: 9,
+        daysAgo: 5,
+        readCount: 9,
       });
 
       const detail = await svc.getSenderDetail(mailboxId, target.id);
       expect(detail).not.toBeNull();
-      expect(detail!.monthlyVolume).toBe(12);
+      expect(detail!.monthlyVolume).toBe(4);
       expect(detail!.readRate).toBe(0.25);
-      // Other sender's row (volume 99) must NOT leak.
-      expect(detail!.monthlyVolume).not.toBe(99);
+      // Other sender's messages must NOT leak (would read 9 / 13 / 1.0).
+      expect(detail!.monthlyVolume).not.toBe(9);
+      expect(detail!.monthlyVolume).not.toBe(13);
+      expect(detail!.readRate).not.toBe(1);
     });
 
     // Regression — MISTAKES.md 2026-05-23 (cross-tenant variant for
-    // the detail endpoint). Mirror of the list-side cross-tenant
-    // test: a colliding sender_key across mailboxes must not surface
-    // the wrong tenant's timeseries row.
-    it('does not leak timeseries across mailboxes when sender_key collides (cross-tenant detail regression)', async () => {
+    // the detail endpoint). A colliding sender_key across mailboxes
+    // must not surface the wrong tenant's messages.
+    it('does not leak messages across mailboxes when sender_key collides (cross-tenant detail regression)', async () => {
       const otherMailbox = await seedMailbox(db, 'other-detail-tenant');
       const here = await seedSender(db, {
         mailboxAccountId: mailboxId,
         email: 'collide-detail@x.com',
-        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        lastSeenAt: new Date(Date.now() - 1 * 86400_000),
       });
       const there = await seedSender(db, {
         mailboxAccountId: otherMailbox,
         email: 'collide-detail@x.com',
-        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        lastSeenAt: new Date(Date.now() - 1 * 86400_000),
       });
       expect(here.senderKey).toBe(there.senderKey);
 
-      await seedTimeseries(db, {
+      await seedRollingMessages({
         mailboxAccountId: mailboxId,
         senderKey: here.senderKey,
-        yearMonth: '2026-05-01',
-        volume: 6,
+        count: 3,
+        daysAgo: 5,
         readCount: 0,
       });
-      await seedTimeseries(db, {
+      await seedRollingMessages({
         mailboxAccountId: otherMailbox,
         senderKey: there.senderKey,
-        yearMonth: '2026-05-01',
-        volume: 88,
-        readCount: 88,
+        count: 7,
+        daysAgo: 5,
+        readCount: 7,
       });
 
       const detailHere = await svc.getSenderDetail(mailboxId, here.id);
       expect(detailHere).not.toBeNull();
-      expect(detailHere!.monthlyVolume).toBe(6);
-      expect(detailHere!.monthlyVolume).not.toBe(88);
+      expect(detailHere!.monthlyVolume).toBe(3);
+      // 0 read of 3 = a real "never read" fact, distinct from the other
+      // tenant's 1.0 — and distinct from `null` (= no data).
+      expect(detailHere!.readRate).toBe(0);
+      expect(detailHere!.monthlyVolume).not.toBe(7);
+      expect(detailHere!.monthlyVolume).not.toBe(10);
     });
 
-    // Trend + lastReview symmetry with `listSenders` — the detail
-    // path runs the same correlated-subquery shape and shares the
-    // helpers. One end-to-end test per dimension is sufficient
-    // because the bucket precedence + cross-mailbox safety are
-    // already exercised by the list tests.
+    // Trend + lastReview on the detail payload. `volumeTrend` now rides
+    // the same rolling velocity comparison as the list: recent rate per
+    // day (8/30) vs baseline rate per day (4/60) → 0.267 >= 0.087 → up.
     it('returns volumeTrend + lastReview on the detail payload', async () => {
       const a = await seedSender(db, {
         mailboxAccountId: mailboxId,
         email: 'detail-stats@x.com',
-        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        // Old enough that the `new` bucket (first_seen >= now-30d)
+        // doesn't pre-empt the velocity comparison.
+        firstSeenAt: new Date(Date.now() - 200 * 86400_000),
+        lastSeenAt: new Date(Date.now() - 1 * 86400_000),
       });
-      const NOW = new Date('2026-05-15T00:00:00Z');
-      // Prior avg = 5; current = 8 → up
-      await seedTimeseries(db, {
+      // Recent window (last 30d) — 8 msgs.
+      await seedRollingMessages({
         mailboxAccountId: mailboxId,
         senderKey: a.senderKey,
-        yearMonth: '2026-02-01',
-        volume: 5,
-        readCount: 0,
+        count: 8,
+        daysAgo: 5,
       });
-      await seedTimeseries(db, {
+      // Baseline window (30-90d ago) — 4 msgs.
+      await seedRollingMessages({
         mailboxAccountId: mailboxId,
         senderKey: a.senderKey,
-        yearMonth: '2026-03-01',
-        volume: 5,
-        readCount: 0,
-      });
-      await seedTimeseries(db, {
-        mailboxAccountId: mailboxId,
-        senderKey: a.senderKey,
-        yearMonth: '2026-04-01',
-        volume: 5,
-        readCount: 0,
-      });
-      await seedTimeseries(db, {
-        mailboxAccountId: mailboxId,
-        senderKey: a.senderKey,
-        yearMonth: '2026-05-01',
-        volume: 8,
-        readCount: 0,
+        count: 4,
+        daysAgo: 50,
       });
       const producedAt = new Date('2026-05-10T15:30:00Z');
       await seedTriageDecision(db, {
@@ -1637,8 +1665,9 @@ describe('SendersReadService', () => {
         producedAt,
       });
 
-      const detail = await svc.getSenderDetail(mailboxId, a.id, { now: NOW });
+      const detail = await svc.getSenderDetail(mailboxId, a.id);
       expect(detail).not.toBeNull();
+      expect(detail!.monthlyVolume).toBe(8);
       expect(detail!.volumeTrend).toBe('up');
       expect(detail!.lastReview).toEqual({
         at: producedAt.toISOString(),
@@ -1646,6 +1675,87 @@ describe('SendersReadService', () => {
         generatedBy: 'template',
         confidence: 0.9,
       });
+    });
+
+    // THE INVARIANT THIS BROKE ON (live: sender "Rucha Varma", 2026-07-17).
+    //
+    // `monthlyVolume` / `readRate` / `volumeTrend` must mean exactly ONE
+    // thing product-wide. The list read rolling last-30d windows off
+    // `mail_messages` while the detail still read the latest
+    // `sender_timeseries` CALENDAR month, so the same sender reported
+    // e.g. list `0 / null / down` vs detail `1 / 1.0 / dormant` — the
+    // table rendered "—" (unknown) while the detail page asserted
+    // "100% marked read".
+    //
+    // The seed reproduces exactly that shape: messages in the latest
+    // timeseries calendar month but NONE in the rolling last 30 days.
+    // Pre-fix, the detail read 5 / 1.0 / 'new' off the timeseries row
+    // while the list read 0 / null / 'down' off the rolling window.
+    it('reports identical monthlyVolume/readRate/volumeTrend from the list and the detail path', async () => {
+      const s = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'window-drift@x.com',
+        firstSeenAt: new Date(Date.now() - 300 * 86400_000),
+        lastSeenAt: new Date(Date.now() - 45 * 86400_000),
+      });
+      // A second sender with recent traffic — keeps the correlated
+      // subqueries honest (a tautology would fold these counts in).
+      const noisy = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'window-drift-noise@x.com',
+        lastSeenAt: new Date(Date.now() - 1 * 86400_000),
+      });
+      await seedRollingMessages({
+        mailboxAccountId: mailboxId,
+        senderKey: noisy.senderKey,
+        count: 6,
+        daysAgo: 3,
+        readCount: 6,
+      });
+      // Target's real messages: 45d ago → OUTSIDE the rolling 30d
+      // window, INSIDE the 30-90d trend baseline.
+      await seedRollingMessages({
+        mailboxAccountId: mailboxId,
+        senderKey: s.senderKey,
+        count: 3,
+        daysAgo: 45,
+        readCount: 3,
+      });
+      // The legacy source the detail path used to read: a fully-read
+      // row in the CURRENT calendar month. Nothing may read this for
+      // the three scalar fields any more.
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: s.senderKey,
+        yearMonth: startOfMonthIsoForTest(new Date()),
+        volume: 5,
+        readCount: 5,
+      });
+
+      const [detail, rows] = await Promise.all([
+        svc.getSenderDetail(mailboxId, s.id),
+        svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 25,
+        }),
+      ]);
+      const listRow = rows.find((r) => r.id === s.id);
+      expect(detail).not.toBeNull();
+      expect(listRow).toBeDefined();
+
+      // The invariant: same sender, same facts, both endpoints.
+      expect(detail!.monthlyVolume).toBe(listRow!.monthlyVolume);
+      expect(detail!.readRate).toBe(listRow!.readRate);
+      expect(detail!.volumeTrend).toBe(listRow!.volumeTrend);
+
+      // Pin the absolute values so the test can't pass by both paths
+      // regressing to the legacy timeseries read together.
+      expect(detail!.monthlyVolume).toBe(0);
+      // NULL, not 0 — "no messages in the window" is not "never read".
+      expect(detail!.readRate).toBeNull();
+      expect(detail!.volumeTrend).toBe('down');
     });
   });
 

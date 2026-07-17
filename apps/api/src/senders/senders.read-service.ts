@@ -143,6 +143,80 @@ function buildActivityPredicate(filter: ActivityFilter): SQL {
   return filter.negate ? sql`NOT (${pred})` : pred;
 }
 
+/**
+ * Build the ROLLING-WINDOW per-row stat subqueries shared by the list
+ * (`listSenders`) and the detail (`getSenderDetail`) read paths.
+ *
+ * ONE definition on purpose. These three counts feed the
+ * `monthlyVolume` / `readRate` / `volumeTrend` wire fields, and those
+ * fields MUST mean the same thing on every surface. They previously
+ * drifted — the list read rolling `mail_messages` windows while the
+ * detail still read the latest `sender_timeseries` calendar month — so
+ * the same sender reported different volume, a null-vs-100% read rate,
+ * and a different trend bucket depending on which endpoint you asked.
+ * Callers get the fragments from here so that can't recur.
+ *
+ * Every count comes from `mail_messages` filtered by
+ * `internal_date >= now - N days` — the same source the summary
+ * endpoint aggregates from, so a row's "47 in last 30d" agrees with
+ * the chip count.
+ *
+ * CORRELATION QUOTE-TRAP (MISTAKES.md 2026-05-23). Outer-scope refs
+ * use `sql.identifier(getTableName(senders))` so a Drizzle template
+ * can't degenerate to a tautology that silently joins every row to the
+ * same inner result.
+ *
+ * `sql<number | string>` reflects the runtime: postgres-js returns
+ * scalar subquery columns as STRINGS even with `::int` (the cast
+ * affects the wire encoding, not the driver decoding). Callers MUST
+ * coerce at the map site via `ensureSafeIntegerNumber`.
+ */
+function buildRollingWindowSubqueries(): {
+  last30dMsgs: SQL<number | string>;
+  last30dReadCount: SQL<number | string>;
+  baselineMsgs: SQL<number | string>;
+} {
+  const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
+  const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
+  return {
+    // Count of inbound msgs in last 30d. Drives the "47 in last 30d"
+    // label + the trend bucket's "recent" half.
+    last30dMsgs: sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
+        AND ${mailMessages.isOutbound} = false
+    )`,
+    // Same window, only msgs the user has read (Gmail removed the
+    // UNREAD label). Drives the read rate.
+    last30dReadCount: sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
+        AND ${mailMessages.isOutbound} = false
+        AND ${mailMessages.isUnread} = false
+    )`,
+    // Count in the prior 30-90 day window (60-day baseline span). Used
+    // by the trend bucket: recent / (baseline / 2) ratio compared
+    // against UP/DOWN multipliers. The window size is
+    // (TREND_BASELINE_END - TREND_BASELINE_START), normalised per-day
+    // in TS so the "recent vs baseline" rate comparison is fair.
+    baselineMsgs: sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.internalDate} <  now() - (${WINDOWS.TREND_BASELINE_START_DAYS} || ' days')::interval
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.TREND_BASELINE_END_DAYS}   || ' days')::interval
+        AND ${mailMessages.isOutbound} = false
+    )`,
+  };
+}
+
 function buildSenderSearchCondition(q: string | null | undefined): SQL | null {
   const pattern = buildSenderSearchPattern(q);
   if (pattern === null) return null;
@@ -319,60 +393,21 @@ export class SendersReadService {
 
     // ROLLING-WINDOW per-row stats (replaces the old per-sender-latest-
     // year_month sums that summed across decades and inflated totals).
-    // Every per-row count below comes from `mail_messages` filtered by
-    // `internal_date >= now - N days` — same source the summary
-    // endpoint aggregates from, so the row's "47 in last 30d" agrees
-    // with the chip count.
-    //
+    // Shared with `getSenderDetail` so the two paths cannot drift —
+    // see `buildRollingWindowSubqueries` for the window definitions and
+    // the correlation quote-trap note.
+    const {
+      last30dMsgs: last30dMsgsSql,
+      last30dReadCount: last30dReadCountSql,
+      baselineMsgs: baselineMsgsSql,
+    } = buildRollingWindowSubqueries();
+
     // CORRELATION QUOTE-TRAP (MISTAKES.md 2026-05-23). Outer-scope
     // refs use `sql.identifier(getTableName(senders))` so a Drizzle
     // template can't degenerate to a tautology that silently joins
     // every row to the same inner result.
     const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
     const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
-
-    // `last30dMsgs` — count of inbound msgs in last 30d. Drives the
-    // row's "47 in last 30d" label + the trend bucket "recent" half.
-    //
-    // sql<number | string> reflects the runtime: postgres-js returns
-    // scalar subquery columns as strings even with `::int` (the cast
-    // affects the wire encoding, not the driver decoding). Callers MUST
-    // coerce at the map site (see `Number(row.last30dMsgs)` below).
-    const last30dMsgsSql = sql<number | string>`(
-      SELECT COUNT(*)::int
-      FROM ${mailMessages}
-      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
-        AND ${mailMessages.senderKey} = ${outerSenderKey}
-        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
-        AND ${mailMessages.isOutbound} = false
-    )`;
-    // `last30dReadCount` — same window, only msgs the user has read
-    // (Gmail removed the UNREAD label). Drives the row's read-rate.
-    // Same string-coercion caveat as `last30dMsgs` above.
-    const last30dReadCountSql = sql<number | string>`(
-      SELECT COUNT(*)::int
-      FROM ${mailMessages}
-      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
-        AND ${mailMessages.senderKey} = ${outerSenderKey}
-        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
-        AND ${mailMessages.isOutbound} = false
-        AND ${mailMessages.isUnread} = false
-    )`;
-    // `baselineMsgs` — count in the prior 30-90 day window (60-day
-    // baseline span). Used by the trend bucket: recent / (baseline / 2)
-    // ratio compared against UP/DOWN multipliers. The window size is
-    // (TREND_BASELINE_END - TREND_BASELINE_START), normalised per-day
-    // in TS so the "recent vs baseline" rate comparison is fair.
-    // Same string-coercion caveat as `last30dMsgs` above.
-    const baselineMsgsSql = sql<number | string>`(
-      SELECT COUNT(*)::int
-      FROM ${mailMessages}
-      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
-        AND ${mailMessages.senderKey} = ${outerSenderKey}
-        AND ${mailMessages.internalDate} <  now() - (${WINDOWS.TREND_BASELINE_START_DAYS} || ' days')::interval
-        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.TREND_BASELINE_END_DAYS}   || ' days')::interval
-        AND ${mailMessages.isOutbound} = false
-    )`;
     // `sparkline` — 12 weekly buckets ending at the current week (oldest
     // bucket is index 0 in the returned array). Bucket size = 7 days;
     // window = 84 days. Drives the per-row mini-sparkline in the grid
@@ -1159,48 +1194,16 @@ export class SendersReadService {
     // rather than bare `${senders.column}` interpolations, and for the
     // trend-bucket / last-reviewed subquery rationale.
     const now = args.now ?? new Date();
-    const currentMonthIso = startOfMonthIso(now);
-    const priorWindowStartIso = startOfMonthIso(addMonthsUtc(now, -3));
     const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
     const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
-    const latestVolumeSql = sql<number | null>`(
-      SELECT ${senderTimeseries.volume}
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-      ORDER BY ${senderTimeseries.yearMonth} DESC
-      LIMIT 1
-    )`;
-    const latestReadCountSql = sql<number | null>`(
-      SELECT ${senderTimeseries.readCount}
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-      ORDER BY ${senderTimeseries.yearMonth} DESC
-      LIMIT 1
-    )`;
-    const currentMonthVolumeSql = sql<number | null>`(
-      SELECT ${senderTimeseries.volume}
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-        AND ${senderTimeseries.yearMonth} = ${currentMonthIso}
-      LIMIT 1
-    )`;
-    const priorAvgVolumeSql = sql<number | null>`(
-      SELECT AVG(${senderTimeseries.volume})::float
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-        AND ${senderTimeseries.yearMonth} >= ${priorWindowStartIso}
-        AND ${senderTimeseries.yearMonth} < ${currentMonthIso}
-    )`;
-    const historyMonthCountSql = sql<number>`(
-      SELECT COUNT(*)::int
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-    )`;
+    // Same ROLLING-WINDOW stats the list path uses — `monthlyVolume` /
+    // `readRate` / `volumeTrend` are one product-wide fact, so they are
+    // computed from one definition.
+    const {
+      last30dMsgs: last30dMsgsSql,
+      last30dReadCount: last30dReadCountSql,
+      baselineMsgs: baselineMsgsSql,
+    } = buildRollingWindowSubqueries();
     // ADR-0008 §3 ratification: direct triage_decisions read in the
     // senders read service (one of several sites — grep this marker to
     // find them all when ratifying the ADR).
@@ -1267,11 +1270,9 @@ export class SendersReadService {
         unsubscribeUrl: sql<
           string | null
         >`CASE WHEN ${senders.unsubscribeMethod} = 'mailto' THEN ${senders.unsubscribeUrl} ELSE NULL END`,
-        latestVolume: latestVolumeSql,
-        latestReadCount: latestReadCountSql,
-        currentMonthVolume: currentMonthVolumeSql,
-        priorAvgVolume: priorAvgVolumeSql,
-        historyMonthCount: historyMonthCountSql,
+        last30dMsgs: last30dMsgsSql,
+        last30dReadCount: last30dReadCountSql,
+        baselineMsgs: baselineMsgsSql,
         lastDecisionAt: lastDecisionAtSql,
         lastDecisionVerdict: lastDecisionVerdictSql,
         lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
@@ -1310,6 +1311,16 @@ export class SendersReadService {
       protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
     };
 
+    // Coerce the scalar subquery columns at the map boundary — see the
+    // matching note in `listSenders` (postgres-js returns them as
+    // strings despite the `::int` cast).
+    const last30dMsgs = ensureSafeIntegerNumber(row.last30dMsgs, 'senders.last30dMsgs');
+    const last30dReadCount = ensureSafeIntegerNumber(
+      row.last30dReadCount,
+      'senders.last30dReadCount',
+    );
+    const baselineMsgs = ensureSafeIntegerNumber(row.baselineMsgs, 'senders.baselineMsgs');
+
     return {
       id: row.id,
       displayName: row.displayName,
@@ -1320,16 +1331,20 @@ export class SendersReadService {
       lastSeenAt: row.lastSeenAt.toISOString(),
       totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
       repliedCount: ensureSafeIntegerNumber(row.repliedCount, 'senders.replied_count'),
-      monthlyVolume: row.latestVolume,
-      readRate: computeReadRate(row.latestVolume, row.latestReadCount),
-      // Detail endpoint still rides the legacy timeseries shape; sparkline
-      // not yet wired on this path. Null so the contract holds.
+      // Identical rolling-30d semantics to the list path — the same
+      // sender reports the same volume / read rate / trend on both.
+      monthlyVolume: last30dMsgs,
+      readRate: computeReadRate(last30dMsgs, last30dReadCount),
+      // Sparkline not yet wired on this path. Null so the contract holds.
       sparkline: null,
-      volumeTrend: computeTrendBucket(
-        row.currentMonthVolume,
-        row.priorAvgVolume,
-        row.historyMonthCount,
-      ),
+      volumeTrend: computeRollingTrendBucket({
+        last30dMsgs,
+        baselineMsgs,
+        firstSeenAt: row.firstSeenAt,
+        lastSeenAt: row.lastSeenAt,
+        totalReceived: row.totalReceived,
+        now,
+      }),
       unsubscribeMethod: row.unsubscribeMethod,
       // D230 manual path — the raw mailto: URL the FE turns into a
       // Gmail compose deep link. Only for mailto senders.
@@ -2028,32 +2043,9 @@ function mondayOfWeekIso(d: Date): string {
 }
 
 /**
- * Pure helper — map the raw timeseries inputs to one of the bucketed
- * trend labels (`VolumeTrendBucket`) the FE renders. LEGACY — used by
- * `getSenderDetail` until its read path migrates to rolling windows.
- * New code should use `computeRollingTrendBucket` below.
- */
-function computeTrendBucket(
-  currentVolume: number | null,
-  priorAvg: number | null,
-  historyMonthCount: number,
-): VolumeTrendBucket | null {
-  if (historyMonthCount === 0) return null;
-  if (historyMonthCount < 2) return 'new';
-  const current = currentVolume ?? 0;
-  const prior = priorAvg ?? 0;
-  if (prior === 0) {
-    return current > 0 ? 'up' : null;
-  }
-  if (current === 0) return 'dormant';
-  if (current >= prior * 1.3) return 'up';
-  if (current <= prior * 0.7) return 'down';
-  return 'steady';
-}
-
-/**
- * Pure helper — rolling-window trend bucket (replaces calendar-month
- * `computeTrendBucket`). Drives the per-row trend chip.
+ * Pure helper — rolling-window trend bucket. Drives the trend chip on
+ * both the list and the detail path (the calendar-month bucket it
+ * replaced is gone; both paths now share one definition).
  *
  * Inputs come from per-request `mail_messages` aggregates so the
  * bucket reflects what's actually in the user's inbox right now, NOT
