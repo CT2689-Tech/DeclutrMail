@@ -120,25 +120,57 @@ export type RollupEntry =
  * unaffected (grouping is presentation-only, D226 preview semantics
  * stay per-sender).
  */
+/**
+ * Consumer mail providers whose domain is NOT a brand — 13 unrelated
+ * humans at gmail.com are not "gmail.com" the sender (2026-07-16
+ * founder smoke). Rollup exists for bulk senders sharing a brand;
+ * these providers never qualify.
+ */
+const CONSUMER_MAIL_PROVIDERS = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'yahoo.com',
+  'ymail.com',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'msn.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'proton.me',
+  'protonmail.com',
+  'aol.com',
+]);
+
 export function rollupByDomain(senders: readonly Sender[], minGroupSize = 3): RollupEntry[] {
   const byDomain = new Map<string, Sender[]>();
   for (const s of senders) {
     const key = registrableDomain(s.domain);
+    // Two exclusions keep a group meaning "one brand's bulk senders":
+    // consumer providers (the domain isn't a brand), and senders the
+    // user has replied to (a relationship is never rollup inventory,
+    // whatever domain it mails from).
+    if (CONSUMER_MAIL_PROVIDERS.has(key) || s.repliedCount > 0) continue;
     const arr = byDomain.get(key);
     if (arr) arr.push(s);
     else byDomain.set(key, [s]);
   }
 
-  const grouped = new Set<string>();
+  // Membership is per-sender, not per-domain: a replied-to sender at a
+  // grouped domain must still emit as its own row, never be swallowed.
+  const groupedSenderIds = new Set<string>();
   for (const [domain, members] of byDomain) {
-    if (domain.length > 0 && members.length >= minGroupSize) grouped.add(domain);
+    if (domain.length > 0 && members.length >= minGroupSize) {
+      for (const m of members) groupedSenderIds.add(m.id);
+    }
   }
 
   const entries: RollupEntry[] = [];
   const emitted = new Set<string>();
   for (const s of senders) {
     const key = registrableDomain(s.domain);
-    if (!grouped.has(key)) {
+    if (!groupedSenderIds.has(s.id)) {
       entries.push({ kind: 'sender', sender: s });
       continue;
     }

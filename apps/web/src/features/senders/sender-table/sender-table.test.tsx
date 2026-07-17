@@ -336,9 +336,9 @@ describe('SenderTable', () => {
     const { container } = render(<Harness rows={[]} loading={true} />);
     const skeletonRows = container.querySelectorAll('tr[data-dm-sender-skeleton]');
     expect(skeletonRows.length).toBeGreaterThan(0);
-    // Column count: 10 cells per row matches COLUMNS.length.
+    // Column count: 11 cells per row matches COLUMNS.length.
     const first = skeletonRows[0]!;
-    expect(first.children.length).toBe(10);
+    expect(first.children.length).toBe(11);
   });
 
   it('renders an error row with retry when error + onRetry are provided', () => {

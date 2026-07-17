@@ -257,6 +257,23 @@ button {
   background-clip: padding-box;
 }
 
+/* Peek affordance — an identity block that opens a dialog reveals its
+   clickability on hover: name underlines, glyph fades in (opt-in via
+   data-dm-peek on the trigger; data-dm-peek-name / data-dm-peek-glyph
+   on the parts). Cursor alone was invisible (2026-07-16 smoke). */
+[data-dm-peek]:hover [data-dm-peek-name] {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+[data-dm-peek] [data-dm-peek-glyph] {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+[data-dm-peek]:hover [data-dm-peek-glyph],
+[data-dm-peek]:focus-visible [data-dm-peek-glyph] {
+  opacity: 1;
+}
+
 /* Premium hover-lift for cards (opt-in via data-dm-lift). */
 [data-dm-lift] {
   transition:
