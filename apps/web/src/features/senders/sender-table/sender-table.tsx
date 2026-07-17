@@ -572,8 +572,12 @@ function SenderRow({
             fontVariantNumeric: 'tabular-nums',
           }}
         >
-          {/* ≥3 replies auto-protects (D245) — the strongest keep signal. */}
-          {sender.repliedCount > 0 ? `${sender.repliedCount}×` : '—'}
+          {/* ≥3 replies auto-protects (D245) — the strongest keep signal.
+              Zero renders "0×", never an em-dash: the adjacent Read cell
+              uses "—" for "no timeseries / unknown", so a dash here would
+              make "you never replied" and "we don't know" the same glyph
+              on the same row. Matches the grid card. */}
+          {`${sender.repliedCount}×`}
         </td>
 
         <td
