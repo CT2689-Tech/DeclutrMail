@@ -74,8 +74,18 @@ function invalidateAfterDecision(qc: QueryClient): void {
  */
 export function ScreenerScreen({
   state = DEFAULT_SCREENER_STATE,
+  totalPending = null,
 }: {
   state?: ScreenerScreenState;
+  /**
+   * True count of senders awaiting a decision (the badge's
+   * `pendingCount`, D74) — the queue only loads a working window (top
+   * N), so `state.rows.length` is a page size, NOT the total. The
+   * heading states this authoritative number so it can't claim "50
+   * waiting" when 3,259 do; falls back to the loaded window only when
+   * the count query hasn't resolved.
+   */
+  totalPending?: number | null;
 }) {
   const qc = useQueryClient();
   const decide = useScreenerDecide();
@@ -124,10 +134,10 @@ export function ScreenerScreen({
     if (state.kind === 'ready' || state.kind === 'empty') {
       viewedFired.current = true;
       void track('screener_queue_viewed', {
-        pending_count: state.kind === 'ready' ? state.rows.length : 0,
+        pending_count: state.kind === 'ready' ? (totalPending ?? state.rows.length) : 0,
       });
     }
-  }, [state]);
+  }, [state, totalPending]);
 
   // D226 current-match preview — only the label-modify verbs move mail.
   const pendingRow: ScreenerQueueRow | null =
@@ -380,7 +390,7 @@ export function ScreenerScreen({
           }}
         >
           {state.kind === 'ready'
-            ? `${state.rows.length} new sender${state.rows.length === 1 ? '' : 's'} waiting.`
+            ? `${totalPending ?? state.rows.length} new sender${(totalPending ?? state.rows.length) === 1 ? '' : 's'} waiting.`
             : state.kind === 'empty'
               ? 'No unknown senders.'
               : state.kind === 'error'
