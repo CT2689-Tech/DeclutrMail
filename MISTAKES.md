@@ -512,6 +512,17 @@ collision case").
 **Rule:** Green CI + clean structural gates ≠ correct. Run an adversarial "try to break it" review (correctness/data-loss/races/idempotency/auth/flow) + self-verify each finding before recommending merge. Diverse lenses beat one reviewer; verification filters plausible-but-wrong findings.
 **Enforcement update:** This session ran the adversarial review as a Claude subagent workflow (replacing the OpenAI Codex CI of #237, closed — no metered quota). Candidate: keep adversarial review as a standard phase of every PR-review workflow. Promote to CLAUDE.md §7/§8 if a third wave of green-but-broken PRs appears.
 
+## 2026-07-17 — I repeated the exact D-number umbrella mis-tag the log warns about
+**PR:** #339, #340, #341, #343, #346 (all merged)
+**Caught by:** self, reading `IMPLEMENTATION-LOG.md` after merging
+**What happened:** I tagged five senders PRs with `Closes D38` / `Closes D51` / `Closes D47` / `Closes D48` by taking the D-numbers from CLAUDE.md §4's topic table ("Senders & screener | D38–D43"), which is an approximate INDEX, not the decision text. The actual rows are:
+- **D38 = "First-time education: Onboarding-only tour + tooltips on hover."** Its own log row already says: *"no tour/coachmark code exists; prior '(D38)' tags on PRs #12 and #158–#178 were umbrella mis-tags."* I then made the same mis-tag again, twice (#339, #343). There IS an `[ADR-0012 PATCH 2026-05-25 on D38]` covering senders grouping, which makes the number defensible-but-ambiguous — the merge auto-flip will still mark an onboarding tour that does not exist as shipped.
+- **D51 = "Filter UI: Hybrid — 4 quick-filter chips + More filters drawer."** My #340/#341 shipped rollup semantics, grid/table parity, and a replied-cell fix — not the filter drawer.
+- **D47/D48 = the Weekly Hero.** #346 **deleted** that feature and closed the rows, so a removal reads as a delivery. The rows were 🟢 Verified citing `senders.controller.spec.ts — Weekly Hero contract`, a spec that PR now deletes: the log cites evidence that no longer exists.
+**Correct approach:** Read the actual `### D<N> —` line in `docs/execution/Implementation-Plan.md` (plus its patches) before writing `Closes D<N>`. CLAUDE.md §4's table maps topics to RANGES for navigation; it is not the decision text and must not be used to source a trailer. A PR that RETIRES a decision needs a reversal/retire marker, not `Closes`.
+**Rule:** Never source a `Closes D###` from CLAUDE.md §4's topic table — quote the plan's `### D<N> —` title in the PR body so a wrong number is visible at review time. Removal ≠ Closes.
+**Enforcement update:** Founder's call — flagged in FOUNDER-FOLLOWUPS 2026-07-17 rather than self-resolved, since correcting D-rows and choosing the retire semantics for D47/D48 is a plan decision (§3). Candidate: have the merge auto-flip action echo the plan's D-title into the log entry, so a mis-tag is loud instead of silent.
+
 ## 2026-07-02 — cloud-smoke harness generated an invalid cookie domain (merged before caught)
 **PR:** #239 (bug) → #249 (fix)
 **Caught by:** Codex stop-time review, post-merge
