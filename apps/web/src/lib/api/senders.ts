@@ -219,60 +219,6 @@ export interface TimeseriesPointDto {
 }
 
 /**
- * One sender row inside a Weekly Hero slice card (D47, D48).
- *
- * Compact shape — the full `SenderListRow` is overkill for the slice
- * cards (which render avatar dot + name + monthly volume + sparkline).
- * Kept narrow so the hero envelope stays small (3 slices × ≤ 24 rows
- * × 12-int sparklines).
- *
- * `sparkline` is exactly 12 numbers in chronological order (oldest →
- * newest). Months with no `sender_timeseries` row are filled with 0
- * by the BE so the FE doesn't need alignment logic.
- */
-export interface WeeklyHeroSenderDto {
-  id: string;
-  displayName: string;
-  email: string;
-  domain: string;
-  monthlyVolume: number;
-  readRate: number | null;
-  sparkline: number[];
-}
-
-/** Slice kind on the Weekly Hero (D47, D48). */
-export type WeeklyHeroSliceKind = 'high_confidence' | 'spike' | 'quiet';
-
-/** One Hero slice card (D47, D48). `senders` is capped at 24 by the BE. */
-export interface WeeklyHeroSliceDto {
-  kind: WeeklyHeroSliceKind;
-  /** Pre-cap total — drives "+N more" copy when totalCount > senders.length. */
-  totalCount: number;
-  senders: WeeklyHeroSenderDto[];
-}
-
-/**
- * Response shape on `GET /api/senders/weekly-hero` (D47, D48).
- *
- * `isMonday` is true on Mondays in the mailbox's local timezone — the
- * FE shows the Hero only when true; on other days it hides the Hero
- * and renders the grid/table directly. Slices with < 3 senders are
- * OMITTED by the BE (D48 empty-card guard); the FE iterates returned
- * slices unconditionally.
- */
-export interface WeeklyHeroDto {
-  isMonday: boolean;
-  /** YYYY-MM-DD — Monday of the current week (mailbox-local). */
-  weekOf: string;
-  slices: WeeklyHeroSliceDto[];
-}
-
-/** GET /api/senders/weekly-hero — Weekly Hero slices (D47, D48). */
-export function fetchWeeklyHero(signal?: AbortSignal): Promise<Envelope<WeeklyHeroDto, unknown>> {
-  return apiGet<WeeklyHeroDto>('/api/senders/weekly-hero', { signal });
-}
-
-/**
  * Minimal-shape suggestion row for the `/senders/suggest` typeahead.
  * Lighter than `SenderListRow` by design — the dropdown only needs
  * enough to render one line per match.

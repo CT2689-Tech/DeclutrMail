@@ -93,9 +93,12 @@ export interface ReviewResult {
 }
 
 /**
- * Full-bleed focused review overlay opened by a weekly-hero CTA. The
- * user lands on exactly the promised slice — per-row segmented
- * decisions, a bulk default, keyboard nav, ⌘⏎ to apply.
+ * Full-bleed focused review overlay — per-row segmented decisions, a
+ * bulk default, keyboard nav, ⌘⏎ to apply.
+ *
+ * NOTE: currently unreachable. Its only entry point was the Weekly-Hero
+ * slice CTA, removed with that stack (D47/D48 retired). Kept because the
+ * bulk-review surface is still planned; see FOUNDER-FOLLOWUPS.
  */
 export function ReviewSession({
   open,
