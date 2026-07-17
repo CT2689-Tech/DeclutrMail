@@ -195,6 +195,12 @@ describe('AutopilotScreen — edge states', () => {
     expect(screen.getAllByText(/pending in the latest 50/i).length).toBeGreaterThan(0);
   });
 
+  it('names the active mailbox in the eyebrow, not a static "default mailbox"', () => {
+    renderScreen(ready());
+    expect(screen.getByText('Autopilot · active@example.com')).toBeInTheDocument();
+    expect(screen.queryByText(/default mailbox/i)).toBeNull();
+  });
+
   it('shows the paused banner + disables Pause-all when every rule is paused', () => {
     renderScreen({ kind: 'ready', rules: PRESET_RULES_ALL_PAUSED, suggestions: [] });
     expect(screen.getByText(/autopilot paused/i)).toBeInTheDocument();
@@ -437,6 +443,30 @@ describe('AutopilotScreen — rules management (D101)', () => {
 
     await waitFor(() => expect(observed).toHaveLength(1));
     expect(observed[0]).toEqual({ confidenceThreshold: 0.9 });
+  });
+
+  it('snaps the threshold back when the server rejects the PATCH (D101)', async () => {
+    installFetchStub([
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: () => jsonServerError('threshold_rejected'),
+      },
+    ]);
+
+    renderScreen({ kind: 'ready', rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT], suggestions: [] });
+    const slider = screen.getByRole('slider', {
+      name: /confidence threshold for rule auto-archive low-engagement/i,
+    }) as HTMLInputElement;
+
+    fireEvent.change(slider, { target: { value: '0.9' } });
+    expect(slider.value).toBe('0.9');
+    fireEvent.blur(slider);
+
+    // The refetch returns the OLD threshold, so the re-sync effect never
+    // fires — without an explicit snap-back the control would keep
+    // asserting a threshold the rule never took.
+    await waitFor(() => expect(slider.value).toBe('0.7'));
   });
 
   it('runs the dry-run preview on demand and renders the would-match count (D103/D192)', async () => {
@@ -717,6 +747,46 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: /approve 2 suggestions/i }));
     await waitFor(() => expect(observed).toHaveLength(1));
     expect(observed[0]).toBe(`/api/autopilot/rules/${AUTO_ARCHIVE_LOW_ENGAGEMENT.id}/approve-all`);
+  });
+
+  it('states the UNCAPPED scope when Approve all reaches past the buffered page (D226)', async () => {
+    // approve-all is an uncapped server-side update; `matches` is at most
+    // the BE's 50-row page. The preview must describe the real scope —
+    // a page count presented as the total is the bug this guards.
+    const rule = {
+      ...AUTO_ARCHIVE_LOW_ENGAGEMENT,
+      observeDigest: { pendingTotal: 214, senders7d: 200, messages7d: 900 },
+    };
+    const base = PENDING_SUGGESTIONS.find((m) => m.ruleId === AUTO_ARCHIVE_LOW_ENGAGEMENT.id)!;
+    const suggestions: SuggestionWithRule[] = Array.from({ length: 50 }, (_, i) => ({
+      match: { ...base, id: `00000000-0000-0000-0000-0000000002${String(i).padStart(2, '0')}` },
+      rule,
+    }));
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/approve-all$/,
+        respond: () =>
+          jsonOk({
+            data: { approvedCount: 214, alreadyResolvedCount: 0, executionEnqueued: true },
+          }),
+      },
+    ]);
+
+    renderScreen({ kind: 'ready', rules: [rule], suggestions });
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: /approve all suggestions from rule auto-archive low-engagement/i,
+      }),
+    );
+
+    const dialog = screen.getByRole('dialog', { name: /approve ALL ~214 pending suggestions/i });
+    expect(within(dialog).getByText(/showing the latest 50 of ~214/i)).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('button', { name: /approve all ~214 suggestions/i }),
+    ).toBeInTheDocument();
+    // Never a bare "Approve 50 suggestions" — that would be the page count.
+    expect(within(dialog).queryByRole('button', { name: /^approve 50 suggestions$/i })).toBeNull();
   });
 
   it('Approve selected sends exactly the checked matchIds', async () => {

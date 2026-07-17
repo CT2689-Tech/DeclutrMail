@@ -20,7 +20,7 @@ import type {
   AutopilotRulePreviewResultDto,
 } from '@/lib/api/autopilot';
 import { ContextualHelp } from '@/features/help/contextual-help';
-import { useOptionalAuth } from '@/features/auth/auth-provider';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
 import { useApproveMatches } from './api/use-approve-matches';
 import { useAutopilotRules } from './api/use-autopilot-rules';
@@ -148,6 +148,10 @@ interface ApproveTarget {
 export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const auth = useOptionalAuth();
   const activeMailboxId = auth?.me.activeMailboxId ?? null;
+  // Which mailbox these rules run on — makes a multi-mailbox switch
+  // visible in the header instead of a static "default mailbox" that
+  // was wrong for every account after the first.
+  const activeEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   const dismissMatch = useDismissMatch();
   const pauseAll = usePauseAll();
   const patchRule = usePatchRule();
@@ -293,18 +297,19 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     );
   };
 
-  const onCommitThreshold = (rule: AutopilotRuleDto, value: number) => {
+  const onCommitThreshold = async (rule: AutopilotRuleDto, value: number): Promise<boolean> => {
     void track('autopilot_preset_changed', { preset_id: rule.id, action: 'parameter_changed' });
-    patchRule.mutate(
-      { ruleId: rule.id, patch: { confidenceThreshold: value } },
-      {
-        onSuccess: () => toast(`Threshold set to ${Math.round(value * 100)}%`, 'info'),
-        onError: (err) => {
-          toast(patchFailureMessage(err), 'warn');
-          captureFeatureException(err, { surface: 'autopilot', reason: 'rule_threshold_failed' });
-        },
-      },
-    );
+    try {
+      await patchRule.mutateAsync({ ruleId: rule.id, patch: { confidenceThreshold: value } });
+      toast(`Threshold set to ${Math.round(value * 100)}%`, 'info');
+      return true;
+    } catch (err) {
+      toast(patchFailureMessage(err), 'warn');
+      captureFeatureException(err, { surface: 'autopilot', reason: 'rule_threshold_failed' });
+      // Reported to the slider so it snaps back — a warn toast alone
+      // leaves the control showing a threshold the rule never took.
+      return false;
+    }
   };
 
   const onResume = (rule: AutopilotRuleDto) => {
@@ -401,8 +406,11 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const onApproveConfirm = () => {
     if (approveTarget == null || isApproving) return;
     const { rule, matches, kind } = approveTarget;
-    const count = matches.length;
-    const onSuccess = () => {
+    // 'all' is an UNCAPPED server-side update — matches.length is at
+    // most the 50-row page, so the toast/analytics count MUST come from
+    // the server's approvedCount (D226 honesty; 2026-07-16 audit).
+    const onSuccess = (result: { approvedCount: number }) => {
+      const count = kind === 'all' ? result.approvedCount : matches.length;
       void track('autopilot_suggestion_decided', {
         decision: 'accepted',
         suggestion_kind: 'preset_rule',
@@ -419,7 +427,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         for (const m of matches) next.delete(m.id);
         return next;
       });
-      toast(`Approved ${count} suggestion${count === 1 ? '' : 's'}`, 'info');
+      toast(`Approved ${count.toLocaleString()} suggestion${count === 1 ? '' : 's'}`, 'info');
     };
     const onError = (err: unknown) => {
       captureFeatureException(err, { surface: 'autopilot', reason: 'approve_failed' });
@@ -570,7 +578,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         }}
       >
         <div>
-          <Eyebrow>Autopilot · default mailbox</Eyebrow>
+          <Eyebrow>{activeEmail ? `Autopilot · ${activeEmail}` : 'Autopilot'}</Eyebrow>
           <h1
             style={{
               fontFamily: font.display,
@@ -771,6 +779,9 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         <ApproveConfirmModal
           rule={approveTarget.rule}
           matches={approveTarget.matches}
+          kind={approveTarget.kind}
+          pendingTotal={approveTarget.rule.observeDigest?.pendingTotal ?? null}
+          pendingApproximate={pendingBufferTruncated}
           isApproving={isApproving}
           error={approveError}
           onCancel={() => {

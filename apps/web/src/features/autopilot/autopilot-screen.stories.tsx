@@ -197,6 +197,32 @@ export const ApproveConfirmOpen: Story<typeof ApproveConfirmModal> = {
       <ApproveConfirmModal
         rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
         matches={PENDING_SUGGESTIONS.filter((m) => m.ruleId === AUTO_ARCHIVE_LOW_ENGAGEMENT.id)}
+        kind="selected"
+        pendingTotal={null}
+        pendingApproximate={false}
+        isApproving={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    ),
+};
+
+/**
+ * D226 — "Approve all" when the pending buffer hit the BE's 50-row page
+ * cap. The mutation is an UNCAPPED server-side update, so the preview
+ * must state the real scope (~total) and qualify the chip list as "the
+ * latest N" rather than presenting a page count as the total.
+ */
+export const ApproveAllBeyondBuffer: Story<typeof ApproveConfirmModal> = {
+  render: () =>
+    frame(
+      <ApproveConfirmModal
+        rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
+        matches={PENDING_SUGGESTIONS.filter((m) => m.ruleId === AUTO_ARCHIVE_LOW_ENGAGEMENT.id)}
+        kind="all"
+        pendingTotal={214}
+        pendingApproximate
         isApproving={false}
         error={null}
         onCancel={() => undefined}

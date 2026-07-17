@@ -52,8 +52,13 @@ export function RuleCard({
   /** True while any PATCH for THIS rule is in flight. */
   isSaving: boolean;
   onToggleEnabled: (next: boolean) => void;
-  /** Fires on slider release with the new threshold in [0,1]. */
-  onCommitThreshold: (value: number) => void;
+  /**
+   * Fires on slider release with the new threshold in [0,1]. Resolves
+   * `true` when the server accepted the PATCH, `false` when it rejected
+   * it — the slider snaps back on `false` so the control never shows a
+   * threshold the rule doesn't actually have.
+   */
+  onCommitThreshold: (value: number) => Promise<boolean>;
   /** Paused → Observe (a fresh 7-day observe window starts). */
   onResume: () => void;
   previewOpen: boolean;
@@ -316,7 +321,7 @@ function ThresholdSlider({
   ruleName: string;
   committed: number;
   disabled: boolean;
-  onCommit: (value: number) => void;
+  onCommit: (value: number) => Promise<boolean>;
 }) {
   const [value, setValue] = useState(committed);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -333,7 +338,18 @@ function ThresholdSlider({
   }, [committed]);
 
   const commit = () => {
-    if (value !== committed) onCommit(value);
+    if (value === committed) return;
+    const attempted = value;
+    const previous = committed;
+    void onCommit(attempted).then((accepted) => {
+      // Server rejected the PATCH — snap back to the value the rule
+      // still has. Without this the slider keeps rendering the failed
+      // value (the refetch returns the OLD threshold, so the re-sync
+      // effect above sees an unchanged `committed` and never fires),
+      // leaving the control asserting a threshold that isn't real.
+      // Skip when the user has already moved on to another value.
+      if (!accepted) setValue((cur) => (cur === attempted ? previous : cur));
+    });
   };
 
   return (
