@@ -157,6 +157,10 @@ const COLUMNS: ReadonlyArray<{
   { key: null, label: 'Monthly', alignRight: true },
   { key: null, label: 'Trend' },
   { key: null, label: 'Read' },
+  // Reply count — ≥3 replies is the D245 auto-protect trigger, the
+  // strongest "don't touch this" fact; the analytical view must show it
+  // (grid↔table parity, 2026-07-16).
+  { key: null, label: 'Replied', alignRight: true },
   { key: 'last_seen', label: 'Last seen', alignRight: true },
   { key: null, label: 'Unsub' },
   { key: null, label: '' }, // verbs
@@ -555,6 +559,21 @@ function SenderRow({
 
         <td style={{ ...cellStyle, width: 90 }}>
           <ReadBucketText rate={sender.readRate} />
+        </td>
+
+        <td
+          style={{
+            ...cellStyle,
+            textAlign: 'right',
+            width: 74,
+            color: sender.repliedCount > 0 ? color.fg : color.fgMuted,
+            fontFamily: font.mono,
+            fontSize: text.sm,
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {/* ≥3 replies auto-protects (D245) — the strongest keep signal. */}
+          {sender.repliedCount > 0 ? `${sender.repliedCount}×` : '—'}
         </td>
 
         <td

@@ -142,7 +142,9 @@ export function SenderSearch({
         domain: s.domain,
         // Suggestions don't carry monthly volume — show the lifetime
         // total instead so the row still has a quantitative anchor.
-        secondary: s.totalReceived.toLocaleString() + ' lifetime',
+        // "emails" not "lifetime": next to the list's "N senders" counts,
+        // a bare "421 lifetime" reads as unit-ambiguous (2026-07-16 smoke).
+        secondary: s.totalReceived.toLocaleString() + ' emails',
       }));
     }
     return fallbackMatches.map((s) => ({

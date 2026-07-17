@@ -29,7 +29,7 @@ import {
   type NumericDisplayTone,
 } from '@declutrmail/shared';
 import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
-import { ReadBucketText } from '../fact-language';
+import { ReadBucketText, TrendChip } from '../fact-language';
 import { EPOCH_GUARD_DAYS, isStandingProtected, type Sender } from '../data';
 import type { ActionRequest } from '../data';
 import { isFeatureEnabled } from '@/lib/flags';
@@ -198,6 +198,7 @@ export function SenderCard({
           onClick={peekEnabled ? () => setPeekOpen(true) : undefined}
           title={peekEnabled ? 'Peek at recent emails and volume' : undefined}
           aria-haspopup={peekEnabled ? 'dialog' : undefined}
+          data-dm-peek={peekEnabled ? '' : undefined}
           style={{
             flex: 1,
             minWidth: 0,
@@ -222,6 +223,7 @@ export function SenderCard({
               // only distinguishable by the underlying address
               // (2026-07-07 founder smoke feedback).
               title={sender.email ? `${sender.name} <${sender.email}>` : sender.name}
+              data-dm-peek-name={peekEnabled ? '' : undefined}
               style={{
                 fontFamily: font.sans,
                 fontSize: 14,
@@ -236,6 +238,20 @@ export function SenderCard({
             >
               {sender.name}
             </span>
+            {peekEnabled && (
+              <span
+                data-dm-peek-glyph=""
+                aria-hidden="true"
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: 11,
+                  color: color.fgMuted,
+                  flex: '0 0 auto',
+                }}
+              >
+                ⌕
+              </span>
+            )}
             {sender.policyType === 'unsubscribe' &&
               (() => {
                 const copy = unsubscribeStatusCopy(sender.unsubStatus, sender.unsubscribeMethod);
@@ -375,7 +391,7 @@ export function SenderCard({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+            gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
             gap: 0,
             marginTop: 10,
             paddingTop: 10,
@@ -388,6 +404,9 @@ export function SenderCard({
               ("marked read" is the honest fact). Same words + tones as
               the table's Read column. */}
           <Stat label="Read" value={<ReadBucketText rate={sender.readRate} />} />
+          {/* Grid↔table parity (2026-07-16): the table's Trend column,
+              same fact-language chip. */}
+          <Stat label="Trend" value={<TrendChip bucket={sender.volumeTrend} />} />
           {/* Epoch guard: Gmail reports internalDate=0 for some spam
               messages, which lands here as ~20,000d. "—" is the honest
               render — we don't know when. */}

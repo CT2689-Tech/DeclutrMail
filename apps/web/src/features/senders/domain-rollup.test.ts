@@ -109,4 +109,45 @@ describe('rollupByDomain', () => {
     const entries = rollupByDomain(list);
     expect(entries.map((e) => e.kind)).toEqual(['sender', 'sender', 'sender']);
   });
+
+  it('never groups consumer mail providers — 13 humans at gmail.com are not a brand', () => {
+    const list = [
+      sender({ id: 'g1', domain: 'gmail.com' }),
+      sender({ id: 'g2', domain: 'gmail.com' }),
+      sender({ id: 'g3', domain: 'gmail.com' }),
+      sender({ id: 'g4', domain: 'googlemail.com' }),
+      sender({ id: 'o1', domain: 'outlook.com' }),
+      sender({ id: 'o2', domain: 'outlook.com' }),
+      sender({ id: 'o3', domain: 'outlook.com' }),
+    ];
+    const entries = rollupByDomain(list);
+    expect(entries.every((e) => e.kind === 'sender')).toBe(true);
+  });
+
+  it('excludes replied-to senders from groups without swallowing their row', () => {
+    const list = [
+      sender({ id: 'r1', domain: 'brand.com', repliedCount: 4 }),
+      sender({ id: 'b1', domain: 'brand.com' }),
+      sender({ id: 'b2', domain: 'mail.brand.com' }),
+      sender({ id: 'b3', domain: 'news.brand.com' }),
+    ];
+    const entries = rollupByDomain(list);
+    // r1 emits as its own row; b1–b3 still form the brand group.
+    const standalone = entries.filter((e) => e.kind === 'sender');
+    const groups = entries.filter((e) => e.kind === 'group');
+    expect(standalone.map((e) => (e.kind === 'sender' ? e.sender.id : ''))).toEqual(['r1']);
+    expect(groups).toHaveLength(1);
+    if (groups[0]!.kind !== 'group') throw new Error('expected group');
+    expect(groups[0]!.senders.map((s) => s.id).sort()).toEqual(['b1', 'b2', 'b3']);
+  });
+
+  it('drops the group entirely when replied-to exclusions push it under minGroupSize', () => {
+    const list = [
+      sender({ id: 'r1', domain: 'brand.com', repliedCount: 1 }),
+      sender({ id: 'b1', domain: 'brand.com' }),
+      sender({ id: 'b2', domain: 'brand.com' }),
+    ];
+    const entries = rollupByDomain(list);
+    expect(entries.every((e) => e.kind === 'sender')).toBe(true);
+  });
 });

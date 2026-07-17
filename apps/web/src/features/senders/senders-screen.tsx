@@ -1620,9 +1620,6 @@ function SendersScreenContent({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <SenderSearch value={query} onChange={setQuery} senders={senders} onPick={onSearchPick} />
-          {/* The Grid/Table toggle was retired (founder-approved,
-              2026-07-08 senders suite) — the grid is the single adaptive
-              surface; sorting lives on the ComposeStrip sort chip. */}
         </div>
       </div>
 
