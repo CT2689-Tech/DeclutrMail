@@ -15,7 +15,7 @@ import {
   startMailboxConnect,
   startMailboxReactivation,
 } from '@/features/mailboxes/connect-mailbox-url';
-import { ApiError } from '@/lib/api/client';
+import { isBillingDisabledError } from '@/features/billing/api/use-billing-subscription';
 import { track } from '@/lib/posthog';
 import {
   useMeSettings,
@@ -458,13 +458,12 @@ export function SettingsScreen() {
             billing.isPending
               ? { kind: 'loading' }
               : billing.isError
-                ? {
-                    kind: 'unavailable',
-                    reason:
-                      billing.error instanceof ApiError && billing.error.status === 503
-                        ? 'Billing is not enabled in this environment yet.'
-                        : 'Could not load your plan right now.',
-                  }
+                ? // Only the BILLING_DISABLED envelope code means the flag is
+                  // off. A bare 503 also covers BILLING_NOT_PROVISIONED and
+                  // any upstream outage — those are failures, and retryable.
+                  isBillingDisabledError(billing.error)
+                  ? { kind: 'disabled' }
+                  : { kind: 'error', onRetry: () => void billing.refetch() }
                 : {
                     kind: 'ready',
                     planName: manifestTier?.name ?? billing.data.tier,
@@ -537,7 +536,9 @@ function SectionLabel({
 
 type PlanCardState =
   | { kind: 'loading' }
-  | { kind: 'unavailable'; reason: string }
+  /** 503 BILLING_DISABLED — the flag is off. Deterministic, so no retry. */
+  | { kind: 'disabled' }
+  | { kind: 'error'; onRetry: () => void }
   | { kind: 'ready'; planName: string; foundingMember: boolean };
 
 /** Plan & Billing summary — link-only; the /billing screen owns the rest. */
@@ -552,8 +553,17 @@ function PlanCard({ state }: { state: PlanCardState }) {
           <p role="status" style={mutedTextStyle}>
             Loading plan…
           </p>
-        ) : state.kind === 'unavailable' ? (
-          <p style={mutedTextStyle}>{state.reason}</p>
+        ) : state.kind === 'disabled' ? (
+          <p style={mutedTextStyle}>Billing is not enabled in this environment yet.</p>
+        ) : state.kind === 'error' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+            <span style={{ fontSize: 13, color: color.danger }}>
+              Could not load your plan right now.
+            </span>
+            <Button tone="default" size="sm" onClick={state.onRetry}>
+              Retry
+            </Button>
+          </div>
         ) : (
           <p style={mutedTextStyle}>
             Current plan:{' '}

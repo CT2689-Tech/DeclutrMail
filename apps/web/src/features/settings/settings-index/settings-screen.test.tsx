@@ -288,6 +288,82 @@ describe('SettingsScreen', () => {
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
   });
 
+  it('states "Not synced yet" for a mailbox with no sync row (never a bare "Ready")', async () => {
+    // `readiness: null` = no sync row exists yet (D116). The card used to
+    // fall through to "Ready", asserting a completed scan it cannot see.
+    me = makeMe([{ ...mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'), readiness: null }]);
+    renderScreen();
+
+    const row = (await screen.findByText('chintan.a.thakkar.crypt@gmail.com')).closest(
+      'li',
+    ) as HTMLElement;
+    expect(within(row).getByText('Not synced yet')).toBeInTheDocument();
+    expect(within(row).queryByText('Ready')).not.toBeInTheDocument();
+  });
+
+  it('still says "Ready" for a mailbox whose sync really did complete', async () => {
+    me = makeMe([
+      { ...mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'), readiness: 'ready' },
+    ]);
+    renderScreen();
+
+    const row = (await screen.findByText('chintan.a.thakkar.crypt@gmail.com')).closest(
+      'li',
+    ) as HTMLElement;
+    expect(within(row).getByText('Ready')).toBeInTheDocument();
+  });
+
+  it('shows a visible reason next to a Reconnect disabled by data deletion', async () => {
+    me = makeMe([
+      {
+        ...mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
+        status: 'disconnected',
+        indexedDataState: 'deleting',
+      },
+    ]);
+    renderScreen();
+
+    const reconnect = await screen.findByRole('button', {
+      name: 'Reconnect chintan.a.thakkar.crypt@gmail.com',
+    });
+    expect(reconnect).toBeDisabled();
+    // The reason must be readable on the page, not hidden in a `title`
+    // tooltip that touch + keyboard + screen readers never reach.
+    const reason = screen.getByText(/reconnect becomes available after indexed-data deletion/i);
+    expect(reason).toBeInTheDocument();
+    expect(reconnect).toHaveAttribute('aria-describedby', reason.id);
+  });
+
+  it('gives the delayed-deletion reason its own visible copy', async () => {
+    me = makeMe([
+      {
+        ...mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
+        status: 'disconnected',
+        indexedDataState: 'deletion_delayed',
+      },
+    ]);
+    renderScreen();
+
+    expect(await screen.findByText(/deletion is delayed and will retry/i)).toBeInTheDocument();
+  });
+
+  it('leaves no visible blocked-reason on an enabled Reconnect', async () => {
+    me = makeMe([
+      {
+        ...mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
+        status: 'disconnected',
+        indexedDataState: 'retained',
+      },
+    ]);
+    renderScreen();
+
+    const reconnect = await screen.findByRole('button', {
+      name: 'Reconnect chintan.a.thakkar.crypt@gmail.com',
+    });
+    expect(reconnect).toBeEnabled();
+    expect(screen.queryByText(/reconnect becomes available/i)).not.toBeInTheDocument();
+  });
+
   it('shows mailbox-data deletion lifecycle and blocks reconnect until completion', async () => {
     me = makeMe([
       {
@@ -343,6 +419,45 @@ describe('SettingsScreen', () => {
     );
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
     expect(startMailboxReactivationSpy).not.toHaveBeenCalled();
+  });
+
+  it('labels each preview-placement toggle with where the preview actually lands', async () => {
+    const patches: unknown[] = [];
+    installFetchStub([
+      ...happyHandlers(),
+      {
+        method: 'PATCH',
+        path: '/api/me/action-sheet-prefs',
+        respond: async (req) => {
+          const body = (await req.json()) as Record<string, boolean>;
+          patches.push(body);
+          return jsonOk({
+            data: {
+              actionSheetPrefs: { archive: false, unsubscribe: false, later: false, ...body },
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const toggle = await screen.findByRole('switch', {
+      name: /show the archive preview in the row/i,
+    });
+    // pref=false → the sheet opens, so the preview is in a WINDOW. The
+    // legacy 'Show'/'Skip' wording named the sheet (a word this card
+    // never uses) and so read as the inverse of the switch's own label.
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(toggle).toHaveTextContent('Window');
+    expect(toggle).not.toHaveTextContent('Row');
+
+    await userEvent.click(toggle);
+
+    // pref=true → the sheet is skipped and the preview renders in the ROW.
+    await waitFor(() => expect(patches).toEqual([{ archive: true }]));
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+    expect(toggle).toHaveTextContent('Row');
+    expect(toggle).not.toHaveTextContent('Window');
   });
 
   it('D34 toggle PATCHes the single changed key and mirrors into the triage store', async () => {
@@ -453,7 +568,35 @@ describe('SettingsScreen', () => {
     expect(screen.getByText('Account notices')).toBeInTheDocument();
   });
 
-  it('renders the honest billing-unavailable copy on 503 (no fake Free)', async () => {
+  it('renders the honest billing-disabled copy on 503 BILLING_DISABLED (no fake Free)', async () => {
+    installFetchStub([
+      ...happyHandlers().filter((h) => h.path !== '/api/billing/subscription'),
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () =>
+          new Response(JSON.stringify({ error: { code: 'BILLING_DISABLED' } }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await waitFor(() =>
+      expect(screen.getByText(/billing is not enabled in this environment/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/current plan/i)).not.toBeInTheDocument();
+    // The flag being off is deterministic — a retry would be noise.
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+    // The billing link still works — /billing owns the rest.
+    expect(screen.getByRole('link', { name: /manage plan & billing/i })).toHaveAttribute(
+      'href',
+      '/billing',
+    );
+  });
+
+  it('does not claim billing is disabled on a 503 that is not BILLING_DISABLED', async () => {
     installFetchStub([
       ...happyHandlers().filter((h) => h.path !== '/api/billing/subscription'),
       {
@@ -468,15 +611,39 @@ describe('SettingsScreen', () => {
     ]);
     renderScreen();
 
+    // A generic upstream 503 — and BILLING_NOT_PROVISIONED, which also
+    // 503s — is an outage, not the flag being off.
     await waitFor(() =>
-      expect(screen.getByText(/billing is not enabled in this environment/i)).toBeInTheDocument(),
+      expect(screen.getByText(/could not load your plan right now/i)).toBeInTheDocument(),
     );
-    expect(screen.queryByText(/current plan/i)).not.toBeInTheDocument();
-    // The billing link still works — /billing owns the rest.
-    expect(screen.getByRole('link', { name: /manage plan & billing/i })).toHaveAttribute(
-      'href',
-      '/billing',
-    );
+    expect(screen.queryByText(/billing is not enabled/i)).not.toBeInTheDocument();
+  });
+
+  it('recovers the plan card when its Retry succeeds', async () => {
+    let attempts = 0;
+    installFetchStub([
+      ...happyHandlers().filter((h) => h.path !== '/api/billing/subscription'),
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => {
+          attempts += 1;
+          return attempts <= 3
+            ? new Response(JSON.stringify({ error: { code: 'INTERNAL' } }), {
+                status: 500,
+                headers: { 'content-type': 'application/json' },
+              })
+            : jsonOk({ data: SUBSCRIPTION_PAYLOAD });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const retry = await screen.findByRole('button', { name: /^retry$/i }, { timeout: 5000 });
+    await userEvent.click(retry);
+
+    await waitFor(() => expect(screen.getByText(/current plan/i)).toBeInTheDocument());
+    expect(screen.queryByText(/could not load your plan right now/i)).not.toBeInTheDocument();
   });
 
   it('renders per-card retry when the settings read fails (page stays usable)', async () => {

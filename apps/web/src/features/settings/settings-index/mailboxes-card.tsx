@@ -73,11 +73,16 @@ export function MailboxesCard({
                 indexedDataState === 'deletion_pending' ||
                 indexedDataState === 'deleting' ||
                 indexedDataState === 'deletion_delayed';
-              const reconnectTitle = deletionInFlight
+              // A disabled control must say why in VISIBLE text — a `title`
+              // tooltip reaches neither touch nor keyboard nor a screen reader.
+              // The tier-limit reason renders once at the card footer instead,
+              // so only the per-row deletion reason is carried here.
+              const reconnectBlockedReason = deletionInFlight
                 ? indexedDataState === 'deletion_delayed'
                   ? 'Indexed-data deletion is delayed and will retry. Reconnect becomes available after deletion completes.'
                   : 'Reconnect becomes available after indexed-data deletion completes.'
                 : undefined;
+              const reconnectBlockedReasonId = `mailbox-${m.id}-reconnect-blocked`;
               const reconnectBlocked = deletionInFlight || (atLimit && !needsReconnect);
               const reconnectHighlighted = m.id === highlightMailboxId;
               return (
@@ -164,24 +169,46 @@ export function MailboxesCard({
                       <StatusTag tone="muted">Syncing…</StatusTag>
                     ) : m.readiness === 'failed' ? (
                       <StatusTag tone="danger">Sync failed</StatusTag>
-                    ) : (
+                    ) : m.readiness === 'ready' ? (
                       <StatusTag tone="muted">Ready</StatusTag>
+                    ) : (
+                      // readiness === null: no sync row exists yet (D116), so
+                      // the first scan has not been recorded. Never fold this
+                      // into "Ready" — that claims a scan we cannot see.
+                      <StatusTag tone="muted">Not synced yet</StatusTag>
                     )}
                     {showReconnect && (
-                      <ReconnectButton
-                        disabled={reconnectBlocked}
-                        describedBy={
-                          atLimit && !needsReconnect && !deletionInFlight
-                            ? MAILBOX_LIMIT_EXPLANATION_ID
-                            : undefined
-                        }
-                        email={m.email}
-                        label={
-                          indexedDataState === 'deleted' ? 'Reconnect · new index' : 'Reconnect'
-                        }
-                        title={reconnectTitle}
-                        onClick={() => (needsReconnect ? onConnect(m.id) : onReactivate(m.id))}
-                      />
+                      <>
+                        {reconnectBlockedReason && (
+                          <span
+                            id={reconnectBlockedReasonId}
+                            style={{
+                              fontSize: 11,
+                              color: color.fgMuted,
+                              flex: '1 1 200px',
+                              minWidth: 0,
+                              textAlign: 'right',
+                            }}
+                          >
+                            {reconnectBlockedReason}
+                          </span>
+                        )}
+                        <ReconnectButton
+                          disabled={reconnectBlocked}
+                          describedBy={
+                            reconnectBlockedReason
+                              ? reconnectBlockedReasonId
+                              : atLimit && !needsReconnect
+                                ? MAILBOX_LIMIT_EXPLANATION_ID
+                                : undefined
+                          }
+                          email={m.email}
+                          label={
+                            indexedDataState === 'deleted' ? 'Reconnect · new index' : 'Reconnect'
+                          }
+                          onClick={() => (needsReconnect ? onConnect(m.id) : onReactivate(m.id))}
+                        />
+                      </>
                     )}
                   </span>
                 </li>
@@ -239,14 +266,12 @@ function ReconnectButton({
   describedBy,
   email,
   label,
-  title,
   onClick,
 }: {
   disabled: boolean;
   describedBy: string | undefined;
   email: string;
   label: string;
-  title: string | undefined;
   onClick: () => void;
 }) {
   return (
@@ -255,7 +280,6 @@ function ReconnectButton({
       disabled={disabled}
       aria-label={`Reconnect ${email}`}
       aria-describedby={describedBy}
-      title={title}
       onClick={onClick}
       style={{
         display: 'inline-flex',

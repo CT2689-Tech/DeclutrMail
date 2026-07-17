@@ -59,6 +59,13 @@ export function SendersPoliciesScreen() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [data]);
 
+  // The BE-honest count of protected senders, query-wide rather than
+  // cursor-scoped (ADR-0014). `protectedSenders.length` is only what this
+  // page happens to have loaded, so it would render the `limit=50` cap as
+  // a total. Page 1's value is authoritative for the whole scroll.
+  const queryMeta = data?.pages[0]?.meta.query;
+  const totalMatching = queryMeta?.totalMatching;
+
   if (sendersQuery.isLoading) return <LoadingState />;
   if (sendersQuery.isError) {
     return <PoliciesErrorState error={sendersQuery.error} onRetry={() => sendersQuery.refetch()} />;
@@ -142,7 +149,15 @@ export function SendersPoliciesScreen() {
               color: color.fgMuted,
             }}
           >
-            {protectedSenders.length} {protectedSenders.length === 1 ? 'sender' : 'senders'}
+            {/* Without a server total, a capped page cannot claim one — say
+                what is on screen instead (the Autopilot "latest N" posture). */}
+            {totalMatching !== undefined
+              ? `${totalMatching.toLocaleString()} ${totalMatching === 1 ? 'sender' : 'senders'}`
+              : hasNextPage
+                ? `Showing ${protectedSenders.length.toLocaleString()}`
+                : `${protectedSenders.length.toLocaleString()} ${
+                    protectedSenders.length === 1 ? 'sender' : 'senders'
+                  }`}
           </span>
         </header>
 
@@ -151,6 +166,11 @@ export function SendersPoliciesScreen() {
             <EmptyState
               title="No protected senders yet"
               description="When you mark a sender as Protected from their detail page, it will appear here. Protected senders are skipped by auto-rules and bulk actions."
+              action={
+                <Link href="/senders" style={{ textDecoration: 'none' }}>
+                  <Button size="sm">Browse senders</Button>
+                </Link>
+              }
             />
           </div>
         ) : (
