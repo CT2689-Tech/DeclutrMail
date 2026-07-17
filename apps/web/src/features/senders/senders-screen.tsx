@@ -1620,6 +1620,9 @@ function SendersScreenContent({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <SenderSearch value={query} onChange={setQuery} senders={senders} onPick={onSearchPick} />
+          {/* D49 — segmented [Grid | Table] switch at top right.
+              Per-session, non-persistent (each visit starts in grid). */}
+          <ViewToggle />
         </div>
       </div>
 
@@ -1720,6 +1723,7 @@ function SendersScreenContent({
         <SenderResultsFreshness
           asOf={asOf}
           mailboxEmail={activeEmail}
+          totalSenders={filterCounts?.total ?? null}
           updating={showingStaleRows}
         />
       )}
@@ -1805,9 +1809,6 @@ function SendersScreenContent({
             {senders.length > 0 && !showingStaleRows && (
               <BulkSelectButton senders={senders} selected={selected} setSelected={setSelected} />
             )}
-            {/* D49 — segmented [Grid | Table] switch. Per-session,
-                non-persistent (each visit starts in grid). */}
-            <ViewToggle />
           </span>
         </div>
       )}
@@ -1973,14 +1974,22 @@ function SendersScreenContent({
 
 /* ────────────────── HELPERS ────────────────── */
 
-/** D245 — query scope + server snapshot time beside the matching count. */
+/**
+ * D245 + D49 follow-through — query scope, coverage, and server
+ * snapshot time beside the matching count. `totalSenders` is the
+ * mailbox-wide indexed count (filterCounts.total, NOT the filtered
+ * match) so a Gmail-native user can answer "am I looking at all my
+ * mail?" without leaving the page (2026-07-16 founder smoke).
+ */
 function SenderResultsFreshness({
   asOf,
   mailboxEmail,
+  totalSenders,
   updating,
 }: {
   asOf: string;
   mailboxEmail: string;
+  totalSenders: number | null;
   updating: boolean;
 }) {
   const label = formatSenderSnapshotTime(asOf);
@@ -2012,10 +2021,14 @@ function SenderResultsFreshness({
         </>
       ) : (
         <>
-          <span>Matching count and rows for {mailboxEmail}</span>
+          <span>
+            Synced through <time dateTime={asOf}>{label}</time>
+          </span>
           <span aria-hidden="true">·</span>
           <span>
-            Snapshot <time dateTime={asOf}>{label}</time>
+            {totalSenders !== null
+              ? `${totalSenders.toLocaleString()} senders indexed for ${mailboxEmail}`
+              : `Matching count and rows for ${mailboxEmail}`}
           </span>
         </>
       )}
