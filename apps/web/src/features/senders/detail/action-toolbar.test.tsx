@@ -3,24 +3,18 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { tokens } from '@declutrmail/shared';
 import { ActionToolbar } from './action-toolbar';
-import type { Sender } from '../data';
+import { makeSender } from '../testing/make-sender';
 
-function sender(overrides: Partial<Sender> = {}): Sender {
-  return {
-    id: 's1',
-    name: 'Acme',
+const sender: typeof makeSender = (overrides = {}) =>
+  makeSender({
+    displayName: 'Acme',
     domain: 'acme.example',
-    monthly: 12,
-    group: 'promotions',
-    read: 0.1,
-    spark: [],
+    gmailCategory: 'promotions',
+    readRate: 0.1,
     lastDays: 2,
-    unread: 0,
-    firstSeenMo: 12,
     unsubscribeMethod: 'none',
     ...overrides,
-  };
-}
+  });
 
 describe('ActionToolbar — D245 fact-derived primary', () => {
   function actionButtonTag(html: string, label: string): string {
@@ -35,7 +29,18 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
     ['Keep', sender(), tokens.color.primary],
     ['Unsubscribe', sender({ unsubscribeMethod: 'one_click' }), tokens.color.amber],
     ['Archive', sender({ lastDays: 250 }), tokens.color.fg],
-    ['Keep', sender({ unsubscribeMethod: 'one_click', protected: true }), tokens.color.primary],
+    [
+      'Keep',
+      sender({
+        unsubscribeMethod: 'one_click',
+        protectionFlags: {
+          isProtected: true,
+          protectionReason: 'user_defined',
+          protectionSetAt: '2026-06-01T00:00:00.000Z',
+        },
+      }),
+      tokens.color.primary,
+    ],
   ] as const)('highlights %s from observed facts', (label, row, background) => {
     const html = renderToStaticMarkup(<ActionToolbar sender={row} onAction={() => {}} />);
     expect(actionButtonTag(html, label)).toContain(`background:${background}`);

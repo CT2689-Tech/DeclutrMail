@@ -410,8 +410,15 @@ function CheckoutPanel({
   const tier = TIER_MANIFEST[target];
   const point = cycle === 'annual' ? tier.prices.annual : tier.prices.monthly;
   const founding = foundingEligible && claimFounding && tier.promo ? tier.promo : null;
-  const amountCents = founding ? founding.annual.usdCents : (point?.usdCents ?? 0);
-  const impact = `${formatUsd(amountCents)} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`;
+  // A paid tier with no price point for the chosen cycle must never
+  // render a fabricated "$0.00 billed …, starting today" promise —
+  // block checkout instead. Unreachable with today's manifest (both
+  // paid tiers carry both cycles); guards future tier edits.
+  const amountCents = founding ? founding.annual.usdCents : (point?.usdCents ?? null);
+  const impact =
+    amountCents !== null
+      ? `${formatUsd(amountCents)} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
+      : `Pricing for the ${cycle} cycle isn't available right now — try the other billing cycle.`;
 
   return (
     <div
@@ -499,7 +506,7 @@ function CheckoutPanel({
       )}
 
       <div>
-        <Button tone="primary" onClick={onContinue} disabled={isPending}>
+        <Button tone="primary" onClick={onContinue} disabled={isPending || amountCents === null}>
           {isPending ? 'Opening checkout…' : 'Continue to checkout →'}
         </Button>
       </div>

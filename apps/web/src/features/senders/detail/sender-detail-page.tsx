@@ -1025,11 +1025,16 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           {latestPoint != null ? (
             <>
               Sent <span style={{ color: color.fg, fontWeight: 600 }}>{latestPoint.volume}</span> in{' '}
-              {latestMonthAbbrev}.{' '}
-              <span style={{ color: color.fg, fontWeight: 600 }}>
-                {Math.round(stats.readRate * 100)}%
-              </span>{' '}
-              of their messages were marked read.
+              {latestMonthAbbrev}.
+              {stats.readRate !== null && (
+                <>
+                  {' '}
+                  <span style={{ color: color.fg, fontWeight: 600 }}>
+                    {Math.round(stats.readRate * 100)}%
+                  </span>{' '}
+                  of their messages were marked read.
+                </>
+              )}
             </>
           ) : (
             <>Hasn&rsquo;t mailed you yet.</>
@@ -1079,14 +1084,18 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                 </div>
               ) : null,
           },
+          // `null` readRate = no timeseries — em-dash cell, matching the
+          // Volume cell's honesty rule above (never a fabricated 0%).
           {
             label: 'Read rate',
-            value: Math.round(stats.readRate * 100),
-            unit: '%',
+            value: stats.readRate !== null ? Math.round(stats.readRate * 100) : '—',
+            unit: stats.readRate !== null ? '%' : null,
             micro:
-              stats.readRate < 0.2
-                ? 'below 20%'
-                : `${Math.round(stats.readRate * 100)}% marked read`,
+              stats.readRate === null
+                ? 'no data yet'
+                : stats.readRate < 0.2
+                  ? 'below 20%'
+                  : `${Math.round(stats.readRate * 100)}% marked read`,
           },
           {
             label: 'Relationship',

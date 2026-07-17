@@ -345,10 +345,7 @@ export function ConfirmActionModal({
   if (!request) return null;
 
   const { senders } = request;
-  const senderTotals = senders.map((s) => s.total);
-  const historic = senderTotals.every((t) => t != null)
-    ? senderTotals.reduce((sum, t) => sum + (t as number), 0)
-    : null;
+  const historic = senders.reduce((sum, s) => sum + s.totalReceived, 0);
   const requestedSenderCount = senders.length;
   const selectedCount = request.selectedCount ?? requestedSenderCount;
   const skippedCount = (request.skipped?.protectedCount ?? 0) + (request.skipped?.peopleCount ?? 0);
@@ -530,7 +527,7 @@ export function ConfirmActionModal({
               <span>·</span>
               <span>
                 <strong style={{ color: color.fg, fontFamily: font.sans, fontWeight: 600 }}>
-                  {compositePreview?.sender?.monthly ?? senders[0]!.monthly}
+                  {compositePreview?.sender?.monthly ?? senders[0]!.monthlyVolume ?? 0}
                 </strong>{' '}
                 /mo
               </span>

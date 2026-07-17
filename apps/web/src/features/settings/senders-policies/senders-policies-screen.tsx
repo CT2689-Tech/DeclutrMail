@@ -26,8 +26,8 @@ import {
   tokens,
 } from '@declutrmail/shared';
 import { useSenders } from '@/features/senders/api/use-senders';
-import { adaptSenderListRow } from '@/features/senders/api/adapters';
-import type { Sender } from '@/features/senders/data';
+
+import { enrichSenderRow, type Sender } from '@/features/senders/data';
 import { ApiError } from '@/lib/api/client';
 
 const { color, font, space, radius } = tokens;
@@ -55,7 +55,7 @@ export function SendersPoliciesScreen() {
   const protectedSenders = useMemo<Sender[]>(() => {
     const pages = data?.pages ?? [];
     return pages
-      .flatMap((p) => p.data.map((row) => adaptSenderListRow(row)))
+      .flatMap((p) => p.data.map((row) => enrichSenderRow(row)))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [data]);
 
@@ -218,7 +218,7 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
             marginTop: 2,
           }}
         >
-          {sender.domain} · {sender.monthly}/mo
+          {sender.domain} · {sender.monthlyVolume ?? 0}/mo
         </div>
       </div>
       <Link

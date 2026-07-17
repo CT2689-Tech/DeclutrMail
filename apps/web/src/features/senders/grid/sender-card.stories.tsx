@@ -6,7 +6,7 @@
 
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
-import type { Sender } from '../data';
+import { makeSender } from '../testing/make-sender';
 import { SenderCard } from './sender-card';
 
 const { color } = tokens;
@@ -45,23 +45,16 @@ type CardArgs = ComponentProps<typeof SenderCard>;
 
 const noop = () => undefined;
 
-function sender(overrides: Partial<Sender> = {}): Sender {
-  return {
+const sender: typeof makeSender = (overrides = {}) =>
+  makeSender({
     id: 'story-card',
-    name: 'Acme Newsletter',
-    domain: 'acme.com',
-    monthly: 12,
-    group: 'updates',
-    read: 0.18,
-    spark: [3, 3, 3, 3],
+    displayName: 'Acme Newsletter',
+    gmailCategory: 'updates',
+    readRate: 0.18,
     lastDays: 4,
-    unread: 0,
     firstSeenMo: 18,
-    volumeTrend: 'steady',
-    lastReview: null,
     ...overrides,
-  };
-}
+  });
 
 function frame(args: CardArgs) {
   return (
@@ -95,7 +88,7 @@ export const Default: Story<typeof SenderCard> = {
 /** Selected — primary border highlights the row. */
 export const Selected: Story<typeof SenderCard> = {
   args: {
-    sender: sender({ name: 'Selected Sender' }),
+    sender: sender({ displayName: 'Selected Sender' }),
     selected: true,
     onToggleSelect: noop,
     onAction: noop,
@@ -107,7 +100,14 @@ export const Selected: Story<typeof SenderCard> = {
 /** Protected — Unsubscribe + Archive disabled. */
 export const Protected: Story<typeof SenderCard> = {
   args: {
-    sender: sender({ name: 'Protected Sender', protected: true }),
+    sender: sender({
+      displayName: 'Protected Sender',
+      protectionFlags: {
+        isProtected: true,
+        protectionReason: 'user_defined',
+        protectionSetAt: '2026-06-01T00:00:00.000Z',
+      },
+    }),
     selected: false,
     onToggleSelect: noop,
     onAction: noop,

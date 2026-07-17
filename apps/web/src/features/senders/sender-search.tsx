@@ -127,7 +127,7 @@ export function SenderSearch({
     return senders
       .filter((s) => s.name.toLowerCase().includes(q) || s.domain.toLowerCase().includes(q))
       .slice(0, 6)
-      .map((s) => ({ id: s.id, name: s.name, domain: s.domain, monthly: s.monthly }));
+      .map((s) => ({ id: s.id, name: s.name, domain: s.domain, monthly: s.monthlyVolume ?? 0 }));
   }, [text, senders]);
 
   // Resolve the dropdown row set. Empty query → nothing. Remote result

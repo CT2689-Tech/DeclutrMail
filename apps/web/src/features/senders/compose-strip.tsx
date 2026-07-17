@@ -342,7 +342,7 @@ function ToggleChip({
         }}
         aria-hidden
       >
-        {active && <span style={{ color: color.card, lineHeight: 1, fontSize: 9 }}>✓</span>}
+        {active && <span style={{ color: color.fg, lineHeight: 1, fontSize: 9 }}>✓</span>}
         {negated && <span style={{ color: 'inherit', lineHeight: 1, fontSize: 9 }}>✕</span>}
       </span>
       <span>{label}</span>
@@ -402,7 +402,7 @@ function OnOffChip({
         }}
         aria-hidden
       >
-        {active && <span style={{ color: color.card, lineHeight: 1, fontSize: 9 }}>✓</span>}
+        {active && <span style={{ color: color.fg, lineHeight: 1, fontSize: 9 }}>✓</span>}
       </span>
       <span>{label}</span>
       {count !== undefined && (

@@ -14,7 +14,7 @@
 // plus the same four states for the Recent subjects card (real
 // first-page `/api/senders/:id/messages` rows, capped at 3).
 
-import type { Sender } from '../data';
+import { makeSender } from '../testing/make-sender';
 import {
   SenderRowDetail,
   type RowDetailSubjects,
@@ -51,23 +51,18 @@ const meta: StoryMeta<typeof SenderRowDetail> = {
 
 export default meta;
 
-function sender(overrides: Partial<Sender> = {}): Sender {
-  return {
+const sender: typeof makeSender = (overrides = {}) =>
+  makeSender({
     id: 'story-sender',
-    name: 'Acme Newsletter',
-    domain: 'acme.com',
-    monthly: 24,
-    group: 'updates',
-    read: 0.1,
-    spark: [6, 6, 6, 6],
+    gmailCategory: 'updates',
+    monthlyVolume: 24,
+    readRate: 0.1,
+    sparkline: [6, 6, 6, 6],
     lastDays: 2,
-    unread: 5,
     firstSeenMo: 18,
     volumeTrend: 'up',
-    lastReview: null,
     ...overrides,
-  };
-}
+  });
 
 const READY: RowDetailTimeseries = {
   status: 'ready',

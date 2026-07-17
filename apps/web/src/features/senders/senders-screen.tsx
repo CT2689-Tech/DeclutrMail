@@ -17,6 +17,7 @@ import {
   canLater,
   canUnsubscribe,
   canUseActionSelector,
+  enrichSenderRow,
   isStandingProtected,
   VERB_PAST,
   type ActionRequest,
@@ -34,7 +35,7 @@ import { KeyboardCheatsheet } from './keyboard-cheatsheet';
 import { isTypingTarget } from './keyboard';
 import { useSenders } from './api/use-senders';
 import { useSendersSummary } from './api/use-senders-summary';
-import { adaptSenderListRow } from './api/adapters';
+
 import {
   useEnqueueAction,
   useActionStatus,
@@ -140,7 +141,8 @@ const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
  * engagement framing ships on Brief; this screen stays a tool.
  *
  * Data flow (D200): `useSenders()` returns the paginated wire shape;
- * we adapt rows to the `Sender` UI shape via `adaptSenderListRow`.
+ * rows are enriched into the `Sender` model (wire row + derived
+ * fields) via `enrichSenderRow` — every wire field rides through.
  * Search + compose narrowing are SERVER-side (#145 / D38) — the loaded
  * pages are the visible set; no client re-filtering.
  *
@@ -213,12 +215,11 @@ export function SendersScreen() {
   });
   const allSenders = useMemo<Sender[]>(() => {
     const pages = sendersQuery.data?.pages ?? [];
-    return pages.flatMap((p) => p.data.map((row) => adaptSenderListRow(row)));
+    return pages.flatMap((p) => p.data.map((row) => enrichSenderRow(row)));
   }, [sendersQuery.data]);
   // Carry the wire rows through verbatim for the flat-table view — the
-  // SenderTable consumes the wire `SenderListRow` directly (it needs
-  // `totalReceived` and `lastReview`, which the FE `Sender` adapter
-  // drops for legacy reasons). Grid mode reads the adapted `senders`.
+  // SenderTable consumes the wire `SenderListRow` directly. Grid mode
+  // reads the enriched `senders` (same rows + derived fields).
   const allWireRows = useMemo<SenderListRow[]>(() => {
     const pages = sendersQuery.data?.pages ?? [];
     return pages.flatMap((p) => p.data);
@@ -1886,7 +1887,7 @@ function SendersScreenContent({
             }}
             onRowToggle={({ id, shiftKey }) => toggleWithRange(tableOrderedIds, id, shiftKey)}
             onAction={({ verb, sender }) => {
-              const adapted = adaptSenderListRow(sender);
+              const adapted = enrichSenderRow(sender);
               requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
             }}
             emptyKind={

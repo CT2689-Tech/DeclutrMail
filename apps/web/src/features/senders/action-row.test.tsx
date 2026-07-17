@@ -13,7 +13,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { derivePrimaryVerbId, leadButtonTone, SenderActionRow } from './action-row';
-import type { Sender } from './data';
+import { makeSender } from './testing/make-sender';
 
 describe('leadButtonTone — ADR-0016 A5 tone lock', () => {
   it.each([
@@ -28,21 +28,22 @@ describe('leadButtonTone — ADR-0016 A5 tone lock', () => {
 });
 
 /** A noisy, unprotected promotions sender — the archetypal cleanup row. */
-function sender(overrides: Partial<Sender> = {}): Sender {
-  return {
-    id: 's1',
-    name: 'Acme Deals',
-    domain: 'acme.com',
-    monthly: 30,
-    group: 'promotions',
-    read: 0.05,
-    spark: [8, 8, 7, 8],
+const sender: typeof makeSender = (overrides = {}) =>
+  makeSender({
+    displayName: 'Acme Deals',
+    gmailCategory: 'promotions',
+    monthlyVolume: 30,
+    readRate: 0.05,
     lastDays: 2,
-    unread: 12,
-    firstSeenMo: 14,
     ...overrides,
-  };
-}
+  });
+
+/** Standing-protection wire flags (D42/D43) for override brevity. */
+const PROTECTED = {
+  isProtected: true,
+  protectionReason: 'user_defined',
+  protectionSetAt: '2026-06-01T00:00:00.000Z',
+} as const;
 
 describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () => {
   it('derives Unsubscribe for a one-click sender (the wire fact, not a stub)', () => {
@@ -50,15 +51,15 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
   });
 
   it('protected wins over unsub-ready — registry rule order (D42/D43)', () => {
-    expect(derivePrimaryVerbId(sender({ unsubscribeMethod: 'one_click', protected: true }))).toBe(
-      'keep',
-    );
+    expect(
+      derivePrimaryVerbId(sender({ unsubscribeMethod: 'one_click', protectionFlags: PROTECTED })),
+    ).toBe('keep');
   });
 
-  it("one-click in group 'primary' never derives Unsubscribe — the primary CTA must agree with the popover's canUnsubscribe gate", () => {
-    expect(derivePrimaryVerbId(sender({ unsubscribeMethod: 'one_click', group: 'primary' }))).toBe(
-      'keep',
-    );
+  it("one-click in category 'primary' never derives Unsubscribe — the primary CTA must agree with the popover's canUnsubscribe gate", () => {
+    expect(
+      derivePrimaryVerbId(sender({ unsubscribeMethod: 'one_click', gmailCategory: 'primary' })),
+    ).toBe('keep');
   });
 
   it('mailto is NOT unsub-ready — manual at launch (D230), never auto-recommended', () => {

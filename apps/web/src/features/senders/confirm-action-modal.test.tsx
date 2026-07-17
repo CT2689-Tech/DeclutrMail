@@ -2,9 +2,10 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { CompositeActionPreviewResult } from '@/lib/api/use-action';
 import { ConfirmActionModal } from './confirm-action-modal';
-import { SENDERS, type ActionRequest } from './data';
+import type { ActionRequest } from './data';
+import { makeSender } from './testing/make-sender';
 
-const sender = SENDERS[0]!;
+const sender = makeSender();
 const buckets = {
   all: 4,
   olderThan30d: 3,
@@ -25,8 +26,8 @@ const livePreview: CompositeActionPreviewResult = {
     name: sender.name,
     domain: sender.domain,
     lastSeenDays: sender.lastDays,
-    repliedCount: sender.repliedCount ?? 0,
-    monthly: sender.monthly,
+    repliedCount: sender.repliedCount,
+    monthly: sender.monthlyVolume ?? 0,
   },
   counts: buckets,
   recentSubjects: subjects,

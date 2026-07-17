@@ -38,7 +38,7 @@ export function SenderGroup({
     setExpanded(new Set());
   }, [fingerprint]);
 
-  const monthly = items.reduce((sum, s) => sum + s.monthly, 0);
+  const monthly = items.reduce((sum, s) => sum + (s.monthlyVolume ?? 0), 0);
   const visible = items.slice(0, visibleCount);
   const remaining = Math.max(0, items.length - visibleCount);
 

@@ -18,8 +18,8 @@
 
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
-import { SENDERS } from '../data';
-import { buildSenderDetail } from './data';
+import { buildSenderDetail } from '@/mocks/sender-detail-builder';
+import { SENDER_FIXTURES } from '@/mocks/sender-fixture-data';
 import { SenderDetailPage } from './sender-detail-page';
 
 const { color } = tokens;
@@ -56,14 +56,14 @@ export default meta;
 
 type PageArgs = ComponentProps<typeof SenderDetailPage>;
 
-const linkedin = SENDERS.find((s) => s.id === 'linkedin');
-const sarah = SENDERS.find((s) => s.id === 'sarah');
-const stripeSender = SENDERS.find((s) => s.id === 'stripe');
-const groupon = SENDERS.find((s) => s.id === 'groupon');
+const linkedin = SENDER_FIXTURES.find((s) => s.id === 'linkedin');
+const sarah = SENDER_FIXTURES.find((s) => s.id === 'sarah');
+const stripeSender = SENDER_FIXTURES.find((s) => s.id === 'stripe');
+const groupon = SENDER_FIXTURES.find((s) => s.id === 'groupon');
 
 if (linkedin == null || sarah == null || stripeSender == null || groupon == null) {
   throw new Error(
-    'Story fixtures expect the demo SENDERS dataset (linkedin / sarah / stripe / groupon).',
+    'Story fixtures expect the demo SENDER_FIXTURES dataset (linkedin / sarah / stripe / groupon).',
   );
 }
 

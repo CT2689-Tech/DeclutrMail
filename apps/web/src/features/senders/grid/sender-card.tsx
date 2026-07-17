@@ -236,7 +236,7 @@ export function SenderCard({
             >
               {sender.name}
             </span>
-            {sender.unsubPending &&
+            {sender.policyType === 'unsubscribe' &&
               (() => {
                 const copy = unsubscribeStatusCopy(sender.unsubStatus, sender.unsubscribeMethod);
                 return (
@@ -274,10 +274,11 @@ export function SenderCard({
             {sender.domain}
           </div>
         </button>
-        {sender.spark && sender.spark.length > 0 && (
+        {sender.sparkline && sender.sparkline.length > 0 && (
           // ADR-0016 §B3 — sparkline color uniformly neutral; tone
-          // semantics removed from card chrome.
-          <Spark values={sender.spark} width={48} height={16} color={color.fgSoft} />
+          // semantics removed from card chrome. Absent series renders
+          // nothing — never a fabricated flat line.
+          <Spark values={sender.sparkline} width={48} height={16} color={color.fgSoft} />
         )}
         {/* Toggle fires from onClick (not onChange) — the click event is
             the only one that carries `shiftKey`, which the screen's
@@ -308,7 +309,7 @@ export function SenderCard({
           }}
         >
           <NumericDisplay
-            value={sender.monthly}
+            value={sender.monthlyVolume ?? '—'}
             suffix="in last 30d"
             variant="display"
             style={{ display: 'flex' }}
@@ -318,20 +319,18 @@ export function SenderCard({
               a quiet month reads as a sort bug (2026-07-03 smoke:
               cards showed 72 / 0 / 8 under total-desc). Same fact the
               magnitude bar below encodes, now legible. */}
-          {sender.total !== undefined && (
-            <span
-              title="Lifetime emails received — what 'Most emails ever' sorts by"
-              style={{
-                fontFamily: font.mono,
-                fontSize: 10.5,
-                color: color.fgMuted,
-                whiteSpace: 'nowrap',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {sender.total.toLocaleString()} ever
-            </span>
-          )}
+          <span
+            title="Lifetime emails received — what 'Most emails ever' sorts by"
+            style={{
+              fontFamily: font.mono,
+              fontSize: 10.5,
+              color: color.fgMuted,
+              whiteSpace: 'nowrap',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {sender.totalReceived.toLocaleString()} ever
+          </span>
         </div>
 
         {/* Magnitude under-bar (spec v1.2 Decision 13 + ADR-0016 §B1).
@@ -339,38 +338,34 @@ export function SenderCard({
             factual one-click unsubscribe action is available; muted
             otherwise. Hidden when totalsAcrossMailbox absent —
             wire shape varies. */}
-        {sender.total !== undefined && (
+        <div
+          aria-hidden="true"
+          style={{
+            height: 2,
+            background: color.line,
+            marginTop: 8,
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
           <div
-            aria-hidden="true"
             style={{
-              height: 2,
-              background: color.line,
-              marginTop: 8,
-              position: 'relative',
-              overflow: 'hidden',
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              background: primaryVerb === 'unsubscribe' ? color.amber : color.fgSoft,
+              transformOrigin: 'left center',
+              // ADR-0016 §B1 — denominator is mailbox-wide MAX, not
+              // a hardcoded 100. `sender.totalReceived` is the sender's
+              // lifetime inbound count; bar width is the proportion of
+              // the mailbox's loudest sender. Filtered view does NOT
+              // rescale.
+              transform: `scaleX(${
+                globalMaxTotal > 0 ? Math.min(1, sender.totalReceived / globalMaxTotal) : 0
+              })`,
             }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                background: primaryVerb === 'unsubscribe' ? color.amber : color.fgSoft,
-                transformOrigin: 'left center',
-                // ADR-0016 §B1 — denominator is mailbox-wide MAX, not
-                // a hardcoded 100. `sender.total` is the sender's
-                // lifetime inbound count; bar width is the proportion of
-                // the mailbox's loudest sender. Filtered view does NOT
-                // rescale.
-                transform: `scaleX(${
-                  sender.total != null && globalMaxTotal > 0
-                    ? Math.min(1, sender.total / globalMaxTotal)
-                    : 0
-                })`,
-              }}
-            />
-          </div>
-        )}
+          />
+        </div>
 
         {/* Stat micro-strip — full-word user-friendly labels per
             spec v1.2 Decision 12. `STATUS` retired (was the only
@@ -392,7 +387,7 @@ export function SenderCard({
               AND used "Opened", which Gmail metadata can't support
               ("marked read" is the honest fact). Same words + tones as
               the table's Read column. */}
-          <Stat label="Read" value={<ReadBucketText rate={sender.read} />} />
+          <Stat label="Read" value={<ReadBucketText rate={sender.readRate} />} />
           {/* Epoch guard: Gmail reports internalDate=0 for some spam
               messages, which lands here as ~20,000d. "—" is the honest
               render — we don't know when. */}
@@ -406,10 +401,7 @@ export function SenderCard({
                   : 'today'
             }
           />
-          <Stat
-            label="You replied"
-            value={sender.repliedCount !== undefined ? `${sender.repliedCount}×` : '—'}
-          />
+          <Stat label="You replied" value={`${sender.repliedCount}×`} />
         </div>
       </div>
 

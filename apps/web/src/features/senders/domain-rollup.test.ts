@@ -2,20 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import { registrableDomain, rollupByDomain } from './domain-rollup';
 import type { Sender } from './data';
+import { makeSender } from './testing/make-sender';
 
 function sender(overrides: Partial<Sender> & { id: string; domain: string }): Sender {
-  return {
-    name: overrides.id,
-    monthly: 10,
-    group: 'promotions',
-    read: 0.1,
-    spark: [1, 2, 3, 4],
-    lastDays: 3,
-    unread: 0,
-    firstSeenMo: 12,
-    total: 100,
+  return makeSender({
+    displayName: overrides.id,
+    monthlyVolume: 10,
+    totalReceived: 100,
     ...overrides,
-  };
+  });
 }
 
 describe('registrableDomain (eTLD+1, pragmatic suffix list)', () => {
@@ -48,10 +43,10 @@ describe('registrableDomain (eTLD+1, pragmatic suffix list)', () => {
 describe('rollupByDomain', () => {
   it('groups >= 3 senders sharing a registrable domain into one entry at first-member position', () => {
     const list = [
-      sender({ id: 'a1', domain: 'mail.amazon.com', monthly: 5, total: 100 }),
+      sender({ id: 'a1', domain: 'mail.amazon.com', monthlyVolume: 5, totalReceived: 100 }),
       sender({ id: 'x', domain: 'x.com' }),
-      sender({ id: 'a2', domain: 'marketing.amazon.com', monthly: 7, total: 200 }),
-      sender({ id: 'a3', domain: 'amazon.com', monthly: 1, total: 50 }),
+      sender({ id: 'a2', domain: 'marketing.amazon.com', monthlyVolume: 7, totalReceived: 200 }),
+      sender({ id: 'a3', domain: 'amazon.com', monthlyVolume: 1, totalReceived: 50 }),
     ];
     const entries = rollupByDomain(list);
     expect(entries.map((e) => e.kind)).toEqual(['group', 'sender']);
@@ -89,19 +84,20 @@ describe('rollupByDomain', () => {
     expect(entries[0]!.kind).toBe('group');
   });
 
-  it('sums missing lifetime totals as 0 rather than NaN', () => {
+  // Intent updated with the wire unification: `totalReceived` is now a
+  // required wire field (no missing-total state to guard), while
+  // `monthlyVolume` is nullable ("no timeseries yet") — the rollup must
+  // sum the null cadence as 0, never NaN.
+  it('sums a null monthlyVolume as 0 rather than NaN', () => {
     const list = [
-      // Malformed runtime rows whose `total` is missing (the rollup
-      // guards `?? 0`); the cast stages a state the `Sender` type
-      // forbids at compile time.
-      sender({ id: 'c1', domain: 'c.com', total: undefined as unknown as number }),
-      sender({ id: 'c2', domain: 'c.com', total: 10 }),
-      sender({ id: 'c3', domain: 'c.com', total: undefined as unknown as number }),
+      sender({ id: 'c1', domain: 'c.com', monthlyVolume: null }),
+      sender({ id: 'c2', domain: 'c.com', monthlyVolume: 10 }),
+      sender({ id: 'c3', domain: 'c.com', monthlyVolume: null }),
     ];
     const entries = rollupByDomain(list);
     const group = entries[0]!;
     if (group.kind !== 'group') throw new Error('expected group');
-    expect(group.totalReceived).toBe(10);
+    expect(group.volume30d).toBe(10);
   });
 
   it('never groups empty domains together', () => {

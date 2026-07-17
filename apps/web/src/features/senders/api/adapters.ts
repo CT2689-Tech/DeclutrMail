@@ -1,24 +1,19 @@
 /**
  * BE → FE adapters for the Senders surface.
  *
- * The wire types (`apps/web/src/lib/api/senders.ts`) match the frozen
- * BE contract. The component types (`features/senders/data.ts`,
- * `features/senders/detail/types.ts`) predate the wire contract and
- * carry slightly richer shapes for the UI (synthesised stats, sparkline,
- * past-tense decision labels, etc.).
+ * The list-row adaptation is GONE (2026-07-16 wire unification): the
+ * `Sender` model IS the wire row plus derived fields, built by
+ * `enrichSenderRow` in `../data`. The hand-mapped adapter this file
+ * used to carry dropped `repliedCount` and coerced `readRate: null`
+ * into a fake "never read" — a class of bug the spread-based enrich
+ * makes structurally impossible.
  *
- * Two principled reasons we adapt at the seam rather than rewrite the
- * components:
- *
- *   1. Surgical change (CLAUDE.md §1.3). The components already render
- *      correctly against their shapes — touching them risks the visual
- *      regressions the design-freeze hooks were put in place to prevent
- *      (D210). The wire is the new thing; map to what works.
- *   2. Fields not on the wire (e.g. `Sender.spark`, the 4-week
- *      sparkline, or `RecentMessage.sizeBytes`) are inferred locally so
- *      the visual contract holds until later BE iterations send them.
- *      Each inferred field is commented inline so the mapping is
- *      explicit rather than magical.
+ * What remains here is the Sender Detail composition: the detail DTO +
+ * its paginated child responses (messages, timeseries, history) fold
+ * into the one `SenderDetail` value the page consumes. Every field
+ * comes from the wire or an explicit presentation derivation of a wire
+ * field; nullable wire facts stay nullable (a `null` readRate renders
+ * as "—", never "0%").
  */
 
 import type {
@@ -27,10 +22,9 @@ import type {
   MailMessageRow,
   ProtectionReasonWire,
   SenderDetailDto,
-  SenderListRow,
   TimeseriesPointDto,
 } from '@/lib/api/senders';
-import type { Sender, SenderGroup } from '../data';
+import { daysSince, enrichSenderRow, monthsSince } from '../data';
 import type {
   DecisionAction,
   DecisionHistoryRow,
@@ -43,15 +37,6 @@ import type {
   Verdict,
 } from '../detail/types';
 
-/** Maps Gmail category → component-side `SenderGroup` (they're synonyms today). */
-const CATEGORY_TO_GROUP: Record<GmailCategory, SenderGroup> = {
-  primary: 'primary',
-  promotions: 'promotions',
-  social: 'social',
-  updates: 'updates',
-  forums: 'forums',
-};
-
 /** Display labels derived directly from the Gmail category on the wire. */
 const CATEGORY_TO_LABEL: Record<GmailCategory, string> = {
   primary: 'Gmail: Primary',
@@ -61,145 +46,6 @@ const CATEGORY_TO_LABEL: Record<GmailCategory, string> = {
   forums: 'Gmail: Forums',
 };
 
-/** Computes days between an ISO date and "now" — clamped to 0. */
-function daysSince(iso: string, now: number = Date.now()): number {
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return 0;
-  return Math.max(0, Math.floor((now - then) / (1000 * 60 * 60 * 24)));
-}
-
-/** Computes whole months between an ISO date and "now" — clamped to 0. */
-function monthsSince(iso: string, now: number = Date.now()): number {
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return 0;
-  return Math.max(0, Math.floor((now - then) / (1000 * 60 * 60 * 24 * 30)));
-}
-
-/**
- * Adapt a wire `SenderListRow` to the FE `Sender` shape. Fields not on
- * the wire (sparkline, unread count, spike flag) are zero/defaulted —
- * the BE PR will add them in a follow-up; for now the visuals degrade
- * gracefully (flat sparkline, zero unread badge, no spike chip).
- */
-/**
- * Adapt a Weekly Hero slice row (D47/D48 — `GET /api/senders/weekly-hero`)
- * into the FE `Sender` shape so the Hero CTA's review-session opens
- * across the FULL slice even when slice members live outside the
- * currently-loaded paginated sender list (PR #115 P2 review).
- *
- * The hero DTO carries `id, displayName, email, domain, monthlyVolume,
- * readRate, sparkline` — everything the K/A/U/L action surface actually
- * reads. The wider `Sender` shape carries fields the hero doesn't
- * surface (group, lastDays, firstSeenMo, volumeTrend, lastReview). Those
- * default to safe placeholders here:
- *   - `group: 'updates'` — Gmail's "things that aren't conversations"
- *     bucket. Hero slices are inherently update-flavoured (cleanup
- *     candidates), so this is the closest safe default. The review
- *     session uses `group` only for filter-pill rendering; cleared via
- *     refresh once the user navigates to the full senders list.
- *   - `lastDays: 0`, `firstSeenMo: 12` — the hero already implicitly
- *     filtered for relationship age (quiet slice = first_seen ≥ 6mo,
- *     other slices have a current-month timeseries row), so a non-zero
- *     `firstSeenMo` keeps the cadence-line render sane.
- *   - `volumeTrend: null`, `lastReview: null` — the row tile falls
- *     back to its evidence-line render for these.
- *
- * `spark` is the BE-provided 12-month sparkline (chronological,
- * 0-padded) — already correct, no shaping needed.
- */
-export function adaptHeroSender(row: {
-  id: string;
-  displayName: string;
-  email: string;
-  domain: string;
-  monthlyVolume: number;
-  readRate: number | null;
-  sparkline: number[];
-}): Sender {
-  return {
-    id: row.id,
-    name: row.displayName || row.email,
-    domain: row.domain,
-    monthly: row.monthlyVolume,
-    group: 'updates',
-    read: row.readRate ?? 0,
-    spark: row.sparkline,
-    lastDays: 0,
-    unread: 0,
-    firstSeenMo: 12,
-    volumeTrend: null,
-    lastReview: null,
-  };
-}
-
-export function adaptSenderListRow(row: SenderListRow, now: number = Date.now()): Sender {
-  // BE returns `monthlyVolume` and `readRate` as nullable when the
-  // sender has no `sender_timeseries` rows yet. The FE `Sender` shape
-  // pre-dates that nullability (carries `number`); coerce to `0` so
-  // existing sort / why-line code paths keep working and the
-  // missing-data case degrades to a quiet "0/mo" rather than a NaN
-  // render. The `volumeTrend` chip + `lastReview` slot are the
-  // canonical surfaces for "no data yet" — they explicitly carry
-  // `null` instead of pretending.
-  const monthly = row.monthlyVolume ?? 0;
-  const read = row.readRate ?? 0;
-  const sender: Sender = {
-    id: row.id,
-    name: row.displayName || row.email,
-    // Full address rides along so cards/rows can expose it on hover —
-    // duplicate display names are otherwise indistinguishable.
-    email: row.email,
-    domain: row.domain,
-    monthly,
-    // Real all-time received count (`senders.total_received`) — carried
-    // through verbatim. Replaces the former `monthly × 12` fabrication.
-    total: row.totalReceived,
-    group: CATEGORY_TO_GROUP[row.gmailCategory],
-    read,
-    // Real 12-week sparkline from BE (oldest → newest). Falls back to a
-    // flat 4-bucket line at the recent cadence when the BE omits it (very
-    // old senders with no recent mail_messages rows).
-    spark:
-      row.sparkline && row.sparkline.length > 0
-        ? row.sparkline
-        : [monthly, monthly, monthly, monthly].map((v) => Math.round(v / 4)),
-    lastDays: daysSince(row.lastSeenAt, now),
-    // Wire doesn't return current-unread-from-sender yet. Surfaces as 0
-    // in the row badge until BE adds the field — non-blocking.
-    unread: 0,
-    firstSeenMo: monthsSince(row.firstSeenAt, now),
-    volumeTrend: row.volumeTrend,
-    lastReview: row.lastReview,
-    // Standing policy flags now ride the list row (BE
-    // `SenderListRow.protectionFlags`). `protected` drives the row's
-    // "Protected" chip + the fact-derived Keep rule so protected senders
-    // never receive a destructive primary.
-    // Optional-chained so a malformed / older response that omits the
-    // block degrades to "not protected" rather than crashing the list.
-    protected: row.protectionFlags?.isProtected ?? false,
-    // Standing-policy unsub state (D38 + 2026-06-05 brainstorm). True
-    // when the BE has the sender's policy at `'unsubscribe'`. Drives
-    // the unsub pill on the sender card; `unsubStatus` (D9 Wave 2)
-    // refines the pill copy with the real execution outcome.
-    unsubPending: row.policyType === 'unsubscribe',
-    unsubStatus: row.unsubStatus ?? null,
-    // List-Unsubscribe method — carried verbatim so the action row can
-    // derive the ADR-0019 `unsub_ready` primary fact ('one_click').
-    unsubscribeMethod: row.unsubscribeMethod ?? null,
-  };
-  return sender;
-}
-
-/**
- * Adapt the wire `SenderDetailDto` + paginated child responses into the
- * FE `SenderDetail` model the page already consumes.
- *
- * Every field in the returned live model comes from the wire or from an
- * explicit presentation derivation of a wire field. Fixture builders
- * must not participate in this path: the detail endpoint currently has
- * no recommendation payload, so live recommendations stay `null` until
- * that contract exists.
- */
 /**
  * Map the wire `protection_reason` enum (BE source-of-truth) onto the
  * narrower FE `ProtectionReason` union used by the header chip + banner:
@@ -231,21 +77,24 @@ export function adaptSenderDetail(args: {
   history: DecisionHistoryRowDto[];
   now?: number;
 }): SenderDetail {
-  const sender = adaptSenderListRow(args.detail, args.now);
+  const sender = enrichSenderRow(args.detail, args.now);
   const isProtected = args.detail.protectionFlags.isProtected;
   const protectionReason: ProtectionReason | null = adaptProtectionReason(
     isProtected,
     args.detail.protectionFlags.protectionReason,
   );
 
+  const now = args.now ?? Date.now();
   const stats: SenderStats = {
-    // Both BE fields are nullable when sender has no timeseries; coerce
-    // to 0 because the existing chart + stats components carry
-    // `number` types. The empty-state cue is `volumeTrend === null`.
+    // `monthlyVolume` is nullable when the sender has no
+    // `sender_timeseries` rows yet; the chart + KPI cells key their
+    // empty state off the timeseries itself, so 0 is safe for the
+    // cadence figure. `readRate` stays null — "we don't know" must
+    // never render as "0% read".
     monthlyVolume: args.detail.monthlyVolume ?? 0,
-    readRate: args.detail.readRate ?? 0,
-    relationshipMonths: monthsSince(args.detail.firstSeenAt, args.now),
-    lastSeenDays: daysSince(args.detail.lastSeenAt, args.now),
+    readRate: args.detail.readRate,
+    relationshipMonths: monthsSince(args.detail.firstSeenAt, now),
+    lastSeenDays: daysSince(args.detail.lastSeenAt, now),
     volumeTrend: args.detail.volumeTrend,
   };
 
