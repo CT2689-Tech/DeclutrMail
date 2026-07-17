@@ -165,9 +165,8 @@ export class SendersCounterReconciliationWorker extends BaseDeclutrWorker<
 /**
  * postgres-js and PGlite both wrap `db.execute()` results in a `.rows`
  * envelope (with the array-like result on the outer object as a
- * fallback). Mirrors the shape extractor in
- * `SendersReadService.listWeeklyHero` so the access pattern is
- * consistent across the codebase.
+ * fallback). Normalises both to a plain array so callers don't branch
+ * on the driver.
  */
 function extractRows<T>(res: unknown): T[] {
   return ((res as { rows?: T[] }).rows ?? (res as T[])) as T[];

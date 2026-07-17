@@ -61,8 +61,6 @@ export const sendersKeys = {
       unsubIgnored?: boolean | undefined;
     } = {},
   ) => ['senders', 'list', params] as const,
-  /** Weekly Hero slices (D47, D48) — singleton per mailbox. */
-  weeklyHero: () => ['senders', 'weekly-hero'] as const,
   /**
    * Mailbox-wide aggregates (#145, real-data counts mandate) — drives
    * the hero, KPI strip, and intent chips on the Senders screen. Keyed

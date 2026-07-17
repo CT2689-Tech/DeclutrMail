@@ -26,6 +26,20 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-17 — Needs a BE endpoint: failed INITIAL sync has no retry CTA
+**Source:** session (settings truth batch, PR #344)
+**Why:** A mailbox whose INITIAL sync failed is a dead end in Settings → Mailboxes: the card says "Sync failed" and offers nothing. The only sync route (`POST /api/v1/sync/incremental`) 409s `SYNC_NOT_READY` in exactly that state, so there is no endpoint an honest retry button could call. Initial sync is enqueued only from the OAuth connect path; the sync gate's own "Try again" is just `window.location.reload()`. NOT stubbed in #344 per CLAUDE.md §10 — a button that cannot work is worse than no button. Mitigating: the worker DOES auto-retry, so this is a missing CTA, not stuck data. Not launch-blocking on its own, but it is the one remaining dead end on the Settings surface.
+**How:** Decide the shape, then implement: add `POST /api/v1/sync/initial/retry` (re-enqueue the initial-sync job for a mailbox in `readiness='failed'`, idempotent per mailbox) and wire a "Try again" button in `mailboxes-card.tsx` next to the "Sync failed" tag. Alternative if the worker's auto-retry is considered sufficient: keep no button but make the card SAY that a retry is already scheduled, so the state stops reading as terminal.
+**Verifies by:** A mailbox forced to `readiness='failed'` shows a working retry (or an honest "retrying automatically" line), and the founder can recover a failed connect without re-running OAuth.
+**Status:** Open
+
+### 2026-07-17 — Two `useBillingSubscription` hooks can disagree about billing state
+**Source:** session (settings truth batch, PR #344)
+**Why:** `features/settings/api/` and `features/billing/api/` each define a `useBillingSubscription` with DIFFERENT query keys and DIFFERENT retry policies. Because the keys differ, the two caches never share data, so Settings and `/billing` can render contradicting billing state at the same moment. Not observed breaking live; flagged rather than fixed because consolidating touches the billing surface and was outside #344's scope (CLAUDE.md §1.3).
+**How:** Pick one owner (likely `features/billing/api/`), delete the other, and repoint Settings' `PlanCard` at it. Verify the retry policy that survives is the one the 503/`BILLING_NOT_PROVISIONED` gating in `settings-screen.tsx` expects.
+**Verifies by:** One hook, one query key; Settings and `/billing` cannot disagree.
+**Status:** Open
+
 ### 2026-07-16 — Post-launch chore: 6 render-body `Date.now()` sites (hydration-warning risk)
 **Source:** session (prelaunch product audit, wire-model refactor sweep)
 **Why:** Six components call `Date.now()` (directly or via a defaulted param) in the render body, so a server render and the client hydration can compute different relative-time labels — a React hydration warning at worst, no data corruption. All render client-fetched data, so real-world impact is cosmetic; explicitly NOT launch-blocking.
