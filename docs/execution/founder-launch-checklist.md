@@ -327,8 +327,13 @@ are **not bound to Cloud Run**.
 
 Provision the catalog IDs, create the Secret Manager secrets, add the
 `--update-secrets` bindings, flip `BILLING_ENABLED=true`, redeploy. Then buy
-Plus yourself, cancel, and walk the refund path. See
-`docs/runbooks/billing-guardrails.md` and `docs/runbooks/secrets-inventory.md`.
+Plus yourself, cancel, and walk the refund path.
+
+**Full ordered runbook (accounts → keys → catalog → webhooks → binding → flag →
+sandbox verify → prod cutover):**
+[`docs/execution/billing-go-live-runbook-2026-07-17.md`](./billing-go-live-runbook-2026-07-17.md).
+See also `docs/runbooks/billing-guardrails.md` and
+`docs/runbooks/secrets-inventory.md`.
 
 **Verify:** `/billing` stops saying "isn't live yet"; the post-free-cap upgrade
 modal matches `/pricing`.
