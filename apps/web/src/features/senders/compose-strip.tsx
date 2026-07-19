@@ -734,8 +734,8 @@ const SORT_OPTIONS: ReadonlyArray<{
   { sort: 'total', direction: 'asc', label: 'Fewest emails ever', group: 'Volume' },
   { sort: 'last_seen', direction: 'desc', label: 'Most recent', group: 'Last seen' },
   { sort: 'last_seen', direction: 'asc', label: 'Longest quiet', group: 'Last seen' },
-  { sort: 'first_seen', direction: 'desc', label: 'Newest senders', group: 'First seen' },
-  { sort: 'first_seen', direction: 'asc', label: 'Oldest senders', group: 'First seen' },
+  { sort: 'first_seen', direction: 'desc', label: 'Newest arrivals', group: 'First seen' },
+  { sort: 'first_seen', direction: 'asc', label: 'Oldest arrivals', group: 'First seen' },
   { sort: 'name', direction: 'asc', label: 'A → Z', group: 'Name' },
   { sort: 'name', direction: 'desc', label: 'Z → A', group: 'Name' },
 ];
