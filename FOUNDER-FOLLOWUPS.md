@@ -206,20 +206,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 **Why:** the new incremental-sync delta trigger makes enabled Autopilot rules re-fire on new mail — but its REAL-TIME path only runs in prod once Gmail webhooks flow. The Pub/Sub **topic** is provisioned and `GMAIL_PUBSUB_TOPIC` is set (local + GH secrets; `sync-infra-state.md` §at-a-glance), while the push **subscription** + Cloud Run deploy remain ⏳ Deferred — tracked in the Open 2026-05-21 "SETUP: provision Gmail sync infrastructure" entry (step 4 tail). Until those land, the trigger still works but at drift-sweep cadence (the 5-min `incremental_drift` sweep enqueues syncs for cursors stale >10 min), i.e. rules re-fire within ~5-15 min of new mail rather than within the 5-min debounce window of a webhook.
 **How:** no new steps — finish the 2026-05-21 entry (Cloud Run deploy → create the Pub/Sub push subscription pointing at `/api/webhooks/gmail` with the OIDC service account).
 **Verifies by:** prod log line `worker.succeeded` for `AutopilotApplyWorker` with a `-delta-` jobId within ~5 min of sending a mail from an already-known sender to a connected mailbox.
-### 2026-07-07 — Refund-guarantee drift across three surfaces: one canonical call needed (D121 vs /refunds vs landing FAQ)
-**Source:** PR #283 gate review (design-system-agent + SEO review; [BLOCKING] llms.txt overclaim fixed on-branch in caf469c)
-**Why:** Three public surfaces state three different refund terms: D121 (plan) says 30-day money-back on Pro; /refunds §3 says a 14-day pro-rata window (shipped "Pending confirmation" — the window decision is already tracked in the 2026-07-02 entry); the landing FAQ says "30-day money-back guarantee on every paid plan" in BOTH the visible copy and the FAQPage JSON-LD that PR #283 emits from the same source. llms.txt was softened to "see the refund policy for terms", so the machine-readable trust file no longer overclaims — but the FAQ ↔ policy contradiction stands, and crawlers read both the FAQ markup and the policy page.
-**How:** Decide the canonical guarantee (duration + which tiers, i.e. adopt D121's 30-day-Pro, the 14-day pro-rata default, or something else). Then one copy-pass PR: /refunds §§2–3 (+ bump last-updated), the FAQ answer in `apps/web/src/features/marketing/landing/faq.tsx` (single source — visible copy and FAQPage JSON-LD update together), and optionally restore a specific claim in `apps/web/public/llms.txt`.
-**Verifies by:** all three surfaces state identical terms; landing + legal-pages tests green; the "Pending confirmation" marker is gone from /refunds §3.
-**Status:** Open
-
-### 2026-07-02 — Legal pages live with two "Pending confirmation" markers + mailboxes to create
-**Source:** PR #199 merge (D146; founder blanket merge-all-safe 2026-07-02)
-**Why:** `/privacy` `/terms` `/refunds` are LIVE on **app.declutrmail.com** (apex + www still serve the Squarespace placeholder — F10 DNS cutover remains open; the placeholder 200s every path, so status-code checks against the apex are meaningless). Two copy decisions ship as visible "Pending confirmation" markers (refunds §3 refund window; terms §10 governing law India/Mumbai), and the pages reference `privacy@declutrmail.com` + `support@declutrmail.com`, which must accept mail before launch traffic.
-**How:** (1) confirm refund window (2026-06-26 stack-review followup proposed 14-day pro-rata) + governing law, then have an agent apply the copy edit and bump the last-updated stamps; (2) create/alias the two mailboxes at the mail host; (3) recheck privacy §7 deletion wording when the D232 deletion UI fully ships.
-**Verifies by:** markers gone from the live pages; both mailboxes deliver.
-**Status:** Open
-
 ### 2026-06-29 — IMPL-LOG-DRIFT: 49 🔵 rows stale >14 days un-verified (verify-d backlog)
 **Source:** impl-log-drift-oracle (scheduled task, 2026-06-29 sweep)
 **Why:** 49 D-rows sit at 🔵 (merge-shipped) but were never flipped 🔵→🟢 via `pnpm verify-d`; all merged ≥17 days ago (oldest 40d). 🔵 is meant to be transient — a large stale backlog means the plan's verified-state is no longer trustworthy as a launch-readiness signal. This is the first run to flag stale-🔵 (prior 2026-05-27 sweep predated the backlog).
@@ -1649,6 +1635,20 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-07-02 — Legal pages live with two "Pending confirmation" markers + mailboxes to create
+**Source:** PR #199 merge (D146; founder blanket merge-all-safe 2026-07-02)
+**Why:** `/privacy` `/terms` `/refunds` are LIVE on **app.declutrmail.com** (apex + www still serve the Squarespace placeholder — F10 DNS cutover remains open; the placeholder 200s every path, so status-code checks against the apex are meaningless). Two copy decisions ship as visible "Pending confirmation" markers (refunds §3 refund window; terms §10 governing law India/Mumbai), and the pages reference `privacy@declutrmail.com` + `support@declutrmail.com`, which must accept mail before launch traffic.
+**How:** (1) confirm refund window (2026-06-26 stack-review followup proposed 14-day pro-rata) + governing law, then have an agent apply the copy edit and bump the last-updated stamps; (2) create/alias the two mailboxes at the mail host; (3) recheck privacy §7 deletion wording when the D232 deletion UI fully ships.
+**Verifies by:** markers gone from the live pages; both mailboxes deliver.
+**Status:** Done 2026-07-19 (copy) / mailboxes verified in-flight — both markers are GONE from source: /refunds §§ founder-confirmed 30-day (2026-07-08, D121); /terms §10 India/Mumbai founder-confirmed, no marker string anywhere (tests assert absence). Remaining tail is operational, tracked in the launch checklist: founder added privacy@/support@ (+legal/billing/founder) aliases in Google Workspace on declutrmail.ai 2026-07-19; .com delivery pending the declutrmail.com domain-alias add (MX already → Google). Deletion-reachability re-check also passed 2026-07-19 (zero-mailbox state renders the deletion flow).
+
+### 2026-07-07 — Refund-guarantee drift across three surfaces: one canonical call needed (D121 vs /refunds vs landing FAQ)
+**Source:** PR #283 gate review (design-system-agent + SEO review; [BLOCKING] llms.txt overclaim fixed on-branch in caf469c)
+**Why:** Three public surfaces state three different refund terms: D121 (plan) says 30-day money-back on Pro; /refunds §3 says a 14-day pro-rata window (shipped "Pending confirmation" — the window decision is already tracked in the 2026-07-02 entry); the landing FAQ says "30-day money-back guarantee on every paid plan" in BOTH the visible copy and the FAQPage JSON-LD that PR #283 emits from the same source. llms.txt was softened to "see the refund policy for terms", so the machine-readable trust file no longer overclaims — but the FAQ ↔ policy contradiction stands, and crawlers read both the FAQ markup and the policy page.
+**How:** Decide the canonical guarantee (duration + which tiers, i.e. adopt D121's 30-day-Pro, the 14-day pro-rata default, or something else). Then one copy-pass PR: /refunds §§2–3 (+ bump last-updated), the FAQ answer in `apps/web/src/features/marketing/landing/faq.tsx` (single source — visible copy and FAQPage JSON-LD update together), and optionally restore a specific claim in `apps/web/public/llms.txt`.
+**Verifies by:** all three surfaces state identical terms; landing + legal-pages tests green; the "Pending confirmation" marker is gone from /refunds §3.
+**Status:** Done 2026-07-19 — already resolved 2026-07-08: founder confirmed 30-day/all-paid-plans (D121) and PR #308 shipped it across /refunds, landing FAQ (single FAQS array feeds visible copy + FAQPage JSON-LD — cannot drift), llms.txt, cancel-modal (MONEY_BACK_NOTE + refund mailto), /help + learn FAQs. Guard tests in legal-pages/support-pages assert the canonical terms and ban 14-day/pro-rata on /refunds. Verified surface-by-surface 2026-07-19; founder re-confirmed 30-day all-plans same day. Optional cosmetic gap: public /pricing page carries no money-back line (in-app surfaces do).
 
 ### 2026-07-07 — Ship D147 cookie-consent banner before setting NEXT_PUBLIC_POSTHOG_KEY in prod web env
 **Source:** session (D132 SEO batch PR — page_viewed added to /privacy, /terms, /refunds, /beta)
