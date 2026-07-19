@@ -75,6 +75,18 @@ export const senders = pgTable(
     email: citext('email').notNull(),
     /** Domain part of `email` — drives the D41 Gmail domain search link. */
     domain: text('domain').notNull(),
+    /**
+     * Registrable domain (eTLD+1) of `domain` — GENERATED STORED from the
+     * IMMUTABLE `dm_registrable_domain` SQL function (migration 0047, D247).
+     * `mail.google.com` and `news.google.com` both resolve to `google.com`
+     * so a brand's many subdomain/address rows collapse into ONE server-side
+     * brand card. The SQL function is the single source of truth for eTLD+1.
+     * Consumer providers (gmail.com, …) resolve to themselves and are
+     * excluded from grouping at query time, not here.
+     */
+    registrableDomain: text('registrable_domain').generatedAlwaysAs(
+      sql`dm_registrable_domain("domain")`,
+    ),
     gmailCategory: gmailCategory('gmail_category').notNull(),
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true, mode: 'date' }).notNull(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true, mode: 'date' }).notNull(),
@@ -159,6 +171,14 @@ export const senders = pgTable(
     categoryIdx: index('senders_account_category_idx').on(
       table.mailboxAccountId,
       table.gmailCategory,
+    ),
+    /**
+     * Supports the D247 brand-grouping aggregation: `GROUP BY
+     * registrable_domain` within a mailbox account (server-side brand cards).
+     */
+    registrableDomainIdx: index('senders_account_registrable_domain_idx').on(
+      table.mailboxAccountId,
+      table.registrableDomain,
     ),
     /**
      * Keyset index for the default `Total ↓` sort on the Senders list

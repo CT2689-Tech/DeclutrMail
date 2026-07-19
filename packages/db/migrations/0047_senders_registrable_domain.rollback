@@ -1,0 +1,7 @@
+-- Rollback for 0047_senders_registrable_domain.sql
+
+DROP INDEX "senders_account_registrable_domain_idx";
+--> statement-breakpoint
+ALTER TABLE "senders" DROP COLUMN "registrable_domain";
+--> statement-breakpoint
+DROP FUNCTION dm_registrable_domain(text);
