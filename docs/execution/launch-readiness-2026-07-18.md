@@ -131,9 +131,10 @@ Branch `chore/bootstrap-launch-stale-sweep`:
   rotation cadence updated.
 - `apps/api/src/activity/activity.types.ts` — comment referenced deleted
   `decision-queue.md`; reference removed.
-- 7 stale session-handoff docs deleted (June d038/senders-v2 series + the
-  bulk-actions codex-review). Kept: `2026-05-30-bulk-actions-final-consensus.md`
-  (still the Action Registry design record).
+- 6 stale session-handoff docs deleted (June d038/senders-v2 series — zero
+  inbound references). Kept: `2026-05-30-bulk-actions-final-consensus.md` and
+  `2026-05-30-bulk-actions-architecture-codex-review.md` (both still cited by
+  MISTAKES.md / LEARNINGS.md / the Action Registry design record).
 - `FOUNDER-FOLLOWUPS.md` — D147 cookie-consent entry moved Open → Done with
   evidence (shipped as #282/#289/#320; verified live today: PostHog gated
   behind consent on every call, banner defaults to decline).
