@@ -177,8 +177,7 @@ export type ActivityVerbFilter = ActivityLogEntry['action'];
 /**
  * Aggregate cleanup totals for one mailbox within a window — the
  * numbers a user would share / see at inbox-zero (DQ16 "cleanup
- * receipt" prerequisite; no D covers aggregate stats yet, D-number
- * pending founder ratification — see docs/execution/decision-queue.md).
+ * receipt" prerequisite; no D covers aggregate stats yet).
  *
  * Counts only the five canonical verbs (K/A/U/L/D, D227 + ADR-0019);
  * feature-specific actions (`followup-dismiss`, Protect toggles)

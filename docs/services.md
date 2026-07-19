@@ -99,19 +99,27 @@ _why_, _which tier_, and _where the credential lives_.
 
 ---
 
-### Stripe
+### Paddle (international billing)
 
-| Field                | Value                                                                                                                                                                   |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Status**           | ⏳ Not yet                                                                                                                                                              |
-| **Purpose**          | Subscription billing (Free / Plus / Pro tiers)                                                                                                                          |
-| **Account email**    | —                                                                                                                                                                       |
-| **Plan / tier**      | Stripe Pay-as-you-go (2.9% + 30¢ per transaction)                                                                                                                       |
-| **Approximate cost** | Revenue-proportional                                                                                                                                                    |
-| **Key / secret**     | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`                                                                                                                            |
-| **Key location**     | 1Password → _Stripe — DeclutrMail_ item (once created)                                                                                                                  |
-| **D-reference**      | D17–D21, D77, D81                                                                                                                                                       |
-| **Notes**            | Stop condition — billing webhook wiring requires founder review before going live. `STRIPE_WEBHOOK_SECRET` used for HMAC signature verification on all incoming events. |
+| Field            | Value                                                                                                                                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Status**       | 🌑 Built, shipped dark (kill switches — see billing go-live runbook)                                                                                                                                                    |
+| **Purpose**      | Subscription billing, international (Free / Plus / Pro tiers)                                                                                                                                                           |
+| **Key / secret** | `PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `PADDLE_WEBHOOK_SECRET`, `PADDLE_ENV`                                                                                                                                          |
+| **D-reference**  | D117–D120 (supersedes the D17–D21 Stripe assumption)                                                                                                                                                                    |
+| **Notes**        | Stop condition — billing webhook wiring requires founder review before going live. Webhook HMAC verified; unset secret fails closed (503). Go-live sequence: `docs/execution/billing-go-live-runbook-2026-07-17.md` §9. |
+
+---
+
+### Razorpay (India billing)
+
+| Field            | Value                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Status**       | 🌑 Built, shipped dark (kill switches — see billing go-live runbook)                                         |
+| **Purpose**      | Subscription billing, India                                                                                  |
+| **Key / secret** | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`                                          |
+| **D-reference**  | D117–D120                                                                                                    |
+| **Notes**        | Same fail-closed webhook posture as Paddle. Go-live: `docs/execution/billing-go-live-runbook-2026-07-17.md`. |
 
 ---
 
