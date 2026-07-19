@@ -37,64 +37,70 @@
 
 ## 2. YOUR STEPS — in order
 
-### Step 1 — Decide refund terms (P0, ~10 min, unblocks step 2)
+### ~~Step 1 — Decide refund terms~~ ✅ DONE (was already shipped)
 
-Three public surfaces disagree: plan D121 "30-day Pro" · `/refunds` §3
-"14-day pro-rata (Pending confirmation)" · landing FAQ + JSON-LD "30-day
-every paid plan".
+Founder confirmed 30-day/all-paid-plans 2026-07-19 — and verification showed
+it ALREADY shipped 2026-07-08 (PR #308, D121): /refunds, landing FAQ +
+JSON-LD (single source), llms.txt, cancel-modal, /help — all identical;
+markers gone; guard tests lock the terms. The "drift" followups were stale
+(now moved to Done). Optional cosmetic: /pricing page shows no money-back
+line (in-app surfaces do) — say the word to add it.
 
-1. Pick one: **(a) 30-day, all paid plans** (recommended — matches the FAQ
-   crawlers already read), (b) 30-day Pro only, (c) 14-day pro-rata.
-2. Also confirm `/terms` §10 governing law: India/Mumbai — yes/no.
-3. Tell the agent the picks → one copy-pass PR fixes `/refunds`, FAQ
-   (visible + JSON-LD together), `llms.txt`, removes both "Pending
-   confirmation" markers.
+### Step 2 — Mailboxes: add `.com` domain alias (P0, ~10 min) — IN PROGRESS
 
-✅ Done when: all three surfaces state identical terms; no marker left.
+Workspace aliases (privacy/support/legal/billing/founder@declutrmail.ai)
+created 2026-07-19 ✓. Legal pages promise the **.com** addresses; MX for
+.com already points to Google.
 
-### Step 2 — Create two mailboxes (P0, ~10 min)
+1. Admin console → Account → Domains → Manage domains → **Add a domain** →
+   `declutrmail.com` → type: **domain alias** of declutrmail.ai.
+2. Verify ownership (TXT record).
+3. Send test mail to `privacy@declutrmail.com` + `support@declutrmail.com`.
 
-Legal pages reference `privacy@declutrmail.com` + `support@declutrmail.com`.
+✅ Done when: both .com test mails land.
 
-1. Mail host → add both as aliases to your inbox.
-2. Send a test mail to each.
+### ~~Step 3 — Deletion-reachability check~~ ✅ DONE 2026-07-19
 
-✅ Done when: both test mails land.
+Smoked in zero-mailbox state (both mailboxes disconnected via SQL, restored
+after): Settings renders, "Delete account and data" present + enabled. The
+July-08 audit trap is fixed on current main.
 
-### Step 3 — Deletion-reachability check (P0, ~15 min, agent-runnable)
+### Step 4 — verify-d backlog (P1) — NEEDS ONE FOUNDER PICK
 
-July-08 audit: account deletion may be unreachable after disconnecting the
-last mailbox.
+Ran 2026-07-19. Finding: `pnpm verify-d` RECORDS verification, performs
+none — bulk-flipping 49 rows would fabricate. Pick one:
 
-1. Ask the agent to smoke it: disconnect sole mailbox on dev → Settings →
-   deletion path must render.
-2. If broken: small routing fix, same-day PR.
+- **(a) targeted (recommended):** agent properly verifies the ~10
+  launch-critical Ds (privacy/webhook/sync/deletion) and flips only those;
+  rest post-launch.
+- **(b) honest bulk-ack:** flip all 49 with source "hand-smoked at merge,
+  2026-07 batch ack" — your assertion to make, not the agent's.
+- **(c) leave 🔵** until post-launch.
 
-✅ Done when: deletion flow reachable in the zero-mailbox state.
+✅ Done when: chosen option executed; log reflects reality.
 
-### Step 4 — verify-d backlog (P1, agent-runnable, run before launch day)
+### Step 5 — Billing go-live (founder chose NOT to defer, 2026-07-19)
 
-49 D-rows merged but never verified (list in FOUNDER-FOLLOWUPS 2026-06-29
-entry). Ask the agent to batch-run `pnpm verify-d D###` and report
-failures as real gaps.
+Full sequence lives in `billing-go-live-runbook-2026-07-17.md`. Founder
+starts ① NOW (days of lead time): Paddle seller account + verification
+(sandbox account meanwhile) and Razorpay KYC + enable Subscriptions.
+Then ② collect API keys → ③ GitHub Actions secrets → ④ run "Provision
+billing catalog" workflow (sandbox) + hand agent the manifest patch →
+⑤ register webhooks + secrets → ⑥ agent binds Cloud Run secrets + flips
+`BILLING_ENABLED` (founder merges) → ⑦ founder sandbox-verifies (buy
+Plus/Pro/Founding, cancel, refund; note the Paddle-overlay stale-card
+suspect) → ⑧ production cutover + one real purchase-and-refund.
+Refund terms already canonical (step 1), so no copy gate remains.
 
-✅ Done when: backlog rows flip 🔵→🟢 or have a logged gap.
+**Real-time webhooks** (separate decision): still deferred by default —
+drift-sweep latency 5–15 min is fine at launch scale.
 
-### Step 5 — Two conscious decisions (P1, ~5 min each; "defer" is valid)
+### Step 6 — D247 grouping: PRE-LAUNCH (founder decision 2026-07-19)
 
-- **Real-time webhooks:** Pub/Sub push subscription not created → new mail
-  lands via 5-min drift sweep (5–15 min latency). Fine at launch scale.
-  Decide: create subscription now (steps in the 2026-05-21 followup) or
-  defer. Recommended: **defer**.
-- **Billing:** stays dark (verified fail-closed). Run the §9 go-live in
-  `billing-go-live-runbook-2026-07-17.md` only AFTER step 1 lands.
-  Recommended: **launch free-first, billing later**.
-
-### Step 6 — D247 grouping: post-launch (recommended)
-
-Branch parked. Finishing it (API + FE toggle) is ~2 PRs + a prod
-migration — don't spend launch week on it. Say "finish D247" whenever
-ready.
+In progress. API stage (server-side grouped list, complete counts,
+contract tests) building on `feat/d247-senders-brand-grouping`; FE stage
+(default-off toggle, table+grid group rows, expand-to-members, client
+rollup removal) follows; full dev-login browser smoke before PRs.
 
 ### Step 7 — Launch day
 
