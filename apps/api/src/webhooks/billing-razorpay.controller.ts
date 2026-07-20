@@ -90,6 +90,14 @@ export class BillingRazorpayWebhookController {
     }
 
     const outcome = await this.service.process('razorpay', event, payload);
+    if (outcome.kind === 'unresolved') {
+      // 503, never 200 — see the Paddle controller: a 2xx retires the
+      // event from the provider's retry queue and strands a payment.
+      throw new AppException({
+        code: 'BILLING_WEBHOOK_UNRESOLVED',
+        message: `Billing event unresolved (${outcome.reason}).`,
+      });
+    }
     return { status: outcome.kind };
   }
 }

@@ -114,7 +114,7 @@ interface PaddleWebhookBody {
  * sandbox trial must not crash the stream (the pg_enum has no
  * `trialing`). `inactive` (terminal, post-dunning) maps to `canceled`.
  */
-function mapStatus(paddleStatus: string): SubscriptionStatus {
+function mapStatus(paddleStatus: string): SubscriptionStatus | null {
   switch (paddleStatus) {
     case 'active':
     case 'trialing':
@@ -127,20 +127,28 @@ function mapStatus(paddleStatus: string): SubscriptionStatus {
     case 'inactive':
       return 'canceled';
     default:
-      return 'canceled';
+      // Unrecognized status → null (the event becomes `ignored`, no
+      // state write). Mapping an unknown status to `canceled`
+      // manufactured a TERMINAL state from a non-terminal input, and
+      // the terminal-canceled floor then locked the subscription out of
+      // reactivating. Leaving state untouched self-heals on the next
+      // recognized event.
+      return null;
   }
 }
 
+/** null when the provider status is unrecognized (caller ignores it). */
 function toNormalizedSubscription(
   sub: PaddleSubscription,
   webhookSecret: string | undefined,
-): NormalizedSubscription {
+): NormalizedSubscription | null {
   const priceId = sub.items?.[0]?.price?.id;
   if (!sub.id || !priceId) {
     throw new Error('Paddle subscription payload missing id or items[0].price.id');
   }
   const scheduledCancel = sub.scheduled_change?.action === 'cancel';
   const status = mapStatus(sub.status);
+  if (status === null) return null;
   return {
     providerSubscriptionId: sub.id,
     providerCustomerId: sub.customer_id ?? null,
@@ -296,16 +304,17 @@ export class PaddleAdapter implements BillingProvider {
       case 'subscription.canceled':
       case 'subscription.paused':
       case 'subscription.resumed':
-      case 'subscription.past_due':
-        return {
-          kind: 'subscription',
-          providerEventId: eventId,
-          eventType,
-          subscription: toNormalizedSubscription(
-            body.data as unknown as PaddleSubscription,
-            this.env.PADDLE_WEBHOOK_SECRET,
-          ),
-        };
+      case 'subscription.past_due': {
+        const subscription = toNormalizedSubscription(
+          body.data as unknown as PaddleSubscription,
+          this.env.PADDLE_WEBHOOK_SECRET,
+        );
+        if (subscription === null) {
+          // Unrecognized status — do not drive a state change.
+          return { kind: 'ignored', providerEventId: eventId, eventType };
+        }
+        return { kind: 'subscription', providerEventId: eventId, eventType, subscription };
+      }
       case 'transaction.completed': {
         const data = body.data as PaddleTransaction | undefined;
         return {

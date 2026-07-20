@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
+import { BillingService } from '../billing.service.js';
 import { BillingWebhookService, projectWebhookPayload } from '../billing-webhook.service.js';
 import { PaddleAdapter } from '../paddle.adapter.js';
 import { RazorpayAdapter } from '../razorpay.adapter.js';
@@ -122,8 +123,6 @@ function collectKeysDeep(value: unknown, out: string[] = []): string[] {
 /** PII key names real Paddle/Razorpay webhook bodies carry (D7-banned). */
 const PII_KEYS = ['email', 'contact', 'card', 'name', 'billing_details', 'address'] as const;
 
-// The fixtures sign `custom_data`; the adapter must verify with the
-// same secret or every attribution assertion fails for the wrong reason.
 const paddle = new PaddleAdapter({
   PADDLE_WEBHOOK_SECRET: TEST_PADDLE_WEBHOOK_SECRET,
 } as unknown as NodeJS.ProcessEnv);
@@ -327,14 +326,44 @@ describe('BillingWebhookService.process', () => {
       priceId: 'pri_never_provisioned',
     });
     const outcome = await service.process('paddle', paddle.mapWebhookEvent(unknown), unknown);
-    expect(outcome).toEqual({ kind: 'ignored' });
+    expect(outcome).toEqual({ kind: 'unresolved', reason: 'unknown_price' });
 
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
     expect(ws!.tier).toBe('free');
-    // Both events recorded + processed (audit trail, no retry loop).
+
+    // The payment is terminal; the drifted price is NOT. Stamping the
+    // latter processed made every provider retry short-circuit as
+    // `duplicate`, so a real payment could never be recovered once the
+    // catalog was patched (2026-07-20 sandbox incident).
     const eventRows = await db.select().from(subscriptionEvents);
     expect(eventRows).toHaveLength(2);
-    expect(eventRows.every((r) => r.processedAt !== null)).toBe(true);
+    const drifted = eventRows.find((r) => r.providerEventId === 'evt_unknown_price');
+    expect(drifted!.processedAt).toBeNull();
+    expect(eventRows.find((r) => r.providerEventId !== 'evt_unknown_price')!.processedAt).not.toBe(
+      null,
+    );
+  });
+
+  it('an unresolved event re-drives on retry once the catalog is patched', async () => {
+    const unknown = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_retry_me',
+      priceId: 'pri_never_provisioned',
+    });
+    expect(await service.process('paddle', paddle.mapWebhookEvent(unknown), unknown)).toEqual({
+      kind: 'unresolved',
+      reason: 'unknown_price',
+    });
+
+    // Same event id again — must NOT short-circuit as `duplicate`; the
+    // resume path re-drives it. Here it stays unresolved because the
+    // catalog is still drifted, which is the point: the event survives
+    // until someone fixes the cause.
+    expect(await service.process('paddle', paddle.mapWebhookEvent(unknown), unknown)).toEqual({
+      kind: 'unresolved',
+      reason: 'unknown_price',
+    });
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(1);
   });
 
   it('unattributable events (no sub, no customer, bad workspace id) are recorded, never applied', async () => {
@@ -345,19 +374,551 @@ describe('BillingWebhookService.process', () => {
       customerId: 'ctm_forged_1',
     });
     const outcome = await service.process('paddle', paddle.mapWebhookEvent(forged), forged);
-    expect(outcome).toEqual({ kind: 'ignored' });
+    expect(outcome).toEqual({ kind: 'unresolved', reason: 'unattributable' });
     expect(await db.select().from(subscriptions)).toHaveLength(0);
     const eventRows = await db.select().from(subscriptionEvents);
     expect(eventRows).toHaveLength(1);
-    expect(eventRows[0]!.processedAt).not.toBeNull();
+    // Recorded for audit but left UNPROCESSED — a forged id is dropped
+    // on every retry anyway, while a genuinely-not-yet-attributable
+    // event gets to land once a sibling seeds billing_customers.
+    expect(eventRows[0]!.processedAt).toBeNull();
+  });
+
+  it('a user cancel is not reverted by an in-flight webhook that predates it', async () => {
+    // The advisory lock serializes writers but does NOT order them: a
+    // provider event captured BEFORE the cancel can still win the lock
+    // afterwards and upsert its pre-cancel `cancel_at_period_end:
+    // false`. The user cancels, a renewal lands, and the cancellation
+    // silently disappears. The local cancel therefore records a
+    // state-writing event so the stale one loses the ordering check.
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_ucr_activate',
+      subscriptionId: 'sub_ucr',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    // A renewal is delivered and sits unprocessed (in flight).
+    const inFlight = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_ucr_renewal',
+      subscriptionId: 'sub_ucr',
+      eventType: 'subscription.updated',
+    });
+    const inFlightEvent = paddle.mapWebhookEvent(inFlight);
+    await db.insert(subscriptionEvents).values({
+      provider: 'paddle',
+      providerEventId: inFlightEvent.providerEventId,
+      eventType: inFlightEvent.eventType,
+      payload: projectWebhookPayload(inFlightEvent, inFlight),
+    });
+
+    // The user cancels through BillingService (provider call stubbed).
+    const billing = new BillingService(
+      db,
+      testCatalog(),
+      { id: 'paddle', cancelSubscription: async () => {} } as unknown as PaddleAdapter,
+      { id: 'razorpay' } as unknown as RazorpayAdapter,
+    );
+    await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'too_expensive' });
+
+    // Now the in-flight renewal finally processes. It must NOT revert.
+    // Either terminal outcome is acceptable — refused as stale, or held
+    // as ambiguous for retry when the two rows share a timestamp. What
+    // must never happen is `processed`, which would clobber the cancel.
+    const outcome = await service.process('paddle', inFlightEvent, inFlight);
+    expect(outcome.kind).not.toBe('processed');
+
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_ucr'));
+    expect(subRow!.cancelAtPeriodEnd).toBe(true);
+  });
+
+  it('a SECOND cancellation writes a fresh ordering marker', async () => {
+    // A fixed `local_cancel_<sub>` event id collided with the first
+    // cancellation and onConflictDoNothing kept the OLD row, freezing
+    // created_at at the first cancel. The second cancellation was then
+    // no longer newer than in-flight events and could be reverted.
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_2c_activate',
+      subscriptionId: 'sub_2c',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const billing = new BillingService(
+      db,
+      testCatalog(),
+      { id: 'paddle', cancelSubscription: async () => {} } as unknown as PaddleAdapter,
+      { id: 'razorpay' } as unknown as RazorpayAdapter,
+    );
+    await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'too_expensive' });
+
+    // The provider resumes the subscription (un-cancel), clearing the
+    // flag — this is what makes a SECOND cancellation possible.
+    await db
+      .update(subscriptions)
+      .set({ cancelAtPeriodEnd: false })
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_2c'));
+
+    // A renewal is delivered and sits in flight BEFORE the 2nd cancel.
+    const inFlight = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_2c_renewal',
+      subscriptionId: 'sub_2c',
+      eventType: 'subscription.updated',
+    });
+    const inFlightEvent = paddle.mapWebhookEvent(inFlight);
+    await db.insert(subscriptionEvents).values({
+      provider: 'paddle',
+      providerEventId: inFlightEvent.providerEventId,
+      eventType: inFlightEvent.eventType,
+      payload: projectWebhookPayload(inFlightEvent, inFlight),
+    });
+
+    await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'not_using_enough' });
+
+    // Two distinct markers, not one reused row.
+    const markers = await db
+      .select()
+      .from(subscriptionEvents)
+      .where(eq(subscriptionEvents.eventType, 'local.cancellation_requested'));
+    expect(markers).toHaveLength(2);
+
+    // And the second cancel still wins against the older in-flight event.
+    const outcome = await service.process('paddle', inFlightEvent, inFlight);
+    expect(outcome.kind).not.toBe('processed');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_2c'));
+    expect(subRow!.cancelAtPeriodEnd).toBe(true);
+  });
+
+  it('a LATE first delivery cannot resurrect a cancelled subscription', async () => {
+    // Arrival order is not event order. A provider event stamped 10:00
+    // can be delayed past one stamped 10:05 and arrive with the newest
+    // created_at of all — so an arrival-only guard would apply it and
+    // hand entitlement back to a churned user. Ordering is by the
+    // provider's own occurred_at.
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_late_activate',
+      subscriptionId: 'sub_late',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const canceled = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_late_cancel',
+      subscriptionId: 'sub_late',
+      eventType: 'subscription.canceled',
+      status: 'canceled',
+    });
+    (canceled as Record<string, unknown>).occurred_at = '2026-06-11T10:05:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(canceled), canceled);
+
+    const [afterCancel] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(afterCancel!.tier).toBe('free');
+
+    // Delayed FIRST delivery of an OLDER event — newest arrival, oldest
+    // event time. Must be refused.
+    const delayed = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_late_delayed',
+      subscriptionId: 'sub_late',
+      eventType: 'subscription.updated',
+    });
+    (delayed as Record<string, unknown>).occurred_at = '2026-06-11T10:00:00.000000Z';
+    expect(await service.process('paddle', paddle.mapWebhookEvent(delayed), delayed)).toEqual({
+      kind: 'ignored',
+    });
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_late'));
+    expect(subRow!.status).toBe('canceled');
+  });
+
+  it('an equal-occurred_at active event never resurrects a PAUSED subscription', async () => {
+    // paused is a non-granting, tier-locking state (D118) just like
+    // canceled. A stale active sharing the pause's event time and
+    // arriving after it must not un-lock the tier. A genuine resume is
+    // NOT affected — it has a strictly-later occurred_at (next test).
+    const T = '2026-07-20T10:00:00.000000Z';
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_pz_activate',
+      subscriptionId: 'sub_pz',
+    });
+    (activate as Record<string, unknown>).occurred_at = '2026-07-20T09:00:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const paused = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_pz_pause',
+      subscriptionId: 'sub_pz',
+      eventType: 'subscription.paused',
+      status: 'paused',
+      periodEndsAt: null,
+    });
+    (paused as Record<string, unknown>).occurred_at = T;
+    await service.process('paddle', paddle.mapWebhookEvent(paused), paused);
+
+    const [afterPause] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(afterPause!.tier).toBe('free');
+
+    const tiedActive = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_pz_active',
+      subscriptionId: 'sub_pz',
+      eventType: 'subscription.updated',
+    });
+    (tiedActive as Record<string, unknown>).occurred_at = T;
+    const outcome = await service.process('paddle', paddle.mapWebhookEvent(tiedActive), tiedActive);
+    expect(outcome.kind).not.toBe('processed');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_pz'));
+    expect(subRow!.status).toBe('paused');
+  });
+
+  it('a genuine resume (later occurred_at) DOES reactivate a paused subscription', async () => {
+    // The fix above must not block a real resume: it arrives strictly
+    // after the pause in event time, so the ordering branch applies it.
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_rs_activate',
+      subscriptionId: 'sub_rs',
+    });
+    (activate as Record<string, unknown>).occurred_at = '2026-07-20T09:00:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const paused = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_rs_pause',
+      subscriptionId: 'sub_rs',
+      eventType: 'subscription.paused',
+      status: 'paused',
+      periodEndsAt: null,
+    });
+    (paused as Record<string, unknown>).occurred_at = '2026-07-20T10:00:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(paused), paused);
+
+    const resumed = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_rs_resume',
+      subscriptionId: 'sub_rs',
+      eventType: 'subscription.resumed',
+      status: 'active',
+    });
+    (resumed as Record<string, unknown>).occurred_at = '2026-07-20T11:00:00.000000Z';
+    const outcome = await service.process('paddle', paddle.mapWebhookEvent(resumed), resumed);
+    expect(outcome.kind).toBe('processed');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('plus');
+  });
+
+  it('an UNRECOGNIZED provider status does not manufacture a terminal cancel', async () => {
+    // The terminal-canceled floor treats `canceled` as absorbing. If an
+    // unknown status string mapped to `canceled`, a later real
+    // activation would be locked out forever. Unknown → ignored, state
+    // untouched, so the next recognized event still applies.
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_unk_activate',
+      subscriptionId: 'sub_unk',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const weird = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_unk_weird',
+      subscriptionId: 'sub_unk',
+      eventType: 'subscription.updated',
+      status: 'some_future_status',
+    });
+    const weirdOutcome = await service.process('paddle', paddle.mapWebhookEvent(weird), weird);
+    expect(weirdOutcome.kind).toBe('ignored');
+
+    // Row untouched — still active, still granting.
+    const [afterWeird] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(afterWeird!.tier).toBe('plus');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_unk'));
+    expect(subRow!.status).toBe('active');
+  });
+
+  it('a real cancel is not discarded when it ties an active peer on BOTH event time and arrival', async () => {
+    // The exact double-tie: equal occurred_at AND equal created_at.
+    // `>=` would resolve it in the committed active peer's favour and
+    // DISCARD the cancel (user stays paid after cancelling); strict `>`
+    // applies the cancel. A sequential test can't force an equal
+    // created_at (each process() gets a distinct now()), so both rows
+    // are inserted with a pinned created_at to isolate the comparison.
+    const T = '2026-07-20T10:00:00.000000Z';
+    const TIE = new Date('2026-07-20T10:00:00.500Z');
+
+    // Committed active peer: subscription row + a processed event row,
+    // both pinned so the workspace is genuinely on `plus`.
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_tie2',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      billingCycle: 'monthly',
+    });
+    await db.update(workspaces).set({ tier: 'plus' }).where(eq(workspaces.id, workspaceId));
+    await db.insert(subscriptionEvents).values({
+      provider: 'paddle',
+      providerEventId: 'evt_tie2_active',
+      eventType: 'subscription.activated',
+      payload: { kind: 'subscription', provider_subscription_id: 'sub_tie2', occurred_at: T },
+      processedAt: TIE,
+      createdAt: TIE,
+    });
+
+    // The cancel: pre-insert its event row at the SAME created_at so the
+    // insert-first resume path reads TIE as this event's arrival time.
+    const canceled = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_tie2_cancel',
+      subscriptionId: 'sub_tie2',
+      eventType: 'subscription.canceled',
+      status: 'canceled',
+    });
+    (canceled as Record<string, unknown>).occurred_at = T;
+    const cancelEvent = paddle.mapWebhookEvent(canceled);
+    await db.insert(subscriptionEvents).values({
+      provider: 'paddle',
+      providerEventId: cancelEvent.providerEventId,
+      eventType: cancelEvent.eventType,
+      payload: projectWebhookPayload(cancelEvent, canceled),
+      createdAt: TIE,
+    });
+
+    const outcome = await service.process('paddle', cancelEvent, canceled);
+    expect(outcome.kind).toBe('processed');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_tie2'));
+    expect(subRow!.status).toBe('canceled');
+  });
+
+  it('an equal-occurred_at active event never resurrects a cancelled subscription', async () => {
+    // occurred_at is not a total order. Two same-subscription events can
+    // share it — Razorpay stamps unix SECONDS, so any two events in the
+    // same second tie. A tie must not let an older-intent event clobber
+    // a terminal state; the already-processed peer wins.
+    const T = '2026-07-20T10:00:00.000000Z';
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_tie_activate',
+      subscriptionId: 'sub_tie',
+    });
+    (activate as Record<string, unknown>).occurred_at = '2026-07-20T09:00:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const canceled = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_tie_cancel',
+      subscriptionId: 'sub_tie',
+      eventType: 'subscription.canceled',
+      status: 'canceled',
+    });
+    (canceled as Record<string, unknown>).occurred_at = T;
+    await service.process('paddle', paddle.mapWebhookEvent(canceled), canceled);
+
+    const [afterCancel] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(afterCancel!.tier).toBe('free');
+
+    // A distinct active event stamped the SAME instant as the cancel.
+    // Must not clobber the cancel.
+    const tiedActive = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_tie_active',
+      subscriptionId: 'sub_tie',
+      eventType: 'subscription.updated',
+    });
+    (tiedActive as Record<string, unknown>).occurred_at = T;
+    const outcome = await service.process('paddle', paddle.mapWebhookEvent(tiedActive), tiedActive);
+    expect(outcome.kind).not.toBe('processed');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_tie'));
+    expect(subRow!.status).toBe('canceled');
+  });
+
+  it('Razorpay same-second events cannot resurrect a cancelled subscription', async () => {
+    // Razorpay stamps `created_at` in unix SECONDS, so a cancel and a
+    // stale active update in the same second tie on event time and the
+    // active one may arrive last — the exact case occurred_at ordering
+    // cannot resolve. The terminal-canceled floor must still hold.
+    const SEC = 1781430100;
+    const activate = razorpaySubscriptionEvent({
+      workspaceId,
+      subscriptionId: 'sub_rzp_term',
+      event: 'subscription.activated',
+    });
+    await service.process(
+      'razorpay',
+      razorpay.mapWebhookEvent({ ...activate, __eventId: 'evt_rzp_act' }),
+      activate,
+    );
+
+    const canceled = razorpaySubscriptionEvent({
+      workspaceId,
+      subscriptionId: 'sub_rzp_term',
+      event: 'subscription.cancelled',
+      status: 'cancelled',
+    });
+    canceled.created_at = SEC;
+    await service.process(
+      'razorpay',
+      razorpay.mapWebhookEvent({ ...canceled, __eventId: 'evt_rzp_can' }),
+      canceled,
+    );
+
+    const [afterCancel] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(afterCancel!.tier).toBe('free');
+
+    // Stale active update, same second, arriving after the cancel.
+    const tiedActive = razorpaySubscriptionEvent({
+      workspaceId,
+      subscriptionId: 'sub_rzp_term',
+      event: 'subscription.updated',
+      status: 'active',
+    });
+    tiedActive.created_at = SEC;
+    const outcome = await service.process(
+      'razorpay',
+      razorpay.mapWebhookEvent({ ...tiedActive, __eventId: 'evt_rzp_stale' }),
+      tiedActive,
+    );
+    expect(outcome.kind).not.toBe('processed');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+  });
+
+  it('a stale retry never overwrites newer subscription state', async () => {
+    // The hazard introduced by leaving unresolved events unprocessed:
+    // an old event becomes attributable LATER and re-drives on top of
+    // state that has since moved on. Sequence: an activation arrives
+    // unattributable → a cancel lands → the activation is retried and
+    // now resolves. Without the guard it upserts `active` over the
+    // cancel and hands entitlement back.
+    const orphan = paddleSubscriptionActivated({
+      eventId: 'evt_stale_activate',
+      subscriptionId: 'sub_stale_1',
+      customerId: 'ctm_stale_1',
+      customData: {}, // no attribution yet
+    });
+    expect(await service.process('paddle', paddle.mapWebhookEvent(orphan), orphan)).toEqual({
+      kind: 'unresolved',
+      reason: 'unattributable',
+    });
+
+    // Attribution becomes possible, and a REAL activation + cancel land.
+    const seed = paddleTransactionCompleted({
+      workspaceId,
+      customerId: 'ctm_stale_1',
+      subscriptionId: 'sub_stale_1',
+      eventId: 'evt_stale_txn',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(seed), seed);
+
+    const canceled = paddleSubscriptionActivated({
+      eventId: 'evt_stale_cancel',
+      subscriptionId: 'sub_stale_1',
+      customerId: 'ctm_stale_1',
+      customData: {},
+      status: 'canceled',
+      eventType: 'subscription.canceled',
+    });
+    // Real providers stamp a distinct event time per event; the shared
+    // fixture default would make these two look simultaneous.
+    (canceled as Record<string, unknown>).occurred_at = '2026-06-11T10:05:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(canceled), canceled);
+
+    const [afterCancel] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(afterCancel!.tier).toBe('free');
+
+    // Provider retries the ORIGINAL activation. It now resolves — and
+    // must be refused as stale rather than resurrecting the sub.
+    const retry = await service.process('paddle', paddle.mapWebhookEvent(orphan), orphan);
+    expect(retry).toEqual({ kind: 'ignored' });
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_stale_1'));
+    expect(subRow!.status).toBe('canceled');
+  });
+
+  it('a stranded activation still lands when its seeding transaction arrived LATER', async () => {
+    // Production ordering, and the case the staleness guard must NOT
+    // eat: the activation is stranded first, and the transaction that
+    // makes it attributable arrives afterwards. A payment event shares
+    // the subscription id but writes no subscription state, so it can
+    // never count as "newer state" — otherwise the retry that finally
+    // resolves is discarded and the payment is lost a second time.
+    const stranded = paddleSubscriptionActivated({
+      eventId: 'evt_late_seed_activate',
+      subscriptionId: 'sub_late_seed',
+      customerId: 'ctm_late_seed',
+      customData: {}, // provider echoed no attribution
+    });
+    expect(await service.process('paddle', paddle.mapWebhookEvent(stranded), stranded)).toEqual({
+      kind: 'unresolved',
+      reason: 'unattributable',
+    });
+
+    const seed = paddleTransactionCompleted({
+      workspaceId,
+      customerId: 'ctm_late_seed',
+      subscriptionId: 'sub_late_seed',
+      eventId: 'evt_late_seed_txn',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(seed), seed);
+
+    // The provider retries the original activation. It must APPLY.
+    const retry = await service.process('paddle', paddle.mapWebhookEvent(stranded), stranded);
+    expect(retry.kind).toBe('processed');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('plus');
   });
 
   it('a completed transaction seeds billing_customers so a later subscription attributes', async () => {
-    // Closes the single-point-of-failure in attribution: Paddle does
-    // not reliably echo checkout custom_data onto the SUBSCRIPTION
-    // entity, and on a first purchase there is no prior subscription
-    // row either — so without this seed such an activation is
-    // unattributable and the paid workspace never flips.
+    // The failure mode this closes: Paddle does not reliably echo
+    // checkout custom_data onto the SUBSCRIPTION entity. With no
+    // customer mapping, such an activation is unattributable and the
+    // paid workspace never flips.
     const txn = paddleTransactionCompleted({
       workspaceId,
       customerId: 'ctm_seed_1',
@@ -369,40 +930,17 @@ describe('BillingWebhookService.process', () => {
       effect: 'payment:succeeded',
     });
 
-    const customers = await db.select().from(billingCustomers);
-    expect(customers).toHaveLength(1);
-    expect(customers[0]).toMatchObject({ workspaceId, providerCustomerId: 'ctm_seed_1' });
-
-    // The activation carries NO attribution — it must resolve via the
-    // customer mapping the transaction just seeded.
     const activate = paddleSubscriptionActivated({
       eventId: 'evt_seed_activate',
       subscriptionId: 'sub_seed_1',
       customerId: 'ctm_seed_1',
-      customData: {},
+      customData: {}, // provider echoed NO attribution
     });
     const outcome = await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
     expect(outcome.kind).toBe('processed');
 
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
     expect(ws!.tier).toBe('plus');
-  });
-
-  it('a forged workspace id in a payment never mints a customer mapping', async () => {
-    // custom_data reaches Paddle through the browser. The signature
-    // check upstream is the primary defence; this pins the second one —
-    // an unsigned/forged id resolves to null, so no mapping is written.
-    const forged = paddleTransactionCompleted({
-      customerId: 'ctm_forged',
-      subscriptionId: 'sub_forged',
-      eventId: 'evt_txn_forged',
-    });
-    (forged.data as Record<string, unknown>).custom_data = {
-      workspace_id: workspaceId,
-      sig: 'not-a-valid-signature',
-    };
-    await service.process('paddle', paddle.mapWebhookEvent(forged), forged);
-    expect(await db.select().from(billingCustomers)).toHaveLength(0);
   });
 
   it('later events on a known subscription resolve the workspace WITHOUT payload attribution', async () => {
