@@ -390,10 +390,13 @@ export class BillingWebhookService {
       };
       const selfMs = toMillis(selfOccurredAt);
 
-      // Does THIS event grant a tier? (active/past_due grant; paused and
-      // canceled do not.) Only a granting event can wrongly resurrect a
-      // committed non-granting state.
-      const selfGrants = sub.status === 'active' || sub.status === 'past_due';
+      // Does THIS event grant a tier? Only a granting event can wrongly
+      // resurrect a committed non-granting state. Derived from the SAME
+      // GRANTING_STATUSES that recomputeWorkspaceTier uses, so the
+      // partition can never drift between the two.
+      const selfGrants = (GRANTING_STATUSES as readonly string[]).includes(sub.status);
+      const nonGranting = (status: string | null): boolean =>
+        status !== null && !(GRANTING_STATUSES as readonly string[]).includes(status);
 
       const isNewer = (peer: {
         createdAt: Date;
@@ -419,7 +422,7 @@ export class BillingWebhookService {
         // because it genuinely arrives last. `canceled` is also caught
         // by the terminal floor below; `paused` (D118 tier lock) has no
         // other guard.
-        return selfGrants && (peer.status === 'paused' || peer.status === 'canceled');
+        return selfGrants && nonGranting(peer.status);
       };
 
       if (peers.some(isNewer)) {
