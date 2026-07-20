@@ -231,7 +231,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D177 | Secret management: **GCP Secret Manager + env var refs | ⬜ |  |  |  |
 | D178 | Dependency scanning: **Dependabot + Snyk free tier | ⬜ |  |  |  |
 | D179 | CORS configuration (derived) | 🔵 | #46 |  |  |
-| D180 | Webhook signature verification (derived) | ⬜ |  |  |  |
+| D180 | Webhook signature verification (derived) | 🔵 | #362 |  |  |
 | D181 | Security events log (distinct from Activity log) | 🔵 | #131 |  |  |
 | D182 | Test framework stack: **Vitest + testcontainers + Playwright | ⬜ |  |  |  |
 | D183 | Gmail mock strategy: **MockGmailProvider + recorded fixtures + staging real Gmail | 🔵 | #197 |  |  |
