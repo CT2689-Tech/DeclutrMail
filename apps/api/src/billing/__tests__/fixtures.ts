@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+
 // Recorded-shape webhook fixtures for the D117 billing adapters.
 //
 // Shapes mirror the providers' documented webhook payloads (Paddle
@@ -7,6 +9,31 @@
 // keys exist only as GH secrets (no live API access from tests), so
 // these fixtures + real-HMAC signature vectors are the integration
 // surface (per the U11 build contract + D183's recorded-fixture tier).
+
+/**
+ * Webhook secret the billing specs run the adapters with. It keys BOTH
+ * the `Paddle-Signature` HMAC and the `custom_data` attribution
+ * signature, so fixtures must sign with the same value the adapter
+ * under test is constructed with.
+ */
+export const TEST_PADDLE_WEBHOOK_SECRET = 'pdl_ntfset_test_secret_01';
+
+/**
+ * A correctly-signed `custom_data` blob. `custom_data` reaches Paddle
+ * through the browser, so the webhook only trusts a signed workspace
+ * id — an unsigned fixture would be silently discarded and every
+ * attribution assertion would fail for the wrong reason.
+ */
+export function signedCustomData(
+  workspaceId: string | undefined,
+  secret: string = TEST_PADDLE_WEBHOOK_SECRET,
+): Record<string, unknown> {
+  if (!workspaceId) return {};
+  return {
+    workspace_id: workspaceId,
+    sig: createHmac('sha256', secret).update(`paddle:workspace:${workspaceId}`).digest('hex'),
+  };
+}
 
 /** Test catalog ids used across the billing specs. */
 export const TEST_PRICE_IDS = {
@@ -27,7 +54,13 @@ export function paddleSubscriptionActivated(args: {
   eventId?: string;
   subscriptionId?: string;
   priceId?: string;
-  workspaceId: string;
+  workspaceId?: string;
+  /**
+   * Raw `custom_data` echo. Pass a real `createCheckout()` session's
+   * `customData` to prove the writer and reader agree on the key —
+   * `workspaceId` alone hardcodes the reader's shape and cannot.
+   */
+  customData?: Record<string, unknown>;
   status?: string;
   customerId?: string;
   scheduledChange?: { action: string; effective_at: string } | null;
@@ -77,7 +110,7 @@ export function paddleSubscriptionActivated(args: {
           },
         },
       ],
-      custom_data: { workspace_id: args.workspaceId },
+      custom_data: args.customData ?? signedCustomData(args.workspaceId),
     },
   };
 }
@@ -86,6 +119,9 @@ export function paddleSubscriptionActivated(args: {
 export function paddleTransactionCompleted(args: {
   eventId?: string;
   subscriptionId?: string | null;
+  customerId?: string;
+  /** Checkout attribution Paddle copies onto the transaction. */
+  workspaceId?: string;
 }): Record<string, unknown> {
   return {
     event_id: args.eventId ?? 'evt_01paddle_txn_000001',
@@ -94,11 +130,12 @@ export function paddleTransactionCompleted(args: {
     data: {
       id: 'txn_01paddle000001',
       status: 'completed',
-      customer_id: 'ctm_01paddle000001',
+      customer_id: args.customerId ?? 'ctm_01paddle000001',
       subscription_id:
         args.subscriptionId === undefined ? 'sub_01paddle000001' : args.subscriptionId,
       currency_code: 'USD',
       details: { totals: { grand_total: '900' } },
+      ...(args.workspaceId ? { custom_data: signedCustomData(args.workspaceId) } : {}),
     },
   };
 }

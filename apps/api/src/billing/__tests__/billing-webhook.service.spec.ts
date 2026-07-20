@@ -24,6 +24,7 @@ import {
   paddleSubscriptionActivated,
   paddleTransactionCompleted,
   razorpaySubscriptionEvent,
+  TEST_PADDLE_WEBHOOK_SECRET,
   TEST_PRICE_IDS,
 } from './fixtures.js';
 
@@ -121,7 +122,11 @@ function collectKeysDeep(value: unknown, out: string[] = []): string[] {
 /** PII key names real Paddle/Razorpay webhook bodies carry (D7-banned). */
 const PII_KEYS = ['email', 'contact', 'card', 'name', 'billing_details', 'address'] as const;
 
-const paddle = new PaddleAdapter({} as NodeJS.ProcessEnv);
+// The fixtures sign `custom_data`; the adapter must verify with the
+// same secret or every attribution assertion fails for the wrong reason.
+const paddle = new PaddleAdapter({
+  PADDLE_WEBHOOK_SECRET: TEST_PADDLE_WEBHOOK_SECRET,
+} as unknown as NodeJS.ProcessEnv);
 const razorpay = new RazorpayAdapter({} as NodeJS.ProcessEnv);
 
 describe('BillingWebhookService.process', () => {
@@ -345,6 +350,59 @@ describe('BillingWebhookService.process', () => {
     const eventRows = await db.select().from(subscriptionEvents);
     expect(eventRows).toHaveLength(1);
     expect(eventRows[0]!.processedAt).not.toBeNull();
+  });
+
+  it('a completed transaction seeds billing_customers so a later subscription attributes', async () => {
+    // Closes the single-point-of-failure in attribution: Paddle does
+    // not reliably echo checkout custom_data onto the SUBSCRIPTION
+    // entity, and on a first purchase there is no prior subscription
+    // row either — so without this seed such an activation is
+    // unattributable and the paid workspace never flips.
+    const txn = paddleTransactionCompleted({
+      workspaceId,
+      customerId: 'ctm_seed_1',
+      subscriptionId: 'sub_seed_1',
+      eventId: 'evt_txn_seed',
+    });
+    expect(await service.process('paddle', paddle.mapWebhookEvent(txn), txn)).toEqual({
+      kind: 'processed',
+      effect: 'payment:succeeded',
+    });
+
+    const customers = await db.select().from(billingCustomers);
+    expect(customers).toHaveLength(1);
+    expect(customers[0]).toMatchObject({ workspaceId, providerCustomerId: 'ctm_seed_1' });
+
+    // The activation carries NO attribution — it must resolve via the
+    // customer mapping the transaction just seeded.
+    const activate = paddleSubscriptionActivated({
+      eventId: 'evt_seed_activate',
+      subscriptionId: 'sub_seed_1',
+      customerId: 'ctm_seed_1',
+      customData: {},
+    });
+    const outcome = await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+    expect(outcome.kind).toBe('processed');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('plus');
+  });
+
+  it('a forged workspace id in a payment never mints a customer mapping', async () => {
+    // custom_data reaches Paddle through the browser. The signature
+    // check upstream is the primary defence; this pins the second one —
+    // an unsigned/forged id resolves to null, so no mapping is written.
+    const forged = paddleTransactionCompleted({
+      customerId: 'ctm_forged',
+      subscriptionId: 'sub_forged',
+      eventId: 'evt_txn_forged',
+    });
+    (forged.data as Record<string, unknown>).custom_data = {
+      workspace_id: workspaceId,
+      sig: 'not-a-valid-signature',
+    };
+    await service.process('paddle', paddle.mapWebhookEvent(forged), forged);
+    expect(await db.select().from(billingCustomers)).toHaveLength(0);
   });
 
   it('later events on a known subscription resolve the workspace WITHOUT payload attribution', async () => {

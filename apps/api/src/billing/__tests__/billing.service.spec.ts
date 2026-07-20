@@ -97,7 +97,7 @@ describe('BillingService', () => {
       priceId: 'pri_plus_m',
       clientToken: 'test_tok',
       environment: 'sandbox',
-      customData: { workspaceId: 'set-below' },
+      customData: { workspace_id: 'set-below', sig: 'test-sig' },
     });
     paddleCancel = vi.fn().mockResolvedValue(undefined);
     const paddle = {

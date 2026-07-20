@@ -56,6 +56,16 @@ export type NormalizedBillingEvent =
       outcome: 'succeeded' | 'failed';
       /** Provider subscription id when the payment is subscription-linked. */
       providerSubscriptionId: string | null;
+      /**
+       * Attribution carried by the payment itself. A completed
+       * transaction is the one event guaranteed to hold the customer id
+       * AND the checkout's own `custom_data`/`notes`, so it seeds
+       * `billing_customers` — giving subscription attribution a second
+       * link instead of depending solely on the provider echoing
+       * custom_data onto the subscription entity.
+       */
+      providerCustomerId: string | null;
+      workspaceId: string | null;
     }
   | {
       kind: 'cancellation_scheduled';
