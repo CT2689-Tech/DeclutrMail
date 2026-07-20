@@ -93,7 +93,13 @@ function mapStatus(rzpStatus: string): SubscriptionStatus | null {
     case 'expired':
       return 'canceled';
     default:
-      return 'canceled';
+      // Unrecognized status → null (treated as `ignored`, no state
+      // write). Mapping an unknown status to `canceled` manufactured a
+      // TERMINAL state from a non-terminal input, and the
+      // terminal-canceled floor then locked the subscription out of
+      // ever reactivating. Leaving state untouched self-heals when a
+      // recognized event arrives.
+      return null;
   }
 }
 

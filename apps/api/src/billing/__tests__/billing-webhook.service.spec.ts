@@ -545,6 +545,100 @@ describe('BillingWebhookService.process', () => {
     expect(subRow!.status).toBe('canceled');
   });
 
+  it('an UNRECOGNIZED provider status does not manufacture a terminal cancel', async () => {
+    // The terminal-canceled floor treats `canceled` as absorbing. If an
+    // unknown status string mapped to `canceled`, a later real
+    // activation would be locked out forever. Unknown → ignored, state
+    // untouched, so the next recognized event still applies.
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_unk_activate',
+      subscriptionId: 'sub_unk',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const weird = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_unk_weird',
+      subscriptionId: 'sub_unk',
+      eventType: 'subscription.updated',
+      status: 'some_future_status',
+    });
+    const weirdOutcome = await service.process('paddle', paddle.mapWebhookEvent(weird), weird);
+    expect(weirdOutcome.kind).toBe('ignored');
+
+    // Row untouched — still active, still granting.
+    const [afterWeird] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(afterWeird!.tier).toBe('plus');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_unk'));
+    expect(subRow!.status).toBe('active');
+  });
+
+  it('a real cancel is not discarded when it ties an active peer on BOTH event time and arrival', async () => {
+    // The exact double-tie: equal occurred_at AND equal created_at.
+    // `>=` would resolve it in the committed active peer's favour and
+    // DISCARD the cancel (user stays paid after cancelling); strict `>`
+    // applies the cancel. A sequential test can't force an equal
+    // created_at (each process() gets a distinct now()), so both rows
+    // are inserted with a pinned created_at to isolate the comparison.
+    const T = '2026-07-20T10:00:00.000000Z';
+    const TIE = new Date('2026-07-20T10:00:00.500Z');
+
+    // Committed active peer: subscription row + a processed event row,
+    // both pinned so the workspace is genuinely on `plus`.
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_tie2',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      billingCycle: 'monthly',
+    });
+    await db.update(workspaces).set({ tier: 'plus' }).where(eq(workspaces.id, workspaceId));
+    await db.insert(subscriptionEvents).values({
+      provider: 'paddle',
+      providerEventId: 'evt_tie2_active',
+      eventType: 'subscription.activated',
+      payload: { kind: 'subscription', provider_subscription_id: 'sub_tie2', occurred_at: T },
+      processedAt: TIE,
+      createdAt: TIE,
+    });
+
+    // The cancel: pre-insert its event row at the SAME created_at so the
+    // insert-first resume path reads TIE as this event's arrival time.
+    const canceled = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_tie2_cancel',
+      subscriptionId: 'sub_tie2',
+      eventType: 'subscription.canceled',
+      status: 'canceled',
+    });
+    (canceled as Record<string, unknown>).occurred_at = T;
+    const cancelEvent = paddle.mapWebhookEvent(canceled);
+    await db.insert(subscriptionEvents).values({
+      provider: 'paddle',
+      providerEventId: cancelEvent.providerEventId,
+      eventType: cancelEvent.eventType,
+      payload: projectWebhookPayload(cancelEvent, canceled),
+      createdAt: TIE,
+    });
+
+    const outcome = await service.process('paddle', cancelEvent, canceled);
+    expect(outcome.kind).toBe('processed');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_tie2'));
+    expect(subRow!.status).toBe('canceled');
+  });
+
   it('an equal-occurred_at active event never resurrects a cancelled subscription', async () => {
     // occurred_at is not a total order. Two same-subscription events can
     // share it — Razorpay stamps unix SECONDS, so any two events in the

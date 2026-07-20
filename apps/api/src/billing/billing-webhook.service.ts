@@ -393,13 +393,16 @@ export class BillingWebhookService {
         const peerMs = toMillis(peer.occurredAt);
         // Distinct event times: the provider's order is authoritative.
         if (peerMs !== null && selfMs !== null && peerMs !== selfMs) return peerMs > selfMs;
-        // Equal (or missing) event time — occurred_at is not a total
-        // order, and a tie must never let this event clobber an already
-        // committed peer. Fall back to arrival, `>=` so an exact tie is
-        // resolved in the peer's favour (conservative: refuse, do not
-        // overwrite). This is what lets a user-cancel marker, written
-        // after an in-flight renewal arrived, still win their tie.
-        return peer.createdAt.getTime() >= eventCreatedAt.getTime();
+        // Equal (or missing) event time — fall back to arrival order,
+        // STRICT. Whichever event arrived later is treated as newer:
+        //   - a user-cancel marker, written AFTER an in-flight renewal
+        //     arrived, wins and refuses the renewal (its flag-revert);
+        //   - a real cancel arriving after a committed active peer is
+        //     NOT refused — it arrived later, so it is not older, and
+        //     `>=` here would wrongly DISCARD it.
+        // A stale active arriving after a cancel is the one case this
+        // lets through; the terminal-canceled floor below catches it.
+        return peer.createdAt.getTime() > eventCreatedAt.getTime();
       };
 
       if (peers.some(isNewer)) {
