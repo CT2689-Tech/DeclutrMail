@@ -358,6 +358,7 @@ export class BillingWebhookService {
         .select({
           createdAt: subscriptionEvents.createdAt,
           occurredAt: sql<string | null>`${subscriptionEvents.payload}->>'occurred_at'`,
+          status: sql<string | null>`${subscriptionEvents.payload}->>'status'`,
         })
         .from(subscriptionEvents)
         .where(
@@ -389,9 +390,20 @@ export class BillingWebhookService {
       };
       const selfMs = toMillis(selfOccurredAt);
 
-      const isNewer = (peer: { createdAt: Date; occurredAt: string | null }): boolean => {
+      // Does THIS event grant a tier? (active/past_due grant; paused and
+      // canceled do not.) Only a granting event can wrongly resurrect a
+      // committed non-granting state.
+      const selfGrants = sub.status === 'active' || sub.status === 'past_due';
+
+      const isNewer = (peer: {
+        createdAt: Date;
+        occurredAt: string | null;
+        status: string | null;
+      }): boolean => {
         const peerMs = toMillis(peer.occurredAt);
         // Distinct event times: the provider's order is authoritative.
+        // A genuine resume (occurred_at strictly after the pause) is
+        // resolved HERE and correctly applies.
         if (peerMs !== null && selfMs !== null && peerMs !== selfMs) return peerMs > selfMs;
         // Equal (or missing) event time — fall back to arrival order,
         // STRICT. Whichever event arrived later is treated as newer:
@@ -400,9 +412,14 @@ export class BillingWebhookService {
         //   - a real cancel arriving after a committed active peer is
         //     NOT refused — it arrived later, so it is not older, and
         //     `>=` here would wrongly DISCARD it.
-        // A stale active arriving after a cancel is the one case this
-        // lets through; the terminal-canceled floor below catches it.
-        return peer.createdAt.getTime() > eventCreatedAt.getTime();
+        if (peer.createdAt.getTime() > eventCreatedAt.getTime()) return true;
+        // On an unresolved event-time tie a granting event must NOT
+        // overwrite a committed NON-GRANTING peer (paused or canceled) —
+        // the stale-active resurrection the arrival order cannot catch
+        // because it genuinely arrives last. `canceled` is also caught
+        // by the terminal floor below; `paused` (D118 tier lock) has no
+        // other guard.
+        return selfGrants && (peer.status === 'paused' || peer.status === 'canceled');
       };
 
       if (peers.some(isNewer)) {

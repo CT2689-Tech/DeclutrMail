@@ -545,6 +545,90 @@ describe('BillingWebhookService.process', () => {
     expect(subRow!.status).toBe('canceled');
   });
 
+  it('an equal-occurred_at active event never resurrects a PAUSED subscription', async () => {
+    // paused is a non-granting, tier-locking state (D118) just like
+    // canceled. A stale active sharing the pause's event time and
+    // arriving after it must not un-lock the tier. A genuine resume is
+    // NOT affected — it has a strictly-later occurred_at (next test).
+    const T = '2026-07-20T10:00:00.000000Z';
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_pz_activate',
+      subscriptionId: 'sub_pz',
+    });
+    (activate as Record<string, unknown>).occurred_at = '2026-07-20T09:00:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const paused = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_pz_pause',
+      subscriptionId: 'sub_pz',
+      eventType: 'subscription.paused',
+      status: 'paused',
+      periodEndsAt: null,
+    });
+    (paused as Record<string, unknown>).occurred_at = T;
+    await service.process('paddle', paddle.mapWebhookEvent(paused), paused);
+
+    const [afterPause] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(afterPause!.tier).toBe('free');
+
+    const tiedActive = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_pz_active',
+      subscriptionId: 'sub_pz',
+      eventType: 'subscription.updated',
+    });
+    (tiedActive as Record<string, unknown>).occurred_at = T;
+    const outcome = await service.process('paddle', paddle.mapWebhookEvent(tiedActive), tiedActive);
+    expect(outcome.kind).not.toBe('processed');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_pz'));
+    expect(subRow!.status).toBe('paused');
+  });
+
+  it('a genuine resume (later occurred_at) DOES reactivate a paused subscription', async () => {
+    // The fix above must not block a real resume: it arrives strictly
+    // after the pause in event time, so the ordering branch applies it.
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_rs_activate',
+      subscriptionId: 'sub_rs',
+    });
+    (activate as Record<string, unknown>).occurred_at = '2026-07-20T09:00:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const paused = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_rs_pause',
+      subscriptionId: 'sub_rs',
+      eventType: 'subscription.paused',
+      status: 'paused',
+      periodEndsAt: null,
+    });
+    (paused as Record<string, unknown>).occurred_at = '2026-07-20T10:00:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(paused), paused);
+
+    const resumed = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_rs_resume',
+      subscriptionId: 'sub_rs',
+      eventType: 'subscription.resumed',
+      status: 'active',
+    });
+    (resumed as Record<string, unknown>).occurred_at = '2026-07-20T11:00:00.000000Z';
+    const outcome = await service.process('paddle', paddle.mapWebhookEvent(resumed), resumed);
+    expect(outcome.kind).toBe('processed');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('plus');
+  });
+
   it('an UNRECOGNIZED provider status does not manufacture a terminal cancel', async () => {
     // The terminal-canceled floor treats `canceled` as absorbing. If an
     // unknown status string mapped to `canceled`, a later real
