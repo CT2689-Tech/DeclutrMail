@@ -41,6 +41,14 @@ jobs:
   provision:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Secrets resolve from the GitHub Environment named by the input, so
+    # `sandbox` and `production` hold SEPARATE copies of the SAME secret
+    # names — no swapping between runs. Define PADDLE_API_KEY /
+    # RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET inside BOTH environments
+    # (Settings → Environments); an environment that omits one silently
+    # falls back to the repo-level secret, so define all three in each.
+    # Add required reviewers to `production` to gate live provisioning.
+    environment: ${{ inputs.paddle_env }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

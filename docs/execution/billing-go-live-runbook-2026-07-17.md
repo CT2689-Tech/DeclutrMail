@@ -114,11 +114,30 @@ test-vs-live follows the key prefix itself (`rzp_test_` / `rzp_live_`).
 
 ---
 
-## 4. Phase C — Store keys as GitHub Actions secrets
+## 4. Phase C — Store keys as GitHub **Environment** secrets
 
-Per the checklist, `PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `RAZORPAY_KEY_ID`,
-`RAZORPAY_KEY_SECRET` **may already exist** as GH secrets. Confirm/set them at
-**GitHub → repo → Settings → Secrets and variables → Actions**.
+The provisioning workflow selects its secrets from a **GitHub Environment**
+named by the `paddle_env` input (`job.environment: ${{ inputs.paddle_env }}`),
+so sandbox and production hold SEPARATE copies of the SAME secret names — no
+swapping a shared slot between runs.
+
+**GitHub → repo → Settings → Environments** → create `sandbox` and
+`production`, and in EACH define:
+
+- `PADDLE_API_KEY` — sandbox `pdl_sdbx_apikey_…` vs live `pdl_live_apikey_…`
+- `RAZORPAY_KEY_ID` — `rzp_test_…` vs `rzp_live_…`
+- `RAZORPAY_KEY_SECRET`
+
+Define all three in **both** environments: an environment that omits a secret
+silently falls back to the repo-level secret of the same name (a footgun — a
+production run could pick up a leftover sandbox key). Delete any leftover
+repo-level `PADDLE_API_KEY` / `RAZORPAY_*` to remove that fallback. Add
+**required reviewers** to `production` so a live provisioning run needs an
+approval click.
+
+> `PADDLE_CLIENT_TOKEN` / `PADDLE_WEBHOOK_SECRET` / `RAZORPAY_WEBHOOK_SECRET`
+> are NOT provisioning inputs — they are runtime-only (§5–7) and live in GCP
+> Secret Manager, not here.
 
 > **The single most-repeated mistake in this repo:** _a GitHub Actions secret is
 > not a Cloud Run secret._ Keys here let the **provisioning workflow** run; they
