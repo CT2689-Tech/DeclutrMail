@@ -497,6 +497,54 @@ describe('BillingWebhookService.process', () => {
     expect(subRow!.cancelAtPeriodEnd).toBe(true);
   });
 
+  it('a LATE first delivery cannot resurrect a cancelled subscription', async () => {
+    // Arrival order is not event order. A provider event stamped 10:00
+    // can be delayed past one stamped 10:05 and arrive with the newest
+    // created_at of all — so an arrival-only guard would apply it and
+    // hand entitlement back to a churned user. Ordering is by the
+    // provider's own occurred_at.
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_late_activate',
+      subscriptionId: 'sub_late',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const canceled = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_late_cancel',
+      subscriptionId: 'sub_late',
+      eventType: 'subscription.canceled',
+      status: 'canceled',
+    });
+    (canceled as Record<string, unknown>).occurred_at = '2026-06-11T10:05:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(canceled), canceled);
+
+    const [afterCancel] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(afterCancel!.tier).toBe('free');
+
+    // Delayed FIRST delivery of an OLDER event — newest arrival, oldest
+    // event time. Must be refused.
+    const delayed = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_late_delayed',
+      subscriptionId: 'sub_late',
+      eventType: 'subscription.updated',
+    });
+    (delayed as Record<string, unknown>).occurred_at = '2026-06-11T10:00:00.000000Z';
+    expect(await service.process('paddle', paddle.mapWebhookEvent(delayed), delayed)).toEqual({
+      kind: 'ignored',
+    });
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_late'));
+    expect(subRow!.status).toBe('canceled');
+  });
+
   it('a stale retry never overwrites newer subscription state', async () => {
     // The hazard introduced by leaving unresolved events unprocessed:
     // an old event becomes attributable LATER and re-drives on top of
@@ -532,6 +580,9 @@ describe('BillingWebhookService.process', () => {
       status: 'canceled',
       eventType: 'subscription.canceled',
     });
+    // Real providers stamp a distinct event time per event; the shared
+    // fixture default would make these two look simultaneous.
+    (canceled as Record<string, unknown>).occurred_at = '2026-06-11T10:05:00.000000Z';
     await service.process('paddle', paddle.mapWebhookEvent(canceled), canceled);
 
     const [afterCancel] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));

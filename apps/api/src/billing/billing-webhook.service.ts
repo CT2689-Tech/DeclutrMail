@@ -328,21 +328,25 @@ export class BillingWebhookService {
     const outcome = await this.db.transaction(async (tx) => {
       await this.lockSubscription(tx, provider, sub.providerSubscriptionId);
 
-      // Peers = processed, STATE-WRITING events for this subscription,
-      // excluding this row, that did not arrive before it.
+      // Peers = every processed, STATE-WRITING event for this
+      // subscription, excluding this row.
       //
-      // Ordering is (created_at, occurred_at). `created_at` alone is not
-      // a total order — now() is transaction-scoped, so rows written in
-      // quick succession share a timestamp. `id` cannot break the tie
-      // (gen_random_uuid() would decide by coin flip), and deferring the
-      // event does not help either: both timestamps are FIXED, so a
-      // retry re-runs the identical comparison forever and the provider
-      // eventually drops a real payment.
+      // Ordering is by the PROVIDER's `occurred_at`, not by arrival.
+      // Arrival is wrong for late FIRST deliveries: a `subscription.
+      // updated` stamped 10:00 can be delayed past a `subscription.
+      // canceled` stamped 10:05, land at 10:07 with the newest
+      // created_at of all, and resurrect the cancelled subscription.
+      // Filtering peers by arrival would hide exactly that case, so
+      // every peer is considered and compared on event time.
       //
-      // `occurred_at` is the PROVIDER's own event time, carried in the
-      // audit payload — a semantically correct arrival order, not a
-      // guess. Equal on both is genuine simultaneity: neither is newer,
-      // so the event applies rather than looping.
+      // `created_at` is the fallback when either side lacks
+      // occurred_at. It is not a total order on its own — now() is
+      // transaction-scoped, so rows written in quick succession share a
+      // timestamp — and `id` cannot break the tie (gen_random_uuid()
+      // would decide by coin flip). Equal on both is treated as
+      // simultaneous: neither is newer, so the event applies rather
+      // than deferring forever (both timestamps are FIXED, so a retry
+      // re-runs the identical comparison).
       const [self] = await tx
         .select({ occurredAt: sql<string | null>`${subscriptionEvents.payload}->>'occurred_at'` })
         .from(subscriptionEvents)
@@ -352,8 +356,7 @@ export class BillingWebhookService {
 
       const peers = await tx
         .select({
-          id: subscriptionEvents.id,
-          strictlyNewer: sql<boolean>`${subscriptionEvents.createdAt} > ${eventCreatedAt.toISOString()}::timestamptz`,
+          createdAt: subscriptionEvents.createdAt,
           occurredAt: sql<string | null>`${subscriptionEvents.payload}->>'occurred_at'`,
         })
         .from(subscriptionEvents)
@@ -362,9 +365,6 @@ export class BillingWebhookService {
             eq(subscriptionEvents.provider, provider),
             isNotNull(subscriptionEvents.processedAt),
             sql`${subscriptionEvents.id} <> ${eventRowId}::uuid`,
-            // Date bound as an ISO string with an explicit cast —
-            // postgres.js rejects a JS Date beside a raw expression.
-            sql`${subscriptionEvents.createdAt} >= ${eventCreatedAt.toISOString()}::timestamptz`,
             sql`${subscriptionEvents.payload}->>'provider_subscription_id' = ${sub.providerSubscriptionId}`,
             // ONLY state-writing kinds count as "newer state". A payment
             // event carries the same provider_subscription_id but writes
@@ -376,12 +376,28 @@ export class BillingWebhookService {
           ),
         );
 
-      // A same-arrival peer wins only if the PROVIDER stamped it later.
-      // Missing occurred_at on either side is not evidence of newness.
-      const beatsOnOccurredAt = (peerOccurredAt: string | null): boolean =>
-        peerOccurredAt !== null && selfOccurredAt !== null && peerOccurredAt > selfOccurredAt;
+      // Providers disagree on format: Paddle sends an ISO string,
+      // Razorpay unix SECONDS. Normalize to epoch millis so a marker
+      // written by our own cancel path (ISO) compares correctly against
+      // either. A subscription belongs to one provider, but the local
+      // cancel marker crosses that boundary.
+      const toMillis = (value: string | null): number | null => {
+        if (value === null) return null;
+        if (/^\d+$/.test(value)) return Number(value) * 1000;
+        const parsed = Date.parse(value);
+        return Number.isNaN(parsed) ? null : parsed;
+      };
+      const selfMs = toMillis(selfOccurredAt);
 
-      if (peers.some((p) => p.strictlyNewer || beatsOnOccurredAt(p.occurredAt))) {
+      const isNewer = (peer: { createdAt: Date; occurredAt: string | null }): boolean => {
+        const peerMs = toMillis(peer.occurredAt);
+        // Event time wins whenever both sides carry it.
+        if (peerMs !== null && selfMs !== null) return peerMs > selfMs;
+        // Otherwise fall back to arrival order.
+        return peer.createdAt.getTime() > eventCreatedAt.getTime();
+      };
+
+      if (peers.some(isNewer)) {
         // Terminal: a newer event already won. Stamp it so the provider
         // stops retrying — unlike the unresolved cases above, replaying
         // this can never produce a better outcome. Deferring instead
