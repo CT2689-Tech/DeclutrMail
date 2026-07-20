@@ -168,6 +168,29 @@ export function projectWebhookPayload(
   return projected;
 }
 
+/**
+ * Serialize every writer of ONE subscription's state. Must be taken by
+ * EVERY path that mutates a `subscriptions` row — the webhook upsert,
+ * the scheduled-cancellation flag, and the user-initiated cancel in
+ * `BillingService` — inside the same transaction as the write. The
+ * webhook's staleness check is read-then-write, so an unlocked writer
+ * elsewhere can interleave between the check and the upsert and land
+ * last. Keyed on provider + subscription id, so unrelated
+ * subscriptions never contend.
+ *
+ * Exported because the writers live in two services; a second lock
+ * expression would silently stop excluding the first.
+ */
+export async function lockSubscription(
+  tx: DrizzleDb,
+  provider: BillingProviderId,
+  providerSubscriptionId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtext(${`${provider}:${providerSubscriptionId}`}))`,
+  );
+}
+
 @Injectable()
 export class BillingWebhookService {
   private readonly logger = new Logger(BillingWebhookService.name);
@@ -249,6 +272,14 @@ export class BillingWebhookService {
     }
   }
 
+  private async lockSubscription(
+    tx: DrizzleDb,
+    provider: BillingProviderId,
+    providerSubscriptionId: string,
+  ): Promise<void> {
+    await lockSubscription(tx, provider, providerSubscriptionId);
+  }
+
   private async markProcessed(eventRowId: string): Promise<void> {
     await this.db
       .update(subscriptionEvents)
@@ -295,13 +326,7 @@ export class BillingWebhookService {
     // truth: providers give no reliable monotonic sequence, and
     // `occurred_at` lives only inside the audit payload.
     const outcome = await this.db.transaction(async (tx) => {
-      // Serialize every writer for THIS subscription. The staleness
-      // check below is read-then-write: without the lock, two events
-      // delivered concurrently both read "no newer event" and both
-      // upsert, and the loser's stale state can land last.
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext(${`${provider}:${sub.providerSubscriptionId}`}))`,
-      );
+      await this.lockSubscription(tx, provider, sub.providerSubscriptionId);
 
       const [newer] = await tx
         .select({ id: subscriptionEvents.id })
@@ -459,6 +484,12 @@ export class BillingWebhookService {
     // needs the same provenance column as the flag above, so it ships
     // in that change rather than as a revert-prone half-measure.
     const outcome = await this.db.transaction(async (tx) => {
+      // Same lock as the subscription upsert — this is the OTHER writer
+      // of `subscriptions` state. Without it a cancellation can
+      // interleave with an in-flight upsert whose staleness check
+      // already ran, and the upsert's `cancel_at_period_end` lands last.
+      await this.lockSubscription(tx, provider, event.providerSubscriptionId);
+
       const [row] = await tx
         .update(subscriptions)
         .set({ cancelAtPeriodEnd: true, updatedAt: new Date() })

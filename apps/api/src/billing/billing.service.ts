@@ -32,6 +32,7 @@ import { AppException } from '../common/app-exception.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { BillingProvider } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
+import { lockSubscription } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
 
@@ -181,10 +182,17 @@ export class BillingService {
       // the local row record the scheduled cancel. Idempotent: a
       // second cancel click skips the provider round-trip.
       await this.adapterFor(sub.provider).cancelSubscription(sub.providerSubscriptionId);
-      await this.db
-        .update(subscriptions)
-        .set({ cancelAtPeriodEnd: true, updatedAt: new Date() })
-        .where(eq(subscriptions.id, sub.id));
+      // Under the SAME advisory lock the webhook writers take: a
+      // provider event for this subscription can be in flight right
+      // now, and its upsert would otherwise overwrite the flag we are
+      // about to set with the pre-cancel value it read earlier.
+      await this.db.transaction(async (tx) => {
+        await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+        await tx
+          .update(subscriptions)
+          .set({ cancelAtPeriodEnd: true, updatedAt: new Date() })
+          .where(eq(subscriptions.id, sub.id));
+      });
 
       // D118 — reason into the normalized event stream (audit).
       await this.db
