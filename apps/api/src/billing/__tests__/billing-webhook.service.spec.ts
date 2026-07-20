@@ -423,8 +423,11 @@ describe('BillingWebhookService.process', () => {
     await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'too_expensive' });
 
     // Now the in-flight renewal finally processes. It must NOT revert.
+    // Either terminal outcome is acceptable — refused as stale, or held
+    // as ambiguous for retry when the two rows share a timestamp. What
+    // must never happen is `processed`, which would clobber the cancel.
     const outcome = await service.process('paddle', inFlightEvent, inFlight);
-    expect(outcome).toEqual({ kind: 'ignored' });
+    expect(outcome.kind).not.toBe('processed');
 
     const [subRow] = await db
       .select()
@@ -485,7 +488,8 @@ describe('BillingWebhookService.process', () => {
     expect(markers).toHaveLength(2);
 
     // And the second cancel still wins against the older in-flight event.
-    expect(await service.process('paddle', inFlightEvent, inFlight)).toEqual({ kind: 'ignored' });
+    const outcome = await service.process('paddle', inFlightEvent, inFlight);
+    expect(outcome.kind).not.toBe('processed');
     const [subRow] = await db
       .select()
       .from(subscriptions)

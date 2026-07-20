@@ -24,6 +24,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-07-20 — Schema: subscription_events needs a monotonic arrival column
+**Source:** session 2026-07-20 billing hardening (PR #361), Codex stop-time review
+**Why:** The webhook staleness guard orders events by `subscription_events.created_at`. That is not a total order — `now()` is transaction-scoped, so two rows written in quick succession share a timestamp. `id` cannot break the tie: it is `gen_random_uuid()`, so ordering on it is a coin flip that can refuse a valid event or accept a stale one. The guard currently treats an equal timestamp as UNKNOWN order and leaves the event unprocessed for retry — fail-safe and self-clearing, but it costs a redelivery round-trip and logs `billing.webhook.ambiguous_order`.
+**How:** Add a monotonic arrival column to `subscription_events` (`bigint generated always as identity`, indexed) and order on it instead of `created_at`. Then ties disappear and the ambiguous branch can be deleted. NOTE: coordinate the migration number — the D247 branch already carries a pending `0047`.
+**Verifies by:** two events inserted in the same millisecond compare deterministically; `billing.webhook.ambiguous_order` stops appearing.
+**Status:** Open
+
 ### 2026-07-20 — CONFIRMED live: /billing does not update after a successful purchase
 **Source:** session 2026-07-20 sandbox smoke (founder observed it directly)
 **Why:** Sandbox purchase completed, webhook landed, `workspaces.tier` flipped free→plus in 37s — and the billing card kept showing Free until a manual reload. The user has paid and the product tells them they are still on the free plan. This was flagged as a theoretical gap by the lifecycle audit; it is now observed behaviour. Cause: `useBillingSubscription` has `staleTime: 60_000` with no polling, `me` only polls while a mailbox syncs, and the plan-change modal closes on `onSuccess` with no "waiting for confirmation" state.

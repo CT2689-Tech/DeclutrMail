@@ -328,21 +328,29 @@ export class BillingWebhookService {
     const outcome = await this.db.transaction(async (tx) => {
       await this.lockSubscription(tx, provider, sub.providerSubscriptionId);
 
-      const [newer] = await tx
-        .select({ id: subscriptionEvents.id })
+      // Peers = processed, STATE-WRITING events for this subscription,
+      // excluding this row, that did not arrive before it.
+      //
+      // `created_at` cannot be tie-broken by `id`: it is
+      // gen_random_uuid(), so ordering on it is a coin flip that can
+      // refuse a valid event or accept a stale one. There is no
+      // monotonic arrival column today (that needs a schema change), so
+      // an equal timestamp is treated as UNKNOWN order rather than
+      // guessed — see below.
+      const peers = await tx
+        .select({
+          id: subscriptionEvents.id,
+          strictlyNewer: sql<boolean>`${subscriptionEvents.createdAt} > ${eventCreatedAt.toISOString()}::timestamptz`,
+        })
         .from(subscriptionEvents)
         .where(
           and(
             eq(subscriptionEvents.provider, provider),
             isNotNull(subscriptionEvents.processedAt),
-            // (created_at, id) as a TOTAL order. Plain `created_at >`
-            // is not enough: `now()` is transaction-scoped, so two
-            // rows written in quick succession can share a timestamp
-            // and neither counts as newer than the other. The id
-            // tiebreak keeps the comparison strict and self-excluding.
-            // Date is bound as an ISO string with an explicit cast —
+            sql`${subscriptionEvents.id} <> ${eventRowId}::uuid`,
+            // Date bound as an ISO string with an explicit cast —
             // postgres.js rejects a JS Date beside a raw expression.
-            sql`(${subscriptionEvents.createdAt}, ${subscriptionEvents.id}) > (${eventCreatedAt.toISOString()}::timestamptz, ${eventRowId}::uuid)`,
+            sql`${subscriptionEvents.createdAt} >= ${eventCreatedAt.toISOString()}::timestamptz`,
             sql`${subscriptionEvents.payload}->>'provider_subscription_id' = ${sub.providerSubscriptionId}`,
             // ONLY state-writing kinds count as "newer state". A payment
             // event carries the same provider_subscription_id but writes
@@ -352,12 +360,12 @@ export class BillingWebhookService {
             // the activation this recovery path exists to rescue.
             sql`${subscriptionEvents.payload}->>'kind' IN ('subscription', 'cancellation_scheduled')`,
           ),
-        )
-        .limit(1);
-      if (newer) {
-        // Terminal: a newer event already won. Stamp it so the provider
-        // stops retrying — unlike the unresolved cases above, replaying
-        // this can never produce a better outcome.
+        );
+
+      if (peers.some((p) => p.strictlyNewer)) {
+        // Terminal: a strictly-newer event already won. Stamp it so the
+        // provider stops retrying — unlike the unresolved cases above,
+        // replaying this can never produce a better outcome.
         this.logger.warn(
           `billing.webhook.stale_replay provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
         );
@@ -366,6 +374,18 @@ export class BillingWebhookService {
           .set({ processedAt: new Date() })
           .where(eq(subscriptionEvents.id, eventRowId));
         return { kind: 'ignored' } as const;
+      }
+
+      if (peers.length > 0) {
+        // Same timestamp, unknown real order. Applying could clobber
+        // newer state; stamping could discard a live payment. So do
+        // NEITHER — leave it unprocessed and let the provider retry,
+        // by which point the peer is strictly older and the comparison
+        // resolves. Fail-safe in both directions, and self-clearing.
+        this.logger.warn(
+          `billing.webhook.ambiguous_order provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
+        );
+        return { kind: 'unresolved', reason: 'unattributable' } as const;
       }
 
       // Customer record (webhook hot path resolves workspace from it).
