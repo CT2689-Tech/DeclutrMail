@@ -52,6 +52,18 @@ interface PaddleSubscription {
   custom_data?: { workspace_id?: string } | null;
 }
 
+/**
+ * Paddle transaction entity fields this adapter reads. `custom_data`
+ * here is the checkout's own payload (Paddle copies it onto the
+ * transaction), which is why a completed transaction can seed
+ * attribution even when the subscription entity carries none.
+ */
+interface PaddleTransaction {
+  subscription_id?: string | null;
+  customer_id?: string | null;
+  custom_data?: { workspace_id?: string } | null;
+}
+
 /** Paddle webhook envelope (API v2 notifications). */
 interface PaddleWebhookBody {
   event_id?: string;
@@ -135,7 +147,8 @@ export class PaddleAdapter implements BillingProvider {
       priceId: input.providerPriceId,
       clientToken,
       environment: this.env.PADDLE_ENV === 'production' ? 'production' : 'sandbox',
-      customData: { workspaceId: input.workspaceId },
+      // Key must match the webhook reader (`custom_data.workspace_id`).
+      customData: { workspace_id: input.workspaceId },
     };
   }
 
@@ -241,23 +254,27 @@ export class PaddleAdapter implements BillingProvider {
           subscription: toNormalizedSubscription(body.data as unknown as PaddleSubscription),
         };
       case 'transaction.completed': {
-        const data = body.data as { subscription_id?: string | null } | undefined;
+        const data = body.data as PaddleTransaction | undefined;
         return {
           kind: 'payment',
           providerEventId: eventId,
           eventType,
           outcome: 'succeeded',
           providerSubscriptionId: data?.subscription_id ?? null,
+          providerCustomerId: data?.customer_id ?? null,
+          workspaceId: data?.custom_data?.workspace_id ?? null,
         };
       }
       case 'transaction.payment_failed': {
-        const data = body.data as { subscription_id?: string | null } | undefined;
+        const data = body.data as PaddleTransaction | undefined;
         return {
           kind: 'payment',
           providerEventId: eventId,
           eventType,
           outcome: 'failed',
           providerSubscriptionId: data?.subscription_id ?? null,
+          providerCustomerId: data?.customer_id ?? null,
+          workspaceId: data?.custom_data?.workspace_id ?? null,
         };
       }
       case 'adjustment.created': {

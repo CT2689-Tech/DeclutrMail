@@ -85,7 +85,11 @@ export const PaddleCheckoutSessionSchema = z.object({
   priceId: z.string().min(1),
   clientToken: z.string().min(1),
   environment: z.enum(['sandbox', 'production']),
-  customData: z.object({ workspaceId: z.uuid() }),
+  // snake_case ON PURPOSE: this object is stored verbatim by Paddle and
+  // read back off the webhook as `custom_data.workspace_id`. A camelCase
+  // key here makes every first purchase unattributable (the webhook has
+  // no subscription or billing_customers row to fall back to yet).
+  customData: z.object({ workspace_id: z.uuid() }),
 });
 export type PaddleCheckoutSession = z.infer<typeof PaddleCheckoutSessionSchema>;
 

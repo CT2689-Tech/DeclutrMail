@@ -240,9 +240,35 @@ describe('PaddleAdapter checkout + cancel', () => {
       priceId: 'pri_x',
       clientToken: 'test_abc',
       environment: 'sandbox',
-      customData: { workspaceId: WORKSPACE },
+      customData: { workspace_id: WORKSPACE },
     });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // Regression (2026-07-20): the writer emitted `workspaceId` while the
+  // reader looked for `custom_data.workspace_id`, so EVERY first purchase
+  // was unattributable — the webhook 200'd and wrote nothing. Both sides
+  // passed their own fixtures; only feeding the writer's output through
+  // the reader catches it. Paddle stores custom_data verbatim, so this
+  // round-trip mirrors production exactly.
+  it('createCheckout customData round-trips through the webhook reader', async () => {
+    const adapter = makeAdapter({ PADDLE_CLIENT_TOKEN: 'test_abc' });
+    const session = await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'monthly',
+      providerPriceId: 'pri_x',
+    });
+
+    if (session.provider !== 'paddle') throw new Error('expected a paddle session');
+
+    // Paddle echoes customData back on the subscription as `custom_data`.
+    const echoed = paddleSubscriptionActivated({ customData: session.customData });
+    const event = adapter.mapWebhookEvent(echoed);
+
+    if (event.kind !== 'subscription') throw new Error('expected a subscription event');
+    expect(event.subscription.workspaceId).toBe(WORKSPACE);
   });
 
   it('createCheckout fails closed without a client token', async () => {

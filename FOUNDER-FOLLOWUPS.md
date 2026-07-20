@@ -24,6 +24,27 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-07-20 — CONFIRMED live: /billing does not update after a successful purchase
+**Source:** session 2026-07-20 sandbox smoke (founder observed it directly)
+**Why:** Sandbox purchase completed, webhook landed, `workspaces.tier` flipped free→plus in 37s — and the billing card kept showing Free until a manual reload. The user has paid and the product tells them they are still on the free plan. This was flagged as a theoretical gap by the lifecycle audit; it is now observed behaviour. Cause: `useBillingSubscription` has `staleTime: 60_000` with no polling, `me` only polls while a mailbox syncs, and the plan-change modal closes on `onSuccess` with no "waiting for confirmation" state.
+**How:** Add a post-checkout pending state that short-polls `GET /api/billing/subscription` (and `me`) until the tier changes or a timeout renders a "payment received, still confirming" notice. Touches a design-freeze surface (D220) — may need the `redesign` label.
+**Verifies by:** complete a sandbox purchase and watch the card flip to Plus with no manual reload.
+**Status:** Open
+
+### 2026-07-20 — Decision needed: refund/chargeback entitlement needs a provenance column
+**Source:** session 2026-07-20 (billing sandbox smoke) + Codex stop-time review
+**Why:** You chose "chargeback revokes entitlement immediately, voluntary refund holds to period end". It is NOT implemented, deliberately. `adjustment.created` can only write `cancel_at_period_end` / `tier`, and both columns are re-derived from the provider payload by the next `subscription.*` event — so a chargeback revoke is silently re-granted and a refund flag is silently cleared. Making the flag locally sticky instead is worse: an un-cancel in Paddle's portal and an ordinary renewal are the same payload, so a sticky flag can never be cleared and live subscriptions would show "cancellation scheduled" forever.
+**How:** Approve a `subscriptions` migration adding cancellation provenance (e.g. `cancel_source` enum `provider|refund|chargeback` + `entitlement_ends_at timestamptz`), so webhook writes can tell local intent from provider truth. Then the refund/chargeback rules land in `applyScheduledCancellation` without being clobbered. Schema change ⇒ schema-migration-reviewer gate + a §9 stop-condition review.
+**Verifies by:** a chargeback fixture followed by a `subscription.updated` renewal leaves the workspace on `free`; a voluntary refund followed by the same renewal keeps tier until `current_period_end` then drops.
+**Status:** Open
+
+### 2026-07-20 — Billing gaps left unfixed by scope choice (ranked)
+**Source:** session 2026-07-20 flow-completeness audit of the billing lifecycle
+**Why:** You scoped the fix PR to correctness-only. These remain, highest money-risk first: (1) `past_due` grants entitlement with NO time bound, and Razorpay's terminal `halted` maps into it — Razorpay never auto-cancels, so that is free Pro forever; (2) no reconciliation job polls either provider, so the webhook is the only channel with no backstop sweep; (3) paused/`past_due` users are blocked from checkout with no resume or un-cancel path anywhere (BE endpoint and FE control both absent); (4) founding sale #251 charges the $129 promo price but grants Pro without the price lock, with no FE signal; (5) `/billing` renders tier from `workspaces.tier` and price from the latest `subscriptions` row regardless of status, so a canceled Pro shows "Free · $190/yr".
+**How:** Decide which to schedule. (1) needs a dunning deadline value from you (days past `current_period_end` before the grant drops). (3) and (5) touch design-freeze surfaces (D220).
+**Verifies by:** per-item — (1) a `halted` Razorpay sub loses entitlement after the deadline; (5) a canceled Pro renders one consistent state.
+**Status:** Open
+
 <!-- Newest at top. -->
 
 ### 2026-07-17 — Plan decision: 5 merged PRs carry wrong `Closes D###` trailers

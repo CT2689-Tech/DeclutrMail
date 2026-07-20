@@ -27,7 +27,13 @@ export function paddleSubscriptionActivated(args: {
   eventId?: string;
   subscriptionId?: string;
   priceId?: string;
-  workspaceId: string;
+  workspaceId?: string;
+  /**
+   * Raw `custom_data` echo. Pass a real `createCheckout()` session's
+   * `customData` to prove the writer and reader agree on the key —
+   * `workspaceId` alone hardcodes the reader's shape and cannot.
+   */
+  customData?: Record<string, unknown>;
   status?: string;
   customerId?: string;
   scheduledChange?: { action: string; effective_at: string } | null;
@@ -77,7 +83,7 @@ export function paddleSubscriptionActivated(args: {
           },
         },
       ],
-      custom_data: { workspace_id: args.workspaceId },
+      custom_data: args.customData ?? { workspace_id: args.workspaceId },
     },
   };
 }
@@ -86,6 +92,9 @@ export function paddleSubscriptionActivated(args: {
 export function paddleTransactionCompleted(args: {
   eventId?: string;
   subscriptionId?: string | null;
+  customerId?: string;
+  /** Checkout attribution Paddle copies onto the transaction. */
+  workspaceId?: string;
 }): Record<string, unknown> {
   return {
     event_id: args.eventId ?? 'evt_01paddle_txn_000001',
@@ -94,11 +103,12 @@ export function paddleTransactionCompleted(args: {
     data: {
       id: 'txn_01paddle000001',
       status: 'completed',
-      customer_id: 'ctm_01paddle000001',
+      customer_id: args.customerId ?? 'ctm_01paddle000001',
       subscription_id:
         args.subscriptionId === undefined ? 'sub_01paddle000001' : args.subscriptionId,
       currency_code: 'USD',
       details: { totals: { grand_total: '900' } },
+      ...(args.workspaceId ? { custom_data: { workspace_id: args.workspaceId } } : {}),
     },
   };
 }

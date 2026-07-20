@@ -20,7 +20,7 @@ const PADDLE_SESSION: PaddleCheckoutSession = {
   priceId: 'pri_123',
   clientToken: 'ctk_live_x',
   environment: 'sandbox',
-  customData: { workspaceId: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff' },
+  customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff' },
 };
 
 const RAZORPAY_SESSION: RazorpayCheckoutSession = {
@@ -53,7 +53,7 @@ describe('launchCheckout', () => {
     });
     expect(open).toHaveBeenCalledWith({
       items: [{ priceId: 'pri_123', quantity: 1 }],
-      customData: { workspaceId: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff' },
+      customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff' },
     });
   });
 
