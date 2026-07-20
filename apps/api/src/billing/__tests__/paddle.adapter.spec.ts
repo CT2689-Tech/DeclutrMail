@@ -28,7 +28,10 @@ function sign(body: string, tsSec: number, secret = SECRET): string {
 }
 
 function makeAdapter(env: Record<string, string> = {}): PaddleAdapter {
-  return new PaddleAdapter(env as NodeJS.ProcessEnv);
+  // PADDLE_WEBHOOK_SECRET keys the custom_data attribution signature as
+  // well as the Paddle-Signature HMAC, so it is present by default —
+  // individual tests override it to exercise the unsigned path.
+  return new PaddleAdapter({ PADDLE_WEBHOOK_SECRET: SECRET, ...env } as NodeJS.ProcessEnv);
 }
 
 describe('PaddleAdapter.verifyWebhookSignature', () => {
@@ -155,6 +158,29 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
     });
   });
 
+  // `custom_data` reaches Paddle through the BROWSER, so a client can
+  // put any workspace id in it. Unsigned or mis-signed attribution must
+  // resolve to null — otherwise a forged checkout binds a paid
+  // subscription (and a billing_customers mapping) onto someone else's
+  // workspace.
+  it.each([
+    ['unsigned', { workspace_id: WORKSPACE }],
+    ['forged signature', { workspace_id: WORKSPACE, sig: 'deadbeef' }],
+    [
+      'valid signature for a DIFFERENT workspace',
+      {
+        workspace_id: WORKSPACE,
+        sig: createHmac('sha256', SECRET)
+          .update('paddle:workspace:99999999-9999-4999-8999-999999999999')
+          .digest('hex'),
+      },
+    ],
+  ])('refuses %s attribution', (_label, customData) => {
+    const event = adapter.mapWebhookEvent(paddleSubscriptionActivated({ customData }));
+    if (event.kind !== 'subscription') throw new Error('expected a subscription event');
+    expect(event.subscription.workspaceId).toBeNull();
+  });
+
   it('maps scheduled_change=cancel to cancelAtPeriodEnd and paused status to paused', () => {
     const canceling = adapter.mapWebhookEvent(
       paddleSubscriptionActivated({
@@ -240,9 +266,35 @@ describe('PaddleAdapter checkout + cancel', () => {
       priceId: 'pri_x',
       clientToken: 'test_abc',
       environment: 'sandbox',
-      customData: { workspaceId: WORKSPACE },
+      customData: { workspace_id: WORKSPACE, sig: expect.any(String) },
     });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // Regression (2026-07-20): the writer emitted `workspaceId` while the
+  // reader looked for `custom_data.workspace_id`, so EVERY first purchase
+  // was unattributable — the webhook 200'd and wrote nothing. Both sides
+  // passed their own fixtures; only feeding the writer's output through
+  // the reader catches it. Paddle stores custom_data verbatim, so this
+  // round-trip mirrors production exactly.
+  it('createCheckout customData round-trips through the webhook reader', async () => {
+    const adapter = makeAdapter({ PADDLE_CLIENT_TOKEN: 'test_abc' });
+    const session = await adapter.createCheckout({
+      workspaceId: WORKSPACE,
+      userEmail: 'user@example.com',
+      tierId: 'plus',
+      cycle: 'monthly',
+      providerPriceId: 'pri_x',
+    });
+
+    if (session.provider !== 'paddle') throw new Error('expected a paddle session');
+
+    // Paddle echoes customData back on the subscription as `custom_data`.
+    const echoed = paddleSubscriptionActivated({ customData: session.customData });
+    const event = adapter.mapWebhookEvent(echoed);
+
+    if (event.kind !== 'subscription') throw new Error('expected a subscription event');
+    expect(event.subscription.workspaceId).toBe(WORKSPACE);
   });
 
   it('createCheckout fails closed without a client token', async () => {

@@ -400,6 +400,39 @@ export class BillingWebhookService {
     event: Extract<NormalizedBillingEvent, { kind: 'payment' }>,
     eventRowId: string,
   ): Promise<WebhookProcessOutcome> {
+    // Seed `billing_customers` from the payment's own attribution.
+    // Subscription state still arrives via subscription.* events, but
+    // those can reach us with no usable attribution: the provider does
+    // not reliably echo checkout custom_data onto the SUBSCRIPTION
+    // entity. A completed transaction is the one event carrying the
+    // customer id AND the checkout's signed custom_data, so it gives
+    // `resolveWorkspace` a second, independent link.
+    if (event.providerCustomerId && event.workspaceId) {
+      const [ws] = await this.db
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .where(eq(workspaces.id, event.workspaceId))
+        .limit(1);
+      // The id is signature-verified upstream, and re-checked against
+      // `workspaces` here — a mapping must never be minted onto a row
+      // the payment cannot prove it owns.
+      if (ws) {
+        await this.db
+          .insert(billingCustomers)
+          .values({
+            workspaceId: ws.id,
+            provider,
+            providerCustomerId: event.providerCustomerId,
+            region: provider === 'razorpay' ? 'india' : 'international',
+          })
+          .onConflictDoNothing();
+      } else {
+        this.logger.warn(
+          `billing.webhook.payment_unknown_workspace provider=${provider} event=${event.providerEventId}`,
+        );
+      }
+    }
+
     // Observability only — subscription state always arrives via its
     // own subscription.* events on both providers.
     let tier = 'free';

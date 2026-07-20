@@ -21,6 +21,7 @@ import { PaddleAdapter } from '../../billing/paddle.adapter.js';
 import { RazorpayAdapter } from '../../billing/razorpay.adapter.js';
 import {
   paddleSubscriptionActivated,
+  signedCustomData,
   razorpaySubscriptionEvent,
   TEST_PRICE_IDS,
 } from '../../billing/__tests__/fixtures.js';
@@ -177,7 +178,11 @@ describe('billing webhook controllers', () => {
     it('200-processes a signed fixture, then replays as duplicate — one row, one flip', async () => {
       vi.stubEnv('PADDLE_WEBHOOK_SECRET', PADDLE_SECRET);
       const controller = makeController();
-      const body = JSON.stringify(paddleSubscriptionActivated({ workspaceId }));
+      // custom_data must be signed with the SAME secret the controller
+      // runs under — attribution is verified, not trusted.
+      const body = JSON.stringify(
+        paddleSubscriptionActivated({ customData: signedCustomData(workspaceId, PADDLE_SECRET) }),
+      );
 
       expect(await controller.receive(rawReq(body), paddleSign(body))).toEqual({
         status: 'processed',
