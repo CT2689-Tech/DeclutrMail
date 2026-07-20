@@ -165,6 +165,17 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'This plan cannot be purchased yet. Please try again later.',
   },
+  // A verified webhook we could not yet resolve to a workspace or a
+  // catalog entry. NEVER 200: a 2xx tells the provider the event is
+  // delivered and retries stop, which strands a real payment with no
+  // subscription row. 503 keeps it in the provider's retry queue while
+  // the founder fixes attribution or catalog drift.
+  BILLING_WEBHOOK_UNRESOLVED: {
+    status: 503,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'Billing event could not be resolved yet.',
+  },
   BILLING_PROVIDER_ERROR: {
     status: 502,
     severityTier: 'inline_recoverable',
