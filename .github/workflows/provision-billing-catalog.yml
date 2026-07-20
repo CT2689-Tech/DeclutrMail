@@ -48,6 +48,12 @@ jobs:
     # (Settings → Environments); an environment that omits one silently
     # falls back to the repo-level secret, so define all three in each.
     # Add required reviewers to `production` to gate live provisioning.
+    #
+    # Do NOT delete the repo-level PADDLE_API_KEY / RAZORPAY_* secrets:
+    # the scheduled vendor-limits watchdog (D156) reads them and cannot
+    # use this reviewer-gated environment (a cron run would hang on the
+    # approval gate). Repo-level = watchdog (production); environments =
+    # provisioning.
     environment: ${{ inputs.paddle_env }}
     steps:
       - uses: actions/checkout@v7

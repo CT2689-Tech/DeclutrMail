@@ -129,11 +129,21 @@ swapping a shared slot between runs.
 - `RAZORPAY_KEY_SECRET`
 
 Define all three in **both** environments: an environment that omits a secret
-silently falls back to the repo-level secret of the same name (a footgun — a
-production run could pick up a leftover sandbox key). Delete any leftover
-repo-level `PADDLE_API_KEY` / `RAZORPAY_*` to remove that fallback. Add
-**required reviewers** to `production` so a live provisioning run needs an
-approval click.
+silently falls back to the repo-level secret of the same name, so a fully
+defined pair of environments means the provisioning job never touches the
+repo-level copies. Add **required reviewers** to `production` so a live
+provisioning run needs an approval click.
+
+> **Do NOT delete the repo-level `PADDLE_API_KEY` / `RAZORPAY_KEY_ID` /
+> `RAZORPAY_KEY_SECRET`.** The daily **vendor-limits watchdog** (D156,
+> `vendor-limits-watchdog.yml`) reads them for billing webhook-delivery health
+> checks. It runs on a schedule, so it cannot live on the reviewer-gated
+> `production` environment (a required-reviewer gate would hang every cron
+> run) — it stays on repo-level secrets. Those repo-level values should hold
+> the **production** keys once live, with the repo **variable** `PADDLE_ENV`
+> set to `production`; absent keys make the watchdog silently report
+> UNCONFIGURED, not fail. So: repo-level = production (watchdog); the two
+> environments = provisioning inputs.
 
 > `PADDLE_CLIENT_TOKEN` / `PADDLE_WEBHOOK_SECRET` / `RAZORPAY_WEBHOOK_SECRET`
 > are NOT provisioning inputs — they are runtime-only (§5–7) and live in GCP
