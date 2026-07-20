@@ -87,6 +87,14 @@ export class BillingPaddleWebhookController {
     }
 
     const outcome = await this.service.process('paddle', event, payload);
+    if (outcome.kind === 'unresolved') {
+      // 503, never 200 — a 2xx retires the event from Paddle's retry
+      // queue and strands a real payment with no subscription row.
+      throw new AppException({
+        code: 'BILLING_WEBHOOK_UNRESOLVED',
+        message: `Billing event unresolved (${outcome.reason}).`,
+      });
+    }
     return { status: outcome.kind };
   }
 }

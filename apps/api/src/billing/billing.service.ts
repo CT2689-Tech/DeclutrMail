@@ -32,6 +32,7 @@ import { AppException } from '../common/app-exception.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { BillingProvider } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
+import { lockSubscription } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
 
@@ -181,22 +182,57 @@ export class BillingService {
       // the local row record the scheduled cancel. Idempotent: a
       // second cancel click skips the provider round-trip.
       await this.adapterFor(sub.provider).cancelSubscription(sub.providerSubscriptionId);
-      await this.db
-        .update(subscriptions)
-        .set({ cancelAtPeriodEnd: true, updatedAt: new Date() })
-        .where(eq(subscriptions.id, sub.id));
+      // Under the SAME advisory lock the webhook writers take — but the
+      // lock only serializes, it does not ORDER. A provider event
+      // captured BEFORE this cancel can still win the lock afterwards
+      // and upsert its pre-cancel `cancel_at_period_end: false` on top.
+      //
+      // So the audit row is written IN THIS TRANSACTION and shaped to
+      // participate in the webhook's staleness check: carrying
+      // `kind: 'cancellation_scheduled'` + `provider_subscription_id`
+      // makes it a state-writing event with a `created_at` of NOW, so
+      // any in-flight event that arrived earlier is refused as stale.
+      // Written as a plain audit blob before, it was invisible to that
+      // check and the cancellation was silently reverted.
+      const now = new Date();
+      await this.db.transaction(async (tx) => {
+        await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+        await tx
+          .update(subscriptions)
+          .set({ cancelAtPeriodEnd: true, updatedAt: now })
+          .where(eq(subscriptions.id, sub.id));
 
-      // D118 — reason into the normalized event stream (audit).
-      await this.db
-        .insert(subscriptionEvents)
-        .values({
-          provider: sub.provider,
-          providerEventId: `local_cancel_${sub.providerSubscriptionId}`,
-          eventType: 'local.cancellation_requested',
-          payload: { cancellation_reason: dto.reason ?? null },
-          processedAt: new Date(),
-        })
-        .onConflictDoNothing();
+        // D118 — reason into the normalized event stream (audit).
+        //
+        // The event id carries a timestamp so EACH cancellation gets
+        // its own row. A fixed `local_cancel_<sub>` id collided with
+        // the previous cancellation and `onConflictDoNothing` kept the
+        // OLD row — freezing this marker's `created_at` at the first
+        // cancel, so a later cancel was no longer newer than in-flight
+        // events and could be reverted again. `created_at` cannot be
+        // refreshed in place: subscription_events is append-only apart
+        // from `processed_at`.
+        await tx
+          .insert(subscriptionEvents)
+          .values({
+            provider: sub.provider,
+            providerEventId: `local_cancel_${sub.providerSubscriptionId}_${now.toISOString()}`,
+            eventType: 'local.cancellation_requested',
+            payload: {
+              kind: 'cancellation_scheduled',
+              provider_subscription_id: sub.providerSubscriptionId,
+              // Participates in the webhook's ordering tiebreak: when
+              // this marker and an in-flight event share an arrival
+              // timestamp, `occurred_at` decides, and a marker without
+              // one silently loses to the event it must beat.
+              occurred_at: now.toISOString(),
+              cancellation_reason: dto.reason ?? null,
+            },
+            processedAt: now,
+          })
+          // Two clicks inside the same millisecond are the same intent.
+          .onConflictDoNothing();
+      });
 
       this.logger.log(
         `billing_event kind=subscription_canceled provider=${sub.provider} workspace=${principal.workspaceId} at_period_end=true reason=${dto.reason ?? 'none'}`,

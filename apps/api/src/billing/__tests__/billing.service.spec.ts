@@ -228,7 +228,16 @@ describe('BillingService', () => {
       .from(subscriptionEvents)
       .where(eq(subscriptionEvents.eventType, 'local.cancellation_requested'));
     expect(audits).toHaveLength(1);
-    expect(audits[0]!.payload).toEqual({ cancellation_reason: 'too_expensive' });
+    // Shaped as a state-writing event on purpose: the webhook's
+    // staleness check reads `kind` + `provider_subscription_id`, and a
+    // plain audit blob was invisible to it, so an in-flight event that
+    // predated the cancel could silently revert it.
+    expect(audits[0]!.payload).toEqual({
+      kind: 'cancellation_scheduled',
+      provider_subscription_id: 'sub_cancel_me',
+      occurred_at: expect.any(String),
+      cancellation_reason: 'too_expensive',
+    });
 
     // Second click: no second provider call, no second audit row.
     await service.cancelAtPeriodEnd(principal, {});

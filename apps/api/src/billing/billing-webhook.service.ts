@@ -46,7 +46,7 @@
 // `subscription_events` insert.
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { billingCustomers, subscriptionEvents, subscriptions, workspaces } from '@declutrmail/db';
 import { TIER_RANK } from '@declutrmail/shared/entitlements';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
@@ -65,7 +65,16 @@ const FOUNDING_LOCK_KEY = 117_126;
 const GRANTING_STATUSES = ['active', 'past_due'] as const;
 
 export type WebhookProcessOutcome =
-  { kind: 'processed'; effect: string } | { kind: 'duplicate' } | { kind: 'ignored' };
+  | { kind: 'processed'; effect: string }
+  | { kind: 'duplicate' }
+  | { kind: 'ignored' }
+  // Verified but not yet resolvable (unknown workspace / unprovisioned
+  // price). Deliberately NOT stamped processed: the dedup gate's
+  // resume path re-drives it on the provider's next retry, and the
+  // controller answers 503 so a retry actually happens. Stamping here
+  // is what made a real sandbox payment permanently unrecoverable
+  // (2026-07-20) — every retry short-circuited as `duplicate`.
+  | { kind: 'unresolved'; reason: 'unknown_price' | 'unattributable' };
 
 /** Safe property read — no throw on null/array/scalar inputs. */
 function prop(obj: unknown, key: string): unknown {
@@ -159,6 +168,29 @@ export function projectWebhookPayload(
   return projected;
 }
 
+/**
+ * Serialize every writer of ONE subscription's state. Must be taken by
+ * EVERY path that mutates a `subscriptions` row — the webhook upsert,
+ * the scheduled-cancellation flag, and the user-initiated cancel in
+ * `BillingService` — inside the same transaction as the write. The
+ * webhook's staleness check is read-then-write, so an unlocked writer
+ * elsewhere can interleave between the check and the upsert and land
+ * last. Keyed on provider + subscription id, so unrelated
+ * subscriptions never contend.
+ *
+ * Exported because the writers live in two services; a second lock
+ * expression would silently stop excluding the first.
+ */
+export async function lockSubscription(
+  tx: DrizzleDb,
+  provider: BillingProviderId,
+  providerSubscriptionId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtext(${`${provider}:${providerSubscriptionId}`}))`,
+  );
+}
+
 @Injectable()
 export class BillingWebhookService {
   private readonly logger = new Logger(BillingWebhookService.name);
@@ -184,12 +216,20 @@ export class BillingWebhookService {
         payload: projectWebhookPayload(event, rawPayload),
       })
       .onConflictDoNothing()
-      .returning({ id: subscriptionEvents.id });
+      .returning({ id: subscriptionEvents.id, createdAt: subscriptionEvents.createdAt });
 
     let eventRowId: string;
+    // Arrival order of THIS event. A retry reuses the original row, so
+    // this stays the first-attempt timestamp — which is what makes it
+    // usable as a staleness reference against later-arrived events.
+    let eventCreatedAt: Date;
     if (inserted.length === 0) {
       const [existing] = await this.db
-        .select({ id: subscriptionEvents.id, processedAt: subscriptionEvents.processedAt })
+        .select({
+          id: subscriptionEvents.id,
+          processedAt: subscriptionEvents.processedAt,
+          createdAt: subscriptionEvents.createdAt,
+        })
         .from(subscriptionEvents)
         .where(
           and(
@@ -206,17 +246,19 @@ export class BillingWebhookService {
       }
       // Crash-recovery resume: insert committed, effect didn't.
       eventRowId = existing.id;
+      eventCreatedAt = existing.createdAt;
       this.logger.warn(
         `billing.webhook.resume_unprocessed provider=${provider} event=${event.providerEventId}`,
       );
     } else {
       eventRowId = inserted[0]!.id;
+      eventCreatedAt = inserted[0]!.createdAt;
     }
 
     // 2. Apply the domain effect + stamp processed_at atomically.
     switch (event.kind) {
       case 'subscription':
-        return this.applySubscription(provider, event, eventRowId);
+        return this.applySubscription(provider, event, eventRowId, eventCreatedAt);
       case 'cancellation_scheduled':
         return this.applyScheduledCancellation(provider, event, eventRowId);
       case 'payment':
@@ -230,6 +272,14 @@ export class BillingWebhookService {
     }
   }
 
+  private async lockSubscription(
+    tx: DrizzleDb,
+    provider: BillingProviderId,
+    providerSubscriptionId: string,
+  ): Promise<void> {
+    await lockSubscription(tx, provider, providerSubscriptionId);
+  }
+
   private async markProcessed(eventRowId: string): Promise<void> {
     await this.db
       .update(subscriptionEvents)
@@ -241,30 +291,128 @@ export class BillingWebhookService {
     provider: BillingProviderId,
     event: Extract<NormalizedBillingEvent, { kind: 'subscription' }>,
     eventRowId: string,
+    eventCreatedAt: Date,
   ): Promise<WebhookProcessOutcome> {
     const sub = event.subscription;
     const entry = this.catalog.resolveByPriceId(provider, sub.providerPriceId);
     if (!entry) {
-      // Catalog drift — a price id we did not provision. Loud log (the
-      // founder must reconcile), processed stamp (retries cannot fix
-      // drift; the audit row in subscription_events preserves it).
+      // Catalog drift — a price id we did not provision. Left
+      // UNPROCESSED so the provider keeps retrying: drift is fixable
+      // (patch the manifest / BILLING_CATALOG_JSON and the next retry
+      // lands), and the alternative is discarding a real payment.
       this.logger.error(
         `billing.webhook.unknown_price provider=${provider} price=${sub.providerPriceId} event=${event.providerEventId}`,
       );
-      await this.markProcessed(eventRowId);
-      return { kind: 'ignored' };
+      return { kind: 'unresolved', reason: 'unknown_price' };
     }
 
     const workspaceId = await this.resolveWorkspace(provider, sub);
     if (!workspaceId) {
+      // Same: attribution can become possible later (a sibling event
+      // seeds billing_customers), so never stamp this one terminal.
       this.logger.error(
         `billing.webhook.unattributable provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
       );
-      await this.markProcessed(eventRowId);
-      return { kind: 'ignored' };
+      return { kind: 'unresolved', reason: 'unattributable' };
     }
 
-    await this.db.transaction(async (tx) => {
+    // STALENESS GUARD. Leaving unresolved events unprocessed means a
+    // provider can re-deliver an OLD event after newer ones already
+    // landed — e.g. a `subscription.created` retry that only becomes
+    // attributable after a `subscription.canceled` has been applied.
+    // Re-driving it would upsert `status: active` over the cancel and
+    // hand back entitlement. Arrival order (`created_at`, stamped on
+    // first receipt and preserved across retries) is the ordering
+    // truth: providers give no reliable monotonic sequence, and
+    // `occurred_at` lives only inside the audit payload.
+    const outcome = await this.db.transaction(async (tx) => {
+      await this.lockSubscription(tx, provider, sub.providerSubscriptionId);
+
+      // Peers = every processed, STATE-WRITING event for this
+      // subscription, excluding this row.
+      //
+      // Ordering is by the PROVIDER's `occurred_at`, not by arrival.
+      // Arrival is wrong for late FIRST deliveries: a `subscription.
+      // updated` stamped 10:00 can be delayed past a `subscription.
+      // canceled` stamped 10:05, land at 10:07 with the newest
+      // created_at of all, and resurrect the cancelled subscription.
+      // Filtering peers by arrival would hide exactly that case, so
+      // every peer is considered and compared on event time.
+      //
+      // `created_at` is the fallback when either side lacks
+      // occurred_at. It is not a total order on its own — now() is
+      // transaction-scoped, so rows written in quick succession share a
+      // timestamp — and `id` cannot break the tie (gen_random_uuid()
+      // would decide by coin flip). Equal on both is treated as
+      // simultaneous: neither is newer, so the event applies rather
+      // than deferring forever (both timestamps are FIXED, so a retry
+      // re-runs the identical comparison).
+      const [self] = await tx
+        .select({ occurredAt: sql<string | null>`${subscriptionEvents.payload}->>'occurred_at'` })
+        .from(subscriptionEvents)
+        .where(eq(subscriptionEvents.id, eventRowId))
+        .limit(1);
+      const selfOccurredAt = self?.occurredAt ?? null;
+
+      const peers = await tx
+        .select({
+          createdAt: subscriptionEvents.createdAt,
+          occurredAt: sql<string | null>`${subscriptionEvents.payload}->>'occurred_at'`,
+        })
+        .from(subscriptionEvents)
+        .where(
+          and(
+            eq(subscriptionEvents.provider, provider),
+            isNotNull(subscriptionEvents.processedAt),
+            sql`${subscriptionEvents.id} <> ${eventRowId}::uuid`,
+            sql`${subscriptionEvents.payload}->>'provider_subscription_id' = ${sub.providerSubscriptionId}`,
+            // ONLY state-writing kinds count as "newer state". A payment
+            // event carries the same provider_subscription_id but writes
+            // no subscription row — and `transaction.completed` is
+            // precisely what seeds billing_customers to make a stranded
+            // activation attributable. Counting it here would discard
+            // the activation this recovery path exists to rescue.
+            sql`${subscriptionEvents.payload}->>'kind' IN ('subscription', 'cancellation_scheduled')`,
+          ),
+        );
+
+      // Providers disagree on format: Paddle sends an ISO string,
+      // Razorpay unix SECONDS. Normalize to epoch millis so a marker
+      // written by our own cancel path (ISO) compares correctly against
+      // either. A subscription belongs to one provider, but the local
+      // cancel marker crosses that boundary.
+      const toMillis = (value: string | null): number | null => {
+        if (value === null) return null;
+        if (/^\d+$/.test(value)) return Number(value) * 1000;
+        const parsed = Date.parse(value);
+        return Number.isNaN(parsed) ? null : parsed;
+      };
+      const selfMs = toMillis(selfOccurredAt);
+
+      const isNewer = (peer: { createdAt: Date; occurredAt: string | null }): boolean => {
+        const peerMs = toMillis(peer.occurredAt);
+        // Event time wins whenever both sides carry it.
+        if (peerMs !== null && selfMs !== null) return peerMs > selfMs;
+        // Otherwise fall back to arrival order.
+        return peer.createdAt.getTime() > eventCreatedAt.getTime();
+      };
+
+      if (peers.some(isNewer)) {
+        // Terminal: a newer event already won. Stamp it so the provider
+        // stops retrying — unlike the unresolved cases above, replaying
+        // this can never produce a better outcome. Deferring instead
+        // would loop forever: both timestamps are fixed, so every retry
+        // re-runs the same comparison.
+        this.logger.warn(
+          `billing.webhook.stale_replay provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
+        );
+        await tx
+          .update(subscriptionEvents)
+          .set({ processedAt: new Date() })
+          .where(eq(subscriptionEvents.id, eventRowId));
+        return { kind: 'ignored' } as const;
+      }
+
       // Customer record (webhook hot path resolves workspace from it).
       if (sub.providerCustomerId) {
         await tx
@@ -331,6 +479,16 @@ export class BillingWebhookService {
             providerPriceId: sub.providerPriceId,
             billingCycle: entry.cycle,
             currentPeriodEnd: sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null,
+            // KNOWN GAP (2026-07-20): a refund/chargeback sets this
+            // flag locally, and the next renewal event overwrites it
+            // back to false — the user keeps entitlement they were
+            // refunded for. Mirroring the provider is still correct
+            // here: a locally-sticky flag has NO clearing path (an
+            // un-cancel in Paddle's portal and a plain renewal are the
+            // same payload), which would strand active subscriptions
+            // showing "cancellation scheduled" forever. The real fix
+            // is a provenance column so local and provider-derived
+            // cancellations are distinguishable. Tracked, not stubbed.
             cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
             pauseUntil: sub.pauseUntil ? new Date(sub.pauseUntil) : null,
             foundingMember: founding,
@@ -344,7 +502,10 @@ export class BillingWebhookService {
         .update(subscriptionEvents)
         .set({ processedAt: new Date() })
         .where(eq(subscriptionEvents.id, eventRowId));
+      return null;
     });
+    // Stale replays exit here; everything below is the applied path.
+    if (outcome) return outcome;
 
     // D159 billing_event — taxonomy kinds.
     const kind =
@@ -367,7 +528,20 @@ export class BillingWebhookService {
     event: Extract<NormalizedBillingEvent, { kind: 'cancellation_scheduled' }>,
     eventRowId: string,
   ): Promise<WebhookProcessOutcome> {
-    await this.db.transaction(async (tx) => {
+    // NOTE: the founder chose "chargeback revokes entitlement now,
+    // voluntary refund holds to period end" (2026-07-20). That is NOT
+    // implemented here yet — writing tier=free on a chargeback is
+    // undone by the very next subscription.* event, which re-grants
+    // `entry.tierId` from the provider payload. Landing it soundly
+    // needs the same provenance column as the flag above, so it ships
+    // in that change rather than as a revert-prone half-measure.
+    const outcome = await this.db.transaction(async (tx) => {
+      // Same lock as the subscription upsert — this is the OTHER writer
+      // of `subscriptions` state. Without it a cancellation can
+      // interleave with an in-flight upsert whose staleness check
+      // already ran, and the upsert's `cancel_at_period_end` lands last.
+      await this.lockSubscription(tx, provider, event.providerSubscriptionId);
+
       const [row] = await tx
         .update(subscriptions)
         .set({ cancelAtPeriodEnd: true, updatedAt: new Date() })
@@ -378,21 +552,30 @@ export class BillingWebhookService {
           ),
         )
         .returning({ workspaceId: subscriptions.workspaceId, tier: subscriptions.tier });
+
       if (!row) {
+        // The subscription this cancels was never recorded — usually a
+        // sibling activation that is still unresolved. Leave the event
+        // UNPROCESSED so it re-drives once attribution succeeds; a
+        // 'processed' return here dropped refunds on the floor.
         this.logger.error(
           `billing.webhook.cancel_unknown_sub provider=${provider} sub=${event.providerSubscriptionId}`,
         );
-      } else {
-        this.logger.log(
-          `billing.subscription_changed workspace=${row.workspaceId} tier=${row.tier} cancel_at_period_end=true reason=${event.reason} provider=${provider}`,
-        );
+        return { kind: 'unresolved', reason: 'unattributable' } as const;
       }
+
+      this.logger.log(
+        `billing.subscription_changed workspace=${row.workspaceId} tier=${row.tier} cancel_at_period_end=true reason=${event.reason} provider=${provider}`,
+      );
+
       await tx
         .update(subscriptionEvents)
         .set({ processedAt: new Date() })
         .where(eq(subscriptionEvents.id, eventRowId));
+      return { kind: 'processed', effect: `cancellation_scheduled:${event.reason}` } as const;
     });
-    return { kind: 'processed', effect: `cancellation_scheduled:${event.reason}` };
+
+    return outcome;
   }
 
   private async applyPayment(
@@ -402,20 +585,18 @@ export class BillingWebhookService {
   ): Promise<WebhookProcessOutcome> {
     // Seed `billing_customers` from the payment's own attribution.
     // Subscription state still arrives via subscription.* events, but
-    // those can reach us with no usable attribution: the provider does
-    // not reliably echo checkout custom_data onto the SUBSCRIPTION
-    // entity. A completed transaction is the one event carrying the
-    // customer id AND the checkout's signed custom_data, so it gives
-    // `resolveWorkspace` a second, independent link.
+    // those may reach us with no usable attribution (the provider does
+    // not reliably echo checkout custom_data onto the subscription
+    // entity). This gives resolveWorkspace a second, independent link
+    // — without it, one missing field strands a real payment.
     if (event.providerCustomerId && event.workspaceId) {
       const [ws] = await this.db
         .select({ id: workspaces.id })
         .from(workspaces)
         .where(eq(workspaces.id, event.workspaceId))
         .limit(1);
-      // The id is signature-verified upstream, and re-checked against
-      // `workspaces` here — a mapping must never be minted onto a row
-      // the payment cannot prove it owns.
+      // Validated against `workspaces` — a forged or typo'd id must
+      // never mint a customer mapping onto someone else's row.
       if (ws) {
         await this.db
           .insert(billingCustomers)
@@ -433,8 +614,6 @@ export class BillingWebhookService {
       }
     }
 
-    // Observability only — subscription state always arrives via its
-    // own subscription.* events on both providers.
     let tier = 'free';
     if (event.providerSubscriptionId) {
       const [row] = await this.db
