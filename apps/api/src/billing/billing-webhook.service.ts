@@ -391,10 +391,15 @@ export class BillingWebhookService {
 
       const isNewer = (peer: { createdAt: Date; occurredAt: string | null }): boolean => {
         const peerMs = toMillis(peer.occurredAt);
-        // Event time wins whenever both sides carry it.
-        if (peerMs !== null && selfMs !== null) return peerMs > selfMs;
-        // Otherwise fall back to arrival order.
-        return peer.createdAt.getTime() > eventCreatedAt.getTime();
+        // Distinct event times: the provider's order is authoritative.
+        if (peerMs !== null && selfMs !== null && peerMs !== selfMs) return peerMs > selfMs;
+        // Equal (or missing) event time — occurred_at is not a total
+        // order, and a tie must never let this event clobber an already
+        // committed peer. Fall back to arrival, `>=` so an exact tie is
+        // resolved in the peer's favour (conservative: refuse, do not
+        // overwrite). This is what lets a user-cancel marker, written
+        // after an in-flight renewal arrived, still win their tie.
+        return peer.createdAt.getTime() >= eventCreatedAt.getTime();
       };
 
       if (peers.some(isNewer)) {
@@ -405,6 +410,35 @@ export class BillingWebhookService {
         // re-runs the same comparison.
         this.logger.warn(
           `billing.webhook.stale_replay provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
+        );
+        await tx
+          .update(subscriptionEvents)
+          .set({ processedAt: new Date() })
+          .where(eq(subscriptionEvents.id, eventRowId));
+        return { kind: 'ignored' } as const;
+      }
+
+      // TERMINAL-CANCELED FLOOR. `canceled` is terminal on both
+      // providers — the same subscription id never reactivates
+      // (reactivation is a fresh subscription). This catches the one
+      // resurrection the timestamp guard above cannot: a stale active
+      // event sharing the cancel's event-time (Razorpay stamps unix
+      // SECONDS, so any two events in the same second are unorderable)
+      // that arrives AFTER the cancel — nothing in the event stream
+      // marks it older, yet it must not move the row out of canceled.
+      const [current] = await tx
+        .select({ status: subscriptions.status })
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.provider, provider),
+            eq(subscriptions.providerSubscriptionId, sub.providerSubscriptionId),
+          ),
+        )
+        .limit(1);
+      if (current?.status === 'canceled' && sub.status !== 'canceled') {
+        this.logger.warn(
+          `billing.webhook.canceled_is_terminal provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
         );
         await tx
           .update(subscriptionEvents)

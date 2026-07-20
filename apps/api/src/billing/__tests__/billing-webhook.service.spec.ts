@@ -545,6 +545,106 @@ describe('BillingWebhookService.process', () => {
     expect(subRow!.status).toBe('canceled');
   });
 
+  it('an equal-occurred_at active event never resurrects a cancelled subscription', async () => {
+    // occurred_at is not a total order. Two same-subscription events can
+    // share it — Razorpay stamps unix SECONDS, so any two events in the
+    // same second tie. A tie must not let an older-intent event clobber
+    // a terminal state; the already-processed peer wins.
+    const T = '2026-07-20T10:00:00.000000Z';
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_tie_activate',
+      subscriptionId: 'sub_tie',
+    });
+    (activate as Record<string, unknown>).occurred_at = '2026-07-20T09:00:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const canceled = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_tie_cancel',
+      subscriptionId: 'sub_tie',
+      eventType: 'subscription.canceled',
+      status: 'canceled',
+    });
+    (canceled as Record<string, unknown>).occurred_at = T;
+    await service.process('paddle', paddle.mapWebhookEvent(canceled), canceled);
+
+    const [afterCancel] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(afterCancel!.tier).toBe('free');
+
+    // A distinct active event stamped the SAME instant as the cancel.
+    // Must not clobber the cancel.
+    const tiedActive = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_tie_active',
+      subscriptionId: 'sub_tie',
+      eventType: 'subscription.updated',
+    });
+    (tiedActive as Record<string, unknown>).occurred_at = T;
+    const outcome = await service.process('paddle', paddle.mapWebhookEvent(tiedActive), tiedActive);
+    expect(outcome.kind).not.toBe('processed');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_tie'));
+    expect(subRow!.status).toBe('canceled');
+  });
+
+  it('Razorpay same-second events cannot resurrect a cancelled subscription', async () => {
+    // Razorpay stamps `created_at` in unix SECONDS, so a cancel and a
+    // stale active update in the same second tie on event time and the
+    // active one may arrive last — the exact case occurred_at ordering
+    // cannot resolve. The terminal-canceled floor must still hold.
+    const SEC = 1781430100;
+    const activate = razorpaySubscriptionEvent({
+      workspaceId,
+      subscriptionId: 'sub_rzp_term',
+      event: 'subscription.activated',
+    });
+    await service.process(
+      'razorpay',
+      razorpay.mapWebhookEvent({ ...activate, __eventId: 'evt_rzp_act' }),
+      activate,
+    );
+
+    const canceled = razorpaySubscriptionEvent({
+      workspaceId,
+      subscriptionId: 'sub_rzp_term',
+      event: 'subscription.cancelled',
+      status: 'cancelled',
+    });
+    canceled.created_at = SEC;
+    await service.process(
+      'razorpay',
+      razorpay.mapWebhookEvent({ ...canceled, __eventId: 'evt_rzp_can' }),
+      canceled,
+    );
+
+    const [afterCancel] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(afterCancel!.tier).toBe('free');
+
+    // Stale active update, same second, arriving after the cancel.
+    const tiedActive = razorpaySubscriptionEvent({
+      workspaceId,
+      subscriptionId: 'sub_rzp_term',
+      event: 'subscription.updated',
+      status: 'active',
+    });
+    tiedActive.created_at = SEC;
+    const outcome = await service.process(
+      'razorpay',
+      razorpay.mapWebhookEvent({ ...tiedActive, __eventId: 'evt_rzp_stale' }),
+      tiedActive,
+    );
+    expect(outcome.kind).not.toBe('processed');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+  });
+
   it('a stale retry never overwrites newer subscription state', async () => {
     // The hazard introduced by leaving unresolved events unprocessed:
     // an old event becomes attributable LATER and re-drives on top of
