@@ -40,6 +40,43 @@ const DEFAULT_MAX_SKEW_SEC = 5;
 
 const API_TIMEOUT_MS = 10_000;
 
+/**
+ * `custom_data` travels to Paddle THROUGH THE BROWSER
+ * (`Paddle.Checkout.open`), so its contents are attacker-controlled: a
+ * forged `workspace_id` would attribute a paid subscription — and mint
+ * a `billing_customers` mapping — onto someone else's workspace. The
+ * server therefore signs the id and the webhook refuses any value
+ * whose signature does not verify, which reduces the client to a
+ * courier of an opaque blob it cannot forge.
+ *
+ * Keyed on PADDLE_WEBHOOK_SECRET: server-only, already required for
+ * this flow, and never exposed to the browser (the FE receives only
+ * PADDLE_CLIENT_TOKEN).
+ */
+function attributionSignature(workspaceId: string, secret: string): string {
+  return createHmac('sha256', secret).update(`paddle:workspace:${workspaceId}`).digest('hex');
+}
+
+/**
+ * Verify a `custom_data` attribution blob. Returns the workspace id
+ * only when the signature matches; unsigned or mis-signed values are
+ * discarded (the event then falls back to the subscription /
+ * billing_customers links, or is left unresolved for retry).
+ */
+export function verifiedWorkspaceId(
+  customData: { workspace_id?: string; sig?: string } | null | undefined,
+  secret: string | undefined,
+): string | null {
+  const workspaceId = customData?.workspace_id;
+  const sig = customData?.sig;
+  if (!workspaceId || !sig || !secret) return null;
+  const expected = attributionSignature(workspaceId, secret);
+  const a = Buffer.from(sig, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  return workspaceId;
+}
+
 /** Paddle subscription entity fields this adapter reads (API v2). */
 interface PaddleSubscription {
   id: string;
@@ -49,7 +86,7 @@ interface PaddleSubscription {
   current_billing_period?: { ends_at?: string | null } | null;
   scheduled_change?: { action?: string; effective_at?: string } | null;
   paused_at?: string | null;
-  custom_data?: { workspace_id?: string } | null;
+  custom_data?: { workspace_id?: string; sig?: string } | null;
 }
 
 /**
@@ -61,7 +98,7 @@ interface PaddleSubscription {
 interface PaddleTransaction {
   subscription_id?: string | null;
   customer_id?: string | null;
-  custom_data?: { workspace_id?: string } | null;
+  custom_data?: { workspace_id?: string; sig?: string } | null;
 }
 
 /** Paddle webhook envelope (API v2 notifications). */
@@ -94,7 +131,10 @@ function mapStatus(paddleStatus: string): SubscriptionStatus {
   }
 }
 
-function toNormalizedSubscription(sub: PaddleSubscription): NormalizedSubscription {
+function toNormalizedSubscription(
+  sub: PaddleSubscription,
+  webhookSecret: string | undefined,
+): NormalizedSubscription {
   const priceId = sub.items?.[0]?.price?.id;
   if (!sub.id || !priceId) {
     throw new Error('Paddle subscription payload missing id or items[0].price.id');
@@ -115,7 +155,9 @@ function toNormalizedSubscription(sub: PaddleSubscription): NormalizedSubscripti
       status === 'paused' && sub.scheduled_change?.action === 'resume'
         ? (sub.scheduled_change.effective_at ?? null)
         : null,
-    workspaceId: sub.custom_data?.workspace_id ?? null,
+    // Signed attribution only — an unsigned/forged blob resolves to
+    // null and the event falls back to the server-owned links.
+    workspaceId: verifiedWorkspaceId(sub.custom_data, webhookSecret),
   };
 }
 
@@ -138,7 +180,12 @@ export class PaddleAdapter implements BillingProvider {
    */
   async createCheckout(input: CreateCheckoutInput): Promise<CheckoutSession> {
     const clientToken = this.env.PADDLE_CLIENT_TOKEN;
-    if (!clientToken) {
+    // The webhook secret also keys the attribution signature. Without
+    // it we could only emit an UNSIGNED blob, which the webhook would
+    // then refuse — fail closed here instead of taking money for a
+    // checkout that can never be attributed.
+    const webhookSecret = this.env.PADDLE_WEBHOOK_SECRET;
+    if (!clientToken || !webhookSecret) {
       throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
     }
     return {
@@ -148,7 +195,10 @@ export class PaddleAdapter implements BillingProvider {
       clientToken,
       environment: this.env.PADDLE_ENV === 'production' ? 'production' : 'sandbox',
       // Key must match the webhook reader (`custom_data.workspace_id`).
-      customData: { workspace_id: input.workspaceId },
+      customData: {
+        workspace_id: input.workspaceId,
+        sig: attributionSignature(input.workspaceId, webhookSecret),
+      },
     };
   }
 
@@ -251,7 +301,10 @@ export class PaddleAdapter implements BillingProvider {
           kind: 'subscription',
           providerEventId: eventId,
           eventType,
-          subscription: toNormalizedSubscription(body.data as unknown as PaddleSubscription),
+          subscription: toNormalizedSubscription(
+            body.data as unknown as PaddleSubscription,
+            this.env.PADDLE_WEBHOOK_SECRET,
+          ),
         };
       case 'transaction.completed': {
         const data = body.data as PaddleTransaction | undefined;
@@ -262,7 +315,7 @@ export class PaddleAdapter implements BillingProvider {
           outcome: 'succeeded',
           providerSubscriptionId: data?.subscription_id ?? null,
           providerCustomerId: data?.customer_id ?? null,
-          workspaceId: data?.custom_data?.workspace_id ?? null,
+          workspaceId: verifiedWorkspaceId(data?.custom_data, this.env.PADDLE_WEBHOOK_SECRET),
         };
       }
       case 'transaction.payment_failed': {
@@ -274,7 +327,7 @@ export class PaddleAdapter implements BillingProvider {
           outcome: 'failed',
           providerSubscriptionId: data?.subscription_id ?? null,
           providerCustomerId: data?.customer_id ?? null,
-          workspaceId: data?.custom_data?.workspace_id ?? null,
+          workspaceId: verifiedWorkspaceId(data?.custom_data, this.env.PADDLE_WEBHOOK_SECRET),
         };
       }
       case 'adjustment.created': {

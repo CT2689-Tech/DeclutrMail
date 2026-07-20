@@ -294,37 +294,48 @@ export class BillingWebhookService {
     // first receipt and preserved across retries) is the ordering
     // truth: providers give no reliable monotonic sequence, and
     // `occurred_at` lives only inside the audit payload.
-    const [newer] = await this.db
-      .select({ id: subscriptionEvents.id })
-      .from(subscriptionEvents)
-      .where(
-        and(
-          eq(subscriptionEvents.provider, provider),
-          isNotNull(subscriptionEvents.processedAt),
-          gt(subscriptionEvents.createdAt, eventCreatedAt),
-          sql`${subscriptionEvents.payload}->>'provider_subscription_id' = ${sub.providerSubscriptionId}`,
-          // ONLY state-writing kinds count as "newer state". A payment
-          // event carries the same provider_subscription_id but writes
-          // no subscription row — and `transaction.completed` is
-          // precisely what seeds billing_customers to make a stranded
-          // activation attributable. Counting it here would discard
-          // the activation this recovery path exists to rescue.
-          sql`${subscriptionEvents.payload}->>'kind' IN ('subscription', 'cancellation_scheduled')`,
-        ),
-      )
-      .limit(1);
-    if (newer) {
-      // Terminal: a newer event already won. Stamp it so the provider
-      // stops retrying — unlike the unresolved cases above, replaying
-      // this can never produce a better outcome.
-      this.logger.warn(
-        `billing.webhook.stale_replay provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
+    const outcome = await this.db.transaction(async (tx) => {
+      // Serialize every writer for THIS subscription. The staleness
+      // check below is read-then-write: without the lock, two events
+      // delivered concurrently both read "no newer event" and both
+      // upsert, and the loser's stale state can land last.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`${provider}:${sub.providerSubscriptionId}`}))`,
       );
-      await this.markProcessed(eventRowId);
-      return { kind: 'ignored' };
-    }
 
-    await this.db.transaction(async (tx) => {
+      const [newer] = await tx
+        .select({ id: subscriptionEvents.id })
+        .from(subscriptionEvents)
+        .where(
+          and(
+            eq(subscriptionEvents.provider, provider),
+            isNotNull(subscriptionEvents.processedAt),
+            gt(subscriptionEvents.createdAt, eventCreatedAt),
+            sql`${subscriptionEvents.payload}->>'provider_subscription_id' = ${sub.providerSubscriptionId}`,
+            // ONLY state-writing kinds count as "newer state". A payment
+            // event carries the same provider_subscription_id but writes
+            // no subscription row — and `transaction.completed` is
+            // precisely what seeds billing_customers to make a stranded
+            // activation attributable. Counting it here would discard
+            // the activation this recovery path exists to rescue.
+            sql`${subscriptionEvents.payload}->>'kind' IN ('subscription', 'cancellation_scheduled')`,
+          ),
+        )
+        .limit(1);
+      if (newer) {
+        // Terminal: a newer event already won. Stamp it so the provider
+        // stops retrying — unlike the unresolved cases above, replaying
+        // this can never produce a better outcome.
+        this.logger.warn(
+          `billing.webhook.stale_replay provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
+        );
+        await tx
+          .update(subscriptionEvents)
+          .set({ processedAt: new Date() })
+          .where(eq(subscriptionEvents.id, eventRowId));
+        return { kind: 'ignored' } as const;
+      }
+
       // Customer record (webhook hot path resolves workspace from it).
       if (sub.providerCustomerId) {
         await tx
@@ -414,7 +425,10 @@ export class BillingWebhookService {
         .update(subscriptionEvents)
         .set({ processedAt: new Date() })
         .where(eq(subscriptionEvents.id, eventRowId));
+      return null;
     });
+    // Stale replays exit here; everything below is the applied path.
+    if (outcome) return outcome;
 
     // D159 billing_event — taxonomy kinds.
     const kind =

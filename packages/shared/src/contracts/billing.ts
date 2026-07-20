@@ -89,7 +89,14 @@ export const PaddleCheckoutSessionSchema = z.object({
   // read back off the webhook as `custom_data.workspace_id`. A camelCase
   // key here makes every first purchase unattributable (the webhook has
   // no subscription or billing_customers row to fall back to yet).
-  customData: z.object({ workspace_id: z.uuid() }),
+  customData: z.object({
+    workspace_id: z.uuid(),
+    // Server-issued HMAC over the workspace id. `custom_data` reaches
+    // Paddle through the BROWSER, so an unsigned id would let a client
+    // attribute a paid subscription onto someone else's workspace; the
+    // webhook discards any blob whose signature does not verify.
+    sig: z.string().min(1),
+  }),
 });
 export type PaddleCheckoutSession = z.infer<typeof PaddleCheckoutSessionSchema>;
 

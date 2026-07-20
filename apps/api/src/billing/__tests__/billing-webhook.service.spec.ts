@@ -24,6 +24,7 @@ import {
   paddleSubscriptionActivated,
   paddleTransactionCompleted,
   razorpaySubscriptionEvent,
+  TEST_PADDLE_WEBHOOK_SECRET,
   TEST_PRICE_IDS,
 } from './fixtures.js';
 
@@ -121,7 +122,9 @@ function collectKeysDeep(value: unknown, out: string[] = []): string[] {
 /** PII key names real Paddle/Razorpay webhook bodies carry (D7-banned). */
 const PII_KEYS = ['email', 'contact', 'card', 'name', 'billing_details', 'address'] as const;
 
-const paddle = new PaddleAdapter({} as NodeJS.ProcessEnv);
+const paddle = new PaddleAdapter({
+  PADDLE_WEBHOOK_SECRET: TEST_PADDLE_WEBHOOK_SECRET,
+} as unknown as NodeJS.ProcessEnv);
 const razorpay = new RazorpayAdapter({} as NodeJS.ProcessEnv);
 
 describe('BillingWebhookService.process', () => {

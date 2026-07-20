@@ -216,7 +216,7 @@ describe('BillingScreen — free tier (billing live)', () => {
               priceId: 'pri_test_123',
               clientToken: 'test_token',
               environment: 'sandbox',
-              customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff' },
+              customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
             },
           });
         },
@@ -252,7 +252,7 @@ describe('BillingScreen — free tier (billing live)', () => {
     expect(vi.mocked(launchCheckout).mock.calls[0]?.[0]).toMatchObject({
       provider: 'paddle',
       priceId: 'pri_test_123',
-      customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff' },
+      customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
     });
   });
 
