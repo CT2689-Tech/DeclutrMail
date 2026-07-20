@@ -182,29 +182,41 @@ export class BillingService {
       // the local row record the scheduled cancel. Idempotent: a
       // second cancel click skips the provider round-trip.
       await this.adapterFor(sub.provider).cancelSubscription(sub.providerSubscriptionId);
-      // Under the SAME advisory lock the webhook writers take: a
-      // provider event for this subscription can be in flight right
-      // now, and its upsert would otherwise overwrite the flag we are
-      // about to set with the pre-cancel value it read earlier.
+      // Under the SAME advisory lock the webhook writers take — but the
+      // lock only serializes, it does not ORDER. A provider event
+      // captured BEFORE this cancel can still win the lock afterwards
+      // and upsert its pre-cancel `cancel_at_period_end: false` on top.
+      //
+      // So the audit row is written IN THIS TRANSACTION and shaped to
+      // participate in the webhook's staleness check: carrying
+      // `kind: 'cancellation_scheduled'` + `provider_subscription_id`
+      // makes it a state-writing event with a `created_at` of NOW, so
+      // any in-flight event that arrived earlier is refused as stale.
+      // Written as a plain audit blob before, it was invisible to that
+      // check and the cancellation was silently reverted.
       await this.db.transaction(async (tx) => {
         await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
         await tx
           .update(subscriptions)
           .set({ cancelAtPeriodEnd: true, updatedAt: new Date() })
           .where(eq(subscriptions.id, sub.id));
-      });
 
-      // D118 — reason into the normalized event stream (audit).
-      await this.db
-        .insert(subscriptionEvents)
-        .values({
-          provider: sub.provider,
-          providerEventId: `local_cancel_${sub.providerSubscriptionId}`,
-          eventType: 'local.cancellation_requested',
-          payload: { cancellation_reason: dto.reason ?? null },
-          processedAt: new Date(),
-        })
-        .onConflictDoNothing();
+        // D118 — reason into the normalized event stream (audit).
+        await tx
+          .insert(subscriptionEvents)
+          .values({
+            provider: sub.provider,
+            providerEventId: `local_cancel_${sub.providerSubscriptionId}`,
+            eventType: 'local.cancellation_requested',
+            payload: {
+              kind: 'cancellation_scheduled',
+              provider_subscription_id: sub.providerSubscriptionId,
+              cancellation_reason: dto.reason ?? null,
+            },
+            processedAt: new Date(),
+          })
+          .onConflictDoNothing();
+      });
 
       this.logger.log(
         `billing_event kind=subscription_canceled provider=${sub.provider} workspace=${principal.workspaceId} at_period_end=true reason=${dto.reason ?? 'none'}`,

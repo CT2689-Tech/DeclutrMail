@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
+import { BillingService } from '../billing.service.js';
 import { BillingWebhookService, projectWebhookPayload } from '../billing-webhook.service.js';
 import { PaddleAdapter } from '../paddle.adapter.js';
 import { RazorpayAdapter } from '../razorpay.adapter.js';
@@ -381,6 +382,55 @@ describe('BillingWebhookService.process', () => {
     // on every retry anyway, while a genuinely-not-yet-attributable
     // event gets to land once a sibling seeds billing_customers.
     expect(eventRows[0]!.processedAt).toBeNull();
+  });
+
+  it('a user cancel is not reverted by an in-flight webhook that predates it', async () => {
+    // The advisory lock serializes writers but does NOT order them: a
+    // provider event captured BEFORE the cancel can still win the lock
+    // afterwards and upsert its pre-cancel `cancel_at_period_end:
+    // false`. The user cancels, a renewal lands, and the cancellation
+    // silently disappears. The local cancel therefore records a
+    // state-writing event so the stale one loses the ordering check.
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_ucr_activate',
+      subscriptionId: 'sub_ucr',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    // A renewal is delivered and sits unprocessed (in flight).
+    const inFlight = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_ucr_renewal',
+      subscriptionId: 'sub_ucr',
+      eventType: 'subscription.updated',
+    });
+    const inFlightEvent = paddle.mapWebhookEvent(inFlight);
+    await db.insert(subscriptionEvents).values({
+      provider: 'paddle',
+      providerEventId: inFlightEvent.providerEventId,
+      eventType: inFlightEvent.eventType,
+      payload: projectWebhookPayload(inFlightEvent, inFlight),
+    });
+
+    // The user cancels through BillingService (provider call stubbed).
+    const billing = new BillingService(
+      db,
+      testCatalog(),
+      { id: 'paddle', cancelSubscription: async () => {} } as unknown as PaddleAdapter,
+      { id: 'razorpay' } as unknown as RazorpayAdapter,
+    );
+    await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'too_expensive' });
+
+    // Now the in-flight renewal finally processes. It must NOT revert.
+    const outcome = await service.process('paddle', inFlightEvent, inFlight);
+    expect(outcome).toEqual({ kind: 'ignored' });
+
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_ucr'));
+    expect(subRow!.cancelAtPeriodEnd).toBe(true);
   });
 
   it('a stale retry never overwrites newer subscription state', async () => {
