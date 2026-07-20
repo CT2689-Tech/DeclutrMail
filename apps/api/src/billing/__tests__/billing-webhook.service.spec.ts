@@ -433,6 +433,66 @@ describe('BillingWebhookService.process', () => {
     expect(subRow!.cancelAtPeriodEnd).toBe(true);
   });
 
+  it('a SECOND cancellation writes a fresh ordering marker', async () => {
+    // A fixed `local_cancel_<sub>` event id collided with the first
+    // cancellation and onConflictDoNothing kept the OLD row, freezing
+    // created_at at the first cancel. The second cancellation was then
+    // no longer newer than in-flight events and could be reverted.
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_2c_activate',
+      subscriptionId: 'sub_2c',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const billing = new BillingService(
+      db,
+      testCatalog(),
+      { id: 'paddle', cancelSubscription: async () => {} } as unknown as PaddleAdapter,
+      { id: 'razorpay' } as unknown as RazorpayAdapter,
+    );
+    await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'too_expensive' });
+
+    // The provider resumes the subscription (un-cancel), clearing the
+    // flag — this is what makes a SECOND cancellation possible.
+    await db
+      .update(subscriptions)
+      .set({ cancelAtPeriodEnd: false })
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_2c'));
+
+    // A renewal is delivered and sits in flight BEFORE the 2nd cancel.
+    const inFlight = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_2c_renewal',
+      subscriptionId: 'sub_2c',
+      eventType: 'subscription.updated',
+    });
+    const inFlightEvent = paddle.mapWebhookEvent(inFlight);
+    await db.insert(subscriptionEvents).values({
+      provider: 'paddle',
+      providerEventId: inFlightEvent.providerEventId,
+      eventType: inFlightEvent.eventType,
+      payload: projectWebhookPayload(inFlightEvent, inFlight),
+    });
+
+    await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'not_using_enough' });
+
+    // Two distinct markers, not one reused row.
+    const markers = await db
+      .select()
+      .from(subscriptionEvents)
+      .where(eq(subscriptionEvents.eventType, 'local.cancellation_requested'));
+    expect(markers).toHaveLength(2);
+
+    // And the second cancel still wins against the older in-flight event.
+    expect(await service.process('paddle', inFlightEvent, inFlight)).toEqual({ kind: 'ignored' });
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_2c'));
+    expect(subRow!.cancelAtPeriodEnd).toBe(true);
+  });
+
   it('a stale retry never overwrites newer subscription state', async () => {
     // The hazard introduced by leaving unresolved events unprocessed:
     // an old event becomes attributable LATER and re-drives on top of

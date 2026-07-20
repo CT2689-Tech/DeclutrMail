@@ -46,7 +46,7 @@
 // `subscription_events` insert.
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { billingCustomers, subscriptionEvents, subscriptions, workspaces } from '@declutrmail/db';
 import { TIER_RANK } from '@declutrmail/shared/entitlements';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
@@ -335,7 +335,14 @@ export class BillingWebhookService {
           and(
             eq(subscriptionEvents.provider, provider),
             isNotNull(subscriptionEvents.processedAt),
-            gt(subscriptionEvents.createdAt, eventCreatedAt),
+            // (created_at, id) as a TOTAL order. Plain `created_at >`
+            // is not enough: `now()` is transaction-scoped, so two
+            // rows written in quick succession can share a timestamp
+            // and neither counts as newer than the other. The id
+            // tiebreak keeps the comparison strict and self-excluding.
+            // Date is bound as an ISO string with an explicit cast —
+            // postgres.js rejects a JS Date beside a raw expression.
+            sql`(${subscriptionEvents.createdAt}, ${subscriptionEvents.id}) > (${eventCreatedAt.toISOString()}::timestamptz, ${eventRowId}::uuid)`,
             sql`${subscriptionEvents.payload}->>'provider_subscription_id' = ${sub.providerSubscriptionId}`,
             // ONLY state-writing kinds count as "newer state". A payment
             // event carries the same provider_subscription_id but writes

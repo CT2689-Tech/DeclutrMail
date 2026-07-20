@@ -194,27 +194,38 @@ export class BillingService {
       // any in-flight event that arrived earlier is refused as stale.
       // Written as a plain audit blob before, it was invisible to that
       // check and the cancellation was silently reverted.
+      const now = new Date();
       await this.db.transaction(async (tx) => {
         await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
         await tx
           .update(subscriptions)
-          .set({ cancelAtPeriodEnd: true, updatedAt: new Date() })
+          .set({ cancelAtPeriodEnd: true, updatedAt: now })
           .where(eq(subscriptions.id, sub.id));
 
         // D118 — reason into the normalized event stream (audit).
+        //
+        // The event id carries a timestamp so EACH cancellation gets
+        // its own row. A fixed `local_cancel_<sub>` id collided with
+        // the previous cancellation and `onConflictDoNothing` kept the
+        // OLD row — freezing this marker's `created_at` at the first
+        // cancel, so a later cancel was no longer newer than in-flight
+        // events and could be reverted again. `created_at` cannot be
+        // refreshed in place: subscription_events is append-only apart
+        // from `processed_at`.
         await tx
           .insert(subscriptionEvents)
           .values({
             provider: sub.provider,
-            providerEventId: `local_cancel_${sub.providerSubscriptionId}`,
+            providerEventId: `local_cancel_${sub.providerSubscriptionId}_${now.toISOString()}`,
             eventType: 'local.cancellation_requested',
             payload: {
               kind: 'cancellation_scheduled',
               provider_subscription_id: sub.providerSubscriptionId,
               cancellation_reason: dto.reason ?? null,
             },
-            processedAt: new Date(),
+            processedAt: now,
           })
+          // Two clicks inside the same millisecond are the same intent.
           .onConflictDoNothing();
       });
 
