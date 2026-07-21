@@ -1,0 +1,10 @@
+ALTER TABLE "subscriptions"
+  DROP CONSTRAINT IF EXISTS "subscriptions_scheduled_change_complete_check",
+  DROP CONSTRAINT IF EXISTS "subscriptions_scheduled_change_state_check",
+  DROP COLUMN IF EXISTS "scheduled_change_requested_at",
+  DROP COLUMN IF EXISTS "scheduled_change_state",
+  DROP COLUMN IF EXISTS "scheduled_change_at",
+  DROP COLUMN IF EXISTS "scheduled_provider_price_id",
+  DROP COLUMN IF EXISTS "scheduled_billing_cycle",
+  DROP COLUMN IF EXISTS "scheduled_tier";
+

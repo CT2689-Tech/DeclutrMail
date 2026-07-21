@@ -11,7 +11,11 @@ import {
   tokens,
   toast,
 } from '@declutrmail/shared';
-import type { BillingSubscription, CancelRequest } from '@declutrmail/shared/contracts';
+import type {
+  BillingCycle,
+  BillingSubscription,
+  CancelRequest,
+} from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 
 import { useAuth } from '@/features/auth/auth-provider';
@@ -21,15 +25,21 @@ import { formatUsd } from '@/features/marketing/pricing/pricing-model';
 import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
-import { isBillingDisabledError, useBillingSubscription } from './api/use-billing-subscription';
+import {
+  apiErrorCode,
+  isBillingDisabledError,
+  useBillingSubscription,
+} from './api/use-billing-subscription';
+import { billingKeys } from './api/query-keys';
 import type { BillingIntent } from './billing-intent';
 import { useCancelSubscription } from './api/use-cancel-subscription';
+import { useChangePlan } from './api/use-change-plan';
 import { canCancel, formatBillingDate, planPriceLabel, statusNote } from './billing-model';
 import { CancelModal } from './cancel-modal';
 import { useResumeSubscription } from './api/use-resume-subscription';
 import {
   clearPendingCheckout,
-  PENDING_CHECKOUT_KEY,
+  pendingCheckoutKey,
   readPendingCheckout,
   writePendingCheckout,
   type PendingCheckout,
@@ -127,7 +137,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   useEffect(() => {
     setPending(readPendingCheckout(workspaceId));
     const onStorage = (event: StorageEvent) => {
-      if (event.key !== null && event.key !== PENDING_CHECKOUT_KEY) return;
+      if (event.key !== null && event.key !== pendingCheckoutKey(workspaceId)) return;
       setPending(readPendingCheckout(workspaceId));
     };
     window.addEventListener('storage', onStorage);
@@ -146,13 +156,12 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   // action started from. Only then is success claimed.
   useEffect(() => {
     if (pending === null || data === null) return;
-    const tierFlipped = data.tier !== pending.fromTier;
-    const cycleFlipped =
-      pending.fromCycle !== null &&
-      data.subscription !== null &&
-      data.subscription.cycle !== pending.fromCycle;
-    if (tierFlipped || cycleFlipped) {
-      clearPendingCheckout();
+    const reachedTargetTier = data.tier === pending.toTier;
+    const reachedTargetCycle =
+      pending.toCycle === null ||
+      (data.subscription !== null && data.subscription.cycle === pending.toCycle);
+    if (reachedTargetTier && reachedTargetCycle) {
+      clearPendingCheckout(workspaceId);
       setPending(null);
       // Tier is a server-resolved scope and feature query keys are not
       // partitioned by it (§8 scope-change ⇒ cache-reset invariant) —
@@ -163,7 +172,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
       void queryClient.invalidateQueries();
       toast(`Plan updated — you're on ${TIER_MANIFEST[data.tier].name}.`, 'success');
     }
-  }, [pending, data, queryClient]);
+  }, [pending, data, queryClient, workspaceId]);
 
   // "Usually within a minute" needs a state for when it isn't (§8 —
   // every promise in copy gets its elapsed branch). Elapsed counts
@@ -199,7 +208,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   // never released on a timer (that would reopen the double-charge
   // window for exactly the user whose webhook is delayed).
   function onReleasePendingLock() {
-    clearPendingCheckout();
+    clearPendingCheckout(workspaceId);
     setPending(null);
   }
 
@@ -218,8 +227,10 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
     );
   }
 
-  function startPending(kind: PendingKind) {
-    setPending(writePendingCheckout(workspaceId, kind, tier, subscription?.cycle ?? null));
+  function startPending(kind: PendingKind, toTier: TierId, toCycle: BillingCycle | null) {
+    setPending(
+      writePendingCheckout(workspaceId, kind, tier, subscription?.cycle ?? null, toTier, toCycle),
+    );
     // Ask immediately — fast webhooks (sandbox flips in ~40s, some land
     // sooner) shouldn't wait a full poll interval.
     void subscriptionQuery.refetch();
@@ -257,7 +268,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
       <ScreenIntro
         id="billing"
         title="Plan & billing"
-        body="Your plan, what it includes, and how it renews. Upgrades start today; cancellations take effect at the end of the period you've paid for."
+        body="Your plan, what it includes, and how it renews. Upgrades start today; downgrades and cancellations take effect after the period you've paid for."
         tip="Every paid plan includes a 30-day money-back guarantee, subject to the published Refund Policy and fair-use terms."
       />
 
@@ -281,11 +292,23 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         onCancel={() => setCancelOpen(true)}
       />
 
+      {subscription?.scheduledChange ? (
+        <ScheduledPlanChangeNotice
+          currentTier={subscription.tier}
+          currentCycle={subscription.cycle}
+          scheduledChange={subscription.scheduledChange}
+          onCanceled={(next) => {
+            queryClient.setQueryData(billingKeys.subscription(), next);
+            toast('Keeping your current plan — confirming with Paddle.', 'success');
+          }}
+        />
+      ) : null}
+
       {subscription?.status === 'paused' && !billingDisabled && pending === null ? (
         <PausedSubscriptionNotice
           subscription={subscription}
           currentTier={tier}
-          onResumeStarted={() => startPending('resume')}
+          onResumeStarted={() => startPending('resume', subscription.tier, subscription.cycle)}
           onRequestCancel={() => setCancelOpen(true)}
         />
       ) : null}
@@ -298,11 +321,27 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         // whose row doesn't exist yet. Withhold every affordance until
         // the pending state resolves (the banner above says why).
         // Paused subs must resume or cancel first (the notice above).
-        disabled={billingDisabled || pending !== null || subscription?.status === 'paused'}
+        disabled={
+          billingDisabled ||
+          pending !== null ||
+          subscription?.status === 'paused' ||
+          subscription?.status === 'past_due' ||
+          subscription?.cancelAtPeriodEnd === true ||
+          subscription?.scheduledChange != null
+        }
         initialIntent={initialIntent}
         onRequestCancel={() => setCancelOpen(true)}
-        onPaymentCompleted={() => startPending('checkout')}
-        onPlanChangeStarted={() => startPending('change')}
+        onPaymentCompleted={(target, cycle) => startPending('checkout', target, cycle)}
+        onPlanChangeAccepted={(next, target, cycle) => {
+          const scheduled = next.subscription?.scheduledChange ?? null;
+          if (scheduled) {
+            queryClient.setQueryData(billingKeys.subscription(), next);
+            const date = formatBillingDate(scheduled.effectiveAt);
+            toast(date ? `Downgrade scheduled for ${date}.` : 'Downgrade scheduled.', 'success');
+          } else {
+            startPending('change', target, cycle);
+          }
+        }}
       />
 
       <CancelModal
@@ -423,8 +462,10 @@ export function PaymentProcessingNotice({
           <span>
             <strong style={{ fontWeight: 600 }}>{acted} — confirming your plan.</strong>{' '}
             <span style={{ color: color.fgSoft }}>
-              The payment provider is finalizing your subscription. This page updates automatically,
-              usually within a minute.
+              {kind === 'resume'
+                ? 'No charge was started; your existing paid period continues.'
+                : 'The payment provider is finalizing your subscription.'}{' '}
+              This page updates automatically, usually within a minute.
             </span>
           </span>
         )}
@@ -590,6 +631,106 @@ function CurrentPlanCard({
   );
 }
 
+function ScheduledPlanChangeNotice({
+  currentTier,
+  currentCycle,
+  scheduledChange,
+  onCanceled,
+}: {
+  currentTier: 'plus' | 'pro';
+  currentCycle: BillingCycle;
+  scheduledChange: NonNullable<NonNullable<BillingSubscription['subscription']>['scheduledChange']>;
+  onCanceled: (next: BillingSubscription) => void;
+}) {
+  const changePlan = useChangePlan();
+  const effectiveDate = formatBillingDate(scheduledChange.effectiveAt);
+  const targetName = TIER_MANIFEST[scheduledChange.tier].name;
+  const confirming = scheduledChange.state !== 'scheduled';
+  const restoring = scheduledChange.state === 'restoring_current';
+  return (
+    <div
+      role="status"
+      data-testid="scheduled-plan-change-notice"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        padding: '12px 14px',
+        background: color.primarySoft,
+        border: `1px solid ${color.primaryBorder}`,
+        borderRadius: radius.md,
+        fontSize: 13,
+        lineHeight: 1.55,
+        color: color.fg,
+      }}
+    >
+      <strong style={{ fontWeight: 600 }}>
+        {restoring
+          ? 'Keeping your current plan'
+          : confirming
+            ? 'Confirming your downgrade'
+            : 'Downgrade scheduled'}
+        {effectiveDate ? ` for ${effectiveDate}` : ''}.
+      </strong>
+      <span style={{ color: color.fgSoft }}>
+        {restoring ? (
+          <>
+            We&rsquo;re confirming your request to keep {TIER_MANIFEST[currentTier].name}. Your
+            current access remains available while Paddle&rsquo;s billing outcome is unconfirmed.
+          </>
+        ) : confirming ? (
+          <>
+            Your request to move to {targetName} ({scheduledChange.cycle}) was recorded, but the
+            payment provider hasn&rsquo;t confirmed it yet. Your {TIER_MANIFEST[currentTier].name}{' '}
+            features stay active, and nothing is charged while it settles.
+          </>
+        ) : (
+          <>
+            Your {TIER_MANIFEST[currentTier].name} features stay active through the current paid
+            period. Then you&rsquo;ll move to {targetName} ({scheduledChange.cycle}). $0 is due
+            today, and there is no refund or credit for the current period.
+          </>
+        )}
+      </span>
+      {confirming ? (
+        <span style={{ color: color.fgMuted, fontSize: 12 }}>
+          {restoring
+            ? 'Paddle has not confirmed whether your renewal was restored. Retry before renewal or contact support.'
+            : 'The payment provider’s response was interrupted, so billing changes are locked while we reconcile it.'}{' '}
+          {restoring ? '' : 'Your current plan and renewal remain unchanged. '}Email{' '}
+          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+            support@declutrmail.com
+          </a>{' '}
+          if this does not settle shortly.
+        </span>
+      ) : null}
+      <div>
+        <Button
+          tone="default"
+          disabled={changePlan.isPending}
+          onClick={() =>
+            changePlan.mutate(
+              { tierId: currentTier, cycle: currentCycle },
+              { onSuccess: onCanceled },
+            )
+          }
+        >
+          {changePlan.isPending
+            ? 'Keeping current plan…'
+            : restoring
+              ? 'Retry keeping current plan'
+              : 'Keep current plan instead'}
+        </Button>
+      </div>
+      {changePlan.error ? (
+        <span role="alert" style={{ color: color.red, fontSize: 12 }}>
+          We couldn&rsquo;t cancel the scheduled downgrade. Nothing else changed — please try again.
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * A paused subscription's designed state: the two real exits — resume
  * it (webhook restores the tier) or cancel it. Plan changes stay
@@ -610,8 +751,14 @@ function PausedSubscriptionNotice({
   onRequestCancel: () => void;
 }) {
   const resume = useResumeSubscription();
+  const [confirmingResume, setConfirmingResume] = useState(false);
   const tierName = TIER_MANIFEST[subscription.tier].name;
   const until = formatBillingDate(subscription.pauseUntil);
+  const retainedPeriodEnd = formatBillingDate(subscription.currentPeriodEnd);
+  // Self-serve resume promises "$0 today, existing period continues" —
+  // only render that promise when the retained period is actually known
+  // (ui-truth: never assert a period the read can't confirm).
+  const canSelfServeResume = subscription.provider === 'paddle' && retainedPeriodEnd !== null;
   return (
     <div
       role="status"
@@ -639,6 +786,17 @@ function PausedSubscriptionNotice({
           you&rsquo;re done with it.
         </span>
       </span>
+      {!canSelfServeResume ? (
+        <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
+          {subscription.provider === 'razorpay'
+            ? 'Razorpay does not guarantee a no-charge resume on the existing billing period. To avoid an unexpected charge, email '
+            : 'We can’t confirm your retained billing period from here, so resume isn’t offered without review. Email '}
+          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+            support@declutrmail.com
+          </a>{' '}
+          and we&rsquo;ll help reactivate it safely.
+        </p>
+      ) : null}
       {resume.error ? (
         <div
           role="alert"
@@ -651,21 +809,58 @@ function PausedSubscriptionNotice({
             padding: '8px 10px',
           }}
         >
-          Resuming didn&rsquo;t go through. Please try again, or email support@declutrmail.com.
+          {apiErrorCode(resume.error) === 'RESUME_PERIOD_ENDED'
+            ? 'Your retained billing period has ended. Nothing was charged. Email support@declutrmail.com to reactivate with a new paid period.'
+            : 'Resuming didn’t go through. Please try again, or email support@declutrmail.com.'}
+        </div>
+      ) : null}
+      {confirmingResume && canSelfServeResume ? (
+        <div
+          data-testid="resume-confirm-panel"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            padding: '10px 12px',
+            background: color.card,
+            border: `1px solid ${color.border}`,
+            borderRadius: radius.md,
+          }}
+        >
+          <strong style={{ fontWeight: 600 }}>Resume without starting a new billing period</strong>
+          <span style={{ color: color.fgSoft }}>
+            $0 is due today. Your existing paid period continues through {retainedPeriodEnd}; plan
+            and billing changes take effect from the next billing period. If that retained period
+            has already ended, resume will stop safely instead of starting a new charge.
+          </span>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Button
+              tone="primary"
+              disabled={resume.isPending}
+              onClick={() =>
+                resume.mutate(undefined, {
+                  onSuccess: () => onResumeStarted(),
+                })
+              }
+            >
+              {resume.isPending ? 'Resuming…' : `Confirm resume ${tierName}`}
+            </Button>
+            <Button
+              tone="default"
+              disabled={resume.isPending}
+              onClick={() => setConfirmingResume(false)}
+            >
+              Keep paused
+            </Button>
+          </div>
         </div>
       ) : null}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <Button
-          tone="primary"
-          disabled={resume.isPending}
-          onClick={() =>
-            resume.mutate(undefined, {
-              onSuccess: () => onResumeStarted(),
-            })
-          }
-        >
-          {resume.isPending ? 'Resuming…' : `Resume ${tierName}`}
-        </Button>
+        {canSelfServeResume && !confirmingResume ? (
+          <Button tone="primary" onClick={() => setConfirmingResume(true)}>
+            Review resume
+          </Button>
+        ) : null}
         <Button tone="default" onClick={onRequestCancel} disabled={resume.isPending}>
           Cancel subscription
         </Button>

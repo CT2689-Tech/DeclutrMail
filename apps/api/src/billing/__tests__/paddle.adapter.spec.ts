@@ -319,6 +319,7 @@ describe('PaddleAdapter checkout + cancel', () => {
     expect(url).toBe('https://sandbox-api.paddle.com/subscriptions/sub_01paddle000001/cancel');
     expect(init.method).toBe('POST');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer pdl_test_key');
+    expect((init.headers as Record<string, string>)['Paddle-Version']).toBe('1');
     expect(init.body).toBe(JSON.stringify({ effective_from: 'next_billing_period' }));
   });
 
@@ -335,6 +336,103 @@ describe('PaddleAdapter checkout + cancel', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
     await expect(adapter.cancelSubscription('sub_x')).rejects.toMatchObject({
       code: 'BILLING_PROVIDER_ERROR',
+    });
+  });
+
+  it('changePlan prorates upgrades immediately', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+
+    await adapter.changePlan('sub_upgrade', 'pri_pro_a', { kind: 'immediate_prorated' });
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://sandbox-api.paddle.com/subscriptions/sub_upgrade');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(String(init.body))).toEqual({
+      items: [{ price_id: 'pri_pro_a', quantity: 1 }],
+      proration_billing_mode: 'prorated_immediately',
+    });
+  });
+
+  it('changePlan schedules downgrades with no immediate bill and pins the renewal date', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            updated_at: '2026-07-20T12:00:00.000Z',
+            items: [{ price: { id: 'pri_plus_m' } }],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+    const effectiveAt = '2026-08-20T12:00:00.000Z';
+
+    const result = await adapter.changePlan('sub_downgrade', 'pri_plus_m', {
+      kind: 'next_period_no_proration',
+      effectiveAt,
+    });
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      items: [{ price_id: 'pri_plus_m', quantity: 1 }],
+      proration_billing_mode: 'do_not_bill',
+      next_billed_at: effectiveAt,
+    });
+    expect(result).toEqual({
+      providerPriceId: 'pri_plus_m',
+      providerUpdatedAt: '2026-07-20T12:00:00.000Z',
+    });
+  });
+
+  it('classifies provider 4xx as definitive but keeps 5xx ambiguous', async () => {
+    const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 422 })));
+    await expect(
+      adapter.changePlan('sub_4xx', 'pri_plus_m', { kind: 'immediate_prorated' }),
+    ).rejects.toMatchObject({ details: { providerOutcome: 'definitive' } });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 503 })));
+    await expect(
+      adapter.changePlan('sub_5xx', 'pri_plus_m', { kind: 'immediate_prorated' }),
+    ).rejects.toMatchObject({ details: undefined });
+  });
+
+  it('resume continues the retained period without starting a charge', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+
+    await adapter.resumeSubscription('sub_paused');
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://sandbox-api.paddle.com/subscriptions/sub_paused/resume');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      effective_from: 'immediately',
+      on_resume: 'continue_existing_billing_period',
+    });
+  });
+
+  it('resume reports an ended retained period without falling back to a charge', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { code: 'subscription_continuing_existing_billing_period_not_allowed' },
+          }),
+          { status: 400 },
+        ),
+      ),
+    );
+    const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+
+    await expect(adapter.resumeSubscription('sub_expired_pause')).rejects.toMatchObject({
+      code: 'RESUME_PERIOD_ENDED',
     });
   });
 });

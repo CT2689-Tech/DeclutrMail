@@ -29,6 +29,7 @@ import type {
   CreateCheckoutInput,
   NormalizedBillingEvent,
   NormalizedSubscription,
+  PlanChangeResult,
   SignatureVerifyResult,
 } from './billing-provider.interface.js';
 
@@ -212,37 +213,15 @@ export class RazorpayAdapter implements BillingProvider {
    * worse, mis-billing) path. Fail closed with the designed code; the
    * FE routes Razorpay subscribers to support instead.
    */
-  async changePlan(providerSubscriptionId: string): Promise<void> {
+  async changePlan(providerSubscriptionId: string): Promise<PlanChangeResult> {
     this.logger.warn(`razorpay.change_plan.unsupported sub=${providerSubscriptionId}`);
     throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
   }
 
   /** POST /v1/subscriptions/{id}/resume — immediately (D118 pause exit). */
   async resumeSubscription(providerSubscriptionId: string): Promise<void> {
-    const auth = this.authHeader();
-    let res: Response;
-    try {
-      res = await fetch(
-        `${API_BASE}/v1/subscriptions/${encodeURIComponent(providerSubscriptionId)}/resume`,
-        {
-          method: 'POST',
-          headers: { Authorization: auth, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ resume_at: 'now' }),
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
-        },
-      );
-    } catch (err) {
-      this.logger.error(
-        `razorpay.resume.network_error sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
-      );
-      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
-    }
-    if (!res.ok) {
-      this.logger.error(
-        `razorpay.resume.failed sub=${providerSubscriptionId} status=${res.status}`,
-      );
-      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
-    }
+    this.logger.warn(`razorpay.resume.no_charge_unverified sub=${providerSubscriptionId}`);
+    throw new AppException({ code: 'RESUME_UNSUPPORTED' });
   }
 
   verifyWebhookSignature(args: {

@@ -220,6 +220,39 @@ export const ERROR_CODES = {
     message:
       'Plan changes aren’t self-serve for this subscription yet — email support@declutrmail.com and we’ll switch you over.',
   },
+  PLAN_CHANGE_PENDING: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Another plan change is still being confirmed. Please wait or contact support.',
+  },
+  PLAN_CHANGE_TOO_LATE: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'This plan change is too close to renewal to schedule safely. Try again after the renewal completes.',
+  },
+  SUBSCRIPTION_CANCELING: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This subscription is already scheduled to cancel.',
+  },
+  RESUME_UNSUPPORTED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'No-charge resume is not available for this payment method yet. Email support@declutrmail.com for help.',
+  },
+  RESUME_PERIOD_ENDED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'The retained billing period has ended, so the subscription cannot resume without a new charge.',
+  },
 
   // --- domain: account deletion (D205/D216/D232 — apps/api/src/account) ---
   DELETION_CONFIRM_MISMATCH: {

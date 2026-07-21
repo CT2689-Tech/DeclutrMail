@@ -53,9 +53,10 @@ Once the switches are satisfied, this is exactly what a Free user does:
 
 1. Hits a gate — the Free 5-lifetime-cleanup cap, or any Pro-only surface
    (Screener/Autopilot/Brief) — or clicks **Get Plus/Get Pro** on `/pricing`.
-2. Lands on `/billing`; the "isn't live yet" notice is gone, **Change plan**
-   is now visible → opens the **Plan-change modal** (pick tier, cycle,
-   provider; Founding-Pro claim checkbox if eligible).
+2. Lands on `/billing`; the "isn't live yet" notice is gone. The inline plan
+   picker shows Free/Plus/Pro under one monthly/annual toggle. Selecting a plan
+   opens its confirmation panel in place (provider choice and Founding-Pro claim
+   appear only for a new checkout).
 3. **`POST /api/billing/checkout`** creates a provider session — **Paddle** opens
    an in-page overlay; **Razorpay** navigates to a hosted subscription page.
    The workspace id rides in `customData`/`notes` for webhook attribution.
@@ -63,17 +64,19 @@ Once the switches are satisfied, this is exactly what a Free user does:
 5. The provider fires a **webhook** → `POST /api/webhooks/billing/{paddle,razorpay}`
    → HMAC-verified → `recomputeWorkspaceTier` flips `workspaces.tier`.
    **Checkout never grants tier — only the webhook does** (§10 no-fake-completion).
-6. `/billing` re-reads the subscription and shows the new plan.
+6. `/billing` enters a truthful processing state and polls the subscription
+   read. It keeps checkout locked until the webhook reports the exact tier/cycle,
+   then updates the plan card without a reload. At 90 seconds the copy changes to
+   "taking longer than usual"; at 15 minutes it keeps the lock and requires an
+   explicit no-charge confirmation before checkout can be retried.
 
-> **Verify during §6 — the one behavioral gap.** For **Razorpay** the user
-> returns via a full navigation, so `/billing` remounts and refetches. For the
-> **Paddle overlay**, it closes **in place** with no `eventCallback`/refetch in
-> `features/billing/checkout.ts`, and the webhook is async — so the plan card
-> can show the **old** tier until a manual reload. This can only be observed
-> with a live sandbox purchase (below). If it reads stale, the fix is a
-> post-close refetch + a short "finishing your upgrade…" poll on the
-> subscription query — a small FE follow-up, deliberately **not** built blind
-> (untestable without live billing = §8/§10). Flag it back and an agent ships it.
+Paid plan changes use the existing payment method. Upgrades apply after Paddle
+confirms the immediate prorated charge. Pro→Plus and annual→monthly downgrades
+show `$0 today`, retain the current entitlement through the paid period, and are
+stored as a durable scheduled change. Resume is a two-step confirmation and asks
+Paddle to continue the retained billing period without starting a new charge.
+Razorpay plan change/resume stays support-assisted until its payment-method-specific
+semantics are verified.
 
 ---
 
@@ -237,16 +240,27 @@ runtime secret (`PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `PADDLE_WEBHOOK_SECRET`
 
 No agent can run this: it needs a real payment surface. In **sandbox**:
 
-1. `/billing` no longer says "isn't live yet"; **Change plan** appears.
+1. `/billing` no longer says "isn't live yet"; the inline plan CTAs appear.
 2. Buy **Plus** (Paddle sandbox card) → watch the webhook land
    (`billing-webhook.service` log line) → **`workspaces.tier` flips to `plus`**
-   → the plan card updates. **Note whether it updates on its own or needs a
-   reload** (the §1 Paddle-overlay gap).
-3. The post-free-cap **upgrade modal** matches `/pricing` numbers.
-4. **Cancel** → `cancel_at_period_end=true`, tier holds until period end.
-5. Walk the **refund/chargeback** path (Paddle `adjustment.created`) → maps to
+   → the processing notice clears and the plan card updates **without reload**.
+3. The post-free-cap inline confirmation matches `/pricing` numbers. Block the
+   Paddle script once and verify the panel stays open with “Nothing was charged”
+   and a working retry.
+4. From Plus, upgrade to Pro → confirm the immediate prorated charge and wait for
+   the exact Pro webhook flip.
+5. From Pro, schedule Plus → confirm `$0 today`, Pro stays active, the durable
+   “Downgrade scheduled” notice shows the period-end date, and no rapid polling
+   continues. At renewal, confirm Plus becomes active and the schedule clears.
+6. Pause a Paddle subscription, then **Review resume** → confirm `$0 today`, the
+   retained period date, and no POST before the second confirmation. Resume and
+   verify no new transaction/new billing period is created.
+7. **Cancel** → `cancel_at_period_end=true`, tier holds until period end.
+8. Walk the **refund/chargeback** path (Paddle `adjustment.created`) → maps to
    scheduled cancellation, tier holds until the provider's terminal event.
-6. Repeat the core buy on **Razorpay** test mode (India ladder).
+9. Repeat the core buy on **Razorpay** test mode (India ladder); verify plan
+   changes and no-charge resume route to support rather than guessing provider
+   behavior.
 
 Then repeat #1–#2 for **Pro** and **Founding Pro** ($129/yr, confirm the 250-cap
 counter decrements).
@@ -283,8 +297,9 @@ counter decrements).
 
 ## Appendix B — Code gaps to confirm/close during sandbox
 
-- **Paddle-overlay post-checkout refresh** (§1/§8) — likely a stale plan card
-  until reload. Small FE follow-up; verify first, then flag.
+- **Server-side pending checkout** — the browser lock is workspace-scoped and
+  cross-tab, but a second device cannot see it until a provider event creates
+  server state. Keep the founder follow-up open until the API owns this signal.
 - **503 body message** — `BILLING_DISABLED` returns `"message":"Internal server
 error"`. The FE branches on the `code`, so the correct "isn't live yet" copy
   still renders; the generic message is never user-visible. Cosmetic — leave.

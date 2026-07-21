@@ -31,13 +31,6 @@ section to the Done section. Do not delete entries — the trail matters.
 **Verifies by:** pay in browser A; /billing in browser B shows the processing state with checkout locked until the tier flips.
 **Status:** Open
 
-### 2026-07-20 — Paddle sandbox webhook destination points at a rotated tunnel hostname
-**Source:** session 2026-07-20 (D117 upgrade-flow smoke)
-**Why:** cloudflared quick tunnels mint a NEW hostname every restart. The running tunnel is `emily-ministry-reviews-know.trycloudflare.com` and its request counter read 1 (only our probe) after a completed sandbox purchase — Paddle is delivering that purchase's webhooks to a dead previous hostname, so no sandbox purchase can flip a tier until the destination is updated. (The FE pending→flip chain was verified with a correctly SIGNED synthetic webhook instead; the only unverified link is Paddle's own delivery.) Side effect: that smoke purchase left an orphan ACTIVE $19/mo Pro subscription in the Paddle sandbox that will keep emitting undeliverable renewal events.
-**How:** In the Paddle sandbox dashboard → Developer Tools → Notifications: point the destination at the current tunnel URL (or replace the quick tunnel with a named cloudflared tunnel so the hostname stops rotating). Then cancel the orphan sandbox subscription (created 2026-07-20, $19/mo Pro monthly, customer chintan.a.thakkar@gmail.com). Optionally re-run one sandbox purchase to re-verify end-to-end delivery.
-**Verifies by:** tunnel request counter increments on a sandbox purchase; `/billing` pending state clears to the new tier without a signed synthetic event.
-**Status:** Open
-
 ### 2026-07-20 — Schema: subscription_events needs a monotonic arrival column
 **Source:** session 2026-07-20 billing hardening (PR #361), Codex stop-time review
 **Why:** The webhook staleness guard orders events by `subscription_events.created_at`. That is not a total order — `now()` is transaction-scoped, so two rows written in quick succession share a timestamp. `id` cannot break the tie: it is `gen_random_uuid()`, so ordering on it is a coin flip that can refuse a valid event or accept a stale one. The guard currently treats an equal timestamp as UNKNOWN order and leaves the event unprocessed for retry — fail-safe and self-clearing, but it costs a redelivery round-trip and logs `billing.webhook.ambiguous_order`.
@@ -64,7 +57,7 @@ section to the Done section. Do not delete entries — the trail matters.
 **Why:** You scoped the fix PR to correctness-only. These remain, highest money-risk first: (1) `past_due` grants entitlement with NO time bound, and Razorpay's terminal `halted` maps into it — Razorpay never auto-cancels, so that is free Pro forever; (2) no reconciliation job polls either provider, so the webhook is the only channel with no backstop sweep; (3) paused/`past_due` users are blocked from checkout with no resume or un-cancel path anywhere (BE endpoint and FE control both absent); (4) founding sale #251 charges the $129 promo price but grants Pro without the price lock, with no FE signal; (5) `/billing` renders tier from `workspaces.tier` and price from the latest `subscriptions` row regardless of status, so a canceled Pro shows "Free · $190/yr".
 **How:** Decide which to schedule. (1) needs a dunning deadline value from you (days past `current_period_end` before the grant drops). (3) and (5) touch design-freeze surfaces (D220).
 **Verifies by:** per-item — (1) a `halted` Razorpay sub loses entitlement after the deadline; (5) a canceled Pro renders one consistent state.
-**Status:** Open — (3) and (5) SHIPPED in PR #367 (2026-07-20): `POST /api/billing/resume` + paused-notice with Resume/Cancel closes the resume half of (3) (un-cancel still absent); the plan card now renders only entitlement-backed subscription facts, closing (5). (1), (2), (4) remain.
+**Status:** Open — (3) and (5) SHIPPED in PR #367 (2026-07-20): `POST /api/billing/resume` + paused-notice with Resume/Cancel closes the resume half of (3) (un-cancel still absent); the plan card now renders only entitlement-backed subscription facts, closing (5). (1), (2), (4) remain. 2026-07-21 update — (2) grew a new dependent: D120 scheduled downgrades clear only via the post-renewal `subscription.updated` webhook, so a permanently-dropped renewal event leaves the higher tier granted while the lower price is billed (`scheduled_change_state='scheduled'` never clears), and an ambiguous provider timeout can strand `pending_provider` with only a manual re-request as exit. Both are logged (`billing.plan_change_unconfirmed` / `billing.plan_restore_unconfirmed` WARNs) but only a reconciliation sweep closes them; fold `scheduled_change_state` age checks into the sweep when (2) is scheduled.
 
 <!-- Newest at top. -->
 
@@ -1674,6 +1667,13 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-07-20 — Paddle sandbox webhook destination points at a rotated tunnel hostname
+**Source:** session 2026-07-20 (D117 upgrade-flow smoke)
+**Why:** cloudflared quick tunnels mint a NEW hostname every restart. The prior sandbox destination was dead, so Paddle could not deliver purchase webhooks; the failed smoke also left an orphan active Pro subscription.
+**How:** Point Paddle sandbox notifications at `https://emily-ministry-reviews-know.trycloudflare.com/api/webhooks/billing/paddle` and cancel the orphan sandbox subscription.
+**Verifies by:** Paddle shows the new destination and the orphan subscription is canceled. Final end-to-end purchase smoke remains intentionally deferred until the complete polished billing feature is ready.
+**Status:** Done 2026-07-20 — founder updated the webhook URL and canceled the orphan subscription.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->

@@ -234,6 +234,234 @@ describe('BillingWebhookService.process', () => {
     expect(subRows[0]!.status).toBe('canceled');
   });
 
+  it('keeps the old entitlement for a scheduled downgrade, then promotes it on renewal', async () => {
+    const subscriptionId = 'sub_scheduled_downgrade';
+    const effectiveAt = new Date('2026-07-11T10:00:00.000Z');
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      subscriptionId,
+      eventId: 'evt_sched_1',
+      priceId: TEST_PRICE_IDS.paddle.pro_annual,
+      periodEndsAt: effectiveAt.toISOString(),
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+    await db
+      .update(subscriptions)
+      .set({
+        scheduledTier: 'plus',
+        scheduledBillingCycle: 'monthly',
+        scheduledProviderPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+        scheduledChangeAt: effectiveAt,
+        scheduledChangeState: 'pending_provider',
+        scheduledChangeRequestedAt: new Date('2026-06-20T10:00:00.000Z'),
+      })
+      .where(eq(subscriptions.providerSubscriptionId, subscriptionId));
+
+    const providerAcknowledged = paddleSubscriptionActivated({
+      subscriptionId,
+      eventId: 'evt_sched_2',
+      eventType: 'subscription.updated',
+      priceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      periodEndsAt: effectiveAt.toISOString(),
+    });
+    await service.process(
+      'paddle',
+      paddle.mapWebhookEvent(providerAcknowledged),
+      providerAcknowledged,
+    );
+
+    let [sub] = await db.select().from(subscriptions);
+    let [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(sub).toMatchObject({
+      tier: 'pro',
+      billingCycle: 'annual',
+      providerPriceId: TEST_PRICE_IDS.paddle.pro_annual,
+      scheduledTier: 'plus',
+      scheduledChangeState: 'scheduled',
+    });
+    expect(ws!.tier).toBe('pro');
+
+    const renewed = paddleSubscriptionActivated({
+      subscriptionId,
+      eventId: 'evt_sched_3',
+      eventType: 'subscription.updated',
+      priceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      periodEndsAt: '2026-08-11T10:00:00.000Z',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(renewed), renewed);
+
+    [sub] = await db.select().from(subscriptions);
+    [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(sub).toMatchObject({
+      tier: 'plus',
+      billingCycle: 'monthly',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      scheduledTier: null,
+      scheduledChangeState: null,
+    });
+    expect(ws!.tier).toBe('plus');
+  });
+
+  it('keeps the downgrade mask until the original price restore webhook arrives', async () => {
+    const subscriptionId = 'sub_restore_current';
+    const effectiveAt = new Date('2026-07-11T10:00:00.000Z');
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      subscriptionId,
+      eventId: 'evt_restore_1',
+      priceId: TEST_PRICE_IDS.paddle.pro_annual,
+      periodEndsAt: effectiveAt.toISOString(),
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+    await db
+      .update(subscriptions)
+      .set({
+        scheduledTier: 'plus',
+        scheduledBillingCycle: 'monthly',
+        scheduledProviderPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+        scheduledChangeAt: effectiveAt,
+        scheduledChangeState: 'restoring_current',
+        scheduledChangeRequestedAt: new Date('2026-06-20T10:00:00.000Z'),
+      })
+      .where(eq(subscriptions.providerSubscriptionId, subscriptionId));
+
+    const delayedOldPrice = paddleSubscriptionActivated({
+      subscriptionId,
+      eventId: 'evt_restore_2',
+      eventType: 'subscription.updated',
+      priceId: TEST_PRICE_IDS.paddle.pro_annual,
+      periodEndsAt: effectiveAt.toISOString(),
+      occurredAt: '2026-06-19T10:00:00.000Z',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(delayedOldPrice), delayedOldPrice);
+    let [sub] = await db.select().from(subscriptions);
+    expect(sub).toMatchObject({ tier: 'pro', scheduledChangeState: 'restoring_current' });
+
+    const delayedTarget = paddleSubscriptionActivated({
+      subscriptionId,
+      eventId: 'evt_restore_3',
+      eventType: 'subscription.updated',
+      priceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      periodEndsAt: effectiveAt.toISOString(),
+      occurredAt: '2026-06-20T10:01:00.000Z',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(delayedTarget), delayedTarget);
+    [sub] = await db.select().from(subscriptions);
+    expect(sub).toMatchObject({ tier: 'pro', scheduledChangeState: 'restoring_current' });
+
+    const restored = paddleSubscriptionActivated({
+      subscriptionId,
+      eventId: 'evt_restore_4',
+      eventType: 'subscription.updated',
+      priceId: TEST_PRICE_IDS.paddle.pro_annual,
+      periodEndsAt: effectiveAt.toISOString(),
+      occurredAt: '2026-06-20T10:02:00.000Z',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(restored), restored);
+
+    [sub] = await db.select().from(subscriptions);
+    expect(sub).toMatchObject({
+      tier: 'pro',
+      providerPriceId: TEST_PRICE_IDS.paddle.pro_annual,
+      scheduledChangeState: null,
+      scheduledTier: null,
+    });
+  });
+
+  it('applies the target plan at renewal when an ambiguous restore never reached Paddle', async () => {
+    const subscriptionId = 'sub_restore_failed';
+    const effectiveAt = new Date('2026-07-11T10:00:00.000Z');
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      subscriptionId,
+      eventId: 'evt_restore_failed_1',
+      priceId: TEST_PRICE_IDS.paddle.pro_annual,
+      periodEndsAt: effectiveAt.toISOString(),
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+    await db
+      .update(subscriptions)
+      .set({
+        scheduledTier: 'plus',
+        scheduledBillingCycle: 'monthly',
+        scheduledProviderPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+        scheduledChangeAt: effectiveAt,
+        scheduledChangeState: 'restoring_current',
+        scheduledChangeRequestedAt: new Date('2026-06-20T10:00:00.000Z'),
+      })
+      .where(eq(subscriptions.providerSubscriptionId, subscriptionId));
+
+    const renewedOnTarget = paddleSubscriptionActivated({
+      subscriptionId,
+      eventId: 'evt_restore_failed_2',
+      eventType: 'subscription.updated',
+      priceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      periodEndsAt: '2026-08-11T10:00:00.000Z',
+      occurredAt: '2026-07-11T10:00:01.000Z',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(renewedOnTarget), renewedOnTarget);
+
+    const [sub] = await db.select().from(subscriptions);
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(sub).toMatchObject({
+      tier: 'plus',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      scheduledChangeState: null,
+      scheduledTier: null,
+    });
+    expect(ws?.tier).toBe('plus');
+  });
+
+  it('refuses a delayed target-price webhook after synchronous restore confirmation', async () => {
+    const subscriptionId = 'sub_restore_snapshot';
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      subscriptionId,
+      eventId: 'evt_snapshot_1',
+      priceId: TEST_PRICE_IDS.paddle.pro_annual,
+      occurredAt: '2026-06-20T10:00:00.000Z',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const restoredAt = new Date('2026-06-20T10:03:00.000Z');
+    await db.insert(subscriptionEvents).values({
+      provider: 'paddle',
+      providerEventId: 'local_plan_restore_confirmed_sub_restore_snapshot',
+      eventType: 'local.plan_restore_confirmed',
+      payload: {
+        kind: 'subscription',
+        provider_subscription_id: subscriptionId,
+        provider_price_id: TEST_PRICE_IDS.paddle.pro_annual,
+        status: 'active',
+        occurred_at: restoredAt.toISOString(),
+      },
+      processedAt: restoredAt,
+    });
+
+    const delayedTarget = paddleSubscriptionActivated({
+      subscriptionId,
+      eventId: 'evt_snapshot_2',
+      eventType: 'subscription.updated',
+      priceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      occurredAt: '2026-06-20T10:01:00.000Z',
+    });
+    const outcome = await service.process(
+      'paddle',
+      paddle.mapWebhookEvent(delayedTarget),
+      delayedTarget,
+    );
+
+    expect(outcome).toEqual({ kind: 'ignored' });
+    const [sub] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, subscriptionId));
+    expect(sub).toMatchObject({
+      tier: 'pro',
+      providerPriceId: TEST_PRICE_IDS.paddle.pro_annual,
+    });
+  });
+
   it('past_due keeps the entitlement (dunning grace)', async () => {
     const activate = paddleSubscriptionActivated({ workspaceId, eventId: 'evt_pd_1' });
     await service.process('paddle', paddle.mapWebhookEvent(activate), activate);

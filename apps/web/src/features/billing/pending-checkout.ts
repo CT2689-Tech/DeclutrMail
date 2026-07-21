@@ -37,12 +37,18 @@ export interface PendingCheckout {
    *  changes flip THIS while the tier stays put. Null when there was
    *  no subscription to change (fresh checkout). */
   fromCycle: BillingCycle | null;
+  /** Exact server state that acknowledges this action. */
+  toTier: TierId;
+  toCycle: BillingCycle | null;
   /** Epoch ms of the triggering action. */
   at: number;
 }
 
-/** Exported for the cross-tab `storage`-event filter. */
+/** Prefix only; each workspace owns an independent browser lock. */
 export const PENDING_CHECKOUT_KEY = 'dm.billing.pending-checkout';
+export function pendingCheckoutKey(workspaceId: string): string {
+  return `${PENDING_CHECKOUT_KEY}:${workspaceId}`;
+}
 
 const TIER_IDS: readonly string[] = ['free', 'plus', 'pro', 'team', 'enterprise'];
 const KINDS: readonly string[] = ['checkout', 'change', 'resume'];
@@ -59,7 +65,7 @@ export function readPendingCheckout(workspaceId: string): PendingCheckout | null
   if (typeof window === 'undefined') return null;
   let raw: string | null = null;
   try {
-    raw = window.localStorage.getItem(PENDING_CHECKOUT_KEY);
+    raw = window.localStorage.getItem(pendingCheckoutKey(workspaceId));
   } catch {
     return null; // storage unavailable (privacy mode) — lock degrades to tab-local
   }
@@ -68,7 +74,7 @@ export function readPendingCheckout(workspaceId: string): PendingCheckout | null
   try {
     parsed = JSON.parse(raw);
   } catch {
-    clearPendingCheckout();
+    clearPendingCheckout(workspaceId);
     return null;
   }
   const record = parsed as Partial<PendingCheckout>;
@@ -79,9 +85,12 @@ export function readPendingCheckout(workspaceId: string): PendingCheckout | null
     !TIER_IDS.includes(record.fromTier) ||
     typeof record.kind !== 'string' ||
     !KINDS.includes(record.kind) ||
-    (record.fromCycle !== null && !CYCLES.includes(record.fromCycle as string))
+    (record.fromCycle !== null && !CYCLES.includes(record.fromCycle as string)) ||
+    typeof record.toTier !== 'string' ||
+    !TIER_IDS.includes(record.toTier) ||
+    (record.toCycle !== null && !CYCLES.includes(record.toCycle as string))
   ) {
-    clearPendingCheckout();
+    clearPendingCheckout(workspaceId);
     return null;
   }
   if (record.workspaceId !== workspaceId) return null;
@@ -94,20 +103,30 @@ export function writePendingCheckout(
   kind: PendingKind,
   fromTier: TierId,
   fromCycle: BillingCycle | null,
+  toTier: TierId,
+  toCycle: BillingCycle | null,
 ): PendingCheckout {
-  const record: PendingCheckout = { workspaceId, kind, fromTier, fromCycle, at: Date.now() };
+  const record: PendingCheckout = {
+    workspaceId,
+    kind,
+    fromTier,
+    fromCycle,
+    toTier,
+    toCycle,
+    at: Date.now(),
+  };
   try {
-    window.localStorage.setItem(PENDING_CHECKOUT_KEY, JSON.stringify(record));
+    window.localStorage.setItem(pendingCheckoutKey(workspaceId), JSON.stringify(record));
   } catch {
     // Storage full/unavailable — the in-memory lock still holds this tab.
   }
   return record;
 }
 
-/** The webhook grant landed (or the record went stale) — release. */
-export function clearPendingCheckout(): void {
+/** The webhook grant landed (or the user explicitly released it). */
+export function clearPendingCheckout(workspaceId: string): void {
   try {
-    window.localStorage.removeItem(PENDING_CHECKOUT_KEY);
+    window.localStorage.removeItem(pendingCheckoutKey(workspaceId));
   } catch {
     // Nothing to release if storage is unavailable.
   }

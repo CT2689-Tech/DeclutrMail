@@ -10,16 +10,19 @@
  * the pending-poll state instead of writing the cache.
  */
 
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { BillingSubscription, PlanChangeRequest } from '@declutrmail/shared/contracts';
 
 import { apiPost } from '@/lib/api/client';
+import { billingKeys } from './query-keys';
 
 export function useChangePlan() {
+  const queryClient = useQueryClient();
   return useMutation<BillingSubscription, Error, PlanChangeRequest>({
     mutationFn: async (body) => {
       const envelope = await apiPost<BillingSubscription>('/api/billing/change-plan', body);
       return envelope.data;
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: billingKeys.subscription() }),
   });
 }

@@ -61,10 +61,11 @@ const PRO_SUB: BillingSubscription = {
     tier: 'pro',
     status: 'active',
     cycle: 'monthly',
-    currentPeriodEnd: '2026-07-01T12:00:00.000Z',
+    currentPeriodEnd: '2026-08-15T12:00:00.000Z',
     cancelAtPeriodEnd: false,
     pauseUntil: null,
     foundingMember: false,
+    scheduledChange: null,
   },
 };
 
@@ -161,6 +162,71 @@ export const ProSubscriber: Story<typeof BillingScreen> = {
     frame(makeClient(meFixture('pro', null), PRO_SUB)),
 };
 
+/** Pro remains effective while a Plus downgrade waits for renewal. */
+export const DowngradeScheduled: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('pro', null), {
+        ...PRO_SUB,
+        subscription: PRO_SUB.subscription
+          ? {
+              ...PRO_SUB.subscription,
+              scheduledChange: {
+                tier: 'plus',
+                cycle: 'monthly',
+                effectiveAt: '2026-08-15T12:00:00.000Z',
+                state: 'scheduled',
+              },
+            }
+          : null,
+      }),
+    ),
+};
+
+/** Downgrade requested but the provider hasn't confirmed it yet —
+ *  billing changes stay locked while the marker reconciles. */
+export const DowngradeConfirming: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('pro', null), {
+        ...PRO_SUB,
+        subscription: PRO_SUB.subscription
+          ? {
+              ...PRO_SUB.subscription,
+              scheduledChange: {
+                tier: 'plus',
+                cycle: 'monthly',
+                effectiveAt: '2026-08-15T12:00:00.000Z',
+                state: 'pending_provider',
+              },
+            }
+          : null,
+      }),
+    ),
+};
+
+/** "Keep current plan" requested — restore awaiting Paddle's confirmation,
+ *  with the retry CTA. */
+export const DowngradeRestoring: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('pro', null), {
+        ...PRO_SUB,
+        subscription: PRO_SUB.subscription
+          ? {
+              ...PRO_SUB.subscription,
+              scheduledChange: {
+                tier: 'plus',
+                cycle: 'monthly',
+                effectiveAt: '2026-08-15T12:00:00.000Z',
+                state: 'restoring_current',
+              },
+            }
+          : null,
+      }),
+    ),
+};
+
 /** Founding Pro member — locked-price banner (D126). */
 export const FoundingMember: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
@@ -214,7 +280,29 @@ export const Paused: Story<typeof BillingScreen> = {
               tier: 'plus',
               status: 'paused',
               pauseUntil: '2026-08-03T12:00:00.000Z',
-              currentPeriodEnd: null,
+              currentPeriodEnd: '2026-08-15T12:00:00.000Z',
+            }
+          : null,
+      }),
+    ),
+};
+
+/** Razorpay paused — no self-serve resume promise; support route only
+ *  (no-charge resume semantics unverified for this provider). */
+export const PausedRazorpay: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('free', 0), {
+        tier: 'free',
+        foundingMember: false,
+        subscription: PRO_SUB.subscription
+          ? {
+              ...PRO_SUB.subscription,
+              provider: 'razorpay',
+              tier: 'plus',
+              status: 'paused',
+              pauseUntil: '2026-08-03T12:00:00.000Z',
+              currentPeriodEnd: '2026-08-15T12:00:00.000Z',
             }
           : null,
       }),

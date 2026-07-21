@@ -32,6 +32,8 @@ import type {
   CreateCheckoutInput,
   NormalizedBillingEvent,
   NormalizedSubscription,
+  PlanChangeResult,
+  PlanChangeTiming,
   SignatureVerifyResult,
 } from './billing-provider.interface.js';
 
@@ -225,6 +227,7 @@ export class PaddleAdapter implements BillingProvider {
           headers: {
             Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
+            'Paddle-Version': '1',
           },
           body: JSON.stringify({ effective_from: 'next_billing_period' }),
           signal: AbortSignal.timeout(API_TIMEOUT_MS),
@@ -246,11 +249,15 @@ export class PaddleAdapter implements BillingProvider {
 
   /**
    * PATCH /subscriptions/{id} — swap the single line item to the new
-   * price. `prorated_immediately`: upgrades charge the difference now,
-   * downgrades credit unused time toward future bills; the resulting
-   * `subscription.updated` webhook recomputes the tier (D117/D120).
+   * price. Upgrades use `prorated_immediately`; scheduled downgrades use
+   * `do_not_bill` and pin the existing renewal date. The webhook
+   * projector masks that provider-side item swap until period end.
    */
-  async changePlan(providerSubscriptionId: string, providerPriceId: string): Promise<void> {
+  async changePlan(
+    providerSubscriptionId: string,
+    providerPriceId: string,
+    timing: PlanChangeTiming,
+  ): Promise<PlanChangeResult> {
     const apiKey = this.env.PADDLE_API_KEY;
     if (!apiKey) {
       throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
@@ -264,10 +271,15 @@ export class PaddleAdapter implements BillingProvider {
           headers: {
             Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
+            'Paddle-Version': '1',
           },
           body: JSON.stringify({
             items: [{ price_id: providerPriceId, quantity: 1 }],
-            proration_billing_mode: 'prorated_immediately',
+            proration_billing_mode:
+              timing.kind === 'immediate_prorated' ? 'prorated_immediately' : 'do_not_bill',
+            ...(timing.kind === 'next_period_no_proration'
+              ? { next_billed_at: timing.effectiveAt }
+              : {}),
           }),
           signal: AbortSignal.timeout(API_TIMEOUT_MS),
         },
@@ -282,7 +294,31 @@ export class PaddleAdapter implements BillingProvider {
       this.logger.error(
         `paddle.change_plan.failed sub=${providerSubscriptionId} status=${res.status}`,
       );
-      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      throw new AppException({
+        code: 'BILLING_PROVIDER_ERROR',
+        ...(res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429
+          ? { details: { providerOutcome: 'definitive' } }
+          : {}),
+      });
+    }
+    // A successful PATCH returns the updated subscription. This lets
+    // the service reconcile a restore even if its webhook is delayed
+    // or lost. Malformed success bodies remain explicitly unconfirmed.
+    try {
+      const body = (await res.json()) as {
+        data?: {
+          updated_at?: unknown;
+          items?: Array<{ price?: { id?: unknown } }>;
+        };
+      };
+      const returnedPriceId = body.data?.items?.[0]?.price?.id;
+      const updatedAt = body.data?.updated_at;
+      return {
+        providerPriceId: typeof returnedPriceId === 'string' ? returnedPriceId : null,
+        providerUpdatedAt: typeof updatedAt === 'string' ? updatedAt : null,
+      };
+    } catch {
+      return { providerPriceId: null, providerUpdatedAt: null };
     }
   }
 
@@ -301,8 +337,12 @@ export class PaddleAdapter implements BillingProvider {
           headers: {
             Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
+            'Paddle-Version': '1',
           },
-          body: JSON.stringify({ effective_from: 'immediately' }),
+          body: JSON.stringify({
+            effective_from: 'immediately',
+            on_resume: 'continue_existing_billing_period',
+          }),
           signal: AbortSignal.timeout(API_TIMEOUT_MS),
         },
       );
@@ -313,6 +353,16 @@ export class PaddleAdapter implements BillingProvider {
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     if (!res.ok) {
+      let providerCode: string | null = null;
+      try {
+        const body = (await res.clone().json()) as { error?: { code?: unknown } };
+        providerCode = typeof body.error?.code === 'string' ? body.error.code : null;
+      } catch {
+        // Non-JSON provider error; the generic mapping below remains truthful.
+      }
+      if (providerCode === 'subscription_continuing_existing_billing_period_not_allowed') {
+        throw new AppException({ code: 'RESUME_PERIOD_ENDED' });
+      }
       this.logger.error(`paddle.resume.failed sub=${providerSubscriptionId} status=${res.status}`);
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }

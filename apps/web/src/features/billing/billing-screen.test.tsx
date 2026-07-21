@@ -59,7 +59,7 @@ import { launchCheckout, type CheckoutEvents } from './checkout';
 import type { BillingIntent } from './billing-intent';
 import { annualMonthsFree, planPriceLabel } from './billing-model';
 import { BillingScreen } from './billing-screen';
-import { PENDING_CHECKOUT_KEY, writePendingCheckout } from './pending-checkout';
+import { pendingCheckoutKey, writePendingCheckout } from './pending-checkout';
 
 const FREE_BODY: BillingSubscription = { tier: 'free', foundingMember: false, subscription: null };
 
@@ -72,6 +72,7 @@ const SUB: NonNullable<BillingSubscription['subscription']> = {
   cancelAtPeriodEnd: false,
   pauseUntil: null,
   foundingMember: false,
+  scheduledChange: null,
 };
 
 const PRO_SUB: BillingSubscription = { tier: 'pro', foundingMember: false, subscription: SUB };
@@ -388,6 +389,47 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(launchCheckout).not.toHaveBeenCalled();
   });
 
+  it('keeps the confirm panel open with a retryable error when the provider window fails', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          jsonOk({
+            data: {
+              provider: 'paddle',
+              kind: 'overlay',
+              priceId: 'pri_test_123',
+              clientToken: 'test_client_token',
+              environment: 'sandbox',
+              customData: {
+                workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff',
+                sig: 'test-sig',
+              },
+            },
+          }),
+      },
+    ]);
+    vi.mocked(launchCheckout).mockRejectedValueOnce(new Error('script blocked'));
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = screen.getByTestId('checkout-panel');
+    fireEvent.click(
+      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+      'The secure checkout window could not be opened. Nothing was charged',
+    );
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+  });
+
   it('payment processing: checkout.completed shows the truthful pending state; only the polled server tier clears it', async () => {
     // The subscription read flips ONLY when "the webhook lands" — the
     // test controls that moment through this mutable body.
@@ -442,7 +484,10 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     // "Webhook lands": the server now reports pro — the immediate
     // post-completion refetch picks it up and the pending state clears.
-    subscriptionBody = PRO_SUB;
+    subscriptionBody = {
+      ...PRO_SUB,
+      subscription: PRO_SUB.subscription ? { ...PRO_SUB.subscription, cycle: 'annual' } : null,
+    };
     act(() => capturedCheckoutEvents().onCompleted?.());
     await waitFor(() =>
       expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
@@ -584,7 +629,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
   it('the pending lock survives a reload: a stored record locks a fresh mount', async () => {
     // "Reload" = a fresh mount finding the persisted record (the mock
     // me fixture's workspace id is 'w').
-    writePendingCheckout('w', 'checkout', 'free', null);
+    writePendingCheckout('w', 'checkout', 'free', null, 'plus', 'monthly');
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
 
@@ -593,12 +638,15 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
   });
 
   it("another workspace's pending record does not lock this one", async () => {
-    writePendingCheckout('someone-elses-workspace', 'checkout', 'free', null);
+    writePendingCheckout('someone-elses-workspace', 'checkout', 'free', null, 'plus', 'monthly');
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
 
     expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    expect(
+      window.localStorage.getItem(pendingCheckoutKey('someone-elses-workspace')),
+    ).not.toBeNull();
   });
 
   it('an old unconfirmed record still LOCKS — released only by the user confirming no charge', async () => {
@@ -606,12 +654,14 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // NOT silently expire (that would reopen the double-charge window
     // for exactly the user whose webhook is delayed).
     window.localStorage.setItem(
-      PENDING_CHECKOUT_KEY,
+      pendingCheckoutKey('w'),
       JSON.stringify({
         workspaceId: 'w',
         kind: 'checkout',
         fromTier: 'free',
         fromCycle: null,
+        toTier: 'plus',
+        toCycle: 'monthly',
         at: Date.now() - 16 * 60_000,
       }),
     );
@@ -633,13 +683,13 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     const releaseConfirm = within(notice).getByTestId('release-confirm');
     expect(releaseConfirm).toHaveTextContent(/you could be charged twice/i);
     expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
-    expect(window.localStorage.getItem(PENDING_CHECKOUT_KEY)).not.toBeNull();
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
 
     // "Keep waiting" backs out without releasing anything.
     fireEvent.click(within(releaseConfirm).getByRole('button', { name: 'Keep waiting' }));
     expect(within(notice).queryByTestId('release-confirm')).not.toBeInTheDocument();
-    expect(window.localStorage.getItem(PENDING_CHECKOUT_KEY)).not.toBeNull();
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
 
     // Only the confirmed assertion releases the lock.
     fireEvent.click(
@@ -650,7 +700,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     );
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
-    expect(window.localStorage.getItem(PENDING_CHECKOUT_KEY)).toBeNull();
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
   });
 
   it('a payment completed in ANOTHER tab locks this one live (storage event)', async () => {
@@ -659,11 +709,11 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
 
     // Another tab writes the record; the browser fires `storage` here.
-    const record = writePendingCheckout('w', 'checkout', 'free', null);
+    const record = writePendingCheckout('w', 'checkout', 'free', null, 'plus', 'monthly');
     act(() => {
       window.dispatchEvent(
         new StorageEvent('storage', {
-          key: PENDING_CHECKOUT_KEY,
+          key: pendingCheckoutKey('w'),
           newValue: JSON.stringify(record),
         }),
       );
@@ -857,9 +907,9 @@ describe('BillingScreen — paid subscriber', () => {
     const panel = screen.getByTestId('change-plan-panel');
     expect(within(panel).getByText('Preview · before anything changes')).toBeInTheDocument();
     expect(within(panel).getByText(/Plus \(monthly\) → Pro \(annual\)/)).toBeInTheDocument();
-    expect(within(panel).getByText(/no new checkout/i)).toBeInTheDocument();
+    expect(within(panel).getByText(/existing payment method/i)).toBeInTheDocument();
 
-    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm plan change' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
     await waitFor(() => expect(changeBody).toEqual({ tierId: 'pro', cycle: 'annual' }));
 
     // The change is pending until the webhook lands: truthful banner,
@@ -869,6 +919,60 @@ describe('BillingScreen — paid subscriber', () => {
     );
     expect(within(screen.getByTestId('current-plan-card')).getByText('Plus')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Switch to/ })).not.toBeInTheDocument();
+  });
+
+  it('Pro→Plus schedules the downgrade without a charge or a weeks-long processing lock', async () => {
+    mockTier = 'pro';
+    const scheduled: BillingSubscription = {
+      ...PRO_SUB,
+      subscription: PRO_SUB.subscription
+        ? {
+            ...PRO_SUB.subscription,
+            scheduledChange: {
+              tier: 'plus',
+              cycle: 'annual',
+              effectiveAt: SUB.currentPeriodEnd!,
+              state: 'scheduled',
+            },
+          }
+        : null,
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PRO_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: async (req) => {
+          const body = (await req.json()) as { tierId?: string; cycle?: string };
+          return jsonOk({
+            data: body.tierId === 'pro' && body.cycle === 'monthly' ? PRO_SUB : scheduled,
+          });
+        },
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
+    const panel = screen.getByTestId('change-plan-panel');
+    expect(panel).toHaveTextContent('$0 today');
+    expect(panel).toHaveTextContent('no refund or credit');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Schedule downgrade' }));
+
+    const notice = await screen.findByTestId('scheduled-plan-change-notice');
+    expect(notice).toHaveTextContent('Downgrade scheduled for Jul 1, 2026');
+    expect(notice).toHaveTextContent('Pro features stay active');
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
+
+    fireEvent.click(within(notice).getByRole('button', { name: 'Keep current plan instead' }));
+    await waitFor(() =>
+      expect(screen.queryByTestId('scheduled-plan-change-notice')).not.toBeInTheDocument(),
+    );
+    expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
   });
 
   it('a Razorpay subscriber gets the honest support route, never the failing confirm', async () => {
@@ -912,7 +1016,7 @@ describe('BillingScreen — paid subscriber', () => {
     const pausedBody: BillingSubscription = {
       tier: 'free',
       foundingMember: false,
-      subscription: { ...SUB, tier: 'plus', status: 'paused', currentPeriodEnd: null },
+      subscription: { ...SUB, tier: 'plus', status: 'paused' },
     };
     installFetchStub([
       {
@@ -952,7 +1056,12 @@ describe('BillingScreen — paid subscriber', () => {
     // Plan changes stay locked while paused.
     expect(screen.queryByRole('button', { name: /Upgrade to|Switch to/ })).not.toBeInTheDocument();
 
-    fireEvent.click(within(notice).getByRole('button', { name: 'Resume Plus' }));
+    fireEvent.click(within(notice).getByRole('button', { name: 'Review resume' }));
+    const resumePanel = within(notice).getByTestId('resume-confirm-panel');
+    expect(resumePanel).toHaveTextContent('$0 is due today');
+    expect(resumePanel).toHaveTextContent('through Jul 1, 2026');
+    expect(resumed).toBe(false);
+    fireEvent.click(within(resumePanel).getByRole('button', { name: 'Confirm resume Plus' }));
     await waitFor(() => expect(resumed).toBe(true));
     expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
       'Resume accepted — confirming your plan.',

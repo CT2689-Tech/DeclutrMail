@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import { Button, Eyebrow, tokens } from '@declutrmail/shared';
@@ -67,7 +67,7 @@ export function PlanPicker({
   initialIntent = null,
   onRequestCancel,
   onPaymentCompleted,
-  onPlanChangeStarted,
+  onPlanChangeAccepted,
 }: {
   currentTier: TierId;
   /** The latest provider subscription record (screen's read), or null. */
@@ -81,10 +81,10 @@ export function PlanPicker({
   /** Paddle overlay reported `checkout.completed` — payment made, tier
    *  grant pending the webhook. The screen owns the truthful pending
    *  state; this component only reports the provider fact. */
-  onPaymentCompleted: () => void;
+  onPaymentCompleted: (target: PaidTier, cycle: BillingCycle) => void;
   /** The change-plan endpoint accepted the switch — the screen enters
    *  the pending state until the webhook lands. */
-  onPlanChangeStarted: () => void;
+  onPlanChangeAccepted: (next: BillingSubscription, target: PaidTier, cycle: BillingCycle) => void;
 }) {
   const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
   const [selected, setSelected] = useState<StripTierId | null>(null);
@@ -94,6 +94,8 @@ export function PlanPicker({
   );
   const checkout = useCheckout();
   const changePlan = useChangePlan();
+  const [launchError, setLaunchError] = useState<string | null>(null);
+  const consumedIntent = useRef(false);
 
   // A subscription that GRANTS (active/past_due) routes paid targets
   // through the change-plan endpoint; anything else (none, canceled,
@@ -108,7 +110,10 @@ export function PlanPicker({
   // the confirm panel directly (the deep link IS the plan click).
   const intentPlan = initialIntent?.plan ?? null;
   useEffect(() => {
-    if (intentPlan && !disabled) setSelected(intentPlan);
+    if (intentPlan && !disabled && !consumedIntent.current) {
+      consumedIntent.current = true;
+      setSelected(intentPlan);
+    }
   }, [intentPlan, disabled]);
 
   const foundingEligible = selected === 'pro' && cycle === 'annual' && grantingSub === null;
@@ -120,6 +125,7 @@ export function PlanPicker({
     setSelected(null);
     checkout.reset();
     changePlan.reset();
+    setLaunchError(null);
   }
 
   function onSelect(id: StripTierId) {
@@ -130,11 +136,13 @@ export function PlanPicker({
     if (id === currentTier && grantingSub?.provider !== 'paddle') return;
     checkout.reset();
     changePlan.reset();
+    setLaunchError(null);
     setSelected((prev) => (prev === id ? null : id));
   }
 
   function onConfirm(target: PaidTier) {
     if (checkout.isPending) return;
+    setLaunchError(null);
     void track('checkout_started', {
       tier: target,
       cycle,
@@ -150,13 +158,18 @@ export function PlanPicker({
             // and hand the screen the truthful pending state.
             onCompleted: () => {
               closePanel();
-              onPaymentCompleted();
+              onPaymentCompleted(target, cycle);
             },
           }).then(
             () => undefined,
             // Provider script failed to load — keep the panel open with
             // an honest retryable message.
-            () => checkout.reset(),
+            () => {
+              checkout.reset();
+              setLaunchError(
+                'The secure checkout window could not be opened. Nothing was charged — please try again.',
+              );
+            },
           );
         },
       },
@@ -169,9 +182,9 @@ export function PlanPicker({
     changePlan.mutate(
       { tierId: target, cycle },
       {
-        onSuccess: () => {
+        onSuccess: (next) => {
           closePanel();
-          onPlanChangeStarted();
+          onPlanChangeAccepted(next, target, cycle);
         },
       },
     );
@@ -240,6 +253,7 @@ export function PlanPicker({
               cycle={cycle}
               fromTier={grantingSub.tier}
               fromCycle={grantingSub.cycle}
+              currentPeriodEnd={grantingSub.currentPeriodEnd}
               isPending={changePlan.isPending}
               errorMessage={changePlan.error ? checkoutErrorMessage(changePlan.error) : null}
               onConfirm={() => onConfirmChange(selected)}
@@ -258,7 +272,7 @@ export function PlanPicker({
             claimFounding={claimFounding}
             onClaimFoundingChange={setClaimFounding}
             isPending={checkout.isPending}
-            errorMessage={errorMessage}
+            errorMessage={launchError ?? errorMessage}
             onConfirm={() => onConfirm(selected)}
             onDismiss={closePanel}
           />
@@ -522,6 +536,7 @@ function ChangePlanPanel({
   cycle,
   fromTier,
   fromCycle,
+  currentPeriodEnd,
   isPending,
   errorMessage,
   onConfirm,
@@ -531,6 +546,7 @@ function ChangePlanPanel({
   cycle: BillingCycle;
   fromTier: PaidTier;
   fromCycle: BillingCycle;
+  currentPeriodEnd: string | null;
   isPending: boolean;
   errorMessage: string | null;
   onConfirm: () => void;
@@ -538,6 +554,10 @@ function ChangePlanPanel({
 }) {
   const toLabel = planPriceLabel(target, cycle);
   const samePlan = target === fromTier && cycle === fromCycle;
+  const isDowngrade =
+    (fromTier === 'pro' && target === 'plus') ||
+    (fromTier === target && fromCycle === 'annual' && cycle === 'monthly');
+  const effectiveDate = formatBillingDate(currentPeriodEnd);
   return (
     <div
       data-testid="change-plan-panel"
@@ -563,14 +583,31 @@ function ChangePlanPanel({
               {TIER_MANIFEST[fromTier].name} ({fromCycle}) → {TIER_MANIFEST[target].name} ({cycle})
             </strong>
             {toLabel ? (
-              <span style={{ color: color.fgSoft }}> — {toLabel} from now on.</span>
+              <span style={{ color: color.fgSoft }}>
+                {' '}
+                — {toLabel}{' '}
+                {isDowngrade
+                  ? effectiveDate
+                    ? `from ${effectiveDate}.`
+                    : 'from your next renewal.'
+                  : 'from now on.'}
+              </span>
             ) : null}
           </p>
-          <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
-            The switch applies right away on your existing payment method — no new checkout.
-            Upgrades charge the prorated difference for the rest of this period; downgrades credit
-            unused time toward future bills.
-          </p>
+          {isDowngrade ? (
+            <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
+              <strong style={{ fontWeight: 600, color: color.fg }}>$0 today.</strong> Your current
+              plan stays active
+              {effectiveDate ? ` through ${effectiveDate}` : ' through this billing period'}, then{' '}
+              {TIER_MANIFEST[target].name} ({cycle}) begins. There is no refund or credit for the
+              period you already paid for.
+            </p>
+          ) : (
+            <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
+              The upgrade applies after your payment provider confirms it, using your existing
+              payment method. The prorated difference for the rest of this period is charged now.
+            </p>
+          )}
           <p style={{ margin: 0, fontSize: 11.5, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
         </>
       )}
@@ -593,7 +630,13 @@ function ChangePlanPanel({
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Button tone="primary" onClick={onConfirm} disabled={isPending || samePlan}>
-          {isPending ? 'Applying…' : 'Confirm plan change'}
+          {isPending
+            ? isDowngrade
+              ? 'Scheduling…'
+              : 'Applying…'
+            : isDowngrade
+              ? 'Schedule downgrade'
+              : 'Confirm upgrade'}
         </Button>
         <Button tone="default" onClick={onDismiss} disabled={isPending}>
           Keep current plan
