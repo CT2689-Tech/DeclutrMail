@@ -99,8 +99,10 @@ export function PlanPicker({
    *  cannot leave an armed retry with an unknown outcome. */
   onPlanChangeAttempt: (target: PaidTier, cycle: BillingCycle) => void;
   /** The failure is KNOWN (definitive rejection / non-provider error —
-   *  nothing applied, nothing charged): release the attempt lock. */
-  onPlanChangeFailedKnown: () => void;
+   *  nothing applied, nothing charged): release the attempt lock. The
+   *  target identifies WHICH attempt — the screen releases only a lock
+   *  matching it, never a concurrent attempt's unresolved lock. */
+  onPlanChangeFailedKnown: (target: PaidTier, cycle: BillingCycle) => void;
 }) {
   const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
   const [selected, setSelected] = useState<StripTierId | null>(null);
@@ -132,6 +134,20 @@ export function PlanPicker({
     }
   }, [intentPlan, disabled]);
 
+  // A lock landing mid-session (pending action started in THIS tab or
+  // ANOTHER via the storage event) must disarm any already-open confirm
+  // panel — an open panel's Confirm is a charge-capable control and may
+  // not outlive the lock that says a money outcome is unresolved.
+  useEffect(() => {
+    if (disabled && selected !== null) {
+      setSelected(null);
+      checkout.reset();
+      changePlan.reset();
+      setLaunchError(null);
+    }
+    // Reset fns are referentially stable — deps stay minimal on purpose.
+  }, [disabled, selected]);
+
   const foundingEligible = selected === 'pro' && cycle === 'annual' && grantingSub === null;
   const founding = foundingEligible && claimFounding;
   const errorMessage = checkoutErrorMessage(checkout.error);
@@ -157,7 +173,9 @@ export function PlanPicker({
   }
 
   function onConfirm(target: PaidTier) {
-    if (checkout.isPending) return;
+    // `disabled` re-checked at fire time: a lock can land between the
+    // panel opening and this click (cross-tab storage event race).
+    if (disabled || checkout.isPending) return;
     setLaunchError(null);
     void track('checkout_started', {
       tier: target,
@@ -193,7 +211,9 @@ export function PlanPicker({
   }
 
   function onConfirmChange(target: PaidTier) {
-    if (changePlan.isPending) return;
+    // `disabled` re-checked at fire time: a lock can land between the
+    // panel opening and this click (cross-tab storage event race).
+    if (disabled || changePlan.isPending) return;
     void track('plan_change_started', { tier: target, cycle, from_tier: currentTier });
     const from = grantingSub;
     // Pessimistic lock BEFORE the money-moving request: if this tab
@@ -225,7 +245,7 @@ export function PlanPicker({
             closePanel();
             onPlanChangeUnconfirmed(target, cycle);
           } else {
-            onPlanChangeFailedKnown();
+            onPlanChangeFailedKnown(target, cycle);
           }
         },
       },

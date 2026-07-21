@@ -1078,6 +1078,44 @@ describe('BillingScreen — paid subscriber', () => {
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
   });
 
+  it('a lock landing from ANOTHER tab disarms an already-open confirm panel', async () => {
+    // The open panel's Confirm is charge-capable — it must not outlive
+    // a lock that says a money outcome elsewhere is unresolved.
+    mockTier = 'plus';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    expect(screen.getByTestId('change-plan-panel')).toBeInTheDocument();
+
+    const record = writePendingCheckout(
+      'w',
+      'change_unconfirmed',
+      'plus',
+      'monthly',
+      'pro',
+      'annual',
+    );
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: pendingCheckoutKey('w'),
+          newValue: JSON.stringify(record),
+        }),
+      );
+    });
+
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('button', { name: /Switch to|Confirm upgrade/ })).toHaveLength(0);
+  });
+
   it('a provider error on a $0 deferred downgrade stays inline — retry is charge-free', async () => {
     mockTier = 'pro';
     installFetchStub([
