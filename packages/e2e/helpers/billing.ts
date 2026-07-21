@@ -64,6 +64,17 @@ export function paddleSignatureHeader(rawBody: string, secret: string, nowMs = D
   return `ts=${ts};h1=${h1}`;
 }
 
+/**
+ * `custom_data` attribution signature — mirrors
+ * `paddle.adapter.ts#attributionSignature` EXACTLY (the checkout
+ * server signs the workspace id so the webhook can refuse forged
+ * attribution; unsigned custom_data is discarded and the event is
+ * left unresolved). Keyed on the same PADDLE_WEBHOOK_SECRET.
+ */
+export function paddleAttributionSig(workspaceId: string, secret: string): string {
+  return createHmac('sha256', secret).update(`paddle:workspace:${workspaceId}`).digest('hex');
+}
+
 /** Per-run unique provider ids so dedup only fires when WE replay. */
 export function paddleRunIds(): { eventId: string; subscriptionId: string; customerId: string } {
   const nonce = randomUUID().replaceAll('-', '').slice(0, 20);
@@ -91,6 +102,12 @@ export function paddleSubscriptionActivated(args: {
   workspaceId: string;
   /** ISO timestamp the current period ends (drives /billing renewal). */
   periodEndsAt: string;
+  /**
+   * Secret the api's PADDLE_WEBHOOK_SECRET was booted with — signs the
+   * `custom_data` attribution blob (unsigned attribution is discarded
+   * and the event 503s BILLING_WEBHOOK_UNRESOLVED).
+   */
+  attributionSecret: string;
 }): Record<string, unknown> {
   return {
     event_id: args.eventId,
@@ -108,7 +125,10 @@ export function paddleSubscriptionActivated(args: {
       scheduled_change: null,
       canceled_at: null,
       paused_at: null,
-      custom_data: { workspace_id: args.workspaceId },
+      custom_data: {
+        workspace_id: args.workspaceId,
+        sig: paddleAttributionSig(args.workspaceId, args.attributionSecret),
+      },
     },
   };
 }

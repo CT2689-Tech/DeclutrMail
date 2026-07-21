@@ -208,7 +208,9 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   const preview = page.getByRole('dialog');
   await expect(preview).toBeVisible();
   await expect(preview).toContainText('Preview · before anything changes');
-  const confirm = preview.getByRole('button', { name: /Archive \d/ });
+  // Confirm button reads "📥 Archive ⌘⏎" (count moved into the match
+  // line) — match the verb, not a stale "Archive <n>" shape.
+  const confirm = preview.getByRole('button', { name: /Archive/ });
   await expect(confirm).toBeEnabled();
   await confirm.click();
 
@@ -258,6 +260,9 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
     priceId: BILLING_E2E_ENV.proMonthlyPriceId,
     workspaceId: BILLING_SEED.workspaceId,
     periodEndsAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+    // Attribution rides custom_data and must be SIGNED (paddle.adapter
+    // verifiedWorkspaceId) — unsigned attribution is discarded.
+    attributionSecret: BILLING_E2E_ENV.webhookSecret,
   });
 
   // 3a. Tampered signature → 401, and NOTHING changed (the door is
