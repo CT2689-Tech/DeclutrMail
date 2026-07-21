@@ -144,6 +144,14 @@ export const BillingSubscriptionSchema = z.object({
       cancelAtPeriodEnd: z.boolean(),
       pauseUntil: z.iso.datetime().nullable(),
       foundingMember: z.boolean(),
+      scheduledChange: z
+        .object({
+          tier: PurchasableTierSchema,
+          cycle: BillingCycleSchema,
+          effectiveAt: z.iso.datetime(),
+          state: z.enum(['pending_provider', 'scheduled', 'restoring_current']),
+        })
+        .nullable(),
     })
     .nullable(),
 });
@@ -159,3 +167,17 @@ export const CancelRequestSchema = z.object({
     .optional(),
 });
 export type CancelRequest = z.infer<typeof CancelRequestSchema>;
+
+/**
+ * POST /api/billing/change-plan request body (D117/D120 — self-serve
+ * paid↔paid switching). The change is applied on the EXISTING provider
+ * subscription. Upgrades apply immediately with provider proration.
+ * Downgrades are recorded locally for the current period end; no
+ * immediate charge, credit, or entitlement loss. No `provider` field:
+ * the change rides the subscription's existing provider.
+ */
+export const PlanChangeRequestSchema = z.object({
+  tierId: PurchasableTierSchema,
+  cycle: BillingCycleSchema,
+});
+export type PlanChangeRequest = z.infer<typeof PlanChangeRequestSchema>;

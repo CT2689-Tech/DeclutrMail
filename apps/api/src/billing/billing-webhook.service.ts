@@ -325,6 +325,7 @@ export class BillingWebhookService {
     // first receipt and preserved across retries) is the ordering
     // truth: providers give no reliable monotonic sequence, and
     // `occurred_at` lives only inside the audit payload.
+    let appliedTier: 'free' | 'plus' | 'pro' | 'team' | 'enterprise' = entry.tierId;
     const outcome = await this.db.transaction(async (tx) => {
       await this.lockSubscription(tx, provider, sub.providerSubscriptionId);
 
@@ -450,7 +451,19 @@ export class BillingWebhookService {
       // that arrives AFTER the cancel — nothing in the event stream
       // marks it older, yet it must not move the row out of canceled.
       const [current] = await tx
-        .select({ status: subscriptions.status })
+        .select({
+          status: subscriptions.status,
+          tier: subscriptions.tier,
+          billingCycle: subscriptions.billingCycle,
+          providerPriceId: subscriptions.providerPriceId,
+          currentPeriodEnd: subscriptions.currentPeriodEnd,
+          scheduledTier: subscriptions.scheduledTier,
+          scheduledBillingCycle: subscriptions.scheduledBillingCycle,
+          scheduledProviderPriceId: subscriptions.scheduledProviderPriceId,
+          scheduledChangeAt: subscriptions.scheduledChangeAt,
+          scheduledChangeState: subscriptions.scheduledChangeState,
+          scheduledChangeRequestedAt: subscriptions.scheduledChangeRequestedAt,
+        })
         .from(subscriptions)
         .where(
           and(
@@ -469,6 +482,68 @@ export class BillingWebhookService {
           .where(eq(subscriptionEvents.id, eventRowId));
         return { kind: 'ignored' } as const;
       }
+
+      // D120 scheduled downgrade. Paddle updates the subscription item
+      // immediately even with `do_not_bill`; until the provider advances
+      // the period beyond our stored effective date, that target price is
+      // only a billing schedule — it must not revoke current access.
+      const incomingPeriodEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
+      const matchesScheduledTarget =
+        current?.scheduledChangeState != null &&
+        current?.scheduledProviderPriceId === sub.providerPriceId;
+      const scheduledChangeApplied =
+        matchesScheduledTarget &&
+        current?.scheduledChangeState !== 'restoring_current' &&
+        current?.scheduledChangeAt !== null &&
+        incomingPeriodEnd !== null &&
+        incomingPeriodEnd.getTime() > current.scheduledChangeAt.getTime();
+      const restoreConfirmed =
+        current?.scheduledChangeState === 'restoring_current' &&
+        current.providerPriceId === sub.providerPriceId &&
+        current.scheduledChangeRequestedAt !== null &&
+        selfMs !== null &&
+        selfMs >= current.scheduledChangeRequestedAt.getTime();
+      // If an ambiguous restore never reached Paddle, the target item
+      // eventually renews. That post-boundary provider snapshot is
+      // authoritative: do not keep granting the old tier after the
+      // customer has actually renewed on the lower plan.
+      const restoreFailedAtRenewal =
+        current?.scheduledChangeState === 'restoring_current' &&
+        matchesScheduledTarget &&
+        current.scheduledChangeAt !== null &&
+        incomingPeriodEnd !== null &&
+        incomingPeriodEnd.getTime() > current.scheduledChangeAt.getTime() &&
+        current.scheduledChangeRequestedAt !== null &&
+        selfMs !== null &&
+        selfMs >= current.scheduledChangeRequestedAt.getTime();
+      const maskRestoreInFlight =
+        current?.scheduledChangeState === 'restoring_current' &&
+        !restoreConfirmed &&
+        !restoreFailedAtRenewal;
+      const maskScheduledDowngrade =
+        ((matchesScheduledTarget && !scheduledChangeApplied && !restoreFailedAtRenewal) ||
+          maskRestoreInFlight) &&
+        sub.status !== 'canceled';
+      const effectiveTier = maskScheduledDowngrade && current ? current.tier : entry.tierId;
+      appliedTier = effectiveTier;
+      const effectiveCycle = maskScheduledDowngrade && current ? current.billingCycle : entry.cycle;
+      const effectiveProviderPriceId =
+        maskScheduledDowngrade && current ? current.providerPriceId : sub.providerPriceId;
+      const clearScheduledChange =
+        scheduledChangeApplied ||
+        restoreConfirmed ||
+        restoreFailedAtRenewal ||
+        sub.status === 'canceled';
+      const nextScheduledChangeState = clearScheduledChange
+        ? null
+        : matchesScheduledTarget && current?.scheduledChangeState === 'pending_provider'
+          ? 'scheduled'
+          : current?.scheduledChangeState;
+      // Paddle nulls `current_billing_period` while paused, but its
+      // no-charge resume option depends on the retained period. Keep the
+      // last known end locally so the UI can explain the continuity.
+      const effectivePeriodEnd =
+        incomingPeriodEnd ?? (sub.status === 'paused' ? (current?.currentPeriodEnd ?? null) : null);
 
       // Customer record (webhook hot path resolves workspace from it).
       if (sub.providerCustomerId) {
@@ -519,11 +594,11 @@ export class BillingWebhookService {
           workspaceId,
           provider,
           providerSubscriptionId: sub.providerSubscriptionId,
-          tier: entry.tierId,
+          tier: effectiveTier,
           status: sub.status,
-          providerPriceId: sub.providerPriceId,
-          billingCycle: entry.cycle,
-          currentPeriodEnd: sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null,
+          providerPriceId: effectiveProviderPriceId,
+          billingCycle: effectiveCycle,
+          currentPeriodEnd: effectivePeriodEnd,
           cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
           pauseUntil: sub.pauseUntil ? new Date(sub.pauseUntil) : null,
           foundingMember: founding,
@@ -531,11 +606,11 @@ export class BillingWebhookService {
         .onConflictDoUpdate({
           target: [subscriptions.provider, subscriptions.providerSubscriptionId],
           set: {
-            tier: entry.tierId,
+            tier: effectiveTier,
             status: sub.status,
-            providerPriceId: sub.providerPriceId,
-            billingCycle: entry.cycle,
-            currentPeriodEnd: sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null,
+            providerPriceId: effectiveProviderPriceId,
+            billingCycle: effectiveCycle,
+            currentPeriodEnd: effectivePeriodEnd,
             // KNOWN GAP (2026-07-20): a refund/chargeback sets this
             // flag locally, and the next renewal event overwrites it
             // back to false — the user keeps entitlement they were
@@ -549,6 +624,16 @@ export class BillingWebhookService {
             cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
             pauseUntil: sub.pauseUntil ? new Date(sub.pauseUntil) : null,
             foundingMember: founding,
+            scheduledTier: clearScheduledChange ? null : current?.scheduledTier,
+            scheduledBillingCycle: clearScheduledChange ? null : current?.scheduledBillingCycle,
+            scheduledProviderPriceId: clearScheduledChange
+              ? null
+              : current?.scheduledProviderPriceId,
+            scheduledChangeAt: clearScheduledChange ? null : current?.scheduledChangeAt,
+            scheduledChangeState: nextScheduledChangeState,
+            scheduledChangeRequestedAt: clearScheduledChange
+              ? null
+              : current?.scheduledChangeRequestedAt,
             updatedAt: new Date(),
           },
         });
@@ -572,10 +657,10 @@ export class BillingWebhookService {
           ? 'subscription_created'
           : 'subscription_updated';
     this.logger.log(
-      `billing_event kind=${kind} tier=${entry.tierId} provider=${provider} status=${sub.status} workspace=${workspaceId}`,
+      `billing_event kind=${kind} tier=${appliedTier} provider=${provider} status=${sub.status} workspace=${workspaceId}`,
     );
     this.logger.log(
-      `billing.subscription_changed workspace=${workspaceId} tier=${entry.tierId} status=${sub.status} provider=${provider} founding=${entry.founding}`,
+      `billing.subscription_changed workspace=${workspaceId} tier=${appliedTier} status=${sub.status} provider=${provider} founding=${entry.founding}`,
     );
     return { kind: 'processed', effect: `subscription:${sub.status}` };
   }

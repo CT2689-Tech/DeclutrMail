@@ -28,6 +28,16 @@ export interface CreateCheckoutInput {
   providerPriceId: string;
 }
 
+export type PlanChangeTiming =
+  { kind: 'immediate_prorated' } | { kind: 'next_period_no_proration'; effectiveAt: string };
+
+export interface PlanChangeResult {
+  /** Price reported after applying the mutation; null when the response cannot confirm it. */
+  providerPriceId: string | null;
+  /** Provider mutation time, used to order delayed webhooks after local reconciliation. */
+  providerUpdatedAt: string | null;
+}
+
 /**
  * The domain effect of one verified webhook event, normalized across
  * providers. `kind` drives the BillingWebhookService switch:
@@ -123,6 +133,24 @@ export interface BillingProvider {
 
   /** Cancel at period end (D118 — never immediate, no proration). */
   cancelSubscription(providerSubscriptionId: string): Promise<void>;
+
+  /**
+   * Switch the subscription to a different catalog price. Immediate
+   * upgrades are prorated. For a scheduled downgrade the provider item
+   * changes without billing, while the local scheduled-change state
+   * keeps the old entitlement through `effectiveAt`.
+   */
+  changePlan(
+    providerSubscriptionId: string,
+    providerPriceId: string,
+    timing: PlanChangeTiming,
+  ): Promise<PlanChangeResult>;
+
+  /**
+   * Resume a paused subscription immediately. Entitlement returns via
+   * the provider's `subscription.resumed`/`updated` webhook.
+   */
+  resumeSubscription(providerSubscriptionId: string): Promise<void>;
 
   /**
    * Verify the webhook signature against the RAW request body

@@ -9,7 +9,6 @@
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 import type {
   BillingCycle,
-  BillingProviderId,
   BillingSubscription,
   SubscriptionStatus,
 } from '@declutrmail/shared/contracts';
@@ -20,17 +19,54 @@ import { formatUsd } from '@/features/marketing/pricing/pricing-model';
 export const STRIP_TIER_IDS = ['free', 'plus', 'pro'] as const;
 export type StripTierId = (typeof STRIP_TIER_IDS)[number];
 
-/** Provider display names (D117). */
-export const PROVIDER_LABELS: Readonly<Record<BillingProviderId, string>> = {
-  paddle: 'Paddle',
-  razorpay: 'Razorpay',
-};
-
 /** "$19/mo" / "$190/yr" off the manifest; null when not offered. */
 export function planPriceLabel(tier: TierId, cycle: BillingCycle): string | null {
   const point = TIER_MANIFEST[tier].prices[cycle === 'annual' ? 'annual' : 'monthly'];
   if (!point) return null;
   return `${formatUsd(point.usdCents)}${cycle === 'annual' ? '/yr' : '/mo'}`;
+}
+
+/**
+ * Whole months of the monthly price the annual cycle saves ("2 months
+ * free"), derived from the manifest — never a hardcoded claim. Null
+ * when a cycle is missing, the tier is free, or the saving isn't an
+ * exact whole number of months (an approximate claim would be a lie).
+ */
+export function annualMonthsFree(tier: TierId): number | null {
+  const { monthly, annual } = TIER_MANIFEST[tier].prices;
+  if (!monthly || !annual || monthly.usdCents <= 0) return null;
+  const savedCents = monthly.usdCents * 12 - annual.usdCents;
+  if (savedCents <= 0 || savedCents % monthly.usdCents !== 0) return null;
+  return savedCents / monthly.usdCents;
+}
+
+/**
+ * The annual saving shared by EVERY purchasable paid tier, or null when
+ * the tiers disagree — a single toggle badge must not promise a saving
+ * some plan doesn't deliver.
+ */
+export function sharedAnnualMonthsFree(): number | null {
+  const values = STRIP_TIER_IDS.filter((id) => id !== 'free').map((id) => annualMonthsFree(id));
+  const [first] = values;
+  if (first == null || values.some((v) => v !== first)) return null;
+  return first;
+}
+
+/**
+ * D120 — is this paid→paid change a deferred (period-end) downgrade?
+ * MUST mirror `isDowngrade` in apps/api billing.service.changePlan —
+ * the preview's "$0 today vs charged now" claim rides on agreement.
+ */
+export function isDeferredDowngrade(
+  fromTier: TierId,
+  fromCycle: BillingCycle,
+  toTier: TierId,
+  toCycle: BillingCycle,
+): boolean {
+  return (
+    (fromTier === 'pro' && toTier === 'plus') ||
+    (fromTier === toTier && fromCycle === 'annual' && toCycle === 'monthly')
+  );
 }
 
 /** "Jun 1, 2026" — en-US to match the D119 mock. Null-safe. */

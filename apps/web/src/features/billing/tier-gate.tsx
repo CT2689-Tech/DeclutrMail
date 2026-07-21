@@ -14,6 +14,7 @@ import {
 import { useTier } from '@/features/auth/api/use-tier';
 import { track } from '@/lib/posthog';
 
+import { billingIntentPath } from './billing-intent';
 import { MONEY_BACK_NOTE, planPriceLabel } from './billing-model';
 
 const { color, font, radius, shadow } = tokens;
@@ -70,6 +71,14 @@ export function TierGate({
 
   const requiredMonthly = planPriceLabel(requiredTierId, 'monthly');
   const requiredTier = TIER_MANIFEST[requiredTierId].name;
+  // ONE checkout path (D117): deep-link the required plan into
+  // /billing's confirm step via the validated intent — same funnel as
+  // the pricing page and the 402 UpgradeModal. Monthly matches the
+  // quoted price; the billing screen's toggle flips it in place.
+  const upgradeHref =
+    requiredTierId === 'plus' || requiredTierId === 'pro'
+      ? billingIntentPath({ plan: requiredTierId, cycle: 'monthly' })
+      : '/billing';
 
   return (
     <div
@@ -146,7 +155,7 @@ export function TierGate({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
           <Link
-            href="/billing"
+            href={upgradeHref}
             style={{
               display: 'inline-flex',
               alignItems: 'center',

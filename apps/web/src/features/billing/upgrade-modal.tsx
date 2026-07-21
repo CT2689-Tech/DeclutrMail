@@ -15,6 +15,7 @@ import {
 } from '@/lib/entitlements/upgrade-gate';
 import { track } from '@/lib/posthog';
 
+import { billingIntentPath } from './billing-intent';
 import { MONEY_BACK_NOTE, planPriceLabel } from './billing-model';
 
 const { color, font, radius } = tokens;
@@ -69,6 +70,14 @@ export function UpgradeModal() {
   const actionTier = hit.reason === 'action_tier' ? hit.details.requiredTier : null;
   const actionTierName = actionTier ? TIER_MANIFEST[actionTier].name : null;
   const actionTierMonthly = actionTier ? planPriceLabel(actionTier, 'monthly') : null;
+
+  // ONE checkout path (D117): the CTA deep-links the nudged plan into
+  // /billing's confirm step via the same validated intent the pricing
+  // page uses — the copy above quotes monthly prices, so the intent
+  // carries `monthly` (the billing screen's toggle flips it in place).
+  const targetPlan: 'plus' | 'pro' = hit.reason === 'free_cap' ? 'plus' : (actionTier ?? 'pro');
+  const upgradeHref = billingIntentPath({ plan: targetPlan, cycle: 'monthly' });
+  const upgradeLabel = `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
 
   return (
     <>
@@ -170,7 +179,7 @@ export function UpgradeModal() {
                 Not now
               </Button>
               <Link
-                href="/billing"
+                href={upgradeHref}
                 onClick={dismiss}
                 style={{
                   display: 'inline-flex',
@@ -185,7 +194,7 @@ export function UpgradeModal() {
                   textDecoration: 'none',
                 }}
               >
-                See plans
+                {upgradeLabel}
               </Link>
             </>
           ) : (

@@ -208,13 +208,15 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   const preview = page.getByRole('dialog');
   await expect(preview).toBeVisible();
   await expect(preview).toContainText('Preview · before anything changes');
-  const confirm = preview.getByRole('button', { name: /Archive \d/ });
+  // Confirm button reads "📥 Archive ⌘⏎" (count moved into the match
+  // line) — match the verb, not a stale "Archive <n>" shape.
+  const confirm = preview.getByRole('button', { name: /Archive/ });
   await expect(confirm).toBeEnabled();
   await confirm.click();
 
   const upgradeModal = page.getByTestId('upgrade-modal');
   await expect(upgradeModal).toBeVisible({ timeout: 15_000 });
-  await expect(upgradeModal).toContainText(/used all 5 free cleanup actions/);
+  await expect(upgradeModal).toContainText(/used all 5 free sender actions/);
 
   // The gate fired BEFORE any insert — the quota ledger still holds
   // exactly the 5 seeded units and nothing else.
@@ -225,13 +227,19 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   `;
   expect(stray[0]!.n, 'a capped enqueue must write NO action_jobs row').toBe(0);
 
-  // The modal's designed funnel: See plans → /billing (Free plan card).
-  await upgradeModal.getByRole('link', { name: 'See plans' }).click();
-  await expect(page).toHaveURL(/\/billing/);
+  // The modal's designed funnel (D117 one-path): the CTA deep-links the
+  // nudged plan into /billing's confirm step — the D226 preview opens
+  // pre-selected, one click from the provider surface.
+  await upgradeModal.getByRole('link', { name: 'Upgrade to Plus' }).click();
+  await expect(page).toHaveURL(/\/billing\?plan=plus&cycle=monthly/);
   const planCard = page.getByTestId('current-plan-card');
   await expect(planCard).toBeVisible({ timeout: 60_000 });
   await expect(planCard).toContainText('Free');
   await expect(planCard).toContainText('0 of 5 lifetime cleanup actions left.');
+  await expect(page.getByTestId('checkout-panel')).toBeVisible();
+  await expect(page.getByTestId('checkout-panel')).toContainText(
+    'Preview · before anything changes',
+  );
 
   // ---- 2. Pro surface paywall: /screener renders the upsell for a
   // Free workspace (client tier gate) AND the API 402s underneath.
@@ -252,6 +260,9 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
     priceId: BILLING_E2E_ENV.proMonthlyPriceId,
     workspaceId: BILLING_SEED.workspaceId,
     periodEndsAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+    // Attribution rides custom_data and must be SIGNED (paddle.adapter
+    // verifiedWorkspaceId) — unsigned attribution is discarded.
+    attributionSecret: BILLING_E2E_ENV.webhookSecret,
   });
 
   // 3a. Tampered signature → 401, and NOTHING changed (the door is
@@ -309,7 +320,8 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   const proCard = page.getByTestId('current-plan-card');
   await expect(proCard).toBeVisible({ timeout: 60_000 });
   await expect(proCard).toContainText('Pro');
-  await expect(proCard).toContainText('via Paddle');
+  // Provider name is plumbing, not a plan fact — asserted ABSENT.
+  await expect(proCard).not.toContainText('via Paddle');
   await expect(proCard).toContainText('Next renewal');
   await expect(proCard.getByRole('button', { name: 'Cancel subscription' })).toBeVisible();
   const sub = await api.get<SubscriptionView>('/api/billing/subscription');

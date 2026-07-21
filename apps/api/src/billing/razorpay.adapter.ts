@@ -29,6 +29,7 @@ import type {
   CreateCheckoutInput,
   NormalizedBillingEvent,
   NormalizedSubscription,
+  PlanChangeResult,
   SignatureVerifyResult,
 } from './billing-provider.interface.js';
 
@@ -200,6 +201,27 @@ export class RazorpayAdapter implements BillingProvider {
       );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
+  }
+
+  /**
+   * Self-serve plan changes are PADDLE-ONLY at launch (D117/D120).
+   * Razorpay plan updates change the billing frequency + remaining
+   * count semantics of the subscription, no Razorpay catalog id is
+   * provisioned in any environment (the go-live runbook provisions
+   * Paddle), and none of it has been exercised against the real API —
+   * shipping a guessed PATCH here would be a guaranteed-failing (or
+   * worse, mis-billing) path. Fail closed with the designed code; the
+   * FE routes Razorpay subscribers to support instead.
+   */
+  async changePlan(providerSubscriptionId: string): Promise<PlanChangeResult> {
+    this.logger.warn(`razorpay.change_plan.unsupported sub=${providerSubscriptionId}`);
+    throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+  }
+
+  /** POST /v1/subscriptions/{id}/resume — immediately (D118 pause exit). */
+  async resumeSubscription(providerSubscriptionId: string): Promise<void> {
+    this.logger.warn(`razorpay.resume.no_charge_unverified sub=${providerSubscriptionId}`);
+    throw new AppException({ code: 'RESUME_UNSUPPORTED' });
   }
 
   verifyWebhookSignature(args: {

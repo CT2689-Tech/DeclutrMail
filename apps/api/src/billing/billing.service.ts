@@ -19,13 +19,14 @@
 // captured in subscription_events", anonymous enum for analytics).
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { subscriptionEvents, subscriptions, users, workspaces } from '@declutrmail/db';
 import type {
   BillingSubscription,
   CancelRequest,
   CheckoutRequest,
   CheckoutSession,
+  PlanChangeRequest,
 } from '@declutrmail/shared/contracts';
 
 import { AppException } from '../common/app-exception.js';
@@ -148,6 +149,20 @@ export class BillingService {
               cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
               pauseUntil: sub.pauseUntil?.toISOString() ?? null,
               foundingMember: sub.foundingMember,
+              scheduledChange:
+                !sub.cancelAtPeriodEnd &&
+                sub.scheduledTier &&
+                (sub.scheduledTier === 'plus' || sub.scheduledTier === 'pro') &&
+                sub.scheduledBillingCycle &&
+                sub.scheduledChangeAt &&
+                sub.scheduledChangeState
+                  ? {
+                      tier: sub.scheduledTier,
+                      cycle: sub.scheduledBillingCycle,
+                      effectiveAt: sub.scheduledChangeAt.toISOString(),
+                      state: sub.scheduledChangeState,
+                    }
+                  : null,
             }
           : null,
     };
@@ -239,6 +254,387 @@ export class BillingService {
       );
     }
 
+    return this.getSubscription(principal.workspaceId);
+  }
+
+  /**
+   * D117/D120 — self-serve paid↔paid plan change on the EXISTING
+   * provider subscription. Upgrades are provider-prorated immediately.
+   * Downgrades are stored durably and keep the old entitlement through
+   * the current period; Paddle's immediate item swap is masked by the
+   * webhook projector until the renewal boundary.
+   *
+   * Guards:
+   *   - paused subs must resume (or cancel) first — a paused sub's
+   *     provider-side item change semantics differ per provider, and
+   *     the user isn't being billed to change from;
+   *   - Founding Pro subs are change-locked (the $129 price lock dies
+   *     with the price point — never end it on a casual click);
+   *   - same tier+cycle is an idempotent no-op.
+   */
+  async changePlan(
+    principal: { workspaceId: string },
+    dto: PlanChangeRequest,
+  ): Promise<BillingSubscription> {
+    const [sub] = await this.db
+      .select({
+        id: subscriptions.id,
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+        providerPriceId: subscriptions.providerPriceId,
+        tier: subscriptions.tier,
+        billingCycle: subscriptions.billingCycle,
+        status: subscriptions.status,
+        foundingMember: subscriptions.foundingMember,
+        currentPeriodEnd: subscriptions.currentPeriodEnd,
+        cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
+        scheduledTier: subscriptions.scheduledTier,
+        scheduledBillingCycle: subscriptions.scheduledBillingCycle,
+        scheduledProviderPriceId: subscriptions.scheduledProviderPriceId,
+        scheduledChangeAt: subscriptions.scheduledChangeAt,
+        scheduledChangeState: subscriptions.scheduledChangeState,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.workspaceId, principal.workspaceId),
+          inArray(subscriptions.status, ['active', 'past_due', 'paused']),
+        ),
+      )
+      .orderBy(desc(subscriptions.updatedAt))
+      .limit(1);
+    if (!sub) {
+      throw new AppException({ code: 'NO_ACTIVE_SUBSCRIPTION' });
+    }
+    if (sub.status === 'paused') {
+      throw new AppException({ code: 'SUBSCRIPTION_PAUSED' });
+    }
+    if (sub.status !== 'active') {
+      throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+    }
+    if (sub.cancelAtPeriodEnd) {
+      throw new AppException({ code: 'SUBSCRIPTION_CANCELING' });
+    }
+    if (sub.foundingMember) {
+      throw new AppException({ code: 'FOUNDING_PLAN_LOCKED' });
+    }
+    if (sub.provider === 'razorpay') {
+      // Paddle-only at launch — see razorpay.adapter.changePlan for why.
+      // Checked here too so the answer doesn't depend on catalog state.
+      throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+    }
+
+    // Selecting the effective current plan while a downgrade is queued
+    // means “keep my current plan.” Restore Paddle's item first while the
+    // masking marker is still present, then clear the durable schedule.
+    if (
+      sub.scheduledChangeState !== null &&
+      sub.tier === dto.tierId &&
+      sub.billingCycle === dto.cycle
+    ) {
+      if (!sub.scheduledChangeAt) {
+        throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
+      }
+      // Same renewal-boundary window as scheduling: pinning
+      // `next_billed_at` at (or past) the boundary is a guaranteed
+      // provider 4xx — refuse cleanly instead. After renewal the user
+      // can upgrade again through the normal picker.
+      if (sub.scheduledChangeAt.getTime() - Date.now() <= 30 * 60_000) {
+        throw new AppException({ code: 'PLAN_CHANGE_TOO_LATE' });
+      }
+      const now = new Date();
+      await this.db.transaction(async (tx) => {
+        await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+        // State guard: a webhook may have applied/cleared the schedule
+        // between the pre-transaction read and this claim. Without it,
+        // this partial write would trip the all-or-nothing CHECK — and
+        // restoring a schedule that no longer exists calls the provider
+        // for a change the user never previewed.
+        const claimed = await tx
+          .update(subscriptions)
+          .set({
+            scheduledChangeState: 'restoring_current',
+            scheduledChangeRequestedAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(subscriptions.id, sub.id),
+              sql`${subscriptions.scheduledChangeState} IS NOT NULL`,
+            ),
+          )
+          .returning({ id: subscriptions.id });
+        if (claimed.length === 0) {
+          throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
+        }
+        await tx.insert(subscriptionEvents).values({
+          provider: sub.provider,
+          providerEventId: `local_plan_change_canceled_${sub.providerSubscriptionId}_${now.toISOString()}`,
+          eventType: 'local.plan_change_canceled',
+          payload: {
+            kind: 'plan_change_canceled',
+            provider_subscription_id: sub.providerSubscriptionId,
+            occurred_at: now.toISOString(),
+          },
+          processedAt: now,
+        });
+      });
+      try {
+        const confirmation = await this.adapterFor(sub.provider).changePlan(
+          sub.providerSubscriptionId,
+          sub.providerPriceId,
+          {
+            kind: 'next_period_no_proration',
+            effectiveAt: sub.scheduledChangeAt.toISOString(),
+          },
+        );
+        if (confirmation?.providerPriceId === sub.providerPriceId) {
+          const providerConfirmedAt = confirmation.providerUpdatedAt
+            ? new Date(confirmation.providerUpdatedAt)
+            : now;
+          const confirmedAt = Number.isNaN(providerConfirmedAt.getTime())
+            ? now
+            : providerConfirmedAt;
+          await this.db.transaction(async (tx) => {
+            await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+            const cleared = await tx
+              .update(subscriptions)
+              .set({
+                scheduledTier: null,
+                scheduledBillingCycle: null,
+                scheduledProviderPriceId: null,
+                scheduledChangeAt: null,
+                scheduledChangeState: null,
+                scheduledChangeRequestedAt: null,
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
+                  eq(subscriptions.id, sub.id),
+                  eq(subscriptions.scheduledChangeState, 'restoring_current'),
+                ),
+              )
+              .returning({ id: subscriptions.id });
+            if (cleared.length > 0) {
+              await tx.insert(subscriptionEvents).values({
+                provider: sub.provider,
+                providerEventId: `local_plan_restore_confirmed_${sub.providerSubscriptionId}_${now.toISOString()}`,
+                eventType: 'local.plan_restore_confirmed',
+                payload: {
+                  kind: 'subscription',
+                  provider_subscription_id: sub.providerSubscriptionId,
+                  provider_price_id: sub.providerPriceId,
+                  status: sub.status,
+                  occurred_at: confirmedAt.toISOString(),
+                },
+                processedAt: new Date(),
+              });
+            }
+          });
+        }
+      } catch (err) {
+        if (err instanceof AppException && err.details?.providerOutcome === 'definitive') {
+          await this.db
+            .update(subscriptions)
+            .set({ scheduledChangeState: 'scheduled', updatedAt: new Date() })
+            .where(
+              and(
+                eq(subscriptions.id, sub.id),
+                eq(subscriptions.scheduledChangeState, 'restoring_current'),
+              ),
+            );
+        } else {
+          // Ambiguous provider outcome: the marker stays
+          // `restoring_current` on purpose (retry is safe). Without a
+          // reconciler this WARN is how ops finds a stranded row.
+          this.logger.warn(
+            `billing.plan_restore_unconfirmed workspace=${principal.workspaceId} provider=${sub.provider} sub=${sub.providerSubscriptionId}`,
+          );
+        }
+        throw err;
+      }
+      this.logger.log(
+        `billing.plan_change_canceled workspace=${principal.workspaceId} provider=${sub.provider}`,
+      );
+      return this.getSubscription(principal.workspaceId);
+    }
+    if (
+      sub.tier === dto.tierId &&
+      sub.billingCycle === dto.cycle &&
+      sub.scheduledChangeState === null
+    ) {
+      // Idempotent no-op — nothing to change, nothing to charge.
+      return this.getSubscription(principal.workspaceId);
+    }
+    const priceId = this.catalog.resolvePriceId(sub.provider, dto.tierId, dto.cycle, false);
+    if (!priceId) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+
+    const isDowngrade =
+      (sub.tier === 'pro' && dto.tierId === 'plus') ||
+      (sub.tier === dto.tierId && sub.billingCycle === 'annual' && dto.cycle === 'monthly');
+
+    if (isDowngrade) {
+      if (!sub.currentPeriodEnd) {
+        throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+      }
+      const changeAt = sub.currentPeriodEnd;
+      const sameScheduledTarget =
+        sub.scheduledTier === dto.tierId &&
+        sub.scheduledBillingCycle === dto.cycle &&
+        sub.scheduledProviderPriceId === priceId;
+      if (sub.scheduledChangeState === 'scheduled' && sameScheduledTarget) {
+        return this.getSubscription(principal.workspaceId);
+      }
+      if (changeAt.getTime() - Date.now() <= 30 * 60_000) {
+        throw new AppException({ code: 'PLAN_CHANGE_TOO_LATE' });
+      }
+      if (sub.scheduledChangeState !== null && !sameScheduledTarget) {
+        throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
+      }
+
+      if (sub.scheduledChangeState === null) {
+        const now = new Date();
+        await this.db.transaction(async (tx) => {
+          await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+          const claimed = await tx
+            .update(subscriptions)
+            .set({
+              scheduledTier: dto.tierId,
+              scheduledBillingCycle: dto.cycle,
+              scheduledProviderPriceId: priceId,
+              scheduledChangeAt: changeAt,
+              scheduledChangeState: 'pending_provider',
+              scheduledChangeRequestedAt: now,
+              updatedAt: now,
+            })
+            .where(
+              and(eq(subscriptions.id, sub.id), sql`${subscriptions.scheduledChangeState} IS NULL`),
+            )
+            .returning({ id: subscriptions.id });
+          if (claimed.length === 0) {
+            throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
+          }
+          await tx.insert(subscriptionEvents).values({
+            provider: sub.provider,
+            providerEventId: `local_plan_change_${sub.providerSubscriptionId}_${now.toISOString()}`,
+            eventType: 'local.plan_change_requested',
+            payload: {
+              kind: 'plan_change_scheduled',
+              provider_subscription_id: sub.providerSubscriptionId,
+              occurred_at: now.toISOString(),
+              from_tier: sub.tier,
+              from_cycle: sub.billingCycle,
+              to_tier: dto.tierId,
+              to_cycle: dto.cycle,
+              effective_at: changeAt.toISOString(),
+            },
+            processedAt: now,
+          });
+        });
+      }
+
+      // The durable pending marker is committed before this call, so a
+      // fast webhook cannot prematurely revoke the current entitlement.
+      // On an ambiguous timeout the marker intentionally remains
+      // `pending_provider`; retrying the same target is provider-idempotent.
+      try {
+        await this.adapterFor(sub.provider).changePlan(sub.providerSubscriptionId, priceId, {
+          kind: 'next_period_no_proration',
+          effectiveAt: changeAt.toISOString(),
+        });
+      } catch (err) {
+        if (err instanceof AppException && err.details?.providerOutcome === 'definitive') {
+          await this.db
+            .update(subscriptions)
+            .set({
+              scheduledTier: null,
+              scheduledBillingCycle: null,
+              scheduledProviderPriceId: null,
+              scheduledChangeAt: null,
+              scheduledChangeState: null,
+              scheduledChangeRequestedAt: null,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(subscriptions.id, sub.id),
+                eq(subscriptions.scheduledChangeState, 'pending_provider'),
+                eq(subscriptions.scheduledProviderPriceId, priceId),
+              ),
+            );
+        } else {
+          // Ambiguous provider outcome: the marker stays
+          // `pending_provider` on purpose (same-target retry is
+          // provider-idempotent). Without a reconciler this WARN is how
+          // ops finds a stranded row.
+          this.logger.warn(
+            `billing.plan_change_unconfirmed workspace=${principal.workspaceId} provider=${sub.provider} sub=${sub.providerSubscriptionId}`,
+          );
+        }
+        throw err;
+      }
+      await this.db
+        .update(subscriptions)
+        .set({ scheduledChangeState: 'scheduled', updatedAt: new Date() })
+        .where(
+          and(
+            eq(subscriptions.id, sub.id),
+            eq(subscriptions.scheduledChangeState, 'pending_provider'),
+          ),
+        );
+
+      this.logger.log(
+        `billing.plan_change_scheduled workspace=${principal.workspaceId} provider=${sub.provider} from=${sub.tier}/${sub.billingCycle} to=${dto.tierId}/${dto.cycle} effective_at=${changeAt.toISOString()}`,
+      );
+      return this.getSubscription(principal.workspaceId);
+    }
+
+    if (sub.scheduledChangeState !== null) {
+      throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
+    }
+
+    // Provider call IS the immediate upgrade; the webhook writes the
+    // new tier/cycle only after the provider accepts the charge.
+    await this.adapterFor(sub.provider).changePlan(sub.providerSubscriptionId, priceId, {
+      kind: 'immediate_prorated',
+    });
+
+    this.logger.log(
+      `billing.plan_change_requested workspace=${principal.workspaceId} provider=${sub.provider} from=${sub.tier}/${sub.billingCycle} to=${dto.tierId}/${dto.cycle}`,
+    );
+    return this.getSubscription(principal.workspaceId);
+  }
+
+  /**
+   * D118 pause exit — resume the paused subscription immediately.
+   * Entitlement returns via the provider webhook, never here.
+   */
+  async resume(principal: { workspaceId: string }): Promise<BillingSubscription> {
+    const [sub] = await this.db
+      .select({
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.workspaceId, principal.workspaceId),
+          eq(subscriptions.status, 'paused'),
+        ),
+      )
+      .orderBy(desc(subscriptions.updatedAt))
+      .limit(1);
+    if (!sub) {
+      throw new AppException({ code: 'NO_ACTIVE_SUBSCRIPTION' });
+    }
+
+    await this.adapterFor(sub.provider).resumeSubscription(sub.providerSubscriptionId);
+
+    this.logger.log(
+      `billing.resume_requested workspace=${principal.workspaceId} provider=${sub.provider}`,
+    );
     return this.getSubscription(principal.workspaceId);
   }
 

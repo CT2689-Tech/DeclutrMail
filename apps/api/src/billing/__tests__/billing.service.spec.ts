@@ -9,6 +9,7 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DrizzleDb } from '../../db/db.module.js';
+import { AppException } from '../../common/app-exception.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import { BillingService } from '../billing.service.js';
 import type { PaddleAdapter } from '../paddle.adapter.js';
@@ -72,6 +73,15 @@ const CATALOG_ENTRIES: CatalogEntry[] = [
     razorpayPlanId: null, // not provisioned — exercises fail-closed
   },
   {
+    planCode: 'plus_annual',
+    tierId: 'plus',
+    cycle: 'annual',
+    founding: false,
+    usdCents: 9000,
+    paddlePriceId: 'pri_plus_a',
+    razorpayPlanId: null,
+  },
+  {
     planCode: 'pro_annual_founding',
     tierId: 'pro',
     cycle: 'annual',
@@ -87,6 +97,8 @@ describe('BillingService', () => {
   let service: BillingService;
   let paddleCheckout: ReturnType<typeof vi.fn>;
   let paddleCancel: ReturnType<typeof vi.fn>;
+  let paddleChangePlan: ReturnType<typeof vi.fn>;
+  let paddleResume: ReturnType<typeof vi.fn>;
   let principal: { userId: string; workspaceId: string };
 
   beforeEach(async () => {
@@ -100,15 +112,24 @@ describe('BillingService', () => {
       customData: { workspace_id: 'set-below', sig: 'test-sig' },
     });
     paddleCancel = vi.fn().mockResolvedValue(undefined);
+    paddleChangePlan = vi.fn().mockResolvedValue({
+      providerPriceId: null,
+      providerUpdatedAt: null,
+    });
+    paddleResume = vi.fn().mockResolvedValue(undefined);
     const paddle = {
       id: 'paddle',
       createCheckout: paddleCheckout,
       cancelSubscription: paddleCancel,
+      changePlan: paddleChangePlan,
+      resumeSubscription: paddleResume,
     } as unknown as PaddleAdapter;
     const razorpay = {
       id: 'razorpay',
       createCheckout: vi.fn(),
       cancelSubscription: vi.fn(),
+      changePlan: vi.fn(),
+      resumeSubscription: vi.fn(),
     } as unknown as RazorpayAdapter;
     service = new BillingService(db, new BillingCatalog(CATALOG_ENTRIES, 2), paddle, razorpay);
 
@@ -247,6 +268,308 @@ describe('BillingService', () => {
   it('cancel without any granting subscription is NO_ACTIVE_SUBSCRIPTION', async () => {
     await expect(service.cancelAtPeriodEnd(principal, {})).rejects.toMatchObject({
       code: 'NO_ACTIVE_SUBSCRIPTION',
+    });
+  });
+
+  describe('changePlan (D117/D120 paid↔paid switch)', () => {
+    async function seedActivePlus(): Promise<void> {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_change_me',
+        tier: 'plus',
+        status: 'active',
+        providerPriceId: 'pri_plus_m',
+        billingCycle: 'monthly',
+      });
+      await db
+        .update(workspaces)
+        .set({ tier: 'plus' })
+        .where(eq(workspaces.id, principal.workspaceId));
+    }
+
+    it('resolves the target price and delegates to the provider; tier is NOT written locally', async () => {
+      await seedActivePlus();
+      const result = await service.changePlan(principal, { tierId: 'pro', cycle: 'annual' });
+      expect(paddleChangePlan).toHaveBeenCalledWith('sub_change_me', 'pri_pro_a', {
+        kind: 'immediate_prorated',
+      });
+      // §10: the endpoint never grants — the webhook does. Local state
+      // still shows the pre-change subscription.
+      expect(result.tier).toBe('plus');
+      expect(result.subscription).toMatchObject({ tier: 'plus', cycle: 'monthly' });
+    });
+
+    it('same tier+cycle is an idempotent no-op (no provider call)', async () => {
+      await seedActivePlus();
+      const result = await service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' });
+      expect(paddleChangePlan).not.toHaveBeenCalled();
+      expect(result.subscription).toMatchObject({ tier: 'plus', cycle: 'monthly' });
+    });
+
+    it('stores a Pro→Plus downgrade for period end and charges nothing now', async () => {
+      const effectiveAt = new Date('2026-08-20T12:00:00.000Z');
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_downgrade',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: effectiveAt,
+      });
+      await db
+        .update(workspaces)
+        .set({ tier: 'pro' })
+        .where(eq(workspaces.id, principal.workspaceId));
+
+      const result = await service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' });
+
+      expect(paddleChangePlan).toHaveBeenCalledWith('sub_downgrade', 'pri_plus_m', {
+        kind: 'next_period_no_proration',
+        effectiveAt: effectiveAt.toISOString(),
+      });
+      expect(result.tier).toBe('pro');
+      expect(result.subscription?.scheduledChange).toEqual({
+        tier: 'plus',
+        cycle: 'monthly',
+        effectiveAt: effectiveAt.toISOString(),
+        state: 'scheduled',
+      });
+    });
+
+    it('clears a pending marker after a definitive provider rejection', async () => {
+      const effectiveAt = new Date('2026-08-20T12:00:00.000Z');
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_rejected',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: effectiveAt,
+      });
+      paddleChangePlan.mockRejectedValueOnce(
+        new AppException({
+          code: 'BILLING_PROVIDER_ERROR',
+          details: { providerOutcome: 'definitive' },
+        }),
+      );
+
+      await expect(
+        service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' }),
+      ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+      const [sub] = await db.select().from(subscriptions);
+      expect(sub?.scheduledChangeState).toBeNull();
+      expect(sub?.scheduledTier).toBeNull();
+    });
+
+    it('retains the mask after an ambiguous provider timeout', async () => {
+      const effectiveAt = new Date('2026-08-20T12:00:00.000Z');
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_timeout',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: effectiveAt,
+      });
+      paddleChangePlan.mockRejectedValueOnce(new AppException({ code: 'BILLING_PROVIDER_ERROR' }));
+
+      await expect(
+        service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' }),
+      ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+      const [sub] = await db.select().from(subscriptions);
+      expect(sub).toMatchObject({
+        tier: 'pro',
+        scheduledTier: 'plus',
+        scheduledChangeState: 'pending_provider',
+      });
+    });
+
+    it('lets only one concurrent downgrade claim the provider mutation', async () => {
+      const effectiveAt = new Date('2026-08-20T12:00:00.000Z');
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_race',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: effectiveAt,
+      });
+
+      const outcomes = await Promise.allSettled([
+        service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' }),
+        service.changePlan(principal, { tierId: 'plus', cycle: 'annual' }),
+      ]);
+
+      expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toHaveLength(1);
+      expect(paddleChangePlan).toHaveBeenCalledTimes(1);
+      const [sub] = await db.select().from(subscriptions);
+      expect(sub?.scheduledProviderPriceId).toBe(paddleChangePlan.mock.calls[0]?.[1] as string);
+    });
+
+    it('clears the downgrade after Paddle synchronously confirms restoring the current plan', async () => {
+      const effectiveAt = new Date('2026-08-20T12:00:00.000Z');
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_keep_current',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: effectiveAt,
+        scheduledTier: 'plus',
+        scheduledBillingCycle: 'monthly',
+        scheduledProviderPriceId: 'pri_plus_m',
+        scheduledChangeAt: effectiveAt,
+        scheduledChangeState: 'scheduled',
+        scheduledChangeRequestedAt: new Date(),
+      });
+
+      paddleChangePlan.mockResolvedValueOnce({
+        providerPriceId: 'pri_pro_a',
+        providerUpdatedAt: '2026-07-20T12:00:00.000Z',
+      });
+      const result = await service.changePlan(principal, { tierId: 'pro', cycle: 'annual' });
+
+      expect(paddleChangePlan).toHaveBeenCalledWith('sub_keep_current', 'pri_pro_a', {
+        kind: 'next_period_no_proration',
+        effectiveAt: effectiveAt.toISOString(),
+      });
+      expect(result.subscription?.scheduledChange).toBeNull();
+      const [sub] = await db.select().from(subscriptions);
+      expect(sub?.scheduledChangeState).toBeNull();
+      const [marker] = await db
+        .select({ payload: subscriptionEvents.payload })
+        .from(subscriptionEvents)
+        .where(eq(subscriptionEvents.eventType, 'local.plan_restore_confirmed'));
+      expect(marker?.payload).toMatchObject({
+        kind: 'subscription',
+        provider_price_id: 'pri_pro_a',
+        occurred_at: '2026-07-20T12:00:00.000Z',
+      });
+    });
+
+    it('keeps restore retryable when a successful response cannot confirm the provider price', async () => {
+      const effectiveAt = new Date('2026-08-20T12:00:00.000Z');
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_keep_unconfirmed',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: effectiveAt,
+        scheduledTier: 'plus',
+        scheduledBillingCycle: 'monthly',
+        scheduledProviderPriceId: 'pri_plus_m',
+        scheduledChangeAt: effectiveAt,
+        scheduledChangeState: 'scheduled',
+        scheduledChangeRequestedAt: new Date(),
+      });
+
+      const result = await service.changePlan(principal, { tierId: 'pro', cycle: 'annual' });
+
+      expect(result.subscription?.scheduledChange?.state).toBe('restoring_current');
+    });
+
+    it('no subscription → NO_ACTIVE_SUBSCRIPTION', async () => {
+      await expect(
+        service.changePlan(principal, { tierId: 'pro', cycle: 'annual' }),
+      ).rejects.toMatchObject({ code: 'NO_ACTIVE_SUBSCRIPTION' });
+    });
+
+    it('paused subscription → SUBSCRIPTION_PAUSED (resume or cancel first)', async () => {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_paused',
+        tier: 'plus',
+        status: 'paused',
+        providerPriceId: 'pri_plus_m',
+        billingCycle: 'monthly',
+      });
+      await expect(
+        service.changePlan(principal, { tierId: 'pro', cycle: 'annual' }),
+      ).rejects.toMatchObject({ code: 'SUBSCRIPTION_PAUSED' });
+      expect(paddleChangePlan).not.toHaveBeenCalled();
+    });
+
+    it('Founding Pro subscription → FOUNDING_PLAN_LOCKED (price lock protected)', async () => {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_founding',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_f',
+        billingCycle: 'annual',
+        foundingMember: true,
+      });
+      await expect(
+        service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' }),
+      ).rejects.toMatchObject({ code: 'FOUNDING_PLAN_LOCKED' });
+      expect(paddleChangePlan).not.toHaveBeenCalled();
+    });
+
+    it('Razorpay subscription → PLAN_CHANGE_UNSUPPORTED (Paddle-only at launch)', async () => {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'razorpay',
+        providerSubscriptionId: 'sub_rzp',
+        tier: 'plus',
+        status: 'active',
+        providerPriceId: 'plan_plus_m',
+        billingCycle: 'monthly',
+      });
+      await expect(
+        service.changePlan(principal, { tierId: 'pro', cycle: 'annual' }),
+      ).rejects.toMatchObject({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+      expect(paddleChangePlan).not.toHaveBeenCalled();
+    });
+
+    it('unprovisioned target price fails closed (BILLING_NOT_PROVISIONED)', async () => {
+      // The fixture catalog has NO pro_monthly entry.
+      await seedActivePlus();
+      await expect(
+        service.changePlan(principal, { tierId: 'pro', cycle: 'monthly' }),
+      ).rejects.toMatchObject({ code: 'BILLING_NOT_PROVISIONED' });
+      expect(paddleChangePlan).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resume (D118 pause exit)', () => {
+    it('delegates to the provider for a paused subscription; entitlement stays webhook-only', async () => {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_paused',
+        tier: 'plus',
+        status: 'paused',
+        providerPriceId: 'pri_plus_m',
+        billingCycle: 'monthly',
+      });
+      const result = await service.resume(principal);
+      expect(paddleResume).toHaveBeenCalledWith('sub_paused');
+      // Local state unchanged until the provider webhook lands.
+      expect(result.tier).toBe('free');
+      expect(result.subscription).toMatchObject({ status: 'paused' });
+    });
+
+    it('no paused subscription → NO_ACTIVE_SUBSCRIPTION', async () => {
+      await expect(service.resume(principal)).rejects.toMatchObject({
+        code: 'NO_ACTIVE_SUBSCRIPTION',
+      });
     });
   });
 });

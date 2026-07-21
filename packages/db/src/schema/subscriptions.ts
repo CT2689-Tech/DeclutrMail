@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   pgEnum,
   pgTable,
@@ -84,6 +85,22 @@ export const subscriptions = pgTable(
     pauseUntil: timestamp('pause_until', { withTimezone: true, mode: 'date' }),
     /** D126 — on the founding-member price lock (`pro_annual_founding`). */
     foundingMember: boolean('founding_member').notNull().default(false),
+    /**
+     * D120 paid-plan downgrade scheduled for the current period end.
+     * Paddle swaps its catalog item immediately, so these server-owned
+     * fields keep the old entitlement authoritative until renewal.
+     */
+    scheduledTier: workspaceTier('scheduled_tier'),
+    scheduledBillingCycle: billingCycle('scheduled_billing_cycle'),
+    scheduledProviderPriceId: text('scheduled_provider_price_id'),
+    scheduledChangeAt: timestamp('scheduled_change_at', { withTimezone: true, mode: 'date' }),
+    scheduledChangeState: text('scheduled_change_state', {
+      enum: ['pending_provider', 'scheduled', 'restoring_current'],
+    }),
+    scheduledChangeRequestedAt: timestamp('scheduled_change_requested_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -99,6 +116,16 @@ export const subscriptions = pgTable(
     ),
     /** "Current subscription for this workspace" read path (billing screen, tier gate). */
     workspaceIdx: index('subscriptions_workspace_id_idx').on(table.workspaceId),
+    /** Mirrors migration 0048 — scheduled-change state machine vocabulary. */
+    scheduledChangeStateCheck: check(
+      'subscriptions_scheduled_change_state_check',
+      sql`${table.scheduledChangeState} IS NULL OR ${table.scheduledChangeState} IN ('pending_provider', 'scheduled', 'restoring_current')`,
+    ),
+    /** Mirrors migration 0048 — the six scheduled-change columns are all-or-nothing. */
+    scheduledChangeCompleteCheck: check(
+      'subscriptions_scheduled_change_complete_check',
+      sql`(${table.scheduledChangeState} IS NULL AND ${table.scheduledTier} IS NULL AND ${table.scheduledBillingCycle} IS NULL AND ${table.scheduledProviderPriceId} IS NULL AND ${table.scheduledChangeAt} IS NULL AND ${table.scheduledChangeRequestedAt} IS NULL) OR (${table.scheduledChangeState} IS NOT NULL AND ${table.scheduledTier} IS NOT NULL AND ${table.scheduledBillingCycle} IS NOT NULL AND ${table.scheduledProviderPriceId} IS NOT NULL AND ${table.scheduledChangeAt} IS NOT NULL AND ${table.scheduledChangeRequestedAt} IS NOT NULL)`,
+    ),
   }),
 );
 

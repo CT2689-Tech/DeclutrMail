@@ -32,6 +32,8 @@ import type {
   CreateCheckoutInput,
   NormalizedBillingEvent,
   NormalizedSubscription,
+  PlanChangeResult,
+  PlanChangeTiming,
   SignatureVerifyResult,
 } from './billing-provider.interface.js';
 
@@ -225,6 +227,7 @@ export class PaddleAdapter implements BillingProvider {
           headers: {
             Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
+            'Paddle-Version': '1',
           },
           body: JSON.stringify({ effective_from: 'next_billing_period' }),
           signal: AbortSignal.timeout(API_TIMEOUT_MS),
@@ -240,6 +243,127 @@ export class PaddleAdapter implements BillingProvider {
       // Body is Paddle's error envelope — log status only; never log
       // the API key (it is not in the response, but keep the line lean).
       this.logger.error(`paddle.cancel.failed sub=${providerSubscriptionId} status=${res.status}`);
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+  }
+
+  /**
+   * PATCH /subscriptions/{id} — swap the single line item to the new
+   * price. Upgrades use `prorated_immediately`; scheduled downgrades use
+   * `do_not_bill` and pin the existing renewal date. The webhook
+   * projector masks that provider-side item swap until period end.
+   */
+  async changePlan(
+    providerSubscriptionId: string,
+    providerPriceId: string,
+    timing: PlanChangeTiming,
+  ): Promise<PlanChangeResult> {
+    const apiKey = this.env.PADDLE_API_KEY;
+    if (!apiKey) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.baseUrl}/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'Paddle-Version': '1',
+          },
+          body: JSON.stringify({
+            items: [{ price_id: providerPriceId, quantity: 1 }],
+            proration_billing_mode:
+              timing.kind === 'immediate_prorated' ? 'prorated_immediately' : 'do_not_bill',
+            ...(timing.kind === 'next_period_no_proration'
+              ? { next_billed_at: timing.effectiveAt }
+              : {}),
+          }),
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        },
+      );
+    } catch (err) {
+      this.logger.error(
+        `paddle.change_plan.network_error sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (!res.ok) {
+      this.logger.error(
+        `paddle.change_plan.failed sub=${providerSubscriptionId} status=${res.status}`,
+      );
+      throw new AppException({
+        code: 'BILLING_PROVIDER_ERROR',
+        ...(res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429
+          ? { details: { providerOutcome: 'definitive' } }
+          : {}),
+      });
+    }
+    // A successful PATCH returns the updated subscription. This lets
+    // the service reconcile a restore even if its webhook is delayed
+    // or lost. Malformed success bodies remain explicitly unconfirmed.
+    try {
+      const body = (await res.json()) as {
+        data?: {
+          updated_at?: unknown;
+          items?: Array<{ price?: { id?: unknown } }>;
+        };
+      };
+      const returnedPriceId = body.data?.items?.[0]?.price?.id;
+      const updatedAt = body.data?.updated_at;
+      return {
+        providerPriceId: typeof returnedPriceId === 'string' ? returnedPriceId : null,
+        providerUpdatedAt: typeof updatedAt === 'string' ? updatedAt : null,
+      };
+    } catch {
+      return { providerPriceId: null, providerUpdatedAt: null };
+    }
+  }
+
+  /** POST /subscriptions/{id}/resume — immediately (D118 pause exit). */
+  async resumeSubscription(providerSubscriptionId: string): Promise<void> {
+    const apiKey = this.env.PADDLE_API_KEY;
+    if (!apiKey) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.baseUrl}/subscriptions/${encodeURIComponent(providerSubscriptionId)}/resume`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'Paddle-Version': '1',
+          },
+          body: JSON.stringify({
+            effective_from: 'immediately',
+            on_resume: 'continue_existing_billing_period',
+          }),
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        },
+      );
+    } catch (err) {
+      this.logger.error(
+        `paddle.resume.network_error sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (!res.ok) {
+      let providerCode: string | null = null;
+      try {
+        const body = (await res.clone().json()) as { error?: { code?: unknown } };
+        providerCode = typeof body.error?.code === 'string' ? body.error.code : null;
+      } catch {
+        // Non-JSON provider error; the generic mapping below remains truthful.
+      }
+      if (providerCode === 'subscription_continuing_existing_billing_period_not_allowed') {
+        throw new AppException({ code: 'RESUME_PERIOD_ENDED' });
+      }
+      this.logger.error(`paddle.resume.failed sub=${providerSubscriptionId} status=${res.status}`);
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
   }

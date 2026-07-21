@@ -19,6 +19,7 @@ import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import {
   CancelRequestSchema,
   CheckoutRequestSchema,
+  PlanChangeRequestSchema,
   ok,
   type BillingSubscription,
   type CheckoutSession,
@@ -92,5 +93,34 @@ export class BillingController {
       throw new AppException({ code: 'BAD_REQUEST', message: 'Invalid cancel request.' });
     }
     return ok(await this.billing.cancelAtPeriodEnd(principal, parsed.data));
+  }
+
+  /**
+   * POST /api/billing/change-plan — D117/D120 paid↔paid switch on the
+   * existing provider subscription (provider-prorated; tier flips via
+   * webhook only).
+   */
+  @Post('change-plan')
+  @UseGuards(CsrfGuard)
+  @RateLimit({ bucket: 'default', limit: 10, windowSec: 60 })
+  async changePlan(
+    @CurrentUser() principal: Principal,
+    @Body() body: unknown,
+  ): Promise<Envelope<BillingSubscription>> {
+    assertBillingEnabled();
+    const parsed = PlanChangeRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new AppException({ code: 'BAD_REQUEST', message: 'Invalid plan change request.' });
+    }
+    return ok(await this.billing.changePlan(principal, parsed.data));
+  }
+
+  /** POST /api/billing/resume — exit the D118 pause immediately. */
+  @Post('resume')
+  @UseGuards(CsrfGuard)
+  @RateLimit({ bucket: 'default', limit: 10, windowSec: 60 })
+  async resume(@CurrentUser() principal: Principal): Promise<Envelope<BillingSubscription>> {
+    assertBillingEnabled();
+    return ok(await this.billing.resume(principal));
   }
 }

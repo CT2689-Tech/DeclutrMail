@@ -32,6 +32,7 @@ export type EventName =
   | 'upgrade_prompt_shown'
   // — Billing surface (D119/D120, U13) —
   | 'checkout_started'
+  | 'plan_change_started'
   // — Page-view + navigation funnel (FOUNDER-FOLLOWUPS 2026-06-06) —
   | 'page_viewed'
   | 'sender_detail_opened'
@@ -226,6 +227,15 @@ export interface EventPayloads {
     provider: 'paddle' | 'razorpay';
     /** True when the Founding Pro promo price was claimed (D126). */
     founding_pro: boolean;
+  };
+
+  /** D117/D120 — self-serve plan change on the existing subscription. */
+  plan_change_started: {
+    /** Purchasable target tier (D19). */
+    tier: 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    /** Entitlement tier the change started from. */
+    from_tier: 'free' | 'plus' | 'pro' | 'team' | 'enterprise';
   };
 
   pricing_plan_selected: {

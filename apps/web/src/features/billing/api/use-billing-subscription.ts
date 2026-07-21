@@ -26,6 +26,18 @@ export function apiErrorCode(error: unknown): string | null {
 }
 
 /**
+ * Extract one scalar from the envelope's `details` (e.g. the billing
+ * adapters' `providerOutcome: 'definitive'` marker — set only when the
+ * provider itself REJECTED the call, i.e. the outcome is known).
+ */
+export function apiErrorDetail(error: unknown, key: string): string | null {
+  if (!(error instanceof ApiError)) return null;
+  const body = error.body as { error?: { details?: Record<string, unknown> } } | undefined;
+  const value = body?.error?.details?.[key];
+  return typeof value === 'string' ? value : null;
+}
+
+/**
  * True when the error is the 503 "billing is dark" designed state
  * (`BILLING_DISABLED` — module loaded, env flag off).
  */
@@ -35,7 +47,14 @@ export function isBillingDisabledError(error: unknown): boolean {
   );
 }
 
-export function useBillingSubscription() {
+export function useBillingSubscription(options?: {
+  /**
+   * Poll cadence for the post-checkout "payment processing" state —
+   * the ONLY sanctioned repeat-read: a success-path 200 poll while the
+   * webhook grant is in flight, never an error retry.
+   */
+  refetchInterval?: number | false;
+}) {
   return useQuery({
     queryKey: billingKeys.subscription(),
     queryFn: async ({ signal }) => {
@@ -46,5 +65,6 @@ export function useBillingSubscription() {
     // read-guard-4xx/5xx rule; the route fails CLEANLY while dark).
     retry: false,
     staleTime: 60_000,
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }

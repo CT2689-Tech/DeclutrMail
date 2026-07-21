@@ -66,11 +66,12 @@ export function paddleSubscriptionActivated(args: {
   scheduledChange?: { action: string; effective_at: string } | null;
   periodEndsAt?: string | null;
   eventType?: string;
+  occurredAt?: string;
 }): Record<string, unknown> {
   return {
     event_id: args.eventId ?? 'evt_01paddle_activated_000001',
     event_type: args.eventType ?? 'subscription.activated',
-    occurred_at: '2026-06-11T10:00:00.000000Z',
+    occurred_at: args.occurredAt ?? '2026-06-11T10:00:00.000000Z',
     notification_id: 'ntf_01paddle000001',
     data: {
       id: args.subscriptionId ?? 'sub_01paddle000001',

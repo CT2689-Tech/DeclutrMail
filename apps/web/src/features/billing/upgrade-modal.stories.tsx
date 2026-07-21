@@ -82,7 +82,7 @@ const meta: StoryMeta<typeof UpgradeModal> = {
     docs: {
       description: {
         component:
-          'Global entitlement-402 upgrade flow (U13). Opens when a mutation returns FREE_CAP_REACHED or INBOX_LIMIT_REACHED; copy follows the D123 nudge ladder — Free/Plus get the upgrade CTA with the D121 money-back note, Pro gets the honest limit statement with no nudge.',
+          'Global entitlement-402 upgrade flow (U13). Opens when a mutation returns FREE_CAP_REACHED or INBOX_LIMIT_REACHED; copy follows the D123 nudge ladder — Free/Plus get an "Upgrade to <plan>" CTA that deep-links the nudged plan into /billing’s confirm step (one shared checkout path, D117) with the D121 money-back note; Pro gets the honest limit statement with no nudge.',
       },
     },
   },

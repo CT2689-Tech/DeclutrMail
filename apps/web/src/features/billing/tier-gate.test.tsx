@@ -60,7 +60,7 @@ describe('TierGate', () => {
     // D19 manifest price + D121 note, no hardcoded dollars in the gate.
     expect(screen.getByRole('link', { name: 'Upgrade to Pro → $19/mo' })).toHaveAttribute(
       'href',
-      '/billing',
+      '/billing?plan=pro&cycle=monthly',
     );
     expect(screen.getByText('30-day money-back guarantee')).toBeInTheDocument();
     expect(screen.queryByTestId('gated-child')).not.toBeInTheDocument();
@@ -80,7 +80,7 @@ describe('TierGate', () => {
     expect(screen.getByText('Plus feature')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Upgrade to Plus → $9/mo' })).toHaveAttribute(
       'href',
-      '/billing',
+      '/billing?plan=plus&cycle=monthly',
     );
   });
 
@@ -109,7 +109,7 @@ describe('TierGate', () => {
     expect(screen.getByText('Plus feature')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Upgrade to Plus → $9/mo' })).toHaveAttribute(
       'href',
-      '/billing',
+      '/billing?plan=plus&cycle=monthly',
     );
     expect(screen.queryByTestId('triage-content')).not.toBeInTheDocument();
 
