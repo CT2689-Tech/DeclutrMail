@@ -824,9 +824,24 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(checkoutPosts).toBe(1);
     expect(launchCheckout).toHaveBeenCalledTimes(1);
 
-    // Overlay dismissed without payment → the reservation releases and
-    // checkout re-arms.
+    // Overlay dismissed WITHOUT a completed event: not proof of no
+    // payment — the reservation SURFACES (kept + polling), never a
+    // silent unlock.
     act(() => capturedCheckoutEvents().onClosed?.());
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('Checkout started');
+    expect(
+      (JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!) as { kind: string }).kind,
+    ).toBe('checkout_intent');
+
+    // Re-arming is the user's explicit two-step no-charge assertion —
+    // available immediately for a surfaced reservation.
+    fireEvent.click(
+      within(notice).getByRole('button', { name: 'No charge went through — resume checkout' }),
+    );
+    fireEvent.click(
+      within(notice).getByRole('button', { name: 'I checked — no charge. Resume checkout' }),
+    );
     await waitFor(() =>
       expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
     );

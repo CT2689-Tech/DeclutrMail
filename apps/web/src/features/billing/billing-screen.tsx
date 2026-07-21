@@ -320,6 +320,23 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
     setPending(null);
   }
 
+  /**
+   * Surface (NOT release) this attempt's lock: `checkout.closed`
+   * without a completed event is strong evidence of no payment, but
+   * not proof — PayPal-popup/3DS edges can settle a charge after the
+   * overlay closes. The reservation stays, becomes visible with
+   * outcome-neutral copy, and polls; the user re-arms checkout through
+   * the immediate two-step "I checked — no charge" release, and a
+   * late-settling payment auto-clears via the tier flip.
+   */
+  function surfaceAttemptLock(attemptId: string) {
+    const record = readPendingCheckout(workspaceId);
+    if (record !== null && record.attemptId === attemptId) {
+      setPending(record);
+      void subscriptionQuery.refetch();
+    }
+  }
+
   function onConfirmCancel(reason: CancelRequest['reason']) {
     cancel.mutate(reason ? { reason } : {}, {
       onSuccess: (next) => {
@@ -423,6 +440,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         }
         onCheckoutAttempt={(target, cycle) => attemptClaim('checkout_intent', target, cycle)}
         onCheckoutAbandoned={releaseAttemptLock}
+        onCheckoutClosed={surfaceAttemptLock}
         onPlanChangeAttempt={(target, cycle) => attemptClaim('change_unconfirmed', target, cycle)}
         onPlanChangeFailedKnown={releaseAttemptLock}
         onPlanChangeAccepted={(next, target, cycle, attemptId) => {
@@ -585,7 +603,7 @@ export function PaymentProcessingNotice({
           </span>
         )}
       </span>
-      {phase === 'unconfirmed' && onRelease ? (
+      {(phase === 'unconfirmed' || kind === 'checkout_intent') && onRelease ? (
         kind === 'checkout' || kind === 'checkout_intent' || kind === 'change_unconfirmed' ? (
           // A payment happened (checkout) or MAY have (unconfirmed
           // change) — release needs an explicit user assertion, never

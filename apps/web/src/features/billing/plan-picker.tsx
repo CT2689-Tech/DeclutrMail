@@ -70,6 +70,7 @@ export function PlanPicker({
   onPaymentCompleted,
   onCheckoutAttempt,
   onCheckoutAbandoned,
+  onCheckoutClosed,
   onPlanChangeAccepted,
   onPlanChangeUnconfirmed,
   onPlanChangeAttempt,
@@ -94,9 +95,16 @@ export function PlanPicker({
    *  could open a second payment surface while the first is unpaid.
    *  Null means the slot (or mutex) is held: stand down. */
   onCheckoutAttempt: (target: PaidTier, cycle: BillingCycle) => Promise<string | null>;
-  /** The overlay closed without payment / never opened / the session
-   *  POST failed — release THIS checkout's reservation (id-matched). */
+  /** No payment surface ever existed for this reservation (session
+   *  POST failed / provider script never loaded) — hard-release it
+   *  (id-matched). NEVER used for `checkout.closed`: a closed overlay
+   *  is not proof no payment occurred. */
   onCheckoutAbandoned: (attemptId: string) => void;
+  /** The overlay CLOSED without a completed event — strong evidence of
+   *  no payment but not proof (popup/3DS edges). The screen surfaces
+   *  the reservation (outcome-neutral, polling, immediate two-step
+   *  release) instead of unlocking checkout. */
+  onCheckoutClosed: (attemptId: string) => void;
   /** The change-plan endpoint accepted the switch — the screen enters
    *  the pending state until the webhook lands. `attemptId` identifies
    *  the pessimistic lock this attempt wrote (UUID-matched release). */
@@ -230,10 +238,15 @@ export function PlanPicker({
               closePanel();
               onPaymentCompleted(target, cycle, attemptId);
             },
-            // Overlay dismissed without payment — release the
-            // reservation (id-matched: a post-completion close event
-            // cannot release the `checkout` lock, which carries no id).
-            onClosed: () => onCheckoutAbandoned(attemptId),
+            // Overlay dismissed without a completed event — NOT proof
+            // of no payment (popup/3DS edges). Surface the reservation
+            // instead of releasing it; the user re-arms via the
+            // explicit no-charge assertion. (Post-completion close is
+            // inert: the id no longer matches the `checkout` lock.)
+            onClosed: () => {
+              closePanel();
+              onCheckoutClosed(attemptId);
+            },
           }).then(
             () => undefined,
             // Provider script failed to load — no surface ever opened.
