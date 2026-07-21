@@ -24,6 +24,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-07-20 — Paddle sandbox webhook destination points at a rotated tunnel hostname
+**Source:** session 2026-07-20 (D117 upgrade-flow smoke)
+**Why:** cloudflared quick tunnels mint a NEW hostname every restart. The running tunnel is `emily-ministry-reviews-know.trycloudflare.com` and its request counter read 1 (only our probe) after a completed sandbox purchase — Paddle is delivering that purchase's webhooks to a dead previous hostname, so no sandbox purchase can flip a tier until the destination is updated. (The FE pending→flip chain was verified with a correctly SIGNED synthetic webhook instead; the only unverified link is Paddle's own delivery.) Side effect: that smoke purchase left an orphan ACTIVE $19/mo Pro subscription in the Paddle sandbox that will keep emitting undeliverable renewal events.
+**How:** In the Paddle sandbox dashboard → Developer Tools → Notifications: point the destination at the current tunnel URL (or replace the quick tunnel with a named cloudflared tunnel so the hostname stops rotating). Then cancel the orphan sandbox subscription (created 2026-07-20, $19/mo Pro monthly, customer chintan.a.thakkar@gmail.com). Optionally re-run one sandbox purchase to re-verify end-to-end delivery.
+**Verifies by:** tunnel request counter increments on a sandbox purchase; `/billing` pending state clears to the new tier without a signed synthetic event.
+**Status:** Open
+
 ### 2026-07-20 — Schema: subscription_events needs a monotonic arrival column
 **Source:** session 2026-07-20 billing hardening (PR #361), Codex stop-time review
 **Why:** The webhook staleness guard orders events by `subscription_events.created_at`. That is not a total order — `now()` is transaction-scoped, so two rows written in quick succession share a timestamp. `id` cannot break the tie: it is `gen_random_uuid()`, so ordering on it is a coin flip that can refuse a valid event or accept a stale one. The guard currently treats an equal timestamp as UNKNOWN order and leaves the event unprocessed for retry — fail-safe and self-clearing, but it costs a redelivery round-trip and logs `billing.webhook.ambiguous_order`.
