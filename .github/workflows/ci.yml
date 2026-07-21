@@ -61,13 +61,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
 
-  test:
-    name: Test
+  test-api:
+    name: Tests — API
     runs-on: ubuntu-latest
-    # Database-backed API and worker suites run concurrently on shared CI
-    # hardware and now sit near 15 minutes under contention. Keep a real
-    # ceiling while leaving enough headroom to avoid runner-speed flakes.
-    timeout-minutes: 25
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -90,9 +87,93 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test
+      - run: pnpm --filter @declutrmail/api test
         env:
           CLEANUP_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/declutrmail_quota_test
+
+  test-workers:
+    name: Tests — Workers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @declutrmail/workers test
+
+  test-db:
+    name: Tests — Database
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @declutrmail/db test
+
+  test-web:
+    name: Tests — Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @declutrmail/web test
+
+  test-units:
+    name: Tests — Shared units
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: >-
+          pnpm
+          --filter @declutrmail/config
+          --filter @declutrmail/events
+          --filter @declutrmail/shared
+          test
+
+  # Stable aggregate check for merge rules. Every workspace still runs;
+  # sharding only prevents six Vitest processes from fighting over one runner.
+  test:
+    name: Test
+    if: ${{ always() }}
+    needs: [test-api, test-workers, test-db, test-web, test-units]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every test shard
+        env:
+          API_RESULT: ${{ needs.test-api.result }}
+          WORKERS_RESULT: ${{ needs.test-workers.result }}
+          DB_RESULT: ${{ needs.test-db.result }}
+          WEB_RESULT: ${{ needs.test-web.result }}
+          UNITS_RESULT: ${{ needs.test-units.result }}
+        run: |
+          [[ "$API_RESULT" == success ]]
+          [[ "$WORKERS_RESULT" == success ]]
+          [[ "$DB_RESULT" == success ]]
+          [[ "$WEB_RESULT" == success ]]
+          [[ "$UNITS_RESULT" == success ]]
 
   accessibility:
     name: Authenticated accessibility smoke
