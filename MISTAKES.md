@@ -21,6 +21,14 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-07-21 — Migration CHECK constraints not mirrored into the Drizzle schema
+**PR:** #367 (https://github.com/CT2689-Tech/DeclutrMail/pull/367)
+**Caught by:** schema-migration-reviewer gate (pre-commit review of the D120 working tree)
+**What happened:** Migration 0048 added two CHECK constraints on `subscriptions` (`scheduled_change_state` enum + all-or-nothing completeness) but the Drizzle table config declared only columns and indexes — no `.check()`. CI cannot catch this drift: `drizzle-kit check` compares against a snapshot journal frozen at 0015, and atlas lint only scans SQL for dangerous ops, so the DB would enforce invariants the schema-as-source-of-truth never mentioned.
+**Correct approach:** Every migration-level CHECK gets a matching `.check(name, sql)` in the Drizzle table config in the same change (the codebase convention — see `product-feedback.ts`, `sender-policies.ts`, `mail-messages.ts`).
+**Rule:** Hand-authored migration adds a constraint ⇒ same PR mirrors it in `packages/db/src/schema/` with the identical constraint name.
+**Enforcement update:** none (schema-migration-reviewer already checks this; it fired as designed).
+
 ## 2026-06-05 — Stale dev worker process from a prior session intercepted BullMQ jobs with pre-Delete-verb code
 
 **PR:** (this branch — caught during D38 smoke 2026-06-05)
