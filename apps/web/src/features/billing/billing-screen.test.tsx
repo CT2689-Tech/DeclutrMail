@@ -601,7 +601,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
   });
 
-  it('an old unconfirmed record still LOCKS — released only by the user asserting no payment', async () => {
+  it('an old unconfirmed record still LOCKS — released only by the user confirming no charge', async () => {
     // 16 minutes old: past the unconfirmed threshold. The lock must
     // NOT silently expire (that would reopen the double-charge window
     // for exactly the user whose webhook is delayed).
@@ -618,13 +618,13 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(notice).toHaveTextContent(
-      'Payment still unconfirmed — checkout is paused so you can’t be charged twice.',
+      'Payment confirmed in checkout — your plan upgrade hasn’t come through yet.',
     );
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
 
     // The explicit, user-asserted release — the only non-flip way out.
     fireEvent.click(
-      within(notice).getByRole('button', { name: 'I didn’t complete a payment — resume checkout' }),
+      within(notice).getByRole('button', { name: 'No charge went through — resume checkout' }),
     );
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();

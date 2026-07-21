@@ -61,7 +61,7 @@ const PAYMENT_PROCESSING_SLOW_AFTER_MS = 90_000;
  * stays locked (a silent unlock would reopen the double-charge window
  * for exactly the user whose webhook is delayed), the poll slows to
  * PAYMENT_UNCONFIRMED_POLL_MS, and the only releases are the tier flip
- * or the user explicitly asserting they didn't complete a payment.
+ * or the user confirming no charge actually went through.
  */
 const PAYMENT_UNCONFIRMED_AFTER_MS = 15 * 60_000;
 const PAYMENT_UNCONFIRMED_POLL_MS = 30_000;
@@ -192,7 +192,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
     };
   }, [pending]);
 
-  // The explicit, user-asserted release: "I didn't complete a payment".
+  // The explicit, user-asserted release: "no charge went through".
   // The ONLY path out of the unconfirmed lock besides the tier flip —
   // never released on a timer (that would reopen the double-charge
   // window for exactly the user whose webhook is delayed).
@@ -325,7 +325,7 @@ function cancelErrorMessage(error: unknown): string {
  * Phases: `fresh` ("usually within a minute") → `slow` (elapsed branch
  * with a support escape hatch) → `unconfirmed` (checkout stays locked;
  * the ONLY releases are the tier flip or the user asserting via
- * `onRelease` that they didn't complete a payment — an automatic
+ * `onRelease` that no charge actually went through — an automatic
  * unlock would reopen the double-charge window).
  */
 export function PaymentProcessingNotice({
@@ -333,7 +333,7 @@ export function PaymentProcessingNotice({
   onRelease,
 }: {
   phase?: 'fresh' | 'slow' | 'unconfirmed';
-  /** User-asserted "I didn't complete a payment" release (unconfirmed only). */
+  /** User-asserted "no charge went through" release (unconfirmed only). */
   onRelease?: () => void;
 }) {
   return (
@@ -359,15 +359,17 @@ export function PaymentProcessingNotice({
         {phase === 'unconfirmed' ? (
           <span>
             <strong style={{ fontWeight: 600 }}>
-              Payment still unconfirmed — checkout is paused so you can&rsquo;t be charged twice.
+              Payment confirmed in checkout — your plan upgrade hasn&rsquo;t come through yet.
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
-              We haven&rsquo;t received confirmation from the payment provider yet. This page keeps
-              checking. If you completed the payment and your plan doesn&rsquo;t update, email{' '}
+              The provider&rsquo;s confirmation hasn&rsquo;t reached our server, so checkout stays
+              paused — starting another checkout could charge you twice. This page keeps checking.
+              Email{' '}
               <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
                 support@declutrmail.com
               </a>{' '}
-              — your money is safe either way.
+              and we&rsquo;ll sort it out; your payment is safe. If no payment actually went through
+              — no charge on your statement, no receipt email — you can resume checkout below.
             </span>
           </span>
         ) : phase === 'slow' ? (
@@ -397,7 +399,7 @@ export function PaymentProcessingNotice({
       {phase === 'unconfirmed' && onRelease ? (
         <div>
           <Button tone="default" onClick={onRelease}>
-            I didn&rsquo;t complete a payment — resume checkout
+            No charge went through — resume checkout
           </Button>
         </div>
       ) : null}
