@@ -64,7 +64,7 @@ section to the Done section. Do not delete entries — the trail matters.
 **Why:** You scoped the fix PR to correctness-only. These remain, highest money-risk first: (1) `past_due` grants entitlement with NO time bound, and Razorpay's terminal `halted` maps into it — Razorpay never auto-cancels, so that is free Pro forever; (2) no reconciliation job polls either provider, so the webhook is the only channel with no backstop sweep; (3) paused/`past_due` users are blocked from checkout with no resume or un-cancel path anywhere (BE endpoint and FE control both absent); (4) founding sale #251 charges the $129 promo price but grants Pro without the price lock, with no FE signal; (5) `/billing` renders tier from `workspaces.tier` and price from the latest `subscriptions` row regardless of status, so a canceled Pro shows "Free · $190/yr".
 **How:** Decide which to schedule. (1) needs a dunning deadline value from you (days past `current_period_end` before the grant drops). (3) and (5) touch design-freeze surfaces (D220).
 **Verifies by:** per-item — (1) a `halted` Razorpay sub loses entitlement after the deadline; (5) a canceled Pro renders one consistent state.
-**Status:** Open
+**Status:** Open — (3) and (5) SHIPPED in PR #367 (2026-07-20): `POST /api/billing/resume` + paused-notice with Resume/Cancel closes the resume half of (3) (un-cancel still absent); the plan card now renders only entitlement-backed subscription facts, closing (5). (1), (2), (4) remain.
 
 <!-- Newest at top. -->
 
