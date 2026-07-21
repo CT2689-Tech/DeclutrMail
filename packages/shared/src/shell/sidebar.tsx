@@ -118,7 +118,7 @@ export function Sidebar({
         </span>
         <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em' }}>
           DeclutrMail
-          <span style={{ color: color.primary }}>.ai</span>
+          <span style={{ color: color.primary }}>.com</span>
         </span>
       </div>
 
