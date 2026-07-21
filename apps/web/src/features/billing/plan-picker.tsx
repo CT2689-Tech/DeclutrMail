@@ -21,6 +21,7 @@ import { useChangePlan } from './api/use-change-plan';
 import { useCheckout } from './api/use-checkout';
 import {
   formatBillingDate,
+  isDeferredDowngrade,
   MONEY_BACK_NOTE,
   planPriceLabel,
   sharedAnnualMonthsFree,
@@ -255,7 +256,11 @@ export function PlanPicker({
               fromCycle={grantingSub.cycle}
               currentPeriodEnd={grantingSub.currentPeriodEnd}
               isPending={changePlan.isPending}
-              errorMessage={changePlan.error ? checkoutErrorMessage(changePlan.error) : null}
+              errorMessage={
+                changePlan.error
+                  ? planChangeErrorMessage(changePlan.error, grantingSub, selected, cycle)
+                  : null
+              }
               onConfirm={() => onConfirmChange(selected)}
               onDismiss={closePanel}
             />
@@ -305,6 +310,30 @@ export function checkoutErrorMessage(error: unknown): string | null {
     return ERROR_CODES[code].message;
   }
   return 'Checkout could not be started. Please try again.';
+}
+
+/**
+ * Change-plan failures need one extra branch the generic mapping can't
+ * carry: a provider error on an IMMEDIATE upgrade is ambiguous — the
+ * prorated charge may have gone through before the response was lost.
+ * Claiming "could not be reached, try again" would falsely assure a
+ * possibly-charged user. Deferred downgrades carry no charge, so the
+ * generic message stays honest for them.
+ */
+export function planChangeErrorMessage(
+  error: unknown,
+  from: { tier: PaidTier; cycle: BillingCycle },
+  target: PaidTier,
+  cycle: BillingCycle,
+): string | null {
+  if (!error) return null;
+  if (
+    apiErrorCode(error) === 'BILLING_PROVIDER_ERROR' &&
+    !isDeferredDowngrade(from.tier, from.cycle, target, cycle)
+  ) {
+    return 'The payment provider didn’t confirm the upgrade — it may or may not have gone through. If it did, this page updates to the new plan shortly; check before retrying, or email support@declutrmail.com.';
+  }
+  return checkoutErrorMessage(error);
 }
 
 function CycleToggle({
@@ -554,9 +583,7 @@ function ChangePlanPanel({
 }) {
   const toLabel = planPriceLabel(target, cycle);
   const samePlan = target === fromTier && cycle === fromCycle;
-  const isDowngrade =
-    (fromTier === 'pro' && target === 'plus') ||
-    (fromTier === target && fromCycle === 'annual' && cycle === 'monthly');
+  const isDowngrade = isDeferredDowngrade(fromTier, fromCycle, target, cycle);
   const effectiveDate = formatBillingDate(currentPeriodEnd);
   return (
     <div

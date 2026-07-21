@@ -52,6 +52,23 @@ export function sharedAnnualMonthsFree(): number | null {
   return first;
 }
 
+/**
+ * D120 — is this paid→paid change a deferred (period-end) downgrade?
+ * MUST mirror `isDowngrade` in apps/api billing.service.changePlan —
+ * the preview's "$0 today vs charged now" claim rides on agreement.
+ */
+export function isDeferredDowngrade(
+  fromTier: TierId,
+  fromCycle: BillingCycle,
+  toTier: TierId,
+  toCycle: BillingCycle,
+): boolean {
+  return (
+    (fromTier === 'pro' && toTier === 'plus') ||
+    (fromTier === toTier && fromCycle === 'annual' && toCycle === 'monthly')
+  );
+}
+
 /** "Jun 1, 2026" — en-US to match the D119 mock. Null-safe. */
 export function formatBillingDate(iso: string | null): string | null {
   if (!iso) return null;

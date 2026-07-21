@@ -975,6 +975,67 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
   });
 
+  it('an ambiguous provider error on an IMMEDIATE upgrade never claims the charge failed', async () => {
+    // A 502 on prorated_immediately is ambiguous — the charge may have
+    // landed before the response was lost. The copy must not assure
+    // "could not be reached / try again" (the double-belief trap).
+    mockTier = 'plus';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: () =>
+          new Response(
+            JSON.stringify({ error: { code: 'BILLING_PROVIDER_ERROR', message: 'ignored' } }),
+            { status: 502, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    const panel = screen.getByTestId('change-plan-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
+
+    const alert = await within(panel).findByRole('alert');
+    expect(alert).toHaveTextContent(/may or may not have gone through/);
+    expect(alert).not.toHaveTextContent(/could not be reached/);
+  });
+
+  it('a provider error on a $0 deferred downgrade keeps the generic retry message', async () => {
+    mockTier = 'pro';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PRO_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: () =>
+          new Response(
+            JSON.stringify({ error: { code: 'BILLING_PROVIDER_ERROR', message: 'ignored' } }),
+            { status: 502, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
+    const panel = screen.getByTestId('change-plan-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Schedule downgrade' }));
+
+    const alert = await within(panel).findByRole('alert');
+    expect(alert).toHaveTextContent(/could not be reached/);
+    expect(alert).not.toHaveTextContent(/may or may not have gone through/);
+  });
+
   it('a Razorpay subscriber gets the honest support route, never the failing confirm', async () => {
     mockTier = 'plus';
     installFetchStub([

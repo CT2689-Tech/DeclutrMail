@@ -682,7 +682,7 @@ function ScheduledPlanChangeNotice({
           <>
             Your request to move to {targetName} ({scheduledChange.cycle}) was recorded, but the
             payment provider hasn&rsquo;t confirmed it yet. Your {TIER_MANIFEST[currentTier].name}{' '}
-            features stay active, and nothing is charged while it settles.
+            features stay active, and this request itself charges $0.
           </>
         ) : (
           <>
@@ -724,7 +724,9 @@ function ScheduledPlanChangeNotice({
       </div>
       {changePlan.error ? (
         <span role="alert" style={{ color: color.red, fontSize: 12 }}>
-          We couldn&rsquo;t cancel the scheduled downgrade. Nothing else changed — please try again.
+          The payment provider didn&rsquo;t confirm the cancellation — it may or may not have
+          registered. This page reflects the confirmed state; retry, or email
+          support@declutrmail.com if it repeats.
         </span>
       ) : null}
     </div>
@@ -811,7 +813,7 @@ function PausedSubscriptionNotice({
         >
           {apiErrorCode(resume.error) === 'RESUME_PERIOD_ENDED'
             ? 'Your retained billing period has ended. Nothing was charged. Email support@declutrmail.com to reactivate with a new paid period.'
-            : 'Resuming didn’t go through. Please try again, or email support@declutrmail.com.'}
+            : 'The payment provider didn’t confirm the resume. Resume starts no new charge either way — try again, or email support@declutrmail.com.'}
         </div>
       ) : null}
       {confirmingResume && canSelfServeResume ? (
