@@ -70,6 +70,8 @@ export function PlanPicker({
   onPaymentCompleted,
   onPlanChangeAccepted,
   onPlanChangeUnconfirmed,
+  onPlanChangeAttempt,
+  onPlanChangeFailedKnown,
 }: {
   currentTier: TierId;
   /** The latest provider subscription record (screen's read), or null. */
@@ -92,6 +94,13 @@ export function PlanPicker({
    *  The screen must lock + poll; the panel must NOT stay open with a
    *  retryable confirm. */
   onPlanChangeUnconfirmed: (target: PaidTier, cycle: BillingCycle) => void;
+  /** Fired BEFORE the change-plan request — the screen writes the
+   *  persistent lock pessimistically so an unmount/reload mid-flight
+   *  cannot leave an armed retry with an unknown outcome. */
+  onPlanChangeAttempt: (target: PaidTier, cycle: BillingCycle) => void;
+  /** The failure is KNOWN (definitive rejection / non-provider error —
+   *  nothing applied, nothing charged): release the attempt lock. */
+  onPlanChangeFailedKnown: () => void;
 }) {
   const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
   const [selected, setSelected] = useState<StripTierId | null>(null);
@@ -187,6 +196,10 @@ export function PlanPicker({
     if (changePlan.isPending) return;
     void track('plan_change_started', { tier: target, cycle, from_tier: currentTier });
     const from = grantingSub;
+    // Pessimistic lock BEFORE the money-moving request: if this tab
+    // unmounts or reloads mid-flight, these mutate callbacks never run
+    // and the persisted lock is what prevents an armed blind retry.
+    onPlanChangeAttempt(target, cycle);
     changePlan.mutate(
       { tierId: target, cycle },
       {
@@ -202,7 +215,7 @@ export function PlanPicker({
           // (details.providerOutcome, set only when the provider itself
           // refused the call — nothing applied, nothing charged) stays
           // inline and retryable, as do deferred ($0) downgrades and
-          // every non-provider error.
+          // every non-provider error — those release the attempt lock.
           if (
             apiErrorCode(error) === 'BILLING_PROVIDER_ERROR' &&
             apiErrorDetail(error, 'providerOutcome') !== 'definitive' &&
@@ -211,6 +224,8 @@ export function PlanPicker({
           ) {
             closePanel();
             onPlanChangeUnconfirmed(target, cycle);
+          } else {
+            onPlanChangeFailedKnown();
           }
         },
       },

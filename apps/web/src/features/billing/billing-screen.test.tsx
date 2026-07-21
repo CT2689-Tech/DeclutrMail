@@ -1016,6 +1016,66 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('button', { name: /Switch to/ })).toHaveLength(0);
     expect(changeAttempts).toBe(1);
+    // The persisted lock survives (a reload would re-lock).
+    const stored = window.localStorage.getItem(pendingCheckoutKey('w'));
+    expect(stored).not.toBeNull();
+    expect((JSON.parse(stored!) as { kind: string }).kind).toBe('change_unconfirmed');
+  });
+
+  it('an interrupted change attempt locks the NEXT mount; release is a two-step assertion', async () => {
+    // The attempt lock is written BEFORE the request — a reload/unmount
+    // mid-flight leaves this record with no observed outcome. A fresh
+    // mount must lock, and the only manual exit is the explicit
+    // checked-first release.
+    mockTier = 'plus';
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'change_unconfirmed',
+        fromTier: 'plus',
+        fromCycle: 'monthly',
+        toTier: 'pro',
+        toCycle: 'annual',
+        at: Date.now() - 16 * 60_000,
+      }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent(
+      'Plan change unconfirmed — your plan change hasn’t come through yet.',
+    );
+    expect(screen.queryAllByRole('button', { name: /Switch to/ })).toHaveLength(0);
+
+    // Two-step: first click states the risk and releases nothing.
+    fireEvent.click(
+      within(notice).getByRole('button', { name: 'The change didn’t apply — let me retry' }),
+    );
+    const releaseConfirm = within(notice).getByTestId('release-confirm');
+    expect(releaseConfirm).toHaveTextContent(/can move money again/i);
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+
+    fireEvent.click(within(releaseConfirm).getByRole('button', { name: 'Keep waiting' }));
+    expect(within(notice).queryByTestId('release-confirm')).not.toBeInTheDocument();
+
+    // Only the confirmed assertion releases.
+    fireEvent.click(
+      within(notice).getByRole('button', { name: 'The change didn’t apply — let me retry' }),
+    );
+    fireEvent.click(
+      within(notice).getByRole('button', { name: 'I checked — nothing applied. Let me retry' }),
+    );
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Switch to Pro' })).toBeInTheDocument();
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
   });
 
   it('a provider error on a $0 deferred downgrade stays inline — retry is charge-free', async () => {
@@ -1084,6 +1144,8 @@ describe('BillingScreen — paid subscriber', () => {
     expect(alert).toHaveTextContent(/declined this change — nothing was applied or charged/);
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
     expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled();
+    // Known outcome ⇒ the pessimistic attempt lock was released.
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
   });
 
   it('a Razorpay subscriber gets the honest support route, never the failing confirm', async () => {

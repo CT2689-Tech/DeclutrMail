@@ -236,6 +236,33 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
     void subscriptionQuery.refetch();
   }
 
+  /**
+   * Pessimistic lock around the money-moving change-plan request: the
+   * record is written BEFORE the request fires, so an unmount, reload,
+   * or crash mid-flight leaves the lock in place (hydration re-locks on
+   * the next mount) instead of leaving an armed retry. Deliberately no
+   * `setPending` here — the in-flight tab keeps its normal isPending
+   * spinner; only an interrupted/ambiguous outcome surfaces the lock.
+   * Every KNOWN outcome clears or replaces the record: accepted →
+   * `change`, scheduled → cleared, definitive/non-provider error →
+   * cleared, ambiguous → `change_unconfirmed` becomes visible.
+   */
+  function onPlanChangeAttempt(toTier: TierId, toCycle: BillingCycle | null) {
+    writePendingCheckout(
+      workspaceId,
+      'change_unconfirmed',
+      tier,
+      subscription?.cycle ?? null,
+      toTier,
+      toCycle,
+    );
+  }
+
+  function onPlanChangeFailedKnown() {
+    clearPendingCheckout(workspaceId);
+    setPending(null);
+  }
+
   function onConfirmCancel(reason: CancelRequest['reason']) {
     cancel.mutate(reason ? { reason } : {}, {
       onSuccess: (next) => {
@@ -332,9 +359,13 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         initialIntent={initialIntent}
         onRequestCancel={() => setCancelOpen(true)}
         onPaymentCompleted={(target, cycle) => startPending('checkout', target, cycle)}
+        onPlanChangeAttempt={onPlanChangeAttempt}
+        onPlanChangeFailedKnown={onPlanChangeFailedKnown}
         onPlanChangeAccepted={(next, target, cycle) => {
           const scheduled = next.subscription?.scheduledChange ?? null;
           if (scheduled) {
+            // Scheduled ($0) — the attempt lock has done its job.
+            clearPendingCheckout(workspaceId);
             queryClient.setQueryData(billingKeys.subscription(), next);
             const date = formatBillingDate(scheduled.effectiveAt);
             toast(date ? `Downgrade scheduled for ${date}.` : 'Downgrade scheduled.', 'success');
@@ -486,38 +517,58 @@ export function PaymentProcessingNotice({
         )}
       </span>
       {phase === 'unconfirmed' && onRelease ? (
-        kind === 'checkout' ? (
+        kind === 'checkout' || kind === 'change_unconfirmed' ? (
+          // A payment happened (checkout) or MAY have (unconfirmed
+          // change) — release needs an explicit user assertion, never
+          // one click.
           confirmingRelease ? (
             <div
               data-testid="release-confirm"
               style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
             >
               <p style={{ margin: 0, fontSize: 12.5, color: color.fg }}>
-                <strong style={{ fontWeight: 600 }}>Before resuming, check for a charge</strong> — a
-                card statement entry or a Paddle receipt email. If the payment did go through and
-                you check out again, you could be charged twice. Resuming doesn&rsquo;t cancel the
-                earlier payment.
+                {kind === 'checkout' ? (
+                  <>
+                    <strong style={{ fontWeight: 600 }}>Before resuming, check for a charge</strong>{' '}
+                    — a card statement entry or a Paddle receipt email. If the payment did go
+                    through and you check out again, you could be charged twice. Resuming
+                    doesn&rsquo;t cancel the earlier payment.
+                  </>
+                ) : (
+                  <>
+                    <strong style={{ fontWeight: 600 }}>
+                      Before retrying, check your plan and your card
+                    </strong>{' '}
+                    — if the upgrade actually went through, it shows here shortly and no retry is
+                    needed. Starting a different change on top of an applied one can move money
+                    again.
+                  </>
+                )}
               </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Button tone="default" onClick={() => setConfirmingRelease(false)}>
                   Keep waiting
                 </Button>
                 <Button tone="danger" onClick={onRelease}>
-                  I checked — no charge. Resume checkout
+                  {kind === 'checkout'
+                    ? 'I checked — no charge. Resume checkout'
+                    : 'I checked — nothing applied. Let me retry'}
                 </Button>
               </div>
             </div>
           ) : (
             <div>
               <Button tone="default" onClick={() => setConfirmingRelease(true)}>
-                No charge went through — resume checkout
+                {kind === 'checkout'
+                  ? 'No charge went through — resume checkout'
+                  : 'The change didn’t apply — let me retry'}
               </Button>
             </div>
           )
         ) : (
-          // Change/resume locks carry no new-payment risk — re-applying
-          // the same change is a provider no-op — so a single explicit
-          // release is enough.
+          // Accepted change / resume locks carry no new-payment risk —
+          // re-applying the same change is a provider no-op — so a
+          // single explicit release is enough.
           <div>
             <Button tone="default" onClick={onRelease}>
               Stop waiting — let me try again
