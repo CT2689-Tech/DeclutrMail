@@ -233,18 +233,21 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
     toCycle: BillingCycle | null,
     ownAttemptId?: string,
   ) {
-    // No-clobber guard: the key is one per workspace. If it currently
-    // holds ANOTHER attempt's unresolved change_unconfirmed lock, this
-    // outcome must not overwrite it — that lock's money outcome is
-    // still unknown, and replacing it would let the other flow's flip
-    // (or release) silently discard it. Surface the existing lock
-    // instead; its exit is the flip or the user's two-step assertion.
+    // No-clobber guard: the key is one per workspace, and an existing
+    // change_unconfirmed record is an UNRESOLVED money outcome. It may
+    // be overwritten only by the attempt that owns it — presenting its
+    // exact id. Everything else (a completed checkout, an accepted
+    // change, a resume, another attempt) must surface it, not replace
+    // it: replacing would let a different flow's flip or single-step
+    // release silently discard a maybe-charged state. Id-LESS
+    // change_unconfirmed records (the surfaced/interrupted form) are
+    // therefore absolutely protected here — their only exits are the
+    // tier flip or the user's two-step assertion.
     const existing = readPendingCheckout(workspaceId);
     if (
       existing !== null &&
       existing.kind === 'change_unconfirmed' &&
-      existing.attemptId !== undefined &&
-      existing.attemptId !== ownAttemptId
+      (existing.attemptId === undefined || existing.attemptId !== ownAttemptId)
     ) {
       setPending(existing);
     } else {

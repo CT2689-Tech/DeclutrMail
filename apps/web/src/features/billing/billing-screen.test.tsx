@@ -703,6 +703,69 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
   });
 
+  it('a completing checkout never clobbers a surfaced (id-less) ambiguous change lock', async () => {
+    // The surfaced/interrupted change_unconfirmed record carries no
+    // attemptId — it is absolutely protected: even a checkout that just
+    // completed its overlay payment must surface it, not replace it.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          jsonOk({
+            data: {
+              provider: 'paddle',
+              kind: 'overlay',
+              priceId: 'pri_test_123',
+              clientToken: 'test_token',
+              environment: 'sandbox',
+              customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+
+    // Another tab's ambiguous change surfaces its lock while the
+    // overlay is open here (pre-storage-event race — no event fired).
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'change_unconfirmed',
+        fromTier: 'plus',
+        fromCycle: 'monthly',
+        toTier: 'pro',
+        toCycle: 'annual',
+        at: Date.now(),
+      }),
+    );
+
+    act(() => capturedCheckoutEvents().onCompleted?.());
+
+    // The ambiguous lock survives verbatim and is what the screen shows.
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('Plan change unconfirmed');
+    expect(notice).not.toHaveTextContent('Payment received');
+    const after = JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!) as {
+      kind: string;
+      attemptId?: string;
+    };
+    expect(after.kind).toBe('change_unconfirmed');
+    expect(after.attemptId).toBeUndefined();
+  });
+
   it('a payment completed in ANOTHER tab locks this one live (storage event)', async () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
