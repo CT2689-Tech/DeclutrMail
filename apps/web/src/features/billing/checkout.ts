@@ -49,25 +49,44 @@ let paddleLoader: () => Promise<PaddleModule> = () => import('@paddle/paddle-js'
 
 export function __setPaddleLoaderForTests(loader: () => Promise<PaddleModule>): void {
   paddleLoader = loader;
+  // Test isolation: a fresh loader means a fresh Paddle world.
+  paddleInstance = null;
+  activeEvents = {};
 }
+
+/**
+ * Paddle.js `initializePaddle` is FIRST-INIT-WINS: calling it again
+ * returns the existing instance and silently ignores the new
+ * `eventCallback`. Registering per-launch closures there would route a
+ * SECOND checkout's `completed`/`closed` events into the FIRST
+ * launch's handlers — with the first attempt's (stale) reservation id.
+ * So the instance is cached once and the singleton callback always
+ * dispatches to `activeEvents`, which each launch takes over.
+ */
+let paddleInstance: Paddle | null = null;
+let activeEvents: CheckoutEvents = {};
 
 async function openPaddleOverlay(
   session: PaddleCheckoutSession,
   events: CheckoutEvents,
 ): Promise<void> {
-  const { initializePaddle } = await paddleLoader();
-  const paddle: Paddle | undefined = await initializePaddle({
-    environment: session.environment,
-    token: session.clientToken,
-    eventCallback: (event) => {
-      if (event.name === CheckoutEventNames.CHECKOUT_COMPLETED) events.onCompleted?.();
-      if (event.name === CheckoutEventNames.CHECKOUT_CLOSED) events.onClosed?.();
-    },
-  });
-  if (!paddle) {
-    throw new Error('Paddle.js failed to initialize.');
+  activeEvents = events;
+  if (!paddleInstance) {
+    const { initializePaddle } = await paddleLoader();
+    const paddle: Paddle | undefined = await initializePaddle({
+      environment: session.environment,
+      token: session.clientToken,
+      eventCallback: (event) => {
+        if (event.name === CheckoutEventNames.CHECKOUT_COMPLETED) activeEvents.onCompleted?.();
+        if (event.name === CheckoutEventNames.CHECKOUT_CLOSED) activeEvents.onClosed?.();
+      },
+    });
+    if (!paddle) {
+      throw new Error('Paddle.js failed to initialize.');
+    }
+    paddleInstance = paddle;
   }
-  paddle.Checkout.open({
+  paddleInstance.Checkout.open({
     items: [{ priceId: session.priceId, quantity: 1 }],
     // Verbatim pass-through — webhook workspace attribution (D117).
     customData: session.customData,

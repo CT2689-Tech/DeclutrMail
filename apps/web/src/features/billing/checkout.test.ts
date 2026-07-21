@@ -99,6 +99,29 @@ describe('launchCheckout', () => {
     expect(onCompleted).toHaveBeenCalledTimes(1);
   });
 
+  it('paddle: a SECOND launch takes over the event routing (first-init-wins safety)', async () => {
+    // initializePaddle is first-init-wins: the singleton eventCallback
+    // must dispatch to the LATEST launch's handlers, never the stale
+    // first closure (which would carry the first attempt's reservation
+    // id into the second checkout's completed/closed events).
+    const { initializePaddle } = stubPaddle();
+    const first = { onCompleted: vi.fn(), onClosed: vi.fn() };
+    const second = { onCompleted: vi.fn(), onClosed: vi.fn() };
+
+    await launchCheckout(PADDLE_SESSION, first);
+    await launchCheckout(PADDLE_SESSION, second);
+    // Instance cached — the provider was initialized exactly once.
+    expect(initializePaddle).toHaveBeenCalledTimes(1);
+    const eventCallback = registeredEventCallback(initializePaddle);
+
+    eventCallback({ name: 'checkout.completed' });
+    eventCallback({ name: 'checkout.closed' });
+    expect(first.onCompleted).not.toHaveBeenCalled();
+    expect(first.onClosed).not.toHaveBeenCalled();
+    expect(second.onCompleted).toHaveBeenCalledTimes(1);
+    expect(second.onClosed).toHaveBeenCalledTimes(1);
+  });
+
   it('paddle: events are optional — an eventless launch still opens the overlay', async () => {
     const { open, initializePaddle } = stubPaddle();
 
