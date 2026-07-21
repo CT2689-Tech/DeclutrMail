@@ -213,6 +213,13 @@ export const ERROR_CODES = {
     message:
       'Changing plans would end your Founding Pro price lock. Email support@declutrmail.com if you want to switch anyway.',
   },
+  PLAN_CHANGE_UNSUPPORTED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'Plan changes aren’t self-serve for this subscription yet — email support@declutrmail.com and we’ll switch you over.',
+  },
 
   // --- domain: account deletion (D205/D216/D232 — apps/api/src/account) ---
   DELETION_CONFIRM_MISMATCH: {

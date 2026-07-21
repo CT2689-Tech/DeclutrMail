@@ -871,6 +871,41 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByRole('button', { name: /Switch to/ })).not.toBeInTheDocument();
   });
 
+  it('a Razorpay subscriber gets the honest support route, never the failing confirm', async () => {
+    mockTier = 'plus';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...PLUS_SUB,
+              subscription: PLUS_SUB.subscription
+                ? { ...PLUS_SUB.subscription, provider: 'razorpay' }
+                : null,
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    const panel = screen.getByTestId('razorpay-switch-panel');
+    expect(panel).toHaveTextContent(/aren’t self-serve yet for subscriptions paid via Razorpay/);
+    expect(
+      within(panel)
+        .getByRole('link', { name: /Email support/ })
+        .getAttribute('href'),
+    ).toContain('mailto:support@declutrmail.com');
+    expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
+    // No cycle-switch CTA on the current card either — nothing that
+    // routes a Razorpay sub into the unsupported endpoint.
+    expect(
+      screen.queryByRole('button', { name: /Switch to (monthly|annual) billing/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it('a paused subscription shows the honest paused notice; Resume POSTs and enters pending', async () => {
     mockTier = 'free';
     let resumed = false;
@@ -909,6 +944,9 @@ describe('BillingScreen — paid subscriber', () => {
     // The paused notice owns the story + both exits.
     const notice = screen.getByTestId('paused-subscription-notice');
     expect(notice).toHaveTextContent('Your Plus subscription is paused');
+    // The entitlement claim is DERIVED from the server read, never
+    // hardcoded — this fixture's tier is free, so the copy may say so.
+    expect(notice).toHaveTextContent('your workspace is on Free');
     expect(within(notice).getByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
 
     // Plan changes stay locked while paused.

@@ -331,8 +331,7 @@ describe('BillingService', () => {
       expect(paddleChangePlan).not.toHaveBeenCalled();
     });
 
-    it('unprovisioned target price fails closed (BILLING_NOT_PROVISIONED)', async () => {
-      // Razorpay pro_annual is null in the fixture catalog.
+    it('Razorpay subscription → PLAN_CHANGE_UNSUPPORTED (Paddle-only at launch)', async () => {
       await db.insert(subscriptions).values({
         workspaceId: principal.workspaceId,
         provider: 'razorpay',
@@ -344,7 +343,17 @@ describe('BillingService', () => {
       });
       await expect(
         service.changePlan(principal, { tierId: 'pro', cycle: 'annual' }),
+      ).rejects.toMatchObject({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+      expect(paddleChangePlan).not.toHaveBeenCalled();
+    });
+
+    it('unprovisioned target price fails closed (BILLING_NOT_PROVISIONED)', async () => {
+      // The fixture catalog has NO pro_monthly entry.
+      await seedActivePlus();
+      await expect(
+        service.changePlan(principal, { tierId: 'pro', cycle: 'monthly' }),
       ).rejects.toMatchObject({ code: 'BILLING_NOT_PROVISIONED' });
+      expect(paddleChangePlan).not.toHaveBeenCalled();
     });
   });
 

@@ -294,6 +294,11 @@ export class BillingService {
       // Idempotent no-op — nothing to change, nothing to charge.
       return this.getSubscription(principal.workspaceId);
     }
+    if (sub.provider === 'razorpay') {
+      // Paddle-only at launch — see razorpay.adapter.changePlan for why.
+      // Checked here too so the answer doesn't depend on catalog state.
+      throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+    }
 
     const priceId = this.catalog.resolvePriceId(sub.provider, dto.tierId, dto.cycle, false);
     if (!priceId) {

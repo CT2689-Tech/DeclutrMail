@@ -124,9 +124,10 @@ export function PlanPicker({
 
   function onSelect(id: StripTierId) {
     if (disabled) return;
-    // The current plan card carries no CTA — but with a granting sub,
-    // the CURRENT TIER at the OTHER cycle is a valid switch target.
-    if (id === currentTier && grantingSub === null) return;
+    // The current plan card carries no CTA — but with a PADDLE granting
+    // sub, the CURRENT TIER at the OTHER cycle is a valid switch target
+    // (Razorpay changes aren't self-serve — no cycle switch either).
+    if (id === currentTier && grantingSub?.provider !== 'paddle') return;
     checkout.reset();
     changePlan.reset();
     setSelected((prev) => (prev === id ? null : id));
@@ -211,7 +212,7 @@ export function PlanPicker({
             tierId={id}
             cycle={cycle}
             isCurrent={id === currentTier}
-            currentCycle={grantingSub?.cycle ?? null}
+            currentCycle={grantingSub?.provider === 'paddle' ? grantingSub.cycle : null}
             isSelected={id === selected}
             disabled={disabled}
             hasGrantingSubscription={grantingSub !== null}
@@ -233,16 +234,20 @@ export function PlanPicker({
             />
           ) : null
         ) : grantingSub !== null ? (
-          <ChangePlanPanel
-            target={selected}
-            cycle={cycle}
-            fromTier={grantingSub.tier}
-            fromCycle={grantingSub.cycle}
-            isPending={changePlan.isPending}
-            errorMessage={changePlan.error ? checkoutErrorMessage(changePlan.error) : null}
-            onConfirm={() => onConfirmChange(selected)}
-            onDismiss={closePanel}
-          />
+          grantingSub.provider === 'paddle' ? (
+            <ChangePlanPanel
+              target={selected}
+              cycle={cycle}
+              fromTier={grantingSub.tier}
+              fromCycle={grantingSub.cycle}
+              isPending={changePlan.isPending}
+              errorMessage={changePlan.error ? checkoutErrorMessage(changePlan.error) : null}
+              onConfirm={() => onConfirmChange(selected)}
+              onDismiss={closePanel}
+            />
+          ) : (
+            <RazorpaySwitchPanel target={selected} cycle={cycle} onDismiss={closePanel} />
+          )
         ) : (
           <ConfirmPanel
             target={selected}
@@ -444,6 +449,63 @@ function PlanCard({
           </Button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Razorpay plan changes are not self-serve at launch — the BE fails
+ * closed with PLAN_CHANGE_UNSUPPORTED (untested provider update
+ * semantics + no Razorpay catalog provisioned; see razorpay.adapter).
+ * Say so honestly and hand the user the prefilled support route
+ * instead of a confirm button that can only error.
+ */
+function RazorpaySwitchPanel({
+  target,
+  cycle,
+  onDismiss,
+}: {
+  target: PaidTier;
+  cycle: BillingCycle;
+  onDismiss: () => void;
+}) {
+  const mailto = `mailto:support@declutrmail.com?subject=${encodeURIComponent(
+    'Plan change request',
+  )}&body=${encodeURIComponent(
+    `Please switch my subscription to ${TIER_MANIFEST[target].name} (${cycle}).`,
+  )}`;
+  return (
+    <div
+      data-testid="razorpay-switch-panel"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        padding: '14px 16px',
+        background: color.paper,
+        border: `1px solid ${color.line}`,
+        borderRadius: radius.md,
+        fontSize: 13,
+        color: color.fgSoft,
+        lineHeight: 1.55,
+      }}
+    >
+      <p style={{ margin: 0 }}>
+        Plan changes aren&rsquo;t self-serve yet for subscriptions paid via Razorpay — email us and
+        we&rsquo;ll switch you to {TIER_MANIFEST[target].name} ({cycle}), usually within a day. Your
+        current plan keeps working in the meantime.
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <a
+          href={mailto}
+          style={{ fontSize: 12.5, color: color.primary, fontWeight: 600, textDecoration: 'none' }}
+        >
+          Email support with your request →
+        </a>
+        <Button tone="default" onClick={onDismiss}>
+          Keep current plan
+        </Button>
+      </div>
     </div>
   );
 }

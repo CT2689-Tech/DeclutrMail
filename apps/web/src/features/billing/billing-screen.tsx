@@ -284,6 +284,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
       {subscription?.status === 'paused' && !billingDisabled && pending === null ? (
         <PausedSubscriptionNotice
           subscription={subscription}
+          currentTier={tier}
           onResumeStarted={() => startPending('resume')}
           onRequestCancel={() => setCancelOpen(true)}
         />
@@ -590,17 +591,21 @@ function CurrentPlanCard({
 }
 
 /**
- * A paused subscription grants NOTHING (the workspace is on Free) —
- * say so and offer the two real exits: resume it (webhook restores the
- * tier) or cancel it. Plan changes stay locked while paused (the BE
- * rejects them with SUBSCRIPTION_PAUSED).
+ * A paused subscription's designed state: the two real exits — resume
+ * it (webhook restores the tier) or cancel it. Plan changes stay
+ * locked while paused (the BE rejects them with SUBSCRIPTION_PAUSED).
+ * Copy states only server facts: the entitlement tier comes from the
+ * subscription READ (`currentTier`), never assumed to be Free.
  */
 function PausedSubscriptionNotice({
   subscription,
+  currentTier,
   onResumeStarted,
   onRequestCancel,
 }: {
   subscription: NonNullable<BillingSubscription['subscription']>;
+  /** The workspace's server-resolved entitlement tier. */
+  currentTier: TierId;
   onResumeStarted: () => void;
   onRequestCancel: () => void;
 }) {
@@ -629,8 +634,9 @@ function PausedSubscriptionNotice({
           Your {tierName} subscription is paused{until ? ` until ${until}` : ''}.
         </strong>{' '}
         <span style={{ color: color.fgSoft }}>
-          A paused plan doesn&rsquo;t grant features — your workspace is on Free until it resumes.
-          Resume to get {tierName} back, or cancel if you&rsquo;re done with it.
+          While it&rsquo;s paused you aren&rsquo;t billed, and your workspace is on{' '}
+          {TIER_MANIFEST[currentTier].name}. Resume to reactivate {tierName}, or cancel if
+          you&rsquo;re done with it.
         </span>
       </span>
       {resume.error ? (

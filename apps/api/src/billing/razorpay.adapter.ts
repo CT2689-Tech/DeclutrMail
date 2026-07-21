@@ -203,35 +203,18 @@ export class RazorpayAdapter implements BillingProvider {
   }
 
   /**
-   * PATCH /v1/subscriptions/{id} — switch the plan now. Razorpay
-   * prorates the change on the current invoice; the resulting
-   * `subscription.updated` webhook recomputes the tier (D117/D120).
+   * Self-serve plan changes are PADDLE-ONLY at launch (D117/D120).
+   * Razorpay plan updates change the billing frequency + remaining
+   * count semantics of the subscription, no Razorpay catalog id is
+   * provisioned in any environment (the go-live runbook provisions
+   * Paddle), and none of it has been exercised against the real API —
+   * shipping a guessed PATCH here would be a guaranteed-failing (or
+   * worse, mis-billing) path. Fail closed with the designed code; the
+   * FE routes Razorpay subscribers to support instead.
    */
-  async changePlan(providerSubscriptionId: string, providerPriceId: string): Promise<void> {
-    const auth = this.authHeader();
-    let res: Response;
-    try {
-      res = await fetch(
-        `${API_BASE}/v1/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
-        {
-          method: 'PATCH',
-          headers: { Authorization: auth, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plan_id: providerPriceId, schedule_change_at: 'now' }),
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
-        },
-      );
-    } catch (err) {
-      this.logger.error(
-        `razorpay.change_plan.network_error sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
-      );
-      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
-    }
-    if (!res.ok) {
-      this.logger.error(
-        `razorpay.change_plan.failed sub=${providerSubscriptionId} status=${res.status}`,
-      );
-      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
-    }
+  async changePlan(providerSubscriptionId: string): Promise<void> {
+    this.logger.warn(`razorpay.change_plan.unsupported sub=${providerSubscriptionId}`);
+    throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
   }
 
   /** POST /v1/subscriptions/{id}/resume — immediately (D118 pause exit). */
