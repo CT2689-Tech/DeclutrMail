@@ -43,7 +43,7 @@ section to the Done section. Do not delete entries — the trail matters.
 **Why:** Sandbox purchase completed, webhook landed, `workspaces.tier` flipped free→plus in 37s — and the billing card kept showing Free until a manual reload. The user has paid and the product tells them they are still on the free plan. This was flagged as a theoretical gap by the lifecycle audit; it is now observed behaviour. Cause: `useBillingSubscription` has `staleTime: 60_000` with no polling, `me` only polls while a mailbox syncs, and the plan-change modal closes on `onSuccess` with no "waiting for confirmation" state.
 **How:** Add a post-checkout pending state that short-polls `GET /api/billing/subscription` (and `me`) until the tier changes or a timeout renders a "payment received, still confirming" notice. Touches a design-freeze surface (D220) — may need the `redesign` label.
 **Verifies by:** complete a sandbox purchase and watch the card flip to Plus with no manual reload.
-**Status:** Open
+**Status:** Open — fix shipped in PR #367 (2026-07-20): checkout.completed → truthful pending banner + 3s poll until the webhook flips the tier, with a 90s honest slow branch. Verified live against a signed webhook; the Paddle-delivery leg is blocked on the tunnel-rotation followup above. Move to Done once #367 merges and one sandbox purchase flips in place.
 
 ### 2026-07-20 — Decision needed: refund/chargeback entitlement needs a provenance column
 **Source:** session 2026-07-20 (billing sandbox smoke) + Codex stop-time review
