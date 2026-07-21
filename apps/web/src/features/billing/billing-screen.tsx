@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import {
   Button,
@@ -15,32 +15,37 @@ import type { BillingSubscription, CancelRequest } from '@declutrmail/shared/con
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 
 import { useAuth } from '@/features/auth/auth-provider';
+import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
-import { formatUsd, priceLineFor } from '@/features/marketing/pricing/pricing-model';
-import { TIER_JOBS } from '@/features/marketing/pricing/pricing-model';
+import { formatUsd } from '@/features/marketing/pricing/pricing-model';
 import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
 import { isBillingDisabledError, useBillingSubscription } from './api/use-billing-subscription';
-import { billingIntentPath, type BillingIntent } from './billing-intent';
+import type { BillingIntent } from './billing-intent';
 import { useCancelSubscription } from './api/use-cancel-subscription';
 import {
   canCancel,
   formatBillingDate,
-  MONEY_BACK_NOTE,
   planPriceLabel,
   PROVIDER_LABELS,
   statusNote,
-  STRIP_TIER_IDS,
 } from './billing-model';
 import { CancelModal } from './cancel-modal';
-import { PlanChangeModal } from './plan-change-modal';
+import { PlanPicker } from './plan-picker';
 
 const { color, font, radius, shadow } = tokens;
 
 /**
- * Billing screen (D119) — current-plan card + condensed 3-tier strip +
- * link to /pricing, with the D120 change/cancel flows behind modals.
+ * Post-checkout poll cadence — how often the screen re-reads the
+ * subscription while a Paddle payment awaits its webhook grant.
+ */
+const PAYMENT_PROCESSING_POLL_MS = 3000;
+
+/**
+ * Billing screen (D119) — current-plan card + inline plan picker (one
+ * monthly/annual toggle, one CTA per plan into the D226 confirm step),
+ * with the D118/D120 cancel flow behind its preview modal.
  *
  * Tier source of truth: while billing is DARK (503 BILLING_DISABLED —
  * the F-queue hasn't flipped `BILLING_ENABLED`), the plan card renders
@@ -50,17 +55,24 @@ const { color, font, radius, shadow } = tokens;
  * is authoritative (it also carries the founding flag + provider
  * record the `me` payload doesn't).
  *
+ * Post-checkout truth (§10 no-fake-completion): a Paddle overlay
+ * `checkout.completed` only starts the PAYMENT-PROCESSING state — the
+ * screen polls the subscription read until the WEBHOOK flips the tier,
+ * and never claims the new plan before the server does.
+ *
  * No payment-method / invoice sections at beta: the BE exposes no
  * portal or invoice surface yet (D119's full layout lands with it).
  */
 export function BillingScreen({ initialIntent = null }: { initialIntent?: BillingIntent | null }) {
   const { me } = useAuth();
   const { tier: meTier, cleanupRemaining } = useTier();
-  const subscriptionQuery = useBillingSubscription();
+  const [processingFromTier, setProcessingFromTier] = useState<TierId | null>(null);
+  const subscriptionQuery = useBillingSubscription({
+    refetchInterval: processingFromTier !== null ? PAYMENT_PROCESSING_POLL_MS : false,
+  });
   const cancel = useCancelSubscription();
-  const [planChangeOpen, setPlanChangeOpen] = useState(false);
+  const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
-  const handledIntent = useRef<string | null>(null);
 
   useEffect(() => {
     void track('page_viewed', { page: 'billing', mailbox_id: me.activeMailboxId });
@@ -68,20 +80,22 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
 
   const billingDisabled = isBillingDisabledError(subscriptionQuery.error);
   const data = subscriptionQuery.data ?? null;
-  const intentKey = initialIntent ? billingIntentPath(initialIntent) : null;
-
-  // A paid CTA lands here with an exact plan/cycle selection. Wait for
-  // the authoritative billing read before opening checkout; a disabled
-  // or failed billing backend keeps the honest designed state visible.
-  useEffect(() => {
-    if (!intentKey || !subscriptionQuery.isSuccess || handledIntent.current === intentKey) return;
-    handledIntent.current = intentKey;
-    setPlanChangeOpen(true);
-  }, [intentKey, subscriptionQuery.isSuccess]);
 
   // While billing is dark the workspace tier still comes from `me`.
   const tier: TierId = data?.tier ?? meTier;
   const subscription = data?.subscription ?? null;
+
+  // The webhook landed: the SERVER now reports a different tier than
+  // the one checkout started from — only then is success claimed.
+  useEffect(() => {
+    if (processingFromTier === null || data === null) return;
+    if (data.tier !== processingFromTier) {
+      setProcessingFromTier(null);
+      // Tier gates across the app read `me` — refresh it too.
+      void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+      toast(`Upgrade confirmed — you're on ${TIER_MANIFEST[data.tier].name}.`, 'success');
+    }
+  }, [processingFromTier, data, queryClient]);
 
   if (subscriptionQuery.isLoading) {
     return <LoadingState />;
@@ -93,6 +107,13 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         onRetry={() => subscriptionQuery.refetch()}
       />
     );
+  }
+
+  function onPaymentCompleted() {
+    setProcessingFromTier(tier);
+    // Ask immediately — fast webhooks (sandbox flips in ~40s, some land
+    // sooner) shouldn't wait a full poll interval.
+    void subscriptionQuery.refetch();
   }
 
   function onConfirmCancel(reason: CancelRequest['reason']) {
@@ -133,6 +154,8 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
 
       {billingDisabled ? <BillingDisabledNotice /> : null}
 
+      {processingFromTier !== null ? <PaymentProcessingNotice /> : null}
+
       {data?.foundingMember ? <FoundingBanner /> : null}
 
       <CurrentPlanCard
@@ -140,21 +163,19 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         subscription={subscription}
         cleanupRemaining={cleanupRemaining}
         billingDisabled={billingDisabled}
-        onChangePlan={() => setPlanChangeOpen(true)}
         onCancel={() => setCancelOpen(true)}
       />
 
-      <TierStrip currentTier={tier} />
-
-      <PlanChangeModal
-        open={planChangeOpen}
-        initialIntent={initialIntent}
+      <PlanPicker
         currentTier={tier}
         hasActiveSubscription={subscription !== null && subscription.status !== 'canceled'}
         currentPeriodEnd={subscription?.currentPeriodEnd ?? null}
-        onClose={() => setPlanChangeOpen(false)}
+        disabled={billingDisabled}
+        initialIntent={initialIntent}
         onRequestCancel={() => setCancelOpen(true)}
+        onPaymentCompleted={onPaymentCompleted}
       />
+
       <CancelModal
         open={cancelOpen}
         subscription={subscription}
@@ -183,6 +204,42 @@ function cancelErrorMessage(error: unknown): string {
   return 'Cancellation could not be processed. Please try again.';
 }
 
+/**
+ * The truthful post-checkout state (§10): the provider reported the
+ * payment went through; the tier flips only when the webhook lands.
+ * The screen polls underneath — no claim of the new plan is made here.
+ */
+export function PaymentProcessingNotice() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      data-testid="payment-processing-notice"
+      style={{
+        display: 'flex',
+        alignItems: 'baseline',
+        gap: 8,
+        padding: '12px 14px',
+        background: color.primarySoft,
+        border: `1px solid ${color.primaryBorder}`,
+        borderRadius: radius.md,
+        fontSize: 13,
+        lineHeight: 1.55,
+        color: color.fg,
+      }}
+    >
+      <span aria-hidden>⏳</span>
+      <span>
+        <strong style={{ fontWeight: 600 }}>Payment received — confirming your plan.</strong>{' '}
+        <span style={{ color: color.fgSoft }}>
+          The payment provider is finalizing your subscription. This page updates automatically,
+          usually within a minute.
+        </span>
+      </span>
+    </div>
+  );
+}
+
 // ── Current plan card (D119 top block) ───────────────────────────────
 
 function CurrentPlanCard({
@@ -190,14 +247,12 @@ function CurrentPlanCard({
   subscription,
   cleanupRemaining,
   billingDisabled,
-  onChangePlan,
   onCancel,
 }: {
   tier: TierId;
   subscription: BillingSubscription['subscription'];
   cleanupRemaining: number | null;
   billingDisabled: boolean;
-  onChangePlan: () => void;
   onCancel: () => void;
 }) {
   const manifest = TIER_MANIFEST[tier];
@@ -286,18 +341,13 @@ function CurrentPlanCard({
         </p>
       ) : null}
 
-      {billingDisabled ? null : (
+      {!billingDisabled && canCancel(subscription) ? (
         <div style={{ display: 'flex', gap: 8 }}>
-          <Button tone="primary" onClick={onChangePlan}>
-            Change plan
+          <Button tone="default" onClick={onCancel}>
+            Cancel subscription
           </Button>
-          {canCancel(subscription) ? (
-            <Button tone="default" onClick={onCancel}>
-              Cancel subscription
-            </Button>
-          ) : null}
         </div>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -350,89 +400,6 @@ function BillingDisabledNotice() {
       Checkout and subscription management open here once it is — the plans below are final, and
       nothing about your workspace changes until you choose one.
     </div>
-  );
-}
-
-// ── Condensed 3-tier strip (D119 middle block) ───────────────────────
-
-function TierStrip({ currentTier }: { currentTier: TierId }) {
-  return (
-    <section
-      aria-label="Compare plans"
-      style={{
-        background: color.card,
-        border: `1px solid ${color.border}`,
-        borderRadius: radius.lg,
-        boxShadow: shadow.card,
-        padding: '20px 22px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
-      }}
-    >
-      <Eyebrow>Compare plans</Eyebrow>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {STRIP_TIER_IDS.map((id) => {
-          const tier = TIER_MANIFEST[id];
-          const price = priceLineFor(tier, 'monthly');
-          const isCurrent = id === currentTier;
-          return (
-            <div
-              key={id}
-              data-testid={`tier-strip-${id}`}
-              style={{
-                flex: '1 1 160px',
-                padding: '12px 14px',
-                background: isCurrent ? color.primarySoft : color.paper,
-                border: `1px solid ${isCurrent ? color.primaryBorder : color.line}`,
-                borderRadius: radius.md,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-              }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 650, color: color.fg }}>
-                  {id === 'pro' ? '⭐ ' : ''}
-                  {tier.name}
-                </span>
-                {isCurrent ? (
-                  <span
-                    style={{
-                      fontFamily: font.mono,
-                      fontSize: 9.5,
-                      fontWeight: 600,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.08em',
-                      color: color.primary,
-                    }}
-                  >
-                    Current
-                  </span>
-                ) : null}
-              </span>
-              <span style={{ fontSize: 13, color: color.fg, fontVariantNumeric: 'tabular-nums' }}>
-                {price ? `${price.amount}${price.per}` : '—'}
-              </span>
-              <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.4 }}>
-                {TIER_JOBS[id]}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <Link
-          href="/pricing"
-          style={{ fontSize: 12.5, color: color.primary, textDecoration: 'none' }}
-        >
-          See the full comparison →
-        </Link>
-        <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-          All paid plans: {MONEY_BACK_NOTE}
-        </span>
-      </div>
-    </section>
   );
 }
 

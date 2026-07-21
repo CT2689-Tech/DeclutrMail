@@ -18,7 +18,7 @@ import { AuthProvider } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY, type Me } from '@/features/auth/api/use-me';
 
 import { billingKeys } from './api/query-keys';
-import { BillingScreen } from './billing-screen';
+import { BillingScreen, PaymentProcessingNotice } from './billing-screen';
 
 type StoryMeta<C extends (...args: never) => unknown> = {
   title: string;
@@ -79,12 +79,12 @@ function makeClient(me: Me, billing: BillingSubscription | null): QueryClient {
   return client;
 }
 
-function frame(client: QueryClient) {
+function frame(client: QueryClient, props?: ComponentProps<typeof BillingScreen>) {
   return (
     <div style={{ background: tokens.color.bg, minHeight: 600, padding: 12 }}>
       <QueryClientProvider client={client}>
         <AuthProvider>
-          <BillingScreen />
+          <BillingScreen {...props} />
         </AuthProvider>
       </QueryClientProvider>
     </div>
@@ -99,7 +99,7 @@ const meta: StoryMeta<typeof BillingScreen> = {
     docs: {
       description: {
         component:
-          'Billing screen (D119): current-plan card + condensed 3-tier strip + /pricing link, with D120 change/cancel flows and the D121 money-back note. All prices come off the D19 entitlement manifest. While billing is dark (503 BILLING_DISABLED) the screen renders the honest designed state.',
+          'Billing screen (D117/D119): current-plan card + inline plan picker — ONE monthly/annual segmented control (manifest-derived "2 months free" badge) re-prices every card; each plan carries one CTA into the D226 confirm step, then the provider surface. Post-checkout the screen shows the truthful PAYMENT-PROCESSING state and polls until the webhook flips the tier (§10 — never optimistic). All prices come off the D19 entitlement manifest. While billing is dark (503 BILLING_DISABLED) the screen renders the honest designed state.',
       },
     },
   },
@@ -108,10 +108,30 @@ const meta: StoryMeta<typeof BillingScreen> = {
 
 export default meta;
 
-/** Free workspace — $0 card, lifetime-cleanup counter, Free marked current. */
+/** Free workspace — $0 card, lifetime-cleanup counter, Free marked current,
+ *  picker with the annual-default toggle + per-plan Upgrade CTAs. */
 export const FreeTier: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(makeClient(meFixture('free', 3), FREE_BODY)),
+};
+
+/** Deep-linked intent (pricing page / gate nudge / TierGate) — the D226
+ *  confirm step opens pre-selected: one click left to the provider. */
+export const IntentConfirmOpen: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(makeClient(meFixture('free', 3), FREE_BODY), {
+      initialIntent: { plan: 'pro', cycle: 'annual', promo: 'foundingPro' },
+    }),
+};
+
+/** The truthful post-checkout state (§10): payment made in the overlay,
+ *  tier grant pending the webhook — the screen polls, never claims. */
+export const PaymentProcessing: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => (
+    <div style={{ background: tokens.color.bg, minHeight: 120, padding: 12 }}>
+      <PaymentProcessingNotice />
+    </div>
+  ),
 };
 
 /** Active Pro subscriber — renewal date, provider, cancel affordance. */

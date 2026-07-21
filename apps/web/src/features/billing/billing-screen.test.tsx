@@ -1,15 +1,25 @@
 /**
- * Tests for `BillingScreen` (D119/D120/D121).
+ * Tests for `BillingScreen` (D117/D119/D120/D121).
  *
  * Covers the designed states — loading, billing-disabled 503 (honest
  * notice, NOT an error), error — plus the loaded branches (free tier,
- * paid subscriber, founding member, scheduled cancel) and the two
- * flows: change-plan → checkout (exact D117 contract body asserted)
- * and cancel preview → confirm (D118/D120/D121 copy pinned).
+ * paid subscriber, founding member, scheduled cancel) and the flows:
+ *
+ *   - the inline picker's TWO-CLICK upgrade (plan CTA → D226 confirm →
+ *     provider launch, exact D117 contract body asserted);
+ *   - the one-tap monthly↔annual toggle re-pricing every card with the
+ *     manifest-derived savings badge;
+ *   - the truthful post-checkout state: Paddle `checkout.completed`
+ *     shows PAYMENT PROCESSING and only the polled subscription read
+ *     flipping the tier clears it (§10 — no optimistic tier);
+ *   - cancel preview → confirm (D118/D120/D121 copy pinned).
+ *
+ * Every dollar assertion derives from TIER_MANIFEST via the same
+ * helpers the screen uses — a manifest re-price re-prices this file.
  */
 
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 let mockTier = 'free';
 let mockCleanupRemaining: number | null = 3;
@@ -34,7 +44,8 @@ vi.mock('@/features/auth/auth-provider', () => ({
 }));
 
 // Provider launch is a side-effect seam (Paddle overlay / Razorpay
-// navigation) — stub it; the checkout CONTRACT is asserted on the wire.
+// navigation) — stub it; the checkout CONTRACT is asserted on the wire
+// and the overlay lifecycle is driven through the captured events arg.
 vi.mock('@/features/billing/checkout', () => ({
   launchCheckout: vi.fn(() => Promise.resolve()),
 }));
@@ -44,8 +55,9 @@ import type { BillingSubscription } from '@declutrmail/shared/contracts';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
-import { launchCheckout } from './checkout';
+import { launchCheckout, type CheckoutEvents } from './checkout';
 import type { BillingIntent } from './billing-intent';
+import { annualMonthsFree, planPriceLabel } from './billing-model';
 import { BillingScreen } from './billing-screen';
 
 const FREE_BODY: BillingSubscription = { tier: 'free', foundingMember: false, subscription: null };
@@ -69,6 +81,9 @@ const PLUS_SUB: BillingSubscription = {
   subscription: { ...SUB, tier: 'plus' },
 };
 
+/** Manifest-derived labels the picker must render (never literals). */
+const ANNUAL_TOGGLE = `Annual — ${annualMonthsFree('pro')} months free`;
+
 function billingDisabled503(): Response {
   return new Response(
     JSON.stringify({
@@ -89,6 +104,13 @@ function renderScreen(initialIntent: BillingIntent | null = null) {
       <BillingScreen initialIntent={initialIntent} />
     </QueryWrapper>,
   );
+}
+
+/** The overlay-lifecycle callbacks the screen registered on launch. */
+function capturedCheckoutEvents(): CheckoutEvents {
+  const events = vi.mocked(launchCheckout).mock.calls[0]?.[1];
+  expect(events?.onCompleted).toBeTypeOf('function');
+  return events!;
 }
 
 beforeEach(() => {
@@ -114,16 +136,16 @@ describe('BillingScreen — designed states', () => {
     // Plan card still renders from the `me` tier…
     const card = screen.getByTestId('current-plan-card');
     expect(within(card).getByText('Free')).toBeInTheDocument();
-    // …but checkout/cancel affordances are withheld while dark.
-    expect(screen.queryByRole('button', { name: 'Change plan' })).not.toBeInTheDocument();
-    // The strip + pricing link stay (plans are final, D119).
-    expect(screen.getByTestId('tier-strip-pro')).toBeInTheDocument();
+    // …and the picker keeps the plans visible (they're final, D119) but
+    // withholds every checkout affordance — even against a deep link.
+    expect(screen.getByTestId('plan-option-pro')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'See the full comparison →' })).toHaveAttribute(
       'href',
       '/pricing',
     );
     expect(screen.queryByText(/couldn't load/i)).not.toBeInTheDocument();
-    expect(screen.queryByTestId('plan-change-modal')).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -150,36 +172,8 @@ describe('BillingScreen — designed states', () => {
   });
 });
 
-describe('BillingScreen — free tier (billing live)', () => {
-  it('opens a pricing-page Pro monthly choice with the exact plan and cycle selected', async () => {
-    stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    renderScreen({ plan: 'pro', cycle: 'monthly' });
-
-    const modal = await screen.findByTestId('plan-change-modal');
-    expect(within(modal).getByTestId('plan-option-pro')).toHaveAttribute('aria-pressed', 'true');
-    expect(within(modal).getByRole('button', { name: 'Monthly' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(within(modal).getByTestId('checkout-panel')).toBeInTheDocument();
-    expect(within(modal).queryByText(/Founding Pro/)).not.toBeInTheDocument();
-  });
-
-  it('preserves an explicit Founding Pro annual claim from pricing', async () => {
-    stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    renderScreen({ plan: 'pro', cycle: 'annual', promo: 'foundingPro' });
-
-    const modal = await screen.findByTestId('plan-change-modal');
-    expect(within(modal).getByTestId('plan-option-pro')).toHaveAttribute('aria-pressed', 'true');
-    expect(within(modal).getByRole('button', { name: 'Annual' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(within(modal).getByRole('checkbox')).toBeChecked();
-    expect(within(modal).getByText(/Claim Founding Pro — \$129\/yr/)).toBeInTheDocument();
-  });
-
-  it('plan card: Free, $0, lifetime cleanup actions left, change-plan CTA', async () => {
+describe('BillingScreen — plan picker (billing live, free tier)', () => {
+  it('plan card: Free, $0, lifetime cleanup actions left, no cancel affordance', async () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
 
@@ -187,17 +181,50 @@ describe('BillingScreen — free tier (billing live)', () => {
     expect(within(card).getByText('Free')).toBeInTheDocument();
     expect(within(card).getByText('$0')).toBeInTheDocument();
     expect(within(card).getByText('3 of 5 lifetime cleanup actions left.')).toBeInTheDocument();
-    expect(within(card).getByRole('button', { name: 'Change plan' })).toBeInTheDocument();
     expect(
       within(card).queryByRole('button', { name: 'Cancel subscription' }),
     ).not.toBeInTheDocument();
-    // Strip marks Free as current.
-    expect(within(screen.getByTestId('tier-strip-free')).getByText('Current')).toBeInTheDocument();
+    // Picker marks Free as current — no CTA on the current plan.
+    const freeOption = screen.getByTestId('plan-option-free');
+    expect(within(freeOption).getByText('Current')).toBeInTheDocument();
+    expect(within(freeOption).queryByRole('button')).not.toBeInTheDocument();
   });
 
-  it('change plan → Pro annual + Founding Pro → POSTs the exact D117 contract body', async () => {
-    let checkoutBody: unknown = null;
+  it('one-tap toggle: every price + the manifest-derived savings badge update together', async () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen();
+
+    const picker = await screen.findByTestId('plan-picker');
+    // Default is annual (savings-forward), badge derived off the manifest.
+    const annualButton = within(picker).getByRole('button', { name: ANNUAL_TOGGLE });
+    expect(annualButton).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      within(screen.getByTestId('plan-option-plus')).getByText(
+        new RegExp(`\\${planPriceLabel('plus', 'annual')}`),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('plan-option-pro')).getByText(
+        new RegExp(`\\${planPriceLabel('pro', 'annual')}`),
+      ),
+    ).toBeInTheDocument();
+
+    // ONE interaction flips every price.
+    fireEvent.click(within(picker).getByRole('button', { name: 'Monthly' }));
+    expect(
+      within(screen.getByTestId('plan-option-plus')).getByText(
+        new RegExp(`\\${planPriceLabel('plus', 'monthly')}`),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('plan-option-pro')).getByText(
+        new RegExp(`\\${planPriceLabel('pro', 'monthly')}`),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('TWO clicks to the provider: Upgrade to Pro → confirm → exact D117 contract body', async () => {
+    let checkoutBody: unknown = null;
     installFetchStub([
       {
         method: 'GET',
@@ -224,21 +251,20 @@ describe('BillingScreen — free tier (billing live)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Change plan' }));
-    const modal = screen.getByTestId('plan-change-modal');
-    expect(within(modal).getByRole('button', { name: 'Keep current plan' })).toHaveTextContent(
-      'Keep current plan',
-    );
-    fireEvent.click(within(modal).getByTestId('plan-option-pro'));
-
-    const panel = within(modal).getByTestId('checkout-panel');
+    // Click 1 — the plan CTA opens the D226 confirm step in place.
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    const panel = screen.getByTestId('checkout-panel');
+    expect(within(panel).getByText('Preview · before anything changes')).toBeInTheDocument();
     // Defaults: annual cycle, Paddle provider, Founding Pro claimed.
     expect(within(panel).getByRole('checkbox')).toBeChecked();
     expect(within(panel).getByText(/Claim Founding Pro — \$129\/yr/)).toBeInTheDocument();
     expect(within(panel).getByText(/\$129 billed annually, starting today/)).toBeInTheDocument();
     expect(within(panel).getByText('30-day money-back guarantee')).toBeInTheDocument();
 
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout →' }));
+    // Click 2 — confirm into the provider surface.
+    fireEvent.click(
+      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
 
     await waitFor(() =>
       expect(checkoutBody).toEqual({
@@ -283,19 +309,54 @@ describe('BillingScreen — free tier (billing live)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Change plan' }));
-    const modal = screen.getByTestId('plan-change-modal');
-    fireEvent.click(within(modal).getByRole('button', { name: 'Monthly' }));
-    fireEvent.click(within(modal).getByTestId('plan-option-pro'));
+    const picker = await screen.findByTestId('plan-picker');
+    fireEvent.click(within(picker).getByRole('button', { name: 'Monthly' }));
+    fireEvent.click(within(picker).getByRole('button', { name: 'Upgrade to Pro' }));
 
-    const panel = within(modal).getByTestId('checkout-panel');
+    const panel = screen.getByTestId('checkout-panel');
     expect(within(panel).queryByText(/Founding Pro/)).not.toBeInTheDocument();
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout →' }));
+    fireEvent.click(
+      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
 
     await waitFor(() =>
       expect(checkoutBody).toEqual({ tierId: 'pro', cycle: 'monthly', provider: 'razorpay' }),
     );
+  });
+
+  it('a deep-linked intent opens the confirm step with the exact plan and cycle', async () => {
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen({ plan: 'pro', cycle: 'monthly' });
+
+    const panel = await screen.findByTestId('checkout-panel');
+    expect(screen.getByRole('button', { name: 'Monthly' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(panel).queryByText(/Founding Pro/)).not.toBeInTheDocument();
+  });
+
+  it('preserves an explicit Founding Pro annual claim from pricing', async () => {
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen({ plan: 'pro', cycle: 'annual', promo: 'foundingPro' });
+
+    const panel = await screen.findByTestId('checkout-panel');
+    expect(screen.getByRole('button', { name: ANNUAL_TOGGLE })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(panel).getByRole('checkbox')).toBeChecked();
+    expect(within(panel).getByText(/Claim Founding Pro — \$129\/yr/)).toBeInTheDocument();
+  });
+
+  it('Keep current plan collapses the confirm step without a request', async () => {
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = screen.getByTestId('checkout-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Keep current plan' }));
+
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    expect(launchCheckout).not.toHaveBeenCalled();
   });
 
   it('checkout 503 surfaces the honest billing-dark message inline', async () => {
@@ -309,17 +370,75 @@ describe('BillingScreen — free tier (billing live)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Change plan' }));
-    const modal = screen.getByTestId('plan-change-modal');
-    fireEvent.click(within(modal).getByTestId('plan-option-plus'));
-    fireEvent.click(within(modal).getByRole('button', { name: 'Continue to checkout →' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = screen.getByTestId('checkout-panel');
+    fireEvent.click(
+      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
 
     expect(
-      await within(modal).findByText(
+      await within(panel).findByText(
         'Billing isn’t switched on yet — checkout opens here once it goes live.',
       ),
     ).toBeInTheDocument();
     expect(launchCheckout).not.toHaveBeenCalled();
+  });
+
+  it('payment processing: checkout.completed shows the truthful pending state; only the polled server tier clears it', async () => {
+    // The subscription read flips ONLY when "the webhook lands" — the
+    // test controls that moment through this mutable body.
+    let subscriptionBody: BillingSubscription = FREE_BODY;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: subscriptionBody }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          jsonOk({
+            data: {
+              provider: 'paddle',
+              kind: 'overlay',
+              priceId: 'pri_test_123',
+              clientToken: 'test_token',
+              environment: 'sandbox',
+              customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+
+    // No pending state before the overlay reports payment (§10 — the
+    // screen must not celebrate a checkout that merely OPENED).
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+
+    // Overlay reports payment completed → truthful processing state; the
+    // confirm panel is gone, and NO tier is claimed yet.
+    act(() => capturedCheckoutEvents().onCompleted?.());
+    expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
+      'Payment received — confirming your plan.',
+    );
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('current-plan-card')).getByText('Free')).toBeInTheDocument();
+
+    // "Webhook lands": the server now reports pro — the immediate
+    // post-completion refetch picks it up and the pending state clears.
+    subscriptionBody = PRO_SUB;
+    act(() => capturedCheckoutEvents().onCompleted?.());
+    await waitFor(() =>
+      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
+    );
+    expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
   });
 });
 
@@ -460,16 +579,13 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(modal).queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('change plan → Free shows the D120 downgrade panel routing to cancel', async () => {
+  it('Switch to Free shows the D120 downgrade panel routing to cancel', async () => {
     mockTier = 'pro';
     stubSubscription(() => jsonOk({ data: PRO_SUB }));
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Change plan' }));
-    const modal = screen.getByTestId('plan-change-modal');
-    fireEvent.click(within(modal).getByTestId('plan-option-free'));
-
-    const panel = within(modal).getByTestId('downgrade-panel');
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Free' }));
+    const panel = screen.getByTestId('downgrade-panel');
     expect(
       within(panel).getByText(/Your Pro features will remain active until Jul 1, 2026\./),
     ).toBeInTheDocument();
@@ -481,19 +597,17 @@ describe('BillingScreen — paid subscriber', () => {
 
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to cancellation →' }));
     expect(screen.getByTestId('cancel-modal')).toBeInTheDocument();
-    expect(screen.queryByTestId('plan-change-modal')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('downgrade-panel')).not.toBeInTheDocument();
   });
 
-  it('change plan → other paid tier states the honest no-self-serve path', async () => {
+  it('selecting the other paid tier states the honest no-self-serve path', async () => {
     mockTier = 'pro';
     stubSubscription(() => jsonOk({ data: PRO_SUB }));
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Change plan' }));
-    const modal = screen.getByTestId('plan-change-modal');
-    fireEvent.click(within(modal).getByTestId('plan-option-plus'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
 
-    expect(within(modal).getByTestId('paid-switch-panel')).toBeInTheDocument();
-    expect(within(modal).queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('paid-switch-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
   });
 });

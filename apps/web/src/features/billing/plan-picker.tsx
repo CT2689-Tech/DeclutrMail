@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-import { Button, Eyebrow, tokens, useFocusTrap } from '@declutrmail/shared';
+import { Button, Eyebrow, tokens } from '@declutrmail/shared';
 import { ERROR_CODES, isErrorCode } from '@declutrmail/shared/contracts';
 import type { BillingCycle, BillingProviderId } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
@@ -17,6 +17,7 @@ import { useCheckout } from './api/use-checkout';
 import {
   formatBillingDate,
   MONEY_BACK_NOTE,
+  sharedAnnualMonthsFree,
   STRIP_TIER_IDS,
   type StripTierId,
 } from './billing-model';
@@ -28,80 +29,83 @@ const { color, font, radius } = tokens;
 type PaidTier = 'plus' | 'pro';
 
 /**
- * Plan-change modal (D120).
+ * Inline plan picker (D117/D119/D120) — supersedes the PlanChangeModal
+ * round-trip. One prominent monthly/annual segmented control drives
+ * every price on the three cards; each non-current plan carries ONE
+ * primary CTA that expands the confirm panel in place:
  *
- * Three cards (Free / Plus / Pro) + a monthly/annual toggle, then the
- * impact panel for the selected target:
- *
- *   - Paid target, no active subscription → the real checkout: provider
- *     pick (D117 Paddle international / Razorpay India), Founding Pro
- *     claim when Pro-annual (D126), impact summary, continue → the
- *     provider surface via `launchCheckout`.
- *   - Free target while subscribed → D120 downgrade copy (features stay
- *     until period end; the 30-day money-back guarantee lives one step
- *     on) routing to the cancel flow — cancel IS the downgrade-to-free
- *     mechanism (the BE has no separate path).
+ *   - Paid target, no active subscription → the real checkout confirm
+ *     (D226's mandatory preview: provider pick per D117, Founding Pro
+ *     claim when Pro-annual per D126, the exact charge line) →
+ *     `launchCheckout` opens the provider surface. Two clicks total.
+ *   - Free target while subscribed → D120 downgrade copy routing to the
+ *     cancel flow — cancel IS the downgrade-to-free mechanism.
  *   - Paid target while already subscribed → the honest designed state:
- *     paid-to-paid switching is not self-serve at beta (no BE endpoint;
- *     checkout would 409 SUBSCRIPTION_EXISTS).
+ *     paid-to-paid switching is not self-serve at beta.
  *
  * Errors render inline from the shared ERROR_CODES vocabulary —
  * BILLING_DISABLED / BILLING_NOT_PROVISIONED (billing dark, F-queue),
  * FOUNDING_PRO_SOLD_OUT, SUBSCRIPTION_EXISTS — never a generic toast.
+ *
+ * `disabled` (billing dark, 503) keeps the cards visible — the plans
+ * are final (D119) — but withholds every checkout affordance.
  */
-export function PlanChangeModal({
-  open,
-  initialIntent = null,
+export function PlanPicker({
   currentTier,
   hasActiveSubscription,
   currentPeriodEnd,
-  onClose,
+  disabled,
+  initialIntent = null,
   onRequestCancel,
+  onPaymentCompleted,
 }: {
-  open: boolean;
-  /** Validated pricing-page choice carried through auth/onboarding. */
-  initialIntent?: BillingIntent | null;
   currentTier: TierId;
   hasActiveSubscription: boolean;
   /** ISO period end of the active subscription (downgrade copy). */
   currentPeriodEnd: string | null;
-  onClose: () => void;
+  /** Billing dark (503) — render plans, withhold checkout affordances. */
+  disabled: boolean;
+  /** Validated pricing-page/gate-nudge choice carried through auth. */
+  initialIntent?: BillingIntent | null;
   /** Route to the cancel confirm (the downgrade-to-free path, D120). */
   onRequestCancel: () => void;
+  /** Paddle overlay reported `checkout.completed` — payment made, tier
+   *  grant pending the webhook. The screen owns the truthful pending
+   *  state; this component only reports the provider fact. */
+  onPaymentCompleted: () => void;
 }) {
   const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
-  const [selected, setSelected] = useState<StripTierId | null>(initialIntent?.plan ?? null);
+  const [selected, setSelected] = useState<StripTierId | null>(null);
   const [provider, setProvider] = useState<BillingProviderId>('paddle');
   const [claimFounding, setClaimFounding] = useState(
     initialIntent ? initialIntent.promo === 'foundingPro' : true,
   );
   const checkout = useCheckout();
 
+  // A pricing-page/gate-nudge CTA lands with an exact plan+cycle — open
+  // the confirm panel directly (the deep link IS the plan click).
+  const intentPlan = initialIntent?.plan ?? null;
   useEffect(() => {
-    if (!open) return;
-    setSelected(initialIntent?.plan ?? null);
-    setCycle(initialIntent?.cycle ?? 'annual');
-    setProvider('paddle');
-    setClaimFounding(initialIntent ? initialIntent.promo === 'foundingPro' : true);
-    checkout.reset();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // Deliberately keyed on open/close only — `checkout.reset` is
-    // stable across renders (TanStack result identity churns).
-  }, [initialIntent, open, onClose]);
-
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
-
-  if (!open) return null;
+    if (intentPlan && !disabled) setSelected(intentPlan);
+  }, [intentPlan, disabled]);
 
   const foundingEligible = selected === 'pro' && cycle === 'annual';
   const founding = foundingEligible && claimFounding;
   const errorMessage = checkoutErrorMessage(checkout.error);
+  const monthsFree = sharedAnnualMonthsFree();
 
-  function onContinue(target: PaidTier) {
+  function closePanel() {
+    setSelected(null);
+    checkout.reset();
+  }
+
+  function onSelect(id: StripTierId) {
+    if (disabled || id === currentTier) return;
+    checkout.reset();
+    setSelected((prev) => (prev === id ? null : id));
+  }
+
+  function onConfirm(target: PaidTier) {
     if (checkout.isPending) return;
     void track('checkout_started', {
       tier: target,
@@ -113,12 +117,17 @@ export function PlanChangeModal({
       { tierId: target, cycle, provider, ...(founding ? { promo: 'foundingPro' as const } : {}) },
       {
         onSuccess: (session) => {
-          void launchCheckout(session).then(
-            // Paddle overlay is now on top of the page (Razorpay
-            // navigated away) — close our modal underneath it.
-            () => onClose(),
-            // Provider script failed to load — keep the modal open
-            // with an honest retryable message.
+          void launchCheckout(session, {
+            // Payment made in the overlay — collapse the confirm panel
+            // and hand the screen the truthful pending state.
+            onCompleted: () => {
+              closePanel();
+              onPaymentCompleted();
+            },
+          }).then(
+            () => undefined,
+            // Provider script failed to load — keep the panel open with
+            // an honest retryable message.
             () => checkout.reset(),
           );
         },
@@ -127,132 +136,91 @@ export function PlanChangeModal({
   }
 
   return (
-    <>
+    <section
+      aria-label="Plans"
+      data-testid="plan-picker"
+      style={{
+        background: color.card,
+        border: `1px solid ${color.border}`,
+        borderRadius: radius.lg,
+        boxShadow: tokens.shadow.card,
+        padding: '20px 22px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14,
+      }}
+    >
       <div
-        onClick={onClose}
         style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 150,
-        }}
-      />
-      <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dm-plan-change-title"
-        data-testid="plan-change-modal"
-        style={{
-          position: 'fixed',
-          top: '10vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(620px, calc(100vw - 32px))',
-          maxHeight: '80vh',
-          overflow: 'auto',
-          background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 151,
-          fontFamily: font.sans,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
         }}
       >
-        <div
-          style={{
-            padding: '20px 24px 16px',
-            borderBottom: `1px solid ${color.line}`,
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: 12,
-          }}
-        >
-          <div>
-            <Eyebrow>Change plan</Eyebrow>
-            <h2
-              id="dm-plan-change-title"
-              style={{
-                fontSize: 19,
-                fontWeight: 600,
-                letterSpacing: '-0.014em',
-                margin: '6px 0 0',
-              }}
-            >
-              Pick your plan
-            </h2>
-          </div>
-          <CycleToggle cycle={cycle} onChange={setCycle} />
-        </div>
-
-        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', gap: 10 }}>
-            {STRIP_TIER_IDS.map((id) => (
-              <PlanOptionCard
-                key={id}
-                tierId={id}
-                cycle={cycle}
-                isCurrent={id === currentTier}
-                isSelected={id === selected}
-                onSelect={() => setSelected(id)}
-              />
-            ))}
-          </div>
-
-          {selected !== null && selected !== currentTier ? (
-            selected === 'free' ? (
-              hasActiveSubscription ? (
-                <DowngradePanel
-                  currentTier={currentTier}
-                  currentPeriodEnd={currentPeriodEnd}
-                  onRequestCancel={() => {
-                    onClose();
-                    onRequestCancel();
-                  }}
-                />
-              ) : null
-            ) : hasActiveSubscription ? (
-              <PaidSwitchPanel />
-            ) : (
-              <CheckoutPanel
-                target={selected}
-                cycle={cycle}
-                provider={provider}
-                onProviderChange={setProvider}
-                foundingEligible={foundingEligible}
-                claimFounding={claimFounding}
-                onClaimFoundingChange={setClaimFounding}
-                isPending={checkout.isPending}
-                errorMessage={errorMessage}
-                onContinue={() => onContinue(selected)}
-              />
-            )
-          ) : null}
-
-          <Link
-            href="/pricing"
-            style={{ fontSize: 12.5, color: color.primary, textDecoration: 'none' }}
-          >
-            See the full comparison →
-          </Link>
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            padding: '12px 24px 16px',
-            borderTop: `1px solid ${color.line}`,
-          }}
-        >
-          <Button tone="default" onClick={onClose} ariaLabel="Keep current plan">
-            Keep current plan
-          </Button>
-        </div>
+        <Eyebrow>Plans</Eyebrow>
+        <CycleToggle cycle={cycle} onChange={setCycle} monthsFree={monthsFree} />
       </div>
-    </>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {STRIP_TIER_IDS.map((id) => (
+          <PlanCard
+            key={id}
+            tierId={id}
+            cycle={cycle}
+            isCurrent={id === currentTier}
+            isSelected={id === selected}
+            disabled={disabled}
+            hasActiveSubscription={hasActiveSubscription}
+            onSelect={() => onSelect(id)}
+          />
+        ))}
+      </div>
+
+      {selected !== null && selected !== currentTier && !disabled ? (
+        selected === 'free' ? (
+          hasActiveSubscription ? (
+            <DowngradePanel
+              currentTier={currentTier}
+              currentPeriodEnd={currentPeriodEnd}
+              onRequestCancel={() => {
+                closePanel();
+                onRequestCancel();
+              }}
+            />
+          ) : null
+        ) : hasActiveSubscription ? (
+          <PaidSwitchPanel />
+        ) : (
+          <ConfirmPanel
+            target={selected}
+            cycle={cycle}
+            provider={provider}
+            onProviderChange={setProvider}
+            foundingEligible={foundingEligible}
+            claimFounding={claimFounding}
+            onClaimFoundingChange={setClaimFounding}
+            isPending={checkout.isPending}
+            errorMessage={errorMessage}
+            onConfirm={() => onConfirm(selected)}
+            onDismiss={closePanel}
+          />
+        )
+      ) : null}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+        <Link
+          href="/pricing"
+          style={{ fontSize: 12.5, color: color.primary, textDecoration: 'none' }}
+        >
+          See the full comparison →
+        </Link>
+        <span style={{ fontSize: 11.5, color: color.fgMuted }}>
+          All paid plans: {MONEY_BACK_NOTE}
+        </span>
+      </div>
+    </section>
   );
 }
 
@@ -272,43 +240,57 @@ export function checkoutErrorMessage(error: unknown): string | null {
 function CycleToggle({
   cycle,
   onChange,
+  monthsFree,
 }: {
   cycle: BillingCycle;
   onChange: (cycle: BillingCycle) => void;
+  /** Manifest-derived annual saving shared by every paid plan, or null. */
+  monthsFree: number | null;
 }) {
+  const options: { value: BillingCycle; label: string }[] = [
+    { value: 'monthly', label: 'Monthly' },
+    {
+      value: 'annual',
+      label: monthsFree !== null ? `Annual — ${monthsFree} months free` : 'Annual',
+    },
+  ];
   return (
     <div
       role="group"
       aria-label="Billing interval"
+      data-testid="cycle-toggle"
       style={{
         display: 'inline-flex',
         background: color.paper,
         border: `1px solid ${color.border}`,
         borderRadius: radius.pill,
-        padding: 2,
+        padding: 3,
+        gap: 2,
       }}
     >
-      {(['monthly', 'annual'] as const).map((value) => {
-        const on = cycle === value;
+      {options.map((opt) => {
+        const on = cycle === opt.value;
         return (
           <button
-            key={value}
+            key={opt.value}
             type="button"
             aria-pressed={on}
-            onClick={() => onChange(value)}
+            onClick={() => onChange(opt.value)}
             style={{
               border: 'none',
               cursor: 'pointer',
-              padding: '4px 12px',
+              height: 30,
+              padding: '0 14px',
               borderRadius: radius.pill,
               fontFamily: font.sans,
-              fontSize: 12,
+              fontSize: 12.5,
               fontWeight: 600,
-              background: on ? color.primary : 'transparent',
-              color: on ? '#FFFFFF' : color.fgSoft,
+              background: on ? color.fg : 'transparent',
+              color: on ? color.bg : color.fgSoft,
+              transition: 'background 0.12s, color 0.12s',
             }}
           >
-            {value === 'monthly' ? 'Monthly' : 'Annual'}
+            {opt.label}
           </button>
         );
       })}
@@ -316,43 +298,53 @@ function CycleToggle({
   );
 }
 
-function PlanOptionCard({
+function PlanCard({
   tierId,
   cycle,
   isCurrent,
   isSelected,
+  disabled,
+  hasActiveSubscription,
   onSelect,
 }: {
-  tierId: TierId;
+  tierId: StripTierId;
   cycle: BillingCycle;
   isCurrent: boolean;
   isSelected: boolean;
+  disabled: boolean;
+  hasActiveSubscription: boolean;
   onSelect: () => void;
 }) {
   const tier = TIER_MANIFEST[tierId];
   const price = priceLineFor(tier, cycle);
+  const cta = isCurrent
+    ? null
+    : tierId === 'free'
+      ? hasActiveSubscription
+        ? 'Switch to Free'
+        : null
+      : `Upgrade to ${tier.name}`;
+
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={isSelected}
+    <div
       data-testid={`plan-option-${tierId}`}
+      aria-current={isCurrent ? 'true' : undefined}
       style={{
-        flex: 1,
-        textAlign: 'left',
-        padding: '12px 14px',
+        flex: '1 1 160px',
+        padding: '14px 16px',
         background: isSelected ? color.primarySoft : color.paper,
         border: `1px solid ${isSelected ? color.primaryBorder : color.line}`,
         borderRadius: radius.md,
-        cursor: 'pointer',
-        fontFamily: font.sans,
         display: 'flex',
         flexDirection: 'column',
-        gap: 4,
+        gap: 6,
       }}
     >
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 14, fontWeight: 650, color: color.fg }}>{tier.name}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        <span style={{ fontSize: 14, fontWeight: 650, color: color.fg }}>
+          {tierId === 'pro' ? '⭐ ' : ''}
+          {tier.name}
+        </span>
         {isCurrent ? (
           <span
             style={{
@@ -361,17 +353,14 @@ function PlanOptionCard({
               fontWeight: 600,
               textTransform: 'uppercase',
               letterSpacing: '0.08em',
-              color: color.fgMuted,
-              background: color.mutedBg,
-              borderRadius: radius.pill,
-              padding: '2px 7px',
+              color: color.primary,
             }}
           >
             Current
           </span>
         ) : null}
       </span>
-      <span style={{ fontSize: 13, color: color.fg, fontVariantNumeric: 'tabular-nums' }}>
+      <span style={{ fontSize: 15, color: color.fg, fontVariantNumeric: 'tabular-nums' }}>
         {price ? `${price.amount}${price.per}` : '—'}
         {price?.note ? (
           <span style={{ color: color.fgMuted, fontSize: 11.5 }}> · {price.note}</span>
@@ -380,11 +369,26 @@ function PlanOptionCard({
       <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.4 }}>
         {TIER_JOBS[tierId]}
       </span>
-    </button>
+      {cta && !disabled ? (
+        <div style={{ marginTop: 4 }}>
+          <Button
+            tone={tierId === 'free' ? 'default' : 'primary'}
+            onClick={onSelect}
+            ariaLabel={cta}
+          >
+            {cta}
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
-function CheckoutPanel({
+/**
+ * The D226 mandatory confirm step — a lightweight preview of exactly
+ * what will be charged, then ONE confirm into the provider surface.
+ */
+function ConfirmPanel({
   target,
   cycle,
   provider,
@@ -394,7 +398,8 @@ function CheckoutPanel({
   onClaimFoundingChange,
   isPending,
   errorMessage,
-  onContinue,
+  onConfirm,
+  onDismiss,
 }: {
   target: PaidTier;
   cycle: BillingCycle;
@@ -405,7 +410,8 @@ function CheckoutPanel({
   onClaimFoundingChange: (claim: boolean) => void;
   isPending: boolean;
   errorMessage: string | null;
-  onContinue: () => void;
+  onConfirm: () => void;
+  onDismiss: () => void;
 }) {
   const tier = TIER_MANIFEST[target];
   const point = cycle === 'annual' ? tier.prices.annual : tier.prices.monthly;
@@ -433,6 +439,7 @@ function CheckoutPanel({
         borderRadius: radius.md,
       }}
     >
+      <Eyebrow>Preview · before anything changes</Eyebrow>
       <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
         {/* D117 — the provider is the user's explicit regional choice. */}
         <legend style={{ fontSize: 12, color: color.fgMuted, padding: 0, marginBottom: 6 }}>
@@ -485,9 +492,7 @@ function CheckoutPanel({
       ) : null}
 
       <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>{impact}</p>
-      {target === 'pro' ? (
-        <p style={{ margin: 0, fontSize: 11.5, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
-      ) : null}
+      <p style={{ margin: 0, fontSize: 11.5, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
 
       {errorMessage != null && (
         <div
@@ -505,9 +510,12 @@ function CheckoutPanel({
         </div>
       )}
 
-      <div>
-        <Button tone="primary" onClick={onContinue} disabled={isPending || amountCents === null}>
-          {isPending ? 'Opening checkout…' : 'Continue to checkout →'}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Button tone="primary" onClick={onConfirm} disabled={isPending || amountCents === null}>
+          {isPending ? 'Opening checkout…' : 'Confirm — continue to secure checkout →'}
+        </Button>
+        <Button tone="default" onClick={onDismiss} disabled={isPending}>
+          Keep current plan
         </Button>
       </div>
     </div>

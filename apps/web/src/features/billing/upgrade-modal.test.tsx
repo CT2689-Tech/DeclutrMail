@@ -49,7 +49,7 @@ describe('UpgradeModal', () => {
     expect(screen.queryByTestId('upgrade-modal')).not.toBeInTheDocument();
   });
 
-  it('free_cap (spent): headline + Plus/Pro pitch + money-back note + See plans', () => {
+  it('free_cap (spent): headline + Plus/Pro pitch + money-back note + Plus deep link', () => {
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
       details: { remaining: 0, limit: 5, used: 5, requiredUnits: 1 },
@@ -63,7 +63,12 @@ describe('UpgradeModal', () => {
       screen.getByText(/Plus unlocks unlimited sender actions for \$9\/mo/),
     ).toBeInTheDocument();
     expect(screen.getByText(/\$19\/mo — 30-day money-back guarantee/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/billing');
+    // ONE checkout path (D117): the CTA deep-links the nudged plan into
+    // /billing's confirm step via the validated billing intent.
+    expect(screen.getByRole('link', { name: 'Upgrade to Plus' })).toHaveAttribute(
+      'href',
+      '/billing?plan=plus&cycle=monthly',
+    );
   });
 
   it('free_cap (partial): bulk-needs-more headline', () => {
@@ -95,7 +100,10 @@ describe('UpgradeModal', () => {
       screen.getByText(/five lifetime cleanup actions, one sender at a time/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/Plus unlocks multi-sender cleanup for \$9\/mo/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/billing');
+    expect(screen.getByRole('link', { name: 'Upgrade to Plus' })).toHaveAttribute(
+      'href',
+      '/billing?plan=plus&cycle=monthly',
+    );
   });
 
   it('inbox_limit on Plus: upgrade nudge toward Pro', () => {
@@ -107,7 +115,10 @@ describe('UpgradeModal', () => {
 
     expect(screen.getByText('Your Plus plan includes 1 connected inbox')).toBeInTheDocument();
     expect(screen.getByText(/Pro raises the limit to 2 connected inboxes/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'See plans' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Upgrade to Pro' })).toHaveAttribute(
+      'href',
+      '/billing?plan=pro&cycle=monthly',
+    );
   });
 
   it('inbox_limit on Pro: honest limit statement, NO upgrade nudge (D123)', () => {
@@ -118,7 +129,7 @@ describe('UpgradeModal', () => {
     render(<UpgradeModal />);
 
     expect(screen.getByText('Your Pro plan includes 2 connected inboxes')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'See plans' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Upgrade to/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/money-back/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Keep current inboxes' })).toBeInTheDocument();
   });

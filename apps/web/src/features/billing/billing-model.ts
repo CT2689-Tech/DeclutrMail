@@ -33,6 +33,32 @@ export function planPriceLabel(tier: TierId, cycle: BillingCycle): string | null
   return `${formatUsd(point.usdCents)}${cycle === 'annual' ? '/yr' : '/mo'}`;
 }
 
+/**
+ * Whole months of the monthly price the annual cycle saves ("2 months
+ * free"), derived from the manifest — never a hardcoded claim. Null
+ * when a cycle is missing, the tier is free, or the saving isn't an
+ * exact whole number of months (an approximate claim would be a lie).
+ */
+export function annualMonthsFree(tier: TierId): number | null {
+  const { monthly, annual } = TIER_MANIFEST[tier].prices;
+  if (!monthly || !annual || monthly.usdCents <= 0) return null;
+  const savedCents = monthly.usdCents * 12 - annual.usdCents;
+  if (savedCents <= 0 || savedCents % monthly.usdCents !== 0) return null;
+  return savedCents / monthly.usdCents;
+}
+
+/**
+ * The annual saving shared by EVERY purchasable paid tier, or null when
+ * the tiers disagree — a single toggle badge must not promise a saving
+ * some plan doesn't deliver.
+ */
+export function sharedAnnualMonthsFree(): number | null {
+  const values = STRIP_TIER_IDS.filter((id) => id !== 'free').map((id) => annualMonthsFree(id));
+  const [first] = values;
+  if (first == null || values.some((v) => v !== first)) return null;
+  return first;
+}
+
 /** "Jun 1, 2026" — en-US to match the D119 mock. Null-safe. */
 export function formatBillingDate(iso: string | null): string | null {
   if (!iso) return null;

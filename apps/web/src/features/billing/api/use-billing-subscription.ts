@@ -35,7 +35,14 @@ export function isBillingDisabledError(error: unknown): boolean {
   );
 }
 
-export function useBillingSubscription() {
+export function useBillingSubscription(options?: {
+  /**
+   * Poll cadence for the post-checkout "payment processing" state —
+   * the ONLY sanctioned repeat-read: a success-path 200 poll while the
+   * webhook grant is in flight, never an error retry.
+   */
+  refetchInterval?: number | false;
+}) {
   return useQuery({
     queryKey: billingKeys.subscription(),
     queryFn: async ({ signal }) => {
@@ -46,5 +53,6 @@ export function useBillingSubscription() {
     // read-guard-4xx/5xx rule; the route fails CLEANLY while dark).
     retry: false,
     staleTime: 60_000,
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }
