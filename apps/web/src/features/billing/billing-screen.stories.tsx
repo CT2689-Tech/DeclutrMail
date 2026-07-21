@@ -139,7 +139,18 @@ export const PaymentProcessing: Story<typeof BillingScreen> = {
 export const PaymentProcessingSlow: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) => (
     <div style={{ background: tokens.color.bg, minHeight: 120, padding: 12 }}>
-      <PaymentProcessingNotice slow />
+      <PaymentProcessingNotice phase="slow" />
+    </div>
+  ),
+};
+
+/** 15+ minutes unconfirmed: checkout stays locked against a double
+ *  charge; the only releases are the tier flip or the user's explicit
+ *  "I didn't complete a payment" assertion. */
+export const PaymentUnconfirmed: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => (
+    <div style={{ background: tokens.color.bg, minHeight: 160, padding: 12 }}>
+      <PaymentProcessingNotice phase="unconfirmed" onRelease={() => {}} />
     </div>
   ),
 };

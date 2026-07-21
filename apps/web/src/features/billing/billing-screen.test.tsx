@@ -59,11 +59,7 @@ import { launchCheckout, type CheckoutEvents } from './checkout';
 import type { BillingIntent } from './billing-intent';
 import { annualMonthsFree, planPriceLabel } from './billing-model';
 import { BillingScreen } from './billing-screen';
-import {
-  PENDING_CHECKOUT_KEY,
-  PENDING_CHECKOUT_TTL_MS,
-  writePendingCheckout,
-} from './pending-checkout';
+import { PENDING_CHECKOUT_KEY, writePendingCheckout } from './pending-checkout';
 
 const FREE_BODY: BillingSubscription = { tier: 'free', foundingMember: false, subscription: null };
 
@@ -605,21 +601,33 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
   });
 
-  it('an expired pending record does not lock (TTL — a lost webhook must not brick billing)', async () => {
+  it('an old unconfirmed record still LOCKS — released only by the user asserting no payment', async () => {
+    // 16 minutes old: past the unconfirmed threshold. The lock must
+    // NOT silently expire (that would reopen the double-charge window
+    // for exactly the user whose webhook is delayed).
     window.localStorage.setItem(
       PENDING_CHECKOUT_KEY,
       JSON.stringify({
         workspaceId: 'w',
         fromTier: 'free',
-        at: Date.now() - PENDING_CHECKOUT_TTL_MS - 1000,
+        at: Date.now() - 16 * 60_000,
       }),
     );
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
 
-    expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent(
+      'Payment still unconfirmed — checkout is paused so you can’t be charged twice.',
+    );
+    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+
+    // The explicit, user-asserted release — the only non-flip way out.
+    fireEvent.click(
+      within(notice).getByRole('button', { name: 'I didn’t complete a payment — resume checkout' }),
+    );
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
-    // The stale record was released, not left to haunt the next mount.
+    expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
     expect(window.localStorage.getItem(PENDING_CHECKOUT_KEY)).toBeNull();
   });
 

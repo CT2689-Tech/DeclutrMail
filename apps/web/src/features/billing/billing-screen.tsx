@@ -35,7 +35,6 @@ import { CancelModal } from './cancel-modal';
 import {
   clearPendingCheckout,
   PENDING_CHECKOUT_KEY,
-  PENDING_CHECKOUT_TTL_MS,
   readPendingCheckout,
   writePendingCheckout,
   type PendingCheckout,
@@ -56,6 +55,26 @@ const PAYMENT_PROCESSING_POLL_MS = 3000;
  * continues — a delayed webhook still self-heals the screen.
  */
 const PAYMENT_PROCESSING_SLOW_AFTER_MS = 90_000;
+
+/**
+ * After this long the notice becomes the UNCONFIRMED state: checkout
+ * stays locked (a silent unlock would reopen the double-charge window
+ * for exactly the user whose webhook is delayed), the poll slows to
+ * PAYMENT_UNCONFIRMED_POLL_MS, and the only releases are the tier flip
+ * or the user explicitly asserting they didn't complete a payment.
+ */
+const PAYMENT_UNCONFIRMED_AFTER_MS = 15 * 60_000;
+const PAYMENT_UNCONFIRMED_POLL_MS = 30_000;
+
+/** How far along the webhook wait is — drives the notice + poll pace. */
+type ProcessingPhase = 'fresh' | 'slow' | 'unconfirmed';
+
+function processingPhaseAt(pending: PendingCheckout, now: number): ProcessingPhase {
+  const elapsed = now - pending.at;
+  if (elapsed >= PAYMENT_UNCONFIRMED_AFTER_MS) return 'unconfirmed';
+  if (elapsed >= PAYMENT_PROCESSING_SLOW_AFTER_MS) return 'slow';
+  return 'fresh';
+}
 
 /**
  * Billing screen (D119) — current-plan card + inline plan picker (one
@@ -89,9 +108,14 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   // Initialized null (SSR renders without storage) and hydrated from
   // storage on mount below. Cross-DEVICE remains a BE gap — flagged.
   const [pending, setPending] = useState<PendingCheckout | null>(null);
-  const [processingSlow, setProcessingSlow] = useState(false);
+  const [processingPhase, setProcessingPhase] = useState<ProcessingPhase>('fresh');
   const subscriptionQuery = useBillingSubscription({
-    refetchInterval: pending !== null ? PAYMENT_PROCESSING_POLL_MS : false,
+    refetchInterval:
+      pending === null
+        ? false
+        : processingPhase === 'unconfirmed'
+          ? PAYMENT_UNCONFIRMED_POLL_MS
+          : PAYMENT_PROCESSING_POLL_MS,
   });
   const cancel = useCancelSubscription();
   const queryClient = useQueryClient();
@@ -142,41 +166,40 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   // "Usually within a minute" needs a state for when it isn't (§8 —
   // every promise in copy gets its elapsed branch). Elapsed counts
   // from the PAYMENT (pending.at), not from mount — a reload mid-wait
-  // resumes with the true age.
+  // resumes with the true age. The lock itself never auto-expires;
+  // only the copy and poll pace change.
   useEffect(() => {
     if (pending === null) {
-      setProcessingSlow(false);
+      setProcessingPhase('fresh');
       return;
     }
-    const elapsed = Date.now() - pending.at;
-    if (elapsed >= PAYMENT_PROCESSING_SLOW_AFTER_MS) {
-      setProcessingSlow(true);
-      return;
-    }
-    const timer = setTimeout(
-      () => setProcessingSlow(true),
-      PAYMENT_PROCESSING_SLOW_AFTER_MS - elapsed,
-    );
-    return () => clearTimeout(timer);
+    let timer: number | null = null;
+    const advance = () => {
+      const phase = processingPhaseAt(pending, Date.now());
+      setProcessingPhase(phase);
+      if (phase === 'unconfirmed') {
+        timer = null;
+        return;
+      }
+      const nextAt =
+        pending.at +
+        (phase === 'fresh' ? PAYMENT_PROCESSING_SLOW_AFTER_MS : PAYMENT_UNCONFIRMED_AFTER_MS);
+      timer = window.setTimeout(advance, Math.max(0, nextAt - Date.now()));
+    };
+    advance();
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+    };
   }, [pending]);
 
-  // TTL: a lock whose webhook never arrives must not brick billing
-  // forever — expire it in place (readPendingCheckout enforces the
-  // same bound for fresh mounts and other tabs).
-  useEffect(() => {
-    if (pending === null) return;
-    const remaining = pending.at + PENDING_CHECKOUT_TTL_MS - Date.now();
-    if (remaining <= 0) {
-      clearPendingCheckout();
-      setPending(null);
-      return;
-    }
-    const timer = setTimeout(() => {
-      clearPendingCheckout();
-      setPending(null);
-    }, remaining);
-    return () => clearTimeout(timer);
-  }, [pending]);
+  // The explicit, user-asserted release: "I didn't complete a payment".
+  // The ONLY path out of the unconfirmed lock besides the tier flip —
+  // never released on a timer (that would reopen the double-charge
+  // window for exactly the user whose webhook is delayed).
+  function onReleasePendingLock() {
+    clearPendingCheckout();
+    setPending(null);
+  }
 
   if (subscriptionQuery.isLoading) {
     return <LoadingState />;
@@ -238,7 +261,9 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
 
       {billingDisabled ? <BillingDisabledNotice /> : null}
 
-      {pending !== null ? <PaymentProcessingNotice slow={processingSlow} /> : null}
+      {pending !== null ? (
+        <PaymentProcessingNotice phase={processingPhase} onRelease={onReleasePendingLock} />
+      ) : null}
 
       {data?.foundingMember ? <FoundingBanner /> : null}
 
@@ -297,10 +322,20 @@ function cancelErrorMessage(error: unknown): string {
  * The truthful post-checkout state (§10): the provider reported the
  * payment went through; the tier flips only when the webhook lands.
  * The screen polls underneath — no claim of the new plan is made here.
- * `slow` is the elapsed branch of "usually within a minute": still
- * honest, still polling, with a support escape hatch.
+ * Phases: `fresh` ("usually within a minute") → `slow` (elapsed branch
+ * with a support escape hatch) → `unconfirmed` (checkout stays locked;
+ * the ONLY releases are the tier flip or the user asserting via
+ * `onRelease` that they didn't complete a payment — an automatic
+ * unlock would reopen the double-charge window).
  */
-export function PaymentProcessingNotice({ slow = false }: { slow?: boolean }) {
+export function PaymentProcessingNotice({
+  phase = 'fresh',
+  onRelease,
+}: {
+  phase?: 'fresh' | 'slow' | 'unconfirmed';
+  /** User-asserted "I didn't complete a payment" release (unconfirmed only). */
+  onRelease?: () => void;
+}) {
   return (
     <div
       role="status"
@@ -308,7 +343,7 @@ export function PaymentProcessingNotice({ slow = false }: { slow?: boolean }) {
       data-testid="payment-processing-notice"
       style={{
         display: 'flex',
-        alignItems: 'baseline',
+        flexDirection: 'column',
         gap: 8,
         padding: '12px 14px',
         background: color.primarySoft,
@@ -319,30 +354,53 @@ export function PaymentProcessingNotice({ slow = false }: { slow?: boolean }) {
         color: color.fg,
       }}
     >
-      <span aria-hidden>⏳</span>
-      {slow ? (
-        <span>
-          <strong style={{ fontWeight: 600 }}>
-            Still confirming — this is taking longer than usual.
-          </strong>{' '}
-          <span style={{ color: color.fgSoft }}>
-            Your payment went through and is safe; this page keeps checking automatically. If your
-            plan hasn&rsquo;t updated in a few minutes, reload the page or email{' '}
-            <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
-              support@declutrmail.com
-            </a>
-            .
+      <span style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span aria-hidden>⏳</span>
+        {phase === 'unconfirmed' ? (
+          <span>
+            <strong style={{ fontWeight: 600 }}>
+              Payment still unconfirmed — checkout is paused so you can&rsquo;t be charged twice.
+            </strong>{' '}
+            <span style={{ color: color.fgSoft }}>
+              We haven&rsquo;t received confirmation from the payment provider yet. This page keeps
+              checking. If you completed the payment and your plan doesn&rsquo;t update, email{' '}
+              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                support@declutrmail.com
+              </a>{' '}
+              — your money is safe either way.
+            </span>
           </span>
-        </span>
-      ) : (
-        <span>
-          <strong style={{ fontWeight: 600 }}>Payment received — confirming your plan.</strong>{' '}
-          <span style={{ color: color.fgSoft }}>
-            The payment provider is finalizing your subscription. This page updates automatically,
-            usually within a minute.
+        ) : phase === 'slow' ? (
+          <span>
+            <strong style={{ fontWeight: 600 }}>
+              Still confirming — this is taking longer than usual.
+            </strong>{' '}
+            <span style={{ color: color.fgSoft }}>
+              Your payment went through and is safe; this page keeps checking automatically. If your
+              plan hasn&rsquo;t updated in a few minutes, reload the page or email{' '}
+              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                support@declutrmail.com
+              </a>
+              .
+            </span>
           </span>
-        </span>
-      )}
+        ) : (
+          <span>
+            <strong style={{ fontWeight: 600 }}>Payment received — confirming your plan.</strong>{' '}
+            <span style={{ color: color.fgSoft }}>
+              The payment provider is finalizing your subscription. This page updates automatically,
+              usually within a minute.
+            </span>
+          </span>
+        )}
+      </span>
+      {phase === 'unconfirmed' && onRelease ? (
+        <div>
+          <Button tone="default" onClick={onRelease}>
+            I didn&rsquo;t complete a payment — resume checkout
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

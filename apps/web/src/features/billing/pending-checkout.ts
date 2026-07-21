@@ -11,11 +11,13 @@
  * browser via localStorage (writes fire `storage` events in every
  * other tab).
  *
- * TTL: a lock whose webhook never arrives must not brick billing
- * forever — after PENDING_CHECKOUT_TTL_MS the record is treated as
- * expired and cleared (by then the slow-processing notice has long
- * pointed the user at support). Cross-DEVICE double-checkout remains
- * open until the BE exposes a server-side pending signal (flagged in
+ * The lock NEVER auto-expires — a silent unlock would reopen the
+ * double-charge window for exactly the user whose webhook is delayed.
+ * A record that stays unconfirmed past the screen's threshold switches
+ * the UI to an explicit "payment unconfirmed" state whose only release
+ * is the user asserting they did not complete a payment (or the tier
+ * flip clearing it). Cross-DEVICE double-checkout remains open until
+ * the BE exposes a server-side pending signal (flagged in
  * FOUNDER-FOLLOWUPS — a backend change, out of this PR's scope).
  */
 
@@ -32,14 +34,14 @@ export interface PendingCheckout {
 /** Exported for the cross-tab `storage`-event filter. */
 export const PENDING_CHECKOUT_KEY = 'dm.billing.pending-checkout';
 
-export const PENDING_CHECKOUT_TTL_MS = 15 * 60_000;
-
 const TIER_IDS: readonly string[] = ['free', 'plus', 'pro', 'team', 'enterprise'];
 
 /**
- * Read the pending record for THIS workspace. Expired records are
+ * Read the pending record for THIS workspace. Malformed records are
  * cleared; a record for a different workspace is ignored (never
  * cleared — it may be another account's live lock in this browser).
+ * Age is NOT checked here — the screen renders old records as the
+ * explicit "payment unconfirmed" state instead of silently unlocking.
  */
 export function readPendingCheckout(workspaceId: string): PendingCheckout | null {
   if (typeof window === 'undefined') return null;
@@ -64,10 +66,6 @@ export function readPendingCheckout(workspaceId: string): PendingCheckout | null
     typeof record.fromTier !== 'string' ||
     !TIER_IDS.includes(record.fromTier)
   ) {
-    clearPendingCheckout();
-    return null;
-  }
-  if (Date.now() - record.at > PENDING_CHECKOUT_TTL_MS) {
     clearPendingCheckout();
     return null;
   }
