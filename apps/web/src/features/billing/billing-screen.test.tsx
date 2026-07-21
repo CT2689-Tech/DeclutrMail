@@ -622,9 +622,29 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     );
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
 
-    // The explicit, user-asserted release — the only non-flip way out.
+    // The explicit, user-asserted release — the only non-flip way out —
+    // is TWO-step: the first click states the double-charge risk and
+    // releases nothing yet.
     fireEvent.click(
       within(notice).getByRole('button', { name: 'No charge went through — resume checkout' }),
+    );
+    const releaseConfirm = within(notice).getByTestId('release-confirm');
+    expect(releaseConfirm).toHaveTextContent(/you could be charged twice/i);
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(window.localStorage.getItem(PENDING_CHECKOUT_KEY)).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+
+    // "Keep waiting" backs out without releasing anything.
+    fireEvent.click(within(releaseConfirm).getByRole('button', { name: 'Keep waiting' }));
+    expect(within(notice).queryByTestId('release-confirm')).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(PENDING_CHECKOUT_KEY)).not.toBeNull();
+
+    // Only the confirmed assertion releases the lock.
+    fireEvent.click(
+      within(notice).getByRole('button', { name: 'No charge went through — resume checkout' }),
+    );
+    fireEvent.click(
+      within(notice).getByRole('button', { name: 'I checked — no charge. Resume checkout' }),
     );
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();

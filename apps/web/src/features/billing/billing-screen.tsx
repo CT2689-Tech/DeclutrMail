@@ -333,9 +333,13 @@ export function PaymentProcessingNotice({
   onRelease,
 }: {
   phase?: 'fresh' | 'slow' | 'unconfirmed';
-  /** User-asserted "no charge went through" release (unconfirmed only). */
+  /** User-asserted "no charge went through" release (unconfirmed only).
+   *  Reached only through the two-step confirm below — a wrong release
+   *  invites a second charge, so the risk is stated before the act
+   *  (the D226 preview-before-consequence shape). */
   onRelease?: () => void;
 }) {
+  const [confirmingRelease, setConfirmingRelease] = useState(false);
   return (
     <div
       role="status"
@@ -363,13 +367,13 @@ export function PaymentProcessingNotice({
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
               The provider&rsquo;s confirmation hasn&rsquo;t reached our server, so checkout stays
-              paused — starting another checkout could charge you twice. This page keeps checking.
+              paused — starting another checkout could charge you twice. Waiting is always safe:
+              this page keeps checking, and your plan updates the moment the payment is confirmed.
               Email{' '}
               <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
                 support@declutrmail.com
               </a>{' '}
-              and we&rsquo;ll sort it out; your payment is safe. If no payment actually went through
-              — no charge on your statement, no receipt email — you can resume checkout below.
+              and we&rsquo;ll sort it out.
             </span>
           </span>
         ) : phase === 'slow' ? (
@@ -397,11 +401,33 @@ export function PaymentProcessingNotice({
         )}
       </span>
       {phase === 'unconfirmed' && onRelease ? (
-        <div>
-          <Button tone="default" onClick={onRelease}>
-            No charge went through — resume checkout
-          </Button>
-        </div>
+        confirmingRelease ? (
+          <div
+            data-testid="release-confirm"
+            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+          >
+            <p style={{ margin: 0, fontSize: 12.5, color: color.fg }}>
+              <strong style={{ fontWeight: 600 }}>Before resuming, check for a charge</strong> — a
+              card statement entry or a Paddle receipt email. If the payment did go through and you
+              check out again, you could be charged twice. Resuming doesn&rsquo;t cancel the earlier
+              payment.
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button tone="default" onClick={() => setConfirmingRelease(false)}>
+                Keep waiting
+              </Button>
+              <Button tone="danger" onClick={onRelease}>
+                I checked — no charge. Resume checkout
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <Button tone="default" onClick={() => setConfirmingRelease(true)}>
+              No charge went through — resume checkout
+            </Button>
+          </div>
+        )
       ) : null}
     </div>
   );
