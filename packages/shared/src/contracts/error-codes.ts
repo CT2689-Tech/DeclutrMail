@@ -200,6 +200,19 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'All 250 Founding Pro spots have been claimed.',
   },
+  SUBSCRIPTION_PAUSED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This subscription is paused — resume or cancel it before changing plans.',
+  },
+  FOUNDING_PLAN_LOCKED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'Changing plans would end your Founding Pro price lock. Email support@declutrmail.com if you want to switch anyway.',
+  },
 
   // --- domain: account deletion (D205/D216/D232 — apps/api/src/account) ---
   DELETION_CONFIRM_MISMATCH: {

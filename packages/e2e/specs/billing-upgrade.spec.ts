@@ -320,7 +320,8 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   const proCard = page.getByTestId('current-plan-card');
   await expect(proCard).toBeVisible({ timeout: 60_000 });
   await expect(proCard).toContainText('Pro');
-  await expect(proCard).toContainText('via Paddle');
+  // Provider name is plumbing, not a plan fact — asserted ABSENT.
+  await expect(proCard).not.toContainText('via Paddle');
   await expect(proCard).toContainText('Next renewal');
   await expect(proCard.getByRole('button', { name: 'Cancel subscription' })).toBeVisible();
   const sub = await api.get<SubscriptionView>('/api/billing/subscription');

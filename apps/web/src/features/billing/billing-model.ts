@@ -9,7 +9,6 @@
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 import type {
   BillingCycle,
-  BillingProviderId,
   BillingSubscription,
   SubscriptionStatus,
 } from '@declutrmail/shared/contracts';
@@ -19,12 +18,6 @@ import { formatUsd } from '@/features/marketing/pricing/pricing-model';
 /** The condensed-strip tiers (D119) — the three self-serve rungs. */
 export const STRIP_TIER_IDS = ['free', 'plus', 'pro'] as const;
 export type StripTierId = (typeof STRIP_TIER_IDS)[number];
-
-/** Provider display names (D117). */
-export const PROVIDER_LABELS: Readonly<Record<BillingProviderId, string>> = {
-  paddle: 'Paddle',
-  razorpay: 'Razorpay',
-};
 
 /** "$19/mo" / "$190/yr" off the manifest; null when not offered. */
 export function planPriceLabel(tier: TierId, cycle: BillingCycle): string | null {

@@ -125,6 +125,20 @@ export interface BillingProvider {
   cancelSubscription(providerSubscriptionId: string): Promise<void>;
 
   /**
+   * Switch the subscription to a different catalog price (D117/D120
+   * paid↔paid change). Provider-native proration: upgrades charge the
+   * difference immediately, downgrades credit unused time. The tier
+   * flip still arrives ONLY via the `subscription.updated` webhook.
+   */
+  changePlan(providerSubscriptionId: string, providerPriceId: string): Promise<void>;
+
+  /**
+   * Resume a paused subscription immediately. Entitlement returns via
+   * the provider's `subscription.resumed`/`updated` webhook.
+   */
+  resumeSubscription(providerSubscriptionId: string): Promise<void>;
+
+  /**
    * Verify the webhook signature against the RAW request body
    * (D180). Pure HMAC math — fail closed on any malformed input.
    */

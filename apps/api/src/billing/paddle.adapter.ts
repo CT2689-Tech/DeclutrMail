@@ -244,6 +244,80 @@ export class PaddleAdapter implements BillingProvider {
     }
   }
 
+  /**
+   * PATCH /subscriptions/{id} — swap the single line item to the new
+   * price. `prorated_immediately`: upgrades charge the difference now,
+   * downgrades credit unused time toward future bills; the resulting
+   * `subscription.updated` webhook recomputes the tier (D117/D120).
+   */
+  async changePlan(providerSubscriptionId: string, providerPriceId: string): Promise<void> {
+    const apiKey = this.env.PADDLE_API_KEY;
+    if (!apiKey) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.baseUrl}/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            items: [{ price_id: providerPriceId, quantity: 1 }],
+            proration_billing_mode: 'prorated_immediately',
+          }),
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        },
+      );
+    } catch (err) {
+      this.logger.error(
+        `paddle.change_plan.network_error sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (!res.ok) {
+      this.logger.error(
+        `paddle.change_plan.failed sub=${providerSubscriptionId} status=${res.status}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+  }
+
+  /** POST /subscriptions/{id}/resume — immediately (D118 pause exit). */
+  async resumeSubscription(providerSubscriptionId: string): Promise<void> {
+    const apiKey = this.env.PADDLE_API_KEY;
+    if (!apiKey) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.baseUrl}/subscriptions/${encodeURIComponent(providerSubscriptionId)}/resume`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ effective_from: 'immediately' }),
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        },
+      );
+    } catch (err) {
+      this.logger.error(
+        `paddle.resume.network_error sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (!res.ok) {
+      this.logger.error(`paddle.resume.failed sub=${providerSubscriptionId} status=${res.status}`);
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+  }
+
   verifyWebhookSignature(args: {
     rawBody: Buffer;
     signatureHeader: string | undefined;

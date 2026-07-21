@@ -584,7 +584,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
   it('the pending lock survives a reload: a stored record locks a fresh mount', async () => {
     // "Reload" = a fresh mount finding the persisted record (the mock
     // me fixture's workspace id is 'w').
-    writePendingCheckout('w', 'free');
+    writePendingCheckout('w', 'checkout', 'free', null);
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
 
@@ -593,7 +593,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
   });
 
   it("another workspace's pending record does not lock this one", async () => {
-    writePendingCheckout('someone-elses-workspace', 'free');
+    writePendingCheckout('someone-elses-workspace', 'checkout', 'free', null);
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
 
@@ -609,7 +609,9 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       PENDING_CHECKOUT_KEY,
       JSON.stringify({
         workspaceId: 'w',
+        kind: 'checkout',
         fromTier: 'free',
+        fromCycle: null,
         at: Date.now() - 16 * 60_000,
       }),
     );
@@ -618,7 +620,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(notice).toHaveTextContent(
-      'Payment confirmed in checkout — your plan upgrade hasn’t come through yet.',
+      'Payment received — your plan change hasn’t come through yet.',
     );
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
 
@@ -657,7 +659,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
 
     // Another tab writes the record; the browser fires `storage` here.
-    const record = writePendingCheckout('w', 'free');
+    const record = writePendingCheckout('w', 'checkout', 'free', null);
     act(() => {
       window.dispatchEvent(
         new StorageEvent('storage', {
@@ -673,7 +675,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 });
 
 describe('BillingScreen — paid subscriber', () => {
-  it('plan card: tier, price, renewal, provider, cancel affordance', async () => {
+  it('plan card: tier, price, renewal, cancel affordance — and NO provider name', async () => {
     mockTier = 'pro';
     mockCleanupRemaining = null;
     stubSubscription(() => jsonOk({ data: PRO_SUB }));
@@ -683,7 +685,8 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(card).getByText('Pro')).toBeInTheDocument();
     expect(within(card).getByText('$19/mo')).toBeInTheDocument();
     expect(within(card).getByText('· Next renewal Jul 1, 2026')).toBeInTheDocument();
-    expect(within(card).getByText('· via Paddle')).toBeInTheDocument();
+    // The provider is plumbing, not plan facts — never on the card.
+    expect(within(card).queryByText(/via Paddle/)).not.toBeInTheDocument();
     expect(within(card).getByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
   });
 
@@ -830,14 +833,91 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByTestId('downgrade-panel')).not.toBeInTheDocument();
   });
 
-  it('selecting the other paid tier states the honest no-self-serve path', async () => {
-    mockTier = 'pro';
-    stubSubscription(() => jsonOk({ data: PRO_SUB }));
+  it('paid→paid switch: D226 preview → POST /billing/change-plan with the exact body', async () => {
+    mockTier = 'plus';
+    let changeBody: unknown = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: async (req) => {
+          changeBody = await req.json();
+          return jsonOk({ data: PLUS_SUB }); // pre-change state (§10)
+        },
+      },
+    ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    const panel = screen.getByTestId('change-plan-panel');
+    expect(within(panel).getByText('Preview · before anything changes')).toBeInTheDocument();
+    expect(within(panel).getByText(/Plus \(monthly\) → Pro \(annual\)/)).toBeInTheDocument();
+    expect(within(panel).getByText(/no new checkout/i)).toBeInTheDocument();
 
-    expect(screen.getByTestId('paid-switch-panel')).toBeInTheDocument();
-    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm plan change' }));
+    await waitFor(() => expect(changeBody).toEqual({ tierId: 'pro', cycle: 'annual' }));
+
+    // The change is pending until the webhook lands: truthful banner,
+    // no optimistic tier, checkout locked.
+    expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
+      'Plan change accepted — confirming your plan.',
+    );
+    expect(within(screen.getByTestId('current-plan-card')).getByText('Plus')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Switch to/ })).not.toBeInTheDocument();
+  });
+
+  it('a paused subscription shows the honest paused notice; Resume POSTs and enters pending', async () => {
+    mockTier = 'free';
+    let resumed = false;
+    const pausedBody: BillingSubscription = {
+      tier: 'free',
+      foundingMember: false,
+      subscription: { ...SUB, tier: 'plus', status: 'paused', currentPeriodEnd: null },
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: pausedBody }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/resume',
+        respond: () => {
+          resumed = true;
+          return jsonOk({ data: pausedBody }); // pre-resume state (§10)
+        },
+      },
+    ]);
+    renderScreen();
+
+    // Card tells ONE story: entitlement Free, $0 — the paused row's
+    // price/status/cancel never leak onto it.
+    const card = await screen.findByTestId('current-plan-card');
+    expect(within(card).getByText('Free')).toBeInTheDocument();
+    expect(within(card).getByText('$0')).toBeInTheDocument();
+    expect(within(card).queryByText(/\$9/)).not.toBeInTheDocument();
+    expect(
+      within(card).queryByRole('button', { name: 'Cancel subscription' }),
+    ).not.toBeInTheDocument();
+
+    // The paused notice owns the story + both exits.
+    const notice = screen.getByTestId('paused-subscription-notice');
+    expect(notice).toHaveTextContent('Your Plus subscription is paused');
+    expect(within(notice).getByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
+
+    // Plan changes stay locked while paused.
+    expect(screen.queryByRole('button', { name: /Upgrade to|Switch to/ })).not.toBeInTheDocument();
+
+    fireEvent.click(within(notice).getByRole('button', { name: 'Resume Plus' }));
+    await waitFor(() => expect(resumed).toBe(true));
+    expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
+      'Resume accepted — confirming your plan.',
+    );
   });
 });

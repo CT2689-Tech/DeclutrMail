@@ -202,6 +202,66 @@ export class RazorpayAdapter implements BillingProvider {
     }
   }
 
+  /**
+   * PATCH /v1/subscriptions/{id} — switch the plan now. Razorpay
+   * prorates the change on the current invoice; the resulting
+   * `subscription.updated` webhook recomputes the tier (D117/D120).
+   */
+  async changePlan(providerSubscriptionId: string, providerPriceId: string): Promise<void> {
+    const auth = this.authHeader();
+    let res: Response;
+    try {
+      res = await fetch(
+        `${API_BASE}/v1/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: auth, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan_id: providerPriceId, schedule_change_at: 'now' }),
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        },
+      );
+    } catch (err) {
+      this.logger.error(
+        `razorpay.change_plan.network_error sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (!res.ok) {
+      this.logger.error(
+        `razorpay.change_plan.failed sub=${providerSubscriptionId} status=${res.status}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+  }
+
+  /** POST /v1/subscriptions/{id}/resume — immediately (D118 pause exit). */
+  async resumeSubscription(providerSubscriptionId: string): Promise<void> {
+    const auth = this.authHeader();
+    let res: Response;
+    try {
+      res = await fetch(
+        `${API_BASE}/v1/subscriptions/${encodeURIComponent(providerSubscriptionId)}/resume`,
+        {
+          method: 'POST',
+          headers: { Authorization: auth, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resume_at: 'now' }),
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        },
+      );
+    } catch (err) {
+      this.logger.error(
+        `razorpay.resume.network_error sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (!res.ok) {
+      this.logger.error(
+        `razorpay.resume.failed sub=${providerSubscriptionId} status=${res.status}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+  }
+
   verifyWebhookSignature(args: {
     rawBody: Buffer;
     signatureHeader: string | undefined;

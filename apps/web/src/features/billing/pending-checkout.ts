@@ -21,13 +21,23 @@
  * FOUNDER-FOLLOWUPS — a backend change, out of this PR's scope).
  */
 
+import type { BillingCycle } from '@declutrmail/shared/contracts';
 import type { TierId } from '@declutrmail/shared/entitlements';
+
+/** What started the wait — drives the notice copy. */
+export type PendingKind = 'checkout' | 'change' | 'resume';
 
 export interface PendingCheckout {
   workspaceId: string;
-  /** Tier at the moment of payment — the flip detector compares to it. */
+  /** What started the wait (overlay payment / plan change / resume). */
+  kind: PendingKind;
+  /** Tier at the moment of the action — the flip detector compares to it. */
   fromTier: TierId;
-  /** Epoch ms of `checkout.completed`. */
+  /** Billing cycle at the moment of the action — cycle-only plan
+   *  changes flip THIS while the tier stays put. Null when there was
+   *  no subscription to change (fresh checkout). */
+  fromCycle: BillingCycle | null;
+  /** Epoch ms of the triggering action. */
   at: number;
 }
 
@@ -35,6 +45,8 @@ export interface PendingCheckout {
 export const PENDING_CHECKOUT_KEY = 'dm.billing.pending-checkout';
 
 const TIER_IDS: readonly string[] = ['free', 'plus', 'pro', 'team', 'enterprise'];
+const KINDS: readonly string[] = ['checkout', 'change', 'resume'];
+const CYCLES: readonly string[] = ['monthly', 'annual'];
 
 /**
  * Read the pending record for THIS workspace. Malformed records are
@@ -64,7 +76,10 @@ export function readPendingCheckout(workspaceId: string): PendingCheckout | null
     typeof record.workspaceId !== 'string' ||
     typeof record.at !== 'number' ||
     typeof record.fromTier !== 'string' ||
-    !TIER_IDS.includes(record.fromTier)
+    !TIER_IDS.includes(record.fromTier) ||
+    typeof record.kind !== 'string' ||
+    !KINDS.includes(record.kind) ||
+    (record.fromCycle !== null && !CYCLES.includes(record.fromCycle as string))
   ) {
     clearPendingCheckout();
     return null;
@@ -73,9 +88,14 @@ export function readPendingCheckout(workspaceId: string): PendingCheckout | null
   return record as PendingCheckout;
 }
 
-/** Record `checkout.completed` for this workspace. Returns the record. */
-export function writePendingCheckout(workspaceId: string, fromTier: TierId): PendingCheckout {
-  const record: PendingCheckout = { workspaceId, fromTier, at: Date.now() };
+/** Record the pending action for this workspace. Returns the record. */
+export function writePendingCheckout(
+  workspaceId: string,
+  kind: PendingKind,
+  fromTier: TierId,
+  fromCycle: BillingCycle | null,
+): PendingCheckout {
+  const record: PendingCheckout = { workspaceId, kind, fromTier, fromCycle, at: Date.now() };
   try {
     window.localStorage.setItem(PENDING_CHECKOUT_KEY, JSON.stringify(record));
   } catch {

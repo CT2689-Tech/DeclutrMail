@@ -26,6 +26,7 @@ import type {
   CancelRequest,
   CheckoutRequest,
   CheckoutSession,
+  PlanChangeRequest,
 } from '@declutrmail/shared/contracts';
 
 import { AppException } from '../common/app-exception.js';
@@ -239,6 +240,103 @@ export class BillingService {
       );
     }
 
+    return this.getSubscription(principal.workspaceId);
+  }
+
+  /**
+   * D117/D120 — self-serve paid↔paid plan change on the EXISTING
+   * provider subscription. Provider-native proration (upgrades charge
+   * the difference immediately, downgrades credit unused time); the
+   * tier flips ONLY when the provider's `subscription.updated` webhook
+   * lands (§10 — this endpoint never writes tier or subscription rows).
+   *
+   * Guards:
+   *   - paused subs must resume (or cancel) first — a paused sub's
+   *     provider-side item change semantics differ per provider, and
+   *     the user isn't being billed to change from;
+   *   - Founding Pro subs are change-locked (the $129 price lock dies
+   *     with the price point — never end it on a casual click);
+   *   - same tier+cycle is an idempotent no-op.
+   */
+  async changePlan(
+    principal: { workspaceId: string },
+    dto: PlanChangeRequest,
+  ): Promise<BillingSubscription> {
+    const [sub] = await this.db
+      .select({
+        id: subscriptions.id,
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+        tier: subscriptions.tier,
+        billingCycle: subscriptions.billingCycle,
+        status: subscriptions.status,
+        foundingMember: subscriptions.foundingMember,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.workspaceId, principal.workspaceId),
+          inArray(subscriptions.status, ['active', 'past_due', 'paused']),
+        ),
+      )
+      .orderBy(desc(subscriptions.updatedAt))
+      .limit(1);
+    if (!sub) {
+      throw new AppException({ code: 'NO_ACTIVE_SUBSCRIPTION' });
+    }
+    if (sub.status === 'paused') {
+      throw new AppException({ code: 'SUBSCRIPTION_PAUSED' });
+    }
+    if (sub.foundingMember) {
+      throw new AppException({ code: 'FOUNDING_PLAN_LOCKED' });
+    }
+    if (sub.tier === dto.tierId && sub.billingCycle === dto.cycle) {
+      // Idempotent no-op — nothing to change, nothing to charge.
+      return this.getSubscription(principal.workspaceId);
+    }
+
+    const priceId = this.catalog.resolvePriceId(sub.provider, dto.tierId, dto.cycle, false);
+    if (!priceId) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+
+    // Provider call IS the change; the webhook writes the new state.
+    await this.adapterFor(sub.provider).changePlan(sub.providerSubscriptionId, priceId);
+
+    this.logger.log(
+      `billing.plan_change_requested workspace=${principal.workspaceId} provider=${sub.provider} from=${sub.tier}/${sub.billingCycle} to=${dto.tierId}/${dto.cycle}`,
+    );
+    return this.getSubscription(principal.workspaceId);
+  }
+
+  /**
+   * D118 pause exit — resume the paused subscription immediately.
+   * Entitlement returns via the provider webhook, never here.
+   */
+  async resume(principal: { workspaceId: string }): Promise<BillingSubscription> {
+    const [sub] = await this.db
+      .select({
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.workspaceId, principal.workspaceId),
+          eq(subscriptions.status, 'paused'),
+        ),
+      )
+      .orderBy(desc(subscriptions.updatedAt))
+      .limit(1);
+    if (!sub) {
+      throw new AppException({ code: 'NO_ACTIVE_SUBSCRIPTION' });
+    }
+
+    await this.adapterFor(sub.provider).resumeSubscription(sub.providerSubscriptionId);
+
+    this.logger.log(
+      `billing.resume_requested workspace=${principal.workspaceId} provider=${sub.provider}`,
+    );
     return this.getSubscription(principal.workspaceId);
   }
 

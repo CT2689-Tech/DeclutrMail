@@ -159,3 +159,18 @@ export const CancelRequestSchema = z.object({
     .optional(),
 });
 export type CancelRequest = z.infer<typeof CancelRequestSchema>;
+
+/**
+ * POST /api/billing/change-plan request body (D117/D120 — self-serve
+ * paid↔paid switching). The change is applied on the EXISTING provider
+ * subscription (Paddle: items update with `prorated_immediately`;
+ * Razorpay: plan update `schedule_change_at: 'now'`) — upgrades charge
+ * the prorated difference, downgrades credit unused time, and the tier
+ * still flips ONLY via the provider webhook (§10). No `provider` field:
+ * the change rides the subscription's existing provider.
+ */
+export const PlanChangeRequestSchema = z.object({
+  tierId: PurchasableTierSchema,
+  cycle: BillingCycleSchema,
+});
+export type PlanChangeRequest = z.infer<typeof PlanChangeRequestSchema>;

@@ -87,6 +87,8 @@ describe('BillingService', () => {
   let service: BillingService;
   let paddleCheckout: ReturnType<typeof vi.fn>;
   let paddleCancel: ReturnType<typeof vi.fn>;
+  let paddleChangePlan: ReturnType<typeof vi.fn>;
+  let paddleResume: ReturnType<typeof vi.fn>;
   let principal: { userId: string; workspaceId: string };
 
   beforeEach(async () => {
@@ -100,15 +102,21 @@ describe('BillingService', () => {
       customData: { workspace_id: 'set-below', sig: 'test-sig' },
     });
     paddleCancel = vi.fn().mockResolvedValue(undefined);
+    paddleChangePlan = vi.fn().mockResolvedValue(undefined);
+    paddleResume = vi.fn().mockResolvedValue(undefined);
     const paddle = {
       id: 'paddle',
       createCheckout: paddleCheckout,
       cancelSubscription: paddleCancel,
+      changePlan: paddleChangePlan,
+      resumeSubscription: paddleResume,
     } as unknown as PaddleAdapter;
     const razorpay = {
       id: 'razorpay',
       createCheckout: vi.fn(),
       cancelSubscription: vi.fn(),
+      changePlan: vi.fn(),
+      resumeSubscription: vi.fn(),
     } as unknown as RazorpayAdapter;
     service = new BillingService(db, new BillingCatalog(CATALOG_ENTRIES, 2), paddle, razorpay);
 
@@ -247,6 +255,121 @@ describe('BillingService', () => {
   it('cancel without any granting subscription is NO_ACTIVE_SUBSCRIPTION', async () => {
     await expect(service.cancelAtPeriodEnd(principal, {})).rejects.toMatchObject({
       code: 'NO_ACTIVE_SUBSCRIPTION',
+    });
+  });
+
+  describe('changePlan (D117/D120 paid↔paid switch)', () => {
+    async function seedActivePlus(): Promise<void> {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_change_me',
+        tier: 'plus',
+        status: 'active',
+        providerPriceId: 'pri_plus_m',
+        billingCycle: 'monthly',
+      });
+      await db
+        .update(workspaces)
+        .set({ tier: 'plus' })
+        .where(eq(workspaces.id, principal.workspaceId));
+    }
+
+    it('resolves the target price and delegates to the provider; tier is NOT written locally', async () => {
+      await seedActivePlus();
+      const result = await service.changePlan(principal, { tierId: 'pro', cycle: 'annual' });
+      expect(paddleChangePlan).toHaveBeenCalledWith('sub_change_me', 'pri_pro_a');
+      // §10: the endpoint never grants — the webhook does. Local state
+      // still shows the pre-change subscription.
+      expect(result.tier).toBe('plus');
+      expect(result.subscription).toMatchObject({ tier: 'plus', cycle: 'monthly' });
+    });
+
+    it('same tier+cycle is an idempotent no-op (no provider call)', async () => {
+      await seedActivePlus();
+      const result = await service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' });
+      expect(paddleChangePlan).not.toHaveBeenCalled();
+      expect(result.subscription).toMatchObject({ tier: 'plus', cycle: 'monthly' });
+    });
+
+    it('no subscription → NO_ACTIVE_SUBSCRIPTION', async () => {
+      await expect(
+        service.changePlan(principal, { tierId: 'pro', cycle: 'annual' }),
+      ).rejects.toMatchObject({ code: 'NO_ACTIVE_SUBSCRIPTION' });
+    });
+
+    it('paused subscription → SUBSCRIPTION_PAUSED (resume or cancel first)', async () => {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_paused',
+        tier: 'plus',
+        status: 'paused',
+        providerPriceId: 'pri_plus_m',
+        billingCycle: 'monthly',
+      });
+      await expect(
+        service.changePlan(principal, { tierId: 'pro', cycle: 'annual' }),
+      ).rejects.toMatchObject({ code: 'SUBSCRIPTION_PAUSED' });
+      expect(paddleChangePlan).not.toHaveBeenCalled();
+    });
+
+    it('Founding Pro subscription → FOUNDING_PLAN_LOCKED (price lock protected)', async () => {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_founding',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_f',
+        billingCycle: 'annual',
+        foundingMember: true,
+      });
+      await expect(
+        service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' }),
+      ).rejects.toMatchObject({ code: 'FOUNDING_PLAN_LOCKED' });
+      expect(paddleChangePlan).not.toHaveBeenCalled();
+    });
+
+    it('unprovisioned target price fails closed (BILLING_NOT_PROVISIONED)', async () => {
+      // Razorpay pro_annual is null in the fixture catalog.
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'razorpay',
+        providerSubscriptionId: 'sub_rzp',
+        tier: 'plus',
+        status: 'active',
+        providerPriceId: 'plan_plus_m',
+        billingCycle: 'monthly',
+      });
+      await expect(
+        service.changePlan(principal, { tierId: 'pro', cycle: 'annual' }),
+      ).rejects.toMatchObject({ code: 'BILLING_NOT_PROVISIONED' });
+    });
+  });
+
+  describe('resume (D118 pause exit)', () => {
+    it('delegates to the provider for a paused subscription; entitlement stays webhook-only', async () => {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_paused',
+        tier: 'plus',
+        status: 'paused',
+        providerPriceId: 'pri_plus_m',
+        billingCycle: 'monthly',
+      });
+      const result = await service.resume(principal);
+      expect(paddleResume).toHaveBeenCalledWith('sub_paused');
+      // Local state unchanged until the provider webhook lands.
+      expect(result.tier).toBe('free');
+      expect(result.subscription).toMatchObject({ status: 'paused' });
+    });
+
+    it('no paused subscription → NO_ACTIVE_SUBSCRIPTION', async () => {
+      await expect(service.resume(principal)).rejects.toMatchObject({
+        code: 'NO_ACTIVE_SUBSCRIPTION',
+      });
     });
   });
 });

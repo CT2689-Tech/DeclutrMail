@@ -199,15 +199,37 @@ export const PastDue: Story<typeof BillingScreen> = {
     ),
 };
 
-/** Subscription paused — muted status note with the resume date. */
+/** Subscription paused — a paused plan grants NOTHING: the card tells
+ *  the Free story, the paused notice owns Resume/Cancel, and plan
+ *  changes stay locked (BE rejects with SUBSCRIPTION_PAUSED). */
 export const Paused: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
-      makeClient(meFixture('pro', null), {
-        ...PRO_SUB,
+      makeClient(meFixture('free', 0), {
+        tier: 'free',
+        foundingMember: false,
         subscription: PRO_SUB.subscription
-          ? { ...PRO_SUB.subscription, status: 'paused', pauseUntil: '2026-08-03T12:00:00.000Z' }
+          ? {
+              ...PRO_SUB.subscription,
+              tier: 'plus',
+              status: 'paused',
+              pauseUntil: '2026-08-03T12:00:00.000Z',
+              currentPeriodEnd: null,
+            }
           : null,
+      }),
+    ),
+};
+
+/** Plus subscriber — every non-current card carries a bottom-aligned
+ *  "Switch to …" CTA into the D226 change-plan preview (D117/D120). */
+export const PlusSubscriber: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('plus', null), {
+        tier: 'plus',
+        foundingMember: false,
+        subscription: PRO_SUB.subscription ? { ...PRO_SUB.subscription, tier: 'plus' } : null,
       }),
     ),
 };

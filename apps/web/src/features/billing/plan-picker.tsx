@@ -5,7 +5,11 @@ import Link from 'next/link';
 
 import { Button, Eyebrow, tokens } from '@declutrmail/shared';
 import { ERROR_CODES, isErrorCode } from '@declutrmail/shared/contracts';
-import type { BillingCycle, BillingProviderId } from '@declutrmail/shared/contracts';
+import type {
+  BillingCycle,
+  BillingProviderId,
+  BillingSubscription,
+} from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 
 import { formatUsd, priceLineFor, TIER_JOBS } from '@/features/marketing/pricing/pricing-model';
@@ -13,10 +17,12 @@ import { track } from '@/lib/posthog';
 
 import { apiErrorCode } from './api/use-billing-subscription';
 import type { BillingIntent } from './billing-intent';
+import { useChangePlan } from './api/use-change-plan';
 import { useCheckout } from './api/use-checkout';
 import {
   formatBillingDate,
   MONEY_BACK_NOTE,
+  planPriceLabel,
   sharedAnnualMonthsFree,
   STRIP_TIER_IDS,
   type StripTierId,
@@ -34,36 +40,39 @@ type PaidTier = 'plus' | 'pro';
  * every price on the three cards; each non-current plan carries ONE
  * primary CTA that expands the confirm panel in place:
  *
- *   - Paid target, no active subscription → the real checkout confirm
+ *   - Paid target, no granting subscription → the real checkout confirm
  *     (D226's mandatory preview: provider pick per D117, Founding Pro
  *     claim when Pro-annual per D126, the exact charge line) →
  *     `launchCheckout` opens the provider surface. Two clicks total.
+ *   - Paid target with a granting subscription → the SELF-SERVE plan
+ *     change (D117/D120): D226 preview of the switch, then
+ *     `POST /api/billing/change-plan` on the existing subscription —
+ *     provider-prorated, tier flips via webhook only.
  *   - Free target while subscribed → D120 downgrade copy routing to the
  *     cancel flow — cancel IS the downgrade-to-free mechanism.
- *   - Paid target while already subscribed → the honest designed state:
- *     paid-to-paid switching is not self-serve at beta.
  *
  * Errors render inline from the shared ERROR_CODES vocabulary —
  * BILLING_DISABLED / BILLING_NOT_PROVISIONED (billing dark, F-queue),
- * FOUNDING_PRO_SOLD_OUT, SUBSCRIPTION_EXISTS — never a generic toast.
+ * FOUNDING_PRO_SOLD_OUT, SUBSCRIPTION_EXISTS, FOUNDING_PLAN_LOCKED —
+ * never a generic toast.
  *
- * `disabled` (billing dark, 503) keeps the cards visible — the plans
- * are final (D119) — but withholds every checkout affordance.
+ * `disabled` (billing dark 503, pending plan action, paused sub) keeps
+ * the cards visible — the plans are final (D119) — but withholds every
+ * checkout affordance.
  */
 export function PlanPicker({
   currentTier,
-  hasActiveSubscription,
-  currentPeriodEnd,
+  subscription,
   disabled,
   initialIntent = null,
   onRequestCancel,
   onPaymentCompleted,
+  onPlanChangeStarted,
 }: {
   currentTier: TierId;
-  hasActiveSubscription: boolean;
-  /** ISO period end of the active subscription (downgrade copy). */
-  currentPeriodEnd: string | null;
-  /** Billing dark (503) — render plans, withhold checkout affordances. */
+  /** The latest provider subscription record (screen's read), or null. */
+  subscription: BillingSubscription['subscription'];
+  /** Billing dark / pending action / paused — withhold affordances. */
   disabled: boolean;
   /** Validated pricing-page/gate-nudge choice carried through auth. */
   initialIntent?: BillingIntent | null;
@@ -73,6 +82,9 @@ export function PlanPicker({
    *  grant pending the webhook. The screen owns the truthful pending
    *  state; this component only reports the provider fact. */
   onPaymentCompleted: () => void;
+  /** The change-plan endpoint accepted the switch — the screen enters
+   *  the pending state until the webhook lands. */
+  onPlanChangeStarted: () => void;
 }) {
   const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
   const [selected, setSelected] = useState<StripTierId | null>(null);
@@ -81,6 +93,16 @@ export function PlanPicker({
     initialIntent ? initialIntent.promo === 'foundingPro' : true,
   );
   const checkout = useCheckout();
+  const changePlan = useChangePlan();
+
+  // A subscription that GRANTS (active/past_due) routes paid targets
+  // through the change-plan endpoint; anything else (none, canceled,
+  // paused — which `disabled` already locks) is a fresh checkout.
+  const grantingSub =
+    subscription !== null &&
+    (subscription.status === 'active' || subscription.status === 'past_due')
+      ? subscription
+      : null;
 
   // A pricing-page/gate-nudge CTA lands with an exact plan+cycle — open
   // the confirm panel directly (the deep link IS the plan click).
@@ -89,7 +111,7 @@ export function PlanPicker({
     if (intentPlan && !disabled) setSelected(intentPlan);
   }, [intentPlan, disabled]);
 
-  const foundingEligible = selected === 'pro' && cycle === 'annual';
+  const foundingEligible = selected === 'pro' && cycle === 'annual' && grantingSub === null;
   const founding = foundingEligible && claimFounding;
   const errorMessage = checkoutErrorMessage(checkout.error);
   const monthsFree = sharedAnnualMonthsFree();
@@ -97,11 +119,16 @@ export function PlanPicker({
   function closePanel() {
     setSelected(null);
     checkout.reset();
+    changePlan.reset();
   }
 
   function onSelect(id: StripTierId) {
-    if (disabled || id === currentTier) return;
+    if (disabled) return;
+    // The current plan card carries no CTA — but with a granting sub,
+    // the CURRENT TIER at the OTHER cycle is a valid switch target.
+    if (id === currentTier && grantingSub === null) return;
     checkout.reset();
+    changePlan.reset();
     setSelected((prev) => (prev === id ? null : id));
   }
 
@@ -135,6 +162,20 @@ export function PlanPicker({
     );
   }
 
+  function onConfirmChange(target: PaidTier) {
+    if (changePlan.isPending) return;
+    void track('plan_change_started', { tier: target, cycle, from_tier: currentTier });
+    changePlan.mutate(
+      { tierId: target, cycle },
+      {
+        onSuccess: () => {
+          closePanel();
+          onPlanChangeStarted();
+        },
+      },
+    );
+  }
+
   return (
     <section
       aria-label="Plans"
@@ -163,35 +204,45 @@ export function PlanPicker({
         <CycleToggle cycle={cycle} onChange={setCycle} monthsFree={monthsFree} />
       </div>
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'stretch' }}>
         {STRIP_TIER_IDS.map((id) => (
           <PlanCard
             key={id}
             tierId={id}
             cycle={cycle}
             isCurrent={id === currentTier}
+            currentCycle={grantingSub?.cycle ?? null}
             isSelected={id === selected}
             disabled={disabled}
-            hasActiveSubscription={hasActiveSubscription}
+            hasGrantingSubscription={grantingSub !== null}
             onSelect={() => onSelect(id)}
           />
         ))}
       </div>
 
-      {selected !== null && selected !== currentTier && !disabled ? (
+      {selected !== null && !disabled ? (
         selected === 'free' ? (
-          hasActiveSubscription ? (
+          grantingSub !== null ? (
             <DowngradePanel
               currentTier={currentTier}
-              currentPeriodEnd={currentPeriodEnd}
+              currentPeriodEnd={grantingSub.currentPeriodEnd}
               onRequestCancel={() => {
                 closePanel();
                 onRequestCancel();
               }}
             />
           ) : null
-        ) : hasActiveSubscription ? (
-          <PaidSwitchPanel />
+        ) : grantingSub !== null ? (
+          <ChangePlanPanel
+            target={selected}
+            cycle={cycle}
+            fromTier={grantingSub.tier}
+            fromCycle={grantingSub.cycle}
+            isPending={changePlan.isPending}
+            errorMessage={changePlan.error ? checkoutErrorMessage(changePlan.error) : null}
+            onConfirm={() => onConfirmChange(selected)}
+            onDismiss={closePanel}
+          />
         ) : (
           <ConfirmPanel
             target={selected}
@@ -302,28 +353,38 @@ function PlanCard({
   tierId,
   cycle,
   isCurrent,
+  currentCycle,
   isSelected,
   disabled,
-  hasActiveSubscription,
+  hasGrantingSubscription,
   onSelect,
 }: {
   tierId: StripTierId;
   cycle: BillingCycle;
   isCurrent: boolean;
+  /** The granting subscription's billing cycle, or null without one. */
+  currentCycle: BillingCycle | null;
   isSelected: boolean;
   disabled: boolean;
-  hasActiveSubscription: boolean;
+  hasGrantingSubscription: boolean;
   onSelect: () => void;
 }) {
   const tier = TIER_MANIFEST[tierId];
   const price = priceLineFor(tier, cycle);
+  // CTA per card state. Every non-current card gets one so the row
+  // reads as equals; the current card's only action is switching its
+  // billing cycle via the toggle.
   const cta = isCurrent
-    ? null
+    ? hasGrantingSubscription && currentCycle !== null && currentCycle !== cycle
+      ? `Switch to ${cycle} billing`
+      : null
     : tierId === 'free'
-      ? hasActiveSubscription
+      ? hasGrantingSubscription
         ? 'Switch to Free'
         : null
-      : `Upgrade to ${tier.name}`;
+      : hasGrantingSubscription
+        ? `Switch to ${tier.name}`
+        : `Upgrade to ${tier.name}`;
 
   return (
     <div
@@ -370,7 +431,10 @@ function PlanCard({
         {TIER_JOBS[tierId]}
       </span>
       {cta && !disabled ? (
-        <div style={{ marginTop: 4 }}>
+        // marginTop auto pins every CTA to the card's bottom edge so
+        // the row of buttons sits on ONE line regardless of how much
+        // text each card carries.
+        <div style={{ marginTop: 'auto', paddingTop: 10 }}>
           <Button
             tone={tierId === 'free' ? 'default' : 'primary'}
             onClick={onSelect}
@@ -380,6 +444,99 @@ function PlanCard({
           </Button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The D226 confirm step for a PLAN CHANGE on the existing subscription
+ * (D117/D120): states the from→to switch, the new price, and the
+ * provider-prorated billing consequence, then ONE confirm into
+ * `POST /api/billing/change-plan`. No provider pick and no overlay —
+ * the change rides the subscription's existing payment method.
+ */
+function ChangePlanPanel({
+  target,
+  cycle,
+  fromTier,
+  fromCycle,
+  isPending,
+  errorMessage,
+  onConfirm,
+  onDismiss,
+}: {
+  target: PaidTier;
+  cycle: BillingCycle;
+  fromTier: PaidTier;
+  fromCycle: BillingCycle;
+  isPending: boolean;
+  errorMessage: string | null;
+  onConfirm: () => void;
+  onDismiss: () => void;
+}) {
+  const toLabel = planPriceLabel(target, cycle);
+  const samePlan = target === fromTier && cycle === fromCycle;
+  return (
+    <div
+      data-testid="change-plan-panel"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        padding: '14px 16px',
+        background: color.paper,
+        border: `1px solid ${color.line}`,
+        borderRadius: radius.md,
+      }}
+    >
+      <Eyebrow>Preview · before anything changes</Eyebrow>
+      {samePlan ? (
+        <p style={{ margin: 0, fontSize: 13, color: color.fgSoft }}>
+          This is your current plan and billing cycle — nothing to change.
+        </p>
+      ) : (
+        <>
+          <p style={{ margin: 0, fontSize: 13, color: color.fg }}>
+            <strong style={{ fontWeight: 600 }}>
+              {TIER_MANIFEST[fromTier].name} ({fromCycle}) → {TIER_MANIFEST[target].name} ({cycle})
+            </strong>
+            {toLabel ? (
+              <span style={{ color: color.fgSoft }}> — {toLabel} from now on.</span>
+            ) : null}
+          </p>
+          <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
+            The switch applies right away on your existing payment method — no new checkout.
+            Upgrades charge the prorated difference for the rest of this period; downgrades credit
+            unused time toward future bills.
+          </p>
+          <p style={{ margin: 0, fontSize: 11.5, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
+        </>
+      )}
+
+      {errorMessage != null && (
+        <div
+          role="alert"
+          style={{
+            fontSize: 12,
+            color: color.red,
+            background: 'rgba(239,68,68,0.08)',
+            border: `1px solid ${color.red}`,
+            borderRadius: 8,
+            padding: '8px 10px',
+          }}
+        >
+          {errorMessage}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Button tone="primary" onClick={onConfirm} disabled={isPending || samePlan}>
+          {isPending ? 'Applying…' : 'Confirm plan change'}
+        </Button>
+        <Button tone="default" onClick={onDismiss} disabled={isPending}>
+          Keep current plan
+        </Button>
+      </div>
     </div>
   );
 }
@@ -605,28 +762,5 @@ function DowngradePanel({
         </Button>
       </div>
     </div>
-  );
-}
-
-/** Paid→paid switching has no BE path at beta — say so, honestly. */
-function PaidSwitchPanel() {
-  return (
-    <p
-      data-testid="paid-switch-panel"
-      style={{
-        margin: 0,
-        padding: '14px 16px',
-        background: color.paper,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
-        fontSize: 13,
-        color: color.fgSoft,
-        lineHeight: 1.55,
-      }}
-    >
-      Switching between paid plans isn&rsquo;t self-serve yet. Cancel your current plan (it stays
-      active until period end) and subscribe to the new one after — or reply to your receipt email
-      and we&rsquo;ll switch you over.
-    </p>
   );
 }

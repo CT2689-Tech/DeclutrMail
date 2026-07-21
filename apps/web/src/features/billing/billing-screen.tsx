@@ -24,20 +24,16 @@ import { track } from '@/lib/posthog';
 import { isBillingDisabledError, useBillingSubscription } from './api/use-billing-subscription';
 import type { BillingIntent } from './billing-intent';
 import { useCancelSubscription } from './api/use-cancel-subscription';
-import {
-  canCancel,
-  formatBillingDate,
-  planPriceLabel,
-  PROVIDER_LABELS,
-  statusNote,
-} from './billing-model';
+import { canCancel, formatBillingDate, planPriceLabel, statusNote } from './billing-model';
 import { CancelModal } from './cancel-modal';
+import { useResumeSubscription } from './api/use-resume-subscription';
 import {
   clearPendingCheckout,
   PENDING_CHECKOUT_KEY,
   readPendingCheckout,
   writePendingCheckout,
   type PendingCheckout,
+  type PendingKind,
 } from './pending-checkout';
 import { PlanPicker } from './plan-picker';
 
@@ -145,21 +141,27 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   const tier: TierId = data?.tier ?? meTier;
   const subscription = data?.subscription ?? null;
 
-  // The webhook landed: the SERVER now reports a different tier than
-  // the one checkout started from — only then is success claimed.
+  // The webhook landed: the SERVER now reports a different tier — or,
+  // for cycle-only plan changes, a different billing cycle — than the
+  // action started from. Only then is success claimed.
   useEffect(() => {
     if (pending === null || data === null) return;
-    if (data.tier !== pending.fromTier) {
+    const tierFlipped = data.tier !== pending.fromTier;
+    const cycleFlipped =
+      pending.fromCycle !== null &&
+      data.subscription !== null &&
+      data.subscription.cycle !== pending.fromCycle;
+    if (tierFlipped || cycleFlipped) {
       clearPendingCheckout();
       setPending(null);
       // Tier is a server-resolved scope and feature query keys are not
       // partitioned by it (§8 scope-change ⇒ cache-reset invariant) —
-      // every cached read, gated 402 included, may now be stale. An
-      // upgrade is a rare one-time event: reset everything, `me` first
-      // so the app chrome's tier gates flip immediately.
+      // every cached read, gated 402 included, may now be stale. A
+      // plan change is a rare one-time event: reset everything, `me`
+      // first so the app chrome's tier gates flip immediately.
       void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
       void queryClient.invalidateQueries();
-      toast(`Upgrade confirmed — you're on ${TIER_MANIFEST[data.tier].name}.`, 'success');
+      toast(`Plan updated — you're on ${TIER_MANIFEST[data.tier].name}.`, 'success');
     }
   }, [pending, data, queryClient]);
 
@@ -216,8 +218,8 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
     );
   }
 
-  function onPaymentCompleted() {
-    setPending(writePendingCheckout(workspaceId, tier));
+  function startPending(kind: PendingKind) {
+    setPending(writePendingCheckout(workspaceId, kind, tier, subscription?.cycle ?? null));
     // Ask immediately — fast webhooks (sandbox flips in ~40s, some land
     // sooner) shouldn't wait a full poll interval.
     void subscriptionQuery.refetch();
@@ -262,7 +264,11 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
       {billingDisabled ? <BillingDisabledNotice /> : null}
 
       {pending !== null ? (
-        <PaymentProcessingNotice phase={processingPhase} onRelease={onReleasePendingLock} />
+        <PaymentProcessingNotice
+          phase={processingPhase}
+          kind={pending.kind}
+          onRelease={onReleasePendingLock}
+        />
       ) : null}
 
       {data?.foundingMember ? <FoundingBanner /> : null}
@@ -275,19 +281,27 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         onCancel={() => setCancelOpen(true)}
       />
 
+      {subscription?.status === 'paused' && !billingDisabled && pending === null ? (
+        <PausedSubscriptionNotice
+          subscription={subscription}
+          onResumeStarted={() => startPending('resume')}
+          onRequestCancel={() => setCancelOpen(true)}
+        />
+      ) : null}
+
       <PlanPicker
         currentTier={tier}
-        hasActiveSubscription={subscription !== null && subscription.status !== 'canceled'}
-        currentPeriodEnd={subscription?.currentPeriodEnd ?? null}
-        // While a completed payment awaits its webhook, a second
-        // checkout could double-charge — SUBSCRIPTION_EXISTS can't
-        // catch it because the subscription row doesn't exist until
-        // the webhook lands. Withhold every checkout affordance until
+        subscription={subscription}
+        // While a plan action awaits its webhook, a second one could
+        // double-charge — SUBSCRIPTION_EXISTS can't catch a checkout
+        // whose row doesn't exist yet. Withhold every affordance until
         // the pending state resolves (the banner above says why).
-        disabled={billingDisabled || pending !== null}
+        // Paused subs must resume or cancel first (the notice above).
+        disabled={billingDisabled || pending !== null || subscription?.status === 'paused'}
         initialIntent={initialIntent}
         onRequestCancel={() => setCancelOpen(true)}
-        onPaymentCompleted={onPaymentCompleted}
+        onPaymentCompleted={() => startPending('checkout')}
+        onPlanChangeStarted={() => startPending('change')}
       />
 
       <CancelModal
@@ -330,9 +344,15 @@ function cancelErrorMessage(error: unknown): string {
  */
 export function PaymentProcessingNotice({
   phase = 'fresh',
+  kind = 'checkout',
   onRelease,
 }: {
   phase?: 'fresh' | 'slow' | 'unconfirmed';
+  /** What started the wait — a new checkout payment, a plan change on
+   *  the existing subscription, or a pause resume. The copy must state
+   *  only what actually happened (a plan change/resume made no new
+   *  overlay payment). */
+  kind?: PendingKind;
   /** User-asserted "no charge went through" release (unconfirmed only).
    *  Reached only through the two-step confirm below — a wrong release
    *  invites a second charge, so the risk is stated before the act
@@ -340,6 +360,13 @@ export function PaymentProcessingNotice({
   onRelease?: () => void;
 }) {
   const [confirmingRelease, setConfirmingRelease] = useState(false);
+  // What the provider acknowledged — the factual anchor per kind.
+  const acted =
+    kind === 'checkout'
+      ? 'Payment received'
+      : kind === 'change'
+        ? 'Plan change accepted'
+        : 'Resume accepted';
   return (
     <div
       role="status"
@@ -363,13 +390,12 @@ export function PaymentProcessingNotice({
         {phase === 'unconfirmed' ? (
           <span>
             <strong style={{ fontWeight: 600 }}>
-              Payment confirmed in checkout — your plan upgrade hasn&rsquo;t come through yet.
+              {acted} — your plan change hasn&rsquo;t come through yet.
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
-              The provider&rsquo;s confirmation hasn&rsquo;t reached our server, so checkout stays
-              paused — starting another checkout could charge you twice. Waiting is always safe:
-              this page keeps checking, and your plan updates the moment the payment is confirmed.
-              Email{' '}
+              The provider&rsquo;s confirmation hasn&rsquo;t reached our server, so plan changes
+              stay paused — starting another could charge you twice. Waiting is always safe: this
+              page keeps checking, and your plan updates the moment the confirmation arrives. Email{' '}
               <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
                 support@declutrmail.com
               </a>{' '}
@@ -382,8 +408,10 @@ export function PaymentProcessingNotice({
               Still confirming — this is taking longer than usual.
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
-              Your payment went through and is safe; this page keeps checking automatically. If your
-              plan hasn&rsquo;t updated in a few minutes, reload the page or email{' '}
+              {kind === 'checkout'
+                ? 'Your payment went through and is safe; this page keeps checking automatically.'
+                : 'The provider accepted the change; this page keeps checking automatically.'}{' '}
+              If your plan hasn&rsquo;t updated in a few minutes, reload the page or email{' '}
               <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
                 support@declutrmail.com
               </a>
@@ -392,7 +420,7 @@ export function PaymentProcessingNotice({
           </span>
         ) : (
           <span>
-            <strong style={{ fontWeight: 600 }}>Payment received — confirming your plan.</strong>{' '}
+            <strong style={{ fontWeight: 600 }}>{acted} — confirming your plan.</strong>{' '}
             <span style={{ color: color.fgSoft }}>
               The payment provider is finalizing your subscription. This page updates automatically,
               usually within a minute.
@@ -401,30 +429,41 @@ export function PaymentProcessingNotice({
         )}
       </span>
       {phase === 'unconfirmed' && onRelease ? (
-        confirmingRelease ? (
-          <div
-            data-testid="release-confirm"
-            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
-          >
-            <p style={{ margin: 0, fontSize: 12.5, color: color.fg }}>
-              <strong style={{ fontWeight: 600 }}>Before resuming, check for a charge</strong> — a
-              card statement entry or a Paddle receipt email. If the payment did go through and you
-              check out again, you could be charged twice. Resuming doesn&rsquo;t cancel the earlier
-              payment.
-            </p>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Button tone="default" onClick={() => setConfirmingRelease(false)}>
-                Keep waiting
-              </Button>
-              <Button tone="danger" onClick={onRelease}>
-                I checked — no charge. Resume checkout
+        kind === 'checkout' ? (
+          confirmingRelease ? (
+            <div
+              data-testid="release-confirm"
+              style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+            >
+              <p style={{ margin: 0, fontSize: 12.5, color: color.fg }}>
+                <strong style={{ fontWeight: 600 }}>Before resuming, check for a charge</strong> — a
+                card statement entry or a Paddle receipt email. If the payment did go through and
+                you check out again, you could be charged twice. Resuming doesn&rsquo;t cancel the
+                earlier payment.
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Button tone="default" onClick={() => setConfirmingRelease(false)}>
+                  Keep waiting
+                </Button>
+                <Button tone="danger" onClick={onRelease}>
+                  I checked — no charge. Resume checkout
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <Button tone="default" onClick={() => setConfirmingRelease(true)}>
+                No charge went through — resume checkout
               </Button>
             </div>
-          </div>
+          )
         ) : (
+          // Change/resume locks carry no new-payment risk — re-applying
+          // the same change is a provider no-op — so a single explicit
+          // release is enough.
           <div>
-            <Button tone="default" onClick={() => setConfirmingRelease(true)}>
-              No charge went through — resume checkout
+            <Button tone="default" onClick={onRelease}>
+              Stop waiting — let me try again
             </Button>
           </div>
         )
@@ -449,18 +488,28 @@ function CurrentPlanCard({
   onCancel: () => void;
 }) {
   const manifest = TIER_MANIFEST[tier];
-  const note = subscription ? statusNote(subscription) : null;
 
-  // Headline price: the active subscription's actual cycle price, or
-  // the manifest monthly line for non-subscribed tiers (bare $0 for
-  // Free — "/mo" on a forever-free plan reads like a charge).
-  const priceLabel = subscription
+  // The card tells ONE story: the ENTITLEMENT tier. Subscription
+  // details (its price, renewal, status, cancel affordance) render
+  // only when the subscription actually BACKS that tier — a paused or
+  // mismatched row must never leak its price or status onto a Free
+  // card ("Free · $9/mo · paused" asserted three incoherent facts).
+  const subBacksTier =
+    subscription !== null &&
+    subscription.tier === tier &&
+    (subscription.status === 'active' || subscription.status === 'past_due');
+  const note = subBacksTier ? statusNote(subscription) : null;
+
+  // Headline price: the backing subscription's actual cycle price, or
+  // the manifest monthly line otherwise (bare $0 for Free — "/mo" on a
+  // forever-free plan reads like a charge).
+  const priceLabel = subBacksTier
     ? (planPriceLabel(subscription.tier, subscription.cycle) ?? '')
     : tier === 'free'
       ? formatUsd(0)
       : (planPriceLabel(tier, 'monthly') ?? formatUsd(0));
   const renewal =
-    subscription && !subscription.cancelAtPeriodEnd
+    subBacksTier && !subscription.cancelAtPeriodEnd
       ? formatBillingDate(subscription.currentPeriodEnd)
       : null;
 
@@ -498,11 +547,6 @@ function CurrentPlanCard({
         {renewal ? (
           <span style={{ fontSize: 13, color: color.fgMuted }}>· Next renewal {renewal}</span>
         ) : null}
-        {subscription ? (
-          <span style={{ fontSize: 13, color: color.fgMuted }}>
-            · via {PROVIDER_LABELS[subscription.provider]}
-          </span>
-        ) : null}
       </div>
 
       {tier === 'free' ? (
@@ -534,7 +578,7 @@ function CurrentPlanCard({
         </p>
       ) : null}
 
-      {!billingDisabled && canCancel(subscription) ? (
+      {!billingDisabled && subBacksTier && canCancel(subscription) ? (
         <div style={{ display: 'flex', gap: 8 }}>
           <Button tone="default" onClick={onCancel}>
             Cancel subscription
@@ -542,6 +586,85 @@ function CurrentPlanCard({
         </div>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * A paused subscription grants NOTHING (the workspace is on Free) —
+ * say so and offer the two real exits: resume it (webhook restores the
+ * tier) or cancel it. Plan changes stay locked while paused (the BE
+ * rejects them with SUBSCRIPTION_PAUSED).
+ */
+function PausedSubscriptionNotice({
+  subscription,
+  onResumeStarted,
+  onRequestCancel,
+}: {
+  subscription: NonNullable<BillingSubscription['subscription']>;
+  onResumeStarted: () => void;
+  onRequestCancel: () => void;
+}) {
+  const resume = useResumeSubscription();
+  const tierName = TIER_MANIFEST[subscription.tier].name;
+  const until = formatBillingDate(subscription.pauseUntil);
+  return (
+    <div
+      role="status"
+      data-testid="paused-subscription-notice"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        padding: '12px 14px',
+        background: color.paper,
+        border: `1px solid ${color.line}`,
+        borderRadius: radius.md,
+        fontSize: 13,
+        lineHeight: 1.55,
+        color: color.fg,
+      }}
+    >
+      <span>
+        <strong style={{ fontWeight: 600 }}>
+          Your {tierName} subscription is paused{until ? ` until ${until}` : ''}.
+        </strong>{' '}
+        <span style={{ color: color.fgSoft }}>
+          A paused plan doesn&rsquo;t grant features — your workspace is on Free until it resumes.
+          Resume to get {tierName} back, or cancel if you&rsquo;re done with it.
+        </span>
+      </span>
+      {resume.error ? (
+        <div
+          role="alert"
+          style={{
+            fontSize: 12,
+            color: color.red,
+            background: 'rgba(239,68,68,0.08)',
+            border: `1px solid ${color.red}`,
+            borderRadius: 8,
+            padding: '8px 10px',
+          }}
+        >
+          Resuming didn&rsquo;t go through. Please try again, or email support@declutrmail.com.
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Button
+          tone="primary"
+          disabled={resume.isPending}
+          onClick={() =>
+            resume.mutate(undefined, {
+              onSuccess: () => onResumeStarted(),
+            })
+          }
+        >
+          {resume.isPending ? 'Resuming…' : `Resume ${tierName}`}
+        </Button>
+        <Button tone="default" onClick={onRequestCancel} disabled={resume.isPending}>
+          Cancel subscription
+        </Button>
+      </div>
+    </div>
   );
 }
 
