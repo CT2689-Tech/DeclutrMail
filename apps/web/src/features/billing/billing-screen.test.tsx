@@ -430,6 +430,11 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     );
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(within(screen.getByTestId('current-plan-card')).getByText('Free')).toBeInTheDocument();
+    // Checkout is LOCKED while the payment awaits its webhook — a
+    // second checkout here could double-charge (SUBSCRIPTION_EXISTS
+    // can't catch it: the subscription row doesn't exist yet).
+    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Switch to Free' })).not.toBeInTheDocument();
 
     // "Webhook lands": the server now reports pro — the immediate
     // post-completion refetch picks it up and the pending state clears.
@@ -439,6 +444,9 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
     );
     expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
+    // The lock lifts with the pending state — plan changes are
+    // available again against the NEW tier.
+    expect(screen.getByRole('button', { name: 'Switch to Free' })).toBeInTheDocument();
   });
 
   it('a poll failure while processing keeps the processing notice — never "no charge was made"', async () => {

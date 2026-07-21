@@ -197,7 +197,12 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         currentTier={tier}
         hasActiveSubscription={subscription !== null && subscription.status !== 'canceled'}
         currentPeriodEnd={subscription?.currentPeriodEnd ?? null}
-        disabled={billingDisabled}
+        // While a completed payment awaits its webhook, a second
+        // checkout could double-charge — SUBSCRIPTION_EXISTS can't
+        // catch it because the subscription row doesn't exist until
+        // the webhook lands. Withhold every checkout affordance until
+        // the pending state resolves (the banner above says why).
+        disabled={billingDisabled || processingFromTier !== null}
         initialIntent={initialIntent}
         onRequestCancel={() => setCancelOpen(true)}
         onPaymentCompleted={onPaymentCompleted}
