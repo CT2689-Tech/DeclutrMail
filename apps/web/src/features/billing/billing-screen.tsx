@@ -412,7 +412,7 @@ export function PaymentProcessingNotice({
               check out again, you could be charged twice. Resuming doesn&rsquo;t cancel the earlier
               payment.
             </p>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Button tone="default" onClick={() => setConfirmingRelease(false)}>
                 Keep waiting
               </Button>

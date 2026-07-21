@@ -510,7 +510,7 @@ function ConfirmPanel({
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Button tone="primary" onClick={onConfirm} disabled={isPending || amountCents === null}>
           {isPending ? 'Opening checkout…' : 'Confirm — continue to secure checkout →'}
         </Button>
