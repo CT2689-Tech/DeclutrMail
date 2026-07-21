@@ -32,6 +32,14 @@ import {
   statusNote,
 } from './billing-model';
 import { CancelModal } from './cancel-modal';
+import {
+  clearPendingCheckout,
+  PENDING_CHECKOUT_KEY,
+  PENDING_CHECKOUT_TTL_MS,
+  readPendingCheckout,
+  writePendingCheckout,
+  type PendingCheckout,
+} from './pending-checkout';
 import { PlanPicker } from './plan-picker';
 
 const { color, font, radius, shadow } = tokens;
@@ -73,10 +81,17 @@ const PAYMENT_PROCESSING_SLOW_AFTER_MS = 90_000;
 export function BillingScreen({ initialIntent = null }: { initialIntent?: BillingIntent | null }) {
   const { me } = useAuth();
   const { tier: meTier, cleanupRemaining } = useTier();
-  const [processingFromTier, setProcessingFromTier] = useState<TierId | null>(null);
+  const workspaceId = me.user.workspaceId;
+  // The pending payment lock. Persisted per workspace (localStorage) so
+  // it survives reloads and reaches every tab of this browser — React
+  // state alone is tab-local, and between checkout.completed and the
+  // webhook grant nothing server-side can reject a second checkout.
+  // Initialized null (SSR renders without storage) and hydrated from
+  // storage on mount below. Cross-DEVICE remains a BE gap — flagged.
+  const [pending, setPending] = useState<PendingCheckout | null>(null);
   const [processingSlow, setProcessingSlow] = useState(false);
   const subscriptionQuery = useBillingSubscription({
-    refetchInterval: processingFromTier !== null ? PAYMENT_PROCESSING_POLL_MS : false,
+    refetchInterval: pending !== null ? PAYMENT_PROCESSING_POLL_MS : false,
   });
   const cancel = useCancelSubscription();
   const queryClient = useQueryClient();
@@ -85,6 +100,19 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   useEffect(() => {
     void track('page_viewed', { page: 'billing', mailbox_id: me.activeMailboxId });
   }, [me.activeMailboxId]);
+
+  // Hydrate the lock from storage (reload / late mount) and follow
+  // writes from OTHER tabs — localStorage fires `storage` there, so a
+  // payment completed in tab A locks (and later unlocks) tab B live.
+  useEffect(() => {
+    setPending(readPendingCheckout(workspaceId));
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== PENDING_CHECKOUT_KEY) return;
+      setPending(readPendingCheckout(workspaceId));
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [workspaceId]);
 
   const billingDisabled = isBillingDisabledError(subscriptionQuery.error);
   const data = subscriptionQuery.data ?? null;
@@ -96,9 +124,10 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   // The webhook landed: the SERVER now reports a different tier than
   // the one checkout started from — only then is success claimed.
   useEffect(() => {
-    if (processingFromTier === null || data === null) return;
-    if (data.tier !== processingFromTier) {
-      setProcessingFromTier(null);
+    if (pending === null || data === null) return;
+    if (data.tier !== pending.fromTier) {
+      clearPendingCheckout();
+      setPending(null);
       // Tier is a server-resolved scope and feature query keys are not
       // partitioned by it (§8 scope-change ⇒ cache-reset invariant) —
       // every cached read, gated 402 included, may now be stale. An
@@ -108,18 +137,46 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
       void queryClient.invalidateQueries();
       toast(`Upgrade confirmed — you're on ${TIER_MANIFEST[data.tier].name}.`, 'success');
     }
-  }, [processingFromTier, data, queryClient]);
+  }, [pending, data, queryClient]);
 
   // "Usually within a minute" needs a state for when it isn't (§8 —
-  // every promise in copy gets its elapsed branch).
+  // every promise in copy gets its elapsed branch). Elapsed counts
+  // from the PAYMENT (pending.at), not from mount — a reload mid-wait
+  // resumes with the true age.
   useEffect(() => {
-    if (processingFromTier === null) {
+    if (pending === null) {
       setProcessingSlow(false);
       return;
     }
-    const timer = setTimeout(() => setProcessingSlow(true), PAYMENT_PROCESSING_SLOW_AFTER_MS);
+    const elapsed = Date.now() - pending.at;
+    if (elapsed >= PAYMENT_PROCESSING_SLOW_AFTER_MS) {
+      setProcessingSlow(true);
+      return;
+    }
+    const timer = setTimeout(
+      () => setProcessingSlow(true),
+      PAYMENT_PROCESSING_SLOW_AFTER_MS - elapsed,
+    );
     return () => clearTimeout(timer);
-  }, [processingFromTier]);
+  }, [pending]);
+
+  // TTL: a lock whose webhook never arrives must not brick billing
+  // forever — expire it in place (readPendingCheckout enforces the
+  // same bound for fresh mounts and other tabs).
+  useEffect(() => {
+    if (pending === null) return;
+    const remaining = pending.at + PENDING_CHECKOUT_TTL_MS - Date.now();
+    if (remaining <= 0) {
+      clearPendingCheckout();
+      setPending(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      clearPendingCheckout();
+      setPending(null);
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [pending]);
 
   if (subscriptionQuery.isLoading) {
     return <LoadingState />;
@@ -127,7 +184,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   // While a completed payment awaits its webhook, a transient poll
   // failure must NOT swap the screen for the error state — its "no
   // charge was made" copy would be false, and the poll self-heals.
-  if (subscriptionQuery.isError && !billingDisabled && processingFromTier === null) {
+  if (subscriptionQuery.isError && !billingDisabled && pending === null) {
     return (
       <BillingErrorState
         error={subscriptionQuery.error}
@@ -137,7 +194,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   }
 
   function onPaymentCompleted() {
-    setProcessingFromTier(tier);
+    setPending(writePendingCheckout(workspaceId, tier));
     // Ask immediately — fast webhooks (sandbox flips in ~40s, some land
     // sooner) shouldn't wait a full poll interval.
     void subscriptionQuery.refetch();
@@ -181,7 +238,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
 
       {billingDisabled ? <BillingDisabledNotice /> : null}
 
-      {processingFromTier !== null ? <PaymentProcessingNotice slow={processingSlow} /> : null}
+      {pending !== null ? <PaymentProcessingNotice slow={processingSlow} /> : null}
 
       {data?.foundingMember ? <FoundingBanner /> : null}
 
@@ -202,7 +259,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         // catch it because the subscription row doesn't exist until
         // the webhook lands. Withhold every checkout affordance until
         // the pending state resolves (the banner above says why).
-        disabled={billingDisabled || processingFromTier !== null}
+        disabled={billingDisabled || pending !== null}
         initialIntent={initialIntent}
         onRequestCancel={() => setCancelOpen(true)}
         onPaymentCompleted={onPaymentCompleted}

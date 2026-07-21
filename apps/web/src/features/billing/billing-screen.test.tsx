@@ -59,6 +59,11 @@ import { launchCheckout, type CheckoutEvents } from './checkout';
 import type { BillingIntent } from './billing-intent';
 import { annualMonthsFree, planPriceLabel } from './billing-model';
 import { BillingScreen } from './billing-screen';
+import {
+  PENDING_CHECKOUT_KEY,
+  PENDING_CHECKOUT_TTL_MS,
+  writePendingCheckout,
+} from './pending-checkout';
 
 const FREE_BODY: BillingSubscription = { tier: 'free', foundingMember: false, subscription: null };
 
@@ -117,6 +122,9 @@ beforeEach(() => {
   mockTier = 'free';
   mockCleanupRemaining = 3;
   vi.mocked(launchCheckout).mockClear();
+  // The pending-payment lock persists in localStorage by design — a
+  // leaked record from one test must not lock the next one's picker.
+  window.localStorage.clear();
 });
 
 afterEach(() => resetFetchStub());
@@ -575,6 +583,64 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     expect(await within(panel).findByRole('alert')).toBeInTheDocument();
     expect(launchCheckout).not.toHaveBeenCalled();
+  });
+
+  it('the pending lock survives a reload: a stored record locks a fresh mount', async () => {
+    // "Reload" = a fresh mount finding the persisted record (the mock
+    // me fixture's workspace id is 'w').
+    writePendingCheckout('w', 'free');
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen();
+
+    expect(await screen.findByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+  });
+
+  it("another workspace's pending record does not lock this one", async () => {
+    writePendingCheckout('someone-elses-workspace', 'free');
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen();
+
+    expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+  });
+
+  it('an expired pending record does not lock (TTL — a lost webhook must not brick billing)', async () => {
+    window.localStorage.setItem(
+      PENDING_CHECKOUT_KEY,
+      JSON.stringify({
+        workspaceId: 'w',
+        fromTier: 'free',
+        at: Date.now() - PENDING_CHECKOUT_TTL_MS - 1000,
+      }),
+    );
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen();
+
+    expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    // The stale record was released, not left to haunt the next mount.
+    expect(window.localStorage.getItem(PENDING_CHECKOUT_KEY)).toBeNull();
+  });
+
+  it('a payment completed in ANOTHER tab locks this one live (storage event)', async () => {
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen();
+    expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+
+    // Another tab writes the record; the browser fires `storage` here.
+    const record = writePendingCheckout('w', 'free');
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: PENDING_CHECKOUT_KEY,
+          newValue: JSON.stringify(record),
+        }),
+      );
+    });
+
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
   });
 });
 

@@ -24,6 +24,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-07-20 — Needs a BE field: server-side pending-checkout signal (double-charge, cross-device)
+**Source:** PR #367 Codex stop-time review (D117 upgrade-flow polish)
+**Why:** Between Paddle `checkout.completed` and the webhook grant there is no `subscriptions` row, so `SUBSCRIPTION_EXISTS` cannot reject a second checkout. PR #367 closes the same-browser window client-side (persistent localStorage lock + cross-tab `storage` sync + 15-min TTL), but a user who pays on their laptop and immediately opens /billing on their phone still sees live checkout CTAs — only the server can know a payment is pending across devices. Deliberately NOT stubbed client-side (this is a BE contract change; brief said flag, not stub).
+**How:** Decide + approve the BE shape — e.g. record the checkout session at `POST /api/billing/checkout` (or on Paddle's `transaction.completed`), expose `pendingCheckout: {tier, cycle, at} | null` on `GET /api/billing/subscription`, clear it when the subscription webhook lands or after a TTL. FE then derives the lock + processing banner from the server signal (and the localStorage lock becomes a latency shim). Billing BE change ⇒ §9 stop-condition review.
+**Verifies by:** pay in browser A; /billing in browser B shows the processing state with checkout locked until the tier flips.
+**Status:** Open
+
 ### 2026-07-20 — Paddle sandbox webhook destination points at a rotated tunnel hostname
 **Source:** session 2026-07-20 (D117 upgrade-flow smoke)
 **Why:** cloudflared quick tunnels mint a NEW hostname every restart. The running tunnel is `emily-ministry-reviews-know.trycloudflare.com` and its request counter read 1 (only our probe) after a completed sandbox purchase — Paddle is delivering that purchase's webhooks to a dead previous hostname, so no sandbox purchase can flip a tier until the destination is updated. (The FE pending→flip chain was verified with a correctly SIGNED synthetic webhook instead; the only unverified link is Paddle's own delivery.) Side effect: that smoke purchase left an orphan ACTIVE $19/mo Pro subscription in the Paddle sandbox that will keep emitting undeliverable renewal events.
