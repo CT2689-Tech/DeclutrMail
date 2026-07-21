@@ -68,9 +68,19 @@ export const TIER_MANIFEST: TierManifest = {
     id: 'plus',
     name: 'Plus',
     prices: {
-      monthly: { usdCents: 900, inrPaise: 74_900, paddlePriceId: null, razorpayPlanId: null },
+      monthly: {
+        usdCents: 900,
+        inrPaise: 74_900,
+        paddlePriceId: 'pri_01ky15axxbeeyge87f9hehw37t',
+        razorpayPlanId: null,
+      },
       // $90/yr — 2 months free vs monthly (D19).
-      annual: { usdCents: 9000, inrPaise: 749_900, paddlePriceId: null, razorpayPlanId: null },
+      annual: {
+        usdCents: 9000,
+        inrPaise: 749_900,
+        paddlePriceId: 'pri_01ky15axzc9mz8sxw43c0wtn6h',
+        razorpayPlanId: null,
+      },
     },
     inboxLimit: 1,
     undoWindowDays: 7,
@@ -82,9 +92,19 @@ export const TIER_MANIFEST: TierManifest = {
     id: 'pro',
     name: 'Pro',
     prices: {
-      monthly: { usdCents: 1900, inrPaise: 159_900, paddlePriceId: null, razorpayPlanId: null },
+      monthly: {
+        usdCents: 1900,
+        inrPaise: 159_900,
+        paddlePriceId: 'pri_01ky15ay15wqjaz0wjfnhe94vs',
+        razorpayPlanId: null,
+      },
       // $190/yr — 2 months free vs monthly (founder-confirmed 2026-07-14).
-      annual: { usdCents: 19000, inrPaise: 1_599_900, paddlePriceId: null, razorpayPlanId: null },
+      annual: {
+        usdCents: 19000,
+        inrPaise: 1_599_900,
+        paddlePriceId: 'pri_01ky15ay2p27rbevtvc0gb6qta',
+        razorpayPlanId: null,
+      },
     },
     inboxLimit: 2,
     // D19 — Pro extends the undo window to 30 days.
@@ -98,7 +118,12 @@ export const TIER_MANIFEST: TierManifest = {
       // $129/yr, first 250 paying users; grants pro (its host tier)
       // capabilities. Price locked while the subscription stays active
       // (`workspaces.founding_member`).
-      annual: { usdCents: 12900, inrPaise: 1_099_900, paddlePriceId: null, razorpayPlanId: null },
+      annual: {
+        usdCents: 12900,
+        inrPaise: 1_099_900,
+        paddlePriceId: 'pri_01ky15ay4bj9t68bv158hwwfqw',
+        razorpayPlanId: null,
+      },
       maxRedemptions: 250,
     },
   },
