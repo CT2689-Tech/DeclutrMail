@@ -440,6 +440,134 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     );
     expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
   });
+
+  it('a poll failure while processing keeps the processing notice — never "no charge was made"', async () => {
+    // After a COMPLETED payment, the full-screen error state's copy
+    // would be false; a transient poll 5xx must not surface it.
+    let failReads = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => (failReads ? jsonServerError() : jsonOk({ data: FREE_BODY })),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          jsonOk({
+            data: {
+              provider: 'paddle',
+              kind: 'overlay',
+              priceId: 'pri_test_123',
+              clientToken: 'test_token',
+              environment: 'sandbox',
+              customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+
+    act(() => capturedCheckoutEvents().onCompleted?.());
+    await screen.findByTestId('payment-processing-notice');
+
+    // The next poll fails — trigger it via the completed-handler's
+    // immediate refetch and let the failure land.
+    failReads = true;
+    act(() => capturedCheckoutEvents().onCompleted?.());
+    await waitFor(() => expect(screen.queryByText(/couldn't load/i)).not.toBeInTheDocument());
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(screen.queryByText(/no charge or plan change was made/i)).not.toBeInTheDocument();
+  });
+
+  it('after 90s without the webhook, the notice switches to the honest slow copy and keeps checking', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          jsonOk({
+            data: {
+              provider: 'paddle',
+              kind: 'overlay',
+              priceId: 'pri_test_123',
+              clientToken: 'test_token',
+              environment: 'sandbox',
+              customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+
+    // Fake timers ONLY from here — the slow timer registers when the
+    // overlay reports completion, so it lands under our control.
+    vi.useFakeTimers();
+    try {
+      act(() => capturedCheckoutEvents().onCompleted?.());
+      expect(screen.getByTestId('payment-processing-notice')).toHaveTextContent(
+        'Payment received — confirming your plan.',
+      );
+
+      act(() => vi.advanceTimersByTime(91_000));
+      const notice = screen.getByTestId('payment-processing-notice');
+      expect(notice).toHaveTextContent('Still confirming — this is taking longer than usual.');
+      expect(notice).toHaveTextContent('support@declutrmail.com');
+      // Still the truthful non-claim: the card has not flipped.
+      expect(within(screen.getByTestId('current-plan-card')).getByText('Free')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('checkout 409 SUBSCRIPTION_EXISTS renders its shared inline message', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'SUBSCRIPTION_EXISTS', message: 'ignored — ERROR_CODES copy wins' },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = screen.getByTestId('checkout-panel');
+    fireEvent.click(
+      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+
+    expect(await within(panel).findByRole('alert')).toBeInTheDocument();
+    expect(launchCheckout).not.toHaveBeenCalled();
+  });
 });
 
 describe('BillingScreen — paid subscriber', () => {

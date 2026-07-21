@@ -43,6 +43,13 @@ const { color, font, radius, shadow } = tokens;
 const PAYMENT_PROCESSING_POLL_MS = 3000;
 
 /**
+ * After this long without the webhook grant, the processing notice
+ * switches to the honest "taking longer than usual" copy. Polling
+ * continues — a delayed webhook still self-heals the screen.
+ */
+const PAYMENT_PROCESSING_SLOW_AFTER_MS = 90_000;
+
+/**
  * Billing screen (D119) — current-plan card + inline plan picker (one
  * monthly/annual toggle, one CTA per plan into the D226 confirm step),
  * with the D118/D120 cancel flow behind its preview modal.
@@ -67,6 +74,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   const { me } = useAuth();
   const { tier: meTier, cleanupRemaining } = useTier();
   const [processingFromTier, setProcessingFromTier] = useState<TierId | null>(null);
+  const [processingSlow, setProcessingSlow] = useState(false);
   const subscriptionQuery = useBillingSubscription({
     refetchInterval: processingFromTier !== null ? PAYMENT_PROCESSING_POLL_MS : false,
   });
@@ -91,16 +99,35 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
     if (processingFromTier === null || data === null) return;
     if (data.tier !== processingFromTier) {
       setProcessingFromTier(null);
-      // Tier gates across the app read `me` — refresh it too.
+      // Tier is a server-resolved scope and feature query keys are not
+      // partitioned by it (§8 scope-change ⇒ cache-reset invariant) —
+      // every cached read, gated 402 included, may now be stale. An
+      // upgrade is a rare one-time event: reset everything, `me` first
+      // so the app chrome's tier gates flip immediately.
       void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+      void queryClient.invalidateQueries();
       toast(`Upgrade confirmed — you're on ${TIER_MANIFEST[data.tier].name}.`, 'success');
     }
   }, [processingFromTier, data, queryClient]);
 
+  // "Usually within a minute" needs a state for when it isn't (§8 —
+  // every promise in copy gets its elapsed branch).
+  useEffect(() => {
+    if (processingFromTier === null) {
+      setProcessingSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setProcessingSlow(true), PAYMENT_PROCESSING_SLOW_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [processingFromTier]);
+
   if (subscriptionQuery.isLoading) {
     return <LoadingState />;
   }
-  if (subscriptionQuery.isError && !billingDisabled) {
+  // While a completed payment awaits its webhook, a transient poll
+  // failure must NOT swap the screen for the error state — its "no
+  // charge was made" copy would be false, and the poll self-heals.
+  if (subscriptionQuery.isError && !billingDisabled && processingFromTier === null) {
     return (
       <BillingErrorState
         error={subscriptionQuery.error}
@@ -154,7 +181,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
 
       {billingDisabled ? <BillingDisabledNotice /> : null}
 
-      {processingFromTier !== null ? <PaymentProcessingNotice /> : null}
+      {processingFromTier !== null ? <PaymentProcessingNotice slow={processingSlow} /> : null}
 
       {data?.foundingMember ? <FoundingBanner /> : null}
 
@@ -208,8 +235,10 @@ function cancelErrorMessage(error: unknown): string {
  * The truthful post-checkout state (§10): the provider reported the
  * payment went through; the tier flips only when the webhook lands.
  * The screen polls underneath — no claim of the new plan is made here.
+ * `slow` is the elapsed branch of "usually within a minute": still
+ * honest, still polling, with a support escape hatch.
  */
-export function PaymentProcessingNotice() {
+export function PaymentProcessingNotice({ slow = false }: { slow?: boolean }) {
   return (
     <div
       role="status"
@@ -229,13 +258,29 @@ export function PaymentProcessingNotice() {
       }}
     >
       <span aria-hidden>⏳</span>
-      <span>
-        <strong style={{ fontWeight: 600 }}>Payment received — confirming your plan.</strong>{' '}
-        <span style={{ color: color.fgSoft }}>
-          The payment provider is finalizing your subscription. This page updates automatically,
-          usually within a minute.
+      {slow ? (
+        <span>
+          <strong style={{ fontWeight: 600 }}>
+            Still confirming — this is taking longer than usual.
+          </strong>{' '}
+          <span style={{ color: color.fgSoft }}>
+            Your payment went through and is safe; this page keeps checking automatically. If your
+            plan hasn&rsquo;t updated in a few minutes, reload the page or email{' '}
+            <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+              support@declutrmail.com
+            </a>
+            .
+          </span>
         </span>
-      </span>
+      ) : (
+        <span>
+          <strong style={{ fontWeight: 600 }}>Payment received — confirming your plan.</strong>{' '}
+          <span style={{ color: color.fgSoft }}>
+            The payment provider is finalizing your subscription. This page updates automatically,
+            usually within a minute.
+          </span>
+        </span>
+      )}
     </div>
   );
 }

@@ -134,6 +134,16 @@ export const PaymentProcessing: Story<typeof BillingScreen> = {
   ),
 };
 
+/** The elapsed branch of "usually within a minute" — still honest,
+ *  still polling, with the support escape hatch. */
+export const PaymentProcessingSlow: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => (
+    <div style={{ background: tokens.color.bg, minHeight: 120, padding: 12 }}>
+      <PaymentProcessingNotice slow />
+    </div>
+  ),
+};
+
 /** Active Pro subscriber — renewal date, provider, cancel affordance. */
 export const ProSubscriber: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
@@ -174,6 +184,19 @@ export const PastDue: Story<typeof BillingScreen> = {
       makeClient(meFixture('pro', null), {
         ...PRO_SUB,
         subscription: PRO_SUB.subscription ? { ...PRO_SUB.subscription, status: 'past_due' } : null,
+      }),
+    ),
+};
+
+/** Subscription paused — muted status note with the resume date. */
+export const Paused: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('pro', null), {
+        ...PRO_SUB,
+        subscription: PRO_SUB.subscription
+          ? { ...PRO_SUB.subscription, status: 'paused', pauseUntil: '2026-08-03T12:00:00.000Z' }
+          : null,
       }),
     ),
 };
