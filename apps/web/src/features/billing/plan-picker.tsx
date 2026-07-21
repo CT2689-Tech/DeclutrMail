@@ -72,6 +72,7 @@ export function PlanPicker({
   onPlanChangeUnconfirmed,
   onPlanChangeAttempt,
   onPlanChangeFailedKnown,
+  claimPendingSlot,
 }: {
   currentTier: TierId;
   /** The latest provider subscription record (screen's read), or null. */
@@ -105,7 +106,12 @@ export function PlanPicker({
    *  persistent lock pessimistically so an unmount/reload mid-flight
    *  cannot leave an armed retry with an unknown outcome. Returns the
    *  attempt's UUID; every release call must present it back. */
-  onPlanChangeAttempt: (target: PaidTier, cycle: BillingCycle) => string;
+  onPlanChangeAttempt: (target: PaidTier, cycle: BillingCycle) => string | null;
+  /** Fire-time storage re-check for ANY money-capable action — React's
+   *  `disabled` can be stale for the ms before this tab processes a
+   *  storage event. Returns false (and surfaces the lock) when the
+   *  pending slot is already held; the caller must stand down. */
+  claimPendingSlot: () => boolean;
   /** The failure is KNOWN (definitive rejection / non-provider error —
    *  nothing applied, nothing charged): release the attempt lock. The
    *  UUID uniquely identifies WHICH attempt — the screen releases only
@@ -183,8 +189,14 @@ export function PlanPicker({
 
   function onConfirm(target: PaidTier) {
     // `disabled` re-checked at fire time: a lock can land between the
-    // panel opening and this click (cross-tab storage event race).
+    // panel opening and this click (cross-tab storage event race) —
+    // and React state can lag storage, so the slot is re-read from
+    // STORAGE too before opening a payment surface.
     if (disabled || checkout.isPending) return;
+    if (!claimPendingSlot()) {
+      closePanel();
+      return;
+    }
     setLaunchError(null);
     void track('checkout_started', {
       tier: target,
@@ -223,12 +235,18 @@ export function PlanPicker({
     // `disabled` re-checked at fire time: a lock can land between the
     // panel opening and this click (cross-tab storage event race).
     if (disabled || changePlan.isPending) return;
-    void track('plan_change_started', { tier: target, cycle, from_tier: currentTier });
     const from = grantingSub;
     // Pessimistic lock BEFORE the money-moving request: if this tab
     // unmounts or reloads mid-flight, these mutate callbacks never run
     // and the persisted lock is what prevents an armed blind retry.
+    // A null claim means the slot is already held by an unresolved
+    // record that raced ahead of the storage event — stand down.
     const attemptId = onPlanChangeAttempt(target, cycle);
+    if (attemptId === null) {
+      closePanel();
+      return;
+    }
+    void track('plan_change_started', { tier: target, cycle, from_tier: currentTier });
     changePlan.mutate(
       { tierId: target, cycle },
       {

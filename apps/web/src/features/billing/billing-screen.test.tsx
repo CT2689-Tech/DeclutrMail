@@ -766,6 +766,59 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(after.attemptId).toBeUndefined();
   });
 
+  it('a checkout confirm STANDS DOWN when a lock raced ahead of the storage event', async () => {
+    // The record lands in storage but no event fires (same-tab write
+    // timing / pre-processing race) — React still shows an armed
+    // confirm. The fire-time storage re-read must refuse to open the
+    // payment surface.
+    let checkoutPosts = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () => {
+          checkoutPosts += 1;
+          return jsonOk({ data: {} });
+        },
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    // Lock lands silently — no storage event reaches this tab.
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'change_unconfirmed',
+        fromTier: 'plus',
+        fromCycle: 'monthly',
+        toTier: 'pro',
+        toCycle: 'annual',
+        at: Date.now(),
+      }),
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+
+    expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
+      'Plan change unconfirmed',
+    );
+    expect(checkoutPosts).toBe(0);
+    expect(launchCheckout).not.toHaveBeenCalled();
+    const record = JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!) as {
+      kind: string;
+    };
+    expect(record.kind).toBe('change_unconfirmed');
+  });
+
   it('a payment completed in ANOTHER tab locks this one live (storage event)', async () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
@@ -1139,6 +1192,61 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Switch to Pro' })).toBeInTheDocument();
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+  });
+
+  it('a change confirm STANDS DOWN — no POST — when a lock raced ahead of the storage event', async () => {
+    // Same race as the checkout stand-down, on the change-plan path:
+    // the pessimistic attempt write must not clobber the silent lock,
+    // and the money-moving POST must never fire.
+    mockTier = 'plus';
+    let changePosts = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: () => {
+          changePosts += 1;
+          return jsonOk({ data: PLUS_SUB });
+        },
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    // Lock lands silently — no storage event reaches this tab.
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'change_unconfirmed',
+        fromTier: 'plus',
+        fromCycle: 'monthly',
+        toTier: 'plus',
+        toCycle: 'annual',
+        at: Date.now(),
+      }),
+    );
+
+    const panel = screen.getByTestId('change-plan-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
+
+    expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
+      'Plan change unconfirmed',
+    );
+    expect(changePosts).toBe(0);
+    const record = JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!) as {
+      kind: string;
+      toCycle: string;
+      attemptId?: string;
+    };
+    expect(record.kind).toBe('change_unconfirmed');
+    expect(record.toCycle).toBe('annual');
+    expect(record.attemptId).toBeUndefined();
   });
 
   it('a lock landing from ANOTHER tab disarms an already-open confirm panel', async () => {

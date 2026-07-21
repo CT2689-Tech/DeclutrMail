@@ -271,7 +271,27 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
    * `change`, scheduled → cleared, definitive/non-provider error →
    * cleared, ambiguous → `change_unconfirmed` becomes visible.
    */
-  function onPlanChangeAttempt(toTier: TierId, toCycle: BillingCycle | null): string {
+  /**
+   * Claim the pending slot at fire time. React's `disabled` prop can be
+   * stale for the ms before this tab processes another tab's storage
+   * event — so every money-capable action re-reads STORAGE at the
+   * moment it fires. Any existing record (a payment awaiting its
+   * webhook, an unresolved attempt, a surfaced ambiguity) refuses the
+   * claim and gets surfaced instead.
+   */
+  function claimPendingSlot(): boolean {
+    const existing = readPendingCheckout(workspaceId);
+    if (existing !== null) {
+      setPending(existing);
+      return false;
+    }
+    return true;
+  }
+
+  function onPlanChangeAttempt(toTier: TierId, toCycle: BillingCycle | null): string | null {
+    // The pessimistic write must never clobber an existing lock — this
+    // is a brand-new attempt, so ANY record in the key is foreign.
+    if (!claimPendingSlot()) return null;
     const attemptId = crypto.randomUUID();
     writePendingCheckout(
       workspaceId,
@@ -399,6 +419,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         onRequestCancel={() => setCancelOpen(true)}
         onPaymentCompleted={(target, cycle) => startPending('checkout', target, cycle)}
         onPlanChangeAttempt={onPlanChangeAttempt}
+        claimPendingSlot={claimPendingSlot}
         onPlanChangeFailedKnown={releaseAttemptLock}
         onPlanChangeAccepted={(next, target, cycle, attemptId) => {
           const scheduled = next.subscription?.scheduledChange ?? null;
