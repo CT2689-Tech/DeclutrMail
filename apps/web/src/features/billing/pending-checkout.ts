@@ -24,8 +24,13 @@
 import type { BillingCycle } from '@declutrmail/shared/contracts';
 import type { TierId } from '@declutrmail/shared/entitlements';
 
-/** What started the wait — drives the notice copy. */
-export type PendingKind = 'checkout' | 'change' | 'resume';
+/**
+ * What started the wait — drives the notice copy. `change_unconfirmed`
+ * is a plan change whose provider RESPONSE was lost (ambiguous outcome:
+ * the prorated charge may have applied) — same lock + poll, but the
+ * copy must not claim the provider accepted anything.
+ */
+export type PendingKind = 'checkout' | 'change' | 'change_unconfirmed' | 'resume';
 
 export interface PendingCheckout {
   workspaceId: string;
@@ -51,7 +56,7 @@ export function pendingCheckoutKey(workspaceId: string): string {
 }
 
 const TIER_IDS: readonly string[] = ['free', 'plus', 'pro', 'team', 'enterprise'];
-const KINDS: readonly string[] = ['checkout', 'change', 'resume'];
+const KINDS: readonly string[] = ['checkout', 'change', 'change_unconfirmed', 'resume'];
 const CYCLES: readonly string[] = ['monthly', 'annual'];
 
 /**

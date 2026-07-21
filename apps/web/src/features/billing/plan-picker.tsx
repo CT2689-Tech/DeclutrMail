@@ -15,7 +15,7 @@ import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 import { formatUsd, priceLineFor, TIER_JOBS } from '@/features/marketing/pricing/pricing-model';
 import { track } from '@/lib/posthog';
 
-import { apiErrorCode } from './api/use-billing-subscription';
+import { apiErrorCode, apiErrorDetail } from './api/use-billing-subscription';
 import type { BillingIntent } from './billing-intent';
 import { useChangePlan } from './api/use-change-plan';
 import { useCheckout } from './api/use-checkout';
@@ -69,6 +69,7 @@ export function PlanPicker({
   onRequestCancel,
   onPaymentCompleted,
   onPlanChangeAccepted,
+  onPlanChangeUnconfirmed,
 }: {
   currentTier: TierId;
   /** The latest provider subscription record (screen's read), or null. */
@@ -86,6 +87,11 @@ export function PlanPicker({
   /** The change-plan endpoint accepted the switch — the screen enters
    *  the pending state until the webhook lands. */
   onPlanChangeAccepted: (next: BillingSubscription, target: PaidTier, cycle: BillingCycle) => void;
+  /** A provider error on an IMMEDIATE upgrade — ambiguous outcome (the
+   *  prorated charge may have applied before the response was lost).
+   *  The screen must lock + poll; the panel must NOT stay open with a
+   *  retryable confirm. */
+  onPlanChangeUnconfirmed: (target: PaidTier, cycle: BillingCycle) => void;
 }) {
   const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
   const [selected, setSelected] = useState<StripTierId | null>(null);
@@ -180,12 +186,32 @@ export function PlanPicker({
   function onConfirmChange(target: PaidTier) {
     if (changePlan.isPending) return;
     void track('plan_change_started', { tier: target, cycle, from_tier: currentTier });
+    const from = grantingSub;
     changePlan.mutate(
       { tierId: target, cycle },
       {
         onSuccess: (next) => {
           closePanel();
           onPlanChangeAccepted(next, target, cycle);
+        },
+        onError: (error) => {
+          // AMBIGUOUS provider error on an immediate upgrade — the
+          // prorated charge may have applied before the response was
+          // lost. Hand off to the screen's lock+poll instead of leaving
+          // this panel armed for a retry. A DEFINITIVE rejection
+          // (details.providerOutcome, set only when the provider itself
+          // refused the call — nothing applied, nothing charged) stays
+          // inline and retryable, as do deferred ($0) downgrades and
+          // every non-provider error.
+          if (
+            apiErrorCode(error) === 'BILLING_PROVIDER_ERROR' &&
+            apiErrorDetail(error, 'providerOutcome') !== 'definitive' &&
+            from !== null &&
+            !isDeferredDowngrade(from.tier, from.cycle, target, cycle)
+          ) {
+            closePanel();
+            onPlanChangeUnconfirmed(target, cycle);
+          }
         },
       },
     );
@@ -257,9 +283,7 @@ export function PlanPicker({
               currentPeriodEnd={grantingSub.currentPeriodEnd}
               isPending={changePlan.isPending}
               errorMessage={
-                changePlan.error
-                  ? planChangeErrorMessage(changePlan.error, grantingSub, selected, cycle)
-                  : null
+                changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null
               }
               onConfirm={() => onConfirmChange(selected)}
               onDismiss={closePanel}
@@ -313,25 +337,20 @@ export function checkoutErrorMessage(error: unknown): string | null {
 }
 
 /**
- * Change-plan failures need one extra branch the generic mapping can't
- * carry: a provider error on an IMMEDIATE upgrade is ambiguous — the
- * prorated charge may have gone through before the response was lost.
- * Claiming "could not be reached, try again" would falsely assure a
- * possibly-charged user. Deferred downgrades carry no charge, so the
- * generic message stays honest for them.
+ * Inline message for a change-plan failure that STAYS in the panel.
+ * Only two provider-error shapes ever render here — a DEFINITIVE
+ * rejection (any direction: provider refused, nothing applied or
+ * charged) or an AMBIGUOUS failure on a $0 deferred downgrade —
+ * because ambiguous upgrades leave the panel for the lock+poll. The
+ * shared "could not be reached" copy is wrong for both: a definitive
+ * 4xx WAS reached, and an ambiguous one may have been.
  */
-export function planChangeErrorMessage(
-  error: unknown,
-  from: { tier: PaidTier; cycle: BillingCycle },
-  target: PaidTier,
-  cycle: BillingCycle,
-): string | null {
+export function planChangeInlineErrorMessage(error: unknown): string | null {
   if (!error) return null;
-  if (
-    apiErrorCode(error) === 'BILLING_PROVIDER_ERROR' &&
-    !isDeferredDowngrade(from.tier, from.cycle, target, cycle)
-  ) {
-    return 'The payment provider didn’t confirm the upgrade — it may or may not have gone through. If it did, this page updates to the new plan shortly; check before retrying, or email support@declutrmail.com.';
+  if (apiErrorCode(error) === 'BILLING_PROVIDER_ERROR') {
+    return apiErrorDetail(error, 'providerOutcome') === 'definitive'
+      ? 'The payment provider declined this change — nothing was applied or charged. Try again, or email support@declutrmail.com.'
+      : 'The payment provider didn’t confirm the change. Scheduling a downgrade never charges anything — please try again.';
   }
   return checkoutErrorMessage(error);
 }

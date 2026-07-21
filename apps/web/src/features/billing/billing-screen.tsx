@@ -342,6 +342,13 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
             startPending('change', target, cycle);
           }
         }}
+        onPlanChangeUnconfirmed={(target, cycle) =>
+          // Ambiguous provider outcome on an immediate upgrade: the
+          // prorated charge may have applied. Enter the SAME lock+poll
+          // machinery as checkout — no stale panel with an armed
+          // money-moving retry button.
+          startPending('change_unconfirmed', target, cycle)
+        }
       />
 
       <CancelModal
@@ -401,12 +408,16 @@ export function PaymentProcessingNotice({
 }) {
   const [confirmingRelease, setConfirmingRelease] = useState(false);
   // What the provider acknowledged — the factual anchor per kind.
+  // `change_unconfirmed` acknowledges NOTHING: the provider's response
+  // was lost, so every claim below stays outcome-neutral for it.
   const acted =
     kind === 'checkout'
       ? 'Payment received'
       : kind === 'change'
         ? 'Plan change accepted'
-        : 'Resume accepted';
+        : kind === 'change_unconfirmed'
+          ? 'Plan change unconfirmed'
+          : 'Resume accepted';
   return (
     <div
       role="status"
@@ -450,7 +461,9 @@ export function PaymentProcessingNotice({
             <span style={{ color: color.fgSoft }}>
               {kind === 'checkout'
                 ? 'Your payment went through and is safe; this page keeps checking automatically.'
-                : 'The provider accepted the change; this page keeps checking automatically.'}{' '}
+                : kind === 'change_unconfirmed'
+                  ? 'The change may or may not have applied; this page keeps checking automatically.'
+                  : 'The provider accepted the change; this page keeps checking automatically.'}{' '}
               If your plan hasn&rsquo;t updated in a few minutes, reload the page or email{' '}
               <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
                 support@declutrmail.com
@@ -464,7 +477,9 @@ export function PaymentProcessingNotice({
             <span style={{ color: color.fgSoft }}>
               {kind === 'resume'
                 ? 'No charge was started; your existing paid period continues.'
-                : 'The payment provider is finalizing your subscription.'}{' '}
+                : kind === 'change_unconfirmed'
+                  ? 'The payment provider didn’t confirm your upgrade — it may or may not have gone through. If it did, your plan updates here and nothing further is needed.'
+                  : 'The payment provider is finalizing your subscription.'}{' '}
               This page updates automatically, usually within a minute.
             </span>
           </span>

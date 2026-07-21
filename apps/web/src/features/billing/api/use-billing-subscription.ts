@@ -26,6 +26,18 @@ export function apiErrorCode(error: unknown): string | null {
 }
 
 /**
+ * Extract one scalar from the envelope's `details` (e.g. the billing
+ * adapters' `providerOutcome: 'definitive'` marker — set only when the
+ * provider itself REJECTED the call, i.e. the outcome is known).
+ */
+export function apiErrorDetail(error: unknown, key: string): string | null {
+  if (!(error instanceof ApiError)) return null;
+  const body = error.body as { error?: { details?: Record<string, unknown> } } | undefined;
+  const value = body?.error?.details?.[key];
+  return typeof value === 'string' ? value : null;
+}
+
+/**
  * True when the error is the 503 "billing is dark" designed state
  * (`BILLING_DISABLED` — module loaded, env flag off).
  */

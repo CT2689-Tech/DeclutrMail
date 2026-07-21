@@ -975,11 +975,13 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
   });
 
-  it('an ambiguous provider error on an IMMEDIATE upgrade never claims the charge failed', async () => {
+  it('an ambiguous provider error on an IMMEDIATE upgrade enters the lock+poll — no armed retry', async () => {
     // A 502 on prorated_immediately is ambiguous — the charge may have
-    // landed before the response was lost. The copy must not assure
-    // "could not be reached / try again" (the double-belief trap).
+    // landed before the response was lost. The panel must NOT stay open
+    // with a retryable confirm; the screen locks, polls, and completes
+    // normally if the upgrade turns out to have applied.
     mockTier = 'plus';
+    let changeAttempts = 0;
     installFetchStub([
       {
         method: 'GET',
@@ -989,11 +991,13 @@ describe('BillingScreen — paid subscriber', () => {
       {
         method: 'POST',
         path: '/api/billing/change-plan',
-        respond: () =>
-          new Response(
+        respond: () => {
+          changeAttempts += 1;
+          return new Response(
             JSON.stringify({ error: { code: 'BILLING_PROVIDER_ERROR', message: 'ignored' } }),
             { status: 502, headers: { 'content-type': 'application/json' } },
-          ),
+          );
+        },
       },
     ]);
     renderScreen();
@@ -1002,12 +1006,19 @@ describe('BillingScreen — paid subscriber', () => {
     const panel = screen.getByTestId('change-plan-panel');
     fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
 
-    const alert = await within(panel).findByRole('alert');
-    expect(alert).toHaveTextContent(/may or may not have gone through/);
-    expect(alert).not.toHaveTextContent(/could not be reached/);
+    // Panel gone, outcome-neutral notice up, picker locked: the
+    // money-moving confirm is no longer armed, and the poll owns the
+    // reconciliation (the flip machinery is kind-agnostic and covered
+    // by the paid→paid switch test above).
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('Plan change unconfirmed — confirming your plan.');
+    expect(notice).toHaveTextContent(/may or may not have gone through/);
+    expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('button', { name: /Switch to/ })).toHaveLength(0);
+    expect(changeAttempts).toBe(1);
   });
 
-  it('a provider error on a $0 deferred downgrade keeps the generic retry message', async () => {
+  it('a provider error on a $0 deferred downgrade stays inline — retry is charge-free', async () => {
     mockTier = 'pro';
     installFetchStub([
       {
@@ -1032,8 +1043,47 @@ describe('BillingScreen — paid subscriber', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Schedule downgrade' }));
 
     const alert = await within(panel).findByRole('alert');
-    expect(alert).toHaveTextContent(/could not be reached/);
-    expect(alert).not.toHaveTextContent(/may or may not have gone through/);
+    expect(alert).toHaveTextContent(/never charges anything/);
+    expect(alert).not.toHaveTextContent(/could not be reached/);
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+  });
+
+  it('a DEFINITIVE provider rejection on an upgrade stays inline — nothing applied, retry safe', async () => {
+    // details.providerOutcome='definitive' means the provider itself
+    // refused the call — outcome KNOWN, no lock, honest declined copy.
+    mockTier = 'plus';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                code: 'BILLING_PROVIDER_ERROR',
+                message: 'ignored',
+                details: { providerOutcome: 'definitive' },
+              },
+            }),
+            { status: 502, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    const panel = screen.getByTestId('change-plan-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
+
+    const alert = await within(panel).findByRole('alert');
+    expect(alert).toHaveTextContent(/declined this change — nothing was applied or charged/);
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled();
   });
 
   it('a Razorpay subscriber gets the honest support route, never the failing confirm', async () => {
