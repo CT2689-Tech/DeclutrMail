@@ -68,11 +68,12 @@ export function PlanPicker({
   initialIntent = null,
   onRequestCancel,
   onPaymentCompleted,
+  onCheckoutAttempt,
+  onCheckoutAbandoned,
   onPlanChangeAccepted,
   onPlanChangeUnconfirmed,
   onPlanChangeAttempt,
   onPlanChangeFailedKnown,
-  claimPendingSlot,
 }: {
   currentTier: TierId;
   /** The latest provider subscription record (screen's read), or null. */
@@ -85,8 +86,17 @@ export function PlanPicker({
   onRequestCancel: () => void;
   /** Paddle overlay reported `checkout.completed` — payment made, tier
    *  grant pending the webhook. The screen owns the truthful pending
-   *  state; this component only reports the provider fact. */
-  onPaymentCompleted: (target: PaidTier, cycle: BillingCycle) => void;
+   *  state; this component only reports the provider fact. `attemptId`
+   *  is this checkout's reservation id (own-id transition). */
+  onPaymentCompleted: (target: PaidTier, cycle: BillingCycle, attemptId: string) => void;
+  /** Atomic claim + `checkout_intent` RESERVATION before any checkout
+   *  session is created or overlay opened — without it a second tab
+   *  could open a second payment surface while the first is unpaid.
+   *  Null means the slot (or mutex) is held: stand down. */
+  onCheckoutAttempt: (target: PaidTier, cycle: BillingCycle) => Promise<string | null>;
+  /** The overlay closed without payment / never opened / the session
+   *  POST failed — release THIS checkout's reservation (id-matched). */
+  onCheckoutAbandoned: (attemptId: string) => void;
   /** The change-plan endpoint accepted the switch — the screen enters
    *  the pending state until the webhook lands. `attemptId` identifies
    *  the pessimistic lock this attempt wrote (UUID-matched release). */
@@ -107,13 +117,6 @@ export function PlanPicker({
    *  cannot leave an armed retry with an unknown outcome. Returns the
    *  attempt's UUID; every release call must present it back. */
   onPlanChangeAttempt: (target: PaidTier, cycle: BillingCycle) => Promise<string | null>;
-  /** Fire-time ATOMIC slot claim for ANY money-capable action — React's
-   *  `disabled` can be stale for the ms before this tab processes a
-   *  storage event, and localStorage alone has no compare-and-swap, so
-   *  the screen serializes the check through the Web Locks mutex.
-   *  Resolves false (surfacing the lock) when the slot is held; the
-   *  caller must stand down. */
-  claimPendingSlot: () => Promise<boolean>;
   /** The failure is KNOWN (definitive rejection / non-provider error —
    *  nothing applied, nothing charged): release the attempt lock. The
    *  UUID uniquely identifies WHICH attempt — the screen releases only
@@ -196,17 +199,18 @@ export function PlanPicker({
   async function onConfirm(target: PaidTier) {
     // `disabled` re-checked at fire time: a lock can land between the
     // panel opening and this click (cross-tab storage event race) —
-    // and React state can lag storage, so the slot is re-read from
-    // STORAGE (atomically, via the Web Locks mutex) before opening a
-    // payment surface.
+    // and React state can lag storage, so the slot is claimed
+    // ATOMICALLY (Web Locks mutex) and RESERVED (`checkout_intent`)
+    // before any payment surface can open. A second tab's claim now
+    // finds the reservation and stands down.
     if (disabled || checkout.isPending || confirmInFlight.current) return;
     confirmInFlight.current = true;
-    if (!(await claimPendingSlot())) {
-      confirmInFlight.current = false;
+    const attemptId = await onCheckoutAttempt(target, cycle);
+    confirmInFlight.current = false;
+    if (attemptId === null) {
       closePanel();
       return;
     }
-    confirmInFlight.current = false;
     setLaunchError(null);
     void track('checkout_started', {
       tier: target,
@@ -220,23 +224,30 @@ export function PlanPicker({
         onSuccess: (session) => {
           void launchCheckout(session, {
             // Payment made in the overlay — collapse the confirm panel
-            // and hand the screen the truthful pending state.
+            // and hand the screen the truthful pending state (own-id
+            // transition over this checkout's reservation).
             onCompleted: () => {
               closePanel();
-              onPaymentCompleted(target, cycle);
+              onPaymentCompleted(target, cycle, attemptId);
             },
+            // Overlay dismissed without payment — release the
+            // reservation (id-matched: a post-completion close event
+            // cannot release the `checkout` lock, which carries no id).
+            onClosed: () => onCheckoutAbandoned(attemptId),
           }).then(
             () => undefined,
-            // Provider script failed to load — keep the panel open with
-            // an honest retryable message.
+            // Provider script failed to load — no surface ever opened.
             () => {
               checkout.reset();
               setLaunchError(
                 'The secure checkout window could not be opened. Nothing was charged — please try again.',
               );
+              onCheckoutAbandoned(attemptId);
             },
           );
         },
+        // Session creation failed — no overlay, nothing at risk.
+        onError: () => onCheckoutAbandoned(attemptId),
       },
     );
   }

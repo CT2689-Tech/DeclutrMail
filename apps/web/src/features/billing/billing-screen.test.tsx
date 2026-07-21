@@ -474,6 +474,11 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
       'Payment received — confirming your plan.',
     );
+    // The checkout_intent reservation transitioned to the id-less
+    // `checkout` lock (own-id overwrite).
+    expect(
+      (JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!) as { kind: string }).kind,
+    ).toBe('checkout');
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(within(screen.getByTestId('current-plan-card')).getByText('Free')).toBeInTheDocument();
     // Checkout is LOCKED while the payment awaits its webhook — a
@@ -764,6 +769,69 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     };
     expect(after.kind).toBe('change_unconfirmed');
     expect(after.attemptId).toBeUndefined();
+  });
+
+  it('a fresh checkout RESERVES the slot before the overlay; duplicates stand down; close releases', async () => {
+    let checkoutPosts = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () => {
+          checkoutPosts += 1;
+          return jsonOk({
+            data: {
+              provider: 'paddle',
+              kind: 'overlay',
+              priceId: 'pri_test_123',
+              clientToken: 'test_token',
+              environment: 'sandbox',
+              customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+
+    // The reservation exists BEFORE any payment happened — with an id.
+    const reserved = JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!) as {
+      kind: string;
+      attemptId?: string;
+    };
+    expect(reserved.kind).toBe('checkout_intent');
+    expect(typeof reserved.attemptId).toBe('string');
+
+    // A second confirm (this or any tab) finds the reservation and
+    // stands down: exactly ONE session was ever created.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+    expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
+      'Checkout started',
+    );
+    expect(checkoutPosts).toBe(1);
+    expect(launchCheckout).toHaveBeenCalledTimes(1);
+
+    // Overlay dismissed without payment → the reservation releases and
+    // checkout re-arms.
+    act(() => capturedCheckoutEvents().onClosed?.());
+    await waitFor(() =>
+      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
+    );
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
   });
 
   it('a checkout confirm STANDS DOWN when a lock raced ahead of the storage event', async () => {

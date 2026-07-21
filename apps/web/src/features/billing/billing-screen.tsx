@@ -234,21 +234,21 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
     toCycle: BillingCycle | null,
     ownAttemptId?: string,
   ) {
-    // No-clobber guard: the key is one per workspace, and an existing
-    // change_unconfirmed record is an UNRESOLVED money outcome. It may
-    // be overwritten only by the attempt that owns it — presenting its
-    // exact id. Everything else (a completed checkout, an accepted
-    // change, a resume, another attempt) must surface it, not replace
-    // it: replacing would let a different flow's flip or single-step
-    // release silently discard a maybe-charged state. Id-LESS
-    // change_unconfirmed records (the surfaced/interrupted form) are
-    // therefore absolutely protected here — their only exits are the
-    // tier flip or the user's two-step assertion.
+    // No-clobber guard: the key is one per workspace. An id-CARRYING
+    // record (a change attempt or a checkout reservation) may be
+    // overwritten only by the flow that owns it — presenting its exact
+    // id. An id-LESS change_unconfirmed record (the surfaced or
+    // interrupted form) is absolutely protected: replacing an
+    // unresolved money outcome would let a different flow's flip or
+    // single-step release silently discard a maybe-charged state.
+    // Their only exits are the tier flip or the user's two-step
+    // assertion.
     const existing = readPendingCheckout(workspaceId);
     if (
       existing !== null &&
-      existing.kind === 'change_unconfirmed' &&
-      (existing.attemptId === undefined || existing.attemptId !== ownAttemptId)
+      (existing.attemptId !== undefined
+        ? existing.attemptId !== ownAttemptId
+        : existing.kind === 'change_unconfirmed')
     ) {
       setPending(existing);
     } else {
@@ -262,46 +262,26 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   }
 
   /**
-   * Pessimistic lock around the money-moving change-plan request: the
-   * record is written BEFORE the request fires, so an unmount, reload,
-   * or crash mid-flight leaves the lock in place (hydration re-locks on
-   * the next mount) instead of leaving an armed retry. Deliberately no
-   * `setPending` here — the in-flight tab keeps its normal isPending
+   * Atomic claim + pessimistic RESERVATION in one mutex hold — a
+   * brand-new money action may only write into a verified-empty slot;
+   * concurrent tabs serialize here instead of both observing "no
+   * lock". The reservation is written BEFORE any request fires or
+   * overlay opens, so an unmount, reload, or crash mid-flight leaves
+   * the lock in place (hydration re-locks on the next mount).
+   * Deliberately no `setPending` — the in-flight tab keeps its normal
    * spinner; only an interrupted/ambiguous outcome surfaces the lock.
-   * Every KNOWN outcome clears or replaces the record: accepted →
-   * `change`, scheduled → cleared, definitive/non-provider error →
-   * cleared, ambiguous → `change_unconfirmed` becomes visible.
+   * Kinds by path: change attempts write `change_unconfirmed` (the
+   * request itself moves money; accepted → `change`, scheduled/known
+   * failure → released, ambiguous → surfaced); fresh checkouts write
+   * `checkout_intent` (the overlay is the payment surface; completed →
+   * `checkout`, closed-without-payment/launch failure → released,
+   * interrupted → surfaced outcome-neutral).
    */
-  /**
-   * Claim the pending slot at fire time. React's `disabled` prop can be
-   * stale for the ms before this tab processes another tab's storage
-   * event — so every money-capable action re-reads STORAGE at the
-   * moment it fires, ATOMICALLY: the Web Locks mutex serializes the
-   * read-check(-write) across tabs, so two same-instant clicks cannot
-   * both observe an empty slot. Any existing record (a payment awaiting
-   * its webhook, an unresolved attempt, a surfaced ambiguity) refuses
-   * the claim and gets surfaced; a held mutex means another tab is
-   * mid-money-action and refuses it too.
-   */
-  async function claimPendingSlot(): Promise<boolean> {
-    const claim = await withMoneyActionMutex(workspaceId, () => {
-      const existing = readPendingCheckout(workspaceId);
-      if (existing !== null) {
-        setPending(existing);
-        return false;
-      }
-      return true;
-    });
-    return claim.acquired && claim.result === true;
-  }
-
-  async function onPlanChangeAttempt(
+  async function attemptClaim(
+    kind: PendingKind,
     toTier: TierId,
     toCycle: BillingCycle | null,
   ): Promise<string | null> {
-    // Atomic claim + pessimistic write in ONE mutex hold — a brand-new
-    // attempt may only write into a verified-empty slot; concurrent
-    // tabs serialize here instead of both observing "no lock".
     const claim = await withMoneyActionMutex(workspaceId, () => {
       const existing = readPendingCheckout(workspaceId);
       if (existing !== null) {
@@ -311,7 +291,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
       const attemptId = crypto.randomUUID();
       writePendingCheckout(
         workspaceId,
-        'change_unconfirmed',
+        kind,
         tier,
         subscription?.cycle ?? null,
         toTier,
@@ -435,9 +415,15 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         }
         initialIntent={initialIntent}
         onRequestCancel={() => setCancelOpen(true)}
-        onPaymentCompleted={(target, cycle) => startPending('checkout', target, cycle)}
-        onPlanChangeAttempt={onPlanChangeAttempt}
-        claimPendingSlot={claimPendingSlot}
+        onPaymentCompleted={(target, cycle, attemptId) =>
+          // Own-id transition over this checkout's reservation: the
+          // overlay reported payment — the record becomes the visible
+          // "Payment received" lock+poll.
+          startPending('checkout', target, cycle, attemptId)
+        }
+        onCheckoutAttempt={(target, cycle) => attemptClaim('checkout_intent', target, cycle)}
+        onCheckoutAbandoned={releaseAttemptLock}
+        onPlanChangeAttempt={(target, cycle) => attemptClaim('change_unconfirmed', target, cycle)}
         onPlanChangeFailedKnown={releaseAttemptLock}
         onPlanChangeAccepted={(next, target, cycle, attemptId) => {
           const scheduled = next.subscription?.scheduledChange ?? null;
@@ -523,11 +509,13 @@ export function PaymentProcessingNotice({
   const acted =
     kind === 'checkout'
       ? 'Payment received'
-      : kind === 'change'
-        ? 'Plan change accepted'
-        : kind === 'change_unconfirmed'
-          ? 'Plan change unconfirmed'
-          : 'Resume accepted';
+      : kind === 'checkout_intent'
+        ? 'Checkout started'
+        : kind === 'change'
+          ? 'Plan change accepted'
+          : kind === 'change_unconfirmed'
+            ? 'Plan change unconfirmed'
+            : 'Resume accepted';
   return (
     <div
       role="status"
@@ -571,8 +559,8 @@ export function PaymentProcessingNotice({
             <span style={{ color: color.fgSoft }}>
               {kind === 'checkout'
                 ? 'Your payment went through and is safe; this page keeps checking automatically.'
-                : kind === 'change_unconfirmed'
-                  ? 'The change may or may not have applied; this page keeps checking automatically.'
+                : kind === 'change_unconfirmed' || kind === 'checkout_intent'
+                  ? 'The outcome is unconfirmed; this page keeps checking automatically.'
                   : 'The provider accepted the change; this page keeps checking automatically.'}{' '}
               If your plan hasn&rsquo;t updated in a few minutes, reload the page or email{' '}
               <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
@@ -589,14 +577,16 @@ export function PaymentProcessingNotice({
                 ? 'No charge was started; your existing paid period continues.'
                 : kind === 'change_unconfirmed'
                   ? 'The payment provider didn’t confirm your upgrade — it may or may not have gone through. If it did, your plan updates here and nothing further is needed.'
-                  : 'The payment provider is finalizing your subscription.'}{' '}
+                  : kind === 'checkout_intent'
+                    ? 'A checkout was started here but its outcome wasn’t observed — if you paid, your plan updates here and nothing further is needed.'
+                    : 'The payment provider is finalizing your subscription.'}{' '}
               This page updates automatically, usually within a minute.
             </span>
           </span>
         )}
       </span>
       {phase === 'unconfirmed' && onRelease ? (
-        kind === 'checkout' || kind === 'change_unconfirmed' ? (
+        kind === 'checkout' || kind === 'checkout_intent' || kind === 'change_unconfirmed' ? (
           // A payment happened (checkout) or MAY have (unconfirmed
           // change) — release needs an explicit user assertion, never
           // one click.
@@ -606,7 +596,7 @@ export function PaymentProcessingNotice({
               style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
             >
               <p style={{ margin: 0, fontSize: 12.5, color: color.fg }}>
-                {kind === 'checkout' ? (
+                {kind === 'checkout' || kind === 'checkout_intent' ? (
                   <>
                     <strong style={{ fontWeight: 600 }}>Before resuming, check for a charge</strong>{' '}
                     — a card statement entry or a Paddle receipt email. If the payment did go
@@ -629,7 +619,7 @@ export function PaymentProcessingNotice({
                   Keep waiting
                 </Button>
                 <Button tone="danger" onClick={onRelease}>
-                  {kind === 'checkout'
+                  {kind === 'checkout' || kind === 'checkout_intent'
                     ? 'I checked — no charge. Resume checkout'
                     : 'I checked — nothing applied. Let me retry'}
                 </Button>
@@ -638,7 +628,7 @@ export function PaymentProcessingNotice({
           ) : (
             <div>
               <Button tone="default" onClick={() => setConfirmingRelease(true)}>
-                {kind === 'checkout'
+                {kind === 'checkout' || kind === 'checkout_intent'
                   ? 'No charge went through — resume checkout'
                   : 'The change didn’t apply — let me retry'}
               </Button>

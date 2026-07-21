@@ -27,10 +27,15 @@ import type { TierId } from '@declutrmail/shared/entitlements';
 /**
  * What started the wait — drives the notice copy. `change_unconfirmed`
  * is a plan change whose provider RESPONSE was lost (ambiguous outcome:
- * the prorated charge may have applied) — same lock + poll, but the
- * copy must not claim the provider accepted anything.
+ * the prorated charge may have applied). `checkout_intent` is a fresh
+ * checkout's RESERVATION: written atomically at claim time, BEFORE the
+ * overlay opens, so a second tab cannot open a second payment surface;
+ * it resolves to `checkout` on `checkout.completed`, releases on
+ * close-without-payment, and if the tab dies it surfaces with
+ * outcome-neutral copy (the user may or may not have paid).
  */
-export type PendingKind = 'checkout' | 'change' | 'change_unconfirmed' | 'resume';
+export type PendingKind =
+  'checkout' | 'checkout_intent' | 'change' | 'change_unconfirmed' | 'resume';
 
 export interface PendingCheckout {
   workspaceId: string;
@@ -64,7 +69,13 @@ export function pendingCheckoutKey(workspaceId: string): string {
 }
 
 const TIER_IDS: readonly string[] = ['free', 'plus', 'pro', 'team', 'enterprise'];
-const KINDS: readonly string[] = ['checkout', 'change', 'change_unconfirmed', 'resume'];
+const KINDS: readonly string[] = [
+  'checkout',
+  'checkout_intent',
+  'change',
+  'change_unconfirmed',
+  'resume',
+];
 const CYCLES: readonly string[] = ['monthly', 'annual'];
 
 /**
