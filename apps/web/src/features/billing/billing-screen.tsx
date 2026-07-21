@@ -41,6 +41,7 @@ import {
   clearPendingCheckout,
   pendingCheckoutKey,
   readPendingCheckout,
+  withMoneyActionMutex,
   writePendingCheckout,
   type PendingCheckout,
   type PendingKind,
@@ -275,34 +276,51 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
    * Claim the pending slot at fire time. React's `disabled` prop can be
    * stale for the ms before this tab processes another tab's storage
    * event — so every money-capable action re-reads STORAGE at the
-   * moment it fires. Any existing record (a payment awaiting its
-   * webhook, an unresolved attempt, a surfaced ambiguity) refuses the
-   * claim and gets surfaced instead.
+   * moment it fires, ATOMICALLY: the Web Locks mutex serializes the
+   * read-check(-write) across tabs, so two same-instant clicks cannot
+   * both observe an empty slot. Any existing record (a payment awaiting
+   * its webhook, an unresolved attempt, a surfaced ambiguity) refuses
+   * the claim and gets surfaced; a held mutex means another tab is
+   * mid-money-action and refuses it too.
    */
-  function claimPendingSlot(): boolean {
-    const existing = readPendingCheckout(workspaceId);
-    if (existing !== null) {
-      setPending(existing);
-      return false;
-    }
-    return true;
+  async function claimPendingSlot(): Promise<boolean> {
+    const claim = await withMoneyActionMutex(workspaceId, () => {
+      const existing = readPendingCheckout(workspaceId);
+      if (existing !== null) {
+        setPending(existing);
+        return false;
+      }
+      return true;
+    });
+    return claim.acquired && claim.result === true;
   }
 
-  function onPlanChangeAttempt(toTier: TierId, toCycle: BillingCycle | null): string | null {
-    // The pessimistic write must never clobber an existing lock — this
-    // is a brand-new attempt, so ANY record in the key is foreign.
-    if (!claimPendingSlot()) return null;
-    const attemptId = crypto.randomUUID();
-    writePendingCheckout(
-      workspaceId,
-      'change_unconfirmed',
-      tier,
-      subscription?.cycle ?? null,
-      toTier,
-      toCycle,
-      attemptId,
-    );
-    return attemptId;
+  async function onPlanChangeAttempt(
+    toTier: TierId,
+    toCycle: BillingCycle | null,
+  ): Promise<string | null> {
+    // Atomic claim + pessimistic write in ONE mutex hold — a brand-new
+    // attempt may only write into a verified-empty slot; concurrent
+    // tabs serialize here instead of both observing "no lock".
+    const claim = await withMoneyActionMutex(workspaceId, () => {
+      const existing = readPendingCheckout(workspaceId);
+      if (existing !== null) {
+        setPending(existing);
+        return null;
+      }
+      const attemptId = crypto.randomUUID();
+      writePendingCheckout(
+        workspaceId,
+        'change_unconfirmed',
+        tier,
+        subscription?.cycle ?? null,
+        toTier,
+        toCycle,
+        attemptId,
+      );
+      return attemptId;
+    });
+    return claim.acquired ? (claim.result ?? null) : null;
   }
 
   /**

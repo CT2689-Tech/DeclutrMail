@@ -1194,6 +1194,52 @@ describe('BillingScreen — paid subscriber', () => {
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
   });
 
+  it('a change confirm STANDS DOWN when another tab holds the money-action mutex', async () => {
+    // Web Locks path: `ifAvailable` hands the callback `null` when the
+    // mutex is held elsewhere — the claim must refuse and fire nothing,
+    // even with an EMPTY pending slot (the other tab is mid-write).
+    mockTier = 'plus';
+    let changePosts = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: () => {
+          changePosts += 1;
+          return jsonOk({ data: PLUS_SUB });
+        },
+      },
+    ]);
+    const heldLocks = {
+      request: (_name: string, _opts: unknown, cb: (lock: null) => Promise<unknown>) => cb(null),
+    };
+    Object.defineProperty(window.navigator, 'locks', {
+      value: heldLocks,
+      configurable: true,
+    });
+    try {
+      renderScreen();
+      fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+      const panel = screen.getByTestId('change-plan-panel');
+      fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
+
+      // Stand-down: panel closes, nothing fires, nothing was written.
+      await waitFor(() =>
+        expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument(),
+      );
+      expect(changePosts).toBe(0);
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+    } finally {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (window.navigator as any).locks;
+    }
+  });
+
   it('a change confirm STANDS DOWN — no POST — when a lock raced ahead of the storage event', async () => {
     // Same race as the checkout stand-down, on the change-plan path:
     // the pessimistic attempt write must not clobber the silent lock,

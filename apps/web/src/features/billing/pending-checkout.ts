@@ -147,3 +147,33 @@ export function clearPendingCheckout(workspaceId: string): void {
     // Nothing to release if storage is unavailable.
   }
 }
+
+/**
+ * Cross-tab mutual exclusion around the read-check-write of the pending
+ * slot. localStorage has no compare-and-swap, so two tabs firing in the
+ * same instant could both read "no lock" and both proceed with a money
+ * action. The Web Locks API is the real primitive: `ifAvailable` makes
+ * the claim atomic across every tab of this origin — a tab that finds
+ * the mutex held STANDS DOWN (`acquired: false`) instead of waiting,
+ * because whoever holds it is mid-money-action. Where the API is
+ * unavailable (old browsers, non-window contexts) this degrades to the
+ * plain non-atomic call — the durable record still guards everything
+ * slower than the same-instant race, and the server-side pending signal
+ * (FOUNDER-FOLLOWUPS) is the true cross-device fix.
+ */
+export async function withMoneyActionMutex<T>(
+  workspaceId: string,
+  fn: () => T,
+): Promise<{ acquired: boolean; result?: T }> {
+  const locks =
+    typeof navigator !== 'undefined' && 'locks' in navigator ? navigator.locks : undefined;
+  if (!locks) {
+    return { acquired: true, result: fn() };
+  }
+  return locks.request(
+    `${PENDING_CHECKOUT_KEY}.mutex:${workspaceId}`,
+    { ifAvailable: true },
+    (lock) =>
+      Promise.resolve(lock === null ? { acquired: false } : { acquired: true, result: fn() }),
+  );
+}

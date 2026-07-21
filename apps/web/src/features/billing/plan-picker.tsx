@@ -106,12 +106,14 @@ export function PlanPicker({
    *  persistent lock pessimistically so an unmount/reload mid-flight
    *  cannot leave an armed retry with an unknown outcome. Returns the
    *  attempt's UUID; every release call must present it back. */
-  onPlanChangeAttempt: (target: PaidTier, cycle: BillingCycle) => string | null;
-  /** Fire-time storage re-check for ANY money-capable action — React's
+  onPlanChangeAttempt: (target: PaidTier, cycle: BillingCycle) => Promise<string | null>;
+  /** Fire-time ATOMIC slot claim for ANY money-capable action — React's
    *  `disabled` can be stale for the ms before this tab processes a
-   *  storage event. Returns false (and surfaces the lock) when the
-   *  pending slot is already held; the caller must stand down. */
-  claimPendingSlot: () => boolean;
+   *  storage event, and localStorage alone has no compare-and-swap, so
+   *  the screen serializes the check through the Web Locks mutex.
+   *  Resolves false (surfacing the lock) when the slot is held; the
+   *  caller must stand down. */
+  claimPendingSlot: () => Promise<boolean>;
   /** The failure is KNOWN (definitive rejection / non-provider error —
    *  nothing applied, nothing charged): release the attempt lock. The
    *  UUID uniquely identifies WHICH attempt — the screen releases only
@@ -129,6 +131,10 @@ export function PlanPicker({
   const changePlan = useChangePlan();
   const [launchError, setLaunchError] = useState<string | null>(null);
   const consumedIntent = useRef(false);
+  // Synchronous re-entrancy guard: the async slot claim yields before
+  // the mutation's isPending flips, so a double-click could otherwise
+  // enter a confirm handler twice in one frame.
+  const confirmInFlight = useRef(false);
 
   // A subscription that GRANTS (active/past_due) routes paid targets
   // through the change-plan endpoint; anything else (none, canceled,
@@ -187,16 +193,20 @@ export function PlanPicker({
     setSelected((prev) => (prev === id ? null : id));
   }
 
-  function onConfirm(target: PaidTier) {
+  async function onConfirm(target: PaidTier) {
     // `disabled` re-checked at fire time: a lock can land between the
     // panel opening and this click (cross-tab storage event race) —
     // and React state can lag storage, so the slot is re-read from
-    // STORAGE too before opening a payment surface.
-    if (disabled || checkout.isPending) return;
-    if (!claimPendingSlot()) {
+    // STORAGE (atomically, via the Web Locks mutex) before opening a
+    // payment surface.
+    if (disabled || checkout.isPending || confirmInFlight.current) return;
+    confirmInFlight.current = true;
+    if (!(await claimPendingSlot())) {
+      confirmInFlight.current = false;
       closePanel();
       return;
     }
+    confirmInFlight.current = false;
     setLaunchError(null);
     void track('checkout_started', {
       tier: target,
@@ -231,17 +241,20 @@ export function PlanPicker({
     );
   }
 
-  function onConfirmChange(target: PaidTier) {
+  async function onConfirmChange(target: PaidTier) {
     // `disabled` re-checked at fire time: a lock can land between the
     // panel opening and this click (cross-tab storage event race).
-    if (disabled || changePlan.isPending) return;
+    if (disabled || changePlan.isPending || confirmInFlight.current) return;
+    confirmInFlight.current = true;
     const from = grantingSub;
     // Pessimistic lock BEFORE the money-moving request: if this tab
     // unmounts or reloads mid-flight, these mutate callbacks never run
     // and the persisted lock is what prevents an armed blind retry.
-    // A null claim means the slot is already held by an unresolved
-    // record that raced ahead of the storage event — stand down.
-    const attemptId = onPlanChangeAttempt(target, cycle);
+    // The claim + write happen in ONE mutex hold — a null claim means
+    // the slot is held (an unresolved record, or another tab mid-
+    // action) — stand down.
+    const attemptId = await onPlanChangeAttempt(target, cycle);
+    confirmInFlight.current = false;
     if (attemptId === null) {
       closePanel();
       return;
@@ -347,7 +360,7 @@ export function PlanPicker({
               errorMessage={
                 changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null
               }
-              onConfirm={() => onConfirmChange(selected)}
+              onConfirm={() => void onConfirmChange(selected)}
               onDismiss={closePanel}
             />
           ) : (
@@ -364,7 +377,7 @@ export function PlanPicker({
             onClaimFoundingChange={setClaimFounding}
             isPending={checkout.isPending}
             errorMessage={launchError ?? errorMessage}
-            onConfirm={() => onConfirm(selected)}
+            onConfirm={() => void onConfirm(selected)}
             onDismiss={closePanel}
           />
         )
