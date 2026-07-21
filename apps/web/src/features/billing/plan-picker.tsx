@@ -98,8 +98,9 @@ export function PlanPicker({
   /** A provider error on an IMMEDIATE upgrade — ambiguous outcome (the
    *  prorated charge may have applied before the response was lost).
    *  The screen must lock + poll; the panel must NOT stay open with a
-   *  retryable confirm. */
-  onPlanChangeUnconfirmed: (target: PaidTier, cycle: BillingCycle) => void;
+   *  retryable confirm. `attemptId` lets the screen tell this attempt's
+   *  own lock from a concurrent one it must not clobber. */
+  onPlanChangeUnconfirmed: (target: PaidTier, cycle: BillingCycle, attemptId: string) => void;
   /** Fired BEFORE the change-plan request — the screen writes the
    *  persistent lock pessimistically so an unmount/reload mid-flight
    *  cannot leave an armed retry with an unknown outcome. Returns the
@@ -251,7 +252,7 @@ export function PlanPicker({
             !isDeferredDowngrade(from.tier, from.cycle, target, cycle)
           ) {
             closePanel();
-            onPlanChangeUnconfirmed(target, cycle);
+            onPlanChangeUnconfirmed(target, cycle, attemptId);
           } else {
             onPlanChangeFailedKnown(attemptId);
           }

@@ -1247,6 +1247,60 @@ describe('BillingScreen — paid subscriber', () => {
     expect((JSON.parse(after!) as { attemptId: string }).attemptId).toBe('attempt-B');
   });
 
+  it('an ACCEPTED change never clobbers a concurrent attempt’s unresolved lock', async () => {
+    // While attempt A's request is in flight, attempt B re-writes the
+    // key. A is then ACCEPTED — but startPending('change') must not
+    // replace B's change_unconfirmed lock (B's charge outcome is still
+    // unknown); the screen surfaces B's lock instead.
+    mockTier = 'plus';
+    let resolveChange: ((r: Response) => void) | null = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: () => new Promise<Response>((resolve) => (resolveChange = resolve)),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    const panel = screen.getByTestId('change-plan-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
+    await waitFor(() => expect(resolveChange).not.toBeNull());
+
+    const mine = window.localStorage.getItem(pendingCheckoutKey('w'));
+    const foreign = {
+      ...(JSON.parse(mine!) as Record<string, unknown>),
+      toTier: 'plus',
+      toCycle: 'annual',
+      attemptId: 'attempt-B',
+      at: Date.now(),
+    };
+    window.localStorage.setItem(pendingCheckoutKey('w'), JSON.stringify(foreign));
+
+    // A's outcome arrives: ACCEPTED (pre-change body, §10).
+    act(() => {
+      resolveChange!(
+        new Response(JSON.stringify({ data: PLUS_SUB }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    });
+
+    // B's lock survives verbatim and is what the screen surfaces.
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('Plan change unconfirmed');
+    const after = window.localStorage.getItem(pendingCheckoutKey('w'));
+    expect((JSON.parse(after!) as { attemptId: string }).attemptId).toBe('attempt-B');
+    expect((JSON.parse(after!) as { toTier: string }).toTier).toBe('plus');
+  });
+
   it('a Razorpay subscriber gets the honest support route, never the failing confirm', async () => {
     mockTier = 'plus';
     installFetchStub([

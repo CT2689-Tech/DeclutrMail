@@ -227,10 +227,31 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
     );
   }
 
-  function startPending(kind: PendingKind, toTier: TierId, toCycle: BillingCycle | null) {
-    setPending(
-      writePendingCheckout(workspaceId, kind, tier, subscription?.cycle ?? null, toTier, toCycle),
-    );
+  function startPending(
+    kind: PendingKind,
+    toTier: TierId,
+    toCycle: BillingCycle | null,
+    ownAttemptId?: string,
+  ) {
+    // No-clobber guard: the key is one per workspace. If it currently
+    // holds ANOTHER attempt's unresolved change_unconfirmed lock, this
+    // outcome must not overwrite it — that lock's money outcome is
+    // still unknown, and replacing it would let the other flow's flip
+    // (or release) silently discard it. Surface the existing lock
+    // instead; its exit is the flip or the user's two-step assertion.
+    const existing = readPendingCheckout(workspaceId);
+    if (
+      existing !== null &&
+      existing.kind === 'change_unconfirmed' &&
+      existing.attemptId !== undefined &&
+      existing.attemptId !== ownAttemptId
+    ) {
+      setPending(existing);
+    } else {
+      setPending(
+        writePendingCheckout(workspaceId, kind, tier, subscription?.cycle ?? null, toTier, toCycle),
+      );
+    }
     // Ask immediately — fast webhooks (sandbox flips in ~40s, some land
     // sooner) shouldn't wait a full poll interval.
     void subscriptionQuery.refetch();
@@ -386,15 +407,15 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
             const date = formatBillingDate(scheduled.effectiveAt);
             toast(date ? `Downgrade scheduled for ${date}.` : 'Downgrade scheduled.', 'success');
           } else {
-            startPending('change', target, cycle);
+            startPending('change', target, cycle, attemptId);
           }
         }}
-        onPlanChangeUnconfirmed={(target, cycle) =>
+        onPlanChangeUnconfirmed={(target, cycle, attemptId) =>
           // Ambiguous provider outcome on an immediate upgrade: the
           // prorated charge may have applied. Enter the SAME lock+poll
           // machinery as checkout — no stale panel with an armed
           // money-moving retry button.
-          startPending('change_unconfirmed', target, cycle)
+          startPending('change_unconfirmed', target, cycle, attemptId)
         }
       />
 
