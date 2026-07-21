@@ -1186,6 +1186,67 @@ describe('BillingScreen — paid subscriber', () => {
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
   });
 
+  it('a known outcome releases ONLY its own attempt lock, never a concurrent rewrite', async () => {
+    // Release is UUID-matched: while attempt A's request is in flight,
+    // a concurrent attempt (same target — target matching would alias)
+    // re-writes the per-workspace key. A's definitive failure must NOT
+    // clear that other attempt's unresolved lock.
+    mockTier = 'plus';
+    let resolveChange: ((r: Response) => void) | null = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: () => new Promise<Response>((resolve) => (resolveChange = resolve)),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    const panel = screen.getByTestId('change-plan-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
+    await waitFor(() => expect(resolveChange).not.toBeNull());
+
+    // A wrote its lock (with its own attemptId) at click time.
+    const mine = window.localStorage.getItem(pendingCheckoutKey('w'));
+    expect(mine).not.toBeNull();
+
+    // Concurrent attempt B re-writes the key — SAME target, different id.
+    const foreign = {
+      ...(JSON.parse(mine!) as Record<string, unknown>),
+      attemptId: 'attempt-B',
+      at: Date.now(),
+    };
+    window.localStorage.setItem(pendingCheckoutKey('w'), JSON.stringify(foreign));
+
+    // A's outcome arrives: DEFINITIVE rejection.
+    act(() => {
+      resolveChange!(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'BILLING_PROVIDER_ERROR',
+              message: 'ignored',
+              details: { providerOutcome: 'definitive' },
+            },
+          }),
+          { status: 502, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    });
+    await within(panel).findByRole('alert');
+
+    // B's unresolved lock survives A's known outcome.
+    const after = window.localStorage.getItem(pendingCheckoutKey('w'));
+    expect(after).not.toBeNull();
+    expect((JSON.parse(after!) as { attemptId: string }).attemptId).toBe('attempt-B');
+  });
+
   it('a Razorpay subscriber gets the honest support route, never the failing confirm', async () => {
     mockTier = 'plus';
     installFetchStub([

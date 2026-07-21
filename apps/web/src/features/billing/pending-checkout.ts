@@ -47,6 +47,14 @@ export interface PendingCheckout {
   toCycle: BillingCycle | null;
   /** Epoch ms of the triggering action. */
   at: number;
+  /**
+   * Unique id of the pessimistic change ATTEMPT that wrote this record
+   * (absent on user-visible locks written by startPending). The key is
+   * one per workspace (last-writer-wins), so a known outcome may only
+   * release the lock ITS OWN attempt wrote — target/cycle matching is
+   * not unique when two attempts share a target.
+   */
+  attemptId?: string;
 }
 
 /** Prefix only; each workspace owns an independent browser lock. */
@@ -93,7 +101,8 @@ export function readPendingCheckout(workspaceId: string): PendingCheckout | null
     (record.fromCycle !== null && !CYCLES.includes(record.fromCycle as string)) ||
     typeof record.toTier !== 'string' ||
     !TIER_IDS.includes(record.toTier) ||
-    (record.toCycle !== null && !CYCLES.includes(record.toCycle as string))
+    (record.toCycle !== null && !CYCLES.includes(record.toCycle as string)) ||
+    (record.attemptId !== undefined && typeof record.attemptId !== 'string')
   ) {
     clearPendingCheckout(workspaceId);
     return null;
@@ -110,6 +119,7 @@ export function writePendingCheckout(
   fromCycle: BillingCycle | null,
   toTier: TierId,
   toCycle: BillingCycle | null,
+  attemptId?: string,
 ): PendingCheckout {
   const record: PendingCheckout = {
     workspaceId,
@@ -119,6 +129,7 @@ export function writePendingCheckout(
     toTier,
     toCycle,
     at: Date.now(),
+    ...(attemptId !== undefined ? { attemptId } : {}),
   };
   try {
     window.localStorage.setItem(pendingCheckoutKey(workspaceId), JSON.stringify(record));

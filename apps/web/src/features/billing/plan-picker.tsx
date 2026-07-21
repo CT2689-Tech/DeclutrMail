@@ -87,8 +87,14 @@ export function PlanPicker({
    *  state; this component only reports the provider fact. */
   onPaymentCompleted: (target: PaidTier, cycle: BillingCycle) => void;
   /** The change-plan endpoint accepted the switch — the screen enters
-   *  the pending state until the webhook lands. */
-  onPlanChangeAccepted: (next: BillingSubscription, target: PaidTier, cycle: BillingCycle) => void;
+   *  the pending state until the webhook lands. `attemptId` identifies
+   *  the pessimistic lock this attempt wrote (UUID-matched release). */
+  onPlanChangeAccepted: (
+    next: BillingSubscription,
+    target: PaidTier,
+    cycle: BillingCycle,
+    attemptId: string,
+  ) => void;
   /** A provider error on an IMMEDIATE upgrade — ambiguous outcome (the
    *  prorated charge may have applied before the response was lost).
    *  The screen must lock + poll; the panel must NOT stay open with a
@@ -96,13 +102,15 @@ export function PlanPicker({
   onPlanChangeUnconfirmed: (target: PaidTier, cycle: BillingCycle) => void;
   /** Fired BEFORE the change-plan request — the screen writes the
    *  persistent lock pessimistically so an unmount/reload mid-flight
-   *  cannot leave an armed retry with an unknown outcome. */
-  onPlanChangeAttempt: (target: PaidTier, cycle: BillingCycle) => void;
+   *  cannot leave an armed retry with an unknown outcome. Returns the
+   *  attempt's UUID; every release call must present it back. */
+  onPlanChangeAttempt: (target: PaidTier, cycle: BillingCycle) => string;
   /** The failure is KNOWN (definitive rejection / non-provider error —
    *  nothing applied, nothing charged): release the attempt lock. The
-   *  target identifies WHICH attempt — the screen releases only a lock
-   *  matching it, never a concurrent attempt's unresolved lock. */
-  onPlanChangeFailedKnown: (target: PaidTier, cycle: BillingCycle) => void;
+   *  UUID uniquely identifies WHICH attempt — the screen releases only
+   *  the lock that exact attempt wrote, never a concurrent attempt's
+   *  unresolved lock (target matching is not unique). */
+  onPlanChangeFailedKnown: (attemptId: string) => void;
 }) {
   const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
   const [selected, setSelected] = useState<StripTierId | null>(null);
@@ -219,13 +227,13 @@ export function PlanPicker({
     // Pessimistic lock BEFORE the money-moving request: if this tab
     // unmounts or reloads mid-flight, these mutate callbacks never run
     // and the persisted lock is what prevents an armed blind retry.
-    onPlanChangeAttempt(target, cycle);
+    const attemptId = onPlanChangeAttempt(target, cycle);
     changePlan.mutate(
       { tierId: target, cycle },
       {
         onSuccess: (next) => {
           closePanel();
-          onPlanChangeAccepted(next, target, cycle);
+          onPlanChangeAccepted(next, target, cycle, attemptId);
         },
         onError: (error) => {
           // AMBIGUOUS provider error on an immediate upgrade — the
@@ -245,7 +253,7 @@ export function PlanPicker({
             closePanel();
             onPlanChangeUnconfirmed(target, cycle);
           } else {
-            onPlanChangeFailedKnown(target, cycle);
+            onPlanChangeFailedKnown(attemptId);
           }
         },
       },

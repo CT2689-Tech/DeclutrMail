@@ -247,7 +247,8 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
    * `change`, scheduled → cleared, definitive/non-provider error →
    * cleared, ambiguous → `change_unconfirmed` becomes visible.
    */
-  function onPlanChangeAttempt(toTier: TierId, toCycle: BillingCycle | null) {
+  function onPlanChangeAttempt(toTier: TierId, toCycle: BillingCycle | null): string {
+    const attemptId = crypto.randomUUID();
     writePendingCheckout(
       workspaceId,
       'change_unconfirmed',
@@ -255,26 +256,24 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
       subscription?.cycle ?? null,
       toTier,
       toCycle,
+      attemptId,
     );
+    return attemptId;
   }
 
   /**
-   * Release the attempt lock — but ONLY the lock this attempt wrote.
-   * The record is one key per workspace (last-writer-wins), so a known
-   * failure for target X must not release a lock some concurrent
-   * attempt re-wrote for target Y while X was in flight; that lock's
-   * money outcome is still unresolved.
+   * Release the attempt lock — but ONLY the lock this exact attempt
+   * wrote. The record is one key per workspace (last-writer-wins) and
+   * target/cycle matching is not unique (two attempts can share a
+   * target), so release matches the attempt's UUID: a known outcome
+   * never clears a lock some concurrent attempt re-wrote while this one
+   * was in flight, and never a user-visible lock written by
+   * startPending (those carry no attemptId — only the tier flip or the
+   * user's explicit release clears them).
    */
-  function releaseAttemptLock(toTier: TierId, toCycle: BillingCycle | null) {
+  function releaseAttemptLock(attemptId: string) {
     const record = readPendingCheckout(workspaceId);
-    if (
-      record !== null &&
-      (record.kind !== 'change_unconfirmed' ||
-        record.toTier !== toTier ||
-        record.toCycle !== toCycle)
-    ) {
-      return;
-    }
+    if (record !== null && record.attemptId !== attemptId) return;
     clearPendingCheckout(workspaceId);
     setPending(null);
   }
@@ -377,12 +376,12 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         onPaymentCompleted={(target, cycle) => startPending('checkout', target, cycle)}
         onPlanChangeAttempt={onPlanChangeAttempt}
         onPlanChangeFailedKnown={releaseAttemptLock}
-        onPlanChangeAccepted={(next, target, cycle) => {
+        onPlanChangeAccepted={(next, target, cycle, attemptId) => {
           const scheduled = next.subscription?.scheduledChange ?? null;
           if (scheduled) {
-            // Scheduled ($0) — release this attempt's lock (matched:
-            // never a concurrent attempt's unresolved lock).
-            releaseAttemptLock(target, cycle);
+            // Scheduled ($0) — release this attempt's lock (UUID-
+            // matched: never a concurrent attempt's unresolved lock).
+            releaseAttemptLock(attemptId);
             queryClient.setQueryData(billingKeys.subscription(), next);
             const date = formatBillingDate(scheduled.effectiveAt);
             toast(date ? `Downgrade scheduled for ${date}.` : 'Downgrade scheduled.', 'success');
