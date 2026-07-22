@@ -179,7 +179,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D125 | Snoozed + Followups stay at V2 launch with usage-tracking exit clause | ⬜ |  |  |  |
 | D126 | Retention investment package (5-part) | ⬜ |  |  |  |
 | D127 | Brand name: **DeclutrMail** (locked from V1) | ⬜ |  |  |  |
-| D128 | Primary domain: **DeclutrMail.com | ⬜ |  |  |  |
+| D128 | Primary domain: **DeclutrMail.com | 🔵 | #369 |  |  |
 | D129 | Hero tagline: *"Clean Gmail by controlling senders, not individual emails."* | ⬜ |  |  |  |
 | D130 | Brand voice principles (locked, summarizing Phase 1) | ⬜ |  |  |  |
 | D131 | Top nav: **6-item flat | ⬜ |  |  |  |
