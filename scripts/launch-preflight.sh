@@ -550,10 +550,12 @@ required_for() {
     declutrmail-worker) echo 'RESEND_API_KEY' ;;
   esac
 }
-# Only required once billing is live; webhook controllers live in the API.
+# Only required once billing is live. Checkout adapters and webhook
+# controllers both live in the API; the worker has no billing credential
+# reads and must not receive these secrets.
 billing_for() {
   case "$1" in
-    declutrmail-api) echo 'PADDLE_WEBHOOK_SECRET RAZORPAY_WEBHOOK_SECRET' ;;
+    declutrmail-api) echo 'PADDLE_API_KEY PADDLE_CLIENT_TOKEN PADDLE_WEBHOOK_SECRET RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET' ;;
     *)               echo '' ;;
   esac
 }
@@ -848,10 +850,17 @@ EOF
     check_secret_readers resend-webhook-secret-prod "$api_sa"    'the api (signature verification)'
   fi
 
-  # E. Hygiene: a runtime secret sitting in the CI store is the bug class.
+  # E. Hygiene: a runtime-only secret sitting in the CI store is the bug
+  # class. Billing API credentials are deliberately exempt: the catalog
+  # provisioning workflow and vendor watchdog consume PADDLE_API_KEY plus the
+  # Razorpay key pair. Client tokens and webhook secrets remain runtime-only.
   if command -v gh >/dev/null 2>&1; then
     local ghs stray='' all
-    all=$(for svc in $SERVICES; do required_for "$svc"; billing_for "$svc"; done | tr ' ' '\n' | sed '/^$/d' | sort -u)
+    all=$(
+      for svc in $SERVICES; do required_for "$svc"; done
+      echo 'PADDLE_CLIENT_TOKEN PADDLE_WEBHOOK_SECRET RAZORPAY_WEBHOOK_SECRET'
+    )
+    all=$(printf '%s\n' "$all" | tr ' ' '\n' | sed '/^$/d' | sort -u)
     ghs=$(gh secret list 2>/dev/null | awk '{print $1}')
     if [ -n "$ghs" ]; then
       for s in $all; do

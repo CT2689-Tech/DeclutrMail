@@ -221,8 +221,10 @@ runtime secret (`PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `PADDLE_WEBHOOK_SECRET`
 `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`):
 
 1. Create it in **GCP Secret Manager**.
-2. Add an `--update-secrets` binding in `deploy-cloud-run.yml` for **both** the
-   API and worker services (see `secrets-inventory.md` for the pattern).
+2. Add an `--update-secrets` binding in `deploy-cloud-run.yml` for the **API
+   service only** (see `secrets-inventory.md` for the pattern). Checkout and
+   webhook verification both live in the API; the worker reads no billing
+   credentials and must not receive them.
 3. Set env `PADDLE_ENV=sandbox` (then `production` at cutover) and
    `BILLING_ENABLED=true` in the deploy workflow.
 4. Redeploy.
@@ -231,8 +233,8 @@ runtime secret (`PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `PADDLE_WEBHOOK_SECRET`
 > `--update-env-vars` / `--update-secrets` for live merge-sets; never hand-edit.
 > All billing values are **server-side** (the Paddle client token reaches the
 > browser through the checkout-session response, not a `NEXT_PUBLIC` build-time
-> var), so **no FE rebuild is needed** for a billing key change — only an API +
-> worker redeploy.
+> var), so **no FE or worker rebuild is needed** for a billing key change —
+> only an API redeploy.
 
 ---
 
@@ -273,8 +275,8 @@ counter decrements).
    manifest** with the live ids (sandbox and live ids differ) via PR.
 2. Swap every GH/Secret-Manager value to **live** keys; rotate the two webhook
    secrets to the **live** destinations' secrets.
-3. Set `PADDLE_ENV=production`; keep `BILLING_ENABLED=true`; redeploy API +
-   worker (billing keys are server-side — no FE rebuild required).
+3. Set `PADDLE_ENV=production`; keep `BILLING_ENABLED=true`; redeploy the API
+   (billing keys are server-side — no FE or worker rebuild required).
 4. Confirm the guardrail watchdog (`billing-guardrails.md`) covers the providers
    and mirror every new secret into `secrets-inventory.md` with a rotation date.
 5. Do **one** real low-value live purchase and immediately refund it.
