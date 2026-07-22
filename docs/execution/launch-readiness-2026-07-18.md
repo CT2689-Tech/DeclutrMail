@@ -108,8 +108,9 @@ rollup removal) follows; full dev-login browser smoke before PRs.
    the same all-PASS results as §1.
 2. Announce.
 
-Post-launch hygiene queue (no dates): `GET /api/healthz` for uptime
-monitoring · WeeklyHero dead-code removal · D247 finish.
+Pre-launch detection gate: deploy `GET /api/healthz`, then run
+`scripts/setup-uptime-monitoring.sh` and prove the alert reaches the founder.
+Post-launch hygiene queue (no dates): WeeklyHero dead-code removal · D247 finish.
 
 ---
 

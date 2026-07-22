@@ -21,9 +21,9 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 type DrizzleExecutor = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
 
 /**
- * Result of {@link SyncService.advanceHistoryId}.
+ * Result of {@link SyncService.planHistorySyncWithExecutor}.
  *
- *   - `advanced`: row existed with NON-NULL last_history_id, incoming > last_history_id, UPDATE applied
+ *   - `ready`:    row exists with a NON-NULL applied cursor and incoming is newer
  *   - `stale`:    row existed but incoming <= last_history_id (last value returned)
  *   - `uninitialized`: no provider_sync_state row exists for this mailbox
  *   - `deferred_initial_sync_in_flight`: row existed but `last_history_id IS NULL`.
@@ -39,12 +39,12 @@ type DrizzleExecutor = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction'
  *     the range. (D38 webhook-vs-InitialSync race fix, 2026-06-09.)
  *
  * Bootstrap of a missing row is the OAuth-connect / InitialSyncWorker
- * flow's responsibility (D109, D224) — `advanceHistoryId` never creates
+ * flow's responsibility (D109, D224) — planning never creates
  * the row. Callers map `uninitialized` to a successful no-op so Pub/Sub
  * stops retrying a delivery that initial sync wouldn't fix.
  */
-export type AdvanceHistoryIdResult =
-  | { kind: 'advanced'; previousHistoryId: bigint }
+export type HistorySyncPlanResult =
+  | { kind: 'ready'; previousHistoryId: bigint }
   | { kind: 'stale'; lastHistoryId: bigint | null }
   | { kind: 'uninitialized' }
   | { kind: 'deferred_initial_sync_in_flight' };
@@ -139,6 +139,11 @@ export class SyncService {
           readinessStatus: 'queued',
           progressPct: 0,
           errorCode: null,
+          // A queued row represents a fresh full-sync attempt. Clear the
+          // previous applied cursor so InitialSync can capture a new base;
+          // BullMQ retries do not call markQueued and therefore preserve it.
+          lastHistoryId: null,
+          historyIdUpdatedAt: null,
           ...(options.freshCredentials
             ? {
                 lastIncrementalErrorAt: sql`CASE
@@ -192,43 +197,21 @@ export class SyncService {
   }
 
   /**
-   * Advance `provider_sync_state.last_history_id` for one mailbox,
-   * inside a SERIALIZABLE-equivalent SELECT-FOR-UPDATE + UPDATE
-   * transaction (D229 step 8 monotonic cursor).
-   *
-   * Cross-feature facade (D204): the webhooks module calls this rather
-   * than touching `provider_sync_state` directly. The sync feature owns
-   * the table and the lock semantics; webhook is just the trigger.
-   *
-   * No `incrementalSync` enqueue here — the BullMQ producer for the
-   * follow-up incremental-sync job lands in the next PR (`processVerifiedPush`
-   * documents the gap). The dedup row + advanced cursor are the atomic
-   * effect for this PR.
+   * Plan an incremental-sync range inside the webhook transaction.
+   * `last_history_id` is the APPLIED cursor: only IncrementalSyncWorker
+   * advances it after Gmail history records have been persisted. Keeping
+   * it unchanged here means a Redis enqueue failure remains recoverable by
+   * the drift sweep from the same start cursor.
    */
-  async advanceHistoryId(args: {
-    mailboxAccountId: string;
-    incomingHistoryId: bigint;
-  }): Promise<AdvanceHistoryIdResult> {
-    return this.db.transaction((tx) => this.advanceHistoryIdWithExecutor(tx, args));
-  }
-
-  /**
-   * Same SELECT-FOR-UPDATE + UPDATE as {@link advanceHistoryId} but
-   * runs inside a caller-provided executor (transaction client).
-   *
-   * Exposed so callers that need to fold the cursor advance into a
-   * LARGER atomic unit (e.g. the Gmail webhook's dedup-write + cursor-advance
-   * critical section, P1 fix) can share one transaction. The row lock
-   * acquired by `.for('update')` is held by the caller's transaction
-   * until that transaction commits or rolls back — exactly the semantics
-   * we want when the dedup row + cursor advance must commit together.
-   */
-  async advanceHistoryIdWithExecutor(
+  async planHistorySyncWithExecutor(
     executor: DrizzleExecutor,
     args: { mailboxAccountId: string; incomingHistoryId: bigint },
-  ): Promise<AdvanceHistoryIdResult> {
+  ): Promise<HistorySyncPlanResult> {
     const rows = await executor
-      .select({ lastHistoryId: providerSyncState.lastHistoryId })
+      .select({
+        lastHistoryId: providerSyncState.lastHistoryId,
+        readinessStatus: providerSyncState.readinessStatus,
+      })
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, args.mailboxAccountId))
       .for('update')
@@ -237,27 +220,15 @@ export class SyncService {
       return { kind: 'uninitialized' };
     }
     const previousHistoryId = rows[0]!.lastHistoryId ?? null;
-    // D38 race fix: cursor IS NULL means InitialSync's `markReady` has not
-    // yet written the snapshot S. Advancing NULL → H here would orphan
-    // (S, H] because `markReady`'s GREATEST(stored=H, snapshot=S) keeps H
-    // and never writes S. Leave the cursor NULL; InitialSync will write S
-    // when it finishes, and the next webhook / drift sweep will enqueue
-    // from S, which covers all history events including (S, H].
-    if (previousHistoryId === null) {
+    // InitialSync stores its base cursor before fetching so retries reuse
+    // the same snapshot. It is not an applied cursor until readiness=ready.
+    if (previousHistoryId === null || rows[0]!.readinessStatus !== 'ready') {
       return { kind: 'deferred_initial_sync_in_flight' };
     }
     if (previousHistoryId >= args.incomingHistoryId) {
       return { kind: 'stale', lastHistoryId: previousHistoryId };
     }
-    await executor
-      .update(providerSyncState)
-      .set({
-        lastHistoryId: args.incomingHistoryId,
-        historyIdUpdatedAt: sql`now()`,
-        updatedAt: sql`now()`,
-      })
-      .where(eq(providerSyncState.mailboxAccountId, args.mailboxAccountId));
-    return { kind: 'advanced', previousHistoryId };
+    return { kind: 'ready', previousHistoryId };
   }
 
   /**
@@ -356,13 +327,16 @@ export class SyncService {
     trigger: 'manual' | 'cron',
   ): Promise<ManualIncrementalSyncResult> {
     const rows = await this.db
-      .select({ lastHistoryId: providerSyncState.lastHistoryId })
+      .select({
+        lastHistoryId: providerSyncState.lastHistoryId,
+        readinessStatus: providerSyncState.readinessStatus,
+      })
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
       .limit(1);
 
     const lastHistoryId = rows[0]?.lastHistoryId ?? null;
-    if (lastHistoryId === null) {
+    if (lastHistoryId === null || rows[0]?.readinessStatus !== 'ready') {
       return { kind: 'not_ready' };
     }
 
@@ -406,7 +380,7 @@ export class SyncService {
       .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
       .from(providerSyncState)
       .where(
-        sql`${providerSyncState.lastHistoryId} IS NOT NULL AND ${providerSyncState.historyIdUpdatedAt} < ${cutoff}`,
+        sql`${providerSyncState.readinessStatus} = 'ready' AND ${providerSyncState.lastHistoryId} IS NOT NULL AND ${providerSyncState.historyIdUpdatedAt} < ${cutoff}`,
       );
     return rows.map((r) => r.mailboxAccountId);
   }

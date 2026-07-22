@@ -350,14 +350,12 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // concurrent IncrementalSyncWorker job carrying an older
     // `lastPageHistoryId` (or a concurrent InitialSyncWorker.markReady
     // carrying its snapshot-time `historyId`) cannot regress the
-    // cursor. Mirrors `SyncService.advanceHistoryIdWithExecutor`'s
-    // `stale` short-circuit — but inline here because `packages/workers`
-    // cannot import the Nest `SyncService` (D204 boundary).
+    // cursor. The webhook reads this applied cursor but never advances it;
+    // only this post-apply path may move it forward.
     if (lastPageHistoryId !== null) {
       const candidate = BigInt(lastPageHistoryId);
-      // Set `historyIdUpdatedAt` alongside `lastHistoryId` to match
-      // `SyncService.advanceHistoryIdWithExecutor` — otherwise the
-      // cron drift-sweep (worker.ts:1084) selects on
+      // Set `historyIdUpdatedAt` alongside `lastHistoryId`; otherwise the
+      // cron drift-sweep selects on
       // `history_id_updated_at < cutoff` and keeps re-enqueuing this
       // mailbox even though we just advanced the cursor (D38).
       //
@@ -491,149 +489,136 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // RETURNING + `xmax` semantic tells us whether the row was newly
     // inserted (Path B idempotency contract from
     // `senders.totalReceived` ADR-0014).
-    const inserted = await this.deps.db
-      .insert(mailMessages)
-      .values({
-        mailboxAccountId,
-        providerMessageId: meta.id,
-        providerThreadId: meta.threadId,
-        senderKey,
-        subject: meta.subject ?? '',
-        snippet: meta.snippet,
-        internalDate,
-        labelIds: meta.labelIds,
-        isUnread,
-        isOutbound,
-        recipientEmails,
-        unsubscribeUrl,
-        unsubscribeMailtoUrl,
-        unsubscribeOneClick,
-        // ADR-0021 — Gmail `sizeEstimate`; lands NULL when Gmail omits.
-        sizeBytes: meta.sizeBytes ?? null,
-      })
-      .onConflictDoUpdate({
-        target: [mailMessages.mailboxAccountId, mailMessages.providerMessageId],
-        set: {
-          labelIds: meta.labelIds,
-          isUnread,
-          snippet: meta.snippet,
-          updatedAt: new Date(),
-          // Update size on conflict only when Gmail actually returned a
-          // value — preserve any prior backfill if the redelivered
-          // metadata happens to omit the field.
-          ...(meta.sizeBytes !== undefined ? { sizeBytes: meta.sizeBytes } : {}),
-        },
-      })
-      .returning({ id: mailMessages.id });
-
-    if (inserted.length === 0) {
-      // Should not happen with `ON CONFLICT DO UPDATE ... RETURNING`,
-      // but if it does the safest path is "nothing new."
-      return false;
-    }
-
-    // Only INBOUND messages materialise a `senders` row (outbound's
-    // From is the user, not a third-party sender — same rule as
-    // `InitialSyncWorker.buildSenderIndex`).
-    if (!isOutbound && parsedFrom) {
-      const domain = emailDomain(parsedFrom.email);
-      const category = pickGmailCategory(meta.labelIds);
-      // UPSERT — on insert, full identity row; on conflict, bump
-      // last_seen_at (max) and total_received (increment). The
-      // EXCLUDED.* references give us the new row's values cleanly.
-      // RETURNING `(xmax = 0)` distinguishes a TRUE insert from a
-      // conflict-update (same trick as the mail_messages Path-B
-      // idempotency contract, ADR-0014) — it drives the
-      // first-seen-sender callback below.
-      const senderUpsert = await this.deps.db
-        .insert(senders)
+    const result = await this.deps.db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(mailMessages)
         .values({
           mailboxAccountId,
+          providerMessageId: meta.id,
+          providerThreadId: meta.threadId,
           senderKey,
-          displayName: parsedFrom.displayName,
-          email: parsedFrom.email,
-          domain,
-          gmailCategory: category,
-          firstSeenAt: internalDate,
-          lastSeenAt: internalDate,
-          totalReceived: 1,
-          unsubscribeMethod: senderUnsub.method,
-          unsubscribeUrl: senderUnsub.url,
+          subject: meta.subject ?? '',
+          snippet: meta.snippet,
+          internalDate,
+          labelIds: meta.labelIds,
+          isUnread,
+          isOutbound,
+          recipientEmails,
+          unsubscribeUrl,
+          unsubscribeMailtoUrl,
+          unsubscribeOneClick,
+          // ADR-0021 — Gmail `sizeEstimate`; lands NULL when Gmail omits.
+          sizeBytes: meta.sizeBytes ?? null,
         })
         .onConflictDoUpdate({
-          target: [senders.mailboxAccountId, senders.senderKey],
+          target: [mailMessages.mailboxAccountId, mailMessages.providerMessageId],
           set: {
-            // Symmetric LEAST / GREATEST: first/last_seen track MIN/MAX
-            // of every observed internal_date for this sender. The
-            // existing-row guard means an older message arriving via
-            // incremental sync correctly lowers first_seen_at (rare
-            // but possible: out-of-order history events from Gmail's
-            // labelChanged / messageAdded with backdated internal_date).
-            firstSeenAt: sql`LEAST(${senders.firstSeenAt}, EXCLUDED.first_seen_at)`,
-            lastSeenAt: sql`GREATEST(${senders.lastSeenAt}, EXCLUDED.last_seen_at)`,
-            totalReceived: sql`${senders.totalReceived} + 1`,
-            // Monotonic channel upgrade (D9): one_click > mailto > none.
-            // A header-less message must never demote a sender that
-            // already advertised a better channel — only a strictly
-            // higher-ranked method (and its scheme-matched URL, the
-            // Option B invariant) wins. NULL ranks as none (0).
-            unsubscribeMethod: sql`CASE
-              WHEN ${UNSUB_RANK_EXCLUDED} > ${UNSUB_RANK_CURRENT} THEN EXCLUDED.unsubscribe_method
-              ELSE ${senders.unsubscribeMethod}
-            END`,
-            unsubscribeUrl: sql`CASE
-              WHEN ${UNSUB_RANK_EXCLUDED} > ${UNSUB_RANK_CURRENT} THEN EXCLUDED.unsubscribe_url
-              ELSE ${senders.unsubscribeUrl}
-            END`,
+            labelIds: meta.labelIds,
+            isUnread,
+            snippet: meta.snippet,
             updatedAt: new Date(),
+            // Update size on conflict only when Gmail actually returned a
+            // value — preserve any prior backfill if the redelivered
+            // metadata happens to omit the field.
+            ...(meta.sizeBytes !== undefined ? { sizeBytes: meta.sizeBytes } : {}),
           },
         })
         .returning({ newlyInserted: sql<boolean>`(xmax = 0)` });
 
-      // First-seen sender → fire the score trigger (D75 incremental
-      // path). Best-effort per the `onNewSender` contract — a failed
-      // enqueue must not fail the sync delta; the sync_complete sweep
-      // is the safety net.
-      if (senderUpsert[0]?.newlyInserted && this.deps.onNewSender) {
-        try {
-          await this.deps.onNewSender(mailboxAccountId, senderKey);
-        } catch (err) {
-          console.warn(
-            JSON.stringify({
-              level: 'warn',
-              kind: 'sync.new_sender_callback_failed',
-              mailboxAccountId,
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+      if (!inserted[0]?.newlyInserted) {
+        return { newlyInserted: false, firstSeenSender: false };
       }
 
-      // sender_timeseries — month-keyed; bump volume + readCount.
-      const yearMonth = startOfMonthISO(internalDate);
-      await this.deps.db
-        .insert(senderTimeseries)
-        .values({
-          mailboxAccountId,
-          senderKey,
-          yearMonth,
-          volume: 1,
-          readCount: isUnread ? 0 : 1,
-        })
-        .onConflictDoUpdate({
-          target: [
-            senderTimeseries.mailboxAccountId,
-            senderTimeseries.senderKey,
-            senderTimeseries.yearMonth,
-          ],
-          set: {
-            volume: sql`${senderTimeseries.volume} + 1`,
-            readCount: sql`${senderTimeseries.readCount} + ${isUnread ? 0 : 1}`,
-          },
-        });
+      // Only INBOUND messages materialise a `senders` row (outbound's
+      // From is the user, not a third-party sender — same rule as
+      // `InitialSyncWorker.buildSenderIndex`). Keep the message + sender
+      // aggregates atomic so a retry cannot observe a half-applied insert.
+      if (!isOutbound && parsedFrom) {
+        const domain = emailDomain(parsedFrom.email);
+        const category = pickGmailCategory(meta.labelIds);
+        const senderUpsert = await tx
+          .insert(senders)
+          .values({
+            mailboxAccountId,
+            senderKey,
+            displayName: parsedFrom.displayName,
+            email: parsedFrom.email,
+            domain,
+            gmailCategory: category,
+            firstSeenAt: internalDate,
+            lastSeenAt: internalDate,
+            totalReceived: 1,
+            unsubscribeMethod: senderUnsub.method,
+            unsubscribeUrl: senderUnsub.url,
+          })
+          .onConflictDoUpdate({
+            target: [senders.mailboxAccountId, senders.senderKey],
+            set: {
+              firstSeenAt: sql`LEAST(${senders.firstSeenAt}, EXCLUDED.first_seen_at)`,
+              lastSeenAt: sql`GREATEST(${senders.lastSeenAt}, EXCLUDED.last_seen_at)`,
+              totalReceived: sql`${senders.totalReceived} + 1`,
+              unsubscribeMethod: sql`CASE
+                WHEN ${UNSUB_RANK_EXCLUDED} > ${UNSUB_RANK_CURRENT} THEN EXCLUDED.unsubscribe_method
+                ELSE ${senders.unsubscribeMethod}
+              END`,
+              unsubscribeUrl: sql`CASE
+                WHEN ${UNSUB_RANK_EXCLUDED} > ${UNSUB_RANK_CURRENT} THEN EXCLUDED.unsubscribe_url
+                ELSE ${senders.unsubscribeUrl}
+              END`,
+              updatedAt: new Date(),
+            },
+          })
+          .returning({ newlyInserted: sql<boolean>`(xmax = 0)` });
+
+        const yearMonth = startOfMonthISO(internalDate);
+        await tx
+          .insert(senderTimeseries)
+          .values({
+            mailboxAccountId,
+            senderKey,
+            yearMonth,
+            volume: 1,
+            readCount: isUnread ? 0 : 1,
+          })
+          .onConflictDoUpdate({
+            target: [
+              senderTimeseries.mailboxAccountId,
+              senderTimeseries.senderKey,
+              senderTimeseries.yearMonth,
+            ],
+            set: {
+              volume: sql`${senderTimeseries.volume} + 1`,
+              readCount: sql`${senderTimeseries.readCount} + ${isUnread ? 0 : 1}`,
+            },
+          });
+
+        return {
+          newlyInserted: true,
+          firstSeenSender: senderUpsert[0]?.newlyInserted === true,
+        };
+      }
+
+      return { newlyInserted: true, firstSeenSender: false };
+    });
+
+    // External queue work runs after the transaction commits. A callback
+    // failure must not roll back canonical message/sender state.
+    if (result.firstSeenSender && this.deps.onNewSender) {
+      try {
+        await this.deps.onNewSender(mailboxAccountId, senderKey);
+      } catch (err) {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'sync.new_sender_callback_failed',
+            mailboxAccountId,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
     }
 
-    return true;
+    return result.newlyInserted;
   }
 
   /**

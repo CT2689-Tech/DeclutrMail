@@ -289,15 +289,14 @@ check_web() {
 check_api() {
   group 'api — Cloud Run reachability, OAuth, webhook auth'
 
-  # There is no health route (28 controllers, none of them /health), so
-  # the liveness proxy is: does the Nest error envelope come back? A 404
-  # with our envelope proves the app booted and the filter is wired.
-  local root
-  root=$(curl -s --max-time 15 "https://${API}/")
-  if printf '%s' "$root" | grep -q '"correlationId"'; then
-    ok "${API} is up (DeclutrMail error envelope on unknown route)"
+  # Stable, dependency-free process liveness contract. This is also the
+  # endpoint external uptime monitoring must probe after the API deploy.
+  local health
+  health=$(curl -s --max-time 15 "https://${API}/api/healthz")
+  if printf '%s' "$health" | grep -q '"status":"ok"'; then
+    ok "${API}/api/healthz → ok"
   else
-    bad "${API} did not return the DeclutrMail error envelope" "got: $(printf '%s' "$root" | head -c 120)"
+    bad "${API}/api/healthz did not report ok" "got: $(printf '%s' "$health" | head -c 120)"
   fi
 
   # OAuth entry point must redirect to Google, not error.
@@ -448,6 +447,33 @@ check_env() {
   else
     skip 'Cloud Run env checks (gcloud missing, or run `gcloud auth login`)'
   fi
+}
+
+# ── monitoring ──────────────────────────────────────────────────────
+check_monitoring() {
+  group 'monitoring — API uptime detection + alert delivery'
+
+  if ! command -v gcloud >/dev/null 2>&1 || ! gcloud auth print-access-token >/dev/null 2>&1; then
+    skip 'monitoring checks (gcloud missing, or run `gcloud auth login`)'
+    return
+  fi
+
+  local uptime policy
+  uptime=$(gcloud monitoring uptime list-configs \
+    --project="$GCP_PROJECT" \
+    --filter='display_name="DeclutrMail API healthz"' \
+    --format='value(name)' 2>/dev/null | head -1)
+  policy=$(gcloud monitoring policies list \
+    --project="$GCP_PROJECT" \
+    --filter='display_name="DeclutrMail API unavailable"' \
+    --format='value(name)' 2>/dev/null | head -1)
+
+  [ -n "$uptime" ] \
+    && ok 'Cloud Monitoring: API healthz uptime check exists' \
+    || bad 'Cloud Monitoring: API healthz uptime check missing' 'run ./scripts/setup-uptime-monitoring.sh after deploying healthz'
+  [ -n "$policy" ] \
+    && ok 'Cloud Monitoring: API unavailable alert policy exists' \
+    || bad 'Cloud Monitoring: API unavailable alert policy missing' 'run ./scripts/setup-uptime-monitoring.sh after deploying healthz'
 }
 
 # ── pubsub ───────────────────────────────────────────────────────────
@@ -844,13 +870,13 @@ EOF
 
 # ── main ─────────────────────────────────────────────────────────────
 SELECTED=("$@")
-[ ${#SELECTED[@]} -eq 0 ] && SELECTED=(dns mail web api env pubsub secrets)
+[ ${#SELECTED[@]} -eq 0 ] && SELECTED=(dns mail web api env monitoring pubsub secrets)
 
 printf '\033[1mDeclutrMail launch preflight\033[0m — %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 for g in "${SELECTED[@]}"; do
   case "$g" in
-    dns) check_dns ;; mail) check_mail ;; web) check_web ;; api) check_api ;; env) check_env ;; pubsub) check_pubsub ;; secrets) check_secrets ;;
-    *) printf '\nunknown group: %s (valid: dns mail web api env pubsub secrets)\n' "$g"; exit 2 ;;
+    dns) check_dns ;; mail) check_mail ;; web) check_web ;; api) check_api ;; env) check_env ;; monitoring) check_monitoring ;; pubsub) check_pubsub ;; secrets) check_secrets ;;
+    *) printf '\nunknown group: %s (valid: dns mail web api env monitoring pubsub secrets)\n' "$g"; exit 2 ;;
   esac
 done
 

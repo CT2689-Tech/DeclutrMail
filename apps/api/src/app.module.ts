@@ -10,6 +10,7 @@ import { BillingModule } from './billing/billing.module.js';
 import { BriefModule } from './briefs/brief.module.js';
 import { DbModule } from './db/db.module.js';
 import { FollowupModule } from './followups/followup.module.js';
+import { HealthModule } from './health/health.module.js';
 import { MailboxAccountsModule } from './mailboxes/mailbox-accounts.module.js';
 import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { ProductFeedbackModule } from './product-feedback/product-feedback.module.js';
@@ -62,6 +63,7 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     // any `@RateLimit(...)` annotation is enforced. Fails open when
     // REDIS_URL is absent so local dev without Redis still works.
     RateLimitModule,
+    HealthModule,
     UsersModule,
     MailboxAccountsModule,
     AuthModule,
