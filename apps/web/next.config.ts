@@ -1,8 +1,17 @@
 import type { NextConfig } from 'next';
 import { withSentryConfig } from '@sentry/nextjs';
 
+import { legacyDomainRedirects } from './src/lib/legacy-domain-redirects';
+
 const nextConfig: NextConfig = {
   transpilePackages: ['@declutrmail/shared'],
+
+  /**
+   * 301 the retired `declutrmail.ai` origin onto the canonical
+   * `declutrmail.com` (D128). Host-gated — see the module docblock for
+   * why that gate is load-bearing.
+   */
+  redirects: async () => legacyDomainRedirects(),
 
   /**
    * Inject release tag into the PUBLIC env at build time so
