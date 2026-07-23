@@ -45,7 +45,7 @@ else
     --path=/api/healthz \
     --period=1 \
     --timeout=10 \
-    --validate-ssl \
+    --validate-ssl=true \
     --status-classes=2xx \
     --matcher-type=contains-string \
     --matcher-content='"status":"ok"'
