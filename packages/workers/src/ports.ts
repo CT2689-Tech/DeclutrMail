@@ -203,3 +203,21 @@ export interface GmailWatchClient {
 export interface GmailWatchAccess {
   getClient(mailboxAccountId: string): Promise<GmailWatchClient>;
 }
+
+/**
+ * Google OAuth grant lifecycle used only while disconnecting or deleting
+ * a mailbox. Revocation must happen before the encrypted refresh token is
+ * erased, otherwise the external grant can survive without any local
+ * credential left to revoke it.
+ */
+export interface GmailGrantClient {
+  /** Revoke the stored Google refresh token; already-invalid is success. */
+  revokeGrant(): Promise<void>;
+}
+
+/** Combined lifecycle surface so deletion decrypts each mailbox token once. */
+export interface GmailLifecycleClient extends GmailWatchClient, GmailGrantClient {}
+
+export interface GmailLifecycleAccess {
+  getClient(mailboxAccountId: string): Promise<GmailLifecycleClient>;
+}

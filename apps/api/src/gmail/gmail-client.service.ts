@@ -11,6 +11,7 @@ import {
 import type {
   GmailHistoryPage,
   GmailHistoryRecord,
+  GmailGrantClient,
   GmailMessageListPage,
   GmailMessageMetadata,
   GmailMetadataClient,
@@ -68,6 +69,7 @@ const METADATA_FORMAT = 'metadata';
  *     capability (D9 auto-unsubscribe).
  */
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
+const GOOGLE_OAUTH_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 const PAGE_SIZE = 500;
 const REQUEST_TIMEOUT_MS = 30_000;
 /** Quota units charged to the local limiter per request (D5). */
@@ -190,7 +192,7 @@ export type OauthRefreshFailureReason = 'invalid_grant' | 'no_access_token' | 't
 export type OauthRefreshFailureRecorder = (failure: { reason: OauthRefreshFailureReason }) => void;
 
 export class GmailClientService
-  implements GmailMetadataClient, GmailMutationClient, GmailWatchClient
+  implements GmailMetadataClient, GmailMutationClient, GmailWatchClient, GmailGrantClient
 {
   /**
    * Optional D181 audit recorder — set on construction by the worker
@@ -632,6 +634,42 @@ export class GmailClientService
    */
   async stopWatch(): Promise<void> {
     await this.post('/stop', {});
+  }
+
+  /**
+   * Revoke the Google OAuth refresh token while it is still available.
+   * Google's `invalid_token` response is idempotent success: the desired
+   * postcondition (no usable external grant) already holds.
+   */
+  async revokeGrant(): Promise<void> {
+    const refreshToken = this.oauth.credentials.refresh_token;
+    if (!refreshToken) {
+      throw new InvalidGrantError('Google OAuth client has no refresh token to revoke');
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(GOOGLE_OAUTH_REVOKE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token: refreshToken }).toString(),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (err) {
+      throw new TransientError(`Google OAuth revoke request failed: ${errorMessage(err)}`);
+    }
+
+    if (response.ok) {
+      this.oauth.setCredentials({});
+      return;
+    }
+
+    const body = await safeBody(response);
+    if (response.status === 400 && body.includes('invalid_token')) {
+      this.oauth.setCredentials({});
+      return;
+    }
+    throw new TransientError(`Google OAuth revoke returned ${response.status}`);
   }
 
   /** A fresh access token — `OAuth2Client` refreshes it if expired. */
