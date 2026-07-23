@@ -1,0 +1,3 @@
+ALTER TABLE "mailbox_data_deletion_requests" DISABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "action_recovery_previews" DISABLE ROW LEVEL SECURITY;

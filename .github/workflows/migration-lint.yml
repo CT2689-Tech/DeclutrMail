@@ -39,6 +39,25 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Enforce forward-only migration history
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          changed_existing="$(
+            git diff --name-only --diff-filter=MDR "$BASE_SHA" -- \
+              'packages/db/migrations/*.sql'
+          )"
+          if [ -n "$changed_existing" ]; then
+            echo "::error::Applied migration files are immutable. Add a new forward migration instead."
+            printf '%s\n' "$changed_existing"
+            exit 1
+          fi
+          echo "✓ Existing forward migrations are unchanged."
 
       - name: Set up Atlas
         # Pinned to v0.37.0 — Atlas v0.38+ gates `migrate lint` behind a

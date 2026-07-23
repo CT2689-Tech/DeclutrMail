@@ -169,4 +169,24 @@ describe('migration round-trip', () => {
 
     await db.close();
   });
+
+  it('enables row-level security on every public table', async () => {
+    const db = new PGlite({ extensions: { citext } });
+    for (const fwd of listForwardMigrations()) {
+      await applyMigration(db, readSql(fwd));
+    }
+
+    const tablesWithoutRls = await db.query<{ name: string }>(
+      `SELECT c.relname AS name
+       FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public'
+         AND c.relkind = 'r'
+         AND NOT c.relrowsecurity
+       ORDER BY c.relname`,
+    );
+    expect(tablesWithoutRls.rows).toEqual([]);
+
+    await db.close();
+  });
 });
