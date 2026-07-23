@@ -210,16 +210,14 @@ jobs:
           # that split is a convention, not an IAM boundary — see
           # FOUNDER-FOLLOWUPS.md.
           #
-          # --min-instances=0 is a DEV-PHASE override of D193 (which
-          # says 1 warm instance so the OAuth redirect never cold-starts).
-          # Zero users → a held-warm instance is ~$6/mo of idle burn.
-          # REVERT to --min-instances=1 at launch (D193).
+          # D193 launch floor: keep one API instance warm so OAuth callbacks
+          # and authenticated requests do not cold-start during launch.
           gcloud run deploy declutrmail-api \
             --image="$IMAGE" \
             --region="$REGION" \
             --project="$PROJECT" \
             --service-account="$RUNTIME_SA" \
-            --min-instances=0 \
+            --min-instances=1 \
             --max-instances=3 \
             --memory=512Mi \
             --cpu=1 \
@@ -270,8 +268,7 @@ jobs:
           # cut — job pickup is marker-driven, NOT drainDelay-bound, so
           # there is no felt latency (see `workerTuningOptions` in
           # `packages/workers/src/queue.ts`). REVERT toward 10s/60s at
-          # launch when real traffic warrants snappier crash recovery
-          # (pairs with the D193 --min-instances revert above).
+          # launch when real traffic warrants snappier crash recovery.
           gcloud run deploy declutrmail-worker \
             --image="$IMAGE" \
             --region="$REGION" \
