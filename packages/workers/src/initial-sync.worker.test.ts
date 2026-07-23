@@ -68,7 +68,13 @@ async function freshDb(): Promise<InitialSyncDeps['db']> {
 async function resetToQueued(db: InitialSyncDeps['db'], mailboxAccountId: string): Promise<void> {
   await db
     .update(providerSyncState)
-    .set({ readinessStatus: 'queued', currentStage: 'queued', progressPct: 0 })
+    .set({
+      readinessStatus: 'queued',
+      currentStage: 'queued',
+      progressPct: 0,
+      lastHistoryId: null,
+      historyIdUpdatedAt: null,
+    })
     .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
 }
 
@@ -335,6 +341,51 @@ describe('InitialSyncWorker', () => {
     expect(result.messagesSynced).toBe(45);
     expect(second.getCalls).toBe(15); // only the 15 new — 30 skipped on resume
     expect((await db.select().from(mailMessages)).length).toBe(45);
+  });
+
+  it('retry reuses the first history snapshot after a post-fetch crash', async () => {
+    const proto = InitialSyncWorker.prototype as unknown as Record<
+      string,
+      (this: InitialSyncWorker, ...args: unknown[]) => Promise<unknown>
+    >;
+    const originalBuild = proto.buildSenderIndex!;
+    const buildSpy = vi
+      .spyOn(proto, 'buildSenderIndex')
+      .mockImplementationOnce(async (): Promise<never> => {
+        throw new Error('simulated crash after metadata fetch');
+      })
+      .mockImplementation(async function (
+        this: InitialSyncWorker,
+        ...args: unknown[]
+      ): Promise<unknown> {
+        return originalBuild.apply(this, args);
+      });
+
+    try {
+      const messages = makeMessages(10, 3);
+      await expect(
+        new InitialSyncWorker({
+          db,
+          gmailAccess: accessFor(new FakeGmailClient(messages, '1000')),
+        }).processJob({ mailboxAccountId }, CTX),
+      ).rejects.toThrow(/simulated crash/);
+
+      // BullMQ retry: no markQueued reset. A newer profile snapshot must
+      // not replace the original base cursor because persisted messages
+      // are skipped by the resumable fetch.
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(messages, '2000')),
+      }).processJob({ mailboxAccountId }, CTX);
+
+      const [state] = await db
+        .select()
+        .from(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      expect(state!.lastHistoryId).toBe(1000n);
+    } finally {
+      buildSpy.mockRestore();
+    }
   });
 
   it('orphan heal — a stored message lacking sender identity is re-fetched, not dropped', async () => {

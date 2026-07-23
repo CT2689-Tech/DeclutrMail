@@ -336,7 +336,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     initialSyncLog('getProfile_begin', mailboxAccountId);
     const profile = await client.getProfile();
     initialSyncLog('getProfile_done', mailboxAccountId, { historyId: profile.historyId });
-    const snapshotHistoryId = profile.historyId;
+    const snapshotHistoryId = await this.captureInitialHistorySnapshot(
+      mailboxAccountId,
+      profile.historyId,
+    );
 
     initialSyncLog('fetchAndStoreMetadata_begin', mailboxAccountId);
     const { messagesSynced, gmailApiCalls: fetchCalls } = await this.fetchAndStoreMetadata(
@@ -1177,6 +1180,31 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
   }
 
+  /** Persist the first pre-fetch cursor and reuse it across BullMQ retries. */
+  private async captureInitialHistorySnapshot(
+    mailboxAccountId: string,
+    candidateHistoryId: string,
+  ): Promise<string> {
+    const candidate = BigInt(candidateHistoryId);
+    const [row] = await this.deps.db
+      .update(providerSyncState)
+      .set({
+        // First attempt wins. A BullMQ retry resumes persisted messages,
+        // so it must also resume from the original pre-fetch snapshot.
+        lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${candidate})`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+      .returning({ lastHistoryId: providerSyncState.lastHistoryId });
+
+    if (row?.lastHistoryId === null || row?.lastHistoryId === undefined) {
+      throw new ValidationError(
+        `provider sync state ${mailboxAccountId} missing while capturing initial history snapshot`,
+      );
+    }
+    return row.lastHistoryId.toString();
+  }
+
   /** Upsert the sync-state row to a stage + progress (idempotent). */
   private async upsertSyncState(
     mailboxAccountId: string,
@@ -1238,6 +1266,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           readinessStatus: 'ready',
           progressPct: 100,
           lastHistoryId,
+          historyIdUpdatedAt: sql`now()`,
         })
         .onConflictDoUpdate({
           target: providerSyncState.mailboxAccountId,
@@ -1254,6 +1283,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
             THEN EXCLUDED.${sql.identifier('last_history_id')}
             ELSE ${providerSyncState.lastHistoryId}
           END`,
+            historyIdUpdatedAt: sql`now()`,
             lastSyncedAt: sql`now()`,
             updatedAt: sql`now()`,
           },

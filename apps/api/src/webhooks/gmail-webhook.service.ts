@@ -120,21 +120,20 @@ export class GmailWebhookService {
     const incomingHistoryId = BigInt(args.payload.historyId);
     const expiresAt = new Date(Date.now() + DEDUP_TTL_MS);
 
-    // The dedup write and the historyId advance MUST commit atomically
-    // (P1 review of PR #113). A crash between the two would leave the
-    // dedup row durable while the cursor stayed put — Pub/Sub's retry
-    // would then return `duplicate_message_id` and skip the cursor
-    // advance forever. One transaction = both writes commit or neither
-    // does; a Pub/Sub retry of a crashed run re-enters this block fresh.
+    // The dedup write and sync-range plan commit atomically. The durable
+    // cursor is the last APPLIED Gmail historyId and deliberately stays
+    // unchanged here; IncrementalSyncWorker advances it only after the
+    // range has been persisted. That makes a post-commit Redis failure
+    // recoverable by the drift sweep from the same start cursor.
     //
     // The BullMQ enqueue (D8) lives OUTSIDE this transaction
     // (architecture-guardian 2026-06-05 [BLOCKING] fix). BullMQ does not
     // participate in PG transactions; awaiting `queue.add` inside the
     // tx would publish the job to Redis BEFORE the tx commits, so a
     // commit failure (PG conn drop / serialization failure / statement
-    // timeout) would leave the job durable while the cursor advance is
-    // rolled back — the worker would then run against the OLD
-    // `last_history_id`, silently regressing the cursor. Symmetric to
+    // timeout) would leave the job visible before the dedup transaction
+    // commits. Keeping Redis after commit preserves that ordering while
+    // the unchanged applied cursor supplies the recovery point. Symmetric to
     // `SyncModule.connect` which enqueues `initial-sync` AFTER the
     // OAuth tx commits.
     const outcome = await this.db.transaction(async (tx): Promise<ProcessOutcome> => {
@@ -192,18 +191,18 @@ export class GmailWebhookService {
         .set({ mailboxAccountId: mailbox.id })
         .where(eq(webhookDedup.messageId, args.messageId));
 
-      // Step 8: delegate the monotonic cursor advance to SyncService
+      // Step 8: delegate the monotonic range plan to SyncService
       // (D204 — `provider_sync_state` is owned by the sync feature).
-      // We pass the current tx so the SELECT-FOR-UPDATE + UPDATE join the
-      // same atomic unit as the dedup write above. Bootstrap of a missing
-      // row stays out of this path — see `AdvanceHistoryIdResult` and
+      // We pass the current tx so the SELECT-FOR-UPDATE joins the same
+      // atomic unit as the dedup write above. Bootstrap of a missing
+      // row stays out of this path — see `HistorySyncPlanResult` and
       // D224's sync gate.
-      const advance = await this.sync.advanceHistoryIdWithExecutor(tx, {
+      const plan = await this.sync.planHistorySyncWithExecutor(tx, {
         mailboxAccountId: mailbox.id,
         incomingHistoryId,
       });
 
-      if (advance.kind === 'uninitialized') {
+      if (plan.kind === 'uninitialized') {
         // Successful no-op: 200 to Pub/Sub so it doesn't retry — the
         // mailbox needs OAuth + InitialSyncWorker to seed the cursor
         // first, and Pub/Sub retries won't fix that. Privacy (D7): the
@@ -213,10 +212,10 @@ export class GmailWebhookService {
         return { kind: 'sync_state_uninitialized', mailboxAccountId: mailbox.id };
       }
 
-      if (advance.kind === 'stale') {
+      if (plan.kind === 'stale') {
         return {
           kind: 'stale_history_id',
-          lastHistoryId: advance.lastHistoryId,
+          lastHistoryId: plan.lastHistoryId,
           incomingHistoryId,
         };
       }
@@ -226,7 +225,7 @@ export class GmailWebhookService {
       // S without being overwritten by H>S. The next webhook (or the
       // drift sweep) then enqueues from S, covering (S, H]. No enqueue
       // happens here — there is no valid start cursor.
-      if (advance.kind === 'deferred_initial_sync_in_flight') {
+      if (plan.kind === 'deferred_initial_sync_in_flight') {
         return {
           kind: 'deferred_initial_sync_in_flight',
           mailboxAccountId: mailbox.id,
@@ -237,14 +236,15 @@ export class GmailWebhookService {
       return {
         kind: 'enqueued',
         mailboxAccountId: mailbox.id,
-        previousHistoryId: advance.previousHistoryId,
+        previousHistoryId: plan.previousHistoryId,
         historyId: incomingHistoryId,
       };
     });
 
     // D8 enqueue — runs ONLY after the tx commits successfully, so a
-    // committed `enqueued` outcome is the canonical signal both
-    // (a) cursor advanced durably AND (b) job is/will-be in Redis.
+    // committed `enqueued` outcome contains the range to hand to Redis.
+    // The applied cursor remains at `previousHistoryId` until the worker
+    // successfully persists the range.
     //
     // `ensureIncrementalSyncJob` is idempotent on
     // `${mailboxAccountId}:${endHistoryId}` so a Pub/Sub redelivery
@@ -259,10 +259,8 @@ export class GmailWebhookService {
           endHistoryId: outcome.historyId.toString(),
         });
       } catch (err) {
-        // Cursor advance is durable; enqueue failure is recoverable
-        // via the future reconciler-on-redis-state tick. Surface the
-        // gap as a WARN so on-call can grep without losing the
-        // outcome — never rethrow past the webhook contract.
+        // The applied cursor is deliberately unchanged, so the drift
+        // sweep can recover the complete range after Redis returns.
         this.logger.warn(
           `webhook.incremental_enqueue_failed mailbox=${outcome.mailboxAccountId} ` +
             `error=${err instanceof Error ? err.message : String(err)}`,

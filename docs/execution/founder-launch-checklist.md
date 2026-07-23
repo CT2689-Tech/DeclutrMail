@@ -43,9 +43,10 @@ The prior draft was written from memory and has drifted. Do not follow it.
 3. **Resend's sending domain is only one-third configured.**
    `send.declutrmail.com` has DKIM but **no SPF and no bounce MX**. Resend
    will not report the domain as verified.
-4. **There is no `/api/health` route.** 28 controllers, none of them health.
-   Any uptime monitor pointed there gets a permanent 404. The liveness proxy
-   is the error envelope on `GET /` (it carries a `correlationId`).
+4. **`GET /api/healthz` is implemented but not live until the API deploy.**
+   `scripts/setup-uptime-monitoring.sh` then creates the one-minute Cloud
+   Monitoring probe and founder email alert. Until both the deploy and setup
+   script complete, production still has no reliable outage detection.
 
 ---
 
@@ -351,16 +352,16 @@ emails. Deletion respects `max(now+7d, latest_undo_expires_at)` per D232 — ite
 
 ---
 
-## Phase 4 — Ops (not blocking first dogfood)
+## Phase 4 — Ops
 
-| Action                          | Where                                   | Verify                                         |
-| ------------------------------- | --------------------------------------- | ---------------------------------------------- |
-| Sentry alert rules              | Sentry → Alerts                         | Force a test error; the page fires             |
-| Source maps resolve on prod FE  | A Sentry issue's stack                  | Real `apps/web/src/…` paths, not chunk hashes  |
-| Vendor spend caps               | Vercel / PostHog / Sentry / GCP budgets | Caps visible                                   |
-| Mirror secrets into 1Password   | `docs/runbooks/secrets-inventory.md`    | Every row mirrored, `Rotated` filled           |
-| Drain stale Upstash BullMQ jobs | `redis-cli` on prod Redis               | No phantom `worker.failed` for local dev UUIDs |
-| Add a real `/api/health` route  | `apps/api`                              | Uptime monitors stop 404ing                    |
+| Action                                      | Where                                            | Verify                                                         |
+| ------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------- |
+| Sentry alert rules                          | Sentry → Alerts                                  | Force a test error; the page fires                             |
+| Source maps resolve on prod FE              | A Sentry issue's stack                           | Real `apps/web/src/…` paths, not chunk hashes                  |
+| Vendor spend caps                           | Vercel / PostHog / Sentry / GCP budgets          | Caps visible                                                   |
+| Mirror secrets into 1Password               | `docs/runbooks/secrets-inventory.md`             | Every row mirrored, `Rotated` filled                           |
+| Drain stale Upstash BullMQ jobs             | `redis-cli` on prod Redis                        | No phantom `worker.failed` for local dev UUIDs                 |
+| Deploy `/api/healthz` + create uptime alert | `apps/api`, `scripts/setup-uptime-monitoring.sh` | Probe body is `{"status":"ok"}` and test alert reaches founder |
 
 ---
 

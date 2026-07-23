@@ -25,18 +25,18 @@ import { mailboxAccounts } from './mailbox-accounts';
  * `useSyncStatus()` hook polls it every 3s (D200) — there is no push
  * transport.
  *
- * `last_history_id` is the Gmail `historyId` cursor for incremental
- * sync. Per the D229 webhook checklist it must be monotonic — an
- * inbound history event whose id is `<=` this value is rejected as a
- * duplicate / out-of-order delivery. Stored as bigint (Gmail historyId
- * is an unsigned 64-bit counter).
+ * `last_history_id` is the Gmail cursor last APPLIED by incremental
+ * sync while `readiness_status='ready'`. During initial sync it holds
+ * the pre-fetch base snapshot so BullMQ retries reuse the same range;
+ * webhook planning defers until readiness returns to `ready`. Stored as
+ * bigint (Gmail historyId is an unsigned 64-bit counter).
  *
  * `history_id_updated_at` is the wall-clock timestamp of the last
- * advancement of `last_history_id`. The D8 webhook updates both in
- * the same transaction that enqueues the incremental-sync job, so
- * the timestamp is a faithful "freshness" indicator for ops
- * dashboards and alerting (a stale `history_id_updated_at` against a
- * non-zero Pub/Sub volume signals a wedged mailbox).
+ * successful application of `last_history_id`. InitialSync sets it when
+ * the mailbox becomes ready; IncrementalSync updates it only after the
+ * history range is persisted. A stale timestamp against non-zero Pub/Sub
+ * volume therefore signals a wedged mailbox without moving the recovery
+ * cursor past unapplied work.
  *
  * `(mailbox_account_id)` is unique — exactly one sync-state row per
  * mailbox.
@@ -66,9 +66,9 @@ export const providerSyncState = pgTable(
     readinessStatus: syncReadiness('readiness_status').notNull().default('queued'),
     currentStage: syncStage('current_stage').notNull().default('queued'),
     progressPct: smallint('progress_pct').notNull().default(0),
-    /** Gmail historyId cursor — must advance monotonically (D229). */
+    /** Gmail applied cursor; pre-fetch base while initial sync is active. */
     lastHistoryId: bigint('last_history_id', { mode: 'bigint' }),
-    /** Wall-clock of the last `last_history_id` advancement (D8). */
+    /** Wall-clock of the last successful applied-cursor transition (D8). */
     historyIdUpdatedAt: timestamp('history_id_updated_at', {
       withTimezone: true,
       mode: 'date',

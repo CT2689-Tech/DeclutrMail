@@ -146,12 +146,13 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     expect(dedupRows[0]!.mailboxAccountId).toBe(mailboxId);
     expect(dedupRows[0]!.expiresAt.getTime()).toBeGreaterThan(Date.now());
 
-    // sync state advanced + history_id_updated_at set.
+    // The webhook plans/enqueues from the APPLIED cursor. Only the
+    // IncrementalSyncWorker advances it after the range is persisted.
     const sync = await db
       .select()
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxId));
-    expect(sync[0]!.lastHistoryId).toBe(1500n);
+    expect(sync[0]!.lastHistoryId).toBe(1000n);
     expect(sync[0]!.historyIdUpdatedAt).toBeInstanceOf(Date);
   });
 
@@ -170,9 +171,9 @@ describe('GmailWebhookService.processVerifiedPush', () => {
       expect(second.messageId).toBe('msg-dup');
     }
 
-    // The second push must NOT have advanced the cursor.
+    // Neither webhook delivery advances the applied cursor.
     const sync = await db.select().from(providerSyncState);
-    expect(sync[0]!.lastHistoryId).toBe(1500n);
+    expect(sync[0]!.lastHistoryId).toBe(1000n);
   });
 
   it('returns stale_history_id on equal or lower incoming historyId (step 8)', async () => {
@@ -280,7 +281,7 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     });
     expect(resumed.kind).toBe('enqueued');
     const syncAfter = await db.select().from(providerSyncState);
-    expect(syncAfter[0]!.lastHistoryId).toBe(1500n);
+    expect(syncAfter[0]!.lastHistoryId).toBe(1000n);
   });
 
   it('returns sync_state_uninitialized + does NOT create provider_sync_state when the mailbox has no row yet', async () => {
@@ -316,20 +317,18 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     expect(dedup[0]!.mailboxAccountId).toBe(mailboxId);
   });
 
-  it('rolls back dedup row when cursor advance crashes mid-transaction (P1 atomicity)', async () => {
-    // Regression for PR #113 review P1: dedup insert + historyId advance
-    // MUST commit atomically. If the advance throws after the dedup row
-    // is written, the dedup row MUST NOT be visible to a retry — else
-    // Pub/Sub redelivery dedup-skips the work and the cursor never advances.
+  it('rolls back dedup row when range planning crashes mid-transaction', async () => {
+    // The dedup insert + applied-cursor read share one transaction. If
+    // planning throws, the dedup row must not hide the retry.
     const { mailboxId } = await seedMailbox(db, 'alice@example.com', 1000n);
     const queueStub = {} as Queue<InitialSyncJobData>;
 
-    // Wire a SyncService whose `advanceHistoryIdWithExecutor` throws
+    // Wire a SyncService whose `planHistorySyncWithExecutor` throws
     // mid-transaction. Subclass so the rest of the surface (and the
     // service's @Inject contract) stays untouched.
     class CrashingSync extends SyncService {
-      override async advanceHistoryIdWithExecutor(): Promise<never> {
-        throw new Error('simulated crash mid-advance');
+      override async planHistorySyncWithExecutor(): Promise<never> {
+        throw new Error('simulated crash mid-plan');
       }
     }
     const incrementalQueueStub = {
@@ -365,7 +364,7 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     expect(syncState[0]!.lastHistoryId).toBe(1000n);
 
     // A Pub/Sub retry with the SAME messageId re-enters the critical
-    // section (not deduped to no-op) and successfully advances the cursor.
+    // section (not deduped to no-op) and successfully enqueues the range.
     const healthyService = new GmailWebhookService(
       db,
       new SyncService(queueStub, incrementalQueueStub, db),
@@ -377,7 +376,7 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     });
     expect(retry.kind).toBe('enqueued');
 
-    // Dedup row now exists from the retry; cursor is advanced.
+    // Dedup row now exists from the retry; applied cursor stays put.
     const dedupAfterRetry = await db
       .select()
       .from(webhookDedup)
@@ -388,7 +387,7 @@ describe('GmailWebhookService.processVerifiedPush', () => {
       .select()
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxId));
-    expect(syncState[0]!.lastHistoryId).toBe(1500n);
+    expect(syncState[0]!.lastHistoryId).toBe(1000n);
   });
 
   it('rejects an oversized messageId at the DB length cap (varchar 512)', async () => {
@@ -468,6 +467,27 @@ describe('GmailWebhookService.processVerifiedPush', () => {
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxId));
     expect(state[0]!.lastHistoryId).toBeNull();
+  });
+
+  it('defers while initial sync is active after its retry snapshot is stored', async () => {
+    const { mailboxId } = await seedMailbox(db, 'retrying@example.com', 1000n);
+    await db
+      .update(providerSyncState)
+      .set({ readinessStatus: 'syncing', currentStage: 'fetching_metadata' })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+
+    const outcome = await service.processVerifiedPush({
+      messageId: 'msg-retry-snapshot',
+      payload: { emailAddress: 'retrying@example.com', historyId: '1500' },
+    });
+
+    expect(outcome.kind).toBe('deferred_initial_sync_in_flight');
+    expect(incrementalQueueAdd).not.toHaveBeenCalled();
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(state!.lastHistoryId).toBe(1000n);
   });
 
   it('preserves the [snapshot, webhook] range when webhook races InitialSync (D38)', async () => {
@@ -560,12 +580,13 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     expect(enqueuedJobs[0]!.startHistoryId).toBe(snapshotS.toString());
     expect(enqueuedJobs[0]!.endHistoryId).toBe(laterWebhookHPrime.toString());
 
-    // Cursor advanced to H' durably.
+    // Applied cursor stays at S until IncrementalSyncWorker persists the
+    // complete range and advances it to Gmail's reported historyId.
     state = await db
       .select()
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxId));
-    expect(state[0]!.lastHistoryId).toBe(laterWebhookHPrime);
+    expect(state[0]!.lastHistoryId).toBe(snapshotS);
   });
 
   it('enqueue happens AFTER the tx commits — observable ordering', async () => {
@@ -607,18 +628,13 @@ describe('GmailWebhookService.processVerifiedPush', () => {
       payload: { emailAddress: 'alice@example.com', historyId: '1500' },
     });
     expect(outcome.kind).toBe('enqueued');
-    // Both invariants visible at enqueue time = tx committed FIRST.
+    // Dedup is committed before enqueue; applied cursor still identifies
+    // the complete range the worker must process.
     expect(dedupVisibleAtEnqueue).toBe(true);
-    expect(cursorAtEnqueue).toBe(1500n);
+    expect(cursorAtEnqueue).toBe(1000n);
   });
 
-  it('enqueue failure does NOT roll back the tx (recovery via reconciler-on-redis-state)', async () => {
-    // webhook-security-auditor 2026-06-05 [WARNING] coverage gap: the
-    // try/catch around `ensureIncrementalSyncJob` is load-bearing — a
-    // Redis outage MUST leave the dedup row + cursor advance durable so
-    // (a) Pub/Sub doesn't retry forever against a non-idempotent cursor
-    // (the dedup row catches the redelivery) and (b) the future
-    // reconciler can backfill the range from the durable cursor.
+  it('enqueue failure keeps the applied cursor unchanged for drift recovery', async () => {
     const { mailboxId } = await seedMailbox(db, 'alice@example.com', 1000n);
     const queueStub = {} as Queue<InitialSyncJobData>;
     const failingQueue = {
@@ -644,11 +660,12 @@ describe('GmailWebhookService.processVerifiedPush', () => {
       .from(webhookDedup)
       .where(eq(webhookDedup.messageId, 'msg-redis-down'));
     expect(dedup.length).toBe(1);
-    // Cursor advanced — the reconciler's recovery path reads this.
+    // Cursor unchanged — the drift sweep starts from 1000 and therefore
+    // still covers the complete (1000, 1500] interval.
     const state = await db
       .select()
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxId));
-    expect(state[0]!.lastHistoryId).toBe(1500n);
+    expect(state[0]!.lastHistoryId).toBe(1000n);
   });
 });

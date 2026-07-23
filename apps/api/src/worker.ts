@@ -638,11 +638,11 @@ async function bootstrap(): Promise<void> {
   // IncrementalSyncWorker consumer (D8, D229 follow-up). Producer side
   // is the webhook (`WebhooksModule` enqueues on every verified Pub/Sub
   // push); consumer runs here in the same worker process so the
-  // observer/D159 seam shares wiring with InitialSyncWorker. Per-mailbox
-  // serialisation is enforced by the `jobId =
-  // ${mailboxAccountId}:${endHistoryId}` namespacing at enqueue time —
-  // two webhooks for the same mailbox at different historyIds CAN run
-  // concurrently, which is correct: each processes its own delta.
+  // observer/D159 seam shares wiring with InitialSyncWorker. BullMQ jobId
+  // namespacing deduplicates an identical historyId but does NOT serialize
+  // different historyIds for one mailbox. Run the complete sync lifecycle
+  // under the same cross-process mailbox advisory lock as label actions so
+  // overlapping history jobs cannot double-apply deltas or race mutations.
   const incrementalSync = new IncrementalSyncWorker({
     db,
     gmailAccess,
@@ -670,7 +670,7 @@ async function bootstrap(): Promise<void> {
   incrementalSync.setDeadLetterRecorder(deadLetterRecorder);
   const incrementalBullWorker = new Worker<IncrementalSyncJobData, IncrementalSyncResult>(
     INCREMENTAL_SYNC_QUEUE,
-    (job) => incrementalSync.run(job),
+    (job) => mailboxLock.run(job.data.mailboxAccountId, () => incrementalSync.run(job)),
     { connection, concurrency: 20, ...userFacingTuning },
   );
   incrementalBullWorker.on('error', (err) => {
@@ -694,6 +694,23 @@ async function bootstrap(): Promise<void> {
     const { mailboxAccountId } = job.data as IncrementalSyncJobData;
     void (async () => {
       try {
+        // A forced job alone is insufficient: InitialSyncWorker refuses
+        // to re-run a mailbox still marked ready. Reset the durable gate
+        // and clear the expired applied cursor before scheduling the full
+        // resync; the worker captures a fresh base snapshot on entry.
+        await db
+          .update(providerSyncState)
+          .set({
+            readinessStatus: 'queued',
+            currentStage: 'queued',
+            progressPct: 0,
+            lastHistoryId: null,
+            historyIdUpdatedAt: null,
+            lastIncrementalErrorAt: null,
+            lastIncrementalErrorCode: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
         const outcome = await ensureInitialSyncJob(reconcilerQueue, mailboxAccountId, {
           force: true,
         });
@@ -1388,6 +1405,7 @@ async function bootstrap(): Promise<void> {
         .where(
           and(
             eq(mailboxAccounts.status, 'active'),
+            eq(providerSyncState.readinessStatus, 'ready'),
             sql`${providerSyncState.lastHistoryId} IS NOT NULL AND ${providerSyncState.historyIdUpdatedAt} < ${cutoff}`,
           ),
         )

@@ -82,9 +82,8 @@ async function seedMailbox(db: IncrementalSyncDeps['db']): Promise<string> {
       providerAccountId: 'owner@declutrmail.ai',
     })
     .returning({ id: mailboxAccounts.id });
-  // Provider_sync_state row — the cursor advance UPDATEs in place, so it
-  // must already exist. Real callers (the webhook path) only enqueue
-  // after `advanceHistoryIdWithExecutor`, which itself requires the row.
+  // Provider_sync_state row — the worker advances this applied cursor in
+  // place after the Gmail history range has been persisted.
   await db.insert(providerSyncState).values({
     mailboxAccountId: mailbox!.id,
     readinessStatus: 'ready',
@@ -347,10 +346,11 @@ describe('IncrementalSyncWorker', () => {
     // ON CONFLICT DO UPDATE on mail_messages → the second insert is a
     // replay, NOT a true insert; the sender's totalReceived is only
     // bumped on true inserts. (Per ADR-0014 Path B idempotency.)
-    // The current implementation increments unconditionally on every
-    // upsert-returning row — this test pins that observable behavior
-    // so a future change to the contract is explicit.
-    expect(senderRows[0]!.totalReceived).toBe(2);
+    expect(senderRows[0]!.totalReceived).toBe(1);
+
+    const timeseriesRows = await db.select().from(senderTimeseries);
+    expect(timeseriesRows).toHaveLength(1);
+    expect(timeseriesRows[0]!.volume).toBe(1);
   });
 
   it('processes a `messagesDeleted` event — hard-deletes the row', async () => {
