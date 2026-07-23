@@ -1727,7 +1727,7 @@ async function bootstrap(): Promise<void> {
   /**
    * AccountDeletionPurgeWorker + 5-min sweep (D205/D216/D232 —
    * cronPolicy). Purges due deletion requests: stop watches
-   * (best-effort) → enqueue the receipt email (via `emailSendQueue`
+   * (best-effort) → revoke Google OAuth grants → enqueue the receipt email (via `emailSendQueue`
    * above, `recipientOverride` because the user row is gone at send
    * time) → audit row → chunked data drop. `gmailPubsubTopic` null
    * (local dev) skips the `users.stop` calls, mirroring
@@ -1735,7 +1735,7 @@ async function bootstrap(): Promise<void> {
    */
   const deletionPurgeWorker = new AccountDeletionPurgeWorker({
     db,
-    gmailWatch: gmailWatchAccess,
+    gmailLifecycle: { getClient: getGmailClient },
     topicName: gmailPubsubTopic,
     emailQueue: emailSendQueue,
     renderReceiptEmail: deletionReceiptEmail,

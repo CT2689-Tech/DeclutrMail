@@ -43,7 +43,8 @@ import {
 } from './deletion.worker.js';
 import { isSyncPausedForDeletion } from './deletion-pause.js';
 import type { EmailSendJobData } from './email-send.worker.js';
-import type { GmailWatchAccess, GmailWatchClient } from './ports.js';
+import type { GmailLifecycleAccess, GmailLifecycleClient } from './ports.js';
+import { TransientError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
@@ -84,25 +85,33 @@ async function freshDb(): Promise<Db> {
 
 const ctx = {} as WorkerContext;
 
-function fakeWatch(opts?: { failFor?: string[] }): {
-  access: GmailWatchAccess;
+function fakeLifecycle(opts?: { failStopFor?: string[]; failRevokeFor?: string[] }): {
+  access: GmailLifecycleAccess;
   stopped: string[];
+  revoked: string[];
 } {
   const stopped: string[] = [];
-  const access: GmailWatchAccess = {
-    getClient: async (mailboxAccountId: string): Promise<GmailWatchClient> => ({
+  const revoked: string[] = [];
+  const access: GmailLifecycleAccess = {
+    getClient: async (mailboxAccountId: string): Promise<GmailLifecycleClient> => ({
       watch: async () => {
         throw new Error('not under test');
       },
       stopWatch: async () => {
-        if (opts?.failFor?.includes(mailboxAccountId)) {
+        if (opts?.failStopFor?.includes(mailboxAccountId)) {
           throw new Error('invalid_grant');
         }
         stopped.push(mailboxAccountId);
       },
+      revokeGrant: async () => {
+        if (opts?.failRevokeFor?.includes(mailboxAccountId)) {
+          throw new TransientError('Google OAuth revoke unavailable');
+        }
+        revoked.push(mailboxAccountId);
+      },
     }),
   };
-  return { access, stopped };
+  return { access, stopped, revoked };
 }
 
 function fakeEmailQueue(): { queue: Queue<EmailSendJobData>; jobs: EmailSendJobData[] } {
@@ -150,6 +159,9 @@ async function seedDueDeletion(
         userId: user!.id,
         provider: 'gmail',
         providerAccountId: address,
+        encryptedRefreshToken: Buffer.from(`token-${address}`),
+        dekEncrypted: Buffer.from(`dek-${address}`),
+        keyVersion: 1,
       })
       .returning({ id: mailboxAccounts.id });
     mailboxIds.push(mb!.id);
@@ -193,11 +205,11 @@ async function seedDueDeletion(
 }
 
 function makeWorker(db: Db) {
-  const watch = fakeWatch();
+  const lifecycle = fakeLifecycle();
   const email = fakeEmailQueue();
   const worker = new AccountDeletionPurgeWorker({
     db: db as never,
-    gmailWatch: watch.access,
+    gmailLifecycle: lifecycle.access,
     topicName: TOPIC,
     emailQueue: email.queue,
     renderReceiptEmail: ({ deletedAt }) => ({
@@ -205,7 +217,7 @@ function makeWorker(db: Db) {
       text: `Deleted on ${deletedAt}.`,
     }),
   });
-  return { worker, watch, email };
+  return { worker, lifecycle, email };
 }
 
 interface MailboxGraph {
@@ -406,7 +418,7 @@ describe('AccountDeletionPurgeWorker', () => {
   it('purges a due request end-to-end (rows gone, audit survives, receipt enqueued, watches stopped)', async () => {
     const db = await freshDb();
     const seeded = await seedDueDeletion(db);
-    const { worker, watch, email } = makeWorker(db);
+    const { worker, lifecycle, email } = makeWorker(db);
 
     const result = await worker.processJob({ scheduledAtMinute: '2026-06-11T10:00' }, ctx);
 
@@ -436,6 +448,7 @@ describe('AccountDeletionPurgeWorker', () => {
     expect(payload.requestId).toBe(seeded.requestId);
     expect(payload.userId).toBe(seeded.userId);
     expect(payload.mailboxCount).toBe(2);
+    expect(payload.grant).toEqual({ revoked: 2, skipped: 0 });
 
     // Receipt enqueued BEFORE the drop, addressed via recipientOverride.
     expect(email.jobs).toHaveLength(1);
@@ -444,7 +457,8 @@ describe('AccountDeletionPurgeWorker', () => {
     expect(email.jobs[0]!.idempotencyKey).toBe(`email__deletion-receipt__${seeded.requestId}`);
 
     // users.stop per mailbox.
-    expect(watch.stopped.sort()).toEqual([...seeded.mailboxIds].sort());
+    expect(lifecycle.stopped.sort()).toEqual([...seeded.mailboxIds].sort());
+    expect(lifecycle.revoked.sort()).toEqual([...seeded.mailboxIds].sort());
   });
 
   it('leaves future-dated and cancelled requests untouched', async () => {
@@ -568,11 +582,11 @@ describe('AccountDeletionPurgeWorker', () => {
   it('a failed watch stop never blocks the purge (best-effort)', async () => {
     const db = await freshDb();
     const seeded = await seedDueDeletion(db);
-    const watch = fakeWatch({ failFor: [seeded.mailboxIds[0]!] });
+    const lifecycle = fakeLifecycle({ failStopFor: [seeded.mailboxIds[0]!] });
     const email = fakeEmailQueue();
     const worker = new AccountDeletionPurgeWorker({
       db: db as never,
-      gmailWatch: watch.access,
+      gmailLifecycle: lifecycle.access,
       topicName: TOPIC,
       emailQueue: email.queue,
       renderReceiptEmail: () => ({ subject: 's', text: 't' }),
@@ -581,7 +595,54 @@ describe('AccountDeletionPurgeWorker', () => {
     const result = await worker.processJob({ scheduledAtMinute: '2026-06-11T10:20' }, ctx);
 
     expect(result.purged).toBe(1);
-    expect(watch.stopped).toEqual([seeded.mailboxIds[1]]);
+    expect(lifecycle.stopped).toEqual([seeded.mailboxIds[1]]);
+    expect(lifecycle.revoked.sort()).toEqual([...seeded.mailboxIds].sort());
+    expect(await db.select().from(users)).toHaveLength(0);
+  });
+
+  it('keeps data and encrypted tokens until Google grant revocation can succeed', async () => {
+    const db = await freshDb();
+    const seeded = await seedDueDeletion(db);
+    const lifecycle = fakeLifecycle({ failRevokeFor: [seeded.mailboxIds[0]!] });
+    const email = fakeEmailQueue();
+    const worker = new AccountDeletionPurgeWorker({
+      db: db as never,
+      gmailLifecycle: lifecycle.access,
+      topicName: TOPIC,
+      emailQueue: email.queue,
+      renderReceiptEmail: () => ({ subject: 's', text: 't' }),
+    });
+
+    await expect(worker.processJob({ scheduledAtMinute: '2026-06-11T10:22' }, ctx)).rejects.toThrow(
+      'all 1 due deletion requests failed',
+    );
+
+    const remainingMailboxes = await db.select().from(mailboxAccounts);
+    expect(remainingMailboxes).toHaveLength(2);
+    expect(remainingMailboxes.every((mailbox) => mailbox.encryptedRefreshToken !== null)).toBe(
+      true,
+    );
+    expect(await db.select().from(users)).toHaveLength(1);
+    expect(email.jobs).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(securityEvents)
+        .where(eq(securityEvents.eventType, 'account.deletion_executed')),
+    ).toHaveLength(0);
+
+    // Make the executing claim eligible for crash takeover, then retry with
+    // a healthy Google lifecycle adapter. Already-revoked tokens are
+    // idempotent at Google's endpoint, so partial first attempts are safe.
+    await db
+      .update(accountDeletionRequests)
+      .set({ executedAt: new Date(Date.now() - 30 * 60 * 1_000) })
+      .where(eq(accountDeletionRequests.id, seeded.requestId));
+    const retry = makeWorker(db);
+    const result = await retry.worker.processJob({ scheduledAtMinute: '2026-06-11T10:23' }, ctx);
+
+    expect(result).toMatchObject({ due: 1, purged: 1, failed: 0 });
+    expect(retry.lifecycle.revoked.sort()).toEqual([...seeded.mailboxIds].sort());
     expect(await db.select().from(users)).toHaveLength(0);
   });
 
@@ -651,11 +712,12 @@ describe('mailbox indexed-data purge', () => {
       .values({ mailboxAccountId: target.mailboxId })
       .returning({ id: mailboxDataDeletionRequests.id });
 
-    const { worker, watch } = makeWorker(db);
+    const { worker, lifecycle } = makeWorker(db);
     const result = await worker.processJob({ scheduledAtMinute: '2026-07-14T10:00' }, ctx);
 
     expect(result).toMatchObject({ outcome: 'swept', due: 1, purged: 1, failed: 0 });
-    expect(watch.stopped).toEqual([target.mailboxId]);
+    expect(lifecycle.stopped).toEqual([target.mailboxId]);
+    expect(lifecycle.revoked).toEqual([target.mailboxId]);
 
     for (const table of MAILBOX_PURGE_DIRECT_CHILD_TABLES) {
       const targetCount = await pg.query<{ count: string }>(
@@ -770,10 +832,10 @@ describe('mailbox indexed-data purge', () => {
         return fn();
       },
     };
-    const watch = fakeWatch();
+    const lifecycle = fakeLifecycle();
     const worker = new AccountDeletionPurgeWorker({
       db: db as never,
-      gmailWatch: watch.access,
+      gmailLifecycle: lifecycle.access,
       topicName: null,
       emailQueue: null,
       mailboxLock: lock,

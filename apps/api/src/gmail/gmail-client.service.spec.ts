@@ -27,7 +27,9 @@ type FetchMock = ReturnType<typeof vi.fn<(url: string, init: FetchInit) => Promi
 /** A stub OAuth2Client that hands back a fixed access token. */
 function makeOauth(): OAuth2Client {
   return {
+    credentials: { refresh_token: 'refresh-token-xyz' },
     getAccessToken: vi.fn().mockResolvedValue({ token: ACCESS_TOKEN }),
+    setCredentials: vi.fn(),
   } as unknown as OAuth2Client;
 }
 
@@ -565,6 +567,48 @@ describe('GmailClientService — users.watch lifecycle (D8, D225, D229)', () => 
       fetchMock.mockResolvedValueOnce(makeResponse(401, 'unauthorized'));
       const client = new GmailClientService(oauth, limiter);
       await expect(client.stopWatch()).rejects.toBeInstanceOf(AuthExpiredError);
+    });
+  });
+
+  describe('revokeGrant', () => {
+    it('revokes the refresh token and clears local OAuth credentials', async () => {
+      fetchMock.mockResolvedValueOnce(makeResponse(200, ''));
+      const client = new GmailClientService(oauth, limiter);
+
+      await client.revokeGrant();
+
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe('https://oauth2.googleapis.com/revoke');
+      expect(init).toMatchObject({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'token=refresh-token-xyz',
+      });
+      expect(oauth.setCredentials).toHaveBeenCalledWith({});
+    });
+
+    it('treats an already-invalid token as idempotent success', async () => {
+      fetchMock.mockResolvedValueOnce(makeResponse(400, '{"error":"invalid_token"}'));
+      const client = new GmailClientService(oauth, limiter);
+
+      await expect(client.revokeGrant()).resolves.toBeUndefined();
+      expect(oauth.setCredentials).toHaveBeenCalledWith({});
+    });
+
+    it('keeps transient revoke failures retryable', async () => {
+      fetchMock.mockResolvedValueOnce(makeResponse(503, 'unavailable'));
+      const client = new GmailClientService(oauth, limiter);
+
+      await expect(client.revokeGrant()).rejects.toBeInstanceOf(TransientError);
+      expect(oauth.setCredentials).not.toHaveBeenCalled();
+    });
+
+    it('refuses to claim revocation without a stored refresh token', async () => {
+      oauth.credentials = {};
+      const client = new GmailClientService(oauth, limiter);
+
+      await expect(client.revokeGrant()).rejects.toBeInstanceOf(InvalidGrantError);
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 });

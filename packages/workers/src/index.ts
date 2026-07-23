@@ -33,8 +33,11 @@ export {
 export type { IncrementalSyncJobData, InitialSyncJobData } from './queue.js';
 export type {
   GmailAccess,
+  GmailGrantClient,
   GmailHistoryPage,
   GmailHistoryRecord,
+  GmailLifecycleAccess,
+  GmailLifecycleClient,
   GmailMessageListPage,
   GmailMessageMetadata,
   GmailMetadataClient,

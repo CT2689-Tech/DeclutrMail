@@ -36,8 +36,8 @@ import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { enqueueEmailSend } from './email-send.queue.js';
 import type { EmailSendJobData } from './email-send.worker.js';
 import { PASSTHROUGH_MAILBOX_LOCK, type MailboxActionLock } from './label-action.worker.js';
-import { TransientError } from './worker-errors.js';
-import type { GmailWatchAccess } from './ports.js';
+import { InvalidGrantError, TransientError } from './worker-errors.js';
+import type { GmailLifecycleAccess } from './ports.js';
 import type { WorkerContext } from './worker-context.js';
 import type { WorkerObserver } from './worker-observer.js';
 
@@ -73,8 +73,8 @@ export interface DeletionSweepResult {
 
 export interface DeletionPurgeDeps {
   db: WorkerDb;
-  /** Per-mailbox token-bound watch client resolver (composition root). */
-  gmailWatch: GmailWatchAccess;
+  /** Per-mailbox token-bound watch + OAuth grant lifecycle resolver. */
+  gmailLifecycle: GmailLifecycleAccess;
   /**
    * Full Pub/Sub topic resource (env `GMAIL_PUBSUB_TOPIC`), or null
    * when the watch pipeline is off (local dev) — null skips the
@@ -187,9 +187,10 @@ function controlledErrorCode(error: unknown): string {
  *      cutoff, so a replica that loses the claim race gets no row back.
  *   2. Capture — user email/workspace + mailbox ids (needed AFTER the
  *      drop; nothing below can re-read them).
- *   3. `users.stop` on every mailbox — best-effort per-mailbox
- *      isolation (GmailWatchService semantics, worker-side via the
- *      `GmailWatchAccess` port). A failed stop never blocks a purge.
+ *   3. For every credentialed mailbox, call `users.stop` best-effort,
+ *      then revoke the Google OAuth refresh token. Revocation is a
+ *      required, retryable step and runs before any encrypted token is
+ *      erased, so deletion cannot strand a live external grant.
  *   4. Enqueue the deletion-receipt email BEFORE the data drop — the
  *      job carries `recipientOverride` (the captured address) because
  *      the users row will be gone at send time. Idempotent on the
@@ -451,10 +452,10 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
         return false;
       }
 
-      const watch =
+      const lifecycle =
         mailbox.encryptedRefreshToken && mailbox.dekEncrypted
-          ? await this.stopMailboxWatch(request)
-          : 'skipped';
+          ? await this.stopAndRevokeMailboxGrant(request)
+          : { watch: 'skipped' as const, grant: 'skipped' as const };
 
       // Make the mailbox ineligible before the chunked phase. This early
       // update is deliberately durable: if a later chunk/final transaction
@@ -570,26 +571,39 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
           .where(eq(mailboxDataDeletionRequests.id, request.id));
       });
 
-      this.logMailbox('purged', request, { messagesDeleted, watch });
+      this.logMailbox('purged', request, { messagesDeleted, ...lifecycle });
       return true;
     });
   }
 
-  /** Best-effort users.stop while credentials still exist. */
-  private async stopMailboxWatch(
-    request: DueMailboxRequest,
-  ): Promise<'stopped' | 'failed' | 'skipped'> {
-    if (!this.deps.topicName) return 'skipped';
+  /** Best-effort users.stop followed by required OAuth grant revocation. */
+  private async stopAndRevokeMailboxGrant(request: DueMailboxRequest): Promise<{
+    watch: 'stopped' | 'failed' | 'skipped';
+    grant: 'revoked';
+  }> {
+    const client = await this.deps.gmailLifecycle.getClient(request.mailboxAccountId);
+    let watch: 'stopped' | 'failed' | 'skipped' = 'skipped';
+    if (this.deps.topicName) {
+      try {
+        await client.stopWatch();
+        watch = 'stopped';
+      } catch (err) {
+        watch = 'failed';
+        this.logMailbox('watch_stop_failed', request, {
+          error: controlledErrorCode(err),
+        });
+      }
+    }
+
     try {
-      const client = await this.deps.gmailWatch.getClient(request.mailboxAccountId);
-      await client.stopWatch();
-      return 'stopped';
+      await client.revokeGrant();
     } catch (err) {
-      this.logMailbox('watch_stop_failed', request, {
+      this.logMailbox('grant_revoke_failed', request, {
         error: controlledErrorCode(err),
       });
-      return 'failed';
+      throw err;
     }
+    return { watch, grant: 'revoked' };
   }
 
   /** Clear mailbox-derived onboarding pins and only the matching active id. */
@@ -707,19 +721,30 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
       return;
     }
     const mailboxes = await db
-      .select({ id: mailboxAccounts.id })
+      .select({
+        id: mailboxAccounts.id,
+        encryptedRefreshToken: mailboxAccounts.encryptedRefreshToken,
+        dekEncrypted: mailboxAccounts.dekEncrypted,
+      })
       .from(mailboxAccounts)
       .where(eq(mailboxAccounts.userId, request.userId));
     const mailboxIds = mailboxes.map((m) => m.id);
 
-    // 3. users.stop on every mailbox — best-effort, per-mailbox isolation.
-    const watch = await this.stopAllWatches(request, mailboxIds);
+    // 3. Stop watches best-effort, then revoke every stored Google grant.
+    // Revocation is required before the encrypted tokens are erased below.
+    const lifecycle = await this.stopAndRevokeAllGrants(
+      request,
+      mailboxes.map((mailbox) => ({
+        id: mailbox.id,
+        hasCredentials: Boolean(mailbox.encryptedRefreshToken && mailbox.dekEncrypted),
+      })),
+    );
 
     // 4. Receipt email — BEFORE the drop (see class doc for why).
     await this.enqueueReceipt(request, user.email);
 
     // 5. Audit row — survives the drop (security_events FKs SET NULL).
-    await this.recordAudit(request, user.workspaceId, mailboxIds.length, watch);
+    await this.recordAudit(request, user.workspaceId, mailboxIds.length, lifecycle);
 
     // 6a. mail_messages, chunked.
     const messagesDeleted = await this.deleteMailMessagesChunked(request.userId);
@@ -743,36 +768,76 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
     this.log('purged', request, {
       mailboxes: mailboxIds.length,
       messagesDeleted,
-      watchStopped: watch.stopped,
-      watchFailed: watch.failed,
+      watchStopped: lifecycle.watch.stopped,
+      watchFailed: lifecycle.watch.failed,
+      grantsRevoked: lifecycle.grant.revoked,
+      grantsSkipped: lifecycle.grant.skipped,
       workspaceDeleted: !otherMember,
     });
   }
 
-  /** `users.stop` per mailbox — never throws, mirrors GmailWatchService. */
-  private async stopAllWatches(
+  /** Best-effort watch stop + required, idempotent OAuth revocation. */
+  private async stopAndRevokeAllGrants(
     request: DueRequest,
-    mailboxIds: string[],
-  ): Promise<{ stopped: number; failed: number; skipped: number }> {
-    if (!this.deps.topicName) {
-      return { stopped: 0, failed: 0, skipped: mailboxIds.length };
-    }
-    let stopped = 0;
-    let failed = 0;
-    for (const mailboxAccountId of mailboxIds) {
+    mailboxes: { id: string; hasCredentials: boolean }[],
+  ): Promise<{
+    watch: { stopped: number; failed: number; skipped: number };
+    grant: { revoked: number; skipped: number };
+  }> {
+    const watch = { stopped: 0, failed: 0, skipped: 0 };
+    const grant = { revoked: 0, skipped: 0 };
+    for (const mailbox of mailboxes) {
+      if (!mailbox.hasCredentials) {
+        watch.skipped += 1;
+        grant.skipped += 1;
+        continue;
+      }
+
+      let client;
       try {
-        const client = await this.deps.gmailWatch.getClient(mailboxAccountId);
-        await client.stopWatch();
-        stopped += 1;
+        client = await this.deps.gmailLifecycle.getClient(mailbox.id);
       } catch (err) {
-        // A disconnected mailbox (no token) or a Gmail hiccup must not
-        // block the purge. Gmail expires orphaned watches in ≤7 days.
-        failed += 1;
-        const error = err instanceof Error ? err : new Error(String(err));
-        this.log('watch_stop_failed', request, { mailboxAccountId, message: error.message });
+        if (err instanceof InvalidGrantError) {
+          watch.skipped += 1;
+          grant.skipped += 1;
+          continue;
+        }
+        throw err;
+      }
+
+      if (this.deps.topicName) {
+        try {
+          await client.stopWatch();
+          watch.stopped += 1;
+        } catch (err) {
+          // Watch cleanup is best-effort; grant revocation below is the
+          // durable external-access boundary and remains required.
+          watch.failed += 1;
+          this.log('watch_stop_failed', request, {
+            mailboxAccountId: mailbox.id,
+            error: controlledErrorCode(err),
+          });
+        }
+      } else {
+        watch.skipped += 1;
+      }
+
+      try {
+        await client.revokeGrant();
+        grant.revoked += 1;
+      } catch (err) {
+        if (err instanceof InvalidGrantError) {
+          grant.skipped += 1;
+          continue;
+        }
+        this.log('grant_revoke_failed', request, {
+          mailboxAccountId: mailbox.id,
+          error: controlledErrorCode(err),
+        });
+        throw err;
       }
     }
-    return { stopped, failed, skipped: 0 };
+    return { watch, grant };
   }
 
   /** Enqueue the deletion receipt — idempotent on the request id. */
@@ -804,7 +869,10 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
     request: DueRequest,
     workspaceId: string,
     mailboxCount: number,
-    watch: { stopped: number; failed: number; skipped: number },
+    lifecycle: {
+      watch: { stopped: number; failed: number; skipped: number };
+      grant: { revoked: number; skipped: number };
+    },
   ): Promise<void> {
     const [existing] = await this.deps.db
       .select({ id: securityEvents.id })
@@ -835,7 +903,8 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
         requestedAt: request.requestedAt.toISOString(),
         effectiveAt: request.effectiveAt.toISOString(),
         mailboxCount,
-        watch,
+        watch: lifecycle.watch,
+        grant: lifecycle.grant,
       },
     });
   }
