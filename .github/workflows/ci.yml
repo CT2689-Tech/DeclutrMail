@@ -273,7 +273,7 @@ jobs:
         run: pnpm e2e:a11y
       - name: Upload accessibility diagnostics
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: accessibility-diagnostics
           if-no-files-found: ignore
