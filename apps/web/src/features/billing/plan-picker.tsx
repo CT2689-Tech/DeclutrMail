@@ -36,6 +36,20 @@ const { color, font, radius } = tokens;
 type PaidTier = 'plus' | 'pro';
 
 /**
+ * The Razorpay catalog id backing EXACTLY the price point a confirm
+ * would buy — null when that point is unprovisioned (D117: India is
+ * deferred, so every point is null at launch). Promo and standard
+ * annual are separate price points with separate ids, so `founding`
+ * has to be part of the question.
+ */
+function razorpayIdFor(target: PaidTier, cycle: BillingCycle, founding: boolean): string | null {
+  const tier = TIER_MANIFEST[target];
+  if (founding && tier.promo) return tier.promo.annual.razorpayPlanId;
+  const point = cycle === 'annual' ? tier.prices.annual : tier.prices.monthly;
+  return point?.razorpayPlanId ?? null;
+}
+
+/**
  * Inline plan picker (D117/D119/D120) — supersedes the PlanChangeModal
  * round-trip. One prominent monthly/annual segmented control drives
  * every price on the three cards; each non-current plan carries ONE
@@ -182,6 +196,16 @@ export function PlanPicker({
 
   const foundingEligible = selected === 'pro' && cycle === 'annual' && grantingSub === null;
   const founding = foundingEligible && claimFounding;
+  // Offering a provider and BILLING with it must read the same fact, or
+  // a `provider` pick outlives the price point that offered it: the
+  // Founding Pro checkbox swaps the purchased price point WITHOUT
+  // remounting the panel, so a Razorpay pick made on standard Pro annual
+  // would ride a promo checkout that has no Razorpay id — straight into
+  // BILLING_NOT_PROVISIONED. Derived once here; the panel renders from
+  // it and `onConfirm` clamps to it.
+  const razorpayOffered =
+    selected !== null && selected !== 'free' && razorpayIdFor(selected, cycle, founding) !== null;
+  const effectiveProvider: BillingProviderId = razorpayOffered ? provider : 'paddle';
   const errorMessage = checkoutErrorMessage(checkout.error);
   const monthsFree = sharedAnnualMonthsFree();
 
@@ -223,11 +247,16 @@ export function PlanPicker({
     void track('checkout_started', {
       tier: target,
       cycle,
-      provider,
+      provider: effectiveProvider,
       founding_pro: founding,
     });
     checkout.mutate(
-      { tierId: target, cycle, provider, ...(founding ? { promo: 'foundingPro' as const } : {}) },
+      {
+        tierId: target,
+        cycle,
+        provider: effectiveProvider,
+        ...(founding ? { promo: 'foundingPro' as const } : {}),
+      },
       {
         onSuccess: (session) => {
           void launchCheckout(session, {
@@ -394,7 +423,8 @@ export function PlanPicker({
           <ConfirmPanel
             target={selected}
             cycle={cycle}
-            provider={provider}
+            provider={effectiveProvider}
+            razorpayOffered={razorpayOffered}
             onProviderChange={setProvider}
             foundingEligible={foundingEligible}
             claimFounding={claimFounding}
@@ -799,6 +829,7 @@ function ConfirmPanel({
   target,
   cycle,
   provider,
+  razorpayOffered,
   onProviderChange,
   foundingEligible,
   claimFounding,
@@ -811,6 +842,9 @@ function ConfirmPanel({
   target: PaidTier;
   cycle: BillingCycle;
   provider: BillingProviderId;
+  /** Whether the price point this panel would buy has a Razorpay id —
+   *  derived by the parent, which also bills with it. */
+  razorpayOffered: boolean;
   onProviderChange: (provider: BillingProviderId) => void;
   foundingEligible: boolean;
   claimFounding: boolean;
@@ -828,14 +862,6 @@ function ConfirmPanel({
   // block checkout instead. Unreachable with today's manifest (both
   // paid tiers carry both cycles); guards future tier edits.
   const amountCents = founding ? founding.annual.usdCents : (point?.usdCents ?? null);
-  // A provider is offered only when THIS price point carries a catalog
-  // id for it (D117). Razorpay is unprovisioned at launch — India is
-  // deferred — and an offered-but-dead radio walks the user into
-  // BILLING_NOT_PROVISIONED at the moment of purchase. Paddle needs no
-  // such check: it is the default `provider` state and the only path
-  // this branch leaves selectable.
-  const razorpayOffered =
-    (founding ? founding.annual.razorpayPlanId : (point?.razorpayPlanId ?? null)) !== null;
   const impact =
     amountCents !== null
       ? `${formatUsd(amountCents)} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
