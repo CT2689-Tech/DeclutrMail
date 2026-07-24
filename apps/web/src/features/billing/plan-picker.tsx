@@ -36,6 +36,20 @@ const { color, font, radius } = tokens;
 type PaidTier = 'plus' | 'pro';
 
 /**
+ * The Razorpay catalog id backing EXACTLY the price point a confirm
+ * would buy — null when that point is unprovisioned (D117: India is
+ * deferred, so every point is null at launch). Promo and standard
+ * annual are separate price points with separate ids, so `founding`
+ * has to be part of the question.
+ */
+function razorpayIdFor(target: PaidTier, cycle: BillingCycle, founding: boolean): string | null {
+  const tier = TIER_MANIFEST[target];
+  if (founding && tier.promo) return tier.promo.annual.razorpayPlanId;
+  const point = cycle === 'annual' ? tier.prices.annual : tier.prices.monthly;
+  return point?.razorpayPlanId ?? null;
+}
+
+/**
  * Inline plan picker (D117/D119/D120) — supersedes the PlanChangeModal
  * round-trip. One prominent monthly/annual segmented control drives
  * every price on the three cards; each non-current plan carries ONE
@@ -182,6 +196,16 @@ export function PlanPicker({
 
   const foundingEligible = selected === 'pro' && cycle === 'annual' && grantingSub === null;
   const founding = foundingEligible && claimFounding;
+  // Offering a provider and BILLING with it must read the same fact, or
+  // a `provider` pick outlives the price point that offered it: the
+  // Founding Pro checkbox swaps the purchased price point WITHOUT
+  // remounting the panel, so a Razorpay pick made on standard Pro annual
+  // would ride a promo checkout that has no Razorpay id — straight into
+  // BILLING_NOT_PROVISIONED. Derived once here; the panel renders from
+  // it and `onConfirm` clamps to it.
+  const razorpayOffered =
+    selected !== null && selected !== 'free' && razorpayIdFor(selected, cycle, founding) !== null;
+  const effectiveProvider: BillingProviderId = razorpayOffered ? provider : 'paddle';
   const errorMessage = checkoutErrorMessage(checkout.error);
   const monthsFree = sharedAnnualMonthsFree();
 
@@ -223,11 +247,16 @@ export function PlanPicker({
     void track('checkout_started', {
       tier: target,
       cycle,
-      provider,
+      provider: effectiveProvider,
       founding_pro: founding,
     });
     checkout.mutate(
-      { tierId: target, cycle, provider, ...(founding ? { promo: 'foundingPro' as const } : {}) },
+      {
+        tierId: target,
+        cycle,
+        provider: effectiveProvider,
+        ...(founding ? { promo: 'foundingPro' as const } : {}),
+      },
       {
         onSuccess: (session) => {
           void launchCheckout(session, {
@@ -394,7 +423,8 @@ export function PlanPicker({
           <ConfirmPanel
             target={selected}
             cycle={cycle}
-            provider={provider}
+            provider={effectiveProvider}
+            razorpayOffered={razorpayOffered}
             onProviderChange={setProvider}
             foundingEligible={foundingEligible}
             claimFounding={claimFounding}
@@ -799,6 +829,7 @@ function ConfirmPanel({
   target,
   cycle,
   provider,
+  razorpayOffered,
   onProviderChange,
   foundingEligible,
   claimFounding,
@@ -811,6 +842,9 @@ function ConfirmPanel({
   target: PaidTier;
   cycle: BillingCycle;
   provider: BillingProviderId;
+  /** Whether the price point this panel would buy has a Razorpay id —
+   *  derived by the parent, which also bills with it. */
+  razorpayOffered: boolean;
   onProviderChange: (provider: BillingProviderId) => void;
   foundingEligible: boolean;
   claimFounding: boolean;
@@ -847,28 +881,30 @@ function ConfirmPanel({
       }}
     >
       <Eyebrow>Preview · before anything changes</Eyebrow>
-      <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
-        {/* D117 — the provider is the user's explicit regional choice. */}
-        <legend style={{ fontSize: 12, color: color.fgMuted, padding: 0, marginBottom: 6 }}>
-          How would you like to pay?
-        </legend>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <ProviderRadio
-            value="paddle"
-            checked={provider === 'paddle'}
-            onChange={onProviderChange}
-            title="Card · PayPal · Apple Pay"
-            detail="Everywhere outside India — secure checkout by Paddle"
-          />
-          <ProviderRadio
-            value="razorpay"
-            checked={provider === 'razorpay'}
-            onChange={onProviderChange}
-            title="UPI · cards · netbanking (India)"
-            detail="Billed in INR equivalent — secure checkout by Razorpay"
-          />
-        </div>
-      </fieldset>
+      {razorpayOffered ? (
+        <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
+          {/* D117 — the provider is the user's explicit regional choice. */}
+          <legend style={{ fontSize: 12, color: color.fgMuted, padding: 0, marginBottom: 6 }}>
+            How would you like to pay?
+          </legend>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <ProviderRadio
+              value="paddle"
+              checked={provider === 'paddle'}
+              onChange={onProviderChange}
+              title="Card · PayPal · Apple Pay"
+              detail="Everywhere outside India — secure checkout by Paddle"
+            />
+            <ProviderRadio
+              value="razorpay"
+              checked={provider === 'razorpay'}
+              onChange={onProviderChange}
+              title="UPI · cards · netbanking (India)"
+              detail="Billed in INR equivalent — secure checkout by Razorpay"
+            />
+          </div>
+        </fieldset>
+      ) : null}
 
       {foundingEligible && tier.promo ? (
         <label
