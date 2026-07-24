@@ -828,6 +828,14 @@ function ConfirmPanel({
   // block checkout instead. Unreachable with today's manifest (both
   // paid tiers carry both cycles); guards future tier edits.
   const amountCents = founding ? founding.annual.usdCents : (point?.usdCents ?? null);
+  // A provider is offered only when THIS price point carries a catalog
+  // id for it (D117). Razorpay is unprovisioned at launch — India is
+  // deferred — and an offered-but-dead radio walks the user into
+  // BILLING_NOT_PROVISIONED at the moment of purchase. Paddle needs no
+  // such check: it is the default `provider` state and the only path
+  // this branch leaves selectable.
+  const razorpayOffered =
+    (founding ? founding.annual.razorpayPlanId : (point?.razorpayPlanId ?? null)) !== null;
   const impact =
     amountCents !== null
       ? `${formatUsd(amountCents)} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
@@ -847,28 +855,30 @@ function ConfirmPanel({
       }}
     >
       <Eyebrow>Preview · before anything changes</Eyebrow>
-      <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
-        {/* D117 — the provider is the user's explicit regional choice. */}
-        <legend style={{ fontSize: 12, color: color.fgMuted, padding: 0, marginBottom: 6 }}>
-          How would you like to pay?
-        </legend>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <ProviderRadio
-            value="paddle"
-            checked={provider === 'paddle'}
-            onChange={onProviderChange}
-            title="Card · PayPal · Apple Pay"
-            detail="Everywhere outside India — secure checkout by Paddle"
-          />
-          <ProviderRadio
-            value="razorpay"
-            checked={provider === 'razorpay'}
-            onChange={onProviderChange}
-            title="UPI · cards · netbanking (India)"
-            detail="Billed in INR equivalent — secure checkout by Razorpay"
-          />
-        </div>
-      </fieldset>
+      {razorpayOffered ? (
+        <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
+          {/* D117 — the provider is the user's explicit regional choice. */}
+          <legend style={{ fontSize: 12, color: color.fgMuted, padding: 0, marginBottom: 6 }}>
+            How would you like to pay?
+          </legend>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <ProviderRadio
+              value="paddle"
+              checked={provider === 'paddle'}
+              onChange={onProviderChange}
+              title="Card · PayPal · Apple Pay"
+              detail="Everywhere outside India — secure checkout by Paddle"
+            />
+            <ProviderRadio
+              value="razorpay"
+              checked={provider === 'razorpay'}
+              onChange={onProviderChange}
+              title="UPI · cards · netbanking (India)"
+              detail="Billed in INR equivalent — secure checkout by Razorpay"
+            />
+          </div>
+        </fieldset>
+      ) : null}
 
       {foundingEligible && tier.promo ? (
         <label

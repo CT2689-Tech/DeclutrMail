@@ -287,7 +287,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     });
   });
 
-  it('monthly cycle drops the promo; Razorpay pick rides the body (D117)', async () => {
+  it('monthly cycle drops the promo; the unprovisioned Razorpay route is never offered (D117)', async () => {
     let checkoutBody: unknown = null;
     installFetchStub([
       {
@@ -302,11 +302,12 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
           checkoutBody = await req.json();
           return jsonOk({
             data: {
-              provider: 'razorpay',
-              kind: 'hosted',
-              subscriptionId: 'sub_test',
-              shortUrl: 'https://rzp.io/i/test',
-              keyId: 'rzp_test_key',
+              provider: 'paddle',
+              kind: 'overlay',
+              priceId: 'pri_test',
+              clientToken: 'test_token',
+              environment: 'sandbox',
+              customData: { workspace_id: 'ws-1', sig: 'test-sig' },
             },
           });
         },
@@ -320,13 +321,15 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     const panel = screen.getByTestId('checkout-panel');
     expect(within(panel).queryByText(/Founding Pro/)).not.toBeInTheDocument();
-    fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
+    // Razorpay has no catalog id at launch — offering it would send the
+    // user into BILLING_NOT_PROVISIONED at the moment of purchase.
+    expect(within(panel).queryByLabelText(/UPI · cards · netbanking/)).not.toBeInTheDocument();
     fireEvent.click(
       within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
     );
 
     await waitFor(() =>
-      expect(checkoutBody).toEqual({ tierId: 'pro', cycle: 'monthly', provider: 'razorpay' }),
+      expect(checkoutBody).toEqual({ tierId: 'pro', cycle: 'monthly', provider: 'paddle' }),
     );
   });
 
