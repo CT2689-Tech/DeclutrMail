@@ -68,8 +68,31 @@ describe('BillingCatalog resolution', () => {
     expect(catalog.resolveByPriceId('paddle', 'pri_unknown')).toBeNull();
   });
 
-  it('fails closed: unprovisioned price points resolve to null', () => {
-    expect(catalog.resolvePriceId('razorpay', 'plus', 'monthly')).toBeNull();
+  it('resolves Razorpay from the live manifest now that India is provisioned', () => {
+    expect(catalog.resolvePriceId('razorpay', 'plus', 'monthly')).toBe(
+      TIER_MANIFEST.plus.prices.monthly!.razorpayPlanId,
+    );
+  });
+
+  it('fails closed: an unprovisioned price point resolves to null on BOTH rails', () => {
+    // Built explicitly rather than read off the live manifest. This
+    // assertion used to lean on Razorpay being unprovisioned, so the
+    // go-live on 2026-07-25 turned it into a test of nothing — the
+    // fail-closed guard is what protects a FUTURE tier added before its
+    // SKUs exist, and it has to be provable whatever the catalog holds.
+    const bare = new BillingCatalog([
+      {
+        planCode: 'plus_monthly',
+        tierId: 'plus',
+        cycle: 'monthly',
+        founding: false,
+        usdCents: 900,
+        paddlePriceId: null,
+        razorpayPlanId: null,
+      },
+    ]);
+    expect(bare.resolvePriceId('razorpay', 'plus', 'monthly')).toBeNull();
+    expect(bare.resolvePriceId('paddle', 'plus', 'monthly')).toBeNull();
   });
 
   it('carries the D126 founding cap', () => {

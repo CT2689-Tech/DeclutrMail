@@ -196,6 +196,46 @@ jobs:
           # merge/deploy still requires one low-value purchase + refund
           # verification before public announcement.
           #
+          # Razorpay went LIVE 2026-07-25 — all three secrets exist and are
+          # bound below. The sequence is kept here because it is the order
+          # any future provider (or a re-key) has to follow, and because
+          # step 1 is the one that silently costs money when skipped:
+          #   1. Register the LIVE webhook in the Razorpay dashboard,
+          #      BEFORE binding anything. Endpoint (note the /billing
+          #      segment —
+          #      BillingRazorpayController is @Controller('webhooks/billing')
+          #      + @Post('razorpay')):
+          #        https://api.declutrmail.com/api/webhooks/billing/razorpay
+          #      Subscribe exactly the 9 events the handler consumes:
+          #        subscription.activated  subscription.cancelled
+          #        subscription.charged    subscription.completed
+          #        subscription.halted     subscription.paused
+          #        subscription.pending    subscription.resumed
+          #        subscription.updated
+          #      Entitlements are granted by WEBHOOK ONLY (§10
+          #      no-fake-completion) — a successful payment never updates
+          #      local state on its own. A missing or misrouted webhook
+          #      therefore means money taken and no plan granted. Omitting
+          #      `subscription.updated` specifically strands D120 scheduled
+          #      downgrades, which clear only on that event.
+          #   2. Founder creates all three secrets (see
+          #      docs/runbooks/secrets-inventory.md):
+          #      razorpay-key-id-prod, razorpay-key-secret-prod,
+          #      razorpay-webhook-secret-prod — the last one is the signing
+          #      secret entered in step 1, byte-identical.
+          #   3. ONE PR appends to --update-secrets below:
+          #      RAZORPAY_KEY_ID=razorpay-key-id-prod:latest,
+          #      RAZORPAY_KEY_SECRET=razorpay-key-secret-prod:latest,
+          #      RAZORPAY_WEBHOOK_SECRET=razorpay-webhook-secret-prod:latest
+          #   4. Provision the Razorpay catalog + patch the manifest's
+          #      razorpayPlanId values — that is what actually opens India.
+          # Add all three together: an API holding a Razorpay key but no
+          # webhook secret would accept checkouts and then fail every
+          # signature verification (money taken, entitlement never
+          # granted). Keeping the list STATIC also preserves preflight's
+          # "live revision matches the deploy secret contract" drift check,
+          # which needs a declarative contract to compare against.
+          #
           # Resend (D162) is bound below, per-service and least-privilege:
           # RESEND_API_KEY on the WORKER only (it is the sender —
           # EmailService sits behind the worker's EmailDeliveryPort, and no
@@ -220,7 +260,7 @@ jobs:
             --port=8080 \
             --allow-unauthenticated \
             --set-env-vars="NODE_ENV=production,WEB_URL=https://app.declutrmail.com,GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback,CORS_ORIGIN=/^https:[/][/](app[.])?declutrmail[.]com$/,COOKIE_DOMAIN=.declutrmail.com,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,PUBSUB_OIDC_SERVICE_ACCOUNT=$PUBSUB_OIDC_SERVICE_ACCOUNT,PUBSUB_WEBHOOK_ENABLED=true,PUBSUB_PUSH_AUDIENCE=https://api.declutrmail.com,PUBSUB_PUSH_SA_EMAIL=$PUBSUB_OIDC_SERVICE_ACCOUNT,RATE_LIMIT_ENABLED=false,SENTRY_RELEASE=$GITHUB_SHA,BETA_GATE_ENABLED=false,BILLING_ENABLED=true,PADDLE_ENV=production" \
-            --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,ADMIN_EMAIL_ALLOWLIST=admin-email-allowlist-prod:latest,RESEND_WEBHOOK_SECRET=resend-webhook-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,PADDLE_CLIENT_TOKEN=paddle-client-token-prod:latest,PADDLE_WEBHOOK_SECRET=paddle-webhook-secret-prod:latest" \
+            --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,ADMIN_EMAIL_ALLOWLIST=admin-email-allowlist-prod:latest,RESEND_WEBHOOK_SECRET=resend-webhook-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,PADDLE_CLIENT_TOKEN=paddle-client-token-prod:latest,PADDLE_WEBHOOK_SECRET=paddle-webhook-secret-prod:latest,RAZORPAY_KEY_ID=razorpay-key-id-prod:latest,RAZORPAY_KEY_SECRET=razorpay-key-secret-prod:latest,RAZORPAY_WEBHOOK_SECRET=razorpay-webhook-secret-prod:latest" \
             --quiet
 
       - name: Deploy declutrmail-worker (BullMQ + health)
