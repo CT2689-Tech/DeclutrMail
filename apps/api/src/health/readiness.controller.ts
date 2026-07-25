@@ -68,17 +68,29 @@ export class ReadinessController {
   async getReadiness(@Res() res: Response): Promise<void> {
     const [database, redis] = await Promise.all([
       probe(() => this.db.execute(sql`select 1`)),
-      // A missing REDIS_URL is a real posture outside production (local
-      // dev, CI), so it reads as `not_configured` rather than `down` —
-      // but production refuses to boot without it (see RateLimitModule),
-      // so this branch cannot mask a prod outage.
+      // A missing REDIS_URL is a legitimate posture outside production
+      // (local dev, CI), so it reads as `not_configured` rather than
+      // `down` — the app genuinely has no Redis to be down.
       this.redis === null
         ? Promise.resolve<DependencyState>('not_configured')
         : probe(() => this.redis!.ping()),
     ]);
 
+    // In PRODUCTION, `not_configured` is itself the fault: BullMQ has no
+    // queue and the D156 limiter has no shared bucket store, so the
+    // instance cannot serve even though nothing is technically "down".
+    //
+    // This endpoint must decide that ITSELF rather than lean on
+    // RateLimitModule's "production refuses to boot without REDIS_URL"
+    // guard — that guard is conditioned on `isProd && rateLimitEnabled`,
+    // and the production deploy sets RATE_LIMIT_ENABLED=false, so it
+    // never fires. Trusting it would make this endpoint answer 200 for
+    // exactly the misconfiguration it exists to catch.
+    const isProd = process.env.NODE_ENV === 'production';
+    const redisOk = redis === 'ok' || (redis === 'not_configured' && !isProd);
+
     const body: ReadinessBody = {
-      status: database === 'ok' && redis !== 'down' ? 'ok' : 'degraded',
+      status: database === 'ok' && redisOk ? 'ok' : 'degraded',
       checks: { database, redis },
     };
     res.status(body.status === 'ok' ? 200 : 503).json(body);

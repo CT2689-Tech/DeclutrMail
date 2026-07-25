@@ -83,7 +83,7 @@ describe('ReadinessController', () => {
     expect(serialized).not.toMatch(/upstash|budget|suspended|connection refused/i);
   });
 
-  it('treats an unconfigured Redis as ok — local dev has none, prod refuses to boot without it', async () => {
+  it('treats an unconfigured Redis as ok OUTSIDE production — local dev has none', async () => {
     const { r, captured } = res();
     await new ReadinessController(okDb, null).getReadiness(r as never);
     expect(captured.code).toBe(200);
@@ -91,6 +91,28 @@ describe('ReadinessController', () => {
       status: 'ok',
       checks: { database: 'ok', redis: 'not_configured' },
     });
+  });
+
+  it('a production instance with NO Redis configured is not ready', async () => {
+    // The masking case. RateLimitModule's "production refuses to boot
+    // without REDIS_URL" guard is conditioned on `rateLimitEnabled`, and
+    // the production deploy sets RATE_LIMIT_ENABLED=false — so it never
+    // fires, and a Redis-less production boots happily. If this endpoint
+    // deferred to that guard it would answer 200 for exactly the
+    // misconfiguration it exists to catch.
+    const prior = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const { r, captured } = res();
+      await new ReadinessController(okDb, null).getReadiness(r as never);
+      expect(captured.code).toBe(503);
+      expect(captured.body).toEqual({
+        status: 'degraded',
+        checks: { database: 'ok', redis: 'not_configured' },
+      });
+    } finally {
+      process.env.NODE_ENV = prior;
+    }
   });
 
   it('a HUNG dependency reads as down rather than hanging the probe', async () => {
