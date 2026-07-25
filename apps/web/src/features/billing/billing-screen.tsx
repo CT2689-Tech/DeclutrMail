@@ -408,6 +408,7 @@ export function BillingScreen({
       <CurrentPlanCard
         tier={tier}
         subscription={subscription}
+        regionProvider={initialProvider}
         cleanupRemaining={cleanupRemaining}
         billingDisabled={billingDisabled}
         onCancel={() => setCancelOpen(true)}
@@ -693,12 +694,16 @@ export function PaymentProcessingNotice({
 function CurrentPlanCard({
   tier,
   subscription,
+  regionProvider,
   cleanupRemaining,
   billingDisabled,
   onCancel,
 }: {
   tier: TierId;
   subscription: BillingSubscription['subscription'];
+  /** Geo-derived rail, used ONLY when no subscription backs this tier —
+   *  a backing subscription states its own provider as settled fact. */
+  regionProvider: BillingProviderId;
   cleanupRemaining: number | null;
   billingDisabled: boolean;
   onCancel: () => void;
@@ -731,7 +736,10 @@ function CurrentPlanCard({
       ) ?? '')
     : tier === 'free'
       ? formatUsd(0)
-      : (quotedPlanPrice(tier, 'monthly') ?? formatUsd(0));
+      : // No backing subscription, so this is a QUOTE — it has to name the
+        // same rail the plan strip below it quotes, or the same tier
+        // reads two prices on one screen.
+        (quotedPlanPrice(tier, 'monthly', regionProvider) ?? formatUsd(0));
   const renewal =
     subBacksTier && !subscription.cancelAtPeriodEnd
       ? formatBillingDate(subscription.currentPeriodEnd)

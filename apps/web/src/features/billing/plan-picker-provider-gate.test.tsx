@@ -44,7 +44,9 @@ vi.mock('@/features/billing/checkout', () => ({
   launchCheckout: vi.fn(() => Promise.resolve()),
 }));
 
-// Pro ANNUAL gains a Razorpay id; the Founding Pro promo does not.
+// Pro MONTHLY and ANNUAL gain a Razorpay id; the Founding Pro promo
+// does not. The promo staying null is the whole point — it is what makes
+// "which point did this label clamp against?" an answerable question.
 vi.mock('@declutrmail/shared/entitlements', async (importOriginal) => {
   const actual = await importOriginal<typeof Entitlements>();
   const pro = actual.TIER_MANIFEST.pro;
@@ -55,7 +57,7 @@ vi.mock('@declutrmail/shared/entitlements', async (importOriginal) => {
       pro: {
         ...pro,
         prices: {
-          ...pro.prices,
+          monthly: { ...pro.prices.monthly!, razorpayPlanId: 'plan_test_pro_monthly' },
           annual: { ...pro.prices.annual!, razorpayPlanId: 'plan_test_pro_annual' },
         },
       },
@@ -73,6 +75,7 @@ import { BillingScreen } from './billing-screen';
 const FREE_BODY: BillingSubscription = { tier: 'free', foundingMember: false, subscription: null };
 
 let checkoutBody: unknown = null;
+let subscriptionBody: BillingSubscription = FREE_BODY;
 
 function renderScreen(props: { initialProvider?: 'paddle' | 'razorpay' } = {}) {
   const client = createTestQueryClient();
@@ -85,12 +88,13 @@ function renderScreen(props: { initialProvider?: 'paddle' | 'razorpay' } = {}) {
 
 beforeEach(() => {
   checkoutBody = null;
+  subscriptionBody = FREE_BODY;
   window.localStorage.clear();
   installFetchStub([
     {
       method: 'GET',
       path: '/api/billing/subscription',
-      respond: () => jsonOk({ data: FREE_BODY }),
+      respond: () => jsonOk({ data: subscriptionBody }),
     },
     {
       method: 'POST',
@@ -203,5 +207,46 @@ describe('checkout currency (D117/D226)', () => {
 
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
     expect(panel).toHaveTextContent(/₹15,999 billed annually/);
+  });
+
+  it('the Founding Pro claim quotes ITS OWN point, not the one on screen', async () => {
+    // The claim label and the charge line describe DIFFERENT price
+    // points. Standing on standard annual (Razorpay-provisioned, INR),
+    // the promo below it is Paddle-only — so it must say $129. Reading
+    // the standard point's currency printed "Claim Founding Pro —
+    // ₹10,999/yr" over a checkout that charges $129.
+    renderScreen({ initialProvider: 'razorpay' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    const panel = screen.getByTestId('checkout-panel');
+
+    fireEvent.click(within(panel).getByRole('checkbox'));
+    expect(panel).toHaveTextContent(/₹15,999 billed annually/);
+
+    const claim = within(panel).getByText(/Claim Founding Pro/);
+    expect(claim).toHaveTextContent('$129/yr');
+    expect(claim).not.toHaveTextContent('₹10,999');
+  });
+});
+
+describe('the current-plan headline quotes the same rail as the strip (D117)', () => {
+  it('an India visitor reads ONE price for an unbacked paid tier', async () => {
+    // Entitlement says Pro, but no subscription BACKS it (admin grant,
+    // or a paused row). The headline is then a quote, not a charge — and
+    // it has to name the rail the strip under it quotes. Defaulting to
+    // Paddle printed "$19/mo" above a strip reading "₹1,599/mo".
+    subscriptionBody = { tier: 'pro', foundingMember: false, subscription: null };
+    renderScreen({ initialProvider: 'razorpay' });
+
+    const card = await screen.findByTestId('current-plan-card');
+    expect(card).toHaveTextContent('₹1,599/mo');
+    expect(card).not.toHaveTextContent('$19/mo');
+  });
+
+  it('stays USD for a visitor outside India', async () => {
+    subscriptionBody = { tier: 'pro', foundingMember: false, subscription: null };
+    renderScreen({ initialProvider: 'paddle' });
+
+    const card = await screen.findByTestId('current-plan-card');
+    expect(card).toHaveTextContent('$19/mo');
   });
 });

@@ -440,7 +440,7 @@ export function PlanPicker({
           <ConfirmPanel
             target={selected}
             cycle={cycle}
-            provider={effectiveProvider}
+            provider={provider}
             razorpayOffered={razorpayOffered}
             onProviderChange={setProvider}
             foundingEligible={foundingEligible}
@@ -866,6 +866,9 @@ function ConfirmPanel({
 }: {
   target: PaidTier;
   cycle: BillingCycle;
+  /** The RAW regional/user rail pick, NOT the parent's clamped one —
+   *  this panel quotes two different price points and each has to clamp
+   *  against its own catalog id. */
   provider: BillingProviderId;
   /** Whether the price point this panel would buy has a Razorpay id —
    *  derived by the parent, which also bills with it. */
@@ -894,6 +897,13 @@ function ConfirmPanel({
   // and then charging ₹10,999 is the preview lying about the one number
   // it exists to state.
   const currency = pricePoint ? currencyForPricePoint(pricePoint, provider) : 'USD';
+  // The claim-founding label quotes a DIFFERENT price point than the one
+  // `impact` describes — the promo and standard annual are separate SKUs
+  // with separate Razorpay ids, so one being purchasable on a rail says
+  // nothing about the other. Reusing `currency` here let an India
+  // visitor read "Claim Founding Pro — ₹10,999/yr" off the standard
+  // point's provisioning, tick the box, and land on a $129 charge.
+  const promoCurrency = tier.promo ? currencyForPricePoint(tier.promo.annual, provider) : currency;
   const impact =
     pricePoint !== null
       ? `${formatMoney(pricePoint, currency)} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
@@ -956,7 +966,7 @@ function ConfirmPanel({
           />
           <span>
             <strong style={{ fontWeight: 600 }}>
-              Claim {tier.promo.name} — {formatMoney(tier.promo.annual, currency)}/yr
+              Claim {tier.promo.name} — {formatMoney(tier.promo.annual, promoCurrency)}/yr
             </strong>{' '}
             <span style={{ color: color.fgMuted }}>
               First {tier.promo.maxRedemptions} members, price locked while you stay subscribed. If
