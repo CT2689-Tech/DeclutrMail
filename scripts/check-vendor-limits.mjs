@@ -272,7 +272,24 @@ async function checkUpstash() {
     return { ...volume, detail: `${db.database_name}: ${volume.detail}, ${why}` };
   }
   const projected = monthCost / monthElapsedFraction();
-  const spend = gauge(projected, budget * envNum('UPSTASH_BUDGET_WARN_FRACTION', 0.8));
+  // Deliberately NOT `gauge()`. Its BREACH tier is 2x the warn threshold,
+  // which for spend would mean "projecting 160% of the cap" — but the
+  // damage is done the moment the projection crosses the cap ITSELF:
+  // Upstash suspends the database and every BullMQ job stops. That is an
+  // outage prediction, not a cost surprise, so it has to exit non-zero.
+  //
+  // WARN would not do: WARN exits 0, the workflow stays green, and GitHub
+  // sends nothing — which is precisely how the 2026-07-25 suspension
+  // arrived unannounced. Flipping WARN_IS_FAILURE globally is not the
+  // alternative; the table already carries a standing WARN (Actions
+  // minutes at 538% of the included tier), so that would pin the workflow
+  // red forever and train the failure away.
+  const warnAt = budget * envNum('UPSTASH_BUDGET_WARN_FRACTION', 0.8);
+  const spend = {
+    status: projected >= budget ? 'BREACH' : projected >= warnAt ? 'WARN' : 'OK',
+    // Against the cap, so 100% reads as "projecting exactly the budget".
+    usagePct: Math.round((projected / budget) * 100),
+  };
 
   // Worst axis wins — a database on track to blow its cap is not "OK"
   // because its command count happens to be low.
