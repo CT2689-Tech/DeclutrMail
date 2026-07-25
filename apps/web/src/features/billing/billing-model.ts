@@ -13,17 +13,28 @@ import type {
   SubscriptionStatus,
 } from '@declutrmail/shared/contracts';
 
-import { formatUsd } from '@/features/marketing/pricing/pricing-model';
+import { formatMoney, type Currency } from '@/features/marketing/pricing/pricing-model';
 
 /** The condensed-strip tiers (D119) — the three self-serve rungs. */
 export const STRIP_TIER_IDS = ['free', 'plus', 'pro'] as const;
 export type StripTierId = (typeof STRIP_TIER_IDS)[number];
 
-/** "$19/mo" / "$190/yr" off the manifest; null when not offered. */
-export function planPriceLabel(tier: TierId, cycle: BillingCycle): string | null {
+/**
+ * "$19/mo" / "₹1,599/mo" off the manifest; null when not offered.
+ *
+ * Currency defaults to USD so every existing caller keeps its
+ * behavior; the billing strip passes the rail-derived currency so the
+ * CARDS agree with the confirm panel (D117) — a card reading $190 above
+ * a preview reading ₹15,999 is the same lie in a different place.
+ */
+export function planPriceLabel(
+  tier: TierId,
+  cycle: BillingCycle,
+  currency: Currency = 'USD',
+): string | null {
   const point = TIER_MANIFEST[tier].prices[cycle === 'annual' ? 'annual' : 'monthly'];
   if (!point) return null;
-  return `${formatUsd(point.usdCents)}${cycle === 'annual' ? '/yr' : '/mo'}`;
+  return `${formatMoney(point, currency)}${cycle === 'annual' ? '/yr' : '/mo'}`;
 }
 
 /**

@@ -44,6 +44,47 @@ export function formatUsd(cents: number): string {
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
 
+/**
+ * ₹749 / ₹10,999 — Indian digit grouping (`en-IN` groups by lakh, so
+ * ₹1,09,999 not ₹109,999 once amounts pass 1,00,000).
+ */
+export function formatInr(paise: number): string {
+  const rupees = paise / 100;
+  return `₹${new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: Number.isInteger(rupees) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(rupees)}`;
+}
+
+/**
+ * The currency a price is actually CHARGED in (D117).
+ *
+ * Not a display preference — it is a fact about the provider: Paddle
+ * settles USD as merchant-of-record for the rest of the world, Razorpay
+ * settles INR for India. Rendering one while charging the other is the
+ * defect this type exists to make unrepresentable, so every price
+ * surface takes a Currency rather than assuming USD.
+ */
+export type Currency = 'USD' | 'INR';
+
+/** Which currency a provider will charge in. */
+export function currencyForProvider(provider: 'paddle' | 'razorpay'): Currency {
+  return provider === 'razorpay' ? 'INR' : 'USD';
+}
+
+/**
+ * Format a manifest price point in a currency. The manifest carries
+ * BOTH amounts per point (`usdCents` / `inrPaise`) as independently
+ * chosen prices — never a runtime FX conversion — so this only picks
+ * the right field.
+ */
+export function formatMoney(
+  point: { usdCents: number; inrPaise: number },
+  currency: Currency,
+): string {
+  return currency === 'INR' ? formatInr(point.inrPaise) : formatUsd(point.usdCents);
+}
+
 /** What a tier card's price slot shows for the selected interval. */
 export interface PriceLine {
   /** "$9" — formatted manifest amount. */
@@ -60,21 +101,32 @@ export interface PriceLine {
  * the card keeps showing $0). Returns null only when the manifest has
  * no price at all (team/enterprise).
  */
-export function priceLineFor(tier: TierDefinition, interval: BillingInterval): PriceLine | null {
+export function priceLineFor(
+  tier: TierDefinition,
+  interval: BillingInterval,
+  currency: Currency = 'USD',
+): PriceLine | null {
   const point = tier.prices[interval] ?? tier.prices.monthly ?? tier.prices.annual;
   if (!point) return null;
   const isAnnual = point === tier.prices.annual && tier.prices.annual !== null;
-  if (point.usdCents === 0) {
-    return { amount: formatUsd(0), per: '' };
+  const zero = currency === 'INR' ? point.inrPaise === 0 : point.usdCents === 0;
+  if (zero) {
+    return { amount: formatMoney({ usdCents: 0, inrPaise: 0 }, currency), per: '' };
   }
   if (isAnnual) {
+    // The "/mo effective" note divides the SAME currency's annual
+    // amount — mixing the two currencies here would invent a rate.
+    const perMonth =
+      currency === 'INR'
+        ? { usdCents: 0, inrPaise: Math.round(point.inrPaise / 12) }
+        : { usdCents: Math.round(point.usdCents / 12), inrPaise: 0 };
     return {
-      amount: formatUsd(point.usdCents),
+      amount: formatMoney(point, currency),
       per: '/yr',
-      note: `${formatUsd(Math.round(point.usdCents / 12))}/mo effective`,
+      note: `${formatMoney(perMonth, currency)}/mo effective`,
     };
   }
-  return { amount: formatUsd(point.usdCents), per: '/mo' };
+  return { amount: formatMoney(point, currency), per: '/mo' };
 }
 
 /** The Founding Pro promo (D19 launch offer), straight off the manifest. */

@@ -13,6 +13,7 @@ import {
 } from '@declutrmail/shared';
 import type {
   BillingCycle,
+  BillingProviderId,
   BillingSubscription,
   CancelRequest,
 } from '@declutrmail/shared/contracts';
@@ -21,7 +22,11 @@ import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
-import { formatUsd } from '@/features/marketing/pricing/pricing-model';
+import {
+  currencyForProvider,
+  formatMoney,
+  formatUsd,
+} from '@/features/marketing/pricing/pricing-model';
 import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
@@ -104,7 +109,14 @@ function processingPhaseAt(pending: PendingCheckout, now: number): ProcessingPha
  * No payment-method / invoice sections at beta: the BE exposes no
  * portal or invoice surface yet (D119's full layout lands with it).
  */
-export function BillingScreen({ initialIntent = null }: { initialIntent?: BillingIntent | null }) {
+export function BillingScreen({
+  initialIntent = null,
+  initialProvider = 'paddle',
+}: {
+  initialIntent?: BillingIntent | null;
+  /** Geo-derived default rail (D117); the radio still overrides it. */
+  initialProvider?: BillingProviderId;
+}) {
   const { me } = useAuth();
   const { tier: meTier, cleanupRemaining } = useTier();
   const workspaceId = me.user.workspaceId;
@@ -383,7 +395,9 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
         />
       ) : null}
 
-      {data?.foundingMember ? <FoundingBanner /> : null}
+      {data?.foundingMember ? (
+        <FoundingBanner provider={data.subscription?.provider ?? 'paddle'} />
+      ) : null}
 
       <CurrentPlanCard
         tier={tier}
@@ -431,6 +445,7 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
           subscription?.scheduledChange != null
         }
         initialIntent={initialIntent}
+        initialProvider={initialProvider}
         onRequestCancel={() => setCancelOpen(true)}
         onPaymentCompleted={(target, cycle, attemptId) =>
           // Own-id transition over this checkout's reservation: the
@@ -698,8 +713,15 @@ function CurrentPlanCard({
   // Headline price: the backing subscription's actual cycle price, or
   // the manifest monthly line otherwise (bare $0 for Free — "/mo" on a
   // forever-free plan reads like a charge).
+  // A BACKING subscription states its own provider, so the headline
+  // currency here is a fact, not a guess: a Razorpay subscriber paying
+  // ₹15,999/yr must never read "$190/yr" as their current plan.
   const priceLabel = subBacksTier
-    ? (planPriceLabel(subscription.tier, subscription.cycle) ?? '')
+    ? (planPriceLabel(
+        subscription.tier,
+        subscription.cycle,
+        currencyForProvider(subscription.provider),
+      ) ?? '')
     : tier === 'free'
       ? formatUsd(0)
       : (planPriceLabel(tier, 'monthly') ?? formatUsd(0));
@@ -1024,8 +1046,12 @@ function PausedSubscriptionNotice({
   );
 }
 
-/** Founding Pro banner (D119 / D126). Price straight off the manifest. */
-function FoundingBanner() {
+/**
+ * Founding Pro banner (D119 / D126). Price straight off the manifest,
+ * in the currency the member's own rail locked — a Razorpay founding
+ * member's price is locked at ₹10,999/yr, not $129/yr.
+ */
+function FoundingBanner({ provider }: { provider: BillingProviderId }) {
   const promo = TIER_MANIFEST.pro.promo;
   if (!promo) return null;
   return (
@@ -1046,7 +1072,8 @@ function FoundingBanner() {
       <span aria-hidden>🏛️</span>
       <span>
         <strong style={{ fontWeight: 650 }}>{promo.name} member</strong> — price locked at{' '}
-        {formatUsd(promo.annual.usdCents)}/yr while your subscription stays active.
+        {formatMoney(promo.annual, currencyForProvider(provider))}/yr while your subscription stays
+        active.
       </span>
     </div>
   );

@@ -74,11 +74,11 @@ const FREE_BODY: BillingSubscription = { tier: 'free', foundingMember: false, su
 
 let checkoutBody: unknown = null;
 
-function renderScreen() {
+function renderScreen(props: { initialProvider?: 'paddle' | 'razorpay' } = {}) {
   const client = createTestQueryClient();
   return render(
     <QueryWrapper client={client}>
-      <BillingScreen initialIntent={null} />
+      <BillingScreen initialIntent={null} {...props} />
     </QueryWrapper>,
   );
 }
@@ -160,5 +160,48 @@ describe('checkout provider gate (D117)', () => {
         promo: 'foundingPro',
       }),
     );
+  });
+});
+
+describe('checkout currency (D117/D226)', () => {
+  it('the preview quotes the currency the SELECTED provider will charge', async () => {
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    const panel = screen.getByTestId('checkout-panel');
+
+    // Founding Pro is unprovisioned on Razorpay in this fixture, so drop
+    // the promo to reach the standard annual point that IS provisioned.
+    fireEvent.click(within(panel).getByRole('checkbox'));
+    expect(panel).toHaveTextContent(/\$190 billed annually/);
+
+    fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
+
+    // The D226 preview is the "exactly what happens" step. Quoting $190
+    // and then charging ₹15,999 is the preview lying about the one
+    // number it exists to state.
+    expect(panel).toHaveTextContent(/₹15,999 billed annually/);
+    expect(panel).not.toHaveTextContent(/\$190 billed annually/);
+  });
+
+  it('switching back to Paddle restores USD', async () => {
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    const panel = screen.getByTestId('checkout-panel');
+    fireEvent.click(within(panel).getByRole('checkbox'));
+
+    fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
+    expect(panel).toHaveTextContent(/₹15,999/);
+    fireEvent.click(within(panel).getByLabelText(/Card · PayPal · Apple Pay/));
+    expect(panel).toHaveTextContent(/\$190 billed annually/);
+  });
+
+  it('an India-defaulted picker opens on Razorpay + INR without a click', async () => {
+    renderScreen({ initialProvider: 'razorpay' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    const panel = screen.getByTestId('checkout-panel');
+    fireEvent.click(within(panel).getByRole('checkbox'));
+
+    expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
+    expect(panel).toHaveTextContent(/₹15,999 billed annually/);
   });
 });
