@@ -39,6 +39,9 @@
  * Env vars (thresholds — defaults baked in):
  *   SUPABASE_DB_SIZE_WARN_MB      default 400
  *   UPSTASH_DAILY_CMD_WARN        default 1000000
+ *   UPSTASH_BUDGET_WARN_FRACTION  default 0.8 (of the database's own
+ *                                 Upstash budget, gauged against the
+ *                                 PROJECTED month-end spend)
  *   VERCEL_MTD_COST_WARN_USD      default 20
  *   SENTRY_DAILY_EVENTS_WARN      default 1000
  *   POSTHOG_MTD_EVENTS_WARN       default 1000000
@@ -94,6 +97,25 @@ async function httpJson(url, opts) {
 function gauge(value, warnAt) {
   const status = value >= warnAt * 2 ? 'BREACH' : value >= warnAt ? 'WARN' : 'OK';
   return { status, usagePct: Math.round((value / warnAt) * 100) };
+}
+
+/** Status severity order, for picking the worst of several gauges. */
+const RANK = { OK: 0, UNCONFIGURED: 0, WARN: 1, BREACH: 2, ERROR: 3 };
+
+/**
+ * Fraction of the current UTC month elapsed, for extrapolating a
+ * month-to-date total to a month-end projection.
+ *
+ * Floored at 10%: in the first hours of a month the divisor approaches
+ * zero and any spend at all projects to a fantasy number. Early in the
+ * month the projection is therefore CONSERVATIVE (it under-projects)
+ * rather than paging on noise — a real overspend still trips it within
+ * a few days, which is all the warning the cap needs.
+ */
+function monthElapsedFraction(now = new Date()) {
+  const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+  return Math.max((now.getTime() - start) / (end - start), 0.1);
 }
 
 function monthStartIso() {
@@ -214,16 +236,54 @@ async function checkUpstash() {
         .join('; '),
     };
   }
-  // All active — gauge command volume on the primary (single prod Redis).
+  // All active — gauge the primary (single prod Redis).
   const db = dbs[0];
   const stats = await httpJson(`https://api.upstash.com/v2/redis/stats/${db.database_id}`, {
     headers,
   });
   const cmds = latestValue(stats.daily_net_commands, 'daily_net_commands');
   const storageMb = latestValue(stats.current_storage, 'current_storage') / (1024 * 1024);
-  return {
+  const volume = {
     ...gauge(cmds, warnCmds),
-    detail: `${db.database_name}: ${fmtInt(cmds)} commands today (warn ${fmtInt(warnCmds)}), storage ${storageMb.toFixed(1)} MB`,
+    detail: `${fmtInt(cmds)} commands today (warn ${fmtInt(warnCmds)})`,
+  };
+
+  // SPEND, projected. Volume alone cannot see this coming: on 2026-07-25
+  // this vendor read "🟢 OK 14% — 137,114 commands today" hours before the
+  // production database was budget-suspended, because 137k/day is a
+  // seventh of the command threshold while the MONTH's cost was already
+  // at the cap. Commands and money are different axes and only one of
+  // them suspends the database.
+  //
+  // Gauged against the database's OWN `budget` rather than an env
+  // constant, so raising the cap in the Upstash console cannot leave a
+  // stale threshold here.
+  //
+  // The projection is the part that buys warning time. A flat gauge on
+  // spend-so-far is green early in the month by construction — day 5 of a
+  // $30 budget at $8 reads 27% while the run-rate says $48 by month end.
+  const budget = Number(db.budget ?? 0);
+  const monthCost = Number(stats.total_monthly_billing);
+  if (!(budget > 0) || !Number.isFinite(monthCost)) {
+    // Fixed/pro plans carry no spend cap to breach, and a plan that does
+    // not report billing cannot be gauged on it — say which, and fall
+    // back to volume rather than inventing a verdict.
+    const why = budget > 0 ? 'no billing reported' : `no spend cap (type=${db.type ?? 'unknown'})`;
+    return { ...volume, detail: `${db.database_name}: ${volume.detail}, ${why}` };
+  }
+  const projected = monthCost / monthElapsedFraction();
+  const spend = gauge(projected, budget * envNum('UPSTASH_BUDGET_WARN_FRACTION', 0.8));
+
+  // Worst axis wins — a database on track to blow its cap is not "OK"
+  // because its command count happens to be low.
+  const worst = RANK[spend.status] >= RANK[volume.status] ? spend : volume;
+  return {
+    status: worst.status,
+    usagePct: worst.usagePct,
+    detail:
+      `${db.database_name}: $${monthCost.toFixed(2)} spent this month, ` +
+      `projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap` +
+      ` — ${volume.detail}, storage ${storageMb.toFixed(1)} MB`,
   };
 }
 
