@@ -6,6 +6,8 @@ import '@declutrmail/shared/tokens.css';
 import { isFeatureEnabled } from '@/lib/flags';
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { Providers } from './providers';
+import { defaultProviderForCountry } from '@/features/billing/billing-region';
+import { COUNTRY_HEADER } from '@/middleware';
 
 const geist = Geist({
   subsets: ['latin'],
@@ -43,7 +45,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // carry a stale (or missing) nonce. Any future inline <Script> must
   // read the nonce the same way: `(await headers()).get('x-nonce')`.
   // https://nextjs.org/docs/app/guides/content-security-policy
-  const nonce = (await headers()).get('x-nonce') ?? undefined;
+  const requestHeaders = await headers();
+  const nonce = requestHeaders.get('x-nonce') ?? undefined;
+  // Preferred billing rail (D117), resolved at the edge. Read here so
+  // every in-app price — tier gate, upgrade nudges, plan strip — quotes
+  // the rail the visitor will be charged on, from first paint. Each
+  // price surface clamps this per point, so an unprovisioned region
+  // still renders (and charges) the international rail.
+  const regionProvider = defaultProviderForCountry(requestHeaders.get(COUNTRY_HEADER));
   return (
     // suppressHydrationWarning: theme-init.js sets `data-theme` before
     // hydration, so the client html attributes legitimately differ
@@ -68,7 +77,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         {isFeatureEnabled('darkMode') && (
           <script src="/theme-init.js" nonce={nonce} suppressHydrationWarning />
         )}
-        <Providers>{children}</Providers>
+        <Providers regionProvider={regionProvider}>{children}</Providers>
       </body>
     </html>
   );

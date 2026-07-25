@@ -6,6 +6,9 @@ import {
   CAPABILITY_LABELS,
   cardBullets,
   compareRows,
+  currencyForProvider,
+  formatInr,
+  formatMoney,
   formatUsd,
   foundingProPromo,
   priceLineFor,
@@ -163,5 +166,42 @@ describe('cardBullets — manifest-derived card copy', () => {
     expect(bullets).toContain(
       `${TIER_MANIFEST.pro.inboxLimit} connected ${TIER_MANIFEST.pro.inboxLimit === 1 ? 'inbox' : 'inboxes'}`,
     );
+  });
+});
+
+describe('currency (D117)', () => {
+  it('the provider decides the currency — it is a charge fact, not a preference', () => {
+    expect(currencyForProvider('paddle')).toBe('USD');
+    expect(currencyForProvider('razorpay')).toBe('INR');
+  });
+
+  it('formats INR with Indian digit grouping', () => {
+    expect(formatInr(74_900)).toBe('₹749');
+    // Past 1,00,000 paise-to-rupees, en-IN groups by lakh — ₹1,09,999,
+    // NOT the western ₹109,999.
+    expect(formatInr(1_099_900)).toBe('₹10,999');
+    expect(formatInr(10_999_900)).toBe('₹1,09,999');
+  });
+
+  it('formatMoney picks the manifest field — never converts at runtime', () => {
+    const pro = TIER_MANIFEST.pro.prices.annual!;
+    expect(formatMoney(pro, 'USD')).toBe(formatUsd(pro.usdCents));
+    expect(formatMoney(pro, 'INR')).toBe(formatInr(pro.inrPaise));
+    // The two are independently chosen prices, so they must NOT be
+    // derivable from one another by any fixed rate.
+    expect(formatMoney(pro, 'INR')).not.toBe(formatMoney(pro, 'USD'));
+  });
+
+  it('every purchasable price point carries BOTH currencies', () => {
+    // A point missing one currency renders "₹NaN" / "$NaN" at checkout
+    // for exactly the region that cannot see it in review.
+    for (const tier of [TIER_MANIFEST.plus, TIER_MANIFEST.pro]) {
+      for (const point of [tier.prices.monthly, tier.prices.annual, tier.promo?.annual]) {
+        if (!point) continue;
+        expect(Number.isFinite(point.usdCents)).toBe(true);
+        expect(Number.isFinite(point.inrPaise)).toBe(true);
+        expect(point.inrPaise).toBeGreaterThan(0);
+      }
+    }
   });
 });
