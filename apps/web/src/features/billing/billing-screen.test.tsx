@@ -287,7 +287,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     });
   });
 
-  it('monthly cycle drops the promo; the unprovisioned Razorpay route is never offered (D117)', async () => {
+  it('monthly cycle drops the promo and still defaults to the Paddle rail (D117)', async () => {
     let checkoutBody: unknown = null;
     installFetchStub([
       {
@@ -321,9 +321,12 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     const panel = screen.getByTestId('checkout-panel');
     expect(within(panel).queryByText(/Founding Pro/)).not.toBeInTheDocument();
-    // Razorpay has no catalog id at launch — offering it would send the
-    // user into BILLING_NOT_PROVISIONED at the moment of purchase.
-    expect(within(panel).queryByLabelText(/UPI · cards · netbanking/)).not.toBeInTheDocument();
+    // Razorpay went live 2026-07-25, so Pro monthly now carries a plan id
+    // and the rail IS offered. What must not change is the default: this
+    // screen renders without a geo hint, so an unrouted visitor stays on
+    // Paddle and is charged USD unless they pick otherwise.
+    expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeInTheDocument();
+    expect(within(panel).getByLabelText(/Card · PayPal · Apple Pay/)).toBeChecked();
     fireEvent.click(
       within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
     );

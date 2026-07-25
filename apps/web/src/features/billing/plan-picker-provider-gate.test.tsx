@@ -44,9 +44,15 @@ vi.mock('@/features/billing/checkout', () => ({
   launchCheckout: vi.fn(() => Promise.resolve()),
 }));
 
-// Pro MONTHLY and ANNUAL gain a Razorpay id; the Founding Pro promo
-// does not. The promo staying null is the whole point — it is what makes
-// "which point did this label clamp against?" an answerable question.
+// Pro MONTHLY and ANNUAL carry a Razorpay id; the Founding Pro promo is
+// explicitly NULLED. The promo being unprovisioned is the whole point —
+// it is what makes "which point did this label clamp against?" an
+// answerable question.
+//
+// The null is set here rather than inherited from the real manifest:
+// when the live Razorpay catalog landed (2026-07-25) every real id became
+// non-null, and a fixture leaning on the real one would have quietly
+// stopped testing the thing it was written for.
 vi.mock('@declutrmail/shared/entitlements', async (importOriginal) => {
   const actual = await importOriginal<typeof Entitlements>();
   const pro = actual.TIER_MANIFEST.pro;
@@ -60,6 +66,7 @@ vi.mock('@declutrmail/shared/entitlements', async (importOriginal) => {
           monthly: { ...pro.prices.monthly!, razorpayPlanId: 'plan_test_pro_monthly' },
           annual: { ...pro.prices.annual!, razorpayPlanId: 'plan_test_pro_annual' },
         },
+        promo: { ...pro.promo!, annual: { ...pro.promo!.annual, razorpayPlanId: null } },
       },
     },
   };

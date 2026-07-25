@@ -88,28 +88,40 @@ describe('(marketing) layout JSON-LD — D132 SEO batch', () => {
     });
   });
 
-  it('derives one Offer per purchasable manifest price point — and never the promo', () => {
+  it('derives one Offer per purchasable price point PER BUYABLE CURRENCY — and never the promo', () => {
     const { container } = renderLayout();
     const app = readJsonLd(container)['@graph'].find(
       (node) => node['@type'] === 'SoftwareApplication',
-    ) as { offers: Array<{ '@type': string; name: string; price: number }> };
+    ) as {
+      offers: Array<{ '@type': string; name: string; price: number; priceCurrency: string }>;
+    };
 
+    // A point sells in USD always, and in INR only once Razorpay carries
+    // it. Enumerating both beats resolving by request IP: the page quotes
+    // the visitor's rail, so a single-currency graph would contradict the
+    // rendered price for half the world — but varying the graph by IP
+    // would make it change between crawls.
     const expected = Object.values(TIER_MANIFEST)
       .filter((tier) => tier.purchasable)
       .flatMap((tier) =>
         (['monthly', 'annual'] as const).flatMap((cycle) => {
           const price = tier.prices[cycle];
           if (!price) return [];
-          return [
-            {
-              name: price.usdCents === 0 ? tier.name : `${tier.name} — ${cycle}`,
-              price: price.usdCents / 100,
-            },
-          ];
+          const name = price.usdCents === 0 ? tier.name : `${tier.name} — ${cycle}`;
+          const offers = [{ name, price: price.usdCents / 100, priceCurrency: 'USD' }];
+          if (price.razorpayPlanId !== null) {
+            offers.push({ name, price: price.inrPaise / 100, priceCurrency: 'INR' });
+          }
+          return offers;
         }),
       );
 
-    expect(app.offers.map(({ name, price }) => ({ name, price }))).toEqual(expected);
+    expect(
+      app.offers.map(({ name, price, priceCurrency }) => ({ name, price, priceCurrency })),
+    ).toEqual(expected);
+    // Razorpay is live, so INR offers must actually be present — an
+    // all-USD graph would mean the clamp silently reverted.
+    expect(app.offers.some((offer) => offer.priceCurrency === 'INR')).toBe(true);
     expect(app.offers.every((offer) => offer['@type'] === 'Offer')).toBe(true);
     // The Founding Pro promo is a limited-redemption price — it must
     // not be baked into structured data that cannot expire with it.

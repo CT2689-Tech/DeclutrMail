@@ -7,7 +7,10 @@
 //
 // Catalog ids (`paddlePriceId` / `razorpayPlanId`, D117) are null until
 // the catalog-provisioning unit writes the live SKU ids back into this
-// file.
+// file. Both providers are now LIVE-provisioned (2026-07-25) — the
+// Razorpay ids here are the switch that opens India: every price surface
+// clamps per point on `razorpayPlanId !== null`, so populating them is
+// what makes an India visitor see (and be charged) INR.
 //
 // Ladder locked by the founder's 2026-06-11 launch-buildout spec (D19,
 // with D17–D21 / D77 / D81 context). The founder reconfirmed standard
@@ -72,14 +75,14 @@ export const TIER_MANIFEST: TierManifest = {
         usdCents: 900,
         inrPaise: 74_900,
         paddlePriceId: 'pri_01ky15axxbeeyge87f9hehw37t',
-        razorpayPlanId: null,
+        razorpayPlanId: 'plan_THtwadiHmKTaze',
       },
       // $90/yr — 2 months free vs monthly (D19).
       annual: {
         usdCents: 9000,
         inrPaise: 749_900,
         paddlePriceId: 'pri_01ky15axzc9mz8sxw43c0wtn6h',
-        razorpayPlanId: null,
+        razorpayPlanId: 'plan_THtwb3iWLy7qyp',
       },
     },
     inboxLimit: 1,
@@ -96,14 +99,14 @@ export const TIER_MANIFEST: TierManifest = {
         usdCents: 1900,
         inrPaise: 159_900,
         paddlePriceId: 'pri_01ky15ay15wqjaz0wjfnhe94vs',
-        razorpayPlanId: null,
+        razorpayPlanId: 'plan_THtwbSxTZRClHX',
       },
       // $190/yr — 2 months free vs monthly (founder-confirmed 2026-07-14).
       annual: {
         usdCents: 19000,
         inrPaise: 1_599_900,
         paddlePriceId: 'pri_01ky15ay2p27rbevtvc0gb6qta',
-        razorpayPlanId: null,
+        razorpayPlanId: 'plan_THtwbs4FAeqWlv',
       },
     },
     inboxLimit: 2,
@@ -122,7 +125,7 @@ export const TIER_MANIFEST: TierManifest = {
         usdCents: 12900,
         inrPaise: 1_099_900,
         paddlePriceId: 'pri_01ky15ay4bj9t68bv158hwwfqw',
-        razorpayPlanId: null,
+        razorpayPlanId: 'plan_THtwcIa7pf9HzZ',
       },
       maxRedemptions: 250,
     },
