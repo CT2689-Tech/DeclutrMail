@@ -12,7 +12,12 @@ import type {
 } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 
-import { formatUsd, priceLineFor, TIER_JOBS } from '@/features/marketing/pricing/pricing-model';
+import {
+  currencyForPricePoint,
+  formatMoney,
+  priceLineFor,
+  TIER_JOBS,
+} from '@/features/marketing/pricing/pricing-model';
 import { track } from '@/lib/posthog';
 
 import { apiErrorCode, apiErrorDetail } from './api/use-billing-subscription';
@@ -23,7 +28,7 @@ import {
   formatBillingDate,
   isDeferredDowngrade,
   MONEY_BACK_NOTE,
-  planPriceLabel,
+  quotedPlanPrice,
   sharedAnnualMonthsFree,
   STRIP_TIER_IDS,
   type StripTierId,
@@ -80,6 +85,7 @@ export function PlanPicker({
   subscription,
   disabled,
   initialIntent = null,
+  initialProvider = 'paddle',
   onRequestCancel,
   onPaymentCompleted,
   onCheckoutAttempt,
@@ -97,6 +103,10 @@ export function PlanPicker({
   disabled: boolean;
   /** Validated pricing-page/gate-nudge choice carried through auth. */
   initialIntent?: BillingIntent | null;
+  /** Geo-derived default rail (D117). Only a DEFAULT — the radio
+   *  overrides it, and `effectiveProvider` still clamps it against the
+   *  catalog so an unprovisioned region can never be preselected. */
+  initialProvider?: BillingProviderId;
   /** Route to the cancel confirm (the downgrade-to-free path, D120). */
   onRequestCancel: () => void;
   /** Paddle overlay reported `checkout.completed` — payment made, tier
@@ -148,7 +158,7 @@ export function PlanPicker({
 }) {
   const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
   const [selected, setSelected] = useState<StripTierId | null>(null);
-  const [provider, setProvider] = useState<BillingProviderId>('paddle');
+  const [provider, setProvider] = useState<BillingProviderId>(initialProvider);
   const [claimFounding, setClaimFounding] = useState(
     initialIntent ? initialIntent.promo === 'foundingPro' : true,
   );
@@ -206,6 +216,11 @@ export function PlanPicker({
   const razorpayOffered =
     selected !== null && selected !== 'free' && razorpayIdFor(selected, cycle, founding) !== null;
   const effectiveProvider: BillingProviderId = razorpayOffered ? provider : 'paddle';
+  // The STRIP's currency. `razorpayOffered` is per-price-point, so with
+  // no plan selected yet it is false and the strip would snap to USD
+  // even for an India-defaulted picker; fall back to the chosen rail
+  // when there is nothing selected to clamp against.
+  const stripProvider: BillingProviderId = selected === null ? provider : effectiveProvider;
   const errorMessage = checkoutErrorMessage(checkout.error);
   const monthsFree = sharedAnnualMonthsFree();
 
@@ -384,6 +399,7 @@ export function PlanPicker({
             isSelected={id === selected}
             disabled={disabled}
             hasGrantingSubscription={grantingSub !== null}
+            provider={stripProvider}
             onSelect={() => onSelect(id)}
           />
         ))}
@@ -409,6 +425,7 @@ export function PlanPicker({
               fromTier={grantingSub.tier}
               fromCycle={grantingSub.cycle}
               currentPeriodEnd={grantingSub.currentPeriodEnd}
+              provider={grantingSub.provider}
               isPending={changePlan.isPending}
               errorMessage={
                 changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null
@@ -423,7 +440,7 @@ export function PlanPicker({
           <ConfirmPanel
             target={selected}
             cycle={cycle}
-            provider={effectiveProvider}
+            provider={provider}
             razorpayOffered={razorpayOffered}
             onProviderChange={setProvider}
             foundingEligible={foundingEligible}
@@ -553,6 +570,7 @@ function PlanCard({
   isSelected,
   disabled,
   hasGrantingSubscription,
+  provider,
   onSelect,
 }: {
   tierId: StripTierId;
@@ -563,10 +581,13 @@ function PlanCard({
   isSelected: boolean;
   disabled: boolean;
   hasGrantingSubscription: boolean;
+  /** Rail the strip prices against — clamped per point, so the cards
+   *  agree with the confirm panel one click later. */
+  provider: BillingProviderId;
   onSelect: () => void;
 }) {
   const tier = TIER_MANIFEST[tierId];
-  const price = priceLineFor(tier, cycle);
+  const price = priceLineFor(tier, cycle, provider);
   // CTA per card state. Every non-current card gets one so the row
   // reads as equals; the current card's only action is switching its
   // billing cycle via the toggle.
@@ -714,6 +735,7 @@ function ChangePlanPanel({
   fromTier,
   fromCycle,
   currentPeriodEnd,
+  provider,
   isPending,
   errorMessage,
   onConfirm,
@@ -724,12 +746,15 @@ function ChangePlanPanel({
   fromTier: PaidTier;
   fromCycle: BillingCycle;
   currentPeriodEnd: string | null;
+  /** The GRANTING subscription's own rail — what this workspace is
+   *  already being charged on, so it is a fact, not a regional guess. */
+  provider: BillingProviderId;
   isPending: boolean;
   errorMessage: string | null;
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
-  const toLabel = planPriceLabel(target, cycle);
+  const toLabel = quotedPlanPrice(target, cycle, provider);
   const samePlan = target === fromTier && cycle === fromCycle;
   const isDowngrade = isDeferredDowngrade(fromTier, fromCycle, target, cycle);
   const effectiveDate = formatBillingDate(currentPeriodEnd);
@@ -841,6 +866,9 @@ function ConfirmPanel({
 }: {
   target: PaidTier;
   cycle: BillingCycle;
+  /** The RAW regional/user rail pick, NOT the parent's clamped one —
+   *  this panel quotes two different price points and each has to clamp
+   *  against its own catalog id. */
   provider: BillingProviderId;
   /** Whether the price point this panel would buy has a Razorpay id —
    *  derived by the parent, which also bills with it. */
@@ -861,10 +889,24 @@ function ConfirmPanel({
   // render a fabricated "$0.00 billed …, starting today" promise —
   // block checkout instead. Unreachable with today's manifest (both
   // paid tiers carry both cycles); guards future tier edits.
-  const amountCents = founding ? founding.annual.usdCents : (point?.usdCents ?? null);
+  const pricePoint = founding ? founding.annual : (point ?? null);
+  // D226 makes this preview the truthful "here is exactly what
+  // happens" step, so it must quote the currency the SELECTED provider
+  // actually charges: Razorpay settles INR, Paddle USD, and the
+  // manifest carries both as independently chosen prices. Quoting $129
+  // and then charging ₹10,999 is the preview lying about the one number
+  // it exists to state.
+  const currency = pricePoint ? currencyForPricePoint(pricePoint, provider) : 'USD';
+  // The claim-founding label quotes a DIFFERENT price point than the one
+  // `impact` describes — the promo and standard annual are separate SKUs
+  // with separate Razorpay ids, so one being purchasable on a rail says
+  // nothing about the other. Reusing `currency` here let an India
+  // visitor read "Claim Founding Pro — ₹10,999/yr" off the standard
+  // point's provisioning, tick the box, and land on a $129 charge.
+  const promoCurrency = tier.promo ? currencyForPricePoint(tier.promo.annual, provider) : currency;
   const impact =
-    amountCents !== null
-      ? `${formatUsd(amountCents)} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
+    pricePoint !== null
+      ? `${formatMoney(pricePoint, currency)} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
       : `Pricing for the ${cycle} cycle isn't available right now — try the other billing cycle.`;
 
   return (
@@ -924,7 +966,7 @@ function ConfirmPanel({
           />
           <span>
             <strong style={{ fontWeight: 600 }}>
-              Claim {tier.promo.name} — {formatUsd(tier.promo.annual.usdCents)}/yr
+              Claim {tier.promo.name} — {formatMoney(tier.promo.annual, promoCurrency)}/yr
             </strong>{' '}
             <span style={{ color: color.fgMuted }}>
               First {tier.promo.maxRedemptions} members, price locked while you stay subscribed. If
@@ -954,7 +996,7 @@ function ConfirmPanel({
       )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <Button tone="primary" onClick={onConfirm} disabled={isPending || amountCents === null}>
+        <Button tone="primary" onClick={onConfirm} disabled={isPending || pricePoint === null}>
           {isPending ? 'Opening checkout…' : 'Confirm — continue to secure checkout →'}
         </Button>
         <Button tone="default" onClick={onDismiss} disabled={isPending}>

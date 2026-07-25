@@ -8,14 +8,17 @@
  *   - Paddle events: `checkout.completed` / `checkout.closed` reach the
  *     caller's callbacks — and ONLY those events (the truthful
  *     post-checkout state must never fire on e.g. `checkout.loaded`).
- *   - Razorpay: navigate to the provider-hosted `shortUrl`.
+ *   - Razorpay: open the in-page Checkout.js overlay against the
+ *     server-created subscription, map handler/ondismiss onto the SAME
+ *     event contract as Paddle, and fall back to the hosted `shortUrl`
+ *     only when the script cannot load.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as PaddleJs from '@paddle/paddle-js';
 import type { PaddleCheckoutSession, RazorpayCheckoutSession } from '@declutrmail/shared/contracts';
 
-import { __setPaddleLoaderForTests, launchCheckout } from './checkout';
+import { __setPaddleLoaderForTests, __setRazorpayLoaderForTests, launchCheckout } from './checkout';
 
 const PADDLE_SESSION: PaddleCheckoutSession = {
   provider: 'paddle',
@@ -143,9 +146,69 @@ describe('launchCheckout', () => {
     await expect(launchCheckout(PADDLE_SESSION)).rejects.toThrow('Paddle.js failed to initialize.');
   });
 
-  it('razorpay: navigates to the hosted shortUrl', async () => {
+  it('razorpay: opens the overlay against the server-created subscription', async () => {
+    const open = vi.fn();
+    // MUST be a function expression, not an arrow — the launcher calls
+    // it with `new`, and arrows are not constructors.
+    const ctor = vi.fn(function () {
+      return { open };
+    });
+    __setRazorpayLoaderForTests(() => Promise.resolve(ctor as never));
     const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+
     await launchCheckout(RAZORPAY_SESSION);
+
+    expect(ctor).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'rzp_test_key', subscription_id: 'sub_123' }),
+    );
+    expect(open).toHaveBeenCalledTimes(1);
+    // The overlay is the point — no one-way trip to api.razorpay.com.
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('razorpay: handler → onCompleted, and a post-success close is NOT an abandon', async () => {
+    let options!: { handler: () => void; modal: { ondismiss: () => void } };
+    const ctor = vi.fn(function (o: typeof options) {
+      options = o;
+      return { open: vi.fn() };
+    });
+    __setRazorpayLoaderForTests(() => Promise.resolve(ctor as never));
+    const onCompleted = vi.fn();
+    const onClosed = vi.fn();
+
+    await launchCheckout(RAZORPAY_SESSION, { onCompleted, onClosed });
+
+    options.handler();
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+    // Razorpay fires ondismiss when the post-payment overlay closes too;
+    // reporting that as "closed without paying" would wrongly release
+    // the reservation the caller is holding for a paid checkout.
+    options.modal.ondismiss();
+    expect(onClosed).not.toHaveBeenCalled();
+  });
+
+  it('razorpay: a dismiss WITHOUT payment reports onClosed', async () => {
+    let options!: { modal: { ondismiss: () => void } };
+    const ctor = vi.fn(function (o: typeof options) {
+      options = o;
+      return { open: vi.fn() };
+    });
+    __setRazorpayLoaderForTests(() => Promise.resolve(ctor as never));
+    const onClosed = vi.fn();
+
+    await launchCheckout(RAZORPAY_SESSION, { onClosed });
+    options.modal.ondismiss();
+
+    expect(onClosed).toHaveBeenCalledTimes(1);
+  });
+
+  it('razorpay: falls back to the hosted shortUrl when Checkout.js cannot load', async () => {
+    __setRazorpayLoaderForTests(() => Promise.reject(new Error('CDN blocked')));
+    const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+
+    // Must NOT reject — a dead Confirm button is worse than the
+    // one-way hosted page, which still completes the purchase.
+    await expect(launchCheckout(RAZORPAY_SESSION)).resolves.toBeUndefined();
     expect(assign).toHaveBeenCalledWith('https://rzp.io/i/abc');
   });
 });

@@ -30,7 +30,20 @@ import '@/features/marketing/public-shell/public-shell.css';
 const { color, font } = tokens;
 
 /**
- * One schema.org Offer per purchasable tier price point (D19 ladder).
+ * One schema.org Offer per purchasable tier price point (D19 ladder),
+ * in every currency that point can ACTUALLY be bought in (D117).
+ *
+ * Enumerated rather than region-resolved on purpose. The pages
+ * themselves quote the visitor's rail, so a single-currency graph would
+ * disagree with the rendered price for half the world — but varying the
+ * graph by request IP instead makes the structured data change between
+ * crawls. Listing both is the only form that is true from every vantage
+ * point, and it is exactly what schema.org's repeatable `offers` is for.
+ *
+ * INR appears only once `razorpayPlanId` is provisioned for that exact
+ * point: advertising a price no checkout can take is the same lie in
+ * structured data as it is on the page.
+ *
  * The Founding Pro promo is deliberately excluded: it is a
  * limited-redemption price, and structured data has no way to expire
  * with the 250th redemption.
@@ -42,15 +55,26 @@ function tierOffers() {
       (['monthly', 'annual'] as const).flatMap((cycle) => {
         const price = tier.prices[cycle];
         if (!price) return [];
-        return [
+        const name = price.usdCents === 0 ? tier.name : `${tier.name} — ${cycle}`;
+        const offers = [
           {
             '@type': 'Offer',
-            name: price.usdCents === 0 ? tier.name : `${tier.name} — ${cycle}`,
+            name,
             price: price.usdCents / 100,
             priceCurrency: 'USD',
             url: `${siteUrl()}/pricing`,
           },
         ];
+        if (price.razorpayPlanId !== null) {
+          offers.push({
+            '@type': 'Offer',
+            name,
+            price: price.inrPaise / 100,
+            priceCurrency: 'INR',
+            url: `${siteUrl()}/pricing`,
+          });
+        }
+        return offers;
       }),
     );
 }

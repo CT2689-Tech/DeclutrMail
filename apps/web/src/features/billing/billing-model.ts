@@ -13,17 +13,76 @@ import type {
   SubscriptionStatus,
 } from '@declutrmail/shared/contracts';
 
-import { formatUsd } from '@/features/marketing/pricing/pricing-model';
+import {
+  currencyForPricePoint,
+  currencyForProvider,
+  formatMoney,
+  type Currency,
+} from '@/features/marketing/pricing/pricing-model';
+import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 /** The condensed-strip tiers (D119) — the three self-serve rungs. */
 export const STRIP_TIER_IDS = ['free', 'plus', 'pro'] as const;
 export type StripTierId = (typeof STRIP_TIER_IDS)[number];
 
-/** "$19/mo" / "$190/yr" off the manifest; null when not offered. */
-export function planPriceLabel(tier: TierId, cycle: BillingCycle): string | null {
+function priceLabel(tier: TierId, cycle: BillingCycle, currency: Currency): string | null {
   const point = TIER_MANIFEST[tier].prices[cycle === 'annual' ? 'annual' : 'monthly'];
   if (!point) return null;
-  return `${formatUsd(point.usdCents)}${cycle === 'annual' ? '/yr' : '/mo'}`;
+  return `${formatMoney(point, currency)}${cycle === 'annual' ? '/yr' : '/mo'}`;
+}
+
+/**
+ * "$19/mo" — the price of a plan someone MIGHT buy, on the rail they
+ * would be routed to.
+ *
+ * CLAMPED to what that rail can actually charge: preferring Razorpay
+ * does not make a plan purchasable on it (India is deferred, every
+ * `razorpayPlanId` is null), and checkout falls back to Paddle/USD. A
+ * quote naming a currency the checkout cannot take is a promise we
+ * break one click later.
+ *
+ * For a subscription that ALREADY EXISTS use `chargedPlanPrice` — these
+ * answer different questions and must not be merged back together.
+ */
+export function quotedPlanPrice(
+  tier: TierId,
+  cycle: BillingCycle,
+  provider: BillingProviderId = 'paddle',
+): string | null {
+  const point = TIER_MANIFEST[tier].prices[cycle === 'annual' ? 'annual' : 'monthly'];
+  if (!point) return null;
+  return priceLabel(tier, cycle, currencyForPricePoint(point, provider));
+}
+
+/**
+ * "₹15,999/yr" — what an EXISTING subscription is actually billed.
+ *
+ * NOT clamped, deliberately. The subscription's own provider is settled
+ * fact: it exists, so it was purchasable on that rail, whatever the
+ * catalog says today. Clamping here would show a Razorpay subscriber
+ * paying ₹15,999/yr a "$190/yr" headline — the original defect, wearing
+ * the fix as a disguise.
+ *
+ * `founding` selects the PROMO price point (D126). A Founding Pro
+ * member is billed $129/yr, not the standard $190/yr, for as long as
+ * the subscription stays active — reading the standard point off the
+ * tier states a charge that never happens, and contradicts the founding
+ * banner sitting on the same screen.
+ */
+export function chargedPlanPrice(
+  tier: TierId,
+  cycle: BillingCycle,
+  provider: BillingProviderId,
+  founding = false,
+): string | null {
+  const currency = currencyForProvider(provider);
+  const promo = TIER_MANIFEST[tier].promo;
+  // The promo is an annual-only price point; a founding member on any
+  // other cycle is billed the standard line.
+  if (founding && promo && cycle === 'annual') {
+    return `${formatMoney(promo.annual, currency)}/yr`;
+  }
+  return priceLabel(tier, cycle, currency);
 }
 
 /**
