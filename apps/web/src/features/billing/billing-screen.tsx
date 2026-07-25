@@ -39,7 +39,13 @@ import { billingKeys } from './api/query-keys';
 import type { BillingIntent } from './billing-intent';
 import { useCancelSubscription } from './api/use-cancel-subscription';
 import { useChangePlan } from './api/use-change-plan';
-import { canCancel, formatBillingDate, planPriceLabel, statusNote } from './billing-model';
+import {
+  canCancel,
+  chargedPlanPrice,
+  formatBillingDate,
+  quotedPlanPrice,
+  statusNote,
+} from './billing-model';
 import { CancelModal } from './cancel-modal';
 import { useResumeSubscription } from './api/use-resume-subscription';
 import {
@@ -717,10 +723,10 @@ function CurrentPlanCard({
   // currency here is a fact, not a guess: a Razorpay subscriber paying
   // ₹15,999/yr must never read "$190/yr" as their current plan.
   const priceLabel = subBacksTier
-    ? (planPriceLabel(subscription.tier, subscription.cycle, subscription.provider) ?? '')
+    ? (chargedPlanPrice(subscription.tier, subscription.cycle, subscription.provider) ?? '')
     : tier === 'free'
       ? formatUsd(0)
-      : (planPriceLabel(tier, 'monthly') ?? formatUsd(0));
+      : (quotedPlanPrice(tier, 'monthly') ?? formatUsd(0));
   const renewal =
     subBacksTier && !subscription.cancelAtPeriodEnd
       ? formatBillingDate(subscription.currentPeriodEnd)

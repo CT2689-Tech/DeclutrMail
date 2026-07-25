@@ -13,32 +13,62 @@ import type {
   SubscriptionStatus,
 } from '@declutrmail/shared/contracts';
 
-import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
+import {
+  currencyForPricePoint,
+  currencyForProvider,
+  formatMoney,
+  type Currency,
+} from '@/features/marketing/pricing/pricing-model';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 /** The condensed-strip tiers (D119) — the three self-serve rungs. */
 export const STRIP_TIER_IDS = ['free', 'plus', 'pro'] as const;
 export type StripTierId = (typeof STRIP_TIER_IDS)[number];
 
+function priceLabel(tier: TierId, cycle: BillingCycle, currency: Currency): string | null {
+  const point = TIER_MANIFEST[tier].prices[cycle === 'annual' ? 'annual' : 'monthly'];
+  if (!point) return null;
+  return `${formatMoney(point, currency)}${cycle === 'annual' ? '/yr' : '/mo'}`;
+}
+
 /**
- * "$19/mo" / "₹1,599/mo" off the manifest; null when not offered.
+ * "$19/mo" — the price of a plan someone MIGHT buy, on the rail they
+ * would be routed to.
  *
- * Currency defaults to USD so every existing caller keeps its
- * behavior; the billing strip passes the rail-derived currency so the
- * CARDS agree with the confirm panel (D117) — a card reading $190 above
- * a preview reading ₹15,999 is the same lie in a different place.
+ * CLAMPED to what that rail can actually charge: preferring Razorpay
+ * does not make a plan purchasable on it (India is deferred, every
+ * `razorpayPlanId` is null), and checkout falls back to Paddle/USD. A
+ * quote naming a currency the checkout cannot take is a promise we
+ * break one click later.
+ *
+ * For a subscription that ALREADY EXISTS use `chargedPlanPrice` — these
+ * answer different questions and must not be merged back together.
  */
-export function planPriceLabel(
+export function quotedPlanPrice(
   tier: TierId,
   cycle: BillingCycle,
   provider: BillingProviderId = 'paddle',
 ): string | null {
   const point = TIER_MANIFEST[tier].prices[cycle === 'annual' ? 'annual' : 'monthly'];
   if (!point) return null;
-  // Clamped per point: an India visitor must not be quoted INR for a
-  // price point that is unprovisioned on Razorpay — checkout would
-  // clamp to Paddle and charge USD.
-  return `${formatMoney(point, currencyForPricePoint(point, provider))}${cycle === 'annual' ? '/yr' : '/mo'}`;
+  return priceLabel(tier, cycle, currencyForPricePoint(point, provider));
+}
+
+/**
+ * "₹15,999/yr" — what an EXISTING subscription is actually billed.
+ *
+ * NOT clamped, deliberately. The subscription's own provider is settled
+ * fact: it exists, so it was purchasable on that rail, whatever the
+ * catalog says today. Clamping here would show a Razorpay subscriber
+ * paying ₹15,999/yr a "$190/yr" headline — the original defect, wearing
+ * the fix as a disguise.
+ */
+export function chargedPlanPrice(
+  tier: TierId,
+  cycle: BillingCycle,
+  provider: BillingProviderId,
+): string | null {
+  return priceLabel(tier, cycle, currencyForProvider(provider));
 }
 
 /**

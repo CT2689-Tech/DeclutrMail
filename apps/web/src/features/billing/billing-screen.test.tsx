@@ -57,7 +57,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { launchCheckout, type CheckoutEvents } from './checkout';
 import type { BillingIntent } from './billing-intent';
-import { annualMonthsFree, planPriceLabel } from './billing-model';
+import { annualMonthsFree, quotedPlanPrice } from './billing-model';
 import { BillingScreen } from './billing-screen';
 import { pendingCheckoutKey, writePendingCheckout } from './pending-checkout';
 
@@ -205,12 +205,12 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(annualButton).toHaveAttribute('aria-pressed', 'true');
     expect(
       within(screen.getByTestId('plan-option-plus')).getByText(
-        new RegExp(`\\${planPriceLabel('plus', 'annual')}`),
+        new RegExp(`\\${quotedPlanPrice('plus', 'annual')}`),
       ),
     ).toBeInTheDocument();
     expect(
       within(screen.getByTestId('plan-option-pro')).getByText(
-        new RegExp(`\\${planPriceLabel('pro', 'annual')}`),
+        new RegExp(`\\${quotedPlanPrice('pro', 'annual')}`),
       ),
     ).toBeInTheDocument();
 
@@ -218,12 +218,12 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     fireEvent.click(within(picker).getByRole('button', { name: 'Monthly' }));
     expect(
       within(screen.getByTestId('plan-option-plus')).getByText(
-        new RegExp(`\\${planPriceLabel('plus', 'monthly')}`),
+        new RegExp(`\\${quotedPlanPrice('plus', 'monthly')}`),
       ),
     ).toBeInTheDocument();
     expect(
       within(screen.getByTestId('plan-option-pro')).getByText(
-        new RegExp(`\\${planPriceLabel('pro', 'monthly')}`),
+        new RegExp(`\\${quotedPlanPrice('pro', 'monthly')}`),
       ),
     ).toBeInTheDocument();
   });

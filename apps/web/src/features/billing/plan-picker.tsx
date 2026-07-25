@@ -28,7 +28,7 @@ import {
   formatBillingDate,
   isDeferredDowngrade,
   MONEY_BACK_NOTE,
-  planPriceLabel,
+  quotedPlanPrice,
   sharedAnnualMonthsFree,
   STRIP_TIER_IDS,
   type StripTierId,
@@ -754,7 +754,7 @@ function ChangePlanPanel({
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
-  const toLabel = planPriceLabel(target, cycle, provider);
+  const toLabel = quotedPlanPrice(target, cycle, provider);
   const samePlan = target === fromTier && cycle === fromCycle;
   const isDowngrade = isDeferredDowngrade(fromTier, fromCycle, target, cycle);
   const effectiveDate = formatBillingDate(currentPeriodEnd);

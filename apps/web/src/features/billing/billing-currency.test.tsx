@@ -18,6 +18,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { BillingCurrencyProvider } from './billing-currency';
+import { chargedPlanPrice, quotedPlanPrice } from './billing-model';
 import {
   currencyForPricePoint,
   formatInr,
@@ -82,5 +83,32 @@ describe('in-app upgrade nudges quote the regional rail (D117)', () => {
     expect(
       screen.getByText(new RegExp(formatUsd(PRO_MONTHLY.usdCents).replace('$', '\\$'))),
     ).toBeInTheDocument();
+  });
+});
+
+describe('quote vs charge are different questions (D117)', () => {
+  const PRO_ANNUAL = TIER_MANIFEST.pro.prices.annual!;
+
+  it('an EXISTING Razorpay subscription shows INR even though the catalog is unprovisioned', () => {
+    // The clamp that protects prospective quotes must not reach here.
+    // This subscription EXISTS, so it was purchasable on Razorpay
+    // whatever the catalog says today — the workspace is being billed
+    // ₹15,999/yr and must not read "$190/yr".
+    expect(PRO_ANNUAL.razorpayPlanId).toBeNull();
+    expect(chargedPlanPrice('pro', 'annual', 'razorpay')).toBe(
+      `${formatInr(PRO_ANNUAL.inrPaise)}/yr`,
+    );
+  });
+
+  it('a prospective QUOTE on the same unprovisioned point stays USD', () => {
+    expect(quotedPlanPrice('pro', 'annual', 'razorpay')).toBe(
+      `${formatUsd(PRO_ANNUAL.usdCents)}/yr`,
+    );
+  });
+
+  it('the two agree on Paddle, and once Razorpay is provisioned', () => {
+    expect(chargedPlanPrice('pro', 'annual', 'paddle')).toBe(
+      quotedPlanPrice('pro', 'annual', 'paddle'),
+    );
   });
 });

@@ -41,7 +41,7 @@ export function BillingCurrencyProvider({
 /**
  * The region's PREFERRED rail — deliberately not a resolved currency.
  *
- * Callers pass it to `planPriceLabel` / `currencyForPricePoint`, which
+ * Callers pass it to `quotedPlanPrice` / `currencyForPricePoint`, which
  * clamp per PRICE POINT: preferring Razorpay does not mean a given plan
  * is purchasable on it (India is deferred; every `razorpayPlanId` is
  * null today), and quoting INR for a point that checkout will charge in
