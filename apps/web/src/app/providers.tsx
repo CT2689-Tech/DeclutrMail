@@ -22,7 +22,7 @@
 import { useState, type ReactNode } from 'react';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
-import type { Currency } from '@/features/marketing/pricing/pricing-model';
+import type { BillingProviderId } from '@declutrmail/shared/contracts';
 import { makeQueryClient } from '@/lib/query-client';
 
 let browserQueryClient: QueryClient | undefined;
@@ -40,17 +40,18 @@ function getQueryClient(): QueryClient {
 
 export function Providers({
   children,
-  currency = 'USD',
+  regionProvider = 'paddle',
 }: {
   children: ReactNode;
-  /** Edge-resolved display currency (D117) — server-seeded so the first
-   *  paint is already right for the visitor's region. */
-  currency?: Currency;
+  /** Edge-resolved preferred rail (D117) — server-seeded so the first
+   *  paint is already right for the visitor's region. Price surfaces
+   *  clamp it per point; it is a preference, not a resolved currency. */
+  regionProvider?: BillingProviderId;
 }) {
   const [queryClient] = useState(getQueryClient);
   return (
     <QueryClientProvider client={queryClient}>
-      <BillingCurrencyProvider currency={currency}>{children}</BillingCurrencyProvider>
+      <BillingCurrencyProvider provider={regionProvider}>{children}</BillingCurrencyProvider>
     </QueryClientProvider>
   );
 }

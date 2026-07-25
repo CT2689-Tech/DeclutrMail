@@ -17,7 +17,7 @@ import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
 import { MONEY_BACK_NOTE, planPriceLabel } from './billing-model';
-import { useBillingCurrency } from './billing-currency';
+import { useRegionProvider } from './billing-currency';
 
 const { color, font, radius } = tokens;
 
@@ -67,11 +67,13 @@ export function UpgradeModal() {
   // Pro+ tiers have no upgrade path to offer (Team isn't purchasable)
   // — the honest limit statement with no nudge (D123's Pro rung).
   const nudge = tier === 'free' || tier === 'plus';
-  const currency = useBillingCurrency();
-  const proMonthly = planPriceLabel('pro', 'monthly', currency);
+  const regionProvider = useRegionProvider();
+  const proMonthly = planPriceLabel('pro', 'monthly', regionProvider);
   const actionTier = hit.reason === 'action_tier' ? hit.details.requiredTier : null;
   const actionTierName = actionTier ? TIER_MANIFEST[actionTier].name : null;
-  const actionTierMonthly = actionTier ? planPriceLabel(actionTier, 'monthly', currency) : null;
+  const actionTierMonthly = actionTier
+    ? planPriceLabel(actionTier, 'monthly', regionProvider)
+    : null;
 
   // ONE checkout path (D117): the CTA deep-links the nudged plan into
   // /billing's confirm step via the same validated intent the pricing
@@ -137,7 +139,7 @@ export function UpgradeModal() {
             {hit.reason === 'free_cap' ? (
               <>
                 Completed mail actions stay in place. Plus unlocks unlimited sender actions for{' '}
-                {planPriceLabel('plus', 'monthly', currency)}. Pro could do this for you
+                {planPriceLabel('plus', 'monthly', regionProvider)}. Pro could do this for you
                 automatically &mdash; Autopilot, Daily Brief, and Quiet Hours for {proMonthly}.
               </>
             ) : hit.reason === 'action_tier' ? (

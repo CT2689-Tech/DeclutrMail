@@ -13,11 +13,10 @@ import type {
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 
 import {
-  currencyForProvider,
+  currencyForPricePoint,
   formatMoney,
   priceLineFor,
   TIER_JOBS,
-  type Currency,
 } from '@/features/marketing/pricing/pricing-model';
 import { track } from '@/lib/posthog';
 
@@ -221,7 +220,7 @@ export function PlanPicker({
   // no plan selected yet it is false and the strip would snap to USD
   // even for an India-defaulted picker; fall back to the chosen rail
   // when there is nothing selected to clamp against.
-  const stripCurrency = currencyForProvider(selected === null ? provider : effectiveProvider);
+  const stripProvider: BillingProviderId = selected === null ? provider : effectiveProvider;
   const errorMessage = checkoutErrorMessage(checkout.error);
   const monthsFree = sharedAnnualMonthsFree();
 
@@ -400,7 +399,7 @@ export function PlanPicker({
             isSelected={id === selected}
             disabled={disabled}
             hasGrantingSubscription={grantingSub !== null}
-            currency={stripCurrency}
+            provider={stripProvider}
             onSelect={() => onSelect(id)}
           />
         ))}
@@ -426,7 +425,7 @@ export function PlanPicker({
               fromTier={grantingSub.tier}
               fromCycle={grantingSub.cycle}
               currentPeriodEnd={grantingSub.currentPeriodEnd}
-              currency={currencyForProvider(grantingSub.provider)}
+              provider={grantingSub.provider}
               isPending={changePlan.isPending}
               errorMessage={
                 changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null
@@ -571,7 +570,7 @@ function PlanCard({
   isSelected,
   disabled,
   hasGrantingSubscription,
-  currency,
+  provider,
   onSelect,
 }: {
   tierId: StripTierId;
@@ -582,13 +581,13 @@ function PlanCard({
   isSelected: boolean;
   disabled: boolean;
   hasGrantingSubscription: boolean;
-  /** Rail-derived currency — the cards must agree with the confirm
-   *  panel, or the strip contradicts the preview one click later. */
-  currency: Currency;
+  /** Rail the strip prices against — clamped per point, so the cards
+   *  agree with the confirm panel one click later. */
+  provider: BillingProviderId;
   onSelect: () => void;
 }) {
   const tier = TIER_MANIFEST[tierId];
-  const price = priceLineFor(tier, cycle, currency);
+  const price = priceLineFor(tier, cycle, provider);
   // CTA per card state. Every non-current card gets one so the row
   // reads as equals; the current card's only action is switching its
   // billing cycle via the toggle.
@@ -736,7 +735,7 @@ function ChangePlanPanel({
   fromTier,
   fromCycle,
   currentPeriodEnd,
-  currency,
+  provider,
   isPending,
   errorMessage,
   onConfirm,
@@ -748,14 +747,14 @@ function ChangePlanPanel({
   fromCycle: BillingCycle;
   currentPeriodEnd: string | null;
   /** The GRANTING subscription's own rail — what this workspace is
-   *  already being charged in, so it is a fact, not a regional guess. */
-  currency: Currency;
+   *  already being charged on, so it is a fact, not a regional guess. */
+  provider: BillingProviderId;
   isPending: boolean;
   errorMessage: string | null;
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
-  const toLabel = planPriceLabel(target, cycle, currency);
+  const toLabel = planPriceLabel(target, cycle, provider);
   const samePlan = target === fromTier && cycle === fromCycle;
   const isDowngrade = isDeferredDowngrade(fromTier, fromCycle, target, cycle);
   const effectiveDate = formatBillingDate(currentPeriodEnd);
@@ -894,7 +893,7 @@ function ConfirmPanel({
   // manifest carries both as independently chosen prices. Quoting $129
   // and then charging ₹10,999 is the preview lying about the one number
   // it exists to state.
-  const currency = currencyForProvider(provider);
+  const currency = pricePoint ? currencyForPricePoint(pricePoint, provider) : 'USD';
   const impact =
     pricePoint !== null
       ? `${formatMoney(pricePoint, currency)} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`

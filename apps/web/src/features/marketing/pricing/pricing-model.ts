@@ -67,9 +67,29 @@ export function formatInr(paise: number): string {
  */
 export type Currency = 'USD' | 'INR';
 
-/** Which currency a provider will charge in. */
+/** Which currency a provider settles in. */
 export function currencyForProvider(provider: 'paddle' | 'razorpay'): Currency {
   return provider === 'razorpay' ? 'INR' : 'USD';
+}
+
+/**
+ * The currency a SPECIFIC price point would actually be charged in on a
+ * given rail.
+ *
+ * Region preference alone is not enough to quote INR: Razorpay is
+ * deferred at launch, so every `razorpayPlanId` is null and checkout
+ * clamps to Paddle/USD. Quoting ₹1,599 to an India visitor whose
+ * checkout will charge $19 is the same defect as the reverse, and
+ * region-only resolution makes it easy to reintroduce. Taking the POINT
+ * — not just the provider — makes an unpurchasable currency
+ * unrepresentable: INR requires that this exact point is purchasable on
+ * Razorpay.
+ */
+export function currencyForPricePoint(
+  point: { razorpayPlanId: string | null },
+  provider: 'paddle' | 'razorpay',
+): Currency {
+  return provider === 'razorpay' && point.razorpayPlanId !== null ? 'INR' : 'USD';
 }
 
 /**
@@ -104,10 +124,13 @@ export interface PriceLine {
 export function priceLineFor(
   tier: TierDefinition,
   interval: BillingInterval,
-  currency: Currency = 'USD',
+  provider: 'paddle' | 'razorpay' = 'paddle',
 ): PriceLine | null {
   const point = tier.prices[interval] ?? tier.prices.monthly ?? tier.prices.annual;
   if (!point) return null;
+  // Clamped per point — an unprovisioned Razorpay point renders USD,
+  // matching what checkout will actually charge.
+  const currency = currencyForPricePoint(point, provider);
   const isAnnual = point === tier.prices.annual && tier.prices.annual !== null;
   const zero = currency === 'INR' ? point.inrPaise === 0 : point.usdCents === 0;
   if (zero) {

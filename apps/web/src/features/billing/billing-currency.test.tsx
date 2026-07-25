@@ -18,7 +18,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { BillingCurrencyProvider } from './billing-currency';
-import { formatInr, formatUsd } from '@/features/marketing/pricing/pricing-model';
+import {
+  currencyForPricePoint,
+  formatInr,
+  formatUsd,
+} from '@/features/marketing/pricing/pricing-model';
 
 vi.mock('@/features/auth/api/use-tier', () => ({
   useTier: () => ({ tier: 'free', cleanupRemaining: 0 }),
@@ -29,9 +33,9 @@ import { TierGate } from './tier-gate';
 
 const PRO_MONTHLY = TIER_MANIFEST.pro.prices.monthly!;
 
-function renderGate(currency: 'USD' | 'INR') {
+function renderGate(provider: 'paddle' | 'razorpay') {
   return render(
-    <BillingCurrencyProvider currency={currency}>
+    <BillingCurrencyProvider provider={provider}>
       <TierGate capability="autopilot" title="Autopilot" pitch="Automate recurring noise.">
         <div>unlocked</div>
       </TierGate>
@@ -40,13 +44,30 @@ function renderGate(currency: 'USD' | 'INR') {
 }
 
 describe('in-app upgrade nudges quote the regional rail (D117)', () => {
-  it('tier gate quotes INR for an India-resolved visitor', () => {
-    renderGate('INR');
-    expect(screen.getByText(new RegExp(formatInr(PRO_MONTHLY.inrPaise)))).toBeInTheDocument();
+  it('an India visitor is quoted USD while Razorpay is UNPROVISIONED', () => {
+    // The live manifest has every razorpayPlanId null (India deferred),
+    // so checkout clamps to Paddle and charges USD. Quoting ₹1,599 here
+    // would promise a rail that cannot take the payment — the same lie
+    // as the reverse, which is why region preference alone never
+    // decides the currency.
+    expect(PRO_MONTHLY.razorpayPlanId).toBeNull();
+    renderGate('razorpay');
+    expect(
+      screen.getByText(new RegExp(formatUsd(PRO_MONTHLY.usdCents).replace('$', '\\$'))),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(formatInr(PRO_MONTHLY.inrPaise)))).not.toBeInTheDocument();
+  });
+
+  it('quotes INR once that exact point IS provisioned on Razorpay', () => {
+    // Pure resolver check — the render path above proves the wiring;
+    // this pins the rule that flips it on at go-live.
+    expect(currencyForPricePoint({ razorpayPlanId: 'plan_x' }, 'razorpay')).toBe('INR');
+    expect(currencyForPricePoint({ razorpayPlanId: null }, 'razorpay')).toBe('USD');
+    expect(currencyForPricePoint({ razorpayPlanId: 'plan_x' }, 'paddle')).toBe('USD');
   });
 
   it('tier gate quotes USD everywhere else', () => {
-    renderGate('USD');
+    renderGate('paddle');
     expect(
       screen.getByText(new RegExp(formatUsd(PRO_MONTHLY.usdCents).replace('$', '\\$'))),
     ).toBeInTheDocument();

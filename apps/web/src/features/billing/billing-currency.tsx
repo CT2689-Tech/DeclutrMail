@@ -22,27 +22,34 @@
 
 import { createContext, useContext, type ReactNode } from 'react';
 
-import type { Currency } from '@/features/marketing/pricing/pricing-model';
+import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
-const BillingCurrencyContext = createContext<Currency>('USD');
+const RegionProviderContext = createContext<BillingProviderId>('paddle');
 
 export function BillingCurrencyProvider({
-  currency,
+  provider,
   children,
 }: {
-  currency: Currency;
+  provider: BillingProviderId;
   children: ReactNode;
 }) {
   return (
-    <BillingCurrencyContext.Provider value={currency}>{children}</BillingCurrencyContext.Provider>
+    <RegionProviderContext.Provider value={provider}>{children}</RegionProviderContext.Provider>
   );
 }
 
 /**
- * The regional display currency. Defaults to USD outside a provider —
- * Storybook, tests, and any non-Vercel host legitimately have no geo,
- * and the international rail is the one always provisioned.
+ * The region's PREFERRED rail — deliberately not a resolved currency.
+ *
+ * Callers pass it to `planPriceLabel` / `currencyForPricePoint`, which
+ * clamp per PRICE POINT: preferring Razorpay does not mean a given plan
+ * is purchasable on it (India is deferred; every `razorpayPlanId` is
+ * null today), and quoting INR for a point that checkout will charge in
+ * USD is the defect this indirection exists to prevent.
+ *
+ * Defaults to Paddle outside a provider — Storybook, tests, and any
+ * non-Vercel host legitimately have no geo.
  */
-export function useBillingCurrency(): Currency {
-  return useContext(BillingCurrencyContext);
+export function useRegionProvider(): BillingProviderId {
+  return useContext(RegionProviderContext);
 }

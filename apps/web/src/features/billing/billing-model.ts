@@ -13,7 +13,8 @@ import type {
   SubscriptionStatus,
 } from '@declutrmail/shared/contracts';
 
-import { formatMoney, type Currency } from '@/features/marketing/pricing/pricing-model';
+import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
+import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 /** The condensed-strip tiers (D119) — the three self-serve rungs. */
 export const STRIP_TIER_IDS = ['free', 'plus', 'pro'] as const;
@@ -30,11 +31,14 @@ export type StripTierId = (typeof STRIP_TIER_IDS)[number];
 export function planPriceLabel(
   tier: TierId,
   cycle: BillingCycle,
-  currency: Currency = 'USD',
+  provider: BillingProviderId = 'paddle',
 ): string | null {
   const point = TIER_MANIFEST[tier].prices[cycle === 'annual' ? 'annual' : 'monthly'];
   if (!point) return null;
-  return `${formatMoney(point, currency)}${cycle === 'annual' ? '/yr' : '/mo'}`;
+  // Clamped per point: an India visitor must not be quoted INR for a
+  // price point that is unprovisioned on Razorpay — checkout would
+  // clamp to Paddle and charge USD.
+  return `${formatMoney(point, currencyForPricePoint(point, provider))}${cycle === 'annual' ? '/yr' : '/mo'}`;
 }
 
 /**
