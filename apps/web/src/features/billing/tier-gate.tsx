@@ -15,7 +15,8 @@ import { useTier } from '@/features/auth/api/use-tier';
 import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
-import { MONEY_BACK_NOTE, planPriceLabel } from './billing-model';
+import { MONEY_BACK_NOTE, quotedPlanPrice } from './billing-model';
+import { useRegionProvider } from './billing-currency';
 
 const { color, font, radius, shadow } = tokens;
 
@@ -67,9 +68,13 @@ export function TierGate({
     });
   }, [granted, requiredTierId]);
 
+  const regionProvider = useRegionProvider();
+
   if (granted) return <>{children}</>;
 
-  const requiredMonthly = planPriceLabel(requiredTierId, 'monthly');
+  // Quote the rail this visitor will actually be charged on — the CTA
+  // below deep-links straight into checkout (D117).
+  const requiredMonthly = quotedPlanPrice(requiredTierId, 'monthly', regionProvider);
   const requiredTier = TIER_MANIFEST[requiredTierId].name;
   // ONE checkout path (D117): deep-link the required plan into
   // /billing's confirm step via the validated intent — same funnel as
