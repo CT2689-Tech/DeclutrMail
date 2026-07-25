@@ -426,6 +426,7 @@ export function PlanPicker({
               fromTier={grantingSub.tier}
               fromCycle={grantingSub.cycle}
               currentPeriodEnd={grantingSub.currentPeriodEnd}
+              currency={currencyForProvider(grantingSub.provider)}
               isPending={changePlan.isPending}
               errorMessage={
                 changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null
@@ -735,6 +736,7 @@ function ChangePlanPanel({
   fromTier,
   fromCycle,
   currentPeriodEnd,
+  currency,
   isPending,
   errorMessage,
   onConfirm,
@@ -745,12 +747,15 @@ function ChangePlanPanel({
   fromTier: PaidTier;
   fromCycle: BillingCycle;
   currentPeriodEnd: string | null;
+  /** The GRANTING subscription's own rail — what this workspace is
+   *  already being charged in, so it is a fact, not a regional guess. */
+  currency: Currency;
   isPending: boolean;
   errorMessage: string | null;
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
-  const toLabel = planPriceLabel(target, cycle);
+  const toLabel = planPriceLabel(target, cycle, currency);
   const samePlan = target === fromTier && cycle === fromCycle;
   const isDowngrade = isDeferredDowngrade(fromTier, fromCycle, target, cycle);
   const effectiveDate = formatBillingDate(currentPeriodEnd);

@@ -6,6 +6,8 @@ import { Button, EmptyState, Eyebrow, Pill, tokens } from '@declutrmail/shared';
 import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
+import { useBillingCurrency } from '@/features/billing/billing-currency';
+import { formatMoney } from '@/features/marketing/pricing/pricing-model';
 
 import { useAutopilotRules } from './api/use-autopilot-rules';
 import { useRulePreview } from './api/use-rule-preview';
@@ -35,7 +37,10 @@ export function AutopilotObservePreview() {
   const preview = useRulePreview();
   const [previewRuleId, setPreviewRuleId] = useState<string | null>(null);
   const monthly = TIER_MANIFEST.pro.prices.monthly;
-  const price = monthly == null ? null : `$${monthly.usdCents / 100}/mo`;
+  // Was a hardcoded `$` template — an India-bound user read "$19/mo"
+  // here and was charged ₹1,599 at the checkout this nudge leads to.
+  const currency = useBillingCurrency();
+  const price = monthly == null ? null : `${formatMoney(monthly, currency)}/mo`;
 
   return (
     <div
