@@ -523,6 +523,7 @@ check_pubsub() {
 #   - every secret the CODE requires at boot is bound
 #   - billing secrets are bound BEFORE BILLING_ENABLED flips (pre-flip guard)
 DEPLOY_WF='.github/workflows/deploy-cloud-run.yml'
+MANIFEST='packages/shared/src/entitlements/manifest.ts'
 
 # TWO Cloud Run services, each with its own --update-secrets block and its
 # own secret needs. Checking only the API greenlights an email-disabled
@@ -553,10 +554,31 @@ required_for() {
 # Only required once billing is live. Checkout adapters and webhook
 # controllers both live in the API; the worker has no billing credential
 # reads and must not receive these secrets.
-billing_for() {
+#
+# PER-PROVIDER, not per-service: BILLING_ENABLED=true means "Paddle is
+# live", not "every provider is live" — Paddle and Razorpay launch on
+# independent timelines (D117), and a deferred provider is SUPPOSED to
+# have unbound secrets (its catalog ids are null, so its adapter and the
+# FE gate both refuse it). Checking every provider unconditionally once
+# billing is on made this group permanently red the moment Paddle alone
+# went live (2026-07-24) — a watchdog that cries wolf on a correct state
+# gets ignored, which is worse than not having it.
+BILLING_PROVIDERS='paddle razorpay'
+billing_provider_secrets() {
   case "$1" in
-    declutrmail-api) echo 'PADDLE_API_KEY PADDLE_CLIENT_TOKEN PADDLE_WEBHOOK_SECRET RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET' ;;
-    *)               echo '' ;;
+    paddle)   echo 'PADDLE_API_KEY PADDLE_CLIENT_TOKEN PADDLE_WEBHOOK_SECRET' ;;
+    razorpay) echo 'RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET' ;;
+  esac
+}
+# A provider is "launched" once the manifest carries at least one
+# non-null catalog id for it — the exact fact billing-catalog.ts
+# resolves against and the FE provider gate reads (plan-picker.tsx).
+# Same source of truth, so this check can never disagree with what the
+# app actually does.
+billing_provider_provisioned() {
+  case "$1" in
+    paddle)   grep -q "paddlePriceId: '" "$MANIFEST" ;;
+    razorpay) grep -q "razorpayPlanId: '" "$MANIFEST" ;;
   esac
 }
 
@@ -685,25 +707,33 @@ EOF
       ok "${svc}: ${s} → ${src} (bound, live version, durable across deploys)"
     done
 
-    # D. Pre-flip guard: bind billing secrets BEFORE BILLING_ENABLED=true.
-    local bsecs billing unbound=''
-    bsecs=$(billing_for "$svc")
-    if [ -n "$bsecs" ]; then
+    # D. Pre-flip guard: bind a PROVIDER's billing secrets before it goes
+    # live. Only declutrmail-api holds billing credentials.
+    if [ "$svc" = 'declutrmail-api' ]; then
       billing=$(printf '%s\n' "$live" | awk '$1=="BILLING_ENABLED" {print $3}')
-      if [ "$billing" = 'true' ]; then
-        for s in $bsecs; do
-          printf '%s\n' "$live" | awk -v n="$s" '$1==n' | grep -q . \
-            && ok "${svc}: ${s} bound (billing is live)" \
-            || bad "${svc}: BILLING_ENABLED=true but ${s} is not bound" 'webhook signature verification will fail'
-        done
-      else
-        for s in $bsecs; do
-          printf '%s\n' "$live" | awk -v n="$s" '$1==n' | grep -q . || unbound="${unbound}${s} "
-        done
-        [ -n "$unbound" ] \
-          && warn "${svc}: billing is OFF; bind these before BILLING_ENABLED=true" "${unbound%% }" \
-          || ok "${svc}: billing secrets already bound (safe to flip BILLING_ENABLED)"
-      fi
+      local provider bsecs unbound
+      for provider in $BILLING_PROVIDERS; do
+        bsecs=$(billing_provider_secrets "$provider")
+        if ! billing_provider_provisioned "$provider"; then
+          skip "${svc}: ${provider} billing secrets (catalog unprovisioned — ${provider} is deferred, correctly dark)"
+          continue
+        fi
+        if [ "$billing" = 'true' ]; then
+          for s in $bsecs; do
+            printf '%s\n' "$live" | awk -v n="$s" '$1==n' | grep -q . \
+              && ok "${svc}: ${s} bound (${provider} is live)" \
+              || bad "${svc}: ${provider} is provisioned and BILLING_ENABLED=true but ${s} is not bound" 'webhook signature verification will fail'
+          done
+        else
+          unbound=''
+          for s in $bsecs; do
+            printf '%s\n' "$live" | awk -v n="$s" '$1==n' | grep -q . || unbound="${unbound}${s} "
+          done
+          [ -n "$unbound" ] \
+            && warn "${svc}: ${provider} is provisioned but billing is OFF; bind these before BILLING_ENABLED=true" "${unbound%% }" \
+            || ok "${svc}: ${provider} secrets already bound (safe to flip BILLING_ENABLED)"
+        fi
+      done
     fi
   done
 
