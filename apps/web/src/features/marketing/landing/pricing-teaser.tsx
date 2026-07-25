@@ -1,4 +1,9 @@
+'use client';
+
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
+import { useRegionProvider } from '@/features/billing/billing-currency';
+import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
 
 import { TrackedCta } from './tracked-cta';
 
@@ -6,18 +11,23 @@ import { TrackedCta } from './tracked-cta';
  * Pricing teaser (D134 §8) — Free / Plus / ⭐ Pro strip + Founding Pro
  * banner + money-back line, linking to /pricing for the full grid.
  *
- * Every dollar amount and limit renders FROM the D19 manifest —
- * re-pricing in packages/shared/src/entitlements/manifest.ts flows
- * here with no copy edit.
+ * Every amount and limit renders FROM the D19 manifest — re-pricing in
+ * packages/shared/src/entitlements/manifest.ts flows here with no copy
+ * edit.
+ *
+ * Client only to read the region rail (D117): these amounts must name
+ * the same currency /pricing and the checkout do, or the landing page
+ * quotes a price the purchase then contradicts. Still server-RENDERED,
+ * so the crawler sees the numbers. Each amount clamps per price point,
+ * so an unprovisioned rail shows the USD checkout would actually charge.
  */
 
-function dollars(usdCents: number): string {
-  return `$${usdCents % 100 === 0 ? usdCents / 100 : (usdCents / 100).toFixed(2)}`;
-}
-
 export function PricingTeaser() {
+  const provider = useRegionProvider();
   const { free, plus, pro } = TIER_MANIFEST;
   const founding = pro.promo;
+  const money = (point: { usdCents: number; inrPaise: number; razorpayPlanId: string | null }) =>
+    formatMoney(point, currencyForPricePoint(point, provider));
 
   return (
     <section className="dm-mkt-section dm-mkt-shell">
@@ -28,7 +38,7 @@ export function PricingTeaser() {
         <div className="dm-mkt-tier">
           <div className="dm-mkt-tier-name">{free.name}</div>
           <div className="dm-mkt-tier-price">
-            {dollars(free.prices.monthly?.usdCents ?? 0)} <small>forever</small>
+            {free.prices.monthly ? money(free.prices.monthly) : null} <small>forever</small>
           </div>
           <div className="dm-mkt-tier-alt" />
           <ul className="dm-mkt-tier-feats">
@@ -44,11 +54,10 @@ export function PricingTeaser() {
         <div className="dm-mkt-tier">
           <div className="dm-mkt-tier-name">{plus.name}</div>
           <div className="dm-mkt-tier-price">
-            {plus.prices.monthly ? dollars(plus.prices.monthly.usdCents) : '—'}{' '}
-            <small>/ month</small>
+            {plus.prices.monthly ? money(plus.prices.monthly) : '—'} <small>/ month</small>
           </div>
           <div className="dm-mkt-tier-alt">
-            {plus.prices.annual ? `or ${dollars(plus.prices.annual.usdCents)} / year` : ''}
+            {plus.prices.annual ? `or ${money(plus.prices.annual)} / year` : ''}
           </div>
           <ul className="dm-mkt-tier-feats">
             <li>Unlimited cleanup actions</li>
@@ -65,10 +74,10 @@ export function PricingTeaser() {
             {pro.name} <span className="dm-mkt-tier-star">⭐ recommended</span>
           </div>
           <div className="dm-mkt-tier-price">
-            {pro.prices.monthly ? dollars(pro.prices.monthly.usdCents) : '—'} <small>/ month</small>
+            {pro.prices.monthly ? money(pro.prices.monthly) : '—'} <small>/ month</small>
           </div>
           <div className="dm-mkt-tier-alt">
-            {pro.prices.annual ? `or ${dollars(pro.prices.annual.usdCents)} / year` : ''}
+            {pro.prices.annual ? `or ${money(pro.prices.annual)} / year` : ''}
           </div>
           <ul className="dm-mkt-tier-feats">
             <li>Everything in {plus.name}, plus automation</li>
@@ -85,9 +94,9 @@ export function PricingTeaser() {
         <div className="dm-mkt-founding">
           <b>{founding.name}</b>
           <span>
-            {dollars(founding.annual.usdCents)} / year, limited to the first{' '}
-            {founding.maxRedemptions} paid subscriptions. Availability is confirmed at checkout; the
-            price stays locked while an eligible subscription remains active.
+            {money(founding.annual)} / year, limited to the first {founding.maxRedemptions} paid
+            subscriptions. Availability is confirmed at checkout; the price stays locked while an
+            eligible subscription remains active.
           </span>
         </div>
       ) : null}

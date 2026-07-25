@@ -6,10 +6,12 @@ import { useRouter } from 'next/navigation';
 import { ACTION_SAFETY_SUMMARY, tokens } from '@declutrmail/shared';
 import type { TierDefinition } from '@declutrmail/shared/entitlements';
 
+import { useRegionProvider } from '@/features/billing/billing-currency';
 import { navigateToCheckout } from './cta';
 import {
+  currencyForPricePoint,
   foundingProPromo,
-  formatUsd,
+  formatMoney,
   pricingTiers,
   TIER_JOBS,
   type BillingInterval,
@@ -144,10 +146,15 @@ export function PricingScreen() {
 function FoundingProBanner() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  // The promo and the standard annual it is compared against are
+  // SEPARATE price points with separate catalog ids — each clamps
+  // against its own, so "₹10,999 instead of $190" can never render.
+  const regionProvider = useRegionProvider();
   const found = foundingProPromo();
   if (!found) return null;
   const { hostTier, promo } = found;
   const standardAnnual = hostTier.prices.annual;
+  const promoCurrency = currencyForPricePoint(promo.annual, regionProvider);
 
   return (
     <aside
@@ -169,11 +176,11 @@ function FoundingProBanner() {
         <strong
           style={{ fontFamily: font.display, fontSize: 16, fontWeight: 650, color: color.mint }}
         >
-          {promo.name} — {formatUsd(promo.annual.usdCents)}/yr for the first {promo.maxRedemptions}{' '}
-          subscriptions
+          {promo.name} — {formatMoney(promo.annual, promoCurrency)}/yr for the first{' '}
+          {promo.maxRedemptions} subscriptions
         </strong>
         <span style={{ fontFamily: font.sans, fontSize: 13, color: color.fgInverseSoft }}>
-          {standardAnnual ? `Instead of ${formatUsd(standardAnnual.usdCents)}/yr — ` : ''}
+          {standardAnnual ? `Instead of ${formatMoney(standardAnnual, promoCurrency)}/yr — ` : ''}
           full {hostTier.name}, price locked while your subscription stays active. Availability is
           confirmed at checkout; no spot is reserved until payment succeeds.
         </span>

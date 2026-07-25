@@ -6,11 +6,13 @@ import { useRouter } from 'next/navigation';
 import { tokens } from '@declutrmail/shared';
 import type { TierDefinition } from '@declutrmail/shared/entitlements';
 
+import { useRegionProvider } from '@/features/billing/billing-currency';
 import { track } from '@/lib/posthog';
 import { navigateToCheckout, navigateToFreeApp } from './cta';
 import {
   cardBullets,
-  formatUsd,
+  currencyForPricePoint,
+  formatMoney,
   priceLineFor,
   TIER_JOBS,
   type BillingInterval,
@@ -39,9 +41,26 @@ export function TierCard({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  // The card quotes the rail the CTA below it routes to (D117) —
+  // clamped per price point, so an unprovisioned rail still shows the
+  // USD that checkout will actually charge.
+  const regionProvider = useRegionProvider();
 
-  const price = priceLineFor(tier, interval);
+  const price = priceLineFor(tier, interval, regionProvider);
   const promoActive = interval === 'annual' && tier.promo != null;
+  // A COMPARISON has to be single-currency. Each price point clamps
+  // independently, so a promo that is Paddle-only sitting beside a
+  // standard annual that IS on Razorpay would render "$129/yr" struck
+  // through "₹15,999/yr" — two currencies presented as a discount on one
+  // another. The promo is the thing being bought, so its rail wins for
+  // both halves.
+  const promoCurrency = tier.promo
+    ? currencyForPricePoint(tier.promo.annual, regionProvider)
+    : null;
+  const struckAmount =
+    promoCurrency !== null && tier.prices.annual !== null
+      ? formatMoney(tier.prices.annual, promoCurrency)
+      : (price?.amount ?? null);
   const isFree = tier.prices.monthly?.usdCents === 0;
 
   async function onCta() {
@@ -141,12 +160,12 @@ export function TierCard({
                   fontVariantNumeric: 'tabular-nums',
                 }}
               >
-                {formatUsd(tier.promo.annual.usdCents)}
+                {formatMoney(tier.promo.annual, promoCurrency ?? 'USD')}
               </span>
               <span style={{ fontFamily: font.sans, fontSize: 14, color: color.fgMuted }}>/yr</span>
-              {price ? (
+              {struckAmount ? (
                 <s style={{ fontFamily: font.sans, fontSize: 14, color: color.fgMuted }}>
-                  {price.amount}
+                  {struckAmount}
                 </s>
               ) : null}
             </div>
