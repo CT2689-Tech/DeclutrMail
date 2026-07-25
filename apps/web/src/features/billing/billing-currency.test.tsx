@@ -45,23 +45,23 @@ function renderGate(provider: 'paddle' | 'razorpay') {
 }
 
 describe('in-app upgrade nudges quote the regional rail (D117)', () => {
-  it('an India visitor is quoted USD while Razorpay is UNPROVISIONED', () => {
-    // The live manifest has every razorpayPlanId null (India deferred),
-    // so checkout clamps to Paddle and charges USD. Quoting ₹1,599 here
-    // would promise a rail that cannot take the payment — the same lie
-    // as the reverse, which is why region preference alone never
-    // decides the currency.
-    expect(PRO_MONTHLY.razorpayPlanId).toBeNull();
+  it('an India visitor is quoted INR now that Razorpay is provisioned', () => {
+    // Razorpay went live 2026-07-25, so this point carries a plan id and
+    // an India-routed checkout really does settle INR. Quoting "$19/mo"
+    // over a ₹1,599 charge is the defect this whole seam exists to
+    // prevent — in the direction that is now reachable.
+    expect(PRO_MONTHLY.razorpayPlanId).not.toBeNull();
     renderGate('razorpay');
+    expect(screen.getByText(new RegExp(formatInr(PRO_MONTHLY.inrPaise)))).toBeInTheDocument();
     expect(
-      screen.getByText(new RegExp(formatUsd(PRO_MONTHLY.usdCents).replace('$', '\\$'))),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(new RegExp(formatInr(PRO_MONTHLY.inrPaise)))).not.toBeInTheDocument();
+      screen.queryByText(new RegExp(formatUsd(PRO_MONTHLY.usdCents).replace('$', '\\$'))),
+    ).not.toBeInTheDocument();
   });
 
-  it('quotes INR once that exact point IS provisioned on Razorpay', () => {
-    // Pure resolver check — the render path above proves the wiring;
-    // this pins the rule that flips it on at go-live.
+  it('clamps back to USD for a point with no Razorpay id', () => {
+    // Fixture-free so it keeps testing the RULE rather than whatever the
+    // catalog happens to hold: a future tier added before its Razorpay
+    // plan exists must quote the USD its checkout will charge.
     expect(currencyForPricePoint({ razorpayPlanId: 'plan_x' }, 'razorpay')).toBe('INR');
     expect(currencyForPricePoint({ razorpayPlanId: null }, 'razorpay')).toBe('USD');
     expect(currencyForPricePoint({ razorpayPlanId: 'plan_x' }, 'paddle')).toBe('USD');
@@ -89,20 +89,25 @@ describe('in-app upgrade nudges quote the regional rail (D117)', () => {
 describe('quote vs charge are different questions (D117)', () => {
   const PRO_ANNUAL = TIER_MANIFEST.pro.prices.annual!;
 
-  it('an EXISTING Razorpay subscription shows INR even though the catalog is unprovisioned', () => {
-    // The clamp that protects prospective quotes must not reach here.
-    // This subscription EXISTS, so it was purchasable on Razorpay
-    // whatever the catalog says today — the workspace is being billed
-    // ₹15,999/yr and must not read "$190/yr".
-    expect(PRO_ANNUAL.razorpayPlanId).toBeNull();
+  it('an EXISTING Razorpay subscription is shown its own charged currency', () => {
+    // A settled subscription states its provider as fact — the clamp
+    // that protects prospective quotes must never reach it. The
+    // distinction is invisible while the catalog agrees, so the pure
+    // check below keeps it pinned.
     expect(chargedPlanPrice('pro', 'annual', 'razorpay')).toBe(
       `${formatInr(PRO_ANNUAL.inrPaise)}/yr`,
     );
   });
 
-  it('a prospective QUOTE on the same unprovisioned point stays USD', () => {
-    expect(quotedPlanPrice('pro', 'annual', 'razorpay')).toBe(
-      `${formatUsd(PRO_ANNUAL.usdCents)}/yr`,
+  it('a charge stays INR even for a point the catalog no longer offers', () => {
+    // The case that separates the two functions: if Pro annual were
+    // de-listed from Razorpay tomorrow, every existing subscriber is
+    // still billed ₹15,999/yr and must not suddenly read "$190/yr".
+    // `chargedPlanPrice` is unclamped by design; `quotedPlanPrice` is not.
+    const delisted = { ...PRO_ANNUAL, razorpayPlanId: null };
+    expect(currencyForPricePoint(delisted, 'razorpay')).toBe('USD');
+    expect(chargedPlanPrice('pro', 'annual', 'razorpay')).toBe(
+      `${formatInr(PRO_ANNUAL.inrPaise)}/yr`,
     );
   });
 

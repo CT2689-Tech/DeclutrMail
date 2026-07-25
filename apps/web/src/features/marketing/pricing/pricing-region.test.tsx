@@ -28,21 +28,36 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock('@/lib/posthog', () => ({ track: h.track }));
 vi.mock('@/lib/api/waitlist', () => ({ joinWaitlist: vi.fn() }));
 
-// Pro monthly + annual gain a Razorpay id. Plus and the Founding Pro
-// promo stay unprovisioned — they are the clamp's witnesses.
+// Pro monthly + annual carry a Razorpay id; Plus and the Founding Pro
+// promo are explicitly NULLED — they are the clamp's witnesses.
+//
+// Both sides are set deliberately. An earlier version only provisioned
+// Pro and let the others inherit the real manifest, which was all-null
+// while India was deferred — so the day the live catalog landed
+// (2026-07-25) the "unprovisioned" witnesses silently became provisioned
+// and the assertions inverted. A fixture that means "this one yes, that
+// one no" has to say both halves out loud.
 vi.mock('@declutrmail/shared/entitlements', async (importOriginal) => {
   const actual = await importOriginal<typeof Entitlements>();
-  const pro = actual.TIER_MANIFEST.pro;
+  const { plus, pro } = actual.TIER_MANIFEST;
   return {
     ...actual,
     TIER_MANIFEST: {
       ...actual.TIER_MANIFEST,
+      plus: {
+        ...plus,
+        prices: {
+          monthly: { ...plus.prices.monthly!, razorpayPlanId: null },
+          annual: { ...plus.prices.annual!, razorpayPlanId: null },
+        },
+      },
       pro: {
         ...pro,
         prices: {
           monthly: { ...pro.prices.monthly!, razorpayPlanId: 'plan_test_pro_monthly' },
           annual: { ...pro.prices.annual!, razorpayPlanId: 'plan_test_pro_annual' },
         },
+        promo: { ...pro.promo!, annual: { ...pro.promo!.annual, razorpayPlanId: null } },
       },
     },
   };
