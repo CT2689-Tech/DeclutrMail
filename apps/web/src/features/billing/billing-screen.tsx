@@ -723,7 +723,12 @@ function CurrentPlanCard({
   // currency here is a fact, not a guess: a Razorpay subscriber paying
   // ₹15,999/yr must never read "$190/yr" as their current plan.
   const priceLabel = subBacksTier
-    ? (chargedPlanPrice(subscription.tier, subscription.cycle, subscription.provider) ?? '')
+    ? (chargedPlanPrice(
+        subscription.tier,
+        subscription.cycle,
+        subscription.provider,
+        subscription.foundingMember,
+      ) ?? '')
     : tier === 'free'
       ? formatUsd(0)
       : (quotedPlanPrice(tier, 'monthly') ?? formatUsd(0));

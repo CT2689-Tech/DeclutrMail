@@ -62,13 +62,27 @@ export function quotedPlanPrice(
  * catalog says today. Clamping here would show a Razorpay subscriber
  * paying ₹15,999/yr a "$190/yr" headline — the original defect, wearing
  * the fix as a disguise.
+ *
+ * `founding` selects the PROMO price point (D126). A Founding Pro
+ * member is billed $129/yr, not the standard $190/yr, for as long as
+ * the subscription stays active — reading the standard point off the
+ * tier states a charge that never happens, and contradicts the founding
+ * banner sitting on the same screen.
  */
 export function chargedPlanPrice(
   tier: TierId,
   cycle: BillingCycle,
   provider: BillingProviderId,
+  founding = false,
 ): string | null {
-  return priceLabel(tier, cycle, currencyForProvider(provider));
+  const currency = currencyForProvider(provider);
+  const promo = TIER_MANIFEST[tier].promo;
+  // The promo is an annual-only price point; a founding member on any
+  // other cycle is billed the standard line.
+  if (founding && promo && cycle === 'annual') {
+    return `${formatMoney(promo.annual, currency)}/yr`;
+  }
+  return priceLabel(tier, cycle, currency);
 }
 
 /**

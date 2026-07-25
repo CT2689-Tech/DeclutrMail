@@ -112,3 +112,36 @@ describe('quote vs charge are different questions (D117)', () => {
     );
   });
 });
+
+describe('a founding subscription is billed the promo point (D126)', () => {
+  const PROMO = TIER_MANIFEST.pro.promo!;
+  const PRO_ANNUAL = TIER_MANIFEST.pro.prices.annual!;
+
+  it('shows the LOCKED promo price, not the standard tier price', () => {
+    // A Founding Pro member pays $129/yr. Reading the standard pro
+    // annual point states a charge that never happens — and contradicts
+    // the founding banner on the same screen, which quotes the promo.
+    expect(PROMO.annual.usdCents).not.toBe(PRO_ANNUAL.usdCents);
+    expect(chargedPlanPrice('pro', 'annual', 'paddle', true)).toBe(
+      `${formatUsd(PROMO.annual.usdCents)}/yr`,
+    );
+  });
+
+  it('a non-founding subscriber on the same tier still sees the standard price', () => {
+    expect(chargedPlanPrice('pro', 'annual', 'paddle', false)).toBe(
+      `${formatUsd(PRO_ANNUAL.usdCents)}/yr`,
+    );
+  });
+
+  it('carries the promo through to INR for a founding Razorpay member', () => {
+    expect(chargedPlanPrice('pro', 'annual', 'razorpay', true)).toBe(
+      `${formatInr(PROMO.annual.inrPaise)}/yr`,
+    );
+  });
+
+  it('the promo is annual-only — a monthly founding record bills the standard line', () => {
+    expect(chargedPlanPrice('pro', 'monthly', 'paddle', true)).toBe(
+      `${formatUsd(TIER_MANIFEST.pro.prices.monthly!.usdCents)}/mo`,
+    );
+  });
+});
