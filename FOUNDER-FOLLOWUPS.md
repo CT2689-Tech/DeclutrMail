@@ -24,6 +24,41 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-07-25 — LIVE OUTAGE: production Upstash Redis is suspended for exceeding its budget
+**Source:** Sentry `DECLUTRMAIL-WEB-6` (found while assessing launch readiness)
+**Why:** `ReplyError: ERR This database has been suspended for exceeding the defined budget limit` — `environment=production`, `kind=dead_letter.scheduler_failed`, **7,922 events since 2026-06-09, still firing**. Redis is not optional: BullMQ carries every sync and mail-mutating job, and the D156 limiter's token buckets live there. While it is suspended, jobs do not run. Nothing detected this for 46 days because `/api/healthz` is dependency-free and the only uptime check watches it — see the readiness-probe item below, which makes this class visible but does NOT fix this instance.
+**How:** Upstash console → the production database → raise the budget or move to a Fixed plan. Then confirm `https://api.declutrmail.com/api/readyz` returns 200 (after PR #377 deploys) and that the Sentry issue stops recurring. Re-check the $20 budget cap noted in the 2026-06-10 Upstash item — that cap is what is being hit.
+**Verifies by:** `/api/readyz` → `{"status":"ok","checks":{"database":"ok","redis":"ok"}}`; `DECLUTRMAIL-WEB-6` last-seen stops advancing.
+**Status:** Open
+
+### 2026-07-25 — Create the readiness uptime check + alert policy
+**Source:** PR #377 (D159)
+**Why:** PR #377 adds `/api/readyz`, but merging does not create monitoring resources. Until this runs, a dependency outage still pages nobody.
+**How:** After #377 deploys: `./scripts/setup-uptime-monitoring.sh` (idempotent — it skips what already exists and adds the readyz check + the "DeclutrMail API not ready" policy).
+**Verifies by:** `./scripts/launch-preflight.sh` monitoring group shows 4 PASS, including "API readyz uptime check exists" and "API not-ready alert policy exists".
+**Status:** Open
+
+### 2026-07-25 — Stale Razorpay key in repo secrets keeps the vendor watchdog red
+**Source:** `vendor-limits-watchdog.yml` run log (6 of the last 8 runs failed)
+**Why:** The watchdog fails with `HTTP 401 from api.razorpay.com: Authentication failed` — the repo secret still holds the key rotated during the 2026-07-24 Razorpay setup session. A red watchdog is a dead guardrail: it also reports Google Cloud budgets as `⚪ UNCONFIGURED (missing GOOGLE_APPLICATION_CREDENTIALS, GCP_BILLING_ACCOUNT_ID)`, so the GCP spend guardrail is unwatched too, and the noise hides both.
+**How:** Update `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` in repo secrets to the current keys; set `GCP_BILLING_ACCOUNT_ID` and wire GCP credentials for the budgets check.
+**Verifies by:** `vendor-limits-watchdog` goes green with Razorpay 🟢 and Google Cloud no longer `UNCONFIGURED`.
+**Status:** Open
+
+### 2026-07-25 — `infra-snapshot` has failed 8 consecutive runs
+**Source:** workflow run history
+**Why:** Same class the 2026-07-22 audit flagged (43 straight ignored failures) — it exits 2 during the snapshot step. A drift detector nobody can read is not a detector, and its permanent redness trains the eye to ignore Actions failures generally, which is how the Razorpay 401 above went unnoticed too.
+**How:** Run `./scripts/infra-snapshot.sh` locally with gcloud auth to reproduce, or open the latest run's `snapshot` step. Fix or, if it is not worth carrying at this stage, disable the schedule deliberately rather than leaving it red.
+**Verifies by:** either a green run, or the workflow disabled with a note here.
+**Status:** Open
+
+### 2026-07-25 — Recommend: drop `RATE_LIMIT_ENABLED=false` from the prod API deploy
+**Source:** launch-readiness review of `.github/workflows/deploy-cloud-run.yml:222`
+**Why:** The limiter itself DOES enforce — `buildStore()` only takes the disable branch when `!isProd`, so the 2026-07-07 "false alarm" finding stands. The problem is the second use of the same variable: the boot guard at `rate-limit.module.ts:57` is `if (isProd && rateLimitEnabled) throw`, so setting the var to `false` in production means a Redis-less production **boots silently fail-open instead of refusing**. Codex's stop-time review on PR #377 found the knock-on: the new `/readyz` originally trusted that guard and reported a missing `REDIS_URL` as `not_configured` → `200 OK`, i.e. the outage endpoint would have certified a Redis-less production as healthy. #377 now decides that itself (`not_configured` is a fault in production), so the masking is closed — but the guard is still disarmed, and it is the cheapest backstop for exactly the class of incident above. The flag is for local e2e; it has no business in the production deploy manifest.
+**How:** Remove `RATE_LIMIT_ENABLED=false` from the `declutrmail-api` `--set-env-vars` list. Zero behavior change today; re-arms the guard. (Not done unilaterally — it edits the production deploy manifest.)
+**Verifies by:** deploy succeeds; `/api/readyz` stays 200; limiter behavior unchanged.
+**Status:** Open
+
 ### 2026-07-20 — Needs a BE field: server-side pending-checkout signal (double-charge, cross-device)
 **Source:** PR #367 Codex stop-time review (D117 upgrade-flow polish)
 **Why:** Between Paddle `checkout.completed` and the webhook grant there is no `subscriptions` row, so `SUBSCRIPTION_EXISTS` cannot reject a second checkout. PR #367 closes the same-browser window client-side (persistent localStorage lock + cross-tab `storage` sync; the lock never auto-expires — after 15 min it becomes an explicit "payment unconfirmed" state whose only releases are the tier flip or the user asserting they didn't complete a payment). But a user who pays on their laptop and immediately opens /billing on their phone still sees live checkout CTAs — only the server can know a payment is pending across devices. Deliberately NOT stubbed client-side (this is a BE contract change; brief said flag, not stub).

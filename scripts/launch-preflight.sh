@@ -289,14 +289,26 @@ check_web() {
 check_api() {
   group 'api — Cloud Run reachability, OAuth, webhook auth'
 
-  # Stable, dependency-free process liveness contract. This is also the
-  # endpoint external uptime monitoring must probe after the API deploy.
+  # Stable, dependency-free process liveness contract.
   local health
   health=$(curl -s --max-time 15 "https://${API}/api/healthz")
   if printf '%s' "$health" | grep -q '"status":"ok"'; then
     ok "${API}/api/healthz → ok"
   else
     bad "${API}/api/healthz did not report ok" "got: $(printf '%s' "$health" | head -c 120)"
+  fi
+
+  # Dependency readiness. /healthz cannot fail this way — it is
+  # dependency-free by design, which is why it answered 200 through a
+  # 46-day Upstash suspension. A 503 here names the dependency that is
+  # actually down.
+  local ready ready_code
+  ready=$(curl -s --max-time 15 "https://${API}/api/readyz")
+  ready_code=$(code "https://${API}/api/readyz")
+  if [ "$ready_code" = "200" ] && printf '%s' "$ready" | grep -q '"status":"ok"'; then
+    ok "${API}/api/readyz → ok (database + redis reachable)"
+  else
+    bad "${API}/api/readyz → ${ready_code}" "got: $(printf '%s' "$ready" | head -c 160)"
   fi
 
   # OAuth entry point must redirect to Google, not error.
@@ -458,7 +470,7 @@ check_monitoring() {
     return
   fi
 
-  local uptime policy
+  local uptime policy ready_uptime ready_policy
   uptime=$(gcloud monitoring uptime list-configs \
     --project="$GCP_PROJECT" \
     --filter='display_name="DeclutrMail API healthz"' \
@@ -467,6 +479,16 @@ check_monitoring() {
     --project="$GCP_PROJECT" \
     --filter='display_name="DeclutrMail API unavailable"' \
     --format='value(name)' 2>/dev/null | head -1)
+  # The readiness pair is what actually detects a dependency outage; the
+  # liveness pair above cannot (see /api/readyz in the api group).
+  ready_uptime=$(gcloud monitoring uptime list-configs \
+    --project="$GCP_PROJECT" \
+    --filter='display_name="DeclutrMail API readyz"' \
+    --format='value(name)' 2>/dev/null | head -1)
+  ready_policy=$(gcloud monitoring policies list \
+    --project="$GCP_PROJECT" \
+    --filter='display_name="DeclutrMail API not ready"' \
+    --format='value(name)' 2>/dev/null | head -1)
 
   [ -n "$uptime" ] \
     && ok 'Cloud Monitoring: API healthz uptime check exists' \
@@ -474,6 +496,12 @@ check_monitoring() {
   [ -n "$policy" ] \
     && ok 'Cloud Monitoring: API unavailable alert policy exists' \
     || bad 'Cloud Monitoring: API unavailable alert policy missing' 'run ./scripts/setup-uptime-monitoring.sh after deploying healthz'
+  [ -n "$ready_uptime" ] \
+    && ok 'Cloud Monitoring: API readyz uptime check exists' \
+    || bad 'Cloud Monitoring: API readyz uptime check missing' 'run ./scripts/setup-uptime-monitoring.sh — without it no dependency outage is detected'
+  [ -n "$ready_policy" ] \
+    && ok 'Cloud Monitoring: API not-ready alert policy exists' \
+    || bad 'Cloud Monitoring: API not-ready alert policy missing' 'run ./scripts/setup-uptime-monitoring.sh — without it no dependency outage pages anyone'
 }
 
 # ── pubsub ───────────────────────────────────────────────────────────
