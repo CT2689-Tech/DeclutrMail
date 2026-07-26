@@ -206,9 +206,12 @@ export function AppShell({
             </svg>
           </button>
           <div
+            // `display` lives in tokens.css, not here: an inline style
+            // would outrank the phone-width media query that drops the
+            // strip (same reason `dm-trust-extra` sets none inline).
+            className="dm-trust-strip"
             style={{
               flex: 1,
-              display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: 12,
