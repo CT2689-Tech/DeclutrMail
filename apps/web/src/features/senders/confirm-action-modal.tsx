@@ -244,12 +244,17 @@ export function ConfirmActionModal({
   // primary time-window; Later keeps its existing all-current-mail shape.
   const primaryActsOnInbox = isArchiveVerb || isLaterVerb || isDeleteVerb;
   const primaryUsesWindow = isArchiveVerb || isDeleteVerb;
-  // Whether the secondary chip row is shown (Unsub or Later primary).
-  const showSecondaryRow = isUnsubVerb || isLaterVerb;
+  // Whether the secondary chip row is shown. Unsubscribe ONLY: it is the
+  // one primary that does not touch existing inbox mail, so "what about
+  // the backlog?" is a real, unanswered question. Later already moves
+  // every current message out of the inbox and schedules its return, so
+  // pairing it with "also archive/delete the past" asked the user to
+  // choose between two mutually-exclusive fates for the same mail.
+  const showSecondaryRow = isUnsubVerb;
   const hasSecondaryAction = showSecondaryRow && secondaryVerb !== null;
 
   // For Archive/Delete primary the time-window applies to the primary
-  // verb itself. For Unsub/Later with a non-null secondary, the
+  // verb itself. For Unsubscribe with a non-null secondary, the
   // time-window applies to the secondary's historic mail.
   const showWindowRow = primaryUsesWindow || hasSecondaryAction;
 
@@ -1066,7 +1071,7 @@ export function ConfirmActionModal({
                     </span>
                   );
                 }
-                if (isLaterVerb && !hasSecondaryAction) {
+                if (isLaterVerb) {
                   return (
                     <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                       {presentation.primary.currentMail.summary}{' '}

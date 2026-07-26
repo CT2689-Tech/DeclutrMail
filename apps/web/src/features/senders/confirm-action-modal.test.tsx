@@ -193,3 +193,57 @@ describe('ConfirmActionModal — Protected sender acknowledgement (D245/D42)', (
     expect(onConfirm).toHaveBeenCalledWith(expect.not.objectContaining({ override: true }));
   });
 });
+
+describe('ConfirmActionModal — backlog secondary belongs to Unsubscribe only', () => {
+  // Later already moves every current message out of the inbox and
+  // schedules its return, so an "also archive/delete the past" chip
+  // asked the user to pick two mutually-exclusive fates for the same
+  // mail. Unsubscribe is the one primary that leaves existing mail
+  // where it is, so the backlog question is real there and only there.
+  it('offers the backlog row for Unsubscribe', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+
+    expect(
+      screen.getByRole('radiogroup', { name: /also act on past emails/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('does NOT offer the backlog row for Later', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Later')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+
+    expect(screen.queryByRole('radiogroup', { name: /also act on past emails/i })).toBeNull();
+  });
+
+  it('sends no secondary on a Later confirm', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Later')}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={livePreview}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Later/i }));
+    // The key must be ABSENT, not present-and-null: `objectContaining`
+    // with `undefined` would still demand it exist.
+    const opts = onConfirm.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(Object.keys(opts)).not.toContain('secondary');
+    expect(opts.archiveHistoric).toBe(false);
+  });
+});
