@@ -276,3 +276,37 @@ describe('Store — remember-preference persists per verb (round-trip)', () => {
     },
   );
 });
+
+describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
+  const protectedRow = { ...TRIAGE_QUEUE[0]!, protectionReason: 'replied' as const };
+  const plainRow = TRIAGE_QUEUE.find((r) => r.protectionReason === null)!;
+
+  function renderSheet(row: (typeof TRIAGE_QUEUE)[number]) {
+    return render(
+      <ActionSheet
+        open
+        verb="Archive"
+        row={row}
+        inboxCount={12}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+  }
+
+  it('names the protection and says "anyway" on the confirm', () => {
+    // triage-screen.tsx sends `override: true` for exactly this row. An
+    // override the user is never told about is the same defect class this
+    // codebase keeps fixing, so the mandatory D226 preview states it.
+    renderSheet(protectedRow);
+    expect(screen.getByRole('status')).toHaveTextContent(/Protected/);
+    expect(screen.getByRole('button', { name: /Archive anyway/i })).toBeInTheDocument();
+  });
+
+  it('says nothing about protection for an unprotected row', () => {
+    // Two-sided: a notice only ever observed present is not a verified notice.
+    const { container } = renderSheet(plainRow);
+    expect(container.textContent).not.toMatch(/is Protected/);
+    expect(screen.queryByRole('button', { name: /anyway/i })).toBeNull();
+  });
+});

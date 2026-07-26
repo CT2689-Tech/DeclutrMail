@@ -197,3 +197,32 @@ describe('TriageRow — inline preview composition', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', () => {
+  function renderInline(row: ReturnType<typeof rowById>) {
+    return render(
+      <TriageRow
+        row={row}
+        expanded={true}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
+      />,
+    );
+  }
+
+  it('states the protection and says "anyway" on the inline confirm', () => {
+    // D226 lets the SHEET be skipped via D34's remember-preference, but
+    // the preview always renders. The override notice therefore has to
+    // exist on BOTH paths — otherwise skipping the sheet silently skips
+    // the acknowledgement while `override: true` still goes on the wire.
+    renderInline(rowById('t-sarah')); // protectionReason: 'user-marked'
+    expect(screen.getByRole('button', { name: /Confirm Archive anyway/i })).toBeInTheDocument();
+  });
+
+  it('says nothing about protection on an unprotected row', () => {
+    const { container } = renderInline(rowById('t-groupon'));
+    expect(container.textContent).not.toMatch(/is Protected/);
+    expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeInTheDocument();
+  });
+});

@@ -421,6 +421,30 @@ export function TriageRow({
                 mode="inline"
                 accountContext={inlinePreviewAccountContext}
               />
+              {/* Protected acknowledgement (D245/D42) — the inline half of
+                  the same statement the sheet makes. D226 lets the sheet
+                  be skipped via D34's remember-preference, but the preview
+                  always renders, so the override must be named on BOTH
+                  paths or skipping the sheet silently skips the notice.
+                  `triage-screen.tsx` sends `override: true` for this row. */}
+              {row.protectionReason != null && (
+                <div
+                  role="status"
+                  style={{
+                    marginTop: 10,
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(196,46,46,0.06)',
+                    border: '1px solid rgba(196,46,46,0.30)',
+                    fontSize: 12,
+                    lineHeight: 1.45,
+                    color: color.danger,
+                  }}
+                >
+                  This sender is <strong>Protected</strong> — it is normally kept out of bulk and
+                  automatic actions. This applies to this sender only.
+                </div>
+              )}
               {/* Explicit confirm affordance (2026-07-16 audit): before
                   this bar, confirming meant an UNDOCUMENTED second click
                   on the same verb — users read the preview and believed
@@ -437,6 +461,7 @@ export function TriageRow({
               >
                 <Button tone="primary" size="sm" onClick={() => onAction(inlinePreview.verb)}>
                   Confirm {inlinePreview.verb}
+                  {row.protectionReason != null ? ' anyway' : ''}
                 </Button>
                 <span
                   style={{
