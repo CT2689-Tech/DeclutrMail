@@ -572,7 +572,7 @@ describe('SendersScreen — edge states', () => {
       compositePreviewHandler(12),
       {
         method: 'POST',
-        path: '/api/actions/archive',
+        path: '/api/actions',
         respond: () => {
           archivePosted = true;
           return jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } });
@@ -636,6 +636,104 @@ describe('SendersScreen — edge states', () => {
     expect(undoPosted).toBe(true);
   });
 
+  it('carries the chosen time window into a SINGLE-sender archive enqueue (D226)', async () => {
+    // The chip row offers real per-bucket counts, so confirming "1 year+"
+    // promises that ONLY the 12 aged messages move. The window must reach
+    // the wire or the preview is a lie: the worker resolves the whole
+    // inbox when `olderThanDays` is absent. Multi-sender archive already
+    // passed this; single-sender routed through a legacy endpoint whose
+    // body schema had no window field at all.
+    let postedBody: unknown = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 250 } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              sender: {
+                id: 'a',
+                name: 'Sender A',
+                domain: 'example.com',
+                lastSeenDays: 2,
+                repliedCount: 0,
+                monthly: 30,
+              },
+              counts: {
+                all: 250,
+                olderThan30d: 41,
+                olderThan90d: 30,
+                olderThan180d: 20,
+                olderThan365d: 12,
+              },
+              recentSubjects: {
+                all: [],
+                olderThan30d: [],
+                olderThan90d: [],
+                olderThan180d: [],
+                olderThan365d: [],
+              },
+              unsubAvailable: true,
+              protected: false,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          postedBody = await req.json();
+          return jsonOk({ data: { actionId: 'act-w', requestedCount: 12, status: 'queued' } });
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: archiveStatus({ actionId: 'act-w', undoToken: null, undoExpiresAt: null }),
+          }),
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive mail from 1 sender/i);
+    await screen.findByText(/currently match.*Archive/i);
+
+    // Pick the narrowest window — the chip states 12 of the 250.
+    const dialog = screen.getByRole('dialog');
+    const yearChip = within(dialog).getByRole('radio', { name: /1 year\+/i });
+    expect(yearChip).toHaveTextContent('12');
+    fireEvent.click(yearChip);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await waitFor(() => expect(postedBody).not.toBeNull());
+    expect(postedBody).toMatchObject({
+      selector: { type: 'sender', senderId: 'a' },
+      primary: { type: 'archive', olderThanDays: 365 },
+    });
+  });
+
   it('reports a no-op archive (0 affected at execution) with no reversible receipt (P6)', async () => {
     // Defense in depth: even if the preview counted >0, the inbox can empty
     // before the worker runs (a race), so the worker archives 0 and issues
@@ -664,7 +762,7 @@ describe('SendersScreen — edge states', () => {
       compositePreviewHandler(5),
       {
         method: 'POST',
-        path: '/api/actions/archive',
+        path: '/api/actions',
         respond: () => jsonOk({ data: { actionId: 'act-0', requestedCount: 0, status: 'queued' } }),
       },
       {
@@ -726,7 +824,7 @@ describe('SendersScreen — edge states', () => {
       compositePreviewHandler(0),
       {
         method: 'POST',
-        path: '/api/actions/archive',
+        path: '/api/actions',
         respond: () => {
           archivePosted = true;
           return jsonOk({ data: { actionId: 'x', requestedCount: 0, status: 'queued' } });
@@ -786,7 +884,7 @@ describe('SendersScreen — edge states', () => {
       },
       {
         method: 'POST',
-        path: '/api/actions/archive',
+        path: '/api/actions',
         respond: () => {
           archivePosted = true;
           return jsonOk({ data: { actionId: 'act-1', requestedCount: 3, status: 'queued' } });

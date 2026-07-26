@@ -5,15 +5,18 @@
  * the Senders surfaces and Triage, so the hooks live in the lib layer
  * alongside the `./actions` transport rather than inside one feature.
  *
- * `useEnqueueAction` enqueues an Archive (a fresh idempotency key per
- * mutate); `useActionStatus` polls the returned handle until the worker
- * reaches a terminal state; `useRevertUndo` reverses a completed action by
- * its undo token (which itself enqueues a reverse job polled the same way).
+ * `useEnqueueComposite` enqueues Archive / Later / Delete (a fresh
+ * idempotency key per mutate); `useActionStatus` polls the returned handle
+ * until the worker reaches a terminal state; `useRevertUndo` reverses a
+ * completed action by its undo token (which itself enqueues a reverse job
+ * polled the same way).
  *
- * Historical note: `archive` was the first (and briefly only) verb with
- * a BE pipeline; `later` + `delete` now ride the composite endpoint and
- * the same worker (`labelChangeForVerb` handles all three). The
- * archive-named hooks here remain the single-sender Archive wire.
+ * Historical note: `archive` was the first (and briefly only) verb with a
+ * BE pipeline and had its own `useEnqueueAction` hook over
+ * `POST /api/actions/archive`. That route's body schema had no
+ * `olderThanDays`, so every confirmed time window was silently widened to
+ * the whole inbox; it was deleted and all three verbs now ride the single
+ * composite wire (D226 — the preview must describe the mutation that runs).
  */
 
 import { useEffect } from 'react';
@@ -22,7 +25,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { undoKeys } from '@/features/undo/query-keys';
 
 import {
-  enqueueArchiveSender,
   enqueueBulkAction,
   enqueueCompositeAction,
   getActionStatus,
@@ -35,7 +37,6 @@ import {
   recordUnsubscribeIntent,
   recordUnsubscribeManualStatus,
   revertUndo,
-  type ActionEnqueueResult,
   type ActionStatusResult,
   type BatchStatusResult,
   type BulkActionEnqueueResult,
@@ -62,25 +63,6 @@ export const ACTION_POLL_MS = 1_000;
 export function actionRefetchInterval(data: ActionStatusResult | undefined): number | false {
   if (!data) return ACTION_POLL_MS;
   return isTerminalStatus(data.status) ? false : ACTION_POLL_MS;
-}
-
-/**
- * Enqueue a single-sender Archive. One idempotency key per mutate call, so
- * a network-retry of the SAME mutation dedupes while a fresh user click is
- * a new action (D202).
- *
- * A 402 FREE_CAP_REACHED surfaces the UpgradeModal via the GLOBAL
- * MutationCache handler in `lib/query-client.ts` (D19/D77) — no
- * per-hook wiring needed here.
- */
-export function useEnqueueAction() {
-  return useMutation<ActionEnqueueResult, Error, { senderId: string; override?: boolean }>({
-    mutationFn: ({ senderId, override }) =>
-      enqueueArchiveSender(senderId, {
-        idempotencyKey: newIdempotencyKey(),
-        override: override ?? false,
-      }),
-  });
 }
 
 /**

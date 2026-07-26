@@ -37,7 +37,6 @@ import { useSenders } from './api/use-senders';
 import { useSendersSummary } from './api/use-senders-summary';
 
 import {
-  useEnqueueAction,
   useActionStatus,
   useBatchStatus,
   useBulkActionPreview,
@@ -390,16 +389,16 @@ function SendersScreenContent({
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
 
-  // P6 — real single-sender Archive (D226). `enqueue` fires the action;
-  // `activeAction` holds the in-flight handle that `actionStatus` polls to
-  // a terminal state; `revert` + `revertActionId` drive the undo loop. One
-  // in-flight action at a time is sufficient for the single-sender wire.
+  // P6 — real single-sender actions (D226). `activeAction` holds the
+  // in-flight handle that `actionStatus` polls to a terminal state;
+  // `revert` + `revertActionId` drive the undo loop. One in-flight action
+  // at a time is sufficient for the single-sender wire.
   const qc = useQueryClient();
-  const enqueue = useEnqueueAction();
-  // ADR-0020 unified composite endpoint — covers Delete primary + Later
-  // primary + composite secondary (Later/Unsub + Archive/Delete past).
-  // The per-verb `enqueueArchiveSender` stays for the single-sender
-  // Archive path until Phase 5 dead-code sweep retires it.
+  // ADR-0020 unified composite endpoint — the ONLY single-sender enqueue
+  // wire. Covers Archive / Later / Delete primaries plus the composite
+  // secondary (Later/Unsub + Archive/Delete past). The per-verb
+  // `enqueueArchiveSender` route it replaced could not carry a time
+  // window, so it silently widened every windowed Archive (D226).
   const enqueueComposite = useEnqueueComposite();
   // D52 — multi-sender bulk pipeline. One POST fans out server-side
   // (per-sender failure isolation); the FE polls ONE batch handle.
@@ -681,53 +680,23 @@ function SendersScreenContent({
       // handle to a terminal state in the effect below. The real receipt
       // (with the real undo token) appears on `done`, never optimistically.
       // Multi-sender Archive/Later/Delete ride the bulk branch below (D52).
-      if (verb === 'Archive' && senders.length === 1 && opts?.secondary == null) {
-        const sender = senders[0]!;
-        setPendingAction(null);
-        setSelected(new Set());
-        toast(`Archiving mail from ${sender.name}…`, 'info');
-        const mutationArgs: { senderId: string; override?: boolean } = { senderId: sender.id };
-        enqueue.mutate(mutationArgs, {
-          onSuccess: (res) =>
-            setActiveAction({
-              actionId: res.actionId,
-              senderName: sender.name,
-              verb: 'Archive',
-            }),
-          onError: (err) => {
-            // 402 FREE_CAP_REACHED is a designed state — the
-            // UpgradeModal (global MutationCache handler,
-            // lib/query-client) is the surface; skip Sentry + toast.
-            if (err instanceof ApiError && err.status === 402) return;
-            // 409 PROTECTED_SENDER is a designed conflict — skip Sentry to
-            // avoid noise. Every other failure (5xx, IDEMPOTENCY_KEY race,
-            // NO_ACTIVE_MAILBOX) is a real regression worth capturing.
-            if (!(err instanceof ApiError && err.status === 409)) {
-              captureFeatureException(err, { surface: 'senders', reason: 'enqueue_archive' });
-            }
-            toast(
-              err instanceof ApiError && err.status === 409
-                ? `${sender.name} is protected — unprotect it first`
-                : `Couldn't archive ${sender.name}`,
-              'warn',
-            );
-          },
-        });
-        return;
-      }
-
-      // Composite path (ADR-0020 + spec v1.2 Decision 15) — single-sender
-      // Delete primary OR Later primary OR Archive/Later with a secondary
-      // historic verb. Routes through `POST /api/actions` so the BE
-      // composite executor persists primary + secondary as two linked
+      // Composite path (ADR-0020 + spec v1.2 Decision 15) — EVERY
+      // single-sender Archive / Later / Delete, with or without a
+      // secondary historic verb. Routes through `POST /api/actions` so the
+      // BE composite executor persists primary + secondary as two linked
       // rows when relevant. Unsubscribe primary takes its own branch
       // below (D9 Wave 2): a REAL recorded intent + RFC 8058 execution,
       // whose secondary chip enqueues a separate composite (the BE has
       // no composite PRIMARY for unsub — the triage pattern).
-      if (
-        senders.length === 1 &&
-        (verb === 'Delete' || (verb === 'Archive' && opts?.secondary != null) || verb === 'Later')
-      ) {
+      //
+      // Plain single-sender Archive used to take a per-verb branch here
+      // that posted to the legacy `POST /api/actions/archive`, whose body
+      // schema has no `olderThanDays`. The chip row offered real
+      // per-bucket counts and the confirmed window was dropped at the
+      // call site, so picking "1 year+ · 12" archived the whole inbox
+      // (D226 — the preview must describe the mutation that runs).
+      // Multi-sender Archive/Later/Delete ride the bulk branch below (D52).
+      if (senders.length === 1 && (verb === 'Delete' || verb === 'Archive' || verb === 'Later')) {
         const sender = senders[0]!;
         const primaryType: 'archive' | 'later' | 'delete' =
           verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
@@ -1140,7 +1109,7 @@ function SendersScreenContent({
       // bucket. Protect stays a standing-policy toggle on Sender
       // Detail; no Senders-screen surface emits it as a verb.
     },
-    [enqueue, enqueueBulk],
+    [enqueueBulk],
   );
 
   // P6 — drive the Archive lifecycle off the polled status. On `done`,

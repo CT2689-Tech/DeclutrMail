@@ -26,7 +26,6 @@ import { useSenderTimeseries } from '../api/use-sender-timeseries';
 import { useSenderHistory } from '../api/use-sender-history';
 import {
   useCompositePreview,
-  useEnqueueAction,
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
   useActionStatus,
@@ -236,7 +235,6 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   // The sender-detail path is single-sender by design (the route is
   // per-sender), so no bulk-fan-out is needed.
   const qc = useQueryClient();
-  const enqueue = useEnqueueAction();
   const enqueueComposite = useEnqueueComposite();
   const recordUnsubIntent = useRecordUnsubscribeIntent();
   const setPolicy = useSetSenderPolicy();
@@ -351,10 +349,10 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
    *   - **Keep** → `useSetSenderPolicy` (D40: applies immediately,
    *     records `sender_policy(policy_type=keep)` + a `keep` audit row;
    *     no Gmail mutation, no preview — ADR-0015 `policy-only`).
-   *   - **Archive** without secondary → `useEnqueueAction` (direct path).
-   *   - **Archive (w/ secondary), Delete, Later** → `useEnqueueComposite`
-   *     (ADR-0020 composite executor handles primary + secondary in one
-   *     row pair).
+   *   - **Archive, Delete, Later** (with or without a secondary) →
+   *     `useEnqueueComposite` (ADR-0020 composite executor handles
+   *     primary + secondary in one row pair, and is the only wire that
+   *     carries the confirmed `olderThanDays` window).
    *   - **Unsubscribe** → `useRecordUnsubscribeIntent` (writes the
    *     pending policy + activity_log audit row; the RFC8058 / mailto /
    *     manual pipeline lands per D230).
@@ -403,48 +401,21 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       // Re-entry guard for every destructive branch — see jsdoc above.
       // Composite + direct-enqueue share the same `activeAction` slot,
       // so a single guard covers both.
-      if (activeAction != null || enqueue.isPending || enqueueComposite.isPending) {
+      if (activeAction != null || enqueueComposite.isPending) {
         toast('Still confirming your last action — give it a moment.', 'info');
         setPendingAction(null);
         return;
       }
 
-      // Archive without a secondary historic verb → direct enqueue path
-      // (the only verb with a `useEnqueueAction` wire; composite handles
-      // every other shape).
-      if (verb === 'Archive' && opts?.secondary == null) {
-        setPendingAction(null);
-        toast(`Archiving mail from ${sender.name}…`, 'info');
-        enqueue.mutate(
-          { senderId: sender.id },
-          {
-            onSuccess: (res) =>
-              setActiveAction({ actionId: res.actionId, senderName: sender.name, verb: 'Archive' }),
-            onError: (err) => {
-              // 402 FREE_CAP_REACHED — the UpgradeModal (global
-              // MutationCache handler in lib/query-client) is the
-              // surface; skip Sentry + the generic toast.
-              if (err instanceof ApiError && err.status === 402) return;
-              captureFeatureException(err, { surface: 'senders', reason: 'enqueue_archive' });
-              toast(
-                err instanceof ApiError && err.status === 409
-                  ? `${sender.name} is protected — unprotect it first`
-                  : `Couldn't archive ${sender.name}`,
-                'warn',
-              );
-            },
-          },
-        );
-        return;
-      }
-
-      // Composite path — Delete primary, Later primary, or Archive with
+      // Composite path — EVERY Archive / Later / Delete, with or without
       // a secondary historic verb. ADR-0020 single round-trip.
-      if (
-        verb === 'Delete' ||
-        verb === 'Later' ||
-        (verb === 'Archive' && opts?.secondary != null)
-      ) {
+      //
+      // Plain Archive used to take a per-verb branch here that posted to
+      // the legacy `POST /api/actions/archive`, whose body schema has no
+      // `olderThanDays` — so a confirmed "1 year+" window was dropped at
+      // the call site and the worker archived the whole inbox (D226 — the
+      // preview must describe the mutation that runs).
+      if (verb === 'Delete' || verb === 'Later' || verb === 'Archive') {
         const primaryType: 'archive' | 'later' | 'delete' =
           verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
         const inFlightCopy =
@@ -588,7 +559,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         return;
       }
     },
-    [enqueue, enqueueComposite, recordUnsubIntent, setPolicy, qc, activeAction, activeUnsub],
+    [enqueueComposite, recordUnsubIntent, setPolicy, qc, activeAction, activeUnsub],
   );
 
   // Route every destructive verb through the modal (D226 — preview is

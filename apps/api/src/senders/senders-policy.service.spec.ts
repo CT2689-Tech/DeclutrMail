@@ -326,9 +326,10 @@ describe('SendersPolicyService', () => {
       const actions = new ActionsService(db as never, queue as never);
 
       await expect(
-        actions.enqueueArchive({
+        actions.enqueueComposite({
           mailboxAccountId: mailboxId,
           selector: { type: 'sender', senderId },
+          primary: { type: 'archive' },
           idempotencyKey: 'click-protected-1',
           override: false,
         }),
@@ -336,9 +337,10 @@ describe('SendersPolicyService', () => {
 
       // Unprotect → the same enqueue goes through.
       await svc.setPolicy({ mailboxAccountId: mailboxId, senderId, patch: { isProtected: false } });
-      const res = await actions.enqueueArchive({
+      const res = await actions.enqueueComposite({
         mailboxAccountId: mailboxId,
         selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
         idempotencyKey: 'click-protected-2',
         override: false,
       });

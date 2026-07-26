@@ -11,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   defaultLaterWakeAt,
   enqueueCompositeAction,
-  enqueueArchiveSender,
   getActionStatus,
   getBulkActionPreview,
   isTerminalStatus,
@@ -21,56 +20,6 @@ import {
   revertUndo,
 } from './actions';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
-
-describe('enqueueArchiveSender', () => {
-  beforeEach(() => installFetchStub([]));
-  afterEach(() => resetFetchStub());
-
-  it('POSTs the sender selector + Idempotency-Key header and unwraps the handle', async () => {
-    let observedKey: string | null = null;
-    let observedBody: unknown = null;
-    installFetchStub([
-      {
-        method: 'POST',
-        path: '/api/actions/archive',
-        respond: async (req) => {
-          observedKey = req.headers.get('idempotency-key');
-          observedBody = await req.json();
-          return jsonOk({
-            data: { actionId: 'a-1', requestedCount: 12, status: 'queued' },
-          });
-        },
-      },
-    ]);
-
-    const res = await enqueueArchiveSender('snd-1', { idempotencyKey: 'key-12345678' });
-
-    expect(observedKey).toBe('key-12345678');
-    expect(observedBody).toEqual({
-      selector: { type: 'sender', senderId: 'snd-1' },
-      override: false,
-    });
-    expect(res).toEqual({ actionId: 'a-1', requestedCount: 12, status: 'queued' });
-  });
-
-  it('forwards override=true for a protected sender', async () => {
-    let observedBody: { override?: boolean } | null = null;
-    installFetchStub([
-      {
-        method: 'POST',
-        path: '/api/actions/archive',
-        respond: async (req) => {
-          observedBody = (await req.json()) as { override?: boolean };
-          return jsonOk({ data: { actionId: 'a-2', requestedCount: 1, status: 'queued' } });
-        },
-      },
-    ]);
-
-    await enqueueArchiveSender('snd-2', { idempotencyKey: 'key-87654321', override: true });
-
-    expect(observedBody!.override).toBe(true);
-  });
-});
 
 describe('getActionStatus', () => {
   beforeEach(() => installFetchStub([]));
