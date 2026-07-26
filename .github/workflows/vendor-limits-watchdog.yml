@@ -12,11 +12,15 @@
 # useful from day 1 with only SUPABASE_SESSION_DSN and gets better as
 # the founder adds vendor tokens.
 #
-# GCP check activation (currently UNCONFIGURED by design): the org
-# policy blocks JSON SA keys, so it needs a google-github-actions/auth
-# WIF step here (exports GOOGLE_APPLICATION_CREDENTIALS) + a SA holding
-# `roles/billing.viewer` on the billing account + the
-# GCP_BILLING_ACCOUNT_ID secret.
+# GCP check activation: the org policy blocks JSON SA keys, so the WIF
+# auth step below exports GOOGLE_APPLICATION_CREDENTIALS. Two things
+# outside this file must also be true, or the check stays UNCONFIGURED:
+#   * the GCP_BILLING_ACCOUNT_ID repo secret is set, AND
+#   * GCP_DEPLOY_SA holds `roles/billing.viewer` ON THE BILLING ACCOUNT
+#     (a billing-account grant, NOT a project-level one — the deploy SA's
+#     project roles do not reach it).
+# The auth step is skipped when GCP_WIF_PROVIDER is absent so the rest of
+# the watchdog still runs.
 
 name: Vendor limits watchdog
 
@@ -29,6 +33,8 @@ on:
 
 permissions:
   contents: read
+  # Required by google-github-actions/auth to mint the WIF token.
+  id-token: write
 
 concurrency:
   group: vendor-limits-watchdog-${{ github.ref }}
@@ -38,12 +44,27 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Lifted to job env so the auth step's `if:` can test it — the
+      # secrets context is not addressable from a step-level condition.
+      GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
+
+      - name: Authenticate to Google Cloud
+        if: env.GCP_WIF_PROVIDER != ''
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+
+      - name: Install gcloud
+        if: env.GCP_WIF_PROVIDER != ''
+        uses: google-github-actions/setup-gcloud@v3
 
       - name: Install psql
         run: |
