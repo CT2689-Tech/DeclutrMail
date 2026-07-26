@@ -45,7 +45,19 @@ hdr()  { curl -sI --max-time 15 "$1" 2>/dev/null | tr -d '\r'; }
 # `set -o pipefail` the whole pipeline reports failure — so the check
 # fails EXACTLY WHEN the content it is looking for is present. Capture
 # the body first, then match it.
-fetch() { curl -sL --max-time 15 "$1" 2>/dev/null; }
+# Callers assert on body CONTENT, so an empty response is indistinguishable
+# from "the origin served the wrong thing" — a single transient timeout
+# reports a FALSE FAIL on a healthy site (observed 2026-07-25: the sitemap
+# canonical-host check failed once and passed on re-run). Retry once, with a
+# longer deadline, only when the body came back empty: any real page (even a
+# 404) returns bytes, so a genuine mismatch still fails on the first attempt
+# at no extra cost.
+fetch() {
+  local body
+  body=$(curl -sL --max-time 15 "$1" 2>/dev/null)
+  [ -n "$body" ] || body=$(curl -sL --max-time 30 "$1" 2>/dev/null)
+  printf '%s' "$body"
+}
 body_has()     { printf '%s' "$1" | grep -qF "$2"; }
 body_matches() { printf '%s' "$1" | grep -qE "$2"; }
 
