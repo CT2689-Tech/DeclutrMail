@@ -6,6 +6,7 @@ import {
   type EventName,
   type EventProps,
 } from '@declutrmail/shared/observability';
+import type { Attribution } from './attribution';
 import { hasAnalyticsConsent, storeConsent } from './cookie-consent';
 
 /**
@@ -41,6 +42,7 @@ type PosthogSdk = {
   init: (key: string, opts: Record<string, unknown>) => void;
   capture: (eventName: string, props?: Record<string, unknown>) => void;
   identify: (id: string, props?: Record<string, unknown>) => void;
+  register: (props: Record<string, unknown>) => void;
   reset: () => void;
 };
 
@@ -106,6 +108,30 @@ export async function track<E extends EventName>(
     sdk.capture(eventName, safeProps);
   } catch {
     // Explicit analytics is best-effort; product actions never depend on it.
+  }
+}
+
+/**
+ * Attach first-touch attribution as super properties, so every
+ * subsequent event carries the channel without any change to the
+ * `EventName`/`EventProps` closed union — channel is a dimension of
+ * every event, not an event of its own.
+ *
+ * Values are already-validated slugs from `lib/attribution`; passing
+ * anything else would be scrubbed at the wire boundary anyway.
+ */
+export async function registerAttribution(attribution: Attribution): Promise<void> {
+  const sdk = await loadSdk();
+  if (!sdk) return;
+  const props: Record<string, string> = { utm_source: attribution.source };
+  if (attribution.medium) props.utm_medium = attribution.medium;
+  if (attribution.campaign) props.utm_campaign = attribution.campaign;
+  if (attribution.content) props.utm_content = attribution.content;
+  if (attribution.term) props.utm_term = attribution.term;
+  try {
+    sdk.register(props);
+  } catch {
+    // Attribution enrichment is best-effort; never blocks a page view.
   }
 }
 

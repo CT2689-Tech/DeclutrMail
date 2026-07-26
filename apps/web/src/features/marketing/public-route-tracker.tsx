@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 
 import type { EventProps } from '@declutrmail/shared/observability';
 
+import { useAttributionCapture } from './use-attribution-capture';
 import { useConsentedPageView } from './use-consented-page-view';
 
 type PublicPage = EventProps<'page_viewed'>['page'];
@@ -34,6 +35,7 @@ export function publicPageForPath(pathname: string | null): PublicPage | null {
 
 export function PublicRouteTracker() {
   const pathname = usePathname();
+  useAttributionCapture();
   useConsentedPageView(publicPageForPath(pathname));
 
   return null;

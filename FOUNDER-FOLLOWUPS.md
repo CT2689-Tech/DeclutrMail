@@ -24,6 +24,22 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-07-26 — Marketing tool stack: accounts to open and DNS to fix before any acquisition motion runs
+**Source:** marketing automation plan (`~/.claude/plans/since-we-are-getting-velvet-tarjan.md`), founder-selected budget $100–300/mo, channels = lifecycle email + SEO content + launch platforms
+**Why:** The repo half of attribution has now shipped (first-touch capture → PostHog super properties → `waitlist.source`), but every channel it measures is still unopened, and the sending domain cannot carry lifecycle-email volume. These are account/DNS actions no agent can take.
+**How:**
+1. **Google Search Console + Bing Webmaster** (free) — verify `declutrmail.com`, submit the sitemap. Needed before any content work is measurable, and a prerequisite for the IndexNow automation (plan W3).
+2. **SPF + bounce MX on `send.declutrmail.com`** — DKIM is configured, the other two are not, so Resend never reports the domain verified and lifecycle mail will land in spam. Also add a separate marketing subdomain (e.g. `news.declutrmail.com`) so a marketing complaint rate cannot poison transactional reputation.
+3. **Ahrefs Starter** ($29/mo) — keyword + rank tracking; the source of the `/how-to` and `/vs` expansion list.
+4. **Resend Pro** ($20/mo) — unlocks Broadcasts/Audiences on the existing account for waitlist nurture and changelog digests.
+5. **F5Bot** (free) + optionally **Syften** ($19/mo) — Reddit/HN keyword alerts on "clean gmail", "unsubscribe emails", "inbox zero", and competitor names.
+6. **Typefully** ($12.50/mo) — build-in-public scheduling; its API also drives the changelog auto-post in plan W4.
+7. **Screen Studio** (~$89 one-time) — demo video for the landing page and the Product Hunt launch.
+8. Claim the free directory listings (Product Hunt, AlternativeTo, G2, Capterra, Trustpilot, SaaSHub, Indie Hackers, BetaList).
+**Deliberately not purchased:** a dedicated lifecycle ESP (Loops/Customer.io/Mailchimp). It would add a subprocessor and force updates to `gmail-data-inventory.ts`, the public processor list, and the privacy policy — on the one product whose wedge is "your mail goes nowhere". Plan W2 builds the triggers in-repo on Resend + BullMQ instead.
+**Verifies by:** GSC reports the sitemap as read; `curl https://api.resend.com/domains` shows `send.declutrmail.com` verified on all three records; a test lifecycle send scores ≥ 9/10 on mail-tester.com.
+**Status:** Open
+
 ### 2026-07-26 — The CI deploy SA cannot read Secret Manager or the API SA's IAM policy — the snapshot's two most security-relevant sections have never been captured
 **Source:** PR #380 — the first honest `infra-snapshot` run ([30191656010](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/30191656010)), which surfaced this within minutes of the sentinel fix landing
 **Why:** In CI, `secret_manager` and `iam.declutrmail_api_sa` both serialize as `null` — the read did not happen. `GCP_DEPLOY_SA` evidently lacks `roles/secretmanager.viewer` (or `.secretAccessor`) and `roles/iam.serviceAccountViewer` on `declutrmail-ai-prod`. Everything else captures fine: Cloud Run revisions/env/traffic for both services, Atlas head (`0049`, at latest), and 19 GitHub secrets via the new PAT. **This was always true and was structurally invisible** — under the previous code a failed read returned `[]`/`{}`, so the daily snapshot asserted "Secret Manager holds zero secrets" and "the API service account has zero IAM bindings", producing a permanently clean diff for precisely the two resources whose drift matters most. Note the asymmetry that makes the diagnosis certain: `declutrmail_worker_sa` reads `{"not_found": true}` because Google evaluates existence before permission, while `declutrmail_api_sa` — which does exist — reads `null`. Different unknowns, and until this PR both rendered as `{}`.

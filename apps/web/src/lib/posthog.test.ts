@@ -5,6 +5,7 @@ import {
   __resetForTests,
   __setSdkPromiseForTests,
   identifyUser,
+  registerAttribution,
   track,
   withdrawAnalyticsConsent,
 } from './posthog';
@@ -20,6 +21,7 @@ const posthogMock = vi.hoisted(() => ({
   init: vi.fn(),
   capture: vi.fn(),
   identify: vi.fn(),
+  register: vi.fn(),
   reset: vi.fn(),
 }));
 
@@ -36,6 +38,7 @@ beforeEach(() => {
   posthogMock.init.mockClear();
   posthogMock.capture.mockClear();
   posthogMock.identify.mockClear();
+  posthogMock.register.mockClear();
   posthogMock.reset.mockClear();
   vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'phc_test');
 });
@@ -181,5 +184,51 @@ describe('withdrawAnalyticsConsent() — GDPR Art. 7(3) (D147)', () => {
     await expect(withdrawAnalyticsConsent()).resolves.toBeUndefined();
     expect(hasAnalyticsConsent()).toBe(false);
     expect(readStoredConsent()).toBe('essential');
+  });
+});
+
+describe('registerAttribution', () => {
+  it('does nothing without consent — attribution is analytics, not essential', async () => {
+    await registerAttribution({ source: 'reddit' });
+    expect(posthogMock.init).not.toHaveBeenCalled();
+    expect(posthogMock.register).not.toHaveBeenCalled();
+  });
+
+  it('does nothing after "Essential only"', async () => {
+    storeConsent('essential');
+    await registerAttribution({ source: 'reddit' });
+    expect(posthogMock.register).not.toHaveBeenCalled();
+  });
+
+  it('registers the source as a super property after "Accept all"', async () => {
+    storeConsent('all');
+    await registerAttribution({ source: 'reddit' });
+    expect(posthogMock.register).toHaveBeenCalledWith({ utm_source: 'reddit' });
+  });
+
+  it('maps every present dimension and omits absent ones', async () => {
+    storeConsent('all');
+    await registerAttribution({
+      source: 'reddit',
+      medium: 'social',
+      campaign: 'launch',
+      content: 'comment',
+      term: 'gmail',
+    });
+    expect(posthogMock.register).toHaveBeenCalledWith({
+      utm_source: 'reddit',
+      utm_medium: 'social',
+      utm_campaign: 'launch',
+      utm_content: 'comment',
+      utm_term: 'gmail',
+    });
+  });
+
+  it('never throws when the SDK register call fails', async () => {
+    storeConsent('all');
+    posthogMock.register.mockImplementationOnce(() => {
+      throw new Error('sdk boom');
+    });
+    await expect(registerAttribution({ source: 'reddit' })).resolves.toBeUndefined();
   });
 });

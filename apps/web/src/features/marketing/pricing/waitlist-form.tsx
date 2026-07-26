@@ -6,6 +6,7 @@ import { tokens } from '@declutrmail/shared';
 import type { TierId } from '@declutrmail/shared/entitlements';
 
 import { joinWaitlist } from '@/lib/api/waitlist';
+import { attributionSource } from '@/lib/attribution';
 import { track } from '@/lib/posthog';
 
 const { color, font, radius } = tokens;
@@ -30,11 +31,16 @@ export function WaitlistForm({ tierInterest, source }: { tierInterest: TierId; s
     e.preventDefault();
     if (status === 'submitting') return;
     setStatus('submitting');
+    // `source` names the surface; the stored first-touch channel is
+    // appended when one exists (`pricing` → `pricing:reddit`). Resolved
+    // at submit rather than render so a visitor who accepts cookies
+    // after the form mounted is still attributed.
+    const attributedSource = attributionSource(source);
     try {
-      await joinWaitlist({ email: email.trim(), tierInterest, source });
+      await joinWaitlist({ email: email.trim(), tierInterest, source: attributedSource });
       setStatus('confirmed');
       // D159 — fires only after the server accepted; never the email.
-      void track('waitlist_joined', { tier_interest: tierInterest, source });
+      void track('waitlist_joined', { tier_interest: tierInterest, source: attributedSource });
     } catch {
       setStatus('error');
     }
