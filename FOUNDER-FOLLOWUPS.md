@@ -24,13 +24,6 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
-### 2026-07-26 — CASA Tier 2: submitted 15 Apr 2026, outcome unconfirmed 102 days later
-**Source:** founder's inbox — TAC Security CASA Support Team, Wed 15 Apr 2026 21:56 (verified: 15 Apr 2026 was a Wednesday)
-**Why:** The launch checklist requires a *current* CASA Tier 2 assessment, and Gmail restricted scopes depend on it. The email on file says only that the **Letter of Validation was submitted to Google**, with "an update within 5-6 business days" expected. That was **102 days ago**. Submission is not approval, and `docs/execution/d-break-ledger-2026-07-11.md` already records the deliberate choice to state publicly that the cycle is in progress rather than claim a passed status — so the repo must not start asserting otherwise without the artifact. Either Google approved it in late April and a later message says so, or it has stalled and that is itself the finding. The thread header reads **3 of 12**, so the answer is very likely already in the inbox.
-**How:** Open the newest message in that thread. Record here: (a) the approval date, (b) the assessment's validity window — CASA Tier 2 is an annual recertification, so the expiry is the operative fact for the checklist, not the submission date — and (c) whether a redacted letter exists that could back a public claim. If the newest message is still the 15 Apr one, chase TAC Security; do not contact Google directly (their instruction, and it is plausible on its face).
-**Verifies by:** an approval date + expiry recorded here, and the launch-checklist row "CASA Tier 2 assessment current" moved off ⬜.
-**Status:** Open
-
 ### 2026-07-26 — The CI deploy SA cannot read Secret Manager or the API SA's IAM policy — the snapshot's two most security-relevant sections have never been captured
 **Source:** PR #380 — the first honest `infra-snapshot` run ([30191656010](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/30191656010)), which surfaced this within minutes of the sentinel fix landing
 **Why:** In CI, `secret_manager` and `iam.declutrmail_api_sa` both serialize as `null` — the read did not happen. `GCP_DEPLOY_SA` evidently lacks `roles/secretmanager.viewer` (or `.secretAccessor`) and `roles/iam.serviceAccountViewer` on `declutrmail-ai-prod`. Everything else captures fine: Cloud Run revisions/env/traffic for both services, Atlas head (`0049`, at latest), and 19 GitHub secrets via the new PAT. **This was always true and was structurally invisible** — under the previous code a failed read returned `[]`/`{}`, so the daily snapshot asserted "Secret Manager holds zero secrets" and "the API service account has zero IAM bindings", producing a permanently clean diff for precisely the two resources whose drift matters most. Note the asymmetry that makes the diagnosis certain: `declutrmail_worker_sa` reads `{"not_found": true}` because Google evaluates existence before permission, while `declutrmail_api_sa` — which does exist — reads `null`. Different unknowns, and until this PR both rendered as `{}`.
@@ -1748,6 +1741,19 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-07-26 — CASA Tier 2 / OAuth restricted-scope verification: APPROVED 21 Apr 2026
+**Source:** founder's inbox — `api-oauth-dev-verification-reply@google.com`, "The Third Party Data Safety Team", **Tue 21 Apr 2026 18:39**
+**Why:** The launch checklist requires a *current* CASA Tier 2 assessment; Gmail restricted scopes depend on it. The only artifact previously on file was the 15 Apr Letter-of-Validation *submission*, and submission is not approval — `docs/execution/d-break-ledger-2026-07-11.md` deliberately states publicly that the cycle is "in progress" rather than claiming a pass. The approval message was already in the thread, 4 messages down.
+**How:** Read the newest message in the thread. Recorded:
+- **Approved:** 21 Apr 2026 — Google approved the OAuth App Verification request for project `387835380133` (`declutrmail-ai-prod`).
+- **Scope granted:** `https://www.googleapis.com/auth/gmail.modify` — the single restricted scope DeclutrMail uses.
+- **Turnaround:** submitted Wed 15 Apr → approved Tue 21 Apr = **4 business days**, inside the stated 5–6.
+- **Expiry / validity:** annual recertification. Google's wording is "recertified on an annual basis" and gives no explicit expiry date, so treat **21 Apr 2027** as the operative deadline and start the reassessment early — Google asks you to *reply to that thread* to begin reverification, which is the cheapest possible renewal path and worth doing ~60 days ahead (≈ 20 Feb 2027).
+- **Re-verification triggers (independent of the annual clock):** a new scope, or **any change to the OAuth consent-screen configuration**, requires a fresh verification request. Verification is not inheritable.
+- **Public-claim backing:** the approval email itself is the artifact. It is a Google-sent confirmation naming the project and scope, which is sufficient to stop describing the cycle as "in progress". No separate redacted letter was needed.
+**Verifies by:** approval date + renewal deadline recorded here (done); launch-checklist row "CASA Tier 2 assessment current" moves off ⬜; live status re-checkable any time at the OAuth Consent Screen in the Google API Console.
+**Status:** Done 2026-07-26
 
 ### 2026-07-20 — Paddle sandbox webhook destination points at a rotated tunnel hostname
 **Source:** session 2026-07-20 (D117 upgrade-flow smoke)
