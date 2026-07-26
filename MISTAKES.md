@@ -20,6 +20,214 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-26 — A guardrail warned on a ratio that could not cost money, and stayed yellow for months
+**PR:** #382
+**Caught by:** founder question — "How do we reduce GH action minutes? Is that 2000 per month? what are the cost implications?"
+**What happened:** `check-vendor-limits.mjs` graded GitHub Actions as `WARN` at ≥80% of "included minutes", and the row had been sitting at **574% of 2,000** for months. The included-minutes allowance applies to **private** repos; DeclutrMail is public, and public repos bill $0 on standard GitHub-hosted runners. GitHub's own API says so unambiguously — `/actions/runs/{id}/timing` returns `"billable": {"UBUNTU": {"total_ms": 0}}` for a run whose `run_duration_ms` is 13,000 — and the check's *own* detail string printed `net spend $0.00` on the same line as the warning. The alarm and its refutation were rendered side by side in one table cell.
+
+Worse, the codebase had already routed around it instead of fixing it: the Upstash comment argued against `WARN_IS_FAILURE` on the grounds that "the table already carries a standing WARN (Actions minutes at 538% of the included tier), so that would pin the workflow red forever." A false alarm had become load-bearing in the reasoning about a *different* vendor's threshold.
+**Correct approach:** Grade on the quantity that can actually hurt. `netAmount` was already being fetched and already drove BREACH; the ratio was decoration that outranked it. Status now keys on spend alone, minutes are reported as context, and `usagePct` is omitted so the row renders `—` instead of a false near-breach percentage.
+**Rule:** A threshold must be expressed in the units of the harm. If a check can print its own contradiction (`574%` next to `$0.00`), the percentage is not measuring the risk. And when a permanent WARN starts being *cited* in other decisions, it has already cost more than the signal it was meant to give.
+**Enforcement update:** none mechanical — but this is the **third** instance today of a guardrail that cannot tell a real state from a null one (`[]`-on-failure, `NOT_FOUND`-vs-unreadable, and now ratio-vs-cost). CLAUDE.md §11 distillation triggers **#1 (recurrence ≥3)** and **#4 (cross-cutting)** are both met. Candidate §2 guardrail: *a monitoring surface must distinguish "measured and fine" from "not measurable here", and must grade in the units of the harm.*
+
+## 2026-07-26 — Fixed the "captured-and-empty" lie one section at a time, three rounds
+**PR:** branch `chore/d038-infra-snapshot-hardening` (371e1e00 → 2d3d4879 → 91674d5b)
+**Caught by:** Codex stop-time review, twice — "failed GCP reads are still serialized as captured-and-empty", then "GCP `NOT_FOUND` is still conflated with an unreadable source"
+**What happened:** `infra-snapshot.sh` had failed 8 consecutive nightly runs because a 403 from `gh secret list` reached `--argjson` as an empty string. I root-caused that correctly and fixed the one section, writing a commit message explaining at length that an empty array is a *claim* — "these are the secrets, and none changed" — about a list never read.
+
+Then I shipped it with `safe_gcloud` still returning `[]` on failure, so every GCP read told exactly that lie: Secret Manager holding no secrets, both service-account IAM policies empty, all six Cloud Run reads empty. `sa_iam_state` was worst — a `// {}` coalesce whose only function was converting the failure sentinel into an empty policy, in a security drift detector. `atlas_state` had it from a different cause: grep piped from atlas under `pipefail`, so the `|| true` absorbing a no-match grep also absorbed an atlas that never ran, and an unreachable database serialized as `{"raw": ""}`.
+
+Round two fixed all of those to `null` — and immediately over-corrected, collapsing a *definitive* answer into the unreadable bucket. `declutrmail-worker@` does not exist; the API says so plainly. Reporting that as "could not read" destroys the one drift signal that item needs, because creating that SA **is** the remediation in FOUNDER-FOLLOWUPS, and "still absent" must stay distinguishable from "we did not look tonight."
+
+Round three split them: `{"not_found": true}` for the API's verdict, `null` for a read that did not happen. Match order turned out to be load-bearing — Google merges the two cases in one sentence ("does not have permission to access projects instance [...] (or it may not exist): Permission denied"), so an explicit permission/auth match must win, or a credentials outage serializes as every resource being absent. Error strings were captured from the live project rather than guessed; Cloud Run does not emit the NOT_FOUND token at all ("Cannot find service [x]").
+**Correct approach:** When the diagnosis is "this code cannot distinguish *checked-and-clean* from *never-checked*", that is a statement about a defect CLASS, not a line — grep every sibling path answering the same question before claiming the fix. And when introducing a sentinel, enumerate the states the underlying system can actually be in *first*; I introduced a two-state encoding for a three-state world and had to be told.
+**Rule:** A fix whose rationale is a general principle is not done until that principle has been run as a query over every instance it indicts. Write the rationale, then go looking for what else it convicts — and count the states before choosing the encoding.
+**Enforcement update:** none yet — but this is the **fifth** occurrence of the class in this repo (dependency-free `/healthz` as the only uptime check, 46 days of silent Redis suspension; the vendor watchdog degrading to UNCONFIGURED-and-green when a shared secret is deleted; and the three above). CLAUDE.md §11 distillation trigger #1 (recurrence ≥3) and #4 (cross-cutting) are both met. **Candidate guardrail for the founder to distill:** *a health, drift, or monitoring surface must never represent an unreadable source as an empty or default one — unreachable, absent, and empty are three distinct states and must serialize distinctly.* This is the ops-layer form of the UI truth-bug class already tracked (null→0, unknown→"Ready").
+
+
+## 2026-07-25 — Three UI-truth defects a full audit found on surfaces every gate had passed
+**PR:** (this branch — launch audit session)
+**Caught by:** manual test (local browser walk at 375/620/1280 px against the real 121k-message mailbox, cross-checked in psql)
+
+**What happened:** three separate surfaces asserted something they did not know,
+and all three shipped through green typecheck, green tests, and every structural gate.
+
+1. **Autopilot suggestions named nobody — and, underneath that, the whole
+   backlog was stale.** `senders.display_name` defaults to `''`, the read
+   service normalises `''` → `null`, and the FE read that as "Sender details
+   still syncing" *and* suppressed the address too, so 867 of 6,244 pending
+   matches were permanently unidentifiable. Digging into why 25 of the first 50
+   rows had no `senders` row at all exposed the real defect: the initial-sync
+   rebuild DELETEs and re-inserts `senders` (delete + reinsert *is* the
+   reconciliation), while `rule_match_log` is left alone. So after the
+   2026-07-24 reconnect, **5,978 of the 6,244 pending matches pointed at rows
+   the rebuild had re-created and 32 at rows that never came back — only 234
+   were current.** Every one was an approvable Gmail mutation whose confidence
+   and reasoning described mail the mailbox no longer held: a preview (D226)
+   built on deleted evidence.
+2. **"4768 actions" on a rule that performed none.** The apply worker writes
+   `last_run_actions = matchesForRule.length` in both modes; the rule card
+   printed it as "actions" even for an Observe rule sitting Off.
+3. **Garbage in the mobile topbar.** The trust strip is `overflow: hidden` and
+   `justify-content: center`; at 375 px it shrinks to 32 px around a 95 px child
+   and painted the mid-slice of "UNDO WINDOWS" as the literal string "o wir" —
+   on every authenticated screen, on the product's own trust surface.
+
+**Correct approach:** derived state must be torn down with the thing it derives
+from — the rebuild transaction owns that. The fallback chain must match what the
+rest of the product already does (name → address → and only then "syncing"); a
+count's label must be true in every mode the count is written in; and a strip
+that cannot fit must be hidden, not clipped mid-word.
+
+**Rule:** *if a surface cannot name the thing it is about to change, or its
+evidence predates the current index, it must not offer to change it* — enforce
+that in the read layer AND delete the derived rows where they are invalidated.
+
+**Enforcement update:** `initial-sync.worker.ts` deletes every UNEXECUTED
+`rule_match_log` row — `pending`, plus `approved AND NOT intent_applied` —
+inside the same transaction as the `senders` teardown. Dismissed rows (the
+user's decision) and executed rows (referenced by activity + undo) survive.
+`SENDER_INDEXED_AT_MATCH_TIME` (`senders.created_at <= matched_at`) guards the
+pending list, `pendingTotal`, and both approve paths, and the same currency test
+guards `AutopilotActionWorker.loadEligibleMatches`, for mailboxes rebuilt before
+that shipped. Specs lock all three.
+
+Thirteen things worth carrying forward:
+(a) A CSS media query cannot override an inline `display` — the first topbar fix
+silently did nothing. Put responsive `display` in `tokens.css`, never inline.
+(b) **My first fix tested existence, not currency** — "does a `senders` row
+exist?" caught 32 of 6,010 bad rows (0.5%) and, worse, let a stale suggestion
+resurrect the moment its sender was re-indexed. I then wrote that resurrection
+up as "it self-heals". Codex's stop-time review caught it. When a fix makes a
+symptom disappear, check whether the mechanism can run backwards.
+(c) Hiding rows is not free: `rule_match_log_pending_dedup_uniq` covers pending
+rows, so a hidden-but-present pending row blocks the sweep from ever recording a
+current match for that (rule, sender). Any read-layer suppression of rows a
+writer deduplicates against needs a matching cleanup, or it converts a stale
+suggestion into no suggestion, forever.
+(d) **I then scoped the cleanup to `resolution='pending'` and missed the
+executable half.** Codex's second stop-time review caught it: a match sits at
+`approved AND NOT intent_applied` between approval and the sweep — and Active
+mode writes matches already-approved — so a rebuild in that window left rows
+that `AutopilotActionWorker` would go on to EXECUTE against Gmail. A pending row
+only misleads; an approved-unexecuted row mutates the user's mailbox. When
+invalidating derived state, enumerate every state the pipeline can hold it in
+and ask which of them a downstream *writer* consumes — "resolved = safe to keep"
+was the wrong abstraction; "executed = safe to keep" is the right one.
+
+(e) **And the cleanup itself was not synchronized with the workers that write
+what it cleans.** `WORKER_POLICIES.perMailboxPolicy` says `concurrencyScope:
+'perMailbox'`, but nothing reads that field — `apps/api/src/worker.ts:805` says
+outright that per-mailbox concurrency=1 is not enforced at the consumer. So
+`AutopilotApplyWorker` can read signals, have the rebuild commit under it, and
+then insert matches from the pre-rebuild snapshot — rows that pass every
+currency guard, because their `matched_at` is later than the rebuild's fresh
+`created_at`. A deleting cleanup does not make a system consistent unless the
+writers feeding that table are synchronized with it. The fix follows this repo's
+existing pattern (ScoreWorker's monotonic upsert): correctness at the DB layer —
+fingerprint `min(senders.created_at)` before reading and re-check before
+writing. Reach for the invariant the writer can verify itself.
+
+(f) **That fingerprint, on its own, was still check-then-act.** Codex's fourth
+review: comparing the stamp and then INSERTing are two statements, so the
+rebuild can commit in the gap and the stale matches land anyway. I had shrunk
+the window and called it closed — the second time in this session I mistook a
+narrower race for no race. The comparison and the write now share ONE
+transaction holding a per-mailbox `pg_advisory_xact_lock` that the rebuild takes
+too (`sender-index-lock.ts`); transaction-scoped, so there is no unlock path to
+leak. Same review also caught that the `flipMatchApplied` warning fires AFTER
+the Gmail mutation — it reported the race rather than preventing it — so the
+currency predicate is now re-checked immediately before the mutation, with the
+warning kept only for the residue. That residue is irreducible and worth stating
+plainly rather than papering over: an external side effect can never be
+transactional with a database predicate.
+
+(g) **And "irreducible" was wrong.** I wrote that an external side effect can
+never be transactional with a database predicate, so the mutation window had to
+stay open. True in general, false here: this worker ALREADY writes a durable
+`action_jobs` claim before mutating (key `autopilot-<matchId>`). Creating that
+claim under the rebuild's lock, in the same transaction as the currency check,
+serializes "decide to execute" against "invalidate" — either the claim commits
+first and the rebuild skips the match, or the rebuild commits first and the
+check fails before Gmail is touched. Declaring a race irreducible is a claim
+about the whole system, not about the function in front of you; check what
+durable state the pipeline already writes before asserting it.
+
+(h) Extracting the shared predicate was not tidying. Written out twice —
+`loadEligibleMatches` and `matchStillCurrent` — they drifted on the FIRST edit:
+the claim escape hatch went into one and not the other, so a claimed match was
+filtered at load and stranded exactly as designed-against. One `SQL` constant,
+used by both. A duplicated predicate is a bug with a delay fuse.
+
+(i) **Preserving the claim created a zombie.** Making claimed matches survive
+the rebuild was right, but it collided with the older "sender row missing =
+`building_sender_index` race, retry later" branch. When the sender genuinely
+does not come back, that race never resolves: the cleanup skips the row (claim),
+the currency predicate passes it (claim), and the sweep retries it forever with
+`action_jobs` parked at `queued`. Every exemption you add to a cleanup needs the
+question "what now retires this row instead?" — an exemption without a terminal
+path is a leak. The missing-sender branch now separates transient from final by
+the same index fingerprint (`min(senders.created_at) > matched_at` ⇒ the
+teardown already happened, so the absence is permanent), terminates the match as
+a no-op and flips the claim to `failed`.
+
+(j) **The retirement I added to close (i) could strand a real Gmail mutation.**
+`resolvedMessageIds` + `status='executing'` are persisted immediately BEFORE
+`batchModify`, precisely so a crashed attempt can re-apply the same set. So a
+non-`done` claim may mean the mail has ALREADY moved — and my retirement marked
+it `failed` and flipped the match terminal with no `activity_log` row and no
+`undo_journal` token. That is an archived-or-trashed set of the user's mail that
+is invisible in Activity and unrecoverable: the single worst outcome this
+product can produce, written while fixing a leak. Only a claim that never
+advanced past creation (`status='queued'`, no resolved ids) is safe to drop;
+anything further must COMPLETE, which it can — the execution set is persisted
+Gmail ids and the audit row keys off `senderKey`, so neither needs the senders
+row the guard was missing. `abandonStaleClaim` now re-asserts that condition
+itself rather than trusting its caller.
+
+(k) **And the protection I added for (j) was in the wrong place.** I guarded the
+missing-sender branch, but that sits FOURTH in the per-match loop. Three guards
+run before it — rule disabled/paused (`continue`, and a paused rule never
+retries, so the mutation is stranded forever), non-preset key (`continue`), and
+the Protect re-check (`dismissShieldedMatch`, which retires the match outright)
+— plus the daily cap after it. Every one of them could strand or retire a
+mutation that had already moved mail. The insight I kept missing: those guards
+all answer "should we START this action?", and none of them may answer "should
+we RECORD one that already happened". The in-flight check now runs FIRST, above
+every start gate.
+
+(l) **Then the SWEEP-level gates stranded them too.** Hoisting the in-flight
+check to the top of the per-match loop still left two gates that `return` before
+the matches are even loaded: the entitlement check (workspace downgraded off
+Pro) and the quiet window. Quiet re-schedules, so it only delays the audit; a
+downgrade never sweeps again, so an already-executed mutation stays invisible
+and unrecoverable forever. Both now record a REASON instead of returning, and
+the sweep falls through to a completion-only pass over the in-flight claims.
+Three rounds running, the same fix kept landing one layer below the hole — the
+lesson is to enumerate every exit from the code path FIRST (`grep` for `return`
+and `continue` in the whole function, not just the block being edited) and only
+then decide where the check belongs.
+
+(m) **The gated-completion pass I added for (l) was an N+1.** It asked
+`isClaimInFlight` per match, sequentially awaited, before the sweep did
+anything — and `loadEligibleMatches` is unbounded, so a mailbox with a large
+backlog paid thousands of serial round-trips per sweep. Correctness fixes carry
+the same performance obligation as features: a guard added to the front of a
+hot loop is on the hot path. One batched `inArray` lookup (chunked for bind
+limits) replaces it, and the in-flight predicate is now a pure function shared
+by the batch and single-claim paths so they cannot drift — the same duplication
+that already cost this file a bug.
+
+**Rule:** before terminating any record, ask what IRREVERSIBLE external effect
+it might already have caused. A cleanup that cannot distinguish "never started"
+from "already happened" must refuse to run, not guess. And when you add such a
+check, put it where EVERY exit from the code path passes through it — one guard
+protecting one branch just moves the hole.
+
+**Rule (generalised):** "check, then act" is not a guard unless something holds
+still between the two. Name what that something is — a lock, a single
+statement, a durable claim, a monotonic column — or say out loud which window
+stays open, and only after checking what the pipeline already persists.
 
 ## 2026-07-21 — Migration CHECK constraints not mirrored into the Drizzle schema
 **PR:** #367 (https://github.com/CT2689-Tech/DeclutrMail/pull/367)
@@ -707,3 +915,4 @@ collision case").
 **Correct approach:** Repo-level billing secrets STAY (watchdog, production keys). The two GitHub Environments are for the provisioning workflow only; defining all three in both means provisioning never falls back to the repo-level copies. Two consumers, two homes, documented.
 **Rule:** Before advising deletion of a shared secret/var/resource, grep every consumer (`grep -rn secrets.NAME .github/workflows/`), not just the file in hand. A scheduled job that degrades to "skipped" instead of "failed" hides the breakage.
 **Enforcement update:** runbook §4 + provisioning workflow comment now explicitly forbid deleting the repo-level billing secrets and name the watchdog dependency.
+

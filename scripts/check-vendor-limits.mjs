@@ -33,8 +33,8 @@
  *   SENTRY_AUTH_TOKEN + SENTRY_ORG          accepted error events / day
  *   POSTHOG_API_KEY + POSTHOG_PROJECT_ID    quota limits + MTD events
  *     (+ POSTHOG_HOST, default us.posthog.com)
- *   GH_BILLING_PAT (+ GH_BILLING_ACCOUNT,   Actions minutes vs included
- *     default GITHUB_REPOSITORY_OWNER)
+ *   GH_BILLING_PAT (+ GH_BILLING_ACCOUNT,   Actions net spend (minutes are
+ *     default GITHUB_REPOSITORY_OWNER)      reported but do not gate)
  *
  * Env vars (thresholds — defaults baked in):
  *   SUPABASE_DB_SIZE_WARN_MB      default 400
@@ -281,9 +281,11 @@ async function checkUpstash() {
   // WARN would not do: WARN exits 0, the workflow stays green, and GitHub
   // sends nothing — which is precisely how the 2026-07-25 suspension
   // arrived unannounced. Flipping WARN_IS_FAILURE globally is not the
-  // alternative; the table already carries a standing WARN (Actions
-  // minutes at 538% of the included tier), so that would pin the workflow
-  // red forever and train the failure away.
+  // alternative either: it would make every soft signal in the table fail
+  // the workflow, and a row that is always red trains the failure away just
+  // as surely as one that is always yellow. (The GH Actions row used to be
+  // exactly that standing WARN — 574% of an allowance a public repo never
+  // pays — and is now cost-keyed instead. Keep it that way.)
   const warnAt = budget * envNum('UPSTASH_BUDGET_WARN_FRACTION', 0.8);
   const spend = {
     status: projected >= budget ? 'BREACH' : projected >= warnAt ? 'WARN' : 'OK',
@@ -462,14 +464,31 @@ async function checkGithubActions() {
     minutes += Number(item.quantity) || 0;
     netUsd += Number(item.netAmount) || 0;
   }
-  const usagePct = Math.round((minutes / included) * 100);
-  // Included minutes net out via discountAmount — any netAmount > 0
-  // means the free tier is exhausted and real money is being spent.
-  const status = netUsd > 0 ? 'BREACH' : usagePct >= 80 ? 'WARN' : 'OK';
+  // Minutes-vs-included is NOT a cost signal for this repo and must not
+  // drive status. DeclutrMail is a PUBLIC repo, and public repos bill $0 on
+  // standard GitHub-hosted runners: GitHub reports
+  // `billable.UBUNTU.total_ms: 0` for a run whose `run_duration_ms` is
+  // 13,000. Keying WARN off the ratio pinned this row permanently yellow at
+  // 574% of an allowance that does not apply — and a guardrail that is always
+  // yellow trains the whole column away (see the Upstash note above, which
+  // already had to reason around this row as a standing WARN).
+  //
+  // netAmount is the only figure that tracks real money, and for a repo that
+  // should cost exactly $0 the correct alarm threshold is the first cent: any
+  // spend at all means something structural changed — the repo was made
+  // private (~$76/mo at current volume), or a larger runner was added, which
+  // IS billed even on public repos. So this stays BREACH-on-first-cent rather
+  // than warning through a dollar band; WARN exits 0 and notifies nobody.
+  //
+  // `included` still frames the minute count for the private-repo case.
+  const status = netUsd > 0 ? 'BREACH' : 'OK';
+  const framing =
+    netUsd > 0 ? `of ${fmtInt(included)} included` : '— public repo, standard runners bill $0';
   return {
     status,
-    usagePct,
-    detail: `${fmtInt(minutes)} Actions min MTD of ${fmtInt(included)} included; net spend $${netUsd.toFixed(2)}`,
+    // No usagePct: the ratio is meaningless here and renders as a false
+    // near-breach percentage in the table.
+    detail: `${fmtInt(minutes)} Actions min MTD ${framing}; net spend $${netUsd.toFixed(2)}`,
   };
 }
 
