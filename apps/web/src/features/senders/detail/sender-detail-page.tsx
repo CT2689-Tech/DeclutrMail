@@ -443,6 +443,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                   },
                 }
               : {}),
+            // Protected acknowledgement from the D226 confirm. This page is
+            // single-sender by construction, so there is no bulk path here.
+            ...(opts?.override ? { override: true } : {}),
           },
           {
             onSuccess: (res) =>

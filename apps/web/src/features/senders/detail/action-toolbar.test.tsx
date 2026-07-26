@@ -72,7 +72,7 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
     }
   });
 
-  it('emits Delete, and disables it only for a standing-protected sender', () => {
+  it('emits Delete, and keeps it live on a standing-protected sender', () => {
     const onAction = vi.fn();
     const row = sender();
     const { unmount } = render(<ActionToolbar sender={row} onAction={onAction} />);
@@ -80,20 +80,24 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
     expect(onAction).toHaveBeenCalledWith({ verb: 'Delete', senders: [row] });
     unmount();
 
-    // Two-sided: a gate only ever observed returning one answer is not a
-    // verified gate.
-    render(
-      <ActionToolbar
-        sender={sender({
-          protectionFlags: {
-            isProtected: true,
-            protectionReason: 'user_defined',
-            protectionSetAt: '2026-06-01T00:00:00.000Z',
-          },
-        })}
-        onAction={() => {}}
-      />,
-    );
-    expect(screen.getByRole('button', { name: 'Delete (D)' })).toBeDisabled();
+    // D245 excludes Protected senders from BULK and AUTOMATIC actions —
+    // not from an explicit click aimed at one sender. The server agrees:
+    // it answers a protected single-sender action with a 409 whose copy
+    // is "Confirm to archive anyway" and accepts an `override`. The
+    // acknowledgement belongs in the mandatory D226 confirm, not in a
+    // greyed-out button that makes the 409 unreachable.
+    const protectedRow = sender({
+      protectionFlags: {
+        isProtected: true,
+        protectionReason: 'user_defined',
+        protectionSetAt: '2026-06-01T00:00:00.000Z',
+      },
+    });
+    const onProtectedAction = vi.fn();
+    render(<ActionToolbar sender={protectedRow} onAction={onProtectedAction} />);
+    const deleteButton = screen.getByRole('button', { name: 'Delete (D)' });
+    expect(deleteButton).toBeEnabled();
+    fireEvent.click(deleteButton);
+    expect(onProtectedAction).toHaveBeenCalledWith({ verb: 'Delete', senders: [protectedRow] });
   });
 });

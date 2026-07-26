@@ -12,10 +12,10 @@ import {
 } from '@declutrmail/shared';
 import { buildActionReceiptResult } from '@declutrmail/shared/actions';
 import {
-  canArchive,
-  canDelete,
-  canLater,
-  canUnsubscribe,
+  canBulkArchive,
+  canBulkDelete,
+  canBulkLater,
+  canBulkUnsubscribe,
   canUseActionSelector,
   enrichSenderRow,
   isStandingProtected,
@@ -86,11 +86,16 @@ const VERB_TO_POSTHOG: Record<ActionVerb, Verb> = {
   Protect: 'keep',
 };
 
+/**
+ * Eligibility for the SELECTION-scoped (bulk) keyboard shortcuts, so
+ * D245's bulk exclusion holds on the keyboard path exactly as it does on
+ * the SelectionBar buttons.
+ */
 const ELIGIBLE: Record<'Archive' | 'Later' | 'Unsubscribe' | 'Delete', (s: Sender) => boolean> = {
-  Archive: canArchive,
-  Later: canLater,
-  Unsubscribe: canUnsubscribe,
-  Delete: canDelete,
+  Archive: canBulkArchive,
+  Later: canBulkLater,
+  Unsubscribe: canBulkUnsubscribe,
+  Delete: canBulkDelete,
 };
 
 /**
@@ -725,6 +730,10 @@ function SendersScreenContent({
                   },
                 }
               : {}),
+            // Protected acknowledgement from the D226 confirm. Single-sender
+            // only — the bulk branch below never sets it, because D245
+            // excludes protected senders from bulk in the first place.
+            ...(opts?.override ? { override: true } : {}),
           },
           {
             onSuccess: (res) =>

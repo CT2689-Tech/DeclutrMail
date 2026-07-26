@@ -451,24 +451,36 @@ export const TRIAGE_SESSION_STATS_QUIET: TriageSessionStats = {
 };
 
 // ─── Capability gates ─────────────────────────────────────────────
-// Mirrors the senders feature: protected rows can only be Kept;
-// Unsubscribe is hidden when no `List-Unsubscribe` header was seen.
+// Mirrors the senders feature: an explicit single-row action is offered
+// for every verb, and Unsubscribe is hidden only when no
+// `List-Unsubscribe` header was seen (a fact, not a policy).
+//
+// These previously returned false for any protected row, which
+// contradicted this feature's OWN server contract verbatim —
+// `triage.read-service.ts` states that forcing the Keep RECOMMENDATION
+// for a protected sender is "display-layer only … every K/A/U/L action
+// remains available on the row". The gate was also client-only: the
+// server has no protected check on the triage act path, so it blocked
+// nothing an HTTP client couldn't do anyway.
+//
+// D245 excludes Protected senders from BULK and AUTOMATIC actions; the
+// autopilot workers enforce that and are untouched. Triage rows are
+// explicit single-sender intent behind the mandatory D226 preview.
 
-export function canArchive(row: TriageDecisionRow): boolean {
-  return row.protectionReason === null;
+export function canArchive(_row: TriageDecisionRow): boolean {
+  return true;
 }
 
-export function canLater(row: TriageDecisionRow): boolean {
-  return row.protectionReason === null;
+export function canLater(_row: TriageDecisionRow): boolean {
+  return true;
 }
 
 /**
  * Unsubscribe is offered when the sender has any List-Unsubscribe
- * header and is not protected. `mailto` is rendered with a "manual
- * follow-up" hint per D230 — never auto-fired.
+ * header — a fact about the sender, not a policy. `mailto` is rendered
+ * with a "manual follow-up" hint per D230 — never auto-fired.
  */
 export function canUnsubscribe(row: TriageDecisionRow): boolean {
-  if (row.protectionReason !== null) return false;
   return row.unsubscribeMethod !== 'none';
 }
 

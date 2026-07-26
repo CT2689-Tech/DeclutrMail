@@ -68,7 +68,18 @@ const ARROW = (
 export function derivePrimaryVerbId(sender: Sender): VerbId {
   return deriveDefaultPrimary({
     protected: isStandingProtected(sender),
-    unsubReady: sender.unsubscribeMethod === 'one_click' && canUnsubscribe(sender),
+    // RECOMMENDATION, not availability — the two are deliberately
+    // different. `canUnsubscribe` asks "is there a channel to use?"; this
+    // asks "should we put it forward?". A Gmail `primary`-category sender
+    // with a live one-click header is offerable but not recommendable:
+    // primary-category mail is where real correspondence lands, so
+    // leading with Unsubscribe there is the wrong default. That category
+    // term used to live inside `canUnsubscribe`, where it silently greyed
+    // the button out with no reason text and no server counterpart.
+    unsubReady:
+      sender.unsubscribeMethod === 'one_click' &&
+      sender.gmailCategory !== 'primary' &&
+      canUnsubscribe(sender),
     lastSeenDays: sender.lastDays,
   });
 }
