@@ -347,6 +347,9 @@ button {
 .dm-topbar-hamburger {
   display: none;
 }
+.dm-trust-strip {
+  display: flex;
+}
 .dm-trust-extra {
   display: inline-flex;
 }
@@ -358,6 +361,17 @@ button {
     display: inline-flex;
   }
   .dm-trust-extra {
+    display: none;
+  }
+}
+/* Phone widths — the topbar's fixed chrome (hamburger + theme toggle +
+   Sync now + account pill) leaves under ~40px between them, and the
+   strip clips `overflow: hidden` MID-WORD, painting a slice of "UNDO
+   WINDOWS" as garbage ("o wir") on every authed screen. Drop the whole
+   strip instead: both claims are buttons that route to Activity and
+   Settings, and both routes are one tap away in the drawer nav. */
+@media (max-width: 600px) {
+  .dm-trust-strip {
     display: none;
   }
 }

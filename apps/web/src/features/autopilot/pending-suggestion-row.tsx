@@ -3,6 +3,7 @@
 import { Button, tokens } from '@declutrmail/shared';
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { describeWouldAction } from './action-label';
+import { resolveSenderIdentity, SENDER_SYNCING_LABEL } from './sender-label';
 
 const { color, font } = tokens;
 
@@ -19,10 +20,9 @@ const { color, font } = tokens;
  * Privacy: `senderKey` is the sha256 hex digest (D7). `senderName` +
  * `senderEmail` come from the senders table — both ARE on the D7
  * storage allowlist (sender identity is the FIRST item). We render
- * name + email when present and fall back to `sender·<hash>` only
- * for the brief race window before `building_sender_index`
- * materialises the senders row (FOUNDER 2026-06-06 — hash-only was
- * unreadable to the user).
+ * name + email when present, fall back to the address alone when the
+ * `From` header carried no display name, and only claim "still
+ * syncing" when neither exists (see `sender-label.ts`).
  */
 export function PendingSuggestionRow({
   match,
@@ -41,8 +41,9 @@ export function PendingSuggestionRow({
 }) {
   const wouldVerb = rule ? describeWouldAction(rule.actionKind) : 'would act';
   const confidencePct = Math.round(match.confidence * 100);
-  const hasName = match.senderName != null && match.senderName.length > 0;
-  const senderLabel = hasName ? (match.senderName ?? 'Sender') : 'Sender details still syncing';
+  const identity = resolveSenderIdentity(match);
+  const senderLabel = identity.label;
+  const isIdentified = identity.source !== 'unknown';
 
   return (
     <li
@@ -73,7 +74,7 @@ export function PendingSuggestionRow({
             flexWrap: 'wrap',
           }}
         >
-          {hasName ? (
+          {isIdentified ? (
             <span
               style={{
                 fontSize: 13,
@@ -84,9 +85,9 @@ export function PendingSuggestionRow({
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }}
-              title={match.senderEmail ?? match.senderName ?? 'Sender'}
+              title={match.senderEmail ?? senderLabel}
             >
-              {match.senderName}
+              {senderLabel}
             </span>
           ) : (
             <span
@@ -100,9 +101,9 @@ export function PendingSuggestionRow({
                 border: `1px solid ${color.line}`,
                 borderRadius: 5,
               }}
-              title="Sender details still syncing"
+              title={SENDER_SYNCING_LABEL}
             >
-              Sender details still syncing
+              {SENDER_SYNCING_LABEL}
             </span>
           )}
           <span style={{ fontSize: 13, color: color.fg, fontWeight: 500 }}>{wouldVerb}</span>
@@ -117,7 +118,7 @@ export function PendingSuggestionRow({
             color: color.fgMuted,
           }}
         >
-          {hasName && match.senderEmail != null && (
+          {identity.source === 'name' && match.senderEmail != null && (
             <>
               <span
                 style={{

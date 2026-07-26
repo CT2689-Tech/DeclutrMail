@@ -4,10 +4,13 @@ import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
+  actionJobs,
+  automationRules,
   mailboxAccounts,
   mailMessages,
   outboxEvents,
   providerSyncState,
+  ruleMatchLog,
   schema,
   senders,
   users,
@@ -731,6 +734,121 @@ describe('InitialSyncWorker', () => {
     expect(remaining.every((m) => Number(m.providerMessageId.split('-')[1]) < 7)).toBe(true);
     // No re-fetches of the 7 survivors (resume cursor still works).
     expect(second.getCalls).toBe(0);
+  });
+
+  it('reconciliation — the rebuild clears UNEXECUTED Autopilot matches, keeps decided and executed ones', async () => {
+    // Every match is a claim about a sender's volume/read-rate/recency,
+    // all recomputed from scratch by this rebuild. Two shapes must go:
+    // `pending` (a suggestion built on deleted mail, which also holds
+    // the `rule_match_log_pending_dedup_uniq` slot hostage) and
+    // `approved AND NOT intent_applied` — already queued for
+    // AutopilotActionWorker, which would MUTATE Gmail on that deleted
+    // evidence. Two must stay: a dismissed row (the user's decision) and
+    // an executed row (referenced by activity + undo).
+    const client = new FakeGmailClient(makeMessages(3, 3));
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const [rule] = await db
+      .insert(automationRules)
+      .values({
+        mailboxAccountId,
+        isPreset: true,
+        presetKey: 'auto_archive_low_engagement',
+        name: 'Auto-archive low engagement',
+        enabled: false,
+        mode: 'observe',
+        scope: 'account',
+        conditions: {},
+        actionKind: 'archive',
+        actionPayload: {},
+      })
+      .returning({ id: automationRules.id });
+    await db.insert(ruleMatchLog).values([
+      {
+        ruleId: rule!.id,
+        mailboxAccountId,
+        senderKey: 'a'.repeat(64),
+        modeAtMatch: 'observe',
+        confidence: '0.92',
+        reason: 'pending — derived from mail this rebuild replaces',
+      },
+      {
+        ruleId: rule!.id,
+        mailboxAccountId,
+        senderKey: 'c'.repeat(64),
+        modeAtMatch: 'active',
+        confidence: '0.92',
+        reason: 'approved but not yet executed — would mutate Gmail',
+        resolution: 'approved',
+        intentApplied: false,
+      },
+      {
+        ruleId: rule!.id,
+        mailboxAccountId,
+        senderKey: 'd'.repeat(64),
+        modeAtMatch: 'active',
+        confidence: '0.92',
+        reason: 'already executed — activity + undo reference this',
+        resolution: 'approved',
+        intentApplied: true,
+      },
+      {
+        ruleId: rule!.id,
+        mailboxAccountId,
+        senderKey: 'b'.repeat(64),
+        modeAtMatch: 'observe',
+        confidence: '0.92',
+        reason: 'the user already decided this one',
+        resolution: 'dismissed',
+        dismissReason: 'user',
+      },
+    ]);
+
+    // A match whose execution is already CLAIMED — AutopilotActionWorker
+    // wrote its durable action_jobs row under the same advisory lock
+    // this rebuild takes, so the action is in flight and the row must
+    // survive; deleting it would strand a Gmail change with nothing to
+    // flip or audit against.
+    const [claimedMatch] = await db
+      .insert(ruleMatchLog)
+      .values({
+        ruleId: rule!.id,
+        mailboxAccountId,
+        senderKey: 'e'.repeat(64),
+        modeAtMatch: 'active',
+        confidence: '0.92',
+        reason: 'claimed — execution already in flight',
+        resolution: 'approved',
+        intentApplied: false,
+      })
+      .returning({ id: ruleMatchLog.id });
+    await db.insert(actionJobs).values({
+      mailboxAccountId,
+      verb: 'archive',
+      direction: 'forward',
+      selector: { type: 'sender', senderId: mailboxAccountId, senderKey: 'e'.repeat(64) },
+      resolvedMessageIds: [],
+      requestedCount: 0,
+      status: 'queued',
+      idempotencyKey: `autopilot-${claimedMatch!.id}`,
+    });
+
+    await resetToQueued(db, mailboxAccountId);
+    await new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(3, 3))),
+    }).processJob({ mailboxAccountId }, CTX);
+
+    const rows = await db.select().from(ruleMatchLog);
+    expect(
+      rows.map((r) => `${r.resolution}/${r.intentApplied ? 'executed' : 'unexecuted'}`).sort(),
+    ).toEqual(['approved/executed', 'approved/unexecuted', 'dismissed/unexecuted']);
+    // The only surviving unexecuted approved row is the CLAIMED one.
+    expect(rows.find((r) => r.resolution === 'approved' && !r.intentApplied)!.id).toBe(
+      claimedMatch!.id,
+    );
   });
 
   it('atomicity — a thrown error inside the rebuild transaction rolls back the delete', async () => {

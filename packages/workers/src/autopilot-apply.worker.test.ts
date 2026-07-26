@@ -18,7 +18,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AutopilotApplyWorker } from './autopilot-apply.worker.js';
 import { seedAutopilotPresets } from './autopilot-preset-seeder.js';
@@ -203,6 +203,80 @@ async function enablePreset(
 }
 
 describe('AutopilotApplyWorker', () => {
+  describe('sender-index rebuild synchronisation', () => {
+    // `perMailboxPolicy` declares one in-flight job per mailbox but the
+    // consumer does not enforce it (apps/api/src/worker.ts), so an
+    // InitialSyncWorker rebuild can land between this sweep's read and
+    // its writes. The matches would then describe deleted mail AND pass
+    // the downstream currency guard, because a row written now carries a
+    // `matched_at` later than the rebuild's fresh `created_at`.
+    it('abandons the write when the index is rebuilt mid-sweep', async () => {
+      const db = await freshDb();
+      const mbId = await seedMailbox(db);
+      await seedAutopilotPresets(db as never, mbId);
+      await enablePreset(db, mbId, 'auto_archive_low_engagement', {
+        enabled: true,
+        mode: 'observe',
+      });
+      await seedSender(db, mbId, {
+        email: 'above@example.com',
+        decision: { verdict: 'archive', confidence: 0.92 },
+        totalMessages: 10,
+      });
+
+      const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+      // First read = pre-sweep stamp, second = the check before writing.
+      const stamp = vi
+        .spyOn(worker as unknown as { senderIndexStamp: () => Promise<string> }, 'senderIndexStamp')
+        .mockResolvedValueOnce('before-rebuild')
+        .mockResolvedValueOnce('after-rebuild');
+
+      const result = await worker.processJob(
+        { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+        FAKE_CTX,
+      );
+
+      expect(stamp).toHaveBeenCalledTimes(2);
+      expect(result.abortedIndexRebuilt).toBe(true);
+      expect(result.matchesWritten).toBe(0);
+      expect(await db.select().from(ruleMatchLog)).toHaveLength(0);
+    });
+
+    it('the stamp moves on a rebuild and holds still for an ordinary new sender', async () => {
+      const db = await freshDb();
+      const mbId = await seedMailbox(db);
+      await seedSender(db, mbId, {
+        email: 'first@example.com',
+        decision: { verdict: 'archive', confidence: 0.92 },
+        totalMessages: 10,
+      });
+      const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+      const stampOf = () =>
+        (worker as unknown as { senderIndexStamp: (id: string) => Promise<string> })[
+          'senderIndexStamp'
+        ](mbId);
+
+      const original = await stampOf();
+
+      // Incremental sync appending a NEW sender leaves the oldest row —
+      // and therefore the stamp — untouched.
+      await seedSender(db, mbId, {
+        email: 'second@example.com',
+        decision: { verdict: 'archive', confidence: 0.9 },
+        totalMessages: 4,
+      });
+      expect(await stampOf()).toBe(original);
+
+      // The rebuild's delete + re-insert gives every row a fresh
+      // created_at, so the minimum jumps forward. (Re-seeded without a
+      // triage decision — the rebuild replaces `senders`, and the
+      // decision row for this sender key already exists.)
+      await db.delete(senders).where(eq(senders.mailboxAccountId, mbId));
+      await seedSender(db, mbId, { email: 'first@example.com' });
+      expect(await stampOf()).not.toBe(original);
+    });
+  });
+
   it('preset #1 (auto_archive_low_engagement) in Observe mode writes pending match rows', async () => {
     const db = await freshDb();
     const mbId = await seedMailbox(db);
@@ -570,36 +644,23 @@ describe('AutopilotApplyWorker', () => {
       totalMessages: 5,
     });
 
-    // Patch the db so the first ruleMatchLog insert throws; let the
-    // rest pass through. Use a proxy that intercepts only `.insert()`
-    // when targeting ruleMatchLog.
+    // Fail the first rule's match write; let the rest pass through.
+    //
+    // The write now runs inside `db.transaction()` — it shares one
+    // transaction with the sender-index lock and the fingerprint
+    // re-check, which is what makes that pair atomic. So the fault is
+    // injected at the transaction boundary rather than on `db.insert`.
+    // Proxying the transaction's own executor was tried and rejected:
+    // intercepting drizzle's internals broke its rollback path and the
+    // suite hung. What this test actually pins is the per-rule
+    // try/catch — that ONE rule's write failing is counted and the loop
+    // carries on — and the boundary expresses that faithfully.
     let injected = false;
-    // The mock proxy synthesises a chain-aware insert builder so the
-    // worker's `.insert().values().onConflictDoNothing().returning()`
-    // chain (added per Codex finding #3) doesn't trip on a Promise
-    // returned mid-chain — the rejection must surface at the awaited
-    // terminus to be caught by the worker's per-rule try/catch.
     const dbWithFault = new Proxy(db as never as Record<string, unknown>, {
       get(target, prop, receiver) {
-        if (prop === 'insert') {
-          return (table: unknown) => {
-            if (table === ruleMatchLog && !injected) {
-              injected = true;
-              const failingTerminus = Promise.reject(new Error('synthetic insert failure'));
-              // Pre-attach a no-op catch so the rejection isn't flagged
-              // as unhandled when the chain builder is evaluated but the
-              // returning() terminus hasn't been awaited yet.
-              failingTerminus.catch(() => {});
-              const chain = {
-                values: () => chain,
-                onConflictDoNothing: () => chain,
-                returning: () => failingTerminus,
-              };
-              return chain;
-            }
-            const origInsert = Reflect.get(target, prop, receiver) as (t: unknown) => unknown;
-            return origInsert.call(target, table);
-          };
+        if (prop === 'transaction' && !injected) {
+          injected = true;
+          return () => Promise.reject(new Error('synthetic insert failure'));
         }
         return Reflect.get(target, prop, receiver);
       },

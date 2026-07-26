@@ -90,6 +90,44 @@ const OBSERVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** Preview sample size — D103's "10-row sample list". */
 const PREVIEW_SAMPLE_SIZE = 10;
 
+/**
+ * A pending suggestion is offerable only while the sender row it was
+ * computed FROM is still the one in the index.
+ *
+ * A match is a claim about a sender's volume, read rate and recency.
+ * The initial-sync rebuild tears `senders` down and re-inserts it
+ * (`initial-sync.worker.ts` — delete + reinsert IS the reconciliation),
+ * so after any resync every surviving match describes mail this mailbox
+ * no longer holds. On the founder's dev mailbox, ten days after a
+ * reconnect: 6,244 pending matches, of which **32** pointed at sender
+ * keys that existed nowhere and **5,978** at rows the rebuild had
+ * re-created — only 234 were genuinely current. Existence alone is
+ * therefore the wrong test; it catches 0.5% of the bad rows and lets a
+ * stale suggestion RESURRECT the instant its sender is re-inserted.
+ *
+ * `created_at <= matched_at` is the exact test: the sweep reads senders
+ * and then writes the match, so a legitimate pair always satisfies it,
+ * and incremental sync upserts (`onConflictDoUpdate`) never move
+ * `created_at`. Only a full rebuild — the one event that invalidates
+ * the evidence — makes it false.
+ *
+ * `initial-sync.worker.ts` now deletes pending matches inside the same
+ * rebuild transaction, so this predicate is the guard for mailboxes
+ * that were already rebuilt before that shipped.
+ *
+ * Written with `sql.raw` on purpose: an interpolated Drizzle column
+ * emits a BARE name, which inside this subquery would bind to `s` and
+ * degenerate into `s.x = s.x` (see LEARNINGS — correlated-subquery
+ * pitfall). The outer table must be named explicitly.
+ */
+const SENDER_INDEXED_AT_MATCH_TIME: SQL = sql`exists (
+  select 1
+  from senders s
+  where s.mailbox_account_id = ${sql.raw('rule_match_log.mailbox_account_id')}
+    and s.sender_key = ${sql.raw('rule_match_log.sender_key')}
+    and s.created_at <= ${sql.raw('rule_match_log.matched_at')}
+)`;
+
 /** D246 repeated-decision evidence and dismissal windows. */
 const PATTERN_EVIDENCE_WINDOW_DAYS = 30;
 const PATTERN_EVIDENCE_MIN_SENDERS = 3;
@@ -339,7 +377,7 @@ export class AutopilotReadService {
     const rows = await this.db
       .select({
         ruleId: ruleMatchLog.ruleId,
-        pendingTotal: sql<number>`count(distinct ${ruleMatchLog.id}) filter (where ${pending})::int`,
+        pendingTotal: sql<number>`count(distinct ${ruleMatchLog.id}) filter (where ${pending} and ${SENDER_INDEXED_AT_MATCH_TIME})::int`,
         senders7d: sql<number>`count(distinct ${ruleMatchLog.senderKey}) filter (where ${recent})::int`,
         messages7d: sql<number>`count(distinct ${mailMessages.id}) filter (where ${recent})::int`,
       })
@@ -501,6 +539,7 @@ export class AutopilotReadService {
           eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
           eq(ruleMatchLog.modeAtMatch, 'observe'),
           eq(ruleMatchLog.resolution, 'pending'),
+          SENDER_INDEXED_AT_MATCH_TIME,
         ),
       )
       .orderBy(desc(ruleMatchLog.matchedAt), desc(ruleMatchLog.id))
@@ -659,6 +698,7 @@ export class AutopilotReadService {
           inArray(ruleMatchLog.id, matchIds),
           eq(ruleMatchLog.modeAtMatch, 'observe'),
           eq(ruleMatchLog.resolution, 'pending'),
+          SENDER_INDEXED_AT_MATCH_TIME,
         ),
       )
       .returning({ id: ruleMatchLog.id });
@@ -720,6 +760,7 @@ export class AutopilotReadService {
           eq(ruleMatchLog.ruleId, ruleId),
           eq(ruleMatchLog.modeAtMatch, 'observe'),
           eq(ruleMatchLog.resolution, 'pending'),
+          SENDER_INDEXED_AT_MATCH_TIME,
         ),
       )
       .returning({ id: ruleMatchLog.id });

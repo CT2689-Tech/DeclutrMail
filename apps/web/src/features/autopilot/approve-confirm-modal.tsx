@@ -5,6 +5,7 @@ import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/sha
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { ConfirmModalFrame } from './confirm-modal-frame';
 import { presetDisplayName } from './preset-labels';
+import { resolveSenderIdentity } from './sender-label';
 
 const { color, font } = tokens;
 
@@ -112,9 +113,9 @@ export function ApproveConfirmModal({
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
             }}
-            title={m.senderEmail ?? m.senderName ?? 'Sender details still syncing'}
+            title={m.senderEmail ?? resolveSenderIdentity(m).label}
           >
-            {m.senderName ?? 'Sender details still syncing'}
+            {resolveSenderIdentity(m).label}
           </span>
         ))}
       </div>

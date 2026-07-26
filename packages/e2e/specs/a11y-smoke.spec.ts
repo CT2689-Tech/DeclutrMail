@@ -45,10 +45,30 @@ async function expectNoBlockingAxeViolations(page: Page): Promise<void> {
   expect(blocking, report || 'no serious or critical axe violations').toEqual([]);
 }
 
-async function expectCriticalControlsHaveNames(page: Page): Promise<void> {
-  await expect(page.getByRole('button', { name: 'Undo windows' })).toHaveAccessibleName(
-    'Undo windows',
-  );
+const MOBILE_PROJECT = 'a11y-mobile-reduced-motion';
+
+/**
+ * The trust strip ("Full bodies fetched: 0" / "Undo windows") is
+ * DESKTOP-ONLY from the B3 fix onward. Below 600px the topbar's fixed
+ * chrome — hamburger, theme toggle, Sync now, account pill — leaves it
+ * under ~40px, and it clipped `overflow: hidden` MID-WORD, painting a
+ * slice of "UNDO WINDOWS" as garbage ("o wir") on every authed screen.
+ * Both claims are buttons routing to Activity and Settings, and both
+ * routes stay one tap away in the drawer nav, so dropping the strip
+ * costs no destination.
+ *
+ * Asserted in BOTH directions on purpose: named on desktop, genuinely
+ * absent on mobile. A one-sided assertion would pass just as happily if
+ * the strip vanished from every viewport, which is the regression this
+ * gate exists to catch.
+ */
+async function expectCriticalControlsHaveNames(page: Page, isMobile: boolean): Promise<void> {
+  const trustClaim = page.getByRole('button', { name: 'Undo windows' });
+  if (isMobile) {
+    await expect(trustClaim, 'trust strip must not render at phone widths').toHaveCount(0);
+  } else {
+    await expect(trustClaim).toHaveAccessibleName('Undo windows');
+  }
   await expect(
     page.getByRole('button', { name: 'chintan.e2e.billing@synthetic.test', exact: true }),
   ).toHaveAccessibleName('chintan.e2e.billing@synthetic.test');
@@ -66,7 +86,7 @@ async function expectNoViewportOverflow(page: Page): Promise<void> {
 }
 
 test.beforeEach(async ({ page }, testInfo) => {
-  if (testInfo.project.name === 'a11y-mobile-reduced-motion') {
+  if (testInfo.project.name === MOBILE_PROJECT) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     expect(
       await page.evaluate(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches),
@@ -76,7 +96,7 @@ test.beforeEach(async ({ page }, testInfo) => {
 });
 
 for (const route of ROUTES) {
-  test(`${route.path} passes the authenticated accessibility smoke`, async ({ page }) => {
+  test(`${route.path} passes the authenticated accessibility smoke`, async ({ page }, testInfo) => {
     await page.goto(route.path);
     await expect(page.getByRole('main')).toBeVisible();
     const ready =
@@ -85,7 +105,7 @@ for (const route of ROUTES) {
         : page.getByRole('heading', { name: route.readyName, exact: true });
     await expect(ready).toBeVisible({ timeout: 60_000 });
 
-    await expectCriticalControlsHaveNames(page);
+    await expectCriticalControlsHaveNames(page, testInfo.project.name === MOBILE_PROJECT);
     await expectNoViewportOverflow(page);
     await expectNoBlockingAxeViolations(page);
   });

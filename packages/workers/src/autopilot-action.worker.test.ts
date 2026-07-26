@@ -133,6 +133,12 @@ async function seedSender(
       gmailCategory: 'promotions',
       firstSeenAt: new Date('2024-01-01T00:00:00Z'),
       lastSeenAt: NOW,
+      // Production always indexes the sender BEFORE the sweep records a
+      // match, and `loadEligibleMatches` now relies on that ordering to
+      // spot rows a rebuild invalidated. The fixtures use a frozen NOW
+      // in the past, so `created_at` has to be pinned behind it or every
+      // seeded match looks like a post-rebuild resurrection.
+      createdAt: new Date('2024-01-01T00:00:00Z'),
       unsubscribeMethod: opts.unsubscribeMethod ?? 'none',
       unsubscribeUrl: opts.unsubscribeUrl ?? null,
     })
@@ -263,6 +269,391 @@ describe('AutopilotActionWorker', () => {
     gmail = new FakeMutationClient();
     unsubJobs = [];
     worker = buildWorker();
+  });
+
+  it('never executes a match whose sender row was re-created after it (rebuild invalidation)', async () => {
+    // The initial-sync rebuild DELETEs and re-inserts `senders`, so a
+    // sender row created after the match means the volume / read-rate
+    // the rule decided on came from mail this mailbox no longer holds.
+    // The existing `skippedMissingSender` guard does not catch this —
+    // the row EXISTS, it is just newer — so the sweep would mutate
+    // Gmail on deleted evidence.
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey } = await seedSender(db, mailboxId, 'noisy@shop.com', {
+      inboxMessages: 3,
+    });
+    const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+    // Rebuild: the sender row now postdates the match.
+    await db
+      .update(senders)
+      .set({ createdAt: new Date(NOW.getTime() + 60_000) })
+      .where(and(eq(senders.mailboxAccountId, mailboxId), eq(senders.senderKey, senderKey)));
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.matchesConsidered).toBe(0);
+    expect(result.labelActionsExecuted).toBe(0);
+    expect(gmail.calls).toHaveLength(0);
+    expect(await db.select().from(undoJournal)).toHaveLength(0);
+    expect(await db.select().from(activityLog)).toHaveLength(0);
+
+    // Left untouched — the rebuild's own cleanup owns removal, not this
+    // read guard, so nothing is silently marked as done.
+    const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+    expect(row!.resolution).toBe('approved');
+    expect(row!.intentApplied).toBe(false);
+  });
+
+  it('still executes a CLAIMED match after a rebuild — an in-flight action is never stranded', async () => {
+    // The mirror of the test above. Once `AutopilotActionWorker` has
+    // written its durable action_jobs claim (under the same advisory
+    // lock the rebuild takes), the action is legitimately in flight:
+    // the rebuild's cleanup leaves the row alone, so the currency guard
+    // must let the retry finish rather than abandon a Gmail change with
+    // no audit row.
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey, senderId } = await seedSender(db, mailboxId, 'noisy@shop.com', {
+      inboxMessages: 3,
+    });
+    const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+    await db.insert(actionJobs).values({
+      mailboxAccountId: mailboxId,
+      verb: 'archive',
+      direction: 'forward',
+      selector: { type: 'sender', senderId, senderKey },
+      resolvedMessageIds: [],
+      requestedCount: 0,
+      status: 'queued',
+      idempotencyKey: `autopilot-${matchId}`,
+    });
+    await db
+      .update(senders)
+      .set({ createdAt: new Date(NOW.getTime() + 60_000) })
+      .where(and(eq(senders.mailboxAccountId, mailboxId), eq(senders.senderKey, senderKey)));
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.skippedIndexRebuilt).toBe(0);
+    expect(result.labelActionsExecuted).toBe(1);
+    expect(gmail.calls).toHaveLength(1);
+    const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+    expect(row!.intentApplied).toBe(true);
+  });
+
+  it('retires a claimed match whose sender never came back — no forever-retry zombie', async () => {
+    // Preserving claims across a rebuild created this sub-case: the
+    // cleanup skips the row (claim present), the currency predicate
+    // passes it (claim present), but the sender is gone for good, so the
+    // "sender not materialised yet, retry later" branch would spin on it
+    // every sweep with the action_jobs row parked at `queued`.
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey, senderId } = await seedSender(db, mailboxId, 'noisy@shop.com', {
+      inboxMessages: 3,
+    });
+    const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+    await db.insert(actionJobs).values({
+      mailboxAccountId: mailboxId,
+      verb: 'archive',
+      direction: 'forward',
+      selector: { type: 'sender', senderId, senderKey },
+      resolvedMessageIds: [],
+      requestedCount: 0,
+      status: 'queued',
+      idempotencyKey: `autopilot-${matchId}`,
+    });
+    // The rebuild: this sender no longer has mail, so it is NOT
+    // re-inserted. Another sender is, and its created_at postdates the
+    // match — the signature of a full teardown.
+    await db.delete(senders).where(eq(senders.mailboxAccountId, mailboxId));
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'f'.repeat(64),
+      displayName: 'survivor@shop.com',
+      email: 'survivor@shop.com',
+      domain: 'shop.com',
+      gmailCategory: 'promotions',
+      firstSeenAt: new Date('2024-01-01T00:00:00Z'),
+      lastSeenAt: NOW,
+      createdAt: new Date(NOW.getTime() + 60_000),
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.abandonedStaleClaim).toBe(1);
+    expect(result.skippedMissingSender).toBe(0);
+    expect(gmail.calls).toHaveLength(0);
+
+    // Both sides are terminal, so the next sweep does not see it again.
+    const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+    expect(row!.intentApplied).toBe(true);
+    const [job] = await db
+      .select()
+      .from(actionJobs)
+      .where(eq(actionJobs.idempotencyKey, `autopilot-${matchId}`));
+    expect(job!.status).toBe('failed');
+    expect(job!.errorCode).toBe('SENDER_INDEX_REBUILT');
+
+    const second = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() + 1 },
+      CTX,
+    );
+    expect(second.matchesConsidered).toBe(0);
+  });
+
+  it('finishes an in-flight mutation whose sender vanished, instead of retiring it unaudited', async () => {
+    // `resolvedMessageIds` + status='executing' are persisted immediately
+    // BEFORE batchModify, so a claim past that point may already have
+    // moved real mail. Retiring it would leave the user's messages
+    // archived with no Activity row and no undo token. It has to
+    // complete — the persisted ids and the senderKey-based audit row do
+    // not need the senders row that is missing.
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey, senderId } = await seedSender(db, mailboxId, 'noisy@shop.com', {
+      inboxMessages: 3,
+    });
+    const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+    await db.insert(actionJobs).values({
+      mailboxAccountId: mailboxId,
+      verb: 'archive',
+      direction: 'forward',
+      selector: { type: 'sender', senderId, senderKey },
+      resolvedMessageIds: [`${senderKey.slice(0, 8)}-0`, `${senderKey.slice(0, 8)}-1`],
+      requestedCount: 2,
+      status: 'executing',
+      idempotencyKey: `autopilot-${matchId}`,
+    });
+    // Rebuild in which this sender does not come back.
+    await db.delete(senders).where(eq(senders.mailboxAccountId, mailboxId));
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'f'.repeat(64),
+      displayName: 'survivor@shop.com',
+      email: 'survivor@shop.com',
+      domain: 'shop.com',
+      gmailCategory: 'promotions',
+      firstSeenAt: new Date('2024-01-01T00:00:00Z'),
+      lastSeenAt: NOW,
+      createdAt: new Date(NOW.getTime() + 60_000),
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    // Completed, not retired.
+    expect(result.abandonedStaleClaim).toBe(0);
+    expect(result.skippedMissingSender).toBe(0);
+    expect(result.labelActionsExecuted).toBe(1);
+    // Re-applied verbatim against the PERSISTED set, never re-resolved.
+    expect(gmail.calls).toHaveLength(1);
+    expect(gmail.calls[0]!.ids).toEqual([
+      `${senderKey.slice(0, 8)}-0`,
+      `${senderKey.slice(0, 8)}-1`,
+    ]);
+    // The change is auditable and recoverable — the whole point.
+    const activity = await db.select().from(activityLog);
+    expect(activity).toHaveLength(1);
+    expect(activity[0]!.affectedCount).toBe(2);
+    const undo = await db.select().from(undoJournal);
+    expect(undo).toHaveLength(1);
+    expect(activity[0]!.undoToken).toBe(undo[0]!.token);
+  });
+
+  // Every start-gating guard answers "should we START this action?".
+  // None may answer "should we RECORD one that already happened" — an
+  // in-flight claim skipped by a paused rule never retries, and one
+  // dismissed by the Protect re-check is retired outright. Both leave
+  // the user's mail moved with no Activity row and no undo token.
+  for (const scenario of [
+    { name: 'the rule was paused', setup: 'paused' as const },
+    { name: 'the sender was newly Protected', setup: 'protected' as const },
+  ]) {
+    it(`still completes an in-flight mutation when ${scenario.name}`, async () => {
+      const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+      const { senderKey, senderId } = await seedSender(db, mailboxId, 'noisy@shop.com', {
+        inboxMessages: 3,
+      });
+      const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId, senderKey },
+        resolvedMessageIds: [`${senderKey.slice(0, 8)}-0`],
+        requestedCount: 1,
+        status: 'executing',
+        idempotencyKey: `autopilot-${matchId}`,
+      });
+
+      if (scenario.setup === 'paused') {
+        await enablePreset(db, mailboxId, 'auto_archive_low_engagement', 'paused');
+      } else {
+        await db.insert(senderPolicies).values({
+          mailboxAccountId: mailboxId,
+          senderKey,
+          policyType: 'keep',
+          isProtected: true,
+          protectionReason: 'user_defined',
+          protectionSetAt: NOW,
+        });
+      }
+
+      const result = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
+
+      expect(result.skippedRuleInactive).toBe(0);
+      expect(result.skippedProtected).toBe(0);
+      expect(result.labelActionsExecuted).toBe(1);
+
+      const activity = await db.select().from(activityLog);
+      expect(activity).toHaveLength(1);
+      expect(activity[0]!.affectedCount).toBe(1);
+      const undo = await db.select().from(undoJournal);
+      expect(undo).toHaveLength(1);
+      expect(activity[0]!.undoToken).toBe(undo[0]!.token);
+      const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(row!.intentApplied).toBe(true);
+    });
+  }
+
+  // Sweep-level gates stop NEW work. They must not strand a mutation
+  // that already ran: quiet at least re-schedules, but a downgrade never
+  // sweeps again, so the change would be invisible and unrecoverable
+  // forever.
+  for (const gate of ['entitlement', 'quiet'] as const) {
+    it(`completes an in-flight mutation even when the sweep is gated by ${gate}`, async () => {
+      const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+      const { senderKey, senderId } = await seedSender(db, mailboxId, 'noisy@shop.com', {
+        inboxMessages: 3,
+      });
+      const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+      const pending = await seedApprovedMatch(
+        db,
+        mailboxId,
+        ruleId,
+        (await seedSender(db, mailboxId, 'other@shop.com', { inboxMessages: 2 })).senderKey,
+      );
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId, senderKey },
+        resolvedMessageIds: [`${senderKey.slice(0, 8)}-0`],
+        requestedCount: 1,
+        status: 'executing',
+        idempotencyKey: `autopilot-${matchId}`,
+      });
+
+      if (gate === 'entitlement') {
+        await setMailboxTier(db, mailboxId, 'free');
+      } else {
+        await db
+          .update(mailboxAccounts)
+          .set({
+            quietState: {
+              enabled: true,
+              started_at: NOW.toISOString(),
+              until_at: new Date(NOW.getTime() + 60 * 60 * 1000).toISOString(),
+              source: 'manual',
+            },
+          })
+          .where(eq(mailboxAccounts.id, mailboxId));
+      }
+
+      const result = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
+
+      // Only the in-flight claim runs; the untouched match stays queued
+      // for whenever the gate lifts.
+      expect(result.matchesConsidered).toBe(1);
+      expect(result.labelActionsExecuted).toBe(1);
+      expect(gmail.calls).toHaveLength(1);
+
+      const activity = await db.select().from(activityLog);
+      expect(activity).toHaveLength(1);
+      const undo = await db.select().from(undoJournal);
+      expect(undo).toHaveLength(1);
+      expect(activity[0]!.undoToken).toBe(undo[0]!.token);
+
+      const [done] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(done!.intentApplied).toBe(true);
+      const [untouched] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, pending));
+      expect(untouched!.intentApplied).toBe(false);
+    });
+  }
+
+  it('resolves in-flight claims for the whole sweep in one batched lookup, per verb key', async () => {
+    // The sweep asks once for every match instead of once per match —
+    // `loadEligibleMatches` is unbounded, so the per-match version was
+    // an N+1 of sequentially awaited queries in front of every sweep.
+    // The risk in batching is the key mapping: unsubscribe claims use a
+    // different prefix, and getting it wrong would silently report every
+    // claim as not-in-flight, disabling the whole protection.
+    const archiveRule = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const unsubRule = await enablePreset(db, mailboxId, 'auto_unsubscribe_noisy');
+    const a = await seedSender(db, mailboxId, 'a@shop.com', { inboxMessages: 1 });
+    const u = await seedSender(db, mailboxId, 'u@shop.com', {
+      inboxMessages: 1,
+      unsubscribeMethod: 'one_click',
+      unsubscribeUrl: 'https://shop.com/unsub',
+    });
+    const n = await seedSender(db, mailboxId, 'n@shop.com', { inboxMessages: 1 });
+    const archiveMatch = await seedApprovedMatch(db, mailboxId, archiveRule, a.senderKey);
+    const unsubMatch = await seedApprovedMatch(db, mailboxId, unsubRule, u.senderKey);
+    const noClaim = await seedApprovedMatch(db, mailboxId, archiveRule, n.senderKey);
+
+    await db.insert(actionJobs).values([
+      {
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: a.senderId, senderKey: a.senderKey },
+        resolvedMessageIds: [`${a.senderKey.slice(0, 8)}-0`],
+        requestedCount: 1,
+        status: 'executing',
+        idempotencyKey: `autopilot-${archiveMatch}`,
+      },
+      {
+        mailboxAccountId: mailboxId,
+        verb: 'unsubscribe',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: u.senderId, senderKey: u.senderKey },
+        resolvedMessageIds: [],
+        requestedCount: 1,
+        status: 'executing',
+        idempotencyKey: `autopilot-unsubexec-${unsubMatch}`,
+      },
+    ]);
+
+    const flags = await (
+      worker as unknown as {
+        loadInFlightFlags: (
+          m: { matchId: string; actionKind: string }[],
+        ) => Promise<Map<string, boolean>>;
+      }
+    ).loadInFlightFlags([
+      { matchId: archiveMatch, actionKind: 'archive' },
+      { matchId: unsubMatch, actionKind: 'unsubscribe' },
+      { matchId: noClaim, actionKind: 'archive' },
+    ]);
+
+    expect(flags.get(archiveMatch)).toBe(true);
+    expect(flags.get(unsubMatch)).toBe(true);
+    expect(flags.get(noClaim)).toBe(false);
   });
 
   it('Pro executes an approved archive match end-to-end with autopilot attribution', async () => {
