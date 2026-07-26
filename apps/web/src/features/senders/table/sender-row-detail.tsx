@@ -1,20 +1,13 @@
 'use client';
 
-import { Button, Eyebrow, tokens } from '@declutrmail/shared';
+import { Eyebrow, tokens } from '@declutrmail/shared';
 import type { TimeseriesPointDto } from '@/lib/api/senders';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { useSenderMessages } from '../api/use-sender-messages';
 import { useSenderTimeseries } from '../api/use-sender-timeseries';
-import {
-  canArchive,
-  canLater,
-  canUnsubscribe,
-  relTimeLabel,
-  type ActionRequest,
-  type Sender,
-} from '../data';
-import { derivePrimaryVerbId, leadButtonTone } from '../action-row';
+import { relTimeLabel, type ActionRequest, type Sender } from '../data';
+import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
 
 const { color, font } = tokens;
 
@@ -242,41 +235,17 @@ export function SenderRowDetail({
           borderTop: `1px dashed ${color.line}`,
         }}
       >
+        {/* ADR-0019: every verb surface renders from VERB_REGISTRY via
+            SenderActionRow — never a hand-rolled button list. This block
+            was four literal <Button>s closed at K/A/U/L, so Delete was
+            unreachable from the table expand-row, the list-row expand,
+            and SenderPeek (the only rich per-sender panel a phone can
+            reach) all at once. Keep also carried no `disabled` prop while
+            the other three did, which is what produced the "only Keep is
+            active" state on any standing-protected sender. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Eyebrow>Decide</Eyebrow>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <Button
-              size="sm"
-              tone={primary === 'keep' ? leadButtonTone('Keep') : 'default'}
-              onClick={() => onAction({ verb: 'Keep', senders: [s] })}
-            >
-              Keep
-            </Button>
-            <Button
-              size="sm"
-              tone={primary === 'archive' ? leadButtonTone('Archive') : 'default'}
-              disabled={!canArchive(s)}
-              onClick={() => onAction({ verb: 'Archive', senders: [s] })}
-            >
-              Archive
-            </Button>
-            <Button
-              size="sm"
-              tone={primary === 'unsubscribe' ? leadButtonTone('Unsubscribe') : 'default'}
-              disabled={!canUnsubscribe(s)}
-              onClick={() => onAction({ verb: 'Unsubscribe', senders: [s] })}
-            >
-              Unsubscribe
-            </Button>
-            <Button
-              size="sm"
-              tone={primary === 'later' ? leadButtonTone('Later') : 'default'}
-              disabled={!canLater(s)}
-              onClick={() => onAction({ verb: 'Later', senders: [s] })}
-            >
-              Later
-            </Button>
-          </div>
+          <SenderActionRow sender={s} onAction={onAction} />
         </div>
         {gmailUrl && (
           <a

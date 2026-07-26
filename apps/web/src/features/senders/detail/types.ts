@@ -20,7 +20,7 @@ import type { Sender } from '../data';
  * are derived from observed signals (read rate, volume, recency),
  * not from learned class labels.
  */
-export type Verdict = 'keep' | 'archive' | 'unsubscribe' | 'later';
+export type Verdict = 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
 
 /**
  * Why a sender is protected. Each variant has a different copy in

@@ -3,6 +3,7 @@
 import { Button, Kbd, tokens } from '@declutrmail/shared';
 import {
   canArchive,
+  canDelete,
   canLater,
   canUnsubscribe,
   type ActionRequest,
@@ -15,20 +16,32 @@ import type { Verdict } from './types';
 const { color, font, radius } = tokens;
 
 /**
- * D40 verb set (post D227 reverbing).
+ * The canonical verb set — K/A/U/L/D (CLAUDE.md §2.2, ADR-0019).
  *
- * The action toolbar contains exactly the 4 canonical user-facing
- * verbs: Keep / Archive / Unsubscribe / Later — K/A/U/L. Protect is
- * not in the toolbar; it lives in the header.
+ * Delete was absent here until 2026-07-26. D40's 2026-05-18 patch
+ * enumerated this toolbar as K/A/U/L, but ADR-0019 postdates it and adds
+ * Delete as canonical, and CLAUDE.md §3 ranks §2 above D-decisions —
+ * ruled stale by the founder. The gap was user-visible in the worst way:
+ * `triage/why-no-delete.tsx` renders under every triage queue telling
+ * users "deleting a sender's mail lives on Senders and Sender Detail",
+ * and it did not live here. Because this toolbar is the only producer of
+ * an ActionRequest on the page, the entire Delete branch below it was
+ * unreachable.
  *
- * The "Always-Keep" button is intentionally absent; Protect already
- * serves that safety intent more clearly.
+ * Delete's destructive tone is carried by the mandatory D226 confirm
+ * modal (`isDeleteVerb`, red consequence copy), exactly as it is for
+ * Archive and Later — the toolbar itself stays tonally uniform.
+ *
+ * Protect is not in the toolbar; it lives in the header. The
+ * "Always-Keep" button is intentionally absent; Protect already serves
+ * that safety intent more clearly.
  */
 const VERBS: ReadonlyArray<{ verb: ActionVerb; shortcut: string; verdict: Verdict }> = [
   { verb: 'Keep', shortcut: 'K', verdict: 'keep' },
   { verb: 'Archive', shortcut: 'A', verdict: 'archive' },
   { verb: 'Unsubscribe', shortcut: 'U', verdict: 'unsubscribe' },
   { verb: 'Later', shortcut: 'L', verdict: 'later' },
+  { verb: 'Delete', shortcut: 'D', verdict: 'delete' },
 ] as const;
 
 /**
@@ -71,7 +84,8 @@ export function ActionToolbar({
         const disabled =
           (verb === 'Archive' && !canArchive(sender)) ||
           (verb === 'Unsubscribe' && !canUnsubscribe(sender)) ||
-          (verb === 'Later' && !canLater(sender));
+          (verb === 'Later' && !canLater(sender)) ||
+          (verb === 'Delete' && !canDelete(sender));
         const isHighlighted = highlight === verdict && !disabled;
         return (
           <Button

@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 
 vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => ({
@@ -110,16 +110,26 @@ describe('SenderRowDetail — D245 fact-first actions', () => {
     expect(screen.getByText('Last 30 days')).toBeInTheDocument();
   });
 
-  it('offers factual one-click Unsubscribe and restores Archive to the action set', () => {
+  it('offers factual one-click Unsubscribe and the FULL canonical verb set (ADR-0019)', () => {
+    // This panel backs three surfaces at once — the table expand-row, the
+    // list-row expand, and SenderPeek (the only rich per-sender panel a
+    // phone reaches). It used to hand-roll four literal <Button>s closed
+    // at K/A/U/L, so Delete was unreachable from all three. It now renders
+    // SenderActionRow, which derives every verb from VERB_REGISTRY.
+    //
+    // The assertion pins verb COVERAGE rather than a flat button list:
+    // no surface test pinned a verb count before, which is why the Delete
+    // gap survived every gate.
     renderDetail(CHART_READY, READY_SUBJECTS, sender({ unsubscribeMethod: 'one_click' }));
+
+    // The observed fact (a live one-click channel) drives the primary CTA.
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
-    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
-      'Keep',
-      'Archive',
-      'Unsubscribe',
-      'Later',
-    ]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for Acme Newsletter' }));
+    const menu = screen.getByRole('menu', { name: 'Actions for Acme Newsletter' });
+    for (const label of ['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete']) {
+      expect(within(menu).getByRole('menuitem', { name: label })).toBeInTheDocument();
+    }
   });
 });
 

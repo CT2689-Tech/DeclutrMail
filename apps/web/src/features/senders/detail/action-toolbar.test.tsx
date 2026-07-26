@@ -54,4 +54,46 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
     expect(onAction).toHaveBeenCalledWith({ verb: 'Archive', senders: [row] });
   });
+
+  it('renders the full canonical verb set K/A/U/L/D, Delete included', () => {
+    // Delete was missing here until 2026-07-26 while `why-no-delete.tsx`
+    // told every triage user it lived on Sender Detail. Nothing pinned a
+    // verb count on any surface, which is why the gap survived every gate
+    // — this assertion is that missing tripwire.
+    render(<ActionToolbar sender={sender()} onAction={() => {}} />);
+    for (const [verb, key] of [
+      ['Keep', 'K'],
+      ['Archive', 'A'],
+      ['Unsubscribe', 'U'],
+      ['Later', 'L'],
+      ['Delete', 'D'],
+    ] as const) {
+      expect(screen.getByRole('button', { name: `${verb} (${key})` })).toBeInTheDocument();
+    }
+  });
+
+  it('emits Delete, and disables it only for a standing-protected sender', () => {
+    const onAction = vi.fn();
+    const row = sender();
+    const { unmount } = render(<ActionToolbar sender={row} onAction={onAction} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete (D)' }));
+    expect(onAction).toHaveBeenCalledWith({ verb: 'Delete', senders: [row] });
+    unmount();
+
+    // Two-sided: a gate only ever observed returning one answer is not a
+    // verified gate.
+    render(
+      <ActionToolbar
+        sender={sender({
+          protectionFlags: {
+            isProtected: true,
+            protectionReason: 'user_defined',
+            protectionSetAt: '2026-06-01T00:00:00.000Z',
+          },
+        })}
+        onAction={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Delete (D)' })).toBeDisabled();
+  });
 });

@@ -5,12 +5,21 @@ import type { Recommendation, Verdict } from './types';
 
 const { color, font, radius } = tokens;
 
-/** Canonical user-facing label per verdict — K/A/U/L (D227). */
+/**
+ * Canonical user-facing label per verdict — K/A/U/L/D (CLAUDE.md §2.2,
+ * ADR-0019). Total over `Verdict`, so adding a verb without labelling it
+ * is a compile error rather than a blank banner.
+ *
+ * `delete` is never *recommended* — `VERB_REGISTRY` marks it
+ * `canBePrimary: false`, so the scoring layer cannot select it. The entry
+ * exists because the type is total, not because the banner will show it.
+ */
 const VERDICT_LABEL: Record<Verdict, string> = {
   keep: 'Keep',
   archive: 'Archive',
   unsubscribe: 'Unsubscribe',
   later: 'Later',
+  delete: 'Delete',
 };
 
 /**

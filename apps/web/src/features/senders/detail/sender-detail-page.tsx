@@ -73,7 +73,8 @@ const { color, font, radius, shadow, space } = tokens;
  * `performAction` mutation → undo receipt strip. Keep / Protect
  * are non-destructive and fire immediately.
  *
- * Canonical verbs (D227): K/A/U/L only.
+ * Canonical verbs: K/A/U/L/D (CLAUDE.md §2.2). D227 set K/A/U/L;
+ * ADR-0019 added Delete and names this page a day-one consumer.
  *
  * Privacy (D7): never fetches or stores message bodies. The recent
  * messages list shows sender + subject + Gmail snippet + dates only.
