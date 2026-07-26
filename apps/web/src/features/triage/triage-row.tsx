@@ -480,7 +480,20 @@ export function TriageRow({
                 color: color.fgMuted,
               }}
             >
-              or press {VERB_SHORTCUT[inlinePreview.verb]} again · Esc cancels
+              {/* Only advertise the shortcut where it actually fires.
+                  The verb keydown lives on ActionToolbar: on desktop the
+                  toolbar mounts only inside the expanded body, and on
+                  narrow widths it mounts on collapsed cards but with
+                  `keyboardEnabled={expanded && ...}` — so "press A again"
+                  is false on a collapsed row either way. Escape is
+                  different: it is a window listener in triage-screen
+                  gated only on the pending inline surface, so it stays
+                  true whether the row is open or closed. */}
+              {expanded ? (
+                <>or press {VERB_SHORTCUT[inlinePreview.verb]} again · Esc cancels</>
+              ) : (
+                <>Esc cancels</>
+              )}
             </span>
           </div>
         </div>

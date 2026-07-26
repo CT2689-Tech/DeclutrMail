@@ -273,3 +273,35 @@ describe('TriageRow — the D226 inline preview survives collapse (mobile bypass
     expect(screen.queryByRole('region', { name: /^Preview · / })).toBeNull();
   });
 });
+
+describe('TriageRow — the inline preview only advertises live shortcuts', () => {
+  const PENDING = { verb: 'Archive' as const, archiveHistoric: false, inboxCount: 2 };
+
+  function renderPreview(expanded: boolean) {
+    return render(
+      <TriageRow
+        row={rowById('t-groupon')}
+        expanded={expanded}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+        inlinePreview={PENDING}
+      />,
+    );
+  }
+
+  it('EXPANDED: offers the verb shortcut, because the toolbar keydown is live', () => {
+    const { container } = renderPreview(true);
+    expect(container.textContent).toMatch(/press A again/);
+    expect(container.textContent).toMatch(/Esc cancels/);
+  });
+
+  it('COLLAPSED: offers Esc only — the verb key fires nothing on a closed row', () => {
+    // Desktop never mounts the toolbar outside the expanded body, and
+    // narrow widths mount it with `keyboardEnabled={expanded && ...}`.
+    // Escape is a window listener on the pending inline surface, so it
+    // survives the collapse and stays honest.
+    const { container } = renderPreview(false);
+    expect(container.textContent).not.toMatch(/press A again/);
+    expect(container.textContent).toMatch(/Esc cancels/);
+  });
+});
