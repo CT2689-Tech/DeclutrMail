@@ -1,0 +1,367 @@
+{
+  "snapshot_date": "2026-07-26",
+  "snapshot_ts": "2026-07-26T06:47:49Z",
+  "gcp_project": "declutrmail-ai-prod",
+  "cloud_run": {
+    "api": {
+      "service": "declutrmail-api",
+      "latest_revision": [
+        {
+          "metadata": {
+            "creationTimestamp": "2026-07-25T23:13:00.849057Z",
+            "name": "declutrmail-api-00133-d82"
+          },
+          "spec": {
+            "containers": [
+              {
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:7ea814503938b0490f8909cc0515d5d5f21aac2e39b2830f88f7b454f8d7410d"
+              }
+            ]
+          },
+          "status": {
+            "conditions": [
+              {
+                "status": "True"
+              }
+            ]
+          }
+        }
+      ],
+      "env_var_names": {
+        "spec": {
+          "template": {
+            "spec": {
+              "containers": [
+                {
+                  "env": [
+                    {
+                      "name": "ANTHROPIC_API_KEY"
+                    },
+                    {
+                      "name": "SENTRY_DSN"
+                    },
+                    {
+                      "name": "GOOGLE_CLIENT_SECRET"
+                    },
+                    {
+                      "name": "JWT_ACCESS_SECRET"
+                    },
+                    {
+                      "name": "JWT_REFRESH_SECRET"
+                    },
+                    {
+                      "name": "DATABASE_URL"
+                    },
+                    {
+                      "name": "REDIS_URL"
+                    },
+                    {
+                      "name": "ADMIN_EMAIL_ALLOWLIST"
+                    },
+                    {
+                      "name": "RESEND_WEBHOOK_SECRET"
+                    },
+                    {
+                      "name": "PADDLE_API_KEY"
+                    },
+                    {
+                      "name": "PADDLE_CLIENT_TOKEN"
+                    },
+                    {
+                      "name": "PADDLE_WEBHOOK_SECRET"
+                    },
+                    {
+                      "name": "NODE_ENV"
+                    },
+                    {
+                      "name": "WEB_URL"
+                    },
+                    {
+                      "name": "GOOGLE_REDIRECT_URI"
+                    },
+                    {
+                      "name": "CORS_ORIGIN"
+                    },
+                    {
+                      "name": "COOKIE_DOMAIN"
+                    },
+                    {
+                      "name": "KMS_KEY_RESOURCE"
+                    },
+                    {
+                      "name": "GOOGLE_CLOUD_PROJECT_ID"
+                    },
+                    {
+                      "name": "GOOGLE_CLIENT_ID"
+                    },
+                    {
+                      "name": "GMAIL_PUBSUB_TOPIC"
+                    },
+                    {
+                      "name": "PUBSUB_OIDC_SERVICE_ACCOUNT"
+                    },
+                    {
+                      "name": "PUBSUB_WEBHOOK_ENABLED"
+                    },
+                    {
+                      "name": "PUBSUB_PUSH_AUDIENCE"
+                    },
+                    {
+                      "name": "PUBSUB_PUSH_SA_EMAIL"
+                    },
+                    {
+                      "name": "RATE_LIMIT_ENABLED"
+                    },
+                    {
+                      "name": "SENTRY_RELEASE"
+                    },
+                    {
+                      "name": "BETA_GATE_ENABLED"
+                    },
+                    {
+                      "name": "BILLING_ENABLED"
+                    },
+                    {
+                      "name": "PADDLE_ENV"
+                    },
+                    {
+                      "name": "RAZORPAY_KEY_ID"
+                    },
+                    {
+                      "name": "RAZORPAY_KEY_SECRET"
+                    },
+                    {
+                      "name": "RAZORPAY_WEBHOOK_SECRET"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "traffic": {
+        "status": {
+          "traffic": [
+            {
+              "percent": 100,
+              "revisionName": "declutrmail-api-00133-d82"
+            }
+          ]
+        }
+      }
+    },
+    "worker": {
+      "service": "declutrmail-worker",
+      "latest_revision": [
+        {
+          "metadata": {
+            "creationTimestamp": "2026-07-25T23:13:45.706534Z",
+            "name": "declutrmail-worker-00138-w9m"
+          },
+          "spec": {
+            "containers": [
+              {
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:7ea814503938b0490f8909cc0515d5d5f21aac2e39b2830f88f7b454f8d7410d"
+              }
+            ]
+          },
+          "status": {
+            "conditions": [
+              {
+                "status": "True"
+              }
+            ]
+          }
+        }
+      ],
+      "env_var_names": {
+        "spec": {
+          "template": {
+            "spec": {
+              "containers": [
+                {
+                  "env": [
+                    {
+                      "name": "ANTHROPIC_API_KEY"
+                    },
+                    {
+                      "name": "SENTRY_DSN"
+                    },
+                    {
+                      "name": "DATABASE_URL"
+                    },
+                    {
+                      "name": "REDIS_URL"
+                    },
+                    {
+                      "name": "JWT_ACCESS_SECRET"
+                    },
+                    {
+                      "name": "JWT_REFRESH_SECRET"
+                    },
+                    {
+                      "name": "GOOGLE_CLIENT_SECRET"
+                    },
+                    {
+                      "name": "RESEND_API_KEY"
+                    },
+                    {
+                      "name": "NODE_OPTIONS"
+                    },
+                    {
+                      "name": "NODE_ENV"
+                    },
+                    {
+                      "name": "KMS_KEY_RESOURCE"
+                    },
+                    {
+                      "name": "GOOGLE_CLOUD_PROJECT_ID"
+                    },
+                    {
+                      "name": "GOOGLE_CLIENT_ID"
+                    },
+                    {
+                      "name": "GMAIL_PUBSUB_TOPIC"
+                    },
+                    {
+                      "name": "RATE_LIMIT_ENABLED"
+                    },
+                    {
+                      "name": "SENTRY_RELEASE"
+                    },
+                    {
+                      "name": "WEB_URL"
+                    },
+                    {
+                      "name": "REASONING_RATE_PER_MIN"
+                    },
+                    {
+                      "name": "REASONING_TIMEOUT_MS"
+                    },
+                    {
+                      "name": "WORKER_SENTRY_ENABLED"
+                    },
+                    {
+                      "name": "WORKER_DRAIN_DELAY_SEC"
+                    },
+                    {
+                      "name": "WORKER_STALLED_INTERVAL_MS"
+                    },
+                    {
+                      "name": "WORKER_CRON_DRAIN_DELAY_SEC"
+                    },
+                    {
+                      "name": "WORKER_CRON_STALLED_INTERVAL_MS"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "traffic": {
+        "status": {
+          "traffic": [
+            {
+              "percent": 100,
+              "revisionName": "declutrmail-worker-00138-w9m"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "secret_manager": null,
+  "atlas_migration": {
+    "raw": "  -- Current Version: 0049\n  -- Next Version:    Already at latest version"
+  },
+  "iam": {
+    "declutrmail_api_sa": null,
+    "declutrmail_worker_sa": {
+      "not_found": true
+    }
+  },
+  "github_actions_secrets": {
+    "available": true,
+    "secrets": [
+      {
+        "name": "ANTHROPIC_ADMIN_KEY",
+        "updatedAt": "2026-06-11T03:59:41Z"
+      },
+      {
+        "name": "ANTHROPIC_API_KEY",
+        "updatedAt": "2026-06-11T03:38:19Z"
+      },
+      {
+        "name": "GCP_DEPLOY_SA",
+        "updatedAt": "2026-06-08T07:38:12Z"
+      },
+      {
+        "name": "GCP_WIF_PROVIDER",
+        "updatedAt": "2026-06-08T07:38:27Z"
+      },
+      {
+        "name": "GH_BILLING_PAT",
+        "updatedAt": "2026-06-11T03:27:07Z"
+      },
+      {
+        "name": "INFRA_SNAPSHOT_TOKEN",
+        "updatedAt": "2026-07-26T06:41:44Z"
+      },
+      {
+        "name": "PADDLE_API_KEY",
+        "updatedAt": "2026-07-24T19:04:02Z"
+      },
+      {
+        "name": "PADDLE_ENV",
+        "updatedAt": "2026-07-21T01:38:42Z"
+      },
+      {
+        "name": "POSTHOG_API_KEY",
+        "updatedAt": "2026-06-11T03:21:51Z"
+      },
+      {
+        "name": "POSTHOG_PROJECT_ID",
+        "updatedAt": "2026-06-11T03:22:02Z"
+      },
+      {
+        "name": "RAZORPAY_KEY_ID",
+        "updatedAt": "2026-07-25T23:09:47Z"
+      },
+      {
+        "name": "RAZORPAY_KEY_SECRET",
+        "updatedAt": "2026-07-25T23:09:57Z"
+      },
+      {
+        "name": "SENTRY_AUTH_TOKEN",
+        "updatedAt": "2026-06-11T02:06:22Z"
+      },
+      {
+        "name": "SENTRY_ORG",
+        "updatedAt": "2026-06-11T01:55:58Z"
+      },
+      {
+        "name": "SUPABASE_SESSION_DSN",
+        "updatedAt": "2026-06-08T23:26:28Z"
+      },
+      {
+        "name": "UPSTASH_API_KEY",
+        "updatedAt": "2026-06-10T22:32:24Z"
+      },
+      {
+        "name": "UPSTASH_EMAIL",
+        "updatedAt": "2026-06-10T22:32:09Z"
+      },
+      {
+        "name": "VERCEL_TEAM_ID",
+        "updatedAt": "2026-06-11T03:56:13Z"
+      },
+      {
+        "name": "VERCEL_TOKEN",
+        "updatedAt": "2026-06-11T03:45:07Z"
+      }
+    ]
+  }
+}
