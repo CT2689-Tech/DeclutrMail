@@ -20,6 +20,16 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-26 — "transient:" made a three-day Vercel monitoring outage look like weather
+**PR:** #383
+**Caught by:** reading the watchdog table properly while verifying an unrelated fix — the Vercel row said `🟡 WARN — transient: The operation was aborted due to timeout`, and checking the previous 8 runs showed the identical string on every one, across 3 days.
+**What happened:** `runVendor` classified any timeout as `WARN` with the detail prefixed `transient:` — **assuming** rather than testing. Vercel's `/v1/billing/charges` streams FOCUS JSONL for the whole month-to-date and does not fit the shared 10s budget, so it timed out every single run. Vercel spend was unverified for at least 3 days while the table showed a reassuring yellow.
+
+The code knew. The comment read "e.g. Vercel's billing endpoint, **which times out most days**" — the chronic failure was documented as a justification for the softened status instead of being treated as the bug. Second time in one session that a known-bad signal was reasoned *around* rather than fixed (the other: the Upstash comment citing the permanent Actions WARN as an argument about `WARN_IS_FAILURE`).
+**Correct approach:** One retry turns the assumption into a test — a genuine blip succeeds on the second attempt, and two timeouts in a row is an observability outage, not weather. Root cause fixed too: `httpText` takes a per-call `timeoutMs` and Vercel gets its own 45s budget, since the path itself answers 403 in ~88ms unauthenticated, so it is the response body that is slow. Status stays WARN (daily red trains the operator to ignore red — that habit masked the 2026-07-15 Upstash suspension), but the detail can no longer comfort: it now reads `unreachable — timed out twice, value NOT verified`.
+**Rule:** Never label a failure "transient" without retrying to find out. If a comment justifies a soft status by noting the thing fails *most days*, that comment is a bug report. And a degraded check must state what it does **not** know, not merely how it feels about it.
+**Enforcement update:** none mechanical. Fourth instance today of the same class — see the entry below for the §11 distillation case.
+
 ## 2026-07-26 — A guardrail warned on a ratio that could not cost money, and stayed yellow for months
 **PR:** #382
 **Caught by:** founder question — "How do we reduce GH action minutes? Is that 2000 per month? what are the cost implications?"

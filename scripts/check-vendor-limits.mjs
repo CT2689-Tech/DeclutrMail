@@ -74,12 +74,12 @@ function envNum(name, fallback) {
   return n;
 }
 
-async function httpText(url, { headers = {}, method = 'GET', body } = {}) {
+async function httpText(url, { headers = {}, method = 'GET', body, timeoutMs = TIMEOUT_MS } = {}) {
   const res = await fetch(url, {
     method,
     headers,
     body,
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const text = await res.text();
   if (!res.ok) {
@@ -101,6 +101,15 @@ function gauge(value, warnAt) {
 
 /** Status severity order, for picking the worst of several gauges. */
 const RANK = { OK: 0, UNCONFIGURED: 0, WARN: 1, BREACH: 2, ERROR: 3 };
+
+/**
+ * A request that ran out of time rather than failing on its merits.
+ * `AbortSignal.timeout` throws a TimeoutError; the message match covers
+ * fetch/undici wording differences and the `execFile` timeout path.
+ */
+function isTimeout(err) {
+  return err?.name === 'TimeoutError' || /timeout|aborted/i.test(String(err?.message));
+}
 
 /**
  * Fraction of the current UTC month elapsed, for extrapolating a
@@ -312,8 +321,15 @@ async function checkVercel() {
   url.searchParams.set('from', monthStartIso());
   url.searchParams.set('to', new Date().toISOString());
   if (process.env.VERCEL_TEAM_ID) url.searchParams.set('teamId', process.env.VERCEL_TEAM_ID);
+  // This endpoint streams FOCUS JSONL for the whole month-to-date, so it is
+  // structurally slower than every other call here and had been timing out
+  // against the shared 10s budget on EIGHT consecutive runs (2026-07-24 →
+  // 07-26), leaving Vercel spend unverified the entire time. The path itself
+  // is fine — unauthenticated it answers 403 in ~88ms, so it is the response
+  // body that is slow, not resolution. Give it its own budget.
   const text = await httpText(url.toString(), {
     headers: { Authorization: `Bearer ${process.env.VERCEL_TOKEN}` },
+    timeoutMs: envNum('VERCEL_TIMEOUT_MS', 45_000),
   });
   // Response is FOCUS v1.3 JSONL — one charge object per line.
   let usd = 0;
@@ -535,19 +551,45 @@ async function runVendor(vendor) {
   try {
     return { name: vendor.name, ...(await vendor.check()) };
   } catch (err) {
-    // A request TIMEOUT is transient degraded-observability, not a
-    // breach — classify it WARN so one flaky vendor API (e.g. Vercel's
-    // billing endpoint, which times out most days) can't turn the whole
-    // run red daily and train the operator to ignore it. That habitual
-    // red is exactly what masked the 2026-07-15 Upstash suspension. A
-    // real limit breach returns BREACH from its gauge and still exits 1;
-    // a genuine config/auth failure still surfaces as ERROR below.
-    const isTimeout = err?.name === 'TimeoutError' || /timeout|aborted/i.test(String(err?.message));
-    return {
-      name: vendor.name,
-      status: isTimeout ? 'WARN' : 'ERROR',
-      detail: `${isTimeout ? 'transient: ' : ''}${String(err?.message ?? err).slice(0, 300)}`,
-    };
+    if (!isTimeout(err)) {
+      // A genuine config/auth/parse failure. Loud, immediately.
+      return {
+        name: vendor.name,
+        status: 'ERROR',
+        detail: String(err?.message ?? err).slice(0, 300),
+      };
+    }
+    // A timeout MIGHT be a transient blip — so find out instead of assuming.
+    // One retry is the whole test: a real blip succeeds on the second try,
+    // and anything that times out twice in a row is not transient, it is an
+    // observability outage for a metered vendor.
+    //
+    // This used to assume rather than test, and stamped every timeout
+    // "transient:". Vercel then timed out on EIGHT consecutive runs across
+    // three days while the table reported a reassuring yellow, because the
+    // word made a standing outage read like weather. Same defect as the
+    // GitHub Actions row above: a status that could not distinguish a real
+    // state from a null one.
+    try {
+      const res = await vendor.check();
+      // Surface the retry: a vendor that needs a second attempt is flaky,
+      // and that is worth seeing before it becomes a standing outage.
+      return { name: vendor.name, ...res, detail: `${res.detail} [slow — succeeded on retry]` };
+    } catch (err2) {
+      // Still WARN, not ERROR: a chronically slow vendor API must not turn
+      // the run red every day and train the operator to ignore red — that
+      // habit is exactly what masked the 2026-07-15 Upstash suspension. A
+      // real limit breach still returns BREACH from its gauge and exits 1.
+      // But the DETAIL must not comfort: it has to say the figure is
+      // unverified, because that is the only true thing we know.
+      return {
+        name: vendor.name,
+        status: 'WARN',
+        detail: `unreachable — timed out twice, value NOT verified: ${String(
+          err2?.message ?? err2,
+        ).slice(0, 240)}`,
+      };
+    }
   }
 }
 
