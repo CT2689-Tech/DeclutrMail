@@ -18,7 +18,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -87,6 +87,47 @@ async function seedMailbox(db: Db, email: string): Promise<string> {
     .returning({ id: mailboxAccounts.id });
   return mb!.id;
 }
+
+/**
+ * Materialise the `senders` rows a match implies.
+ *
+ * The apply worker only ever writes a `rule_match_log` row for a sender
+ * it read out of the senders index, and the read service now enforces
+ * that ordering (`SENDER_INDEXED_AT_MATCH_TIME`) so a suggestion cannot
+ * outlive — or be resurrected by — a resync that rebuilt the index.
+ * Fixtures that insert a bare match must therefore index the sender
+ * too, and index it BEFORE the match: `createdAt` is backdated so every
+ * fixture sender predates every fixture match, exactly as production
+ * orders them. Pass a later `createdAt` to simulate a rebuild.
+ */
+const SENDER_INDEXED_AT = new Date('2023-01-01T00:00:00.000Z');
+
+async function indexSenders(
+  db: Db,
+  mailboxAccountId: string,
+  keys: string[],
+  createdAt: Date = SENDER_INDEXED_AT,
+): Promise<void> {
+  await db
+    .insert(senders)
+    .values(
+      keys.map((senderKey) => ({
+        mailboxAccountId,
+        senderKey,
+        displayName: `Sender ${senderKey.slice(0, 4)}`,
+        email: `${senderKey.slice(0, 8)}@example.com`,
+        domain: 'example.com',
+        gmailCategory: 'promotions' as const,
+        firstSeenAt: new Date('2024-01-01'),
+        lastSeenAt: new Date(),
+        createdAt,
+      })),
+    )
+    .onConflictDoNothing();
+}
+
+/** The synthetic keys the match fixtures below reuse. */
+const FIXTURE_SENDER_KEYS = ['a', 'b', 'c', 'd', 'e', 'f'].map((c) => c.repeat(64));
 
 /** Seed the 5 preset rules directly (no worker dependency). */
 async function seedPresets(db: Db, mailboxAccountId: string): Promise<void> {
@@ -486,6 +527,60 @@ describe('AutopilotReadService', () => {
   });
 
   describe('listPendingSuggestions', () => {
+    beforeEach(async () => {
+      await indexSenders(db, mailboxA, FIXTURE_SENDER_KEYS);
+      await indexSenders(db, mailboxB, FIXTURE_SENDER_KEYS);
+    });
+
+    // The initial-sync rebuild deletes and re-inserts `senders`, so a
+    // match that survives one describes mail the mailbox no longer
+    // holds. Two shapes result: the sender never comes back (orphan),
+    // or it comes back with a NEW row (resurrection). Both must vanish
+    // from the list and the counter — offering either means offering a
+    // Gmail mutation whose preview (D226) is built on deleted evidence.
+    it('drops matches whose sender left the index or was re-indexed after them', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const tenDaysAgo = new Date(Date.now() - 10 * 86_400_000);
+      // Re-created by a rebuild AFTER the match was recorded.
+      await indexSenders(db, mailboxA, ['7'.repeat(64)], new Date());
+      await db.insert(ruleMatchLog).values([
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: 'a'.repeat(64),
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'indexed',
+          matchedAt: tenDaysAgo,
+        },
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          // Never came back — the rebuild dropped it for good.
+          senderKey: '9'.repeat(64),
+          modeAtMatch: 'observe',
+          confidence: '0.95',
+          reason: 'orphaned',
+          matchedAt: tenDaysAgo,
+        },
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: '7'.repeat(64),
+          modeAtMatch: 'observe',
+          confidence: '0.95',
+          reason: 'resurrected',
+          matchedAt: tenDaysAgo,
+        },
+      ]);
+
+      const pending = await service.listPendingSuggestions(mailboxA);
+      expect(pending.map((p) => p.reason)).toEqual(['indexed']);
+
+      const rule = (await service.listRules(mailboxA)).find((r) => r.id === ruleId);
+      expect(rule!.observeDigest?.pendingTotal).toBe(1);
+    });
+
     it('returns observe+pending matches newest first', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const now = new Date();
@@ -719,6 +814,11 @@ describe('AutopilotReadService', () => {
   });
 
   describe('approveMatches (U14)', () => {
+    beforeEach(async () => {
+      await indexSenders(db, mailboxA, FIXTURE_SENDER_KEYS);
+      await indexSenders(db, mailboxB, FIXTURE_SENDER_KEYS);
+    });
+
     function withQueue(): { svc: AutopilotReadService; add: ReturnType<typeof vi.fn> } {
       const add = vi.fn().mockResolvedValue(undefined);
       const svc = new AutopilotReadService(db as never, { add } as never);
@@ -740,6 +840,57 @@ describe('AutopilotReadService', () => {
         .returning({ id: ruleMatchLog.id });
       return { ruleId, matchId: m!.id };
     }
+
+    it('never approves a match whose sender left the index or was re-indexed after it', async () => {
+      const { svc } = withQueue();
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const tenDaysAgo = new Date(Date.now() - 10 * 86_400_000);
+      await indexSenders(db, mailboxA, ['7'.repeat(64)], new Date());
+      const stale = await db
+        .insert(ruleMatchLog)
+        .values([
+          {
+            ruleId,
+            mailboxAccountId: mailboxA,
+            senderKey: '9'.repeat(64),
+            modeAtMatch: 'observe',
+            confidence: '0.92',
+            reason: 'orphaned',
+            matchedAt: tenDaysAgo,
+          },
+          {
+            ruleId,
+            mailboxAccountId: mailboxA,
+            senderKey: '7'.repeat(64),
+            modeAtMatch: 'observe',
+            confidence: '0.92',
+            reason: 'resurrected',
+            matchedAt: tenDaysAgo,
+          },
+        ])
+        .returning({ id: ruleMatchLog.id });
+
+      expect(
+        (
+          await svc.approveMatches(
+            mailboxA,
+            stale.map((s) => s.id),
+          )
+        ).approvedCount,
+      ).toBe(0);
+      expect((await svc.approveAllForRule(mailboxA, ruleId))!.approvedCount).toBe(0);
+
+      const rows = await db
+        .select({ resolution: ruleMatchLog.resolution })
+        .from(ruleMatchLog)
+        .where(
+          inArray(
+            ruleMatchLog.id,
+            stale.map((s) => s.id),
+          ),
+        );
+      expect(rows.map((r) => r.resolution)).toEqual(['pending', 'pending']);
+    });
 
     it('approves pending observe matches and enqueues the action sweep', async () => {
       const { svc, add } = withQueue();
@@ -1051,6 +1202,12 @@ describe('AutopilotReadService', () => {
     const SENDER_2 = 'd2'.repeat(32);
     const SENDER_3 = 'd3'.repeat(32);
     const SENDER_4 = 'd4'.repeat(32);
+    const DIGEST_SENDER_KEYS = [SENDER_1, SENDER_2, SENDER_3, SENDER_4];
+
+    beforeEach(async () => {
+      await indexSenders(db, mailboxA, DIGEST_SENDER_KEYS);
+      await indexSenders(db, mailboxB, DIGEST_SENDER_KEYS);
+    });
 
     async function seedMessages(
       mailboxId: string,

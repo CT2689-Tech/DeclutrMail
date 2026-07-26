@@ -2,6 +2,7 @@ import {
   mailboxAccounts,
   mailMessages,
   providerSyncState,
+  ruleMatchLog,
   senders,
   senderTimeseries,
 } from '@declutrmail/db';
@@ -20,6 +21,7 @@ import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
+import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import type { GmailAccess, GmailMessageMetadata, GmailMetadataClient } from './ports.js';
 import { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
@@ -753,10 +755,56 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // spec L488). Both run inside the rebuild tx so a partial reply
     // pass rolls back with the rest.
     await this.deps.db.transaction(async (tx) => {
+      // Exclude the Autopilot writers for the whole teardown+rebuild.
+      // Without it an apply sweep that read signals a moment ago can
+      // INSERT matches derived from the index this transaction is about
+      // to delete — and those rows pass every downstream currency guard,
+      // because their `matched_at` is later than the fresh `created_at`
+      // written below. The declared `perMailbox` concurrency scope does
+      // not help: nothing reads that field.
+      await lockSenderIndex(tx, mailboxAccountId);
       await tx
         .delete(senderTimeseries)
         .where(eq(senderTimeseries.mailboxAccountId, mailboxAccountId));
       await tx.delete(senders).where(eq(senders.mailboxAccountId, mailboxAccountId));
+      // UNEXECUTED Autopilot matches die with the index they were
+      // derived from. A match is a claim about a sender's volume, read
+      // rate and recency — all recomputed from scratch below, so after
+      // the teardown its confidence and reason describe mail this
+      // mailbox no longer has.
+      //
+      // `pending` and `approved AND NOT intent_applied` both qualify,
+      // and the approved half is the dangerous one: those rows are
+      // already queued for `AutopilotActionWorker`, which would go on to
+      // MUTATE Gmail on deleted evidence. (Active-mode matches are
+      // written already-approved, so this is not a narrow race.) Pending
+      // rows matter for a second reason —
+      // `rule_match_log_pending_dedup_uniq` means a surviving one blocks
+      // the sweep from ever recording a CURRENT match for that
+      // (rule, sender).
+      //
+      // Two kinds survive, neither derived: rows the user dismissed
+      // (their decision), and rows already executed (`intent_applied`),
+      // which the activity ledger and undo journal reference.
+      await tx.delete(ruleMatchLog).where(
+        and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          eq(ruleMatchLog.intentApplied, false),
+          inArray(ruleMatchLog.resolution, ['pending', 'approved']),
+          // ...except one whose execution has already been CLAIMED.
+          // `AutopilotActionWorker` writes its durable `action_jobs` row
+          // under the same advisory lock this transaction holds, so a
+          // claim that is visible here committed before the teardown —
+          // the action is legitimately in flight (or has a persisted
+          // execution set mid-retry), and deleting it would strand a
+          // Gmail change with no match row to flip or audit against.
+          sql`not exists (
+            select 1
+            from action_jobs aj
+            where aj.idempotency_key = 'autopilot-' || ${sql.raw('rule_match_log.id')}::text
+          )`,
+        ),
+      );
 
       if (senderRows.length > 0) {
         for (let i = 0; i < senderRows.length; i += UPSERT_BATCH) {

@@ -11,6 +11,7 @@ import {
   mailboxAccounts,
   ruleMatchLog,
   type schema,
+  senders,
   workspaces,
 } from '@declutrmail/db';
 import { hasCapability } from '@declutrmail/shared/entitlements';
@@ -18,6 +19,7 @@ import { hasCapability } from '@declutrmail/shared/entitlements';
 import { AUTOPILOT_PRESETS, type PresetInput } from './autopilot-presets.js';
 import { materializeAutopilotSignals } from './autopilot-signals.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { lockSenderIndex } from './sender-index-lock.js';
 import { ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -89,6 +91,12 @@ export interface AutopilotApplyJobResult {
   activeSkippedAlreadyQueued: number;
   /** Senders considered (after the protect-filter). */
   sendersConsidered: number;
+  /**
+   * True when the sender index was rebuilt mid-sweep and the writes
+   * were abandoned rather than committed against stale evidence. See
+   * `senderIndexStamp`.
+   */
+  abortedIndexRebuilt?: boolean;
   /** Wall-clock ms. */
   durationMs: number;
 }
@@ -202,6 +210,17 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       };
     }
 
+    // Fingerprint the sender index BEFORE reading signals. `perMailbox`
+    // concurrency is declared in the policy but not enforced at the
+    // consumer (apps/api/src/worker.ts) — correctness is a DB-layer
+    // concern here, as it is for ScoreWorker's monotonic upsert. So an
+    // InitialSyncWorker rebuild can commit between this read and the
+    // writes below, and every match we are about to insert would then
+    // describe mail the mailbox no longer holds. It would also pass the
+    // downstream currency guard, because a row inserted now carries a
+    // `matched_at` LATER than the rebuild's fresh `created_at` values.
+    // Re-checking the stamp before each write is what closes that.
+    const indexStamp = await this.senderIndexStamp(mailboxAccountId);
     const signalRows = await materializeAutopilotSignals(this.deps.db, mailboxAccountId, now);
     // Protect filter — defense-in-depth even though the cascade also
     // returns 'keep' for protected senders. A rule must NEVER act on
@@ -318,6 +337,16 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         }
 
         if (matchesForRule.length > 0) {
+          // The fingerprint re-check and the INSERT run inside ONE
+          // transaction holding the per-mailbox sender-index lock.
+          // Comparing the stamp outside a transaction would be
+          // check-then-act — `InitialSyncWorker` could commit its
+          // rebuild in the gap between the comparison and the INSERT and
+          // the stale matches would land regardless. `null` back means
+          // the fingerprint moved: the index was rebuilt while this
+          // sweep ran, so everything computed above is evidence about
+          // mail the mailbox no longer holds.
+          //
           // `onConflictDoNothing` is paired with the partial unique idx
           // `rule_match_log_pending_dedup_uniq` on (rule_id, sender_key)
           // WHERE resolution='pending' (see packages/db migration 0009).
@@ -332,26 +361,59 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
           // backs the conflict clause. Active-mode inserts (resolution
           // = 'approved') are unaffected: the partial idx skips them,
           // so the ON CONFLICT clause is a no-op for those rows.
-          const inserted = await this.deps.db
-            .insert(ruleMatchLog)
-            .values(
-              matchesForRule.map((m) => ({
-                ruleId: rule.id,
+          const inserted = await this.deps.db.transaction(async (tx) => {
+            await lockSenderIndex(tx, mailboxAccountId);
+            if ((await this.senderIndexStamp(mailboxAccountId, tx)) !== indexStamp) return null;
+            return tx
+              .insert(ruleMatchLog)
+              .values(
+                matchesForRule.map((m) => ({
+                  ruleId: rule.id,
+                  mailboxAccountId,
+                  senderKey: m.senderKey,
+                  matchedAt: now,
+                  modeAtMatch,
+                  confidence: m.confidence.toFixed(2),
+                  reason: m.reason,
+                  intentApplied: false,
+                  resolution,
+                })),
+              )
+              .onConflictDoNothing({
+                target: [ruleMatchLog.ruleId, ruleMatchLog.senderKey],
+                where: sql`${ruleMatchLog.resolution} = 'pending'`,
+              })
+              .returning({ id: ruleMatchLog.id });
+          });
+
+          if (inserted === null) {
+            // The rebuild's own cleanup removes the unexecuted matches it
+            // invalidated, and the next sweep recomputes from the fresh
+            // index — so abandoning this pass loses nothing.
+            console.warn(
+              JSON.stringify({
+                level: 'warn',
+                kind: 'autopilot.sweep_aborted_index_rebuilt',
+                worker: this.workerName,
                 mailboxAccountId,
-                senderKey: m.senderKey,
-                matchedAt: now,
-                modeAtMatch,
-                confidence: m.confidence.toFixed(2),
-                reason: m.reason,
-                intentApplied: false,
-                resolution,
-              })),
-            )
-            .onConflictDoNothing({
-              target: [ruleMatchLog.ruleId, ruleMatchLog.senderKey],
-              where: sql`${ruleMatchLog.resolution} = 'pending'`,
-            })
-            .returning({ id: ruleMatchLog.id });
+                discardedMatches: matchesForRule.length,
+              }),
+            );
+            return {
+              rulesEvaluated,
+              rulesFailed,
+              rulesSkippedMalformed,
+              matchesWritten,
+              observeMatches,
+              activeMatches,
+              activeSkippedNotActionable,
+              activeSkippedAlreadyQueued,
+              sendersConsidered: eligible.length,
+              abortedIndexRebuilt: true,
+              durationMs: Date.now() - startedAt,
+            };
+          }
+
           // Counters reflect ACTUAL inserts so observability can spot a
           // re-run pattern (matchesForRule.length kept growing but
           // matchesWritten flatlined → dedup is firing).
@@ -446,6 +508,32 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
    * the schema but skipped at runtime per D197 — V2 ships only the
    * preset matchers.
    */
+  /**
+   * A fingerprint that changes only when the sender index is REBUILT.
+   *
+   * `InitialSyncWorker` reconciles by `DELETE` + re-`INSERT`, so every
+   * row — including the oldest — gets a fresh `created_at`, and the
+   * minimum jumps forward. An ordinary incremental-sync upsert either
+   * updates an existing row (`created_at` preserved) or appends a newer
+   * one, and in both cases the minimum is untouched. Using `min` rather
+   * than `max` or `count` is what keeps this from aborting sweeps every
+   * time a new sender simply shows up.
+   *
+   * Takes an executor so the re-check can run INSIDE the write
+   * transaction — comparing it outside would be check-then-act, and the
+   * rebuild could still commit in the gap before the insert.
+   */
+  private async senderIndexStamp(
+    mailboxAccountId: string,
+    executor: Pick<WorkerDb, 'select'> = this.deps.db,
+  ): Promise<string> {
+    const [row] = await executor
+      .select({ stamp: sql<string | null>`min(${senders.createdAt})::text` })
+      .from(senders)
+      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+    return row?.stamp ?? 'empty';
+  }
+
   private async loadEnabledRules(mailboxAccountId: string): Promise<AutomationRule[]> {
     const [workspace] = await this.deps.db
       .select({ tier: workspaces.tier })

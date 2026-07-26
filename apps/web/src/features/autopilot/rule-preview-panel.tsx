@@ -2,6 +2,7 @@
 
 import { Button, tokens } from '@declutrmail/shared';
 import type { RulePreviewState } from './types';
+import { resolveSenderIdentity } from './sender-label';
 
 const { color, font } = tokens;
 
@@ -109,9 +110,9 @@ export function RulePreviewPanel({
                   }}
                 >
                   <span style={{ fontWeight: 600, color: color.fg }}>
-                    {s.senderName ?? 'Sender details still syncing'}
+                    {resolveSenderIdentity(s).label}
                   </span>
-                  {s.senderEmail != null && (
+                  {resolveSenderIdentity(s).source === 'name' && s.senderEmail != null && (
                     <span
                       style={{
                         fontFamily: font.mono,

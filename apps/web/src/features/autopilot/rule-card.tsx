@@ -214,14 +214,24 @@ function ruleModeExplanation(rule: AutopilotRuleDto): string {
   return 'Observe — matches become suggestions. Nothing changes until you review a preview and approve the action.';
 }
 
-/** "Last run Jun 9 · 14 actions · 7 senders" / "Hasn't run yet". */
+/**
+ * "Last run Jun 9 · 14 matched · 7 senders" / "Hasn't run yet".
+ *
+ * `lastRunActions` is written by the apply worker as
+ * `matchesForRule.length` — the MATCH count, in both Observe and
+ * Active mode. Calling it "actions" was false twice over: an Observe
+ * run performs no Gmail action at all (a rule sitting Off would read
+ * "4,768 actions"), and an Active run enqueues intents that can still
+ * fail. Activity is the ledger of what actually happened; this line
+ * reports what the rule matched.
+ */
 function lastRunSummary(rule: AutopilotRuleDto): string {
   if (rule.lastRunAt == null) return "Hasn't run yet";
   const d = new Date(rule.lastRunAt);
   const when = Number.isNaN(d.getTime())
     ? rule.lastRunAt
     : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  return `Last run ${when} · ${rule.lastRunActions} action${rule.lastRunActions === 1 ? '' : 's'} · ${rule.lastRunSenders} sender${rule.lastRunSenders === 1 ? '' : 's'}`;
+  return `Last run ${when} · ${rule.lastRunActions} matched · ${rule.lastRunSenders} sender${rule.lastRunSenders === 1 ? '' : 's'}`;
 }
 
 /** D10 observe-window countdown; null when not in Observe mode. */
