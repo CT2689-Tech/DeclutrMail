@@ -930,3 +930,11 @@ collision case").
 **Rule:** Before advising deletion of a shared secret/var/resource, grep every consumer (`grep -rn secrets.NAME .github/workflows/`), not just the file in hand. A scheduled job that degrades to "skipped" instead of "failed" hides the breakage.
 **Enforcement update:** runbook §4 + provisioning workflow comment now explicitly forbid deleting the repo-level billing secrets and name the watchdog dependency.
 
+
+## 2026-07-26 — Enabled a verb without wiring the override it needed; trusted a subagent's negative claim
+**PR:** not yet opened (branch `fix/d226-archive-window-single-sender`, commits `dc05bf3f` → fixed by `ea35d8a2`)
+**Caught by:** Codex stop-time review ("protected-action overrides are not wired through every newly enabled path")
+**What happened:** Unblocking destructive verbs on protected senders (D245: bulk/automatic only) required passing `override` so the server's 409 `PROTECTED_SENDER` becomes the designed confirm instead of an error. I wired it on the two Senders surfaces and missed Triage — which has no protected check of its own but rides the SHARED `POST /api/actions` composite endpoint and therefore inherits one. The result was strictly worse than the bug being fixed: an honest disabled button became a live button that always 409s into an error toast. The root cause of the miss was accepting an investigating agent's negative claim at face value — "the server has no protected check on the triage act path" — which was true of the triage module and false of the endpoint it calls.
+**Correct approach:** When removing a client-side gate, enumerate every call site that now reaches the server and check what the SERVER does on each — following the actual endpoint, not the feature module. A negative claim ("X has no check") deserves the same verification as a positive one, and is more dangerous because it reads as permission.
+**Rule:** Before unblocking any path, list every enqueue site the unblocked verb can reach and confirm the request shape each one sends; a subagent's "there is no check" is a hypothesis until you have read the endpoint it actually calls.
+**Enforcement update:** none yet — candidate: a test that asserts wire-body shape (not just "the call happened") for every surface that can reach a guarded endpoint. The four new both-directions override tests are the start of that pattern.
