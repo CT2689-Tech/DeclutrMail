@@ -35,10 +35,15 @@
 #
 # Output: stdout = JSON. The workflow handles writing + committing.
 #
-# Sentinel: a section that could NOT be captured is `null` — deliberately
-# distinct from `[]` / `{}`, which mean "captured, and empty". A drift
-# detector that cannot tell those two apart reports "nothing changed"
-# about resources it never read.
+# Sentinels, in descending order of what we actually know:
+#   <data>                captured
+#   [] / {}               captured, and genuinely empty
+#   {"not_found": true}   the API said the resource does not exist
+#   {"available": false}  a section we could not reach, with a reason
+#   null                  not captured (auth, permission, network)
+# These are deliberately distinct. A drift detector that collapses them
+# reports "nothing changed" about resources it never read, which is the
+# one failure mode that makes the whole file worthless.
 
 set -euo pipefail
 
@@ -59,14 +64,41 @@ SNAPSHOT_TS="${SNAPSHOT_TS:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 # lacked permission to look. That reads as a clean diff forever, which
 # is strictly worse than a missing section: it is the same lie the
 # GitHub-secrets section told while a stale Razorpay key sat undetected.
+# Three outcomes, three encodings — a failed call is not one state:
+#   <data>              the read succeeded
+#   []                  the read succeeded and there was nothing there
+#   {"not_found": true} the API answered "no such resource"
+#   null                the read did not happen (auth, permission, network)
+#
+# The NOT_FOUND split matters for drift: `declutrmail-worker@` does not
+# exist today, and "the SA is still absent" must stay distinguishable
+# from "we could not check tonight" — otherwise the day it gets created
+# (the remediation in FOUNDER-FOLLOWUPS) looks identical to a flaky run.
+#
+# We record the API's verdict, we do not interpret it. Google merges the
+# two cases itself when a whole project is unreachable: "does not have
+# permission to access projects instance [...] (or it may not exist):
+# Permission denied". Hence the match ORDER below — an explicit
+# permission/auth failure must win over the "may not exist" in the same
+# sentence, or a credentials outage would serialize as "absent".
 safe_gcloud() {
-  local out
-  if out=$("$@" 2>/dev/null); then
+  local out err msg
+  err=$(mktemp)
+  if out=$("$@" 2>"$err"); then
+    rm -f "$err"
     if [ -z "$out" ]; then
       echo "[]"
     else
       echo "$out"
     fi
+    return
+  fi
+  msg=$(tr '\n' ' ' < "$err")
+  rm -f "$err"
+  if printf '%s' "$msg" | grep -qiE 'UNAUTHENTICATED|PERMISSION_DENIED|does not have permission|permission denied'; then
+    echo "null"
+  elif printf '%s' "$msg" | grep -qiE 'NOT_FOUND|cannot find'; then
+    echo '{"not_found": true}'
   else
     echo "null"
   fi
@@ -112,7 +144,7 @@ cloud_run_state() {
 secrets_state() {
   safe_gcloud gcloud secrets list --project="$PROJECT" \
     --format='json(name, createTime)' \
-  | jq 'if . == null then null else [.[] | {name: (.name | split("/") | last), createTime}] end'
+  | jq 'if type == "array" then [.[] | {name: (.name | split("/") | last), createTime}] else . end'
 }
 
 # ─── Atlas migration head ───────────────────────────────────────────
