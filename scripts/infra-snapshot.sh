@@ -51,6 +51,14 @@ SNAPSHOT_TS="${SNAPSHOT_TS:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 # Helper: emit "null" instead of erroring if a gcloud call has no
 # credentials in the current environment. Lets the same script run
 # locally (founder's laptop, partial perms) AND in CI.
+#
+# A FAILED call emits `null`; only a call that genuinely succeeded with
+# no rows emits `[]`. Collapsing those two into `[]` — as this did until
+# 2026-07-26 — makes the snapshot assert "this service account has no
+# IAM bindings" or "Secret Manager holds no secrets" whenever it merely
+# lacked permission to look. That reads as a clean diff forever, which
+# is strictly worse than a missing section: it is the same lie the
+# GitHub-secrets section told while a stale Razorpay key sat undetected.
 safe_gcloud() {
   local out
   if out=$("$@" 2>/dev/null); then
@@ -60,7 +68,7 @@ safe_gcloud() {
       echo "$out"
     fi
   else
-    echo "[]"
+    echo "null"
   fi
 }
 
@@ -104,7 +112,7 @@ cloud_run_state() {
 secrets_state() {
   safe_gcloud gcloud secrets list --project="$PROJECT" \
     --format='json(name, createTime)' \
-  | jq '[.[] | {name: (.name | split("/") | last), createTime}]'
+  | jq 'if . == null then null else [.[] | {name: (.name | split("/") | last), createTime}] end'
 }
 
 # ─── Atlas migration head ───────────────────────────────────────────
@@ -113,21 +121,31 @@ atlas_state() {
     echo '{"current_version": null, "skipped": "no-dsn-or-no-cli"}'
     return
   fi
-  local status
-  status=$(atlas migrate status \
+  # Grep AFTER the call, not in a pipeline with it: under `pipefail` the
+  # `|| true` that absorbs a no-match grep also absorbed an atlas that
+  # never ran, so an unreachable database serialized as `{"raw": ""}` —
+  # "the migration status is empty" rather than "we could not read it".
+  local raw status rc=0
+  raw=$(atlas migrate status \
     --url "$SUPABASE_SESSION_DSN?sslmode=require" \
-    --dir 'file://packages/db/migrations' 2>/dev/null \
-    | grep -E "Current Version|Next Version" || true)
+    --dir 'file://packages/db/migrations' 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo '{"raw": null, "unavailable": "atlas migrate status failed (bad DSN, unreachable DB, or unreadable migration dir)"}'
+    return
+  fi
+  status=$(printf '%s\n' "$raw" | grep -E "Current Version|Next Version" || true)
   jq -n --arg s "$status" '{raw: $s}'
 }
 
 # ─── IAM bindings on the two runtime SAs ────────────────────────────
+# No `// {}` coalesce here on purpose: it turned a failed read into an
+# empty policy, i.e. "this service account has no bindings" — the most
+# misleading possible answer from a security drift detector.
 sa_iam_state() {
   local sa=$1
   safe_gcloud gcloud iam service-accounts get-iam-policy "$sa" \
     --project="$PROJECT" \
-    --format='json(bindings[].role, bindings[].members)' \
-  | jq '. // {}'
+    --format='json(bindings[].role, bindings[].members)'
 }
 
 # ─── GitHub Actions secret names ────────────────────────────────────
