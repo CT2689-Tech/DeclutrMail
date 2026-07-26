@@ -410,71 +410,79 @@ export function TriageRow({
             </div>
           )}
           <TriageRowExpanded row={row} />
-          {inlinePreview != null && (
-            <div style={{ padding: '0 18px 18px' }}>
-              <ActionPreviewPresentation
-                verb={inlinePreview.verb}
-                row={row}
-                archiveHistoric={inlinePreview.archiveHistoric}
-                inboxCount={inlinePreview.inboxCount}
-                wakeAt={inlinePreview.wakeAt ?? null}
-                mode="inline"
-                accountContext={inlinePreviewAccountContext}
-              />
-              {/* Protected acknowledgement (D245/D42) — the inline half of
+        </div>
+      )}
+
+      {/* The D226 preview is MANDATORY while an action is pending, so it
+          renders on `inlinePreview` alone — never on `expanded`. It used
+          to live inside the expanded body, which made it dismissable:
+          collapsing the row unmounted the preview (and its Protected
+          acknowledgement) while the pending action survived and, on
+          narrow widths, the verb toolbar stayed live on the collapsed
+          card. A preview a tap can hide is an optional preview. */}
+      {inlinePreview != null && (
+        <div style={{ padding: '0 18px 18px' }}>
+          <ActionPreviewPresentation
+            verb={inlinePreview.verb}
+            row={row}
+            archiveHistoric={inlinePreview.archiveHistoric}
+            inboxCount={inlinePreview.inboxCount}
+            wakeAt={inlinePreview.wakeAt ?? null}
+            mode="inline"
+            accountContext={inlinePreviewAccountContext}
+          />
+          {/* Protected acknowledgement (D245/D42) — the inline half of
                   the same statement the sheet makes. D226 lets the sheet
                   be skipped via D34's remember-preference, but the preview
                   always renders, so the override must be named on BOTH
                   paths or skipping the sheet silently skips the notice.
                   `triage-screen.tsx` sends `override: true` for this row. */}
-              {row.protectionReason != null && (
-                <div
-                  role="status"
-                  style={{
-                    marginTop: 10,
-                    padding: '8px 12px',
-                    borderRadius: 8,
-                    background: 'rgba(196,46,46,0.06)',
-                    border: '1px solid rgba(196,46,46,0.30)',
-                    fontSize: 12,
-                    lineHeight: 1.45,
-                    color: color.danger,
-                  }}
-                >
-                  This sender is <strong>Protected</strong> — it is normally kept out of bulk and
-                  automatic actions. This applies to this sender only.
-                </div>
-              )}
-              {/* Explicit confirm affordance (2026-07-16 audit): before
+          {row.protectionReason != null && (
+            <div
+              role="status"
+              style={{
+                marginTop: 10,
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: 'rgba(196,46,46,0.06)',
+                border: '1px solid rgba(196,46,46,0.30)',
+                fontSize: 12,
+                lineHeight: 1.45,
+                color: color.danger,
+              }}
+            >
+              This sender is <strong>Protected</strong> — it is normally kept out of bulk and
+              automatic actions. This applies to this sender only.
+            </div>
+          )}
+          {/* Explicit confirm affordance (2026-07-16 audit): before
                   this bar, confirming meant an UNDOCUMENTED second click
                   on the same verb — users read the preview and believed
                   the action fired. The button routes through the same
                   onAction path, so the screen's same-verb confirm logic
                   is unchanged. */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  marginTop: 10,
-                }}
-              >
-                <Button tone="primary" size="sm" onClick={() => onAction(inlinePreview.verb)}>
-                  Confirm {inlinePreview.verb}
-                  {row.protectionReason != null ? ' anyway' : ''}
-                </Button>
-                <span
-                  style={{
-                    fontFamily: font.mono,
-                    fontSize: 11,
-                    color: color.fgMuted,
-                  }}
-                >
-                  or press {VERB_SHORTCUT[inlinePreview.verb]} again · Esc cancels
-                </span>
-              </div>
-            </div>
-          )}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              marginTop: 10,
+            }}
+          >
+            <Button tone="primary" size="sm" onClick={() => onAction(inlinePreview.verb)}>
+              Confirm {inlinePreview.verb}
+              {row.protectionReason != null ? ' anyway' : ''}
+            </Button>
+            <span
+              style={{
+                fontFamily: font.mono,
+                fontSize: 11,
+                color: color.fgMuted,
+              }}
+            >
+              or press {VERB_SHORTCUT[inlinePreview.verb]} again · Esc cancels
+            </span>
+          </div>
         </div>
       )}
       {/* D37 — live gesture feedback: while a touch drag would resolve

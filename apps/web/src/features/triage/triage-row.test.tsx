@@ -226,3 +226,50 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
     expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeInTheDocument();
   });
 });
+
+describe('TriageRow — the D226 inline preview survives collapse (mobile bypass)', () => {
+  it('renders the preview and Protected acknowledgement on a COLLAPSED row', () => {
+    // The bypass this guards: `inlinePreview` is derived from
+    // `pendingAction` alone, but the preview used to render only inside
+    // the `expanded` body. On narrow widths the verb toolbar stays live
+    // on a collapsed card, so tapping the row header dismissed the
+    // preview -- and its Protected acknowledgement -- while the pending
+    // action survived and the buttons stayed tappable. D226 makes the
+    // preview mandatory; a preview a tap can hide is an optional preview.
+    render(
+      <TriageRow
+        row={rowById('t-sarah')}
+        expanded={false}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
+      />,
+    );
+    expect(
+      screen.getByRole('region', { name: `Preview · Archive ${rowById('t-sarah').senderName}` }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Confirm Archive anyway/i })).toBeInTheDocument();
+  });
+
+  it('renders no preview when no action is pending, collapsed or expanded', () => {
+    // Two-sided: a surface only ever observed present is not verified.
+    const { rerender } = render(
+      <TriageRow
+        row={rowById('t-sarah')}
+        expanded={false}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('region', { name: /^Preview · / })).toBeNull();
+    rerender(
+      <TriageRow
+        row={rowById('t-sarah')}
+        expanded={true}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('region', { name: /^Preview · / })).toBeNull();
+  });
+});
