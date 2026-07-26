@@ -295,6 +295,33 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
     expect(container.textContent).toMatch(/Esc cancels/);
   });
 
+  it('EXPANDED but preview still loading: no shortcut, and confirm fails closed', () => {
+    // `inlineConfirmBlocked` makes the toolbar's keydown inert while a
+    // mail-moving verb's live count has not resolved, so advertising the
+    // shortcut there is the same lie in a different state. The confirm
+    // button must also fail closed exactly like the sheet does —
+    // otherwise D226's mandatory preview can be confirmed before it has
+    // produced a number.
+    const { container } = render(
+      <TriageRow
+        row={rowById('t-groupon')}
+        expanded={true}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 'loading' }}
+      />,
+    );
+    expect(container.textContent).not.toMatch(/press A again/);
+    expect(container.textContent).toMatch(/Esc cancels/);
+    expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeDisabled();
+  });
+
+  it('EXPANDED with a resolved count: confirm is enabled', () => {
+    // Two-sided: a disabled state only ever observed disabled proves nothing.
+    renderPreview(true);
+    expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeEnabled();
+  });
+
   it('COLLAPSED: offers Esc only — the verb key fires nothing on a closed row', () => {
     // Desktop never mounts the toolbar outside the expanded body, and
     // narrow widths mount it with `keyboardEnabled={expanded && ...}`.

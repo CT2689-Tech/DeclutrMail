@@ -469,7 +469,19 @@ export function TriageRow({
               marginTop: 10,
             }}
           >
-            <Button tone="primary" size="sm" onClick={() => onAction(inlinePreview.verb)}>
+            {/* Fail closed exactly like the sheet does (action-sheet's
+                `confirmDisabled`): `inlineConfirmBlocked` is true while a
+                mail-moving verb's live count has not resolved, and `busy`
+                while an action is in flight. This button ignored both, so
+                the inline path could confirm a mutation before D226's
+                mandatory preview had produced a number — the one thing the
+                preview exists to prevent. */}
+            <Button
+              tone="primary"
+              size="sm"
+              disabled={actionsDisabled}
+              onClick={() => onAction(inlinePreview.verb)}
+            >
               Confirm {inlinePreview.verb}
               {row.protectionReason != null ? ' anyway' : ''}
             </Button>
@@ -489,7 +501,7 @@ export function TriageRow({
                   different: it is a window listener in triage-screen
                   gated only on the pending inline surface, so it stays
                   true whether the row is open or closed. */}
-              {expanded ? (
+              {expanded && !actionsDisabled ? (
                 <>or press {VERB_SHORTCUT[inlinePreview.verb]} again · Esc cancels</>
               ) : (
                 <>Esc cancels</>
