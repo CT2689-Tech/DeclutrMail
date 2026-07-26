@@ -19,6 +19,80 @@ permissions:
   contents: read
 
 jobs:
+  # Which expensive shards actually need to run for this diff.
+  #
+  # A docs- or scripts-only PR was booting Postgres, installing the whole
+  # workspace six times and running every Vitest suite — PR #384 changed
+  # MISTAKES.md and one .mjs and still spent 5m in Tests — Workers alone.
+  #
+  # Two deliberate safety properties:
+  #   * Each filter includes the shared `infra` set (lockfile, workspace
+  #     manifests, tsconfig, .nvmrc, packages/config, and THIS file). A
+  #     dependency bump or a change to CI itself must re-run everything —
+  #     the whole point of a filter is lost if it can hide a broken lockfile.
+  #   * Filters gate `pull_request` ONLY. A push to main always runs the
+  #     full suite (see each `if:`), so the protected branch is never
+  #     validated by a subset. Skipping on a PR is an optimisation;
+  #     skipping on main would be a coverage hole.
+  #
+  # Typecheck / Lint / Format stay ungated on purpose: ~2 min combined, and
+  # they are the checks that cover scripts/ and *.md — exactly the files a
+  # path filter would otherwise exempt from all review.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      workers: ${{ steps.filter.outputs.workers }}
+      db: ${{ steps.filter.outputs.db }}
+      web: ${{ steps.filter.outputs.web }}
+      units: ${{ steps.filter.outputs.units }}
+      a11y: ${{ steps.filter.outputs.a11y }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            infra: &infra
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - 'tsconfig*.json'
+              - '.nvmrc'
+              - 'packages/config/**'
+              - '.github/workflows/ci.yml'
+            api:
+              - *infra
+              - 'apps/api/**'
+              - 'packages/db/**'
+              - 'packages/shared/**'
+              - 'packages/events/**'
+            workers:
+              - *infra
+              - 'packages/workers/**'
+              - 'packages/db/**'
+              - 'packages/shared/**'
+              - 'packages/events/**'
+            db:
+              - *infra
+              - 'packages/db/**'
+            web:
+              - *infra
+              - 'apps/web/**'
+              - 'packages/shared/**'
+            units:
+              - *infra
+              - 'packages/shared/**'
+              - 'packages/events/**'
+            a11y:
+              - *infra
+              - 'apps/web/**'
+              - 'apps/api/**'
+              - 'packages/db/**'
+              - 'packages/shared/**'
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -63,6 +137,8 @@ jobs:
 
   test-api:
     name: Tests — API
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.api == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -93,6 +169,8 @@ jobs:
 
   test-workers:
     name: Tests — Workers
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.workers == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -107,6 +185,8 @@ jobs:
 
   test-db:
     name: Tests — Database
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.db == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -121,6 +201,8 @@ jobs:
 
   test-web:
     name: Tests — Web
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -135,6 +217,8 @@ jobs:
 
   test-units:
     name: Tests — Shared units
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.units == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -152,31 +236,76 @@ jobs:
           --filter @declutrmail/shared
           test
 
-  # Stable aggregate check for merge rules. Every workspace still runs;
-  # sharding only prevents six Vitest processes from fighting over one runner.
+  # Stable aggregate check for merge rules. Sharding prevents six Vitest
+  # processes from fighting over one runner; the path filter above decides
+  # which shards are relevant to the diff at all.
+  #
+  # `skipped` is an ACCEPTED result here, which makes this job the one place
+  # that could quietly turn "we ran nothing" into a green Test ✅. So it
+  # names the split in the run summary rather than collapsing both states
+  # into a checkmark — a passing aggregate must say what it actually
+  # covered. `failure` and `cancelled` are still hard failures.
+  #
+  # `changes` is in `needs` on purpose: if path detection itself breaks,
+  # every shard skips, and without this guard the aggregate would report
+  # green having run zero tests.
   test:
     name: Test
     if: ${{ always() }}
-    needs: [test-api, test-workers, test-db, test-web, test-units]
+    needs: [changes, test-api, test-workers, test-db, test-web, test-units]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Require every test shard
+      - name: Require every selected test shard
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           API_RESULT: ${{ needs.test-api.result }}
           WORKERS_RESULT: ${{ needs.test-workers.result }}
           DB_RESULT: ${{ needs.test-db.result }}
           WEB_RESULT: ${{ needs.test-web.result }}
           UNITS_RESULT: ${{ needs.test-units.result }}
         run: |
-          [[ "$API_RESULT" == success ]]
-          [[ "$WORKERS_RESULT" == success ]]
-          [[ "$DB_RESULT" == success ]]
-          [[ "$WEB_RESULT" == success ]]
-          [[ "$UNITS_RESULT" == success ]]
+          set -euo pipefail
+
+          # Path detection failing must never read as "nothing to test".
+          if [ "$CHANGES_RESULT" != success ]; then
+            echo "::error::path detection did not succeed ($CHANGES_RESULT) —" \
+                 "shard selection is unknown, so this cannot pass"
+            exit 1
+          fi
+
+          ran=''; skipped=''; bad=''
+          classify() {
+            case "$2" in
+              success) ran="$ran $1" ;;
+              skipped) skipped="$skipped $1" ;;
+              *) bad="$bad $1=$2" ;;
+            esac
+          }
+          classify api "$API_RESULT"
+          classify workers "$WORKERS_RESULT"
+          classify db "$DB_RESULT"
+          classify web "$WEB_RESULT"
+          classify units "$UNITS_RESULT"
+
+          {
+            echo "### Test shards"
+            echo
+            echo "- **ran:**${ran:- none}"
+            echo "- **skipped** (no matching path changed):${skipped:- none}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "ran:${ran:- none}"
+          echo "skipped:${skipped:- none}"
+
+          if [ -n "$bad" ]; then
+            echo "::error::test shard(s) did not succeed:$bad"
+            exit 1
+          fi
 
   accessibility:
     name: Authenticated accessibility smoke
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.a11y == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     services:
