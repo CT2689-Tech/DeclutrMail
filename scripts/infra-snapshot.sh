@@ -34,6 +34,11 @@
 #     `gh auth login`).
 #
 # Output: stdout = JSON. The workflow handles writing + committing.
+#
+# Sentinel: a section that could NOT be captured is `null` — deliberately
+# distinct from `[]` / `{}`, which mean "captured, and empty". A drift
+# detector that cannot tell those two apart reports "nothing changed"
+# about resources it never read.
 
 set -euo pipefail
 
@@ -56,6 +61,20 @@ safe_gcloud() {
     fi
   else
     echo "[]"
+  fi
+}
+
+# Guard every `--argjson` input. jq aborts the WHOLE snapshot on one
+# invalid value ("invalid JSON text passed to --argjson"), so a single
+# section that emits nothing costs all seven — which is exactly how this
+# script failed 8 consecutive nightly runs (2026-07-18 → 07-25) without
+# producing a single usable snapshot.
+#   $1 candidate JSON  $2 fallback JSON
+json_or() {
+  if [ -n "$1" ] && printf '%s' "$1" | jq -e . >/dev/null 2>&1; then
+    printf '%s' "$1"
+  else
+    printf '%s' "$2"
   fi
 }
 
@@ -112,12 +131,32 @@ sa_iam_state() {
 }
 
 # ─── GitHub Actions secret names ────────────────────────────────────
+#
+# Listing repo secrets requires repo ADMIN. CI's default `GITHUB_TOKEN`
+# never carries it regardless of the workflow `permissions:` block, so
+# `gh secret list` 403s there and returns nothing — which used to reach
+# `--argjson` as an empty string and abort the entire snapshot.
+#
+# The fix is NOT to fall back to `[]`. An empty array is a claim: "these
+# are the secrets, and none changed." Asserting that about a thing we
+# never read is the same defect the snapshot exists to catch — a stale
+# Razorpay key sat in this repo undetected while this section reported
+# nothing was wrong. Report reachability explicitly instead, so a diff
+# shows the section going blind rather than going quiet.
+#
+# Bind `INFRA_SNAPSHOT_TOKEN` (a fine-grained PAT scoped to this repo
+# with Secrets: read) to make it readable in CI.
 gh_secrets_state() {
   if ! command -v gh >/dev/null 2>&1; then
-    echo '[]'
+    echo '{"available": false, "reason": "gh CLI not on PATH"}'
     return
   fi
-  gh secret list --repo "$REPO" --json name,updatedAt 2>/dev/null | jq '. // []'
+  local out
+  if ! out=$(gh secret list --repo "$REPO" --json name,updatedAt 2>/dev/null); then
+    echo '{"available": false, "reason": "gh secret list failed — token lacks repo admin; bind INFRA_SNAPSHOT_TOKEN (fine-grained PAT, Secrets: read)"}'
+    return
+  fi
+  jq -n --argjson s "$(json_or "$out" '[]')" '{available: true, secrets: $s}'
 }
 
 # ─── Assemble the snapshot ──────────────────────────────────────────
@@ -125,13 +164,13 @@ jq -n \
   --arg date "$SNAPSHOT_DATE" \
   --arg ts "$SNAPSHOT_TS" \
   --arg project "$PROJECT" \
-  --argjson api "$(cloud_run_state declutrmail-api)" \
-  --argjson worker "$(cloud_run_state declutrmail-worker)" \
-  --argjson secrets "$(secrets_state)" \
-  --argjson atlas "$(atlas_state)" \
-  --argjson api_sa "$(sa_iam_state declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com)" \
-  --argjson worker_sa "$(sa_iam_state declutrmail-worker@declutrmail-ai-prod.iam.gserviceaccount.com)" \
-  --argjson gh_secrets "$(gh_secrets_state)" \
+  --argjson api "$(json_or "$(cloud_run_state declutrmail-api)" null)" \
+  --argjson worker "$(json_or "$(cloud_run_state declutrmail-worker)" null)" \
+  --argjson secrets "$(json_or "$(secrets_state)" null)" \
+  --argjson atlas "$(json_or "$(atlas_state)" null)" \
+  --argjson api_sa "$(json_or "$(sa_iam_state declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com)" null)" \
+  --argjson worker_sa "$(json_or "$(sa_iam_state declutrmail-worker@declutrmail-ai-prod.iam.gserviceaccount.com)" null)" \
+  --argjson gh_secrets "$(json_or "$(gh_secrets_state)" null)" \
   '{
     snapshot_date: $date,
     snapshot_ts: $ts,

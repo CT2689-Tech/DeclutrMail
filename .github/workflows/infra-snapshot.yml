@@ -15,8 +15,12 @@
 #   * GCP: Workload Identity Federation (same provider + SA the deploy
 #     workflow uses).
 #   * Supabase: SUPABASE_SESSION_DSN secret (same one Atlas uses).
-#   * GitHub: GITHUB_TOKEN (default scope is enough for `gh secret list`
-#     with `actions:read`).
+#   * GitHub: INFRA_SNAPSHOT_TOKEN when present, else GITHUB_TOKEN.
+#     `gh secret list` needs repo ADMIN, which GITHUB_TOKEN never has —
+#     no `permissions:` block can grant it. Without the PAT the snapshot
+#     still runs and records the GitHub-secrets section as
+#     `{"available": false, ...}` rather than silently claiming it read
+#     an empty secret list.
 #
 # Privacy posture (D7 / D228): the script reads ONLY infra metadata.
 # No row reads of mail_messages / senders / triage_decisions. Atlas
@@ -66,7 +70,7 @@ jobs:
           GCP_PROJECT: declutrmail-ai-prod
           GCP_REGION: us-central1
           SUPABASE_SESSION_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.INFRA_SNAPSHOT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           DATE=$(date -u +%Y-%m-%d)
