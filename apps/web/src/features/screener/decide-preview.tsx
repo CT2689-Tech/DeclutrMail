@@ -4,7 +4,12 @@ import { Button, tokens } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 
-import type { ScreenerDecideVerb, ScreenerQueueRow } from './data';
+import {
+  needsProtectedOverride,
+  protectionReasonLabel,
+  type ScreenerDecideVerb,
+  type ScreenerQueueRow,
+} from './data';
 import { VERB_LABEL } from './verbs';
 
 const { color, font } = tokens;
@@ -80,6 +85,18 @@ export function DecidePreview({
   const previewBlocked = moves && (inboxCount === 'loading' || inboxCount === 'unavailable');
   const confirmDisabled = confirming || previewBlocked;
 
+  // A Protected sender decided EXPLICITLY, one at a time — the path
+  // D245 leaves open (it excludes Protected from bulk and automatic
+  // actions, not from a deliberate click). Name the protection and make
+  // the confirm carry the acknowledgement, so the user is never sent
+  // away to unprotect a sender they are about to act on anyway.
+  const overriding = needsProtectedOverride(row, verb);
+  const confirmLabel = confirming
+    ? 'Confirming…'
+    : overriding
+      ? `Confirm ${VERB_LABEL[verb]} anyway`
+      : `Confirm ${VERB_LABEL[verb]}`;
+
   return (
     <div
       role="region"
@@ -134,6 +151,28 @@ export function DecidePreview({
         <ImpactFigure moves={moves} inboxCount={inboxCount} />
       </div>
 
+      {/* Protected acknowledgement (D42/D245) — stated before the
+          confirm, never after the fact. `role="status"` so a screen
+          reader hears it when the preview opens. */}
+      {overriding && (
+        <div
+          role="status"
+          style={{
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: color.red,
+            background: color.card,
+            border: `1px solid ${color.red}`,
+            borderRadius: 8,
+            padding: '8px 10px',
+          }}
+        >
+          <strong style={{ fontWeight: 600 }}>This sender is Protected</strong> — {name} is kept
+          safe because {protectionReasonLabel(row.protectionReason)}. Confirming acts on it anyway;
+          it stays Protected afterwards.
+        </div>
+      )}
+
       {/* Engine recap — why the engine queued this sender. */}
       {row.recommendation != null && (
         <div style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>
@@ -151,9 +190,11 @@ export function DecidePreview({
           tone={verb === 'delete' ? 'danger' : 'primary'}
           onClick={onConfirm}
           disabled={confirmDisabled}
-          ariaLabel={`Confirm ${VERB_LABEL[verb]} for ${name}`}
+          // Stable across the in-flight transition — a button that
+          // renames itself mid-action loses its accessible identity.
+          ariaLabel={`Confirm ${VERB_LABEL[verb]}${overriding ? ' anyway' : ''} for ${name}`}
         >
-          {confirming ? 'Confirming…' : `Confirm ${VERB_LABEL[verb]}`}
+          {confirmLabel}
         </Button>
       </div>
     </div>

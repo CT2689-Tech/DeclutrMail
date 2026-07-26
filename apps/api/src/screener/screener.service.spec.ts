@@ -210,6 +210,25 @@ describe('ScreenerService.decide (D72, D226)', () => {
     expect(await pendingCount()).toBe(1);
   });
 
+  it('forwards the Protected override so a queued-and-protected sender is decidable (D42/D245)', async () => {
+    // Without this the delegated enqueueComposite answers 409
+    // PROTECTED_SENDER for every A/L/D decision on a sender that was
+    // protected while it sat in the queue, and the row can never leave
+    // it. D245 excludes Protected from BULK and AUTOMATIC actions — a
+    // Screener decision is neither.
+    await svc.decide({
+      mailboxAccountId: mailboxId,
+      senderId,
+      verb: 'delete',
+      olderThanDays: null,
+      override: true,
+      idempotencyKey: 'key-override-1',
+    });
+    expect(actions.enqueueComposite).toHaveBeenCalledWith(
+      expect.objectContaining({ override: true }),
+    );
+  });
+
   it('a 0-message async action (terminal no-op) resolves the row immediately', async () => {
     actions.enqueueComposite.mockResolvedValueOnce({
       actionId: 'action-noop',

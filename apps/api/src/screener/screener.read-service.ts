@@ -1,7 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, count, desc, eq, inArray, isNull } from 'drizzle-orm';
 
-import { mailMessages, screenerQuarantine, senders, triageDecisions } from '@declutrmail/db';
+import {
+  mailMessages,
+  screenerQuarantine,
+  senderPolicies,
+  senders,
+  triageDecisions,
+} from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { ScreenerCountResult, ScreenerQueueRow } from './screener.types.js';
@@ -42,6 +48,8 @@ export class ScreenerReadService {
         firstSeenAt: senders.firstSeenAt,
         totalReceived: senders.totalReceived,
         unsubscribeMethod: senders.unsubscribeMethod,
+        isProtected: senderPolicies.isProtected,
+        protectionReason: senderPolicies.protectionReason,
         verdict: triageDecisions.verdict,
         confidence: triageDecisions.confidence,
         reasoning: triageDecisions.reasoning,
@@ -59,6 +67,14 @@ export class ScreenerReadService {
         and(
           eq(triageDecisions.mailboxAccountId, screenerQuarantine.mailboxAccountId),
           eq(triageDecisions.senderKey, screenerQuarantine.senderKey),
+        ),
+      )
+      // LEFT: a sender with no policy row has never been protected.
+      .leftJoin(
+        senderPolicies,
+        and(
+          eq(senderPolicies.mailboxAccountId, screenerQuarantine.mailboxAccountId),
+          eq(senderPolicies.senderKey, screenerQuarantine.senderKey),
         ),
       )
       .where(
@@ -105,6 +121,10 @@ export class ScreenerReadService {
       messageCount: r.totalReceived,
       sampleSubject: subjectBySender.get(r.senderKey) ?? '',
       unsubscribeMethod: r.unsubscribeMethod ?? 'none',
+      // No policy row ⇒ never protected. Keep reason and flag in
+      // agreement so the FE never renders "Protected" with no reason.
+      isProtected: r.isProtected ?? false,
+      protectionReason: r.isProtected === true ? r.protectionReason : null,
       recommendation:
         r.verdict != null && r.confidence != null && r.reasoning != null
           ? {

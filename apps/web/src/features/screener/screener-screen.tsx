@@ -24,6 +24,7 @@ import { SCREENER_COUNT_KEY, SCREENER_QUEUE_KEY, useScreenerDecide } from './api
 import {
   SCREENER_QUEUE,
   canScreenerUnsubscribe,
+  needsProtectedOverride,
   type ScreenerDecideVerb,
   type ScreenerQueueRow,
   type ScreenerScreenState,
@@ -264,6 +265,10 @@ export function ScreenerScreen({
           senderId: row.senderId,
           verb,
           ...(verb === 'later' && pending.wakeAt ? { wakeAt: pending.wakeAt } : {}),
+          // The preview named the protection and the confirm said
+          // "anyway" — carry that acknowledgement to the server, which
+          // otherwise answers 409 and strands the row (D42/D245).
+          ...(needsProtectedOverride(row, verb) ? { override: true } : {}),
         },
         {
           onSuccess: (res) => {
@@ -300,12 +305,18 @@ export function ScreenerScreen({
             // (hook-level handler); 409 PROTECTED_SENDER is a designed
             // state — no Sentry for either.
             if (err instanceof ApiError && err.status === 402) return;
-            if (!(err instanceof ApiError && err.status === 409)) {
+            const stale409 = err instanceof ApiError && err.status === 409;
+            if (!stale409) {
               captureFeatureException(err, { surface: 'screener', reason: `decide_${verb}` });
             }
+            // A 409 now means only one thing: the row was protected
+            // AFTER this queue page loaded, so the confirm carried no
+            // override. Refetch so the reopened preview shows the
+            // acknowledgement — without this the retry 409s forever.
+            if (stale409) invalidateAfterDecision(qc);
             toast(
-              err instanceof ApiError && err.status === 409
-                ? `${row.senderName} is protected — unprotect it first`
+              stale409
+                ? `${row.senderName} is Protected — reopen the preview to confirm anyway`
                 : `Couldn't ${VERB_LABEL[verb].toLowerCase()} ${row.senderName}`,
               'warn',
             );

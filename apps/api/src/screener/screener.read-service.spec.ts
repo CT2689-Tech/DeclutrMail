@@ -8,6 +8,7 @@ import {
   mailMessages,
   schema,
   screenerQuarantine,
+  senderPolicies,
   senders,
   triageDecisions,
   users,
@@ -178,6 +179,43 @@ describe('ScreenerReadService (D71–D74)', () => {
     const beta = rows.find((r) => r.senderKey === SENDER_B)!;
     expect(beta.recommendation).toBeNull();
     expect(beta.sampleSubject).toBe('Beta receipt');
+
+    // No policy row at all ⇒ not protected. Both sides asserted so a
+    // LEFT JOIN that silently drops policy-less senders would fail.
+    expect(alpha.isProtected).toBe(false);
+    expect(alpha.protectionReason).toBeNull();
+  });
+
+  it('carries standing protection so the decide preview can name it (D42/D245)', async () => {
+    // A queued sender CAN be protected: the automatic sweep runs over
+    // every sender with no Screener exclusion, and Sender Detail can
+    // protect one by hand while it waits. Without this on the wire the
+    // decision is a silent 409 the user cannot resolve in place.
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_A,
+      isProtected: true,
+      protectionReason: 'starred',
+      protectionSetAt: new Date('2026-06-09T12:00:00Z'),
+    });
+
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 50 });
+    const alpha = rows.find((r) => r.senderKey === SENDER_A)!;
+    expect(alpha.isProtected).toBe(true);
+    expect(alpha.protectionReason).toBe('starred');
+
+    // Unprotecting must clear the reason too — a reason surviving a
+    // false flag would render "Protected" copy on a free sender.
+    await db
+      .update(senderPolicies)
+      .set({ isProtected: false })
+      .where(
+        and(eq(senderPolicies.mailboxAccountId, mailboxId), eq(senderPolicies.senderKey, SENDER_A)),
+      );
+    const after = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 50 });
+    const alphaAfter = after.find((r) => r.senderKey === SENDER_A)!;
+    expect(alphaAfter.isProtected).toBe(false);
+    expect(alphaAfter.protectionReason).toBeNull();
   });
 
   it('excludes decided rows from the queue and the count', async () => {
