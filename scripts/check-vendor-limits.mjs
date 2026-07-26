@@ -20,7 +20,10 @@
  *   UNCONFIGURED — required env var(s) absent; check skipped. The
  *                  script is useful from day 1 with partial creds and
  *                  gets better as the founder adds tokens.
- *   ERROR        — vendor call failed (auth, network, parse)
+ *   ERROR        — no value obtained: the vendor call failed (auth,
+ *                  network, parse) or timed out twice in a row. Exits 1.
+ *                  WARN/BREACH judge a value we HAVE; ERROR means we do
+ *                  not have one, and must never be graded as a soft signal.
  *
  * Env vars (creds — missing => UNCONFIGURED for that vendor):
  *   SUPABASE_SESSION_DSN                    DB size via psql
@@ -576,15 +579,25 @@ async function runVendor(vendor) {
       // and that is worth seeing before it becomes a standing outage.
       return { name: vendor.name, ...res, detail: `${res.detail} [slow — succeeded on retry]` };
     } catch (err2) {
-      // Still WARN, not ERROR: a chronically slow vendor API must not turn
-      // the run red every day and train the operator to ignore red — that
-      // habit is exactly what masked the 2026-07-15 Upstash suspension. A
-      // real limit breach still returns BREACH from its gauge and exits 1.
-      // But the DETAIL must not comfort: it has to say the figure is
-      // unverified, because that is the only true thing we know.
+      // ERROR, not WARN. WARN and BREACH are judgments ABOUT A MEASURED
+      // VALUE; ERROR is the absence of one. Two timeouts produced no value,
+      // so grading this WARN would file "never read it" alongside "read it,
+      // it is fine" — and WARN exits 0, so the run reports SUCCESS and
+      // GitHub sends nothing. That is the watchdog telling exactly the lie
+      // it exists to catch: a green signal standing in for a check that
+      // never happened.
+      //
+      // The anti-red-training argument that used to live here ("a
+      // chronically slow vendor API must not turn the run red daily") was
+      // calibrated to a world where Vercel timed out most days against the
+      // 10s budget shared by every call in this file. The per-vendor
+      // timeout above removed that world: Vercel now answers on the FIRST
+      // attempt inside 45s. A double timeout is exceptional again, and
+      // failing to read a metered vendor's spend is precisely what should
+      // exit 1.
       return {
         name: vendor.name,
-        status: 'WARN',
+        status: 'ERROR',
         detail: `unreachable — timed out twice, value NOT verified: ${String(
           err2?.message ?? err2,
         ).slice(0, 240)}`,
