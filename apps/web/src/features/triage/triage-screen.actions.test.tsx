@@ -994,3 +994,88 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     await waitFor(() => expect(enqueues).toHaveLength(1));
   });
 });
+
+describe('TriageScreen — Protected rows act with an explicit override (D245/D42)', () => {
+  const SARAH = TRIAGE_QUEUE.find((r) => r.protectionReason !== null)!;
+
+  function renderWith(rows: typeof TRIAGE_QUEUE) {
+    return render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageScreen state={{ kind: 'ready', rows: [...rows], stats: TRIAGE_SESSION_STATS }} />
+      </QueryWrapper>,
+    );
+  }
+
+  beforeEach(() => {
+    resetTriageStore();
+    h.toast.mockClear();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => jsonOk({ data: PREVIEW_BODY }),
+      },
+    ]);
+  });
+  afterEach(() => resetFetchStub());
+
+  /**
+   * Triage rides the SHARED composite endpoint, which answers a protected
+   * sender with 409 PROTECTED_SENDER unless `override` is set. Enabling
+   * the verb on protected rows without wiring this would have swapped an
+   * honest disabled button for a guaranteed error toast.
+   */
+  async function archiveAndCaptureBody(row: (typeof TRIAGE_QUEUE)[number]) {
+    const enqueues: unknown[] = [];
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          enqueues.push(await req.json());
+          return jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 3,
+              secondaryCount: null,
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              status: 'done',
+              requestedCount: 3,
+              affectedCount: 3,
+              undoToken: null,
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+
+    renderWith([row]);
+    expandRow(row.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+    await waitFor(() => expect(enqueues).toHaveLength(1));
+    return enqueues[0];
+  }
+
+  it('sends override:true when archiving a PROTECTED row', async () => {
+    expect(await archiveAndCaptureBody(SARAH)).toMatchObject({ override: true });
+  });
+
+  it('does NOT send override for an unprotected row', async () => {
+    // Two-sided: a flag only ever observed set is not a verified flag.
+    expect(await archiveAndCaptureBody(GROUPON)).not.toMatchObject({ override: true });
+  });
+});

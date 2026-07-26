@@ -544,7 +544,17 @@ export function TriageScreen({
               }
               if (details?.archiveHistoric) {
                 enqueueComposite.mutate(
-                  { senderId: row.senderId, primary: { type: 'archive', olderThanDays: null } },
+                  {
+                    senderId: row.senderId,
+                    primary: { type: 'archive', olderThanDays: null },
+                    // Triage rides the SHARED composite endpoint, which
+                    // answers a protected sender with 409 PROTECTED_SENDER
+                    // unless `override` is set. Triage rows are explicit
+                    // single-sender intent (D245 excludes bulk/automatic,
+                    // not this), and the protection is named in the row
+                    // badge before the user confirms.
+                    ...(row.protectionReason !== null ? { override: true } : {}),
+                  },
                   {
                     onSuccess: (res) =>
                       setActiveAction({
@@ -608,6 +618,9 @@ export function TriageScreen({
             olderThanDays: null,
             ...(primaryType === 'later' && details?.wakeAt ? { wakeAt: details.wakeAt } : {}),
           },
+          // See the note on the follow-on archive above: the shared
+          // composite endpoint 409s on a protected sender without this.
+          ...(row.protectionReason !== null ? { override: true } : {}),
         },
         {
           onSuccess: (res) => {
