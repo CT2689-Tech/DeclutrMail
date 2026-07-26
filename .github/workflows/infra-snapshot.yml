@@ -1,9 +1,13 @@
 # Daily infrastructure drift detector (D38, D159).
 #
 # Captures every external resource DeclutrMail depends on into a JSON
-# blob committed to docs/infra-snapshots/YYYY-MM-DD.json. Only commits
-# when the snapshot differs from the most recent one — identical days
-# stay silent so the git log doesn't fill with noise.
+# blob committed to docs/infra-snapshots/YYYY-MM-DD.json ON THE
+# `infra-snapshots` BRANCH — never on main, which is protected and
+# requires a PR plus 11 status checks. Only commits when the snapshot
+# differs from the most recent one; identical days stay silent so the
+# log doesn't fill with noise. On a drift day the diff is also written
+# to the run summary, so the signal is readable without checking out
+# the branch.
 #
 # Trigger:
 #   * Cron @ 06:00 UTC daily — quiet hour for the founder, lines up
@@ -74,41 +78,61 @@ jobs:
         run: |
           set -euo pipefail
           DATE=$(date -u +%Y-%m-%d)
-          OUT="docs/infra-snapshots/${DATE}.json"
-          ./scripts/infra-snapshot.sh > "$OUT"
+          ./scripts/infra-snapshot.sh > "${RUNNER_TEMP}/${DATE}.json"
           echo "DATE=$DATE" >> "$GITHUB_ENV"
-          echo "OUT=$OUT" >> "$GITHUB_ENV"
 
-      - name: Skip commit if identical to prior snapshot
+      # Snapshots live on their own branch, never on main. main is
+      # protected (PR + 11 required checks), so a bot pushing a daily
+      # commit to it is impossible without a bypass credential — and a
+      # standing bypass token in CI would defeat the protection itself.
+      # This step is why the workflow failed even after the snapshot
+      # script was fixed: it had never once reached the push before.
+      - name: Check out the snapshot branch
+        uses: actions/checkout@v7
+        with:
+          ref: infra-snapshots
+          path: snapshot-branch
+
+      - name: Publish when the snapshot has drifted
+        working-directory: snapshot-branch
         run: |
           set -euo pipefail
-          # Find the most recent snapshot OTHER than today's.
+          OUT="docs/infra-snapshots/${DATE}.json"
+          mkdir -p docs/infra-snapshots
+          # Most recent snapshot OTHER than today's, before we overwrite.
           PRIOR=$(ls docs/infra-snapshots/*.json 2>/dev/null \
-            | grep -v "$(basename "$OUT")" \
+            | grep -v "${DATE}.json" \
             | sort -r \
             | head -1 || true)
+          cp "${RUNNER_TEMP}/${DATE}.json" "$OUT"
+
           if [ -n "$PRIOR" ] && diff -q "$PRIOR" "$OUT" >/dev/null 2>&1; then
-            echo "No drift since $PRIOR — removing today's snapshot."
-            rm "$OUT"
-            echo "DRIFT=false" >> "$GITHUB_ENV"
-          else
-            echo "Drift detected (or first snapshot) — keeping $OUT."
-            echo "DRIFT=true" >> "$GITHUB_ENV"
+            echo "No drift since ${PRIOR}."
+            echo "### Infra snapshot ${DATE} — no drift since $(basename "$PRIOR" .json)" \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
-      - name: Commit if drift
-        if: env.DRIFT == 'true'
-        run: |
-          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add "$OUT"
-          # Skip commit if `git add` produced no staged change (e.g.
-          # the file existed identical from a prior dispatch in the
-          # same UTC day).
           if git diff --cached --quiet; then
-            echo "No staged change — skipping commit."
+            echo "No staged change — nothing to publish."
             exit 0
           fi
-          git commit -m "chore(infra): snapshot $DATE drift detected (D38)"
-          git push
+          git commit -m "chore(infra): snapshot ${DATE} drift detected (D38)"
+          git push origin HEAD:infra-snapshots
+
+          # The diff IS the alert — surface it in the run summary so drift
+          # is readable without navigating to the branch.
+          {
+            echo "### Infra snapshot ${DATE} — drift detected"
+            echo
+            if [ -n "$PRIOR" ]; then
+              echo '```diff'
+              diff -u "$PRIOR" "$OUT" | head -100 || true
+              echo '```'
+            else
+              echo "First snapshot on this branch."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
