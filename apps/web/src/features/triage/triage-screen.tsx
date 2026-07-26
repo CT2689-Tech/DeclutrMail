@@ -647,15 +647,22 @@ export function TriageScreen({
             // the UpgradeModal via the global MutationCache handler
             // (lib/query-client), so skip the generic toast.
             if (err instanceof ApiError && err.status === 402) return;
-            if (!(err instanceof ApiError && err.status === 409)) {
+            const stale409 = err instanceof ApiError && err.status === 409;
+            if (!stale409) {
               captureFeatureException(err, {
                 surface: 'triage',
                 reason: `enqueue_${primaryType}`,
               });
             }
+            // A triage action now carries the override whenever the row
+            // says Protected, so a 409 means only one thing: this row's
+            // protection changed after the queue loaded. Refetch, or the
+            // reopened sheet shows the same stale row and 409s again —
+            // forever.
+            if (stale409) invalidateAfterDecision(qc);
             toast(
-              err instanceof ApiError && err.status === 409
-                ? `${row.senderName} is protected — unprotect it first`
+              stale409
+                ? `${row.senderName} is Protected — reopen the action to confirm anyway`
                 : getActionFailureCopy('enqueue', {
                     action: `${verb.toLowerCase()} ${row.senderName}`,
                   }).message,

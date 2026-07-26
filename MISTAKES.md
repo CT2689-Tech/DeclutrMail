@@ -946,3 +946,50 @@ collision case").
 **Correct approach:** A UX decision applies to the BEHAVIOUR, not to the first surface that implements it. Before calling one done, enumerate every surface that can reach the behaviour — and in this codebase specifically, remember that "the D226 preview" is two components (modal/sheet + inline), not one.
 **Rule:** When a founder decision governs a user-facing moment, list every component that renders that moment before implementing, and assert the decision on each; for anything D226-related, that list always has both the sheet/modal path and the inline path.
 **Enforcement update:** none yet — candidate: a shared `<ProtectedOverrideNotice>` primitive so the two preview paths cannot drift, or a test helper that runs the same assertion against every preview surface.
+
+## 2026-07-26 — Opening a verb on Protected senders created a partial execution
+
+**PR:** #394 (https://github.com/CT2689-Tech/DeclutrMail/pull/394)
+**Caught by:** Codex stop-gate review
+**What happened:** C3 split `canUnsubscribe` so Protected senders could be
+unsubscribed by an explicit click. Unsubscribe has no server-side Protected
+guard, so the intent always lands — and for one-click that is a real, one-way
+RFC 8058 request (D58). The paired "also act on past emails" backlog action is
+a SEPARATE composite POST, and it did not carry the `override` the preview had
+already collected. Result: server 409s the second half AFTER the irreversible
+first half ran. The user ends up unsubscribed with their mail untouched, told
+only "Unsubscribe queued, but couldn't archive the backlog". Two surfaces
+(`senders-screen.tsx`, `sender-detail-page.tsx`).
+
+I had wired `override` into every composite call I could see — including
+triage's archive-after-unsub — and still missed these two, because they build
+their request object at a different call site from the one the modal feeds.
+
+**Correct approach:** when a change makes a verb newly REACHABLE for a class of
+sender, enumerate every request that verb can emit, not every place the verb's
+name appears. Unsubscribe emits two.
+**Rule:** a flag collected once in a preview must reach EVERY request that
+preview authorises — grep the flag, then grep the endpoint, and diff the two lists.
+**Enforcement update:** two-sided tests in `senders-screen.test.tsx` pinning
+`override: true` / `override: false` on the backlog composite; verified to fail
+without the fix.
+
+## 2026-07-26 — A 409 handler that did not refetch made the retry loop forever
+
+**PR:** #394
+**Caught by:** Codex stop-gate review
+**What happened:** Once an explicit action carries `override` whenever the row
+says Protected, a 409 `PROTECTED_SENDER` can mean only one thing — the client's
+protection data is stale. The Senders, Sender Detail and Triage handlers kept
+the old copy ("unprotect it first") and did not refetch, so the cached row still
+said unprotected, the reopened modal omitted the acknowledgement and the
+override, and it 409'd again. Forever. I shipped the refetch in the Screener,
+listed the other three as a "known follow-up" in the PR body, and moved on —
+but the loop is a REGRESSION of the same PR that made Protected senders
+actionable, not a pre-existing wart.
+**Correct approach:** if a PR changes what an error code MEANS, every handler
+reading that code is in scope for that PR.
+**Rule:** a designed 4xx that the client can resolve must invalidate whatever
+made the client wrong; otherwise the retry is the same request.
+**Enforcement update:** `triage-screen.actions.test.tsx` contract inverted with
+the reasoning recorded inline (it previously asserted NO invalidation).

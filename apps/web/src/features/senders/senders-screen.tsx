@@ -750,15 +750,22 @@ function SendersScreenContent({
             onError: (err) => {
               // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
               if (err instanceof ApiError && err.status === 402) return;
-              if (!(err instanceof ApiError && err.status === 409)) {
+              const stale409 = err instanceof ApiError && err.status === 409;
+              if (!stale409) {
                 captureFeatureException(err, {
                   surface: 'senders',
                   reason: `enqueue_${primaryType}`,
                 });
               }
+              // An explicit single-sender action now carries the override
+              // whenever the row says Protected, so a 409 means only one
+              // thing: this row's protection changed after the list
+              // loaded. Refetch, or the reopened modal shows the same
+              // stale row and 409s again — forever.
+              if (stale409) void qc.invalidateQueries({ queryKey: sendersKeys.all });
               toast(
-                err instanceof ApiError && err.status === 409
-                  ? `${sender.name} is protected — unprotect it first`
+                stale409
+                  ? `${sender.name} is Protected — reopen the action to confirm anyway`
                   : `Couldn't ${primaryType} ${sender.name}`,
                 'warn',
               );
@@ -835,6 +842,14 @@ function SendersScreenContent({
                         type: secondary.type,
                         olderThanDays: secondary.olderThanDays ?? null,
                       },
+                      // The SAME acknowledgement the preview collected.
+                      // Unsubscribe has no Protected guard, so the intent
+                      // above always lands — one-click sends a real,
+                      // one-way request (D58). Dropping the override here
+                      // 409s the backlog half AFTER that, leaving the user
+                      // unsubscribed with their mail untouched: a partial
+                      // execution whose first half cannot be undone.
+                      ...(opts?.override === true ? { override: true } : {}),
                     },
                     {
                       onSuccess: (cres) =>

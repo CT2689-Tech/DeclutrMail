@@ -373,7 +373,16 @@ describe('TriageScreen — D226 mutation wiring', () => {
     });
   });
 
-  it('surfaces a designed 409 (protected sender) without crashing or invalidating', async () => {
+  it('surfaces a designed 409 (protected sender) and REFETCHES the stale row', async () => {
+    // Contract inverted deliberately (2026-07-26). This used to assert
+    // the queue was NOT invalidated, on the reasoning that a 409 means
+    // nothing changed so the cache is fine. That reasoning stopped being
+    // true once an explicit triage action started carrying `override`
+    // whenever the row says Protected: a 409 can now mean only ONE
+    // thing — this row's protection changed after the queue loaded. The
+    // cached row still says unprotected, so the reopened sheet omits the
+    // acknowledgement, omits the override, and 409s again. Forever.
+    // Refetching is what breaks that loop.
     addFetchHandlers([
       {
         method: 'POST',
@@ -396,12 +405,12 @@ describe('TriageScreen — D226 mutation wiring', () => {
     fireEvent.keyDown(window, { key: 'a' });
     await confirmOpenSheet('Archive');
 
-    // The failure leaves the queue untouched: no busy latch, no
-    // invalidation, row still present.
+    // No busy latch and the row survives — nothing was mutated. But the
+    // queue IS refetched, so the retry can carry the override.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await new Promise((r) => setTimeout(r, 50));
     expect(container.querySelector('[aria-busy="true"]')).toBeNull();
-    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
   });
 
