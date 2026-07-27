@@ -125,12 +125,6 @@ export async function confirmActionRecovery(
 /** Returned by `GET /api/actions/:id` — canonical shared poll snapshot. */
 export type ActionStatusResult = ActionStatusSnapshot;
 
-/** Returned by `GET /api/actions/archive/preview` — the REAL inbox count. */
-export interface ArchivePreviewResult {
-  senderId: string;
-  inboxCount: number;
-}
-
 /** Returned by `POST /api/undo/:token` — the reverse handle to poll. */
 export interface UndoRevertResult {
   token: string;
@@ -162,22 +156,6 @@ export function newIdempotencyKey(): string {
 /** Per-request options shared by the action calls. */
 interface ActionRequestOptions {
   mailboxId?: string | undefined;
-}
-
-/**
- * Non-mutating preview: the current count of a sender's inbox mail. The
- * worker re-resolves Gmail at execution, so the final affected count can
- * differ if the inbox changes after confirmation. 404s an unowned sender.
- */
-export async function getArchivePreview(
-  senderId: string,
-  options: ActionRequestOptions = {},
-): Promise<ArchivePreviewResult> {
-  const env = await apiGet<ArchivePreviewResult>('/api/actions/archive/preview', {
-    query: { senderId },
-    ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
-  });
-  return env.data;
 }
 
 /** Poll one action's status. Mailbox-scoped → 404 if not owned. */

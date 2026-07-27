@@ -41,7 +41,6 @@ import {
   useBatchStatus,
   useBulkActionPreview,
   useRevertUndo,
-  useArchivePreview,
   useCompositePreview,
   useEnqueueBulkAction,
   useEnqueueComposite,
@@ -461,11 +460,12 @@ function SendersScreenContent({
   const revertStatus = useActionStatus(revertActionId);
   const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null);
 
-  // Real inbox-count preview (D226): fetch the actual inbox count for any
-  // single-sender verb whose preview depends on it — Archive (the headline
-  // figure: exactly what moves) AND Unsubscribe/Later (the optional "also
-  // archive the backlog" toggle, which must not offer a no-op). Bulk + other
-  // verbs keep the estimate (archivePreview = undefined).
+  // ADR-0020 composite preview (D226): ONE round-trip for the sender ctx
+  // strip + per-time-window bucket counts — the modal's headline, chip
+  // row, zero-state gate and confirm enablement all read this one
+  // source. The legacy GET /api/actions/archive/preview count (all
+  // labels, no outbound filter) is retired — a second count source is
+  // how the gate and the headline learned to disagree (finding 5.5).
   // Resolve the preview sender via an explicit narrow rather than a
   // bang on `senders[0]` — keeps the guarantee local to the call site so
   // a future refactor that loosens the length check can't silently
@@ -480,45 +480,17 @@ function SendersScreenContent({
       previewVerb === 'Delete')
       ? (pendingAction.senders[0] ?? null)
       : null;
-  const archivePreviewSenderId = previewFirstSender?.id ?? null;
-  const archivePreviewQuery = useArchivePreview(archivePreviewSenderId);
-  // ADR-0020 composite preview — single round-trip for sender ctx strip
-  // + per-time-window bucket counts. Powers the chip row + summary line
-  // for every primary verb (archive/delete/later/unsub) without the FE
-  // having to fetch 5 buckets separately.
-  const compositePreviewQuery = useCompositePreview(archivePreviewSenderId);
+  const previewSenderId = previewFirstSender?.id ?? null;
+  const compositePreviewQuery = useCompositePreview(previewSenderId);
   useEffect(() => {
-    if (!compositePreviewQuery.isError || archivePreviewSenderId == null) return;
+    if (!compositePreviewQuery.isError || previewSenderId == null) return;
     const err = compositePreviewQuery.error;
     console.warn('[senders] composite preview fetch failed', {
-      senderId: archivePreviewSenderId,
+      senderId: previewSenderId,
       message: err instanceof Error ? err.message : String(err),
     });
     captureFeatureException(err, { surface: 'senders', reason: 'composite_preview' });
-  }, [compositePreviewQuery.isError, compositePreviewQuery.error, archivePreviewSenderId]);
-  // Breadcrumb the underlying error before we collapse it to a boolean
-  // for the modal — preview is D226-mandatory, so a sustained 5xx that
-  // forces the modal into "we'll archive whatever's there" copy without
-  // any observability would invisibly sidestep the mandate. The boolean
-  // still flows to the UI; the error message goes to the console
-  // (Sentry FE wiring is queued in FOUNDER-FOLLOWUPS).
-  useEffect(() => {
-    if (!archivePreviewQuery.isError || archivePreviewSenderId == null) return;
-    const err = archivePreviewQuery.error;
-    console.warn('[senders] archive preview fetch failed', {
-      senderId: archivePreviewSenderId,
-      message: err instanceof Error ? err.message : String(err),
-    });
-    captureFeatureException(err, { surface: 'senders', reason: 'archive_preview' });
-  }, [archivePreviewQuery.isError, archivePreviewQuery.error, archivePreviewSenderId]);
-  const archivePreview =
-    archivePreviewSenderId != null
-      ? {
-          inboxCount: archivePreviewQuery.data?.inboxCount,
-          loading: archivePreviewQuery.isLoading,
-          error: archivePreviewQuery.isError,
-        }
-      : undefined;
+  }, [compositePreviewQuery.isError, compositePreviewQuery.error, previewSenderId]);
   // D52 — aggregated multi-sender preview. Unsubscribe also starts this
   // read in the background because selecting Archive/Delete for its
   // backlog turns the otherwise non-mail-moving request into a required
@@ -1947,7 +1919,6 @@ function SendersScreenContent({
         request={showingStaleRows ? null : pendingAction}
         onCancel={closePending}
         onConfirm={confirmPending}
-        archivePreview={archivePreview}
         compositePreview={compositePreviewQuery.data}
         // isFetching, not isLoading: a reopened modal serves CACHED data
         // while the fresh preview is in flight, and that state must keep
@@ -1966,7 +1937,6 @@ function SendersScreenContent({
             : undefined
         }
         onRetryPreview={() => {
-          void archivePreviewQuery.refetch();
           void compositePreviewQuery.refetch();
           if (bulkPreviewSenderIds != null) void bulkPreviewQuery.refetch();
         }}

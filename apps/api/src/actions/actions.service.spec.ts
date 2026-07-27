@@ -119,6 +119,7 @@ async function seedMessage(
   labels: string[],
   internalDate: Date = new Date('2026-05-01'),
   senderKey: string = SENDER_KEY,
+  isOutbound = false,
 ): Promise<void> {
   await db.insert(mailMessages).values({
     mailboxAccountId,
@@ -128,6 +129,7 @@ async function seedMessage(
     internalDate,
     isUnread: false,
     labelIds: labels,
+    isOutbound,
   });
 }
 
@@ -255,28 +257,28 @@ describe('ActionsService', () => {
     expect(row!.status).toBe('queued');
   });
 
-  it('previewArchive returns the REAL inbox-only count (no mutation)', async () => {
+  it('previewComposite returns the REAL inbox-only count (no mutation)', async () => {
     await seedMessage(db, mailboxId, 'm1', ['INBOX']);
     await seedMessage(db, mailboxId, 'm2', ['INBOX']);
     await seedMessage(db, mailboxId, 'm3', ['CATEGORY_PROMOTIONS']); // not in inbox
 
-    const res = await svc.previewArchive({ mailboxAccountId: mailboxId, senderId });
+    const res = await svc.previewComposite({ mailboxAccountId: mailboxId, senderId });
 
-    expect(res).toEqual({ senderId, inboxCount: 2 });
+    expect(res.counts.all).toBe(2);
     // Preview never enqueues — it's a read.
     expect(queue.count).toBe(0);
   });
 
-  it('previewArchive returns 0 for a sender with nothing in the inbox', async () => {
+  it('previewComposite returns 0 for a sender with nothing in the inbox', async () => {
     await seedMessage(db, mailboxId, 'm1', ['CATEGORY_PROMOTIONS']);
 
-    const res = await svc.previewArchive({ mailboxAccountId: mailboxId, senderId });
-    expect(res.inboxCount).toBe(0);
+    const res = await svc.previewComposite({ mailboxAccountId: mailboxId, senderId });
+    expect(res.counts.all).toBe(0);
   });
 
-  it('previewArchive 404s a sender not in the current mailbox', async () => {
+  it('previewComposite 404s a sender not in the current mailbox', async () => {
     await expect(
-      svc.previewArchive({
+      svc.previewComposite({
         mailboxAccountId: mailboxId,
         senderId: '00000000-0000-4000-8000-000000000000',
       }),
@@ -1275,6 +1277,88 @@ describe('ActionsService', () => {
           token: '00000000-0000-4000-8000-000000000000',
         }),
       ).rejects.toMatchObject({ response: { code: 'ACTION_NOT_FOUND' } });
+    });
+  });
+
+  describe('preview ↔ execution contract (2026-07-26 finding 5.5)', () => {
+    it('single preview and enqueue count agree on the inbound-only inbox set', async () => {
+      // Inbound inbox mail — the set a sender decision is about.
+      await seedMessage(db, mailboxId, 'in-recent', ['INBOX']);
+      await seedMessage(db, mailboxId, 'in-old', ['INBOX'], new Date('2024-01-01'));
+      // Self-sent / self-CC mail: Gmail stores SENT alongside INBOX and
+      // the sync stamps is_outbound=true. Never previewed, never moved.
+      await seedMessage(
+        db,
+        mailboxId,
+        'self-cc',
+        ['SENT', 'INBOX'],
+        new Date('2026-05-01'),
+        SENDER_KEY,
+        true,
+      );
+      // Outbound-only and archived rows are outside the inbox set anyway.
+      await seedMessage(
+        db,
+        mailboxId,
+        'sent-only',
+        ['SENT'],
+        new Date('2026-05-01'),
+        SENDER_KEY,
+        true,
+      );
+      await seedMessage(db, mailboxId, 'archived', ['CATEGORY_PROMOTIONS']);
+
+      const preview = await svc.previewComposite({ mailboxAccountId: mailboxId, senderId });
+      expect(preview.counts.all).toBe(2);
+      expect(preview.counts.olderThan365d).toBe(1);
+
+      const res = await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
+        idempotencyKey: 'contract-all',
+        override: false,
+      });
+      expect(res.primaryCount).toBe(preview.counts.all);
+
+      const windowed = await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'archive', olderThanDays: 365 },
+        idempotencyKey: 'contract-365',
+        override: false,
+      });
+      expect(windowed.primaryCount).toBe(preview.counts.olderThan365d);
+    });
+
+    it('bulk preview totals and bulk enqueue counts exclude outbound mail', async () => {
+      await db.update(workspaces).set({ tier: 'plus' });
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 'b-in1', ['INBOX']);
+      await seedMessage(db, mailboxId, 'b-in2', ['INBOX'], new Date('2026-05-01'), SENDER_KEY_2);
+      await seedMessage(
+        db,
+        mailboxId,
+        'b-self',
+        ['SENT', 'INBOX'],
+        new Date('2026-05-01'),
+        SENDER_KEY_2,
+        true,
+      );
+
+      const preview = await svc.previewBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+      });
+      expect(preview.totals.all).toBe(2);
+
+      const res = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'archive' },
+        idempotencyKey: 'contract-bulk',
+      });
+      expect(res.requestedTotal).toBe(preview.totals.all);
     });
   });
 

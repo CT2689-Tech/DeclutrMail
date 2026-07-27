@@ -151,6 +151,31 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(screen.getByRole('button', { name: /Archive/ })).toBeEnabled();
   });
 
+  it('blocks Archive on a zero count from the ONE preview source (finding 5.5)', () => {
+    // The zero-state gate and the headline read the same composite
+    // bucket count — "0 emails currently match" can never sit above an
+    // enabled confirm.
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={{
+          ...livePreview,
+          counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/emails currently match/)).toBeInTheDocument();
+    const confirm = screen.getByRole('button', { name: /Archive/ });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   it('fails closed when a refetch errors while stale counts are still on screen', () => {
     const onConfirm = vi.fn();
     render(
@@ -178,7 +203,6 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
         request={request('Archive')}
         onCancel={() => {}}
         onConfirm={onConfirm}
-        archivePreview={{ inboxCount: undefined, loading: false, error: true }}
         compositePreviewError={true}
       />,
     );

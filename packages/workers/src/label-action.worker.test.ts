@@ -107,6 +107,7 @@ async function seedMessage(
   mailboxAccountId: string,
   providerMessageId: string,
   labelIds: string[],
+  isOutbound = false,
 ): Promise<void> {
   await db.insert(mailMessages).values({
     mailboxAccountId,
@@ -116,6 +117,7 @@ async function seedMessage(
     internalDate: new Date('2026-05-01'),
     isUnread: false,
     labelIds,
+    isOutbound,
   });
 }
 
@@ -180,6 +182,33 @@ describe('LabelActionWorker', () => {
       await seedMessage(db, mailboxId, 'm1', ['INBOX', 'CATEGORY_PROMOTIONS']);
       await seedMessage(db, mailboxId, 'm2', ['INBOX']);
       await seedMessage(db, mailboxId, 'm3', ['CATEGORY_PROMOTIONS']); // not in inbox
+    });
+
+    it('excludes outbound self-sent mail from the resolved set (finding 5.5)', async () => {
+      // Self-CC mail carries SENT + INBOX and is_outbound=true. The
+      // composite preview never counts it, so the worker must never
+      // move it — preview and execution resolve ONE predicate (D226).
+      await seedMessage(db, mailboxId, 'self-cc', ['SENT', 'INBOX'], true);
+
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'archive',
+          direction: 'forward',
+          selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+          idempotencyKey: 'idem-outbound',
+        })
+        .returning();
+
+      const result = await worker.processJob(
+        { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-outbound' },
+        CTX,
+      );
+
+      expect(gmail.calls).toHaveLength(1);
+      expect(gmail.calls[0]!.ids.sort()).toEqual(['m1', 'm2']);
+      expect(result.affectedCount).toBe(2);
     });
 
     it('resolves inbox-only, mutates, and writes the full terminal tx', async () => {

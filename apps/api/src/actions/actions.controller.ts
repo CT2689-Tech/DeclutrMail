@@ -27,7 +27,6 @@ import {
   type ActionRecoveryEnqueueResult,
   type ActionRecoveryPreviewResult,
   type ActionStatusResult,
-  type ArchivePreviewResult,
   type BatchStatusResult,
   type BulkActionEnqueueResult,
   type BulkActionPreviewResult,
@@ -63,26 +62,6 @@ export class ActionsController {
     private readonly actions: ActionsService,
     private readonly recovery: ActionRecoveryService,
   ) {}
-
-  /**
-   * GET /api/actions/archive/preview?senderId= — the REAL current-inbox
-   * count for a sender, for the D226 confirm modal (so the preview states
-   * what will actually move, never a client estimate). Read-only → no
-   * CsrfGuard. Mailbox-scoped → 404 if the sender isn't in the active
-   * mailbox. Declared before `:id` so the two-segment path is unambiguous.
-   */
-  @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
-  @Get('archive/preview')
-  async archivePreview(
-    @CurrentMailbox() mailbox: { id: string },
-    @Query('senderId') senderId: string | undefined,
-  ): Promise<Envelope<ArchivePreviewResult>> {
-    if (!senderId || !isUuid(senderId)) {
-      throw new BadRequestException({ code: 'INVALID_ID', message: 'senderId must be a UUID.' });
-    }
-    const result = await this.actions.previewArchive({ mailboxAccountId: mailbox.id, senderId });
-    return ok(result);
-  }
 
   /**
    * POST /api/actions — unified composite action endpoint per ADR-0020.

@@ -1,4 +1,4 @@
-import { and, eq, inArray, lte, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { JobsOptions } from 'bullmq';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -7,6 +7,7 @@ import {
   activityLog,
   mailboxAccounts,
   mailMessages,
+  senderInboxActionWhere,
   senderPolicies,
   undoJournal,
   workspaces,
@@ -616,24 +617,14 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     senderKey: string,
     olderThanDays: number | null,
   ): Promise<string[]> {
-    const predicates = [
-      eq(mailMessages.mailboxAccountId, mailboxAccountId),
-      eq(mailMessages.senderKey, senderKey),
-      sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-    ];
-    if (olderThanDays !== null && olderThanDays !== undefined) {
-      // `internal_date` is Gmail's authoritative "when did this hit
-      // your mailbox" timestamp — the same column the API's
-      // `previewComposite` per-bucket counts filter on, so the resolved
-      // set matches what the FE chip row showed.
-      predicates.push(
-        lte(mailMessages.internalDate, sql`now() - (${olderThanDays} || ' days')::interval`),
-      );
-    }
+    // ONE shared predicate with the API's preview + enqueue counting
+    // (`senderInboxActionWhere`, @declutrmail/db) — the resolved set IS
+    // the set the FE chip row previewed, including the inbound-only
+    // rule that keeps self-sent SENT+INBOX mail untouched.
     const rows = await this.deps.db
       .select({ providerMessageId: mailMessages.providerMessageId })
       .from(mailMessages)
-      .where(and(...predicates));
+      .where(senderInboxActionWhere({ mailboxAccountId, senderKeys: [senderKey], olderThanDays }));
     return rows.map((r) => r.providerMessageId);
   }
 

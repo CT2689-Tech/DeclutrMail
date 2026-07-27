@@ -73,6 +73,8 @@ export type {
 } from './schema/followup-tracker';
 export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
+export { senderInboxActionWhere } from './predicates';
+export type { SenderInboxActionScope } from './predicates';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
 export type { MailboxAccount, NewMailboxAccount } from './schema/mailbox-accounts';
 export {

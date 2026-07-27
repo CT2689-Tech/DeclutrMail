@@ -12,6 +12,7 @@ import {
   mailMessages,
   ruleMatchLog,
   type schema,
+  senderInboxActionWhere,
   senderPolicies,
   senders,
   undoJournal,
@@ -1432,13 +1433,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     const rows = await this.deps.db
       .select({ providerMessageId: mailMessages.providerMessageId })
       .from(mailMessages)
-      .where(
-        and(
-          eq(mailMessages.mailboxAccountId, mailboxAccountId),
-          eq(mailMessages.senderKey, senderKey),
-          sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-        ),
-      );
+      .where(senderInboxActionWhere({ mailboxAccountId, senderKeys: [senderKey] }));
     return rows.map((r) => r.providerMessageId);
   }
 
