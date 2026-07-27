@@ -37,6 +37,7 @@ import { SettingsScreen } from './settings-screen';
 const MAILBOX_A = '11111111-1111-4111-8111-111111111111';
 const MAILBOX_B = '22222222-2222-4222-8222-222222222222';
 const MAILBOX_C = '33333333-3333-4333-8333-333333333333';
+const MAILBOX_D = '44444444-4444-4444-8444-444444444444';
 
 const startMailboxConnectSpy = vi.fn();
 const startMailboxReactivationSpy = vi.fn();
@@ -398,9 +399,11 @@ describe('SettingsScreen', () => {
   });
 
   it('keeps a disconnected reconnect limit-gated when all active slots are occupied', async () => {
+    // Pro's inbox limit is 3 (A3) — occupy every active slot first.
     me = makeMe([
       mailbox(MAILBOX_A, 'chintan.a.thakkar@gmail.com'),
       mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
+      mailbox(MAILBOX_D, 'chintan.a.thakkar.third@gmail.com'),
       {
         ...mailbox(MAILBOX_C, 'chintan.a.thakkar.archive@gmail.com'),
         status: 'disconnected',
@@ -415,7 +418,7 @@ describe('SettingsScreen', () => {
     const describedBy = reconnect.getAttribute('aria-describedby');
     expect(describedBy).toBe('mailboxes-inbox-limit-explanation');
     expect(document.getElementById(describedBy!)).toHaveTextContent(
-      /your plan includes 2 connected inboxes/i,
+      /your plan includes 3 connected inboxes/i,
     );
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
     expect(startMailboxReactivationSpy).not.toHaveBeenCalled();
@@ -935,7 +938,12 @@ describe('SettingsScreen', () => {
   });
 
   it('disables connect-another at the tier inboxLimit with an upgrade pointer', async () => {
-    // Pro allows 2 inboxes; both are connected → at limit.
+    // Pro allows 3 inboxes (A3); occupy all three → at limit.
+    me = makeMe([
+      mailbox(MAILBOX_A, 'chintan.a.thakkar@gmail.com'),
+      mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
+      mailbox(MAILBOX_D, 'chintan.a.thakkar.third@gmail.com'),
+    ]);
     renderScreen();
 
     const connect = await screen.findByRole('button', { name: /connect another gmail account/i });

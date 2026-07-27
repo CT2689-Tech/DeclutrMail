@@ -21,7 +21,10 @@ import type { Queue } from 'bullmq';
 
 import type { SnoozeLabelMapStore, SnoozeWakeJobData } from '@declutrmail/workers';
 
-import { CAPABILITY_EXEMPT_METADATA } from '../common/entitlements/capability.guard.js';
+import {
+  CAPABILITY_EXEMPT_METADATA,
+  CAPABILITY_METADATA,
+} from '../common/entitlements/capability.guard.js';
 import { SnoozeService } from './snooze.service.js';
 import { SnoozedController } from './snoozed.controller.js';
 import { SnoozedReadService } from './snoozed.read-service.js';
@@ -532,15 +535,16 @@ describe('SnoozeService.wakeNow', () => {
 });
 
 describe('SnoozedController recovery entitlement', () => {
-  it('never paywalls failure visibility or immediate recovery', () => {
-    expect(
-      Reflect.getMetadata(CAPABILITY_EXEMPT_METADATA, SnoozedController.prototype.recovery),
-    ).toBe(true);
-    expect(
-      Reflect.getMetadata(CAPABILITY_EXEMPT_METADATA, SnoozedController.prototype.wakeRecovery),
-    ).toBe(true);
-    expect(
-      Reflect.getMetadata(CAPABILITY_EXEMPT_METADATA, SnoozedController.prototype.wakeNow),
-    ).toBeUndefined();
+  it('carries no capability gate at all (A3 — the Later apparatus is Free)', () => {
+    // The old shape exempted recovery from a class-level `snoozed` gate.
+    // A3 removed the gate entirely, so nothing on this controller may
+    // reintroduce a capability requirement or an exemption marker.
+    expect(Reflect.getMetadata(CAPABILITY_METADATA, SnoozedController)).toBeUndefined();
+    for (const route of ['list', 'patchSnooze', 'wakeNow', 'recovery', 'wakeRecovery'] as const) {
+      expect(
+        Reflect.getMetadata(CAPABILITY_EXEMPT_METADATA, SnoozedController.prototype[route]),
+        route,
+      ).toBeUndefined();
+    }
   });
 });

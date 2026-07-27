@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { ACTION_REGISTRY, listActionDescriptors } from '../actions/manifest-entries';
 import { ACTION_TIERS, SELECTOR_TYPES } from '../contracts/verb-constants';
-import { TIER_MANIFEST } from './manifest';
+import { COUNTS_AS_CLEANUP, SELECTOR_CAPS, SELECTOR_TIERS, TIER_MANIFEST } from './pricing.config';
 import {
-  cleanupActionsLifetimeFor,
+  cleanupActionsPerMonthFor,
   hasCapability,
   inboxLimitFor,
   minimumTierForCapability,
@@ -16,11 +16,155 @@ import type { Capability, TierId } from './types';
 import { CAPABILITIES, TIER_IDS, TIER_RANK } from './types';
 
 /**
- * The D19 tier manifest invariants. The ladder is LOCKED (founder spec
- * 2026-06-11) — these tests pin every number so a re-price or a tier
- * edit is a deliberate, reviewed change, never a silent drift.
+ * Pricing-config tests (D19/A3) — Leak-3 discipline: exactly ONE
+ * deliberately-pinned snapshot as the change tripwire, and everything
+ * else an INVARIANT that holds under any tuning. Moving a capability,
+ * changing a price or retiering a selector edits pricing.config.ts and
+ * the snapshot below — never a scattered test.
  */
-describe('Tier manifest (D19)', () => {
+describe('Pricing config — the pinned snapshot (change tripwire)', () => {
+  // Editing the config on purpose? Update this snapshot in the same
+  // commit and say why in the commit body. Any other diff here is
+  // silent drift.
+  it('pins the entire launch ladder', () => {
+    const tiers = Object.fromEntries(
+      TIER_IDS.map((id) => {
+        const t = TIER_MANIFEST[id];
+        return [
+          id,
+          {
+            name: t.name,
+            monthlyUsdCents: t.prices.monthly?.usdCents ?? null,
+            annualUsdCents: t.prices.annual?.usdCents ?? null,
+            monthlyInrPaise: t.prices.monthly?.inrPaise ?? null,
+            annualInrPaise: t.prices.annual?.inrPaise ?? null,
+            inboxLimit: t.inboxLimit,
+            undoWindowDays: t.undoWindowDays,
+            cleanupActionsPerMonth: t.cleanupActionsPerMonth,
+            capabilities: [...t.capabilities].sort(),
+            purchasable: t.purchasable,
+            nonPurchasableRow: t.nonPurchasableRow ?? null,
+            promo: t.promo
+              ? {
+                  id: t.promo.id,
+                  annualUsdCents: t.promo.annual.usdCents,
+                  annualInrPaise: t.promo.annual.inrPaise,
+                  maxRedemptions: t.promo.maxRedemptions,
+                }
+              : null,
+          },
+        ];
+      }),
+    );
+
+    const freeSet = [
+      'activity',
+      'cleanup-actions',
+      'sender-detail',
+      'senders',
+      'snoozed',
+      'triage',
+    ];
+    const proSet = [...freeSet, 'autopilot', 'brief', 'followups', 'quiet', 'screener'].sort();
+
+    expect({
+      tiers,
+      selectorTiers: SELECTOR_TIERS,
+      selectorCaps: SELECTOR_CAPS,
+      countsAsCleanup: COUNTS_AS_CLEANUP,
+    }).toEqual({
+      tiers: {
+        free: {
+          name: 'Free',
+          monthlyUsdCents: 0,
+          annualUsdCents: null,
+          monthlyInrPaise: 0,
+          annualInrPaise: null,
+          inboxLimit: 1,
+          undoWindowDays: 7,
+          cleanupActionsPerMonth: 50,
+          capabilities: freeSet,
+          purchasable: true,
+          nonPurchasableRow: null,
+          promo: null,
+        },
+        plus: {
+          name: 'Plus',
+          monthlyUsdCents: 900,
+          annualUsdCents: 9000,
+          monthlyInrPaise: 74_900,
+          annualInrPaise: 749_900,
+          inboxLimit: 1,
+          undoWindowDays: 7,
+          cleanupActionsPerMonth: null,
+          capabilities: freeSet,
+          purchasable: true,
+          nonPurchasableRow: null,
+          promo: null,
+        },
+        pro: {
+          name: 'Pro',
+          monthlyUsdCents: 1900,
+          annualUsdCents: 19000,
+          monthlyInrPaise: 159_900,
+          annualInrPaise: 1_599_900,
+          inboxLimit: 3,
+          undoWindowDays: 30,
+          cleanupActionsPerMonth: null,
+          capabilities: proSet,
+          purchasable: true,
+          nonPurchasableRow: null,
+          promo: {
+            id: 'foundingPro',
+            annualUsdCents: 12900,
+            annualInrPaise: 1_099_900,
+            maxRedemptions: 250,
+          },
+        },
+        team: {
+          name: 'Team',
+          monthlyUsdCents: null,
+          annualUsdCents: null,
+          monthlyInrPaise: null,
+          annualInrPaise: null,
+          inboxLimit: 3,
+          undoWindowDays: 30,
+          cleanupActionsPerMonth: null,
+          capabilities: proSet,
+          purchasable: false,
+          nonPurchasableRow: { kind: 'waitlist', label: 'Join the waitlist' },
+          promo: null,
+        },
+        enterprise: {
+          name: 'Enterprise',
+          monthlyUsdCents: null,
+          annualUsdCents: null,
+          monthlyInrPaise: null,
+          annualInrPaise: null,
+          inboxLimit: 3,
+          undoWindowDays: 30,
+          cleanupActionsPerMonth: null,
+          capabilities: proSet,
+          purchasable: false,
+          nonPurchasableRow: { kind: 'contact', label: 'Contact sales' },
+          promo: null,
+        },
+      },
+      selectorTiers: { sender: 'free', 'multi-sender': 'free', 'sender-filter': 'pro' },
+      selectorCaps: { 'multi-sender': 1000 },
+      countsAsCleanup: {
+        keep: false,
+        archive: true,
+        later: true,
+        unsubscribe: true,
+        delete: true,
+        unarchive: false,
+      },
+    });
+  });
+});
+
+describe('Pricing config — invariants (hold under any tuning)', () => {
   // 1. TIER_IDS ↔ manifest bijection — no orphan tier, no orphan entry.
   it('has exactly one definition per tier in TIER_IDS', () => {
     expect(Object.keys(TIER_MANIFEST).sort()).toEqual([...TIER_IDS].sort());
@@ -29,80 +173,29 @@ describe('Tier manifest (D19)', () => {
     }
   });
 
-  // 2. The locked price ladder, in USD cents.
-  it('pins the locked D19 price ladder', () => {
-    expect(TIER_MANIFEST.free.prices.monthly?.usdCents).toBe(0);
-    expect(TIER_MANIFEST.free.prices.annual).toBeNull();
-    expect(TIER_MANIFEST.plus.prices.monthly?.usdCents).toBe(900);
-    expect(TIER_MANIFEST.plus.prices.annual?.usdCents).toBe(9000);
-    expect(TIER_MANIFEST.pro.prices.monthly?.usdCents).toBe(1900);
-    expect(TIER_MANIFEST.pro.prices.annual?.usdCents).toBe(19000);
-    expect(TIER_MANIFEST.team.prices).toEqual({ monthly: null, annual: null });
-    expect(TIER_MANIFEST.enterprise.prices).toEqual({ monthly: null, annual: null });
-  });
-
-  it('pins the matching INR provider ladder', () => {
-    expect(TIER_MANIFEST.free.prices.monthly?.inrPaise).toBe(0);
-    expect(TIER_MANIFEST.plus.prices.monthly?.inrPaise).toBe(74_900);
-    expect(TIER_MANIFEST.plus.prices.annual?.inrPaise).toBe(749_900);
-    expect(TIER_MANIFEST.pro.prices.monthly?.inrPaise).toBe(159_900);
-    expect(TIER_MANIFEST.pro.prices.annual?.inrPaise).toBe(1_599_900);
-    expect(TIER_MANIFEST.pro.promo?.annual.inrPaise).toBe(1_099_900);
-  });
-
-  // 3. Annual = 10× monthly (the "2 months free" D19 framing).
-  it('gives paid tiers an annual price of exactly 10x monthly', () => {
-    for (const id of ['plus', 'pro'] as const) {
+  // 2. Annual = 10× monthly on any tier that offers both intervals
+  //    (the "2 months free" D19 framing).
+  it('gives dual-interval tiers an annual price of exactly 10x monthly', () => {
+    for (const id of TIER_IDS) {
       const { monthly, annual } = TIER_MANIFEST[id].prices;
-      expect(annual?.usdCents, id).toBe((monthly?.usdCents ?? 0) * 10);
+      if (monthly !== null && annual !== null && monthly.usdCents > 0) {
+        expect(annual.usdCents, id).toBe(monthly.usdCents * 10);
+      }
     }
   });
 
-  // 4. The Founding Pro launch promo (D19 launch offer).
-  it('hosts the foundingPro promo on pro and nowhere else', () => {
-    const promo = TIER_MANIFEST.pro.promo;
-    expect(promo).toBeDefined();
-    expect(promo?.id).toBe('foundingPro');
-    expect(promo?.annual.usdCents).toBe(12900);
-    expect(promo?.maxRedemptions).toBe(250);
-    // Cheaper than both the standard annual and 12 months of monthly.
-    expect(promo!.annual.usdCents).toBeLessThan(TIER_MANIFEST.pro.prices.annual!.usdCents);
-    expect(promo!.annual.usdCents).toBeLessThan(TIER_MANIFEST.pro.prices.monthly!.usdCents * 12);
+  // 3. A promo undercuts both its host's annual and 12 months of monthly.
+  it('keeps any promo cheaper than its host tier', () => {
     for (const id of TIER_IDS) {
-      if (id !== 'pro') expect(TIER_MANIFEST[id].promo, id).toBeUndefined();
+      const t = TIER_MANIFEST[id];
+      if (!t.promo) continue;
+      expect(t.promo.annual.usdCents, id).toBeLessThan(t.prices.annual!.usdCents);
+      expect(t.promo.annual.usdCents, id).toBeLessThan(t.prices.monthly!.usdCents * 12);
     }
   });
 
-  // 5. Inbox limits: Free 1 / Plus 1 / Pro 2; team/enterprise never
-  //    below pro (their values are provisional pro-equivalents).
-  it('pins the inbox limits', () => {
-    expect(inboxLimitFor('free')).toBe(1);
-    expect(inboxLimitFor('plus')).toBe(1);
-    expect(inboxLimitFor('pro')).toBe(2);
-    expect(inboxLimitFor('team')).toBeGreaterThanOrEqual(2);
-    expect(inboxLimitFor('enterprise')).toBeGreaterThanOrEqual(2);
-  });
-
-  // 6. Undo windows: 7d, lifted to 30d at Pro and above (D19).
-  it('pins the undo windows', () => {
-    expect(undoWindowDaysFor('free')).toBe(7);
-    expect(undoWindowDaysFor('plus')).toBe(7);
-    expect(undoWindowDaysFor('pro')).toBe(30);
-    expect(undoWindowDaysFor('team')).toBe(30);
-    expect(undoWindowDaysFor('enterprise')).toBe(30);
-  });
-
-  // 7. Free = 5 LIFETIME cleanup actions; every paid tier unlimited.
-  it('gives free exactly 5 lifetime cleanup actions and others unlimited', () => {
-    expect(cleanupActionsLifetimeFor('free')).toBe(5);
-    for (const id of TIER_IDS) {
-      if (id !== 'free') expect(cleanupActionsLifetimeFor(id), id).toBeNull();
-    }
-  });
-
-  // 8. Capability sets are cumulative up the ladder — a higher tier
-  //    never loses a surface a lower tier has (Free=see ⊂ Plus=clean ⊂
-  //    Pro=automate; team/enterprise carry the pro set).
+  // 4. Capability sets are cumulative up the ladder — a higher tier
+  //    never loses a surface a lower tier has.
   it('keeps capability sets cumulative in rank order', () => {
     const ranked = [...TIER_IDS].sort((a, b) => TIER_RANK[a] - TIER_RANK[b]);
     for (let i = 1; i < ranked.length; i += 1) {
@@ -112,52 +205,57 @@ describe('Tier manifest (D19)', () => {
         expect(higher.has(cap), `${ranked[i]} keeps ${cap} from ${ranked[i - 1]}`).toBe(true);
       }
     }
+    // The top tier grants the FULL capability union — no orphan capability.
+    const top = ranked[ranked.length - 1]!;
+    expect([...TIER_MANIFEST[top].capabilities].sort()).toEqual([...CAPABILITIES].sort());
   });
 
-  // 9. The exact D19 capability buckets per tier.
-  it('pins the per-tier capability buckets', () => {
-    const freeSet: Capability[] = ['senders', 'sender-detail', 'activity', 'cleanup-actions'];
-    const plusSet: Capability[] = [...freeSet, 'triage'];
-    const proSet: Capability[] = [
-      ...plusSet,
-      'autopilot',
-      'brief',
-      'screener',
-      'quiet',
-      'snoozed',
-      'followups',
-    ];
-    expect([...TIER_MANIFEST.free.capabilities]).toEqual(freeSet);
-    expect([...TIER_MANIFEST.plus.capabilities]).toEqual(plusSet);
-    expect([...TIER_MANIFEST.pro.capabilities]).toEqual(proSet);
-    expect([...TIER_MANIFEST.team.capabilities]).toEqual(proSet);
-    expect([...TIER_MANIFEST.enterprise.capabilities]).toEqual(proSet);
-    // Pro grants the FULL capability union — no orphan capability.
-    expect([...TIER_MANIFEST.pro.capabilities].sort()).toEqual([...CAPABILITIES].sort());
-  });
-
-  // 10. Purchasability: free/plus/pro self-serve; team is a waitlist row
-  //     (no speculative ship date), enterprise a contact row (D19).
-  it('pins purchasability and the non-purchasable row treatments', () => {
-    for (const id of ['free', 'plus', 'pro'] as const) {
-      expect(TIER_MANIFEST[id].purchasable, id).toBe(true);
-      expect(TIER_MANIFEST[id].nonPurchasableRow, id).toBeUndefined();
+  // 5. inboxLimit and undoWindowDays are monotonic non-decreasing by
+  //    rank (audit bug 4 — Pro 3 must never exceed Team/Enterprise).
+  it('keeps inboxLimit and undoWindowDays monotonic non-decreasing by rank', () => {
+    const ranked = [...TIER_IDS].sort((a, b) => TIER_RANK[a] - TIER_RANK[b]);
+    for (let i = 1; i < ranked.length; i += 1) {
+      const lower = ranked[i - 1]!;
+      const higher = ranked[i]!;
+      expect(inboxLimitFor(higher), `${higher} inboxLimit >= ${lower}`).toBeGreaterThanOrEqual(
+        inboxLimitFor(lower),
+      );
+      expect(
+        undoWindowDaysFor(higher),
+        `${higher} undoWindowDays >= ${lower}`,
+      ).toBeGreaterThanOrEqual(undoWindowDaysFor(lower));
     }
-    expect(TIER_MANIFEST.team.purchasable).toBe(false);
-    expect(TIER_MANIFEST.team.nonPurchasableRow).toEqual({
-      kind: 'waitlist',
-      label: 'Join the waitlist',
-    });
-    expect(TIER_MANIFEST.enterprise.purchasable).toBe(false);
-    expect(TIER_MANIFEST.enterprise.nonPurchasableRow?.kind).toBe('contact');
   });
 
-  // 11. Price-point hygiene: integer cents, and catalog ids are null
-  //     (pre-provisioning) or non-empty strings (post-provisioning).
+  // 6. The monthly quota is monotonic too: no higher tier has a SMALLER
+  //    quota (null = unlimited ranks above any number).
+  it('never gives a higher tier a smaller cleanup quota', () => {
+    const ranked = [...TIER_IDS].sort((a, b) => TIER_RANK[a] - TIER_RANK[b]);
+    for (let i = 1; i < ranked.length; i += 1) {
+      const lower = cleanupActionsPerMonthFor(ranked[i - 1]!);
+      const higher = cleanupActionsPerMonthFor(ranked[i]!);
+      if (higher !== null) {
+        expect(lower, `${ranked[i]} quota >= ${ranked[i - 1]}`).not.toBeNull();
+        expect(higher).toBeGreaterThanOrEqual(lower!);
+      }
+    }
+  });
+
+  // 7. Purchasability shape: a non-purchasable tier carries its row
+  //    treatment; a purchasable one never does.
+  it('pairs nonPurchasableRow with purchasable=false exactly', () => {
+    for (const id of TIER_IDS) {
+      const t = TIER_MANIFEST[id];
+      expect(t.nonPurchasableRow !== undefined, id).toBe(!t.purchasable);
+    }
+  });
+
+  // 8. Price-point hygiene: integer amounts; catalog ids null or
+  //    non-empty; a $0 point never gets a checkout SKU.
   it('keeps every price point well-formed', () => {
     const points = TIER_IDS.flatMap((id) => {
       const { monthly, annual } = TIER_MANIFEST[id].prices;
-      return [monthly, annual, id === 'pro' ? TIER_MANIFEST.pro.promo!.annual : null];
+      return [monthly, annual, TIER_MANIFEST[id].promo?.annual ?? null];
     }).filter((p) => p !== null);
     for (const point of points) {
       expect(Number.isInteger(point.usdCents)).toBe(true);
@@ -167,11 +265,11 @@ describe('Tier manifest (D19)', () => {
       for (const catalogId of [point.paddlePriceId, point.razorpayPlanId]) {
         expect(catalogId === null || catalogId.length > 0).toBe(true);
       }
+      if (point.usdCents === 0) {
+        expect(point.paddlePriceId).toBeNull();
+        expect(point.razorpayPlanId).toBeNull();
+      }
     }
-    // A purchasable PAID interval is a future checkout SKU; the $0 free
-    // point never gets one — pin that it has no catalog ids.
-    expect(TIER_MANIFEST.free.prices.monthly?.paddlePriceId).toBeNull();
-    expect(TIER_MANIFEST.free.prices.monthly?.razorpayPlanId).toBeNull();
   });
 });
 
@@ -182,38 +280,17 @@ describe('Entitlement resolvers (D19)', () => {
     }
   });
 
-  it('hasCapability gates the Plus and Pro buckets', () => {
-    // Free: read surfaces + cleanup pipeline, NO triage, NO automation.
-    expect(hasCapability('free', 'senders')).toBe(true);
-    expect(hasCapability('free', 'cleanup-actions')).toBe(true);
-    expect(hasCapability('free', 'triage')).toBe(false);
-    expect(hasCapability('free', 'autopilot')).toBe(false);
-    // Plus: + triage, still no automation.
-    expect(hasCapability('plus', 'triage')).toBe(true);
-    expect(hasCapability('plus', 'screener')).toBe(false);
-    expect(hasCapability('plus', 'brief')).toBe(false);
-    // Pro and above: everything.
-    for (const id of ['pro', 'team', 'enterprise'] as const) {
-      for (const cap of CAPABILITIES) {
-        expect(hasCapability(id, cap), `${id} has ${cap}`).toBe(true);
+  it('minimumTierForCapability is the lowest-ranked granting tier', () => {
+    for (const capability of CAPABILITIES) {
+      const min = minimumTierForCapability(capability);
+      expect(hasCapability(min, capability), capability).toBe(true);
+      for (const id of TIER_IDS) {
+        if (TIER_RANK[id] < TIER_RANK[min]) {
+          expect(hasCapability(id, capability), `${id} below ${min} lacks ${capability}`).toBe(
+            false,
+          );
+        }
       }
-    }
-  });
-
-  it('derives each capability minimum from the ordered manifest', () => {
-    for (const capability of ['senders', 'sender-detail', 'activity', 'cleanup-actions'] as const) {
-      expect(minimumTierForCapability(capability), capability).toBe('free');
-    }
-    expect(minimumTierForCapability('triage')).toBe('plus');
-    for (const capability of [
-      'autopilot',
-      'brief',
-      'screener',
-      'quiet',
-      'snoozed',
-      'followups',
-    ] as const) {
-      expect(minimumTierForCapability(capability), capability).toBe('pro');
     }
   });
 
@@ -238,10 +315,9 @@ describe('Entitlement resolvers (D19)', () => {
 });
 
 /**
- * The seam with the Action Registry (actions/manifest-entries.ts).
- * The registry declares per-verb/selector MINIMUM ActionTiers +
- * countsAsCleanup; this layer declares per-tier grants. These tests pin
- * that the two compose without duplication.
+ * The seam with the Action Registry (actions/manifest-entries.ts). The
+ * registry declares selector SUPPORT; the pricing config resolves tier,
+ * cap and cleanup counting. These tests pin that composition.
  */
 describe('Action Registry seam', () => {
   // The entitlement ladder's first three rungs ARE the action tiers, in
@@ -249,6 +325,23 @@ describe('Action Registry seam', () => {
   // shared prefix.
   it('keeps ACTION_TIERS as the ordered prefix of TIER_IDS', () => {
     expect(TIER_IDS.slice(0, ACTION_TIERS.length)).toEqual([...ACTION_TIERS]);
+  });
+
+  // Registry-derived capabilities mirror the config EXACTLY — a verb ×
+  // selector that is supported carries the config's tier, cap and
+  // counting flag; an unsupported one is null.
+  it('derives every registry capability from the pricing config', () => {
+    for (const d of listActionDescriptors()) {
+      for (const selector of SELECTOR_TYPES) {
+        const cap = d.capabilities[selector];
+        if (cap === null) continue;
+        expect(cap.tier, `${d.verb}/${selector} tier`).toBe(SELECTOR_TIERS[selector]);
+        expect(cap.countsAsCleanup, `${d.verb}/${selector} counting`).toBe(
+          COUNTS_AS_CLEANUP[d.verb],
+        );
+        expect(cap.cap, `${d.verb}/${selector} cap`).toBe(SELECTOR_CAPS[selector]);
+      }
+    }
   });
 
   // Every tier a registry capability requires resolves through
@@ -259,7 +352,6 @@ describe('Action Registry seam', () => {
         const cap = d.capabilities[selector];
         if (!cap) continue;
         for (const id of TIER_IDS) {
-          // Must not throw, and pro+ meets every requirement.
           const ok = satisfiesActionTier(id, cap.tier);
           if (TIER_RANK[id] >= TIER_RANK.pro) {
             expect(ok, `${id} meets ${d.verb}/${selector}`).toBe(true);
@@ -269,9 +361,10 @@ describe('Action Registry seam', () => {
     }
   });
 
-  // D19 coherence: a verb that draws down the Free lifetime quota
-  // (countsAsCleanup on the single-sender selector) must be REACHABLE on
-  // free — the "5 taste actions" only make sense if free can fire them.
+  // D19/A3 coherence: a verb that draws down the quota must be
+  // REACHABLE on free, and free's quota must be finite while the next
+  // rung is unlimited — a metered verb needs a counter to draw down and
+  // an upgrade that lifts it.
   it('keeps every single-sender cleanup verb reachable on free', () => {
     for (const d of listActionDescriptors()) {
       const cap = d.capabilities.sender;
@@ -279,14 +372,14 @@ describe('Action Registry seam', () => {
         expect(satisfiesActionTier('free', cap.tier), d.verb).toBe(true);
       }
     }
-    // And the quota itself is finite on free, unlimited on plus — the
-    // registry's countsAsCleanup flag has a counter to draw down.
-    expect(cleanupActionsLifetimeFor('free')).toBe(5);
-    expect(cleanupActionsLifetimeFor('plus')).toBeNull();
-    // Spot-check the flag exists on the registry side (no duplication —
-    // the entitlement layer never re-declares per-verb costs).
-    expect(ACTION_REGISTRY.archive.capabilities.sender.countsAsCleanup).toBe(true);
-    expect(ACTION_REGISTRY.keep.capabilities.sender.countsAsCleanup).toBe(false);
+    expect(cleanupActionsPerMonthFor('free')).not.toBeNull();
+    expect(cleanupActionsPerMonthFor('plus')).toBeNull();
+    // Spot-check the flag flows from the config (no duplication — the
+    // registry never re-declares per-verb costs).
+    expect(ACTION_REGISTRY.archive.capabilities.sender.countsAsCleanup).toBe(
+      COUNTS_AS_CLEANUP.archive,
+    );
+    expect(ACTION_REGISTRY.keep.capabilities.sender.countsAsCleanup).toBe(COUNTS_AS_CLEANUP.keep);
   });
 });
 
@@ -326,14 +419,13 @@ describe('type-level exhaustiveness', () => {
       case 'sender-detail':
       case 'activity':
       case 'cleanup-actions':
-        return 'free';
       case 'triage':
-        return 'plus';
+      case 'snoozed':
+        return 'free';
       case 'autopilot':
       case 'brief':
       case 'screener':
       case 'quiet':
-      case 'snoozed':
       case 'followups':
         return 'pro';
       default:

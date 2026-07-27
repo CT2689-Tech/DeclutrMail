@@ -244,7 +244,7 @@ function emitSummary(
     '',
     `Paddle: ${paddle ? 'provisioned' : 'skipped (no key)'} · Razorpay: ${razorpay ? 'provisioned' : 'skipped (no key)'}`,
     '',
-    '### Manifest patch (packages/shared/src/entitlements/manifest.ts)',
+    '### Manifest patch (packages/shared/src/entitlements/pricing.config.ts)',
     '',
     'Patch each price point with its provider ids (F3):',
     '',

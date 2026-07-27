@@ -40,19 +40,17 @@ import type {
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
-import {
-  CapabilityExempt,
-  CapabilityGuard,
-  RequiresCapability,
-} from '../common/entitlements/capability.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { SnoozeService } from './snooze.service.js';
 import { SnoozedReadService } from './snoozed.read-service.js';
 
+// A3: the Later apparatus is Free — no capability gate. The list,
+// wake and recovery routes are reachable on every tier, so the old
+// class-level `snoozed` gate (and its recovery exemptions) came off
+// per D245 (prelaunch — no vestigial gating).
 @Controller('snoozed')
-@UseGuards(JwtGuard, CurrentMailboxGuard, CapabilityGuard)
-@RequiresCapability('snoozed')
+@UseGuards(JwtGuard, CurrentMailboxGuard)
 export class SnoozedController {
   constructor(
     private readonly reads: SnoozedReadService,
@@ -76,7 +74,6 @@ export class SnoozedController {
    * the action pipeline, so every tier must learn when a return is stuck.
    */
   @Get('recovery')
-  @CapabilityExempt()
   @RateLimit('triage-load')
   async recovery(
     @CurrentMailbox() mailbox: { id: string },
@@ -142,7 +139,6 @@ export class SnoozedController {
 
   /** All-tier retry, but only after the return is actually failed/missed. */
   @Post('recovery/:senderId/wake')
-  @CapabilityExempt()
   @UseGuards(CsrfGuard)
   @RateLimit('gmail-action')
   async wakeRecovery(

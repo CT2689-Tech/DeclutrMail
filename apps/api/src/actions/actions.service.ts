@@ -356,29 +356,6 @@ export class ActionsService {
     // checks so an impossible Later request never presents as an upgrade or
     // queue-availability problem.
     this.assertValidWakeAt(primary.type, primary.wakeAt ?? null);
-    if (primary.type === 'later' && selector.type !== 'sender') {
-      throw new BadRequestException({
-        code: 'LATER_SENDER_REQUIRED',
-        message: 'Later is scheduled per sender, not per message selection.',
-      });
-    }
-    if (selector.type === 'messages') {
-      // Message-id selectors are bulk capability, not a Free
-      // single-sender action. Enforce every verb before resolving ids or
-      // writing either half of a composite.
-      await this.entitlements.assertActionSelectorTier(
-        mailboxAccountId,
-        primary.type,
-        'multi-sender',
-      );
-      if (secondary) {
-        await this.entitlements.assertActionSelectorTier(
-          mailboxAccountId,
-          secondary.type,
-          'multi-sender',
-        );
-      }
-    }
     if (!this.queue) {
       throw new ServiceUnavailableException({
         code: 'QUEUE_UNAVAILABLE',
@@ -395,76 +372,52 @@ export class ActionsService {
     const safeKey = idempotencyKey.replace(/:/g, '-');
     const primaryStorageKey = `${primary.type}-${safeKey}`;
 
-    // Resolve target set + ownership ONCE for the sender selector — both
-    // primary and secondary act on the same sender / same selector. The
-    // override check fires on the resolved senderKey so a Protected
-    // sender is blocked before any row is written (defense-in-depth, D42).
-    let storedSelector: LabelActionSelector;
-    let resolvedMessageIds: string[];
-    let primaryCount: number;
-
-    if (selector.type === 'sender') {
-      const senderKey = await this.resolveSenderKey(mailboxAccountId, selector.senderId);
-      const [policy] = await this.db
-        .select({ isProtected: senderPolicies.isProtected })
-        .from(senderPolicies)
-        .where(
-          and(
-            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-            eq(senderPolicies.senderKey, senderKey),
-          ),
-        )
-        .limit(1);
-      if (policy?.isProtected && !override) {
-        throw new ConflictException({
-          code: 'PROTECTED_SENDER',
-          message: 'This sender is Protected. Confirm to apply the action anyway.',
-        });
-      }
-      primaryCount = await this.countSenderInboxWithWindow(
-        mailboxAccountId,
-        senderKey,
-        primary.olderThanDays ?? null,
-      );
-      resolvedMessageIds = []; // worker resolves "in INBOX now" at execute
-      storedSelector = { type: 'sender', senderId: selector.senderId, senderKey };
-    } else {
-      // messages selector — keep only owned, currently-INBOX ids. The
-      // per-row time-window does not apply to a messages selector (the
-      // caller already supplied the exact set).
-      const owned = await this.db
-        .select({ providerMessageId: mailMessages.providerMessageId })
-        .from(mailMessages)
-        .where(
-          and(
-            eq(mailMessages.mailboxAccountId, mailboxAccountId),
-            inArray(mailMessages.providerMessageId, selector.messageIds),
-            sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-          ),
-        );
-      resolvedMessageIds = owned.map((r) => r.providerMessageId);
-      primaryCount = resolvedMessageIds.length;
-      storedSelector = { type: 'messages' };
+    // Resolve target set + ownership ONCE — primary and secondary act on
+    // the same sender. The override check fires on the resolved senderKey
+    // so a Protected sender is blocked before any row is written
+    // (defense-in-depth, D42). The former `messages` id-list selector was
+    // REMOVED from this wire (2026-07-27): it had no product producer and,
+    // once A3 opened it to metered Free, it charged one unit for up to 500
+    // messages spanning any number of senders — a quota bypass. Reverse
+    // and recovery rows keep the internal frozen-ids selector shape.
+    const senderKey = await this.resolveSenderKey(mailboxAccountId, selector.senderId);
+    const [policy] = await this.db
+      .select({ isProtected: senderPolicies.isProtected })
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+          eq(senderPolicies.senderKey, senderKey),
+        ),
+      )
+      .limit(1);
+    if (policy?.isProtected && !override) {
+      throw new ConflictException({
+        code: 'PROTECTED_SENDER',
+        message: 'This sender is Protected. Confirm to apply the action anyway.',
+      });
     }
+    const primaryCount = await this.countSenderInboxWithWindow(
+      mailboxAccountId,
+      senderKey,
+      primary.olderThanDays ?? null,
+    );
+    const resolvedMessageIds: string[] = []; // worker resolves "in INBOX now" at execute
+    const storedSelector: LabelActionSelector = {
+      type: 'sender',
+      senderId: selector.senderId,
+      senderKey,
+    };
 
-    // Secondary acts on the SAME sender / messages selector but with its
-    // own time-window. Re-resolve the count for the secondary's window;
-    // resolved ids stay empty for sender selector (worker handles), and
-    // for messages selector the secondary shares the primary's frozen set.
+    // Secondary acts on the SAME sender with its own time-window.
     const secondaryStorageKey = secondary ? `${secondary.type}-${safeKey}-sec` : null;
-    let secondaryCount: number | null = null;
-    if (secondary && selector.type === 'sender') {
-      // The sender selector already resolved the senderKey above; reuse it
-      // via the stored selector.
-      const senderSel = storedSelector as Extract<LabelActionSelector, { type: 'sender' }>;
-      secondaryCount = await this.countSenderInboxWithWindow(
-        mailboxAccountId,
-        senderSel.senderKey,
-        secondary.olderThanDays ?? null,
-      );
-    } else if (secondary) {
-      secondaryCount = resolvedMessageIds.length;
-    }
+    const secondaryCount = secondary
+      ? await this.countSenderInboxWithWindow(
+          mailboxAccountId,
+          senderKey,
+          secondary.olderThanDays ?? null,
+        )
+      : null;
 
     // The workspace lock remains held through BOTH inserts. That makes a
     // fresh composite one atomic quota-consuming write: no concurrent
@@ -501,7 +454,7 @@ export class ActionsService {
                 verb: secondary.type,
                 direction: 'forward',
                 selector: storedSelector,
-                resolvedMessageIds: selector.type === 'messages' ? resolvedMessageIds : [],
+                resolvedMessageIds,
                 requestedCount: secondaryCount,
                 idempotencyKey: secondaryStorageKey,
                 olderThanDays: secondary.olderThanDays ?? null,
@@ -753,19 +706,17 @@ export class ActionsService {
 
     const safeKey = idempotencyKey.replace(/:/g, '-');
 
-    // D19/D77 free-cleanup cap — a bulk of N actionable senders is N
-    // units (skipped senders never enqueue, so they don't count).
-    // Replay detection: per-row keys derive deterministically from the
-    // client key + sorted sender ids, so the anchor's key existing
-    // means this exact bulk was already enqueued (its units consumed).
-    // Counting rule on `EntitlementsService.cleanupUnitsUsed`.
+    // D19/A3 cleanup cap — a bulk of N actionable senders is N units
+    // (skipped senders never enqueue, so they don't count). Replay
+    // detection: per-row keys derive deterministically from the client
+    // key + sorted sender ids, so the anchor's key existing means this
+    // exact bulk was already enqueued (its units consumed). Counting
+    // rule on `EntitlementsService.cleanupUnitsUsed`.
     const anchorKey = `${primary.type}-${safeKey}-${actionable[0]!.id}`;
-    if (!(await this.hasJobWithKey(anchorKey))) {
-      await this.entitlements.assertCleanupCapacity(mailboxAccountId, actionable.length);
-    }
 
     // Per-sender counts for each verb's window — ONE grouped query per
-    // window, not N queries.
+    // window, not N queries. Pure reads that don't need the workspace
+    // lock, so they stay OUTSIDE the transaction below.
     const keys = actionable.map((r) => r.senderKey);
     const primaryCounts = await this.countSenderInboxGrouped(
       mailboxAccountId,
@@ -776,60 +727,98 @@ export class ActionsService {
       ? await this.countSenderInboxGrouped(mailboxAccountId, keys, secondary.olderThanDays ?? null)
       : null;
 
-    let anchorId: string | null = null;
-    let status: ActionJobStatus = 'queued';
-    let requestedTotal = 0;
-    let persistedWakeAt: Date | null = null;
-
-    for (const sender of actionable) {
-      const primaryKey = `${primary.type}-${safeKey}-${sender.id}`;
-      const primaryRow = await this.insertJob({
-        mailboxAccountId,
-        verb: primary.type,
-        direction: 'forward',
-        selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
-        resolvedMessageIds: [], // worker resolves "in INBOX now" at execute
-        requestedCount: primaryCounts.get(sender.senderKey) ?? 0,
-        idempotencyKey: primaryKey,
-        olderThanDays: primary.olderThanDays ?? null,
-        wakeAt: primary.wakeAt ?? null,
-        compositeId: anchorId, // null only for the anchor itself
-      });
-      if (anchorId === null) {
-        anchorId = primaryRow.row.id;
-        status = primaryRow.row.status;
-        persistedWakeAt = primaryRow.row.wakeAt;
+    // A3 mandatory concurrency fix: the replay recheck, the capacity
+    // check and EVERY insert share ONE transaction holding the finite-
+    // tier workspace row lock — the same shape as the single-sender
+    // path above. Previously the check ran on the root executor, whose
+    // statement-scoped FOR UPDATE released before the inserts, so two
+    // racing bulks could both read `used`, both pass, and both insert
+    // N rows past the quota.
+    const persisted = await this.db.transaction(async (tx) => {
+      const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
+      if (!(await this.hasJobWithKey(anchorKey, tx))) {
+        await this.entitlements.assertCleanupCapacityForWorkspace(workspace, actionable.length, tx);
       }
-      if (!primaryRow.existing) {
-        await this.enqueueJob(primaryRow.row.id, mailboxAccountId, primaryKey);
-      }
-      requestedTotal += primaryRow.row.requestedCount;
 
-      if (secondary) {
-        const secondaryKey = `${secondary.type}-${safeKey}-${sender.id}-sec`;
-        const secondaryRow = await this.insertJob({
-          mailboxAccountId,
-          verb: secondary.type,
-          direction: 'forward',
-          selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
-          resolvedMessageIds: [],
-          requestedCount: secondaryCounts?.get(sender.senderKey) ?? 0,
-          idempotencyKey: secondaryKey,
-          olderThanDays: secondary.olderThanDays ?? null,
-          compositeId: anchorId,
-        });
-        if (!secondaryRow.existing) {
-          await this.enqueueJob(secondaryRow.row.id, mailboxAccountId, secondaryKey);
+      let anchorId: string | null = null;
+      let status: ActionJobStatus = 'queued';
+      let requestedTotal = 0;
+      let persistedWakeAt: Date | null = null;
+      const fresh: Array<{ actionId: string; idempotencyKey: string }> = [];
+
+      for (const sender of actionable) {
+        const primaryKey = `${primary.type}-${safeKey}-${sender.id}`;
+        const primaryRow = await this.insertJob(
+          {
+            mailboxAccountId,
+            verb: primary.type,
+            direction: 'forward',
+            selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
+            resolvedMessageIds: [], // worker resolves "in INBOX now" at execute
+            requestedCount: primaryCounts.get(sender.senderKey) ?? 0,
+            idempotencyKey: primaryKey,
+            olderThanDays: primary.olderThanDays ?? null,
+            wakeAt: primary.wakeAt ?? null,
+            compositeId: anchorId, // null only for the anchor itself
+          },
+          tx,
+        );
+        if (anchorId === null) {
+          anchorId = primaryRow.row.id;
+          status = primaryRow.row.status;
+          persistedWakeAt = primaryRow.row.wakeAt;
+        }
+        if (!primaryRow.existing) {
+          fresh.push({ actionId: primaryRow.row.id, idempotencyKey: primaryKey });
+        }
+        requestedTotal += primaryRow.row.requestedCount;
+
+        if (secondary) {
+          const secondaryKey = `${secondary.type}-${safeKey}-${sender.id}-sec`;
+          const secondaryRow = await this.insertJob(
+            {
+              mailboxAccountId,
+              verb: secondary.type,
+              direction: 'forward',
+              selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
+              resolvedMessageIds: [],
+              requestedCount: secondaryCounts?.get(sender.senderKey) ?? 0,
+              idempotencyKey: secondaryKey,
+              olderThanDays: secondary.olderThanDays ?? null,
+              compositeId: anchorId,
+            },
+            tx,
+          );
+          if (!secondaryRow.existing) {
+            fresh.push({ actionId: secondaryRow.row.id, idempotencyKey: secondaryKey });
+          }
         }
       }
+
+      return { anchorId: anchorId!, status, requestedTotal, persistedWakeAt, fresh };
+    });
+
+    // Queueing stays outside the transaction so workers never observe an
+    // uncommitted row; allSettled so an early enqueue failure cannot
+    // strand a committed fresh row without an enqueue attempt.
+    const enqueueResults = await Promise.allSettled(
+      persisted.fresh.map((row) =>
+        this.enqueueJob(row.actionId, mailboxAccountId, row.idempotencyKey),
+      ),
+    );
+    const enqueueFailure = enqueueResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (enqueueFailure) {
+      throw enqueueFailure.reason;
     }
 
     return {
-      batchId: anchorId!,
-      status,
+      batchId: persisted.anchorId,
+      status: persisted.status,
       senderCount: actionable.length,
-      requestedTotal,
-      wakeAt: persistedWakeAt?.toISOString() ?? null,
+      requestedTotal: persisted.requestedTotal,
+      wakeAt: persisted.persistedWakeAt?.toISOString() ?? null,
       skipped,
     };
   }

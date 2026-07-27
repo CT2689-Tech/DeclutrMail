@@ -1048,3 +1048,11 @@ copy. If reads have one and mutations don't, mutations are the bug.
 route to the upgrade gate — so every mutation surface recovers, not only the
 handlers someone remembered to wire. Tests in `query-client.test.ts` cover all
 three codes plus three negatives, verified to fail without the handler.
+
+## 2026-07-27 — Two launch-completion defects of one shape: a gate inferred from the wrong layer
+**PR:** #401, #402 (fix commits 206748d2, 4d90bc75)
+**Caught by:** Codex stop-time review
+**What happened:** (1) A3 opened the composite wire's `messages` selector to metered Free via the multi-sender knob without re-checking what the newly-reachable path charges — one unit for 500 messages across any number of senders. (2) The A6 derive layer freed the plan picker for non-backing subscription rows on the reasoning "the entitlement is granted from elsewhere," but the server's SUBSCRIPTION_EXISTS guard keys on STATUS, not backing — every offered checkout was a dead-end 409.
+**Correct approach:** When a change makes a path reachable or re-derives a client-side gate, enumerate the SERVER predicate that path will actually hit and mirror it exactly — never re-derive the rule from the concept (backing, tier) when the server enforces a different axis (status, unit charge).
+**Rule:** A client affordance gate must quote the server predicate it fronts; a retier must re-run the invariants of every path it newly exposes.
+**Enforcement update:** none (both now pinned by tests: wire-rejection test on the selector; status-set unit tests on the picker lock).

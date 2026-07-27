@@ -56,11 +56,17 @@ export interface Me {
   /** Workspace billing tier (D19) — drives every FE entitlement gate. */
   tier: Tier;
   /**
-   * Free-tier LIFETIME cleanup actions left (D19: 5); `null` =
+   * Cleanup actions left THIS PERIOD (A3: Free = 50/month); `null` =
    * unlimited (every paid tier). Refreshed with the `me` query, so a
    * `FREE_CAP_REACHED` 402's `details` is the fresher signal mid-flow.
    */
   cleanupRemaining: number | null;
+  /**
+   * Next anniversary reset instant (ISO), server-computed (A3) — the
+   * browser NEVER derives it. `null` = unlimited tier. Optional on the
+   * wire for deploy-skew tolerance.
+   */
+  cleanupResetsAt?: string | null;
 }
 
 export const ME_QUERY_KEY = ['auth', 'me'] as const;

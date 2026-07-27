@@ -21,8 +21,14 @@ import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { ActionsService, reverseQueueJobId } from './actions.service.js';
+import { compositeActionRequestSchema } from './actions.types.js';
+
+/** The Free monthly quota, from the pricing config (A3). */
+const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth!;
 
 /**
  * ActionsService integration tests (D226).
@@ -315,48 +321,16 @@ describe('ActionsService', () => {
     expect(res.status).toBe('queued');
   });
 
-  it('messages selector drops forged ids AND owned-but-not-in-INBOX ids', async () => {
-    await db.update(workspaces).set({ tier: 'plus' });
-    await seedMessage(db, mailboxId, 'm1', ['INBOX']);
-    await seedMessage(db, mailboxId, 'm2', ['INBOX']);
-    await seedMessage(db, mailboxId, 'm3', ['CATEGORY_PROMOTIONS']); // owned, NOT in inbox
-
-    const res = await svc.enqueueComposite({
-      mailboxAccountId: mailboxId,
-      // m3 is owned but archived already; forged-x is not ours. Both drop —
-      // the archive verb only touches inbox mail (so undo restores faithfully).
-      selector: { type: 'messages', messageIds: ['m1', 'm2', 'm3', 'forged-x'] },
+  it('the composite wire rejects the removed messages selector (quota-bypass hardening)', () => {
+    // A3 made the wire's selectors metered on Free; the producer-less
+    // `messages` id-list arm charged ONE unit for up to 500 messages
+    // spanning any number of senders, so it was removed outright. The
+    // schema — not a tier gate — is the enforcement now.
+    const res = compositeActionRequestSchema.safeParse({
+      selector: { type: 'messages', messageIds: ['m1'] },
       primary: { type: 'archive' },
-      idempotencyKey: 'click-msgs',
-      override: false,
     });
-    expect(res.primaryCount).toBe(2);
-    const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, res.actionId));
-    expect([...row!.resolvedMessageIds].sort()).toEqual(['m1', 'm2']);
-  });
-
-  it('legacy messages selector requires Plus before resolving or writing any ids', async () => {
-    await seedMessage(db, mailboxId, 'm-free', ['INBOX']);
-
-    await expect(
-      svc.enqueueComposite({
-        mailboxAccountId: mailboxId,
-        selector: { type: 'messages', messageIds: ['m-free'] },
-        primary: { type: 'archive' },
-        idempotencyKey: 'free-messages-denied',
-        override: false,
-      }),
-    ).rejects.toMatchObject({
-      code: 'ACTION_TIER_REQUIRED',
-      details: {
-        tier: 'free',
-        requiredTier: 'plus',
-        selector: 'multi-sender',
-        verb: 'archive',
-      },
-    });
-    expect(queue.count).toBe(0);
-    expect(await db.select().from(actionJobs)).toHaveLength(0);
+    expect(res.success).toBe(false);
   });
 
   it('is idempotent on a repeated Idempotency-Key', async () => {
@@ -379,9 +353,9 @@ describe('ActionsService', () => {
     expect(queue.count).toBe(1); // no second enqueue
   });
 
-  it('replays a legacy archive at the Free cap and rejects only a fresh sixth key', async () => {
+  it('replays an archive at the Free cap and rejects only a fresh over-quota key', async () => {
     await seedMessage(db, mailboxId, 'm-cap', ['INBOX']);
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < FREE_LIMIT - 1; i += 1) {
       await db.insert(actionJobs).values({
         mailboxAccountId: mailboxId,
         verb: 'archive',
@@ -429,9 +403,9 @@ describe('ActionsService', () => {
     expect(queue.count).toBe(1);
   });
 
-  it('admits only one concurrent legacy archive when one Free unit remains', async () => {
+  it('admits only one concurrent archive when one Free unit remains', async () => {
     await seedMessage(db, mailboxId, 'm-cap-race', ['INBOX']);
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < FREE_LIMIT - 1; i += 1) {
       await db.insert(actionJobs).values({
         mailboxAccountId: mailboxId,
         verb: 'archive',
@@ -808,87 +782,6 @@ describe('ActionsService', () => {
       expect(await db.select().from(actionJobs)).toHaveLength(0);
     });
 
-    it('rejects a message-scoped Later before writing a job (D245)', async () => {
-      await expect(
-        svc.enqueueComposite({
-          mailboxAccountId: mailboxId,
-          selector: { type: 'messages', messageIds: ['m1'] },
-          primary: { type: 'later', wakeAt: new Date('2099-07-21T09:00:00Z') },
-          idempotencyKey: 'click-later-message',
-          override: false,
-        }),
-      ).rejects.toMatchObject({ response: { code: 'LATER_SENDER_REQUIRED' } });
-      expect(await db.select().from(actionJobs)).toHaveLength(0);
-    });
-
-    it('messages selector requires Plus before a primary or secondary can write', async () => {
-      await seedMessage(db, mailboxId, 'm-free-composite', ['INBOX']);
-
-      await expect(
-        svc.enqueueComposite({
-          mailboxAccountId: mailboxId,
-          selector: { type: 'messages', messageIds: ['m-free-composite'] },
-          primary: { type: 'archive' },
-          secondary: { type: 'delete' },
-          idempotencyKey: 'free-composite-messages-denied',
-          override: false,
-        }),
-      ).rejects.toMatchObject({
-        code: 'ACTION_TIER_REQUIRED',
-        details: { selector: 'multi-sender', verb: 'archive' },
-      });
-      expect(queue.count).toBe(0);
-      expect(await db.select().from(actionJobs)).toHaveLength(0);
-    });
-
-    it('Plus messages selector preserves owned-id filtering for primary + secondary', async () => {
-      await db.update(workspaces).set({ tier: 'plus' });
-      await seedMessage(db, mailboxId, 'm-owned', ['INBOX']);
-      await seedMessage(db, mailboxId, 'm-not-inbox', ['CATEGORY_PROMOTIONS']);
-
-      const assertActionSelectorTier = vi.fn().mockResolvedValue(undefined);
-      const checkedSvc = new ActionsService(db as never, queue as never, undefined, null, {
-        assertActionSelectorTier,
-        assertCleanupCapacity: vi.fn().mockResolvedValue(undefined),
-        lockCleanupWorkspace: vi.fn().mockResolvedValue({ workspaceId: 'ws-plus', tier: 'plus' }),
-        assertCleanupCapacityForWorkspace: vi.fn().mockResolvedValue(undefined),
-      } as never);
-
-      const res = await checkedSvc.enqueueComposite({
-        mailboxAccountId: mailboxId,
-        selector: {
-          type: 'messages',
-          messageIds: ['m-owned', 'm-not-inbox', 'm-forged'],
-        },
-        primary: { type: 'archive' },
-        secondary: { type: 'delete' },
-        idempotencyKey: 'plus-composite-messages',
-        override: false,
-      });
-
-      expect(res.primaryCount).toBe(1);
-      expect(res.secondaryCount).toBe(1);
-      const rows = await db
-        .select()
-        .from(actionJobs)
-        .where(eq(actionJobs.mailboxAccountId, mailboxId));
-      expect(rows).toHaveLength(2);
-      expect(rows.every((row) => row.selector.type === 'messages')).toBe(true);
-      expect(rows.every((row) => row.resolvedMessageIds.join(',') === 'm-owned')).toBe(true);
-      expect(assertActionSelectorTier).toHaveBeenNthCalledWith(
-        1,
-        mailboxId,
-        'archive',
-        'multi-sender',
-      );
-      expect(assertActionSelectorTier).toHaveBeenNthCalledWith(
-        2,
-        mailboxId,
-        'delete',
-        'multi-sender',
-      );
-    });
-
     it('single-verb Archive: ONE row, composite_id null, namespaced idempotency key', async () => {
       await seedMessage(db, mailboxId, 'm1', ['INBOX'], daysAgo(5));
       const res = await svc.enqueueComposite({
@@ -962,7 +855,7 @@ describe('ActionsService', () => {
     });
 
     it('admits only one concurrent composite when one Free unit remains', async () => {
-      await seedCountedCleanupJobs(db, mailboxId, senderId, 4, 'composite-race-fill');
+      await seedCountedCleanupJobs(db, mailboxId, senderId, FREE_LIMIT - 1, 'composite-race-fill');
       await seedMessage(db, mailboxId, 'm-composite-race', ['INBOX']);
 
       // PGlite protects application ordering but not cross-connection lock
@@ -999,7 +892,13 @@ describe('ActionsService', () => {
     });
 
     it('concurrent same-key composites replay one quota unit and one queue job', async () => {
-      await seedCountedCleanupJobs(db, mailboxId, senderId, 4, 'composite-replay-fill');
+      await seedCountedCleanupJobs(
+        db,
+        mailboxId,
+        senderId,
+        FREE_LIMIT - 1,
+        'composite-replay-fill',
+      );
       await seedMessage(db, mailboxId, 'm-composite-replay', ['INBOX']);
       const request = {
         mailboxAccountId: mailboxId,
@@ -1367,19 +1266,17 @@ describe('ActionsService', () => {
       await db.update(workspaces).set({ tier: 'plus' });
     });
 
-    it('rejects a Free workspace before resolving any multi-sender preview data', async () => {
+    it('serves the multi-sender preview on Free (A3 — bulk is Free, metered by quota)', async () => {
       await db.update(workspaces).set({ tier: 'free' });
       const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 'free-bulk-1', ['INBOX']);
 
-      await expect(
-        svc.previewBulkComposite({
-          mailboxAccountId: mailboxId,
-          senderIds: [senderId, sender2Id],
-        }),
-      ).rejects.toMatchObject({
-        code: 'ACTION_TIER_REQUIRED',
-        details: { tier: 'free', requiredTier: 'plus', selector: 'multi-sender' },
+      const res = await svc.previewBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
       });
+      expect(res.senders).toHaveLength(2);
+      expect(res.totals.all).toBe(1);
     });
 
     it('aggregates bucket counts across the selection with a per-sender breakdown', async () => {
@@ -1452,33 +1349,25 @@ describe('ActionsService', () => {
       await db.update(workspaces).set({ tier: 'plus' });
     });
 
-    it('rejects a Free multi-sender enqueue before writing or queueing, while single-sender stays available', async () => {
+    it('a Free bulk enqueues (A3) and consumes one unit per actionable sender', async () => {
       await db.update(workspaces).set({ tier: 'free' });
       const sender2Id = await seedSecondSender(db, mailboxId);
 
-      await expect(
-        svc.enqueueBulkComposite({
-          mailboxAccountId: mailboxId,
-          senderIds: [senderId, sender2Id],
-          primary: { type: 'archive' },
-          idempotencyKey: 'bulk-free-denied',
-        }),
-      ).rejects.toMatchObject({
-        code: 'ACTION_TIER_REQUIRED',
-        details: { tier: 'free', requiredTier: 'plus', selector: 'multi-sender' },
+      const res = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'archive' },
+        idempotencyKey: 'bulk-free-allowed',
       });
-      expect(queue.count).toBe(0);
-      expect(await db.select().from(actionJobs)).toHaveLength(0);
-
+      expect(res.senderCount).toBe(2);
+      expect(queue.count).toBe(2);
+      const [mailbox] = await db
+        .select({ workspaceId: mailboxAccounts.workspaceId })
+        .from(mailboxAccounts)
+        .where(eq(mailboxAccounts.id, mailboxId));
       await expect(
-        svc.enqueueComposite({
-          mailboxAccountId: mailboxId,
-          selector: { type: 'sender', senderId },
-          primary: { type: 'archive' },
-          idempotencyKey: 'single-free-allowed',
-          override: false,
-        }),
-      ).resolves.toMatchObject({ status: 'queued' });
+        new EntitlementsService(db as never).cleanupSummary(mailbox!.workspaceId),
+      ).resolves.toMatchObject({ used: 2 });
     });
 
     it('fans out one row per sender linked to the anchor, with per-sender counts + keys', async () => {
@@ -1920,7 +1809,13 @@ describe('ActionsService', () => {
     });
 
     it('admits only one concurrent unsubscribe when one Free unit remains', async () => {
-      await seedCountedCleanupJobs(db, mailboxId, senderId, 4, 'unsubscribe-race-fill');
+      await seedCountedCleanupJobs(
+        db,
+        mailboxId,
+        senderId,
+        FREE_LIMIT - 1,
+        'unsubscribe-race-fill',
+      );
 
       // PGlite protects application ordering but not cross-connection lock
       // behavior; EntitlementsService separately pins the FOR UPDATE SQL.
@@ -2032,7 +1927,7 @@ describe('ActionsService', () => {
     });
 
     it('records a no-channel preference without consuming a Free cleanup unit', async () => {
-      await seedCountedCleanupJobs(db, mailboxId, senderId, 5, 'unsubscribe-none-fill');
+      await seedCountedCleanupJobs(db, mailboxId, senderId, FREE_LIMIT, 'unsubscribe-none-fill');
       await db
         .update(senders)
         .set({ unsubscribeMethod: 'none', unsubscribeUrl: null })
@@ -2056,7 +1951,7 @@ describe('ActionsService', () => {
         .where(eq(mailboxAccounts.id, mailboxId));
       await expect(
         new EntitlementsService(db as never).cleanupSummary(mailbox!.workspaceId),
-      ).resolves.toMatchObject({ used: 5, remaining: 0 });
+      ).resolves.toMatchObject({ used: FREE_LIMIT, remaining: 0 });
     });
   });
 

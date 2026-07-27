@@ -11,7 +11,7 @@ import {
   workspaces,
   type TriageVerdict,
 } from '@declutrmail/db';
-import { cleanupActionsLifetimeFor } from '@declutrmail/shared/entitlements';
+import { cleanupActionsPerMonthFor } from '@declutrmail/shared/entitlements';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -416,17 +416,13 @@ export class TriageReadService {
       }
     }
 
-    // D19 free-cap position — LIFETIME cleanup units left (manifest
-    // limit − units consumed), not a daily decision counter. The
-    // counting rule lives on `EntitlementsService.cleanupUnitsUsed`.
-    const lifetimeLimit = cleanupActionsLifetimeFor(tierEnum);
+    // D19/A3 quota position — cleanup units left THIS PERIOD. One
+    // authority: `cleanupSummary` owns the anniversary period + the
+    // counting rule; this read must never recompute either.
     const freeRemaining =
-      lifetimeLimit === null || !tierRow
+      cleanupActionsPerMonthFor(tierEnum) === null || !tierRow
         ? null
-        : Math.max(
-            0,
-            lifetimeLimit - (await this.entitlements.cleanupUnitsUsed(tierRow.workspaceId)),
-          );
+        : (await this.entitlements.cleanupSummary(tierRow.workspaceId)).remaining;
 
     return {
       decidedToday,

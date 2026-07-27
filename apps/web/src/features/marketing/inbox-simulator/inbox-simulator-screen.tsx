@@ -225,10 +225,10 @@ export function InboxSimulatorScreen() {
           <span>Full bodies fetched: 0</span>
         </div>
         <aside className="dm-simulator-tier-note" aria-label="Plan availability">
-          <strong>This demo shows Plus and Pro Triage.</strong>
+          <strong>Triage is included on every plan.</strong>
           <span>
-            Free uses the same cleanup verbs in Senders and includes{' '}
-            {TIER_MANIFEST.free.cleanupActionsLifetime} lifetime cleanup actions.
+            Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month;
+            paid plans are unlimited.
           </span>
           <a href="/pricing">Compare plans</a>
         </aside>

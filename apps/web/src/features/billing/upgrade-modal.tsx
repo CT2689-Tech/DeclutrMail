@@ -27,12 +27,12 @@ const { color, font, radius } = tokens;
  * Renders when the global MutationCache handler (lib/query-client)
  * reports an entitlement 402 into the upgrade-gate store:
  *
- *   - `FREE_CAP_REACHED` — the Free tier's 5 lifetime cleanup actions
- *     are spent (or the attempted bulk needs more than remain).
+ *   - `FREE_CAP_REACHED` — the Free tier's monthly cleanup-action
+ *     quota is spent (or the attempted bulk needs more than remain).
  *   - `INBOX_LIMIT_REACHED` — connecting another Gmail account would
  *     exceed the tier's inbox limit.
  *   - `ACTION_TIER_REQUIRED` — an Action Registry selector requires a
- *     higher plan (Free multi-sender actions require Plus).
+ *     higher plan (A3: only all-matching cleanup sits above Free).
  *
  * Copy is tier-appropriate per D123's nudge ladder: Free hears what
  * Plus/Pro unlock, Plus hears the Pro automation set, Pro gets the
@@ -138,20 +138,27 @@ export function UpgradeModal() {
           <p style={{ fontSize: 13, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.55 }}>
             {hit.reason === 'free_cap' ? (
               <>
-                Completed mail actions stay in place. Plus unlocks unlimited sender actions for{' '}
-                {quotedPlanPrice('plus', 'monthly', regionProvider)}. Pro could do this for you
-                automatically &mdash; Autopilot, Daily Brief, and Quiet Hours for {proMonthly}.
+                Completed mail actions stay in place
+                {hit.details.resetsAt
+                  ? ` — your quota resets on ${resetDateLabel(hit.details.resetsAt)}`
+                  : ''}
+                . {TIER_MANIFEST.plus.name} unlocks unlimited cleanup for{' '}
+                {quotedPlanPrice('plus', 'monthly', regionProvider)}. {TIER_MANIFEST.pro.name} could
+                do this for you automatically &mdash; Autopilot, Daily Brief, and Quiet Hours for{' '}
+                {proMonthly}.
               </>
             ) : hit.reason === 'action_tier' ? (
               <>
-                Free still includes five lifetime cleanup actions, one sender at a time. Select one
-                sender to continue, or {actionTierName} unlocks multi-sender cleanup
+                Your plan covers every selection this size and smaller. {actionTierName} unlocks{' '}
+                {hit.details.selector === 'sender-filter'
+                  ? 'all-matching cleanup'
+                  : 'this workflow'}
                 {actionTierMonthly ? ` for ${actionTierMonthly}` : ''}.
               </>
             ) : nudge ? (
               <>
                 Your existing connection{hit.details.connected === 1 ? ' keeps' : 's keep'} working
-                &mdash; only adding is blocked. Pro raises the limit to{' '}
+                &mdash; only adding is blocked. {TIER_MANIFEST.pro.name} raises the limit to{' '}
                 {TIER_MANIFEST.pro.inboxLimit} connected inboxes for {proMonthly}.
               </>
             ) : (
@@ -214,8 +221,16 @@ export function UpgradeModal() {
 
 function freeCapTitle(d: FreeCapDetails): string {
   return d.requiredUnits > 1 && d.remaining > 0
-    ? `That needs ${d.requiredUnits} sender actions — only ${d.remaining} of your ${d.limit} free ones are left`
-    : `You've used all ${d.limit} free sender actions`;
+    ? `That needs ${d.requiredUnits} cleanup actions — only ${d.remaining} of your ${d.limit} are left this month`
+    : `You've used all ${d.limit} cleanup actions for this month`;
+}
+
+/** Short, locale-stable "Aug 27" label for the server's reset instant. */
+function resetDateLabel(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? 'your next monthly reset'
+    : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function inboxLimitTitle(d: InboxLimitDetails, tierLabel: string): string {
@@ -223,12 +238,20 @@ function inboxLimitTitle(d: InboxLimitDetails, tierLabel: string): string {
 }
 
 function actionTierTitle(d: ActionTierDetails): string {
-  const plan = tierName(d.requiredTier);
-  return d.selector === 'multi-sender'
-    ? `Multi-sender actions are part of ${plan}`
-    : `This action is part of ${plan}`;
+  const plan = TIER_MANIFEST[d.requiredTier].name;
+  return d.selector === 'sender-filter'
+    ? `All-matching actions are part of ${plan}`
+    : d.selector === 'multi-sender'
+      ? `Multi-sender actions are part of ${plan}`
+      : `This action is part of ${plan}`;
 }
 
 function tierName(tier: string): string {
-  return tier.charAt(0).toUpperCase() + tier.slice(1);
+  return tier === 'free' ||
+    tier === 'plus' ||
+    tier === 'pro' ||
+    tier === 'team' ||
+    tier === 'enterprise'
+    ? TIER_MANIFEST[tier].name
+    : tier.charAt(0).toUpperCase() + tier.slice(1);
 }

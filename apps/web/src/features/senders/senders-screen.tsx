@@ -19,6 +19,7 @@ import {
   canUseActionSelector,
   enrichSenderRow,
   isStandingProtected,
+  multiSenderPlanName,
   VERB_PAST,
   type ActionRequest,
   type ActionVerb,
@@ -1402,7 +1403,10 @@ function SendersScreenContent({
     (verb: 'Keep' | keyof typeof ELIGIBLE) => {
       if (showingStaleRows) return;
       if (selectedSenders.length > 1 && !canUseActionSelector(tier, verb, 'multi-sender')) {
-        toast('Multi-sender actions require Plus — select one sender or see plans.', 'info');
+        toast(
+          `Multi-sender actions require ${multiSenderPlanName()} — select one sender or see plans.`,
+          'info',
+        );
         return;
       }
       // Keep (D40) — a standing-policy write, non-destructive: no
@@ -1927,6 +1931,10 @@ function SendersScreenContent({
         compositePreviewLoading={compositePreviewQuery.isFetching}
         compositePreviewError={compositePreviewQuery.isError}
         mailboxEmail={activeEmail}
+        cleanupQuota={{
+          remaining: me.cleanupRemaining ?? null,
+          resetsAt: me.cleanupResetsAt ?? null,
+        }}
         bulkPreview={
           bulkPreviewSenderIds != null
             ? {

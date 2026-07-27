@@ -46,12 +46,17 @@ export interface MeEnvelope {
   /** Workspace billing tier (D19) — drives every FE entitlement gate. */
   tier: TierId;
   /**
-   * Free-tier lifetime cleanup actions left (D19: 5 lifetime);
-   * `null` = unlimited (every paid tier). Mirrored by the FE
-   * `useTier()` hook; the manifest resolvers in
+   * Cleanup actions left THIS PERIOD (A3: Free = 50/month on the signup
+   * anniversary); `null` = unlimited (every paid tier). Mirrored by the
+   * FE `useTier()` hook; the config resolvers in
    * `@declutrmail/shared/entitlements` carry the limits themselves.
    */
   cleanupRemaining: number | null;
+  /**
+   * The next anniversary reset instant (ISO), server-computed — the
+   * browser never derives it (A3). `null` = unlimited tier.
+   */
+  cleanupResetsAt: string | null;
 }
 
 /**
@@ -116,6 +121,7 @@ export class AuthController {
       activeMailboxId,
       tier: quota.tier,
       cleanupRemaining: quota.remaining,
+      cleanupResetsAt: quota.resetsAt?.toISOString() ?? null,
     });
   }
 

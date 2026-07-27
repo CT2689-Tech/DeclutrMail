@@ -4,11 +4,6 @@ import { ok, type Envelope } from '@declutrmail/shared/contracts';
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
-import {
-  CapabilityExempt,
-  CapabilityGuard,
-  RequiresCapability,
-} from '../common/entitlements/capability.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import {
   TriageReadService,
@@ -32,9 +27,10 @@ import { TriageService } from './triage.service.js';
  *
  * D7 / D228: read-only over metadata. No body content touched.
  */
+// A3: Triage is Free — the class-level `triage` capability gate came
+// off per D245 (prelaunch — no vestigial gating).
 @Controller('triage')
-@UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard, CapabilityGuard)
-@RequiresCapability('triage')
+@UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard)
 export class TriageController {
   /** Per D30, queue size is clamped to `[5, 12]`. */
   private static readonly QUEUE_HARD_MAX = 12;
@@ -101,10 +97,6 @@ export class TriageController {
 
   @Get('stats')
   @RateLimit('triage-load')
-  // D112 onboarding embeds the real Triage screen for a three-decision
-  // Free practice run and needs only aggregate progress. Queue rows and
-  // every scoring route remain behind the class-level Plus gate.
-  @CapabilityExempt()
   async stats(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<TriageSessionStats>> {
     const stats = await this.reads.getSessionStats({ mailboxAccountId: mailbox.id });
     return ok(stats);

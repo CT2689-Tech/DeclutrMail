@@ -207,8 +207,8 @@ export function cardBullets(tier: TierDefinition): readonly string[] {
 
   if (!prev) {
     for (const capability of tier.capabilities) {
-      if (capability === 'cleanup-actions' && tier.cleanupActionsLifetime !== null) {
-        bullets.push(`${tier.cleanupActionsLifetime} lifetime cleanup actions to taste`);
+      if (capability === 'cleanup-actions' && tier.cleanupActionsPerMonth !== null) {
+        bullets.push(`${tier.cleanupActionsPerMonth} cleanup actions every month`);
       } else {
         bullets.push(CAPABILITY_LABELS[capability]);
       }
@@ -220,7 +220,7 @@ export function cardBullets(tier: TierDefinition): readonly string[] {
         bullets.push(CAPABILITY_LABELS[capability]);
       }
     }
-    if (prev.cleanupActionsLifetime !== null && tier.cleanupActionsLifetime === null) {
+    if (prev.cleanupActionsPerMonth !== null && tier.cleanupActionsPerMonth === null) {
       bullets.push('Unlimited cleanup actions');
     }
   }
@@ -245,8 +245,8 @@ export interface CompareRow {
 /**
  * The full comparison table, derived from the manifest:
  *   - one row per capability (`CAPABILITIES` order), cell = included?
- *     (the cleanup row shows the Free lifetime quota instead of a bare
- *     check — that quota is the Free→Plus upgrade trigger, D19);
+ *     (the cleanup row shows the Free monthly quota instead of a bare
+ *     check — that quota is the Free→Plus upgrade trigger, D19/A3);
  *   - quota rows (inboxes / undo window) from the manifest limits.
  */
 export function compareRows(): readonly CompareRow[] {
@@ -262,9 +262,9 @@ export function compareRows(): readonly CompareRow[] {
     values: tiers.map((tier) => {
       if (!tier.capabilities.includes(capability)) return null;
       if (capability === 'cleanup-actions') {
-        return tier.cleanupActionsLifetime === null
+        return tier.cleanupActionsPerMonth === null
           ? 'Unlimited'
-          : `${tier.cleanupActionsLifetime} lifetime`;
+          : `${tier.cleanupActionsPerMonth}/month`;
       }
       return 'Included';
     }),

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, count, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, ne, sql } from 'drizzle-orm';
 
 import {
   actionJobs,
@@ -10,9 +10,12 @@ import {
 } from '@declutrmail/db';
 import { ACTION_REGISTRY, type ActionVerb, type SelectorType } from '@declutrmail/shared/actions';
 import {
-  cleanupActionsLifetimeFor,
+  TIER_IDS,
+  TIER_MANIFEST,
+  cleanupActionsPerMonthFor,
   hasCapability,
   inboxLimitFor,
+  minimumTierForCapability,
   satisfiesActionTier,
   type Capability,
   type TierId,
@@ -21,6 +24,7 @@ import { ERROR_CODES } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../../db/db.module.js';
 import { AppException } from '../app-exception.js';
+import { cleanupPeriodFor } from './cleanup-period.js';
 
 /**
  * Either the root Drizzle client or a caller-owned transaction.
@@ -35,6 +39,8 @@ export type EntitlementsExecutor = DrizzleDb | EntitlementsTransaction;
 export interface CleanupWorkspace {
   workspaceId: string;
   tier: TierId;
+  /** The signup instant — the anchor for the monthly quota period (A3). */
+  createdAt: Date;
 }
 
 /** Workspace identity + locked tier used by an inbox activation. */
@@ -44,13 +50,13 @@ export interface InboxWorkspace {
 }
 
 /**
- * Verbs that draw down the Free lifetime cleanup quota (D19/D77).
- * Derived from the Action Registry — the manifest's `countsAsCleanup`
- * flag on the single-sender selector is the source of truth, so adding
- * a counting verb is a registry edit, never an edit here. Today this
- * resolves to `archive | later | delete | unsubscribe`. The DB enum is
- * a narrower append-only subset of the registry, so the final filter
- * keeps only verbs that can actually appear in `action_jobs`.
+ * Verbs that draw down the monthly cleanup quota (D19/A3). Derived from
+ * the Action Registry, whose `countsAsCleanup` values resolve from the
+ * pricing config's `COUNTS_AS_CLEANUP` — so adding a counting verb is a
+ * config edit, never an edit here. Today this resolves to
+ * `archive | later | delete | unsubscribe`. The DB enum is a narrower
+ * append-only subset of the registry, so the final filter keeps only
+ * verbs that can actually appear in `action_jobs`.
  */
 const PERSISTED_ACTION_VERBS = new Set<string>(actionVerb.enumValues);
 const CLEANUP_VERBS = Object.values(ACTION_REGISTRY)
@@ -58,15 +64,20 @@ const CLEANUP_VERBS = Object.values(ACTION_REGISTRY)
   .map((descriptor) => descriptor.verb)
   .filter((verb): verb is PersistedActionVerb => PERSISTED_ACTION_VERBS.has(verb));
 
-/** One workspace's cleanup-quota position (D19 Free = 5 lifetime). */
+/** One workspace's cleanup-quota position (A3: Free = 50/month). */
 export interface CleanupSummary {
   tier: TierId;
-  /** Manifest lifetime quota — `null` = unlimited (every paid tier). */
+  /** Config monthly quota — `null` = unlimited (every paid tier). */
   limit: number | null;
-  /** Lifetime cleanup units consumed (0 when unlimited — not computed). */
+  /** Cleanup units consumed THIS period (0 when unlimited — not computed). */
   used: number;
   /** `limit - used`, floored at 0; `null` when unlimited. */
   remaining: number | null;
+  /**
+   * The next anniversary reset instant — server-computed, mandatory on
+   * the wire (the browser must never derive it). `null` = unlimited.
+   */
+  resetsAt: Date | null;
 }
 
 /**
@@ -75,13 +86,15 @@ export interface CleanupSummary {
  * Reads `workspaces.tier` + the `@declutrmail/shared/entitlements`
  * manifest resolvers and enforces the launch entitlements:
  *
- *   1. FREE CLEANUP CAP — 5 LIFETIME cleanup actions (D19; supersedes
- *      the old 25/day display path). See `cleanupUnitsUsed` for the
- *      counting rule.
- *   2. ACTION SELECTOR TIER — Free single-sender, Plus explicit bulk,
- *      Pro all-matching, sourced from the Action Registry.
- *   3. INBOX LIMIT — connected-Gmail-account ceiling per tier (D19:
- *      Free 1 / Plus 1 / Pro 2). See `assertCanConnectMailbox`.
+ *   1. FREE CLEANUP CAP — 50 cleanup actions per month on the signup
+ *      anniversary (A3; supersedes the 5-lifetime cap). See
+ *      `cleanupUnitsUsed` for the counting rule and `cleanupPeriodFor`
+ *      for the period.
+ *   2. ACTION SELECTOR TIER — single-sender and explicit bulk are Free,
+ *      all-matching starts at Pro (A3), sourced from the pricing config
+ *      through the Action Registry.
+ *   3. INBOX LIMIT — connected-Gmail-account ceiling per tier (D19/A3:
+ *      Free 1 / Plus 1 / Pro 3). See `assertCanConnectMailbox`.
  *
  * Gates throw `AppException` with a 402 + a registered error code so
  * the FE can branch on the code and render the upgrade prompt.
@@ -106,7 +119,11 @@ export class EntitlementsService {
     executor: EntitlementsExecutor = this.db,
   ): Promise<CleanupWorkspace | null> {
     const [row] = await executor
-      .select({ workspaceId: workspaces.id, tier: workspaces.tier })
+      .select({
+        workspaceId: workspaces.id,
+        tier: workspaces.tier,
+        createdAt: workspaces.createdAt,
+      })
       .from(mailboxAccounts)
       .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
       .where(eq(mailboxAccounts.id, mailboxAccountId))
@@ -115,7 +132,9 @@ export class EntitlementsService {
   }
 
   /**
-   * Lifetime cleanup units consumed by a workspace (D19 Free cap).
+   * Cleanup units consumed by a workspace (D19/A3 Free cap) — scoped to
+   * the current anniversary period when `periodStart` is given, lifetime
+   * otherwise.
    *
    * COUNTING RULE (the single place it is defined — cite, don't copy):
    *
@@ -151,19 +170,22 @@ export class EntitlementsService {
    *     represent intent that is about to move mail.
    *
    * Derivation is purely from existing `action_jobs` data (no schema
-   * change): group id = `COALESCE(composite_id, root_action_id, id)`, sender unit =
-   * the selector's `senderId` (rows with a messages selector fall back
-   * to their own id — each is its own unit). The scan walks the
+   * change): group id = `COALESCE(composite_id, root_action_id, id)`,
+   * sender unit = the selector's `senderId`; rows with a messages
+   * selector fall back to their GROUP id, so a composite's primary +
+   * secondary stay ONE unit there too (one click = one unit — reachable
+   * on Free since A3 opened the messages selector). The scan walks the
    * workspace's mailboxes via `action_jobs_account_status_created_idx`
    * (leading column `mailbox_account_id`).
    */
   async cleanupUnitsUsed(
     workspaceId: string,
     executor: EntitlementsExecutor = this.db,
+    periodStart?: Date,
   ): Promise<number> {
     const [row] = await executor
       .select({
-        used: sql<number>`count(DISTINCT (COALESCE(${actionJobs.compositeId}, ${actionJobs.rootActionId}, ${actionJobs.id}), COALESCE(${actionJobs.selector}->>'senderId', ${actionJobs.id}::text)))::int`,
+        used: sql<number>`count(DISTINCT (COALESCE(${actionJobs.compositeId}, ${actionJobs.rootActionId}, ${actionJobs.id}), COALESCE(${actionJobs.selector}->>'senderId', COALESCE(${actionJobs.compositeId}, ${actionJobs.rootActionId}, ${actionJobs.id})::text)))::int`,
       })
       .from(actionJobs)
       .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, actionJobs.mailboxAccountId))
@@ -172,6 +194,11 @@ export class EntitlementsService {
           eq(mailboxAccounts.workspaceId, workspaceId),
           eq(actionJobs.direction, 'forward'),
           inArray(actionJobs.verb, CLEANUP_VERBS),
+          // A3 — only units consumed in the current anniversary period
+          // count. The enqueue instant (`created_at`) IS the consuming
+          // instant; the range predicate rides
+          // `action_jobs_account_status_created_idx`.
+          ...(periodStart ? [gte(actionJobs.createdAt, periodStart)] : []),
           // Only the durable intent-dedup row represents the user's
           // unsubscribe cleanup decision. The one-click execution row
           // (`unsubexec-*`) belongs to that same unit.
@@ -203,12 +230,16 @@ export class EntitlementsService {
     executor: EntitlementsExecutor = this.db,
   ): Promise<CleanupWorkspace | null> {
     const workspace = await this.workspaceForMailbox(mailboxAccountId, executor);
-    if (!workspace || cleanupActionsLifetimeFor(workspace.tier) === null) {
+    if (!workspace || cleanupActionsPerMonthFor(workspace.tier) === null) {
       return workspace;
     }
 
     const [locked] = await executor
-      .select({ workspaceId: workspaces.id, tier: workspaces.tier })
+      .select({
+        workspaceId: workspaces.id,
+        tier: workspaces.tier,
+        createdAt: workspaces.createdAt,
+      })
       .from(workspaces)
       .where(eq(workspaces.id, workspace.workspaceId))
       .for('update')
@@ -221,13 +252,25 @@ export class EntitlementsService {
    * tier actually has a quota (Free) — paid tiers skip the count scan.
    */
   async cleanupSummary(workspaceId: string): Promise<CleanupSummary> {
-    const tier = await this.tierForWorkspace(workspaceId);
-    const limit = cleanupActionsLifetimeFor(tier);
-    if (limit === null) {
-      return { tier, limit: null, used: 0, remaining: null };
+    const [row] = await this.db
+      .select({ tier: workspaces.tier, createdAt: workspaces.createdAt })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+    const tier = row?.tier ?? 'free';
+    const limit = cleanupActionsPerMonthFor(tier);
+    if (limit === null || !row) {
+      return { tier, limit: null, used: 0, remaining: null, resetsAt: null };
     }
-    const used = await this.cleanupUnitsUsed(workspaceId);
-    return { tier, limit, used, remaining: Math.max(0, limit - used) };
+    const period = cleanupPeriodFor(row.createdAt, new Date());
+    const used = await this.cleanupUnitsUsed(workspaceId, this.db, period.periodStart);
+    return {
+      tier,
+      limit,
+      used,
+      remaining: Math.max(0, limit - used),
+      resetsAt: period.resetsAt,
+    };
   }
 
   /**
@@ -265,18 +308,26 @@ export class EntitlementsService {
     // No workspace row ⇒ the mailbox is orphaned; ownership guards
     // upstream will reject the request — nothing to gate here.
     if (!workspace) return;
-    const limit = cleanupActionsLifetimeFor(workspace.tier);
+    const limit = cleanupActionsPerMonthFor(workspace.tier);
     if (limit === null) return; // unlimited tier
-    const used = await this.cleanupUnitsUsed(workspace.workspaceId, executor);
+    const period = cleanupPeriodFor(workspace.createdAt, new Date());
+    const used = await this.cleanupUnitsUsed(workspace.workspaceId, executor, period.periodStart);
     if (used + unitsNeeded > limit) {
       const remaining = Math.max(0, limit - used);
+      const upgradePlan = unlimitedCleanupPlanName();
       throw new AppException({
         code: 'FREE_CAP_REACHED',
         message:
           remaining > 0
-            ? `This needs ${unitsNeeded} sender actions but only ${remaining} of your ${limit} free ones are left. Upgrade for unlimited actions.`
-            : `You've used all ${limit} free sender actions. Upgrade for unlimited actions — everything you've already done stays done.`,
-        details: { remaining, limit, used, requiredUnits: unitsNeeded },
+            ? `This needs ${unitsNeeded} cleanup actions but only ${remaining} of your ${limit} are left this month. Upgrade to ${upgradePlan} for unlimited cleanup.`
+            : `You've used all ${limit} cleanup actions for this month. Upgrade to ${upgradePlan} for unlimited cleanup — everything you've already done stays done.`,
+        details: {
+          remaining,
+          limit,
+          used,
+          requiredUnits: unitsNeeded,
+          resetsAt: period.resetsAt.toISOString(),
+        },
       });
     }
   }
@@ -312,8 +363,7 @@ export class EntitlementsService {
     // this entitlement service does not turn that condition into a 402.
     if (!ws || satisfiesActionTier(ws.tier, actionCapability.tier)) return;
 
-    const requiredPlan =
-      actionCapability.tier.charAt(0).toUpperCase() + actionCapability.tier.slice(1);
+    const requiredPlan = TIER_MANIFEST[actionCapability.tier].name;
     const selectorLabel =
       selector === 'multi-sender'
         ? 'Multi-sender actions'
@@ -385,12 +435,18 @@ export class EntitlementsService {
       );
     const connected = Number(row?.connected ?? 0);
     if (connected >= limit) {
+      // Derive the upgrade target from the config: the first tier whose
+      // inbox limit exceeds the current one (none ⇒ no upgrade pitch).
+      const upgradeTier = TIER_IDS.find((id) => inboxLimitFor(id) > limit);
+      const upgrade = upgradeTier
+        ? ` Upgrade to ${TIER_MANIFEST[upgradeTier].name} to connect up to ${inboxLimitFor(upgradeTier)} Gmail accounts.`
+        : '';
       throw new AppException({
         code: 'INBOX_LIMIT_REACHED',
         message:
           limit === 1
-            ? 'Your plan includes 1 connected inbox. Upgrade to Pro to connect a second Gmail account.'
-            : `Your plan includes ${limit} connected inboxes and all are in use.`,
+            ? `Your plan includes 1 connected inbox.${upgrade}`
+            : `Your plan includes ${limit} connected inboxes and all are in use.${upgrade}`,
         details: { limit, connected, tier },
       });
     }
@@ -398,23 +454,44 @@ export class EntitlementsService {
 }
 
 /**
- * Per-capability upgrade copy for the legacy 402 `PRO_FEATURE_REQUIRED`
- * envelope. Keyed by the D19 manifest capability; a capability without
- * an entry falls back to the error registry's generic line. The
- * `screener` entry is the exact D77 copy `ScreenerService` shipped
- * with — extracting the gate must not reword it.
+ * The plan a quota-capped workspace upgrades to for unlimited cleanup —
+ * the lowest tier whose monthly quota is `null`. Derived from the
+ * pricing config so retiering never edits this file.
  */
-const CAPABILITY_UPGRADE_MESSAGES: Partial<Record<Capability, string>> = {
-  triage: 'Triage is part of the Plus plan. Upgrade to review a focused sender queue.',
-  screener: 'The Screener is part of the Pro plan. Upgrade to review new senders in one place.',
-  autopilot: 'Autopilot is part of the Pro plan. Upgrade to automate your inbox rules.',
-  brief: 'The Daily Brief is part of the Pro plan. Upgrade to get your morning inbox summary.',
-  quiet: 'Quiet hours are part of the Pro plan. Upgrade to schedule when Autopilot acts.',
-  snoozed:
-    'The Later list is part of the Pro plan. Upgrade to manage every Later sender in one place.',
-  followups:
-    'Follow-ups are part of the Pro plan. Upgrade to track threads still waiting on a reply.',
+function unlimitedCleanupPlanName(): string {
+  const tier = TIER_IDS.find((id) => cleanupActionsPerMonthFor(id) === null);
+  return tier ? TIER_MANIFEST[tier].name : 'a paid plan';
+}
+
+/**
+ * Per-capability upgrade copy templates for the 402
+ * `PRO_FEATURE_REQUIRED` envelope. The PLAN NAME is never written here
+ * — it interpolates from `minimumTierForCapability` + the pricing
+ * config, so moving a capability between tiers updates its upgrade copy
+ * automatically. A capability without an entry falls back to the error
+ * registry's generic line. Triage and the Later apparatus carry no
+ * entry because nothing gates them after A3 (they are Free).
+ */
+const CAPABILITY_FEATURE_COPY: Partial<
+  Record<Capability, { subject: string; verb: 'is' | 'are'; pitch: string }>
+> = {
+  screener: { subject: 'The Screener', verb: 'is', pitch: 'review new senders in one place' },
+  autopilot: { subject: 'Autopilot', verb: 'is', pitch: 'automate your inbox rules' },
+  brief: { subject: 'The Daily Brief', verb: 'is', pitch: 'get your morning inbox summary' },
+  quiet: { subject: 'Quiet hours', verb: 'are', pitch: 'schedule when Autopilot acts' },
+  followups: {
+    subject: 'Follow-ups',
+    verb: 'are',
+    pitch: 'track threads still waiting on a reply',
+  },
 };
+
+function capabilityUpgradeMessage(capability: Capability): string {
+  const copy = CAPABILITY_FEATURE_COPY[capability];
+  if (!copy) return ERROR_CODES.PRO_FEATURE_REQUIRED.message;
+  const plan = TIER_MANIFEST[minimumTierForCapability(capability)].name;
+  return `${copy.subject} ${copy.verb} part of the ${plan} plan. Upgrade to ${copy.pitch}.`;
+}
 
 /**
  * D19/D77 capability gate — throws 402 `PRO_FEATURE_REQUIRED` when
@@ -433,7 +510,7 @@ export function assertTierCapability(tier: TierId, capability: Capability): void
   if (hasCapability(tier, capability)) return;
   throw new AppException({
     code: 'PRO_FEATURE_REQUIRED',
-    message: CAPABILITY_UPGRADE_MESSAGES[capability] ?? ERROR_CODES.PRO_FEATURE_REQUIRED.message,
+    message: capabilityUpgradeMessage(capability),
     details: { capability, tier },
   });
 }

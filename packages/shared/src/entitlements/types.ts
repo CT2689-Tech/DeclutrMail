@@ -8,18 +8,20 @@
 // SEAM with the Action Registry (actions/manifest-entries.ts). The two
 // layers split responsibility and MUST NOT duplicate each other:
 //
-//   - `ActionCapability` (per verb × selector) declares the MINIMUM
-//     `ActionTier` a verb requires plus `countsAsCleanup` — i.e. WHAT a
-//     verb costs. That stays in ACTION_REGISTRY.
+//   - The registry declares only WHICH SELECTORS a verb supports; the
+//     pricing config (`pricing.config.ts` — SELECTOR_TIERS,
+//     SELECTOR_CAPS, COUNTS_AS_CLEANUP) resolves what a verb × selector
+//     COSTS. `ActionCapability` values are derived from the config at
+//     registry construction.
 //   - This layer declares WHAT A TIER GRANTS: feature surfaces
-//     (`Capability`), inbox limit, undo window, and the Free lifetime
-//     cleanup quota the registry's `countsAsCleanup` flag draws down.
+//     (`Capability`), inbox limit, undo window, and the monthly
+//     cleanup quota the config's `COUNTS_AS_CLEANUP` flags draw down.
 //
 // Composition (the later enforcement unit wires this; no guards here):
 // an action is permitted iff `satisfiesActionTier(workspace.tier,
 // actionCapability.tier)` AND, when `countsAsCleanup` and
-// `cleanupActionsLifetimeFor(tier)` is non-null, the workspace's
-// lifetime counter is below that quota.
+// `cleanupActionsPerMonthFor(tier)` is non-null, the workspace's
+// current-period counter is below that quota.
 
 import type { ActionTier } from '../contracts/verb-constants';
 
@@ -53,12 +55,13 @@ export const TIER_RANK: Readonly<Record<TierId, number>> = {
  *
  *   - `senders` / `sender-detail` / `activity` — the Free read surfaces.
  *   - `cleanup-actions` — the K/A/U/L/D mutation pipeline. Present on
- *     every tier; the FREE quota (5 lifetime) lives on
- *     `cleanupActionsLifetime`, not on capability presence. Per-verb /
- *     per-selector minimum tiers stay in ACTION_REGISTRY (the seam).
- *   - `triage` — the Plus ritual (D29/D33).
- *   - `autopilot` / `brief` / `screener` / `quiet` / `snoozed` /
- *     `followups` — the Pro automation set (D19, D77).
+ *     every tier; the FREE quota (50/month, A3) lives on
+ *     `cleanupActionsPerMonth`, not on capability presence. Per-verb /
+ *     per-selector minimum tiers resolve from the pricing config.
+ *   - `triage` — the core ritual (D29/D33); Free per A3.
+ *   - `snoozed` — the Later apparatus; Free per A3 (follows the verb).
+ *   - `autopilot` / `brief` / `screener` / `quiet` / `followups` — the
+ *     Pro automation set (D19, D77).
  */
 export const CAPABILITIES = [
   'senders',
@@ -148,11 +151,13 @@ export interface TierDefinition<T extends TierId = TierId> {
   /** Undo retention window (D19: 7d; Pro+ 30d). Interacts with D232. */
   readonly undoWindowDays: number;
   /**
-   * Lifetime cleanup-action quota drawn down by registry verbs with
-   * `countsAsCleanup: true` (the seam). `null` = unlimited. Free = 5
-   * ("taste" actions, D19); every paid tier is unlimited.
+   * Monthly cleanup-action quota drawn down by verbs whose
+   * `COUNTS_AS_CLEANUP` entry is true (A3). The period is anchored on
+   * the workspace's signup anniversary (`workspaces.created_at`) and
+   * computed server-side. `null` = unlimited (every paid tier);
+   * Free = 50/month.
    */
-  readonly cleanupActionsLifetime: number | null;
+  readonly cleanupActionsPerMonth: number | null;
   readonly capabilities: readonly Capability[];
   /**
    * Self-serve attainable at launch: signup (free) or checkout

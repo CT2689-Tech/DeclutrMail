@@ -24,8 +24,10 @@ import type {
   CanonicalShortcut,
   CanonicalVerb,
   PreviewMode,
+  SelectorType,
 } from '../contracts/verb-constants';
 import { ACTION_VERBS, CANONICAL_SHORTCUTS } from '../contracts/verb-constants';
+import { COUNTS_AS_CLEANUP, SELECTOR_CAPS, SELECTOR_TIERS } from '../entitlements/pricing.config';
 import {
   ACTION_SEMANTICS,
   staticActionPreviewCopy,
@@ -131,7 +133,7 @@ export interface ActionCopy {
 /** Tier + cleanup-counting for one selector axis (Codex correction C). */
 export interface ActionCapability {
   readonly tier: ActionTier;
-  /** Whether this draws down the Free 5-lifetime-cleanup counter (D19). */
+  /** Whether this draws down the monthly cleanup quota (D19/A3). */
   readonly countsAsCleanup: boolean;
   /** Max senders per batch for the `multi-sender` selector (D-Q1: 1000). */
   readonly cap?: number;
@@ -146,6 +148,36 @@ export interface CapabilitiesBySelector {
   readonly sender: ActionCapability;
   readonly 'multi-sender': ActionCapability | null;
   readonly 'sender-filter': ActionCapability | null;
+}
+
+/**
+ * A3 seam: verb entries declare only WHICH selectors they support —
+ * the one axis that genuinely varies per verb. Tier, batch cap and
+ * cleanup counting resolve from the pricing config (SELECTOR_TIERS /
+ * SELECTOR_CAPS / COUNTS_AS_CLEANUP), so retiering a selector or
+ * changing what counts is a config edit, never a registry sweep.
+ */
+export type SelectorSupport = Readonly<Record<SelectorType, boolean>>;
+
+function capabilitiesFor(verb: ActionVerb, support: SelectorSupport): CapabilitiesBySelector {
+  const build = (selector: SelectorType): ActionCapability | null => {
+    if (!support[selector]) return null;
+    const cap = SELECTOR_CAPS[selector];
+    return {
+      tier: SELECTOR_TIERS[selector],
+      countsAsCleanup: COUNTS_AS_CLEANUP[verb],
+      ...(cap !== undefined ? { cap } : {}),
+    };
+  };
+  const sender = build('sender');
+  if (!sender) {
+    throw new Error(`verb "${verb}" must support the single-sender selector`);
+  }
+  return {
+    sender,
+    'multi-sender': build('multi-sender'),
+    'sender-filter': build('sender-filter'),
+  };
 }
 
 /** ONE registry descriptor for a verb. */
@@ -182,11 +214,11 @@ export const ACTION_REGISTRY: ActionRegistry = {
     shortcut: CANONICAL_SHORTCUTS.keep,
     // Keep is non-destructive — a 200ms toast with a 5s undo, no sheet.
     preview: 'inline-confirm',
-    capabilities: {
-      sender: { tier: 'free', countsAsCleanup: false },
-      'multi-sender': { tier: 'plus', countsAsCleanup: false },
-      'sender-filter': null,
-    },
+    capabilities: capabilitiesFor('keep', {
+      sender: true,
+      'multi-sender': true,
+      'sender-filter': false,
+    }),
     execution: {
       kind: 'policy-only',
       // Standing "keep" verdict only. The defensive `is_protected`
@@ -206,11 +238,11 @@ export const ACTION_REGISTRY: ActionRegistry = {
     },
     shortcut: CANONICAL_SHORTCUTS.archive,
     preview: 'modal',
-    capabilities: {
-      sender: { tier: 'free', countsAsCleanup: true },
-      'multi-sender': { tier: 'plus', countsAsCleanup: true, cap: 1000 },
-      'sender-filter': { tier: 'pro', countsAsCleanup: true },
-    },
+    capabilities: capabilitiesFor('archive', {
+      sender: true,
+      'multi-sender': true,
+      'sender-filter': true,
+    }),
     execution: {
       kind: 'label-modify',
       // Archive = drop INBOX; undo re-adds it. The LabelActionWorker reads
@@ -230,11 +262,11 @@ export const ACTION_REGISTRY: ActionRegistry = {
     },
     shortcut: CANONICAL_SHORTCUTS.later,
     preview: 'modal',
-    capabilities: {
-      sender: { tier: 'free', countsAsCleanup: true },
-      'multi-sender': { tier: 'plus', countsAsCleanup: true, cap: 1000 },
-      'sender-filter': { tier: 'pro', countsAsCleanup: true },
-    },
+    capabilities: capabilitiesFor('later', {
+      sender: true,
+      'multi-sender': true,
+      'sender-filter': true,
+    }),
     execution: {
       kind: 'label-modify',
       // Later = drop INBOX + tag DeclutrMail/Later; undo restores the
@@ -258,11 +290,11 @@ export const ACTION_REGISTRY: ActionRegistry = {
     },
     shortcut: CANONICAL_SHORTCUTS.unsubscribe,
     preview: 'modal',
-    capabilities: {
-      sender: { tier: 'free', countsAsCleanup: true },
-      'multi-sender': { tier: 'plus', countsAsCleanup: true, cap: 1000 },
-      'sender-filter': { tier: 'pro', countsAsCleanup: true },
-    },
+    capabilities: capabilitiesFor('unsubscribe', {
+      sender: true,
+      'multi-sender': true,
+      'sender-filter': true,
+    }),
     execution: {
       kind: 'unsubscribe',
       // Its OWN kind (Codex §4 — never misclassified as label-modify, so
@@ -284,11 +316,11 @@ export const ACTION_REGISTRY: ActionRegistry = {
     // plus Gmail's separate Trash-retention fallback. Modal preview is
     // mandatory per D226 and renders the red Delete consequence tone.
     preview: 'modal',
-    capabilities: {
-      sender: { tier: 'free', countsAsCleanup: true },
-      'multi-sender': { tier: 'plus', countsAsCleanup: true, cap: 1000 },
-      'sender-filter': { tier: 'pro', countsAsCleanup: true },
-    },
+    capabilities: capabilitiesFor('delete', {
+      sender: true,
+      'multi-sender': true,
+      'sender-filter': true,
+    }),
     execution: {
       // Routes through `label-modify` kind because Gmail's `TRASH` is
       // internally a label; `batchModify` with `addLabelIds:['TRASH']` is
@@ -319,13 +351,13 @@ export const ACTION_REGISTRY: ActionRegistry = {
     // No canonical single-key shortcut — unarchive is not part of K/A/U/L.
     shortcut: null,
     preview: 'modal',
-    capabilities: {
-      // Single-sender restore only (Q3). Bulk restore is not a launch
-      // surface — no multi-sender / sender-filter selector.
-      sender: { tier: 'free', countsAsCleanup: false },
-      'multi-sender': null,
-      'sender-filter': null,
-    },
+    // Single-sender restore only (Q3). Bulk restore is not a launch
+    // surface — no multi-sender / sender-filter selector.
+    capabilities: capabilitiesFor('unarchive', {
+      sender: true,
+      'multi-sender': false,
+      'sender-filter': false,
+    }),
     execution: {
       kind: 'label-modify',
       // The inverse of archive — re-add INBOX; undo drops it again. A

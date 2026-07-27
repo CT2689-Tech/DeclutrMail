@@ -8,6 +8,7 @@ import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
 import {
   canUseActionSelector,
+  multiSenderPlanName,
   canBulkArchive,
   canBulkDelete,
   canBulkLater,
@@ -128,7 +129,7 @@ export function SelectionBar({
             fontSize: 12,
           }}
         >
-          Multi-sender actions require Plus.
+          Multi-sender actions require {multiSenderPlanName()}.
           <Link
             href="/billing"
             style={{ color: color.fgInverse, fontWeight: 700, textUnderlineOffset: 3 }}
@@ -158,7 +159,7 @@ export function SelectionBar({
             disabled={disabled}
             title={
               !entitled
-                ? `${label} — Plus required for multi-sender actions`
+                ? `${label} — ${multiSenderPlanName()} required for multi-sender actions`
                 : shortcut
                   ? `${label} (${shortcut})`
                   : label

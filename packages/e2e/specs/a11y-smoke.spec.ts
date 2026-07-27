@@ -17,9 +17,10 @@ import { expect, test, type Page } from '@playwright/test';
 
 const ROUTES = [
   { path: '/senders', readyRole: 'region', readyName: 'About How Senders works' },
-  // The synthetic workspace is intentionally Free for billing E2E, so
-  // Triage exercises its real authenticated tier-gate surface here.
-  { path: '/triage', readyRole: 'heading', readyName: 'Triage' },
+  // A3 (D19) granted Free the real Triage screen, not the TierGate
+  // placeholder — the synthetic Free workspace now exercises the same
+  // "About <feature>" ScreenIntro landmark every other route asserts on.
+  { path: '/triage', readyRole: 'region', readyName: 'About How Triage works' },
   { path: '/activity', readyRole: 'region', readyName: 'About Activity' },
   { path: '/settings/privacy', readyRole: 'region', readyName: 'About Privacy & Data' },
   { path: '/billing', readyRole: 'region', readyName: 'About Plan & billing' },

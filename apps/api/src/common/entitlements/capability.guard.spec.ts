@@ -37,7 +37,6 @@ const PRO_CAPABILITIES: readonly Capability[] = [
   'brief',
   'screener',
   'quiet',
-  'snoozed',
   'followups',
 ];
 
@@ -169,15 +168,6 @@ describe('CapabilityGuard (D19) — per-surface wiring', () => {
       gated: ['list', 'dismiss'],
       exempt: [],
     },
-    {
-      surface: 'snoozed',
-      capability: 'snoozed',
-      controller: SnoozedController,
-      gated: ['list', 'patchSnooze', 'wakeNow'],
-      // Recovery must remain available on every tier because Later
-      // actions can fail on every tier; recovery is never an upsell.
-      exempt: ['recovery', 'wakeRecovery'],
-    },
   ];
 
   for (const { surface, capability, controller, gated, exempt } of SURFACES) {
@@ -242,52 +232,17 @@ describe('CapabilityGuard (D19) — per-surface wiring', () => {
     });
   }
 
-  describe('triage (Plus capability)', () => {
-    const gatedRoutes = ['scoreSender', 'queueSize', 'queue', 'todaySummary'] as const;
-    const routes = ['scoreSender', 'queueSize', 'queue', 'stats', 'todaySummary'] as const;
-
-    it('declares the capability at class level, lists the guard, and covers every route', () => {
-      expect(Reflect.getMetadata(CAPABILITY_METADATA, TriageController)).toBe('triage');
-      expect(Reflect.getMetadata(GUARDS_METADATA, TriageController)).toContain(CapabilityGuard);
-      expect(
-        Object.getOwnPropertyNames(TriageController.prototype).filter(
-          (name) => name !== 'constructor',
-        ),
-      ).toEqual(routes);
-    });
-
-    it('402s Free and passes Plus and above on every route', async () => {
-      for (const handlerName of gatedRoutes) {
-        const { guard: freeGuard } = makeGuard('free');
-        const err = await caught(
-          freeGuard.canActivate(
-            makeCtx({ controller: TriageController, handlerName, user: PRINCIPAL }),
-          ),
+  describe('triage + snoozed are capability-free (A3 — Free features carry no gate)', () => {
+    it('declares NO capability and does not list CapabilityGuard', () => {
+      for (const controller of [TriageController, SnoozedController]) {
+        expect(
+          Reflect.getMetadata(CAPABILITY_METADATA, controller),
+          controller.name,
+        ).toBeUndefined();
+        expect(Reflect.getMetadata(GUARDS_METADATA, controller), controller.name).not.toContain(
+          CapabilityGuard,
         );
-        expect(err, handlerName).toBeInstanceOf(AppException);
-        expect((err as AppException).code).toBe('PRO_FEATURE_REQUIRED');
-        expect((err as AppException).message).toContain('Plus plan');
-
-        for (const tier of ['plus', 'pro', 'team', 'enterprise'] as const) {
-          const { guard } = makeGuard(tier);
-          await expect(
-            guard.canActivate(
-              makeCtx({ controller: TriageController, handlerName, user: PRINCIPAL }),
-            ),
-            `${tier} × triage.${handlerName}`,
-          ).resolves.toBe(true);
-        }
       }
-    });
-
-    it('keeps aggregate stats open for the Free onboarding practice run', async () => {
-      const { guard, tierForWorkspace } = makeGuard('free');
-      await expect(
-        guard.canActivate(
-          makeCtx({ controller: TriageController, handlerName: 'stats', user: PRINCIPAL }),
-        ),
-      ).resolves.toBe(true);
-      expect(tierForWorkspace).not.toHaveBeenCalled();
     });
   });
 

@@ -86,6 +86,7 @@ function makeMe(mailboxes: MeMailbox[] = [MAILBOX_A, MAILBOX_B]): Me {
     activeMailboxId: MAILBOX_A.id,
     tier: 'pro',
     cleanupRemaining: null,
+    cleanupResetsAt: null,
   };
 }
 
@@ -104,6 +105,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     entitlements = {
       tier: 'pro',
       cleanupRemaining: null,
+      cleanupResetsAt: null,
       inboxLimit: 2,
       connectedInboxes: 2,
       atInboxLimit: true,
