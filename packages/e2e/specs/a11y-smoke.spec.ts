@@ -18,9 +18,21 @@ import { expect, test, type Page } from '@playwright/test';
 const ROUTES = [
   { path: '/senders', readyRole: 'region', readyName: 'About How Senders works' },
   // A3 (D19) granted Free the real Triage screen, not the TierGate
-  // placeholder — the synthetic Free workspace now exercises the same
-  // "About <feature>" ScreenIntro landmark every other route asserts on.
-  { path: '/triage', readyRole: 'region', readyName: 'About How Triage works' },
+  // placeholder. The "How Triage works" ScreenIntro is NOT a valid ready
+  // signal here — triage-screen.tsx renders it unconditionally for the
+  // 'daily' journey regardless of `state.kind`, so it appears before the
+  // queue/stats reads ever settle and the gate would pass on a page
+  // permanently stuck on "Loading your decisions…". Anchor on the
+  // composed h1 instead, which only reaches this text once
+  // `composeTriageState` has left 'loading' for a real outcome —
+  // 'ready' (N decisions) or 'empty' (nothing waiting). A genuine load
+  // failure ('error') is deliberately EXCLUDED so it still times out
+  // and fails the gate rather than being waved through.
+  {
+    path: '/triage',
+    readyRole: 'heading',
+    readyName: /^(\d+ decisions?, one at a time\.|Nothing waiting\.)$/,
+  },
   { path: '/activity', readyRole: 'region', readyName: 'About Activity' },
   { path: '/settings/privacy', readyRole: 'region', readyName: 'About Privacy & Data' },
   { path: '/billing', readyRole: 'region', readyName: 'About Plan & billing' },
@@ -103,7 +115,10 @@ for (const route of ROUTES) {
     const ready =
       route.readyRole === 'region'
         ? page.getByRole('region', { name: route.readyName })
-        : page.getByRole('heading', { name: route.readyName, exact: true });
+        : page.getByRole('heading', {
+            name: route.readyName,
+            ...(typeof route.readyName === 'string' ? { exact: true } : {}),
+          });
     await expect(ready).toBeVisible({ timeout: 60_000 });
 
     await expectCriticalControlsHaveNames(page, testInfo.project.name === MOBILE_PROJECT);
