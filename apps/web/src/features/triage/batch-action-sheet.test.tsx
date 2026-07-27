@@ -5,18 +5,20 @@ import { TRIAGE_QUEUE } from './data';
 import { BatchActionSheet } from './batch-action-sheet';
 import type { DomainBatch } from './domain-batch';
 
+const batchRows = [0, 1, 2].map((index) => ({
+  ...TRIAGE_QUEUE[0]!,
+  id: `row-${index}`,
+  senderId: `sender-${index}`,
+  senderName: `Sender ${index + 1}`,
+  senderEmail: `sender-${index + 1}@example.com`,
+  senderDomain: 'example.com',
+  protectionReason: null,
+}));
 const batch: DomainBatch = {
   domain: 'example.com',
   startIndex: 0,
-  rows: [0, 1, 2].map((index) => ({
-    ...TRIAGE_QUEUE[0]!,
-    id: `row-${index}`,
-    senderId: `sender-${index}`,
-    senderName: `Sender ${index + 1}`,
-    senderEmail: `sender-${index + 1}@example.com`,
-    senderDomain: 'example.com',
-    protectionReason: null,
-  })),
+  rows: batchRows,
+  eligibleRows: batchRows,
 };
 
 const buckets = {

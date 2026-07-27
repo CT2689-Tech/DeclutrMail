@@ -79,7 +79,12 @@ function mkBatch(
     verdict: m.protection ? 'keep' : 'archive',
     protectionReason: m.protection ?? null,
   }));
-  return { domain, startIndex: 0, rows };
+  return {
+    domain,
+    startIndex: 0,
+    rows,
+    eligibleRows: rows.filter((r) => r.protectionReason === null),
+  };
 }
 
 const AMAZON_BATCH = mkBatch('amazon.com', [

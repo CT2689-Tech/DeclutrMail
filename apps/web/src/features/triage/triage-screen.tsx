@@ -208,10 +208,12 @@ export function TriageScreen({
   const enqueueBulk = useEnqueueBulkAction();
   const batchStatus = useBatchStatus(batchAction?.batchId ?? null);
 
-  // D226 — the batch sheet's REAL aggregated counts. Enabled only
-  // while the sheet is open (>1 eligible sender by construction).
+  // D226 — the batch sheet's REAL aggregated counts. A batch is only
+  // constructed with ≥MIN_BATCH_RUN eligible rows (domain-batch.ts), so
+  // the >1 enablement below always fires and the sheet can never sit on
+  // "Counting the inbox…" forever.
   const pendingBatchSenderIds = pendingBatch
-    ? pendingBatch.batch.rows.filter((r) => r.protectionReason === null).map((r) => r.senderId)
+    ? pendingBatch.batch.eligibleRows.map((r) => r.senderId)
     : null;
   const bulkPreview = useBulkActionPreview(pendingBatchSenderIds);
   const batchSheetOpen = pendingBatch != null;
@@ -829,7 +831,7 @@ export function TriageScreen({
   const onBatchConfirm = useCallback(() => {
     if (pendingBatch == null) return;
     const { verb, batch, wakeAt } = pendingBatch;
-    const eligible = batch.rows.filter((r) => r.protectionReason === null);
+    const eligible = batch.eligibleRows;
     setPendingBatch(null);
     enqueueBulk.mutate(
       {

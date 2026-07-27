@@ -64,14 +64,33 @@ export interface DomainBatch {
   domain: string;
   /** Index of the run's first row within the queue. */
   startIndex: number;
-  /** The member rows, in queue order. */
+  /** The FULL member run, in queue order — protected rows included. */
   rows: TriageDecisionRow[];
+  /**
+   * The actionable subset (`protectionReason === null`) — the ONE
+   * predicate every batch surface reads: the card's count, the sheet's
+   * title, the bulk preview's sender set, and the enqueue payload.
+   * D245 excludes Protected senders from bulk, so a batch is only
+   * constructed when this holds ≥{@link MIN_BATCH_RUN} rows — a card
+   * for a set that cannot legally enter the bulk flow is never offered.
+   */
+  eligibleRows: TriageDecisionRow[];
+}
+
+/** The one bulk-eligibility predicate (D245 — Protected never bulks). */
+export function isBatchEligible(row: TriageDecisionRow): boolean {
+  return row.protectionReason === null;
 }
 
 /**
  * Find every run of ≥{@link MIN_BATCH_RUN} consecutive rows sharing a
  * registrable domain, skipping domains the user dismissed this
  * session. Runs never overlap (a row belongs to at most one batch).
+ *
+ * The threshold applies to the ELIGIBLE members: a run whose protected
+ * rows leave fewer than {@link MIN_BATCH_RUN} actionable senders falls
+ * back to per-row flow instead of offering a card whose count and
+ * confirm path could not deliver.
  */
 export function findDomainBatches(
   rows: readonly TriageDecisionRow[],
@@ -86,9 +105,10 @@ export function findDomainBatches(
     while (j < rows.length && registrableDomain(rows[j]!.senderDomain) === domain) {
       j += 1;
     }
-    const runLength = j - i;
-    if (runLength >= MIN_BATCH_RUN && !dismissed.has(domain)) {
-      batches.push({ domain, startIndex: i, rows: rows.slice(i, j) });
+    const run = rows.slice(i, j);
+    const eligibleRows = run.filter(isBatchEligible);
+    if (eligibleRows.length >= MIN_BATCH_RUN && !dismissed.has(domain)) {
+      batches.push({ domain, startIndex: i, rows: run, eligibleRows });
     }
     i = j;
   }
@@ -128,9 +148,13 @@ export function findVerdictBatch(
   for (const verdict of ['archive', 'later'] as const) {
     const label = VERDICT_BATCH_LABELS[verdict];
     if (dismissed.has(label)) continue;
-    const members = rows.filter((r) => r.verdict === verdict && r.protectionReason === null);
+    const members = rows.filter((r) => r.verdict === verdict && isBatchEligible(r));
     if (members.length >= MIN_BATCH_RUN) {
-      return { batch: { domain: label, startIndex: 0, rows: members }, verdict };
+      // Filtered up front, so the full set IS the eligible set.
+      return {
+        batch: { domain: label, startIndex: 0, rows: members, eligibleRows: members },
+        verdict,
+      };
     }
   }
   return null;
