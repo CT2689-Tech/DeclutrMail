@@ -11,10 +11,11 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import type { BillingSubscription } from '@declutrmail/shared/contracts';
+import { BillingSubscriptionSchema } from '@declutrmail/shared/contracts';
 
 import { apiGet, ApiError } from '@/lib/api/client';
 
+import { BillingPayloadError } from '../billing-model';
 import { billingKeys } from './query-keys';
 
 /** Extract the machine-readable envelope code from an ApiError. */
@@ -58,8 +59,15 @@ export function useBillingSubscription(options?: {
   return useQuery({
     queryKey: billingKeys.subscription(),
     queryFn: async ({ signal }) => {
-      const envelope = await apiGet<BillingSubscription>('/api/billing/subscription', { signal });
-      return envelope.data;
+      const envelope = await apiGet<unknown>('/api/billing/subscription', { signal });
+      // Contract narrow at the wire boundary: a payload the schema
+      // cannot parse surfaces as the screen's honest UNKNOWN state —
+      // never `TIER_MANIFEST[garbage]` or an invented price/status.
+      const parsed = BillingSubscriptionSchema.safeParse(envelope.data);
+      if (!parsed.success) {
+        throw new BillingPayloadError();
+      }
+      return parsed.data;
     },
     // 503 BILLING_DISABLED is a designed state — never hammer it (§8
     // read-guard-4xx/5xx rule; the route fails CLEANLY while dark).

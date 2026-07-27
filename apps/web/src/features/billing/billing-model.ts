@@ -6,20 +6,20 @@
  * discipline as the /pricing model, which this reuses).
  */
 
-import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
-import type {
-  BillingCycle,
-  BillingSubscription,
-  SubscriptionStatus,
-} from '@declutrmail/shared/contracts';
+import { TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
+import type { BillingCycle, BillingSubscription } from '@declutrmail/shared/contracts';
 
 import {
   currencyForPricePoint,
   currencyForProvider,
   formatMoney,
+  formatUsd,
   type Currency,
 } from '@/features/marketing/pricing/pricing-model';
+import { apiErrorCode } from '@/lib/api/client';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
+
+import type { PendingCheckout } from './pending-checkout';
 
 /** The condensed-strip tiers (D119) — the three self-serve rungs. */
 export const STRIP_TIER_IDS = ['free', 'plus', 'pro'] as const;
@@ -143,15 +143,201 @@ export function formatBillingDate(iso: string | null): string | null {
  */
 export const MONEY_BACK_NOTE = '30-day money-back guarantee';
 
+// ── D119/A6 — the single derived billing story ───────────────────────
+//
+// The billing screen used to let each surface read the raw subscription
+// row for itself, so an entitlement/row disagreement ("tier: pro" +
+// paused Plus row) rendered TWO plans at once. `deriveBillingViewState`
+// is the one place the read is interpreted; every component renders
+// from the resulting discriminated union and never from the raw row.
+// See docs/adr/0027-billing-presentation-state.md.
+
+/** The provider subscription record as served by the billing read. */
+export type SubscriptionRecord = NonNullable<BillingSubscription['subscription']>;
+
 /**
- * One-line subscription status descriptor for the plan card. Returns
- * null for plain `active` (the renewal line already says everything).
+ * The billing read answered 200 with a payload the contract schema
+ * cannot narrow. Thrown by the read hook's Zod parse; the derive layer
+ * maps it to the `unknown` view state — the screen renders honest
+ * ignorance instead of `TIER_MANIFEST[garbage]` or an invented price.
  */
-export function statusNote(
-  sub: NonNullable<BillingSubscription['subscription']>,
+export class BillingPayloadError extends Error {
+  constructor() {
+    super('GET /api/billing/subscription returned a payload outside BillingSubscriptionSchema');
+    this.name = 'BillingPayloadError';
+  }
+}
+
+/**
+ * The record that GRANTS the entitlement tier: same tier AND a
+ * granting status (the server's GRANTING_STATUSES: active/past_due).
+ * `cancel_scheduled` is a granting record with `cancelAtPeriodEnd` —
+ * still charging, still granting, renewal withdrawn. Everything else
+ * is a non-backing record and never a source for the current plan's
+ * name, price, renewal, or provider.
+ */
+export type BackingState =
+  | { state: 'none' }
+  | { state: 'active' | 'past_due' | 'cancel_scheduled'; sub: SubscriptionRecord };
+
+export type NonBackingReason = 'paused' | 'canceled' | 'tier_mismatch';
+
+/**
+ * A real, actionable subscription record that does NOT grant the
+ * entitlement tier. `paused`: the ordinary pause story (resume restores
+ * or upgrades). `canceled`: the row ended. `tier_mismatch`: the
+ * entitlement OUTRANKS what this row grants (or a granting-status row
+ * names a different tier) — the workspace's plan comes from elsewhere,
+ * and resume/cancel verbs carry cross-tier consequences.
+ */
+export interface NonBackingRecord {
+  reason: NonBackingReason;
+  sub: SubscriptionRecord;
+}
+
+export interface BillingPlanView {
+  /** The workspace's resolved tier — the ONLY "current plan" any surface may name. */
+  entitlementTier: TierId;
+  backing: BackingState;
+  nonBacking: NonBackingRecord | null;
+  /** Only ever read off a BACKING record — a non-backing row's marker is not a plan fact. */
+  scheduledChange: SubscriptionRecord['scheduledChange'];
+  foundingMember: boolean;
+}
+
+export type BillingViewState =
+  | { kind: 'loading' }
+  | { kind: 'billing_dark'; entitlementTier: TierId }
+  | { kind: 'read_failed'; error: unknown }
+  | ({ kind: 'payment_pending'; pending: PendingCheckout } & BillingPlanView)
+  | ({ kind: 'plan' } & BillingPlanView)
+  | { kind: 'unknown' };
+
+/** The plan payload when no billing read body exists (billing dark, or
+ *  a pending lock on a mount whose read has no data yet): entitlement
+ *  from `me`, no subscription claims of any kind. */
+export function emptyPlanView(entitlementTier: TierId): BillingPlanView {
+  return {
+    entitlementTier,
+    backing: { state: 'none' },
+    nonBacking: null,
+    scheduledChange: null,
+    foundingMember: false,
+  };
+}
+
+/**
+ * True when a NON-BACKING record still occupies the workspace's ONE
+ * live-subscription slot server-side: `createCheckout` answers 409
+ * SUBSCRIPTION_EXISTS for any row in status active/past_due/paused
+ * (billing.service.ts) — the row failing the BACKING test does not
+ * free that slot. Offering a new checkout past this predicate is a
+ * guaranteed dead-end 409, so the picker must stay locked until the
+ * row is resumed into backing or canceled. Only a canceled row leaves
+ * the slot free. Mirrors the SERVER's status set — not the reason.
+ */
+export function nonBackingBlocksNewCheckout(record: NonBackingRecord | null): boolean {
+  return record !== null && record.sub.status !== 'canceled';
+}
+
+function nonBackingReason(sub: SubscriptionRecord, entitlementTier: TierId): NonBackingReason {
+  if (sub.status === 'canceled') return 'canceled';
+  if (sub.status === 'paused') {
+    // A paused row under an entitlement that OUTRANKS it is the A6
+    // repro shape: the plan is granted from elsewhere, and resuming
+    // re-grants the SUB's tier — the webhook recompute
+    // (billing-webhook.service recomputeWorkspaceTier) rebuilds the
+    // workspace tier from subscription rows, which can downgrade it.
+    return TIER_RANK[entitlementTier] > TIER_RANK[sub.tier] ? 'tier_mismatch' : 'paused';
+  }
+  // Granting status but a different tier than the entitlement — the
+  // backing test already failed, so the row cannot tell the plan story.
+  return 'tier_mismatch';
+}
+
+function planViewOf(payload: BillingSubscription): BillingPlanView {
+  const entitlementTier: TierId = payload.tier;
+  const sub = payload.subscription;
+  let backing: BackingState = { state: 'none' };
+  let nonBacking: NonBackingRecord | null = null;
+  if (sub !== null) {
+    if ((sub.status === 'active' || sub.status === 'past_due') && sub.tier === entitlementTier) {
+      backing = { state: sub.cancelAtPeriodEnd ? 'cancel_scheduled' : sub.status, sub };
+    } else {
+      nonBacking = { reason: nonBackingReason(sub, entitlementTier), sub };
+    }
+  }
+  return {
+    entitlementTier,
+    backing,
+    nonBacking,
+    scheduledChange: backing.state === 'none' ? null : backing.sub.scheduledChange,
+    foundingMember: payload.foundingMember,
+  };
+}
+
+export interface BillingReadSnapshot {
+  isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+  /** The Zod-parsed read body (the hook throws `BillingPayloadError` before an unparsed one gets here). */
+  data: BillingSubscription | undefined;
+  /** Entitlement fallback from `/api/auth/me` for states with no read body. */
+  meTier: TierId;
+  pending: PendingCheckout | null;
+}
+
+/**
+ * The one interpretation of the billing read (A6). Precedence:
+ * a pending money action outranks everything but loading (its lock and
+ * poll must stay visible through transient read failures — the error
+ * state's "no charge was made" would be false); `billing_dark` is the
+ * D202 `BILLING_DISABLED` CODE, never "any 503" (MISTAKES 2026-07-26:
+ * a status says how a request failed, never why).
+ */
+export function deriveBillingViewState(read: BillingReadSnapshot): BillingViewState {
+  if (read.isLoading) return { kind: 'loading' };
+  if (read.pending !== null) {
+    return {
+      kind: 'payment_pending',
+      pending: read.pending,
+      ...(read.data !== undefined ? planViewOf(read.data) : emptyPlanView(read.meTier)),
+    };
+  }
+  if (apiErrorCode(read.error) === 'BILLING_DISABLED') {
+    return { kind: 'billing_dark', entitlementTier: read.meTier };
+  }
+  if (read.error instanceof BillingPayloadError) return { kind: 'unknown' };
+  if (read.isError) return { kind: 'read_failed', error: read.error };
+  if (read.data === undefined) return { kind: 'unknown' };
+  return { kind: 'plan', ...planViewOf(read.data) };
+}
+
+/**
+ * The current-plan card's headline price — provider price ONLY from the
+ * backing record. Backing `none` on a paid tier makes NO price claim
+ * (nobody is charged one); the old quotedPlanPrice headline printed a
+ * price for a plan nobody was paying for (A6).
+ */
+export function currentPlanPriceLabel(view: BillingPlanView): string {
+  if (view.backing.state !== 'none') {
+    const { sub } = view.backing;
+    return chargedPlanPrice(sub.tier, sub.cycle, sub.provider, sub.foundingMember) ?? '';
+  }
+  if (view.entitlementTier === 'free') return formatUsd(0);
+  return 'Included with your workspace';
+}
+
+/**
+ * One-line status descriptor for the plan card — BACKING states only.
+ * The old `statusNote` also carried paused/canceled branches; those
+ * rows are non-backing and render through the non-backing notice now.
+ */
+export function backingStatusNote(
+  backing: BackingState,
 ): { tone: 'warn' | 'muted'; text: string } | null {
-  if (sub.cancelAtPeriodEnd) {
-    const end = formatBillingDate(sub.currentPeriodEnd);
+  if (backing.state === 'cancel_scheduled') {
+    const end = formatBillingDate(backing.sub.currentPeriodEnd);
     return {
       tone: 'warn',
       text: end
@@ -159,28 +345,11 @@ export function statusNote(
         : "Cancellation scheduled — you'll switch to Free at the end of the current period.",
     };
   }
-  if (sub.status === 'past_due') {
+  if (backing.state === 'past_due') {
     return {
       tone: 'warn',
       text: 'Payment past due — update your payment method with the provider to keep your plan.',
     };
   }
-  if (sub.status === 'paused') {
-    const until = formatBillingDate(sub.pauseUntil);
-    return {
-      tone: 'muted',
-      text: until ? `Subscription paused until ${until}.` : 'Subscription paused.',
-    };
-  }
-  if (sub.status === 'canceled') {
-    return { tone: 'muted', text: 'Subscription ended — your workspace is on the Free plan.' };
-  }
   return null;
-}
-
-/** Whether the plan card offers the cancel affordance (D118). */
-export function canCancel(sub: BillingSubscription['subscription']): boolean {
-  if (!sub) return false;
-  const cancellable: SubscriptionStatus[] = ['active', 'past_due', 'paused'];
-  return cancellable.includes(sub.status) && !sub.cancelAtPeriodEnd;
 }

@@ -22,29 +22,24 @@ import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
-import {
-  currencyForProvider,
-  formatMoney,
-  formatUsd,
-} from '@/features/marketing/pricing/pricing-model';
+import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
-import {
-  apiErrorCode,
-  isBillingDisabledError,
-  useBillingSubscription,
-} from './api/use-billing-subscription';
+import { apiErrorCode, useBillingSubscription } from './api/use-billing-subscription';
 import { billingKeys } from './api/query-keys';
 import type { BillingIntent } from './billing-intent';
 import { useCancelSubscription } from './api/use-cancel-subscription';
 import { useChangePlan } from './api/use-change-plan';
 import {
-  canCancel,
-  chargedPlanPrice,
+  backingStatusNote,
+  currentPlanPriceLabel,
+  deriveBillingViewState,
+  emptyPlanView,
   formatBillingDate,
-  quotedPlanPrice,
-  statusNote,
+  nonBackingBlocksNewCheckout,
+  type BillingPlanView,
+  type NonBackingRecord,
 } from './billing-model';
 import { CancelModal } from './cancel-modal';
 import { useResumeSubscription } from './api/use-resume-subscription';
@@ -163,10 +158,24 @@ export function BillingScreen({
     return () => window.removeEventListener('storage', onStorage);
   }, [workspaceId]);
 
-  const billingDisabled = isBillingDisabledError(subscriptionQuery.error);
   const data = subscriptionQuery.data ?? null;
 
-  // While billing is dark the workspace tier still comes from `me`.
+  // A6 — the ONE interpretation of the billing read. Every rendered
+  // surface derives from `view`; no component reads the raw
+  // subscription row for plan facts anymore
+  // (docs/adr/0027-billing-presentation-state.md).
+  const view = deriveBillingViewState({
+    isLoading: subscriptionQuery.isLoading,
+    isError: subscriptionQuery.isError,
+    error: subscriptionQuery.error,
+    data: subscriptionQuery.data,
+    meTier,
+    pending,
+  });
+
+  // Pending-lock BOOKKEEPING (not render): the lock records the exact
+  // server tier/cycle a money action started from, so it still reads
+  // the raw body (while billing is dark the tier comes from `me`).
   const tier: TierId = data?.tier ?? meTier;
   const subscription = data?.subscription ?? null;
 
@@ -231,19 +240,19 @@ export function BillingScreen({
     setPending(null);
   }
 
-  if (subscriptionQuery.isLoading) {
+  if (view.kind === 'loading') {
     return <LoadingState />;
   }
-  // While a completed payment awaits its webhook, a transient poll
-  // failure must NOT swap the screen for the error state — its "no
-  // charge was made" copy would be false, and the poll self-heals.
-  if (subscriptionQuery.isError && !billingDisabled && pending === null) {
-    return (
-      <BillingErrorState
-        error={subscriptionQuery.error}
-        onRetry={() => subscriptionQuery.refetch()}
-      />
-    );
+  // The derive layer already kept a pending money action out of this
+  // state: while a completed payment awaits its webhook, a transient
+  // poll failure must NOT swap the screen for the error state — its
+  // "no charge was made" copy would be false, and the poll self-heals.
+  if (view.kind === 'read_failed') {
+    return <BillingErrorState error={view.error} onRetry={() => subscriptionQuery.refetch()} />;
+  }
+  // Malformed 200 body — honest ignorance, never TIER_MANIFEST[garbage].
+  if (view.kind === 'unknown') {
+    return <BillingUnknownState onRetry={() => subscriptionQuery.refetch()} />;
   }
 
   function startPending(
@@ -373,6 +382,21 @@ export function BillingScreen({
     });
   }
 
+  // Remaining kinds: billing_dark | payment_pending | plan — all render
+  // the plan layout. Billing-dark carries no read body, so its plan
+  // payload is the honest empty view over the `me` entitlement.
+  const billingDark = view.kind === 'billing_dark';
+  const plan: BillingPlanView = billingDark ? emptyPlanView(view.entitlementTier) : view;
+  const backingSub = plan.backing.state === 'none' ? null : plan.backing.sub;
+  // The picker's change-vs-checkout routing rides the BACKING record in
+  // a granting status only (cancel_scheduled locks the picker anyway).
+  const grantingBackingSub =
+    plan.backing.state === 'active' || plan.backing.state === 'past_due' ? plan.backing.sub : null;
+  // The non-backing notice renders only in the settled plan state — a
+  // pending money action's banner owns the screen's story until the
+  // webhook resolves it, and billing-dark has no rows to describe.
+  const nonBacking = view.kind === 'plan' ? plan.nonBacking : null;
+
   return (
     <div
       style={{
@@ -391,7 +415,7 @@ export function BillingScreen({
         tip="Every paid plan includes a 30-day money-back guarantee, subject to the published Refund Policy and fair-use terms."
       />
 
-      {billingDisabled ? <BillingDisabledNotice /> : null}
+      {billingDark ? <BillingDisabledNotice /> : null}
 
       {pending !== null ? (
         <PaymentProcessingNotice
@@ -401,24 +425,20 @@ export function BillingScreen({
         />
       ) : null}
 
-      {data?.foundingMember ? (
-        <FoundingBanner provider={data.subscription?.provider ?? 'paddle'} />
-      ) : null}
+      {plan.foundingMember && backingSub ? <FoundingBanner provider={backingSub.provider} /> : null}
 
       <CurrentPlanCard
-        tier={tier}
-        subscription={subscription}
-        regionProvider={initialProvider}
+        plan={plan}
         cleanupRemaining={cleanupRemaining}
-        billingDisabled={billingDisabled}
+        billingDark={billingDark}
         onCancel={() => setCancelOpen(true)}
       />
 
-      {subscription?.scheduledChange ? (
+      {plan.scheduledChange && backingSub ? (
         <ScheduledPlanChangeNotice
-          currentTier={subscription.tier}
-          currentCycle={subscription.cycle}
-          scheduledChange={subscription.scheduledChange}
+          currentTier={backingSub.tier}
+          currentCycle={backingSub.cycle}
+          scheduledChange={plan.scheduledChange}
           onCanceled={(next) => {
             queryClient.setQueryData(billingKeys.subscription(), next);
             toast('Keeping your current plan — confirming with Paddle.', 'success');
@@ -426,30 +446,34 @@ export function BillingScreen({
         />
       ) : null}
 
-      {subscription?.status === 'paused' && !billingDisabled && pending === null ? (
-        <PausedSubscriptionNotice
-          subscription={subscription}
-          currentTier={tier}
-          onResumeStarted={() => startPending('resume', subscription.tier, subscription.cycle)}
+      {nonBacking ? (
+        <NonBackingSubscriptionNotice
+          record={nonBacking}
+          entitlementTier={plan.entitlementTier}
+          onResumeStarted={() => startPending('resume', nonBacking.sub.tier, nonBacking.sub.cycle)}
           onRequestCancel={() => setCancelOpen(true)}
         />
       ) : null}
 
       <PlanPicker
-        currentTier={tier}
-        subscription={subscription}
+        currentTier={plan.entitlementTier}
+        grantingSub={grantingBackingSub}
         // While a plan action awaits its webhook, a second one could
         // double-charge — SUBSCRIPTION_EXISTS can't catch a checkout
         // whose row doesn't exist yet. Withhold every affordance until
         // the pending state resolves (the banner above says why).
-        // Paused subs must resume or cancel first (the notice above).
+        // A non-backing row that is not CANCELED still occupies the
+        // server's one-live-subscription slot (SUBSCRIPTION_EXISTS keys
+        // on STATUS active/past_due/paused, not on backing) — offering
+        // checkout against it is a guaranteed 409 dead-end. Resume or
+        // cancel first; the notice above carries those verbs (A6).
         disabled={
-          billingDisabled ||
+          billingDark ||
           pending !== null ||
-          subscription?.status === 'paused' ||
-          subscription?.status === 'past_due' ||
-          subscription?.cancelAtPeriodEnd === true ||
-          subscription?.scheduledChange != null
+          plan.backing.state === 'past_due' ||
+          plan.backing.state === 'cancel_scheduled' ||
+          plan.scheduledChange != null ||
+          nonBackingBlocksNewCheckout(nonBacking)
         }
         initialIntent={initialIntent}
         initialProvider={initialProvider}
@@ -489,7 +513,9 @@ export function BillingScreen({
 
       <CancelModal
         open={cancelOpen}
-        subscription={subscription}
+        sub={backingSub ?? plan.nonBacking?.sub ?? null}
+        backsEntitlement={backingSub !== null}
+        entitlementTier={plan.entitlementTier}
         onClose={() => {
           setCancelOpen(false);
           // Clear a failed attempt so reopening the modal starts clean
@@ -692,57 +718,32 @@ export function PaymentProcessingNotice({
 // ── Current plan card (D119 top block) ───────────────────────────────
 
 function CurrentPlanCard({
-  tier,
-  subscription,
-  regionProvider,
+  plan,
   cleanupRemaining,
-  billingDisabled,
+  billingDark,
   onCancel,
 }: {
-  tier: TierId;
-  subscription: BillingSubscription['subscription'];
-  /** Geo-derived rail, used ONLY when no subscription backs this tier —
-   *  a backing subscription states its own provider as settled fact. */
-  regionProvider: BillingProviderId;
+  plan: BillingPlanView;
   cleanupRemaining: number | null;
-  billingDisabled: boolean;
+  billingDark: boolean;
   onCancel: () => void;
 }) {
-  const manifest = TIER_MANIFEST[tier];
+  const manifest = TIER_MANIFEST[plan.entitlementTier];
+  const { backing } = plan;
 
-  // The card tells ONE story: the ENTITLEMENT tier. Subscription
-  // details (its price, renewal, status, cancel affordance) render
-  // only when the subscription actually BACKS that tier — a paused or
-  // mismatched row must never leak its price or status onto a Free
-  // card ("Free · $9/mo · paused" asserted three incoherent facts).
-  const subBacksTier =
-    subscription !== null &&
-    subscription.tier === tier &&
-    (subscription.status === 'active' || subscription.status === 'past_due');
-  const note = subBacksTier ? statusNote(subscription) : null;
-
-  // Headline price: the backing subscription's actual cycle price, or
-  // the manifest monthly line otherwise (bare $0 for Free — "/mo" on a
-  // forever-free plan reads like a charge).
-  // A BACKING subscription states its own provider, so the headline
-  // currency here is a fact, not a guess: a Razorpay subscriber paying
-  // ₹15,999/yr must never read "$190/yr" as their current plan.
-  const priceLabel = subBacksTier
-    ? (chargedPlanPrice(
-        subscription.tier,
-        subscription.cycle,
-        subscription.provider,
-        subscription.foundingMember,
-      ) ?? '')
-    : tier === 'free'
-      ? formatUsd(0)
-      : // No backing subscription, so this is a QUOTE — it has to name the
-        // same rail the plan strip below it quotes, or the same tier
-        // reads two prices on one screen.
-        (quotedPlanPrice(tier, 'monthly', regionProvider) ?? formatUsd(0));
+  // The card tells ONE story: the ENTITLEMENT tier. Subscription facts
+  // (price, renewal, status, cancel affordance) render only from the
+  // BACKING record the derive layer resolved — a paused or mismatched
+  // row never leaks its price or status onto this card ("Pro · $19/mo"
+  // above "your Plus subscription is paused" asserted two plans at
+  // once, A6). A backing record states its own provider, so the
+  // headline currency is a fact, not a guess; with NO backing record a
+  // paid tier makes no price claim at all — nobody is charged one.
+  const note = backingStatusNote(backing);
+  const priceLabel = currentPlanPriceLabel(plan);
   const renewal =
-    subBacksTier && !subscription.cancelAtPeriodEnd
-      ? formatBillingDate(subscription.currentPeriodEnd)
+    backing.state === 'active' || backing.state === 'past_due'
+      ? formatBillingDate(backing.sub.currentPeriodEnd)
       : null;
 
   return (
@@ -781,9 +782,13 @@ function CurrentPlanCard({
         ) : null}
       </div>
 
-      {tier === 'free' ? (
+      {plan.entitlementTier === 'free' &&
+      (plan.nonBacking === null || cleanupRemaining !== null) ? (
         <p style={{ margin: 0, fontSize: 13, color: color.fgSoft }}>
-          Free forever — no card on file.
+          {/* "No card on file" is a claim about the PROVIDER — with a
+              paused or ended subscription record the provider may well
+              hold one, so the line renders only when no record exists. */}
+          {plan.nonBacking === null ? 'Free forever — no card on file.' : null}
           {cleanupRemaining !== null ? (
             <>
               {' '}
@@ -810,7 +815,7 @@ function CurrentPlanCard({
         </p>
       ) : null}
 
-      {!billingDisabled && subBacksTier && canCancel(subscription) ? (
+      {!billingDark && (backing.state === 'active' || backing.state === 'past_due') ? (
         <div style={{ display: 'flex', gap: 8 }}>
           <Button tone="default" onClick={onCancel}>
             Cancel subscription
@@ -924,63 +929,113 @@ function ScheduledPlanChangeNotice({
 }
 
 /**
- * A paused subscription's designed state: the two real exits — resume
- * it (webhook restores the tier) or cancel it. Plan changes stay
- * locked while paused (the BE rejects them with SUBSCRIPTION_PAUSED).
+ * A NON-BACKING subscription record's designed state (A6): a real,
+ * actionable row that does NOT grant the entitlement tier. Exactly ONE
+ * plan is ever named as current — the entitlement — and the record is
+ * described as what it is:
+ *
+ *   - `paused` — the ordinary pause story: resume it (webhook restores
+ *     the tier) or cancel it. Plan changes stay locked while paused
+ *     (the BE rejects them with SUBSCRIPTION_PAUSED).
+ *   - `canceled` — the truthful "subscription ended" line.
+ *   - `tier_mismatch` — the entitlement is granted from elsewhere. The
+ *     resume copy states the real consequence: the webhook recompute
+ *     (billing-webhook.service) re-grants from subscription rows, which
+ *     can move the workspace off its current plan. A past_due mismatch
+ *     row still surfaces its dunning warning here.
+ *
  * Copy states only server facts: the entitlement tier comes from the
- * subscription READ (`currentTier`), never assumed to be Free.
+ * derive layer's read, never assumed to be Free.
  */
-function PausedSubscriptionNotice({
-  subscription,
-  currentTier,
+function NonBackingSubscriptionNotice({
+  record,
+  entitlementTier,
   onResumeStarted,
   onRequestCancel,
 }: {
-  subscription: NonNullable<BillingSubscription['subscription']>;
+  record: NonBackingRecord;
   /** The workspace's server-resolved entitlement tier. */
-  currentTier: TierId;
+  entitlementTier: TierId;
   onResumeStarted: () => void;
   onRequestCancel: () => void;
 }) {
   const resume = useResumeSubscription();
   const [confirmingResume, setConfirmingResume] = useState(false);
-  const tierName = TIER_MANIFEST[subscription.tier].name;
-  const until = formatBillingDate(subscription.pauseUntil);
-  const retainedPeriodEnd = formatBillingDate(subscription.currentPeriodEnd);
-  // Self-serve resume promises "$0 today, existing period continues" —
-  // only render that promise when the retained period is actually known
-  // (ui-truth: never assert a period the read can't confirm).
-  const canSelfServeResume = subscription.provider === 'paddle' && retainedPeriodEnd !== null;
-  return (
-    <div
-      role="status"
-      data-testid="paused-subscription-notice"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-        padding: '12px 14px',
-        background: color.paper,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
-        fontSize: 13,
-        lineHeight: 1.55,
-        color: color.fg,
-      }}
-    >
-      <span>
-        <strong style={{ fontWeight: 600 }}>
-          Your {tierName} subscription is paused{until ? ` until ${until}` : ''}.
-        </strong>{' '}
-        <span style={{ color: color.fgSoft }}>
-          While it&rsquo;s paused you aren&rsquo;t billed, and your workspace is on{' '}
-          {TIER_MANIFEST[currentTier].name}. Resume to reactivate {tierName}, or cancel if
-          you&rsquo;re done with it.
+  const { sub, reason } = record;
+  const tierName = TIER_MANIFEST[sub.tier].name;
+  const entitlementName = TIER_MANIFEST[entitlementTier].name;
+  const boxStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    padding: '12px 14px',
+    background: color.paper,
+    border: `1px solid ${color.line}`,
+    borderRadius: radius.md,
+    fontSize: 13,
+    lineHeight: 1.55,
+    color: color.fg,
+  } as const;
+
+  if (reason === 'canceled') {
+    return (
+      <div role="status" data-testid="non-backing-subscription-notice" style={boxStyle}>
+        <span>
+          <strong style={{ fontWeight: 600 }}>Your {tierName} subscription ended.</strong>{' '}
+          <span style={{ color: color.fgSoft }}>
+            Your workspace is on {entitlementName}. Pick a plan below any time to subscribe again.
+          </span>
         </span>
+      </div>
+    );
+  }
+
+  const until = formatBillingDate(sub.pauseUntil);
+  const retainedPeriodEnd = formatBillingDate(sub.currentPeriodEnd);
+  const isPaused = sub.status === 'paused';
+  const mismatch = reason === 'tier_mismatch';
+  // Self-serve resume promises "$0 today, existing period continues" —
+  // only render that promise when the record IS paused and the retained
+  // period is actually known (ui-truth: never assert a period the read
+  // can't confirm).
+  const canSelfServeResume = isPaused && sub.provider === 'paddle' && retainedPeriodEnd !== null;
+  return (
+    <div role="status" data-testid="non-backing-subscription-notice" style={boxStyle}>
+      <span>
+        {mismatch ? (
+          <>
+            <strong style={{ fontWeight: 600 }}>
+              {isPaused ? `A paused ${tierName} subscription` : `A ${tierName} subscription`} is on
+              your account{isPaused && until ? ` (paused until ${until})` : ''}.
+            </strong>{' '}
+            <span style={{ color: color.fgSoft }}>
+              Your workspace is on {entitlementName} — this subscription isn&rsquo;t what grants it.{' '}
+              {isPaused
+                ? `Resuming makes ${tierName} your paid subscription again; your plan is then recomputed from your subscriptions, which can move your workspace off ${entitlementName}. Cancel it if you’re done with it.`
+                : 'Cancel it if you’re done with it.'}
+            </span>
+          </>
+        ) : (
+          <>
+            <strong style={{ fontWeight: 600 }}>
+              Your {tierName} subscription is paused{until ? ` until ${until}` : ''}.
+            </strong>{' '}
+            <span style={{ color: color.fgSoft }}>
+              While it&rsquo;s paused you aren&rsquo;t billed, and your workspace is on{' '}
+              {entitlementName}. Resume to reactivate {tierName}, or cancel if you&rsquo;re done
+              with it.
+            </span>
+          </>
+        )}
       </span>
-      {!canSelfServeResume ? (
+      {mismatch && sub.status === 'past_due' ? (
+        <p style={{ margin: 0, fontSize: 12.5, color: color.amber }}>
+          Payment past due — update your payment method with the provider to keep it.
+        </p>
+      ) : null}
+      {isPaused && !canSelfServeResume ? (
         <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
-          {subscription.provider === 'razorpay'
+          {sub.provider === 'razorpay'
             ? 'Razorpay does not guarantee a no-charge resume on the existing billing period. To avoid an unexpected charge, email '
             : 'We can’t confirm your retained billing period from here, so resume isn’t offered without review. Email '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
@@ -1024,6 +1079,9 @@ function PausedSubscriptionNotice({
             $0 is due today. Your existing paid period continues through {retainedPeriodEnd}; plan
             and billing changes take effect from the next billing period. If that retained period
             has already ended, resume will stop safely instead of starting a new charge.
+            {mismatch
+              ? ` Resuming re-grants ${tierName} from this subscription; your workspace’s plan is then recomputed from your subscriptions and can change from ${entitlementName}.`
+              : null}
           </span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button
@@ -1165,6 +1223,33 @@ function BillingErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
       <RecoverableErrorState
         title="We couldn't load your billing details"
         description={`${status}No charge or plan change was made. Try again in a moment.`}
+        onRetry={onRetry}
+      />
+    </div>
+  );
+}
+
+/**
+ * The UNKNOWN designed state (A6): the billing read answered 200 with
+ * a payload outside the contract schema. Unknown stays unknown — the
+ * screen shows nothing rather than something wrong (no invented tier,
+ * price, or status).
+ */
+function BillingUnknownState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        maxWidth: 720,
+        margin: '0 auto',
+        padding: '20px clamp(12px, 4vw, 24px) 28px',
+        fontFamily: font.sans,
+      }}
+    >
+      <RecoverableErrorState
+        title="We couldn't read your billing details"
+        description="The billing service answered in a format this page doesn't recognize, so nothing is shown rather than something wrong. Loading this page made no charge or plan change. Try again in a moment."
         onRetry={onRetry}
       />
     </div>

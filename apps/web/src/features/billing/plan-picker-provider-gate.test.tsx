@@ -235,25 +235,27 @@ describe('checkout currency (D117/D226)', () => {
   });
 });
 
-describe('the current-plan headline quotes the same rail as the strip (D117)', () => {
-  it('an India visitor reads ONE price for an unbacked paid tier', async () => {
-    // Entitlement says Pro, but no subscription BACKS it (admin grant,
-    // or a paused row). The headline is then a quote, not a charge — and
-    // it has to name the rail the strip under it quotes. Defaulting to
-    // Paddle printed "$19/mo" above a strip reading "₹1,599/mo".
+describe('the current-plan headline makes no price claim without a backing sub (A6)', () => {
+  // Supersedes the "headline quotes the strip's rail" tests: an
+  // unbacked paid tier used to render quotedPlanPrice as its current
+  // price — a charge nobody pays. The headline now claims no price at
+  // all, on ANY rail, so it can never disagree with the strip either.
+  it('an India-routed visitor reads NO price for an unbacked paid tier', async () => {
     subscriptionBody = { tier: 'pro', foundingMember: false, subscription: null };
     renderScreen({ initialProvider: 'razorpay' });
 
     const card = await screen.findByTestId('current-plan-card');
-    expect(card).toHaveTextContent('₹1,599/mo');
+    expect(card).toHaveTextContent('Included with your workspace');
+    expect(card).not.toHaveTextContent('₹1,599/mo');
     expect(card).not.toHaveTextContent('$19/mo');
   });
 
-  it('stays USD for a visitor outside India', async () => {
+  it('same for a visitor outside India', async () => {
     subscriptionBody = { tier: 'pro', foundingMember: false, subscription: null };
     renderScreen({ initialProvider: 'paddle' });
 
     const card = await screen.findByTestId('current-plan-card');
-    expect(card).toHaveTextContent('$19/mo');
+    expect(card).toHaveTextContent('Included with your workspace');
+    expect(card).not.toHaveTextContent('$19/mo');
   });
 });

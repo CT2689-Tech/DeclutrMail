@@ -128,12 +128,19 @@ export class BillingService {
       throw new AppException({ code: 'NOT_FOUND' });
     }
 
-    const [sub] = await this.db
+    // The read serves ONE row, and it must be the row that tells the
+    // plan story: "latest by updated_at" let a paused/canceled row
+    // SHADOW the granting one, so the FE asserted two plans at once
+    // (audit A6). Prefer the row in a granting status (the webhook
+    // recompute's GRANTING_STATUSES: active/past_due); otherwise serve
+    // the most recent non-granting row. Row count per workspace is
+    // bounded by the one-live-subscription rule.
+    const rows = await this.db
       .select()
       .from(subscriptions)
       .where(eq(subscriptions.workspaceId, workspaceId))
-      .orderBy(desc(subscriptions.updatedAt))
-      .limit(1);
+      .orderBy(desc(subscriptions.updatedAt));
+    const sub = rows.find((r) => r.status === 'active' || r.status === 'past_due') ?? rows[0];
 
     return {
       tier: ws.tier,

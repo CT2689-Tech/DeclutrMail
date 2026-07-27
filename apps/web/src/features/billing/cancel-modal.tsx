@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 
 import { Button, Eyebrow, tokens, useFocusTrap } from '@declutrmail/shared';
-import type { BillingSubscription, CancelRequest } from '@declutrmail/shared/contracts';
+import type { CancelRequest } from '@declutrmail/shared/contracts';
+import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 
-import { formatBillingDate, MONEY_BACK_NOTE } from './billing-model';
+import { formatBillingDate, MONEY_BACK_NOTE, type SubscriptionRecord } from './billing-model';
 
 const { color, font, radius } = tokens;
 
@@ -41,14 +42,23 @@ const REFUND_REQUEST_MAILTO = `mailto:support@declutrmail.com?subject=${encodeUR
 )}`;
 export function CancelModal({
   open,
-  subscription,
+  sub,
+  backsEntitlement,
+  entitlementTier,
   onClose,
   onConfirm,
   isCanceling,
   cancelError,
 }: {
   open: boolean;
-  subscription: NonNullable<BillingSubscription['subscription']> | null;
+  /** The record this cancel targets — backing or non-backing (A6). */
+  sub: SubscriptionRecord | null;
+  /** True when `sub` is what GRANTS the entitlement tier — only then
+   *  may the preview claim "then your workspace switches to Free". A
+   *  non-backing record (paused / other tier) doesn't grant the current
+   *  plan, and its features are not necessarily active. */
+  backsEntitlement: boolean;
+  entitlementTier: TierId;
   onClose: () => void;
   onConfirm: (reason: CancelReason | undefined) => void;
   isCanceling: boolean;
@@ -68,10 +78,11 @@ export function CancelModal({
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
 
-  if (!open || !subscription) return null;
+  if (!open || !sub) return null;
 
-  const tierLabel = subscription.tier === 'pro' ? 'Pro' : 'Plus';
-  const end = formatBillingDate(subscription.currentPeriodEnd);
+  const tierLabel = TIER_MANIFEST[sub.tier].name;
+  const entitlementName = TIER_MANIFEST[entitlementTier].name;
+  const end = formatBillingDate(sub.currentPeriodEnd);
 
   return (
     <>
@@ -113,7 +124,9 @@ export function CancelModal({
             id="dm-cancel-title"
             style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
           >
-            Cancel your {tierLabel} plan?
+            {backsEntitlement
+              ? `Cancel your ${tierLabel} plan?`
+              : `End your ${tierLabel} subscription?`}
           </h2>
         </div>
 
@@ -131,12 +144,33 @@ export function CancelModal({
               lineHeight: 1.5,
             }}
           >
-            <li>
-              {end
-                ? `Your ${tierLabel} features stay active until ${end}.`
-                : `Your ${tierLabel} features stay active until the end of the current billing period.`}
-            </li>
-            <li>Then your workspace switches to Free — completed mail actions stay in place.</li>
+            {backsEntitlement ? (
+              <>
+                <li>
+                  {end
+                    ? `Your ${tierLabel} features stay active until ${end}.`
+                    : `Your ${tierLabel} features stay active until the end of the current billing period.`}
+                </li>
+                <li>
+                  Then your workspace switches to Free — completed mail actions stay in place.
+                </li>
+              </>
+            ) : (
+              // A NON-BACKING record (A6): its features are not
+              // necessarily active and it does not grant the current
+              // plan — the preview claims neither.
+              <>
+                <li>
+                  {end
+                    ? `Your ${tierLabel} subscription ends at the end of its paid period (${end}) and won't renew.`
+                    : `Your ${tierLabel} subscription ends at the end of its paid period and won't renew.`}
+                </li>
+                <li>
+                  Your workspace is on {entitlementName} today — that plan isn&rsquo;t granted by
+                  this subscription.
+                </li>
+              </>
+            )}
             <li>
               Canceling stops your renewal and takes effect at period end — on its own it
               isn&rsquo;t a refund. If you want your money back, use the guarantee below.

@@ -185,6 +185,9 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Free')).toBeInTheDocument();
     expect(within(card).getByText('$0')).toBeInTheDocument();
+    // "No card on file" may render ONLY with no subscription record at
+    // all (a paused/ended row means the provider may hold one).
+    expect(within(card).getByText(/Free forever — no card on file/)).toBeInTheDocument();
     expect(within(card).getByText('3 of 5 lifetime cleanup actions left.')).toBeInTheDocument();
     expect(
       within(card).queryByRole('button', { name: 'Cancel subscription' }),
@@ -1668,17 +1671,19 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     // Card tells ONE story: entitlement Free, $0 — the paused row's
-    // price/status/cancel never leak onto it.
+    // price/status/cancel never leak onto it. "No card on file" is a
+    // provider claim the paused record contradicts, so it's absent too.
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Free')).toBeInTheDocument();
     expect(within(card).getByText('$0')).toBeInTheDocument();
     expect(within(card).queryByText(/\$9/)).not.toBeInTheDocument();
+    expect(within(card).queryByText(/no card on file/)).not.toBeInTheDocument();
     expect(
       within(card).queryByRole('button', { name: 'Cancel subscription' }),
     ).not.toBeInTheDocument();
 
     // The paused notice owns the story + both exits.
-    const notice = screen.getByTestId('paused-subscription-notice');
+    const notice = screen.getByTestId('non-backing-subscription-notice');
     expect(notice).toHaveTextContent('Your Plus subscription is paused');
     // The entitlement claim is DERIVED from the server read, never
     // hardcoded — this fixture's tier is free, so the copy may say so.
@@ -1698,5 +1703,153 @@ describe('BillingScreen — paid subscriber', () => {
     expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
       'Resume accepted — confirming your plan.',
     );
+  });
+});
+
+describe('BillingScreen — one billing story (A6)', () => {
+  it('Pro entitlement + paused Plus row: ONE current plan, no invented price, consequence-stating resume', async () => {
+    // The A6 repro: entitlement tier (pro) ≠ subscription row (paused
+    // plus). The screen must tell ONE story — the entitlement — and the
+    // row is a non-backing record with honest, consequence-stating verbs.
+    mockTier = 'pro';
+    mockCleanupRemaining = null;
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          tier: 'pro',
+          foundingMember: false,
+          subscription: { ...SUB, tier: 'plus', status: 'paused' },
+        },
+      }),
+    );
+    renderScreen();
+
+    // The card asserts the entitlement and NOTHING it can't know: no
+    // quoted Pro price (nobody is charged it) and no leaked Plus price.
+    const card = await screen.findByTestId('current-plan-card');
+    expect(within(card).getByText('Pro')).toBeInTheDocument();
+    expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
+    expect(within(card).queryByText(quotedPlanPrice('plus', 'monthly')!)).not.toBeInTheDocument();
+    expect(within(card).getByText('Included with your workspace')).toBeInTheDocument();
+    expect(
+      within(card).queryByRole('button', { name: 'Cancel subscription' }),
+    ).not.toBeInTheDocument();
+
+    // The notice describes the row as a paused subscription record,
+    // names exactly ONE plan as current (the entitlement), and states
+    // the real consequence of resuming: the webhook recompute re-grants
+    // from subscription rows, which can move the workspace off Pro.
+    const notice = screen.getByTestId('non-backing-subscription-notice');
+    expect(notice).toHaveTextContent('paused Plus subscription');
+    expect(notice).toHaveTextContent('Your workspace is on Pro');
+    expect(notice).not.toHaveTextContent('Resume to reactivate Plus');
+    expect(notice).toHaveTextContent(/can move your workspace off Pro/);
+    expect(within(notice).getByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
+
+    // The paused row still occupies the server's one-live-subscription
+    // slot (SUBSCRIPTION_EXISTS keys on STATUS, not backing) — a new
+    // checkout would 409, so the picker withholds every checkout
+    // affordance until the row is resumed or canceled. The notice above
+    // carries those verbs.
+    expect(screen.queryByRole('button', { name: 'Upgrade to Plus' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
+  });
+
+  it('Pro entitlement with NO subscription: no price claim, picker available', async () => {
+    mockTier = 'pro';
+    mockCleanupRemaining = null;
+    stubSubscription(() =>
+      jsonOk({ data: { tier: 'pro', foundingMember: false, subscription: null } }),
+    );
+    renderScreen();
+
+    // A comped/admin-granted tier is charged by NOBODY — the card must
+    // not render the quote as if it were the bill.
+    const card = await screen.findByTestId('current-plan-card');
+    expect(within(card).getByText('Pro')).toBeInTheDocument();
+    expect(within(card).getByText('Included with your workspace')).toBeInTheDocument();
+    expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
+    expect(within(card).queryByText(quotedPlanPrice('pro', 'annual')!)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('non-backing-subscription-notice')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upgrade to Plus' })).toBeInTheDocument();
+  });
+
+  it('a non-backing past_due row surfaces its dunning warning and locks new checkouts', async () => {
+    mockTier = 'pro';
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          tier: 'pro',
+          foundingMember: false,
+          subscription: { ...SUB, tier: 'plus', status: 'past_due' },
+        },
+      }),
+    );
+    renderScreen();
+
+    const notice = await screen.findByTestId('non-backing-subscription-notice');
+    expect(notice).toHaveTextContent('Payment past due — update your payment method');
+    expect(notice).toHaveTextContent('Your workspace is on Pro');
+    // The mismatch row never puts its price on the card…
+    const card = screen.getByTestId('current-plan-card');
+    expect(within(card).queryByText(quotedPlanPrice('plus', 'monthly')!)).not.toBeInTheDocument();
+    // …and it still occupies the server's one-live-subscription slot
+    // (status past_due ∈ SUBSCRIPTION_EXISTS), so no checkout affordance
+    // renders at all.
+    expect(screen.queryByRole('button', { name: 'Upgrade to Plus' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
+  });
+
+  it('a canceled row renders the truthful subscription-ended line', async () => {
+    mockTier = 'free';
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          tier: 'free',
+          foundingMember: false,
+          subscription: { ...SUB, status: 'canceled', currentPeriodEnd: null },
+        },
+      }),
+    );
+    renderScreen();
+
+    const notice = await screen.findByTestId('non-backing-subscription-notice');
+    expect(notice).toHaveTextContent('Your Pro subscription ended.');
+    expect(notice).toHaveTextContent('Your workspace is on Free.');
+    // No resume/cancel verbs on an ended row.
+    expect(within(notice).queryByRole('button')).not.toBeInTheDocument();
+    // "No card on file" stays off while a provider record exists, and
+    // the ended row does not lock the picker.
+    const card = screen.getByTestId('current-plan-card');
+    expect(within(card).queryByText(/no card on file/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+  });
+
+  it('a malformed 200 payload renders the honest unknown state, never invented facts', async () => {
+    mockTier = 'free';
+    let attempts = 0;
+    stubSubscription(() => {
+      attempts += 1;
+      return attempts === 1
+        ? jsonOk({ data: { tier: 'galactic', subscription: 'not-a-record' } })
+        : jsonOk({ data: FREE_BODY });
+    });
+    renderScreen();
+
+    // Unknown stays unknown: no TIER_MANIFEST[garbage] crash, no
+    // invented card or picker — the honest read-failed-grade state.
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: "We couldn't read your billing details" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('current-plan-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('plan-picker')).not.toBeInTheDocument();
+
+    // Retry against a now-valid payload recovers normally.
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    const card = await screen.findByTestId('current-plan-card');
+    expect(within(card).getByText('Free')).toBeInTheDocument();
   });
 });
