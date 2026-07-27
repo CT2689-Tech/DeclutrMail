@@ -1,0 +1,274 @@
+/**
+ * Unit tests for the A6 derive layer (`deriveBillingViewState` + the
+ * card helpers) — every discriminant of `BillingViewState`, the
+ * backing/non-backing classification rules, and the price/status
+ * helpers that render only what the backing record can prove.
+ * See docs/adr/0027-billing-presentation-state.md.
+ */
+
+import { describe, expect, it } from 'vitest';
+
+import type { BillingSubscription } from '@declutrmail/shared/contracts';
+
+import { ApiError } from '@/lib/api/client';
+
+import {
+  backingStatusNote,
+  BillingPayloadError,
+  currentPlanPriceLabel,
+  deriveBillingViewState,
+  emptyPlanView,
+  type BillingReadSnapshot,
+  type SubscriptionRecord,
+} from './billing-model';
+import type { PendingCheckout } from './pending-checkout';
+
+const SUB: SubscriptionRecord = {
+  provider: 'paddle',
+  tier: 'pro',
+  status: 'active',
+  cycle: 'monthly',
+  currentPeriodEnd: '2026-07-01T12:00:00.000Z',
+  cancelAtPeriodEnd: false,
+  pauseUntil: null,
+  foundingMember: false,
+  scheduledChange: null,
+};
+
+const PENDING: PendingCheckout = {
+  workspaceId: 'w',
+  kind: 'checkout',
+  fromTier: 'free',
+  fromCycle: null,
+  toTier: 'pro',
+  toCycle: 'annual',
+  at: Date.now(),
+};
+
+function body(
+  tier: BillingSubscription['tier'],
+  subscription: SubscriptionRecord | null,
+  foundingMember = false,
+): BillingSubscription {
+  return { tier, foundingMember, subscription };
+}
+
+function snapshot(overrides: Partial<BillingReadSnapshot>): BillingReadSnapshot {
+  return {
+    isLoading: false,
+    isError: false,
+    error: null,
+    data: undefined,
+    meTier: 'free',
+    pending: null,
+    ...overrides,
+  };
+}
+
+function billingDisabledError(): ApiError {
+  return new ApiError(503, { error: { code: 'BILLING_DISABLED' } }, 'disabled');
+}
+
+describe('deriveBillingViewState — discriminants', () => {
+  it('loading wins over everything', () => {
+    expect(deriveBillingViewState(snapshot({ isLoading: true, pending: PENDING })).kind).toBe(
+      'loading',
+    );
+  });
+
+  it('a pending money action outranks a transient read failure — never read_failed', () => {
+    const view = deriveBillingViewState(
+      snapshot({ isError: true, error: new ApiError(500, undefined, 'boom'), pending: PENDING }),
+    );
+    expect(view.kind).toBe('payment_pending');
+  });
+
+  it('payment_pending carries the parsed plan when data exists, the empty view when not', () => {
+    const withData = deriveBillingViewState(snapshot({ data: body('pro', SUB), pending: PENDING }));
+    expect(withData).toMatchObject({
+      kind: 'payment_pending',
+      entitlementTier: 'pro',
+      backing: { state: 'active' },
+    });
+
+    const withoutData = deriveBillingViewState(snapshot({ pending: PENDING, meTier: 'plus' }));
+    expect(withoutData).toMatchObject({
+      kind: 'payment_pending',
+      ...emptyPlanView('plus'),
+    });
+  });
+
+  it('billing_dark keys on the BILLING_DISABLED code with the me-tier entitlement', () => {
+    const view = deriveBillingViewState(
+      snapshot({ isError: true, error: billingDisabledError(), meTier: 'plus' }),
+    );
+    expect(view).toEqual({ kind: 'billing_dark', entitlementTier: 'plus' });
+  });
+
+  it('a bare 503 WITHOUT the code is read_failed, never billing_dark (MISTAKES 2026-07-26)', () => {
+    const error = new ApiError(503, { error: { code: 'SOMETHING_ELSE' } }, 'outage');
+    const view = deriveBillingViewState(snapshot({ isError: true, error }));
+    expect(view).toEqual({ kind: 'read_failed', error });
+  });
+
+  it('a malformed payload (BillingPayloadError) is the unknown state', () => {
+    const view = deriveBillingViewState(
+      snapshot({ isError: true, error: new BillingPayloadError() }),
+    );
+    expect(view).toEqual({ kind: 'unknown' });
+  });
+
+  it('any other error is read_failed', () => {
+    const error = new Error('network down');
+    expect(deriveBillingViewState(snapshot({ isError: true, error }))).toEqual({
+      kind: 'read_failed',
+      error,
+    });
+  });
+
+  it('no error and no data is unknown, never an invented plan', () => {
+    expect(deriveBillingViewState(snapshot({}))).toEqual({ kind: 'unknown' });
+  });
+});
+
+describe('deriveBillingViewState — backing classification', () => {
+  it('active + tier match backs the plan', () => {
+    const view = deriveBillingViewState(snapshot({ data: body('pro', SUB) }));
+    expect(view).toMatchObject({
+      kind: 'plan',
+      entitlementTier: 'pro',
+      backing: { state: 'active', sub: SUB },
+      nonBacking: null,
+    });
+  });
+
+  it('past_due + tier match still backs (the granting set)', () => {
+    const sub = { ...SUB, status: 'past_due' as const };
+    const view = deriveBillingViewState(snapshot({ data: body('pro', sub) }));
+    expect(view).toMatchObject({ backing: { state: 'past_due', sub } });
+  });
+
+  it('cancelAtPeriodEnd on a granting match is cancel_scheduled', () => {
+    const sub = { ...SUB, cancelAtPeriodEnd: true };
+    const view = deriveBillingViewState(snapshot({ data: body('pro', sub) }));
+    expect(view).toMatchObject({ backing: { state: 'cancel_scheduled', sub } });
+  });
+
+  it('scheduledChange surfaces ONLY off a backing record', () => {
+    const change = {
+      tier: 'plus' as const,
+      cycle: 'monthly' as const,
+      effectiveAt: '2026-08-15T12:00:00.000Z',
+      state: 'scheduled' as const,
+    };
+    const backing = deriveBillingViewState(
+      snapshot({ data: body('pro', { ...SUB, scheduledChange: change }) }),
+    );
+    expect(backing).toMatchObject({ scheduledChange: change });
+
+    // The same marker on a NON-backing row is not a plan fact.
+    const nonBacking = deriveBillingViewState(
+      snapshot({
+        data: body('pro', { ...SUB, tier: 'plus', status: 'paused', scheduledChange: change }),
+      }),
+    );
+    expect(nonBacking).toMatchObject({ scheduledChange: null });
+  });
+
+  it('foundingMember passes through from the workspace payload', () => {
+    const view = deriveBillingViewState(snapshot({ data: body('pro', SUB, true) }));
+    expect(view).toMatchObject({ foundingMember: true });
+  });
+});
+
+describe('deriveBillingViewState — non-backing reasons', () => {
+  it('paused under a free entitlement is the ordinary paused story', () => {
+    const sub = { ...SUB, tier: 'plus' as const, status: 'paused' as const };
+    const view = deriveBillingViewState(snapshot({ data: body('free', sub) }));
+    expect(view).toMatchObject({
+      backing: { state: 'none' },
+      nonBacking: { reason: 'paused', sub },
+    });
+  });
+
+  it('paused stays "paused" when the SUB outranks the entitlement (resume cannot downgrade)', () => {
+    const sub = { ...SUB, status: 'paused' as const }; // paused PRO
+    const view = deriveBillingViewState(snapshot({ data: body('plus', sub) }));
+    expect(view).toMatchObject({ nonBacking: { reason: 'paused' } });
+  });
+
+  it('paused under an entitlement that OUTRANKS it is tier_mismatch (the A6 repro)', () => {
+    const sub = { ...SUB, tier: 'plus' as const, status: 'paused' as const };
+    const view = deriveBillingViewState(snapshot({ data: body('pro', sub) }));
+    expect(view).toMatchObject({ nonBacking: { reason: 'tier_mismatch', sub } });
+  });
+
+  it('a granting-status row on a different tier is tier_mismatch', () => {
+    const active = { ...SUB, tier: 'plus' as const };
+    expect(deriveBillingViewState(snapshot({ data: body('pro', active) }))).toMatchObject({
+      nonBacking: { reason: 'tier_mismatch' },
+    });
+    const pastDue = { ...SUB, tier: 'plus' as const, status: 'past_due' as const };
+    expect(deriveBillingViewState(snapshot({ data: body('pro', pastDue) }))).toMatchObject({
+      nonBacking: { reason: 'tier_mismatch' },
+    });
+  });
+
+  it('a canceled row is reason canceled', () => {
+    const sub = { ...SUB, status: 'canceled' as const, currentPeriodEnd: null };
+    const view = deriveBillingViewState(snapshot({ data: body('free', sub) }));
+    expect(view).toMatchObject({ nonBacking: { reason: 'canceled', sub } });
+  });
+});
+
+describe('currentPlanPriceLabel', () => {
+  it('renders the backing record’s charged price (its own provider/cycle)', () => {
+    const view = deriveBillingViewState(snapshot({ data: body('pro', SUB) }));
+    expect(view.kind).toBe('plan');
+    if (view.kind !== 'plan') return;
+    expect(currentPlanPriceLabel(view)).toBe('$19/mo');
+  });
+
+  it('renders the founding promo price for a founding annual backing sub', () => {
+    const sub = { ...SUB, cycle: 'annual' as const, foundingMember: true };
+    const view = deriveBillingViewState(snapshot({ data: body('pro', sub, true) }));
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('$129/yr');
+  });
+
+  it('free with no backing record is $0', () => {
+    expect(currentPlanPriceLabel(emptyPlanView('free'))).toBe('$0');
+  });
+
+  it('a paid tier with NO backing record makes no price claim', () => {
+    expect(currentPlanPriceLabel(emptyPlanView('pro'))).toBe('Included with your workspace');
+    // Even with a non-backing row present, its price never leaks.
+    const view = deriveBillingViewState(
+      snapshot({ data: body('pro', { ...SUB, tier: 'plus', status: 'paused' }) }),
+    );
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('Included with your workspace');
+  });
+});
+
+describe('backingStatusNote', () => {
+  it('is null for none and plain active', () => {
+    expect(backingStatusNote({ state: 'none' })).toBeNull();
+    expect(backingStatusNote({ state: 'active', sub: SUB })).toBeNull();
+  });
+
+  it('warns on past_due (dunning)', () => {
+    expect(backingStatusNote({ state: 'past_due', sub: SUB })).toMatchObject({
+      tone: 'warn',
+      text: expect.stringContaining('Payment past due'),
+    });
+  });
+
+  it('warns on cancel_scheduled with the period-end date', () => {
+    const sub = { ...SUB, cancelAtPeriodEnd: true };
+    expect(backingStatusNote({ state: 'cancel_scheduled', sub })).toMatchObject({
+      tone: 'warn',
+      text: expect.stringContaining('until Jul 1, 2026'),
+    });
+  });
+});

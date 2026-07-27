@@ -32,6 +32,7 @@ import {
   sharedAnnualMonthsFree,
   STRIP_TIER_IDS,
   type StripTierId,
+  type SubscriptionRecord,
 } from './billing-model';
 import { launchCheckout } from './checkout';
 
@@ -82,7 +83,7 @@ function razorpayIdFor(target: PaidTier, cycle: BillingCycle, founding: boolean)
  */
 export function PlanPicker({
   currentTier,
-  subscription,
+  grantingSub,
   disabled,
   initialIntent = null,
   initialProvider = 'paddle',
@@ -97,8 +98,13 @@ export function PlanPicker({
   onPlanChangeFailedKnown,
 }: {
   currentTier: TierId;
-  /** The latest provider subscription record (screen's read), or null. */
-  subscription: BillingSubscription['subscription'];
+  /** The BACKING subscription in a granting status (active/past_due AND
+   *  tier === entitlement), or null — resolved by the screen's derive
+   *  layer (A6). Drives change-vs-checkout routing (D117/D120): a
+   *  non-backing row must never route paid targets through change-plan,
+   *  and a workspace whose entitlement is granted from elsewhere keeps
+   *  its checkout affordances. */
+  grantingSub: SubscriptionRecord | null;
   /** Billing dark / pending action / paused — withhold affordances. */
   disabled: boolean;
   /** Validated pricing-page/gate-nudge choice carried through auth. */
@@ -170,15 +176,6 @@ export function PlanPicker({
   // the mutation's isPending flips, so a double-click could otherwise
   // enter a confirm handler twice in one frame.
   const confirmInFlight = useRef(false);
-
-  // A subscription that GRANTS (active/past_due) routes paid targets
-  // through the change-plan endpoint; anything else (none, canceled,
-  // paused — which `disabled` already locks) is a fresh checkout.
-  const grantingSub =
-    subscription !== null &&
-    (subscription.status === 'active' || subscription.status === 'past_due')
-      ? subscription
-      : null;
 
   // A pricing-page/gate-nudge CTA lands with an exact plan+cycle — open
   // the confirm panel directly (the deep link IS the plan click).

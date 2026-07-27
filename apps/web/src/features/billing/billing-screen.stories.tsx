@@ -309,6 +309,91 @@ export const PausedRazorpay: Story<typeof BillingScreen> = {
     ),
 };
 
+/** A6 repro — entitlement Pro, paused PLUS row (tier_mismatch): the
+ *  card tells ONE story (Pro, no price claim), the non-backing notice
+ *  names the paused row as a record with consequence-stating resume
+ *  copy, and the picker stays available (backing = none). */
+export const ProEntitlementPausedPlusRow: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('pro', null), {
+        tier: 'pro',
+        foundingMember: false,
+        subscription: PRO_SUB.subscription
+          ? {
+              ...PRO_SUB.subscription,
+              tier: 'plus',
+              status: 'paused',
+              pauseUntil: '2026-08-03T12:00:00.000Z',
+            }
+          : null,
+      }),
+    ),
+};
+
+/** Entitlement without any subscription (admin grant): the card makes
+ *  NO price claim — "Included with your workspace", never a quote
+ *  presented as the bill (A6). */
+export const ProWithoutSubscription: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('pro', null), {
+        tier: 'pro',
+        foundingMember: false,
+        subscription: null,
+      }),
+    ),
+};
+
+/** A NON-BACKING past_due row (entitlement granted elsewhere) still
+ *  surfaces its dunning warning through the non-backing notice (A6). */
+export const NonBackingPastDue: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('pro', null), {
+        tier: 'pro',
+        foundingMember: false,
+        subscription: PRO_SUB.subscription
+          ? { ...PRO_SUB.subscription, tier: 'plus', status: 'past_due' }
+          : null,
+      }),
+    ),
+};
+
+/** A canceled row — the truthful "subscription ended" line; no card
+ *  claims, no verbs, picker available (A6). */
+export const SubscriptionEnded: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('free', 0), {
+        tier: 'free',
+        foundingMember: false,
+        subscription: PRO_SUB.subscription
+          ? { ...PRO_SUB.subscription, status: 'canceled', currentPeriodEnd: null }
+          : null,
+      }),
+    ),
+};
+
+/**
+ * The UNKNOWN designed state (A6): the read answered 200 with a payload
+ * outside the contract schema — the screen shows honest ignorance,
+ * never TIER_MANIFEST[garbage] or an invented price. Stubs fetch since
+ * an error state cannot be cache-primed.
+ */
+export const BillingUnknown: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => {
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ data: { tier: 'galactic', subscription: 'not-a-record' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )) as typeof globalThis.fetch;
+    return frame(makeClient(meFixture('free', 5), null));
+  },
+};
+
 /** Plus subscriber — every non-current card carries a bottom-aligned
  *  "Switch to …" CTA into the D226 change-plan preview (D117/D120). */
 export const PlusSubscriber: Story<typeof BillingScreen> = {
