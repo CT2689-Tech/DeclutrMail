@@ -218,6 +218,66 @@ describe('BillingService', () => {
     });
   });
 
+  it('getSubscription serves the GRANTING row even when a non-granting row is newer (A6)', async () => {
+    // Latest-by-updated_at let a paused row SHADOW the granting one, so
+    // the FE read asserted two plans at once (audit A6). The read must
+    // prefer the row in a granting status (active/past_due).
+    await db.insert(subscriptions).values({
+      workspaceId: principal.workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_active_old',
+      tier: 'pro',
+      status: 'active',
+      providerPriceId: 'pri_pro_a',
+      billingCycle: 'annual',
+      updatedAt: new Date('2026-07-01T00:00:00Z'),
+    });
+    await db.insert(subscriptions).values({
+      workspaceId: principal.workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_paused_new',
+      tier: 'plus',
+      status: 'paused',
+      providerPriceId: 'pri_plus_m',
+      billingCycle: 'monthly',
+      updatedAt: new Date('2026-07-20T00:00:00Z'),
+    });
+    await db
+      .update(workspaces)
+      .set({ tier: 'pro' })
+      .where(eq(workspaces.id, principal.workspaceId));
+
+    const result = await service.getSubscription(principal.workspaceId);
+    expect(result.tier).toBe('pro');
+    expect(result.subscription).toMatchObject({ tier: 'pro', status: 'active' });
+  });
+
+  it('getSubscription falls back to the most recent NON-granting row when nothing grants', async () => {
+    await db.insert(subscriptions).values({
+      workspaceId: principal.workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_paused_old',
+      tier: 'plus',
+      status: 'paused',
+      providerPriceId: 'pri_plus_m',
+      billingCycle: 'monthly',
+      updatedAt: new Date('2026-07-01T00:00:00Z'),
+    });
+    await db.insert(subscriptions).values({
+      workspaceId: principal.workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_canceled_new',
+      tier: 'pro',
+      status: 'canceled',
+      providerPriceId: 'pri_pro_a',
+      billingCycle: 'annual',
+      updatedAt: new Date('2026-07-20T00:00:00Z'),
+    });
+
+    const result = await service.getSubscription(principal.workspaceId);
+    expect(result.subscription).toMatchObject({ tier: 'pro', status: 'canceled' });
+  });
+
   it('cancelAtPeriodEnd calls the provider, sets the flag, records the D118 reason — idempotently', async () => {
     const periodEnd = new Date('2026-07-11T10:00:00Z');
     await db.insert(subscriptions).values({
