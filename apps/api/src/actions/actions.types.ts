@@ -168,8 +168,8 @@ export interface ActionEnqueueResult {
    *
    *   - `selector.type === 'sender'`   → count of the sender's inbox
    *      messages at this instant (whatever the worker is about to
-   *      archive). Equal to `ArchivePreviewResult.inboxCount` from a
-   *      preview taken in the same instant.
+   *      archive). Equal to `CompositeActionPreviewResult.counts.all`
+   *      from a preview taken in the same instant.
    *   - `selector.type === 'messages'` → length of the messageIds
    *      array AFTER ownership filtering (forged or cross-mailbox ids
    *      are dropped silently); may be strictly less than the caller's
@@ -256,17 +256,6 @@ export interface ActionRecoveryEnqueueResult {
  * D245 receipt without another request.
  */
 export type ActionStatusResult = ActionStatusSnapshot;
-
-/**
- * Non-mutating archive preview (D226). `inboxCount` is the REAL number of
- * the sender's messages currently labelled INBOX — the exact set the
- * archive will move — so the confirm modal states what actually changes
- * instead of a client-side estimate.
- */
-export interface ArchivePreviewResult {
-  senderId: string;
-  inboxCount: number;
-}
 
 /* ─────────────────────────── ADR-0020 — unified composite action shape ────────────────────────── */
 
@@ -524,8 +513,7 @@ export interface BatchStatusResult {
  * counts per time-window bucket so the FE can render the chip row with
  * accurate per-preset counts without a second roundtrip. Buckets are
  * locked to the FE preset chips: 30d / 90d / 180d / 365d. `all` is the
- * un-windowed count (= existing `ArchivePreviewResult.inboxCount` for
- * primary=archive).
+ * un-windowed count of the sender's actionable inbox set.
  */
 export interface CompositeActionPreviewResult {
   sender: {

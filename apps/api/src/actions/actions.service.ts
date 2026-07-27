@@ -19,6 +19,7 @@ import {
   actionJobs,
   activityLog,
   mailMessages,
+  senderInboxActionWhere,
   senderPolicies,
   senders,
   undoJournal,
@@ -52,7 +53,6 @@ import { TRIAGE_DECIDED_WINDOW_DAYS } from '../triage/triage.read-service.js';
 import type {
   ActionJobStatus,
   ActionStatusResult,
-  ArchivePreviewResult,
   ArchiveSelector,
   BatchStatusResult,
   BulkActionEnqueueResult,
@@ -145,22 +145,6 @@ export class ActionsService {
   ) {
     this.outbox = outbox ?? new OutboxPublisher();
     this.entitlements = entitlements ?? new EntitlementsService(db);
-  }
-
-  /**
-   * Non-mutating archive preview (D226). Returns the REAL count of the
-   * sender's messages currently labelled INBOX — the exact set the archive
-   * would move — so the confirm modal states what actually changes instead
-   * of a client-side `monthlyVolume × 12` estimate. Ownership is enforced
-   * by `resolveSenderKey` (404 on a forged / cross-mailbox id).
-   */
-  async previewArchive(input: {
-    mailboxAccountId: string;
-    senderId: string;
-  }): Promise<ArchivePreviewResult> {
-    const senderKey = await this.resolveSenderKey(input.mailboxAccountId, input.senderId);
-    const inboxCount = await this.countSenderInbox(input.mailboxAccountId, senderKey);
-    return { senderId: input.senderId, inboxCount };
   }
 
   /**
@@ -277,10 +261,7 @@ export class ActionsService {
             row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '180 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_180,
             row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '365 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_365
           FROM ${mailMessages}
-          WHERE ${mailMessages.mailboxAccountId} = ${mailboxAccountId}
-            AND ${mailMessages.senderKey} = ${sender.senderKey}
-            AND ${mailMessages.isOutbound} = false
-            AND 'INBOX' = ANY(${mailMessages.labelIds})
+          WHERE ${senderInboxActionWhere({ mailboxAccountId, senderKeys: [sender.senderKey] })}
         ) m`,
       );
 
@@ -633,13 +614,7 @@ export class ActionsService {
               olderThan365d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '365 days')::int`,
             })
             .from(mailMessages)
-            .where(
-              and(
-                eq(mailMessages.mailboxAccountId, mailboxAccountId),
-                inArray(mailMessages.senderKey, keys),
-                sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-              ),
-            )
+            .where(senderInboxActionWhere({ mailboxAccountId, senderKeys: keys }))
             .groupBy(mailMessages.senderKey);
     const countsByKey = new Map(countRows.map((r) => [r.senderKey, r] as const));
 
@@ -945,20 +920,10 @@ export class ActionsService {
     olderThanDays: number | null,
   ): Promise<Map<string, number>> {
     if (senderKeys.length === 0) return new Map();
-    const predicates = [
-      eq(mailMessages.mailboxAccountId, mailboxAccountId),
-      inArray(mailMessages.senderKey, senderKeys),
-      sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-    ];
-    if (olderThanDays !== null) {
-      predicates.push(
-        sql`${mailMessages.internalDate} <= now() - (${olderThanDays} || ' days')::interval`,
-      );
-    }
     const rows = await this.db
       .select({ senderKey: mailMessages.senderKey, n: count() })
       .from(mailMessages)
-      .where(and(...predicates))
+      .where(senderInboxActionWhere({ mailboxAccountId, senderKeys, olderThanDays }))
       .groupBy(mailMessages.senderKey);
     return new Map(rows.map((r) => [r.senderKey, toCount(r.n)]));
   }
@@ -974,20 +939,10 @@ export class ActionsService {
     senderKey: string,
     olderThanDays: number | null,
   ): Promise<number> {
-    const predicates = [
-      eq(mailMessages.mailboxAccountId, mailboxAccountId),
-      eq(mailMessages.senderKey, senderKey),
-      sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-    ];
-    if (olderThanDays !== null) {
-      predicates.push(
-        sql`${mailMessages.internalDate} <= now() - (${olderThanDays} || ' days')::interval`,
-      );
-    }
     const [row] = await this.db
       .select({ n: count() })
       .from(mailMessages)
-      .where(and(...predicates));
+      .where(senderInboxActionWhere({ mailboxAccountId, senderKeys: [senderKey], olderThanDays }));
     return toCount(row?.n);
   }
 
@@ -1844,26 +1799,6 @@ export class ActionsService {
       });
     }
     return sender.senderKey;
-  }
-
-  /**
-   * Count a sender's messages currently labelled INBOX — the exact set the
-   * archive moves. Used both to stamp `requestedCount` on enqueue and to
-   * answer the preview, so the "before anything changes" figure is the
-   * real one.
-   */
-  private async countSenderInbox(mailboxAccountId: string, senderKey: string): Promise<number> {
-    const [row] = await this.db
-      .select({ n: count() })
-      .from(mailMessages)
-      .where(
-        and(
-          eq(mailMessages.mailboxAccountId, mailboxAccountId),
-          eq(mailMessages.senderKey, senderKey),
-          sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-        ),
-      );
-    return toCount(row?.n);
   }
 
   /**

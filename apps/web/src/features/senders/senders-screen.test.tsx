@@ -563,12 +563,6 @@ describe('SendersScreen — edge states', () => {
             },
           }),
       },
-      {
-        // Real inbox count for the preview (D226) — >0 so confirm enables.
-        method: 'GET',
-        path: '/api/actions/archive/preview',
-        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 12 } }),
-      },
       compositePreviewHandler(12),
       {
         method: 'POST',
@@ -656,11 +650,6 @@ describe('SendersScreen — edge states', () => {
               query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
             },
           }),
-      },
-      {
-        method: 'GET',
-        path: '/api/actions/archive/preview',
-        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 250 } }),
       },
       {
         method: 'GET',
@@ -753,12 +742,6 @@ describe('SendersScreen — edge states', () => {
             },
           }),
       },
-      {
-        // Preview counts >0 so confirm enables; the race empties it by execution.
-        method: 'GET',
-        path: '/api/actions/archive/preview',
-        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 5 } }),
-      },
       compositePreviewHandler(5),
       {
         method: 'POST',
@@ -816,11 +799,6 @@ describe('SendersScreen — edge states', () => {
             },
           }),
       },
-      {
-        method: 'GET',
-        path: '/api/actions/archive/preview',
-        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 0 } }),
-      },
       compositePreviewHandler(0),
       {
         method: 'POST',
@@ -871,16 +849,11 @@ describe('SendersScreen — edge states', () => {
       },
       {
         method: 'GET',
-        path: '/api/actions/archive/preview',
+        path: '/api/actions/preview',
         respond: () => {
           previewRequests++;
           return jsonServerError();
         },
-      },
-      {
-        method: 'GET',
-        path: '/api/actions/preview',
-        respond: () => jsonServerError(),
       },
       {
         method: 'POST',
@@ -926,14 +899,7 @@ describe('SendersScreen — edge states', () => {
     // held nothing — contradicting the Archive preview's "nothing to archive"
     // for the same sender. The real inbox count must gate the toggle. But
     // Unsubscribe is future-only, so a 0 count must NOT block its confirm.
-    installFetchStub([
-      oneSenderHandler(),
-      {
-        method: 'GET',
-        path: '/api/actions/archive/preview',
-        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 0 } }),
-      },
-    ]);
+    installFetchStub([oneSenderHandler()]);
 
     renderScreen();
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
@@ -957,14 +923,7 @@ describe('SendersScreen — edge states', () => {
     // non-destructive against past mail by default); the user can opt
     // into Archive/Delete past via the chip row, which surfaces the
     // time-window chip row underneath when active.
-    installFetchStub([
-      oneSenderHandler(),
-      {
-        method: 'GET',
-        path: '/api/actions/archive/preview',
-        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 3 } }),
-      },
-    ]);
+    installFetchStub([oneSenderHandler()]);
 
     renderScreen();
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
@@ -1063,11 +1022,6 @@ describe('SendersScreen — edge states', () => {
     // wire returns more subjects than the count (drift defense).
     installFetchStub([
       oneSenderHandler(),
-      {
-        method: 'GET',
-        path: '/api/actions/archive/preview',
-        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 3 } }),
-      },
       {
         method: 'GET',
         path: '/api/actions/preview',

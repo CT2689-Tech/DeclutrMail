@@ -75,18 +75,6 @@ const TIME_WINDOW_PRESETS = [
 ] as const;
 
 /**
- * Real archive preview (D226). Carried alongside the request shape so
- * the modal can state the REAL inbox-now count for the single-sender
- * Archive path. Kept for backwards compatibility; the composite preview
- * supersedes it on every Senders surface.
- */
-export interface ArchivePreviewState {
-  inboxCount: number | undefined;
-  loading: boolean;
-  error: boolean;
-}
-
-/**
  * Aggregated multi-sender preview state (D52). Drives the chip-row
  * bucket counts, the headline figure, and the per-sender breakdown for
  * a bulk action. `loading` gates confirm exactly like the single-sender
@@ -167,7 +155,6 @@ export function ConfirmActionModal({
   request,
   onCancel,
   onConfirm,
-  archivePreview,
   compositePreview,
   compositePreviewLoading,
   compositePreviewError,
@@ -178,11 +165,6 @@ export function ConfirmActionModal({
   request: ActionRequest | null;
   onCancel: () => void;
   onConfirm: (opts: ConfirmOptions) => void;
-  /**
-   * Legacy single-sender archive count — superseded by `compositePreview`
-   * on the senders surface; retained for triage's tracer integration.
-   */
-  archivePreview?: ArchivePreviewState | undefined;
   /**
    * Composite preview (ADR-0020). Drives the sender context strip's real
    * domain/monthly/lastSeenDays values + the per-bucket counts the chip
@@ -304,23 +286,19 @@ export function ConfirmActionModal({
   const livePreviewBlocksConfirm =
     requiresLivePreview && (livePreviewLoading || livePreviewUnavailable);
 
-  // Preview bucket count under the current chip selection.
+  // Preview bucket count under the current chip selection — the ONE
+  // count source: it feeds the headline, the zero-state gate and (via
+  // requestedCount parity server-side) what the worker will move.
   const compositeCount = pickBucketCount(bucketCounts, olderThanDays);
   const previewLoading = isBulk
     ? (bulkPreview?.loading ?? false)
-    : Boolean(compositePreviewLoading || archivePreview?.loading);
-  const inboxNow = isBulk
-    ? bulkPreview?.data?.totals.all
-    : archivePreview != null && !previewLoading && !archivePreview.error
-      ? archivePreview.inboxCount
-      : (compositePreview?.counts?.all ?? undefined);
+    : Boolean(compositePreviewLoading);
 
-  // Archive is the only verb whose ENTIRE effect is moving inbox mail, so an
-  // empty inbox makes it a pure no-op → block confirm. Delete primary
-  // follows the same rule (no inbox mail in window = nothing to delete).
-  const nothingToActOn =
-    (isArchiveVerb && inboxNow === 0) ||
-    (isDeleteVerb && (compositeCount === 0 || (compositeCount === undefined && inboxNow === 0)));
+  // An Archive/Delete whose entire effect is moving inbox mail is a pure
+  // no-op when the selected window matches nothing → block confirm. Gated
+  // on the SAME count the headline renders, so "0 emails currently match"
+  // can never sit above an enabled confirm (finding 5.5).
+  const nothingToActOn = (isArchiveVerb || isDeleteVerb) && compositeCount === 0;
   const wakeAtInvalid = isLaterVerb && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
   const confirmDisabled =
     livePreviewBlocksConfirm ||
@@ -411,7 +389,7 @@ export function ConfirmActionModal({
   })();
   const presentation = buildActionPresentation({
     verb: primaryVerb,
-    liveCount: isUnsubVerb ? 0 : (compositeCount ?? inboxNow ?? null),
+    liveCount: isUnsubVerb ? 0 : (compositeCount ?? null),
     planUndoDeadline: null,
     wakeAt: isLaterVerb ? wakeAt : null,
     unsubscribeChannel,
@@ -983,10 +961,8 @@ export function ConfirmActionModal({
                   );
                 }
                 // Headline figure resolution order:
-                //   1. composite per-bucket count (most accurate)
-                //   2. legacy archivePreview (single-sender archive path)
-                //   3. historic total (bulk + no preview)
-                //   4. fallback qualitative copy
+                //   1. composite per-bucket count (the one count source)
+                //   2. fallback qualitative copy while it resolves
                 if (compositeCount !== undefined) {
                   if (primaryActsOnInbox) {
                     return (
@@ -1021,45 +997,6 @@ export function ConfirmActionModal({
                       </>
                     );
                   }
-                }
-                if (
-                  isArchiveVerb &&
-                  archivePreview != null &&
-                  !previewLoading &&
-                  !archivePreview.error &&
-                  archivePreview.inboxCount !== undefined
-                ) {
-                  if (archivePreview.inboxCount === 0) {
-                    return (
-                      <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                        No mail from this sender is in your inbox right now — nothing to archive.
-                      </span>
-                    );
-                  }
-                  return (
-                    <>
-                      <strong style={numberStyle}>
-                        {archivePreview.inboxCount.toLocaleString()}
-                      </strong>
-                      <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                        email{archivePreview.inboxCount === 1 ? '' : 's'} from this sender{' '}
-                        {archivePreview.inboxCount === 1 ? 'is' : 'are'} in your inbox now.
-                      </span>
-                    </>
-                  );
-                }
-                if (
-                  isArchiveVerb &&
-                  archivePreview != null &&
-                  !previewLoading &&
-                  (archivePreview.error || archivePreview.inboxCount === undefined)
-                ) {
-                  return (
-                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      Couldn’t load a live preview. Close and retry — no inbox mail can move without
-                      one.
-                    </span>
-                  );
                 }
                 if (previewLoading) {
                   return (
