@@ -18,7 +18,9 @@ import {
   currentPlanPriceLabel,
   deriveBillingViewState,
   emptyPlanView,
+  nonBackingBlocksNewCheckout,
   type BillingReadSnapshot,
+  type NonBackingRecord,
   type SubscriptionRecord,
 } from './billing-model';
 import type { PendingCheckout } from './pending-checkout';
@@ -270,5 +272,23 @@ describe('backingStatusNote', () => {
       tone: 'warn',
       text: expect.stringContaining('until Jul 1, 2026'),
     });
+  });
+});
+
+describe('nonBackingBlocksNewCheckout — mirrors the server SUBSCRIPTION_EXISTS set', () => {
+  const record = (status: SubscriptionRecord['status']): NonBackingRecord => ({
+    reason: status === 'canceled' ? 'canceled' : 'tier_mismatch',
+    sub: { ...SUB, status },
+  });
+
+  it('blocks while the row is active, past_due, or paused (server 409s a new checkout)', () => {
+    expect(nonBackingBlocksNewCheckout(record('active'))).toBe(true);
+    expect(nonBackingBlocksNewCheckout(record('past_due'))).toBe(true);
+    expect(nonBackingBlocksNewCheckout(record('paused'))).toBe(true);
+  });
+
+  it('a canceled row frees the slot; no record blocks nothing', () => {
+    expect(nonBackingBlocksNewCheckout(record('canceled'))).toBe(false);
+    expect(nonBackingBlocksNewCheckout(null)).toBe(false);
   });
 });

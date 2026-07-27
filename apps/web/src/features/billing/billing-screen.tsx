@@ -37,6 +37,7 @@ import {
   deriveBillingViewState,
   emptyPlanView,
   formatBillingDate,
+  nonBackingBlocksNewCheckout,
   type BillingPlanView,
   type NonBackingRecord,
 } from './billing-model';
@@ -461,16 +462,18 @@ export function BillingScreen({
         // double-charge — SUBSCRIPTION_EXISTS can't catch a checkout
         // whose row doesn't exist yet. Withhold every affordance until
         // the pending state resolves (the banner above says why).
-        // An ordinarily paused sub must resume or cancel first (the
-        // notice above); a NON-BACKING mismatch row does not lock the
-        // picker — the entitlement is granted from elsewhere (A6).
+        // A non-backing row that is not CANCELED still occupies the
+        // server's one-live-subscription slot (SUBSCRIPTION_EXISTS keys
+        // on STATUS active/past_due/paused, not on backing) — offering
+        // checkout against it is a guaranteed 409 dead-end. Resume or
+        // cancel first; the notice above carries those verbs (A6).
         disabled={
           billingDark ||
           pending !== null ||
           plan.backing.state === 'past_due' ||
           plan.backing.state === 'cancel_scheduled' ||
           plan.scheduledChange != null ||
-          nonBacking?.reason === 'paused'
+          nonBackingBlocksNewCheckout(nonBacking)
         }
         initialIntent={initialIntent}
         initialProvider={initialProvider}

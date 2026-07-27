@@ -1746,9 +1746,14 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(notice).toHaveTextContent(/can move your workspace off Pro/);
     expect(within(notice).getByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
 
-    // The picker derives from BACKING (none here) — the workspace
-    // regains its plan affordances instead of being locked by a stale row.
-    expect(screen.getByRole('button', { name: 'Upgrade to Plus' })).toBeInTheDocument();
+    // The paused row still occupies the server's one-live-subscription
+    // slot (SUBSCRIPTION_EXISTS keys on STATUS, not backing) — a new
+    // checkout would 409, so the picker withholds every checkout
+    // affordance until the row is resumed or canceled. The notice above
+    // carries those verbs.
+    expect(screen.queryByRole('button', { name: 'Upgrade to Plus' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
   });
 
   it('Pro entitlement with NO subscription: no price claim, picker available', async () => {
@@ -1770,7 +1775,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(screen.getByRole('button', { name: 'Upgrade to Plus' })).toBeInTheDocument();
   });
 
-  it('a non-backing past_due row still surfaces its dunning warning; paid targets route to CHECKOUT', async () => {
+  it('a non-backing past_due row surfaces its dunning warning and locks new checkouts', async () => {
     mockTier = 'pro';
     stubSubscription(() =>
       jsonOk({
@@ -1789,10 +1794,11 @@ describe('BillingScreen — one billing story (A6)', () => {
     // The mismatch row never puts its price on the card…
     const card = screen.getByTestId('current-plan-card');
     expect(within(card).queryByText(quotedPlanPrice('plus', 'monthly')!)).not.toBeInTheDocument();
-    // …and paid targets route through CHECKOUT, not change-plan — the
-    // change endpoint rides a GRANTING sub, which this is not.
-    fireEvent.click(screen.getByRole('button', { name: 'Upgrade to Plus' }));
-    expect(screen.getByTestId('checkout-panel')).toBeInTheDocument();
+    // …and it still occupies the server's one-live-subscription slot
+    // (status past_due ∈ SUBSCRIPTION_EXISTS), so no checkout affordance
+    // renders at all.
+    expect(screen.queryByRole('button', { name: 'Upgrade to Plus' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
   });
 

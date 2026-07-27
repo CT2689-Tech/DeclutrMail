@@ -226,6 +226,20 @@ export function emptyPlanView(entitlementTier: TierId): BillingPlanView {
   };
 }
 
+/**
+ * True when a NON-BACKING record still occupies the workspace's ONE
+ * live-subscription slot server-side: `createCheckout` answers 409
+ * SUBSCRIPTION_EXISTS for any row in status active/past_due/paused
+ * (billing.service.ts) — the row failing the BACKING test does not
+ * free that slot. Offering a new checkout past this predicate is a
+ * guaranteed dead-end 409, so the picker must stay locked until the
+ * row is resumed into backing or canceled. Only a canceled row leaves
+ * the slot free. Mirrors the SERVER's status set — not the reason.
+ */
+export function nonBackingBlocksNewCheckout(record: NonBackingRecord | null): boolean {
+  return record !== null && record.sub.status !== 'canceled';
+}
+
 function nonBackingReason(sub: SubscriptionRecord, entitlementTier: TierId): NonBackingReason {
   if (sub.status === 'canceled') return 'canceled';
   if (sub.status === 'paused') {
