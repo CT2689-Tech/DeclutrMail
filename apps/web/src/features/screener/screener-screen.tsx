@@ -159,11 +159,13 @@ export function ScreenerScreen({
       reason: 'composite_preview',
     });
   }, [compositePreview.isError, compositePreview.error, previewSenderId]);
+  // isFetching keeps a reopened preview in 'loading' while cached data
+  // refetches — a cached count must never arm confirm (D226).
   const previewInboxCount = compositePreview.isError
     ? ('unavailable' as const)
-    : compositePreview.data != null
-      ? compositePreview.data.counts.all
-      : ('loading' as const);
+    : compositePreview.isFetching || compositePreview.data == null
+      ? ('loading' as const)
+      : compositePreview.data.counts.all;
   const pendingMovesMail =
     pending?.verb === 'archive' || pending?.verb === 'later' || pending?.verb === 'delete';
   const pendingPreviewBlocked = pendingMovesMail && typeof previewInboxCount !== 'number';

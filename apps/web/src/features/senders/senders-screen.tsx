@@ -1949,14 +1949,18 @@ function SendersScreenContent({
         onConfirm={confirmPending}
         archivePreview={archivePreview}
         compositePreview={compositePreviewQuery.data}
-        compositePreviewLoading={compositePreviewQuery.isLoading}
+        // isFetching, not isLoading: a reopened modal serves CACHED data
+        // while the fresh preview is in flight, and that state must keep
+        // confirm locked (D226). These queries only fetch on mount/reopen/
+        // retry, so this never re-locks an idle modal.
+        compositePreviewLoading={compositePreviewQuery.isFetching}
         compositePreviewError={compositePreviewQuery.isError}
         mailboxEmail={activeEmail}
         bulkPreview={
           bulkPreviewSenderIds != null
             ? {
                 data: bulkPreviewQuery.data,
-                loading: bulkPreviewQuery.isLoading,
+                loading: bulkPreviewQuery.isFetching,
                 error: bulkPreviewQuery.isError,
               }
             : undefined
