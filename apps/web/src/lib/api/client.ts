@@ -66,6 +66,24 @@ export class ApiError extends Error {
 }
 
 /**
+ * The D202 envelope's `error.code`, or null when the body isn't one.
+ *
+ * A status code does NOT name a cause. `POST /api/actions` answers 409
+ * for `PROTECTED_SENDER` — and, because `CurrentMailboxGuard` runs in
+ * front of it, also for `NO_ACTIVE_MAILBOX`, `SELECT_MAILBOX` and
+ * `MAILBOX_NOT_OWNED`. Branching on the bare status makes a handler
+ * assert a cause it has not read, so a user with no active mailbox gets
+ * told a sender is Protected. Branch on the code.
+ */
+export function apiErrorCode(err: unknown): string | null {
+  if (!(err instanceof ApiError) || typeof err.body !== 'object' || err.body === null) return null;
+  const { error } = err.body as { error?: unknown };
+  if (typeof error !== 'object' || error === null) return null;
+  const { code } = error as { code?: unknown };
+  return typeof code === 'string' ? code : null;
+}
+
+/**
  * Options passed straight to `fetch` plus an optional query-string map.
  *
  * All optional fields explicitly allow `undefined` so call sites can

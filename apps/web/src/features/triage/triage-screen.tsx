@@ -15,7 +15,7 @@ import {
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
@@ -647,21 +647,26 @@ export function TriageScreen({
             // the UpgradeModal via the global MutationCache handler
             // (lib/query-client), so skip the generic toast.
             if (err instanceof ApiError && err.status === 402) return;
-            const stale409 = err instanceof ApiError && err.status === 409;
-            if (!stale409) {
+            // Read the CODE, not the status: CurrentMailboxGuard also
+            // answers 409 (NO_ACTIVE_MAILBOX / SELECT_MAILBOX /
+            // MAILBOX_NOT_OWNED), and naming those "Protected" tells the
+            // user something false about their sender.
+            const conflict = err instanceof ApiError && err.status === 409;
+            const staleProtection = apiErrorCode(err) === 'PROTECTED_SENDER';
+            if (!conflict) {
               captureFeatureException(err, {
                 surface: 'triage',
                 reason: `enqueue_${primaryType}`,
               });
             }
             // A triage action now carries the override whenever the row
-            // says Protected, so a 409 means only one thing: this row's
-            // protection changed after the queue loaded. Refetch, or the
-            // reopened sheet shows the same stale row and 409s again —
-            // forever.
-            if (stale409) invalidateAfterDecision(qc);
+            // says Protected, so PROTECTED_SENDER means only one thing:
+            // this row's protection changed after the queue loaded.
+            // Refetch, or the reopened sheet shows the same stale row and
+            // 409s again — forever.
+            if (staleProtection) invalidateAfterDecision(qc);
             toast(
-              stale409
+              staleProtection
                 ? `${row.senderName} is Protected — reopen the action to confirm anyway`
                 : getActionFailureCopy('enqueue', {
                     action: `${verb.toLowerCase()} ${row.senderName}`,

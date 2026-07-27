@@ -37,7 +37,7 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { DecisionTimeline, KpiStrip, type TimelineItem } from '../uplift-d';
 import { unsubscribeStatusCopy } from '../grid/sender-card';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
@@ -462,23 +462,28 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             onError: (err) => {
               // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
               if (err instanceof ApiError && err.status === 402) return;
-              const stale409 = err instanceof ApiError && err.status === 409;
-              // 409 PROTECTED_SENDER is a designed state, not a defect —
-              // no Sentry (matches the Senders list handler).
-              if (!stale409) {
+              // Read the CODE, not the status: CurrentMailboxGuard also
+              // answers 409 (NO_ACTIVE_MAILBOX / SELECT_MAILBOX /
+              // MAILBOX_NOT_OWNED), and naming those "Protected" tells
+              // the user something false about their sender.
+              const conflict = err instanceof ApiError && err.status === 409;
+              const staleProtection = apiErrorCode(err) === 'PROTECTED_SENDER';
+              // Every 409 here is a designed state, not a defect — no
+              // Sentry (matches the Senders list handler).
+              if (!conflict) {
                 captureFeatureException(err, {
                   surface: 'senders',
                   reason: `enqueue_${primaryType}`,
                 });
               }
               // An explicit single-sender action now carries the override
-              // whenever the row says Protected, so a 409 means only one
-              // thing: this sender's protection changed after the page
-              // loaded. Refetch, or the reopened modal shows the same
+              // whenever the row says Protected, so PROTECTED_SENDER means
+              // only one thing: this sender's protection changed after the
+              // page loaded. Refetch, or the reopened modal shows the same
               // stale sender and 409s again — forever.
-              if (stale409) void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              if (staleProtection) void qc.invalidateQueries({ queryKey: sendersKeys.all });
               toast(
-                stale409
+                staleProtection
                   ? `${sender.name} is Protected — reopen the action to confirm anyway`
                   : `Couldn't ${primaryType} ${sender.name}`,
                 'warn',

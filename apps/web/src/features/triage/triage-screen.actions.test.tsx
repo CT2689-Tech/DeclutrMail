@@ -414,6 +414,40 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
   });
 
+  it('a NON-protected 409 is not dressed up as protection (CurrentMailboxGuard)', async () => {
+    // `CurrentMailboxGuard` answers 409 too — NO_ACTIVE_MAILBOX /
+    // SELECT_MAILBOX / MAILBOX_NOT_OWNED. Branching on the bare status
+    // made the handler assert a cause it had never read, telling a user
+    // with no connected mailbox that their SENDER was Protected, and
+    // refetching a queue that was not the problem.
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'NO_ACTIVE_MAILBOX', message: 'No active Gmail account.' },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    renderScreen(client);
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/is Protected/i)).toBeNull();
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
+  });
+
   it('terminal FAILED: warn toast, busy latch releases, row stays, no invalidation', async () => {
     addFetchHandlers([
       {
