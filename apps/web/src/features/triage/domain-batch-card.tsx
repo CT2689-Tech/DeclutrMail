@@ -45,7 +45,9 @@ export function DomainBatchCard({
   onDismiss: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const eligible = batch.rows.filter((r) => r.protectionReason === null);
+  // The shared eligibility set — same rows the sheet previews and the
+  // enqueue sends, so the headline count can never drift from them.
+  const eligible = batch.eligibleRows;
   const protectedCount = batch.rows.length - eligible.length;
 
   return (

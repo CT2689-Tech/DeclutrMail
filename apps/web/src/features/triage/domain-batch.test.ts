@@ -25,8 +25,19 @@ import {
 } from './domain-batch';
 
 /** Minimal row carrying just the fields the grouping reads. */
-function row(id: string, senderDomain: string): TriageDecisionRow {
-  return { ...TRIAGE_QUEUE[0]!, id, senderId: `sid-${id}`, senderKey: `sk_${id}`, senderDomain };
+function row(
+  id: string,
+  senderDomain: string,
+  protectionReason: TriageDecisionRow['protectionReason'] = null,
+): TriageDecisionRow {
+  return {
+    ...TRIAGE_QUEUE[0]!,
+    id,
+    senderId: `sid-${id}`,
+    senderKey: `sk_${id}`,
+    senderDomain,
+    protectionReason,
+  };
 }
 
 describe('registrableDomain — eTLD+1 collapse', () => {
@@ -129,6 +140,57 @@ describe('planQueueItems — interleaved render plan', () => {
   });
 });
 
+describe('findDomainBatches — protection-aware eligibility (D245)', () => {
+  it('keeps the full run but exposes only eligible rows for action', () => {
+    const rows = [
+      row('a', 'amazon.com'),
+      row('b', 'amazon.com', 'replied'),
+      row('c', 'amazon.com'),
+      row('d', 'amazon.com'),
+      row('e', 'linkedin.com'),
+    ];
+    const batches = findDomainBatches(rows);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]!.rows.map((r) => r.id)).toEqual(['a', 'b', 'c', 'd']);
+    expect(batches[0]!.eligibleRows.map((r) => r.id)).toEqual(['a', 'c', 'd']);
+  });
+
+  it('offers no batch when protection leaves fewer than the minimum eligible', () => {
+    // A 3-run with 2 protected has ONE actionable sender — a bulk card
+    // for it would dead-end (bulk needs >1) and lie about its count.
+    const rows = [
+      row('a', 'amazon.com'),
+      row('b', 'amazon.com', 'replied'),
+      row('c', 'amazon.com', 'replied'),
+    ];
+    expect(findDomainBatches(rows)).toHaveLength(0);
+    const items = planQueueItems(rows);
+    expect(items.every((i) => i.kind === 'row')).toBe(true);
+    expect(items).toHaveLength(3);
+  });
+
+  it('offers no batch when every row in the run is protected', () => {
+    const rows = [
+      row('a', 'amazon.com', 'replied'),
+      row('b', 'amazon.com', 'replied'),
+      row('c', 'amazon.com', 'replied'),
+    ];
+    expect(findDomainBatches(rows)).toHaveLength(0);
+    expect(planQueueItems(rows).every((i) => i.kind === 'row')).toBe(true);
+  });
+
+  it('applies the minimum to eligible rows even when the raw run is longer', () => {
+    const rows = [
+      row('a', 'amazon.com'),
+      row('b', 'amazon.com', 'replied'),
+      row('c', 'amazon.com'),
+      row('d', 'amazon.com', 'replied'),
+    ];
+    // 4-run, 2 eligible — below MIN_BATCH_RUN, no card.
+    expect(findDomainBatches(rows)).toHaveLength(0);
+  });
+});
+
 describe('findVerdictBatch — same-recommendation batch (2026-07-10)', () => {
   function vrow(
     id: string,
@@ -157,6 +219,8 @@ describe('findVerdictBatch — same-recommendation batch (2026-07-10)', () => {
     expect(found?.verdict).toBe('archive');
     expect(found?.batch.domain).toBe(VERDICT_BATCH_LABELS.archive);
     expect(found?.batch.rows.map((r) => r.id)).toEqual(['a', 'c', 'd']);
+    // Verdict batches filter protection up front, so all rows are eligible.
+    expect(found?.batch.eligibleRows).toEqual(found?.batch.rows);
   });
 
   it('excludes protected rows from the batch and the threshold', () => {
