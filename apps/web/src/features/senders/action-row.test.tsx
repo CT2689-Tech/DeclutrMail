@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { derivePrimaryVerbId, leadButtonTone, SenderActionRow } from './action-row';
 import { makeSender } from './testing/make-sender';
+import { canUnsubscribe } from './data';
 
 describe('leadButtonTone — ADR-0016 A5 tone lock', () => {
   it.each([
@@ -56,10 +57,15 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
     ).toBe('keep');
   });
 
-  it("one-click in category 'primary' never derives Unsubscribe — the primary CTA must agree with the popover's canUnsubscribe gate", () => {
-    expect(
-      derivePrimaryVerbId(sender({ unsubscribeMethod: 'one_click', gmailCategory: 'primary' })),
-    ).toBe('keep');
+  it("one-click in category 'primary' is OFFERED but never RECOMMENDED", () => {
+    // Availability and recommendation are different questions. The verb
+    // stays live in the popover — there is a real one-click channel, and
+    // gating it greyed a button with no reason text and no server
+    // counterpart. But primary-category mail is where real correspondence
+    // lands, so Unsubscribe is never the derived default there.
+    const row = sender({ unsubscribeMethod: 'one_click', gmailCategory: 'primary' });
+    expect(derivePrimaryVerbId(row)).toBe('keep');
+    expect(canUnsubscribe(row)).toBe(true);
   });
 
   it('mailto is NOT unsub-ready — manual at launch (D230), never auto-recommended', () => {

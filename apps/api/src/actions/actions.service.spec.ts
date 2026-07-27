@@ -236,14 +236,15 @@ describe('ActionsService', () => {
     await seedMessage(db, mailboxId, 'm2', ['INBOX']);
     await seedMessage(db, mailboxId, 'm3', ['CATEGORY_PROMOTIONS']);
 
-    const res = await svc.enqueueArchive({
+    const res = await svc.enqueueComposite({
       mailboxAccountId: mailboxId,
       selector: { type: 'sender', senderId },
+      primary: { type: 'archive' },
       idempotencyKey: 'click-0001',
       override: false,
     });
 
-    expect(res.requestedCount).toBe(2); // inbox-only
+    expect(res.primaryCount).toBe(2); // inbox-only
     expect(res.status).toBe('queued');
     expect(queue.count).toBe(1);
     expect(queue.jobIds).toEqual(['archive-click-0001']); // verb-namespaced, colon-free (BullMQ jobId)
@@ -292,18 +293,20 @@ describe('ActionsService', () => {
     await seedMessage(db, mailboxId, 'm1', ['INBOX']);
 
     await expect(
-      svc.enqueueArchive({
+      svc.enqueueComposite({
         mailboxAccountId: mailboxId,
         selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
         idempotencyKey: 'click-prot',
         override: false,
       }),
     ).rejects.toMatchObject({ response: { code: 'PROTECTED_SENDER' } });
 
     // With override it proceeds.
-    const res = await svc.enqueueArchive({
+    const res = await svc.enqueueComposite({
       mailboxAccountId: mailboxId,
       selector: { type: 'sender', senderId },
+      primary: { type: 'archive' },
       idempotencyKey: 'click-prot-ovr',
       override: true,
     });
@@ -316,15 +319,16 @@ describe('ActionsService', () => {
     await seedMessage(db, mailboxId, 'm2', ['INBOX']);
     await seedMessage(db, mailboxId, 'm3', ['CATEGORY_PROMOTIONS']); // owned, NOT in inbox
 
-    const res = await svc.enqueueArchive({
+    const res = await svc.enqueueComposite({
       mailboxAccountId: mailboxId,
       // m3 is owned but archived already; forged-x is not ours. Both drop —
       // the archive verb only touches inbox mail (so undo restores faithfully).
       selector: { type: 'messages', messageIds: ['m1', 'm2', 'm3', 'forged-x'] },
+      primary: { type: 'archive' },
       idempotencyKey: 'click-msgs',
       override: false,
     });
-    expect(res.requestedCount).toBe(2);
+    expect(res.primaryCount).toBe(2);
     const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, res.actionId));
     expect([...row!.resolvedMessageIds].sort()).toEqual(['m1', 'm2']);
   });
@@ -333,9 +337,10 @@ describe('ActionsService', () => {
     await seedMessage(db, mailboxId, 'm-free', ['INBOX']);
 
     await expect(
-      svc.enqueueArchive({
+      svc.enqueueComposite({
         mailboxAccountId: mailboxId,
         selector: { type: 'messages', messageIds: ['m-free'] },
+        primary: { type: 'archive' },
         idempotencyKey: 'free-messages-denied',
         override: false,
       }),
@@ -354,15 +359,17 @@ describe('ActionsService', () => {
 
   it('is idempotent on a repeated Idempotency-Key', async () => {
     await seedMessage(db, mailboxId, 'm1', ['INBOX']);
-    const first = await svc.enqueueArchive({
+    const first = await svc.enqueueComposite({
       mailboxAccountId: mailboxId,
       selector: { type: 'sender', senderId },
+      primary: { type: 'archive' },
       idempotencyKey: 'same-key',
       override: false,
     });
-    const second = await svc.enqueueArchive({
+    const second = await svc.enqueueComposite({
       mailboxAccountId: mailboxId,
       selector: { type: 'sender', senderId },
+      primary: { type: 'archive' },
       idempotencyKey: 'same-key',
       override: false,
     });
@@ -385,15 +392,17 @@ describe('ActionsService', () => {
       });
     }
 
-    const fifth = await svc.enqueueArchive({
+    const fifth = await svc.enqueueComposite({
       mailboxAccountId: mailboxId,
       selector: { type: 'sender', senderId },
+      primary: { type: 'archive' },
       idempotencyKey: 'cap-fifth',
       override: false,
     });
-    const replay = await svc.enqueueArchive({
+    const replay = await svc.enqueueComposite({
       mailboxAccountId: mailboxId,
       selector: { type: 'sender', senderId },
+      primary: { type: 'archive' },
       idempotencyKey: 'cap-fifth',
       override: false,
     });
@@ -401,9 +410,10 @@ describe('ActionsService', () => {
     expect(queue.count).toBe(1);
 
     await expect(
-      svc.enqueueArchive({
+      svc.enqueueComposite({
         mailboxAccountId: mailboxId,
         selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
         idempotencyKey: 'cap-sixth',
         override: false,
       }),
@@ -437,9 +447,10 @@ describe('ActionsService', () => {
     // FOR UPDATE; a real-Postgres concurrency job is tracked separately.
     const results = await Promise.allSettled(
       ['race-a', 'race-b'].map((idempotencyKey) =>
-        svc.enqueueArchive({
+        svc.enqueueComposite({
           mailboxAccountId: mailboxId,
           selector: { type: 'sender', senderId },
+          primary: { type: 'archive' },
           idempotencyKey,
           override: false,
         }),
@@ -625,9 +636,10 @@ describe('ActionsService', () => {
 
   it('getStatus is mailbox-scoped (404 for a foreign mailbox)', async () => {
     await seedMessage(db, mailboxId, 'm1', ['INBOX']);
-    const res = await svc.enqueueArchive({
+    const res = await svc.enqueueComposite({
       mailboxAccountId: mailboxId,
       selector: { type: 'sender', senderId },
+      primary: { type: 'archive' },
       idempotencyKey: 'click-status',
       override: false,
     });
@@ -692,9 +704,10 @@ describe('ActionsService', () => {
   it('returns 503 when the queue is unavailable', async () => {
     const noQueue = new ActionsService(db as never, null);
     await expect(
-      noQueue.enqueueArchive({
+      noQueue.enqueueComposite({
         mailboxAccountId: mailboxId,
         selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
         idempotencyKey: 'click-noredis',
         override: false,
       }),

@@ -10,7 +10,7 @@ import {
 } from '@declutrmail/shared/actions';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { BulkActionPreviewResult, CompositeActionPreviewResult } from '@/lib/api/use-action';
-import { verbDisplay, type ActionRequest, type ActionVerb } from './data';
+import { isStandingProtected, verbDisplay, type ActionRequest, type ActionVerb } from './data';
 
 const { color, font } = tokens;
 
@@ -22,6 +22,13 @@ const { color, font } = tokens;
 export type ConfirmSecondaryVerb = 'archive' | 'delete' | null;
 
 export interface ConfirmOptions {
+  /**
+   * Explicit acknowledgement that the target sender is Protected. Set
+   * only on a single-sender request; the server requires it to act on a
+   * protected sender and otherwise answers 409 PROTECTED_SENDER (D42).
+   * Bulk never sets it — D245 excludes protected senders from bulk.
+   */
+  override?: boolean;
   /** Exact return time confirmed for a Later action. */
   wakeAt?: string;
   /**
@@ -237,12 +244,17 @@ export function ConfirmActionModal({
   // primary time-window; Later keeps its existing all-current-mail shape.
   const primaryActsOnInbox = isArchiveVerb || isLaterVerb || isDeleteVerb;
   const primaryUsesWindow = isArchiveVerb || isDeleteVerb;
-  // Whether the secondary chip row is shown (Unsub or Later primary).
-  const showSecondaryRow = isUnsubVerb || isLaterVerb;
+  // Whether the secondary chip row is shown. Unsubscribe ONLY: it is the
+  // one primary that does not touch existing inbox mail, so "what about
+  // the backlog?" is a real, unanswered question. Later already moves
+  // every current message out of the inbox and schedules its return, so
+  // pairing it with "also archive/delete the past" asked the user to
+  // choose between two mutually-exclusive fates for the same mail.
+  const showSecondaryRow = isUnsubVerb;
   const hasSecondaryAction = showSecondaryRow && secondaryVerb !== null;
 
   // For Archive/Delete primary the time-window applies to the primary
-  // verb itself. For Unsub/Later with a non-null secondary, the
+  // verb itself. For Unsubscribe with a non-null secondary, the
   // time-window applies to the secondary's historic mail.
   const showWindowRow = primaryUsesWindow || hasSecondaryAction;
 
@@ -251,6 +263,19 @@ export function ConfirmActionModal({
   // confirm-gating rules below are IDENTICAL across both shapes.
   const isBulk = (request?.senders.length ?? 0) > 1;
   const bucketCounts = isBulk ? bulkPreview?.data?.totals : compositePreview?.counts;
+
+  // A protected sender acted on EXPLICITLY, one at a time. D245 excludes
+  // Protected from bulk and automatic actions only, so this path stays
+  // open — but the server answers it with 409 PROTECTED_SENDER unless
+  // `override` is set, and its message is written as a confirm ("Confirm
+  // to archive anyway"). This is the "anyway" the server was waiting
+  // for: we name the protection, and the confirm carries the override.
+  // Bulk never overrides — protected senders are excluded upstream.
+  const protectedSingle =
+    !isBulk && request != null && request.senders[0] != null
+      ? isStandingProtected(request.senders[0])
+      : false;
+  const needsProtectedOverride = protectedSingle && verb !== 'Keep';
 
   // Fail closed on every path that moves current mail. A count from the
   // composite/bulk endpoint is the preview contract for the active time
@@ -308,6 +333,10 @@ export function ConfirmActionModal({
     } else if (showSecondaryRow) {
       opts.secondary = null;
     }
+    // The explicit "act anyway" acknowledgement for a Protected sender.
+    // Never set on a bulk request — D245 excludes protected senders from
+    // bulk entirely, so there is nothing to override there.
+    if (needsProtectedOverride) opts.override = true;
     // Backwards-compat surface for review-session (pre-spec-v1.2).
     opts.archiveHistoric = hasSecondaryAction && secondaryVerb === 'archive';
     return opts;
@@ -407,6 +436,9 @@ export function ConfirmActionModal({
   const confirmLabel = (() => {
     const primaryGlyph = VERB_GLYPH[verb!] ?? '';
     const primaryPart = `${primaryGlyph} ${verbDisplay(verb!).label}`;
+    // Name the override in the button itself — the click IS the
+    // acknowledgement, so it must not read like an ordinary confirm.
+    if (needsProtectedOverride && !hasSecondaryAction) return `${primaryPart} anyway`;
     if (!hasSecondaryAction) return primaryPart;
     const secVerb = secondaryVerb === 'archive' ? 'Archive' : 'Delete';
     const secGlyph = VERB_GLYPH[secVerb] ?? '';
@@ -592,6 +624,31 @@ export function ConfirmActionModal({
             </p>
           )}
         </div>
+
+        {/* Protected acknowledgement (D245 / D42). The sender is Protected
+            and this is an explicit single-sender action, so the path stays
+            open — but the user is told, in the mandatory preview, before
+            the click that carries `override`. Protection is usually
+            AUTOMATIC (≥3 replies, a star, or repeated Gmail-importance),
+            so the user may not know they set it; naming it is the point. */}
+        {needsProtectedOverride && (
+          <div
+            role="status"
+            style={{
+              margin: '12px 24px 0',
+              padding: '8px 12px',
+              borderRadius: 8,
+              background: 'rgba(196,46,46,0.06)',
+              border: `1px solid rgba(196,46,46,0.30)`,
+              fontFamily: font.sans,
+              fontSize: 12,
+              color: color.danger,
+            }}
+          >
+            This sender is <strong>Protected</strong> — it is normally kept out of bulk and
+            automatic actions. This action applies to this sender only.
+          </div>
+        )}
 
         {/* Recovery copy is generated from the canonical semantics for
             both primary and optional secondary actions. */}
@@ -1014,7 +1071,7 @@ export function ConfirmActionModal({
                     </span>
                   );
                 }
-                if (isLaterVerb && !hasSecondaryAction) {
+                if (isLaterVerb) {
                   return (
                     <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                       {presentation.primary.currentMail.summary}{' '}

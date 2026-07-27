@@ -373,7 +373,16 @@ describe('TriageScreen — D226 mutation wiring', () => {
     });
   });
 
-  it('surfaces a designed 409 (protected sender) without crashing or invalidating', async () => {
+  it('surfaces a designed 409 (protected sender) and REFETCHES the stale row', async () => {
+    // Contract inverted deliberately (2026-07-26). This used to assert
+    // the queue was NOT invalidated, on the reasoning that a 409 means
+    // nothing changed so the cache is fine. That reasoning stopped being
+    // true once an explicit triage action started carrying `override`
+    // whenever the row says Protected: a 409 can now mean only ONE
+    // thing — this row's protection changed after the queue loaded. The
+    // cached row still says unprotected, so the reopened sheet omits the
+    // acknowledgement, omits the override, and 409s again. Forever.
+    // Refetching is what breaks that loop.
     addFetchHandlers([
       {
         method: 'POST',
@@ -396,13 +405,47 @@ describe('TriageScreen — D226 mutation wiring', () => {
     fireEvent.keyDown(window, { key: 'a' });
     await confirmOpenSheet('Archive');
 
-    // The failure leaves the queue untouched: no busy latch, no
-    // invalidation, row still present.
+    // No busy latch and the row survives — nothing was mutated. But the
+    // queue IS refetched, so the retry can carry the override.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await new Promise((r) => setTimeout(r, 50));
     expect(container.querySelector('[aria-busy="true"]')).toBeNull();
-    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
+  });
+
+  it('a NON-protected 409 is not dressed up as protection (CurrentMailboxGuard)', async () => {
+    // `CurrentMailboxGuard` answers 409 too — NO_ACTIVE_MAILBOX /
+    // SELECT_MAILBOX / MAILBOX_NOT_OWNED. Branching on the bare status
+    // made the handler assert a cause it had never read, telling a user
+    // with no connected mailbox that their SENDER was Protected, and
+    // refetching a queue that was not the problem.
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'NO_ACTIVE_MAILBOX', message: 'No active Gmail account.' },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    renderScreen(client);
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/is Protected/i)).toBeNull();
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
   });
 
   it('terminal FAILED: warn toast, busy latch releases, row stays, no invalidation', async () => {
@@ -992,5 +1035,90 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     fireEvent.keyDown(window, { key: 'a' });
 
     await waitFor(() => expect(enqueues).toHaveLength(1));
+  });
+});
+
+describe('TriageScreen — Protected rows act with an explicit override (D245/D42)', () => {
+  const SARAH = TRIAGE_QUEUE.find((r) => r.protectionReason !== null)!;
+
+  function renderWith(rows: typeof TRIAGE_QUEUE) {
+    return render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageScreen state={{ kind: 'ready', rows: [...rows], stats: TRIAGE_SESSION_STATS }} />
+      </QueryWrapper>,
+    );
+  }
+
+  beforeEach(() => {
+    resetTriageStore();
+    h.toast.mockClear();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => jsonOk({ data: PREVIEW_BODY }),
+      },
+    ]);
+  });
+  afterEach(() => resetFetchStub());
+
+  /**
+   * Triage rides the SHARED composite endpoint, which answers a protected
+   * sender with 409 PROTECTED_SENDER unless `override` is set. Enabling
+   * the verb on protected rows without wiring this would have swapped an
+   * honest disabled button for a guaranteed error toast.
+   */
+  async function archiveAndCaptureBody(row: (typeof TRIAGE_QUEUE)[number]) {
+    const enqueues: unknown[] = [];
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          enqueues.push(await req.json());
+          return jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 3,
+              secondaryCount: null,
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              status: 'done',
+              requestedCount: 3,
+              affectedCount: 3,
+              undoToken: null,
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+
+    renderWith([row]);
+    expandRow(row.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+    await waitFor(() => expect(enqueues).toHaveLength(1));
+    return enqueues[0];
+  }
+
+  it('sends override:true when archiving a PROTECTED row', async () => {
+    expect(await archiveAndCaptureBody(SARAH)).toMatchObject({ override: true });
+  });
+
+  it('does NOT send override for an unprotected row', async () => {
+    // Two-sided: a flag only ever observed set is not a verified flag.
+    expect(await archiveAndCaptureBody(GROUPON)).not.toMatchObject({ override: true });
   });
 });

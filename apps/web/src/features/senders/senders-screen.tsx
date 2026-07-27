@@ -12,10 +12,10 @@ import {
 } from '@declutrmail/shared';
 import { buildActionReceiptResult } from '@declutrmail/shared/actions';
 import {
-  canArchive,
-  canDelete,
-  canLater,
-  canUnsubscribe,
+  canBulkArchive,
+  canBulkDelete,
+  canBulkLater,
+  canBulkUnsubscribe,
   canUseActionSelector,
   enrichSenderRow,
   isStandingProtected,
@@ -37,7 +37,6 @@ import { useSenders } from './api/use-senders';
 import { useSendersSummary } from './api/use-senders-summary';
 
 import {
-  useEnqueueAction,
   useActionStatus,
   useBatchStatus,
   useBulkActionPreview,
@@ -54,7 +53,7 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
 import { useQueryClient } from '@tanstack/react-query';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SenderGrid } from './grid/sender-grid';
 import { ViewToggle } from './view-toggle';
@@ -87,11 +86,16 @@ const VERB_TO_POSTHOG: Record<ActionVerb, Verb> = {
   Protect: 'keep',
 };
 
+/**
+ * Eligibility for the SELECTION-scoped (bulk) keyboard shortcuts, so
+ * D245's bulk exclusion holds on the keyboard path exactly as it does on
+ * the SelectionBar buttons.
+ */
 const ELIGIBLE: Record<'Archive' | 'Later' | 'Unsubscribe' | 'Delete', (s: Sender) => boolean> = {
-  Archive: canArchive,
-  Later: canLater,
-  Unsubscribe: canUnsubscribe,
-  Delete: canDelete,
+  Archive: canBulkArchive,
+  Later: canBulkLater,
+  Unsubscribe: canBulkUnsubscribe,
+  Delete: canBulkDelete,
 };
 
 /**
@@ -390,16 +394,16 @@ function SendersScreenContent({
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
 
-  // P6 — real single-sender Archive (D226). `enqueue` fires the action;
-  // `activeAction` holds the in-flight handle that `actionStatus` polls to
-  // a terminal state; `revert` + `revertActionId` drive the undo loop. One
-  // in-flight action at a time is sufficient for the single-sender wire.
+  // P6 — real single-sender actions (D226). `activeAction` holds the
+  // in-flight handle that `actionStatus` polls to a terminal state;
+  // `revert` + `revertActionId` drive the undo loop. One in-flight action
+  // at a time is sufficient for the single-sender wire.
   const qc = useQueryClient();
-  const enqueue = useEnqueueAction();
-  // ADR-0020 unified composite endpoint — covers Delete primary + Later
-  // primary + composite secondary (Later/Unsub + Archive/Delete past).
-  // The per-verb `enqueueArchiveSender` stays for the single-sender
-  // Archive path until Phase 5 dead-code sweep retires it.
+  // ADR-0020 unified composite endpoint — the ONLY single-sender enqueue
+  // wire. Covers Archive / Later / Delete primaries plus the composite
+  // secondary (Later/Unsub + Archive/Delete past). The per-verb
+  // `enqueueArchiveSender` route it replaced could not carry a time
+  // window, so it silently widened every windowed Archive (D226).
   const enqueueComposite = useEnqueueComposite();
   // D52 — multi-sender bulk pipeline. One POST fans out server-side
   // (per-sender failure isolation); the FE polls ONE batch handle.
@@ -681,53 +685,23 @@ function SendersScreenContent({
       // handle to a terminal state in the effect below. The real receipt
       // (with the real undo token) appears on `done`, never optimistically.
       // Multi-sender Archive/Later/Delete ride the bulk branch below (D52).
-      if (verb === 'Archive' && senders.length === 1 && opts?.secondary == null) {
-        const sender = senders[0]!;
-        setPendingAction(null);
-        setSelected(new Set());
-        toast(`Archiving mail from ${sender.name}…`, 'info');
-        const mutationArgs: { senderId: string; override?: boolean } = { senderId: sender.id };
-        enqueue.mutate(mutationArgs, {
-          onSuccess: (res) =>
-            setActiveAction({
-              actionId: res.actionId,
-              senderName: sender.name,
-              verb: 'Archive',
-            }),
-          onError: (err) => {
-            // 402 FREE_CAP_REACHED is a designed state — the
-            // UpgradeModal (global MutationCache handler,
-            // lib/query-client) is the surface; skip Sentry + toast.
-            if (err instanceof ApiError && err.status === 402) return;
-            // 409 PROTECTED_SENDER is a designed conflict — skip Sentry to
-            // avoid noise. Every other failure (5xx, IDEMPOTENCY_KEY race,
-            // NO_ACTIVE_MAILBOX) is a real regression worth capturing.
-            if (!(err instanceof ApiError && err.status === 409)) {
-              captureFeatureException(err, { surface: 'senders', reason: 'enqueue_archive' });
-            }
-            toast(
-              err instanceof ApiError && err.status === 409
-                ? `${sender.name} is protected — unprotect it first`
-                : `Couldn't archive ${sender.name}`,
-              'warn',
-            );
-          },
-        });
-        return;
-      }
-
-      // Composite path (ADR-0020 + spec v1.2 Decision 15) — single-sender
-      // Delete primary OR Later primary OR Archive/Later with a secondary
-      // historic verb. Routes through `POST /api/actions` so the BE
-      // composite executor persists primary + secondary as two linked
+      // Composite path (ADR-0020 + spec v1.2 Decision 15) — EVERY
+      // single-sender Archive / Later / Delete, with or without a
+      // secondary historic verb. Routes through `POST /api/actions` so the
+      // BE composite executor persists primary + secondary as two linked
       // rows when relevant. Unsubscribe primary takes its own branch
       // below (D9 Wave 2): a REAL recorded intent + RFC 8058 execution,
       // whose secondary chip enqueues a separate composite (the BE has
       // no composite PRIMARY for unsub — the triage pattern).
-      if (
-        senders.length === 1 &&
-        (verb === 'Delete' || (verb === 'Archive' && opts?.secondary != null) || verb === 'Later')
-      ) {
+      //
+      // Plain single-sender Archive used to take a per-verb branch here
+      // that posted to the legacy `POST /api/actions/archive`, whose body
+      // schema has no `olderThanDays`. The chip row offered real
+      // per-bucket counts and the confirmed window was dropped at the
+      // call site, so picking "1 year+ · 12" archived the whole inbox
+      // (D226 — the preview must describe the mutation that runs).
+      // Multi-sender Archive/Later/Delete ride the bulk branch below (D52).
+      if (senders.length === 1 && (verb === 'Delete' || verb === 'Archive' || verb === 'Later')) {
         const sender = senders[0]!;
         const primaryType: 'archive' | 'later' | 'delete' =
           verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
@@ -756,6 +730,10 @@ function SendersScreenContent({
                   },
                 }
               : {}),
+            // Protected acknowledgement from the D226 confirm. Single-sender
+            // only — the bulk branch below never sets it, because D245
+            // excludes protected senders from bulk in the first place.
+            ...(opts?.override ? { override: true } : {}),
           },
           {
             onSuccess: (res) =>
@@ -772,15 +750,28 @@ function SendersScreenContent({
             onError: (err) => {
               // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
               if (err instanceof ApiError && err.status === 402) return;
-              if (!(err instanceof ApiError && err.status === 409)) {
+              // Read the CODE, not the status: CurrentMailboxGuard also
+              // answers 409 (NO_ACTIVE_MAILBOX / SELECT_MAILBOX /
+              // MAILBOX_NOT_OWNED), and naming those "Protected" tells
+              // the user something false about their sender.
+              const conflict = err instanceof ApiError && err.status === 409;
+              const staleProtection = apiErrorCode(err) === 'PROTECTED_SENDER';
+              // Every 409 here is a designed state, not a defect.
+              if (!conflict) {
                 captureFeatureException(err, {
                   surface: 'senders',
                   reason: `enqueue_${primaryType}`,
                 });
               }
+              // An explicit single-sender action now carries the override
+              // whenever the row says Protected, so PROTECTED_SENDER means
+              // only one thing: this row's protection changed after the
+              // list loaded. Refetch, or the reopened modal shows the same
+              // stale row and 409s again — forever.
+              if (staleProtection) void qc.invalidateQueries({ queryKey: sendersKeys.all });
               toast(
-                err instanceof ApiError && err.status === 409
-                  ? `${sender.name} is protected — unprotect it first`
+                staleProtection
+                  ? `${sender.name} is Protected — reopen the action to confirm anyway`
                   : `Couldn't ${primaryType} ${sender.name}`,
                 'warn',
               );
@@ -857,6 +848,14 @@ function SendersScreenContent({
                         type: secondary.type,
                         olderThanDays: secondary.olderThanDays ?? null,
                       },
+                      // The SAME acknowledgement the preview collected.
+                      // Unsubscribe has no Protected guard, so the intent
+                      // above always lands — one-click sends a real,
+                      // one-way request (D58). Dropping the override here
+                      // 409s the backlog half AFTER that, leaving the user
+                      // unsubscribed with their mail untouched: a partial
+                      // execution whose first half cannot be undone.
+                      ...(opts?.override === true ? { override: true } : {}),
                     },
                     {
                       onSuccess: (cres) =>
@@ -1112,7 +1111,10 @@ function SendersScreenContent({
               if (err instanceof ApiError && err.status === 402) return;
               // 409 NO_ACTIONABLE_SENDERS is a designed conflict (whole
               // selection protected / gone) — skip Sentry, mirror the
-              // single-sender PROTECTED_SENDER convention.
+              // single-sender convention. Read the CODE for the copy:
+              // CurrentMailboxGuard's 409s share the status, and
+              // "the selected senders are protected or gone" is a claim
+              // about SENDERS that a mailbox conflict never made.
               if (!(err instanceof ApiError && err.status === 409)) {
                 captureFeatureException(err, {
                   surface: 'senders',
@@ -1120,7 +1122,7 @@ function SendersScreenContent({
                 });
               }
               toast(
-                err instanceof ApiError && err.status === 409
+                apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS'
                   ? 'Nothing to do — the selected senders are protected or gone'
                   : `Couldn't ${primaryType} mail from ${n} senders`,
                 'warn',
@@ -1140,7 +1142,7 @@ function SendersScreenContent({
       // bucket. Protect stays a standing-policy toggle on Sender
       // Detail; no Senders-screen surface emits it as a verb.
     },
-    [enqueue, enqueueBulk],
+    [enqueueBulk],
   );
 
   // P6 — drive the Archive lifecycle off the polled status. On `done`,

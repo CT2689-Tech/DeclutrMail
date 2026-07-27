@@ -146,29 +146,76 @@ export function isStandingProtected(s: Pick<Sender, 'protectionFlags'>): boolean
   return s.protectionFlags.isProtected;
 }
 
+/**
+ * EXPLICIT single-sender capability.
+ *
+ * D245 excludes Protected senders from **bulk and automatic**
+ * mail-changing actions — not from an explicit click the user aimed at
+ * one sender. These four predicates therefore carry no protection term;
+ * `canBulk*` below does, and every bulk/automatic path reads those.
+ *
+ * The server has always agreed: `actions.service.ts` answers a protected
+ * single-sender action with 409 `PROTECTED_SENDER` whose message is
+ * written as a confirm — "This sender is Protected. Confirm to archive
+ * anyway." — and accepts an `override` flag to proceed. It expected a UI
+ * that offers "anyway"; the client greyed the button out instead, so the
+ * 409 was unreachable and `override` had no production caller.
+ *
+ * Auto-protection fires on ≥3 replies (plus starred / Gmail-important),
+ * so the blocked set was every sender the user actually corresponds
+ * with — the whole product went read-only for exactly those.
+ */
 export function canUnsubscribe(s: Sender): boolean {
-  return (
-    !isStandingProtected(s) &&
-    s.gmailCategory !== 'primary' &&
-    (s.unsubscribeMethod === 'one_click' || s.unsubscribeMethod === 'mailto')
-  );
+  // Channel requirement only: no List-Unsubscribe header means there is
+  // nothing to send, which is a fact about the sender rather than a
+  // policy. The former `gmailCategory !== 'primary'` term is gone — it
+  // had no server, worker, or scoring counterpart and greyed the button
+  // with no reason text. `deriveDefaultPrimary` already declines to
+  // RECOMMEND Unsubscribe for those senders, which is the right place
+  // for a soft signal.
+  return s.unsubscribeMethod === 'one_click' || s.unsubscribeMethod === 'mailto';
 }
 
-export function canArchive(s: Sender): boolean {
-  return !isStandingProtected(s);
+export function canArchive(_s: Sender): boolean {
+  return true;
 }
 
 /** "Later" moves a sender's current inbox mail to the
- * DeclutrMail/Later label — safe for anyone not standing-protected. */
-export function canLater(s: Sender): boolean {
-  return !isStandingProtected(s);
+ * DeclutrMail/Later label. */
+export function canLater(_s: Sender): boolean {
+  return true;
 }
 
-/** Delete (Gmail Trash, 30-day recovery) — gated like the other
- * destructive verbs: blocked only for standing-protected senders
- * (D42/D43). */
-export function canDelete(s: Sender): boolean {
-  return !isStandingProtected(s);
+/** Delete (Gmail Trash, 30-day recovery, plus the tier undo window). */
+export function canDelete(_s: Sender): boolean {
+  return true;
+}
+
+/**
+ * BULK capability — `can*` AND not standing-protected.
+ *
+ * This is the D245 guardrail: Protected senders are excluded from bulk
+ * and automatic mail-changing actions. Every multi-select surface MUST
+ * filter on these, never on the bare `can*` predicates, or a protected
+ * sender re-enters a bulk. The server enforces it again
+ * (`actions.service.ts` skips protected keys and reports them in
+ * `skipped`), but a client that offered them would state a count it
+ * cannot deliver.
+ */
+export function canBulkUnsubscribe(s: Sender): boolean {
+  return canUnsubscribe(s) && !isStandingProtected(s);
+}
+
+export function canBulkArchive(s: Sender): boolean {
+  return canArchive(s) && !isStandingProtected(s);
+}
+
+export function canBulkLater(s: Sender): boolean {
+  return canLater(s) && !isStandingProtected(s);
+}
+
+export function canBulkDelete(s: Sender): boolean {
+  return canDelete(s) && !isStandingProtected(s);
 }
 
 /** Compact large-number display: 12480 → "12.5k". */

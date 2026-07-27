@@ -88,6 +88,16 @@ export function ActionSheet({
   const confirmDisabled =
     (requiresLivePreview && (previewPending || previewUnavailable)) || wakeAtInvalid;
 
+  // Acting on a Protected sender. D245 excludes Protected from BULK and
+  // AUTOMATIC actions, so this explicit single-row action stays open —
+  // but `triage-screen.tsx` sends `override: true` for exactly this row,
+  // and an override the user is never told about is the same defect this
+  // codebase keeps fixing. Name it here, in the mandatory D226 preview,
+  // and say "anyway" on the button that carries it. Protection is usually
+  // AUTOMATIC (>=3 replies, a star, repeated Gmail-importance), so the
+  // user may not know it is set — which is precisely why it is stated.
+  const isProtectedRow = row?.protectionReason != null;
+
   useEffect(() => {
     if (!open || actionKey === null) {
       setInitializedActionKey(null);
@@ -304,6 +314,25 @@ export function ActionSheet({
           </button>
         </div>
 
+        {isProtectedRow && (
+          <div
+            role="status"
+            style={{
+              margin: '0 24px 12px',
+              padding: '8px 12px',
+              borderRadius: 8,
+              background: 'rgba(196,46,46,0.06)',
+              border: '1px solid rgba(196,46,46,0.30)',
+              fontSize: 12,
+              lineHeight: 1.45,
+              color: color.danger,
+            }}
+          >
+            This sender is <strong>Protected</strong> — it is normally kept out of bulk and
+            automatic actions. This applies to this sender only.
+          </div>
+        )}
+
         <div
           style={{
             display: 'flex',
@@ -362,7 +391,7 @@ export function ActionSheet({
                 </Kbd>
               }
             >
-              {verb}
+              {isProtectedRow ? `${verb} anyway` : verb}
             </Button>
           </div>
         </div>

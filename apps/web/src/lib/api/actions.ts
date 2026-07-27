@@ -165,28 +165,6 @@ interface ActionRequestOptions {
 }
 
 /**
- * Enqueue an Archive of every inbox message from one sender. The worker
- * resolves the sender's current INBOX ids server-side (the `sender`
- * selector), so the client sends only the sender id.
- *
- * `override` is required to act on a Protected sender.
- */
-export async function enqueueArchiveSender(
-  senderId: string,
-  args: { idempotencyKey: string; override?: boolean } & ActionRequestOptions,
-): Promise<ActionEnqueueResult> {
-  const env = await apiPost<ActionEnqueueResult>(
-    '/api/actions/archive',
-    { selector: { type: 'sender', senderId }, override: args.override ?? false },
-    {
-      headers: { 'Idempotency-Key': args.idempotencyKey },
-      ...(args.mailboxId ? { mailboxId: args.mailboxId } : {}),
-    },
-  );
-  return env.data;
-}
-
-/**
  * Non-mutating preview: the current count of a sender's inbox mail. The
  * worker re-resolves Gmail at execution, so the final affected count can
  * differ if the inbox changes after confirmation. 404s an unowned sender.

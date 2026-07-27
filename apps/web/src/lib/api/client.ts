@@ -74,6 +74,10 @@ export class ApiError extends Error {
  * `MAILBOX_NOT_OWNED`. Branching on the bare status makes a handler
  * assert a cause it has not read, so a user with no active mailbox gets
  * told a sender is Protected. Branch on the code.
+ *
+ * `features/sync/api/use-sync-now.ts` learned this first and kept a
+ * private `readErrorCode`; this is the shared home. Fold that one in
+ * when the sync error mapping is next touched.
  */
 export function apiErrorCode(err: unknown): string | null {
   if (!(err instanceof ApiError) || typeof err.body !== 'object' || err.body === null) return null;

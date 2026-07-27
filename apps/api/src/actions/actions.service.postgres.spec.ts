@@ -344,9 +344,10 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
     await controlClient!`SELECT id FROM workspaces WHERE id = ${workspaceId} FOR UPDATE`;
 
     const pendingResults = Promise.allSettled([
-      legacy!.enqueueArchive({
+      legacy!.enqueueComposite({
         mailboxAccountId: mailboxId,
         selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
         idempotencyKey: 'postgres-race-legacy',
         override: false,
       }),

@@ -19,13 +19,11 @@ import { ActionRecoveryService } from './action-recovery.service.js';
 import { ActionsService } from './actions.service.js';
 import {
   actionRecoveryConfirmRequestSchema,
-  archiveRequestSchema,
   bulkPreviewRequestSchema,
   compositeActionRequestSchema,
   keepIntentRequestSchema,
   unsubscribeIntentRequestSchema,
   unsubscribeManualStatusRequestSchema,
-  type ActionEnqueueResult,
   type ActionRecoveryEnqueueResult,
   type ActionRecoveryPreviewResult,
   type ActionStatusResult,
@@ -65,42 +63,6 @@ export class ActionsController {
     private readonly actions: ActionsService,
     private readonly recovery: ActionRecoveryService,
   ) {}
-
-  /**
-   * POST /api/actions/archive — resolve the target set, enqueue, return
-   * the action handle. Rate-limit (D156): `gmail-action` bucket (caps
-   * destructive-action API abuse; per-user Gmail quota is governed
-   * separately in the worker's `RateLimiter`).
-   */
-  @RateLimit({ bucket: 'gmail-action' })
-  @Post('archive')
-  @UseGuards(CsrfGuard)
-  async archive(
-    @CurrentMailbox() mailbox: { id: string },
-    @Headers('idempotency-key') idempotencyKey: string | undefined,
-    @Body() body: unknown,
-  ): Promise<Envelope<ActionEnqueueResult>> {
-    if (!idempotencyKey || idempotencyKey.trim().length < 8) {
-      throw new BadRequestException({
-        code: 'IDEMPOTENCY_KEY_REQUIRED',
-        message: 'An Idempotency-Key header (≥8 chars) is required for actions.',
-      });
-    }
-    const parsed = archiveRequestSchema.safeParse(body);
-    if (!parsed.success) {
-      throw new BadRequestException({
-        code: 'INVALID_REQUEST',
-        message: parsed.error.issues[0]?.message ?? 'Invalid action request.',
-      });
-    }
-    const result = await this.actions.enqueueArchive({
-      mailboxAccountId: mailbox.id,
-      selector: parsed.data.selector,
-      idempotencyKey: idempotencyKey.trim(),
-      override: parsed.data.override ?? false,
-    });
-    return ok(result);
-  }
 
   /**
    * GET /api/actions/archive/preview?senderId= — the REAL current-inbox

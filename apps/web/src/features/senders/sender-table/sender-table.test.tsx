@@ -204,7 +204,7 @@ describe('SenderTable', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('popover disables destructive verbs for standing-protected rows', () => {
+  it('popover keeps every verb live on a standing-protected row', () => {
     render(
       <Harness
         rows={[
@@ -219,10 +219,15 @@ describe('SenderTable', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: /more actions/i }));
-    // Protected rows: Archive/Later/Unsubscribe/Delete all gated by the
-    // shared capability predicates; Keep stays available.
-    expect(screen.getByRole('menuitem', { name: /archive/i })).toBeDisabled();
-    expect(screen.getByRole('menuitem', { name: /delete/i })).toBeDisabled();
+    // D245 excludes Protected senders from BULK and AUTOMATIC actions.
+    // A row popover is explicit single-sender intent, so nothing is gated
+    // here — the protection is acknowledged in the mandatory D226 confirm,
+    // which carries `override` to the server. Blocking here instead made
+    // the server's own "Confirm to archive anyway" 409 unreachable, and
+    // because auto-protection fires on >=3 replies, it turned every sender
+    // the user actually corresponds with into a Keep-only row.
+    expect(screen.getByRole('menuitem', { name: /archive/i })).not.toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: /delete/i })).not.toBeDisabled();
     expect(screen.getByRole('menuitem', { name: /keep/i })).not.toBeDisabled();
   });
 

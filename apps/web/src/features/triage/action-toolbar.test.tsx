@@ -95,16 +95,24 @@ describe('ActionToolbar — render (D29, D31)', () => {
     expect(html.toLowerCase()).not.toContain('screen');
   });
 
-  it('disables Archive / Unsubscribe / Later for a protected row but keeps Keep enabled', () => {
+  it('keeps every verb live on a protected row (D245 excludes bulk, not one row)', () => {
     const row = rowById('t-sarah'); // user-protected
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
-    // The Button component sets `disabled` and lowers opacity — both
-    // surface in the SSR markup. We assert the disabled attribute
-    // appears for Archive/Unsubscribe/Later but not Keep.
-    const archiveSection = html.slice(html.indexOf('>Archive<') - 600, html.indexOf('>Archive<'));
-    expect(archiveSection).toMatch(/disabled/);
-    const keepSection = html.slice(html.indexOf('>Keep<') - 600, html.indexOf('>Keep<'));
-    expect(keepSection).not.toMatch(/disabled=""/);
+    // This feature's own server contract says so verbatim
+    // (`triage.read-service.ts`): forcing the Keep RECOMMENDATION for a
+    // protected sender is "display-layer only … every K/A/U/L action
+    // remains available on the row". The client asserted the opposite,
+    // and its gate was client-only — the server has no protected check on
+    // the triage act path, so it blocked nothing a curl couldn't do.
+    for (const verb of ['Archive', 'Later', 'Keep']) {
+      const section = html.slice(html.indexOf(`>${verb}<`) - 600, html.indexOf(`>${verb}<`));
+      expect(section, `${verb} must stay enabled`).not.toMatch(/disabled=""/);
+    }
+    // Two-sided: Unsubscribe on this row is still disabled — but by the
+    // CHANNEL fact (t-sarah has no List-Unsubscribe header), never by
+    // protection. A fact about the sender survives; a policy gate does not.
+    const unsub = html.slice(html.indexOf('>Unsubscribe<') - 600, html.indexOf('>Unsubscribe<'));
+    expect(unsub).toMatch(/disabled/);
   });
 });
 
@@ -124,10 +132,15 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
 
     expect(verbDisabledReason('Unsubscribe', oneClick)).toBeNull();
 
-    expect(verbDisabledReason('Unsubscribe', protectedRow)).toBe(PROTECTED_COPY);
-    expect(verbDisabledReason('Archive', protectedRow)).toBe(PROTECTED_COPY);
-    expect(verbDisabledReason('Later', protectedRow)).toBe(PROTECTED_COPY);
+    // Protection no longer disables anything, so it states no reason —
+    // the row badge names the protection and the mandatory D226 confirm
+    // carries the acknowledgement. The CHANNEL fact still does: t-sarah
+    // has no List-Unsubscribe header, and that is a fact about the
+    // sender rather than a policy about the user's intent.
+    expect(verbDisabledReason('Archive', protectedRow)).toBeNull();
+    expect(verbDisabledReason('Later', protectedRow)).toBeNull();
     expect(verbDisabledReason('Keep', protectedRow)).toBeNull();
+    expect(verbDisabledReason('Unsubscribe', protectedRow)).toBe(NO_CHANNEL_COPY);
   });
 
   it('the disabled Unsubscribe pill carries the reason as title + aria-label', () => {
@@ -158,13 +171,14 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
     }
   });
 
-  it('protected rows title their disabled verbs with the protection reason, no note line', () => {
+  it('protected rows carry no disabled-verb copy — nothing is disabled', () => {
     const html = renderToStaticMarkup(
       <ActionToolbar row={rowById('t-sarah')} onAction={() => {}} />,
     );
-    // The row header's Protected badge explains the row; the
-    // toolbar only mirrors the copy into the disabled pills' titles.
-    expect(html).toContain(`title="${PROTECTED_COPY}"`);
+    // The row header's Protected badge still explains the row. The
+    // toolbar no longer mirrors a "destructive verbs are disabled" line,
+    // because that statement is no longer true.
+    expect(html).not.toContain(PROTECTED_COPY);
     expect(html).not.toContain('role="note"');
   });
 });

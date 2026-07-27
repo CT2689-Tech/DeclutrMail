@@ -216,10 +216,12 @@ function verbDisabled(verb: ActionVerb, row: TriageDecisionRow): boolean {
  */
 export function verbDisabledReason(verb: ActionVerb, row: TriageDecisionRow): string | null {
   if (verb === 'Keep') return null;
-  if (row.protectionReason !== null) {
-    // Mirrors the row badge's title so the two surfaces never drift.
-    return 'Protected — destructive verbs are disabled for this sender';
-  }
+  // Protection no longer disables a verb here. D245 excludes Protected
+  // senders from BULK and AUTOMATIC actions, not from an explicit click
+  // on one row, and this feature's own server contract says every
+  // K/A/U/L action stays available on a protected row. The protection is
+  // surfaced by the row badge and acknowledged in the D226 confirm,
+  // which is where the "act anyway" decision belongs.
   if (verb === 'Unsubscribe' && row.unsubscribeMethod === 'none') {
     return 'No unsubscribe channel found — Archive handles senders like this.';
   }

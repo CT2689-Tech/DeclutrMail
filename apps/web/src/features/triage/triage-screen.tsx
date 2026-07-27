@@ -15,7 +15,7 @@ import {
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
@@ -544,7 +544,17 @@ export function TriageScreen({
               }
               if (details?.archiveHistoric) {
                 enqueueComposite.mutate(
-                  { senderId: row.senderId, primary: { type: 'archive', olderThanDays: null } },
+                  {
+                    senderId: row.senderId,
+                    primary: { type: 'archive', olderThanDays: null },
+                    // Triage rides the SHARED composite endpoint, which
+                    // answers a protected sender with 409 PROTECTED_SENDER
+                    // unless `override` is set. Triage rows are explicit
+                    // single-sender intent (D245 excludes bulk/automatic,
+                    // not this), and the protection is named in the row
+                    // badge before the user confirms.
+                    ...(row.protectionReason !== null ? { override: true } : {}),
+                  },
                   {
                     onSuccess: (res) =>
                       setActiveAction({
@@ -608,6 +618,9 @@ export function TriageScreen({
             olderThanDays: null,
             ...(primaryType === 'later' && details?.wakeAt ? { wakeAt: details.wakeAt } : {}),
           },
+          // See the note on the follow-on archive above: the shared
+          // composite endpoint 409s on a protected sender without this.
+          ...(row.protectionReason !== null ? { override: true } : {}),
         },
         {
           onSuccess: (res) => {
@@ -634,15 +647,27 @@ export function TriageScreen({
             // the UpgradeModal via the global MutationCache handler
             // (lib/query-client), so skip the generic toast.
             if (err instanceof ApiError && err.status === 402) return;
-            if (!(err instanceof ApiError && err.status === 409)) {
+            // Read the CODE, not the status: CurrentMailboxGuard also
+            // answers 409 (NO_ACTIVE_MAILBOX / SELECT_MAILBOX /
+            // MAILBOX_NOT_OWNED), and naming those "Protected" tells the
+            // user something false about their sender.
+            const conflict = err instanceof ApiError && err.status === 409;
+            const staleProtection = apiErrorCode(err) === 'PROTECTED_SENDER';
+            if (!conflict) {
               captureFeatureException(err, {
                 surface: 'triage',
                 reason: `enqueue_${primaryType}`,
               });
             }
+            // A triage action now carries the override whenever the row
+            // says Protected, so PROTECTED_SENDER means only one thing:
+            // this row's protection changed after the queue loaded.
+            // Refetch, or the reopened sheet shows the same stale row and
+            // 409s again — forever.
+            if (staleProtection) invalidateAfterDecision(qc);
             toast(
-              err instanceof ApiError && err.status === 409
-                ? `${row.senderName} is protected — unprotect it first`
+              staleProtection
+                ? `${row.senderName} is Protected — reopen the action to confirm anyway`
                 : getActionFailureCopy('enqueue', {
                     action: `${verb.toLowerCase()} ${row.senderName}`,
                   }).message,

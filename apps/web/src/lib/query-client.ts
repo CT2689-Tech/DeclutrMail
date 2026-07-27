@@ -10,24 +10,45 @@
 
 import { MutationCache, QueryClient } from '@tanstack/react-query';
 
+import {
+  isMailboxScopeConflict,
+  resetMailboxScopedCache,
+} from '@/features/mailboxes/api/reset-mailbox-cache';
+
 import { retryTransientOnly } from './api/retry';
 import { reportUpgradeGateHit } from './entitlements/upgrade-gate';
 
 const DEFAULT_STALE_TIME_MS = 30_000;
 
 export function makeQueryClient(): QueryClient {
-  return new QueryClient({
+  let client: QueryClient | null = null;
+  const mutationCache = new MutationCache({
     // Entitlement 402s (FREE_CAP_REACHED / INBOX_LIMIT_REACHED /
     // ACTION_TIER_REQUIRED, D19/
     // D77/D81) are designed states, not failures — ONE global handler
     // routes them to the upgrade-gate store so every mutation surface
     // gets the UpgradeModal without per-hook wiring. Other errors pass
     // through to the caller's own onError untouched.
-    mutationCache: new MutationCache({
-      onError: (error) => {
-        reportUpgradeGateHit(error);
-      },
-    }),
+    onError: (error) => {
+      reportUpgradeGateHit(error);
+      // A mutation that fails the mailbox guard proves the client's idea
+      // of the active mailbox is wrong — disconnected in another tab,
+      // switched, revoked. Reads already treat that 4xx as a designed
+      // state and the app shell renders the reconnect gate off `me`, but
+      // a MUTATION had no such recovery: its caller toasted a generic
+      // failure and the user stayed on a screen full of a mailbox that
+      // no longer resolves, with no way to the gate (CLAUDE.md §8
+      // "scope change ⇒ reset scoped cache").
+      //
+      // Global, like the 402 above, so every mutation surface recovers —
+      // not only the handlers someone remembered to wire.
+      if (client !== null && isMailboxScopeConflict(error)) {
+        void resetMailboxScopedCache(client);
+      }
+    },
+  });
+  client = new QueryClient({
+    mutationCache,
     defaultOptions: {
       queries: {
         staleTime: DEFAULT_STALE_TIME_MS,
@@ -40,4 +61,5 @@ export function makeQueryClient(): QueryClient {
       },
     },
   });
+  return client;
 }

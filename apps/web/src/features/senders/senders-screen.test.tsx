@@ -572,7 +572,7 @@ describe('SendersScreen — edge states', () => {
       compositePreviewHandler(12),
       {
         method: 'POST',
-        path: '/api/actions/archive',
+        path: '/api/actions',
         respond: () => {
           archivePosted = true;
           return jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } });
@@ -636,6 +636,104 @@ describe('SendersScreen — edge states', () => {
     expect(undoPosted).toBe(true);
   });
 
+  it('carries the chosen time window into a SINGLE-sender archive enqueue (D226)', async () => {
+    // The chip row offers real per-bucket counts, so confirming "1 year+"
+    // promises that ONLY the 12 aged messages move. The window must reach
+    // the wire or the preview is a lie: the worker resolves the whole
+    // inbox when `olderThanDays` is absent. Multi-sender archive already
+    // passed this; single-sender routed through a legacy endpoint whose
+    // body schema had no window field at all.
+    let postedBody: unknown = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 250 } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              sender: {
+                id: 'a',
+                name: 'Sender A',
+                domain: 'example.com',
+                lastSeenDays: 2,
+                repliedCount: 0,
+                monthly: 30,
+              },
+              counts: {
+                all: 250,
+                olderThan30d: 41,
+                olderThan90d: 30,
+                olderThan180d: 20,
+                olderThan365d: 12,
+              },
+              recentSubjects: {
+                all: [],
+                olderThan30d: [],
+                olderThan90d: [],
+                olderThan180d: [],
+                olderThan365d: [],
+              },
+              unsubAvailable: true,
+              protected: false,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          postedBody = await req.json();
+          return jsonOk({ data: { actionId: 'act-w', requestedCount: 12, status: 'queued' } });
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: archiveStatus({ actionId: 'act-w', undoToken: null, undoExpiresAt: null }),
+          }),
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive mail from 1 sender/i);
+    await screen.findByText(/currently match.*Archive/i);
+
+    // Pick the narrowest window — the chip states 12 of the 250.
+    const dialog = screen.getByRole('dialog');
+    const yearChip = within(dialog).getByRole('radio', { name: /1 year\+/i });
+    expect(yearChip).toHaveTextContent('12');
+    fireEvent.click(yearChip);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await waitFor(() => expect(postedBody).not.toBeNull());
+    expect(postedBody).toMatchObject({
+      selector: { type: 'sender', senderId: 'a' },
+      primary: { type: 'archive', olderThanDays: 365 },
+    });
+  });
+
   it('reports a no-op archive (0 affected at execution) with no reversible receipt (P6)', async () => {
     // Defense in depth: even if the preview counted >0, the inbox can empty
     // before the worker runs (a race), so the worker archives 0 and issues
@@ -664,7 +762,7 @@ describe('SendersScreen — edge states', () => {
       compositePreviewHandler(5),
       {
         method: 'POST',
-        path: '/api/actions/archive',
+        path: '/api/actions',
         respond: () => jsonOk({ data: { actionId: 'act-0', requestedCount: 0, status: 'queued' } }),
       },
       {
@@ -726,7 +824,7 @@ describe('SendersScreen — edge states', () => {
       compositePreviewHandler(0),
       {
         method: 'POST',
-        path: '/api/actions/archive',
+        path: '/api/actions',
         respond: () => {
           archivePosted = true;
           return jsonOk({ data: { actionId: 'x', requestedCount: 0, status: 'queued' } });
@@ -786,7 +884,7 @@ describe('SendersScreen — edge states', () => {
       },
       {
         method: 'POST',
-        path: '/api/actions/archive',
+        path: '/api/actions',
         respond: () => {
           archivePosted = true;
           return jsonOk({ data: { actionId: 'act-1', requestedCount: 3, status: 'queued' } });
@@ -937,9 +1035,17 @@ describe('SendersScreen — edge states', () => {
     ]);
 
     renderScreen();
-    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
-    fireEvent.keyDown(document.body, { key: 'u' });
-    await screen.findByText(/unsubscribe from 1 sender/i);
+    // The ROW action — the explicit single-sender path D245 leaves open.
+    // NOT the selection bar: that is the bulk affordance, and bulk
+    // excludes Protected upstream (`canBulkUnsubscribe`), so driving it
+    // from there would never reach the code under test.
+    fireEvent.click(await screen.findByRole('button', { name: /More actions for Sender A/i }));
+    fireEvent.click(
+      within(screen.getByRole('menu', { name: /Actions for Sender A/i })).getByRole('menuitem', {
+        name: 'Unsubscribe',
+      }),
+    );
+    await screen.findByRole('radiogroup', { name: /also act on past emails/i });
     fireEvent.click(screen.getByRole('radio', { name: 'Archive them' }));
     const confirm = screen.getByRole('button', { name: /Unsubscribe.*Archive/i });
     await waitFor(() => expect(confirm).toBeEnabled());
@@ -1919,5 +2025,136 @@ describe('SendersScreen — summary-driven aggregates (#145)', () => {
     });
     await waitFor(() => expect(summaryQ.value).toBe('foo'), { timeout: 2000 });
     expect(listQ).toBe('foo');
+  });
+});
+
+describe('SendersScreen — the Protected override must reach BOTH halves of an unsubscribe', () => {
+  // Unsubscribe has no Protected guard on the server, so the intent
+  // ALWAYS lands — and for a one-click sender that is a real, one-way
+  // RFC 8058 request (D58). The paired backlog action is a SEPARATE
+  // composite POST. If the acknowledgement the preview collected does
+  // not ride that second call, the server 409s it and the user is left
+  // unsubscribed with their mail untouched: a partial execution whose
+  // first half cannot be undone.
+  const PROTECTED_ROW = {
+    ...ROW,
+    protectionFlags: {
+      isProtected: true,
+      protectionReason: 'starred' as const,
+      protectionSetAt: '2026-06-01T00:00:00.000Z',
+    },
+  };
+
+  function protectedSenderHandler() {
+    const base = oneSenderHandler();
+    return {
+      ...base,
+      respond: () =>
+        jsonOk({
+          data: [PROTECTED_ROW],
+          meta: {
+            pagination: { nextCursor: null, hasMore: false, limit: 25 },
+            query: {
+              totalMatching: 1,
+              globalMaxTotal: 120,
+              asOf: '2026-05-29T12:00:00.000Z',
+              filterCounts: {
+                total: 7887,
+                active: 1,
+                quiet: 0,
+                dormant: 0,
+                unsubReady: 0,
+                protectedCount: 1,
+              },
+            },
+          },
+        }),
+    };
+  }
+
+  async function runUnsubWithBacklog(handler: ReturnType<typeof oneSenderHandler>) {
+    const composites: Record<string, unknown>[] = [];
+    installFetchStub([
+      handler,
+      compositePreviewHandler(3),
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-intent',
+        respond: () =>
+          jsonOk({
+            data: {
+              senderId: 'a',
+              recordedAt: '2026-07-26T12:00:00.000Z',
+              activityLogId: 'activity-a',
+              method: 'none',
+              executionActionId: null,
+              mailtoUrl: null,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req: Request) => {
+          composites.push((await req.json()) as Record<string, unknown>);
+          return jsonOk({
+            data: {
+              actionId: 'action-backlog',
+              compositeId: 'action-backlog',
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 3,
+              secondaryCount: null,
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/action-backlog',
+        respond: () =>
+          jsonOk({
+            data: archiveStatus({
+              actionId: 'action-backlog',
+              requestedCount: 3,
+              affectedCount: 3,
+              undoToken: 'undo-backlog',
+            }),
+          }),
+      },
+    ]);
+
+    renderScreen();
+    // The ROW action — the explicit single-sender path D245 leaves open.
+    // NOT the selection bar: that is the bulk affordance, and bulk
+    // excludes Protected upstream (`canBulkUnsubscribe`), so driving it
+    // from there would never reach the code under test.
+    fireEvent.click(await screen.findByRole('button', { name: /More actions for Sender A/i }));
+    fireEvent.click(
+      within(screen.getByRole('menu', { name: /Actions for Sender A/i })).getByRole('menuitem', {
+        name: 'Unsubscribe',
+      }),
+    );
+    await screen.findByRole('radiogroup', { name: /also act on past emails/i });
+    fireEvent.click(screen.getByRole('radio', { name: 'Archive them' }));
+    const confirm = screen.getByRole('button', { name: /Unsubscribe.*Archive/i });
+    // Wait for the live preview — confirming early would post nothing at
+    // all, and a "no override" assertion would pass for the wrong reason.
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(composites).toHaveLength(1));
+    return composites[0]!;
+  }
+
+  it('carries override:true on the backlog composite for a Protected sender', async () => {
+    expect(await runUnsubWithBacklog(protectedSenderHandler())).toMatchObject({ override: true });
+  });
+
+  it('sends override:false for an unprotected sender', async () => {
+    // Two-sided. `enqueueCompositeAction` always writes the key
+    // (`override: input.override ?? false`), so the negative assertion
+    // is an explicit `false`, not an absent key.
+    const body = await runUnsubWithBacklog(oneSenderHandler());
+    expect(body).toMatchObject({ override: false });
   });
 });

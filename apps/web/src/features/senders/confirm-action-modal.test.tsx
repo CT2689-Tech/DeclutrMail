@@ -144,3 +144,106 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(screen.getByText(/second cleanup action/i)).toBeInTheDocument();
   });
 });
+
+describe('ConfirmActionModal — Protected sender acknowledgement (D245/D42)', () => {
+  const protectedSender = makeSender({
+    protectionFlags: {
+      isProtected: true,
+      protectionReason: 'user_defined',
+      protectionSetAt: '2026-06-01T00:00:00.000Z',
+    },
+  });
+
+  it('names the protection and carries override:true on confirm', () => {
+    // The server has always answered a protected single-sender action
+    // with 409 PROTECTED_SENDER whose copy reads "Confirm to archive
+    // anyway", and accepts `override` to proceed. Nothing in production
+    // ever set it — the client greyed the button out first, so the 409
+    // was unreachable. This is the "anyway" the server was built for.
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Delete', senders: [protectedSender] }}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={{ ...livePreview, protected: true }}
+      />,
+    );
+
+    expect(screen.getByText(/this sender is/i)).toHaveTextContent(/Protected/);
+    const confirm = screen.getByRole('button', { name: /Delete anyway/i });
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ override: true }));
+  });
+
+  it('does NOT set override for an unprotected sender', () => {
+    // Two-sided: a flag only ever observed set is not a verified flag.
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Delete', senders: [makeSender()] }}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={livePreview}
+      />,
+    );
+
+    expect(screen.queryByText(/this sender is/i)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Delete/i }));
+    expect(onConfirm).toHaveBeenCalledWith(expect.not.objectContaining({ override: true }));
+  });
+});
+
+describe('ConfirmActionModal — backlog secondary belongs to Unsubscribe only', () => {
+  // Later already moves every current message out of the inbox and
+  // schedules its return, so an "also archive/delete the past" chip
+  // asked the user to pick two mutually-exclusive fates for the same
+  // mail. Unsubscribe is the one primary that leaves existing mail
+  // where it is, so the backlog question is real there and only there.
+  it('offers the backlog row for Unsubscribe', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+
+    expect(
+      screen.getByRole('radiogroup', { name: /also act on past emails/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('does NOT offer the backlog row for Later', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Later')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+
+    expect(screen.queryByRole('radiogroup', { name: /also act on past emails/i })).toBeNull();
+  });
+
+  it('sends no secondary on a Later confirm', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Later')}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={livePreview}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Later/i }));
+    // The key must be ABSENT, not present-and-null: `objectContaining`
+    // with `undefined` would still demand it exist.
+    const opts = onConfirm.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(Object.keys(opts)).not.toContain('secondary');
+    expect(opts.archiveHistoric).toBe(false);
+  });
+});

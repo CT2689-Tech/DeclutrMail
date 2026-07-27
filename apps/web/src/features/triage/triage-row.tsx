@@ -410,46 +410,104 @@ export function TriageRow({
             </div>
           )}
           <TriageRowExpanded row={row} />
-          {inlinePreview != null && (
-            <div style={{ padding: '0 18px 18px' }}>
-              <ActionPreviewPresentation
-                verb={inlinePreview.verb}
-                row={row}
-                archiveHistoric={inlinePreview.archiveHistoric}
-                inboxCount={inlinePreview.inboxCount}
-                wakeAt={inlinePreview.wakeAt ?? null}
-                mode="inline"
-                accountContext={inlinePreviewAccountContext}
-              />
-              {/* Explicit confirm affordance (2026-07-16 audit): before
+        </div>
+      )}
+
+      {/* The D226 preview is MANDATORY while an action is pending, so it
+          renders on `inlinePreview` alone — never on `expanded`. It used
+          to live inside the expanded body, which made it dismissable:
+          collapsing the row unmounted the preview (and its Protected
+          acknowledgement) while the pending action survived and, on
+          narrow widths, the verb toolbar stayed live on the collapsed
+          card. A preview a tap can hide is an optional preview. */}
+      {inlinePreview != null && (
+        <div style={{ padding: '0 18px 18px' }}>
+          <ActionPreviewPresentation
+            verb={inlinePreview.verb}
+            row={row}
+            archiveHistoric={inlinePreview.archiveHistoric}
+            inboxCount={inlinePreview.inboxCount}
+            wakeAt={inlinePreview.wakeAt ?? null}
+            mode="inline"
+            accountContext={inlinePreviewAccountContext}
+          />
+          {/* Protected acknowledgement (D245/D42) — the inline half of
+                  the same statement the sheet makes. D226 lets the sheet
+                  be skipped via D34's remember-preference, but the preview
+                  always renders, so the override must be named on BOTH
+                  paths or skipping the sheet silently skips the notice.
+                  `triage-screen.tsx` sends `override: true` for this row. */}
+          {row.protectionReason != null && (
+            <div
+              role="status"
+              style={{
+                marginTop: 10,
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: 'rgba(196,46,46,0.06)',
+                border: '1px solid rgba(196,46,46,0.30)',
+                fontSize: 12,
+                lineHeight: 1.45,
+                color: color.danger,
+              }}
+            >
+              This sender is <strong>Protected</strong> — it is normally kept out of bulk and
+              automatic actions. This applies to this sender only.
+            </div>
+          )}
+          {/* Explicit confirm affordance (2026-07-16 audit): before
                   this bar, confirming meant an UNDOCUMENTED second click
                   on the same verb — users read the preview and believed
                   the action fired. The button routes through the same
                   onAction path, so the screen's same-verb confirm logic
                   is unchanged. */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  marginTop: 10,
-                }}
-              >
-                <Button tone="primary" size="sm" onClick={() => onAction(inlinePreview.verb)}>
-                  Confirm {inlinePreview.verb}
-                </Button>
-                <span
-                  style={{
-                    fontFamily: font.mono,
-                    fontSize: 11,
-                    color: color.fgMuted,
-                  }}
-                >
-                  or press {VERB_SHORTCUT[inlinePreview.verb]} again · Esc cancels
-                </span>
-              </div>
-            </div>
-          )}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              marginTop: 10,
+            }}
+          >
+            {/* Fail closed exactly like the sheet does (action-sheet's
+                `confirmDisabled`): `inlineConfirmBlocked` is true while a
+                mail-moving verb's live count has not resolved, and `busy`
+                while an action is in flight. This button ignored both, so
+                the inline path could confirm a mutation before D226's
+                mandatory preview had produced a number — the one thing the
+                preview exists to prevent. */}
+            <Button
+              tone="primary"
+              size="sm"
+              disabled={actionsDisabled}
+              onClick={() => onAction(inlinePreview.verb)}
+            >
+              Confirm {inlinePreview.verb}
+              {row.protectionReason != null ? ' anyway' : ''}
+            </Button>
+            <span
+              style={{
+                fontFamily: font.mono,
+                fontSize: 11,
+                color: color.fgMuted,
+              }}
+            >
+              {/* Only advertise the shortcut where it actually fires.
+                  The verb keydown lives on ActionToolbar: on desktop the
+                  toolbar mounts only inside the expanded body, and on
+                  narrow widths it mounts on collapsed cards but with
+                  `keyboardEnabled={expanded && ...}` — so "press A again"
+                  is false on a collapsed row either way. Escape is
+                  different: it is a window listener in triage-screen
+                  gated only on the pending inline surface, so it stays
+                  true whether the row is open or closed. */}
+              {expanded && !actionsDisabled ? (
+                <>or press {VERB_SHORTCUT[inlinePreview.verb]} again · Esc cancels</>
+              ) : (
+                <>Esc cancels</>
+              )}
+            </span>
+          </div>
         </div>
       )}
       {/* D37 — live gesture feedback: while a touch drag would resolve

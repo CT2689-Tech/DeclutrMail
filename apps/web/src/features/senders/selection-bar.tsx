@@ -8,10 +8,10 @@ import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
 import {
   canUseActionSelector,
-  canArchive,
-  canDelete,
-  canLater,
-  canUnsubscribe,
+  canBulkArchive,
+  canBulkDelete,
+  canBulkLater,
+  canBulkUnsubscribe,
   verbDisplay,
   type ActionVerb,
   type Sender,
@@ -51,10 +51,13 @@ export function SelectionBar({
     // Keep is a standing-policy write (D40) — non-destructive, so every
     // selected sender is eligible (protected senders included).
     Keep: senders.length,
-    Archive: senders.filter(canArchive).length,
-    Later: senders.filter(canLater).length,
-    Unsubscribe: senders.filter(canUnsubscribe).length,
-    Delete: senders.filter(canDelete).length,
+    // D245 — bulk EXCLUDES protected senders. Must read the `canBulk*`
+    // predicates, never the bare `can*` ones (which carry no protection
+    // term because explicit single-sender intent is not bulk).
+    Archive: senders.filter(canBulkArchive).length,
+    Later: senders.filter(canBulkLater).length,
+    Unsubscribe: senders.filter(canBulkUnsubscribe).length,
+    Delete: senders.filter(canBulkDelete).length,
   };
   const selector = senders.length > 1 ? 'multi-sender' : 'sender';
   const multiSenderLocked =

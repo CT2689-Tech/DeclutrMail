@@ -197,3 +197,138 @@ describe('TriageRow — inline preview composition', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', () => {
+  function renderInline(row: ReturnType<typeof rowById>) {
+    return render(
+      <TriageRow
+        row={row}
+        expanded={true}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
+      />,
+    );
+  }
+
+  it('states the protection and says "anyway" on the inline confirm', () => {
+    // D226 lets the SHEET be skipped via D34's remember-preference, but
+    // the preview always renders. The override notice therefore has to
+    // exist on BOTH paths — otherwise skipping the sheet silently skips
+    // the acknowledgement while `override: true` still goes on the wire.
+    renderInline(rowById('t-sarah')); // protectionReason: 'user-marked'
+    expect(screen.getByRole('button', { name: /Confirm Archive anyway/i })).toBeInTheDocument();
+  });
+
+  it('says nothing about protection on an unprotected row', () => {
+    const { container } = renderInline(rowById('t-groupon'));
+    expect(container.textContent).not.toMatch(/is Protected/);
+    expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeInTheDocument();
+  });
+});
+
+describe('TriageRow — the D226 inline preview survives collapse (mobile bypass)', () => {
+  it('renders the preview and Protected acknowledgement on a COLLAPSED row', () => {
+    // The bypass this guards: `inlinePreview` is derived from
+    // `pendingAction` alone, but the preview used to render only inside
+    // the `expanded` body. On narrow widths the verb toolbar stays live
+    // on a collapsed card, so tapping the row header dismissed the
+    // preview -- and its Protected acknowledgement -- while the pending
+    // action survived and the buttons stayed tappable. D226 makes the
+    // preview mandatory; a preview a tap can hide is an optional preview.
+    render(
+      <TriageRow
+        row={rowById('t-sarah')}
+        expanded={false}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
+      />,
+    );
+    expect(
+      screen.getByRole('region', { name: `Preview · Archive ${rowById('t-sarah').senderName}` }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Confirm Archive anyway/i })).toBeInTheDocument();
+  });
+
+  it('renders no preview when no action is pending, collapsed or expanded', () => {
+    // Two-sided: a surface only ever observed present is not verified.
+    const { rerender } = render(
+      <TriageRow
+        row={rowById('t-sarah')}
+        expanded={false}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('region', { name: /^Preview · / })).toBeNull();
+    rerender(
+      <TriageRow
+        row={rowById('t-sarah')}
+        expanded={true}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('region', { name: /^Preview · / })).toBeNull();
+  });
+});
+
+describe('TriageRow — the inline preview only advertises live shortcuts', () => {
+  const PENDING = { verb: 'Archive' as const, archiveHistoric: false, inboxCount: 2 };
+
+  function renderPreview(expanded: boolean) {
+    return render(
+      <TriageRow
+        row={rowById('t-groupon')}
+        expanded={expanded}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+        inlinePreview={PENDING}
+      />,
+    );
+  }
+
+  it('EXPANDED: offers the verb shortcut, because the toolbar keydown is live', () => {
+    const { container } = renderPreview(true);
+    expect(container.textContent).toMatch(/press A again/);
+    expect(container.textContent).toMatch(/Esc cancels/);
+  });
+
+  it('EXPANDED but preview still loading: no shortcut, and confirm fails closed', () => {
+    // `inlineConfirmBlocked` makes the toolbar's keydown inert while a
+    // mail-moving verb's live count has not resolved, so advertising the
+    // shortcut there is the same lie in a different state. The confirm
+    // button must also fail closed exactly like the sheet does —
+    // otherwise D226's mandatory preview can be confirmed before it has
+    // produced a number.
+    const { container } = render(
+      <TriageRow
+        row={rowById('t-groupon')}
+        expanded={true}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 'loading' }}
+      />,
+    );
+    expect(container.textContent).not.toMatch(/press A again/);
+    expect(container.textContent).toMatch(/Esc cancels/);
+    expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeDisabled();
+  });
+
+  it('EXPANDED with a resolved count: confirm is enabled', () => {
+    // Two-sided: a disabled state only ever observed disabled proves nothing.
+    renderPreview(true);
+    expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeEnabled();
+  });
+
+  it('COLLAPSED: offers Esc only — the verb key fires nothing on a closed row', () => {
+    // Desktop never mounts the toolbar outside the expanded body, and
+    // narrow widths mount it with `keyboardEnabled={expanded && ...}`.
+    // Escape is a window listener on the pending inline surface, so it
+    // survives the collapse and stays honest.
+    const { container } = renderPreview(false);
+    expect(container.textContent).not.toMatch(/press A again/);
+    expect(container.textContent).toMatch(/Esc cancels/);
+  });
+});
