@@ -288,9 +288,17 @@ export function ConfirmActionModal({
     (isBulk
       ? bulkPreview == null || (bulkPreview.error ?? false)
       : (compositePreviewError ?? false));
+  // A fetch in flight blocks readiness even when cached data is already
+  // on screen: staleTime 0 + the default gcTime means a reopened modal
+  // receives the PREVIOUS preview while the fresh one resolves, and a
+  // cached count must never arm a mutation (D226).
+  const livePreviewRefetching = isBulk
+    ? (bulkPreview?.loading ?? false)
+    : Boolean(compositePreviewLoading);
   const livePreviewReady =
     requiresLivePreview &&
     !livePreviewUnavailable &&
+    !livePreviewRefetching &&
     (isBulk ? bulkPreview?.data !== undefined : compositePreview !== undefined);
   const livePreviewLoading = requiresLivePreview && !livePreviewUnavailable && !livePreviewReady;
   const livePreviewBlocksConfirm =

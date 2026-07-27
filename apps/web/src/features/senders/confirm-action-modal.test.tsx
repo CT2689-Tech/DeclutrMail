@@ -71,6 +71,106 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     },
   );
 
+  // A reopened modal can receive CACHED preview data while the fresh
+  // refetch is still in flight (staleTime: 0 + default gcTime). Cached
+  // counts must not arm confirm — only a settled fetch may (D226).
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'keeps %s locked while a cached preview refetches, then unlocks on the fresh result',
+    (verb) => {
+      const onConfirm = vi.fn();
+      const { rerender } = render(
+        <ConfirmActionModal
+          request={request(verb)}
+          onCancel={() => {}}
+          onConfirm={onConfirm}
+          compositePreview={livePreview}
+          compositePreviewLoading={true}
+        />,
+      );
+
+      const confirm = screen.getByRole('button', { name: new RegExp(verb) });
+      expect(confirm).toBeDisabled();
+      fireEvent.click(confirm);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      expect(onConfirm).not.toHaveBeenCalled();
+      expect(screen.getByText(/confirm stays locked/i)).toBeInTheDocument();
+
+      rerender(
+        <ConfirmActionModal
+          request={request(verb)}
+          onCancel={() => {}}
+          onConfirm={onConfirm}
+          compositePreview={livePreview}
+          compositePreviewLoading={false}
+        />,
+      );
+
+      const readyConfirm = screen.getByRole('button', { name: new RegExp(verb) });
+      expect(readyConfirm).toBeEnabled();
+      fireEvent.click(readyConfirm);
+      fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+      expect(onConfirm).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('keeps a bulk verb locked while a cached bulk preview refetches', () => {
+    const onConfirm = vi.fn();
+    const second = makeSender({ id: 'sender-2', displayName: 'Beta Digest', email: 'b@beta.com' });
+    const bulkRequest: ActionRequest = { verb: 'Archive', senders: [sender, second] };
+    const bulkData = {
+      senders: [
+        { senderId: sender.id, name: sender.name, counts: buckets, protected: false },
+        { senderId: second.id, name: second.name, counts: buckets, protected: false },
+      ],
+      totals: buckets,
+      protectedCount: 0,
+    };
+    const { rerender } = render(
+      <ConfirmActionModal
+        request={bulkRequest}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        bulkPreview={{ data: bulkData, loading: true, error: false }}
+      />,
+    );
+
+    const confirm = screen.getByRole('button', { name: /Archive/ });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    rerender(
+      <ConfirmActionModal
+        request={bulkRequest}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        bulkPreview={{ data: bulkData, loading: false, error: false }}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /Archive/ })).toBeEnabled();
+  });
+
+  it('fails closed when a refetch errors while stale counts are still on screen', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={livePreview}
+        compositePreviewError={true}
+      />,
+    );
+
+    const confirm = screen.getByRole('button', { name: /Archive/ });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(screen.getAllByText(/close and retry/i).length).toBeGreaterThan(0);
+  });
+
   it('fails closed with retry copy when the required preview is unavailable', () => {
     const onConfirm = vi.fn();
     render(

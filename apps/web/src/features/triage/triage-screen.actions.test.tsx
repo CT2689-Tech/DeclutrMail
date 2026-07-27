@@ -136,6 +136,64 @@ describe('TriageScreen — D226 mutation wiring', () => {
     resetFetchStub();
   });
 
+  it('a reopened sheet stays locked on cached counts until the fresh preview lands', async () => {
+    // First open resolves normally; the reopen's refetch is pinned in
+    // flight. The cache (staleTime 0, non-zero gcTime) still holds the
+    // previous counts, and a cached count must never arm confirm (D226).
+    let previewCalls = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => {
+          previewCalls += 1;
+          if (previewCalls === 1) return jsonOk({ data: PREVIEW_BODY });
+          return new Promise<Response>(() => {});
+        },
+      },
+    ]);
+    const enqueues: unknown[] = [];
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          enqueues.push(await req.json());
+          return jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 47,
+              secondaryCount: null,
+            },
+          });
+        },
+      },
+    ]);
+
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(screen.getByText('47')).toBeDefined());
+    const confirm = within(dialog).getByRole('button', { name: /^Archive/i });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.keyDown(window, { key: 'a' });
+
+    const reopened = await screen.findByRole('dialog');
+    await waitFor(() => expect(previewCalls).toBe(2));
+    const reopenedConfirm = within(reopened).getByRole('button', { name: /^Archive/i });
+    expect(reopenedConfirm).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(enqueues).toHaveLength(0);
+  });
+
   it('Archive: shortcut → sheet (real count) → ⌘⏎ → composite POST → poll → invalidate on done', async () => {
     const enqueues: Array<{ body: unknown; idempotencyKey: string | null }> = [];
     let statusCalls = 0;

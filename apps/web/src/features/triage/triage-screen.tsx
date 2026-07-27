@@ -338,11 +338,13 @@ export function TriageScreen({
       reason: 'composite_preview',
     });
   }, [compositePreview.isError, compositePreview.error, previewSenderId]);
+  // isFetching keeps a reopened sheet in 'loading' while the cached
+  // preview refetches — a cached count must never arm confirm (D226).
   const previewInboxCount: PreviewCount = compositePreview.isError
     ? 'unavailable'
-    : compositePreview.data != null
-      ? compositePreview.data.counts.all
-      : 'loading';
+    : compositePreview.isFetching || compositePreview.data == null
+      ? 'loading'
+      : compositePreview.data.counts.all;
   const trackedPreviews = useRef(new Set<string>());
   /** Same-tick dispatch latch — see dispatchAction. */
   const dispatchLatchRef = useRef(false);

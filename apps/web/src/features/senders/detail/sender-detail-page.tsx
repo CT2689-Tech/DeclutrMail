@@ -1146,7 +1146,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         onCancel={closePending}
         onConfirm={confirmPending}
         compositePreview={compositePreviewQuery.data}
-        compositePreviewLoading={compositePreviewQuery.isLoading}
+        // isFetching, not isLoading — cached data during a reopen's
+        // refetch must keep confirm locked (D226); see senders-screen.
+        compositePreviewLoading={compositePreviewQuery.isFetching}
         compositePreviewError={compositePreviewQuery.isError}
         onRetryPreview={() => void compositePreviewQuery.refetch()}
       />
