@@ -356,29 +356,6 @@ export class ActionsService {
     // checks so an impossible Later request never presents as an upgrade or
     // queue-availability problem.
     this.assertValidWakeAt(primary.type, primary.wakeAt ?? null);
-    if (primary.type === 'later' && selector.type !== 'sender') {
-      throw new BadRequestException({
-        code: 'LATER_SENDER_REQUIRED',
-        message: 'Later is scheduled per sender, not per message selection.',
-      });
-    }
-    if (selector.type === 'messages') {
-      // Message-id selectors are bulk capability, not a Free
-      // single-sender action. Enforce every verb before resolving ids or
-      // writing either half of a composite.
-      await this.entitlements.assertActionSelectorTier(
-        mailboxAccountId,
-        primary.type,
-        'multi-sender',
-      );
-      if (secondary) {
-        await this.entitlements.assertActionSelectorTier(
-          mailboxAccountId,
-          secondary.type,
-          'multi-sender',
-        );
-      }
-    }
     if (!this.queue) {
       throw new ServiceUnavailableException({
         code: 'QUEUE_UNAVAILABLE',
@@ -395,76 +372,52 @@ export class ActionsService {
     const safeKey = idempotencyKey.replace(/:/g, '-');
     const primaryStorageKey = `${primary.type}-${safeKey}`;
 
-    // Resolve target set + ownership ONCE for the sender selector — both
-    // primary and secondary act on the same sender / same selector. The
-    // override check fires on the resolved senderKey so a Protected
-    // sender is blocked before any row is written (defense-in-depth, D42).
-    let storedSelector: LabelActionSelector;
-    let resolvedMessageIds: string[];
-    let primaryCount: number;
-
-    if (selector.type === 'sender') {
-      const senderKey = await this.resolveSenderKey(mailboxAccountId, selector.senderId);
-      const [policy] = await this.db
-        .select({ isProtected: senderPolicies.isProtected })
-        .from(senderPolicies)
-        .where(
-          and(
-            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-            eq(senderPolicies.senderKey, senderKey),
-          ),
-        )
-        .limit(1);
-      if (policy?.isProtected && !override) {
-        throw new ConflictException({
-          code: 'PROTECTED_SENDER',
-          message: 'This sender is Protected. Confirm to apply the action anyway.',
-        });
-      }
-      primaryCount = await this.countSenderInboxWithWindow(
-        mailboxAccountId,
-        senderKey,
-        primary.olderThanDays ?? null,
-      );
-      resolvedMessageIds = []; // worker resolves "in INBOX now" at execute
-      storedSelector = { type: 'sender', senderId: selector.senderId, senderKey };
-    } else {
-      // messages selector — keep only owned, currently-INBOX ids. The
-      // per-row time-window does not apply to a messages selector (the
-      // caller already supplied the exact set).
-      const owned = await this.db
-        .select({ providerMessageId: mailMessages.providerMessageId })
-        .from(mailMessages)
-        .where(
-          and(
-            eq(mailMessages.mailboxAccountId, mailboxAccountId),
-            inArray(mailMessages.providerMessageId, selector.messageIds),
-            sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-          ),
-        );
-      resolvedMessageIds = owned.map((r) => r.providerMessageId);
-      primaryCount = resolvedMessageIds.length;
-      storedSelector = { type: 'messages' };
+    // Resolve target set + ownership ONCE — primary and secondary act on
+    // the same sender. The override check fires on the resolved senderKey
+    // so a Protected sender is blocked before any row is written
+    // (defense-in-depth, D42). The former `messages` id-list selector was
+    // REMOVED from this wire (2026-07-27): it had no product producer and,
+    // once A3 opened it to metered Free, it charged one unit for up to 500
+    // messages spanning any number of senders — a quota bypass. Reverse
+    // and recovery rows keep the internal frozen-ids selector shape.
+    const senderKey = await this.resolveSenderKey(mailboxAccountId, selector.senderId);
+    const [policy] = await this.db
+      .select({ isProtected: senderPolicies.isProtected })
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+          eq(senderPolicies.senderKey, senderKey),
+        ),
+      )
+      .limit(1);
+    if (policy?.isProtected && !override) {
+      throw new ConflictException({
+        code: 'PROTECTED_SENDER',
+        message: 'This sender is Protected. Confirm to apply the action anyway.',
+      });
     }
+    const primaryCount = await this.countSenderInboxWithWindow(
+      mailboxAccountId,
+      senderKey,
+      primary.olderThanDays ?? null,
+    );
+    const resolvedMessageIds: string[] = []; // worker resolves "in INBOX now" at execute
+    const storedSelector: LabelActionSelector = {
+      type: 'sender',
+      senderId: selector.senderId,
+      senderKey,
+    };
 
-    // Secondary acts on the SAME sender / messages selector but with its
-    // own time-window. Re-resolve the count for the secondary's window;
-    // resolved ids stay empty for sender selector (worker handles), and
-    // for messages selector the secondary shares the primary's frozen set.
+    // Secondary acts on the SAME sender with its own time-window.
     const secondaryStorageKey = secondary ? `${secondary.type}-${safeKey}-sec` : null;
-    let secondaryCount: number | null = null;
-    if (secondary && selector.type === 'sender') {
-      // The sender selector already resolved the senderKey above; reuse it
-      // via the stored selector.
-      const senderSel = storedSelector as Extract<LabelActionSelector, { type: 'sender' }>;
-      secondaryCount = await this.countSenderInboxWithWindow(
-        mailboxAccountId,
-        senderSel.senderKey,
-        secondary.olderThanDays ?? null,
-      );
-    } else if (secondary) {
-      secondaryCount = resolvedMessageIds.length;
-    }
+    const secondaryCount = secondary
+      ? await this.countSenderInboxWithWindow(
+          mailboxAccountId,
+          senderKey,
+          secondary.olderThanDays ?? null,
+        )
+      : null;
 
     // The workspace lock remains held through BOTH inserts. That makes a
     // fresh composite one atomic quota-consuming write: no concurrent
@@ -501,7 +454,7 @@ export class ActionsService {
                 verb: secondary.type,
                 direction: 'forward',
                 selector: storedSelector,
-                resolvedMessageIds: selector.type === 'messages' ? resolvedMessageIds : [],
+                resolvedMessageIds,
                 requestedCount: secondaryCount,
                 idempotencyKey: secondaryStorageKey,
                 olderThanDays: secondary.olderThanDays ?? null,

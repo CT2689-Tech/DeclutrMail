@@ -20,28 +20,18 @@ import {
  * itself). Privacy (D7): the selector carries ids only.
  */
 
-/** Max ids accepted in one `messages` selector. Bulk → use the sender selector. */
-export const MESSAGES_SELECTOR_MAX = 500;
-
+/**
+ * Single-sender selector — the ONLY non-bulk shape the composite wire
+ * accepts. The former `messages` id-list arm was REMOVED (2026-07-27):
+ * it had no product producer, and once A3 opened it to metered Free it
+ * charged one cleanup unit for up to 500 message ids spanning any
+ * number of senders — a quota bypass. Reverse and recovery rows keep
+ * the internal frozen-ids selector shape; only the request wire lost it.
+ */
 export const archiveSelectorSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('sender'), senderId: z.string().uuid() }).strict(),
-  z
-    .object({
-      type: z.literal('messages'),
-      messageIds: z.array(z.string().min(1)).min(1).max(MESSAGES_SELECTOR_MAX),
-    })
-    .strict(),
 ]);
 export type ArchiveSelector = z.infer<typeof archiveSelectorSchema>;
-
-export const archiveRequestSchema = z
-  .object({
-    selector: archiveSelectorSchema,
-    /** Required to act on a Protected sender (defense-in-depth, D42). */
-    override: z.boolean().optional(),
-  })
-  .strict();
-export type ArchiveRequest = z.infer<typeof archiveRequestSchema>;
 
 /**
  * Unsubscribe-intent request shape — `POST /api/actions/unsubscribe-intent`.
@@ -372,13 +362,6 @@ export const compositeActionRequestSchema = z
   .strict()
   .superRefine((body, ctx) => {
     if (body.primary.type === 'later') {
-      if (body.selector.type === 'messages') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['selector'],
-          message: 'Later is scheduled per sender, not per message selection.',
-        });
-      }
       if (body.primary.wakeAt === undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
