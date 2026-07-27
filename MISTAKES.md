@@ -993,3 +993,30 @@ reading that code is in scope for that PR.
 made the client wrong; otherwise the retry is the same request.
 **Enforcement update:** `triage-screen.actions.test.tsx` contract inverted with
 the reasoning recorded inline (it previously asserted NO invalidation).
+
+## 2026-07-26 — Correcting a false message left a dead end in its place
+
+**PR:** #394
+**Caught by:** Codex stop-time review (third pass on the same handler)
+**What happened:** Having stopped calling a `CurrentMailboxGuard` 409 a
+"Protected sender" problem, I let those conflicts fall through to a generic
+"Couldn't archive X" toast and refetch NOTHING. But the guard's 409 means the
+client's active mailbox no longer resolves — disconnected in another tab,
+switched, revoked. Reads already treat that as a designed state and the app
+shell renders the reconnect gate off `me`; a MUTATION had no such recovery, so
+the user stayed on a screen full of a mailbox that no longer exists with no
+route to the gate. CLAUDE.md §8 names both halves of this — "scope change ⇒
+reset scoped cache" and "a read guard's 4xx is a designed state" — and I
+satisfied neither, having fixed only the sentence.
+
+**Correct approach:** when a handler stops mis-attributing an error, the
+question is not "what do we say instead" but "what is the designed recovery for
+what this error actually means". Silence is not a fix.
+**Rule:** every designed 4xx needs a route to its recovery UI, not just honest
+copy. If reads have one and mutations don't, mutations are the bug.
+**Enforcement update:** ONE global `MutationCache.onError` in
+`makeQueryClient` resets the mailbox-scoped cache on `NO_ACTIVE_MAILBOX` /
+`SELECT_MAILBOX` / `MAILBOX_NOT_OWNED` — mirroring how entitlement 402s already
+route to the upgrade gate — so every mutation surface recovers, not only the
+handlers someone remembered to wire. Tests in `query-client.test.ts` cover all
+three codes plus three negatives, verified to fail without the handler.

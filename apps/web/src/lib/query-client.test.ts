@@ -79,3 +79,54 @@ describe('makeQueryClient — global entitlement-402 handler', () => {
     expect(useUpgradeGateStore.getState().hit).toBeNull();
   });
 });
+
+describe('makeQueryClient — global mailbox-scope-conflict recovery', () => {
+  /** Same shape as `runFailingMutation`, but hands back the client to spy on. */
+  async function failOn(error: unknown): Promise<{ resetCalls: number }> {
+    const client = makeQueryClient();
+    let resetCalls = 0;
+    const realInvalidate = client.invalidateQueries.bind(client);
+    client.invalidateQueries = ((filters?: unknown, ...rest: unknown[]) => {
+      // `resetMailboxScopedCache` is a bare, filterless invalidate.
+      if (filters === undefined) resetCalls += 1;
+      return (realInvalidate as (...a: unknown[]) => Promise<void>)(filters, ...rest);
+    }) as typeof client.invalidateQueries;
+
+    const mutation = client.getMutationCache().build(client, {
+      mutationFn: () => Promise.reject(error),
+    });
+    await mutation.execute(undefined).catch(() => undefined);
+    return { resetCalls };
+  }
+
+  function conflict(code: string) {
+    return new ApiError(409, { error: { code, message: code } }, code);
+  }
+
+  // A mutation that fails the mailbox guard proves the client's active
+  // mailbox is wrong. Reads already treat that 4xx as a designed state
+  // and the shell renders the gate off `me`; without this, a MUTATION
+  // left the user on a screen full of a mailbox that no longer resolves.
+  it.each(['NO_ACTIVE_MAILBOX', 'SELECT_MAILBOX', 'MAILBOX_NOT_OWNED'])(
+    'resets the mailbox-scoped cache on %s',
+    async (code) => {
+      expect((await failOn(conflict(code))).resetCalls).toBeGreaterThan(0);
+    },
+  );
+
+  it('leaves the cache alone for a 409 that is NOT a scope conflict', async () => {
+    // Two-sided: PROTECTED_SENDER shares the status but is resolved in
+    // place by the action surface, not by blowing away the cache.
+    expect((await failOn(conflict('PROTECTED_SENDER'))).resetCalls).toBe(0);
+  });
+
+  it('leaves the cache alone for a connect-flow ownership rejection', async () => {
+    // MAILBOX_OWNED_BY_OTHER_WORKSPACE is a connect rejection with its
+    // own UI — nothing about the ACTIVE mailbox went stale.
+    expect((await failOn(conflict('MAILBOX_OWNED_BY_OTHER_WORKSPACE'))).resetCalls).toBe(0);
+  });
+
+  it('leaves the cache alone for a plain network failure', async () => {
+    expect((await failOn(new Error('offline'))).resetCalls).toBe(0);
+  });
+});
