@@ -175,6 +175,29 @@ export const DeletePreview: Story<typeof ScreenerRow> = {
   },
 };
 
+export const ProtectedOverridePreview: Story<typeof ScreenerRow> = {
+  render: () => (
+    <Shell>
+      <div style={{ maxWidth: 900, margin: '24px auto' }}>
+        <ScreenerRow
+          {...rowBase}
+          row={SCREENER_QUEUE.find((r) => r.isProtected)!}
+          pendingVerb="delete"
+          previewInboxCount={3}
+        />
+      </div>
+    </Shell>
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'A sender protected while it sat in the queue (D42/D245). The preview names the protection and its exact reason, and the confirm reads "anyway" — D245 excludes Protected from BULK and AUTOMATIC actions, not from one deliberate decision.',
+      },
+    },
+  },
+};
+
 export const ProUpsell: Story<typeof ScreenerProUpsell> = {
   render: () => (
     <Shell>

@@ -931,6 +931,34 @@ collision case").
 **Enforcement update:** runbook §4 + provisioning workflow comment now explicitly forbid deleting the repo-level billing secrets and name the watchdog dependency.
 
 
+## 2026-07-26 — A 409 handler named a cause it had never read
+
+**PR:** #394, #393
+**Caught by:** Codex stop-time review
+**What happened:** Fixing the stale-protection retry loop, I branched the
+recovery on `err.status === 409` and toasted "Sender X is Protected — reopen
+the action to confirm anyway". But 409 is not exclusive to `PROTECTED_SENDER`:
+`CurrentMailboxGuard` runs in front of every one of those endpoints and answers
+409 with `NO_ACTIVE_MAILBOX` / `SELECT_MAILBOX` / `MAILBOX_NOT_OWNED`. A user
+with no connected mailbox got told something false about their SENDER, the real
+designed state (picker / reconnect gate) stayed hidden, and the recovery
+refetch hit the same guard again.
+
+This is the house defect class — a surface asserting what it does not know —
+committed while fixing that same class, in the same session, on four handlers.
+The status code was at hand; the envelope's `error.code` (D202) was one field
+away. The pre-existing copy had the same status-only check, so I inherited the
+shape and made the claim MORE specific without narrowing the condition.
+
+**Correct approach:** an error's HTTP status says how it failed, never why.
+Copy that names a cause must read `error.code`.
+**Rule:** never branch user-facing copy or recovery on a bare 4xx status when
+the envelope carries a code — and check what else can emit that status,
+starting with the guards in front of the route.
+**Enforcement update:** `apiErrorCode()` in `lib/api/client.ts` (documented with
+the exact guard codes that share 409); tests in
+`triage-screen.actions.test.tsx` and `screener-protected-override.test.tsx`
+assert a `NO_ACTIVE_MAILBOX` 409 is not dressed up as protection.
 ## 2026-07-26 — Enabled a verb without wiring the override it needed; trusted a subagent's negative claim
 **PR:** not yet opened (branch `fix/d226-archive-window-single-sender`, commits `dc05bf3f` → fixed by `ea35d8a2`)
 **Caught by:** Codex stop-time review ("protected-action overrides are not wired through every newly enabled path")

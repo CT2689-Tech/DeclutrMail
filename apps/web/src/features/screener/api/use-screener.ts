@@ -72,9 +72,11 @@ export function useScreenerDecide() {
       verb: ScreenerDecideVerb;
       olderThanDays?: number | null;
       wakeAt?: string;
+      /** Explicit "act anyway" on a Protected sender (D42/D245). */
+      override?: boolean;
     }
   >({
-    mutationFn: async ({ senderId, verb, olderThanDays, wakeAt }) => {
+    mutationFn: async ({ senderId, verb, olderThanDays, wakeAt, override }) => {
       const envelope = await apiPost<ScreenerDecideResult>(
         '/api/screener/decide',
         {
@@ -82,6 +84,7 @@ export function useScreenerDecide() {
           verb,
           ...(olderThanDays != null ? { olderThanDays } : {}),
           ...(verb === 'later' ? { wakeAt: wakeAt ?? defaultLaterWakeAt() } : {}),
+          ...(override === true ? { override: true } : {}),
         },
         { headers: { 'Idempotency-Key': newIdempotencyKey() } },
       );
