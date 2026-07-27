@@ -8,6 +8,8 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
 import { ApiError } from '@/lib/api/client';
 
 import { reportUpgradeGateHit, upgradeGateHitFrom, useUpgradeGateStore } from './upgrade-gate';
@@ -47,7 +49,7 @@ describe('upgradeGateHitFrom', () => {
     );
     expect(hit).toEqual({
       reason: 'free_cap',
-      details: { remaining: 2, limit: 5, used: 3, requiredUnits: 4 },
+      details: { remaining: 2, limit: 5, used: 3, requiredUnits: 4, resetsAt: null },
     });
   });
 
@@ -76,11 +78,13 @@ describe('upgradeGateHitFrom', () => {
     });
   });
 
-  it('falls back to D19 defaults when details are malformed', () => {
+  it('falls back to config-derived defaults when details are malformed (A3)', () => {
     const hit = upgradeGateHitFrom(freeCap402({ remaining: 'lots' }));
+    // Never a literal: the fallback quota comes from the pricing config.
+    const limit = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
     expect(hit).toEqual({
       reason: 'free_cap',
-      details: { remaining: 0, limit: 5, used: 5, requiredUnits: 1 },
+      details: { remaining: 0, limit, used: limit, requiredUnits: 1, resetsAt: null },
     });
   });
 

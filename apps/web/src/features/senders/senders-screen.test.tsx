@@ -1282,7 +1282,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(screen.getByRole('button', { name: /deselect loaded 2/i })).toBeInTheDocument();
   });
 
-  it('gates Free multi-sender actions in the bar and shortcuts while preserving one-sender actions', async () => {
+  it('A3: Free multi-sender selections open the bulk flow — no gate, no note', async () => {
     mockAuth.tier = 'free';
     installFetchStub([TWO_SENDER_LIST]);
     renderScreenWithToasts();
@@ -1292,24 +1292,15 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.click(senderA);
     fireEvent.click(senderB);
 
-    expect(screen.getByRole('note')).toHaveTextContent('Multi-sender actions require Plus');
-    expect(screen.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/billing');
-    expect(screen.getByTitle('Archive — Plus required for multi-sender actions')).toBeDisabled();
-    expect(screen.getByTitle('Keep — Plus required for multi-sender actions')).toBeDisabled();
-
-    // The keyboard path shares the same gate; it cannot sneak around
-    // disabled buttons and open the destructive preview.
-    fireEvent.keyDown(document.body, { key: 'a' });
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(await screen.findByText(/select one sender or see plans/i)).toBeInTheDocument();
-
-    // Free's five lifetime cleanup actions are still available one
-    // sender at a time; dropping back to one selection restores A/L/U/D.
-    fireEvent.click(senderB);
+    // No upsell note, no disabled verbs — bulk is Free and metered by
+    // the monthly quota (the server 402s an overflow honestly).
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
     expect(screen.getByTitle('Archive (A)')).not.toBeDisabled();
-  });
 
+    // The keyboard path opens the mandatory D226 bulk preview.
+    fireEvent.keyDown(document.body, { key: 'a' });
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
   it('bulk-archives a selection for real (aggregated preview → enqueue → batch poll → receipt → undo)', async () => {
     let bulkBody: unknown = null;
     let undoPosted = false;

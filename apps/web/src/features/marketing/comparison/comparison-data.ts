@@ -117,7 +117,7 @@ const DECLUTR = {
   },
   price: {
     summary: `Free, ${plusMonthly} Plus, or ${proMonthly} Pro monthly`,
-    detail: `Free includes ${TIER_MANIFEST.free.cleanupActionsLifetime} lifetime cleanup actions. Plus is ${plusAnnual}/year; Pro is ${proAnnual}/year${foundingAnnual ? `, with a limited ${foundingAnnual} founding offer` : ''} in the current tier manifest.`,
+    detail: `Free includes ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions per month. Plus is ${plusAnnual}/year; Pro is ${proAnnual}/year${foundingAnnual ? `, with a limited ${foundingAnnual} founding offer` : ''} in the current tier manifest.`,
     state: 'supported',
   },
 } as const satisfies Record<string, ComparisonCell>;

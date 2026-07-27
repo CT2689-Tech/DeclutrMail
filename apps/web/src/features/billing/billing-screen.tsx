@@ -793,8 +793,8 @@ function CurrentPlanCard({
             <>
               {' '}
               <strong style={{ fontWeight: 600, color: color.fg }}>
-                {cleanupRemaining} of {TIER_MANIFEST.free.cleanupActionsLifetime} lifetime cleanup
-                actions left.
+                {cleanupRemaining} of {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions
+                left this month.
               </strong>
             </>
           ) : null}

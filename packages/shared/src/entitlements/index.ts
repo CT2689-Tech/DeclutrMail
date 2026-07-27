@@ -5,9 +5,9 @@
 // Composes with @declutrmail/shared/actions (ACTION_REGISTRY) — see the
 // seam contract in types.ts.
 
-export { TIER_MANIFEST } from './manifest';
+export { COUNTS_AS_CLEANUP, SELECTOR_CAPS, SELECTOR_TIERS, TIER_MANIFEST } from './pricing.config';
 export {
-  cleanupActionsLifetimeFor,
+  cleanupActionsPerMonthFor,
   hasCapability,
   inboxLimitFor,
   minimumTierForCapability,

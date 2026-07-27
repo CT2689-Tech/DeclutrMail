@@ -48,9 +48,9 @@ describe('InboxSimulatorScreen', () => {
     render(<InboxSimulatorScreen />);
 
     const availability = screen.getByRole('complementary', { name: 'Plan availability' });
-    expect(availability).toHaveTextContent('This demo shows Plus and Pro Triage.');
+    expect(availability).toHaveTextContent('Triage is included on every plan.');
     expect(availability).toHaveTextContent(
-      'Free uses the same cleanup verbs in Senders and includes 5 lifetime cleanup actions.',
+      'Free includes 50 cleanup actions every month; paid plans are unlimited.',
     );
     expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveAttribute('href', '/pricing');
   });

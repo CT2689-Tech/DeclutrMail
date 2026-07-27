@@ -16,6 +16,8 @@ import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { AuthSignupOrchestrator } from '../auth/auth-signup.orchestrator.js';
 import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
@@ -46,6 +48,9 @@ const MIGRATIONS_DIR = join(
 );
 
 const pgUrl = process.env.CLEANUP_TEST_PG_URL;
+
+/** The Free monthly quota, from the pricing config (A3). */
+const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth!;
 
 type Client = ReturnType<typeof postgres>;
 type Db = PostgresJsDatabase<typeof schema>;
@@ -124,18 +129,22 @@ function fakeQueue() {
   };
 }
 
-async function seedQuotaFixture(db: Db): Promise<{
+async function seedQuotaFixture(
+  db: Db,
+  fillUnits = FREE_LIMIT - 1,
+  label = 'quota-race',
+): Promise<{
   workspaceId: string;
   mailboxId: string;
   senderId: string;
 }> {
   const [workspace] = await db
     .insert(workspaces)
-    .values({ name: 'Postgres quota race', tier: 'free' })
+    .values({ name: `Postgres ${label}`, tier: 'free' })
     .returning({ id: workspaces.id });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: workspace!.id, email: 'quota-race@declutrmail.test' })
+    .values({ workspaceId: workspace!.id, email: `${label}@declutrmail.test` })
     .returning({ id: users.id });
   const [mailbox] = await db
     .insert(mailboxAccounts)
@@ -143,21 +152,21 @@ async function seedQuotaFixture(db: Db): Promise<{
       workspaceId: workspace!.id,
       userId: user!.id,
       provider: 'gmail',
-      providerAccountId: 'quota-race@gmail.test',
+      providerAccountId: `${label}@gmail.test`,
     })
     .returning({ id: mailboxAccounts.id });
 
-  const senderKey = 'f'.repeat(64);
+  const senderKey = Buffer.from(label).toString('hex').padEnd(64, 'f').slice(0, 64);
   const [sender] = await db
     .insert(senders)
     .values({
       mailboxAccountId: mailbox!.id,
       senderKey,
-      email: 'news@quota-race.test',
-      domain: 'quota-race.test',
+      email: `news@${label}.test`,
+      domain: `${label}.test`,
       gmailCategory: 'promotions',
       unsubscribeMethod: 'mailto',
-      unsubscribeUrl: 'mailto:unsubscribe@quota-race.test',
+      unsubscribeUrl: `mailto:unsubscribe@${label}.test`,
       firstSeenAt: new Date('2026-01-01T00:00:00.000Z'),
       lastSeenAt: new Date('2026-07-01T00:00:00.000Z'),
     })
@@ -165,15 +174,15 @@ async function seedQuotaFixture(db: Db): Promise<{
 
   await db.insert(mailMessages).values({
     mailboxAccountId: mailbox!.id,
-    providerMessageId: 'quota-race-message',
-    providerThreadId: 'quota-race-thread',
+    providerMessageId: `${label}-message`,
+    providerThreadId: `${label}-thread`,
     senderKey,
     internalDate: new Date('2026-07-01T00:00:00.000Z'),
     isUnread: false,
     labelIds: ['INBOX'],
   });
 
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < fillUnits; i += 1) {
     await db.insert(actionJobs).values({
       mailboxAccountId: mailbox!.id,
       verb: 'archive',
@@ -182,7 +191,7 @@ async function seedQuotaFixture(db: Db): Promise<{
       requestedCount: 1,
       affectedCount: 1,
       status: 'done',
-      idempotencyKey: `postgres-quota-fill-${i}`,
+      idempotencyKey: `postgres-${label}-fill-${i}`,
     });
   }
 
@@ -214,6 +223,14 @@ async function seedInboxActivationFixture(db: Db): Promise<{
       userId: owner!.id,
       provider: 'gmail',
       providerAccountId: 'inbox-race-primary@gmail.test',
+    },
+    {
+      // A3: Pro carries 3 inboxes — occupy the second active slot so
+      // the race below still contends for exactly ONE remaining slot.
+      workspaceId: workspace!.id,
+      userId: owner!.id,
+      provider: 'gmail',
+      providerAccountId: 'inbox-race-secondary@gmail.test',
     },
     {
       workspaceId: workspace!.id,
@@ -413,7 +430,94 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
     expect(candidateRows).toHaveLength(1);
     await expect(
       new EntitlementsService(databases[0]! as never).cleanupSummary(workspaceId),
-    ).resolves.toEqual({ tier: 'free', limit: 5, used: 5, remaining: 0 });
+    ).resolves.toEqual({
+      tier: 'free',
+      limit: FREE_LIMIT,
+      used: FREE_LIMIT,
+      remaining: 0,
+      resetsAt: expect.any(Date),
+    });
+  });
+
+  it('A3 bulk race: two concurrent bulks near the boundary cannot exceed the quota', async () => {
+    // Three units remain; each racing bulk asks for two. The capacity
+    // check, replay recheck and inserts share ONE transaction holding
+    // the workspace row lock, so exactly one bulk can win — without the
+    // transaction both read used=FREE_LIMIT-3, both pass, and the
+    // combined result overruns the quota.
+    const [dbA, dbB] = [databases[0]!, databases[1]!];
+    const contenderPids = await Promise.all(
+      [clients[0]!, clients[1]!].map(async (client) => {
+        const [row] = await client<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+        return row!.pid;
+      }),
+    );
+
+    const { workspaceId, mailboxId } = await seedQuotaFixture(dbA, FREE_LIMIT - 3, 'bulk-race');
+    // Four extra senders so each bulk acts on its own pair.
+    const extraSenders: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const key = `${i}`.padStart(64, 'a');
+      const [row] = await dbA
+        .insert(senders)
+        .values({
+          mailboxAccountId: mailboxId,
+          senderKey: key,
+          email: `bulk-${i}@quota-race.test`,
+          domain: 'quota-race.test',
+          gmailCategory: 'promotions',
+          firstSeenAt: new Date('2026-01-01T00:00:00.000Z'),
+          lastSeenAt: new Date('2026-07-01T00:00:00.000Z'),
+        })
+        .returning({ id: senders.id });
+      extraSenders.push(row!.id);
+    }
+
+    const queue = fakeQueue();
+    const svcA = new ActionsService(dbA as never, queue as never);
+    const svcB = new ActionsService(dbB as never, queue as never);
+
+    await controlClient!.unsafe('BEGIN');
+    await controlClient!`SELECT id FROM workspaces WHERE id = ${workspaceId} FOR UPDATE`;
+
+    const pendingResults = Promise.allSettled([
+      svcA.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [extraSenders[0]!, extraSenders[1]!],
+        primary: { type: 'archive' },
+        idempotencyKey: 'postgres-bulk-race-a',
+      }),
+      svcB.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [extraSenders[2]!, extraSenders[3]!],
+        primary: { type: 'archive' },
+        idempotencyKey: 'postgres-bulk-race-b',
+      }),
+    ]);
+
+    let contentionFailure: unknown;
+    try {
+      await waitForWorkspaceLockContention(controlClient!, contenderPids);
+    } catch (error) {
+      contentionFailure = error;
+    } finally {
+      await controlClient!.unsafe('COMMIT');
+    }
+
+    const results = await pendingResults;
+    if (contentionFailure) throw contentionFailure;
+
+    // Exactly one bulk wins; the loser 402s and writes nothing.
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    expect(rejected?.reason).toMatchObject({ code: 'FREE_CAP_REACHED' });
+
+    // The combined consumption can never exceed the quota.
+    const summary = await new EntitlementsService(dbA as never).cleanupSummary(workspaceId);
+    expect(summary.used).toBeLessThanOrEqual(FREE_LIMIT);
+    expect(summary.used).toBe(FREE_LIMIT - 1); // FREE_LIMIT-3 fill + one 2-sender bulk
   });
 
   it('admits only one distinct inbox activation when one Pro slot remains', async () => {
@@ -498,7 +602,7 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
           eq(mailboxAccounts.status, 'active'),
         ),
       );
-    expect(activeRows).toHaveLength(2);
+    expect(activeRows).toHaveLength(3);
     expect(
       activeRows.filter((row) =>
         [fixture.disconnectedEmail, fixture.newEmail].includes(row.providerAccountId),
@@ -534,6 +638,6 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
           eq(mailboxAccounts.status, 'active'),
         ),
       );
-    expect(activeAfterReplay).toHaveLength(2);
+    expect(activeAfterReplay).toHaveLength(3);
   });
 });

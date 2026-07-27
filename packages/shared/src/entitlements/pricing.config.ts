@@ -1,9 +1,11 @@
-// @declutrmail/shared/entitlements — THE tier manifest (D19).
+// @declutrmail/shared/entitlements — THE pricing config (D19).
 //
-// The single configurable source of truth for the D19 ladder: prices,
-// inbox limits, undo windows, the Free lifetime cleanup quota, and the
-// per-tier capability sets. Re-pricing is a one-value change here —
-// nothing else in the codebase carries a dollar amount or a tier limit.
+// The single production edit point for prices, quota, inbox limits,
+// undo windows, feature tiers, selector tiers, selector caps and
+// cleanup counting. Changing any of them is a one-value edit HERE plus
+// an intentional update to the pinned snapshot test — nothing else in
+// the codebase carries a dollar amount, a tier limit, a quota number
+// or a plan name as a literal.
 //
 // Catalog ids (`paddlePriceId` / `razorpayPlanId`, D117) are null until
 // the catalog-provisioning unit writes the live SKU ids back into this
@@ -12,23 +14,32 @@
 // clamps per point on `razorpayPlanId !== null`, so populating them is
 // what makes an India visitor see (and be charged) INR.
 //
-// Ladder locked by the founder's 2026-06-11 launch-buildout spec (D19,
-// with D17–D21 / D77 / D81 context). The founder reconfirmed standard
-// Pro at $19/mo or $190/yr on 2026-07-14; the $129/yr Founding Pro
-// launch offer remains distinct.
+// Ladder per the A3 free-tier activation decision (founder, 2026-07-26 —
+// docs/execution/a3-pricing-rework-plan.md): prices, Founding Pro and
+// every provider SKU unchanged; Free gains Triage + Later + bulk with a
+// 50 cleanup-actions/month quota anchored on the workspace's signup
+// anniversary; Plus = Free + unlimited volume; Pro adds the automation
+// set, 3 inboxes and the 30-day undo window.
 
+import type { ActionTier, ActionVerb, SelectorType } from '../contracts/verb-constants';
 import type { Capability, TierManifest } from './types';
 
-/** Free-tier read surfaces + the 5-lifetime-quota cleanup pipeline (D19). */
+/**
+ * Free = the whole manual cleanup product: read surfaces, the K/A/U/L/D
+ * pipeline, Triage, and the Later apparatus (`snoozed` — the Later
+ * list, recovery alert and manual wake follow the Later verb).
+ */
 const FREE_CAPABILITIES: readonly Capability[] = [
   'senders',
   'sender-detail',
   'activity',
   'cleanup-actions',
+  'triage',
+  'snoozed',
 ];
 
-/** Plus = Free + Triage; the cleanup quota lifts to unlimited (D19). */
-const PLUS_CAPABILITIES: readonly Capability[] = [...FREE_CAPABILITIES, 'triage'];
+/** Plus = Free + unlimited volume — the quota is the ONLY difference. */
+const PLUS_CAPABILITIES: readonly Capability[] = [...FREE_CAPABILITIES];
 
 /** Pro = Plus + the automation set (D19, D77). */
 const PRO_CAPABILITIES: readonly Capability[] = [
@@ -37,9 +48,41 @@ const PRO_CAPABILITIES: readonly Capability[] = [
   'brief',
   'screener',
   'quiet',
-  'snoozed',
   'followups',
 ];
+
+/**
+ * Which tier unlocks each action SELECTOR. Total record — adding a
+ * selector without deciding its tier is a compile error. Multi-sender
+ * bulk is Free per A3 (metered by the monthly cleanup quota; the bulk
+ * capacity check runs inside one transaction — see
+ * `ActionsService.enqueueBulkComposite`).
+ */
+export const SELECTOR_TIERS: Record<SelectorType, ActionTier> = {
+  sender: 'free',
+  'multi-sender': 'free',
+  'sender-filter': 'pro',
+};
+
+/** Per-selector batch ceiling (D-Q1: 1000 senders per bulk click). */
+export const SELECTOR_CAPS: Partial<Record<SelectorType, number>> = {
+  'multi-sender': 1000,
+};
+
+/**
+ * Which verbs draw down the monthly cleanup quota. Total record. Keep
+ * and Unarchive are free and unlimited — Keep is policy-only and writes
+ * no `action_jobs` row, so counting it would require a write path built
+ * purely for metering.
+ */
+export const COUNTS_AS_CLEANUP: Record<ActionVerb, boolean> = {
+  keep: false,
+  archive: true,
+  later: true,
+  unsubscribe: true,
+  delete: true,
+  unarchive: false,
+};
 
 /**
  * The D19 tier manifest. Team/enterprise entitlement values (inbox
@@ -61,9 +104,11 @@ export const TIER_MANIFEST: TierManifest = {
     },
     inboxLimit: 1,
     undoWindowDays: 7,
-    // D19 — "5 lifetime cleanup actions as taste". Drawn down by registry
-    // verbs with `countsAsCleanup: true` (the Action Registry seam).
-    cleanupActionsLifetime: 5,
+    // A3 — 50 cleanup actions per month, resetting on the workspace's
+    // signup anniversary. One unit = one sender acted upon; the counting
+    // rule lives on `EntitlementsService.cleanupUnitsUsed`, driven by
+    // `COUNTS_AS_CLEANUP` above.
+    cleanupActionsPerMonth: 50,
     capabilities: FREE_CAPABILITIES,
     purchasable: true,
   },
@@ -87,7 +132,7 @@ export const TIER_MANIFEST: TierManifest = {
     },
     inboxLimit: 1,
     undoWindowDays: 7,
-    cleanupActionsLifetime: null,
+    cleanupActionsPerMonth: null,
     capabilities: PLUS_CAPABILITIES,
     purchasable: true,
   },
@@ -109,10 +154,11 @@ export const TIER_MANIFEST: TierManifest = {
         razorpayPlanId: 'plan_THtwbs4FAeqWlv',
       },
     },
-    inboxLimit: 2,
+    // A3 — Pro carries 3 inboxes.
+    inboxLimit: 3,
     // D19 — Pro extends the undo window to 30 days.
     undoWindowDays: 30,
-    cleanupActionsLifetime: null,
+    cleanupActionsPerMonth: null,
     capabilities: PRO_CAPABILITIES,
     purchasable: true,
     promo: {
@@ -134,9 +180,9 @@ export const TIER_MANIFEST: TierManifest = {
     id: 'team',
     name: 'Team',
     prices: { monthly: null, annual: null },
-    inboxLimit: 2,
+    inboxLimit: 3,
     undoWindowDays: 30,
-    cleanupActionsLifetime: null,
+    cleanupActionsPerMonth: null,
     capabilities: PRO_CAPABILITIES,
     purchasable: false,
     nonPurchasableRow: { kind: 'waitlist', label: 'Join the waitlist' },
@@ -145,9 +191,9 @@ export const TIER_MANIFEST: TierManifest = {
     id: 'enterprise',
     name: 'Enterprise',
     prices: { monthly: null, annual: null },
-    inboxLimit: 2,
+    inboxLimit: 3,
     undoWindowDays: 30,
-    cleanupActionsLifetime: null,
+    cleanupActionsPerMonth: null,
     capabilities: PRO_CAPABILITIES,
     purchasable: false,
     nonPurchasableRow: { kind: 'contact', label: 'Contact sales' },

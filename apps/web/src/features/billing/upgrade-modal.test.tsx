@@ -52,16 +52,16 @@ describe('UpgradeModal', () => {
   it('free_cap (spent): headline + Plus/Pro pitch + money-back note + Plus deep link', () => {
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
-      details: { remaining: 0, limit: 5, used: 5, requiredUnits: 1 },
+      details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
     });
     render(<UpgradeModal />);
 
     expect(screen.getByTestId('upgrade-modal')).toBeInTheDocument();
-    expect(screen.getByText("You've used all 5 free sender actions")).toBeInTheDocument();
-    // Manifest-derived prices (D19): Plus $9/mo, Pro $19/mo.
     expect(
-      screen.getByText(/Plus unlocks unlimited sender actions for \$9\/mo/),
+      screen.getByText("You've used all 50 cleanup actions for this month"),
     ).toBeInTheDocument();
+    // Manifest-derived prices (D19): Plus $9/mo, Pro $19/mo.
+    expect(screen.getByText(/Plus unlocks unlimited cleanup for \$9\/mo/)).toBeInTheDocument();
     expect(screen.getByText(/\$19\/mo — 30-day money-back guarantee/)).toBeInTheDocument();
     // ONE checkout path (D117): the CTA deep-links the nudged plan into
     // /billing's confirm step via the validated billing intent.
@@ -74,35 +74,47 @@ describe('UpgradeModal', () => {
   it('free_cap (partial): bulk-needs-more headline', () => {
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
-      details: { remaining: 2, limit: 5, used: 3, requiredUnits: 4 },
+      details: { remaining: 2, limit: 50, used: 48, requiredUnits: 4, resetsAt: null },
     });
     render(<UpgradeModal />);
 
     expect(
-      screen.getByText('That needs 4 sender actions — only 2 of your 5 free ones are left'),
+      screen.getByText('That needs 4 cleanup actions — only 2 of your 50 are left this month'),
     ).toBeInTheDocument();
   });
 
-  it('action_tier: explains Free single-sender access and offers the Plus path', () => {
+  it('free_cap: names the reset date when the server supplies one', () => {
+    useUpgradeGateStore.getState().report({
+      reason: 'free_cap',
+      details: {
+        remaining: 0,
+        limit: 50,
+        used: 50,
+        requiredUnits: 1,
+        resetsAt: '2026-08-27T10:00:00.000Z',
+      },
+    });
+    render(<UpgradeModal />);
+    expect(screen.getByText(/your quota resets on Aug 27/)).toBeInTheDocument();
+  });
+
+  it('action_tier: explains the all-matching selector and offers the Pro path (A3)', () => {
     useUpgradeGateStore.getState().report({
       reason: 'action_tier',
       details: {
         tier: 'free',
-        requiredTier: 'plus',
-        selector: 'multi-sender',
+        requiredTier: 'pro',
+        selector: 'sender-filter',
         verb: 'archive',
       },
     });
     render(<UpgradeModal />);
 
-    expect(screen.getByText('Multi-sender actions are part of Plus')).toBeInTheDocument();
-    expect(
-      screen.getByText(/five lifetime cleanup actions, one sender at a time/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Plus unlocks multi-sender cleanup for \$9\/mo/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Upgrade to Plus' })).toHaveAttribute(
+    expect(screen.getByText('All-matching actions are part of Pro')).toBeInTheDocument();
+    expect(screen.getByText(/Pro unlocks all-matching cleanup for \$19\/mo/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Upgrade to Pro' })).toHaveAttribute(
       'href',
-      '/billing?plan=plus&cycle=monthly',
+      '/billing?plan=pro&cycle=monthly',
     );
   });
 
@@ -114,7 +126,7 @@ describe('UpgradeModal', () => {
     render(<UpgradeModal />);
 
     expect(screen.getByText('Your Plus plan includes 1 connected inbox')).toBeInTheDocument();
-    expect(screen.getByText(/Pro raises the limit to 2 connected inboxes/)).toBeInTheDocument();
+    expect(screen.getByText(/Pro raises the limit to 3 connected inboxes/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Upgrade to Pro' })).toHaveAttribute(
       'href',
       '/billing?plan=pro&cycle=monthly',
@@ -137,7 +149,7 @@ describe('UpgradeModal', () => {
   it('dismisses via the Not now button', () => {
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
-      details: { remaining: 0, limit: 5, used: 5, requiredUnits: 1 },
+      details: { remaining: 0, limit: 5, used: 5, requiredUnits: 1, resetsAt: null },
     });
     render(<UpgradeModal />);
 
@@ -149,7 +161,7 @@ describe('UpgradeModal', () => {
   it('dismisses on Escape', () => {
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
-      details: { remaining: 0, limit: 5, used: 5, requiredUnits: 1 },
+      details: { remaining: 0, limit: 5, used: 5, requiredUnits: 1, resetsAt: null },
     });
     render(<UpgradeModal />);
 

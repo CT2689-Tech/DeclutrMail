@@ -19,6 +19,8 @@ import {
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
 } from '@declutrmail/shared';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
@@ -91,7 +93,9 @@ const FAQS: ReadonlyArray<{
   {
     id: 'pricing-tiers',
     q: 'What do the plans include?',
-    a: 'Free shows you what’s noisy and includes five lifetime cleanup actions. Plus adds unlimited manual actions and Triage. Pro adds preset automation, two inboxes, and a 30-day Activity Undo window for Archive, Later, and Delete. Delete also has separate Gmail Trash recovery, normally up to 30 days on every plan. The pricing page has the current comparison.',
+    // Derived from the pricing config (A3) — no plan number is written
+    // here, so retuning the ladder cannot strand this answer.
+    a: `Free includes the full cleanup toolkit — Senders, Triage, the Later list and every cleanup verb — with ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions each month. Plus removes the monthly cap. Pro adds preset automation, ${TIER_MANIFEST.pro.inboxLimit} inboxes, and a ${TIER_MANIFEST.pro.undoWindowDays}-day Activity Undo window for Archive, Later, and Delete. Delete also has separate Gmail Trash recovery, normally up to 30 days on every plan. The pricing page has the current comparison.`,
     link: { href: '/pricing', label: 'Pricing →' },
   },
   {

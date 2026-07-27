@@ -753,19 +753,17 @@ export class ActionsService {
 
     const safeKey = idempotencyKey.replace(/:/g, '-');
 
-    // D19/D77 free-cleanup cap — a bulk of N actionable senders is N
-    // units (skipped senders never enqueue, so they don't count).
-    // Replay detection: per-row keys derive deterministically from the
-    // client key + sorted sender ids, so the anchor's key existing
-    // means this exact bulk was already enqueued (its units consumed).
-    // Counting rule on `EntitlementsService.cleanupUnitsUsed`.
+    // D19/A3 cleanup cap — a bulk of N actionable senders is N units
+    // (skipped senders never enqueue, so they don't count). Replay
+    // detection: per-row keys derive deterministically from the client
+    // key + sorted sender ids, so the anchor's key existing means this
+    // exact bulk was already enqueued (its units consumed). Counting
+    // rule on `EntitlementsService.cleanupUnitsUsed`.
     const anchorKey = `${primary.type}-${safeKey}-${actionable[0]!.id}`;
-    if (!(await this.hasJobWithKey(anchorKey))) {
-      await this.entitlements.assertCleanupCapacity(mailboxAccountId, actionable.length);
-    }
 
     // Per-sender counts for each verb's window — ONE grouped query per
-    // window, not N queries.
+    // window, not N queries. Pure reads that don't need the workspace
+    // lock, so they stay OUTSIDE the transaction below.
     const keys = actionable.map((r) => r.senderKey);
     const primaryCounts = await this.countSenderInboxGrouped(
       mailboxAccountId,
@@ -776,60 +774,98 @@ export class ActionsService {
       ? await this.countSenderInboxGrouped(mailboxAccountId, keys, secondary.olderThanDays ?? null)
       : null;
 
-    let anchorId: string | null = null;
-    let status: ActionJobStatus = 'queued';
-    let requestedTotal = 0;
-    let persistedWakeAt: Date | null = null;
-
-    for (const sender of actionable) {
-      const primaryKey = `${primary.type}-${safeKey}-${sender.id}`;
-      const primaryRow = await this.insertJob({
-        mailboxAccountId,
-        verb: primary.type,
-        direction: 'forward',
-        selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
-        resolvedMessageIds: [], // worker resolves "in INBOX now" at execute
-        requestedCount: primaryCounts.get(sender.senderKey) ?? 0,
-        idempotencyKey: primaryKey,
-        olderThanDays: primary.olderThanDays ?? null,
-        wakeAt: primary.wakeAt ?? null,
-        compositeId: anchorId, // null only for the anchor itself
-      });
-      if (anchorId === null) {
-        anchorId = primaryRow.row.id;
-        status = primaryRow.row.status;
-        persistedWakeAt = primaryRow.row.wakeAt;
+    // A3 mandatory concurrency fix: the replay recheck, the capacity
+    // check and EVERY insert share ONE transaction holding the finite-
+    // tier workspace row lock — the same shape as the single-sender
+    // path above. Previously the check ran on the root executor, whose
+    // statement-scoped FOR UPDATE released before the inserts, so two
+    // racing bulks could both read `used`, both pass, and both insert
+    // N rows past the quota.
+    const persisted = await this.db.transaction(async (tx) => {
+      const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
+      if (!(await this.hasJobWithKey(anchorKey, tx))) {
+        await this.entitlements.assertCleanupCapacityForWorkspace(workspace, actionable.length, tx);
       }
-      if (!primaryRow.existing) {
-        await this.enqueueJob(primaryRow.row.id, mailboxAccountId, primaryKey);
-      }
-      requestedTotal += primaryRow.row.requestedCount;
 
-      if (secondary) {
-        const secondaryKey = `${secondary.type}-${safeKey}-${sender.id}-sec`;
-        const secondaryRow = await this.insertJob({
-          mailboxAccountId,
-          verb: secondary.type,
-          direction: 'forward',
-          selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
-          resolvedMessageIds: [],
-          requestedCount: secondaryCounts?.get(sender.senderKey) ?? 0,
-          idempotencyKey: secondaryKey,
-          olderThanDays: secondary.olderThanDays ?? null,
-          compositeId: anchorId,
-        });
-        if (!secondaryRow.existing) {
-          await this.enqueueJob(secondaryRow.row.id, mailboxAccountId, secondaryKey);
+      let anchorId: string | null = null;
+      let status: ActionJobStatus = 'queued';
+      let requestedTotal = 0;
+      let persistedWakeAt: Date | null = null;
+      const fresh: Array<{ actionId: string; idempotencyKey: string }> = [];
+
+      for (const sender of actionable) {
+        const primaryKey = `${primary.type}-${safeKey}-${sender.id}`;
+        const primaryRow = await this.insertJob(
+          {
+            mailboxAccountId,
+            verb: primary.type,
+            direction: 'forward',
+            selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
+            resolvedMessageIds: [], // worker resolves "in INBOX now" at execute
+            requestedCount: primaryCounts.get(sender.senderKey) ?? 0,
+            idempotencyKey: primaryKey,
+            olderThanDays: primary.olderThanDays ?? null,
+            wakeAt: primary.wakeAt ?? null,
+            compositeId: anchorId, // null only for the anchor itself
+          },
+          tx,
+        );
+        if (anchorId === null) {
+          anchorId = primaryRow.row.id;
+          status = primaryRow.row.status;
+          persistedWakeAt = primaryRow.row.wakeAt;
+        }
+        if (!primaryRow.existing) {
+          fresh.push({ actionId: primaryRow.row.id, idempotencyKey: primaryKey });
+        }
+        requestedTotal += primaryRow.row.requestedCount;
+
+        if (secondary) {
+          const secondaryKey = `${secondary.type}-${safeKey}-${sender.id}-sec`;
+          const secondaryRow = await this.insertJob(
+            {
+              mailboxAccountId,
+              verb: secondary.type,
+              direction: 'forward',
+              selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
+              resolvedMessageIds: [],
+              requestedCount: secondaryCounts?.get(sender.senderKey) ?? 0,
+              idempotencyKey: secondaryKey,
+              olderThanDays: secondary.olderThanDays ?? null,
+              compositeId: anchorId,
+            },
+            tx,
+          );
+          if (!secondaryRow.existing) {
+            fresh.push({ actionId: secondaryRow.row.id, idempotencyKey: secondaryKey });
+          }
         }
       }
+
+      return { anchorId: anchorId!, status, requestedTotal, persistedWakeAt, fresh };
+    });
+
+    // Queueing stays outside the transaction so workers never observe an
+    // uncommitted row; allSettled so an early enqueue failure cannot
+    // strand a committed fresh row without an enqueue attempt.
+    const enqueueResults = await Promise.allSettled(
+      persisted.fresh.map((row) =>
+        this.enqueueJob(row.actionId, mailboxAccountId, row.idempotencyKey),
+      ),
+    );
+    const enqueueFailure = enqueueResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (enqueueFailure) {
+      throw enqueueFailure.reason;
     }
 
     return {
-      batchId: anchorId!,
-      status,
+      batchId: persisted.anchorId,
+      status: persisted.status,
       senderCount: actionable.length,
-      requestedTotal,
-      wakeAt: persistedWakeAt?.toISOString() ?? null,
+      requestedTotal: persisted.requestedTotal,
+      wakeAt: persisted.persistedWakeAt?.toISOString() ?? null,
       skipped,
     };
   }

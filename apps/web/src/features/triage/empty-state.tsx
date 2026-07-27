@@ -5,7 +5,7 @@ import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import type { TriageSessionStats } from './data';
 
 const { color, font } = tokens;
-const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsLifetime;
+const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth;
 
 /**
  * The triage empty state (D33 + D212).
@@ -32,7 +32,7 @@ const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsLifetime;
  *        free → "See Plus" (lifts the D19 5-LIFETIME cleanup cap)
  *        plus → "Pro could do this for you automatically" (D33 quote)
  *        pro  → no nudge; D33 explicitly hides it for Pro users.
- *      `freeRemaining` is the LIFETIME remainder (manifest-driven via
+ *      `freeRemaining` is the MONTHLY remainder (config-driven via
  *      the BE; replaced the old 25/day display counter), so the nudge
  *      is always relevant on free once any cleanup action is spent.
  *
@@ -178,7 +178,7 @@ export function TriageEmptyState({
       </div>
 
       {/* D33 Free-tier nudge — "See Plus" surfaces when the D19
-          lifetime cleanup cap is in view (≤5 cleanup actions left). */}
+          monthly cleanup cap is in view (≤5 cleanup actions left). */}
       {showPlusNudge && (
         <div
           style={{
@@ -198,8 +198,8 @@ export function TriageEmptyState({
           <span style={{ fontSize: 12.5, color: color.fg, textAlign: 'left' }}>
             <strong style={{ fontWeight: 600 }}>
               {stats.freeRemaining === 0
-                ? `You've used all ${FREE_CLEANUP_LIMIT} free cleanup actions.`
-                : `${stats.freeRemaining} of your ${FREE_CLEANUP_LIMIT} free cleanup actions left.`}
+                ? `You've used all ${FREE_CLEANUP_LIMIT} free cleanup actions this month.`
+                : `${stats.freeRemaining} of your ${FREE_CLEANUP_LIMIT} free cleanup actions left this month.`}
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
               Plus removes the cap — unlimited archive, delete, and unsubscribe.

@@ -134,7 +134,7 @@ export type { UiState, UiActions } from './state/ui-store';
 // tree). Composes with the Action Registry — see entitlements/types.ts.
 export { TIER_MANIFEST } from './entitlements/index';
 export {
-  cleanupActionsLifetimeFor,
+  cleanupActionsPerMonthFor,
   hasCapability,
   inboxLimitFor,
   satisfiesActionTier,

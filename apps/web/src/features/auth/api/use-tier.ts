@@ -9,10 +9,15 @@ import type { Tier } from './use-me';
 export interface TierEntitlements {
   tier: Tier;
   /**
-   * Free-tier LIFETIME cleanup actions left (D19: 5); `null` =
+   * Cleanup actions left THIS PERIOD (A3: Free = 50/month); `null` =
    * unlimited (every paid tier). Served by `/api/auth/me`.
    */
   cleanupRemaining: number | null;
+  /**
+   * Next anniversary reset (ISO), server-computed — the browser never
+   * derives it (A3). `null` = unlimited tier or pre-A3 API skew.
+   */
+  cleanupResetsAt: string | null;
   /** Connected-Gmail-account ceiling for the tier (D19 manifest). */
   inboxLimit: number;
   /** Mailboxes currently connected (status='active'). */
@@ -45,6 +50,7 @@ export function useTier(): TierEntitlements {
   return {
     tier,
     cleanupRemaining: me.cleanupRemaining ?? null,
+    cleanupResetsAt: me.cleanupResetsAt ?? null,
     inboxLimit,
     connectedInboxes,
     atInboxLimit: connectedInboxes >= inboxLimit,

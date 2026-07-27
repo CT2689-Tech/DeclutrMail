@@ -30,7 +30,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
 
 import { TierGate } from './tier-gate';
 
-function renderGate(capability: 'brief' | 'triage' = 'brief') {
+function renderGate(capability: 'brief' | 'triage' | 'screener' = 'brief') {
   let childMounted = false;
   function Child() {
     childMounted = true;
@@ -73,14 +73,14 @@ describe('TierGate', () => {
     expect(screen.getByTestId('tier-gate-placeholder')).toBeInTheDocument();
   });
 
-  it('names Plus and its manifest price for a Plus capability', () => {
+  it('names the granting plan and its manifest price for a Pro capability', () => {
     mockTier = 'free';
-    renderGate('triage');
+    renderGate('screener');
 
-    expect(screen.getByText('Plus feature')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Upgrade to Plus → $9/mo' })).toHaveAttribute(
+    expect(screen.getByText('Pro feature')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Upgrade to Pro → $19/mo' })).toHaveAttribute(
       'href',
-      '/billing?plan=plus&cycle=monthly',
+      '/billing?plan=pro&cycle=monthly',
     );
   });
 
@@ -98,28 +98,14 @@ describe('TierGate', () => {
     expect(screen.getByTestId('gated-child')).toBeInTheDocument();
   });
 
-  it('derives the Plus plan and price for the Triage capability', () => {
+  it('Triage is Free (A3): the gate passes every tier straight through', () => {
     mockTier = 'free';
-    const { unmount } = render(
-      <TierGate capability="triage" title="Triage" pitch="Review a focused sender queue.">
-        <div data-testid="triage-content">Triage content</div>
-      </TierGate>,
-    );
-
-    expect(screen.getByText('Plus feature')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Upgrade to Plus → $9/mo' })).toHaveAttribute(
-      'href',
-      '/billing?plan=plus&cycle=monthly',
-    );
-    expect(screen.queryByTestId('triage-content')).not.toBeInTheDocument();
-
-    unmount();
-    mockTier = 'plus';
     render(
       <TierGate capability="triage" title="Triage" pitch="Review a focused sender queue.">
         <div data-testid="triage-content">Triage content</div>
       </TierGate>,
     );
     expect(screen.getByTestId('triage-content')).toBeInTheDocument();
+    expect(screen.queryByTestId('tier-gate-placeholder')).not.toBeInTheDocument();
   });
 });

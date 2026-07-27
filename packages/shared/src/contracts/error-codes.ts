@@ -122,7 +122,7 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: false,
     message:
-      "You've used all 5 free sender actions. Upgrade for unlimited actions — everything you've already done stays done.",
+      "You've used all your free cleanup actions for this month. Upgrade for unlimited cleanup — everything you've already done stays done.",
   },
   ACTION_TIER_REQUIRED: {
     status: 402,

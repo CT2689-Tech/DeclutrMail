@@ -17,9 +17,14 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
 import { ActionsService } from '../../actions/actions.service.js';
 import { AppException } from '../app-exception.js';
 import { EntitlementsService } from './entitlements.service.js';
+
+/** The Free monthly quota, from the pricing config (A3). */
+const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth!;
 
 /**
  * EntitlementsService integration tests (D19/D77/D81) — real service
@@ -374,7 +379,7 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
     expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(2);
   });
 
-  it('cleanupSummary: free reports limit 5 + remaining; pro is unlimited (no scan)', async () => {
+  it('cleanupSummary: free reports the config limit + remaining + resetsAt; pro is unlimited (no scan)', async () => {
     const sender = await seedSender(db, mailboxId);
     await seedJob(db, mailboxId, {
       verb: 'archive',
@@ -384,9 +389,10 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
     });
     expect(await svc.cleanupSummary(workspaceId)).toEqual({
       tier: 'free',
-      limit: 5,
+      limit: FREE_LIMIT,
       used: 1,
-      remaining: 4,
+      remaining: FREE_LIMIT - 1,
+      resetsAt: expect.any(Date),
     });
 
     const pro = await seedWorkspace(db, 'pro');
@@ -395,12 +401,13 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
       limit: null,
       used: 0,
       remaining: null,
+      resetsAt: null,
     });
   });
 
   it('assertCleanupCapacity: 402 FREE_CAP_REACHED with details at the cap; passes under it', async () => {
     const sender = await seedSender(db, mailboxId);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < FREE_LIMIT - 1; i++) {
       await seedJob(db, mailboxId, {
         verb: 'archive',
         key: `archive-fill-${i}`,
@@ -408,7 +415,7 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
         senderKey: sender.key,
       });
     }
-    // 4 used, 1 left — one more unit fits…
+    // limit-1 used, 1 left — one more unit fits…
     await expect(svc.assertCleanupCapacity(mailboxId, 1)).resolves.toBeUndefined();
     // …but a bulk needing 2 does not (the mid-selection 402).
     const err = await svc.assertCleanupCapacity(mailboxId, 2).catch((e: unknown) => e);
@@ -417,9 +424,10 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
     expect((err as AppException).getStatus()).toBe(402);
     expect((err as AppException).details).toEqual({
       remaining: 1,
-      limit: 5,
-      used: 4,
+      limit: FREE_LIMIT,
+      used: FREE_LIMIT - 1,
       requiredUnits: 2,
+      resetsAt: expect.any(String),
     });
   });
 
@@ -435,6 +443,7 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
     await expect(svc.lockCleanupWorkspace(plus.mailboxId)).resolves.toEqual({
       workspaceId: plus.workspaceId,
       tier: 'plus',
+      createdAt: expect.any(Date),
     });
     expect(queryLog.join('\n')).not.toMatch(/for update/i);
   });
@@ -446,12 +455,14 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
       // Simulate the tier observed before waiting for the row lock. The
       // locking query must return the current persisted tier instead.
       tier: 'free',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
     });
     queryLog.length = 0;
 
     await expect(svc.lockCleanupWorkspace(plus.mailboxId)).resolves.toEqual({
       workspaceId: plus.workspaceId,
       tier: 'plus',
+      createdAt: expect.any(Date),
     });
     expect(queryLog.join('\n')).toMatch(/for update/i);
     lookup.mockRestore();
@@ -473,7 +484,7 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
     await db.transaction(async (tx) => {
       await expect(svc.assertCleanupCapacity(mailboxId, 1, tx as never)).resolves.toBeUndefined();
       expect(lookup).toHaveBeenCalledWith(mailboxId, tx);
-      expect(countUsed).toHaveBeenCalledWith(workspaceId, tx);
+      expect(countUsed).toHaveBeenCalledWith(workspaceId, tx, expect.any(Date));
     });
     lookup.mockRestore();
     countUsed.mockRestore();
@@ -495,37 +506,44 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
 
     await db.transaction(async (tx) => {
       await expect(
-        svc.assertCleanupCapacityForWorkspace({ workspaceId, tier: 'free' }, 1, tx as never),
+        svc.assertCleanupCapacityForWorkspace(
+          { workspaceId, tier: 'free', createdAt: new Date('2026-01-01T00:00:00.000Z') },
+          1,
+          tx as never,
+        ),
       ).resolves.toBeUndefined();
       expect(lookup).not.toHaveBeenCalled();
-      expect(countUsed).toHaveBeenCalledWith(workspaceId, tx);
+      expect(countUsed).toHaveBeenCalledWith(workspaceId, tx, expect.any(Date));
     });
     expect(queryLog.join('\n')).not.toMatch(/for update/i);
     lookup.mockRestore();
     countUsed.mockRestore();
   });
 
-  it('enforces the Action Registry tier per selector without taking away Free single-sender actions', async () => {
+  it('enforces the Action Registry tier per selector — A3: bulk is Free, all-matching stays Pro', async () => {
     await expect(
       svc.assertActionSelectorTier(mailboxId, 'archive', 'sender'),
     ).resolves.toBeUndefined();
+    await expect(
+      svc.assertActionSelectorTier(mailboxId, 'archive', 'multi-sender'),
+    ).resolves.toBeUndefined();
 
     const err = await svc
-      .assertActionSelectorTier(mailboxId, 'archive', 'multi-sender')
+      .assertActionSelectorTier(mailboxId, 'archive', 'sender-filter')
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AppException);
     expect((err as AppException).code).toBe('ACTION_TIER_REQUIRED');
     expect((err as AppException).getStatus()).toBe(402);
     expect((err as AppException).details).toEqual({
       tier: 'free',
-      requiredTier: 'plus',
-      selector: 'multi-sender',
+      requiredTier: 'pro',
+      selector: 'sender-filter',
       verb: 'archive',
     });
 
-    const plus = await seedWorkspace(db, 'plus');
+    const pro = await seedWorkspace(db, 'pro');
     await expect(
-      svc.assertActionSelectorTier(plus.mailboxId, 'archive', 'multi-sender'),
+      svc.assertActionSelectorTier(pro.mailboxId, 'archive', 'sender-filter'),
     ).resolves.toBeUndefined();
   });
 });
@@ -557,7 +575,7 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
     await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
   });
 
-  it('pro (limit 2): allows the 2nd, blocks the 3rd', async () => {
+  it('pro (limit 3, A3): allows the 3rd, blocks the 4th', async () => {
     const { workspaceId, userId } = await seedWorkspace(db, 'pro');
     await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
     await db.insert(mailboxAccounts).values({
@@ -565,6 +583,13 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
       userId,
       provider: 'gmail',
       providerAccountId: 'second@x',
+    });
+    await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
+    await db.insert(mailboxAccounts).values({
+      workspaceId,
+      userId,
+      provider: 'gmail',
+      providerAccountId: 'third@x',
     });
     const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AppException);
@@ -604,10 +629,10 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
     return new ActionsService(db as never, fakeQueue() as never);
   }
 
-  it('the 6th cleanup action 402s with the FREE_CAP_REACHED envelope; replay of a spent key does not', async () => {
+  it('the over-quota cleanup action 402s with the FREE_CAP_REACHED envelope; replay of a spent key does not', async () => {
     const svc = service();
-    // Five fresh single-sender composites — exactly the lifetime quota.
-    for (let i = 0; i < 5; i++) {
+    // Fresh single-sender composites — exactly the monthly quota.
+    for (let i = 0; i < FREE_LIMIT; i++) {
       const sender = await seedSender(db, mailboxId);
       await seedInboxMessage(db, mailboxId, sender.key, `m-${i}`);
       await svc.enqueueComposite({
@@ -618,21 +643,25 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
         override: false,
       });
     }
-    // The 6th fresh enqueue is denied…
-    const sixth = await seedSender(db, mailboxId);
+    // The first over-quota fresh enqueue is denied…
+    const overQuota = await seedSender(db, mailboxId);
     const err = await svc
       .enqueueComposite({
         mailboxAccountId: mailboxId,
-        selector: { type: 'sender', senderId: sixth.id },
+        selector: { type: 'sender', senderId: overQuota.id },
         primary: { type: 'archive', olderThanDays: null },
-        idempotencyKey: 'click-6',
+        idempotencyKey: 'click-over',
         override: false,
       })
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AppException);
     expect((err as AppException).code).toBe('FREE_CAP_REACHED');
     expect((err as AppException).getStatus()).toBe(402);
-    expect((err as AppException).details).toMatchObject({ remaining: 0, limit: 5, used: 5 });
+    expect((err as AppException).details).toMatchObject({
+      remaining: 0,
+      limit: FREE_LIMIT,
+      used: FREE_LIMIT,
+    });
 
     // …but a network-retried click of action #4 replays, never 402s.
     const replayedSender = await db
@@ -654,7 +683,7 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
   it('keep-intent stays exempt at the cap (policy write, never gated)', async () => {
     const svc = service();
     const sender = await seedSender(db, mailboxId);
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < FREE_LIMIT; i++) {
       await seedJob(db, mailboxId, {
         verb: 'archive',
         key: `archive-fill-${i}`,
@@ -666,10 +695,10 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
     expect(keep.activityLogId).toBeTruthy();
   });
 
-  it('multi-sender bulk requires Plus BEFORE quota accounting or writing any row', async () => {
+  it('A3: Free bulk is metered — a bulk that fits consumes N units; one that does not fit 402s atomically', async () => {
     const svc = service();
     const filler = await seedSender(db, mailboxId);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < FREE_LIMIT - 3; i++) {
       await seedJob(db, mailboxId, {
         verb: 'archive',
         key: `archive-fill-${i}`,
@@ -682,22 +711,32 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
     await seedInboxMessage(db, mailboxId, s1.key, 'b1');
     await seedInboxMessage(db, mailboxId, s2.key, 'b2');
 
+    // 3 units left — a bulk of 2 fits and consumes exactly 2.
+    const ok = await svc.enqueueBulkComposite({
+      mailboxAccountId: mailboxId,
+      senderIds: [s1.id, s2.id],
+      primary: { type: 'archive', olderThanDays: null },
+      idempotencyKey: 'bulk-click-fits',
+    });
+    expect(ok.senderCount).toBe(2);
+    const summary = await new EntitlementsService(db as never).cleanupSummary(workspaceId);
+    expect(summary).toMatchObject({ used: FREE_LIMIT - 1, remaining: 1 });
+
+    // 1 unit left — a bulk of 2 must NOT fit, and must write NOTHING
+    // (the capacity check and the inserts share one transaction).
+    const s3 = await seedSender(db, mailboxId);
+    const s4 = await seedSender(db, mailboxId);
     const before = await db.select({ id: actionJobs.id }).from(actionJobs);
-    const err = await svc
-      .enqueueBulkComposite({
+    await expect(
+      svc.enqueueBulkComposite({
         mailboxAccountId: mailboxId,
-        senderIds: [s1.id, s2.id],
+        senderIds: [s3.id, s4.id],
         primary: { type: 'archive', olderThanDays: null },
-        idempotencyKey: 'bulk-click-1',
-      })
-      .catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(AppException);
-    expect((err as AppException).code).toBe('ACTION_TIER_REQUIRED');
-    expect((err as AppException).details).toMatchObject({
-      tier: 'free',
-      requiredTier: 'plus',
-      selector: 'multi-sender',
-      verb: 'archive',
+        idempotencyKey: 'bulk-click-overflow',
+      }),
+    ).rejects.toMatchObject({
+      code: 'FREE_CAP_REACHED',
+      details: { remaining: 1, requiredUnits: 2 },
     });
     const after = await db.select({ id: actionJobs.id }).from(actionJobs);
     expect(after.length).toBe(before.length); // nothing was written
@@ -706,7 +745,7 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
   it('a fresh unsubscribe consumes one Free unit; replay at the cap succeeds; a new intent 402s', async () => {
     const svc = service();
     const sender = await seedSender(db, mailboxId);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < FREE_LIMIT - 1; i++) {
       await seedJob(db, mailboxId, {
         verb: 'archive',
         key: `archive-fill-unsub-${i}`,
@@ -721,7 +760,7 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
       idempotencyKey: 'free-unsub-fifth',
     });
     expect(await new EntitlementsService(db as never).cleanupSummary(workspaceId)).toMatchObject({
-      used: 5,
+      used: FREE_LIMIT,
       remaining: 0,
     });
 
@@ -753,7 +792,7 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
   it('unsubscribe with a backlog action preflights two units and writes nothing when only one remains', async () => {
     const svc = service();
     const sender = await seedSender(db, mailboxId);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < FREE_LIMIT - 1; i++) {
       await seedJob(db, mailboxId, {
         verb: 'archive',
         key: `archive-fill-backlog-${i}`,
@@ -773,7 +812,7 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
       code: 'FREE_CAP_REACHED',
       details: { remaining: 1, requiredUnits: 2 },
     });
-    expect(await db.select().from(actionJobs)).toHaveLength(4);
+    expect(await db.select().from(actionJobs)).toHaveLength(FREE_LIMIT - 1);
     expect(await db.select().from(activityLog)).toHaveLength(0);
   });
 });

@@ -7,6 +7,7 @@ import {
   COMPOSITE_PRIMARY_VERBS,
   SELECTOR_TYPES,
 } from '../contracts/verb-constants';
+import { SELECTOR_TIERS } from '../entitlements/pricing.config';
 import { ACTION_REGISTRY, listActionDescriptors } from './manifest-entries';
 import { ACTION_SEMANTICS } from './action-semantics';
 
@@ -138,6 +139,8 @@ describe('Action Registry (ADR-0015)', () => {
     const tiers = COMPOSITE_PRIMARY_VERBS.map(
       (verb) => ACTION_REGISTRY[verb].capabilities['multi-sender']?.tier,
     );
-    expect(new Set(tiers)).toEqual(new Set(['plus']));
+    // Invariant, not a value pin: ONE shared tier, whatever the config
+    // says it is (the exact value lives in the pricing snapshot test).
+    expect(new Set(tiers)).toEqual(new Set([SELECTOR_TIERS['multi-sender']]));
   });
 });

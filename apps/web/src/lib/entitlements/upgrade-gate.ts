@@ -5,8 +5,8 @@
  *
  * The BE's entitlement gates return 402 with one of three codes:
  *
- *   - `FREE_CAP_REACHED`   — a Free workspace spent its 5 lifetime
- *     cleanup actions (action enqueue paths).
+ *   - `FREE_CAP_REACHED`   — a Free workspace spent its monthly
+ *     cleanup-action quota (action enqueue paths).
  *   - `INBOX_LIMIT_REACHED` — connecting another Gmail account would
  *     exceed the tier's inbox limit (connect path).
  *   - `ACTION_TIER_REQUIRED` — the requested Action Registry selector
@@ -24,6 +24,8 @@
 
 import { create } from 'zustand';
 
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
 import { ApiError } from '@/lib/api/client';
 
 /** Scalar context the FREE_CAP_REACHED 402 attaches to `details`. */
@@ -32,6 +34,8 @@ export interface FreeCapDetails {
   limit: number;
   used: number;
   requiredUnits: number;
+  /** Next anniversary reset (ISO) — server-computed; null if absent. */
+  resetsAt: string | null;
 }
 
 /** Scalar context the INBOX_LIMIT_REACHED 402 attaches to `details`. */
@@ -67,13 +71,25 @@ export const useUpgradeGateStore = create<UpgradeGateState>((set) => ({
   dismiss: () => set({ hit: null }),
 }));
 
-/** D19 defaults — used when a malformed envelope omits `details`. */
-const FREE_CAP_FALLBACK: FreeCapDetails = { remaining: 0, limit: 5, used: 5, requiredUnits: 1 };
+/**
+ * Config-derived defaults — used when a malformed envelope omits
+ * `details`. Never a literal: the quota number comes from the pricing
+ * config so this surface cannot invent a figure it was never told.
+ */
+const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
+const FREE_CAP_FALLBACK: FreeCapDetails = {
+  remaining: 0,
+  limit: FREE_LIMIT,
+  used: FREE_LIMIT,
+  requiredUnits: 1,
+  resetsAt: null,
+};
 const INBOX_LIMIT_FALLBACK: InboxLimitDetails = { limit: 1, connected: 1 };
 const ACTION_TIER_FALLBACK: ActionTierDetails = {
   tier: 'free',
-  requiredTier: 'plus',
-  selector: 'multi-sender',
+  // A3: the only selector above Free is all-matching (Pro).
+  requiredTier: 'pro',
+  selector: 'sender-filter',
   verb: 'archive',
 };
 
@@ -95,6 +111,7 @@ export function upgradeGateHitFrom(error: unknown): UpgradeGateHit | null {
         limit: asCount(d['limit'], FREE_CAP_FALLBACK.limit),
         used: asCount(d['used'], FREE_CAP_FALLBACK.used),
         requiredUnits: asCount(d['requiredUnits'], FREE_CAP_FALLBACK.requiredUnits),
+        resetsAt: typeof d['resetsAt'] === 'string' ? d['resetsAt'] : null,
       },
     };
   }
@@ -148,7 +165,7 @@ function asWorkspaceTier(value: unknown): ActionTierDetails['tier'] {
 }
 
 function asRequiredTier(value: unknown): ActionTierDetails['requiredTier'] {
-  return value === 'pro' ? 'pro' : ACTION_TIER_FALLBACK.requiredTier;
+  return value === 'plus' || value === 'pro' ? value : ACTION_TIER_FALLBACK.requiredTier;
 }
 
 function asSelector(value: unknown): ActionTierDetails['selector'] {

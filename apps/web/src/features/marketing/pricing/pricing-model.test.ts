@@ -110,13 +110,11 @@ describe('compareRows — derived from the manifest', () => {
     }
   });
 
-  it('shows the Free lifetime cleanup quota from the manifest, not a literal', () => {
+  it('shows the Free monthly cleanup quota from the config, not a literal', () => {
     const cleanupRow = compareRows().find((r) => r.label === CAPABILITY_LABELS['cleanup-actions']);
     const compareIds = TIER_IDS.filter((id) => TIER_MANIFEST[id].purchasable);
     const freeIdx = compareIds.indexOf('free');
-    expect(cleanupRow?.values[freeIdx]).toBe(
-      `${TIER_MANIFEST.free.cleanupActionsLifetime} lifetime`,
-    );
+    expect(cleanupRow?.values[freeIdx]).toBe(`${TIER_MANIFEST.free.cleanupActionsPerMonth}/month`);
     const proIdx = compareIds.indexOf('pro');
     expect(cleanupRow?.values[proIdx]).toBe('Unlimited');
   });
@@ -141,18 +139,19 @@ describe('compareRows — derived from the manifest', () => {
 });
 
 describe('cardBullets — manifest-derived card copy', () => {
-  it('Free enumerates its surfaces and shows the lifetime quota', () => {
+  it('Free enumerates its surfaces and shows the monthly quota', () => {
     const bullets = cardBullets(TIER_MANIFEST.free);
     expect(bullets).toContain(
-      `${TIER_MANIFEST.free.cleanupActionsLifetime} lifetime cleanup actions to taste`,
+      `${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month`,
     );
     expect(bullets).toContain(CAPABILITY_LABELS.senders);
   });
 
-  it('Plus stacks on Free and lifts the cleanup quota', () => {
+  it('Plus stacks on Free and lifts the cleanup quota (A3: Triage already Free)', () => {
     const bullets = cardBullets(TIER_MANIFEST.plus);
     expect(bullets).toContain('Everything in Free');
-    expect(bullets).toContain(CAPABILITY_LABELS.triage);
+    // Triage lives in Free now — Plus adds no surface, only volume.
+    expect(bullets).not.toContain(CAPABILITY_LABELS.triage);
     expect(bullets).toContain('Unlimited cleanup actions');
   });
 

@@ -5,7 +5,7 @@
 
 import type { ActionTier } from '../contracts/verb-constants';
 import { ACTION_TIER_RANK } from '../contracts/verb-constants';
-import { TIER_MANIFEST } from './manifest';
+import { TIER_MANIFEST } from './pricing.config';
 import { TIER_IDS, type Capability, type TierDefinition, type TierId } from './types';
 
 /** The full manifest entry for a tier. */
@@ -27,7 +27,7 @@ export function minimumTierForCapability(capability: Capability): TierId {
   return tier;
 }
 
-/** Connected-Gmail-account limit (D19: Free 1 / Plus 1 / Pro 2). */
+/** Connected-Gmail-account limit (D19/A3: Free 1 / Plus 1 / Pro 3). */
 export function inboxLimitFor(id: TierId): number {
   return TIER_MANIFEST[id].inboxLimit;
 }
@@ -38,13 +38,13 @@ export function undoWindowDaysFor(id: TierId): number {
 }
 
 /**
- * Lifetime cleanup-action quota — Free = 5, everything else `null`
- * (unlimited). Drawn down by Action Registry verbs whose selector
- * capability has `countsAsCleanup: true` (the seam with
- * actions/manifest-entries.ts).
+ * Monthly cleanup-action quota — Free = 50/month on the signup
+ * anniversary, everything else `null` (unlimited). Drawn down by verbs
+ * whose `COUNTS_AS_CLEANUP` entry is true (pricing.config.ts). The
+ * period itself is computed server-side (`cleanupPeriodFor`).
  */
-export function cleanupActionsLifetimeFor(id: TierId): number | null {
-  return TIER_MANIFEST[id].cleanupActionsLifetime;
+export function cleanupActionsPerMonthFor(id: TierId): number | null {
+  return TIER_MANIFEST[id].cleanupActionsPerMonth;
 }
 
 /**

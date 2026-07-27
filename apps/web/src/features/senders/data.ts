@@ -22,7 +22,12 @@ import {
   type ActionVerb as RegistryActionVerb,
   type SelectorType,
 } from '@declutrmail/shared/actions';
-import { satisfiesActionTier, type TierId } from '@declutrmail/shared/entitlements';
+import {
+  SELECTOR_TIERS,
+  TIER_MANIFEST,
+  satisfiesActionTier,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 import type { GmailCategory, LastReviewWire, SenderListRow } from '@/lib/api/senders';
 
 /**
@@ -302,6 +307,16 @@ export function verbDisplay(verb: ActionVerb): { label: string; shortcut: string
  * so Free's five single-sender actions cannot accidentally unlock the
  * Plus multi-select workflow in the Senders UI.
  */
+/**
+ * The plan that unlocks multi-sender bulk, from the pricing config —
+ * copy must never write a plan name as a literal (A3 Leak 2). With
+ * bulk on Free this line renders for nobody; it stays derived so a
+ * future retier keeps the copy truthful automatically.
+ */
+export function multiSenderPlanName(): string {
+  return TIER_MANIFEST[SELECTOR_TIERS['multi-sender']].name;
+}
+
 export function canUseActionSelector(
   tier: TierId,
   verb: Exclude<ActionVerb, 'Protect'>,

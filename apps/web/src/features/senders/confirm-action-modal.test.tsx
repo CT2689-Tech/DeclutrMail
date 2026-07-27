@@ -176,6 +176,72 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+  it('states quota usage when the action fits, from server-supplied numbers (A3)', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+        cleanupQuota={{ remaining: 12, resetsAt: '2026-08-27T10:00:00.000Z' }}
+      />,
+    );
+    expect(
+      screen.getByText(/Uses 1 of your 12 cleanup actions left this month/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Archive/ })).toBeEnabled();
+  });
+
+  it('swaps confirm for a truthful upgrade action when the quota cannot cover a bulk (A3)', () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    const second = makeSender({ id: 'sender-q2', displayName: 'Quota Two', email: 'q2@x.com' });
+    const bulkRequest: ActionRequest = { verb: 'Archive', senders: [sender, second] };
+    const bulkData = {
+      senders: [
+        { senderId: sender.id, name: sender.name, counts: buckets, protected: false },
+        { senderId: second.id, name: second.name, counts: buckets, protected: false },
+      ],
+      totals: buckets,
+      protectedCount: 0,
+    };
+    render(
+      <ConfirmActionModal
+        request={bulkRequest}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+        bulkPreview={{ data: bulkData, loading: false, error: false }}
+        cleanupQuota={{ remaining: 1, resetsAt: null }}
+      />,
+    );
+
+    expect(
+      screen.getByText(/This needs 2 cleanup actions but only 1 is left this month/),
+    ).toBeInTheDocument();
+    // No enabled confirm anywhere; the primary CTA is the upgrade action.
+    expect(screen.queryByRole('button', { name: /Archive 2 senders|^📥/ })).not.toBeInTheDocument();
+    const upgrade = screen.getByRole('button', { name: /Upgrade for unlimited cleanup/ });
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    fireEvent.click(upgrade);
+    expect(onCancel).toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('renders no quota line on an unlimited tier', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+        cleanupQuota={{ remaining: null, resetsAt: null }}
+      />,
+    );
+    expect(screen.queryByText(/left this month/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Archive/ })).toBeEnabled();
+  });
+
   it('fails closed when a refetch errors while stale counts are still on screen', () => {
     const onConfirm = vi.fn();
     render(

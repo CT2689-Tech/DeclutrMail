@@ -96,7 +96,7 @@ export const FreeCapSpent: Story<typeof UpgradeModal> = {
   render: (_args: ComponentProps<typeof UpgradeModal>) =>
     frame('free', {
       reason: 'free_cap',
-      details: { remaining: 0, limit: 5, used: 5, requiredUnits: 1 },
+      details: { remaining: 0, limit: 5, used: 5, requiredUnits: 1, resetsAt: null },
     }),
 };
 
@@ -105,7 +105,7 @@ export const FreeCapPartial: Story<typeof UpgradeModal> = {
   render: (_args: ComponentProps<typeof UpgradeModal>) =>
     frame('free', {
       reason: 'free_cap',
-      details: { remaining: 2, limit: 5, used: 3, requiredUnits: 4 },
+      details: { remaining: 2, limit: 5, used: 3, requiredUnits: 4, resetsAt: null },
     }),
 };
 

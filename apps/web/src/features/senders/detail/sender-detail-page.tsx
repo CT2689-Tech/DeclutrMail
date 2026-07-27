@@ -1151,6 +1151,10 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         compositePreviewLoading={compositePreviewQuery.isFetching}
         compositePreviewError={compositePreviewQuery.isError}
         onRetryPreview={() => void compositePreviewQuery.refetch()}
+        cleanupQuota={{
+          remaining: auth?.me.cleanupRemaining ?? null,
+          resetsAt: auth?.me.cleanupResetsAt ?? null,
+        }}
       />
     </div>
   );

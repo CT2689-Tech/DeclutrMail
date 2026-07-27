@@ -9,6 +9,8 @@ import {
   type UnsubscribeChannel,
 } from '@declutrmail/shared/actions';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
 import type { BulkActionPreviewResult, CompositeActionPreviewResult } from '@/lib/api/use-action';
 import { isStandingProtected, verbDisplay, type ActionRequest, type ActionVerb } from './data';
 
@@ -161,6 +163,7 @@ export function ConfirmActionModal({
   bulkPreview,
   onRetryPreview,
   mailboxEmail,
+  cleanupQuota,
 }: {
   request: ActionRequest | null;
   onCancel: () => void;
@@ -189,6 +192,13 @@ export function ConfirmActionModal({
   bulkPreview?: BulkPreviewState | undefined;
   /** Re-run the live preview after a failed read. */
   onRetryPreview?: (() => void) | undefined;
+  /**
+   * A3 — the workspace's cleanup-quota position from `useTier()`.
+   * `remaining: null` = unlimited (no quota line). The SERVER stays the
+   * final authority: stale client state that wrongly says "fits" gets
+   * the honest 402 → upgrade modal on confirm.
+   */
+  cleanupQuota?: { remaining: number | null; resetsAt: string | null } | undefined;
   /** Explicit override for isolated previews; app surfaces use active auth context. */
   mailboxEmail?: string | undefined;
 }) {
@@ -300,10 +310,42 @@ export function ConfirmActionModal({
   // can never sit above an enabled confirm (finding 5.5).
   const nothingToActOn = (isArchiveVerb || isDeleteVerb) && compositeCount === 0;
   const wakeAtInvalid = isLaterVerb && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
+
+  // A3 quota-aware preview. One unit = one sender acted upon; every
+  // modal verb counts (Keep never opens this modal). Bulk needs one
+  // unit per ACTIONABLE (non-protected) sender — the same set the
+  // server will charge.
+  const quotaRemaining = cleanupQuota?.remaining ?? null;
+  const unitsNeeded = isBulk
+    ? bulkPreview?.data
+      ? bulkPreview.data.senders.filter((s) => !s.protected).length
+      : (request?.senders.length ?? 0)
+    : 1;
+  const quotaShort = quotaRemaining !== null && unitsNeeded > quotaRemaining;
+
   const confirmDisabled =
     livePreviewBlocksConfirm ||
     ((isArchiveVerb || isDeleteVerb) && nothingToActOn) ||
-    wakeAtInvalid;
+    wakeAtInvalid ||
+    quotaShort;
+
+  // Swap confirm for a truthful upgrade action when the quota cannot
+  // cover this click — routed through the same upgrade-gate store the
+  // server's 402 uses, so both paths land on one UpgradeModal.
+  const reportQuotaShort = () => {
+    const limit = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
+    useUpgradeGateStore.getState().report({
+      reason: 'free_cap',
+      details: {
+        remaining: quotaRemaining ?? 0,
+        limit,
+        used: Math.max(0, limit - (quotaRemaining ?? 0)),
+        requiredUnits: unitsNeeded,
+        resetsAt: cleanupQuota?.resetsAt ?? null,
+      },
+    });
+    onCancel();
+  };
 
   // Derived ConfirmOptions for onConfirm — packages secondary into the
   // shape the BE composite endpoint expects.
@@ -1149,7 +1191,11 @@ export function ConfirmActionModal({
               ? "Couldn't load the live preview — close and retry before confirming."
               : livePreviewLoading
                 ? 'Loading the live preview — confirm stays locked until it is ready.'
-                : (recoveryCopy ?? '')}
+                : quotaShort
+                  ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
+                  : quotaRemaining !== null
+                    ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.${recoveryCopy ? ` ${recoveryCopy}` : ''}`
+                    : (recoveryCopy ?? '')}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {livePreviewUnavailable && onRetryPreview && (
@@ -1164,23 +1210,33 @@ export function ConfirmActionModal({
             >
               Cancel
             </Button>
-            <Button
-              // Delete-tone CTA fill is one of the three sanctioned
-              // `color.danger` uses (ADR-0019 §accent) — amber stays
-              // Unsubscribe's tone (ADR-0016 A5).
-              tone={isDeleteVerb ? 'danger' : danger ? 'warn' : 'primary'}
-              disabled={confirmDisabled}
-              onClick={() => onConfirm(buildConfirmOpts())}
-              iconRight={
-                <Kbd
-                  style={{ background: color.lineInverse, border: 'none', color: color.fgInverse }}
-                >
-                  ⌘⏎
-                </Kbd>
-              }
-            >
-              {confirmLabel}
-            </Button>
+            {quotaShort ? (
+              <Button tone="primary" onClick={reportQuotaShort}>
+                Upgrade for unlimited cleanup
+              </Button>
+            ) : (
+              <Button
+                // Delete-tone CTA fill is one of the three sanctioned
+                // `color.danger` uses (ADR-0019 §accent) — amber stays
+                // Unsubscribe's tone (ADR-0016 A5).
+                tone={isDeleteVerb ? 'danger' : danger ? 'warn' : 'primary'}
+                disabled={confirmDisabled}
+                onClick={() => onConfirm(buildConfirmOpts())}
+                iconRight={
+                  <Kbd
+                    style={{
+                      background: color.lineInverse,
+                      border: 'none',
+                      color: color.fgInverse,
+                    }}
+                  >
+                    ⌘⏎
+                  </Kbd>
+                }
+              >
+                {confirmLabel}
+              </Button>
+            )}
           </div>
         </div>
       </div>

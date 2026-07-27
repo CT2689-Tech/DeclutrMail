@@ -51,6 +51,7 @@ vi.mock('@/features/billing/checkout', () => ({
 }));
 
 import type { BillingSubscription } from '@declutrmail/shared/contracts';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -178,7 +179,7 @@ describe('BillingScreen — designed states', () => {
 });
 
 describe('BillingScreen — plan picker (billing live, free tier)', () => {
-  it('plan card: Free, $0, lifetime cleanup actions left, no cancel affordance', async () => {
+  it('plan card: Free, $0, monthly cleanup actions left, no cancel affordance', async () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
 
@@ -188,7 +189,11 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // "No card on file" may render ONLY with no subscription record at
     // all (a paused/ended row means the provider may hold one).
     expect(within(card).getByText(/Free forever — no card on file/)).toBeInTheDocument();
-    expect(within(card).getByText('3 of 5 lifetime cleanup actions left.')).toBeInTheDocument();
+    expect(
+      within(card).getByText(
+        `3 of ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions left this month.`,
+      ),
+    ).toBeInTheDocument();
     expect(
       within(card).queryByRole('button', { name: 'Cancel subscription' }),
     ).not.toBeInTheDocument();

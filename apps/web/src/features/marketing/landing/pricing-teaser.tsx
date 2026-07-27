@@ -12,7 +12,7 @@ import { TrackedCta } from './tracked-cta';
  * banner + money-back line, linking to /pricing for the full grid.
  *
  * Every amount and limit renders FROM the D19 manifest — re-pricing in
- * packages/shared/src/entitlements/manifest.ts flows here with no copy
+ * packages/shared/src/entitlements/pricing.config.ts flows here with no copy
  * edit.
  *
  * Client only to read the region rail (D117): these amounts must name
@@ -42,7 +42,7 @@ export function PricingTeaser() {
           </div>
           <div className="dm-mkt-tier-alt" />
           <ul className="dm-mkt-tier-feats">
-            <li>{free.cleanupActionsLifetime} cleanup actions to taste the ritual</li>
+            <li>{free.cleanupActionsPerMonth} cleanup actions every month</li>
             <li>Full sender ledger + activity journal</li>
             <li>
               {free.inboxLimit} inbox · {free.undoWindowDays}-day Activity Undo for Archive, Later,
