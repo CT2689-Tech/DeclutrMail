@@ -70,9 +70,17 @@ export class ScreenerService {
     verb: ScreenerDecideVerb;
     olderThanDays: number | null;
     wakeAt?: Date | null;
+    /**
+     * The user's explicit "act anyway" on a Protected sender (D42/D245).
+     * One sender, one deliberate click — the explicit path D245 leaves
+     * open. Defaults to false, so an unacknowledged decision still gets
+     * the 409.
+     */
+    override?: boolean;
     idempotencyKey: string;
   }): Promise<ScreenerDecideResult> {
     const { mailboxAccountId, senderId, verb, olderThanDays, wakeAt, idempotencyKey } = input;
+    const override = input.override ?? false;
 
     // Ownership + senderKey resolution (needed for the quarantine row;
     // also fails fast before any delegation on a forged id).
@@ -127,7 +135,7 @@ export class ScreenerService {
         selector: { type: 'sender', senderId },
         primary: { type: verb, olderThanDays, wakeAt: wakeAt ?? null },
         idempotencyKey,
-        override: false,
+        override,
       });
       execution = {
         kind: 'enqueued',

@@ -16,7 +16,7 @@ import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
 import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
 
@@ -24,6 +24,7 @@ import { SCREENER_COUNT_KEY, SCREENER_QUEUE_KEY, useScreenerDecide } from './api
 import {
   SCREENER_QUEUE,
   canScreenerUnsubscribe,
+  needsProtectedOverride,
   type ScreenerDecideVerb,
   type ScreenerQueueRow,
   type ScreenerScreenState,
@@ -264,6 +265,10 @@ export function ScreenerScreen({
           senderId: row.senderId,
           verb,
           ...(verb === 'later' && pending.wakeAt ? { wakeAt: pending.wakeAt } : {}),
+          // The preview named the protection and the confirm said
+          // "anyway" — carry that acknowledgement to the server, which
+          // otherwise answers 409 and strands the row (D42/D245).
+          ...(needsProtectedOverride(row, verb) ? { override: true } : {}),
         },
         {
           onSuccess: (res) => {
@@ -300,12 +305,24 @@ export function ScreenerScreen({
             // (hook-level handler); 409 PROTECTED_SENDER is a designed
             // state — no Sentry for either.
             if (err instanceof ApiError && err.status === 402) return;
-            if (!(err instanceof ApiError && err.status === 409)) {
+            // Read the CODE, not the status. `CurrentMailboxGuard` runs
+            // in front of this endpoint and answers 409 as well
+            // (NO_ACTIVE_MAILBOX / SELECT_MAILBOX / MAILBOX_NOT_OWNED),
+            // so branching on the status alone would tell a user with no
+            // connected mailbox that their SENDER was Protected.
+            const conflict = err instanceof ApiError && err.status === 409;
+            const staleProtection = apiErrorCode(err) === 'PROTECTED_SENDER';
+            if (!conflict) {
               captureFeatureException(err, { surface: 'screener', reason: `decide_${verb}` });
             }
+            // PROTECTED_SENDER means only one thing now: the row was
+            // protected AFTER this queue page loaded, so the confirm
+            // carried no override. Refetch so the reopened preview shows
+            // the acknowledgement — without this the retry 409s forever.
+            if (staleProtection) invalidateAfterDecision(qc);
             toast(
-              err instanceof ApiError && err.status === 409
-                ? `${row.senderName} is protected — unprotect it first`
+              staleProtection
+                ? `${row.senderName} is Protected — reopen the preview to confirm anyway`
                 : `Couldn't ${VERB_LABEL[verb].toLowerCase()} ${row.senderName}`,
               'warn',
             );

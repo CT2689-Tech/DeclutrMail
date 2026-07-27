@@ -17,6 +17,9 @@ export type ScreenerRecommendationVerdict = 'keep' | 'archive' | 'unsubscribe' |
 /** The five decide verbs (lowercase wire values, K/A/U/L/D). */
 export type ScreenerDecideVerb = 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
 
+/** Protection reason — mirrors the `protection_reason` pg enum (D245). */
+export type ScreenerProtectionReason = 'user_defined' | 'replied' | 'starred' | 'gmail_important';
+
 export interface ScreenerQueueRow {
   /** `screener_quarantine.id` — the queue row identity. */
   id: string;
@@ -35,6 +38,14 @@ export interface ScreenerQueueRow {
   /** Latest message's subject — D71 sample subject. Empty when none. */
   sampleSubject: string;
   unsubscribeMethod: 'one_click' | 'mailto' | 'none';
+  /**
+   * Standing protection (D42/D245). A queued sender CAN be protected —
+   * the automatic sweep covers every sender with no Screener exclusion,
+   * and Sender Detail can protect one by hand while it waits.
+   */
+  isProtected: boolean;
+  /** Why it is protected — null when it is not. */
+  protectionReason: ScreenerProtectionReason | null;
   /** Engine recommendation — null when the engine hasn't scored yet. */
   recommendation: {
     verdict: ScreenerRecommendationVerdict;
@@ -66,6 +77,31 @@ export type ScreenerScreenState =
   | { kind: 'error'; error: unknown; retry: () => void }
   | { kind: 'empty' }
   | { kind: 'ready'; rows: ScreenerQueueRow[] };
+
+/**
+ * Why this sender is Protected, in the user's own terms (D245 — "show
+ * the exact reason"). Mirrors the Triage row's wording so the same fact
+ * reads the same on every surface.
+ */
+export function protectionReasonLabel(reason: ScreenerProtectionReason | null): string {
+  if (reason === 'user_defined') return 'you marked it Protected';
+  if (reason === 'replied') return 'you replied at least 3 times';
+  if (reason === 'starred') return 'you starred a message';
+  if (reason === 'gmail_important') return 'Gmail marks it important';
+  return 'it is Protected';
+}
+
+/**
+ * Whether a decision on this row needs the explicit "act anyway"
+ * acknowledgement (D42/D245). Keep never moves mail, so it never needs
+ * one — every other verb does.
+ */
+export function needsProtectedOverride(
+  row: Pick<ScreenerQueueRow, 'isProtected'>,
+  verb: ScreenerDecideVerb,
+): boolean {
+  return row.isProtected && verb !== 'keep';
+}
 
 /** A real unsubscribe request needs a published one-click or mailto channel. */
 export function canScreenerUnsubscribe(row: ScreenerQueueRow): boolean {
@@ -106,6 +142,8 @@ export const SCREENER_QUEUE: ScreenerQueueRow[] = [
     messageCount: 1,
     sampleSubject: 'Welcome — confirm your seat preferences',
     unsubscribeMethod: 'one_click',
+    isProtected: false,
+    protectionReason: null,
     recommendation: {
       verdict: 'archive',
       confidence: 0.65,
@@ -124,6 +162,9 @@ export const SCREENER_QUEUE: ScreenerQueueRow[] = [
     messageCount: 2,
     sampleSubject: 'Your appointment on Friday, 10:30',
     unsubscribeMethod: 'none',
+    // Protected while queued — the state that used to be a silent 409.
+    isProtected: true,
+    protectionReason: 'starred',
     recommendation: {
       verdict: 'keep',
       confidence: 0.7,
@@ -142,6 +183,8 @@ export const SCREENER_QUEUE: ScreenerQueueRow[] = [
     messageCount: 2,
     sampleSubject: '48 hours only: everything 40% off',
     unsubscribeMethod: 'mailto',
+    isProtected: false,
+    protectionReason: null,
     recommendation: null,
   },
 ];

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { TriageVerdict } from '@declutrmail/db';
+import type { ProtectionReason, TriageVerdict } from '@declutrmail/db';
 import type { ActionJobStatus, CanonicalVerb } from '@declutrmail/shared/contracts';
 
 /**
@@ -49,6 +49,17 @@ export const screenerDecideRequestSchema = z
     verb: z.enum(SCREENER_DECIDE_VERBS),
     olderThanDays: z.number().int().min(1).max(3650).nullable().optional(),
     wakeAt: z.string().datetime({ offset: true }).optional(),
+    /**
+     * The explicit "act anyway" acknowledgement for a Protected sender
+     * (D42/D245). A Screener decision is one sender at a time, by hand
+     * — exactly the explicit path D245 leaves open (it excludes
+     * Protected from BULK and AUTOMATIC actions, not from a deliberate
+     * click). Without this, a sender protected while queued could never
+     * be archived/latered/deleted from the Screener at all: the
+     * delegated `enqueueComposite` answers 409 PROTECTED_SENDER and the
+     * row stays pending forever.
+     */
+    override: z.boolean().optional(),
   })
   .strict()
   .superRefine((body, ctx) => {
@@ -103,6 +114,17 @@ export interface ScreenerQueueRow {
   sampleSubject: string;
   /** Sender-level unsubscribe channel (drives the U affordance copy). */
   unsubscribeMethod: 'one_click' | 'mailto' | 'none';
+  /**
+   * Standing protection (D42/D245). A queued sender CAN be protected —
+   * the automatic sweep runs over every sender in the mailbox with no
+   * Screener exclusion, and Sender Detail can protect one by hand while
+   * it waits. The queue must carry the fact so the preview can name it
+   * and the confirm can carry the override; otherwise the decision is a
+   * silent 409.
+   */
+  isProtected: boolean;
+  /** Why it is protected — null when it is not. Drives the reason copy. */
+  protectionReason: ProtectionReason | null;
   /**
    * Engine recommendation (D71 — verdict + confidence pip + reasoning).
    * `null` when the engine hasn't scored the sender yet (decision row
