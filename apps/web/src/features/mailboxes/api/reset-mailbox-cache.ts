@@ -50,8 +50,17 @@ const MAILBOX_SCOPE_CONFLICT_CODES: ReadonlySet<string> = new Set([
  *
  * Reads the D202 envelope's code, never the bare 409 — three unrelated
  * domains share that status (see `apiErrorCode`).
+ *
+ * Also reads a plain `code` property, because not every mutation
+ * rejects with the raw `ApiError`: `useSyncNow` TRANSLATES it into a
+ * `SyncNowError` carrying the same code. An envelope-only check would
+ * silently skip every such hook — the recovery has to follow the code,
+ * not the class it arrived in.
  */
 export function isMailboxScopeConflict(error: unknown): boolean {
-  const code = apiErrorCode(error);
-  return code !== null && MAILBOX_SCOPE_CONFLICT_CODES.has(code);
+  const envelopeCode = apiErrorCode(error);
+  if (envelopeCode !== null && MAILBOX_SCOPE_CONFLICT_CODES.has(envelopeCode)) return true;
+  if (error === null || typeof error !== 'object') return false;
+  const { code } = error as { code?: unknown };
+  return typeof code === 'string' && MAILBOX_SCOPE_CONFLICT_CODES.has(code);
 }

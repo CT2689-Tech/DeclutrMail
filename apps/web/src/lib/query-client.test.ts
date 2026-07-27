@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ApiError } from '@/lib/api/client';
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
+import { SyncNowError } from '@/features/sync/api/use-sync-now';
 
 import { makeQueryClient } from './query-client';
 
@@ -128,5 +129,18 @@ describe('makeQueryClient — global mailbox-scope-conflict recovery', () => {
 
   it('leaves the cache alone for a plain network failure', async () => {
     expect((await failOn(new Error('offline'))).resetCalls).toBe(0);
+  });
+
+  it('recovers from a TRANSLATED error that carries the code (useSyncNow)', async () => {
+    // Not every mutation rejects with the raw ApiError. `useSyncNow`
+    // maps it to a SyncNowError carrying the same code, so an
+    // envelope-only check skipped that hook entirely — the recovery has
+    // to follow the code, not the class it arrived in.
+    const translated = new SyncNowError('NO_ACTIVE_MAILBOX', 'No active mailbox.');
+    expect((await failOn(translated)).resetCalls).toBeGreaterThan(0);
+  });
+
+  it('leaves the cache alone for a translated error with an unrelated code', async () => {
+    expect((await failOn(new SyncNowError('SYNC_NOT_READY', 'Not ready.'))).resetCalls).toBe(0);
   });
 });
