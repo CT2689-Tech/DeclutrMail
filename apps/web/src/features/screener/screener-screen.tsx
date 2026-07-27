@@ -16,7 +16,7 @@ import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
 import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
 
@@ -305,17 +305,23 @@ export function ScreenerScreen({
             // (hook-level handler); 409 PROTECTED_SENDER is a designed
             // state — no Sentry for either.
             if (err instanceof ApiError && err.status === 402) return;
-            const stale409 = err instanceof ApiError && err.status === 409;
-            if (!stale409) {
+            // Read the CODE, not the status. `CurrentMailboxGuard` runs
+            // in front of this endpoint and answers 409 as well
+            // (NO_ACTIVE_MAILBOX / SELECT_MAILBOX / MAILBOX_NOT_OWNED),
+            // so branching on the status alone would tell a user with no
+            // connected mailbox that their SENDER was Protected.
+            const conflict = err instanceof ApiError && err.status === 409;
+            const staleProtection = apiErrorCode(err) === 'PROTECTED_SENDER';
+            if (!conflict) {
               captureFeatureException(err, { surface: 'screener', reason: `decide_${verb}` });
             }
-            // A 409 now means only one thing: the row was protected
-            // AFTER this queue page loaded, so the confirm carried no
-            // override. Refetch so the reopened preview shows the
-            // acknowledgement — without this the retry 409s forever.
-            if (stale409) invalidateAfterDecision(qc);
+            // PROTECTED_SENDER means only one thing now: the row was
+            // protected AFTER this queue page loaded, so the confirm
+            // carried no override. Refetch so the reopened preview shows
+            // the acknowledgement — without this the retry 409s forever.
+            if (staleProtection) invalidateAfterDecision(qc);
             toast(
-              stale409
+              staleProtection
                 ? `${row.senderName} is Protected — reopen the preview to confirm anyway`
                 : `Couldn't ${VERB_LABEL[verb].toLowerCase()} ${row.senderName}`,
               'warn',

@@ -26,6 +26,13 @@ import { ScreenerScreen } from './screener-screen';
 
 vi.mock('@/lib/posthog', () => ({ track: vi.fn() }));
 vi.mock('@/lib/sentry', () => ({ captureFeatureException: vi.fn() }));
+// Toast is the only user-visible failure surface here. Partial mock —
+// everything else from the shared package stays real.
+const h = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock('@declutrmail/shared', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, toast: h.toast };
+});
 
 const protectedRow = SCREENER_QUEUE.find((r) => r.isProtected)!;
 const plainRow = SCREENER_QUEUE.find((r) => !r.isProtected)!;
@@ -208,5 +215,49 @@ describe('ScreenerScreen — the acknowledgement reaches the wire', () => {
   it('omits override entirely for an unprotected sender', async () => {
     const body = await confirmDeleteFor(plainRow);
     expect(Object.keys(body)).not.toContain('override');
+  });
+});
+
+describe('ScreenerScreen — a conflict is named from its code, not its status', () => {
+  // `CurrentMailboxGuard` runs in front of /api/screener/decide and
+  // answers 409 too (NO_ACTIVE_MAILBOX / SELECT_MAILBOX /
+  // MAILBOX_NOT_OWNED). Branching on the bare status made the handler
+  // assert a cause it had never read — telling a user with no connected
+  // mailbox that their SENDER was Protected, and refetching a queue that
+  // was not the problem.
+  it('does not call a NO_ACTIVE_MAILBOX conflict a protection problem', async () => {
+    h.toast.mockClear();
+    installFetchStub([
+      previewHandler(protectedRow, 4),
+      {
+        method: 'POST',
+        path: '/api/screener/decide',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'NO_ACTIVE_MAILBOX', message: 'No active Gmail account.' },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} />
+      </QueryWrapper>,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: new RegExp(`${protectedRow.senderName} — expand`) }),
+    );
+    fireEvent.keyDown(window, { key: 'd' });
+    await screen.findByText(/currently match in Inbox/i);
+    fireEvent.keyDown(window, { key: 'Enter' });
+
+    await waitFor(() => expect(h.toast).toHaveBeenCalled());
+    const messages = h.toast.mock.calls.map((c) => String(c[0]));
+    expect(messages.some((m) => /Couldn.t delete/i.test(m))).toBe(true);
+    expect(messages.some((m) => /Protected/i.test(m))).toBe(false);
   });
 });
