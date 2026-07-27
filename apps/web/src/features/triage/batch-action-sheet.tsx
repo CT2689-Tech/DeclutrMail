@@ -70,7 +70,7 @@ export function BatchActionSheet({
 
   if (!open || !batch) return null;
 
-  const eligible = batch.rows.filter((r) => r.protectionReason === null);
+  const eligible = batch.eligibleRows;
   const presentation = buildActionPresentation({
     verb: verb === 'Archive' ? 'archive' : 'later',
     liveCount: typeof preview === 'object' ? preview.totals.all : null,
