@@ -1111,7 +1111,10 @@ function SendersScreenContent({
               if (err instanceof ApiError && err.status === 402) return;
               // 409 NO_ACTIONABLE_SENDERS is a designed conflict (whole
               // selection protected / gone) — skip Sentry, mirror the
-              // single-sender PROTECTED_SENDER convention.
+              // single-sender convention. Read the CODE for the copy:
+              // CurrentMailboxGuard's 409s share the status, and
+              // "the selected senders are protected or gone" is a claim
+              // about SENDERS that a mailbox conflict never made.
               if (!(err instanceof ApiError && err.status === 409)) {
                 captureFeatureException(err, {
                   surface: 'senders',
@@ -1119,7 +1122,7 @@ function SendersScreenContent({
                 });
               }
               toast(
-                err instanceof ApiError && err.status === 409
+                apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS'
                   ? 'Nothing to do — the selected senders are protected or gone'
                   : `Couldn't ${primaryType} mail from ${n} senders`,
                 'warn',
