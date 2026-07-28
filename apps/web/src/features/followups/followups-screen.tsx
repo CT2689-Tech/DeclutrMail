@@ -77,7 +77,7 @@ export function FollowupsScreen() {
     return <LoadingState />;
   }
   if (query.isError) {
-    return <FollowupsErrorState error={query.error} onRetry={() => query.refetch()} />;
+    return <FollowupsErrorState onRetry={() => query.refetch()} />;
   }
 
   const rows = query.data ?? [];
@@ -542,7 +542,7 @@ function LoadingState() {
   );
 }
 
-function FollowupsErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+function FollowupsErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       style={{

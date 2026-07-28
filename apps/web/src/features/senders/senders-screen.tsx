@@ -280,7 +280,7 @@ export function SendersScreen() {
     return <LoadingState />;
   }
   if (sendersQuery.isError) {
-    return <SendersErrorState error={sendersQuery.error} onRetry={() => sendersQuery.refetch()} />;
+    return <SendersErrorState onRetry={() => sendersQuery.refetch()} />;
   }
   return (
     <SendersScreenContent
@@ -2178,7 +2178,7 @@ function LoadingState() {
 }
 
 /** D211 error branch — a distinct, retryable read failure (never an empty mailbox). */
-function SendersErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+function SendersErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       style={{

@@ -248,7 +248,7 @@ export function BillingScreen({
   // poll failure must NOT swap the screen for the error state — its
   // "no charge was made" copy would be false, and the poll self-heals.
   if (view.kind === 'read_failed') {
-    return <BillingErrorState error={view.error} onRetry={() => subscriptionQuery.refetch()} />;
+    return <BillingErrorState onRetry={() => subscriptionQuery.refetch()} />;
   }
   // Malformed 200 body — honest ignorance, never TIER_MANIFEST[garbage].
   if (view.kind === 'unknown') {
@@ -1207,7 +1207,7 @@ function LoadingState() {
   );
 }
 
-function BillingErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+function BillingErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       style={{

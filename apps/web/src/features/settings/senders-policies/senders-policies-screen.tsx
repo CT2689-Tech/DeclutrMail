@@ -67,7 +67,7 @@ export function SendersPoliciesScreen() {
 
   if (sendersQuery.isLoading) return <LoadingState />;
   if (sendersQuery.isError) {
-    return <PoliciesErrorState error={sendersQuery.error} onRetry={() => sendersQuery.refetch()} />;
+    return <PoliciesErrorState onRetry={() => sendersQuery.refetch()} />;
   }
 
   return (
@@ -283,7 +283,7 @@ function LoadingState() {
   );
 }
 
-function PoliciesErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+function PoliciesErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       style={{
