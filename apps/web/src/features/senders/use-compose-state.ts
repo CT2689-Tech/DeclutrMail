@@ -18,7 +18,7 @@ import type {
   SenderListSort,
   TriStateFilter,
 } from '@/lib/api/senders';
-import { EMPTY_COMPOSE, type ComposeState } from './compose-strip';
+import { DEFAULT_COMPOSE, EMPTY_COMPOSE, type ComposeState } from './compose-strip';
 import { useSendersStore } from './store';
 
 interface SenderScope {
@@ -55,13 +55,18 @@ function parseActivity(raw: string | null): {
   activity: ActivityBucket | null;
   activityNegate: boolean;
 } {
-  if (!raw) return { activity: null, activityNegate: false };
+  // Absent param = the launch-audit B2 default: active senders only.
+  // `?activity=all` is the explicit no-filter state (what the chip
+  // toggling off / "Clear filters" writes), so the two are distinct
+  // and both round-trip through the URL.
+  if (!raw) return { activity: 'active', activityNegate: false };
+  if (raw === 'all') return { activity: null, activityNegate: false };
   const negate = raw.startsWith('not-');
   const value = negate ? raw.slice(4) : raw;
   if (value === 'active' || value === 'quiet' || value === 'dormant') {
     return { activity: value, activityNegate: negate };
   }
-  return { activity: null, activityNegate: false };
+  return { activity: 'active', activityNegate: false };
 }
 
 function parseTri(raw: string | null): TriStateFilter {
@@ -137,7 +142,12 @@ function writeScope(params: URLSearchParams, scope: SenderScope): void {
   }
 
   const { compose } = scope;
-  if (compose.activity) {
+  // Mirror of `parseActivity`: the default (active, non-negated) writes
+  // nothing so pristine URLs stay clean; "no activity filter" writes the
+  // explicit `all` sentinel so it survives a refresh.
+  if (compose.activity === null) {
+    params.set('activity', 'all');
+  } else if (compose.activity !== 'active' || compose.activityNegate) {
     params.set('activity', compose.activityNegate ? `not-${compose.activity}` : compose.activity);
   }
   if (compose.unsubReady === true) params.set('unsub_ready', 'true');
@@ -183,7 +193,7 @@ export function useComposeState(): {
   const paramsSnapshot = appRouter?.params.toString() ?? null;
   const storeScope = useSendersStore.getState();
   const fallback: SenderScope = {
-    compose: EMPTY_COMPOSE,
+    compose: DEFAULT_COMPOSE,
     query: '',
     sort: parseSort(storeScope.sort),
     direction: storeScope.direction,
