@@ -24,6 +24,18 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-07-27 — Create `unsubscribe-token-secret-prod` BEFORE merging the D162/D165 email PR
+**Source:** feat/d162-react-email-templates (React Email + RFC 8058 one-click unsubscribe)
+**Why:** The PR binds `UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest` on BOTH Cloud Run services (worker signs the token at enqueue, API verifies Gmail's POST). Per the deploy workflow's own rule, a referenced Secret Manager secret that doesn't exist **fails the whole deploy** — so the secret must exist before the merge-triggered deploy runs. Without the env var the worker's sync-ready email handler throws at enqueue (fail-closed, loud in Sentry) and sync emails stop.
+**How:**
+1. `openssl rand -base64 48 | tr -d '\n' | gcloud secrets create unsubscribe-token-secret-prod --data-file=- --project declutrmail-ai-prod`
+2. Confirm the runtime SA can read it (same `secretmanager.secretAccessor` binding pattern as the other `-prod` secrets).
+3. Merge the PR; deploy proceeds.
+4. AFTER deploy: run the `email-smoke` GH Action, open the received message in Gmail, confirm the native **Unsubscribe** control renders next to the sender, click it, and verify the preference flipped: `SELECT preferences->'emailPrefs' FROM users WHERE email='<founder-address>';`
+5. Also add a matching dev value to `.env.local` (`UNSUBSCRIBE_TOKEN_SECRET=<any 32+ chars>`) so the local worker can sign.
+**Verifies by:** deploy green; smoke email carries `List-Unsubscribe` + `List-Unsubscribe-Post` headers (Show original); Gmail renders the control; psql shows the clicked category `false`; `docs/runbooks/secrets-inventory.md` row gets its `Rotated` date.
+**Status:** Open
+
 ### 2026-07-26 — The CI deploy SA cannot read Secret Manager or the API SA's IAM policy — the snapshot's two most security-relevant sections have never been captured
 **Source:** PR #380 — the first honest `infra-snapshot` run ([30191656010](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/30191656010)), which surfaced this within minutes of the sentinel fix landing
 **Why:** In CI, `secret_manager` and `iam.declutrmail_api_sa` both serialize as `null` — the read did not happen. `GCP_DEPLOY_SA` evidently lacks `roles/secretmanager.viewer` (or `.secretAccessor`) and `roles/iam.serviceAccountViewer` on `declutrmail-ai-prod`. Everything else captures fine: Cloud Run revisions/env/traffic for both services, Atlas head (`0049`, at latest), and 19 GitHub secrets via the new PAT. **This was always true and was structurally invisible** — under the previous code a failed read returned `[]`/`{}`, so the daily snapshot asserted "Secret Manager holds zero secrets" and "the API service account has zero IAM bindings", producing a permanently clean diff for precisely the two resources whose drift matters most. Note the asymmetry that makes the diagnosis certain: `declutrmail_worker_sa` reads `{"not_found": true}` because Google evaluates existence before permission, while `declutrmail_api_sa` — which does exist — reads `null`. Different unknowns, and until this PR both rendered as `{}`.
