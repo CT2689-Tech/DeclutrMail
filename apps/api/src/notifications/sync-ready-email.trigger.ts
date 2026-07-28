@@ -13,7 +13,7 @@ import {
 
 import type { DrizzleDb } from '../db/db.module.js';
 import { syncCompleteEmail, syncReminder24hEmail } from './templates/index.js';
-import { unsubscribeHeaders } from './unsubscribe-headers.js';
+import { unsubscribeHeadersFor, unsubscribeUrl } from './unsubscribe-headers.js';
 
 /**
  * D6 / D162 — `mailbox.sync_ready` → transactional email trigger.
@@ -79,10 +79,20 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
       return;
     }
 
+    // One token per send, feeding BOTH the RFC 8058 header and the
+    // visible in-body link — the header alone does not discharge
+    // CAN-SPAM §7704(a)(5) / GDPR Art. 21(2), and most clients other
+    // than Gmail render no native control at all.
+    const completeUnsubscribe = await unsubscribeUrl({
+      userId: mailbox.userId,
+      category: 'syncComplete',
+      apiUrl: deps.apiUrl,
+    });
     const complete = await syncCompleteEmail({
       mailboxEmail: mailbox.mailboxEmail,
       messageCount: payload.messageCount,
       appUrl,
+      unsubscribeUrl: completeUnsubscribe,
     });
     await enqueueEmailSend(deps.emailQueue, {
       kind: 'sync-complete',
@@ -90,16 +100,21 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
       subject: complete.subject,
       text: complete.text,
       ...(complete.html === undefined ? {} : { html: complete.html }),
-      headers: await unsubscribeHeaders({
-        userId: mailbox.userId,
-        category: 'syncComplete',
-        apiUrl: deps.apiUrl,
-      }),
+      headers: unsubscribeHeadersFor(completeUnsubscribe),
       idempotencyKey: syncCompleteEmailJobId(eventId),
       mailboxAccountId: payload.mailboxAccountId,
     });
 
-    const reminder = await syncReminder24hEmail({ mailboxEmail: mailbox.mailboxEmail, appUrl });
+    const reminderUnsubscribe = await unsubscribeUrl({
+      userId: mailbox.userId,
+      category: 'reminders',
+      apiUrl: deps.apiUrl,
+    });
+    const reminder = await syncReminder24hEmail({
+      mailboxEmail: mailbox.mailboxEmail,
+      appUrl,
+      unsubscribeUrl: reminderUnsubscribe,
+    });
     await enqueueEmailSend(
       deps.emailQueue,
       {
@@ -108,11 +123,7 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
         subject: reminder.subject,
         text: reminder.text,
         ...(reminder.html === undefined ? {} : { html: reminder.html }),
-        headers: await unsubscribeHeaders({
-          userId: mailbox.userId,
-          category: 'reminders',
-          apiUrl: deps.apiUrl,
-        }),
+        headers: unsubscribeHeadersFor(reminderUnsubscribe),
         idempotencyKey: syncReminderEmailJobId(payload.mailboxAccountId),
         mailboxAccountId: payload.mailboxAccountId,
         skipIfUserActiveSince: payload.readyAt,

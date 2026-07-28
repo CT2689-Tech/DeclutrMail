@@ -7,6 +7,7 @@ describe('sync-complete', () => {
     mailboxEmail: 'you@gmail.com',
     messageCount: 24310,
     appUrl: 'https://app.declutrmail.com',
+    unsubscribeUrl: 'https://api.declutrmail.com/api/email/unsubscribe?t=tok',
   };
 
   it('renders subject, text and html', async () => {
@@ -44,6 +45,18 @@ describe('sync-complete', () => {
     const email = await syncCompleteEmail(input);
     expect(email.html).toMatch(/#006b5f/i);
     expect(email.html).not.toMatch(/background-color:#000000/i);
+  });
+
+  it('carries a visible opt-out in BOTH the html and the text part', async () => {
+    const email = await syncCompleteEmail(input);
+    // CAN-SPAM §7704(a)(5) wants the opt-out explanation IN the message,
+    // and GDPR Art. 21(2) wants it presented separately. The
+    // List-Unsubscribe header does not discharge either, and most
+    // clients outside Gmail render no native control at all.
+    expect(email.html).toContain(input.unsubscribeUrl);
+    expect(email.html).toContain('Unsubscribe');
+    expect(email.text).toContain(`Unsubscribe: ${input.unsubscribeUrl}`);
+    expect(email.text).toContain('Email preferences: https://app.declutrmail.com/settings');
   });
 
   it('matches the snapshot', async () => {

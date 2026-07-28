@@ -79,10 +79,39 @@ export const HERO_NUMERAL = {
  * wedge and it is true of all four kinds, so it is shell-level rather
  * than per-template.
  */
+/**
+ * The in-body opt-out block for a marketing/relationship send.
+ *
+ * REQUIRED on every opt-out-able kind, never present on a required
+ * account notice. `List-Unsubscribe` alone does not discharge this:
+ * CAN-SPAM §7704(a)(5) wants the explanation IN the message, GDPR
+ * Art. 21(2) wants it presented separately from other information, and
+ * mechanically Gmail only renders its native control when sender
+ * reputation is good — Outlook desktop and most third-party mobile
+ * clients render nothing at all.
+ */
+export interface EmailOptOut {
+  /**
+   * The signed one-click URL. Same URL the List-Unsubscribe header
+   * carries: a human's click lands on the read-only GET confirmation
+   * page, Gmail's one-click POSTs it.
+   */
+  unsubscribeUrl: string;
+  /** Full preference screen, for people who want to keep some mail. */
+  preferencesUrl: string;
+}
+
+const FOOTER_LINK = {
+  color: MUTED,
+  textDecoration: 'underline',
+} as const;
+
 export function Shell(props: {
   preview: string;
   children: ReactNode;
   footer: string;
+  /** Omitted by required account notices (deletion) — D165. */
+  optOut?: EmailOptOut;
 }): ReactElement {
   return (
     <Html lang="en">
@@ -147,6 +176,18 @@ export function Shell(props: {
           <Text style={{ color: MUTED, fontSize: '12px', lineHeight: '18px', margin: '10px 0 0' }}>
             {props.footer}
           </Text>
+
+          {props.optOut ? (
+            <Text style={{ color: MUTED, fontSize: '12px', lineHeight: '18px', margin: '8px 0 0' }}>
+              <a href={props.optOut.unsubscribeUrl} style={FOOTER_LINK}>
+                Unsubscribe
+              </a>
+              {' · '}
+              <a href={props.optOut.preferencesUrl} style={FOOTER_LINK}>
+                Email preferences
+              </a>
+            </Text>
+          ) : null}
         </Container>
       </Body>
     </Html>

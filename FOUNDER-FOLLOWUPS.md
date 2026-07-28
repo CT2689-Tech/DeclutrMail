@@ -24,6 +24,20 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-07-28 — LAUNCH BLOCKER: transactional email carries no physical postal address (CAN-SPAM / CASL)
+**Source:** #406 email compliance audit (founder asked whether we meet the legal/industry bar for sending)
+**Why:** CAN-SPAM §7704(a)(5)(A)(iii) requires a **valid physical postal address of the sender** in commercial email; Canada's CASL requires it too. We ship none — not in the templates, not on the legal pages (checked: `terms`, `privacy`, `contact` have jurisdiction and email addresses, no postal address anywhere). These statutes bind on **recipient** location, so US and Canadian users pull them in regardless of the Terms' India/Mumbai jurisdiction.
+
+Scope is narrower than it sounds: the two deletion emails are genuine transactional/relationship messages and are **exempt**. The exposure is `sync-reminder-24h` (a re-engagement nudge — regulators treat these as commercial) and the deferred D126 Part 3 sequence, which is unambiguously commercial. `sync-complete` is arguably transactional but ships opt-out-able, so treat it as in scope.
+
+Deliberately deferred by founder decision 2026-07-28 (of the three options — virtual address / home address / defer). Rationale: pre-launch, zero real users, so practical risk today is ~nil; and the alternative was burning a home address into every recipient's permanent archive. **This does not stay deferred past first real send.**
+**How:**
+1. Obtain a usable address — a rented virtual/registered business address in India (~₹500–2000/mo) was the recommended route; a registered company address works equally well if the entity gets set up first.
+2. Add it to `packages/shared/src/copy/` as a locked constant beside the privacy copy (single source of truth, same as `PRIVACY_BADGE_HEADLINE`), and render it in the `Shell` footer of opt-out-able kinds. Ping me and this is a ~20-minute change; the footer block already exists, it just needs the line.
+3. Publish the same address on the marketing site's contact/legal page — CASL expects it discoverable, not email-only.
+**Verifies by:** a rendered `sync-reminder-24h` shows the postal address in both the HTML and plain-text parts; the address appears on `/contact`.
+**Status:** Open — **must close before the first non-founder send.**
+
 ### 2026-07-27 — Create `unsubscribe-token-secret-prod` BEFORE merging the D162/D165 email PR
 **Source:** feat/d162-react-email-templates (React Email + RFC 8058 one-click unsubscribe)
 **Why:** The PR binds `UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest` on BOTH Cloud Run services (worker signs the token at enqueue, API verifies Gmail's POST). Per the deploy workflow's own rule, a referenced Secret Manager secret that doesn't exist **fails the whole deploy** — so the secret must exist before the merge-triggered deploy runs. Without the env var the worker's sync-ready email handler throws at enqueue (fail-closed, loud in Sentry) and sync emails stop.

@@ -22,6 +22,13 @@ export interface SyncCompleteEmailInput {
   messageCount: number;
   /** Web app origin, e.g. "https://app.declutrmail.com". */
   appUrl: string;
+  /**
+   * Signed one-click unsubscribe URL. REQUIRED, not optional: this kind
+   * is opt-out-able, so shipping it without a visible unsubscribe link
+   * is a CAN-SPAM/GDPR defect. Required means the type system refuses
+   * to render a non-compliant send.
+   */
+  unsubscribeUrl: string;
 }
 
 const FOOTER = 'You received this because you connected this mailbox to DeclutrMail.';
@@ -30,6 +37,7 @@ const FOOTER = 'You received this because you connected this mailbox to DeclutrM
 export async function syncCompleteEmail(input: SyncCompleteEmailInput): Promise<RenderedEmail> {
   const messages = formatCount(input.messageCount, 'message', 'messages');
   const triageUrl = `${input.appUrl}/triage`;
+  const preferencesUrl = `${input.appUrl}/settings`;
 
   const text = [
     `DeclutrMail finished indexing ${input.mailboxEmail}.`,
@@ -44,10 +52,18 @@ export async function syncCompleteEmail(input: SyncCompleteEmailInput): Promise<
     '— DeclutrMail',
     '',
     FOOTER,
+    // The plain-text alternative carries the opt-out too — a text-only
+    // reader must not be left without one.
+    `Unsubscribe: ${input.unsubscribeUrl}`,
+    `Email preferences: ${preferencesUrl}`,
   ].join('\n');
 
   const html = await renderShell(
-    <Shell preview={`${messages} indexed and ready to triage`} footer={FOOTER}>
+    <Shell
+      preview={`${messages} indexed and ready to triage`}
+      footer={FOOTER}
+      optOut={{ unsubscribeUrl: input.unsubscribeUrl, preferencesUrl }}
+    >
       <Eyebrow>Your inbox is ready</Eyebrow>
 
       {/* Hero numeral — the count is the news, so it leads at display
