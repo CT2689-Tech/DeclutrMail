@@ -18,7 +18,7 @@ import type { WorkerContext } from './worker-context.js';
  *
  * Layering: the job carries PRE-RENDERED `{subject, text}` (the
  * producer renders via the typed templates in
- * `apps/api/src/notifications/email-templates.ts`); the worker owns
+ * `apps/api/src/notifications/templates/`); the worker owns
  * execution-time decisions that must reflect CURRENT state, not
  * enqueue-time state:
  *

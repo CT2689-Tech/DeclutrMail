@@ -14,7 +14,7 @@
  */
 import { Resend } from 'resend';
 
-import { EMAIL_FROM, syncCompleteEmail } from '../src/notifications/email-templates.js';
+import { EMAIL_FROM, syncCompleteEmail } from '../src/notifications/templates/index.js';
 
 const TO = 'chintan.a.thakkar@gmail.com';
 
@@ -25,7 +25,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const rendered = syncCompleteEmail({
+  const rendered = await syncCompleteEmail({
     mailboxEmail: TO,
     messageCount: 12_345,
     appUrl: 'https://app.declutrmail.com',

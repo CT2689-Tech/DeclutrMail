@@ -3,7 +3,7 @@ import { Resend } from 'resend';
 
 import type { EmailDeliveryOutcome, EmailDeliveryPort } from '@declutrmail/workers';
 
-import { EMAIL_FROM } from './email-templates.js';
+import { EMAIL_FROM } from './templates/index.js';
 import { EmailSuppressionService } from './email-suppression.service.js';
 
 /**

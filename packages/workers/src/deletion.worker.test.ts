@@ -212,7 +212,7 @@ function makeWorker(db: Db) {
     gmailLifecycle: lifecycle.access,
     topicName: TOPIC,
     emailQueue: email.queue,
-    renderReceiptEmail: ({ deletedAt }) => ({
+    renderReceiptEmail: async ({ deletedAt }) => ({
       subject: 'Your DeclutrMail data has been deleted',
       text: `Deleted on ${deletedAt}.`,
     }),
@@ -589,7 +589,7 @@ describe('AccountDeletionPurgeWorker', () => {
       gmailLifecycle: lifecycle.access,
       topicName: TOPIC,
       emailQueue: email.queue,
-      renderReceiptEmail: () => ({ subject: 's', text: 't' }),
+      renderReceiptEmail: async () => ({ subject: 's', text: 't' }),
     });
 
     const result = await worker.processJob({ scheduledAtMinute: '2026-06-11T10:20' }, ctx);
@@ -610,7 +610,7 @@ describe('AccountDeletionPurgeWorker', () => {
       gmailLifecycle: lifecycle.access,
       topicName: TOPIC,
       emailQueue: email.queue,
-      renderReceiptEmail: () => ({ subject: 's', text: 't' }),
+      renderReceiptEmail: async () => ({ subject: 's', text: 't' }),
     });
 
     await expect(worker.processJob({ scheduledAtMinute: '2026-06-11T10:22' }, ctx)).rejects.toThrow(
@@ -839,7 +839,7 @@ describe('mailbox indexed-data purge', () => {
       topicName: null,
       emailQueue: null,
       mailboxLock: lock,
-      renderReceiptEmail: () => ({ subject: 's', text: 't' }),
+      renderReceiptEmail: async () => ({ subject: 's', text: 't' }),
     });
 
     await expect(worker.processJob({ scheduledAtMinute: '2026-07-14T10:05' }, ctx)).rejects.toThrow(

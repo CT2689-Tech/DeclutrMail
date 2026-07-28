@@ -12,7 +12,7 @@ import {
 } from '@declutrmail/workers';
 
 import type { DrizzleDb } from '../db/db.module.js';
-import { syncCompleteEmail, syncReminder24hEmail } from './email-templates.js';
+import { syncCompleteEmail, syncReminder24hEmail } from './templates/index.js';
 
 /**
  * D6 / D162 — `mailbox.sync_ready` → transactional email trigger.
@@ -72,7 +72,7 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
       return;
     }
 
-    const complete = syncCompleteEmail({
+    const complete = await syncCompleteEmail({
       mailboxEmail: mailbox.mailboxEmail,
       messageCount: payload.messageCount,
       appUrl,
@@ -86,7 +86,7 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
       mailboxAccountId: payload.mailboxAccountId,
     });
 
-    const reminder = syncReminder24hEmail({ mailboxEmail: mailbox.mailboxEmail, appUrl });
+    const reminder = await syncReminder24hEmail({ mailboxEmail: mailbox.mailboxEmail, appUrl });
     await enqueueEmailSend(
       deps.emailQueue,
       {

@@ -15,7 +15,7 @@ import { enqueueEmailSend, type EmailSendJobData } from '@declutrmail/workers';
 
 import { AppException } from '../common/app-exception.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { deletionScheduledEmail } from '../notifications/email-templates.js';
+import { deletionScheduledEmail } from '../notifications/templates/index.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { UndoService } from '../undo/undo.service.js';
 
@@ -244,7 +244,7 @@ export class AccountDeletionOrchestrator {
       return;
     }
     const appUrl = (process.env.WEB_URL ?? 'http://localhost:3000').replace(/\/$/, '');
-    const rendered = deletionScheduledEmail({
+    const rendered = await deletionScheduledEmail({
       scheduledFor: formatDateForEmail(request.effectiveAt),
       cancelUrl: `${appUrl}/settings?cancelDeletion=1`,
     });
