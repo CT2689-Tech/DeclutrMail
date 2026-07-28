@@ -16,7 +16,7 @@
 - **Canonical verbs (D227):** any verb in copy is one of Keep · Archive · Unsubscribe · Later · Delete. Never the word "Screen" in user-facing copy.
 - **Trust copy (D2.1):** the badge line is exactly `Full bodies fetched: 0`. Never "Bodies read: 0 forever."
 - **Fail-closed:** `EmailService` must never pretend-send. A missing `RESEND_API_KEY` returns `{ok:false, reason:'disabled'}` and dead-letters on attempt 1.
-- **Vitest include glob is `src/**/*.spec.ts`** (`apps/api/vitest.config.ts`) — `.test.ts` and `.tsx` files are NOT collected. Template tests are `.spec.ts` importing the `.tsx`.
+- **Vitest include glob** is `src/**/*.spec.ts` today (`apps/api/vitest.config.ts`) — `.test.ts` and `.spec.tsx` are NOT collected. Task 2 widens it to include `.spec.tsx`; until that lands, any `.spec.tsx` silently never runs. `packages/workers` uses `*.test.ts` instead — check its own config before naming files there.
 - **ESM import extensions:** intra-package imports use `.js` even when the source is `.ts`/`.tsx` (e.g. `import { x } from './foo.js'` for `foo.tsx`).
 - **Commit types:** commitlint allows only `feat|fix|chore|docs|refactor|test|perf|security`. `build` is rejected. Subject ≤50 chars, D-ref in trailing parens.
 - **Branch:** `feat/d162-react-email-templates` (already created).
