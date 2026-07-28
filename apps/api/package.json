@@ -38,6 +38,7 @@
     "ioredis": "5.10.1",
     "jose": "^6.2.3",
     "postgres": "^3.4.5",
+    "posthog-node": "^5.46.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "reflect-metadata": "^0.2.2",

@@ -13,6 +13,7 @@ import type { Request } from 'express';
 import { z } from 'zod';
 
 import { RateLimit } from '../../common/rate-limit/index.js';
+import { captureServerEvent } from '../../observability/product-analytics.js';
 import { SecurityEventsService } from '../../security-events/security-events.service.js';
 import {
   EmailSuppressionService,
@@ -148,10 +149,16 @@ export class ResendWebhookController {
     const reason = SUPPRESSING_EVENTS[event.type];
     if (!reason) {
       // Deliveries we don't act on (email.sent, email.delivered, …)
-      // ACK so Resend doesn't retry.
+      // ACK so Resend doesn't retry. Delivered is still worth counting —
+      // D126 Part 1 wants delivery visibility. No open beacon: opens are
+      // deliberately NOT tracked (founder decision 2026-07-27).
+      if (event.type === 'email.delivered') {
+        captureServerEvent('email.delivered', { emailType: event.type });
+      }
       this.logger.log(`resend.webhook.ignored type=${event.type}`);
       return { status: 'ignored' };
     }
+    captureServerEvent('email.bounced', { reason });
 
     const recipients =
       typeof event.data?.to === 'string' ? [event.data.to] : (event.data?.to ?? []);
