@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-27 — Called the unsubscribe atomic, while every OTHER preference writer could still undo it
+**PR:** [#405](https://github.com/CT2689-Tech/DeclutrMail/pull/405)
+**Caught by:** Codex stop-time review (third pass on the same endpoint)
+**What happened:** After making the one-click flip a single `jsonb_set` statement, I declared the lost-update fixed. But the invariant "an unsubscribe stays applied" is a property of every writer to `users.preferences`, not of my statement: `UsersService.patchPreferences`, its onboarding clone, and the email-prefs PATCH all did JS read-modify-write of the whole bag — any of them landing after a concurrent flip wrote their stale snapshot back, silently resubscribing the user (8 call sites: active-mailbox switch, settings sub-bags, onboarding keys, the email toggles themselves).
+**Correct approach:** Convert the writer CLASS: `patchPreferences` became an atomic top-level `preferences || $patch::jsonb`; the email-prefs PATCH now forwards only the keys it carries into a new `mergeEmailPrefs` (nested atomic sub-bag merge) instead of persisting a JS-materialized full bag. Verified on PGlite (semantics) and real postgres.js (param path). Fixed alongside `c1ea58c7`'s statement in the same PR.
+**Rule:** A concurrency invariant is only as strong as the weakest writer to the row — after making one path atomic, sweep every other writer to the same column and convert them too (fix the class, not the instance).
+**Enforcement update:** none (PGlite tests in `users.service.spec.ts` pin the only-carried-keys semantics).
+
 ## 2026-07-27 — The "raw merge" unsubscribe fix was still a read-modify-write race
 **PR:** [#405](https://github.com/CT2689-Tech/DeclutrMail/pull/405)
 **Caught by:** Codex stop-time review (second pass — the first fix survived one review round)
