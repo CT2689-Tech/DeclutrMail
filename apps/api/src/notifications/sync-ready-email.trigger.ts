@@ -79,20 +79,29 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
       return;
     }
 
-    // One token per send, feeding BOTH the RFC 8058 header and the
-    // visible in-body link — the header alone does not discharge
-    // CAN-SPAM §7704(a)(5) / GDPR Art. 21(2), and most clients other
-    // than Gmail render no native control at all.
-    const completeUnsubscribe = await unsubscribeUrl({
+    // ONE token for both sends, feeding BOTH the RFC 8058 header and
+    // the visible in-body link on each.
+    //
+    // Scope `'all'`: a footer link labelled plainly "Unsubscribe" is
+    // read as "stop sending me this kind of mail", and CAN-SPAM §316.5
+    // requires an option that stops ALL commercial mail. Turning off
+    // only the category that happened to carry the link would leave a
+    // sibling arriving and earn a spam complaint instead. Granular
+    // control lives on the settings screen.
+    //
+    // The header alone does not discharge CAN-SPAM §7704(a)(5) / GDPR
+    // Art. 21(2) either, and most clients other than Gmail render no
+    // native control at all — so both ship together.
+    const unsubscribe = await unsubscribeUrl({
       userId: mailbox.userId,
-      category: 'syncComplete',
+      scope: 'all',
       apiUrl: deps.apiUrl,
     });
     const complete = await syncCompleteEmail({
       mailboxEmail: mailbox.mailboxEmail,
       messageCount: payload.messageCount,
       appUrl,
-      unsubscribeUrl: completeUnsubscribe,
+      unsubscribeUrl: unsubscribe,
     });
     await enqueueEmailSend(deps.emailQueue, {
       kind: 'sync-complete',
@@ -100,20 +109,15 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
       subject: complete.subject,
       text: complete.text,
       ...(complete.html === undefined ? {} : { html: complete.html }),
-      headers: unsubscribeHeadersFor(completeUnsubscribe),
+      headers: unsubscribeHeadersFor(unsubscribe),
       idempotencyKey: syncCompleteEmailJobId(eventId),
       mailboxAccountId: payload.mailboxAccountId,
     });
 
-    const reminderUnsubscribe = await unsubscribeUrl({
-      userId: mailbox.userId,
-      category: 'reminders',
-      apiUrl: deps.apiUrl,
-    });
     const reminder = await syncReminder24hEmail({
       mailboxEmail: mailbox.mailboxEmail,
       appUrl,
-      unsubscribeUrl: reminderUnsubscribe,
+      unsubscribeUrl: unsubscribe,
     });
     await enqueueEmailSend(
       deps.emailQueue,
@@ -123,7 +127,7 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
         subject: reminder.subject,
         text: reminder.text,
         ...(reminder.html === undefined ? {} : { html: reminder.html }),
-        headers: unsubscribeHeadersFor(reminderUnsubscribe),
+        headers: unsubscribeHeadersFor(unsubscribe),
         idempotencyKey: syncReminderEmailJobId(payload.mailboxAccountId),
         mailboxAccountId: payload.mailboxAccountId,
         skipIfUserActiveSince: payload.readyAt,

@@ -52,7 +52,7 @@ async function main(): Promise<void> {
     // (users.id is a uuid column), and the dead uuid keeps the
     // click on the documented `user_gone` no-op path.
     userId: process.env.SMOKE_UNSUBSCRIBE_USER_ID ?? '00000000-0000-4000-8000-00000000dead',
-    category: 'syncComplete',
+    scope: 'all',
     apiUrl: process.env.API_URL ?? 'https://api.declutrmail.com',
   });
   const headers = unsubscribeHeadersFor(unsubscribe);

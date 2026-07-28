@@ -57,15 +57,35 @@ describe('UnsubscribeController', () => {
     process.env.UNSUBSCRIBE_TOKEN_SECRET = 'y'.repeat(32);
   });
 
-  it('flips exactly the category off — and materialises no defaults', async () => {
+  it('scope "all" stops EVERY opt-out-able category, not just one', async () => {
+    // The compliance case: a footer link labelled plainly "Unsubscribe"
+    // must stop all optional mail (CAN-SPAM §316.5). Turning off only
+    // the category that happened to carry the link would leave a
+    // sibling arriving — the user unsubscribes, still gets email, marks
+    // it spam.
     const db = await freshDb();
     const userId = await seedUser(db, {});
     const controller = new UnsubscribeController(db);
-    const token = await signUnsubscribeToken({ userId, category: 'reminders' });
+    const token = await signUnsubscribeToken({ userId, scope: 'all' });
 
     const res = await controller.unsubscribe(token);
 
     expect(res.status).toBe('ok');
+    expect(await readPrefs(db, userId)).toEqual({
+      emailPrefs: { reminders: false, syncComplete: false },
+    });
+  });
+
+  it('a single-category scope still narrows to just that key', async () => {
+    // Granular tokens remain honoured (never-expiring links), and must
+    // leave the sibling category untouched rather than defaulted.
+    const db = await freshDb();
+    const userId = await seedUser(db, {});
+    const controller = new UnsubscribeController(db);
+    const token = await signUnsubscribeToken({ userId, scope: 'reminders' });
+
+    await controller.unsubscribe(token);
+
     // Only the flipped key exists — the write must not bake today's
     // defaults (syncComplete: true) into storage.
     expect(await readPrefs(db, userId)).toEqual({ emailPrefs: { reminders: false } });
@@ -98,7 +118,7 @@ describe('UnsubscribeController', () => {
     const controller = new UnsubscribeController(db);
     const token = await signUnsubscribeToken({
       userId: '00000000-0000-4000-8000-00000000dead',
-      category: 'reminders',
+      scope: 'all',
     });
 
     const res = await controller.unsubscribe(token);
@@ -107,12 +127,12 @@ describe('UnsubscribeController', () => {
   });
 
   it('never resurrects an existing opt-out — only narrows', async () => {
-    // The user already opted out of reminders. Unsubscribing from
-    // syncComplete must NOT flip reminders back on.
+    // The user already opted out of reminders; unsubscribing must not
+    // flip anything back ON.
     const db = await freshDb();
     const userId = await seedUser(db, { emailPrefs: { reminders: false } });
     const controller = new UnsubscribeController(db);
-    const token = await signUnsubscribeToken({ userId, category: 'syncComplete' });
+    const token = await signUnsubscribeToken({ userId, scope: 'all' });
 
     await controller.unsubscribe(token);
 
@@ -130,7 +150,7 @@ describe('UnsubscribeController', () => {
       emailPrefs: { reminders: false, futureCategory: true },
     });
     const controller = new UnsubscribeController(db);
-    const token = await signUnsubscribeToken({ userId, category: 'syncComplete' });
+    const token = await signUnsubscribeToken({ userId, scope: 'all' });
 
     await controller.unsubscribe(token);
 
@@ -147,12 +167,14 @@ describe('UnsubscribeController', () => {
     const db = await freshDb();
     const userId = await seedUser(db, [1, 2] as unknown as Record<string, unknown>);
     const controller = new UnsubscribeController(db);
-    const token = await signUnsubscribeToken({ userId, category: 'reminders' });
+    const token = await signUnsubscribeToken({ userId, scope: 'all' });
 
     const res = await controller.unsubscribe(token);
 
     expect(res.status).toBe('ok');
-    expect(await readPrefs(db, userId)).toEqual({ emailPrefs: { reminders: false } });
+    expect(await readPrefs(db, userId)).toEqual({
+      emailPrefs: { reminders: false, syncComplete: false },
+    });
   });
 
   it('replaces a malformed non-object emailPrefs instead of no-opping', async () => {
@@ -162,18 +184,20 @@ describe('UnsubscribeController', () => {
     const db = await freshDb();
     const userId = await seedUser(db, { emailPrefs: 'corrupted' });
     const controller = new UnsubscribeController(db);
-    const token = await signUnsubscribeToken({ userId, category: 'reminders' });
+    const token = await signUnsubscribeToken({ userId, scope: 'all' });
 
     await controller.unsubscribe(token);
 
-    expect(await readPrefs(db, userId)).toEqual({ emailPrefs: { reminders: false } });
+    expect(await readPrefs(db, userId)).toEqual({
+      emailPrefs: { reminders: false, syncComplete: false },
+    });
   });
 
   it('GET never mutates, even with a perfectly valid token', async () => {
     const db = await freshDb();
     const userId = await seedUser(db, { emailPrefs: { reminders: true } });
     const controller = new UnsubscribeController(db);
-    const token = await signUnsubscribeToken({ userId, category: 'reminders' });
+    const token = await signUnsubscribeToken({ userId, scope: 'all' });
 
     // Link prefetchers (Outlook Safe Links, malware scanners) issue this
     // GET without any human involved. If it mutated, a scanner would

@@ -10,7 +10,7 @@ describe('unsubscribeUrl', () => {
 
   const input = {
     userId: '11111111-1111-4111-8111-111111111111',
-    category: 'reminders' as const,
+    scope: 'all' as const,
     apiUrl: 'https://api.declutrmail.com',
   };
 
@@ -33,7 +33,7 @@ describe('unsubscribeUrl', () => {
     const token = decodeURIComponent(new URL(url).searchParams.get('t') ?? '');
     expect(await verifyUnsubscribeToken(token)).toEqual({
       userId: input.userId,
-      category: 'reminders',
+      scope: 'all',
     });
   });
 });

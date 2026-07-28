@@ -1,6 +1,4 @@
-import type { EmailPrefs } from '@declutrmail/shared/contracts';
-
-import { signUnsubscribeToken } from './unsubscribe-token.js';
+import { signUnsubscribeToken, type UnsubscribeScope } from './unsubscribe-token.js';
 
 /**
  * The signed one-click URL for one opt-out-able send (D165).
@@ -17,12 +15,13 @@ import { signUnsubscribeToken } from './unsubscribe-token.js';
  */
 export async function unsubscribeUrl(input: {
   userId: string;
-  category: keyof EmailPrefs;
+  /** Emails ship `'all'` — see `UnsubscribeScope`. */
+  scope: UnsubscribeScope;
   apiUrl: string;
 }): Promise<string> {
   const token = await signUnsubscribeToken({
     userId: input.userId,
-    category: input.category,
+    scope: input.scope,
   });
   return `${input.apiUrl.replace(/\/$/, '')}/api/email/unsubscribe?t=${encodeURIComponent(token)}`;
 }
