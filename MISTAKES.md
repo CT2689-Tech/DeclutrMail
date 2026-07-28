@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-27 — Unsubscribe write merged over parser defaults, so it could turn opt-outs back ON
+**PR:** [#405](https://github.com/CT2689-Tech/DeclutrMail/pull/405)
+**Caught by:** Codex stop-time review
+**What happened:** The one-click unsubscribe controller built its write as `{...parseEmailPrefs(stored), [category]: false}`. `parseEmailPrefs` falls back to `DEFAULT_EMAIL_PREFS` (every category `true`) whenever the stored `emailPrefs` bag is malformed or carries a key the current strict schema doesn't know (e.g. written by a future release). Writing that materialized fallback back to the row meant an **unauthenticated** endpoint could flip a user's stored `false` back to `true` — the exact opposite of the "a stale token can only ever turn a preference OFF" property the module's own doc promised.
+**Correct approach:** Read-path parsers with default fallbacks are for READS. A write path — especially an unauthenticated one — merges over the RAW stored bag and changes exactly the one key it is entitled to change, passing unknown keys through untouched. Fixed in `9645a9d7` with regression tests for the resurrect and unknown-key cases.
+**Rule:** Never write a parser's default-filled output back to storage; a narrowing endpoint's write must be provably monotonic (only-off), which means merging raw stored state, not parsed state.
+**Enforcement update:** none (regression tests added in `unsubscribe.controller.spec.ts`).
+
 ## 2026-07-27 — Planned an unsubscribe GET that any mail scanner could fire
 **PR:** none yet (caught in the plan, `docs/superpowers/plans/2026-07-27-email-foundation.md`)
 **Caught by:** Codex stop-time review
