@@ -14,7 +14,7 @@ narrow. Four templates exist; the send path omits every header a
 production sender is expected to set; and two planned artifacts (the
 weekly value receipt, the re-engagement sequence) were never built.
 
-This arc widens the surface to eight templates, adds RFC 8058 one-click
+This arc widens the surface to twelve templates, adds RFC 8058 one-click
 unsubscribe, and ships D189's Weekly Value Receipt — without changing
 what leaves the database.
 
@@ -52,6 +52,18 @@ Infrastructure that this design builds on unchanged:
 | Resend key      | **Keep** (founder decision 2026-07-10)                               | Re-raised in error this session; ledger amended.                                                                                |
 | DMARC           | **Stay `p=none`**                                                    | SPF + DKIM verified; enforcement before reading aggregate reports risks quarantining our own mail.                              |
 
+**Scope widened later the same day.** The founder pulled the deferred
+items back in, except D61's digest, open tracking, DMARC enforcement,
+and key rotation:
+
+| Question           | Decision                | Rationale                                                                                                   |
+| ------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------- |
+| D126 P3 sequence   | **In** — Days 3/7/14/30 | Counts-only content keeps it inside the privacy posture (§9.1).                                             |
+| D189 in-app card   | **In** — §8.6           | Same `payload` as the email, so the two surfaces cannot disagree.                                           |
+| `Reply-To`         | **In, env-gated**       | Code lands now; header activates when `EMAIL_REPLY_TO` is set. Never ships bouncing.                        |
+| Pause-initiation   | **In, Paddle-only**     | Day 30 has no destination without it. Added via the existing `BillingProvider` seam, not bespoke endpoints. |
+| Tracking-layer fix | **In** — §11            | `generate-impl-log` silently destroys all D-tracking state; found while checking log-row editability.       |
+
 ## 4. Architecture
 
 ### 4.1 Template layer
@@ -80,11 +92,15 @@ the port's return type widens by one field and becomes async
 
 ### 4.2 Contract changes
 
-- `EmailSendJobData` gains `html: string`.
-- `EmailDeliveryPort.deliver()` gains `html`.
-- `EmailService` passes `html` alongside `text` → Resend sends
-  multipart.
+- `EmailSendJobData` gains `html?: string`.
+- `EmailDeliveryPort.deliver()` gains `html?`.
+- `EmailService` passes `html` alongside `text` when present → Resend
+  sends multipart; text-only when absent.
 - `EmailService` gains a `headers` parameter for List-Unsubscribe.
+
+`html` is **optional**, not required — five of the twelve templates are
+plain-text-locked by plan decisions (§4.4). A required field would
+force those five to carry an HTML body the plan forbids.
 
 Job payloads grow ~8–15KB in Redis. Acceptable at this volume; noted
 so it isn't a surprise in a future queue-sizing review.
@@ -96,6 +112,24 @@ D232 deletion receipt, whose user row is deliberately gone by send
 time). Waitlist confirmation becomes the **second** — a signup has no
 user row **by design**. The field's doc comment is widened to name both
 cases explicitly rather than letting the precedent go unexplained.
+
+### 4.4 Format matrix — which templates get HTML
+
+Not a stylistic split. Two plan decisions lock specific kinds to plain
+text, and those locks survive the move to React Email.
+
+| Template                                    | Format        | Why                                             |
+| ------------------------------------------- | ------------- | ----------------------------------------------- |
+| `sync-complete`, `sync-reminder-24h`        | HTML + text   | no lock                                         |
+| `deletion-scheduled`, `deletion-receipt`    | HTML + text   | no lock                                         |
+| `mailbox-reconnect-required`, `sync-failed` | HTML + text   | no lock                                         |
+| `waitlist-confirmation`                     | HTML + text   | no lock                                         |
+| `weekly-value-receipt`                      | **text only** | D189 specifies plain-text                       |
+| `reengage-day3/7/14/30`                     | **text only** | D126 P3: "Plain text only; no marketing chrome" |
+
+Seven multipart, five text-only. The text-only templates are still
+authored in the same `.tsx` module for one consistent authoring
+surface — they simply export no `html`.
 
 ## 5. New emails
 
@@ -216,9 +250,8 @@ weekly_value_receipts (
 )
 ```
 
-Atlas migration. `in_app_viewed_at` is written by nothing this arc —
-it exists so the deferred in-app card (§10) doesn't need a second
-migration.
+Atlas migration. `in_app_viewed_at` is written by the in-app card
+(§8.6).
 
 ### 8.2 Worker
 
@@ -290,7 +323,99 @@ If every computable number is zero, **suppress entirely** — do not
 generate the row, do not send. Per D189: sending "you did nothing this
 week" is worse than silence.
 
-## 9. Delivery telemetry
+### 8.6 In-app card
+
+D189's second surface: a card pinned to the top of Triage for 24h
+after generation, dismissible.
+
+- `GET /api/receipts/current` returns the current week's row for the
+  active user, or `null`. Pro-gated identically to the worker.
+- `POST /api/receipts/:id/dismiss` writes `in_app_viewed_at`.
+- Card renders only while `generated_at` is within 24h **and**
+  `in_app_viewed_at IS NULL`.
+- Storybook story required (D210), including the null/empty state —
+  the card must render nothing rather than a skeleton when there is no
+  receipt, since a suppressed empty week is the common case for new
+  users.
+
+The card reads the same `payload` the email renders from, so the two
+surfaces can never disagree — a single generation, two presentations.
+
+## 9. Re-engagement sequence (D126 Part 3)
+
+Four behavioral emails. All plain-text per D126 Part 3's explicit lock
+("Plain text only; no marketing chrome") — this is the one part of the
+arc that does **not** get HTML.
+
+| Step   | Condition                  | Content                        |
+| ------ | -------------------------- | ------------------------------ |
+| Day 3  | no activity since signup   | count of new senders           |
+| Day 7  | no activity in 5 days      | count of noisy senders waiting |
+| Day 14 | no activity                | 7-day counts summary           |
+| Day 30 | no activity + Pro + Paddle | pause offer                    |
+
+### 9.1 Privacy constraint
+
+D126 P3 describes Day 14 as "a Brief summary of last 7 days of email
+patterns". **Patterns means counts, not content.** Day 14 renders
+message and sender counts only — no sender names, no subjects. Any
+other reading would make Resend a Gmail-data sub-processor and drag
+D61's excluded privacy work into this arc through the back door.
+
+### 9.2 Scheduling and durable dedup
+
+A daily `ReEngagementSweepWorker` (`cronPolicy`) finds eligible users
+and enqueues, rather than BullMQ-delaying a job 30 days out. A
+30-day-delayed job is fragile against Redis eviction and job retention
+— the existing 24h reminder delay is at the edge of what that
+mechanism should carry.
+
+Because the sweep runs daily, dedup must be durable rather than
+jobId-scoped:
+
+```
+email_sequence_sends (
+  id uuid pk,
+  user_id uuid fk → users(id) on delete cascade,
+  step text not null,          -- 'day3' | 'day7' | 'day14' | 'day30'
+  sent_at timestamptz not null default now(),
+  unique (user_id, step)
+)
+```
+
+BullMQ `jobId` dedup only holds for the job-retention window; a 30-day
+sequence outlives it. The unique constraint is the real guard.
+
+"Activity" reuses the existing definition — any `active_sessions.last_used_at`
+after the reference instant, the same predicate the 24h reminder uses
+(`hasUserActivitySince`).
+
+### 9.3 Day 30 requires pause-initiation
+
+D126 P3's Day-30 copy offers to pause the subscription. No
+pause-initiation path exists today: the app renders `paused` state and
+offers **resume** (`billing.controller.ts:118`), but nothing can enter
+the state.
+
+This arc adds it via the existing `BillingProvider` seam rather than
+bespoke endpoints:
+
+- `pauseSubscription(providerSubscriptionId, resumeAt)` added to the
+  interface alongside the six methods it already carries.
+- **Paddle:** `POST /subscriptions/{id}/pause`, mirroring the ~35-line
+  `resumeSubscription` at `paddle.adapter.ts:326`.
+- **Razorpay:** typed `PAUSE_UNSUPPORTED` refusal, mirroring
+  `resumeSubscription`'s existing refusal at `razorpay.adapter.ts:222`.
+- `POST /api/billing/pause` mirroring the existing `/resume` route.
+- UI control gated exactly like `canSelfServeResume`
+  (`billing-screen.tsx:1001`).
+
+**The Day-30 email is therefore gated on `provider === 'paddle'`.**
+Razorpay Pro users receive no pause offer, because they could not act
+on it. This provider asymmetry is not new — it is the established
+pattern for self-serve resume.
+
+## 10. Delivery telemetry
 
 `ResendWebhookController` currently ACKs and discards non-suppressing
 events (`resend-webhook.controller.ts:150`). It gains a PostHog
@@ -301,22 +426,74 @@ No `email.opened`, no beacon, no per-recipient pixel identifier.
 D126 Part 1's "Brief open rate" therefore remains **partially
 unsatisfied** — recorded rather than quietly dropped.
 
-## 10. Out of scope
+## 11. Tracking-layer fixes
 
-| Item                                               | Why                                                           |
-| -------------------------------------------------- | ------------------------------------------------------------- |
-| D61 Brief email digest                             | Would make Resend a Gmail-data sub-processor                  |
-| D126 Part 3 re-engagement sequence (Day 3/7/14/30) | Separate arc; depends on the receipt's counts infrastructure  |
-| D189 in-app Triage card                            | Frontend arc. **D189 must not be marked done on this build**  |
-| `Reply-To`                                         | Blocked on `.com` mailbox delivery                            |
-| Open tracking                                      | Founder decision — conflicts with the product's privacy claim |
-| DMARC enforcement                                  | Staying `p=none`                                              |
-| Resend key rotation                                | Founder decision 2026-07-10 — keep                            |
+Two defects in the D-tracking layer, both found while checking whether
+the log rows are hand-editable.
 
-## 11. Testing
+### 11.1 `generate-impl-log` destroys state
 
-- **Unit:** template snapshots (subject + text + html) for all eight
-  kinds; `parseEmailPrefs` upgrade path for the two new keys;
+`scripts/generate-impl-log.ts:67` emits every row as:
+
+```ts
+lines.push(`| D${d.num} | ${d.title} | ⬜ |  |  |  |`);
+```
+
+It reads the existing log **only to locate the AUTO markers**, then
+rewrites all 235 rows with status hard-set to ⬜ and PR / Verified-by /
+Notes blanked. There is no merge and no keying on existing state — so
+`pnpm generate-impl-log`, a command CLAUDE.md's Quick Reference lists
+as routine, silently discards the entire tracking history. Recovery is
+git or nothing.
+
+Fix: merge by D-number. Parse existing rows, preserve the four state
+columns, update titles from the plan, and append genuinely new
+decisions as ⬜. Regression test: a log with a 🟢 row survives a
+regeneration.
+
+This may also explain §12's D165 anomaly — after a wipe, only rows
+`pr-merged.yml` subsequently re-flipped would recover. Hypothesis, not
+traced.
+
+### 11.2 Row corrections
+
+Once the generator is safe, correct the rows themselves:
+
+- **D61** 🟢 → 🟡. Its in-app leg shipped; its optional email digest
+  never did and is explicitly deferred at
+  `brief-snapshot.worker.ts:165`. A 🟢 asserts a decision is verified
+  when half of it does not exist.
+- **D165** ⬜ → 🔵. Prefs API, both toggles, settings card, and
+  execution-time enforcement all shipped.
+- **D162** 🔵 → run `verify-d`.
+
+Row edits land **after** the generator fix, so the next regeneration
+does not undo them.
+
+## 12. Out of scope
+
+| Item                        | Why                                                                |
+| --------------------------- | ------------------------------------------------------------------ |
+| D61 Brief email digest      | Would make Resend a Gmail-data sub-processor                       |
+| Open tracking               | Founder decision — conflicts with the product's privacy claim      |
+| DMARC enforcement           | Staying `p=none`                                                   |
+| Resend key rotation         | Founder decision 2026-07-10 — keep                                 |
+| Day-30 email to Razorpay    | Gated on `provider === 'paddle'`; Razorpay cannot self-serve pause |
+| D119 portal/invoice surface | Adjacent to the pause work but a separate decision's scope         |
+
+`Reply-To` is **in** scope but ships **env-gated**: the header is set
+only when `EMAIL_REPLY_TO` is present, and that variable stays unset
+until `support@declutrmail.com` `.com` delivery is verified
+(`FOUNDER-FOLLOWUPS.md:1786`). Code lands now; the header activates
+when the founder sets one variable. No bouncing Reply-To ever ships.
+| DMARC enforcement | Staying `p=none` |
+| Resend key rotation | Founder decision 2026-07-10 — keep |
+
+## 13. Testing
+
+- **Unit:** template snapshots for all twelve kinds — `subject + text + html`
+  for the seven multipart kinds, `subject + text` for the five
+  plain-text-locked ones (§4.4); `parseEmailPrefs` upgrade path for the two new keys;
   receipt computation against seeded `activity_log` /
   `triage_decisions` / `undo_journal` fixtures — **seeding ≥2 rows on
   both sides** of every correlated aggregate (the documented Drizzle
@@ -333,13 +510,17 @@ unsatisfied** — recorded rather than quietly dropped.
   message; confirm the text/plain alternative reads correctly in a
   text-only client.
 
-## 12. Appendix — full findings ledger
+## 14. Appendix — full findings ledger
 
 Everything surfaced this session, including items outside this arc, so
 none is lost to the conversation.
 
 ### Fixed by this arc
 
+0. **`pnpm generate-impl-log` wipes all D-tracking state**
+   (`scripts/generate-impl-log.ts:67`) — see §11.1. Unrelated to email;
+   found while checking whether the log rows are hand-editable. The
+   most damaging item on this list.
 1. No `List-Unsubscribe` / `-Post` / `Reply-To` / `html` on any send
    (`email.service.ts:94`).
 2. "Plain-text only — LOCKED" comment (`email-templates.ts:4`)
@@ -373,23 +554,32 @@ none is lost to the conversation.
     enforcement all shipped. Under-reported.
 12. **D162 sits 🔵**, never `verify-d`'d.
 
+### Now in scope (founder widened 2026-07-27)
+
+13. D126 Part 3 re-engagement sequence — §9.
+14. D189 in-app Triage card — §8.6.
+15. `Reply-To` — env-gated, §12.
+16. Subscription pause-initiation — §9.3, pulled in because Day 30
+    depends on it.
+
 ### Deferred, recorded
 
-13. D61 Brief digest — requires Resend in `GmailDataProcessor`, the
+17. D61 Brief digest — requires Resend in `GmailDataProcessor`, the
     D245 registry, and a privacy-page amendment.
-14. D126 Part 3 re-engagement sequence.
-15. D189 in-app Triage card.
-16. D126 Part 1 "Brief open rate" stays partially unsatisfied
+18. D126 Part 1 "Brief open rate" stays partially unsatisfied
     (delivery tracked, opens deliberately not).
-17. `support@` / `privacy@` `.com` delivery pending the domain-alias
-    add — blocks `Reply-To`.
+19. `support@` / `privacy@` `.com` delivery pending the domain-alias
+    add — the founder action that activates `Reply-To`.
+20. D119 portal / invoice surface — adjacent to pause, own scope.
+21. Razorpay self-serve pause and resume both remain unimplemented
+    (typed refusals). Day-30 email is Paddle-gated as a result.
 
 ### Checked, no action
 
-18. SPF on `send.declutrmail.com` = `include:amazonses.com` —
+22. SPF on `send.declutrmail.com` = `include:amazonses.com` —
     Resend-on-SES, correct.
-19. DMARC `p=none` on the org domain; the sending subdomain inherits
+23. DMARC `p=none` on the org domain; the sending subdomain inherits
     it. Satisfies Gmail's bulk-sender minimum.
-20. Resend key rotation — founder decision to keep (2026-07-10). The
+24. Resend key rotation — founder decision to keep (2026-07-10). The
     stale `Status: Open` ledger line was amended this session; the
     "exposed" framing is unsupported by anything in the repo.
