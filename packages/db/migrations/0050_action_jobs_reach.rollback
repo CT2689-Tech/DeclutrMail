@@ -44,7 +44,8 @@ WHERE "action_kind" = 'delete'
 UPDATE "action_jobs"
 SET "resolved_message_ids" = '{}',
     "status" = 'failed',
-    "error_code" = 'ROLLBACK_0050_ALL_MAIL_UNDO_DISARMED'
+    "error_code" = 'ROLLBACK_0050_ALL_MAIL_UNDO_DISARMED',
+    "updated_at" = now()
 FROM "undo_journal" u
 WHERE "action_jobs"."undo_token" = u."token"
   AND "action_jobs"."direction" = 'reverse'
@@ -71,7 +72,8 @@ WHERE "action_jobs"."undo_token" = u."token"
 UPDATE "action_jobs"
 SET "resolved_message_ids" = '{}',
     "status" = 'failed',
-    "error_code" = 'ROLLBACK_0050_ALL_MAIL_SCOPE_UNAVAILABLE'
+    "error_code" = 'ROLLBACK_0050_ALL_MAIL_SCOPE_UNAVAILABLE',
+    "updated_at" = now()
 WHERE "direction" = 'forward'
   AND "verb" = 'delete'
   AND "reach" = 'all_mail'
