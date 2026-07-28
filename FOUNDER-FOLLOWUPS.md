@@ -82,7 +82,7 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ### 2026-07-28 — Privacy hardening pair (latent, not leaking): worker Sentry scrubber + body-storage hook regex
 **Source:** privacy agent sweep 2026-07-28 (2 SUGGESTIONS; all 5 audit items otherwise clean)
-**Why:** (a) the API/worker Sentry path ships raw `Error.message` through the weaker key-denylist scrubber while the browser path uses the deny-by-default rebuild — a future `throw new Error(\`failed on "${'{'}subject{'}'}"\`)` would ship to Sentry unguarded; (b) `verify-no-body-storage.sh` greps object-literal `format:` syntax only — `params.set('format','full')` or flipping the METADATA_FORMAT constant passes the hook clean.
+**Why:** (a) the API/worker Sentry path ships raw `Error.message` through the weaker key-denylist scrubber while the browser path uses the deny-by-default rebuild — a future `throw new Error` that interpolates a subject into its message would ship to Sentry unguarded; (b) `verify-no-body-storage.sh` greps object-literal `format:` syntax only — `params.set('format','full')` or flipping the METADATA_FORMAT constant passes the hook clean.
 **How:** approve and I (a) route worker/API Sentry through `scrubSentryEvent`, (b) extend the hook regex to the `params.set`/constant forms.
 **Verifies by:** scrubber unit test on a message-bearing Error; hook self-test rejects the two bypass forms.
 **Status:** Open
