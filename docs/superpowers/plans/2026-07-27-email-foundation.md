@@ -75,8 +75,10 @@ Completed before this plan was written, because its outcome determined the plan'
   - `interface RenderedEmail { subject: string; text: string; html?: string }`
   - `const EMAIL_FROM = 'DeclutrMail <hello@send.declutrmail.com>'`
   - `function formatCount(count: number, singular: string, plural: string): string`
-  - `function Shell(props: { preview: string; children: React.ReactNode; footer: string }): JSX.Element`
-  - `async function renderShell(el: JSX.Element): Promise<string>`
+  - `function Shell(props: { preview: string; children: ReactNode; footer: string }): ReactElement`
+  - `async function renderShell(el: ReactElement): Promise<string>`
+
+**Use `ReactElement`, never `JSX.Element`.** React 19's `@types/react` removed the global `JSX` namespace; `JSX.Element` fails with `TS2503: Cannot find namespace 'JSX'`. Verified against this workspace.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -129,7 +131,7 @@ Expected: FAIL — `Failed to resolve import "./shell.js"`
 // apps/api/src/notifications/templates/shell.tsx
 import { Body, Container, Head, Hr, Html, Preview, Text } from '@react-email/components';
 import { render } from '@react-email/render';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 /** Rendered email — what the EmailSendWorker job carries. */
 export interface RenderedEmail {
@@ -157,7 +159,7 @@ export function Shell(props: {
   preview: string;
   children: ReactNode;
   footer: string;
-}): JSX.Element {
+}): ReactElement {
   return (
     <Html lang="en">
       <Head />
@@ -184,7 +186,7 @@ export function Shell(props: {
 }
 
 /** `render()` is async in React Email 4 — every caller must await. */
-export async function renderShell(el: JSX.Element): Promise<string> {
+export async function renderShell(el: ReactElement): Promise<string> {
   return render(el);
 }
 
@@ -895,10 +897,32 @@ describe('UnsubscribeController', () => {
     expect(res.status).toBe('ok');
     expect(updates).toHaveLength(0);
   });
+
+  it('GET never mutates, even with a perfectly valid token', async () => {
+    const { controller, updates } = build();
+    const token = await signUnsubscribeToken({ userId: 'u-1', category: 'reminders' });
+    const html = await controller.confirmPage(token);
+    // Link prefetchers (Outlook Safe Links, malware scanners) issue this
+    // GET without any human involved. If it mutated, a scanner would
+    // unsubscribe users from mail they never opened.
+    expect(updates).toHaveLength(0);
+    expect(html).toContain('<form method="POST"');
+    expect(html).toContain('Unsubscribe');
+  });
+
+  it('GET escapes the token into the form action', async () => {
+    const { controller } = build();
+    const html = await controller.confirmPage('a"><script>alert(1)</script>');
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&quot;');
+  });
 });
 ```
 
-The uniform `status: 'ok'` across all three cases is the security property under test, not an oversight: a distinguishable error would let an attacker probe which tokens are real.
+Two security properties are under test here, both deliberate:
+
+1. **Uniform `status: 'ok'`** across valid, invalid, and missing tokens. A distinguishable error would let an attacker probe which tokens — and therefore which users — exist.
+2. **GET mutates nothing.** Mail clients and corporate security products prefetch links in email. A mutating GET would let a scanner silently unsubscribe a user before they ever opened the message, with no signal to anyone about why their notifications stopped.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -909,7 +933,7 @@ Expected: FAIL — module not found
 
 ```ts
 // apps/api/src/notifications/unsubscribe.controller.ts
-import { Body, Controller, Get, Inject, Logger, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Header, Inject, Logger, Post, Query } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 
 import { users } from '@declutrmail/db';
@@ -917,6 +941,21 @@ import { parseEmailPrefs } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { verifyUnsubscribeToken } from './unsubscribe-token.js';
+
+/**
+ * The token is echoed into a form action, so it must not be able to
+ * break out of the attribute. Tokens are base64url JWTs and contain
+ * none of these characters today — this is defence against a future
+ * token format, not a live hole.
+ */
+function escapeHtmlAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
 /**
  * RFC 8058 one-click unsubscribe (D165).
@@ -930,6 +969,13 @@ import { verifyUnsubscribeToken } from './unsubscribe-token.js';
  * therefore which users) exist. The only observable effect of a valid
  * token is that one preference flips OFF — never on, never anything
  * else.
+ *
+ * ONLY POST MUTATES. The GET renders a confirmation page and touches
+ * nothing. This is not REST pedantry: mail clients and corporate
+ * security products PREFETCH links in email (Outlook Safe Links,
+ * malware scanners, proxy warmers). A GET that unsubscribed would let
+ * a scanner silently opt users out of mail they never opened, and the
+ * user would have no idea why their notifications stopped.
  */
 @Controller('email/unsubscribe')
 export class UnsubscribeController {
@@ -937,6 +983,7 @@ export class UnsubscribeController {
 
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
 
+  /** The mutating route. Gmail's one-click POST lands here. */
   @Post()
   async unsubscribe(
     @Query('t') queryToken?: string,
@@ -946,10 +993,35 @@ export class UnsubscribeController {
     return { status: 'ok' };
   }
 
+  /**
+   * READ-ONLY. Backs the footer link a human clicks: renders a page
+   * whose button POSTs the same token. Prefetchers hit this and change
+   * nothing.
+   */
   @Get()
-  async unsubscribeViaLink(@Query('t') queryToken?: string): Promise<{ status: 'ok' }> {
-    await this.apply(queryToken);
-    return { status: 'ok' };
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  @Header('Cache-Control', 'no-store')
+  async confirmPage(@Query('t') queryToken?: string): Promise<string> {
+    // Deliberately does NOT verify the token: a verification result
+    // here would be an enumeration oracle, and there is nothing to
+    // protect — the page mutates nothing. An invalid token simply
+    // yields a POST that no-ops.
+    const token = queryToken ?? '';
+    return [
+      '<!doctype html><html lang="en"><head><meta charset="utf-8">',
+      '<meta name="viewport" content="width=device-width,initial-scale=1">',
+      '<title>Unsubscribe · DeclutrMail</title></head>',
+      '<body style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;',
+      'max-width:420px;margin:80px auto;padding:0 24px;color:#111">',
+      '<h1 style="font-size:20px;margin:0 0 12px">Turn off these emails?</h1>',
+      '<p style="color:#666;font-size:14px;line-height:20px;margin:0 0 24px">',
+      'You will still receive required account notices, such as billing',
+      'and account deletion.</p>',
+      `<form method="POST" action="/api/email/unsubscribe?t=${escapeHtmlAttr(token)}">`,
+      '<button type="submit" style="background:#000;color:#fff;border:0;',
+      'border-radius:6px;padding:10px 20px;font-size:14px;cursor:pointer">',
+      'Unsubscribe</button></form></body></html>',
+    ].join('');
   }
 
   private async apply(token: string | undefined): Promise<void> {
@@ -1323,11 +1395,22 @@ Expected: the clicked category reads `false`.
 
 View the same message as plain text (Gmail: ⋮ → Show original, or a text-only client). Confirm the text body reads as written prose, not a tag-stripped approximation.
 
-- [ ] **Step 5: Confirm system notices carry no unsubscribe control**
+- [ ] **Step 5: Prove a link prefetch cannot unsubscribe anyone**
+
+Mint a valid token, `curl` the GET as a scanner would, then confirm the preference is untouched:
+
+```bash
+curl -s "http://localhost:4000/api/email/unsubscribe?t=$TOKEN" > /dev/null
+psql "$DATABASE_URL" -c "SELECT preferences->'emailPrefs' FROM users WHERE id='$USER_ID';"
+```
+
+Expected: unchanged. Then POST the same token and confirm it flips. If the GET mutated, every mail scanner on the internet is an unsubscribe button.
+
+- [ ] **Step 6: Confirm system notices carry no unsubscribe control**
 
 Trigger a `deletion-scheduled` email in dev and confirm **no** `List-Unsubscribe` header is present — a required account notice must not offer an opt-out it will not honour.
 
-- [ ] **Step 6: Open the PR**
+- [ ] **Step 7: Open the PR**
 
 ```bash
 git push -u origin feat/d162-react-email-templates
