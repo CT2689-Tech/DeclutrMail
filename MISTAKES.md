@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-27 — The "raw merge" unsubscribe fix was still a read-modify-write race
+**PR:** [#405](https://github.com/CT2689-Tech/DeclutrMail/pull/405)
+**Caught by:** Codex stop-time review (second pass — the first fix survived one review round)
+**What happened:** The parser-defaults fix (entry below) kept the SELECT-then-UPDATE shape, just merging the raw bag instead of parsed output. Under concurrency that is still a lost-update: a settings PATCH landing between the two statements gets overwritten by the handler's stale snapshot — which can resurrect a just-set opt-out and clobber sibling preference keys (`activeMailboxId`, `onboardingSkipped`). Mail scanners fire one-click POSTs at delivery time, so concurrent-with-user-activity is the normal case, not the edge.
+**Correct approach:** One atomic in-database mutation: `jsonb_set(...)` computed from the row's current value under its row lock (single UPDATE ... RETURNING, no prior SELECT), with a CASE arm repairing a non-object `emailPrefs` because `jsonb_set` silently no-ops on a broken intermediate path. Tests moved from a fake db to PGlite — a fake cannot exercise `jsonb_set` semantics, which is what made the first fix look done. Fixed in `c1ea58c7`; verified against real Postgres (shape after flip: exactly one key, siblings intact).
+**Rule:** A guarantee about concurrent state ("only ever narrows") must hold in ONE statement — if the invariant spans a SELECT and an UPDATE, it does not exist; and test JSONB mutations on a real engine, never a fake.
+**Enforcement update:** none (PGlite regression tests in `unsubscribe.controller.spec.ts`).
+
 ## 2026-07-27 — Unsubscribe write merged over parser defaults, so it could turn opt-outs back ON
 **PR:** [#405](https://github.com/CT2689-Tech/DeclutrMail/pull/405)
 **Caught by:** Codex stop-time review
