@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-28 — The atomic jsonb merges regressed malformed ROOT bags the JS spread had tolerated
+**PR:** [#405](https://github.com/CT2689-Tech/DeclutrMail/pull/405)
+**Caught by:** Codex stop-time review (fourth pass on the same surface)
+**What happened:** The atomic conversions (entries below) guarded a non-object `emailPrefs` SUB-bag but assumed the ROOT of `users.preferences` is an object. jsonb `||` on an array/scalar root CONCATENATES into an array (`'[1,2]' || '{"a":1}'` → `[1,2,{"a":1}]`), and `jsonb_set` with a text path on an array root RAISES an error — a 500 on the endpoint whose contract is a uniform 200. The replaced JS `{...spread}` had degraded a malformed root to an object, so the "safer" SQL was strictly worse on that input. Verified against real Postgres before fixing.
+**Correct approach:** Repair the root in the same statement — `CASE WHEN jsonb_typeof(preferences) = 'object' THEN preferences ELSE '{}'::jsonb END` as the base of every merge (all four statements), with PGlite tests seeding array roots.
+**Rule:** When replacing a JS merge with jsonb operators, enumerate non-object inputs at EVERY level of the path, not just the level being patched — `||` corrupts on a non-object root and `jsonb_set` throws on it, and the behavior parity you owe is with the code you deleted.
+**Enforcement update:** none (array-root tests pinned in `users.service.spec.ts` + `unsubscribe.controller.spec.ts`).
+
 ## 2026-07-27 — Called the unsubscribe atomic, while every OTHER preference writer could still undo it
 **PR:** [#405](https://github.com/CT2689-Tech/DeclutrMail/pull/405)
 **Caught by:** Codex stop-time review (third pass on the same endpoint)
