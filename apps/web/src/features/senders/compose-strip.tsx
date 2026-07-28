@@ -63,6 +63,18 @@ export const EMPTY_COMPOSE: ComposeState = {
   unsubIgnored: false,
 };
 
+/**
+ * First-visit compose (launch-audit B2). A pristine `/senders` URL
+ * opens on ACTIVE senders only — the landing page promises a shortlist,
+ * so the first screen must not be every sender ever seen. "All" stays
+ * one tap away (the active chip toggles off → `?activity=all`), and
+ * `EMPTY_COMPOSE` remains what "Clear filters" resolves to.
+ */
+export const DEFAULT_COMPOSE: ComposeState = {
+  ...EMPTY_COMPOSE,
+  activity: 'active',
+};
+
 export interface ComposeCounts {
   total: number;
   active: number;
