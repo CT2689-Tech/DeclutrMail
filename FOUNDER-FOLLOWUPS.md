@@ -94,13 +94,6 @@ section to the Done section. Do not delete entries — the trail matters.
 **Verifies by:** replayed Resend event acks duplicate; webhook_dedup row count stops growing monotonically.
 **Status:** Open
 
-### 2026-07-28 — Standing yellow: `pnpm lint` exits 1 on main (12 unused eslint-disable warnings)
-**Source:** this session — reproduced on a clean main tree
-**Why:** repo-root lint fails while CI's lint gate presumably passes (different invocation) — the exact "permanently yellow guardrail" shape from MISTAKES; a red local gate that is always red trains ignoring it.
-**How:** approve and I remove the 12 stale `eslint-disable` directives (apps/api main.ts / sentry.ts / undo.types.ts / worker.ts, docs/eval ×2, initial-sync.worker.ts) — mechanical, no behavior.
-**Verifies by:** `pnpm lint` exits 0 on clean main.
-**Status:** Open
-
 ### 2026-07-28 — LAUNCH BLOCKER: transactional email carries no physical postal address (CAN-SPAM / CASL)
 **Source:** #406 email compliance audit (founder asked whether we meet the legal/industry bar for sending)
 **Why:** CAN-SPAM §7704(a)(5)(A)(iii) requires a **valid physical postal address of the sender** in commercial email; Canada's CASL requires it too. We ship none — not in the templates, not on the legal pages (checked: `terms`, `privacy`, `contact` have jurisdiction and email addresses, no postal address anywhere). These statutes bind on **recipient** location, so US and Canadian users pull them in regardless of the Terms' India/Mumbai jurisdiction.
