@@ -136,7 +136,7 @@ function previewHandler(row: (typeof SCREENER_QUEUE)[number], all: number) {
             olderThan180d: 0,
             olderThan365d: 0,
           },
-          recentSubjects: {
+          recentMessages: {
             all: [row.sampleSubject],
             olderThan30d: [],
             olderThan90d: [],

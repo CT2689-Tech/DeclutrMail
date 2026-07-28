@@ -234,21 +234,27 @@ export class ActionsService {
             AND ${mailMessages.isOutbound} = false
             AND ${mailMessages.internalDate} >= now() - interval '30 days'
         )`,
+        // `jsonb_agg(jsonb_build_object(...))` rather than two parallel
+        // `array_agg`s: subject and date stay atomically paired inside one
+        // row object, so they cannot drift out of order on the wire. Both
+        // fields are D7-allowlisted (`internal_date` is registered at
+        // gmail-data-inventory.ts `message.internalDate`). Postgres
+        // renders `timestamptz` inside jsonb as ISO 8601.
         recentAll: sql<
-          string[]
-        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_all <= 5), ARRAY[]::text[])`,
+          RawPreviewMessage[]
+        >`COALESCE(jsonb_agg(jsonb_build_object('subject', m.subject, 'date', m.internal_date) ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_all <= 5), '[]'::jsonb)`,
         recent30d: sql<
-          string[]
-        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_30 <= 5 AND m.internal_date <= now() - interval '30 days'), ARRAY[]::text[])`,
+          RawPreviewMessage[]
+        >`COALESCE(jsonb_agg(jsonb_build_object('subject', m.subject, 'date', m.internal_date) ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_30 <= 5 AND m.internal_date <= now() - interval '30 days'), '[]'::jsonb)`,
         recent90d: sql<
-          string[]
-        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_90 <= 5 AND m.internal_date <= now() - interval '90 days'), ARRAY[]::text[])`,
+          RawPreviewMessage[]
+        >`COALESCE(jsonb_agg(jsonb_build_object('subject', m.subject, 'date', m.internal_date) ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_90 <= 5 AND m.internal_date <= now() - interval '90 days'), '[]'::jsonb)`,
         recent180d: sql<
-          string[]
-        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_180 <= 5 AND m.internal_date <= now() - interval '180 days'), ARRAY[]::text[])`,
+          RawPreviewMessage[]
+        >`COALESCE(jsonb_agg(jsonb_build_object('subject', m.subject, 'date', m.internal_date) ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_180 <= 5 AND m.internal_date <= now() - interval '180 days'), '[]'::jsonb)`,
         recent365d: sql<
-          string[]
-        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_365 <= 5 AND m.internal_date <= now() - interval '365 days'), ARRAY[]::text[])`,
+          RawPreviewMessage[]
+        >`COALESCE(jsonb_agg(jsonb_build_object('subject', m.subject, 'date', m.internal_date) ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_365 <= 5 AND m.internal_date <= now() - interval '365 days'), '[]'::jsonb)`,
       })
       .from(
         sql`(
@@ -264,6 +270,14 @@ export class ActionsService {
           WHERE ${senderInboxActionWhere({ mailboxAccountId, senderKeys: [sender.senderKey] })}
         ) m`,
       );
+
+    const recentMessages = {
+      all: toPreviewMessages(counts?.recentAll),
+      olderThan30d: toPreviewMessages(counts?.recent30d),
+      olderThan90d: toPreviewMessages(counts?.recent90d),
+      olderThan180d: toPreviewMessages(counts?.recent180d),
+      olderThan365d: toPreviewMessages(counts?.recent365d),
+    };
 
     const nowMs = Date.now();
     const lastSeenDays = Math.max(
@@ -295,13 +309,10 @@ export class ActionsService {
       // "Show what will move" trust panel. `subject` is D7-allowlisted
       // (sender + subject + snippet + dates + labels + read state);
       // no body, no attachment, no header-outside-allowlist surfaced.
-      recentSubjects: {
-        all: counts?.recentAll ?? [],
-        olderThan30d: counts?.recent30d ?? [],
-        olderThan90d: counts?.recent90d ?? [],
-        olderThan180d: counts?.recent180d ?? [],
-        olderThan365d: counts?.recent365d ?? [],
-      },
+      // Legacy subjects-only view is PROJECTED from `recentMessages`
+      // below, never queried separately, so the two cannot disagree.
+      recentSubjects: subjectsOnly(recentMessages),
+      recentMessages,
       unsubAvailable:
         sender.unsubscribeMethod === 'one_click' || sender.unsubscribeMethod === 'mailto',
       protected: Boolean(policy?.isProtected),
@@ -2246,6 +2257,51 @@ export class ActionsService {
 function toCount(raw: number | string | undefined): number {
   if (raw === undefined) return 0;
   return typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw);
+}
+
+/**
+ * Project the deprecated subjects-only view from the dated rows. Derived,
+ * never re-queried — a second query is how two views of one fact drift.
+ */
+function subjectsOnly(buckets: Record<string, { subject: string; date: string }[]>): {
+  all: string[];
+  olderThan30d: string[];
+  olderThan90d: string[];
+  olderThan180d: string[];
+  olderThan365d: string[];
+} {
+  const pick = (key: string): string[] => (buckets[key] ?? []).map((row) => row.subject);
+  return {
+    all: pick('all'),
+    olderThan30d: pick('olderThan30d'),
+    olderThan90d: pick('olderThan90d'),
+    olderThan180d: pick('olderThan180d'),
+    olderThan365d: pick('olderThan365d'),
+  };
+}
+
+/** Shape `jsonb_agg(jsonb_build_object(...))` returns before normalizing. */
+interface RawPreviewMessage {
+  subject: string | null;
+  date: string | null;
+}
+
+/**
+ * Normalize the jsonb sample rows into the wire contract. A row missing a
+ * usable `date` is DROPPED rather than emitted with a placeholder: this
+ * feeds a D226 trust panel, and a fabricated timestamp there is worse
+ * than a shorter list (§10 no-fake-data). `subject` may legitimately be
+ * '' — the column defaults to empty string — so only `date` gates.
+ */
+function toPreviewMessages(
+  raw: RawPreviewMessage[] | undefined,
+): { subject: string; date: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((row) => {
+    const date = typeof row?.date === 'string' ? row.date : null;
+    if (date === null || !Number.isFinite(Date.parse(date))) return [];
+    return [{ subject: typeof row.subject === 'string' ? row.subject : '', date }];
+  });
 }
 
 /** Closed operational projection for Redis/BullMQ cleanup failures. */

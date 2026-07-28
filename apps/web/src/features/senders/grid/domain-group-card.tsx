@@ -3,7 +3,7 @@
 /**
  * `DomainGroupCard` — one brand-rollup group row on the senders grid
  * (D51 — eTLD+1 grouping). Renders the shared registrable domain +
- * aggregate counts (senders · 30d volume · lifetime total) and an
+ * aggregate counts (senders · 30d volume · received total) and an
  * expand control; the members render as ordinary `SenderCard`s when
  * expanded (the grid owns that — this card is just the header row).
  *
@@ -26,7 +26,7 @@ export interface DomainGroupCardProps {
   senderCount: number;
   /** Sum of members' last-30d volume. */
   volume30d: number;
-  /** Sum of members' lifetime totals. */
+  /** Sum of members' received totals (`senders.total_received` — within retention, not all-time). */
   totalReceived: number;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -114,7 +114,8 @@ export function DomainGroupCard({
         >
           <GroupStat label="Senders" value={String(senderCount)} />
           <GroupStat label="30d volume" value={fmtCompact(volume30d)} />
-          <GroupStat label="Total ever" value={fmtCompact(totalReceived)} />
+          {/* "Received", never "all-time" — ADR-0014 §Neutral. */}
+          <GroupStat label="Received" value={fmtCompact(totalReceived)} />
         </div>
       </div>
 

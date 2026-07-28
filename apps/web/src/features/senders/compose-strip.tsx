@@ -730,8 +730,13 @@ const SORT_OPTIONS: ReadonlyArray<{
   label: string;
   group: string;
 }> = [
-  { sort: 'total', direction: 'desc', label: 'Most emails ever', group: 'Volume' },
-  { sort: 'total', direction: 'asc', label: 'Fewest emails ever', group: 'Volume' },
+  // Unqualified on purpose. `senders.total_received` converges nightly
+  // to COUNT(mail_messages) for the sender (SendersCounterReconciliation
+  // worker), so it is neither "ever" nor a cumulative "seen" — it is
+  // what we currently hold. This group has no competing option, so the
+  // sort needs no scope word at all (findings doc 7).
+  { sort: 'total', direction: 'desc', label: 'Most emails', group: 'Volume' },
+  { sort: 'total', direction: 'asc', label: 'Fewest emails', group: 'Volume' },
   { sort: 'last_seen', direction: 'desc', label: 'Most recent', group: 'Last seen' },
   { sort: 'last_seen', direction: 'asc', label: 'Longest quiet', group: 'Last seen' },
   { sort: 'first_seen', direction: 'desc', label: 'Newest arrivals', group: 'First seen' },

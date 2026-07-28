@@ -18,6 +18,7 @@ import {
   recordUnsubscribeManualStatus,
   recordUnsubscribeIntent,
   revertUndo,
+  normalizePreviewMessages,
 } from './actions';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 
@@ -260,5 +261,70 @@ describe('isTerminalStatus', () => {
     expect(isTerminalStatus('failed')).toBe(true);
     expect(isTerminalStatus('queued')).toBe(false);
     expect(isTerminalStatus('executing')).toBe(false);
+  });
+});
+
+// apps/api (Cloud Run) and apps/web (Vercel) deploy independently, so the
+// preview sample can arrive in EITHER shape during a skew. Before this
+// normalizer, an API-first deploy served objects to a reader that rendered
+// them as React children — which throws and takes down the D226 modal.
+describe('normalizePreviewMessages — survives a deploy skew in both directions', () => {
+  it('accepts the legacy bare-string shape', () => {
+    expect(normalizePreviewMessages(['Older message', 'Latest message'])).toEqual([
+      { subject: 'Older message', date: null },
+      { subject: 'Latest message', date: null },
+    ]);
+  });
+
+  it('accepts the current object shape', () => {
+    expect(
+      normalizePreviewMessages([{ subject: 'Latest message', date: '2026-06-20T09:00:00.000Z' }]),
+    ).toEqual([{ subject: 'Latest message', date: '2026-06-20T09:00:00.000Z' }]);
+  });
+
+  it('nulls an unparseable date rather than passing it to the renderer', () => {
+    expect(normalizePreviewMessages([{ subject: 'x', date: 'not-a-date' }])).toEqual([
+      { subject: 'x', date: null },
+    ]);
+    expect(normalizePreviewMessages([{ subject: 'x' }])).toEqual([{ subject: 'x', date: null }]);
+  });
+
+  it('tolerates a missing or non-array field', () => {
+    expect(normalizePreviewMessages(undefined)).toEqual([]);
+    expect(normalizePreviewMessages(null)).toEqual([]);
+    expect(normalizePreviewMessages({})).toEqual([]);
+  });
+
+  it('drops rows that are neither string nor object', () => {
+    expect(normalizePreviewMessages([1, null, { subject: 'ok', date: null }])).toEqual([
+      { subject: 'ok', date: null },
+    ]);
+  });
+});
+
+// All four deploy combinations, since apps/api (Cloud Run) and apps/web
+// (Vercel) never deploy atomically. The two the ADAPTER owns are covered
+// here; the old-web-bundle case is covered by the API still emitting
+// `recentSubjects` (asserted in the api contract spec).
+describe('getCompositePreview — deploy-skew matrix', () => {
+  const dated = [{ subject: 'A', date: '2026-06-20T09:00:00.000Z' }];
+
+  it('prefers recentMessages when the API is new', () => {
+    expect(normalizePreviewMessages({ recentMessages: { all: dated } }.recentMessages.all)).toEqual(
+      dated,
+    );
+  });
+
+  it('falls back to recentSubjects when the API is old (new web, old API)', () => {
+    // Old API sends no `recentMessages` at all — the adapter reads the
+    // legacy key and yields dateless rows rather than an empty panel.
+    const wire: { recentMessages?: { all: unknown }; recentSubjects?: { all: unknown } } = {
+      recentSubjects: { all: ['A', 'B'] },
+    };
+    const raw = wire.recentMessages ?? wire.recentSubjects;
+    expect(normalizePreviewMessages(raw?.all)).toEqual([
+      { subject: 'A', date: null },
+      { subject: 'B', date: null },
+    ]);
   });
 });

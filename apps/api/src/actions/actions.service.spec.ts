@@ -731,11 +731,42 @@ describe('ActionsService', () => {
       // The exclusion of `m-archived` is what matters semantically: it
       // never appears in any recent-subjects bucket because its label
       // mask lacks INBOX.
-      expect(res.recentSubjects.all).toHaveLength(5);
-      expect(res.recentSubjects.olderThan30d).toHaveLength(4);
-      expect(res.recentSubjects.olderThan90d).toHaveLength(3);
-      expect(res.recentSubjects.olderThan180d).toHaveLength(2);
-      expect(res.recentSubjects.olderThan365d).toHaveLength(1);
+      expect(res.recentMessages.all).toHaveLength(5);
+      expect(res.recentMessages.olderThan30d).toHaveLength(4);
+      expect(res.recentMessages.olderThan90d).toHaveLength(3);
+      expect(res.recentMessages.olderThan180d).toHaveLength(2);
+      expect(res.recentMessages.olderThan365d).toHaveLength(1);
+      // Every row carries a parseable `internal_date` — the panel uses it
+      // to prove the sample respects the selected window.
+      for (const row of res.recentMessages.all) {
+        expect(Number.isFinite(Date.parse(row.date))).toBe(true);
+      }
+      // Ordered newest-first, so `all[0]` is the newest INBOX message —
+      // which the FE's tied-window notice relies on for the inbox age.
+      const dates = res.recentMessages.all.map((r) => Date.parse(r.date));
+      expect([...dates].sort((a, b) => b - a)).toEqual(dates);
+    });
+
+    // apps/api (Cloud Run) and apps/web (Vercel) deploy independently. A
+    // web bundle built before 2026-07-27 renders these entries directly as
+    // React children, so handing it objects throws and kills the D226
+    // modal. The legacy subjects-only field MUST keep shipping until no
+    // deployed bundle reads it. Delete this test with the field.
+    it('still emits the legacy subjects-only view, projected from the dated rows', async () => {
+      await seedMessage(db, mailboxId, 'm-legacy-2d', ['INBOX'], daysAgo(2));
+      await seedMessage(db, mailboxId, 'm-legacy-200d', ['INBOX'], daysAgo(200));
+
+      const res = await svc.previewComposite({ mailboxAccountId: mailboxId, senderId });
+
+      for (const bucket of ['all', 'olderThan30d', 'olderThan90d', 'olderThan180d'] as const) {
+        const legacy = res.recentSubjects[bucket];
+        const dated = res.recentMessages[bucket];
+        expect(legacy).toHaveLength(dated.length);
+        // Bare strings, never objects — this is the whole point.
+        for (const entry of legacy) expect(typeof entry).toBe('string');
+        // Projected from the same rows, so the two cannot drift.
+        expect(legacy).toEqual(dated.map((row) => row.subject));
+      }
     });
 
     it('returns protected:true when the sender has a policy row', async () => {

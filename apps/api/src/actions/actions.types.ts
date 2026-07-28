@@ -492,6 +492,24 @@ export interface BatchStatusResult {
 }
 
 /**
+ * One row in the composite preview's "what currently matches" sample.
+ * `date` is the message's Gmail `internal_date` as an ISO string — the
+ * SAME column every preview bucket filters on, so a reader can verify
+ * the sample respects the window they selected.
+ */
+export interface CompositePreviewMessage {
+  subject: string;
+  /**
+   * ISO `internal_date`. Always emitted by this service — rows without a
+   * parseable date are dropped in `toPreviewMessages` rather than sent
+   * with a placeholder. The FE mirror types this `string | null` because
+   * apps/web (Vercel) and apps/api (Cloud Run) deploy independently, so
+   * its reader must survive the older `string[]` shape during a skew.
+   */
+  date: string;
+}
+
+/**
  * Composite preview (ADR-0020) — returns the sender context strip +
  * counts per time-window bucket so the FE can render the chip row with
  * accurate per-preset counts without a second roundtrip. Buckets are
@@ -518,13 +536,31 @@ export interface CompositeActionPreviewResult {
     olderThan365d: number;
   };
   /**
-   * Top 5 most-recent subjects per time-window for the "Show what will
+   * Top 5 most-recent messages per time-window for the "Show what will
    * move" trust panel (spec v1.3 — recent beats oldest for 3-sec sender
-   * recognition). Each array is ordered by `internal_date DESC`,
-   * capped at 5. Empty array when no messages match the window.
-   * `subject` is D7-allowlisted (sender + subject + snippet + dates +
-   * labels + read state) — no body, no attachment, no other header
-   * surfaces here.
+   * recognition). Ordered by `internal_date DESC`, capped at 5. Empty
+   * when no messages match the window.
+   *
+   * Carries `date` (the message's `internal_date`, ISO) alongside the
+   * subject: on a windowed action the panel shows the 5 most recent
+   * WITHIN that bucket, and without a date the user cannot check the
+   * sample respects the window they picked. Both fields are
+   * D7-allowlisted (sender + subject + snippet + dates + labels + read
+   * state) — no body, no attachment, no other header surfaces here.
+   */
+  /**
+   * @deprecated Subjects only, no dates — superseded by `recentMessages`.
+   *
+   * Still emitted because apps/api (Cloud Run) and apps/web (Vercel)
+   * deploy INDEPENDENTLY. A web bundle built before 2026-07-27 renders
+   * these entries directly as React children; handing it objects throws
+   * ("Objects are not valid as a React child") and takes down the D226
+   * confirm modal. Keeping the legacy shape makes an API-first deploy
+   * safe.
+   *
+   * Derived from `recentMessages` (never queried separately) so the two
+   * cannot drift. DELETE once no deployed web bundle reads it — verify
+   * with the Vercel deployment list before removing.
    */
   recentSubjects: {
     all: string[];
@@ -532,6 +568,14 @@ export interface CompositeActionPreviewResult {
     olderThan90d: string[];
     olderThan180d: string[];
     olderThan365d: string[];
+  };
+  /** Sample rows with their `internal_date` — the shape the FE reads. */
+  recentMessages: {
+    all: CompositePreviewMessage[];
+    olderThan30d: CompositePreviewMessage[];
+    olderThan90d: CompositePreviewMessage[];
+    olderThan180d: CompositePreviewMessage[];
+    olderThan365d: CompositePreviewMessage[];
   };
   unsubAvailable: boolean;
   protected: boolean;

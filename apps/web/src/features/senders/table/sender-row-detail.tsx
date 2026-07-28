@@ -116,7 +116,10 @@ export function SenderRowDetail({
     primary === 'unsubscribe' ? color.amber : primary === 'archive' ? color.fg : color.primary;
 
   const stats: { k: string; v: string; small?: string; valueColor?: string }[] = [
-    { k: 'Total ever', v: s.totalReceived.toLocaleString(), small: 'emails' },
+    // "Received", never "all-time" — ADR-0014 §Neutral mandates the word:
+    // `total_received` is within-retention, recounted from `mail_messages`
+    // nightly, so a completeness claim would be false (findings doc 7).
+    { k: 'Received', v: s.totalReceived.toLocaleString(), small: 'emails' },
     { k: 'Last received', v: relTimeLabel(s.lastDays) },
     {
       // `null` readRate = no timeseries yet — "—" is the honest render,

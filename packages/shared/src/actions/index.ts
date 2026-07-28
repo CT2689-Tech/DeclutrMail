@@ -28,6 +28,8 @@ export {
   getActionSemantics,
   staticActionPreviewCopy,
 } from './action-semantics';
+export { describeInboxScope, inboxScopeNoticeCopy, tiedWindowNoticeCopy } from './inbox-scope';
+export type { InboxScopeInput, InboxScopeNotice } from './inbox-scope';
 export type {
   ActionDirection,
   ActionFinality,

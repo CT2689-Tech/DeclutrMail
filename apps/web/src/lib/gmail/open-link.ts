@@ -24,6 +24,30 @@ export interface GmailFromSearchLinkInput {
   from: string;
 }
 
+/**
+ * A Gmail search scoped to the SAME set an action preview counted, so the
+ * user can eyeball the real messages in Gmail before confirming (D226
+ * trust surface).
+ *
+ * Deliberately approximate, and the UI must say so. Gmail's
+ * `older_than:` has DAY granularity while `senderInboxActionWhere`
+ * filters on an exact `internal_date` timestamp, and Gmail resolves the
+ * search live. So this link is for eyeballing the set, never a promise
+ * that Gmail's result count equals the preview count.
+ */
+export interface GmailActionScopeLinkInput {
+  mailboxEmail: string;
+  /** Sender address — matches the action's `sender_key` target. */
+  from: string;
+  /** Mirrors the preview's window chip; `null` = no time filter. */
+  olderThanDays?: number | null;
+  /**
+   * `true` mirrors the INBOX-only predicate every current verb uses.
+   * `false` widens to all mail, for the archived-reaching Delete scope.
+   */
+  inboxOnly?: boolean;
+}
+
 export interface GmailComposeLinkInput {
   mailboxEmail: string;
   to: string;
@@ -136,6 +160,28 @@ export const GmailOpenLinkService = {
     return GmailOpenLinkService.buildSearchLink({
       mailboxEmail: input.mailboxEmail,
       query: `from:${quotedSearchValue(from)}`,
+    });
+  },
+
+  /**
+   * Gmail search mirroring an action preview's target set — see
+   * `GmailActionScopeLinkInput` for why it is approximate.
+   */
+  buildActionScopeSearchLink(input: GmailActionScopeLinkInput): string | null {
+    const from = nonEmpty(input.from);
+    if (!from) return null;
+    const terms = [`from:${quotedSearchValue(from)}`];
+    // `in:inbox` is the search analogue of `'INBOX' = ANY(label_ids)`.
+    if (input.inboxOnly !== false) terms.push('in:inbox');
+    // `older_than:` is the analogue of `internal_date <= now() - Nd`.
+    // Gmail rejects a non-positive value, so guard rather than emit junk.
+    const days = input.olderThanDays;
+    if (days != null && Number.isFinite(days) && days > 0) {
+      terms.push(`older_than:${Math.floor(days)}d`);
+    }
+    return GmailOpenLinkService.buildSearchLink({
+      mailboxEmail: input.mailboxEmail,
+      query: terms.join(' '),
     });
   },
 

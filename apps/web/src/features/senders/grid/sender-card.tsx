@@ -330,13 +330,13 @@ export function SenderCard({
             variant="display"
             style={{ display: 'flex' }}
           />
-          {/* Lifetime volume — the number the default "Most emails
+          {/* Received volume — the number the default "Most emails
               ever" sort ranks by. Without it a top-ranked sender with
               a quiet month reads as a sort bug (2026-07-03 smoke:
               cards showed 72 / 0 / 8 under total-desc). Same fact the
               magnitude bar below encodes, now legible. */}
           <span
-            title="Lifetime emails received — what 'Most emails ever' sorts by"
+            title="Emails received from this sender, within DeclutrMail's retention — what 'Most emails' sorts by. Not inbox-only; deleted mail drops out."
             style={{
               fontFamily: font.mono,
               fontSize: 10.5,
@@ -345,7 +345,8 @@ export function SenderCard({
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {sender.totalReceived.toLocaleString()} ever
+            {/* "received", never "all-time" — ADR-0014 §Neutral. */}
+            {sender.totalReceived.toLocaleString()} received
           </span>
         </div>
 
@@ -373,7 +374,7 @@ export function SenderCard({
               transformOrigin: 'left center',
               // ADR-0016 §B1 — denominator is mailbox-wide MAX, not
               // a hardcoded 100. `sender.totalReceived` is the sender's
-              // lifetime inbound count; bar width is the proportion of
+              // received inbound count; bar width is the proportion of
               // the mailbox's loudest sender. Filtered view does NOT
               // rescale.
               transform: `scaleX(${

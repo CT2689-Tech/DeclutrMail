@@ -199,23 +199,151 @@ those are what D245 actually mandates.
 Ordered by user impact. None of these move the wrong mail; they display numbers that
 contradict what happens.
 
-| #    | Surface                                             | Divergence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ---- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 5.1  | Autopilot Observe banner, beside "Switch to Active" | `autopilot.read-service.ts:382` — `filter (where matched_at >= now-7d)` constrains which _match rows_ contribute, never which _messages_; the join at `:385-392` has no date predicate on `mail_messages`. So "would have archived N in the last 7 days" counts every current-inbox message of any age from any recently-matched sender. Dismissed matches also contribute (no `resolution` filter), and the stale-evidence guard is applied to `pendingTotal` (`:380`) but not to `senders7d`/`messages7d`                                                                           |
-| 5.2  | Screener heading + `screener_shown` analytics       | `screener-screen.tsx:392` falls back to `state.rows.length` when the count query is in flight or errored (`retry:false`) — that is the server page size of 50 (`screener.controller.ts:49`). A 3,000-sender backlog renders "50 new senders waiting", and fires `pending_count: 50` to analytics                                                                                                                                                                                                                                                                                      |
-| 5.3  | Any confirm modal reopened within 5 min             | `use-action.ts:176` `useCompositePreview` sets `staleTime: 0` but inherits the default 5-minute `gcTime` (`lib/query-client.ts:33` sets only `staleTime`). A cache hit makes `livePreviewReady` true (`confirm-action-modal.tsx:266-272`), so confirm is **enabled on stale data** — ⌘⏎ before the refetch lands executes against the live set                                                                                                                                                                                                                                        |
-| 5.4  | Triage domain-batch card                            | `domain-batch.ts:76-96` groups ≥3 consecutive rows **without** filtering protection, while `domain-batch-card.tsx:48` counts only unprotected. With ≥2 protected in the run the card offers "1 senders … decide together?", `useBulkActionPreview` is disabled at length 1 (`use-action.ts:222`), and the sheet sits at "Counting the inbox…" with confirm permanently disabled                                                                                                                                                                                                       |
-| 5.5  | Single vs bulk preview of the same sender           | `previewComposite` (`actions.service.ts:413`) is the **only** count in the entire action pipeline that filters `is_outbound = false`. Enqueue counting, the bulk preview, and the worker all omit it. Self-sent / self-CC mail (both `SENT` and `INBOX`) is under-counted in the single preview and over-executed. `confirm-action-modal.tsx:288-290` also gates "nothing to act on" off the unfiltered `archivePreview.inboxCount` while the headline renders the filtered `compositeCount` — so the modal can read "0 emails currently match" **with confirm enabled**, then move 1 |
-| 5.6  | Post-action receipt "X of Y changed"                | `requestedCount` is stamped at enqueue (`actions.service.ts:574-578`); `affectedCount` comes from `ids.length` at execution (`label-action.worker.ts:398`). Any inbox change in between (Autopilot sweep, incremental sync, Gmail) turns a clean success into "3 of 47 emails changed"                                                                                                                                                                                                                                                                                                |
-| 5.7  | Bulk batch receipt denominator                      | `getBatchStatus` (`actions.service.ts:1035-1036`) sums **all** sibling rows; `enqueueBulkComposite` (`:962`) returns primaries only. Bulk Later + secondary yields a permanent `'partial'` receipt reading "N of 2N emails changed"                                                                                                                                                                                                                                                                                                                                                   |
-| 5.8  | Autopilot "Switch to Active" modal                  | `activate-rule-modal.tsx:181-194` states M **messages** actionable now, uncapped, on the line above a `dailyActionCap` expressed in **actions** (100/50/25). No "already queued" dedup                                                                                                                                                                                                                                                                                                                                                                                                |
-| 5.9  | Autopilot rule card "Last run · N matched"          | `autopilot-apply.worker.ts:434-443` writes `lastRunActions: matchesForRule.length` (candidates); the actual insert is `onConflictDoNothing` and the honest counter is `inserted.length` (`:420`). A re-sweep where candidates already have pending rows writes 0 and reports the full candidate count                                                                                                                                                                                                                                                                                 |
-| 5.10 | Autopilot per-group "N waiting" above "Approve all" | `suggestion-group.tsx:76-78` renders a page-capped count (50, `contracts/autopilot.ts:34`) with **no `+` suffix**, directly above an uncapped `approveAllForRule`. The screen header adds `+`; the group header does not. `pendingTotal` — the uncapped truth — is on the same DTO, unused here                                                                                                                                                                                                                                                                                       |
-| 5.11 | Screener row "Messages so far: N"                   | `screener.read-service.ts:105` reads `senders.total_received` — lifetime, all labels — while the same card's preview shows INBOX-only. "Messages so far: 40" beside "2 emails currently match in Inbox"                                                                                                                                                                                                                                                                                                                                                                               |
-| 5.12 | Screener decide on a Protected sender               | `decide-preview.tsx:195` shows `counts.all` which does not exclude protection; `screener.service.ts:130` sends `override: false` → 409. Preview promises N, execution moves 0 and errors                                                                                                                                                                                                                                                                                                                                                                                              |
-| 5.13 | Selection bar verb buttons                          | `selection-bar.tsx:182` counts **senders**; the modal headline (`confirm-action-modal.tsx:929`) counts **emails**. "Archive 12" → "3 emails currently match"                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 5.14 | Sender row / card headlines                         | `monthlyVolume` (30d, all labels) and `totalReceived` (lifetime, all labels) sit next to action buttons whose modal counts INBOX-now. By design, reads as a bug                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 5.15 | `monthlyVolume ?? 0`                                | `sender-row-detail.tsx:142`, `sender-list-row.tsx:54`, `confirm-action-modal.tsx:530` coalesce a nullable wire type to a factual `0` next to action buttons. BE currently always fills it, so latent — PLAUSIBLE, not confirmed                                                                                                                                                                                                                                                                                                                                                       |
+| #    | Surface                                                      | Divergence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 5.1  | Autopilot Observe banner, beside "Switch to Active"          | `autopilot.read-service.ts:382` — `filter (where matched_at >= now-7d)` constrains which _match rows_ contribute, never which _messages_; the join at `:385-392` has no date predicate on `mail_messages`. So "would have archived N in the last 7 days" counts every current-inbox message of any age from any recently-matched sender. Dismissed matches also contribute (no `resolution` filter), and the stale-evidence guard is applied to `pendingTotal` (`:380`) but not to `senders7d`/`messages7d`                                                                                     |
+| 5.2  | Screener heading + `screener_shown` analytics                | `screener-screen.tsx:392` falls back to `state.rows.length` when the count query is in flight or errored (`retry:false`) — that is the server page size of 50 (`screener.controller.ts:49`). A 3,000-sender backlog renders "50 new senders waiting", and fires `pending_count: 50` to analytics                                                                                                                                                                                                                                                                                                |
+| 5.3  | Any confirm modal reopened within 5 min                      | `use-action.ts:176` `useCompositePreview` sets `staleTime: 0` but inherits the default 5-minute `gcTime` (`lib/query-client.ts:33` sets only `staleTime`). A cache hit makes `livePreviewReady` true (`confirm-action-modal.tsx:266-272`), so confirm is **enabled on stale data** — ⌘⏎ before the refetch lands executes against the live set                                                                                                                                                                                                                                                  |
+| 5.4  | Triage domain-batch card                                     | `domain-batch.ts:76-96` groups ≥3 consecutive rows **without** filtering protection, while `domain-batch-card.tsx:48` counts only unprotected. With ≥2 protected in the run the card offers "1 senders … decide together?", `useBulkActionPreview` is disabled at length 1 (`use-action.ts:222`), and the sheet sits at "Counting the inbox…" with confirm permanently disabled                                                                                                                                                                                                                 |
+| 5.5  | Single vs bulk preview of the same sender                    | `previewComposite` (`actions.service.ts:413`) is the **only** count in the entire action pipeline that filters `is_outbound = false`. Enqueue counting, the bulk preview, and the worker all omit it. Self-sent / self-CC mail (both `SENT` and `INBOX`) is under-counted in the single preview and over-executed. `confirm-action-modal.tsx:288-290` also gates "nothing to act on" off the unfiltered `archivePreview.inboxCount` while the headline renders the filtered `compositeCount` — so the modal can read "0 emails currently match" **with confirm enabled**, then move 1           |
+| 5.6  | Post-action receipt "X of Y changed"                         | `requestedCount` is stamped at enqueue (`actions.service.ts:574-578`); `affectedCount` comes from `ids.length` at execution (`label-action.worker.ts:398`). Any inbox change in between (Autopilot sweep, incremental sync, Gmail) turns a clean success into "3 of 47 emails changed"                                                                                                                                                                                                                                                                                                          |
+| 5.7  | Bulk batch receipt denominator                               | `getBatchStatus` (`actions.service.ts:1035-1036`) sums **all** sibling rows; `enqueueBulkComposite` (`:962`) returns primaries only. Bulk Later + secondary yields a permanent `'partial'` receipt reading "N of 2N emails changed"                                                                                                                                                                                                                                                                                                                                                             |
+| 5.8  | Autopilot "Switch to Active" modal                           | `activate-rule-modal.tsx:181-194` states M **messages** actionable now, uncapped, on the line above a `dailyActionCap` expressed in **actions** (100/50/25). No "already queued" dedup                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 5.9  | Autopilot rule card "Last run · N matched"                   | `autopilot-apply.worker.ts:434-443` writes `lastRunActions: matchesForRule.length` (candidates); the actual insert is `onConflictDoNothing` and the honest counter is `inserted.length` (`:420`). A re-sweep where candidates already have pending rows writes 0 and reports the full candidate count                                                                                                                                                                                                                                                                                           |
+| 5.10 | Autopilot per-group "N waiting" above "Approve all"          | `suggestion-group.tsx:76-78` renders a page-capped count (50, `contracts/autopilot.ts:34`) with **no `+` suffix**, directly above an uncapped `approveAllForRule`. The screen header adds `+`; the group header does not. `pendingTotal` — the uncapped truth — is on the same DTO, unused here                                                                                                                                                                                                                                                                                                 |
+| 5.11 | Screener row all-labels count — **FIXED 2026-07-27**         | `screener.read-service.ts:105` reads `senders.total_received` — all labels (and NOT a lifetime total — see finding 7) — while the same card's preview shows INBOX-only. "Messages so far: 40" beside "2 emails currently match in Inbox". Relabelled **"Messages received:"** (ADR-0014 §Neutral), and the decide preview now renders the shared `describeInboxScope` notice when the INBOX count is 0                                                                                                                                                                                          |
+| 5.12 | Screener decide on a Protected sender                        | `decide-preview.tsx:195` shows `counts.all` which does not exclude protection; `screener.service.ts:130` sends `override: false` → 409. Preview promises N, execution moves 0 and errors                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 5.13 | Selection bar verb buttons                                   | `selection-bar.tsx:182` counts **senders**; the modal headline (`confirm-action-modal.tsx:929`) counts **emails**. "Archive 12" → "3 emails currently match"                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 5.14 | Confirm-modal `/mo` over INBOX counts — **FIXED 2026-07-27** | `monthlyVolume` (30d, all labels) and `totalReceived` (all labels; the original "lifetime" reading was WRONG — finding 7) sit next to action buttons whose modal counts INBOX-now. By design, reads as a bug. This was the founder-reported bug (71 /mo above five all-zero window chips). Modal strip now reads **"71 /mo arriving"**; `describeInboxScope` reconciles the zero; the window chip row is suppressed when no window can change the outcome. List/grid cards already label their own time scope ("in last 30d"); their "ever" labels were corrected to "received" — see finding 7 |
+| 5.15 | `monthlyVolume ?? 0`                                         | `sender-row-detail.tsx:142`, `sender-list-row.tsx:54`, `confirm-action-modal.tsx:530` coalesce a nullable wire type to a factual `0` next to action buttons. BE currently always fills it, so latent — PLAUSIBLE, not confirmed. **PARTIALLY FIXED 2026-07-27** — the confirm modal now renders `—` for an unknown monthly volume. `sender-row-detail.tsx` and `sender-list-row.tsx` still coalesce to 0                                                                                                                                                                                        |
+
+---
+
+## 6. Later confirmed on an empty inbox — found while fixing 5.14 (2026-07-27)
+
+**Confirmed live, FIXED.** `nothingToActOn` (`confirm-action-modal.tsx`) gated only
+Archive and Delete, so a Later whose preview read **0** kept an ENABLED confirm.
+
+Later's entire effect is `currentMail` — `ACTION_SEMANTICS.later` has
+`futureMail.effect: 'unchanged'` and no policy delta — so at a zero count it moves
+nothing. Confirming still enqueued an `action_jobs` row, wrote an Activity entry and
+rendered a receipt for a no-op, under a footer reading "Uses 1 of your N cleanup
+actions".
+
+**Correction (same day):** an earlier revision of this finding claimed the click also
+_spent_ a cleanup unit. It does not. `EntitlementsService.cleanupUnitsUsed` excludes
+`status = 'done' AND affected_count = 0` — verified against the live DB. So the quota
+line was the thing that was wrong: it promised a cost a no-op never incurs. The gate fix
+stands on the no-op itself, not on billing harm.
+
+Fixed by keying the gate on `primaryActsOnInbox` (Archive · Later · Delete) instead of
+the hand-listed pair, and deleting the narrower duplicate test in `confirmDisabled` that
+would otherwise have silently re-excluded Later. **Unsubscribe is deliberately still
+confirmable at a zero backlog** — it cuts future mail, which is real work, and it is
+correctly charged a unit (only its `unsub:%` intent row counts; the `unsubexec-*`
+execution row is excluded by the same query).
+
+Repro (pre-fix): any sender with 0 INBOX messages → **Later** → confirm was clickable.
+`ealerts.bankofamerica.com` in the dev DB is such a sender.
+
+---
+
+## 7. `total_received` labels violated ADR-0014 — 2026-07-27
+
+**Confirmed against ADR + live data, FIXED.** Six surfaces rendered
+`senders.total_received` with a completeness claim ("Total ever" ×2, "N ever",
+"Most/Fewest emails ever", plus one introduced by the 5.11 fix earlier the same day).
+
+**ADR-0014 §Neutral already ruled on this**, and per CLAUDE.md §3 it outranks codebase
+convention:
+
+> `total_received` is "within retention," not "all-time in Gmail." **UI copy says
+> "received," never "all-time,"** consistent with the no-body privacy posture.
+
+So every "ever" label was an ADR violation, shipped. Why the ADR is right:
+
+- `SendersCounterReconciliationWorker` (`cronPolicy`, **nightly**, wired at
+  `apps/api/src/worker.ts:1196`) recounts `total_received` from `mail_messages` and
+  UPDATEs every drifted row. Its docstring names the case: _"a sender with a stale
+  non-zero count + zero remaining messages is the **retention-prune drift case**"_.
+- `InitialSyncWorker.buildSenderIndex` recomputes it by folding over surviving
+  `mail_messages` rows, and fires on **every connect, reconnect and OAuth re-grant**.
+- `handleMessageDeleted` (`incremental-sync.worker.ts:628`) drops the row without
+  decrementing — the transient over-count the nightly pass closes.
+
+**Verified empirically 2026-07-27 (dev DB, founder mailbox): 0 of 7,902 senders diverge
+from `COUNT(mail_messages WHERE is_outbound = false)`** — e.g.
+`ealerts.bankofamerica.com` 6,613 / 6,613. ADR, code and data all agree.
+
+Relabelled to the ADR's word: screener row **"Messages received:"** (with a `title`
+naming the retention + all-labels scope), `sender-row-detail` and `domain-group-card`
+**"Received"**, grid card **"N received"**. Sort options dropped the qualifier entirely —
+**"Most emails" / "Fewest emails"** — since the Volume group has no competing option.
+Senders table header is plain "Total"; left alone.
+
+**Three wrong guesses before reading the ADR.** The 5.11 fix chose "Total ever"; the
+first correction chose "seen" (wrong — enumerated only 2 of 3 writers); the second chose
+"indexed" (defensible, but not the decided word). All three were reasoned from
+`packages/db/src/schema/senders.ts`, whose comment claimed _"how many has this sender
+ever sent me"_. That comment now cites ADR-0014 and carries an explicit "NOT a lifetime
+total, despite the name".
+
+**A separate class of false claim in the same pass — two rounds of it.** The new preview
+copy first read _"…are already archived or deleted"_ (names a destination nothing checks:
+of 2,025 recent non-INBOX messages, 19 were SPAM and 1 TRASH, and a snoozed
+DeclutrMail/Later sender would have been called "deleted"). The correction —
+_"…have already moved out of it"_ — was **also** false, for a deeper reason: it asserts a
+TRANSITION, and **`mail_messages` stores only the current `label_ids` with no history
+column**, so DeclutrMail cannot know a message was ever in the inbox.
+
+A Gmail filter with "Skip the Inbox" yields arrivals > 0 and INBOX = 0 with nothing ever
+entering the inbox — and that is the actual cause on the very sender that prompted this
+work: `ealerts.bankofamerica.com` has 71 arrivals, **71/71 still UNREAD** under a custom
+label. The founder never archived them; a filter files them past the inbox. "You archived
+these" would have been flatly wrong to the one person who would read it first.
+
+Final copy states the two observed facts and no transition:
+_"Nothing from this sender is in your inbox right now — though 71 arrived in the last 30
+days. Delete only acts on mail still in the inbox."_
+
+---
+
+## 8. Preview trust affordances — B/C/D, 2026-07-27
+
+Shipped after the founder's screenshots showed a window chip row reading
+`All inbox 2,908 · 30 days+ 2,908 · 3 months+ 2,908 · 6 months+ 2,908 · 1 year+ 59`.
+
+- **B — tied window chips now explain themselves.** github.com's newest inbox message is
+  182 days old, so four windows exclude nothing; the counts were right and the control
+  looked broken. The notice EXPLAINS rather than collapses: merging tied chips would let
+  "All inbox" stand in for "6 months+", and Gmail is re-resolved at execution, so the two
+  can diverge — silently broadening a destructive action.
+- **C — the "what currently matches" sample now carries dates.** On a windowed action the
+  sample is the 5 most recent WITHIN the bucket; without a date the user cannot check it
+  respects the window they picked. `internal_date` was already D7-allowlisted
+  (`gmail-data-inventory.ts:154`), so no registry amendment. Rendered from LOCAL calendar
+  parts — `toISOString().slice(0,10)` prints the UTC day and disagrees with Gmail by one
+  for evening mail.
+- **D — "Check these in Gmail first ↗"** opens `from:"…" in:inbox older_than:180d`,
+  mirroring the preview's scope so the set can be eyeballed before confirming. Labelled
+  approximate on purpose: Gmail's `older_than:` is day-granular and searches live.
+
+**Two defects caught in review before merge** (see MISTAKES 2026-07-27):
+
+1. B first sourced the age from `sender.lastSeenDays` — an **all-labels** field.
+   `jobs-noreply@linkedin.com`: lastSeenDays 3, newest INBOX message 2,784 days. A fourth
+   instance of the very class this branch exists to fix. Now derived from
+   `recentSubjects.all[0].date` (INBOX-scoped by construction).
+2. C's wire swap (`string[]` → `{subject,date}[]`) would have crashed the modal during a
+   Cloud-Run/Vercel deploy skew — objects rendered as React children throw. **Fixed
+   twice:** the first attempt only added `normalizePreviewMessages` to the FE, which
+   protects a NEW bundle against an OLD API and does nothing for the dangerous direction
+   — the ALREADY-DEPLOYED bundle has no normalizer, so an API-first deploy still killed
+   the modal. The API now emits BOTH `recentMessages` (dated, what the FE reads) and the
+   deprecated `recentSubjects` (subjects-only, what an old bundle reads), the latter
+   PROJECTED from the former so they cannot drift. All four deploy combinations are
+   covered, two by the adapter and two by the retained field, each with a test.
+   `recentSubjects` is deleted once no deployed web bundle reads it.
 
 ---
 

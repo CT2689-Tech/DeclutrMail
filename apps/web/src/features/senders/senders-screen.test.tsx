@@ -233,7 +233,7 @@ function compositePreviewHandler(all: number) {
             olderThan180d: 0,
             olderThan365d: 0,
           },
-          recentSubjects: {
+          recentMessages: {
             all: [],
             olderThan30d: [],
             olderThan90d: [],
@@ -672,7 +672,7 @@ describe('SendersScreen — edge states', () => {
                 olderThan180d: 20,
                 olderThan365d: 12,
               },
-              recentSubjects: {
+              recentMessages: {
                 all: [],
                 olderThan30d: [],
                 olderThan90d: [],
@@ -1043,14 +1043,14 @@ describe('SendersScreen — edge states', () => {
                 olderThan180d: 0,
                 olderThan365d: 0,
               },
-              recentSubjects: {
-                // 5 subjects against a count of 3 — deliberate drift.
+              recentMessages: {
+                // 5 sample rows against a count of 3 — deliberate drift.
                 all: [
-                  'Subject one',
-                  'Subject two',
-                  'Subject three',
-                  'Subject four',
-                  'Subject five',
+                  { subject: 'Subject one', date: '2026-06-20T09:00:00.000Z' },
+                  { subject: 'Subject two', date: '2026-06-19T09:00:00.000Z' },
+                  { subject: 'Subject three', date: '2026-06-18T09:00:00.000Z' },
+                  { subject: 'Subject four', date: '2026-06-17T09:00:00.000Z' },
+                  { subject: 'Subject five', date: '2026-06-16T09:00:00.000Z' },
                 ],
                 olderThan30d: [],
                 olderThan90d: [],

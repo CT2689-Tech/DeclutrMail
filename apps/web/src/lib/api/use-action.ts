@@ -42,6 +42,7 @@ import {
   type BulkActionPreviewResult,
   type CompositeActionEnqueueResult,
   type CompositeActionPreviewResult,
+  type CompositePreviewMessage,
   type CompositePrimaryVerb,
   type CompositeSecondaryVerb,
   type UndoRevertResult,
@@ -255,4 +256,4 @@ export function useRecordUnsubscribeManualStatus() {
 }
 
 /** Re-export the preview types so hook consumers don't also import from the transport module. */
-export type { BulkActionPreviewResult, CompositeActionPreviewResult };
+export type { BulkActionPreviewResult, CompositeActionPreviewResult, CompositePreviewMessage };

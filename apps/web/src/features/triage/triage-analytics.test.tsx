@@ -83,7 +83,7 @@ const PREVIEW_BODY = {
     monthly: 52,
   },
   counts: { all: 47, olderThan30d: 30, olderThan90d: 12, olderThan180d: 5, olderThan365d: 1 },
-  recentSubjects: {
+  recentMessages: {
     all: [],
     olderThan30d: [],
     olderThan90d: [],
