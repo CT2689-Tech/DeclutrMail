@@ -1,13 +1,22 @@
 -- Rollback 0050 — drop the reach column + enum.
 --
+-- ORDER OF OPERATIONS: roll the code back (or stop the API + workers)
+-- BEFORE running this — the current build selects the `reach` column on
+-- every action-job read and fails hard once it is gone.
+--
 -- Undo safety across rollback + re-apply: re-applying resets EVERY row
--- to the 'inbox_only' default, including historical all-mail Deletes.
--- That is safe ONLY because the undo path never trusts this column —
--- all-mail undo semantics live in the self-describing undo-journal
--- payload (`reach: 'all_mail'` + `inboxMessageIds`), which this
--- rollback does not touch (see LabelActionWorker.reverseChangeGroups).
--- QUEUED-but-unexecuted all-mail jobs degrade to inbox-only resolution
--- after re-apply — strictly narrower than previewed, never wider.
+-- to the 'inbox_only' default, including historical and in-flight
+-- all-mail Deletes. That is safe ONLY because the undo path never
+-- trusts this column:
+--   - DONE rows: undo semantics live in the undo-journal payload
+--     (measured `inboxMessageIds` + `reach` marker), untouched here.
+--   - IN-FLIGHT rows that already froze their wide id set: the retry
+--     executes the frozen set, and the journal partition is MEASURED
+--     from those ids at write time — never derived from this column —
+--     so their undo still restores each message to where it was.
+--   - QUEUED rows that had not resolved yet: they resolve inbox-only
+--     after re-apply — strictly narrower than previewed, never wider.
+-- (See LabelActionWorker.executeForward + reverseChangeGroups.)
 
 ALTER TABLE "action_jobs" DROP CONSTRAINT IF EXISTS "action_jobs_reach_verb_check";
 --> statement-breakpoint

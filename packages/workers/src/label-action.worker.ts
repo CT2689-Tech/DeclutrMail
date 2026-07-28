@@ -378,18 +378,28 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     const appliedAt = new Date().toISOString();
 
     const undoToken = await db.transaction(async (tx) => {
-      // ADR-0028: an all-mail Delete trashes a MIX of inbox and archived
-      // messages, and its undo must restore each to where it was — so
-      // record which ids carried INBOX. Read from the LOCAL mirror,
-      // inside this transaction and BEFORE the mirror update below
-      // rewrites it: the mirror only changes in this atomic commit, so
-      // even a Gmail-mutated-then-crashed retry still sees the
-      // pre-action state here. (An incremental sync racing that narrow
-      // crash window could overwrite the mirror first — then those
-      // messages restore to archive instead of inbox: degraded, never
-      // destructive.)
+      // ADR-0028: a Delete's undo must restore each message to where it
+      // was — so record which ids carried INBOX. Read from the LOCAL
+      // mirror, inside this transaction and BEFORE the mirror update
+      // below rewrites it: the mirror only changes in this atomic
+      // commit, so even a Gmail-mutated-then-crashed retry still sees
+      // the pre-action state here. (An incremental sync racing that
+      // narrow crash window could overwrite the mirror first — then
+      // those messages restore to archive instead of inbox: degraded,
+      // never destructive.)
+      //
+      // MEASURED FOR EVERY DELETE, never gated on `job.reach` (Codex
+      // stop-review round 2, 2026-07-28): a job that froze its wide
+      // all-mail id set and then crashed before this transaction can be
+      // retried AFTER a migration rollback + re-apply reset the column
+      // to 'inbox_only' — the retry executes the frozen WIDE set, and a
+      // column-gated partition would write a legacy-looking payload
+      // whose undo floods the inbox. The partition is ground truth
+      // measured from the ids actually being mutated; for an inbox-only
+      // delete it simply equals the whole set and the reverse split
+      // degenerates to the uniform reverse.
       const inboxMessageIds =
-        job.reach === 'all_mail' && job.verb === 'delete'
+        job.verb === 'delete'
           ? (
               await tx
                 .select({ providerMessageId: mailMessages.providerMessageId })
@@ -409,7 +419,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         .values({
           mailboxAccountId,
           actionKind: job.verb,
-          payload: buildUndoPayload(job.verb, ids, inboxMessageIds),
+          payload: buildUndoPayload(job.verb, ids, inboxMessageIds, job.reach),
           // Always explicit — the tier-resolved snapshot (downgrade
           // semantics; see `undoExpiresAt`), never the column default.
           expiresAt,
@@ -804,16 +814,21 @@ function buildUndoPayload(
   verb: ActionVerb,
   messageIds: string[],
   inboxMessageIds: string[] | null = null,
+  reach: SenderActionReach = 'inbox_only',
 ) {
   if (verb === 'delete') {
     return {
       kind: 'delete' as const,
+      // The partition is measured for EVERY delete and is the
+      // authoritative undo input — `reverseChangeGroups` splits on it
+      // regardless of any column state. The `reach` marker is a
+      // best-effort second signal for payloads whose partition is later
+      // damaged; it reflects the row at journal time, so a
+      // column-corrupted retry may omit it while still carrying the
+      // (sufficient) measured partition (Codex stop-review 2026-07-28).
       messageIds,
-      // ADR-0028 all-mail payloads are SELF-DESCRIBING: `reach` rides
-      // beside the split so undo semantics survive even a migration
-      // rollback + re-apply that resets the `action_jobs.reach` column
-      // to its default on historical rows (Codex stop-review 2026-07-28).
-      ...(inboxMessageIds !== null ? { inboxMessageIds, reach: 'all_mail' as const } : {}),
+      ...(inboxMessageIds !== null ? { inboxMessageIds } : {}),
+      ...(reach === 'all_mail' ? { reach: 'all_mail' as const } : {}),
     };
   }
   return { kind: verb, messageIds, priorLabels: ['INBOX'] as string[] };

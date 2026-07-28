@@ -40,25 +40,32 @@ match").
    bundle ignores it; a newer web bundle treats its absence (older
    API) as "reach selection unavailable" and hides the chips.
 5. **Undo restores each message to where it was.** The forward path
-   records which resolved ids carried INBOX
+   MEASURES which of the ids being mutated carry INBOX — for every
+   Delete, unconditionally — and records that partition
    (`undo_journal.payload.inboxMessageIds`, read from the local
    mirror inside the terminal transaction, before the mirror update
-   rewrites it) plus a self-describing `reach: 'all_mail'` marker. The
-   revert applies the registry reverse (+INBOX/−TRASH) to that subset
-   and only −TRASH to the archived rest — a blanket +INBOX would dump
-   years of archived mail into the inbox on undo.
+   rewrites it), plus a best-effort `reach: 'all_mail'` marker when
+   the row still says so. The revert applies the registry reverse
+   (+INBOX/−TRASH) to the inbox subset and only −TRASH to the
+   archived rest — a blanket +INBOX would dump years of archived mail
+   into the inbox on undo. (An inbox-only delete's partition is the
+   whole set, so its split degenerates to the uniform reverse.)
 
    **The payload governs; the `reach` column never does** (Codex
-   stop-review 2026-07-28). The column is mutable state: a migration
-   rollback + re-apply resets every historical row to the
-   `inbox_only` default, so keying undo on it would flood the inbox
-   for past all-mail deletes. The journal payload is written once and
-   survives the column. When any signal says all-mail but the split
-   is unreadable (damaged payload), the revert strips the INBOX
-   re-add and restores everything to the archive — degraded, never
-   the flood. Only a payload with no all-mail signal at all takes the
-   uniform reverse (legacy inbox-only deletes, where +INBOX is
-   exactly correct).
+   stop-review 2026-07-28, both rounds). The column is mutable state:
+   a migration rollback + re-apply resets every row — historical AND
+   in-flight — to the `inbox_only` default. Keying the reverse on it
+   would flood the inbox for past all-mail deletes; keying the
+   FORWARD journal write on it would do the same for a job that froze
+   its wide id set, crashed before the terminal transaction, and
+   retried after the reset — which is why the partition is measured
+   from the frozen ids rather than derived from any claim. The
+   journal payload is written once and survives the column. When any
+   signal says all-mail but the split is unreadable (damaged
+   payload), the revert strips the INBOX re-add and restores
+   everything to the archive — degraded, never the flood. Only a
+   payload with no all-mail signal at all takes the uniform reverse
+   (legacy inbox-only deletes, where +INBOX is exactly correct).
 
 ## Companion surface
 
