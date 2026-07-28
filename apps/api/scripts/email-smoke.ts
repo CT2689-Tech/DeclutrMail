@@ -45,7 +45,10 @@ async function main(): Promise<void> {
   let headers: Record<string, string> | undefined;
   if (process.env.UNSUBSCRIBE_TOKEN_SECRET) {
     headers = await unsubscribeHeaders({
-      userId: process.env.SMOKE_UNSUBSCRIBE_USER_ID ?? 'smoke-placeholder-user',
+      // Placeholder is uuid-SHAPED: verify rejects non-uuid userIds
+      // (users.id is a uuid column), and the dead uuid keeps the
+      // click on the documented `user_gone` no-op path.
+      userId: process.env.SMOKE_UNSUBSCRIBE_USER_ID ?? '00000000-0000-4000-8000-00000000dead',
       category: 'syncComplete',
       apiUrl: process.env.API_URL ?? 'https://api.declutrmail.com',
     });

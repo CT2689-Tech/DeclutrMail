@@ -8,12 +8,21 @@ describe('unsubscribe token', () => {
   });
 
   it('round-trips userId and category', async () => {
-    const token = await signUnsubscribeToken({ userId: 'u-1', category: 'reminders' });
-    expect(await verifyUnsubscribeToken(token)).toEqual({ userId: 'u-1', category: 'reminders' });
+    const token = await signUnsubscribeToken({
+      userId: '11111111-1111-4111-8111-111111111111',
+      category: 'reminders',
+    });
+    expect(await verifyUnsubscribeToken(token)).toEqual({
+      userId: '11111111-1111-4111-8111-111111111111',
+      category: 'reminders',
+    });
   });
 
   it('returns null for a tampered token', async () => {
-    const token = await signUnsubscribeToken({ userId: 'u-1', category: 'reminders' });
+    const token = await signUnsubscribeToken({
+      userId: '11111111-1111-4111-8111-111111111111',
+      category: 'reminders',
+    });
     expect(await verifyUnsubscribeToken(`${token}x`)).toBeNull();
   });
 
@@ -22,12 +31,25 @@ describe('unsubscribe token', () => {
     expect(await verifyUnsubscribeToken('')).toBeNull();
   });
 
+  it('returns null for a non-uuid userId', async () => {
+    // users.id is a uuid column — an arbitrary-string claim would make
+    // Postgres throw a cast error and turn the uniform 200 into a 500.
+    const token = await signUnsubscribeToken({
+      userId: 'smoke-placeholder-user',
+      category: 'reminders',
+    });
+    expect(await verifyUnsubscribeToken(token)).toBeNull();
+  });
+
   it('returns null for an unknown category', async () => {
     // A token minted for a key that is not an EmailPrefs key must not
     // be honoured — it would flip an arbitrary preference.
     const { SignJWT } = await import('jose');
     const secret = new TextEncoder().encode(process.env.UNSUBSCRIBE_TOKEN_SECRET);
-    const rogue = await new SignJWT({ userId: 'u-1', category: 'isAdmin' })
+    const rogue = await new SignJWT({
+      userId: '11111111-1111-4111-8111-111111111111',
+      category: 'isAdmin',
+    })
       .setProtectedHeader({ alg: 'HS256' })
       .sign(secret);
     expect(await verifyUnsubscribeToken(rogue)).toBeNull();

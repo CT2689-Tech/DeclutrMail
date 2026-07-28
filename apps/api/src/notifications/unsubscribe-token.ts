@@ -17,6 +17,13 @@ import { EmailPrefsSchema, type EmailPrefs } from '@declutrmail/shared/contracts
  */
 const VALID_CATEGORIES = new Set(Object.keys(EmailPrefsSchema.shape));
 
+/**
+ * `userId` claims must be uuid-shaped: `users.id` is a uuid column, and
+ * comparing it against an arbitrary string makes Postgres throw a cast
+ * error — turning the controller's uniform 200 into a 500 oracle.
+ */
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function secret(): Uint8Array {
   const raw = process.env.UNSUBSCRIBE_TOKEN_SECRET;
   if (!raw || raw.length < 32) {
@@ -43,7 +50,7 @@ export async function verifyUnsubscribeToken(
     const { payload } = await jwtVerify(token, secret());
     const userId = payload.userId;
     const category = payload.category;
-    if (typeof userId !== 'string' || userId.length === 0) return null;
+    if (typeof userId !== 'string' || !UUID_SHAPE.test(userId)) return null;
     if (typeof category !== 'string' || !VALID_CATEGORIES.has(category)) return null;
     return { userId, category: category as keyof EmailPrefs };
   } catch {

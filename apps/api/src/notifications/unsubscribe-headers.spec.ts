@@ -9,7 +9,7 @@ describe('unsubscribeHeaders', () => {
 
   it('emits both RFC 8058 headers', async () => {
     const headers = await unsubscribeHeaders({
-      userId: 'u-1',
+      userId: '11111111-1111-4111-8111-111111111111',
       category: 'reminders',
       apiUrl: 'https://api.declutrmail.com',
     });

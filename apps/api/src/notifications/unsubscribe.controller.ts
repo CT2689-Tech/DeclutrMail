@@ -10,7 +10,8 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+
+import { eq, sql } from 'drizzle-orm';
 
 import { users } from '@declutrmail/db';
 
@@ -116,34 +117,39 @@ export class UnsubscribeController {
       this.logger.warn('email.unsubscribe.invalid_token');
       return;
     }
-    const [row] = await this.db
-      .select({ preferences: users.preferences })
-      .from(users)
+    // ONE atomic in-database mutation — no read-modify-write. A
+    // SELECT-then-UPDATE would race the authed settings PATCH: a
+    // preference changed between the two statements gets overwritten
+    // with this handler's stale snapshot, which can resurrect an
+    // opt-out. `jsonb_set` computes from the row's CURRENT value under
+    // the row lock, flips exactly the one entitled key to `false`, and
+    // passes every other stored key — known or future-shaped — through
+    // untouched. Never merge `parseEmailPrefs()` output here either:
+    // its default fallback (all true) written back would let this
+    // unauthenticated endpoint turn preferences ON. The CASE arm
+    // replaces a malformed non-object `emailPrefs` with `{}` because
+    // `jsonb_set` silently no-ops when an intermediate path step is
+    // not an object.
+    const updated = await this.db
+      .update(users)
+      .set({
+        preferences: sql`jsonb_set(
+          CASE
+            WHEN jsonb_typeof(${users.preferences} -> 'emailPrefs') = 'object'
+              THEN ${users.preferences}
+            ELSE ${users.preferences} || '{"emailPrefs": {}}'::jsonb
+          END,
+          ARRAY['emailPrefs', ${claims.category}],
+          'false'::jsonb,
+          true
+        )`,
+      })
       .where(eq(users.id, claims.userId))
-      .limit(1);
-    if (!row) {
+      .returning({ id: users.id });
+    if (updated.length === 0) {
       this.logger.log('email.unsubscribe.user_gone');
       return;
     }
-    // Merge over the RAW stored bag, not over `parseEmailPrefs()`
-    // output: the parser falls back to DEFAULTS (all true) for a
-    // malformed or future-shaped bag, and writing that back would let
-    // this unauthenticated endpoint flip a stored opt-out back ON.
-    // Spreading the raw object flips exactly one key to `false` and
-    // passes every other stored key through untouched — the endpoint
-    // can only ever narrow.
-    const base = (row.preferences ?? {}) as Record<string, unknown>;
-    const rawEmailPrefs = base.emailPrefs;
-    const storedEmailPrefs =
-      typeof rawEmailPrefs === 'object' && rawEmailPrefs !== null && !Array.isArray(rawEmailPrefs)
-        ? (rawEmailPrefs as Record<string, unknown>)
-        : {};
-    await this.db
-      .update(users)
-      .set({
-        preferences: { ...base, emailPrefs: { ...storedEmailPrefs, [claims.category]: false } },
-      })
-      .where(eq(users.id, claims.userId));
     // Never log the address or the token — category + outcome only (D7).
     this.logger.log(`email.unsubscribe.applied category=${claims.category}`);
   }
