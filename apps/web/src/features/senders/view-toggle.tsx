@@ -14,7 +14,7 @@
  */
 
 import { tokens } from '@declutrmail/shared';
-import { useSendersStore, type SendersView } from './store';
+import { useSendersStore, type SendersDensity, type SendersView } from './store';
 
 const { color, font } = tokens;
 
@@ -22,6 +22,62 @@ const OPTIONS: Array<{ value: SendersView; label: string }> = [
   { value: 'grid', label: 'Grid' },
   { value: 'table', label: 'Table' },
 ];
+
+/** Gmail's own density vocabulary — familiar words, no jargon. */
+const DENSITY_OPTIONS: Array<{ value: SendersDensity; label: string }> = [
+  { value: 'comfortable', label: 'Comfortable' },
+  { value: 'compact', label: 'Compact' },
+];
+
+/**
+ * `DensityToggle` — segmented `[Comfortable | Compact]`, rendered only
+ * while the table view is active (the grid has one density). Same
+ * chrome as `ViewToggle`; state lives beside `view` in the store.
+ */
+export function DensityToggle() {
+  const density = useSendersStore((s) => s.density);
+  const setDensity = useSendersStore((s) => s.setDensity);
+
+  return (
+    <div
+      role="group"
+      aria-label="Table row density"
+      style={{
+        display: 'inline-flex',
+        background: color.card,
+        border: `1px solid ${color.line}`,
+        borderRadius: 8,
+        padding: 2,
+      }}
+    >
+      {DENSITY_OPTIONS.map((opt) => {
+        const active = density === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setDensity(opt.value)}
+            aria-pressed={active}
+            style={{
+              padding: '5px 12px',
+              borderRadius: 6,
+              background: active ? color.fg : 'transparent',
+              color: active ? color.fgInverse : color.fgSoft,
+              border: 'none',
+              fontFamily: font.sans,
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'background 120ms, color 120ms',
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function ViewToggle() {
   const view = useSendersStore((s) => s.view);

@@ -135,7 +135,10 @@ export function ScreenerScreen({
     if (state.kind === 'ready' || state.kind === 'empty') {
       viewedFired.current = true;
       void track('screener_queue_viewed', {
-        pending_count: state.kind === 'ready' ? (totalPending ?? state.rows.length) : 0,
+        // `null` = the count query hadn't resolved when the queue
+        // rendered — never substitute the loaded page size (it reads
+        // as an exact total downstream).
+        pending_count: state.kind === 'ready' ? totalPending : 0,
       });
     }
   }, [state, totalPending]);
@@ -409,7 +412,13 @@ export function ScreenerScreen({
           }}
         >
           {state.kind === 'ready'
-            ? `${totalPending ?? state.rows.length} new sender${(totalPending ?? state.rows.length) === 1 ? '' : 's'} waiting.`
+            ? // Only the count query knows the true total — the queue
+              // loads a working window (top N), so `rows.length` is a
+              // page size. Until the count resolves, claim no number
+              // rather than presenting the page size as the total.
+              totalPending !== null
+              ? `${totalPending} new sender${totalPending === 1 ? '' : 's'} waiting.`
+              : 'New senders waiting.'
             : state.kind === 'empty'
               ? 'No unknown senders.'
               : state.kind === 'error'

@@ -27,7 +27,7 @@ import {
 } from './data';
 import { SenderSearch } from './sender-search';
 import { isFeatureEnabled } from '@/lib/flags';
-import { ComposeStrip, hasAnyFilter, type ComposeState } from './compose-strip';
+import { ComposeStrip, DEFAULT_COMPOSE, hasAnyFilter, type ComposeState } from './compose-strip';
 import { useComposeState } from './use-compose-state';
 import { SelectionBar } from './selection-bar';
 import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal';
@@ -56,7 +56,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SenderGrid } from './grid/sender-grid';
-import { ViewToggle } from './view-toggle';
+import { DensityToggle, ViewToggle } from './view-toggle';
 import { SenderTable, type SenderTableVerb } from './sender-table';
 import { rollupByDomain } from './domain-rollup';
 import { useSendersStore } from './store';
@@ -157,6 +157,24 @@ const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
  * Debounce a fast-changing value (e.g. the search box) so a derived
  * server query fires only after the user pauses — not on every keystroke.
  */
+/**
+ * Is this compose exactly the first-visit default (active-only, B2)?
+ * Field-wise compare — ComposeState is a flat closed shape, so drift
+ * here fails typecheck when a new axis is added.
+ */
+function isDefaultCompose(c: ComposeState): boolean {
+  return (
+    c.activity === DEFAULT_COMPOSE.activity &&
+    c.activityNegate === DEFAULT_COMPOSE.activityNegate &&
+    c.unsubReady === DEFAULT_COMPOSE.unsubReady &&
+    c.replied === DEFAULT_COMPOSE.replied &&
+    c.protectedFlag === DEFAULT_COMPOSE.protectedFlag &&
+    c.windowDays === DEFAULT_COMPOSE.windowDays &&
+    c.domain === DEFAULT_COMPOSE.domain &&
+    c.unsubIgnored === DEFAULT_COMPOSE.unsubIgnored
+  );
+}
+
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -525,6 +543,9 @@ function SendersScreenContent({
   // Per-session grid/table view (D49). Default is grid; the segmented
   // ViewToggle in the header flips it. Deliberately non-persistent.
   const view = useSendersStore((s) => s.view);
+  // Table row density — session-scoped beside `view`; the header's
+  // DensityToggle writes it, only SenderTable reads it.
+  const density = useSendersStore((s) => s.density);
   const selectedSenders = useMemo(
     () => senders.filter((s) => selected.has(s.id)),
     [selected, senders],
@@ -1605,6 +1626,8 @@ function SendersScreenContent({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <SenderSearch value={query} onChange={setQuery} senders={senders} onPick={onSearchPick} />
+          {/* Table-only: row density (the grid has one density). */}
+          {view === 'table' && <DensityToggle />}
           {/* D49 — segmented [Grid | Table] switch at top right.
               Per-session, non-persistent (each visit starts in grid). */}
           <ViewToggle />
@@ -1819,7 +1842,24 @@ function SendersScreenContent({
           transition: 'opacity 120ms ease',
         }}
       >
-        {senders.length === 0 && (query || hasAnyFilter(compose)) ? (
+        {senders.length === 0 && !query && isDefaultCompose(compose) ? (
+          // First-visit default is active-only (launch-audit B2). A
+          // mailbox with nothing ACTIVE must not read as a filter
+          // mistake — name the default and offer the full list.
+          <EmptyState
+            title="No active senders"
+            body="No sender has mailed you recently. You can look at every sender instead — including quiet and dormant ones."
+            action={
+              <Button
+                onClick={() => {
+                  clearSearchAndFilters();
+                }}
+              >
+                Show all senders
+              </Button>
+            }
+          />
+        ) : senders.length === 0 && (query || hasAnyFilter(compose)) ? (
           <EmptyState
             title={query ? `No senders match "${query}"` : 'No senders match these filters'}
             body="Try a different search or clear the filters."
@@ -1861,6 +1901,7 @@ function SendersScreenContent({
           <SenderTable
             rows={wireRows}
             globalMaxTotal={globalMaxTotal}
+            density={density}
             sort={sortCol}
             direction={sortDirection}
             onSortChange={setSort}
