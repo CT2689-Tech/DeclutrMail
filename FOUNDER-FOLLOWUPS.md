@@ -31,8 +31,9 @@ section to the Done section. Do not delete entries — the trail matters.
 1. `openssl rand -base64 48 | tr -d '\n' | gcloud secrets create unsubscribe-token-secret-prod --data-file=- --project declutrmail-ai-prod`
 2. Confirm the runtime SA can read it (same `secretmanager.secretAccessor` binding pattern as the other `-prod` secrets).
 3. Merge the PR; deploy proceeds.
-4. AFTER deploy: run the `email-smoke` GH Action, open the received message in Gmail, confirm the native **Unsubscribe** control renders next to the sender, click it, and verify the preference flipped: `SELECT preferences->'emailPrefs' FROM users WHERE email='<founder-address>';`
-5. Also add a matching dev value to `.env.local` (`UNSUBSCRIBE_TOKEN_SECRET=<any 32+ chars>`) so the local worker can sign.
+4. Create the **GH repo secret `RESEND_API_KEY`** (Settings → Secrets → Actions; same key as `resend-api-key-prod`). Discovered 2026-07-27: it was never created, so every `email-smoke` dispatch fails at the fail-closed guard — run [30335041498](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/30335041498) is the proof. The `.env.example` `[gh]` tag promised it; the promise was never kept.
+5. AFTER deploy: run the `email-smoke` GH Action, open the received message in Gmail, confirm the native **Unsubscribe** control renders next to the sender, click it, and verify the preference flipped: `SELECT preferences->'emailPrefs' FROM users WHERE email='<founder-address>';`
+6. Also add a matching dev value to `.env.local` (`UNSUBSCRIBE_TOKEN_SECRET=<any 32+ chars>`) so the local worker can sign.
 **Verifies by:** deploy green; smoke email carries `List-Unsubscribe` + `List-Unsubscribe-Post` headers (Show original); Gmail renders the control; psql shows the clicked category `false`; `docs/runbooks/secrets-inventory.md` row gets its `Rotated` date.
 **Status:** Open
 
