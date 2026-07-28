@@ -1265,3 +1265,22 @@ was the wrong branch under your feet, this one is the wrong checkout behind your
 **Rule:** A smoke is invalid until the server's cwd is confirmed to be the checkout
 under test.
 **Enforcement update:** none yet — recurs ⇒ add a cwd check to scripts/dev-up.sh.
+
+## 2026-07-28 — Undo semantics keyed on a rollback-mutable column instead of the durable payload
+**PR:** #407 (fixed in dae32112 before merge)
+**Caught by:** Codex stop-time review
+**What happened:** ADR-0028's reverse path decided the inbox/archive undo split from
+`action_jobs.reach`. A migration rollback + re-apply resets that column to its default
+on EVERY historical row, so a past all-mail Delete's undo would have taken the uniform
+`+INBOX` reverse and dumped the whole archived set into the inbox. The damaged-payload
+fallback ("pre-ADR behavior") did the same flood by design — for an all-mail set,
+"pre-ADR behavior" IS the dangerous direction.
+**Correct approach:** Safety-critical reverse semantics must live in the artifact that
+is written once and survives schema churn — the undo-journal payload — and the payload
+must self-describe (`reach` beside `inboxMessageIds`). Columns are at most downgrade
+signals. When a signal says all-mail but the split is unreadable, fail toward the
+archive (degraded, findable), never toward the flood.
+**Rule:** Undo/rollback paths may only depend on write-once artifacts; ask of every
+input "what does a migration rollback + re-apply do to this?"
+**Enforcement update:** decision table + all three branches locked by worker tests
+(split-with-corrupted-column, degrade, legacy); rollback file documents the invariant.
