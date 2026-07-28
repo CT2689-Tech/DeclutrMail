@@ -114,7 +114,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'plans',
     question: 'What changes between Free, Plus, and Pro?',
     answer:
-      'Free supports one inbox, sender and activity surfaces, five lifetime cleanup actions, and a seven-day journal window. Plus adds unlimited cleanup and multi-sender workflows for one inbox. Pro adds a second inbox, a thirty-day journal window, and the automation set including Autopilot, Brief, Screener, Quiet, Later scheduling, and Follow-ups. Use the pricing page as the current source of truth.',
+      'Free supports one inbox with the full manual cleanup workflow — Senders, Triage, Later, bulk actions, and the activity journal — metered at 50 cleanup actions a month with a seven-day undo window. Plus removes the monthly meter for one inbox. Pro adds up to three inboxes, a thirty-day undo window, and the automation set including Autopilot, Brief, Screener, Quiet, and Follow-ups. Use the pricing page as the current source of truth.',
     link: {
       href: '/pricing',
       label: 'Compare current plans',
