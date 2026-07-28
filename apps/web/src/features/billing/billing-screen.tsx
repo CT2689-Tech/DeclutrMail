@@ -891,7 +891,7 @@ function ScheduledPlanChangeNotice({
         <span style={{ color: color.fgMuted, fontSize: 12 }}>
           {restoring
             ? 'Paddle has not confirmed whether your renewal was restored. Retry before renewal or contact support.'
-            : 'The payment provider’s response was interrupted, so billing changes are locked while we reconcile it.'}{' '}
+            : 'The payment provider’s response was interrupted, so billing changes are paused until we confirm what happened.'}{' '}
           {restoring ? '' : 'Your current plan and renewal remain unchanged. '}Email{' '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com
@@ -1208,7 +1208,6 @@ function LoadingState() {
 }
 
 function BillingErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
   return (
     <div
       style={{
@@ -1222,7 +1221,7 @@ function BillingErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
     >
       <RecoverableErrorState
         title="We couldn't load your billing details"
-        description={`${status}No charge or plan change was made. Try again in a moment.`}
+        description="No charge or plan change was made. Try again in a moment."
         onRetry={onRetry}
       />
     </div>

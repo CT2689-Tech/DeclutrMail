@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ERROR_CODES } from '@declutrmail/shared/contracts';
 
 import { AppException } from '../common/app-exception.js';
 import {
@@ -125,7 +126,7 @@ describe('ConnectMailboxStartFilter', () => {
       expect(response.status).toBe(HttpStatus.SERVICE_UNAVAILABLE);
       expect(body.error).toMatchObject({
         code: 'INTERNAL_ERROR',
-        message: 'Internal server error',
+        message: ERROR_CODES.INTERNAL_ERROR.message,
       });
       expect(body.error.correlationId).toEqual(expect.any(String));
       expect(JSON.stringify(body)).not.toContain('private infrastructure detail');

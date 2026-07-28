@@ -70,7 +70,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'action-risk',
         title: 'Evaluate mutation risk separately from data risk',
         paragraphs: [
-          'An app can minimize stored data and still move the wrong messages. Look for a preview that names the sender, action, and count; an activity record; idempotent execution; and verb-specific recovery rather than one universal undo promise.',
+          'An app can minimize stored data and still move the wrong messages. Look for a preview that names the sender, action, and count; an activity record; actions that can be retried safely without doubling up; and verb-specific recovery rather than one universal undo promise.',
           'In DeclutrMail, Archive, Later, and Delete have Activity Undo while their plan-window token is live. Delete also has separate Gmail Trash recovery. A delivered unsubscribe request is one-way. Manual Archive, Later, and Delete affect current matched mail and do not silently become future sender rules.',
         ],
       },
@@ -87,7 +87,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Make a threat-model decision, not a brand decision',
         paragraphs: [
           'A highly sensitive mailbox used for legal, medical, or financial operations may justify avoiding third-party access even when controls are strong. A separate consumer mailbox may have a different risk tolerance. The same answer does not fit both.',
-          'The responsible product answer is therefore conditional: understand the scope, the stored fields, external processors, mutation boundaries, and exit path. Connect only if that complete model is acceptable to you.',
+          'The responsible product answer is therefore conditional: understand the scope, the stored fields, external processors, the boundaries of what the app may change, and exit path. Connect only if that complete model is acceptable to you.',
         ],
       },
     ],
@@ -158,7 +158,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'External processing still belongs in the disclosure',
         paragraphs: [
           'DeclutrMail’s sender-reasoning adapter receives aggregate facts and no subject or snippet. Daily Brief uses a different bounded input: sender identity, subject, and Gmail snippet may be sent to Anthropic to compose a short narrative when the adapter is configured.',
-          'That input remains body-free, and the stored Brief payload intentionally omits the snippets used in the prompt. Even so, sending allowlisted metadata to a processor is processing and should not be hidden behind “no full bodies.”',
+          'That input remains body-free, and the stored Brief intentionally omits the snippets used in the prompt. Even so, sending allowlisted metadata to a processor is processing and should not be hidden behind “no full bodies.”',
         ],
       },
       {

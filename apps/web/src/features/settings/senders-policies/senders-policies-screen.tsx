@@ -28,7 +28,6 @@ import {
 import { useSenders } from '@/features/senders/api/use-senders';
 
 import { enrichSenderRow, type Sender } from '@/features/senders/data';
-import { ApiError } from '@/lib/api/client';
 
 const { color, font, space, radius } = tokens;
 
@@ -285,7 +284,6 @@ function LoadingState() {
 }
 
 function PoliciesErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
   return (
     <div
       style={{
@@ -299,7 +297,7 @@ function PoliciesErrorState({ error, onRetry }: { error: unknown; onRetry: () =>
     >
       <RecoverableErrorState
         title="We couldn't load standing policies"
-        description={`${status}Your existing policies remain active. Try again in a moment.`}
+        description="Your existing policies remain active. Try again in a moment."
         onRetry={onRetry}
       />
     </div>

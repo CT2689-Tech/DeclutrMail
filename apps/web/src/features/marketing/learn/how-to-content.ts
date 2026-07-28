@@ -121,7 +121,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         ],
         callout: {
           title: 'Undo is verb-specific',
-          body: 'Archive, Later, and Delete can be reversed from Activity while their plan-window token is live. Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Once an unsubscribe request is delivered, that request is one-way.',
+          body: 'Archive, Later, and Delete can be reversed from Activity while their undo window is open (its length depends on your plan). Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Once an unsubscribe request is delivered, that request is one-way.',
           tone: 'truth',
         },
       },
@@ -260,7 +260,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'safer-alternatives',
         title: 'Use a less destructive option when uncertain',
         paragraphs: [
-          'Archive preserves mail in All Mail and Gmail search. Later keeps it under a DeclutrMail/Later label. Both are better first moves when the sender mixes useful and noisy messages, and both have DeclutrMail Activity undo while their token is active.',
+          'Archive preserves mail in All Mail and Gmail search. Later keeps it under a DeclutrMail/Later label. Both are better first moves when the sender mixes useful and noisy messages, and both can be undone from Activity while their undo window is open.',
           'The fastest cleanup is not always the one with the largest count. The better measure is how confidently you can explain what moved and how you would recover it.',
         ],
       },
@@ -388,7 +388,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'manual-is-not-future',
         title: 'Do not mistake manual Archive for a standing rule',
         paragraphs: [
-          'A manual Archive in Senders or Triage targets matching mail currently in the inbox. It removes the Inbox label and can be reversed through Activity while its undo token is valid. New mail from the sender may still arrive in Inbox.',
+          'A manual Archive in Senders or Triage targets matching mail currently in the inbox. It removes the Inbox label and can be reversed through Activity while its undo window is open. New mail from the sender may still arrive in Inbox.',
           'The same boundary applies to manual Later and Delete: they change current matched mail, not future delivery. Use Gmail filters or an explicitly activated Autopilot preset when future behavior is the goal.',
         ],
         callout: {
@@ -506,7 +506,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Choose Unsubscribe for legitimate unwanted lists',
-            text: 'The preview explains whether DeclutrMail can use a one-click endpoint or must prepare a mailto request for you to send manually.',
+            text: 'The preview explains whether DeclutrMail can use the sender’s one-click unsubscribe link or must prepare an email request for you to send manually.',
           },
           {
             name: 'Choose a separate current-mail action if needed',
@@ -518,8 +518,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'unsubscribe-boundary',
         title: 'Treat unsubscribe as a one-way delivery request',
         paragraphs: [
-          'For standards-compliant one-click lists, DeclutrMail sends the request and records whether the endpoint accepted it; the sender still controls whether and when mail stops. For mailto-only lists, it opens a prepared Gmail draft and you press Send. It never sends that email silently on your behalf.',
-          'Once the unsubscribe request reaches the sender, DeclutrMail cannot recall it. A separately archived backlog may still have an Activity undo token, but that does not resubscribe you.',
+          'For standards-compliant one-click lists, DeclutrMail sends the request and records whether the sender’s system accepted it; the sender still controls whether and when mail stops. For mailto-only lists, it opens a prepared Gmail draft and you press Send. It never sends that email silently on your behalf.',
+          'Once the unsubscribe request reaches the sender, DeclutrMail cannot recall it. A separately archived backlog may still be undoable from Activity, but that does not resubscribe you.',
         ],
         callout: {
           title: 'Suspicious sender? Do not unsubscribe',
@@ -585,7 +585,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       rows: [
         {
           sender: 'Garden Weekly',
-          detail: 'List-Unsubscribe-Post endpoint available',
+          detail: 'Supports one-click unsubscribe',
           action: 'One-click',
           result: 'DeclutrMail can send the standards-based request.',
         },
@@ -649,7 +649,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Complete the correct delivery path',
-            text: 'One-click requests are submitted through the standards endpoint. Mailto requests open a Gmail draft; DeclutrMail does not auto-send it.',
+            text: 'One-click requests are sent through the sender’s standard unsubscribe link. Mailto requests open a Gmail draft; DeclutrMail does not auto-send it.',
           },
           {
             name: 'Track the outcome',
@@ -661,8 +661,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'undo',
         title: 'Understand why unsubscribe cannot be undone',
         paragraphs: [
-          'A delivered unsubscribe request leaves DeclutrMail and reaches another organization. There is no universal protocol for retracting it, so the product does not issue an undo token for the request itself. You can subscribe again through the sender’s site if you later change your mind.',
-          'If the same confirmation also archived existing mail, only that archive portion is reversible while its Activity token is active. Delete has Gmail Trash recovery. Those recovery mechanisms must not be presented as unsubscribe undo.',
+          'A delivered unsubscribe request leaves DeclutrMail and reaches another organization. There is no universal protocol for retracting it, so the request itself has no undo window. You can subscribe again through the sender’s site if you later change your mind.',
+          'If the same confirmation also archived existing mail, only that archive portion is reversible while its Activity undo window is open. Delete has Gmail Trash recovery. Those recovery mechanisms must not be presented as unsubscribe undo.',
         ],
         callout: {
           title: 'One confirmation may contain two effects',

@@ -2179,7 +2179,6 @@ function LoadingState() {
 
 /** D211 error branch — a distinct, retryable read failure (never an empty mailbox). */
 function SendersErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
   return (
     <div
       style={{
@@ -2193,7 +2192,7 @@ function SendersErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
     >
       <RecoverableErrorState
         title="We couldn't load your senders"
-        description={`${status}Your Gmail messages and sender settings haven't changed. Try again in a moment.`}
+        description="Your Gmail messages and sender settings haven't changed. Try again in a moment."
         onRetry={onRetry}
       />
     </div>

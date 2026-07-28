@@ -84,11 +84,11 @@ export function unsubscribeStatusCopy(
 export const UNSUB_PILL: Record<UnsubscribeLifecycleStatus, { label: string; title: string }> = {
   requested: {
     label: 'Requesting…',
-    title: "The unsubscribe request is being delivered to the sender's endpoint",
+    title: 'Your unsubscribe request is being delivered to the sender',
   },
   endpoint_accepted: {
     label: 'Request accepted',
-    title: 'The endpoint accepted the request; future delivery still depends on the sender',
+    title: "The sender's system accepted the request; whether mail stops is up to them",
   },
   failed: {
     label: 'Request failed',
@@ -96,7 +96,7 @@ export const UNSUB_PILL: Record<UnsubscribeLifecycleStatus, { label: string; tit
   },
   unconfirmed: {
     label: 'Result unconfirmed',
-    title: 'The endpoint result could not be confirmed; watch for future mail',
+    title: "We couldn't confirm the sender received the request; watch for future mail",
   },
   action_required: {
     label: 'Send from Gmail',
@@ -113,7 +113,7 @@ export const UNSUB_PILL: Record<UnsubscribeLifecycleStatus, { label: string; tit
   },
   unavailable: {
     label: 'Unavailable',
-    title: 'No supported unsubscribe channel was found for this sender',
+    title: "This sender doesn't offer an unsubscribe link DeclutrMail can use",
   },
 };
 

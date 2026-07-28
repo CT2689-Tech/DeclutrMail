@@ -40,11 +40,11 @@ const FAQS: ReadonlyArray<{ q: string; a: string; link?: { href: string; label: 
   },
   {
     q: 'How is this different from Gmail filters?',
-    a: 'Filters are rules you write directly in Gmail. DeclutrMail gives you a sender-ranked review, a live count-and-sample preview, and an activity record. The worker re-checks Gmail when a manual action executes, so the final count can change if the inbox changes in between. Manual Archive, Later, and Delete do not create future-mail rules; Pro Autopilot handles future matches only through presets you explicitly enable.',
+    a: 'Filters are rules you write directly in Gmail. DeclutrMail gives you a sender-ranked review, a live count-and-sample preview, and an activity record. DeclutrMail re-checks Gmail at the moment a manual action runs, so the final count can change if the inbox changed in between. Manual Archive, Later, and Delete do not create future-mail rules; Pro Autopilot handles future matches only through presets you explicitly enable.',
   },
   {
     q: 'What happens if I disconnect or delete my account?',
-    a: 'Disconnecting stops all syncing and actions immediately. Deleting your account schedules a purge of everything we stored — the deletion date respects any undo windows still open, so your safety net outlives your subscription.',
+    a: 'Disconnecting stops all syncing and actions immediately. Deleting your account schedules permanent deletion of everything we stored — the deletion date respects any undo windows still open, so your safety net outlives your subscription.',
   },
   {
     q: 'Is there a refund policy?',

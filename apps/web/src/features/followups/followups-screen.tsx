@@ -11,7 +11,6 @@ import {
 } from '@declutrmail/shared';
 
 import type { FollowupRow } from '@/lib/api/followups';
-import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
@@ -97,7 +96,7 @@ export function FollowupsScreen() {
       <ScreenIntro
         id="followups"
         title="Followups"
-        body="Observed from indexed Sent mail: threads where your latest indexed message is outgoing and no later reply has been found."
+        body="Based on your sent mail: conversations where you wrote last and haven't heard back."
         tip="This is not live Gmail status. Checks run about every six hours across sent mail from the last 60 days."
       />
 
@@ -106,7 +105,7 @@ export function FollowupsScreen() {
       {rows.length === 0 ? (
         <EmptyState
           title="No follow-ups observed."
-          description="No thread in the current 60-day window has an outgoing latest message without a later reply in the indexed data. The next check runs within about six hours."
+          description="In the last 60 days, no conversation is waiting on a reply to you. The next check runs within about six hours."
         />
       ) : (
         <>
@@ -537,14 +536,13 @@ function LoadingState() {
         />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>
-        Loading observed follow-ups from indexed Sent mail
+        Loading follow-ups from your sent mail
       </span>
     </div>
   );
 }
 
 function FollowupsErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
   return (
     <div
       style={{
@@ -557,8 +555,8 @@ function FollowupsErrorState({ error, onRetry }: { error: unknown; onRetry: () =
       }}
     >
       <RecoverableErrorState
-        title="We couldn't load your followups"
-        description={`${status}The observed Sent-mail list and your tracked follow-ups are unchanged. Try again in a moment.`}
+        title="We couldn't load your follow-ups"
+        description="Your sent mail and tracked follow-ups are unchanged. Try again in a moment."
         onRetry={onRetry}
       />
     </div>

@@ -581,7 +581,7 @@ describe('ActivityScreen — populated', () => {
       'aria-pressed',
       'true',
     );
-    expect(within(dialog).getByRole('button', { name: '90d' })).toHaveAttribute(
+    expect(within(dialog).getByRole('button', { name: '90 days' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -824,7 +824,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
     // The outcome row renders its own label, distinct from the intent's
     // "Unsubscribe requested" — and the confirmed row shows no count (0 affected).
     await waitFor(() =>
-      expect(screen.getByText(/^Unsubscribe endpoint accepted request$/)).toBeInTheDocument(),
+      expect(screen.getByText(/^Unsubscribe request accepted$/)).toBeInTheDocument(),
     );
     expect(screen.queryByText(/email/)).not.toBeInTheDocument();
   });
@@ -1058,7 +1058,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     await waitFor(() => expect(recoveryPosts).toBe(1));
     expect(idempotencyKeys[0]!.length).toBeGreaterThanOrEqual(8);
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      /could not confirm that the queued attempt reached the worker/i,
+      /could not confirm the retry went through/i,
     );
     await userEvent.click(confirm);
     await waitFor(() => expect(recoveryPosts).toBe(2));
