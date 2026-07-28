@@ -60,6 +60,42 @@ describe('unsubscribe token', () => {
     });
   });
 
+  it('still honours a LEGACY `category` token from already-delivered mail', async () => {
+    // Tokens never expire. Renaming the claim must not strand links
+    // sitting in inboxes: they would verify as null, and the uniform
+    // 200 would report success while doing nothing — a dead unsubscribe
+    // link that looks like it worked. Minted exactly as the pre-rename
+    // signer did.
+    const { SignJWT } = await import('jose');
+    const secret = new TextEncoder().encode(process.env.UNSUBSCRIBE_TOKEN_SECRET);
+    const legacy = await new SignJWT({
+      userId: '11111111-1111-4111-8111-111111111111',
+      category: 'syncComplete',
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .sign(secret);
+
+    expect(await verifyUnsubscribeToken(legacy)).toEqual({
+      userId: '11111111-1111-4111-8111-111111111111',
+      // Mapped to 'all': the control it was minted behind said plainly
+      // "Unsubscribe", and this endpoint can only ever turn things OFF.
+      scope: 'all',
+    });
+  });
+
+  it('rejects a legacy token whose category is not a real preference', async () => {
+    const { SignJWT } = await import('jose');
+    const secret = new TextEncoder().encode(process.env.UNSUBSCRIBE_TOKEN_SECRET);
+    const rogue = await new SignJWT({
+      userId: '11111111-1111-4111-8111-111111111111',
+      category: 'isAdmin',
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .sign(secret);
+    expect(await verifyUnsubscribeToken(rogue)).toBeNull();
+  });
+
   it('returns null for an unknown scope', async () => {
     // A token minted for a key that is neither 'all' nor an EmailPrefs
     // key must not be honoured — it would flip an arbitrary preference.

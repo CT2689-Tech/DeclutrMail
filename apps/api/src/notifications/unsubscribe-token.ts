@@ -67,17 +67,39 @@ export async function signUnsubscribeToken(input: {
     .sign(secret());
 }
 
-/** Never throws — every failure is `null` so the caller stays uniform. */
+/**
+ * Never throws — every failure is `null` so the caller stays uniform.
+ *
+ * Accepts the LEGACY `category` claim as well as `scope`. Tokens have
+ * no expiry and live in delivered mail forever, so renaming the claim
+ * cannot be allowed to strand links already sitting in inboxes: they
+ * would verify as `null`, and because the endpoint answers a uniform
+ * 200 to avoid being an enumeration oracle, the user would see success
+ * and nothing would happen — a dead unsubscribe link that reports
+ * itself as working. Legacy tokens map to `'all'` because the control
+ * they were minted behind was labelled plainly "Unsubscribe", and that
+ * is what a reader clicking it expects; it is also strictly the more
+ * protective reading, since this endpoint can only turn preferences
+ * OFF.
+ */
 export async function verifyUnsubscribeToken(
   token: string,
 ): Promise<{ userId: string; scope: UnsubscribeScope } | null> {
   try {
     const { payload } = await jwtVerify(token, secret());
     const userId = payload.userId;
-    const scope = payload.scope;
     if (typeof userId !== 'string' || !UUID_SHAPE.test(userId)) return null;
-    if (typeof scope !== 'string' || !VALID_SCOPES.has(scope)) return null;
-    return { userId, scope: scope as UnsubscribeScope };
+
+    const scope = payload.scope;
+    if (typeof scope === 'string') {
+      return VALID_SCOPES.has(scope) ? { userId, scope: scope as UnsubscribeScope } : null;
+    }
+
+    const legacyCategory = payload.category;
+    if (typeof legacyCategory === 'string' && VALID_SCOPES.has(legacyCategory)) {
+      return { userId, scope: 'all' };
+    }
+    return null;
   } catch {
     return null;
   }

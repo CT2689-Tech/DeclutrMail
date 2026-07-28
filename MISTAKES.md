@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-28 — Renaming a JWT claim silently killed every unsubscribe link already in someone's inbox
+**PR:** [#406](https://github.com/CT2689-Tech/DeclutrMail/pull/406)
+**Caught by:** Codex stop-time review
+**What happened:** Fixing the scope bug (entry below) renamed the token claim `category` → `scope`. Tokens in already-delivered mail still carry `category`, so `verifyUnsubscribeToken` read `undefined` and returned `null` — and because the endpoint answers a **uniform 200** to avoid being an enumeration oracle, the click reported success and did nothing. A dead unsubscribe link that looks like it worked, which is the exact failure the surface exists to prevent. Not hypothetical: the founder's own smoke emails carry `category` tokens. The self-indictment is that the same commit's comment said *"a link already sitting in an inbox must not break"* — I applied that reasoning to future granular tokens and not to existing ones.
+**Correct approach:** Accept the legacy claim on read. `scope` wins when present; otherwise a valid `category` claim maps to `'all'` (the control it was minted behind said plainly "Unsubscribe", and the endpoint can only turn things OFF, so it is the more protective reading). Signing only ever emits `scope`. Regression test mints a token exactly as the pre-rename signer did.
+**Rule:** A credential with no expiry that is embedded in something already delivered — email, QR code, printed link — is a permanent wire format: you may add claims, never rename or remove one. Note the interaction that makes it dangerous: a "no oracle" uniform-200 contract converts every such break into a SILENT one.
+**Enforcement update:** none (legacy-claim regression test in `unsubscribe-token.spec.ts`).
+
 ## 2026-07-28 — A link labelled "Unsubscribe" stopped one category and left its sibling sending
 **PR:** [#406](https://github.com/CT2689-Tech/DeclutrMail/pull/406)
 **Caught by:** Codex stop-time review
