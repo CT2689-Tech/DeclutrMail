@@ -31,9 +31,16 @@ WHERE "action_kind" = 'delete'
   AND jsonb_typeof("payload"->'messageIds') = 'array'
   AND jsonb_array_length("payload"->'inboxMessageIds') < jsonb_array_length("payload"->'messageIds');
 --> statement-breakpoint
--- Step B — disarm in-flight REVERSE jobs of those same deletes: clear
--- their id sets (an old-build replay then mutates nothing) and mark
--- them failed with a greppable code. Their tokens were expired above.
+-- Step B — TERMINALIZE in-flight REVERSE jobs of those same deletes:
+-- clear their id sets and fail them with a greppable code. Their
+-- tokens were expired above, so nothing can re-enqueue them. The
+-- 'failed' state is the truthful terminal — the build able to execute
+-- the recorded split no longer exists. Residual if the queue-drain
+-- step is skipped: the old build does not honor 'failed' as terminal,
+-- so a replayed BullMQ job would reprocess the row — with the id set
+-- empty it mutates NOTHING, but it would falsely stamp the journal
+-- reverted and flip the row done. Drain the queue; the DB state alone
+-- keeps the failure non-destructive, not invisible.
 UPDATE "action_jobs"
 SET "resolved_message_ids" = '{}',
     "status" = 'failed',
@@ -47,15 +54,24 @@ WHERE "action_jobs"."undo_token" = u."token"
   AND jsonb_typeof(u."payload"->'messageIds') = 'array'
   AND jsonb_array_length(u."payload"->'inboxMessageIds') < jsonb_array_length(u."payload"->'messageIds');
 --> statement-breakpoint
--- Step C — clear the frozen id sets of in-flight FORWARD all-mail
--- deletes so the old build re-resolves them inbox-only (strictly
--- narrower than previewed, never wider; its legacy journal + uniform
--- undo are then correct for the inbox-only set it actually mutates).
--- For an 'executing' row whose crashed attempt already trashed part of
--- the wide set, that remainder stays in Gmail Trash unjournaled —
--- recoverable there for ~30 days, and never re-inboxed by surprise.
+-- Step C — TERMINALIZE in-flight FORWARD all-mail deletes: fail them
+-- and clear their frozen id sets. Leaving them queued would have the
+-- old build silently execute a NARROWER action than the preview the
+-- user confirmed — a D226 preview-contract violation dressed up as a
+-- migration detail. Failing is the truthful outcome: the build that
+-- could execute the confirmed scope is gone; the user sees the
+-- failure and can re-decide. The id sets are cleared as
+-- defense-in-depth: if a replayed queue job makes the old build
+-- reprocess the row anyway (it does not honor 'failed'), it resolves
+-- inbox-only — strictly narrower, never the wide set whose legacy
+-- journal would flood on undo. For an 'executing' row whose crashed
+-- attempt already trashed part of the wide set, that remainder stays
+-- in Gmail Trash unjournaled — recoverable there for ~30 days, and
+-- never re-inboxed by surprise.
 UPDATE "action_jobs"
-SET "resolved_message_ids" = '{}'
+SET "resolved_message_ids" = '{}',
+    "status" = 'failed',
+    "error_code" = 'ROLLBACK_0050_ALL_MAIL_SCOPE_UNAVAILABLE'
 WHERE "direction" = 'forward'
   AND "verb" = 'delete'
   AND "reach" = 'all_mail'
