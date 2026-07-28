@@ -12,7 +12,8 @@ import {
 } from '@declutrmail/workers';
 
 import type { DrizzleDb } from '../db/db.module.js';
-import { syncCompleteEmail, syncReminder24hEmail } from './email-templates.js';
+import { syncCompleteEmail, syncReminder24hEmail } from './templates/index.js';
+import { unsubscribeHeaders } from './unsubscribe-headers.js';
 
 /**
  * D6 / D162 — `mailbox.sync_ready` → transactional email trigger.
@@ -38,6 +39,12 @@ export interface SyncReadyEmailTriggerDeps {
   emailQueue: Queue<EmailSendJobData>;
   /** Web app origin for links, e.g. https://app.declutrmail.com (WEB_URL). */
   appUrl: string;
+  /**
+   * API origin the RFC 8058 unsubscribe URL points at, e.g.
+   * https://api.declutrmail.com (API_URL). The one-click POST must land
+   * on the API process, not the web app.
+   */
+  apiUrl: string;
 }
 
 export type SyncReadyEmailHandler = (
@@ -72,7 +79,7 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
       return;
     }
 
-    const complete = syncCompleteEmail({
+    const complete = await syncCompleteEmail({
       mailboxEmail: mailbox.mailboxEmail,
       messageCount: payload.messageCount,
       appUrl,
@@ -82,11 +89,17 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
       userId: mailbox.userId,
       subject: complete.subject,
       text: complete.text,
+      ...(complete.html === undefined ? {} : { html: complete.html }),
+      headers: await unsubscribeHeaders({
+        userId: mailbox.userId,
+        category: 'syncComplete',
+        apiUrl: deps.apiUrl,
+      }),
       idempotencyKey: syncCompleteEmailJobId(eventId),
       mailboxAccountId: payload.mailboxAccountId,
     });
 
-    const reminder = syncReminder24hEmail({ mailboxEmail: mailbox.mailboxEmail, appUrl });
+    const reminder = await syncReminder24hEmail({ mailboxEmail: mailbox.mailboxEmail, appUrl });
     await enqueueEmailSend(
       deps.emailQueue,
       {
@@ -94,6 +107,12 @@ export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): Syn
         userId: mailbox.userId,
         subject: reminder.subject,
         text: reminder.text,
+        ...(reminder.html === undefined ? {} : { html: reminder.html }),
+        headers: await unsubscribeHeaders({
+          userId: mailbox.userId,
+          category: 'reminders',
+          apiUrl: deps.apiUrl,
+        }),
         idempotencyKey: syncReminderEmailJobId(payload.mailboxAccountId),
         mailboxAccountId: payload.mailboxAccountId,
         skipIfUserActiveSince: payload.readyAt,

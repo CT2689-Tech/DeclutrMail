@@ -5,6 +5,7 @@ import { UsersModule } from '../users/users.module.js';
 import { EmailPrefsController } from './email-prefs.controller.js';
 import { EmailService } from './email.service.js';
 import { EmailSuppressionService } from './email-suppression.service.js';
+import { UnsubscribeController } from './unsubscribe.controller.js';
 
 /**
  * NotificationsModule (D162, D165) — transactional email.
@@ -14,6 +15,8 @@ import { EmailSuppressionService } from './email-suppression.service.js';
  *   - `EmailSuppressionService` — bounce/complaint suppression list
  *     (written by the Resend webhook, read before every send).
  *   - `EmailPrefsController` — PATCH /api/me/email-prefs (D165 toggles).
+ *   - `UnsubscribeController` — RFC 8058 one-click unsubscribe (D165).
+ *     Unauthenticated (token-credentialed), like the Resend webhook.
  *
  * The EmailSendWorker itself runs in the worker process; its wiring
  * (queue + worker registration) lives in `apps/api/src/worker.ts`
@@ -34,7 +37,7 @@ import { EmailSuppressionService } from './email-suppression.service.js';
       inject: [EmailSuppressionService],
     },
   ],
-  controllers: [EmailPrefsController],
+  controllers: [EmailPrefsController, UnsubscribeController],
   exports: [EmailService, EmailSuppressionService],
 })
 export class NotificationsModule {}

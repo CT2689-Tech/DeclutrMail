@@ -6,12 +6,25 @@
 # The orchestrator triggers this once post-merge; the founder verifies
 # receipt + rendering in a real inbox.
 #
-# Injection posture: no github.event.* interpolation anywhere; the only
-# external value is the RESEND_API_KEY secret, passed via env.
+# One-click unsubscribe (D165): with the UNSUBSCRIBE_TOKEN_SECRET repo
+# secret set (same value as `unsubscribe-token-secret-prod` in Secret
+# Manager), the smoke email carries the RFC 8058 headers so Gmail's
+# native Unsubscribe control is verifiable end-to-end. Pass the
+# founder's prod user id as the `unsubscribe_user_id` input for a full
+# click→preference-flip check; leave it blank and the click no-ops on a
+# placeholder id (control render + endpoint reachability still proven).
+#
+# Injection posture: no github.event.* interpolation anywhere; secrets
+# and the dispatch input reach the script via env only.
 name: Email smoke (Resend)
 
 on:
   workflow_dispatch:
+    inputs:
+      unsubscribe_user_id:
+        description: 'Prod users.id to sign into the unsubscribe token (optional)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -32,4 +45,6 @@ jobs:
       - name: Send smoke email
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          UNSUBSCRIBE_TOKEN_SECRET: ${{ secrets.UNSUBSCRIBE_TOKEN_SECRET }}
+          SMOKE_UNSUBSCRIBE_USER_ID: ${{ inputs.unsubscribe_user_id }}
         run: pnpm --filter @declutrmail/api email-smoke

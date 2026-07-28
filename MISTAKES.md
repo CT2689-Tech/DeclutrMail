@@ -20,6 +20,46 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-28 — The atomic jsonb merges regressed malformed ROOT bags the JS spread had tolerated
+**PR:** [#405](https://github.com/CT2689-Tech/DeclutrMail/pull/405)
+**Caught by:** Codex stop-time review (fourth pass on the same surface)
+**What happened:** The atomic conversions (entries below) guarded a non-object `emailPrefs` SUB-bag but assumed the ROOT of `users.preferences` is an object. jsonb `||` on an array/scalar root CONCATENATES into an array (`'[1,2]' || '{"a":1}'` → `[1,2,{"a":1}]`), and `jsonb_set` with a text path on an array root RAISES an error — a 500 on the endpoint whose contract is a uniform 200. The replaced JS `{...spread}` had degraded a malformed root to an object, so the "safer" SQL was strictly worse on that input. Verified against real Postgres before fixing.
+**Correct approach:** Repair the root in the same statement — `CASE WHEN jsonb_typeof(preferences) = 'object' THEN preferences ELSE '{}'::jsonb END` as the base of every merge (all four statements), with PGlite tests seeding array roots.
+**Rule:** When replacing a JS merge with jsonb operators, enumerate non-object inputs at EVERY level of the path, not just the level being patched — `||` corrupts on a non-object root and `jsonb_set` throws on it, and the behavior parity you owe is with the code you deleted.
+**Enforcement update:** none (array-root tests pinned in `users.service.spec.ts` + `unsubscribe.controller.spec.ts`).
+
+## 2026-07-27 — Called the unsubscribe atomic, while every OTHER preference writer could still undo it
+**PR:** [#405](https://github.com/CT2689-Tech/DeclutrMail/pull/405)
+**Caught by:** Codex stop-time review (third pass on the same endpoint)
+**What happened:** After making the one-click flip a single `jsonb_set` statement, I declared the lost-update fixed. But the invariant "an unsubscribe stays applied" is a property of every writer to `users.preferences`, not of my statement: `UsersService.patchPreferences`, its onboarding clone, and the email-prefs PATCH all did JS read-modify-write of the whole bag — any of them landing after a concurrent flip wrote their stale snapshot back, silently resubscribing the user (8 call sites: active-mailbox switch, settings sub-bags, onboarding keys, the email toggles themselves).
+**Correct approach:** Convert the writer CLASS: `patchPreferences` became an atomic top-level `preferences || $patch::jsonb`; the email-prefs PATCH now forwards only the keys it carries into a new `mergeEmailPrefs` (nested atomic sub-bag merge) instead of persisting a JS-materialized full bag. Verified on PGlite (semantics) and real postgres.js (param path). Fixed alongside `c1ea58c7`'s statement in the same PR.
+**Rule:** A concurrency invariant is only as strong as the weakest writer to the row — after making one path atomic, sweep every other writer to the same column and convert them too (fix the class, not the instance).
+**Enforcement update:** none (PGlite tests in `users.service.spec.ts` pin the only-carried-keys semantics).
+
+## 2026-07-27 — The "raw merge" unsubscribe fix was still a read-modify-write race
+**PR:** [#405](https://github.com/CT2689-Tech/DeclutrMail/pull/405)
+**Caught by:** Codex stop-time review (second pass — the first fix survived one review round)
+**What happened:** The parser-defaults fix (entry below) kept the SELECT-then-UPDATE shape, just merging the raw bag instead of parsed output. Under concurrency that is still a lost-update: a settings PATCH landing between the two statements gets overwritten by the handler's stale snapshot — which can resurrect a just-set opt-out and clobber sibling preference keys (`activeMailboxId`, `onboardingSkipped`). Mail scanners fire one-click POSTs at delivery time, so concurrent-with-user-activity is the normal case, not the edge.
+**Correct approach:** One atomic in-database mutation: `jsonb_set(...)` computed from the row's current value under its row lock (single UPDATE ... RETURNING, no prior SELECT), with a CASE arm repairing a non-object `emailPrefs` because `jsonb_set` silently no-ops on a broken intermediate path. Tests moved from a fake db to PGlite — a fake cannot exercise `jsonb_set` semantics, which is what made the first fix look done. Fixed in `c1ea58c7`; verified against real Postgres (shape after flip: exactly one key, siblings intact).
+**Rule:** A guarantee about concurrent state ("only ever narrows") must hold in ONE statement — if the invariant spans a SELECT and an UPDATE, it does not exist; and test JSONB mutations on a real engine, never a fake.
+**Enforcement update:** none (PGlite regression tests in `unsubscribe.controller.spec.ts`).
+
+## 2026-07-27 — Unsubscribe write merged over parser defaults, so it could turn opt-outs back ON
+**PR:** [#405](https://github.com/CT2689-Tech/DeclutrMail/pull/405)
+**Caught by:** Codex stop-time review
+**What happened:** The one-click unsubscribe controller built its write as `{...parseEmailPrefs(stored), [category]: false}`. `parseEmailPrefs` falls back to `DEFAULT_EMAIL_PREFS` (every category `true`) whenever the stored `emailPrefs` bag is malformed or carries a key the current strict schema doesn't know (e.g. written by a future release). Writing that materialized fallback back to the row meant an **unauthenticated** endpoint could flip a user's stored `false` back to `true` — the exact opposite of the "a stale token can only ever turn a preference OFF" property the module's own doc promised.
+**Correct approach:** Read-path parsers with default fallbacks are for READS. A write path — especially an unauthenticated one — merges over the RAW stored bag and changes exactly the one key it is entitled to change, passing unknown keys through untouched. Fixed in `9645a9d7` with regression tests for the resurrect and unknown-key cases.
+**Rule:** Never write a parser's default-filled output back to storage; a narrowing endpoint's write must be provably monotonic (only-off), which means merging raw stored state, not parsed state.
+**Enforcement update:** none (regression tests added in `unsubscribe.controller.spec.ts`).
+
+## 2026-07-27 — Planned an unsubscribe GET that any mail scanner could fire
+**PR:** none yet (caught in the plan, `docs/superpowers/plans/2026-07-27-email-foundation.md`)
+**Caught by:** Codex stop-time review
+**What happened:** The RFC 8058 unsubscribe plan gave `GET /api/email/unsubscribe` the same handler body as the `POST` — both flipped the preference off. The spec that the plan was written from said the GET should "render a confirmation page"; the controller code in the plan ignored that and mutated directly. Mail clients and corporate security products (Outlook Safe Links, malware scanners, proxy warmers) prefetch links inside email without a human involved, so shipping it would have let a scanner unsubscribe users from mail they never opened — with no signal to anyone about why notifications stopped. The same review caught a second defect: three signatures typed as `JSX.Element`, which does not compile under React 19's `@types/react` (the global `JSX` namespace was removed; `TS2503`). Both were in a plan that had already passed my own self-review.
+**Correct approach:** Only POST mutates. GET is read-only and renders a form whose button POSTs the token. Pin it with a test that calls the GET with a *valid* token and asserts zero writes — a test using an invalid token would pass against the broken version too.
+**Rule:** An unauthenticated endpoint reachable from a URL inside an email must not mutate on GET; put the mutation behind POST and test the GET-with-valid-token-writes-nothing case explicitly.
+**Enforcement update:** none yet — candidate for a `webhook-security-auditor` prompt line covering email-reachable routes, not just webhook controllers. Recorded here first per §11 (distil on recurrence).
+
 ## 2026-07-26 — "transient:" made a three-day Vercel monitoring outage look like weather
 **PR:** #383
 **Caught by:** reading the watchdog table properly while verifying an unrelated fix — the Vercel row said `🟡 WARN — transient: The operation was aborted due to timeout`, and checking the previous 8 runs showed the identical string on every one, across 3 days.
@@ -1056,3 +1096,154 @@ three codes plus three negatives, verified to fail without the handler.
 **Correct approach:** When a change makes a path reachable or re-derives a client-side gate, enumerate the SERVER predicate that path will actually hit and mirror it exactly — never re-derive the rule from the concept (backing, tier) when the server enforces a different axis (status, unit charge).
 **Rule:** A client affordance gate must quote the server predicate it fronts; a retier must re-run the invariants of every path it newly exposes.
 **Enforcement update:** none (both now pinned by tests: wire-rejection test on the selector; status-set unit tests on the picker lock).
+
+## 2026-07-27 — Two numbers from different populations, rendered as one story
+**PR:** (this branch)
+**Caught by:** founder hand-smoke on prod (`app.declutrmail.com/senders`)
+**What happened:** The Delete preview for `ealerts.bankofamerica.com` read "71 /mo"
+above five window chips that ALL said 0. Both numbers were correct: `monthly` is
+arrival-scoped (last 30 days, any label) while the bucket counts are state-scoped
+(currently carrying `INBOX`) — the sender mails 71×/month and every one was already
+archived. Verified against the dev DB (71 recent messages, all `Label_23`, none
+`INBOX`). Nothing on screen named either scope, so a correct preview read as a broken
+one. This was already logged as finding 5.14 in
+`docs/execution/action-surface-findings-2026-07-26.md` — dismissed there as "by design,
+reads as a bug" and left unfixed for a week until the founder hit it.
+Fixing it surfaced a second, harder defect: `nothingToActOn` gated only Archive and
+Delete, so **Later** kept an enabled confirm at a zero count — enqueueing a job and
+rendering a receipt for moving nothing.
+**Correction, same session:** I first wrote that this also spent a Free cleanup unit. It
+does not — `cleanupUnitsUsed` excludes `status='done' AND affected_count=0`, verified
+against the live DB. I read `COUNTS_AS_CLEANUP.later === true` and stopped reading the
+predicate three lines later. The over-claim was mine; the real defect is that the modal
+footer promises "Uses 1 of your N cleanup actions" for an action that costs none.
+**Correct approach:** Two numbers with different denominators on one surface must each
+name their scope, and a zero that contradicts a visible figure must explain itself
+rather than leaving the reader to infer a bug. "By design, reads as a bug" is a bug
+report, not a disposition — the same sentence that dismissed 5.14 predicted this report.
+**Rule:** Any surface showing an arrival or all-labels received volume beside an
+INBOX-now action count must label both scopes and reconcile a zero. Any verb whose whole effect is
+`currentMail` must be un-confirmable at count 0 — check `COUNTS_AS_CLEANUP` before
+deciding a no-op is harmless.
+**Enforcement update:** `describeInboxScope` / `inboxScopeNoticeCopy`
+(`packages/shared/src/actions/inbox-scope.ts`) is now the ONE place that classifies the
+gap; the senders confirm modal and the screener decide preview both render from it
+rather than mirroring the logic. `nothingToActOn` keys on `primaryActsOnInbox`, and the
+duplicate narrower test in `confirmDisabled` was deleted so it cannot silently
+re-exclude a verb again. 12 shared + 12 modal tests pin the copy, the chip-row
+suppression, the composite verb naming, and the Unsubscribe non-regression.
+
+## 2026-07-27 — Three guesses at a word an ADR had already decided
+**PR:** (this branch)
+**Caught by:** Codex stop-time review (three rounds)
+**What happened:** Fixing finding 5.11 I relabelled a screener row "Messages so far:" →
+"Total ever:". Codex flagged the completeness claim. I changed it to "seen", reasoning
+from two write paths that the counter was monotonic. Codex rejected that: I had never
+looked for a third writer — `SendersCounterReconciliationWorker` recounts
+`total_received` from `mail_messages` **nightly** and corrects drift downward. I changed
+it to "indexed". Codex rejected again: files still carried false data-contract claims,
+including "lifetime" in the header of the very module I had just written to fix this
+class. Only then did I open `docs/adr/0014-senders-total-received-counter.md`, whose
+§Neutral says: _"`total_received` is 'within retention,' not 'all-time in Gmail.' UI copy
+says 'received,' never 'all-time.'"_ **The word was decided before I started.** The
+pre-existing "Total ever" labels were ADR violations that had shipped.
+Same pass, same shape, twice more: the new preview copy claimed the missing mail was
+"already archived or deleted" (names a destination nothing checks — 19 SPAM + 1 TRASH of
+2,025 measured, and any snoozed sender mislabelled). Corrected to "have already moved out
+of it" — **also false**, because it asserts a TRANSITION and `mail_messages` keeps only
+current `label_ids`, no history. A Gmail "Skip the Inbox" filter gives arrivals > 0 and
+INBOX = 0 with nothing ever entering the inbox, and that is the real cause on the reported
+sender: 71 arrivals, **71/71 UNREAD** under a custom label. I would have told the founder
+"you archived these" about mail he never saw. Final copy states both observed facts and no
+transition: "…in your inbox right now — though 71 arrived in the last 30 days."
+**Correct approach:** CLAUDE.md §3 puts ADRs ABOVE codebase conventions and agent
+judgment. When a field's meaning is load-bearing for user copy, the ADR that introduced
+it is the first place to look, not the last. `ls docs/adr | grep -i <field>` would have
+ended this in one step — `0014-senders-total-received-counter.md` is named after the
+column. I instead read the schema comment (wrong), then the write paths (incomplete),
+then measured the DB (right but silent on vocabulary), and generalized from each.
+**Rule:** Before naming a derived/denormalized field in user-facing copy: (1) check
+`docs/adr/` for an ADR named after it — the wording may already be decided; (2) enumerate
+every writer; (3) verify against the live DB. And when copy explains a DIFFERENCE between
+two counts, state only the counts: any cause ("archived", "deleted") or transition
+("moved out of", "no longer in") is a claim about history, and a schema that stores only
+current state can never support one. Grep the table for a history column before writing a
+past-tense verb.
+**Enforcement update:** `senders.ts` comment now cites ADR-0014 §Neutral explicitly.
+`screener-screen.test.tsx` asserts
+`not.toMatch(/total ever|all[- ]time|\bever\b|messages (seen|indexed)/i)` — banning both
+words I wrongly reached for plus the ADR-forbidden ones. Finding 7 in
+`docs/execution/action-surface-findings-2026-07-26.md` records the ADR quote, the
+write-path evidence, and the 0-drift measurement.
+
+## 2026-07-27 — Traded a true hedge for a false absolute while fixing a truth bug
+**PR:** (this branch)
+**Caught by:** Codex stop-time review
+**What happened:** Fixing finding 5.11 (screener showing an all-labels count beside an
+INBOX-now preview — I wrongly described it as "lifetime" at the time) I relabelled the row
+from "Messages so far:" to "Total ever:". The
+scope disambiguation was right; the word was not. `senders.total_received` is monotonic
+over what DeclutrMail has OBSERVED — `handleMessageDeleted` hard-deletes the
+`mail_messages` row without decrementing it (so it counts mail that no longer exists,
+including mail DeclutrMail's own Delete removed), and Gmail purges Trash/Spam before a
+mailbox is ever connected. The ORIGINAL "so far" was the honest hedge. I replaced a true
+statement with a false one, in the very session whose purpose was eliminating surfaces
+that assert what the system does not know. Three pre-existing siblings made the same
+claim ("Total ever" ×2, "N ever" ×1) and were corrected in the same pass.
+**Correct approach:** When relabelling for scope, change ONLY the axis that was
+ambiguous. "Messages so far" was under-specified on LABEL scope (all-labels vs inbox);
+it was already correct on TIME scope. Fixing one axis must not silently strengthen the
+other. Before writing an absolute ("ever", "all", "total", "every"), find the write path
+and ask what makes the counter go down — if nothing does, it is a monotonic observation,
+not a total.
+**Rule:** A completeness word on a denormalized counter must be justified from its write
+path, not its column name. **SUPERSEDED by the entry above** — this entry's replacement
+("seen") was also wrong, and the whole question had already been decided in ADR-0014
+§Neutral. Check the ADR first.
+**Enforcement update:** `screener-screen.test.tsx` now asserts
+`expect(html).not.toMatch(/Total ever|all[- ]time/i)` on the row, so the claim cannot
+come back. Finding 7 in `docs/execution/action-surface-findings-2026-07-26.md` records
+the write-path evidence. NOTE: the schema comment at
+`packages/db/src/schema/senders.ts:106` still says "ever" — left as-is (not user-facing)
+but it is what misled this change.
+
+## 2026-07-27 — Shipped a "trust" feature that stated a false age, and a wire change that could crash the modal
+**PR:** (this branch, items B and C)
+**Caught by:** Codex stop-time review
+**What happened:** Two defects in the same pass, both in features whose stated purpose was
+establishing trust.
+(1) **B** explained a tied window chip row with "this sender's newest inbox email is N
+days old", sourcing N from `compositePreview.sender.lastSeenDays`. That field is
+`senders.last_seen_at` — newest message across **all labels**. Measured on the dev
+mailbox: `jobs-noreply@linkedin.com` reported lastSeenDays **3** while its newest INBOX
+message was **2,784** days old; `tcs.com` 4,539 vs 20,662. The copy would have printed a
+confident 3-day age about a seven-year-old inbox. Fixed by deriving the age from
+`recentSubjects.all[0].date`, which the server orders `internal_date DESC` over the
+INBOX-scoped predicate and is therefore the newest inbox message by construction.
+(2) **C** swapped the preview sample's wire shape from `string[]` to `{subject,date}[]`.
+`apps/api` deploys to Cloud Run and `apps/web` to Vercel **independently**, so an
+API-first deploy would have served objects to a reader that renders them as React
+children — which throws, taking down the D226 confirm modal on the live site.
+**I then fixed the wrong direction.** My first fix added a normalizer to the FE, which
+only helps a NEW bundle read an OLD API. The bundle at risk is the one ALREADY deployed;
+it will never have my normalizer. Codex had to say "still unsafe during an API-first
+deploy" before I saw it. Correct fix: the API keeps emitting the legacy `recentSubjects`
+alongside the new `recentMessages`, projected from the same rows.
+**Correct approach:** (1) The all-labels/INBOX-now split is the exact distinction this
+whole branch exists to fix. I introduced a fourth instance of it while fixing the first
+three, because `lastSeenDays` was the convenient field already on the DTO. Convenience is
+how this class propagates — before using a count or date in copy, name its scope out loud
+and check it matches the sentence. (2) A wire-shape change between independently deployed
+services needs a reader that accepts both shapes, or it is a scheduled outage.
+**Rule:** Any figure placed in copy next to an INBOX-scoped number must itself be
+INBOX-scoped, or be labelled with its own scope. And for a wire change between
+independently deployed services, enumerate all FOUR combinations (old/new client ×
+old/new server) before calling it safe — a change to the CLIENT can only ever fix the two
+rows where the client is new. Protecting the already-deployed client is the SERVER's job:
+keep emitting the old shape until no deployed bundle reads it.
+**Enforcement update:** `normalizePreviewMessages` (`apps/web/src/lib/api/actions.ts`)
+absorbs `string | {subject,date}` at the single boundary the preview enters through, with
+5 tests covering both shapes, bad dates and non-arrays; the FE type is `date: string |
+null` so a missing date renders as no date. The B test now sets
+`sender.lastSeenDays` to a value that CONTRADICTS the inbox sample, so re-reading the
+wrong field fails the assertion.

@@ -24,6 +24,19 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-07-27 — Create `unsubscribe-token-secret-prod` BEFORE merging the D162/D165 email PR
+**Source:** feat/d162-react-email-templates (React Email + RFC 8058 one-click unsubscribe)
+**Why:** The PR binds `UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest` on BOTH Cloud Run services (worker signs the token at enqueue, API verifies Gmail's POST). Per the deploy workflow's own rule, a referenced Secret Manager secret that doesn't exist **fails the whole deploy** — so the secret must exist before the merge-triggered deploy runs. Without the env var the worker's sync-ready email handler throws at enqueue (fail-closed, loud in Sentry) and sync emails stop.
+**How:**
+1. `openssl rand -base64 48 | tr -d '\n' | gcloud secrets create unsubscribe-token-secret-prod --data-file=- --project declutrmail-ai-prod`
+2. Confirm the runtime SA can read it (same `secretmanager.secretAccessor` binding pattern as the other `-prod` secrets).
+3. Merge the PR; deploy proceeds.
+4. Create two **GH repo secrets** (Settings → Secrets → Actions): `RESEND_API_KEY` (same key as `resend-api-key-prod`) and `UNSUBSCRIBE_TOKEN_SECRET` (same value as step 1's Secret Manager secret — signatures must match prod or the clicked link no-ops). Discovered 2026-07-27: `RESEND_API_KEY` was never created, so every `email-smoke` dispatch fails at the fail-closed guard — run [30335041498](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/30335041498) is the proof. The `.env.example` `[gh]` tag promised it; the promise was never kept.
+5. AFTER deploy: run the `email-smoke` GH Action **with the `unsubscribe_user_id` input set to your prod `users.id`** (`SELECT id FROM users WHERE email='<founder-address>';`) — blank input still proves the control renders, but the click no-ops on a placeholder id. Then in Gmail: confirm the native **Unsubscribe** control renders next to the sender, click it, and verify the preference flipped: `SELECT preferences->'emailPrefs' FROM users WHERE email='<founder-address>';`
+6. Also add a matching dev value to `.env.local` (`UNSUBSCRIBE_TOKEN_SECRET=<any 32+ chars>`) so the local worker can sign.
+**Verifies by:** deploy green; smoke email carries `List-Unsubscribe` + `List-Unsubscribe-Post` headers (Show original); Gmail renders the control; psql shows the clicked category `false`; `docs/runbooks/secrets-inventory.md` row gets its `Rotated` date.
+**Status:** Open
+
 ### 2026-07-26 — The CI deploy SA cannot read Secret Manager or the API SA's IAM policy — the snapshot's two most security-relevant sections have never been captured
 **Source:** PR #380 — the first honest `infra-snapshot` run ([30191656010](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/30191656010)), which surfaced this within minutes of the sentinel fix landing
 **Why:** In CI, `secret_manager` and `iam.declutrmail_api_sa` both serialize as `null` — the read did not happen. `GCP_DEPLOY_SA` evidently lacks `roles/secretmanager.viewer` (or `.secretAccessor`) and `roles/iam.serviceAccountViewer` on `declutrmail-ai-prod`. Everything else captures fine: Cloud Run revisions/env/traffic for both services, Atlas head (`0049`, at latest), and 19 GitHub secrets via the new PAT. **This was always true and was structurally invisible** — under the previous code a failed read returned `[]`/`{}`, so the daily snapshot asserted "Secret Manager holds zero secrets" and "the API service account has zero IAM bindings", producing a permanently clean diff for precisely the two resources whose drift matters most. Note the asymmetry that makes the diagnosis certain: `declutrmail_worker_sa` reads `{"not_found": true}` because Google evaluates existence before permission, while `declutrmail_api_sa` — which does exist — reads `null`. Different unknowns, and until this PR both rendered as `{}`.
@@ -382,7 +395,14 @@ D1→#12(39) · D2→#12(39) · D23→#32(37) · D28→#32(37) · D29→#44(36) 
 **Why:** Single durable record of every founder-owned prerequisite so the next-session multi-agent buildout starts from a clean ledger. DONE this session: Resend email infra (verified + test delivered, From `hello@send.declutrmail.com`), OAuth verified (`declutrmail.com` + `.ai` authorized), Paddle + Razorpay KYC both approved, all vendor billing caps. Decisions locked: billing in beta, Paddle+Razorpay, account deletion 7-day grace + immediate, V2 rebuilds on `.com` (retire `.ai`).
 **How (remaining founder items — full detail in the doc):**
 1. Sentry: set `SENTRY_ORG=chintan-ashok-thakkar` in Vercel + 2 alert rules.
-2. Resend: rotate the exposed full-access key.
+2. ~~Resend: rotate the exposed full-access key.~~ **CLOSED — founder decision
+   2026-07-10: keep the key, do NOT raise rotation.** Re-raised in error
+   2026-07-27; re-checked then and the "exposed" framing is unsupported —
+   no `re_`-shaped literal exists in the working tree, only `.env.example`
+   is tracked, and the sole commit touching `RESEND_API_KEY` in an env file
+   is #204 (the placeholder). `buildout-prerequisites-2026-06-11.md:68`
+   describes this same item as the sandbox→live key swap, not a leak
+   response. Do not re-open without new evidence of actual exposure.
 3. Paddle (Sandbox) + Razorpay (Test) keys + webhook secrets → GH secrets.
 4. Decide Plus/Pro tier prices (D17-21) for the payment catalogs.
 5. `.ai`→`.com` cutover after V2 live (OAuth URLs, payment site, retire `.ai`).

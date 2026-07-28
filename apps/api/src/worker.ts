@@ -123,7 +123,7 @@ import { buildBriefLlmAdapter } from './adapters/brief-llm-anthropic.adapter.js'
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
-import { deletionReceiptEmail } from './notifications/email-templates.js';
+import { deletionReceiptEmail } from './notifications/templates/index.js';
 import { EmailService } from './notifications/email.service.js';
 import { EmailSuppressionService } from './notifications/email-suppression.service.js';
 import { buildSyncReadyEmailHandler } from './notifications/sync-ready-email.trigger.js';
@@ -1932,6 +1932,7 @@ async function bootstrap(): Promise<void> {
         db,
         emailQueue: emailSendQueue,
         appUrl: process.env.WEB_URL ?? 'http://localhost:3000',
+        apiUrl: process.env.API_URL ?? 'http://localhost:4000',
       }),
     }),
     observer: {

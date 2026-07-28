@@ -50,6 +50,9 @@ function fakeQueue(existingJobIds: string[] = []): FakeQueue {
 
 const READY_AT = '2026-06-11T08:00:00.000Z';
 
+// The trigger signs RFC 8058 unsubscribe tokens at enqueue time (D165).
+process.env.UNSUBSCRIBE_TOKEN_SECRET = 't'.repeat(32);
+
 describe('buildSyncReadyEmailHandler', () => {
   let db: DrizzleDb;
   let mailboxId: string;
@@ -90,6 +93,7 @@ describe('buildSyncReadyEmailHandler', () => {
       db,
       emailQueue: queue as unknown as Queue<EmailSendJobData>,
       appUrl: 'https://app.declutrmail.com/',
+      apiUrl: 'https://api.declutrmail.com',
     });
 
     await handler(payload(), 'ev-1');
@@ -127,6 +131,32 @@ describe('buildSyncReadyEmailHandler', () => {
       skipIfUserActiveSince: READY_AT,
     });
     expect(reminderOpts.delay).toBe(24 * 60 * 60 * 1_000);
+
+    // Multipart (D162): the rendered HTML twin rides the job.
+    expect(completeData.html).toContain('https://app.declutrmail.com/triage');
+    expect(reminderData.html).toContain('/triage');
+  });
+
+  it('attaches RFC 8058 headers to both sync emails', async () => {
+    const queue = fakeQueue();
+    const handler = buildSyncReadyEmailHandler({
+      db,
+      emailQueue: queue as unknown as Queue<EmailSendJobData>,
+      appUrl: 'https://app.declutrmail.com',
+      apiUrl: 'https://api.declutrmail.com/',
+    });
+
+    await handler(payload(), 'ev-1');
+
+    const [, completeData] = queue.add.mock.calls[0]! as [string, EmailSendJobData];
+    const [, reminderData] = queue.add.mock.calls[1]! as [string, EmailSendJobData];
+    for (const data of [completeData, reminderData]) {
+      expect(data.headers?.['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
+      // Trailing slash on apiUrl is normalized; the URL targets the API.
+      expect(data.headers?.['List-Unsubscribe']).toMatch(
+        /^<https:\/\/api\.declutrmail\.com\/api\/email\/unsubscribe\?t=.+>$/,
+      );
+    }
   });
 
   it('dedups on redelivery — existing jobIds are not re-enqueued', async () => {
@@ -138,6 +168,7 @@ describe('buildSyncReadyEmailHandler', () => {
       db,
       emailQueue: queue as unknown as Queue<EmailSendJobData>,
       appUrl: 'https://app.declutrmail.com',
+      apiUrl: 'https://api.declutrmail.com',
     });
 
     await handler(payload(), 'ev-1');
@@ -150,6 +181,7 @@ describe('buildSyncReadyEmailHandler', () => {
       db,
       emailQueue: queue as unknown as Queue<EmailSendJobData>,
       appUrl: 'https://app.declutrmail.com',
+      apiUrl: 'https://api.declutrmail.com',
     });
 
     await handler(

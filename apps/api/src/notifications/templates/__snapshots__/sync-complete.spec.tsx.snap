@@ -1,0 +1,16 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`sync-complete > matches the snapshot 1`] = `
+"DeclutrMail finished indexing you@gmail.com.
+
+24,310 messages indexed — your senders are grouped and ready to
+triage. The first pass usually takes a few minutes and clears
+the bulk of the noise.
+
+Jump back in: https://app.declutrmail.com/triage
+(Still in setup? That link drops you right back where you left off.)
+
+— DeclutrMail
+
+You received this because you connected this mailbox to DeclutrMail."
+`;

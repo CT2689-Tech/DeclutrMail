@@ -18,7 +18,7 @@ import type { WorkerContext } from './worker-context.js';
  *
  * Layering: the job carries PRE-RENDERED `{subject, text}` (the
  * producer renders via the typed templates in
- * `apps/api/src/notifications/email-templates.ts`); the worker owns
+ * `apps/api/src/notifications/templates/`); the worker owns
  * execution-time decisions that must reflect CURRENT state, not
  * enqueue-time state:
  *
@@ -71,6 +71,19 @@ export interface EmailSendJobData {
   subject: string;
   /** Pre-rendered plain-text body (counts/dates only). */
   text: string;
+  /**
+   * Pre-rendered HTML body. ABSENT for the plain-text-locked kinds —
+   * D126 Part 3 ("Plain text only; no marketing chrome") and D189's
+   * receipt. Optional rather than required so those kinds cannot be
+   * forced to carry a body the plan forbids.
+   */
+  html?: string;
+  /**
+   * Extra provider headers — RFC 8058 List-Unsubscribe on opt-out-able
+   * kinds. System notices (deletion) set none: there is nothing to
+   * unsubscribe from.
+   */
+  headers?: Record<string, string>;
   /**
    * Logical-event dedup key. Doubles as the BullMQ jobId AND the
    * provider Idempotency-Key — one send per logical event even across
@@ -129,6 +142,8 @@ export interface EmailDeliveryPort {
     subject: string;
     text: string;
     idempotencyKey: string;
+    html?: string;
+    headers?: Record<string, string>;
   }): Promise<EmailDeliveryOutcome>;
 }
 
@@ -203,6 +218,10 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
       subject: payload.subject,
       text: payload.text,
       idempotencyKey: payload.idempotencyKey,
+      // Conditional spreads: exactOptionalPropertyTypes forbids passing
+      // an explicit `undefined` to an optional property.
+      ...(payload.html === undefined ? {} : { html: payload.html }),
+      ...(payload.headers === undefined ? {} : { headers: payload.headers }),
     });
 
     if (delivered.ok) {
