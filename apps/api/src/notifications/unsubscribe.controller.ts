@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Header, Inject, Logger, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Inject,
+  Logger,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 
 import { users } from '@declutrmail/db';
@@ -53,6 +64,8 @@ export class UnsubscribeController {
 
   /** The mutating route. Gmail's one-click POST lands here. */
   @Post()
+  // RFC 8058 §3.2 expects 200; Nest's POST default is 201.
+  @HttpCode(HttpStatus.OK)
   @RateLimit('default')
   async unsubscribe(
     @Query('t') queryToken?: string,
@@ -85,7 +98,7 @@ export class UnsubscribeController {
       'max-width:420px;margin:80px auto;padding:0 24px;color:#111">',
       '<h1 style="font-size:20px;margin:0 0 12px">Turn off these emails?</h1>',
       '<p style="color:#666;font-size:14px;line-height:20px;margin:0 0 24px">',
-      'You will still receive required account notices, such as billing',
+      'You will still receive required account notices, such as billing ',
       'and account deletion.</p>',
       `<form method="POST" action="/api/email/unsubscribe?t=${escapeHtmlAttr(token)}">`,
       '<button type="submit" style="background:#000;color:#fff;border:0;',
