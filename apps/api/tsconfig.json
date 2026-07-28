@@ -4,6 +4,10 @@
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
+    // D162 email templates are React Email (.tsx). The automatic
+    // runtime avoids a `React` import in every template; the classic
+    // runtime would need one and fails with "React is not defined".
+    "jsx": "react-jsx",
     "types": ["node"]
   }
 }
