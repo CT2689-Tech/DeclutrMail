@@ -145,6 +145,14 @@ export function SenderCard({
               // whole-row expand (sender-table.tsx §2): never steal
               // clicks meant for the checkbox / verbs / popover / links.
               // The identity <button> below stays the accessible opener.
+              //
+              // While the peek is open, ignore everything: the dialog
+              // portals to <body>, but React events still bubble the
+              // REACT tree — so a backdrop-dismiss click would land
+              // here after closing and instantly reopen the peek.
+              // `peekOpen` is the render-time closure value, i.e. "was
+              // open when this click started" — exactly the right test.
+              if (peekOpen) return;
               const target = e.target as HTMLElement;
               if (target.closest('button, a, input, select, textarea, label, [role="button"]')) {
                 return;

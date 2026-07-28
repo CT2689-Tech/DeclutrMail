@@ -18,10 +18,15 @@ import { makeSender } from '../testing/make-sender';
 import type { ActionRequest } from '../data';
 import { SenderCard } from './sender-card';
 
-// The peek mounts TanStack queries; stub it so card tests stay unit-scoped.
+// The peek mounts TanStack queries; stub it so card tests stay
+// unit-scoped. The backdrop deliberately does NOT stop propagation —
+// the real SenderPeek portals to <body> but React events still bubble
+// the REACT tree into the card, which is exactly the path the
+// backdrop-reopen regression rode (Codex review 2026-07-28).
 vi.mock('./sender-peek', () => ({
   SenderPeek: ({ onClose }: { onClose: () => void }) => (
     <div role="dialog" aria-label="peek-stub">
+      <div data-testid="peek-backdrop" onClick={onClose} />
       <button onClick={onClose}>close</button>
     </div>
   ),
@@ -72,6 +77,18 @@ describe('SenderCard — peek reachability (grid↔table parity)', () => {
     fireEvent.click(verbButton!);
     expect(screen.queryByRole('dialog', { name: 'peek-stub' })).not.toBeInTheDocument();
     expect(onAction).toHaveBeenCalled();
+  });
+
+  it('backdrop dismissal sticks — the closing click must not reopen through the card', () => {
+    renderCard();
+    fireEvent.click(screen.getByTestId('sender-card-sender-1'));
+    expect(screen.getByRole('dialog', { name: 'peek-stub' })).toBeInTheDocument();
+
+    // The backdrop click closes the peek AND bubbles into the card's
+    // whole-card opener (portal events bubble the React tree). The
+    // card must treat "was open when the click started" as ignore.
+    fireEvent.click(screen.getByTestId('peek-backdrop'));
+    expect(screen.queryByRole('dialog', { name: 'peek-stub' })).not.toBeInTheDocument();
   });
 
   it('still opens from the identity button (the accessible opener)', () => {
