@@ -31,11 +31,20 @@ import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
 /** Two-value view enum — grid is the default; table is the opt-in (D49). */
 export type SendersView = 'grid' | 'table';
 
+/** Table row padding — Gmail's own vocabulary (Comfortable/Compact). */
+export type SendersDensity = 'comfortable' | 'compact';
+
 export interface SendersState {
   /** Active view — `'grid'` on mount (D49); flipped via `setView`. */
   view: SendersView;
   /** Imperative setter — toggle and direct-set both go through here. */
   setView: (view: SendersView) => void;
+  /**
+   * Table density — session-scoped like `view` (same D49 non-persist
+   * rationale). Only the table reads it; the grid has one density.
+   */
+  density: SendersDensity;
+  setDensity: (density: SendersDensity) => void;
   /**
    * Active sort column. Mirrors the server contract: `'total'` is the
    * Slice 1 product default. Stored here so sibling surfaces (the
@@ -53,6 +62,8 @@ export interface SendersState {
 export const useSendersStore = create<SendersState>((set) => ({
   view: 'grid',
   setView: (view) => set({ view }),
+  density: 'comfortable',
+  setDensity: (density) => set({ density }),
   sort: 'total',
   direction: 'desc',
   setSort: ({ sort, direction }) => set({ sort, direction }),
