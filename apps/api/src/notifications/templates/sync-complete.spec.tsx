@@ -25,6 +25,27 @@ describe('sync-complete', () => {
     expect(email.html).not.toMatch(/snippet/i);
   });
 
+  it('leads on the count as a hero numeral with lining figures', async () => {
+    const email = await syncCompleteEmail(input);
+    // The count is the news — it must render at display size with
+    // lining+tabular figures, not buried mid-paragraph.
+    expect(email.html).toMatch(/font-size:44px/);
+    expect(email.html).toMatch(/lining-nums tabular-nums/);
+  });
+
+  it('anchors the mailbox address so Gmail cannot autolink it blue', async () => {
+    const email = await syncCompleteEmail(input);
+    // A bare address in body text gets autolinked by Gmail into default
+    // blue underlined link text, which reads as a broken mailto.
+    expect(email.html).toContain('mailto:you@gmail.com');
+  });
+
+  it('uses the brand teal CTA, never a pure-black button', async () => {
+    const email = await syncCompleteEmail(input);
+    expect(email.html).toMatch(/#006b5f/i);
+    expect(email.html).not.toMatch(/background-color:#000000/i);
+  });
+
   it('matches the snapshot', async () => {
     const email = await syncCompleteEmail(input);
     expect(email.text).toMatchSnapshot();
