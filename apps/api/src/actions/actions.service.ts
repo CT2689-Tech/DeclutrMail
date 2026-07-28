@@ -19,12 +19,13 @@ import {
   actionJobs,
   activityLog,
   mailMessages,
+  senderActionWhere,
   senderInboxActionWhere,
   senderPolicies,
   senders,
   undoJournal,
 } from '@declutrmail/db';
-import type { LabelActionSelector } from '@declutrmail/db';
+import type { LabelActionSelector, SenderActionReach } from '@declutrmail/db';
 import {
   LABEL_ACTION_JOB,
   labelActionJobOptions,
@@ -200,70 +201,33 @@ export class ActionsService {
       )
       .limit(1);
 
-    // ONE aggregate query: all four time-window buckets + the
-    // un-windowed `all` count + the past-30d `monthly` figure + the
-    // top-5 most-recent subjects per window for the "Show what will
-    // move" trust panel (spec v1.3 §"Show what will move" — recent
-    // beats oldest for 3-sec sender recognition).
-    //
-    // `array_agg(subject ORDER BY ... DESC) FILTER (WHERE rn <= 5 AND
-    // window_predicate)` collapses what would have been five separate
-    // LIMIT 5 queries into one aggregate — the window function picks
-    // top-5 per window, the FILTER clause selects per bucket. Single
-    // index seek on `mail_messages_account_sender_date_idx`.
-    const [counts] = await this.db
-      .select({
-        all: sql<number>`count(*)::int`,
-        olderThan30d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '30 days')::int`,
-        olderThan90d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '90 days')::int`,
-        olderThan180d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '180 days')::int`,
-        olderThan365d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '365 days')::int`,
-        // `monthly` deliberately does NOT read the inbox-scoped subquery
-        // the buckets aggregate over: the context strip's "N /mo" must
-        // equal the senders-list figure (read-service `last30dMsgs`),
-        // which counts ALL inbound mail in the window regardless of
-        // labels. Scoped to INBOX it rendered "0 /mo" for any sender
-        // whose recent mail was already archived (live bug 2026-07-03).
-        // Scalar subquery (no outer refs) — legal in an aggregate
-        // select; postgres-js returns it as a string, `toCount` coerces.
-        monthly: sql<number | string>`(
-          SELECT count(*)::int
-          FROM ${mailMessages}
-          WHERE ${mailMessages.mailboxAccountId} = ${mailboxAccountId}
-            AND ${mailMessages.senderKey} = ${sender.senderKey}
-            AND ${mailMessages.isOutbound} = false
-            AND ${mailMessages.internalDate} >= now() - interval '30 days'
-        )`,
-        recentAll: sql<
-          string[]
-        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_all <= 5), ARRAY[]::text[])`,
-        recent30d: sql<
-          string[]
-        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_30 <= 5 AND m.internal_date <= now() - interval '30 days'), ARRAY[]::text[])`,
-        recent90d: sql<
-          string[]
-        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_90 <= 5 AND m.internal_date <= now() - interval '90 days'), ARRAY[]::text[])`,
-        recent180d: sql<
-          string[]
-        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_180 <= 5 AND m.internal_date <= now() - interval '180 days'), ARRAY[]::text[])`,
-        recent365d: sql<
-          string[]
-        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_365 <= 5 AND m.internal_date <= now() - interval '365 days'), ARRAY[]::text[])`,
-      })
-      .from(
-        sql`(
-          SELECT
-            ${mailMessages.subject} AS subject,
-            ${mailMessages.internalDate} AS internal_date,
-            row_number() OVER (ORDER BY ${mailMessages.internalDate} DESC) AS rn_all,
-            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '30 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_30,
-            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '90 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_90,
-            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '180 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_180,
-            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '365 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_365
-          FROM ${mailMessages}
-          WHERE ${senderInboxActionWhere({ mailboxAccountId, senderKeys: [sender.senderKey] })}
-        ) m`,
-      );
+    // Buckets + samples resolved at BOTH reaches (ADR-0028): the inbox
+    // set every verb acts on, and the all-mail set the Delete modal's
+    // "Inbox + archived" chip offers. One shared builder so the two can
+    // never drift; the queries run concurrently. `monthly` is neither —
+    // it counts ALL inbound mail in the last 30 days (trash and spam
+    // included) so the context strip matches the senders-list figure
+    // (read-service `last30dMsgs`; live bug 2026-07-03 when it was
+    // inbox-scoped). Scalar query; postgres-js returns a string,
+    // `toCount` coerces.
+    const [inbox, allMail, [monthlyRow]] = await Promise.all([
+      this.previewBuckets(mailboxAccountId, sender.senderKey, 'inbox_only'),
+      this.previewBuckets(mailboxAccountId, sender.senderKey, 'all_mail'),
+      this.db
+        .select({
+          monthly: sql<number | string>`count(*)::int`,
+        })
+        .from(mailMessages)
+        .where(
+          and(
+            eq(mailMessages.mailboxAccountId, mailboxAccountId),
+            eq(mailMessages.senderKey, sender.senderKey),
+            eq(mailMessages.isOutbound, false),
+            sql`${mailMessages.internalDate} >= now() - interval '30 days'`,
+          ),
+        ),
+    ]);
+    const recentMessages = inbox.recentMessages;
 
     const nowMs = Date.now();
     const lastSeenDays = Math.max(
@@ -282,29 +246,103 @@ export class ActionsService {
         // incrementally by `IncrementalSyncWorker`. The number IS the
         // sender-context-strip "you replied N×" copy.
         repliedCount: sender.repliedCount,
-        monthly: toCount(counts?.monthly),
+        monthly: toCount(monthlyRow?.monthly),
       },
-      counts: {
-        all: toCount(counts?.all),
-        olderThan30d: toCount(counts?.olderThan30d),
-        olderThan90d: toCount(counts?.olderThan90d),
-        olderThan180d: toCount(counts?.olderThan180d),
-        olderThan365d: toCount(counts?.olderThan365d),
-      },
+      counts: inbox.counts,
       // Spec v1.3 — top 5 most-recent subjects per window for the
       // "Show what will move" trust panel. `subject` is D7-allowlisted
       // (sender + subject + snippet + dates + labels + read state);
       // no body, no attachment, no header-outside-allowlist surfaced.
-      recentSubjects: {
-        all: counts?.recentAll ?? [],
-        olderThan30d: counts?.recent30d ?? [],
-        olderThan90d: counts?.recent90d ?? [],
-        olderThan180d: counts?.recent180d ?? [],
-        olderThan365d: counts?.recent365d ?? [],
-      },
+      // Legacy subjects-only view is PROJECTED from `recentMessages`
+      // below, never queried separately, so the two cannot disagree.
+      recentSubjects: subjectsOnly(recentMessages),
+      recentMessages,
+      allMail: { counts: allMail.counts, recentMessages: allMail.recentMessages },
       unsubAvailable:
         sender.unsubscribeMethod === 'one_click' || sender.unsubscribeMethod === 'mailto',
       protected: Boolean(policy?.isProtected),
+    };
+  }
+
+  /**
+   * One reach's time-window buckets + top-5 samples for the composite
+   * preview — the query previously inlined in `previewComposite`, now
+   * shared so the inbox and all-mail (ADR-0028) previews cannot drift.
+   *
+   * ONE aggregate query per reach: `count(*) FILTER (WHERE internal_date
+   * <= …)` per window plus `jsonb_agg(jsonb_build_object(...)) FILTER
+   * (WHERE rn_x <= 5 AND window)` — the window functions pick top-5 per
+   * bucket in a single index seek on
+   * `mail_messages_account_sender_date_idx` (spec v1.3 §"Show what will
+   * move": recent beats oldest for 3-sec sender recognition).
+   *
+   * `jsonb_build_object` keeps subject and date atomically paired inside
+   * one row object so they cannot drift out of order on the wire. Both
+   * fields are D7-allowlisted (`internal_date` is registered at
+   * gmail-data-inventory.ts `message.internalDate`). Postgres renders
+   * `timestamptz` inside jsonb as ISO 8601.
+   */
+  private async previewBuckets(
+    mailboxAccountId: string,
+    senderKey: string,
+    reach: SenderActionReach,
+  ): Promise<{
+    counts: CompositeActionPreviewResult['counts'];
+    recentMessages: CompositeActionPreviewResult['recentMessages'];
+  }> {
+    const [row] = await this.db
+      .select({
+        all: sql<number>`count(*)::int`,
+        olderThan30d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '30 days')::int`,
+        olderThan90d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '90 days')::int`,
+        olderThan180d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '180 days')::int`,
+        olderThan365d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '365 days')::int`,
+        recentAll: sql<
+          RawPreviewMessage[]
+        >`COALESCE(jsonb_agg(jsonb_build_object('subject', m.subject, 'date', m.internal_date) ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_all <= 5), '[]'::jsonb)`,
+        recent30d: sql<
+          RawPreviewMessage[]
+        >`COALESCE(jsonb_agg(jsonb_build_object('subject', m.subject, 'date', m.internal_date) ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_30 <= 5 AND m.internal_date <= now() - interval '30 days'), '[]'::jsonb)`,
+        recent90d: sql<
+          RawPreviewMessage[]
+        >`COALESCE(jsonb_agg(jsonb_build_object('subject', m.subject, 'date', m.internal_date) ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_90 <= 5 AND m.internal_date <= now() - interval '90 days'), '[]'::jsonb)`,
+        recent180d: sql<
+          RawPreviewMessage[]
+        >`COALESCE(jsonb_agg(jsonb_build_object('subject', m.subject, 'date', m.internal_date) ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_180 <= 5 AND m.internal_date <= now() - interval '180 days'), '[]'::jsonb)`,
+        recent365d: sql<
+          RawPreviewMessage[]
+        >`COALESCE(jsonb_agg(jsonb_build_object('subject', m.subject, 'date', m.internal_date) ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_365 <= 5 AND m.internal_date <= now() - interval '365 days'), '[]'::jsonb)`,
+      })
+      .from(
+        sql`(
+          SELECT
+            ${mailMessages.subject} AS subject,
+            ${mailMessages.internalDate} AS internal_date,
+            row_number() OVER (ORDER BY ${mailMessages.internalDate} DESC) AS rn_all,
+            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '30 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_30,
+            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '90 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_90,
+            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '180 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_180,
+            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '365 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_365
+          FROM ${mailMessages}
+          WHERE ${senderActionWhere({ mailboxAccountId, senderKeys: [senderKey], reach })}
+        ) m`,
+      );
+
+    return {
+      counts: {
+        all: toCount(row?.all),
+        olderThan30d: toCount(row?.olderThan30d),
+        olderThan90d: toCount(row?.olderThan90d),
+        olderThan180d: toCount(row?.olderThan180d),
+        olderThan365d: toCount(row?.olderThan365d),
+      },
+      recentMessages: {
+        all: toPreviewMessages(row?.recentAll),
+        olderThan30d: toPreviewMessages(row?.recent30d),
+        olderThan90d: toPreviewMessages(row?.recent90d),
+        olderThan180d: toPreviewMessages(row?.recent180d),
+        olderThan365d: toPreviewMessages(row?.recent365d),
+      },
     };
   }
 
@@ -345,6 +383,8 @@ export class ActionsService {
       type: CompositePrimaryVerb;
       olderThanDays?: number | null | undefined;
       wakeAt?: Date | null | undefined;
+      /** ADR-0028 — absent = `inbox_only` (the pre-reach wire). */
+      reach?: SenderActionReach | undefined;
     };
     secondary?:
       { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined } | undefined;
@@ -397,10 +437,20 @@ export class ActionsService {
         message: 'This sender is Protected. Confirm to apply the action anyway.',
       });
     }
-    const primaryCount = await this.countSenderInboxWithWindow(
+    // ADR-0028: the Zod boundary already rejected `all_mail` on any verb
+    // but Delete; this assert keeps direct service callers honest too.
+    const primaryReach: SenderActionReach = primary.reach ?? 'inbox_only';
+    if (primaryReach === 'all_mail' && primary.type !== 'delete') {
+      throw new BadRequestException({
+        code: 'INVALID_REACH',
+        message: 'Only Delete may reach past the inbox.',
+      });
+    }
+    const primaryCount = await this.countSenderActionWithWindow(
       mailboxAccountId,
       senderKey,
       primary.olderThanDays ?? null,
+      primaryReach,
     );
     const resolvedMessageIds: string[] = []; // worker resolves "in INBOX now" at execute
     const storedSelector: LabelActionSelector = {
@@ -409,13 +459,15 @@ export class ActionsService {
       senderKey,
     };
 
-    // Secondary acts on the SAME sender with its own time-window.
+    // Secondary acts on the SAME sender with its own time-window,
+    // always at inbox reach (ADR-0028 widens the primary Delete only).
     const secondaryStorageKey = secondary ? `${secondary.type}-${safeKey}-sec` : null;
     const secondaryCount = secondary
-      ? await this.countSenderInboxWithWindow(
+      ? await this.countSenderActionWithWindow(
           mailboxAccountId,
           senderKey,
           secondary.olderThanDays ?? null,
+          'inbox_only',
         )
       : null;
 
@@ -442,6 +494,7 @@ export class ActionsService {
           idempotencyKey: primaryStorageKey,
           olderThanDays: primary.olderThanDays ?? null,
           wakeAt: primary.wakeAt ?? null,
+          reach: primaryReach,
         },
         tx,
       );
@@ -899,7 +952,7 @@ export class ActionsService {
 
   /**
    * Per-sender INBOX counts narrowed by an optional time-window — the
-   * grouped sibling of `countSenderInboxWithWindow` for the bulk
+   * grouped sibling of `countSenderActionWithWindow` for the bulk
    * fan-out. Mirrors the worker resolver's predicates so each row's
    * `requestedCount` matches what its job will actually move.
    */
@@ -918,20 +971,23 @@ export class ActionsService {
   }
 
   /**
-   * Count a sender's INBOX messages narrowed by an optional time-window
-   * (ADR-0020). Mirrors the worker's resolver query so the
-   * enqueue-time `requestedCount` matches the worker's resolved set.
-   * NULL window = whole inbox.
+   * Count a sender's actionable messages narrowed by an optional
+   * time-window (ADR-0020) at an explicit reach (ADR-0028). Mirrors the
+   * worker's resolver query so the enqueue-time `requestedCount`
+   * matches the worker's resolved set. NULL window = un-windowed.
    */
-  private async countSenderInboxWithWindow(
+  private async countSenderActionWithWindow(
     mailboxAccountId: string,
     senderKey: string,
     olderThanDays: number | null,
+    reach: SenderActionReach,
   ): Promise<number> {
     const [row] = await this.db
       .select({ n: count() })
       .from(mailMessages)
-      .where(senderInboxActionWhere({ mailboxAccountId, senderKeys: [senderKey], olderThanDays }));
+      .where(
+        senderActionWhere({ mailboxAccountId, senderKeys: [senderKey], olderThanDays, reach }),
+      );
     return toCount(row?.n);
   }
 
@@ -1903,6 +1959,7 @@ export class ActionsService {
         messageIds: sibling.resolvedMessageIds,
         selector: sibling.selector,
         wakeAt: sibling.wakeAt,
+        reach: sibling.reach,
       });
       results.push({
         token: sibling.undoToken,
@@ -1923,6 +1980,8 @@ export class ActionsService {
     selector?: LabelActionSelector;
     /** Original forward Later schedule; null for legacy/other verbs. */
     wakeAt?: Date | null;
+    /** Forward row's ADR-0028 reach, copied onto the reverse row. */
+    reach?: SenderActionReach;
   }): Promise<{ actionId: string; status: ActionJobStatus }> {
     if (!this.queue) {
       throw new ServiceUnavailableException({
@@ -1945,6 +2004,7 @@ export class ActionsService {
       verb: input.verb,
       undoToken: input.token,
       wakeAt: input.wakeAt ?? null,
+      ...(input.reach ? { reach: input.reach } : {}),
     });
     if (inserted.existing) {
       // Existing revert row found. Dispatch by status:
@@ -2125,6 +2185,11 @@ export class ActionsService {
        * composite (per the schema's "primary is self-implicit" convention).
        */
       compositeId?: string | null;
+      /**
+       * ADR-0028 reach. Absent = `inbox_only` (column default). Reverse
+       * rows copy the forward row's value for the audit trail.
+       */
+      reach?: SenderActionReach;
     },
     executor: EntitlementsExecutor = this.db,
   ): Promise<{ existing: boolean; row: typeof actionJobs.$inferSelect }> {
@@ -2144,6 +2209,7 @@ export class ActionsService {
           : {}),
         ...(input.wakeAt ? { wakeAt: input.wakeAt } : {}),
         ...(input.compositeId ? { compositeId: input.compositeId } : {}),
+        ...(input.reach ? { reach: input.reach } : {}),
       })
       .onConflictDoNothing({ target: actionJobs.idempotencyKey })
       .returning();
@@ -2246,6 +2312,51 @@ export class ActionsService {
 function toCount(raw: number | string | undefined): number {
   if (raw === undefined) return 0;
   return typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw);
+}
+
+/**
+ * Project the deprecated subjects-only view from the dated rows. Derived,
+ * never re-queried — a second query is how two views of one fact drift.
+ */
+function subjectsOnly(buckets: Record<string, { subject: string; date: string }[]>): {
+  all: string[];
+  olderThan30d: string[];
+  olderThan90d: string[];
+  olderThan180d: string[];
+  olderThan365d: string[];
+} {
+  const pick = (key: string): string[] => (buckets[key] ?? []).map((row) => row.subject);
+  return {
+    all: pick('all'),
+    olderThan30d: pick('olderThan30d'),
+    olderThan90d: pick('olderThan90d'),
+    olderThan180d: pick('olderThan180d'),
+    olderThan365d: pick('olderThan365d'),
+  };
+}
+
+/** Shape `jsonb_agg(jsonb_build_object(...))` returns before normalizing. */
+interface RawPreviewMessage {
+  subject: string | null;
+  date: string | null;
+}
+
+/**
+ * Normalize the jsonb sample rows into the wire contract. A row missing a
+ * usable `date` is DROPPED rather than emitted with a placeholder: this
+ * feeds a D226 trust panel, and a fabricated timestamp there is worse
+ * than a shorter list (§10 no-fake-data). `subject` may legitimately be
+ * '' — the column defaults to empty string — so only `date` gates.
+ */
+function toPreviewMessages(
+  raw: RawPreviewMessage[] | undefined,
+): { subject: string; date: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((row) => {
+    const date = typeof row?.date === 'string' ? row.date : null;
+    if (date === null || !Number.isFinite(Date.parse(date))) return [];
+    return [{ subject: typeof row.subject === 'string' ? row.subject : '', date }];
+  });
 }
 
 /** Closed operational projection for Redis/BullMQ cleanup failures. */

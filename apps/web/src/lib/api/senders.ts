@@ -103,6 +103,14 @@ export interface SenderListRow {
    */
   totalReceived: number;
   /**
+   * Messages currently carrying INBOX for this sender — what the
+   * inbox-scoped verbs can actually reach (ADR-0028 companion surface).
+   * Optional: an API predating the field omits it (deploy skew) and
+   * legacy fixtures don't carry it; absent ⇒ the UI shows nothing
+   * rather than a fabricated 0.
+   */
+  inboxCount?: number | null;
+  /**
    * "You replied N×" count (Senders V2 spec v1.3 + mig 0022) — distinct
    * outbound messages whose thread contains ≥1 inbound from this sender.
    * Auto-protect threshold is ≥3. Engine default `0` (never null).

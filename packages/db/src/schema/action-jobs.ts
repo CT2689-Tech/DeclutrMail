@@ -90,6 +90,22 @@ export const actionVerb = pgEnum('action_verb', ['archive', 'later', 'delete', '
 /** Forward action vs. its reverse (undo). */
 export const actionDirection = pgEnum('action_direction', ['forward', 'reverse']);
 
+/**
+ * How far a sender-selector action reaches (ADR-0028, 2026-07-28).
+ *
+ * `inbox_only` — the original pipeline semantic: the worker resolves
+ * "currently carrying INBOX". `all_mail` widens Delete to the sender's
+ * archived mail as well (everything except TRASH / SPAM / DRAFT / CHAT),
+ * for senders whose mail a Gmail filter files past the inbox — the
+ * dogfood mailbox held several thousand messages across a handful of
+ * such senders that no inbox verb could reach (2026-07-28 report).
+ *
+ * Delete-only by the table CHECK below: Archive of archived mail is a
+ * no-op by definition, and Later/Autopilot widening is a separate
+ * product decision (D245 keeps automatic actions inbox-scoped).
+ */
+export const actionReach = pgEnum('action_reach', ['inbox_only', 'all_mail']);
+
 /** Job lifecycle — drives the FE poll + the `failed` surface. */
 export const actionJobStatus = pgEnum('action_job_status', [
   'queued',
@@ -206,6 +222,13 @@ export const actionJobs = pgTable(
      */
     olderThanDays: integer('older_than_days'),
     /**
+     * ADR-0028 reach, persisted like `older_than_days` so the worker
+     * resolves exactly the set the preview counted. `all_mail` is legal
+     * only on Delete rows (table CHECK); reverse rows copy the forward
+     * row's value so the undo audit trail records what was widened.
+     */
+    reach: actionReach('reach').notNull().default('inbox_only'),
+    /**
      * D245 Later schedule, captured with the action intent. Required for
      * every Later job and forbidden for every other verb by the table
      * CHECK below. Reverse Later rows copy the original value so Undo can
@@ -254,6 +277,11 @@ export const actionJobs = pgTable(
     wakeAtVerbCheck: check(
       'action_jobs_wake_at_verb_check',
       sql`(${table.verb} = 'later' AND ${table.wakeAt} IS NOT NULL) OR (${table.verb} <> 'later' AND ${table.wakeAt} IS NULL)`,
+    ),
+    /** Only Delete may reach past the inbox (ADR-0028). */
+    reachVerbCheck: check(
+      'action_jobs_reach_verb_check',
+      sql`${table.reach} = 'inbox_only' OR ${table.verb} = 'delete'`,
     ),
   }),
 );

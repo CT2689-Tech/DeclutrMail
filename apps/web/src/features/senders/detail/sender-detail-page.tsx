@@ -434,6 +434,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               type: primaryType,
               olderThanDays: opts?.olderThanDays ?? null,
               ...(primaryType === 'later' && opts?.wakeAt ? { wakeAt: opts.wakeAt } : {}),
+              // ADR-0028 — only Delete may carry the widened reach, and
+              // only the non-default value travels.
+              ...(primaryType === 'delete' && opts?.reach === 'all_mail'
+                ? { reach: opts.reach }
+                : {}),
             },
             ...(opts?.secondary
               ? {

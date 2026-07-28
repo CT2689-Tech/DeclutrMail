@@ -24,6 +24,22 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-07-28 — Decide fate of stashed d162 email-template polish
+**Source:** session (branch cleanup before feat/d226-delete-scope-archived)
+**Why:** The merged #405 session left ~310 uncommitted lines of email-template
+polish (Eyebrow/display-type treatment across shell.tsx, sync-complete,
+deletion-scheduled, deletion-receipt, sync-reminder-24h, shell.spec) in the
+working tree. They were NOT part of the merged PR. Stashed so the new action-reach
+branch stays clean — a stash is recoverable but easy to forget.
+**How:** In the main checkout run `git stash list` (entry: "d162 email template
+polish — uncommitted leftovers from merged #405 session (stashed by Claude
+2026-07-28)"). To resume: `git checkout -b feat/d162-email-polish origin/main &&
+git stash pop`, review, PR. To discard: `git stash drop stash@{0}` after
+confirming the entry name.
+**Verifies by:** `git stash list` no longer shows the entry (popped into a branch
+or deliberately dropped).
+**Status:** Open
+
 ### 2026-07-27 — Create `unsubscribe-token-secret-prod` BEFORE merging the D162/D165 email PR
 **Source:** feat/d162-react-email-templates (React Email + RFC 8058 one-click unsubscribe)
 **Why:** The PR binds `UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest` on BOTH Cloud Run services (worker signs the token at enqueue, API verifies Gmail's POST). Per the deploy workflow's own rule, a referenced Secret Manager secret that doesn't exist **fails the whole deploy** — so the secret must exist before the merge-triggered deploy runs. Without the env var the worker's sync-ready email handler throws at enqueue (fail-closed, loud in Sentry) and sync emails stop.
@@ -679,7 +695,7 @@ This PR's Bug 1 fix wired `useCompositePreview` (preview is now correct + reacti
 **Why:** D210 requires every new component to ship with a stories file. `compose-strip.tsx` (756 lines, NEW) and the heavily-rewritten `confirm-action-modal.tsx` have no stories. The Activity redesign added 9+ states (Loading/Error/WithSelection/BulkUndoError/Grouped/VerbFiltered/CustomDateRange/WindowAllTime/UndoTryAgain) the existing 3-story file does not cover.
 **How:**
 1. Add `compose-strip.stories.tsx` — empty / single-axis / multi-axis / negated / window-popover-open / domain-popover-open / loading-counts.
-2. Add `confirm-action-modal.stories.tsx` — Archive / Delete / Unsub-with-secondary-archive / Unsub-with-secondary-delete / Later / loading-preview / preview-error / expanded-recent-subjects.
+2. Add `confirm-action-modal.stories.tsx` — Archive / Delete / Unsub-with-secondary-archive / Unsub-with-secondary-delete / Later / loading-preview / preview-error / expanded-recent-subjects. ADR-0028 (2026-07-28) adds four more states: reach-unavailable (old API) / Delete-inbox-only / Delete-all-mail / empty-inbox-with-archived-escape-hatch; plus `sender-row-detail.stories.tsx` needs the In-inbox card (present / zero / absent-on-wire).
 3. Extend `activity-screen.stories.tsx` with the 9 new states above + update the stale meta description.
 **Verifies by:** Storybook lists every state; visual-regression CI catches future drift.
 **Status:** Open

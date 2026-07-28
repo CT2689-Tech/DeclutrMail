@@ -17,6 +17,7 @@
 
 import type {
   ActionJobStatus,
+  ActionReach,
   UndoActionKind,
   UnsubscribeLifecycleStatus,
   UnsubscribeManualTransition,
@@ -28,6 +29,9 @@ import { apiGet, apiPost } from './client';
 
 /** Lifecycle of an `action_jobs` row — mirrors the BE `ActionJobStatus`. */
 export type { ActionJobStatus };
+
+/** ADR-0028 — how far a Delete reaches. Absent on the wire = `inbox_only`. */
+export type { ActionReach };
 
 /** A status is terminal once the worker has finished (success or failure). */
 export function isTerminalStatus(status: ActionJobStatus): boolean {
@@ -205,6 +209,49 @@ export interface CompositeActionEnqueueResult {
   wakeAt: string | null;
 }
 
+/**
+ * One row in the composite preview's "what currently matches" sample.
+ * `date` is the message's Gmail `internal_date` as an ISO string — the
+ * SAME column every preview bucket filters on, so a reader can verify
+ * the sample respects the window they selected.
+ */
+export interface CompositePreviewMessage {
+  subject: string;
+  /**
+   * ISO `internal_date`, or `null` when the server did not supply one.
+   *
+   * Nullable on purpose. `apps/api` (Cloud Run) and `apps/web` (Vercel)
+   * deploy INDEPENDENTLY, so every wire-shape change has a skew window in
+   * both directions. This field arrived as a bare `string[]` before
+   * 2026-07-27; a reader that assumes the object shape renders a plain
+   * object as a React child and throws, taking down the D226 confirm
+   * modal. `normalizePreviewMessages` below absorbs either shape at the
+   * boundary so the rest of the app sees one type, and a missing date
+   * renders as no date rather than a guess.
+   */
+  date: string | null;
+}
+
+/** Either shape the preview endpoint may be serving during a deploy skew. */
+type WirePreviewMessage = string | { subject?: unknown; date?: unknown };
+
+/**
+ * Coerce the wire's sample rows to `CompositePreviewMessage[]`. Defensive
+ * parsing at an external boundary, not transitional shim code: the same
+ * discipline as `toCount` on the server side.
+ */
+export function normalizePreviewMessages(raw: unknown): CompositePreviewMessage[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as WirePreviewMessage[]).flatMap((row) => {
+    if (typeof row === 'string') return [{ subject: row, date: null }];
+    if (row === null || typeof row !== 'object') return [];
+    const subject = typeof row.subject === 'string' ? row.subject : '';
+    const date =
+      typeof row.date === 'string' && Number.isFinite(Date.parse(row.date)) ? row.date : null;
+    return [{ subject, date }];
+  });
+}
+
 /** Returned by `GET /api/actions/preview` — composite preview shape. */
 export interface CompositeActionPreviewResult {
   sender: {
@@ -225,19 +272,47 @@ export interface CompositeActionPreviewResult {
     olderThan365d: number;
   };
   /**
-   * Top 5 most-recent subjects per time-window for the "Show what will
-   * move" trust panel (spec v1.3). Each array is ordered by
-   * `internal_date DESC`, capped at 5. Empty when no INBOX messages
-   * match the window. `subject` is D7-allowlisted; no body, no
-   * attachment, no header-outside-allowlist surfaces here.
+   * Top 5 most-recent messages per time-window for the "Show what will
+   * move" trust panel (spec v1.3 — recent beats oldest for 3-sec sender
+   * recognition). Ordered by `internal_date DESC`, capped at 5. Empty
+   * when no messages match the window.
+   *
+   * Carries `date` (the message's `internal_date`, ISO) alongside the
+   * subject: on a windowed action the panel shows the 5 most recent
+   * WITHIN that bucket, and without a date the user cannot check the
+   * sample respects the window they picked. Both fields are
+   * D7-allowlisted (sender + subject + snippet + dates + labels + read
+   * state) — no body, no attachment, no other header surfaces here.
    */
-  recentSubjects: {
-    all: string[];
-    olderThan30d: string[];
-    olderThan90d: string[];
-    olderThan180d: string[];
-    olderThan365d: string[];
+  recentMessages: {
+    all: CompositePreviewMessage[];
+    olderThan30d: CompositePreviewMessage[];
+    olderThan90d: CompositePreviewMessage[];
+    olderThan180d: CompositePreviewMessage[];
+    olderThan365d: CompositePreviewMessage[];
   };
+  /**
+   * ADR-0028 — the same counts + samples at `all_mail` reach (inbox +
+   * archived), powering the Delete modal's "Inbox + archived" chip.
+   * `null` when the API predates the field (deploy skew): the modal
+   * simply does not offer the reach choice against an older server.
+   */
+  allMail: {
+    counts: {
+      all: number;
+      olderThan30d: number;
+      olderThan90d: number;
+      olderThan180d: number;
+      olderThan365d: number;
+    };
+    recentMessages: {
+      all: CompositePreviewMessage[];
+      olderThan30d: CompositePreviewMessage[];
+      olderThan90d: CompositePreviewMessage[];
+      olderThan180d: CompositePreviewMessage[];
+      olderThan365d: CompositePreviewMessage[];
+    };
+  } | null;
   unsubAvailable: boolean;
   protected: boolean;
 }
@@ -250,7 +325,13 @@ export interface CompositeActionPreviewResult {
 export async function enqueueCompositeAction(
   input: {
     senderId: string;
-    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
+    primary: {
+      type: CompositePrimaryVerb;
+      olderThanDays?: number | null;
+      wakeAt?: string;
+      /** ADR-0028 — omit for `inbox_only` (Delete-only field). */
+      reach?: ActionReach;
+    };
     secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
     override?: boolean;
     idempotencyKey: string;
@@ -385,7 +466,66 @@ export async function getCompositePreview(
     query: { senderId },
     ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
   });
-  return env.data;
+  // Absorb the wire HERE, at the one boundary the sample enters through.
+  //
+  // `recentMessages` (dated) is the current field; `recentSubjects`
+  // (subjects-only) is what an API built before 2026-07-27 sends. Reading
+  // whichever is present keeps a NEW web bundle working against an OLD
+  // API. The API keeps emitting BOTH, which is what keeps an OLD web
+  // bundle working against a NEW API — the two services deploy
+  // independently, so both directions need covering.
+  const wire = env.data as unknown as {
+    recentMessages?: Record<string, unknown>;
+    recentSubjects?: Record<string, unknown>;
+    allMail?: {
+      counts?: Record<string, unknown>;
+      recentMessages?: Record<string, unknown>;
+    } | null;
+  };
+  const raw = wire.recentMessages ?? wire.recentSubjects;
+  return {
+    ...env.data,
+    recentMessages: {
+      all: normalizePreviewMessages(raw?.all),
+      olderThan30d: normalizePreviewMessages(raw?.olderThan30d),
+      olderThan90d: normalizePreviewMessages(raw?.olderThan90d),
+      olderThan180d: normalizePreviewMessages(raw?.olderThan180d),
+      olderThan365d: normalizePreviewMessages(raw?.olderThan365d),
+    },
+    // ADR-0028: absent (older API) or malformed → null, and the modal
+    // does not offer the reach choice. Same boundary discipline as the
+    // sample rows above.
+    allMail: normalizeAllMailBlock(wire.allMail),
+  };
+}
+
+/** Coerce the wire's ADR-0028 `allMail` block; `null` = unavailable. */
+function normalizeAllMailBlock(
+  raw:
+    | { counts?: Record<string, unknown>; recentMessages?: Record<string, unknown> }
+    | null
+    | undefined,
+): CompositeActionPreviewResult['allMail'] {
+  const counts = raw?.counts;
+  if (!counts) return null;
+  const bucket = (value: unknown): number =>
+    typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return {
+    counts: {
+      all: bucket(counts.all),
+      olderThan30d: bucket(counts.olderThan30d),
+      olderThan90d: bucket(counts.olderThan90d),
+      olderThan180d: bucket(counts.olderThan180d),
+      olderThan365d: bucket(counts.olderThan365d),
+    },
+    recentMessages: {
+      all: normalizePreviewMessages(raw?.recentMessages?.all),
+      olderThan30d: normalizePreviewMessages(raw?.recentMessages?.olderThan30d),
+      olderThan90d: normalizePreviewMessages(raw?.recentMessages?.olderThan90d),
+      olderThan180d: normalizePreviewMessages(raw?.recentMessages?.olderThan180d),
+      olderThan365d: normalizePreviewMessages(raw?.recentMessages?.olderThan365d),
+    },
+  };
 }
 
 /* ─────────────────────── D52 — multi-sender bulk client ─────────────────────── */
@@ -502,6 +642,7 @@ function withRequiredLaterWakeAt(primary: {
   type: CompositePrimaryVerb;
   olderThanDays?: number | null;
   wakeAt?: string;
+  reach?: ActionReach;
 }): typeof primary {
   return primary.type === 'later' && primary.wakeAt === undefined
     ? { ...primary, wakeAt: defaultLaterWakeAt() }

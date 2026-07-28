@@ -14,8 +14,8 @@ const buckets = {
   olderThan365d: 0,
 };
 const subjects = {
-  all: ['Latest message'],
-  olderThan30d: ['Older message'],
+  all: [{ subject: 'Latest message', date: '2026-06-20T09:00:00.000Z' }],
+  olderThan30d: [{ subject: 'Older message', date: '2026-05-02T09:00:00.000Z' }],
   olderThan90d: [],
   olderThan180d: [],
   olderThan365d: [],
@@ -30,9 +30,35 @@ const livePreview: CompositeActionPreviewResult = {
     monthly: sender.monthlyVolume ?? 0,
   },
   counts: buckets,
-  recentSubjects: subjects,
+  recentMessages: subjects,
+  // `null` = an API without the ADR-0028 block (deploy skew). The base
+  // fixture keeps it null so every pre-reach test exercises the exact
+  // pre-ADR behavior; reach tests build on `livePreviewWithAllMail`.
+  allMail: null,
   unsubAvailable: true,
   protected: false,
+};
+
+/** ADR-0028 fixture — inbox counts above, plus a larger all-mail set. */
+const allMailBuckets = {
+  all: 977,
+  olderThan30d: 900,
+  olderThan90d: 800,
+  olderThan180d: 700,
+  olderThan365d: 600,
+};
+const livePreviewWithAllMail: CompositeActionPreviewResult = {
+  ...livePreview,
+  allMail: {
+    counts: allMailBuckets,
+    recentMessages: {
+      all: [{ subject: 'Archived statement', date: '2026-07-05T09:00:00.000Z' }],
+      olderThan30d: [{ subject: 'Older archived statement', date: '2026-04-01T09:00:00.000Z' }],
+      olderThan90d: [],
+      olderThan180d: [],
+      olderThan365d: [],
+    },
+  },
 };
 
 function request(verb: ActionRequest['verb']): ActionRequest {
@@ -435,5 +461,621 @@ describe('ConfirmActionModal — backlog secondary belongs to Unsubscribe only',
     const opts = onConfirm.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(Object.keys(opts)).not.toContain('secondary');
     expect(opts.archiveHistoric).toBe(false);
+  });
+});
+
+// The founder's 2026-07-27 report: a Delete preview reading "71 /mo"
+// above five window chips that all said 0, and "0 emails currently match
+// (older than 180 days)". Both numbers were true — the sender mails 71×
+// a month and every one is already archived (verified against the dev DB:
+// ealerts.bankofamerica.com, monthly 71, INBOX-now 0). The preview owed
+// the reader that reconciliation.
+describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
+  const emptyInbox = {
+    all: 0,
+    olderThan30d: 0,
+    olderThan90d: 0,
+    olderThan180d: 0,
+    olderThan365d: 0,
+  };
+
+  function renderDelete(counts: typeof emptyInbox, monthly: number | null) {
+    return render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={{
+          ...livePreview,
+          sender: { ...livePreview.sender, monthly },
+          counts,
+        }}
+      />,
+    );
+  }
+
+  it('explains a zero count instead of leaving it to contradict the /mo figure', () => {
+    renderDelete(emptyInbox, 71);
+    expect(
+      screen.getByText(
+        /Nothing from this sender is in your inbox right now — though 71 arrived in the last 30 days\. Delete only acts on mail still in the inbox\./,
+      ),
+    ).toBeTruthy();
+    // No claim about the mail's history or fate — we store only current labels.
+    expect(screen.queryByText(/moved out of it|already archived|already deleted/)).toBeNull();
+  });
+
+  it('hides the window chips when no window can change the outcome', () => {
+    renderDelete(emptyInbox, 71);
+    expect(screen.queryByRole('radiogroup', { name: /How far back/i })).toBeNull();
+    // …and drops the qualifier that described the now-absent control.
+    expect(screen.queryByText(/older than 180 days/)).toBeNull();
+  });
+
+  it('labels the monthly figure as arrivals, not inbox contents', () => {
+    renderDelete(emptyInbox, 71);
+    expect(screen.getByText(/\/mo arriving/)).toBeTruthy();
+  });
+
+  it('falls back to the list row figure when the preview omits monthly', () => {
+    // Both are the same 30-day inbound count by construction
+    // (actions.service.ts `monthly` is documented to equal the senders
+    // list `last30dMsgs`), so the fallback is coherent, not a drift.
+    const { container } = renderDelete(emptyInbox, null);
+    expect(container.textContent).toMatch(/12 \/mo arriving/);
+  });
+
+  it('renders an unknown monthly volume as "—", never a factual 0', () => {
+    const unknown = makeSender({ monthlyVolume: null });
+    const { container } = render(
+      <ConfirmActionModal
+        request={{ verb: 'Delete', senders: [unknown] }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={{
+          ...livePreview,
+          sender: { ...livePreview.sender, monthly: null },
+          counts: emptyInbox,
+        }}
+      />,
+    );
+    expect(container.textContent).toMatch(/—\s*\/mo arriving/);
+    expect(container.textContent).not.toMatch(/0 \/mo arriving/);
+  });
+
+  it('keeps the chips and points at a wider window when only THIS window is empty', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={{
+          ...livePreview,
+          counts: { ...emptyInbox, all: 30, olderThan30d: 30 },
+        }}
+      />,
+    );
+    // The inbox is NOT empty, so the window row stays — widening it is a
+    // real next step and the copy must not claim an empty inbox.
+    expect(screen.getByRole('radiogroup', { name: /How far back/i })).toBeTruthy();
+    expect(
+      screen.getByText(
+        /30 emails from this sender are in your inbox, but none are older than 180 days\. Widen the window to include them\./,
+      ),
+    ).toBeTruthy();
+  });
+
+  it('stays silent when the selected window matches mail', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(screen.queryByText(/Nothing from this sender is in your inbox/)).toBeNull();
+    expect(screen.queryByText(/Widen the window/)).toBeNull();
+  });
+
+  it('never narrates the inbox from a stale cache mid-refetch', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={{ ...livePreview, counts: emptyInbox }}
+        compositePreviewLoading
+      />,
+    );
+    expect(screen.queryByText(/Nothing from this sender is in your inbox/)).toBeNull();
+  });
+});
+
+// Later is the third verb whose entire effect is moving current inbox
+// mail, and it counts as a cleanup action. Confirming it on an empty
+// inbox spent one of the Free tier's 50 monthly actions to do nothing —
+// Archive and Delete were blocked, Later was not (live smoke 2026-07-27).
+describe('ConfirmActionModal — no-op confirm gate', () => {
+  const emptyInbox = {
+    all: 0,
+    olderThan30d: 0,
+    olderThan90d: 0,
+    olderThan180d: 0,
+    olderThan365d: 0,
+  };
+  const emptyPreview = { ...livePreview, counts: emptyInbox };
+
+  it.each(['Archive', 'Delete', 'Later'] as const)(
+    'blocks %s when nothing in the inbox can move',
+    (verb) => {
+      render(
+        <ConfirmActionModal
+          request={request(verb)}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+          compositePreview={emptyPreview}
+        />,
+      );
+      expect(screen.getByRole('button', { name: new RegExp(verb) })).toBeDisabled();
+    },
+  );
+
+  it('keeps Unsubscribe confirmable at a zero backlog — it cuts future mail', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={emptyPreview}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /Unsubscribe/ })).toBeEnabled();
+  });
+
+  it('still confirms Later when the inbox actually has mail to move', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Later')}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={livePreview}
+      />,
+    );
+    const confirm = screen.getByRole('button', { name: /Later/ });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+});
+
+// On Unsubscribe + a backlog secondary the zero count describes the
+// SECONDARY. Naming the primary produced "Unsubscribe only acts on mail
+// still in the inbox" — flatly false, and false about the one verb that
+// never touches inbox mail (live smoke 2026-07-27).
+describe('ConfirmActionModal — composite notice names the acting verb', () => {
+  const emptyPreview = {
+    ...livePreview,
+    counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+  };
+
+  it.each([
+    ['Delete them', 'Delete'],
+    ['Archive them', 'Archive'],
+  ])('names %s as the verb the zero belongs to', (chip, expectedVerb) => {
+    render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={emptyPreview}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: chip }));
+
+    expect(
+      screen.getByText(new RegExp(`\\. ${expectedVerb} only acts on mail still in the inbox\\.$`)),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Unsubscribe only acts on mail still in the inbox/)).toBeNull();
+    // The primary still does real work, so confirm stays available.
+    expect(screen.getByRole('button', { name: /Unsubscribe/ })).toBeEnabled();
+  });
+});
+
+it('pluralizes the scope notice on a bulk sheet', () => {
+  const second = makeSender({ id: 'sender-b2', displayName: 'Beta', email: 'b@beta.com' });
+  const empty = {
+    all: 0,
+    olderThan30d: 0,
+    olderThan90d: 0,
+    olderThan180d: 0,
+    olderThan365d: 0,
+  };
+  render(
+    <ConfirmActionModal
+      request={{ verb: 'Archive', senders: [sender, second] }}
+      onCancel={() => {}}
+      onConfirm={() => {}}
+      bulkPreview={{
+        data: {
+          senders: [
+            { senderId: sender.id, name: sender.name, counts: empty, protected: false },
+            { senderId: second.id, name: second.name, counts: empty, protected: false },
+          ],
+          totals: empty,
+          protectedCount: 0,
+        },
+        loading: false,
+        error: false,
+      }}
+    />,
+  );
+  expect(screen.getByText(/Nothing from these senders is in your inbox right now\./)).toBeTruthy();
+  // Bulk has no single arrival figure — it must not invent one.
+  expect(screen.queryByText(/arrived in the last 30 days/)).toBeNull();
+});
+
+// B/C/D — the trust affordances added 2026-07-27 after the founder's
+// screenshots showed four identical window chips and a dateless sample.
+describe('ConfirmActionModal — preview trust affordances', () => {
+  // github.com shape: newest inbox mail is 182d old, so All/30d/90d/180d
+  // all match 2,908 and only 1yr+ narrows.
+  const tiedCounts = {
+    all: 2908,
+    olderThan30d: 2908,
+    olderThan90d: 2908,
+    olderThan180d: 2908,
+    olderThan365d: 59,
+  };
+
+  it('explains a tied window row instead of leaving 4 identical chips (B)', () => {
+    // The age MUST come from the INBOX-scoped sample, not
+    // `sender.lastSeenDays` (all-labels). Measured on the dev mailbox
+    // 2026-07-27, jobs-noreply@linkedin.com had lastSeenDays 3 while its
+    // newest INBOX message was 2,784 days old — the old wiring printed
+    // "3 days old" about a 7-year-old inbox.
+    const inbox182dAgo = new Date(Date.now() - 182 * 86_400_000).toISOString();
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={{
+          ...livePreview,
+          // Deliberately contradicts the inbox sample: if the copy ever
+          // reads this field again, the assertion below fails.
+          sender: { ...livePreview.sender, lastSeenDays: 3 },
+          counts: tiedCounts,
+          recentMessages: {
+            ...subjects,
+            all: [{ subject: 'Oldest still in inbox', date: inbox182dAgo }],
+          },
+        }}
+      />,
+    );
+    expect(
+      screen.getByText(
+        /Every window through 6 months\+ matches the same 2,908 — this sender's newest inbox email is 182 days old, so those windows exclude nothing\./,
+      ),
+    ).toBeTruthy();
+    // The chips themselves stay: merging them would let "All inbox" stand
+    // in for "6 months+", which can diverge at execution.
+    expect(screen.getByRole('radiogroup', { name: /How far back/i })).toBeTruthy();
+  });
+
+  it('stays quiet when every window narrows something (B)', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(screen.queryByText(/matches the same/)).toBeNull();
+  });
+
+  it('dates every row in the current-matches sample (C)', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Show what currently matches/ }));
+    const row = screen.getByText('Latest message').closest('div')!;
+    // Rendered from LOCAL calendar parts so it agrees with the date Gmail
+    // shows; asserting the literal UTC slice would bake in a TZ assumption.
+    const d = new Date('2026-06-20T09:00:00.000Z');
+    const two = (n: number) => String(n).padStart(2, '0');
+    const localDay = `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+    expect(row.textContent).toContain(localDay);
+    // ISO order, not a locale format that flips D/M.
+    expect(localDay).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(row.querySelector('time')?.getAttribute('dateTime')).toBe('2026-06-20T09:00:00.000Z');
+  });
+
+  it('renders the LOCAL day, not the UTC day, for a late-evening message', () => {
+    // 2026-06-20T04:00Z is still 2026-06-19 in any US timezone. Whatever
+    // the runner's zone, the rendered day must equal the local day.
+    const late = '2026-06-20T04:00:00.000Z';
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={{
+          ...livePreview,
+          recentMessages: { ...subjects, all: [{ subject: 'Late night', date: late }] },
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Show what currently matches/ }));
+    const d = new Date(late);
+    const two = (n: number) => String(n).padStart(2, '0');
+    expect(screen.getByText('Late night').closest('div')!.textContent).toContain(
+      `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`,
+    );
+  });
+
+  it('offers a Gmail search scoped to the same window (D)', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+        mailboxEmail="chintan@example.com"
+      />,
+    );
+    const link = screen.getByRole('link', { name: /Check these in Gmail first/ });
+    const href = decodeURIComponent(link.getAttribute('href') ?? '');
+    // Quoted, matching `buildFromSearchLink` — an unquoted address breaks
+    // Gmail search on any address containing a `+` or a dot-heavy local part.
+    expect(href).toContain(`from:"${sender.email}"`);
+    expect(href).toContain('in:inbox');
+    // Delete defaults to the 6-month window — the link must carry it.
+    expect(href).toContain('older_than:180d');
+    // Never promises the counts match; Gmail is day-granular and live.
+    expect(link.getAttribute('title')).toMatch(/roughly|can differ/i);
+  });
+
+  it('drops the window term from the Gmail link when no window applies (D)', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Later')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+        mailboxEmail="chintan@example.com"
+      />,
+    );
+    const href = decodeURIComponent(
+      screen.getByRole('link', { name: /Check these in Gmail/ }).getAttribute('href') ?? '',
+    );
+    expect(href).toContain('in:inbox');
+    expect(href).not.toContain('older_than');
+  });
+
+  it('offers no Gmail link before the preview resolves (D)', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        mailboxEmail="chintan@example.com"
+      />,
+    );
+    expect(screen.queryByRole('link', { name: /Check these in Gmail/ })).toBeNull();
+  });
+});
+
+describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)', () => {
+  const reachRow = () => screen.queryByRole('radiogroup', { name: /Where it applies/i });
+
+  it('offers no reach choice against an API without the allMail block', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(reachRow()).toBeNull();
+  });
+
+  it.each(['Archive', 'Later'] as const)('offers no reach choice on %s', (verb) => {
+    render(
+      <ConfirmActionModal
+        request={request(verb)}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    expect(reachRow()).toBeNull();
+  });
+
+  it('defaults Delete to Inbox only and labels both chips with window-scoped counts', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    const inboxChip = screen.getByRole('radio', { name: /Inbox only/ });
+    const archivedChip = screen.getByRole('radio', { name: /Inbox \+ archived/ });
+    expect(inboxChip).toHaveAttribute('aria-checked', 'true');
+    expect(archivedChip).toHaveAttribute('aria-checked', 'false');
+    // Delete defaults to the 180d window — each chip carries ITS reach's
+    // count for that window, so the pair is comparable at a glance.
+    expect(inboxChip.textContent).toContain('1');
+    expect(archivedChip.textContent).toContain('700');
+  });
+
+  it('confirms with reach all_mail only after the archived chip is chosen', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
+    expect(onConfirm).toHaveBeenLastCalledWith(expect.not.objectContaining({ reach: 'all_mail' }));
+
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
+    expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ reach: 'all_mail' }));
+  });
+
+  it('switches the headline, chip labels and count source to the all-mail set', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    // 180d default window over the all-mail buckets — the figure appears
+    // on both the chip and the headline, so assert the pair.
+    expect(screen.getAllByText('700').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/across inbox \+ archived/)).toBeInTheDocument();
+    // The un-windowed chip stops claiming "inbox" once the reach is wider.
+    expect(screen.getByRole('radio', { name: /All mail/ })).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /All inbox/ })).toBeNull();
+    // The exclusions + the per-placement undo promise are stated where
+    // the choice is made — and the promise is the CONDITIONAL one the
+    // system actually makes (inbox→inbox, archive→archive), never an
+    // absolute "back where it was".
+    expect(screen.getByText(/Trash, Spam, Drafts and Chat are never touched/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/inbox mail to the inbox, archived mail to the archive/),
+    ).toBeInTheDocument();
+  });
+
+  it('drops in:inbox from the Gmail verify link at all-mail reach', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+        mailboxEmail="chintan@example.com"
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    const href = decodeURIComponent(
+      screen.getByRole('link', { name: /Check these in Gmail/ }).getAttribute('href') ?? '',
+    );
+    expect(href).toContain(`from:"${sender.email}"`);
+    expect(href).not.toContain('in:inbox');
+  });
+
+  it('points the empty-inbox notice at the archived chip when archived mail exists', () => {
+    const emptyInbox: CompositeActionPreviewResult = {
+      ...livePreviewWithAllMail,
+      counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+      recentMessages: {
+        all: [],
+        olderThan30d: [],
+        olderThan90d: [],
+        olderThan180d: [],
+        olderThan365d: [],
+      },
+    };
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={emptyInbox}
+      />,
+    );
+    // The window chips are suppressed (five zeros), but the reach row is
+    // exactly the escape hatch and must stay visible.
+    expect(screen.queryByRole('radiogroup', { name: /How far back/i })).toBeNull();
+    expect(reachRow()).not.toBeNull();
+    expect(
+      screen.getByText(/Switch to "Inbox \+ archived" to reach 977 archived emails\./),
+    ).toBeInTheDocument();
+    // With the reach control on screen, the notice must NOT claim Delete
+    // "only acts on" inbox mail — the next sentence disproves it.
+    expect(screen.getByText(/Delete acts on inbox mail by default/)).toBeInTheDocument();
+    expect(screen.queryByText(/only acts on mail still in the inbox/)).toBeNull();
+    // Flipping the chip clears the inbox-scope narration AND arms the
+    // exact figure the chip advertised: the hidden 180d default resets
+    // to "All mail", so the user gets 977, not a silently-shaved 700.
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    expect(screen.queryByText(/is in your inbox right now/)).toBeNull();
+    expect(screen.getByRole('radio', { name: /All mail/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getAllByText('977').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('button', { name: /Delete/ })).toBeEnabled();
+  });
+
+  it('still blocks confirm when the all-mail set is empty too', () => {
+    const nothingAnywhere: CompositeActionPreviewResult = {
+      ...livePreviewWithAllMail,
+      counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+      allMail: {
+        counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+        recentMessages: {
+          all: [],
+          olderThan30d: [],
+          olderThan90d: [],
+          olderThan180d: [],
+          olderThan365d: [],
+        },
+      },
+    };
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={nothingAnywhere}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled();
+  });
+
+  it('resets to Inbox only when the modal reopens for a new request', () => {
+    const first = request('Delete');
+    const { rerender } = render(
+      <ConfirmActionModal
+        request={first}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    rerender(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    expect(screen.getByRole('radio', { name: /Inbox only/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
   });
 });

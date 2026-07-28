@@ -977,3 +977,41 @@ verb-add breaks a downstream enum a 2nd time.
 **Finding:** A counting rule written when a path was unreachable silently became wrong when entitlements moved; the unit invariant ("one click, one sender, one unit") was only tested on the selectors the old tiers could use.
 **Rule (provisional):** When a tier change makes a code path newly reachable, re-run that path's INVARIANTS, not just its happy tests — reachability is a semantic change.
 **Distillation trigger:** promote if another entitlement move exposes a dormant-path bug.
+
+## 2026-07-27 — Rendering the classification, not the sentence, caught three copy bugs
+**Context:** Fixing the "71 /mo above five zero chips" preview bug across the senders
+confirm modal and the screener decide preview.
+**Finding:** Splitting the helper into `describeInboxScope` (returns a discriminated
+union) and `inboxScopeNoticeCopy` (renders it) paid off three times in one session.
+Because the classification was data, the modal could branch LAYOUT on it — suppressing a
+window chip row whose five zeros no choice could change — while the screener rendered
+the same kind as one line. And because the screener passes `olderThanDays: null`, the
+`empty-window` branch is unreachable there by construction, so a surface with no window
+control can never render "widen the window" copy. Three copy defects only became
+visible once real data flowed through it in a live smoke: `All 1 that arrived … are`,
+`Nothing from this sender` on a 13-sender bulk sheet, and — worst — naming the PRIMARY
+verb on a composite, which produced the flatly false "Unsubscribe only acts on mail
+still in the inbox" about the one verb that never touches inbox mail.
+**Rule (provisional):** Return the classification, not the string. Then smoke every
+cardinality (0 / 1 / many) and every composition (single / composite / bulk) against
+real data — unit tests written from the same mental model as the code will not catch a
+sentence that is grammatical and false.
+**Distillation trigger:** promote to CLAUDE.md §8 if a third copy-truth defect survives
+green tests and is caught only by live smoke.
+
+## 2026-07-28 — The local mirror inside the terminal transaction is a free pre-state snapshot
+**Context:** ADR-0028 all-mail Delete needs undo to restore each message to where it
+was (inbox vs archive), which requires knowing which resolved ids carried INBOX at
+forward time — durably, across worker retries.
+**Finding:** No new column was needed. The label worker only rewrites the local
+`mail_messages.label_ids` mirror inside the SAME transaction that inserts the undo
+journal row, so a SELECT on the mirror at journal-build time — before the UPDATE
+statement in that transaction — reads the pre-action state even when Gmail was already
+mutated by a crashed prior attempt. Atomicity makes the mirror a durable snapshot for
+free; the only loss window is an incremental sync overwriting the mirror during the
+narrow crash-retry gap, which degrades (restore to archive) but never destroys.
+**Rule (provisional):** Before adding a column to preserve pre-mutation state, check
+whether an existing mirror is rewritten atomically WITH the consumer of that state —
+transaction ordering may already preserve it.
+**Distillation trigger:** promote if a second feature derives pre-state from the
+mirror's tx ordering.

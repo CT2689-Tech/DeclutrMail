@@ -92,8 +92,9 @@ export const senders = pgTable(
      */
     unsubscribeUrl: text('unsubscribe_url'),
     /**
-     * Denormalised count of inbound (`is_outbound = false`) messages
-     * synced from this sender, lifetime within retention (ADR-0014).
+     * Denormalised count of inbound (`is_outbound = false`) messages we
+     * currently hold indexed for this sender (ADR-0014). Not a lifetime
+     * figure — see the reconciliation note below.
      * Maintained on two write paths:
      *   A. authoritatively on `InitialSyncWorker.buildSenderIndex`
      *      (full rebuild — closes drift atomically), and
@@ -103,8 +104,20 @@ export const senders = pgTable(
      * the `senders.counter_drift` metric (D159).
      *
      * Inbox state (archive / read / label) never changes this — counts
-     * are "how many has this sender ever sent me", not "how many are
-     * in inbox right now". `mode: 'number'` because counts are bounded
+     * are "how many messages from this sender do we currently hold
+     * indexed", not "how many are in inbox right now".
+     *
+     * NOT a lifetime total, despite the name — ADR-0014 §Neutral is
+     * explicit: this is "within retention", and UI copy must say
+     * "received", never "all-time". `SendersCounterReconciliation`
+     * recounts this from `mail_messages` nightly and corrects drift
+     * DOWNWARD, and full rebuilds recompute it on every connect /
+     * reconnect / OAuth re-grant — so mail deleted from Gmail leaves the
+     * count, and mail Gmail purged before this mailbox was connected was
+     * never in it. Verified 2026-07-27: 0 of 7,902 senders diverged from
+     * COUNT(mail_messages). A previous "ever sent me" phrasing here led
+     * two user-facing labels to claim completeness the data cannot back
+     * (MISTAKES.md 2026-07-27). `mode: 'number'` because counts are bounded
      * far below `Number.MAX_SAFE_INTEGER` (2^53) and the wire shape per
      * the senders list contract is a JSON number, not a `bigint` string.
      */
