@@ -29,6 +29,28 @@ describe('useComposeState — shareable Senders scope', () => {
     useSendersStore.setState({ sort: 'total', direction: 'desc' });
   });
 
+  it('defaults a pristine URL to active senders only (launch-audit B2)', () => {
+    const { result } = renderHook(() => useComposeState());
+
+    expect(result.current.compose).toMatchObject({ activity: 'active', activityNegate: false });
+    // The default writes NOTHING to the URL — pristine links stay clean.
+    expect(navigation.replace).not.toHaveBeenCalled();
+  });
+
+  it('round-trips the explicit no-filter state through ?activity=all', () => {
+    const { result } = renderHook(() => useComposeState());
+
+    // Clearing filters = show everything, spelled `all` so a refresh
+    // does not bounce back to the active-only default.
+    act(() => result.current.clearCompose());
+    const url = lastReplacement();
+    expect(url.searchParams.get('activity')).toBe('all');
+
+    navigation.params = new URLSearchParams('activity=all');
+    const { result: reparsed } = renderHook(() => useComposeState());
+    expect(reparsed.current.compose).toMatchObject({ activity: null, activityNegate: false });
+  });
+
   it('restores search, temporary filters, and sorting from the URL', () => {
     navigation.params = new URLSearchParams(
       'q=renewals&activity=not-quiet&replied=true&domain=example.com&sort=name&direction=asc',
@@ -93,7 +115,9 @@ describe('useComposeState — shareable Senders scope', () => {
     const url = lastReplacement();
     expect(result.current.query).toBe('');
     expect(url.searchParams.has('q')).toBe(false);
-    expect(url.searchParams.has('activity')).toBe(false);
+    // The saved view has NO activity filter — that's the explicit `all`
+    // sentinel now that a pristine URL defaults to active (B2).
+    expect(url.searchParams.get('activity')).toBe('all');
     expect(url.searchParams.get('protected')).toBe('true');
     expect(url.searchParams.get('window')).toBe('90');
     expect(url.searchParams.get('sort')).toBe('name');

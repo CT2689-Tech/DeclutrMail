@@ -57,8 +57,14 @@ describe('ScreenerScreen — ready state', () => {
     }
   });
 
-  it('surfaces the queue length in the header copy', () => {
-    expect(renderState(state)).toContain(`${SCREENER_QUEUE.length} new senders waiting.`);
+  it('surfaces the resolved pending count in the header copy', () => {
+    const html = render(
+      <ScreenerScreen
+        state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }}
+        totalPending={SCREENER_QUEUE.length}
+      />,
+    );
+    expect(html).toContain(`${SCREENER_QUEUE.length} new senders waiting.`);
   });
 
   it('states the TRUE pending count in the heading, not the loaded page size', () => {
@@ -73,13 +79,16 @@ describe('ScreenerScreen — ready state', () => {
     expect(html).not.toContain(`${SCREENER_QUEUE.length} new senders waiting.`);
   });
 
-  it('falls back to the loaded window when the count has not resolved', () => {
-    // totalPending null (count query in flight) → show what we loaded
-    // rather than nothing; the number is honest for the rows on screen.
+  it('claims NO number while the count has not resolved (finding 5.2)', () => {
+    // totalPending null (count query in flight or errored) → the loaded
+    // window is a page size, not a total. Presenting it as the headline
+    // number is the page-count-as-total truth bug — say senders are
+    // waiting without asserting how many.
     const html = render(
       <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} totalPending={null} />,
     );
-    expect(html).toContain(`${SCREENER_QUEUE.length} new senders waiting.`);
+    expect(html).toContain('New senders waiting.');
+    expect(html).not.toContain(`${SCREENER_QUEUE.length} new senders waiting.`);
   });
 
   it('states the D72 soft-quarantine truth in the intro (mail still arrives)', () => {

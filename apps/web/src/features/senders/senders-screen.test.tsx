@@ -300,7 +300,11 @@ describe('SendersScreen — edge states', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('renders the empty-mailbox state when the API returns an empty page', async () => {
+  it('renders the no-ACTIVE-senders state on the default visit, with a show-all escape hatch', async () => {
+    // First visit defaults to active-only (launch-audit B2). An empty
+    // page under that default is "nothing active", not "nothing at
+    // all" — the state must name the default and offer the full list,
+    // never read as a filter mistake.
     installFetchStub([
       {
         method: 'GET',
@@ -317,7 +321,9 @@ describe('SendersScreen — edge states', () => {
     ]);
 
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/no senders yet/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/no active senders/i)).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /show all senders/i })).toBeInTheDocument();
+    expect(screen.queryByText(/no senders match these filters/i)).not.toBeInTheDocument();
   });
 
   it('searches server-side — finds a sender that is NOT on the first page (#145)', async () => {
@@ -1293,9 +1299,10 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.click(senderB);
 
     // No upsell note, no disabled verbs — bulk is Free and metered by
-    // the monthly quota (the server 402s an overflow honestly).
+    // the monthly quota (the server 402s an overflow honestly). The
+    // title carries the SENDERS unit (finding 5.13).
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
-    expect(screen.getByTitle('Archive (A)')).not.toBeDisabled();
+    expect(screen.getByTitle('Archive 2 senders (A)')).not.toBeDisabled();
 
     // The keyboard path opens the mandatory D226 bulk preview.
     fireEvent.keyDown(document.body, { key: 'a' });
@@ -1603,7 +1610,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     installFetchStub([TWO_SENDER_LIST, BULK_PREVIEW_OK]);
     renderScreen();
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
-    const deleteBtn = screen.getByTitle('Delete (D)');
+    // Title states the SENDERS unit (finding 5.13) — the email count
+    // belongs to the D226 preview modal, not this bar.
+    const deleteBtn = screen.getByTitle('Delete 1 sender (D)');
     expect(deleteBtn).toHaveAttribute('aria-keyshortcuts', 'D');
     fireEvent.click(deleteBtn);
     // The click routes through the SAME mandatory preview.

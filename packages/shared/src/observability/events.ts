@@ -480,8 +480,12 @@ export interface EventPayloads {
 
   // — Screener surface (D71–D77) —
   screener_queue_viewed: {
-    /** Pending first-time senders when the queue rendered (D74 badge figure). */
-    pending_count: number;
+    /**
+     * Pending first-time senders when the queue rendered (D74 badge
+     * figure). `null` when the count query hadn't resolved at render —
+     * the loaded page size is never substituted for the total.
+     */
+    pending_count: number | null;
   };
   screener_decision_taken: {
     verb: Verb;
