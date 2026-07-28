@@ -1,6 +1,13 @@
--- Rollback 0050 — drop the reach column + enum. Safe: the column is
--- additive metadata; dropping it returns every job to the implicit
--- inbox-only semantic the worker had before ADR-0028.
+-- Rollback 0050 — drop the reach column + enum.
+--
+-- Undo safety across rollback + re-apply: re-applying resets EVERY row
+-- to the 'inbox_only' default, including historical all-mail Deletes.
+-- That is safe ONLY because the undo path never trusts this column —
+-- all-mail undo semantics live in the self-describing undo-journal
+-- payload (`reach: 'all_mail'` + `inboxMessageIds`), which this
+-- rollback does not touch (see LabelActionWorker.reverseChangeGroups).
+-- QUEUED-but-unexecuted all-mail jobs degrade to inbox-only resolution
+-- after re-apply — strictly narrower than previewed, never wider.
 
 ALTER TABLE "action_jobs" DROP CONSTRAINT IF EXISTS "action_jobs_reach_verb_check";
 --> statement-breakpoint

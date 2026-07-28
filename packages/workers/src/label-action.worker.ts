@@ -680,12 +680,27 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
 
   /**
    * Partition a reverse job's ids into per-`LabelChange` groups
-   * (ADR-0028). Only an all-mail Delete splits: the forward path stored
+   * (ADR-0028). An all-mail Delete splits: the forward path stored
    * which ids carried INBOX in the undo-journal payload, so the revert
    * re-inboxes exactly those and returns the rest to the archive
-   * (registry reverse minus its `addLabelIds`). Everything else — and
-   * any payload the split cannot be read from — stays one uniform group
-   * with the registry reverse, the pre-ADR behavior.
+   * (registry reverse minus its `addLabelIds`).
+   *
+   * THE PAYLOAD GOVERNS, NEVER THE `reach` COLUMN (Codex stop-review
+   * 2026-07-28). The column is mutable state a migration rollback +
+   * re-apply resets to the `inbox_only` default on EVERY row — keying
+   * the split on it would hand a historical all-mail delete the uniform
+   * `+INBOX` reverse and flood the inbox with years of archived mail.
+   * The journal payload is written once at forward time, survives the
+   * column, and self-describes (`reach: 'all_mail'` + `inboxMessageIds`).
+   *
+   * Decision table for a Delete reverse:
+   *   - payload has `inboxMessageIds` → split (authoritative).
+   *   - payload or row says all_mail but the split is unreadable
+   *     (damaged/pruned payload) → strip the INBOX re-add and restore
+   *     EVERYTHING to the archive: degraded (inbox mail resurfaces
+   *     archived, findable via search) but never the inbox-flood.
+   *   - neither → uniform registry reverse (a legacy inbox-only
+   *     payload, where `+INBOX` for all ids is exactly correct).
    */
   private async reverseChangeGroups(
     job: typeof actionJobs.$inferSelect,
@@ -693,7 +708,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     ids: string[],
   ): Promise<Array<{ ids: string[]; change: LabelChange }>> {
     const uniform = [{ ids, change: reverseChange }];
-    if (job.verb !== 'delete' || job.reach !== 'all_mail' || ids.length === 0 || !job.undoToken) {
+    if (job.verb !== 'delete' || ids.length === 0 || !job.undoToken) {
       return uniform;
     }
     const [journal] = await this.deps.db
@@ -701,14 +716,20 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       .from(undoJournal)
       .where(eq(undoJournal.token, job.undoToken))
       .limit(1);
-    const inboxMessageIds = readInboxMessageIds(journal?.payload);
-    if (inboxMessageIds === null) return uniform;
-    const inboxSet = new Set(inboxMessageIds);
-    const toInbox = ids.filter((id) => inboxSet.has(id));
-    const toArchive = ids.filter((id) => !inboxSet.has(id));
+    const payload = journal?.payload;
+    const inboxMessageIds = readInboxMessageIds(payload);
     const archiveChange: LabelChange = reverseChange.removeLabelIds
       ? { removeLabelIds: reverseChange.removeLabelIds }
       : {};
+    if (inboxMessageIds === null) {
+      // No readable split. If ANY surviving signal says this was an
+      // all-mail delete, fail toward the archive — never the flood.
+      const wasAllMail = readPayloadReach(payload) === 'all_mail' || job.reach === 'all_mail';
+      return wasAllMail ? [{ ids, change: archiveChange }] : uniform;
+    }
+    const inboxSet = new Set(inboxMessageIds);
+    const toInbox = ids.filter((id) => inboxSet.has(id));
+    const toArchive = ids.filter((id) => !inboxSet.has(id));
     return [
       { ids: toInbox, change: reverseChange },
       { ids: toArchive, change: archiveChange },
@@ -788,7 +809,11 @@ function buildUndoPayload(
     return {
       kind: 'delete' as const,
       messageIds,
-      ...(inboxMessageIds !== null ? { inboxMessageIds } : {}),
+      // ADR-0028 all-mail payloads are SELF-DESCRIBING: `reach` rides
+      // beside the split so undo semantics survive even a migration
+      // rollback + re-apply that resets the `action_jobs.reach` column
+      // to its default on historical rows (Codex stop-review 2026-07-28).
+      ...(inboxMessageIds !== null ? { inboxMessageIds, reach: 'all_mail' as const } : {}),
     };
   }
   return { kind: verb, messageIds, priorLabels: ['INBOX'] as string[] };
@@ -796,13 +821,21 @@ function buildUndoPayload(
 
 /**
  * Defensive read of `payload.inboxMessageIds` from an undo-journal
- * jsonb value. `null` = the split is unavailable (legacy payload,
- * pruned journal row, malformed data) — the caller falls back to the
- * uniform registry reverse rather than guessing.
+ * jsonb value. `null` = the split is unavailable (legacy inbox-only
+ * payload, pruned journal row, malformed data) — the caller then
+ * decides between the uniform reverse and the archive-only degrade
+ * using `readPayloadReach` + the row (see `reverseChangeGroups`).
  */
 function readInboxMessageIds(payload: unknown): string[] | null {
   if (payload === null || payload === undefined || typeof payload !== 'object') return null;
   const value = (payload as Record<string, unknown>).inboxMessageIds;
   if (!Array.isArray(value)) return null;
   return value.filter((entry): entry is string => typeof entry === 'string');
+}
+
+/** Defensive read of the self-describing `payload.reach` (ADR-0028). */
+function readPayloadReach(payload: unknown): SenderActionReach | null {
+  if (payload === null || payload === undefined || typeof payload !== 'object') return null;
+  const value = (payload as Record<string, unknown>).reach;
+  return value === 'all_mail' || value === 'inbox_only' ? value : null;
 }

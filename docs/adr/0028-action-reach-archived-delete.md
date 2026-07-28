@@ -43,11 +43,22 @@ match").
    records which resolved ids carried INBOX
    (`undo_journal.payload.inboxMessageIds`, read from the local
    mirror inside the terminal transaction, before the mirror update
-   rewrites it). The revert applies the registry reverse
-   (+INBOX/−TRASH) to that subset and only −TRASH to the archived
-   rest — a blanket +INBOX would dump years of archived mail into the
-   inbox on undo. A payload the split cannot be read from falls back
-   to the uniform registry reverse (pre-ADR behavior).
+   rewrites it) plus a self-describing `reach: 'all_mail'` marker. The
+   revert applies the registry reverse (+INBOX/−TRASH) to that subset
+   and only −TRASH to the archived rest — a blanket +INBOX would dump
+   years of archived mail into the inbox on undo.
+
+   **The payload governs; the `reach` column never does** (Codex
+   stop-review 2026-07-28). The column is mutable state: a migration
+   rollback + re-apply resets every historical row to the
+   `inbox_only` default, so keying undo on it would flood the inbox
+   for past all-mail deletes. The journal payload is written once and
+   survives the column. When any signal says all-mail but the split
+   is unreadable (damaged payload), the revert strips the INBOX
+   re-add and restores everything to the archive — degraded, never
+   the flood. Only a payload with no all-mail signal at all takes the
+   uniform reverse (legacy inbox-only deletes, where +INBOX is
+   exactly correct).
 
 ## Companion surface
 

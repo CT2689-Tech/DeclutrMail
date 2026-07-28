@@ -808,13 +808,20 @@ describe('LabelActionWorker', () => {
       kind: string;
       messageIds: string[];
       inboxMessageIds: string[];
+      reach: string;
     };
     expect(payload.kind).toBe('delete');
     expect(payload.messageIds.sort()).toEqual(['a-arch', 'a-in']);
     expect(payload.inboxMessageIds).toEqual(['a-in']);
+    // Self-describing (Codex stop-review 2026-07-28): undo semantics
+    // must survive the reach COLUMN being reset by a migration
+    // rollback + re-apply, so the payload names its own reach.
+    expect(payload.reach).toBe('all_mail');
 
-    // Reverse — same shape `enqueueCompositeRevert` persists (frozen ids,
-    // forward reach copied onto the row).
+    // Reverse — same shape `enqueueCompositeRevert` persists (frozen
+    // ids). The row's reach is deliberately 'inbox_only' here: this is
+    // the post-rollback-re-apply corruption, where the column default
+    // stamped over history. The PAYLOAD must still drive the split.
     const [reverse] = await db
       .insert(actionJobs)
       .values({
@@ -826,7 +833,7 @@ describe('LabelActionWorker', () => {
         requestedCount: 2,
         undoToken: result.undoToken!,
         idempotencyKey: `revert-${result.undoToken!}`,
-        reach: 'all_mail',
+        reach: 'inbox_only',
       })
       .returning();
 
@@ -866,17 +873,18 @@ describe('LabelActionWorker', () => {
     expect(byId['a-out']).toEqual(['SENT', 'INBOX']);
   });
 
-  it('reverse delete at all_mail reach falls back to the uniform registry reverse when the payload has no partition', async () => {
-    // Defensive path: a journal payload the split cannot be read from
-    // (pruned row, malformed data) must behave exactly like the pre-
-    // ADR-0028 revert rather than guessing a partition.
+  it('reverse delete degrades to archive-only when an all-mail payload lost its partition — never the inbox flood', async () => {
+    // Damaged path: the payload says all_mail but its split is gone.
+    // The ONLY safe direction is -TRASH for everything: inbox mail
+    // resurfacing archived is degraded-but-findable, while a uniform
+    // +INBOX would dump the whole archived set into the inbox.
     await seedMessage(db, mailboxId, 'f-1', ['TRASH']);
     const [journal] = await db
       .insert(undoJournal)
       .values({
         mailboxAccountId: mailboxId,
         actionKind: 'delete',
-        payload: { kind: 'delete', messageIds: ['f-1'] },
+        payload: { kind: 'delete', messageIds: ['f-1'], reach: 'all_mail' },
       })
       .returning();
 
@@ -891,7 +899,9 @@ describe('LabelActionWorker', () => {
         requestedCount: 1,
         undoToken: journal!.token,
         idempotencyKey: `revert-${journal!.token}`,
-        reach: 'all_mail',
+        // Column also corrupted to the default — either signal alone
+        // must be enough, so make the payload carry it.
+        reach: 'inbox_only',
       })
       .returning();
 
@@ -906,6 +916,47 @@ describe('LabelActionWorker', () => {
 
     expect(gmail.calls).toHaveLength(1);
     expect(gmail.calls[0]!.ids).toEqual(['f-1']);
+    expect(gmail.calls[0]!.change).toEqual({ removeLabelIds: ['TRASH'] });
+  });
+
+  it('reverse delete keeps the uniform +INBOX reverse for legacy inbox-only payloads', async () => {
+    // A pre-ADR-0028 payload carries no reach and no partition; there
+    // +INBOX for every id is exactly correct and must not change.
+    await seedMessage(db, mailboxId, 'g-1', ['TRASH']);
+    const [journal] = await db
+      .insert(undoJournal)
+      .values({
+        mailboxAccountId: mailboxId,
+        actionKind: 'delete',
+        payload: { kind: 'delete', messageIds: ['g-1'] },
+      })
+      .returning();
+
+    const [reverse] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        direction: 'reverse',
+        selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+        resolvedMessageIds: ['g-1'],
+        requestedCount: 1,
+        undoToken: journal!.token,
+        idempotencyKey: `revert-${journal!.token}`,
+      })
+      .returning();
+
+    await worker.processJob(
+      {
+        actionId: reverse!.id,
+        mailboxAccountId: mailboxId,
+        idempotencyKey: `revert-${journal!.token}`,
+      },
+      CTX,
+    );
+
+    expect(gmail.calls).toHaveLength(1);
+    expect(gmail.calls[0]!.ids).toEqual(['g-1']);
     expect(gmail.calls[0]!.change).toEqual({ addLabelIds: ['INBOX'], removeLabelIds: ['TRASH'] });
   });
 
