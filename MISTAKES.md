@@ -1247,3 +1247,21 @@ absorbs `string | {subject,date}` at the single boundary the preview enters thro
 null` so a missing date renders as no date. The B test now sets
 `sender.lastSeenDays` to a value that CONTRADICTS the inbox sample, so re-reading the
 wrong field fails the assertion.
+
+## 2026-07-28 — Smoke ran against another checkout's dev API and read stale wire shapes
+**PR:** feat/d226-delete-scope-archived (pre-PR)
+**Caught by:** manual test (reach chips absent from a modal the code demonstrably renders)
+**What happened:** The ADR-0028 live smoke opened the Delete modal and saw no reach
+chips and no `recentMessages`/`allMail` on the preview wire — code that was green in
+tests. The API on :4000 was an ORPHANED process (ppid 1) from the merged d162 session's
+worktree (`wt-feat-d162-email-brand-polish/apps/api`), serving that branch's build; this
+session's `dev-up.sh` API had lost the port race and died silently, while its log still
+ended in "successfully started". The command line gave no hint — it read
+`node … src/main.ts` with an env-file path pointing at the MAIN checkout.
+**Correct approach:** Before trusting any smoke, verify the serving process, not just
+the port: `lsof -ti :4000 -sTCP:LISTEN | xargs -I{} lsof -p {} | grep cwd` must show
+THIS checkout. Sibling of the 2026-07-26 "gh pr close switches checkout" trap — that one
+was the wrong branch under your feet, this one is the wrong checkout behind your port.
+**Rule:** A smoke is invalid until the server's cwd is confirmed to be the checkout
+under test.
+**Enforcement update:** none yet — recurs ⇒ add a cwd check to scripts/dev-up.sh.

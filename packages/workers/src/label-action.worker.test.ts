@@ -764,6 +764,151 @@ describe('LabelActionWorker', () => {
     expect(result.affectedCount).toBe(1);
   });
 
+  it('forward delete at all_mail reach — trashes archived mail too, undo restores each side where it was (ADR-0028)', async () => {
+    // The full zoo: one inbox message, one archived, plus every excluded
+    // class (TRASH / SPAM / DRAFT / CHAT) and an outbound self-send. Only
+    // the first two are legal targets at all_mail reach.
+    await seedMessage(db, mailboxId, 'a-in', ['INBOX', 'CATEGORY_PROMOTIONS']);
+    await seedMessage(db, mailboxId, 'a-arch', ['CATEGORY_PROMOTIONS']);
+    await seedMessage(db, mailboxId, 'a-trash', ['TRASH']);
+    await seedMessage(db, mailboxId, 'a-spam', ['SPAM']);
+    await seedMessage(db, mailboxId, 'a-draft', ['DRAFT']);
+    await seedMessage(db, mailboxId, 'a-chat', ['CHAT']);
+    await seedMessage(db, mailboxId, 'a-out', ['SENT', 'INBOX'], true);
+
+    const [job] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+        idempotencyKey: 'idem-del-allmail',
+        reach: 'all_mail',
+      })
+      .returning();
+
+    const result = await worker.processJob(
+      { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-del-allmail' },
+      CTX,
+    );
+
+    expect(gmail.calls).toHaveLength(1);
+    expect(gmail.calls[0]!.ids.sort()).toEqual(['a-arch', 'a-in']);
+    expect(gmail.calls[0]!.change).toEqual({ addLabelIds: ['TRASH'], removeLabelIds: ['INBOX'] });
+    expect(result.affectedCount).toBe(2);
+
+    // The journal payload records WHICH ids carried INBOX — the undo
+    // partition. Without it the revert would re-inbox archived mail.
+    const [undo] = await db
+      .select()
+      .from(undoJournal)
+      .where(eq(undoJournal.token, result.undoToken!));
+    const payload = undo!.payload as {
+      kind: string;
+      messageIds: string[];
+      inboxMessageIds: string[];
+    };
+    expect(payload.kind).toBe('delete');
+    expect(payload.messageIds.sort()).toEqual(['a-arch', 'a-in']);
+    expect(payload.inboxMessageIds).toEqual(['a-in']);
+
+    // Reverse — same shape `enqueueCompositeRevert` persists (frozen ids,
+    // forward reach copied onto the row).
+    const [reverse] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        direction: 'reverse',
+        selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+        resolvedMessageIds: ['a-in', 'a-arch'],
+        requestedCount: 2,
+        undoToken: result.undoToken!,
+        idempotencyKey: `revert-${result.undoToken!}`,
+        reach: 'all_mail',
+      })
+      .returning();
+
+    await worker.processJob(
+      {
+        actionId: reverse!.id,
+        mailboxAccountId: mailboxId,
+        idempotencyKey: `revert-${result.undoToken!}`,
+      },
+      CTX,
+    );
+
+    // Two mutation groups: the inbox subset gets the full registry
+    // reverse; the archived subset ONLY drops TRASH (no INBOX re-add).
+    expect(gmail.calls).toHaveLength(3);
+    expect(gmail.calls[1]!.ids).toEqual(['a-in']);
+    expect(gmail.calls[1]!.change).toEqual({ addLabelIds: ['INBOX'], removeLabelIds: ['TRASH'] });
+    expect(gmail.calls[2]!.ids).toEqual(['a-arch']);
+    expect(gmail.calls[2]!.change).toEqual({ removeLabelIds: ['TRASH'] });
+
+    // Mirror: both restored to exactly where they were.
+    const msgs = await db
+      .select()
+      .from(mailMessages)
+      .where(eq(mailMessages.mailboxAccountId, mailboxId));
+    const byId = Object.fromEntries(msgs.map((m) => [m.providerMessageId, m.labelIds]));
+    expect(byId['a-in']).toContain('INBOX');
+    expect(byId['a-in']).not.toContain('TRASH');
+    expect(byId['a-arch']).not.toContain('INBOX');
+    expect(byId['a-arch']).not.toContain('TRASH');
+    expect(byId['a-arch']).toContain('CATEGORY_PROMOTIONS');
+    // The excluded classes were never touched.
+    expect(byId['a-trash']).toEqual(['TRASH']);
+    expect(byId['a-spam']).toEqual(['SPAM']);
+    expect(byId['a-draft']).toEqual(['DRAFT']);
+    expect(byId['a-chat']).toEqual(['CHAT']);
+    expect(byId['a-out']).toEqual(['SENT', 'INBOX']);
+  });
+
+  it('reverse delete at all_mail reach falls back to the uniform registry reverse when the payload has no partition', async () => {
+    // Defensive path: a journal payload the split cannot be read from
+    // (pruned row, malformed data) must behave exactly like the pre-
+    // ADR-0028 revert rather than guessing a partition.
+    await seedMessage(db, mailboxId, 'f-1', ['TRASH']);
+    const [journal] = await db
+      .insert(undoJournal)
+      .values({
+        mailboxAccountId: mailboxId,
+        actionKind: 'delete',
+        payload: { kind: 'delete', messageIds: ['f-1'] },
+      })
+      .returning();
+
+    const [reverse] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        direction: 'reverse',
+        selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+        resolvedMessageIds: ['f-1'],
+        requestedCount: 1,
+        undoToken: journal!.token,
+        idempotencyKey: `revert-${journal!.token}`,
+        reach: 'all_mail',
+      })
+      .returning();
+
+    await worker.processJob(
+      {
+        actionId: reverse!.id,
+        mailboxAccountId: mailboxId,
+        idempotencyKey: `revert-${journal!.token}`,
+      },
+      CTX,
+    );
+
+    expect(gmail.calls).toHaveLength(1);
+    expect(gmail.calls[0]!.ids).toEqual(['f-1']);
+    expect(gmail.calls[0]!.change).toEqual({ addLabelIds: ['INBOX'], removeLabelIds: ['TRASH'] });
+  });
+
   it('records status=failed on a terminal (non-retryable) error', async () => {
     await seedMessage(db, mailboxId, 'm1', ['INBOX']);
     gmail.shouldThrow = new InvalidGrantError('grant gone');

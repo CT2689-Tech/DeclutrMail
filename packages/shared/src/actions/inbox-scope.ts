@@ -126,12 +126,26 @@ export function inboxScopeNoticeCopy(
   notice: InboxScopeNotice,
   verbLabel: string,
   subject: 'this sender' | 'these senders' = 'this sender',
+  options: {
+    /**
+     * ADR-0028 — set when the surface offers a reach control that lets
+     * this verb act beyond the inbox. The tail then says "by default"
+     * instead of "only": "Delete only acts on mail still in the inbox"
+     * is FALSE one sentence before "Switch to Inbox + archived…"
+     * (design-system gate, 2026-07-28). Surfaces with no reach control
+     * (Screener) omit this and keep the absolute wording, which is true
+     * there.
+     */
+    verbActsBeyondInbox?: boolean;
+  } = {},
 ): string | null {
   if (notice.kind === 'none') return null;
 
   if (notice.kind === 'empty-inbox') {
     const opener = `Nothing from ${subject} is in your inbox right now.`;
-    const tail = `${verbLabel} only acts on mail still in the inbox.`;
+    const tail = options.verbActsBeyondInbox
+      ? `${verbLabel} acts on inbox mail by default.`
+      : `${verbLabel} only acts on mail still in the inbox.`;
     // Only name arrivals we were actually given a number for.
     if (notice.recentArrivals === null || notice.recentArrivals === 0) {
       return `${opener} ${tail}`;

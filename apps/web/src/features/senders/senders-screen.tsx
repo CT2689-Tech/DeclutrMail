@@ -650,6 +650,8 @@ function SendersScreenContent({
           sender_count: senders.length,
           has_secondary: opts?.secondary != null,
           older_than_days: opts?.olderThanDays ?? null,
+          // ADR-0028 — the property that decides blast radius.
+          reach: opts?.reach ?? 'inbox_only',
         },
       });
 
@@ -694,6 +696,11 @@ function SendersScreenContent({
               type: primaryType,
               olderThanDays: opts?.olderThanDays ?? null,
               ...(primaryType === 'later' && opts?.wakeAt ? { wakeAt: opts.wakeAt } : {}),
+              // ADR-0028 — only Delete may carry the widened reach, and
+              // only the non-default value travels.
+              ...(primaryType === 'delete' && opts?.reach === 'all_mail'
+                ? { reach: opts.reach }
+                : {}),
             },
             ...(opts?.secondary
               ? {

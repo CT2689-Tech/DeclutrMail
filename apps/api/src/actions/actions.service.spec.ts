@@ -769,6 +769,38 @@ describe('ActionsService', () => {
       }
     });
 
+    it('returns the parallel all-mail block — archived counted, TRASH/SPAM/DRAFT/CHAT and outbound never (ADR-0028)', async () => {
+      await seedMessage(db, mailboxId, 'r-in-2d', ['INBOX'], daysAgo(2));
+      await seedMessage(db, mailboxId, 'r-in-200d', ['INBOX'], daysAgo(200));
+      await seedMessage(db, mailboxId, 'r-arch-10d', ['CATEGORY_PROMOTIONS'], daysAgo(10));
+      await seedMessage(db, mailboxId, 'r-arch-400d', ['CATEGORY_PROMOTIONS'], daysAgo(400));
+      await seedMessage(db, mailboxId, 'r-trash', ['TRASH'], daysAgo(5));
+      await seedMessage(db, mailboxId, 'r-spam', ['SPAM'], daysAgo(5));
+      await seedMessage(db, mailboxId, 'r-draft', ['DRAFT'], daysAgo(5));
+      await seedMessage(db, mailboxId, 'r-chat', ['CHAT'], daysAgo(5));
+      await seedMessage(db, mailboxId, 'r-out', ['SENT', 'INBOX'], daysAgo(5), SENDER_KEY, true);
+
+      const res = await svc.previewComposite({ mailboxAccountId: mailboxId, senderId });
+
+      // Inbox buckets unchanged by the new block.
+      expect(res.counts.all).toBe(2);
+      // All-mail = inbox + archived; the excluded classes and outbound
+      // self-sends never enter, at any window.
+      expect(res.allMail.counts).toEqual({
+        all: 4,
+        olderThan30d: 2,
+        olderThan90d: 2,
+        olderThan180d: 2,
+        olderThan365d: 1,
+      });
+      expect(res.allMail.recentMessages.all).toHaveLength(4);
+      for (const row of res.allMail.recentMessages.all) {
+        expect(Number.isFinite(Date.parse(row.date))).toBe(true);
+      }
+      const dates = res.allMail.recentMessages.all.map((r) => Date.parse(r.date));
+      expect([...dates].sort((a, b) => b - a)).toEqual(dates);
+    });
+
     it('returns protected:true when the sender has a policy row', async () => {
       await db.insert(senderPolicies).values({
         mailboxAccountId: mailboxId,
@@ -852,6 +884,53 @@ describe('ActionsService', () => {
       expect(row!.olderThanDays).toBe(180);
       expect(row!.requestedCount).toBe(1);
       expect(row!.verb).toBe('delete');
+    });
+
+    it('Delete at all_mail reach counts archived mail and persists the reach (ADR-0028)', async () => {
+      await seedMessage(db, mailboxId, 'r-in', ['INBOX'], daysAgo(10));
+      await seedMessage(db, mailboxId, 'r-arch', ['CATEGORY_PROMOTIONS'], daysAgo(10));
+      await seedMessage(db, mailboxId, 'r-trash', ['TRASH'], daysAgo(10));
+      const res = await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'delete', reach: 'all_mail' },
+        idempotencyKey: 'click-del-allmail',
+        override: false,
+      });
+      // Inbox + archived; TRASH stays out.
+      expect(res.primaryCount).toBe(2);
+      const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, res.actionId));
+      expect(row!.reach).toBe('all_mail');
+      expect(row!.requestedCount).toBe(2);
+    });
+
+    it('Delete without a reach persists the inbox_only default (ADR-0028)', async () => {
+      await seedMessage(db, mailboxId, 'r-in', ['INBOX'], daysAgo(10));
+      await seedMessage(db, mailboxId, 'r-arch', ['CATEGORY_PROMOTIONS'], daysAgo(10));
+      const res = await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'delete' },
+        idempotencyKey: 'click-del-default',
+        override: false,
+      });
+      expect(res.primaryCount).toBe(1);
+      const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, res.actionId));
+      expect(row!.reach).toBe('inbox_only');
+    });
+
+    it('rejects all_mail reach on a non-Delete primary before writing anything (ADR-0028)', async () => {
+      await seedMessage(db, mailboxId, 'r-in', ['INBOX'], daysAgo(10));
+      await expect(
+        svc.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          primary: { type: 'archive', reach: 'all_mail' },
+          idempotencyKey: 'click-arch-allmail',
+          override: false,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'INVALID_REACH' } });
+      expect(await db.select().from(actionJobs)).toHaveLength(0);
     });
 
     it('composite Later + Delete past: TWO rows linked by composite_id, both enqueued', async () => {

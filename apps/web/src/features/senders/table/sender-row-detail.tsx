@@ -120,6 +120,21 @@ export function SenderRowDetail({
     // `total_received` is within-retention, recounted from `mail_messages`
     // nightly, so a completeness claim would be false (findings doc 7).
     { k: 'Received', v: s.totalReceived.toLocaleString(), small: 'emails' },
+    // What the inbox verbs can actually reach RIGHT NOW (ADR-0028
+    // companion). A sender whose Gmail filters skip the inbox reads
+    // "hundreds received · 0 in inbox" here instead of three no-op
+    // modals (founder report 2026-07-28). Absent on the wire (older
+    // API / fixtures) ⇒ the card is omitted, never a made-up 0.
+    ...(s.inboxCount !== undefined && s.inboxCount !== null
+      ? [
+          {
+            k: 'In inbox',
+            v: s.inboxCount.toLocaleString(),
+            small: 'now',
+            ...(s.inboxCount === 0 ? { valueColor: color.fgMuted } : {}),
+          },
+        ]
+      : []),
     { k: 'Last received', v: relTimeLabel(s.lastDays) },
     {
       // `null` readRate = no timeseries yet — "—" is the honest render,
@@ -150,8 +165,9 @@ export function SenderRowDetail({
         gap: 16,
       }}
     >
-      {/* Stat cards — auto-fit: 4-across at table width (unchanged),
-          2×2 inside the narrow SenderPeek sheet. */}
+      {/* Stat cards — auto-fit: up to 5-across at table width when the
+          "In inbox" card is present (4 when the wire omits it), wrapping
+          2+2+1 inside the narrow SenderPeek sheet. */}
       <div
         style={{
           display: 'grid',

@@ -125,10 +125,21 @@ export interface SenderListRow {
    * Maintained authoritatively on every full rebuild (Path A —
    * `InitialSyncWorker.buildSenderIndex`) and reconciled nightly by
    * `SendersCounterReconciliationWorker`. Inbox state (archive / read /
-   * label) never changes the value — counts are "how many has this
-   * sender ever sent me", not "how many are in inbox right now".
+   * label) never changes the value — counts are "received and still
+   * within retention" (ADR-0014 §Neutral — NOT a lifetime total; mail
+   * deleted from Gmail drops out on the nightly recount), not "how many
+   * are in inbox right now".
    */
   totalReceived: number;
+  /**
+   * Messages currently carrying INBOX for this sender — the set every
+   * inbox-scoped verb can act on. Live correlated count (not a
+   * maintained counter — label membership changes on every action and
+   * sync). Lets the row say "hundreds received · 0 in inbox" BEFORE the
+   * user opens three verb modals to learn the same thing (founder
+   * report 2026-07-28).
+   */
+  inboxCount: number;
   /**
    * Per-sender "you replied N×" count (Senders V2 spec v1.3 + mig 0022).
    * Distinct outbound messages whose thread contains ≥1 inbound from

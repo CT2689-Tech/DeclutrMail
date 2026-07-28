@@ -998,3 +998,20 @@ real data — unit tests written from the same mental model as the code will not
 sentence that is grammatical and false.
 **Distillation trigger:** promote to CLAUDE.md §8 if a third copy-truth defect survives
 green tests and is caught only by live smoke.
+
+## 2026-07-28 — The local mirror inside the terminal transaction is a free pre-state snapshot
+**Context:** ADR-0028 all-mail Delete needs undo to restore each message to where it
+was (inbox vs archive), which requires knowing which resolved ids carried INBOX at
+forward time — durably, across worker retries.
+**Finding:** No new column was needed. The label worker only rewrites the local
+`mail_messages.label_ids` mirror inside the SAME transaction that inserts the undo
+journal row, so a SELECT on the mirror at journal-build time — before the UPDATE
+statement in that transaction — reads the pre-action state even when Gmail was already
+mutated by a crashed prior attempt. Atomicity makes the mirror a durable snapshot for
+free; the only loss window is an incremental sync overwriting the mirror during the
+narrow crash-retry gap, which degrades (restore to archive) but never destroys.
+**Rule (provisional):** Before adding a column to preserve pre-mutation state, check
+whether an existing mirror is rewritten atomically WITH the consumer of that state —
+transaction ordering may already preserve it.
+**Distillation trigger:** promote if a second feature derives pre-state from the
+mirror's tx ordering.

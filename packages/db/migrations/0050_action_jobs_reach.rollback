@@ -1,0 +1,9 @@
+-- Rollback 0050 — drop the reach column + enum. Safe: the column is
+-- additive metadata; dropping it returns every job to the implicit
+-- inbox-only semantic the worker had before ADR-0028.
+
+ALTER TABLE "action_jobs" DROP CONSTRAINT IF EXISTS "action_jobs_reach_verb_check";
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP COLUMN IF EXISTS "reach";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "action_reach";

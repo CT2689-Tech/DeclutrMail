@@ -328,3 +328,140 @@ describe('getCompositePreview — deploy-skew matrix', () => {
     ]);
   });
 });
+
+// ADR-0028 — same skew discipline for the `allMail` block: an API without
+// it yields `null` (the modal hides the reach choice), a malformed block
+// degrades to `null`, and a healthy one normalizes its sample rows.
+describe('getCompositePreview — ADR-0028 allMail block', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  const baseWire = {
+    sender: {
+      id: 's-1',
+      name: 'Shop',
+      domain: 'shop.example',
+      lastSeenDays: 2,
+      repliedCount: 0,
+      monthly: 8,
+    },
+    counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+    recentMessages: {
+      all: [],
+      olderThan30d: [],
+      olderThan90d: [],
+      olderThan180d: [],
+      olderThan365d: [],
+    },
+    recentSubjects: {
+      all: [],
+      olderThan30d: [],
+      olderThan90d: [],
+      olderThan180d: [],
+      olderThan365d: [],
+    },
+    unsubAvailable: false,
+    protected: false,
+  };
+
+  async function previewFromWire(extra: Record<string, unknown>) {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/preview/,
+        respond: () => jsonOk({ data: { ...baseWire, ...extra } }),
+      },
+    ]);
+    const { getCompositePreview } = await import('./actions');
+    return getCompositePreview('s-1');
+  }
+
+  it('yields null against an API that predates the field (old API, new web)', async () => {
+    const res = await previewFromWire({});
+    expect(res.allMail).toBeNull();
+  });
+
+  it('yields null for a malformed block instead of guessing counts', async () => {
+    const res = await previewFromWire({ allMail: { recentMessages: {} } });
+    expect(res.allMail).toBeNull();
+  });
+
+  it('normalizes a healthy block, dropping malformed sample rows', async () => {
+    const res = await previewFromWire({
+      allMail: {
+        counts: {
+          all: 977,
+          olderThan30d: 900,
+          olderThan90d: 800,
+          olderThan180d: 700,
+          olderThan365d: 600,
+        },
+        recentMessages: {
+          all: [
+            { subject: 'Statement', date: '2026-07-05T09:00:00.000Z' },
+            { subject: 'Bad date', date: 'not-a-date' },
+            42,
+          ],
+          olderThan30d: [],
+          olderThan90d: [],
+          olderThan180d: [],
+          olderThan365d: [],
+        },
+      },
+    });
+    expect(res.allMail?.counts.all).toBe(977);
+    expect(res.allMail?.recentMessages.all).toEqual([
+      { subject: 'Statement', date: '2026-07-05T09:00:00.000Z' },
+      { subject: 'Bad date', date: null },
+    ]);
+  });
+});
+
+describe('enqueueCompositeAction — ADR-0028 reach on the wire', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  async function capturePost(input: Parameters<typeof enqueueCompositeAction>[0]) {
+    let body: unknown = null;
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /^\/api\/actions$/,
+        respond: async (req) => {
+          body = await req.json();
+          return jsonOk({
+            data: {
+              actionId: 'a-1',
+              compositeId: 'a-1',
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 2,
+              secondaryCount: null,
+              wakeAt: null,
+            },
+          });
+        },
+      },
+    ]);
+    await enqueueCompositeAction(input);
+    return body as { primary: Record<string, unknown> };
+  }
+
+  it('carries reach when set', async () => {
+    const body = await capturePost({
+      senderId: 's-1',
+      primary: { type: 'delete', olderThanDays: null, reach: 'all_mail' },
+      idempotencyKey: 'k-1',
+    });
+    expect(body.primary.reach).toBe('all_mail');
+  });
+
+  it('omits reach entirely when unset — the pre-ADR wire, byte-identical', async () => {
+    const body = await capturePost({
+      senderId: 's-1',
+      primary: { type: 'delete', olderThanDays: null },
+      idempotencyKey: 'k-2',
+    });
+    expect('reach' in body.primary).toBe(false);
+  });
+});

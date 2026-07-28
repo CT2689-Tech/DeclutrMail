@@ -315,6 +315,10 @@ export class ActionRecoveryService {
           selectionFrozenAt: new Date(),
           compositeId: action.compositeId,
           wakeAt,
+          // ADR-0028: the attempt inherits the original reach. Without
+          // this, an all-mail Delete's recovery journal would lose the
+          // inbox/archived split and its undo would re-inbox archived mail.
+          reach: action.reach,
         })
         .returning();
       if (!child) throw new Error('recovery action insert returned no row');

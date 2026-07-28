@@ -7,12 +7,12 @@ import {
   activityLog,
   mailboxAccounts,
   mailMessages,
-  senderInboxActionWhere,
+  senderActionWhere,
   senderPolicies,
   undoJournal,
   workspaces,
 } from '@declutrmail/db';
-import type { schema } from '@declutrmail/db';
+import type { schema, SenderActionReach } from '@declutrmail/db';
 import { ActionLabelAppliedPayloadSchema, TOPICS } from '@declutrmail/events';
 import { getActionDescriptor } from '@declutrmail/shared/actions';
 import type { ActionVerb, LabelChangePair } from '@declutrmail/shared/actions';
@@ -282,9 +282,10 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       throw new ValidationError('Later action requires a sender selector and wake time');
     }
 
-    // Resolve the durable execution set (sender selector resolves "in
-    // INBOX now"; messages selector was frozen by the API). Persist it
-    // BEFORE the mutation so a post-mutation retry reuses it.
+    // Resolve the durable execution set (sender selector resolves the
+    // job's reach — "in INBOX now", or inbox + archived for an ADR-0028
+    // all-mail Delete; messages selector was frozen by the API). Persist
+    // it BEFORE the mutation so a post-mutation retry reuses it.
     //
     // ADR-0020: `older_than_days` narrows the resolution window for the
     // sender selector — `internal_date <= now() - interval 'N days'`.
@@ -292,10 +293,11 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     // is persisted, retries reuse it verbatim regardless of the column.
     let ids = job.resolvedMessageIds;
     if (ids.length === 0 && job.selector.type === 'sender') {
-      ids = await this.resolveSenderInboxIds(
+      ids = await this.resolveSenderActionIds(
         mailboxAccountId,
         job.selector.senderKey,
         job.olderThanDays,
+        job.reach,
       );
       await db
         .update(actionJobs)
@@ -376,12 +378,38 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     const appliedAt = new Date().toISOString();
 
     const undoToken = await db.transaction(async (tx) => {
+      // ADR-0028: an all-mail Delete trashes a MIX of inbox and archived
+      // messages, and its undo must restore each to where it was — so
+      // record which ids carried INBOX. Read from the LOCAL mirror,
+      // inside this transaction and BEFORE the mirror update below
+      // rewrites it: the mirror only changes in this atomic commit, so
+      // even a Gmail-mutated-then-crashed retry still sees the
+      // pre-action state here. (An incremental sync racing that narrow
+      // crash window could overwrite the mirror first — then those
+      // messages restore to archive instead of inbox: degraded, never
+      // destructive.)
+      const inboxMessageIds =
+        job.reach === 'all_mail' && job.verb === 'delete'
+          ? (
+              await tx
+                .select({ providerMessageId: mailMessages.providerMessageId })
+                .from(mailMessages)
+                .where(
+                  and(
+                    eq(mailMessages.mailboxAccountId, mailboxAccountId),
+                    inArray(mailMessages.providerMessageId, ids),
+                    sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+                  ),
+                )
+            ).map((r) => r.providerMessageId)
+          : null;
+
       const [issued] = await tx
         .insert(undoJournal)
         .values({
           mailboxAccountId,
           actionKind: job.verb,
-          payload: buildUndoPayload(job.verb, ids),
+          payload: buildUndoPayload(job.verb, ids, inboxMessageIds),
           // Always explicit — the tier-resolved snapshot (downgrade
           // semantics; see `undoExpiresAt`), never the column default.
           expiresAt,
@@ -499,16 +527,30 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       .where(eq(actionJobs.id, job.id));
 
     const ids = job.resolvedMessageIds;
+    // ADR-0028: an all-mail Delete's undo restores each message to where
+    // it WAS — the inbox subset (recorded in the undo-journal payload at
+    // forward time) gets the registry reverse (+INBOX, −TRASH); the
+    // archived rest gets the reverse WITHOUT the INBOX re-add, so undo
+    // never dumps years of archived mail into the inbox. Every other
+    // job is one uniform group.
+    //
     // The reverse change is rebuilt from the registry, so it carries the
     // same symbolic label NAMES the forward path did — resolve to ids
     // before mutating + mirroring. `ensureLabelId` finds the existing
     // label (the forward path created it), so the revert removes the
     // SAME id the forward path added.
-    let resolved = change;
+    let groups = await this.reverseChangeGroups(job, change, ids);
     if (ids.length > 0) {
       const client = await this.deps.gmailMutation.getClient(mailboxAccountId);
-      resolved = await resolveLabelChange(client, change);
-      await client.batchModify(ids, resolved);
+      groups = await Promise.all(
+        groups.map(async (group) => ({
+          ids: group.ids,
+          change: await resolveLabelChange(client, group.change),
+        })),
+      );
+      for (const group of groups) {
+        await client.batchModify(group.ids, group.change);
+      }
     }
 
     await db.transaction(async (tx) => {
@@ -529,25 +571,28 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         .where(and(eq(activityLog.undoToken, token), sql`${activityLog.revertedAt} IS NULL`));
 
       if (ids.length > 0) {
-        // Derived from the RESOLVED reverse `LabelChange` (ids, not
-        // names) so undoing any label-modify verb keeps the local mirror
-        // correct: archive re-adds INBOX; later re-adds INBOX + drops the
-        // resolved Later label id; delete re-adds INBOX + drops TRASH.
-        // The `CASE WHEN` branch in `buildLabelMirrorExpr` makes
-        // re-adding idempotent so a duplicate revert is a no-op on the
-        // mirror (matching Gmail).
-        await tx
-          .update(mailMessages)
-          .set({
-            labelIds: buildLabelMirrorExpr(resolved),
-            updatedAt: sql`now()`,
-          })
-          .where(
-            and(
-              eq(mailMessages.mailboxAccountId, mailboxAccountId),
-              inArray(mailMessages.providerMessageId, ids),
-            ),
-          );
+        // Derived from each group's RESOLVED reverse `LabelChange` (ids,
+        // not names) so undoing any label-modify verb keeps the local
+        // mirror correct: archive re-adds INBOX; later re-adds INBOX +
+        // drops the resolved Later label id; delete re-adds INBOX +
+        // drops TRASH — except the all-mail archived group, which only
+        // drops TRASH (ADR-0028). The `CASE WHEN` branch in
+        // `buildLabelMirrorExpr` makes re-adding idempotent so a
+        // duplicate revert is a no-op on the mirror (matching Gmail).
+        for (const group of groups) {
+          await tx
+            .update(mailMessages)
+            .set({
+              labelIds: buildLabelMirrorExpr(group.change),
+              updatedAt: sql`now()`,
+            })
+            .where(
+              and(
+                eq(mailMessages.mailboxAccountId, mailboxAccountId),
+                inArray(mailMessages.providerMessageId, group.ids),
+              ),
+            );
+        }
       }
 
       // Undoing a Later action cancels only THAT action's projected
@@ -607,25 +652,67 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
   }
 
   /**
-   * Sender selector → the `provider_message_id`s currently in INBOX,
-   * optionally narrowed to messages older than `olderThanDays` (ADR-0020
-   * time-window filter). When `olderThanDays` is null the full inbox set
-   * is returned (spec v1.2 "All inbox" preset).
+   * Sender selector → the `provider_message_id`s at the job's reach
+   * (ADR-0028: `inbox_only` = currently carrying INBOX; `all_mail` =
+   * inbox + archived minus TRASH/SPAM/DRAFT/CHAT), optionally narrowed
+   * to messages older than `olderThanDays` (ADR-0020 time-window
+   * filter). When `olderThanDays` is null the full set is returned
+   * (spec v1.2 "All inbox" preset).
    */
-  private async resolveSenderInboxIds(
+  private async resolveSenderActionIds(
     mailboxAccountId: string,
     senderKey: string,
     olderThanDays: number | null,
+    reach: SenderActionReach,
   ): Promise<string[]> {
     // ONE shared predicate with the API's preview + enqueue counting
-    // (`senderInboxActionWhere`, @declutrmail/db) — the resolved set IS
+    // (`senderActionWhere`, @declutrmail/db) — the resolved set IS
     // the set the FE chip row previewed, including the inbound-only
     // rule that keeps self-sent SENT+INBOX mail untouched.
     const rows = await this.deps.db
       .select({ providerMessageId: mailMessages.providerMessageId })
       .from(mailMessages)
-      .where(senderInboxActionWhere({ mailboxAccountId, senderKeys: [senderKey], olderThanDays }));
+      .where(
+        senderActionWhere({ mailboxAccountId, senderKeys: [senderKey], olderThanDays, reach }),
+      );
     return rows.map((r) => r.providerMessageId);
+  }
+
+  /**
+   * Partition a reverse job's ids into per-`LabelChange` groups
+   * (ADR-0028). Only an all-mail Delete splits: the forward path stored
+   * which ids carried INBOX in the undo-journal payload, so the revert
+   * re-inboxes exactly those and returns the rest to the archive
+   * (registry reverse minus its `addLabelIds`). Everything else — and
+   * any payload the split cannot be read from — stays one uniform group
+   * with the registry reverse, the pre-ADR behavior.
+   */
+  private async reverseChangeGroups(
+    job: typeof actionJobs.$inferSelect,
+    reverseChange: LabelChange,
+    ids: string[],
+  ): Promise<Array<{ ids: string[]; change: LabelChange }>> {
+    const uniform = [{ ids, change: reverseChange }];
+    if (job.verb !== 'delete' || job.reach !== 'all_mail' || ids.length === 0 || !job.undoToken) {
+      return uniform;
+    }
+    const [journal] = await this.deps.db
+      .select({ payload: undoJournal.payload })
+      .from(undoJournal)
+      .where(eq(undoJournal.token, job.undoToken))
+      .limit(1);
+    const inboxMessageIds = readInboxMessageIds(journal?.payload);
+    if (inboxMessageIds === null) return uniform;
+    const inboxSet = new Set(inboxMessageIds);
+    const toInbox = ids.filter((id) => inboxSet.has(id));
+    const toArchive = ids.filter((id) => !inboxSet.has(id));
+    const archiveChange: LabelChange = reverseChange.removeLabelIds
+      ? { removeLabelIds: reverseChange.removeLabelIds }
+      : {};
+    return [
+      { ids: toInbox, change: reverseChange },
+      { ids: toArchive, change: archiveChange },
+    ].filter((group) => group.ids.length > 0);
   }
 
   /**
@@ -687,10 +774,35 @@ function buildLabelMirrorExpr(change: { addLabelIds?: string[]; removeLabelIds?:
  * message ids — `priorLabels` is vestigial archive metadata kept only
  * on the `archive` + `later` variants for backwards compatibility; the
  * worker never reads it back. `delete` omits it entirely.
+ *
+ * `inboxMessageIds` (ADR-0028, all-mail Delete only): the subset that
+ * carried INBOX at forward time. `reverseChangeGroups` reads it back so
+ * undo restores each message to where it was.
  */
-function buildUndoPayload(verb: ActionVerb, messageIds: string[]) {
+function buildUndoPayload(
+  verb: ActionVerb,
+  messageIds: string[],
+  inboxMessageIds: string[] | null = null,
+) {
   if (verb === 'delete') {
-    return { kind: 'delete' as const, messageIds };
+    return {
+      kind: 'delete' as const,
+      messageIds,
+      ...(inboxMessageIds !== null ? { inboxMessageIds } : {}),
+    };
   }
   return { kind: verb, messageIds, priorLabels: ['INBOX'] as string[] };
+}
+
+/**
+ * Defensive read of `payload.inboxMessageIds` from an undo-journal
+ * jsonb value. `null` = the split is unavailable (legacy payload,
+ * pruned journal row, malformed data) — the caller falls back to the
+ * uniform registry reverse rather than guessing.
+ */
+function readInboxMessageIds(payload: unknown): string[] | null {
+  if (payload === null || payload === undefined || typeof payload !== 'object') return null;
+  const value = (payload as Record<string, unknown>).inboxMessageIds;
+  if (!Array.isArray(value)) return null;
+  return value.filter((entry): entry is string => typeof entry === 'string');
 }

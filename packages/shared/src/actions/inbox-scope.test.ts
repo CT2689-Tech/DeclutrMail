@@ -100,6 +100,23 @@ describe('inboxScopeNoticeCopy', () => {
     expect(copy).not.toMatch(/moved out|archived|deleted|no longer|used to|were in/i);
   });
 
+  // ADR-0028 — a surface with a reach control must not claim the verb
+  // "only acts on" inbox mail while offering the chip that widens it.
+  it('softens the scope tail to "by default" when the verb can act beyond the inbox', () => {
+    expect(
+      inboxScopeNoticeCopy({ kind: 'empty-inbox', recentArrivals: 8 }, 'Delete', 'this sender', {
+        verbActsBeyondInbox: true,
+      }),
+    ).toBe(
+      'Nothing from this sender is in your inbox right now — though 8 arrived in the last 30 days. Delete acts on inbox mail by default.',
+    );
+    // Surfaces without a reach control (Screener) keep the absolute
+    // wording, which is true there.
+    expect(
+      inboxScopeNoticeCopy({ kind: 'empty-inbox', recentArrivals: 8 }, 'Delete', 'this sender', {}),
+    ).toContain('Delete only acts on mail still in the inbox.');
+  });
+
   it('omits the arrivals clause when there are none to name', () => {
     expect(inboxScopeNoticeCopy({ kind: 'empty-inbox', recentArrivals: 0 }, 'Archive')).toBe(
       'Nothing from this sender is in your inbox right now. Archive only acts on mail still in the inbox.',

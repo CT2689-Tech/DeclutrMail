@@ -31,8 +31,34 @@ const livePreview: CompositeActionPreviewResult = {
   },
   counts: buckets,
   recentMessages: subjects,
+  // `null` = an API without the ADR-0028 block (deploy skew). The base
+  // fixture keeps it null so every pre-reach test exercises the exact
+  // pre-ADR behavior; reach tests build on `livePreviewWithAllMail`.
+  allMail: null,
   unsubAvailable: true,
   protected: false,
+};
+
+/** ADR-0028 fixture — inbox counts above, plus a larger all-mail set. */
+const allMailBuckets = {
+  all: 977,
+  olderThan30d: 900,
+  olderThan90d: 800,
+  olderThan180d: 700,
+  olderThan365d: 600,
+};
+const livePreviewWithAllMail: CompositeActionPreviewResult = {
+  ...livePreview,
+  allMail: {
+    counts: allMailBuckets,
+    recentMessages: {
+      all: [{ subject: 'Archived statement', date: '2026-07-05T09:00:00.000Z' }],
+      olderThan30d: [{ subject: 'Older archived statement', date: '2026-04-01T09:00:00.000Z' }],
+      olderThan90d: [],
+      olderThan180d: [],
+      olderThan365d: [],
+    },
+  },
 };
 
 function request(verb: ActionRequest['verb']): ActionRequest {
@@ -844,5 +870,212 @@ describe('ConfirmActionModal — preview trust affordances', () => {
       />,
     );
     expect(screen.queryByRole('link', { name: /Check these in Gmail/ })).toBeNull();
+  });
+});
+
+describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)', () => {
+  const reachRow = () => screen.queryByRole('radiogroup', { name: /Where it applies/i });
+
+  it('offers no reach choice against an API without the allMail block', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(reachRow()).toBeNull();
+  });
+
+  it.each(['Archive', 'Later'] as const)('offers no reach choice on %s', (verb) => {
+    render(
+      <ConfirmActionModal
+        request={request(verb)}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    expect(reachRow()).toBeNull();
+  });
+
+  it('defaults Delete to Inbox only and labels both chips with window-scoped counts', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    const inboxChip = screen.getByRole('radio', { name: /Inbox only/ });
+    const archivedChip = screen.getByRole('radio', { name: /Inbox \+ archived/ });
+    expect(inboxChip).toHaveAttribute('aria-checked', 'true');
+    expect(archivedChip).toHaveAttribute('aria-checked', 'false');
+    // Delete defaults to the 180d window — each chip carries ITS reach's
+    // count for that window, so the pair is comparable at a glance.
+    expect(inboxChip.textContent).toContain('1');
+    expect(archivedChip.textContent).toContain('700');
+  });
+
+  it('confirms with reach all_mail only after the archived chip is chosen', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
+    expect(onConfirm).toHaveBeenLastCalledWith(expect.not.objectContaining({ reach: 'all_mail' }));
+
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
+    expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ reach: 'all_mail' }));
+  });
+
+  it('switches the headline, chip labels and count source to the all-mail set', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    // 180d default window over the all-mail buckets — the figure appears
+    // on both the chip and the headline, so assert the pair.
+    expect(screen.getAllByText('700').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/across inbox \+ archived/)).toBeInTheDocument();
+    // The un-windowed chip stops claiming "inbox" once the reach is wider.
+    expect(screen.getByRole('radio', { name: /All mail/ })).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /All inbox/ })).toBeNull();
+    // The exclusions + the per-placement undo promise are stated where
+    // the choice is made — and the promise is the CONDITIONAL one the
+    // system actually makes (inbox→inbox, archive→archive), never an
+    // absolute "back where it was".
+    expect(screen.getByText(/Trash, Spam, Drafts and Chat are never touched/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/inbox mail to the inbox, archived mail to the archive/),
+    ).toBeInTheDocument();
+  });
+
+  it('drops in:inbox from the Gmail verify link at all-mail reach', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+        mailboxEmail="chintan@example.com"
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    const href = decodeURIComponent(
+      screen.getByRole('link', { name: /Check these in Gmail/ }).getAttribute('href') ?? '',
+    );
+    expect(href).toContain(`from:"${sender.email}"`);
+    expect(href).not.toContain('in:inbox');
+  });
+
+  it('points the empty-inbox notice at the archived chip when archived mail exists', () => {
+    const emptyInbox: CompositeActionPreviewResult = {
+      ...livePreviewWithAllMail,
+      counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+      recentMessages: {
+        all: [],
+        olderThan30d: [],
+        olderThan90d: [],
+        olderThan180d: [],
+        olderThan365d: [],
+      },
+    };
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={emptyInbox}
+      />,
+    );
+    // The window chips are suppressed (five zeros), but the reach row is
+    // exactly the escape hatch and must stay visible.
+    expect(screen.queryByRole('radiogroup', { name: /How far back/i })).toBeNull();
+    expect(reachRow()).not.toBeNull();
+    expect(
+      screen.getByText(/Switch to "Inbox \+ archived" to reach 977 archived emails\./),
+    ).toBeInTheDocument();
+    // With the reach control on screen, the notice must NOT claim Delete
+    // "only acts on" inbox mail — the next sentence disproves it.
+    expect(screen.getByText(/Delete acts on inbox mail by default/)).toBeInTheDocument();
+    expect(screen.queryByText(/only acts on mail still in the inbox/)).toBeNull();
+    // Flipping the chip clears the inbox-scope narration AND arms the
+    // exact figure the chip advertised: the hidden 180d default resets
+    // to "All mail", so the user gets 977, not a silently-shaved 700.
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    expect(screen.queryByText(/is in your inbox right now/)).toBeNull();
+    expect(screen.getByRole('radio', { name: /All mail/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getAllByText('977').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('button', { name: /Delete/ })).toBeEnabled();
+  });
+
+  it('still blocks confirm when the all-mail set is empty too', () => {
+    const nothingAnywhere: CompositeActionPreviewResult = {
+      ...livePreviewWithAllMail,
+      counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+      allMail: {
+        counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+        recentMessages: {
+          all: [],
+          olderThan30d: [],
+          olderThan90d: [],
+          olderThan180d: [],
+          olderThan365d: [],
+        },
+      },
+    };
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={nothingAnywhere}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled();
+  });
+
+  it('resets to Inbox only when the modal reopens for a new request', () => {
+    const first = request('Delete');
+    const { rerender } = render(
+      <ConfirmActionModal
+        request={first}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    rerender(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    expect(screen.getByRole('radio', { name: /Inbox only/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
   });
 });

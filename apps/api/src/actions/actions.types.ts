@@ -267,7 +267,7 @@ export type ActionStatusResult = ActionStatusSnapshot;
 // shared array propagates here on next typecheck. The cast preserves
 // the literal tuple identity for `z.enum` (which requires a non-empty
 // readonly tuple of literal strings).
-import { COMPOSITE_PRIMARY_VERBS } from '@declutrmail/shared/contracts';
+import { ACTION_REACHES, COMPOSITE_PRIMARY_VERBS } from '@declutrmail/shared/contracts';
 export const compositePrimaryVerbSchema = z.enum(
   COMPOSITE_PRIMARY_VERBS as unknown as readonly [
     (typeof COMPOSITE_PRIMARY_VERBS)[number],
@@ -347,6 +347,14 @@ export const compositeActionRequestSchema = z
         olderThanDays: z.number().int().min(1).max(3650).nullable().optional(),
         /** D245: Later is always scheduled; other verbs cannot carry a wake time. */
         wakeAt: z.string().datetime({ offset: true }).optional(),
+        /**
+         * ADR-0028 — how far the verb reaches. Optional (absent =
+         * `inbox_only`, the pre-ADR wire) so every deployed client stays
+         * valid. `all_mail` is legal only on a single-sender Delete
+         * primary; the superRefine below rejects everything else with a
+         * 400 before the DB CHECK could.
+         */
+        reach: z.enum(ACTION_REACHES).optional(),
       })
       .strict(),
     secondary: z
@@ -381,6 +389,22 @@ export const compositeActionRequestSchema = z
         path: ['primary', 'wakeAt'],
         message: 'wakeAt is only valid for Later.',
       });
+    }
+    if (body.primary.reach === 'all_mail') {
+      if (body.primary.type !== 'delete') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['primary', 'reach'],
+          message: 'Only Delete may reach past the inbox.',
+        });
+      }
+      if (body.selector.type !== 'sender') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['primary', 'reach'],
+          message: 'Inbox + archived reach is single-sender only.',
+        });
+      }
     }
   });
 export type CompositeActionRequest = z.infer<typeof compositeActionRequestSchema>;
@@ -577,6 +601,29 @@ export interface CompositeActionPreviewResult {
     olderThan180d: CompositePreviewMessage[];
     olderThan365d: CompositePreviewMessage[];
   };
+  /**
+   * ADR-0028 — the same counts + samples resolved at `all_mail` reach
+   * (inbox + archived; TRASH/SPAM/DRAFT/CHAT excluded), powering the
+   * Delete modal's "Inbox + archived" chip. Additive field: a web
+   * bundle older than this API ignores it, and the FE treats its
+   * absence (older API) as "reach selection unavailable".
+   */
+  allMail: {
+    counts: {
+      all: number;
+      olderThan30d: number;
+      olderThan90d: number;
+      olderThan180d: number;
+      olderThan365d: number;
+    };
+    recentMessages: {
+      all: CompositePreviewMessage[];
+      olderThan30d: CompositePreviewMessage[];
+      olderThan90d: CompositePreviewMessage[];
+      olderThan180d: CompositePreviewMessage[];
+      olderThan365d: CompositePreviewMessage[];
+    };
+  };
   unsubAvailable: boolean;
   protected: boolean;
 }
@@ -593,5 +640,16 @@ const _ACTION_JOB_STATUS_API_EXTENDS_SHARED: ActionJobStatus extends SharedActio
   ? true
   : false = true;
 const _ACTION_JOB_STATUS_SHARED_EXTENDS_API: SharedActionJobStatus extends ActionJobStatus
+  ? true
+  : false = true;
+
+/** Same contract for the ADR-0028 reach enum (DB pg-enum ↔ shared mirror). */
+import type { SenderActionReach as DbSenderActionReach } from '@declutrmail/db';
+import type { ActionReach as SharedActionReach } from '@declutrmail/shared/contracts';
+
+const _ACTION_REACH_DB_EXTENDS_SHARED: DbSenderActionReach extends SharedActionReach
+  ? true
+  : false = true;
+const _ACTION_REACH_SHARED_EXTENDS_DB: SharedActionReach extends DbSenderActionReach
   ? true
   : false = true;

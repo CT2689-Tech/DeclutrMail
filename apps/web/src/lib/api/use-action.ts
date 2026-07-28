@@ -36,6 +36,7 @@ import {
   recordUnsubscribeIntent,
   recordUnsubscribeManualStatus,
   revertUndo,
+  type ActionReach,
   type ActionStatusResult,
   type BatchStatusResult,
   type BulkActionEnqueueResult,
@@ -113,7 +114,13 @@ export function useEnqueueComposite() {
     Error,
     {
       senderId: string;
-      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
+      primary: {
+        type: CompositePrimaryVerb;
+        olderThanDays?: number | null;
+        wakeAt?: string;
+        /** ADR-0028 — omit for `inbox_only` (Delete-only field). */
+        reach?: ActionReach;
+      };
       secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
       override?: boolean;
     }

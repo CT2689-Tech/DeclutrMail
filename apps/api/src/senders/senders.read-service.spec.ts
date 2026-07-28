@@ -133,6 +133,9 @@ async function seedMessage(
     snippet?: string;
     isUnread?: boolean;
     providerMessageId?: string;
+    /** Gmail label ids; default `[]` (not in inbox) matches the column default. */
+    labelIds?: string[];
+    isOutbound?: boolean;
   },
 ): Promise<string> {
   const providerMessageId = args.providerMessageId ?? `pmid-${randomUUID()}`;
@@ -147,6 +150,8 @@ async function seedMessage(
       snippet: args.snippet ?? '',
       internalDate: args.internalDate,
       isUnread: args.isUnread ?? false,
+      ...(args.labelIds ? { labelIds: args.labelIds } : {}),
+      ...(args.isOutbound !== undefined ? { isOutbound: args.isOutbound } : {}),
     })
     .returning({ id: mailMessages.id });
   return row!.id;
@@ -337,6 +342,62 @@ describe('SendersReadService', () => {
       });
       expect(rows.map((r) => r.id)).toEqual([yes.id]);
       expect(rows[0]!.protectionFlags.isProtected).toBe(true);
+    });
+
+    it('reports inboxCount — messages currently carrying INBOX, inbound only (ADR-0028 companion)', async () => {
+      // The splitwise shape (founder report 2026-07-28): plenty received,
+      // none of it in the inbox — the row must say so before three verb
+      // modals do.
+      const filtered = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'hello@splitwise.example',
+        lastSeenAt: new Date('2026-07-20T00:00:00Z'),
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: filtered.senderKey,
+        internalDate: new Date('2026-07-20T00:00:00Z'),
+        labelIds: ['Label_29', 'CATEGORY_UPDATES'],
+      });
+      const inboxy = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'news@inboxy.example',
+        lastSeenAt: new Date('2026-07-21T00:00:00Z'),
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: inboxy.senderKey,
+        internalDate: new Date('2026-07-21T00:00:00Z'),
+        labelIds: ['INBOX'],
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: inboxy.senderKey,
+        internalDate: new Date('2026-07-19T00:00:00Z'),
+        labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
+      });
+      // Outbound self-send in the inbox — never counted (matches the
+      // action predicate's inbound-only rule).
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: inboxy.senderKey,
+        internalDate: new Date('2026-07-18T00:00:00Z'),
+        labelIds: ['SENT', 'INBOX'],
+        isOutbound: true,
+      });
+
+      const rows = await svc.listSenders({
+        mailboxAccountId: mailboxId,
+        category: null,
+        cursor: null,
+        limit: 10,
+      });
+      const byEmail = new Map(rows.map((r) => [r.email, r] as const));
+      expect(byEmail.get('hello@splitwise.example')!.inboxCount).toBe(0);
+      expect(byEmail.get('news@inboxy.example')!.inboxCount).toBe(2);
+
+      const detail = await svc.getSenderDetail(mailboxId, inboxy.id);
+      expect(detail!.inboxCount).toBe(2);
     });
 
     describe('q search (#145)', () => {
