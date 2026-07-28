@@ -47,11 +47,18 @@ export class UsersService {
    * writer changed in between — the lost-update that let a settings
    * save resurrect a concurrent one-click unsubscribe (D165). The `||`
    * touches only the patch's own top-level keys under the row lock.
+   * The CASE repairs a malformed non-object root first: jsonb `||`
+   * on an array/scalar root CONCATENATES into an array.
    */
   async patchPreferences(userId: string, patch: Record<string, unknown>): Promise<void> {
     const updated = await this.db
       .update(users)
-      .set({ preferences: sql`${users.preferences} || ${JSON.stringify(patch)}::jsonb` })
+      .set({
+        preferences: sql`CASE
+          WHEN jsonb_typeof(${users.preferences}) = 'object' THEN ${users.preferences}
+          ELSE '{}'::jsonb
+        END || ${JSON.stringify(patch)}::jsonb`,
+      })
       .where(eq(users.id, userId))
       .returning({ id: users.id });
     if (updated.length === 0) {
@@ -65,27 +72,33 @@ export class UsersService {
    * key-by-key IN SQL from the row's current value, so a concurrent
    * one-click unsubscribe flip of a key this patch does not carry
    * survives. A JS-computed sub-bag would replace it wholesale from a
-   * stale read. The CASE arm repairs a malformed non-object
-   * `emailPrefs` (`jsonb_set` silently no-ops on a broken path).
-   * Returns the post-merge preferences bag for response envelopes.
+   * stale read. The CASE arms repair malformation at both levels — a
+   * non-object ROOT (jsonb_set with a text path on an array root
+   * raises an error) and a non-object `emailPrefs` (`jsonb_set`
+   * silently no-ops on a broken path). Returns the post-merge
+   * preferences bag for response envelopes.
    */
   async mergeEmailPrefs(
     userId: string,
     patch: Record<string, boolean>,
   ): Promise<Record<string, unknown>> {
+    const root = sql`CASE
+      WHEN jsonb_typeof(${users.preferences}) = 'object' THEN ${users.preferences}
+      ELSE '{}'::jsonb
+    END`;
     const [row] = await this.db
       .update(users)
       .set({
         preferences: sql`jsonb_set(
           CASE
-            WHEN jsonb_typeof(${users.preferences} -> 'emailPrefs') = 'object'
-              THEN ${users.preferences}
-            ELSE ${users.preferences} || '{"emailPrefs": {}}'::jsonb
+            WHEN jsonb_typeof(${root} -> 'emailPrefs') = 'object'
+              THEN ${root}
+            ELSE ${root} || '{"emailPrefs": {}}'::jsonb
           END,
           '{emailPrefs}',
           CASE
-            WHEN jsonb_typeof(${users.preferences} -> 'emailPrefs') = 'object'
-              THEN ${users.preferences} -> 'emailPrefs'
+            WHEN jsonb_typeof(${root} -> 'emailPrefs') = 'object'
+              THEN ${root} -> 'emailPrefs'
             ELSE '{}'::jsonb
           END || ${JSON.stringify(patch)}::jsonb
         )`,

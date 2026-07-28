@@ -91,6 +91,18 @@ describe('UsersService.patchPreferences', () => {
       svc.patchPreferences('00000000-0000-4000-8000-00000000dead', { a: 1 }),
     ).rejects.toThrow(InternalServerErrorException);
   });
+
+  it('repairs a malformed non-object root instead of producing an array', async () => {
+    // jsonb `||` on an array/scalar root CONCATENATES into an array —
+    // the bag must come back as an object holding the patch.
+    const db = await freshDb();
+    const userId = await seedUser(db, [1, 2] as unknown as Record<string, unknown>);
+    const svc = new UsersService(db);
+
+    await svc.patchPreferences(userId, { onboardingSkipped: true });
+
+    expect(await readPrefs(db, userId)).toEqual({ onboardingSkipped: true });
+  });
 });
 
 describe('UsersService.mergeEmailPrefs', () => {
@@ -139,5 +151,17 @@ describe('UsersService.mergeEmailPrefs', () => {
     await expect(
       svc.mergeEmailPrefs('00000000-0000-4000-8000-00000000dead', { reminders: false }),
     ).rejects.toThrow(InternalServerErrorException);
+  });
+
+  it('repairs a malformed non-object root instead of erroring', async () => {
+    // jsonb_set with a text path on an ARRAY root raises an error —
+    // the root must be repaired to an object in the same statement.
+    const db = await freshDb();
+    const userId = await seedUser(db, [1, 2] as unknown as Record<string, unknown>);
+    const svc = new UsersService(db);
+
+    await svc.mergeEmailPrefs(userId, { reminders: false });
+
+    expect(await readPrefs(db, userId)).toEqual({ emailPrefs: { reminders: false } });
   });
 });

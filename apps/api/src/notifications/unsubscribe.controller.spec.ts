@@ -140,6 +140,21 @@ describe('UnsubscribeController', () => {
     });
   });
 
+  it('repairs a malformed non-object ROOT instead of erroring', async () => {
+    // jsonb_set with a text path on an ARRAY root raises an error —
+    // which would turn the uniform 200 into a 500. The statement must
+    // repair the root to an object first.
+    const db = await freshDb();
+    const userId = await seedUser(db, [1, 2] as unknown as Record<string, unknown>);
+    const controller = new UnsubscribeController(db);
+    const token = await signUnsubscribeToken({ userId, category: 'reminders' });
+
+    const res = await controller.unsubscribe(token);
+
+    expect(res.status).toBe('ok');
+    expect(await readPrefs(db, userId)).toEqual({ emailPrefs: { reminders: false } });
+  });
+
   it('replaces a malformed non-object emailPrefs instead of no-opping', async () => {
     // jsonb_set silently no-ops when an intermediate path step is not
     // an object — the CASE arm must repair the bag so the opt-out

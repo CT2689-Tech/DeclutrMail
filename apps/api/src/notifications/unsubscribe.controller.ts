@@ -126,18 +126,24 @@ export class UnsubscribeController {
     // passes every other stored key — known or future-shaped — through
     // untouched. Never merge `parseEmailPrefs()` output here either:
     // its default fallback (all true) written back would let this
-    // unauthenticated endpoint turn preferences ON. The CASE arm
-    // replaces a malformed non-object `emailPrefs` with `{}` because
-    // `jsonb_set` silently no-ops when an intermediate path step is
-    // not an object.
+    // unauthenticated endpoint turn preferences ON. The CASE arms
+    // repair malformation at both levels: a non-object ROOT (jsonb_set
+    // with a text path on an array root raises an error — a 500 where
+    // the contract promises a uniform 200) and a non-object
+    // `emailPrefs` (`jsonb_set` silently no-ops when an intermediate
+    // path step is not an object).
+    const root = sql`CASE
+      WHEN jsonb_typeof(${users.preferences}) = 'object' THEN ${users.preferences}
+      ELSE '{}'::jsonb
+    END`;
     const updated = await this.db
       .update(users)
       .set({
         preferences: sql`jsonb_set(
           CASE
-            WHEN jsonb_typeof(${users.preferences} -> 'emailPrefs') = 'object'
-              THEN ${users.preferences}
-            ELSE ${users.preferences} || '{"emailPrefs": {}}'::jsonb
+            WHEN jsonb_typeof(${root} -> 'emailPrefs') = 'object'
+              THEN ${root}
+            ELSE ${root} || '{"emailPrefs": {}}'::jsonb
           END,
           ARRAY['emailPrefs', ${claims.category}],
           'false'::jsonb,

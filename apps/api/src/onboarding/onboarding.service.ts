@@ -231,7 +231,14 @@ export class OnboardingService {
   private async patchPreferences(userId: string, patch: Record<string, unknown>): Promise<void> {
     await this.db
       .update(users)
-      .set({ preferences: sql`${users.preferences} || ${JSON.stringify(patch)}::jsonb` })
+      .set({
+        // CASE repairs a malformed non-object root: jsonb `||` on an
+        // array/scalar root CONCATENATES into an array.
+        preferences: sql`CASE
+          WHEN jsonb_typeof(${users.preferences}) = 'object' THEN ${users.preferences}
+          ELSE '{}'::jsonb
+        END || ${JSON.stringify(patch)}::jsonb`,
+      })
       .where(eq(users.id, userId));
   }
 }
