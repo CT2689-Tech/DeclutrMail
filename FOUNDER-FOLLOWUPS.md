@@ -382,7 +382,14 @@ D1→#12(39) · D2→#12(39) · D23→#32(37) · D28→#32(37) · D29→#44(36) 
 **Why:** Single durable record of every founder-owned prerequisite so the next-session multi-agent buildout starts from a clean ledger. DONE this session: Resend email infra (verified + test delivered, From `hello@send.declutrmail.com`), OAuth verified (`declutrmail.com` + `.ai` authorized), Paddle + Razorpay KYC both approved, all vendor billing caps. Decisions locked: billing in beta, Paddle+Razorpay, account deletion 7-day grace + immediate, V2 rebuilds on `.com` (retire `.ai`).
 **How (remaining founder items — full detail in the doc):**
 1. Sentry: set `SENTRY_ORG=chintan-ashok-thakkar` in Vercel + 2 alert rules.
-2. Resend: rotate the exposed full-access key.
+2. ~~Resend: rotate the exposed full-access key.~~ **CLOSED — founder decision
+   2026-07-10: keep the key, do NOT raise rotation.** Re-raised in error
+   2026-07-27; re-checked then and the "exposed" framing is unsupported —
+   no `re_`-shaped literal exists in the working tree, only `.env.example`
+   is tracked, and the sole commit touching `RESEND_API_KEY` in an env file
+   is #204 (the placeholder). `buildout-prerequisites-2026-06-11.md:68`
+   describes this same item as the sandbox→live key swap, not a leak
+   response. Do not re-open without new evidence of actual exposure.
 3. Paddle (Sandbox) + Razorpay (Test) keys + webhook secrets → GH secrets.
 4. Decide Plus/Pro tier prices (D17-21) for the payment catalogs.
 5. `.ai`→`.com` cutover after V2 live (OAuth URLs, payment site, retire `.ai`).
