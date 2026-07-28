@@ -13,7 +13,6 @@ import {
 import { eq } from 'drizzle-orm';
 
 import { users } from '@declutrmail/db';
-import { parseEmailPrefs } from '@declutrmail/shared/contracts';
 
 import { RateLimit } from '../common/rate-limit/index.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -126,12 +125,23 @@ export class UnsubscribeController {
       this.logger.log('email.unsubscribe.user_gone');
       return;
     }
-    const current = parseEmailPrefs(row.preferences);
+    // Merge over the RAW stored bag, not over `parseEmailPrefs()`
+    // output: the parser falls back to DEFAULTS (all true) for a
+    // malformed or future-shaped bag, and writing that back would let
+    // this unauthenticated endpoint flip a stored opt-out back ON.
+    // Spreading the raw object flips exactly one key to `false` and
+    // passes every other stored key through untouched — the endpoint
+    // can only ever narrow.
     const base = (row.preferences ?? {}) as Record<string, unknown>;
+    const rawEmailPrefs = base.emailPrefs;
+    const storedEmailPrefs =
+      typeof rawEmailPrefs === 'object' && rawEmailPrefs !== null && !Array.isArray(rawEmailPrefs)
+        ? (rawEmailPrefs as Record<string, unknown>)
+        : {};
     await this.db
       .update(users)
       .set({
-        preferences: { ...base, emailPrefs: { ...current, [claims.category]: false } },
+        preferences: { ...base, emailPrefs: { ...storedEmailPrefs, [claims.category]: false } },
       })
       .where(eq(users.id, claims.userId));
     // Never log the address or the token — category + outcome only (D7).

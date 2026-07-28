@@ -165,6 +165,7 @@ coordinate with a maintenance window or pair with refresh-token grace.
 | Slot             | Storage                                             | Env var                                             | Rotated | Owner   |
 | ---------------- | --------------------------------------------------- | --------------------------------------------------- | ------- | ------- |
 | Prod HMAC secret | GCP Secret Manager: `unsubscribe-token-secret-prod` | `UNSUBSCRIBE_TOKEN_SECRET` (Cloud Run API + worker) | —       | founder |
+| Smoke (GH)       | GH Actions secret — same VALUE as prod              | `UNSUBSCRIBE_TOKEN_SECRET` (email-smoke workflow)   | —       | founder |
 | Local dev secret | `.env.local`                                        | `UNSUBSCRIBE_TOKEN_SECRET`                          | —       | founder |
 
 Signs the RFC 8058 one-click unsubscribe tokens embedded in email
