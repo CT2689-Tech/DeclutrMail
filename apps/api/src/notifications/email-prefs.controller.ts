@@ -1,7 +1,6 @@
 import { BadRequestException, Body, Controller, Patch, UseGuards } from '@nestjs/common';
 
 import {
-  DEFAULT_EMAIL_PREFS,
   EmailPrefsPatchSchema,
   ok,
   parseEmailPrefs,
@@ -48,16 +47,17 @@ export class EmailPrefsController {
         message: parsed.error.issues[0]?.message ?? 'Invalid email-prefs patch.',
       });
     }
-    const current = await this.users.findById(user.userId);
-    const merged: EmailPrefs = {
-      ...DEFAULT_EMAIL_PREFS,
-      ...parseEmailPrefs(current?.preferences),
-      // Spread only the keys the patch actually set (optional keys
-      // would otherwise overwrite with `undefined`).
+    // Persist ONLY the keys the patch carries, merged in-database
+    // (`UsersService.mergeEmailPrefs`). Writing a JS-materialised full
+    // bag computed from a prior read would race the D165 one-click
+    // endpoint: an unsubscribe landing between this handler's read and
+    // write would be overwritten — silently resubscribing the user.
+    const patch = {
       ...(parsed.data.reminders !== undefined ? { reminders: parsed.data.reminders } : {}),
       ...(parsed.data.syncComplete !== undefined ? { syncComplete: parsed.data.syncComplete } : {}),
     };
-    await this.users.patchPreferences(user.userId, { emailPrefs: merged });
-    return ok({ emailPrefs: merged });
+    const preferences = await this.users.mergeEmailPrefs(user.userId, patch);
+    // Display view materialises defaults; storage stays sparse.
+    return ok({ emailPrefs: parseEmailPrefs(preferences) });
   }
 }

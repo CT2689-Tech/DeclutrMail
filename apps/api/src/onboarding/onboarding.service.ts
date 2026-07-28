@@ -1,7 +1,7 @@
 import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 
 import { users } from '@declutrmail/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { OnboardingGoalSchema, OnboardingPresetKeySchema } from '@declutrmail/shared/contracts';
 import type {
   OnboardingFirstTriageMeta,
@@ -222,11 +222,17 @@ export class OnboardingService {
     return row;
   }
 
-  /** Shallow preferences merge — same semantics as `UsersService.patchPreferences`. */
+  /**
+   * Shallow preferences merge — same semantics as
+   * `UsersService.patchPreferences`: an ATOMIC in-database `||`, so a
+   * concurrent writer's key (e.g. a D165 unsubscribe flip) cannot be
+   * overwritten by a stale JS-side snapshot.
+   */
   private async patchPreferences(userId: string, patch: Record<string, unknown>): Promise<void> {
-    const current = await this.findUser(userId);
-    const merged = { ...(current.preferences as Record<string, unknown>), ...patch };
-    await this.db.update(users).set({ preferences: merged }).where(eq(users.id, userId));
+    await this.db
+      .update(users)
+      .set({ preferences: sql`${users.preferences} || ${JSON.stringify(patch)}::jsonb` })
+      .where(eq(users.id, userId));
   }
 }
 

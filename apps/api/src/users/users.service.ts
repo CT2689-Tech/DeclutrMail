@@ -1,5 +1,5 @@
 import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { users, workspaces } from '@declutrmail/db';
 
@@ -41,14 +41,61 @@ export class UsersService {
    * Patch `users.preferences` with a shallow merge. Used by the active-
    * mailbox selector so the user's chosen default mailbox persists
    * across sessions.
+   *
+   * ATOMIC in-database merge (`||`), not read-modify-write: a JS-side
+   * merge computed from a prior SELECT overwrites any key another
+   * writer changed in between — the lost-update that let a settings
+   * save resurrect a concurrent one-click unsubscribe (D165). The `||`
+   * touches only the patch's own top-level keys under the row lock.
    */
   async patchPreferences(userId: string, patch: Record<string, unknown>): Promise<void> {
-    const current = await this.findById(userId);
-    if (!current) {
+    const updated = await this.db
+      .update(users)
+      .set({ preferences: sql`${users.preferences} || ${JSON.stringify(patch)}::jsonb` })
+      .where(eq(users.id, userId))
+      .returning({ id: users.id });
+    if (updated.length === 0) {
       throw new InternalServerErrorException(`User ${userId} not found.`);
     }
-    const merged = { ...(current.preferences as Record<string, unknown>), ...patch };
-    await this.db.update(users).set({ preferences: merged }).where(eq(users.id, userId));
+  }
+
+  /**
+   * Atomically merge a partial patch into `preferences.emailPrefs`
+   * (D165). Nested twin of `patchPreferences`: the sub-bag is merged
+   * key-by-key IN SQL from the row's current value, so a concurrent
+   * one-click unsubscribe flip of a key this patch does not carry
+   * survives. A JS-computed sub-bag would replace it wholesale from a
+   * stale read. The CASE arm repairs a malformed non-object
+   * `emailPrefs` (`jsonb_set` silently no-ops on a broken path).
+   * Returns the post-merge preferences bag for response envelopes.
+   */
+  async mergeEmailPrefs(
+    userId: string,
+    patch: Record<string, boolean>,
+  ): Promise<Record<string, unknown>> {
+    const [row] = await this.db
+      .update(users)
+      .set({
+        preferences: sql`jsonb_set(
+          CASE
+            WHEN jsonb_typeof(${users.preferences} -> 'emailPrefs') = 'object'
+              THEN ${users.preferences}
+            ELSE ${users.preferences} || '{"emailPrefs": {}}'::jsonb
+          END,
+          '{emailPrefs}',
+          CASE
+            WHEN jsonb_typeof(${users.preferences} -> 'emailPrefs') = 'object'
+              THEN ${users.preferences} -> 'emailPrefs'
+            ELSE '{}'::jsonb
+          END || ${JSON.stringify(patch)}::jsonb
+        )`,
+      })
+      .where(eq(users.id, userId))
+      .returning({ preferences: users.preferences });
+    if (!row) {
+      throw new InternalServerErrorException(`User ${userId} not found.`);
+    }
+    return row.preferences as Record<string, unknown>;
   }
 
   /** Persist the browser's validated IANA zone for local-time features. */
