@@ -113,4 +113,53 @@ describe('EmailService', () => {
     const outcome = await service.deliver(INPUT);
     expect(outcome).toMatchObject({ ok: false, reason: 'transient', detail: 'ECONNRESET' });
   });
+
+  it('forwards html and headers to the provider payload', async () => {
+    const client = fakeClient({ data: { id: 'x' }, error: null });
+    const service = new EmailService(fakeSuppression(false), client);
+
+    await service.deliver({
+      ...INPUT,
+      html: '<p>hi</p>',
+      headers: { 'List-Unsubscribe': '<https://example.com/u>' },
+    });
+
+    expect(client.emails.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        html: '<p>hi</p>',
+        headers: { 'List-Unsubscribe': '<https://example.com/u>' },
+      }),
+      { idempotencyKey: 'k1' },
+    );
+  });
+
+  it('omits html, headers and reply-to when not provided', async () => {
+    delete process.env.EMAIL_REPLY_TO;
+    const client = fakeClient({ data: { id: 'x' }, error: null });
+    const service = new EmailService(fakeSuppression(false), client);
+
+    await service.deliver(INPUT);
+
+    const payload = client.emails.send.mock.calls[0]![0];
+    expect(payload).not.toHaveProperty('html');
+    expect(payload).not.toHaveProperty('headers');
+    expect(payload).not.toHaveProperty('replyTo');
+  });
+
+  it('sets reply-to when EMAIL_REPLY_TO is set', async () => {
+    process.env.EMAIL_REPLY_TO = 'support@declutrmail.com';
+    try {
+      const client = fakeClient({ data: { id: 'x' }, error: null });
+      const service = new EmailService(fakeSuppression(false), client);
+
+      await service.deliver(INPUT);
+
+      expect(client.emails.send).toHaveBeenCalledWith(
+        expect.objectContaining({ replyTo: 'support@declutrmail.com' }),
+        { idempotencyKey: 'k1' },
+      );
+    } finally {
+      delete process.env.EMAIL_REPLY_TO;
+    }
+  });
 });

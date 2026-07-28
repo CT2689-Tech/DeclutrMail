@@ -105,6 +105,28 @@ describe('EmailSendWorker', () => {
     });
   });
 
+  it('forwards html and headers to the delivery port', async () => {
+    const db = await freshDb();
+    const userId = await seedUser(db);
+    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_2' });
+    const worker = new EmailSendWorker({ db: db as never, delivery });
+
+    await worker.processJob(
+      jobData(userId, {
+        html: '<p>hi</p>',
+        headers: { 'List-Unsubscribe': '<https://example.com/u>' },
+      }),
+      CTX,
+    );
+
+    expect(delivery.deliver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        html: '<p>hi</p>',
+        headers: { 'List-Unsubscribe': '<https://example.com/u>' },
+      }),
+    );
+  });
+
   it('skips without sending when the user row is gone', async () => {
     const db = await freshDb();
     const delivery = deliveryReturning({ ok: true, providerId: null });

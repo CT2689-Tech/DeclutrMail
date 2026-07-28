@@ -31,7 +31,15 @@ import { EmailSuppressionService } from './email-suppression.service.js';
 export interface ResendLikeClient {
   emails: {
     send(
-      payload: { from: string; to: string; subject: string; text: string },
+      payload: {
+        from: string;
+        to: string;
+        subject: string;
+        text: string;
+        html?: string;
+        headers?: Record<string, string>;
+        replyTo?: string;
+      },
       options?: { idempotencyKey?: string },
     ): Promise<{
       data: { id: string } | null;
@@ -77,6 +85,8 @@ export class EmailService implements EmailDeliveryPort {
     subject: string;
     text: string;
     idempotencyKey: string;
+    html?: string;
+    headers?: Record<string, string>;
   }): Promise<EmailDeliveryOutcome> {
     if (!this.client) {
       this.logger.error(
@@ -90,6 +100,12 @@ export class EmailService implements EmailDeliveryPort {
       return { ok: false, reason: 'suppressed', detail: 'Recipient is on the suppression list.' };
     }
 
+    // Ships dormant: FOUNDER-FOLLOWUPS.md records that
+    // support@declutrmail.com .com delivery is still pending the
+    // domain-alias add. A bouncing Reply-To is worse than none, so the
+    // header appears only once the founder sets this variable.
+    const replyTo = process.env.EMAIL_REPLY_TO;
+
     try {
       const { data, error } = await this.client.emails.send(
         {
@@ -97,6 +113,11 @@ export class EmailService implements EmailDeliveryPort {
           to: input.to,
           subject: input.subject,
           text: input.text,
+          // Conditional spreads: exactOptionalPropertyTypes forbids an
+          // explicit `undefined` on an optional property.
+          ...(input.html === undefined ? {} : { html: input.html }),
+          ...(input.headers === undefined ? {} : { headers: input.headers }),
+          ...(replyTo ? { replyTo } : {}),
         },
         { idempotencyKey: input.idempotencyKey },
       );
