@@ -20,6 +20,22 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-28 — Renaming a JWT claim silently killed every unsubscribe link already in someone's inbox
+**PR:** [#406](https://github.com/CT2689-Tech/DeclutrMail/pull/406)
+**Caught by:** Codex stop-time review
+**What happened:** Fixing the scope bug (entry below) renamed the token claim `category` → `scope`. Tokens in already-delivered mail still carry `category`, so `verifyUnsubscribeToken` read `undefined` and returned `null` — and because the endpoint answers a **uniform 200** to avoid being an enumeration oracle, the click reported success and did nothing. A dead unsubscribe link that looks like it worked, which is the exact failure the surface exists to prevent. Not hypothetical: the founder's own smoke emails carry `category` tokens. The self-indictment is that the same commit's comment said *"a link already sitting in an inbox must not break"* — I applied that reasoning to future granular tokens and not to existing ones.
+**Correct approach:** Accept the legacy claim on read. `scope` wins when present; otherwise a valid `category` claim maps to `'all'` (the control it was minted behind said plainly "Unsubscribe", and the endpoint can only turn things OFF, so it is the more protective reading). Signing only ever emits `scope`. Regression test mints a token exactly as the pre-rename signer did.
+**Rule:** A credential with no expiry that is embedded in something already delivered — email, QR code, printed link — is a permanent wire format: you may add claims, never rename or remove one. Note the interaction that makes it dangerous: a "no oracle" uniform-200 contract converts every such break into a SILENT one.
+**Enforcement update:** none (legacy-claim regression test in `unsubscribe-token.spec.ts`).
+
+## 2026-07-28 — A link labelled "Unsubscribe" stopped one category and left its sibling sending
+**PR:** [#406](https://github.com/CT2689-Tech/DeclutrMail/pull/406)
+**Caught by:** Codex stop-time review
+**What happened:** The one-click token carried the category of the email that happened to contain it, so clicking **Unsubscribe** on a sync-complete email set `syncComplete=false` and left `reminders=true` — the 24h nudge still arrived the next day. Two failures compound: mechanically CAN-SPAM §316.5 permits a preference menu but requires an option that stops ALL commercial mail; and the confirmation page asserted *"You will still receive required account notices, such as billing and account deletion"*, which tells the reader everything else has stopped. That sentence was false — an affirmative misrepresentation on the page, worse than the missing behaviour. The predictable user response to "I unsubscribed and it kept coming" is a spam complaint, which is also the metric Gmail's bulk-sender rules police.
+**Correct approach:** The generic control means ALL. Token now carries `scope: 'all' | keyof EmailPrefs`; every email ships `'all'`; granular control lives on the settings screen. `'all'` expands from `Object.keys(EmailPrefsSchema.shape)` — never a hand-written list, so a category added later is covered automatically instead of silently escaping. Page copy now states plainly what stops. The single-category scope is retained (not dead code) because these tokens never expire: a granular link minted later must stay verifiable, and a link already sitting in an inbox must not break.
+**Rule:** A control's blast radius must match its LABEL, not its point of origin — if it says "Unsubscribe" with no qualifier, it stops everything optional; and any set the word "all" expands to must be derived from the schema, never enumerated by hand.
+**Enforcement update:** none (PGlite tests pin both the all-scope sweep and the schema-derived category list).
+
 ## 2026-07-28 — The atomic jsonb merges regressed malformed ROOT bags the JS spread had tolerated
 **PR:** [#405](https://github.com/CT2689-Tech/DeclutrMail/pull/405)
 **Caught by:** Codex stop-time review (fourth pass on the same surface)

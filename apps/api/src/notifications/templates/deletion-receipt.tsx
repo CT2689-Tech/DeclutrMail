@@ -1,6 +1,6 @@
 import { Text } from '@react-email/components';
 
-import { renderShell, Shell, type RenderedEmail } from './shell.js';
+import { BODY_TEXT, Eyebrow, renderShell, Shell, type RenderedEmail } from './shell.js';
 
 export interface DeletionReceiptEmailInput {
   /** Human-readable date the deletion completed, e.g. "June 18, 2026". */
@@ -30,17 +30,15 @@ export async function deletionReceiptEmail(
   // No CTA button — the account is gone; there is nowhere left to send them.
   const html = await renderShell(
     <Shell preview="Your DeclutrMail data has been deleted." footer={FOOTER}>
-      <Text style={{ fontSize: '16px', lineHeight: '24px', margin: '0 0 16px' }}>
-        On <strong>{input.deletedAt}</strong>, DeclutrMail permanently deleted your account and
-        everything it stored about your mailboxes — sender names and addresses, subject lines,
-        snippets, labels, and dates.
+      <Eyebrow>Deleted {input.deletedAt}</Eyebrow>
+      <Text style={{ ...BODY_TEXT, margin: '0 0 16px' }}>
+        DeclutrMail permanently deleted your account and everything it stored about your mailboxes —
+        sender names and addresses, subject lines, snippets, labels, and dates.
       </Text>
-      <Text style={{ fontSize: '16px', lineHeight: '24px', margin: '0 0 16px' }}>
+      <Text style={{ ...BODY_TEXT, margin: '0 0 16px' }}>
         Your Gmail account itself was never modified by this deletion.
       </Text>
-      <Text style={{ fontSize: '16px', lineHeight: '24px', margin: 0 }}>
-        Thank you for trying DeclutrMail.
-      </Text>
+      <Text style={{ ...BODY_TEXT, margin: 0 }}>Thank you for trying DeclutrMail.</Text>
     </Shell>,
   );
 

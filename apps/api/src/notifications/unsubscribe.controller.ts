@@ -17,7 +17,7 @@ import { users } from '@declutrmail/db';
 
 import { RateLimit } from '../common/rate-limit/index.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { verifyUnsubscribeToken } from './unsubscribe-token.js';
+import { OPT_OUT_CATEGORIES, verifyUnsubscribeToken } from './unsubscribe-token.js';
 
 /**
  * The token is echoed into a form action, so it must not be able to
@@ -96,8 +96,9 @@ export class UnsubscribeController {
       '<title>Unsubscribe · DeclutrMail</title></head>',
       '<body style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;',
       'max-width:420px;margin:80px auto;padding:0 24px;color:#111">',
-      '<h1 style="font-size:20px;margin:0 0 12px">Turn off these emails?</h1>',
+      '<h1 style="font-size:20px;margin:0 0 12px">Turn off DeclutrMail emails?</h1>',
       '<p style="color:#666;font-size:14px;line-height:20px;margin:0 0 24px">',
+      'This stops every optional email &mdash; sync updates and reminders. ',
       'You will still receive required account notices, such as billing ',
       'and account deletion.</p>',
       `<form method="POST" action="/api/email/unsubscribe?t=${escapeHtmlAttr(token)}">`,
@@ -117,37 +118,42 @@ export class UnsubscribeController {
       this.logger.warn('email.unsubscribe.invalid_token');
       return;
     }
+    // Which keys this token turns off. `'all'` is what every email
+    // ships: a link labelled plainly "Unsubscribe" is read as "stop
+    // sending me this kind of mail", and CAN-SPAM §316.5 requires an
+    // option that stops ALL commercial mail. Flipping one category
+    // while a sibling kept arriving would break both.
+    const turnOff = claims.scope === 'all' ? OPT_OUT_CATEGORIES : [claims.scope];
+    const offPatch = Object.fromEntries(turnOff.map((key) => [key, false]));
+
     // ONE atomic in-database mutation — no read-modify-write. A
     // SELECT-then-UPDATE would race the authed settings PATCH: a
     // preference changed between the two statements gets overwritten
     // with this handler's stale snapshot, which can resurrect an
-    // opt-out. `jsonb_set` computes from the row's CURRENT value under
-    // the row lock, flips exactly the one entitled key to `false`, and
+    // opt-out. The merge computes from the row's CURRENT value under
+    // the row lock, flips only the entitled keys to `false`, and
     // passes every other stored key — known or future-shaped — through
     // untouched. Never merge `parseEmailPrefs()` output here either:
     // its default fallback (all true) written back would let this
     // unauthenticated endpoint turn preferences ON. The CASE arms
-    // repair malformation at both levels: a non-object ROOT (jsonb_set
-    // with a text path on an array root raises an error — a 500 where
-    // the contract promises a uniform 200) and a non-object
-    // `emailPrefs` (`jsonb_set` silently no-ops when an intermediate
-    // path step is not an object).
+    // repair malformation at both levels: a non-object ROOT (`||` on an
+    // array root CONCATENATES instead of merging) and a non-object
+    // `emailPrefs` (same, one level down).
     const root = sql`CASE
       WHEN jsonb_typeof(${users.preferences}) = 'object' THEN ${users.preferences}
+      ELSE '{}'::jsonb
+    END`;
+    const currentPrefs = sql`CASE
+      WHEN jsonb_typeof(${root} -> 'emailPrefs') = 'object' THEN ${root} -> 'emailPrefs'
       ELSE '{}'::jsonb
     END`;
     const updated = await this.db
       .update(users)
       .set({
         preferences: sql`jsonb_set(
-          CASE
-            WHEN jsonb_typeof(${root} -> 'emailPrefs') = 'object'
-              THEN ${root}
-            ELSE ${root} || '{"emailPrefs": {}}'::jsonb
-          END,
-          ARRAY['emailPrefs', ${claims.category}],
-          'false'::jsonb,
-          true
+          ${root},
+          '{emailPrefs}',
+          ${currentPrefs} || ${JSON.stringify(offPatch)}::jsonb
         )`,
       })
       .where(eq(users.id, claims.userId))
@@ -156,7 +162,7 @@ export class UnsubscribeController {
       this.logger.log('email.unsubscribe.user_gone');
       return;
     }
-    // Never log the address or the token — category + outcome only (D7).
-    this.logger.log(`email.unsubscribe.applied category=${claims.category}`);
+    // Never log the address or the token — scope + outcome only (D7).
+    this.logger.log(`email.unsubscribe.applied scope=${claims.scope}`);
   }
 }

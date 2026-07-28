@@ -7,6 +7,7 @@ describe('sync-complete', () => {
     mailboxEmail: 'you@gmail.com',
     messageCount: 24310,
     appUrl: 'https://app.declutrmail.com',
+    unsubscribeUrl: 'https://api.declutrmail.com/api/email/unsubscribe?t=tok',
   };
 
   it('renders subject, text and html', async () => {
@@ -23,6 +24,39 @@ describe('sync-complete', () => {
     // Counts, dates, the user's own address and DeclutrMail URLs only.
     expect(email.text).not.toMatch(/subject:/i);
     expect(email.html).not.toMatch(/snippet/i);
+  });
+
+  it('leads on the count as a hero numeral with lining figures', async () => {
+    const email = await syncCompleteEmail(input);
+    // The count is the news — it must render at display size with
+    // lining+tabular figures, not buried mid-paragraph.
+    expect(email.html).toMatch(/font-size:44px/);
+    expect(email.html).toMatch(/lining-nums tabular-nums/);
+  });
+
+  it('anchors the mailbox address so Gmail cannot autolink it blue', async () => {
+    const email = await syncCompleteEmail(input);
+    // A bare address in body text gets autolinked by Gmail into default
+    // blue underlined link text, which reads as a broken mailto.
+    expect(email.html).toContain('mailto:you@gmail.com');
+  });
+
+  it('uses the brand teal CTA, never a pure-black button', async () => {
+    const email = await syncCompleteEmail(input);
+    expect(email.html).toMatch(/#006b5f/i);
+    expect(email.html).not.toMatch(/background-color:#000000/i);
+  });
+
+  it('carries a visible opt-out in BOTH the html and the text part', async () => {
+    const email = await syncCompleteEmail(input);
+    // CAN-SPAM §7704(a)(5) wants the opt-out explanation IN the message,
+    // and GDPR Art. 21(2) wants it presented separately. The
+    // List-Unsubscribe header does not discharge either, and most
+    // clients outside Gmail render no native control at all.
+    expect(email.html).toContain(input.unsubscribeUrl);
+    expect(email.html).toContain('Unsubscribe');
+    expect(email.text).toContain(`Unsubscribe: ${input.unsubscribeUrl}`);
+    expect(email.text).toContain('Email preferences: https://app.declutrmail.com/settings');
   });
 
   it('matches the snapshot', async () => {

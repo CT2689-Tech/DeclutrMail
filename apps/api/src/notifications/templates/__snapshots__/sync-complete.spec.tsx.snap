@@ -12,5 +12,7 @@ Jump back in: https://app.declutrmail.com/triage
 
 — DeclutrMail
 
-You received this because you connected this mailbox to DeclutrMail."
+You received this because you connected this mailbox to DeclutrMail.
+Unsubscribe: https://api.declutrmail.com/api/email/unsubscribe?t=tok
+Email preferences: https://app.declutrmail.com/settings"
 `;

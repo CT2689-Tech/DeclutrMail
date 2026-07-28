@@ -1,6 +1,15 @@
 import { Button, Text } from '@react-email/components';
 
-import { renderShell, Shell, type RenderedEmail } from './shell.js';
+import {
+  BODY_TEXT,
+  CTA_BUTTON,
+  DISPLAY,
+  Eyebrow,
+  INK,
+  renderShell,
+  Shell,
+  type RenderedEmail,
+} from './shell.js';
 
 export interface DeletionScheduledEmailInput {
   /** Human-readable date the deletion executes, e.g. "June 18, 2026". */
@@ -37,27 +46,29 @@ export async function deletionScheduledEmail(
 
   const html = await renderShell(
     <Shell preview={`Cancel any time before ${input.scheduledFor}.`} footer={FOOTER}>
-      <Text style={{ fontSize: '16px', lineHeight: '24px', margin: '0 0 16px' }}>
-        Your DeclutrMail account is scheduled for deletion on <strong>{input.scheduledFor}</strong>.
+      <Eyebrow>Deletion scheduled</Eyebrow>
+      {/* The date is the one fact that decides whether the reader acts,
+          so it gets the display treatment rather than bold-in-a-line. */}
+      <Text
+        style={{
+          color: INK,
+          fontFamily: DISPLAY,
+          fontSize: '30px',
+          fontWeight: 300,
+          letterSpacing: '-0.02em',
+          lineHeight: '36px',
+          margin: '0 0 18px',
+        }}
+      >
+        {input.scheduledFor}
       </Text>
-      <Text style={{ fontSize: '16px', lineHeight: '24px', margin: '0 0 24px' }}>
+      <Text style={{ ...BODY_TEXT, margin: '0 0 16px' }}>
         On that date, everything DeclutrMail stored about your mailboxes — sender names and
         addresses, subject lines, snippets, labels, and dates — will be permanently deleted. Nothing
         in your Gmail account itself is touched.
       </Text>
-      <Button
-        href={input.cancelUrl}
-        style={{
-          backgroundColor: '#000000',
-          borderRadius: '6px',
-          color: '#ffffff',
-          display: 'inline-block',
-          fontSize: '14px',
-          fontWeight: 500,
-          padding: '10px 20px',
-          textDecoration: 'none',
-        }}
-      >
+      <Text style={{ ...BODY_TEXT, margin: '0 0 26px' }}>Changed your mind?</Text>
+      <Button href={input.cancelUrl} style={CTA_BUTTON}>
         Cancel deletion
       </Button>
     </Shell>,
