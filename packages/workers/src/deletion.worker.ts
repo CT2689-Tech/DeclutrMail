@@ -96,7 +96,9 @@ export interface DeletionPurgeDeps {
    * `deletionReceiptEmail` from `notifications/templates/`. Async since
    * D162: React Email's `render()` returns a Promise.
    */
-  renderReceiptEmail: (input: { deletedAt: string }) => Promise<{ subject: string; text: string }>;
+  renderReceiptEmail: (input: {
+    deletedAt: string;
+  }) => Promise<{ subject: string; text: string; html?: string }>;
   /**
    * Shared destructive-action mutex. Optional keeps existing composition
    * roots source-compatible; production should pass the label-action
@@ -861,6 +863,8 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
       recipientOverride: email,
       subject: rendered.subject,
       text: rendered.text,
+      // Multipart body; NO unsubscribe headers — required notice (D165).
+      ...(rendered.html === undefined ? {} : { html: rendered.html }),
       idempotencyKey: `email__deletion-receipt__${request.id}`,
     });
   }

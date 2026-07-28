@@ -38,6 +38,9 @@ async function main(): Promise<void> {
       to: TO,
       subject: `[smoke] ${rendered.subject}`,
       text: rendered.text,
+      // Multipart since D162 — the smoke proves the HTML twin renders
+      // in a real client, not only that Resend accepted the call.
+      ...(rendered.html === undefined ? {} : { html: rendered.html }),
     },
     // New key per run — the point IS to send one real email each run.
     { idempotencyKey: `email-smoke__${Date.now()}` },

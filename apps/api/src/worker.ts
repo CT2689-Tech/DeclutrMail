@@ -1932,6 +1932,7 @@ async function bootstrap(): Promise<void> {
         db,
         emailQueue: emailSendQueue,
         appUrl: process.env.WEB_URL ?? 'http://localhost:3000',
+        apiUrl: process.env.API_URL ?? 'http://localhost:4000',
       }),
     }),
     observer: {

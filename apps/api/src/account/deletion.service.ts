@@ -254,6 +254,9 @@ export class AccountDeletionOrchestrator {
         userId,
         subject: rendered.subject,
         text: rendered.text,
+        // Multipart body; NO unsubscribe headers — a required account
+        // notice must not offer an opt-out it will not honour (D165).
+        ...(rendered.html === undefined ? {} : { html: rendered.html }),
         idempotencyKey: `email__deletion-scheduled__${request.id}`,
       });
     } catch (err) {
