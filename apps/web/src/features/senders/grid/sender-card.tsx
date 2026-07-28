@@ -138,6 +138,21 @@ export function SenderCard({
       data-testid={`sender-card-${sender.id}`}
       data-selected={selected || undefined}
       data-dm-lift=""
+      onClick={
+        peekEnabled
+          ? (e) => {
+              // Pointer-only convenience mirroring the table row's
+              // whole-row expand (sender-table.tsx §2): never steal
+              // clicks meant for the checkbox / verbs / popover / links.
+              // The identity <button> below stays the accessible opener.
+              const target = e.target as HTMLElement;
+              if (target.closest('button, a, input, select, textarea, label, [role="button"]')) {
+                return;
+              }
+              setPeekOpen(true);
+            }
+          : undefined
+      }
       style={{
         // ADR-0016 §A2 — neutral hairline chrome. Was tone-wash by
         // recommendation grouping, which created a trust hit on
@@ -153,6 +168,7 @@ export function SenderCard({
         position: 'relative',
         transition: 'border-color 120ms, box-shadow 120ms',
         minHeight: 240,
+        cursor: peekEnabled ? 'pointer' : undefined,
       }}
     >
       {/* Top — avatar + identity + selection + (optional) sparkline */}
@@ -328,7 +344,9 @@ export function SenderCard({
             value={sender.monthlyVolume ?? '—'}
             suffix="in last 30d"
             variant="display"
-            style={{ display: 'flex' }}
+            // Never compress the primary numeral — the received line
+            // (now carrying "· N in inbox") yields instead.
+            style={{ display: 'flex', flexShrink: 0 }}
           />
           {/* Received volume — the number the default "Most emails
               ever" sort ranks by. Without it a top-ranked sender with
@@ -336,17 +354,31 @@ export function SenderCard({
               cards showed 72 / 0 / 8 under total-desc). Same fact the
               magnitude bar below encodes, now legible. */}
           <span
-            title="Emails received from this sender, within DeclutrMail's retention — what 'Most emails' sorts by. Not inbox-only; deleted mail drops out."
+            title={
+              sender.inboxCount !== undefined && sender.inboxCount !== null
+                ? "Emails received from this sender, within DeclutrMail's retention — what 'Most emails' sorts by. 'In inbox' is what Keep/Archive/Delete can reach right now."
+                : "Emails received from this sender, within DeclutrMail's retention — what 'Most emails' sorts by. Not inbox-only; deleted mail drops out."
+            }
             style={{
               fontFamily: font.mono,
               fontSize: 10.5,
               color: color.fgMuted,
-              whiteSpace: 'nowrap',
+              // Wraps to a second line on narrow cards rather than
+              // squeezing the primary numeral into an ellipsis.
+              textAlign: 'right',
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {/* "received", never "all-time" — ADR-0014 §Neutral. */}
+            {/* "received", never "all-time" — ADR-0014 §Neutral. The
+                inbox count rides along when the wire provides it (ADR-0028
+                companion): it's the one number that predicts whether a
+                verb is a no-op — "hundreds received · 0 in inbox" must be
+                readable on the card face, not only inside the peek.
+                Absent on the wire ⇒ omitted, never a fabricated 0. */}
             {sender.totalReceived.toLocaleString()} received
+            {sender.inboxCount !== undefined && sender.inboxCount !== null && (
+              <> · {sender.inboxCount.toLocaleString()} in inbox</>
+            )}
           </span>
         </div>
 

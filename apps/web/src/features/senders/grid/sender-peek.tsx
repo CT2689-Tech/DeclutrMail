@@ -7,10 +7,10 @@
  * cards had NO path to that data. This dialog renders the SAME
  * component, so the two views expose identical facts by construction.
  *
- * Also the mobile story: below `sm` the screen force-renders Grid
- * (D49 — no table on phones), so this sheet is how a phone reaches
- * the rich per-sender panel at all. Small viewports get a bottom
- * sheet; desktop gets a centered dialog.
+ * Also the mobile story: grid is the default view (D49) and the one
+ * phones practically live in, so this sheet is how a phone reaches
+ * the rich per-sender panel. Small viewports get a bottom sheet;
+ * desktop gets a centered dialog.
  *
  * Rendering: portal to <body> — the card applies a hover transform
  * (data-dm-lift), and a transformed ancestor becomes the containing

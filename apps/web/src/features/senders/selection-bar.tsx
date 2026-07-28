@@ -152,17 +152,28 @@ export function SelectionBar({
         // hover tooltip + the `?` cheatsheet. `aria-keyshortcuts` advertises
         // the binding the senders-screen handler honors for the selection.
         const { label, shortcut } = verbDisplay(verb);
+        // The number is SENDERS, never emails — the D226 preview modal
+        // is what counts emails (finding 5.13). When protection (D245)
+        // excludes some of the selection, say "n of m" so the shrink is
+        // visible instead of reading like a different count of the same
+        // thing.
+        const countLabel = n === senders.length ? `${n}` : `${n} of ${senders.length}`;
+        const unitTitle =
+          n === senders.length
+            ? `${label} ${n} sender${n === 1 ? '' : 's'}`
+            : `${label} ${n} of ${senders.length} selected senders (protected senders are excluded from bulk actions)`;
         return (
           <button
             key={verb}
             onClick={() => !disabled && onAct(verb)}
             disabled={disabled}
+            aria-label={unitTitle}
             title={
               !entitled
                 ? `${label} — ${multiSenderPlanName()} required for multi-sender actions`
                 : shortcut
-                  ? `${label} (${shortcut})`
-                  : label
+                  ? `${unitTitle} (${shortcut})`
+                  : unitTitle
             }
             aria-keyshortcuts={entitled ? (shortcut ?? undefined) : undefined}
             style={{
@@ -183,7 +194,7 @@ export function SelectionBar({
             }}
           >
             {label}
-            <span style={{ fontFamily: font.mono, fontSize: 11, opacity: 0.8 }}>{n}</span>
+            <span style={{ fontFamily: font.mono, fontSize: 11, opacity: 0.8 }}>{countLabel}</span>
           </button>
         );
       })}
