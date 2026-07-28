@@ -70,7 +70,7 @@ and key rotation:
 
 Templates move to `.tsx` under `apps/api/src/notifications/templates/`,
 each exporting a typed pure function returning
-`{ subject, text, html }`. **The plain-text alternative is
+`{ subject, text, html? }` (§4.4). **The plain-text alternative is
 hand-written per template, not derived from the HTML** — the result is
 genuine multipart, so a text-preferring client gets the calm voice
 rather than a tag-stripped approximation.
