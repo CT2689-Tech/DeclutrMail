@@ -26,6 +26,30 @@ import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 
 import { mailMessages } from './schema/mail-messages';
 
+/**
+ * How far a sender action reaches (ADR-0028).
+ *
+ *   - `inbox_only` — messages currently carrying INBOX. Every verb's
+ *     original semantic, and still the only legal reach for everything
+ *     except Delete (`action_jobs_reach_verb_check`).
+ *   - `all_mail`   — inbox + archived: everything the mailbox holds for
+ *     the sender EXCEPT Trash, Spam, Drafts and Chat. Mirrors what a
+ *     Gmail `from:` search covers, which is what "delete everything from
+ *     this sender" means to a user whose filters skip the inbox.
+ *
+ * REQUIRED (no default) on `senderActionWhere`: reach decides a
+ * destructive verb's blast radius, so every caller states it in source.
+ */
+export type SenderActionReach = 'inbox_only' | 'all_mail';
+
+/**
+ * Labels `all_mail` must never touch. TRASH/SPAM are already on their
+ * way out or never wanted; DRAFT/CHAT are not "mail from this sender"
+ * in any user's mental model. Kept as one array so the predicate and
+ * its tests share the exact list.
+ */
+export const ALL_MAIL_EXCLUDED_LABELS = ['TRASH', 'SPAM', 'DRAFT', 'CHAT'] as const;
+
 export interface SenderInboxActionScope {
   mailboxAccountId: string;
   /** One or more sha256 sender keys. */
@@ -34,16 +58,29 @@ export interface SenderInboxActionScope {
   olderThanDays?: number | null | undefined;
 }
 
-/** WHERE clause for the sender-action message set — see module doc. */
-export function senderInboxActionWhere(scope: SenderInboxActionScope): SQL {
-  const { mailboxAccountId, senderKeys, olderThanDays } = scope;
+export interface SenderActionScope extends SenderInboxActionScope {
+  reach: SenderActionReach;
+}
+
+/**
+ * WHERE clause for the sender-action message set — see module doc.
+ * Reach-explicit variant (ADR-0028); `senderInboxActionWhere` below
+ * remains the inbox-only spelling for the callers whose reach is fixed
+ * by design (previews' inbox buckets, Autopilot, bulk).
+ */
+export function senderActionWhere(scope: SenderActionScope): SQL {
+  const { mailboxAccountId, senderKeys, olderThanDays, reach } = scope;
   const predicates: SQL[] = [
     eq(mailMessages.mailboxAccountId, mailboxAccountId),
     senderKeys.length === 1
       ? eq(mailMessages.senderKey, senderKeys[0]!)
       : inArray(mailMessages.senderKey, [...senderKeys]),
     eq(mailMessages.isOutbound, false),
-    sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+    reach === 'inbox_only'
+      ? sql`'INBOX' = ANY(${mailMessages.labelIds})`
+      : // Overlap operator against the exclusion list; `label_ids` is
+        // NOT NULL (default '{}') so the NOT can never trip on NULL.
+        sql`NOT (${mailMessages.labelIds} && ${sql.raw(allMailExcludedArrayLiteral())})`,
   ];
   if (olderThanDays !== null && olderThanDays !== undefined) {
     predicates.push(
@@ -52,4 +89,18 @@ export function senderInboxActionWhere(scope: SenderInboxActionScope): SQL {
   }
   // Non-empty predicate list, so `and()` can never return undefined.
   return and(...predicates)!;
+}
+
+/** WHERE clause for the inbox-only sender-action message set. */
+export function senderInboxActionWhere(scope: SenderInboxActionScope): SQL {
+  return senderActionWhere({ ...scope, reach: 'inbox_only' });
+}
+
+/**
+ * `ARRAY['TRASH',…]::text[]` literal. Static, sourced from the const
+ * above (system label ids — no user data), so `sql.raw` is safe and the
+ * planner sees a plain array literal.
+ */
+function allMailExcludedArrayLiteral(): string {
+  return `ARRAY[${ALL_MAIL_EXCLUDED_LABELS.map((l) => `'${l}'`).join(',')}]::text[]`;
 }

@@ -172,6 +172,7 @@ function buildRollingWindowSubqueries(): {
   last30dMsgs: SQL<number | string>;
   last30dReadCount: SQL<number | string>;
   baselineMsgs: SQL<number | string>;
+  inboxCount: SQL<number | string>;
 } {
   const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
   const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
@@ -210,6 +211,22 @@ function buildRollingWindowSubqueries(): {
         AND ${mailMessages.internalDate} <  now() - (${WINDOWS.TREND_BASELINE_START_DAYS} || ' days')::interval
         AND ${mailMessages.internalDate} >= now() - (${WINDOWS.TREND_BASELINE_END_DAYS}   || ' days')::interval
         AND ${mailMessages.isOutbound} = false
+    )`,
+    // Messages currently carrying INBOX — the set every inbox verb can
+    // act on (`senderInboxActionWhere` without a window). Surfaced so a
+    // sender whose Gmail filters skip the inbox (hundreds received, 0 in
+    // inbox — founder report 2026-07-28) is visibly dead to
+    // Archive/Later before three modals say so. Live count, not a
+    // maintained counter: label membership changes on every action and
+    // sync, and a nightly-reconciled column would just re-create the
+    // stale-counter class ADR-0014 documents.
+    inboxCount: sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.isOutbound} = false
+        AND 'INBOX' = ANY(${mailMessages.labelIds})
     )`,
   };
 }
@@ -397,6 +414,7 @@ export class SendersReadService {
       last30dMsgs: last30dMsgsSql,
       last30dReadCount: last30dReadCountSql,
       baselineMsgs: baselineMsgsSql,
+      inboxCount: inboxCountSql,
     } = buildRollingWindowSubqueries();
 
     // CORRELATION QUOTE-TRAP (MISTAKES.md 2026-05-23). Outer-scope
@@ -566,6 +584,7 @@ export class SendersReadService {
         last30dMsgs: last30dMsgsSql,
         last30dReadCount: last30dReadCountSql,
         baselineMsgs: baselineMsgsSql,
+        inboxCount: inboxCountSql,
         sparkline: sparklineSql,
         lastDecisionAt: lastDecisionAtSql,
         lastDecisionVerdict: lastDecisionVerdictSql,
@@ -637,6 +656,9 @@ export class SendersReadService {
         // (rolling). Replaces the per-sender-latest-year_month sum that
         // varied across decades. FE renders as "47 in last 30d".
         monthlyVolume: last30dMsgs,
+        // Messages currently in INBOX — what Archive/Later/inbox-Delete
+        // can actually reach (see the subquery note above).
+        inboxCount: ensureSafeIntegerNumber(row.inboxCount, 'senders.inboxCount'),
         readRate: computeReadRate(last30dMsgs, last30dReadCount),
         sparkline: row.sparkline ?? null,
         volumeTrend: computeRollingTrendBucket({
@@ -1200,6 +1222,7 @@ export class SendersReadService {
       last30dMsgs: last30dMsgsSql,
       last30dReadCount: last30dReadCountSql,
       baselineMsgs: baselineMsgsSql,
+      inboxCount: inboxCountSql,
     } = buildRollingWindowSubqueries();
     // ADR-0008 §3 ratification: direct triage_decisions read in the
     // senders read service (one of several sites — grep this marker to
@@ -1270,6 +1293,7 @@ export class SendersReadService {
         last30dMsgs: last30dMsgsSql,
         last30dReadCount: last30dReadCountSql,
         baselineMsgs: baselineMsgsSql,
+        inboxCount: inboxCountSql,
         lastDecisionAt: lastDecisionAtSql,
         lastDecisionVerdict: lastDecisionVerdictSql,
         lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
@@ -1331,6 +1355,7 @@ export class SendersReadService {
       // Identical rolling-30d semantics to the list path — the same
       // sender reports the same volume / read rate / trend on both.
       monthlyVolume: last30dMsgs,
+      inboxCount: ensureSafeIntegerNumber(row.inboxCount, 'senders.inboxCount'),
       readRate: computeReadRate(last30dMsgs, last30dReadCount),
       // Sparkline not yet wired on this path. Null so the contract holds.
       sparkline: null,

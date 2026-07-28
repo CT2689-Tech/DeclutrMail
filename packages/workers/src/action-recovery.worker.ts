@@ -1,7 +1,12 @@
-import { and, asc, eq, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-import { actionJobs, actionRecoveryPreviews, mailMessages } from '@declutrmail/db';
+import {
+  actionJobs,
+  actionRecoveryPreviews,
+  mailMessages,
+  senderActionWhere,
+} from '@declutrmail/db';
 import type { ActionRecoveryOutcome, schema } from '@declutrmail/db';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
@@ -266,7 +271,7 @@ export class ActionRecoveryWorker extends BaseDeclutrWorker<
     ) {
       candidate = action.resolvedMessageIds;
     } else {
-      candidate = await this.resolveCurrentSenderInbox(action);
+      candidate = await this.resolveCurrentSenderTargets(action);
     }
     candidate = [...new Set(candidate)].sort();
     if (candidate.length === 0) return [];
@@ -293,20 +298,29 @@ export class ActionRecoveryWorker extends BaseDeclutrWorker<
     return current.targetMessageIds;
   }
 
-  private async resolveCurrentSenderInbox(
+  private async resolveCurrentSenderTargets(
     action: typeof actionJobs.$inferSelect & { verb: RecoverableVerb },
   ): Promise<string[]> {
     if (action.selector.type !== 'sender') return action.resolvedMessageIds;
+    // The SHARED action predicate (`senderActionWhere`, @declutrmail/db)
+    // at the action's persisted reach — the same set the preview counted
+    // and the label worker would resolve. Replaces an inline copy that
+    // had drifted from the predicate this pipeline deduplicated in #400:
+    // it lacked `is_outbound = false`, so a recovery freeze could target
+    // self-sent SENT+INBOX mail the original action never touched.
+    //
+    // The predicate computes the time-window from `now()` in SQL; the
+    // injectable `deps.now` is not consulted here. Tests that freeze
+    // time assert on the DB's clock for this query, matching the label
+    // worker's replays.
     const predicates = [
-      eq(mailMessages.mailboxAccountId, action.mailboxAccountId),
-      eq(mailMessages.senderKey, action.selector.senderKey),
-      sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+      senderActionWhere({
+        mailboxAccountId: action.mailboxAccountId,
+        senderKeys: [action.selector.senderKey],
+        olderThanDays: action.olderThanDays,
+        reach: action.reach,
+      }),
     ];
-    if (action.olderThanDays !== null) {
-      const now = (this.deps.now ?? (() => new Date()))();
-      const cutoff = new Date(now.getTime() - action.olderThanDays * 24 * 60 * 60 * 1000);
-      predicates.push(lte(mailMessages.internalDate, cutoff));
-    }
     const rows = await this.deps.db
       .select({ providerMessageId: mailMessages.providerMessageId })
       .from(mailMessages)

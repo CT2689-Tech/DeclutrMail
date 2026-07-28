@@ -1,0 +1,92 @@
+-- Rollback 0050 — drop the reach column + enum, AFTER neutralizing
+-- every durable artifact only ADR-0028 code can handle safely.
+--
+-- WHY THE NEUTRALIZATION EXISTS (Codex stop-review round 3): the
+-- pre-0050 build has no partition logic — its delete-undo applies a
+-- uniform +INBOX to whatever ids a reverse job carries. Any all-mail
+-- artifact left live (an unexpired undo token whose split matters, a
+-- queued reverse of an all-mail delete, a frozen wide forward set)
+-- becomes an inbox flood the moment the old build touches it. So this
+-- script expires / disarms those artifacts first; the trade is honest
+-- and bounded: those specific undos become unavailable (Gmail Trash's
+-- own 30-day recovery still applies) instead of destructive.
+--
+-- ORDER OF OPERATIONS:
+--   1. Stop the API and every worker (do NOT deploy the old build yet).
+--   2. Drain the action queue in Redis (e.g. obliterate the label-action
+--      queue) — a BullMQ job replayed by the old build bypasses row
+--      state and would mutate with the old semantics.
+--   3. Run this script.
+--   4. Deploy the pre-0050 build and start services.
+--
+-- Step A — expire every delete-undo token whose inbox/archive split
+-- matters (strict subset ⇒ archived ids are present). Inbox-only
+-- deletes (partition = whole set) keep their tokens: the old build's
+-- uniform +INBOX is exactly correct for them.
+UPDATE "undo_journal"
+SET "expires_at" = now()
+WHERE "action_kind" = 'delete'
+  AND "expires_at" > now()
+  AND ("payload" ? 'inboxMessageIds')
+  AND jsonb_typeof("payload"->'messageIds') = 'array'
+  AND jsonb_array_length("payload"->'inboxMessageIds') < jsonb_array_length("payload"->'messageIds');
+--> statement-breakpoint
+-- Step B — TERMINALIZE in-flight REVERSE jobs of those same deletes:
+-- clear their id sets and fail them with a greppable code. Their
+-- tokens were expired above, so nothing can re-enqueue them. The
+-- 'failed' state is the truthful terminal — the build able to execute
+-- the recorded split no longer exists. Residual if the queue-drain
+-- step is skipped: the old build does not honor 'failed' as terminal,
+-- so a replayed BullMQ job would reprocess the row — with the id set
+-- empty it mutates NOTHING, but it would falsely stamp the journal
+-- reverted and flip the row done. Drain the queue; the DB state alone
+-- keeps the failure non-destructive, not invisible.
+UPDATE "action_jobs"
+SET "resolved_message_ids" = '{}',
+    "status" = 'failed',
+    "error_code" = 'ROLLBACK_0050_ALL_MAIL_UNDO_DISARMED',
+    "updated_at" = now()
+FROM "undo_journal" u
+WHERE "action_jobs"."undo_token" = u."token"
+  AND "action_jobs"."direction" = 'reverse'
+  AND "action_jobs"."verb" = 'delete'
+  AND "action_jobs"."status" IN ('queued', 'executing')
+  AND (u."payload" ? 'inboxMessageIds')
+  AND jsonb_typeof(u."payload"->'messageIds') = 'array'
+  AND jsonb_array_length(u."payload"->'inboxMessageIds') < jsonb_array_length(u."payload"->'messageIds');
+--> statement-breakpoint
+-- Step C — TERMINALIZE in-flight FORWARD all-mail deletes: fail them
+-- and clear their frozen id sets. Leaving them queued would have the
+-- old build silently execute a NARROWER action than the preview the
+-- user confirmed — a D226 preview-contract violation dressed up as a
+-- migration detail. Failing is the truthful outcome: the build that
+-- could execute the confirmed scope is gone; the user sees the
+-- failure and can re-decide. The id sets are cleared as
+-- defense-in-depth: if a replayed queue job makes the old build
+-- reprocess the row anyway (it does not honor 'failed'), it resolves
+-- inbox-only — strictly narrower, never the wide set whose legacy
+-- journal would flood on undo. For an 'executing' row whose crashed
+-- attempt already trashed part of the wide set, that remainder stays
+-- in Gmail Trash unjournaled — recoverable there for ~30 days, and
+-- never re-inboxed by surprise.
+UPDATE "action_jobs"
+SET "resolved_message_ids" = '{}',
+    "status" = 'failed',
+    "error_code" = 'ROLLBACK_0050_ALL_MAIL_SCOPE_UNAVAILABLE',
+    "updated_at" = now()
+WHERE "direction" = 'forward'
+  AND "verb" = 'delete'
+  AND "reach" = 'all_mail'
+  AND "status" IN ('queued', 'executing');
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP CONSTRAINT IF EXISTS "action_jobs_reach_verb_check";
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP COLUMN IF EXISTS "reach";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "action_reach";
+--
+-- DONE rows need nothing beyond Step A: their payloads are untouched
+-- history, and with the flood-capable tokens expired the old build can
+-- never be asked to reverse them. Re-applying 0050 later restores full
+-- semantics for NEW actions; the expired tokens stay expired (undo
+-- availability is not resurrected retroactively).

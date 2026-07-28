@@ -99,6 +99,28 @@ function renderDetail(
   );
 }
 
+describe('SenderRowDetail — ADR-0028 "In inbox" stat card', () => {
+  const CHART: RowDetailTimeseries = { status: 'ready', points: TIMESERIES };
+
+  it('renders the live inbox count beside Received', () => {
+    renderDetail(CHART, READY_SUBJECTS, sender({ inboxCount: 42 }));
+    expect(screen.getByText('In inbox')).toBeInTheDocument();
+    expect(screen.getByText('42')).toBeInTheDocument();
+  });
+
+  it('renders a real 0 for a filter-skipped sender — the motivating state', () => {
+    renderDetail(CHART, READY_SUBJECTS, sender({ inboxCount: 0, totalReceived: 977 }));
+    expect(screen.getByText('In inbox')).toBeInTheDocument();
+    expect(screen.getByText('0')).toBeInTheDocument();
+    expect(screen.getByText('977')).toBeInTheDocument();
+  });
+
+  it('omits the card entirely when the wire does not carry the count — never a made-up 0', () => {
+    renderDetail(CHART, READY_SUBJECTS, sender());
+    expect(screen.queryByText('In inbox')).toBeNull();
+  });
+});
+
 describe('SenderRowDetail — D245 fact-first actions', () => {
   const CHART_READY: RowDetailTimeseries = { status: 'ready', points: TIMESERIES };
 

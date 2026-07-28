@@ -18,6 +18,7 @@ import {
   recordUnsubscribeManualStatus,
   recordUnsubscribeIntent,
   revertUndo,
+  normalizePreviewMessages,
 } from './actions';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 
@@ -260,5 +261,207 @@ describe('isTerminalStatus', () => {
     expect(isTerminalStatus('failed')).toBe(true);
     expect(isTerminalStatus('queued')).toBe(false);
     expect(isTerminalStatus('executing')).toBe(false);
+  });
+});
+
+// apps/api (Cloud Run) and apps/web (Vercel) deploy independently, so the
+// preview sample can arrive in EITHER shape during a skew. Before this
+// normalizer, an API-first deploy served objects to a reader that rendered
+// them as React children — which throws and takes down the D226 modal.
+describe('normalizePreviewMessages — survives a deploy skew in both directions', () => {
+  it('accepts the legacy bare-string shape', () => {
+    expect(normalizePreviewMessages(['Older message', 'Latest message'])).toEqual([
+      { subject: 'Older message', date: null },
+      { subject: 'Latest message', date: null },
+    ]);
+  });
+
+  it('accepts the current object shape', () => {
+    expect(
+      normalizePreviewMessages([{ subject: 'Latest message', date: '2026-06-20T09:00:00.000Z' }]),
+    ).toEqual([{ subject: 'Latest message', date: '2026-06-20T09:00:00.000Z' }]);
+  });
+
+  it('nulls an unparseable date rather than passing it to the renderer', () => {
+    expect(normalizePreviewMessages([{ subject: 'x', date: 'not-a-date' }])).toEqual([
+      { subject: 'x', date: null },
+    ]);
+    expect(normalizePreviewMessages([{ subject: 'x' }])).toEqual([{ subject: 'x', date: null }]);
+  });
+
+  it('tolerates a missing or non-array field', () => {
+    expect(normalizePreviewMessages(undefined)).toEqual([]);
+    expect(normalizePreviewMessages(null)).toEqual([]);
+    expect(normalizePreviewMessages({})).toEqual([]);
+  });
+
+  it('drops rows that are neither string nor object', () => {
+    expect(normalizePreviewMessages([1, null, { subject: 'ok', date: null }])).toEqual([
+      { subject: 'ok', date: null },
+    ]);
+  });
+});
+
+// All four deploy combinations, since apps/api (Cloud Run) and apps/web
+// (Vercel) never deploy atomically. The two the ADAPTER owns are covered
+// here; the old-web-bundle case is covered by the API still emitting
+// `recentSubjects` (asserted in the api contract spec).
+describe('getCompositePreview — deploy-skew matrix', () => {
+  const dated = [{ subject: 'A', date: '2026-06-20T09:00:00.000Z' }];
+
+  it('prefers recentMessages when the API is new', () => {
+    expect(normalizePreviewMessages({ recentMessages: { all: dated } }.recentMessages.all)).toEqual(
+      dated,
+    );
+  });
+
+  it('falls back to recentSubjects when the API is old (new web, old API)', () => {
+    // Old API sends no `recentMessages` at all — the adapter reads the
+    // legacy key and yields dateless rows rather than an empty panel.
+    const wire: { recentMessages?: { all: unknown }; recentSubjects?: { all: unknown } } = {
+      recentSubjects: { all: ['A', 'B'] },
+    };
+    const raw = wire.recentMessages ?? wire.recentSubjects;
+    expect(normalizePreviewMessages(raw?.all)).toEqual([
+      { subject: 'A', date: null },
+      { subject: 'B', date: null },
+    ]);
+  });
+});
+
+// ADR-0028 — same skew discipline for the `allMail` block: an API without
+// it yields `null` (the modal hides the reach choice), a malformed block
+// degrades to `null`, and a healthy one normalizes its sample rows.
+describe('getCompositePreview — ADR-0028 allMail block', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  const baseWire = {
+    sender: {
+      id: 's-1',
+      name: 'Shop',
+      domain: 'shop.example',
+      lastSeenDays: 2,
+      repliedCount: 0,
+      monthly: 8,
+    },
+    counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+    recentMessages: {
+      all: [],
+      olderThan30d: [],
+      olderThan90d: [],
+      olderThan180d: [],
+      olderThan365d: [],
+    },
+    recentSubjects: {
+      all: [],
+      olderThan30d: [],
+      olderThan90d: [],
+      olderThan180d: [],
+      olderThan365d: [],
+    },
+    unsubAvailable: false,
+    protected: false,
+  };
+
+  async function previewFromWire(extra: Record<string, unknown>) {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/preview/,
+        respond: () => jsonOk({ data: { ...baseWire, ...extra } }),
+      },
+    ]);
+    const { getCompositePreview } = await import('./actions');
+    return getCompositePreview('s-1');
+  }
+
+  it('yields null against an API that predates the field (old API, new web)', async () => {
+    const res = await previewFromWire({});
+    expect(res.allMail).toBeNull();
+  });
+
+  it('yields null for a malformed block instead of guessing counts', async () => {
+    const res = await previewFromWire({ allMail: { recentMessages: {} } });
+    expect(res.allMail).toBeNull();
+  });
+
+  it('normalizes a healthy block, dropping malformed sample rows', async () => {
+    const res = await previewFromWire({
+      allMail: {
+        counts: {
+          all: 977,
+          olderThan30d: 900,
+          olderThan90d: 800,
+          olderThan180d: 700,
+          olderThan365d: 600,
+        },
+        recentMessages: {
+          all: [
+            { subject: 'Statement', date: '2026-07-05T09:00:00.000Z' },
+            { subject: 'Bad date', date: 'not-a-date' },
+            42,
+          ],
+          olderThan30d: [],
+          olderThan90d: [],
+          olderThan180d: [],
+          olderThan365d: [],
+        },
+      },
+    });
+    expect(res.allMail?.counts.all).toBe(977);
+    expect(res.allMail?.recentMessages.all).toEqual([
+      { subject: 'Statement', date: '2026-07-05T09:00:00.000Z' },
+      { subject: 'Bad date', date: null },
+    ]);
+  });
+});
+
+describe('enqueueCompositeAction — ADR-0028 reach on the wire', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  async function capturePost(input: Parameters<typeof enqueueCompositeAction>[0]) {
+    let body: unknown = null;
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /^\/api\/actions$/,
+        respond: async (req) => {
+          body = await req.json();
+          return jsonOk({
+            data: {
+              actionId: 'a-1',
+              compositeId: 'a-1',
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 2,
+              secondaryCount: null,
+              wakeAt: null,
+            },
+          });
+        },
+      },
+    ]);
+    await enqueueCompositeAction(input);
+    return body as { primary: Record<string, unknown> };
+  }
+
+  it('carries reach when set', async () => {
+    const body = await capturePost({
+      senderId: 's-1',
+      primary: { type: 'delete', olderThanDays: null, reach: 'all_mail' },
+      idempotencyKey: 'k-1',
+    });
+    expect(body.primary.reach).toBe('all_mail');
+  });
+
+  it('omits reach entirely when unset — the pre-ADR wire, byte-identical', async () => {
+    const body = await capturePost({
+      senderId: 's-1',
+      primary: { type: 'delete', olderThanDays: null },
+      idempotencyKey: 'k-2',
+    });
+    expect('reach' in body.primary).toBe(false);
   });
 });

@@ -693,7 +693,7 @@ This PR's Bug 1 fix wired `useCompositePreview` (preview is now correct + reacti
 **Why:** D210 requires every new component to ship with a stories file. `compose-strip.tsx` (756 lines, NEW) and the heavily-rewritten `confirm-action-modal.tsx` have no stories. The Activity redesign added 9+ states (Loading/Error/WithSelection/BulkUndoError/Grouped/VerbFiltered/CustomDateRange/WindowAllTime/UndoTryAgain) the existing 3-story file does not cover.
 **How:**
 1. Add `compose-strip.stories.tsx` — empty / single-axis / multi-axis / negated / window-popover-open / domain-popover-open / loading-counts.
-2. Add `confirm-action-modal.stories.tsx` — Archive / Delete / Unsub-with-secondary-archive / Unsub-with-secondary-delete / Later / loading-preview / preview-error / expanded-recent-subjects.
+2. Add `confirm-action-modal.stories.tsx` — Archive / Delete / Unsub-with-secondary-archive / Unsub-with-secondary-delete / Later / loading-preview / preview-error / expanded-recent-subjects. ADR-0028 (2026-07-28) adds four more states: reach-unavailable (old API) / Delete-inbox-only / Delete-all-mail / empty-inbox-with-archived-escape-hatch; plus `sender-row-detail.stories.tsx` needs the In-inbox card (present / zero / absent-on-wire).
 3. Extend `activity-screen.stories.tsx` with the 9 new states above + update the stale meta description.
 **Verifies by:** Storybook lists every state; visual-regression CI catches future drift.
 **Status:** Open
@@ -1775,6 +1775,21 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-07-28 — Decide fate of stashed d162 email-template polish
+**Source:** session (branch cleanup before feat/d226-delete-scope-archived)
+**Why:** The merged #405 session left ~310 uncommitted lines of email-template
+polish (Eyebrow/display-type treatment across shell.tsx, sync-complete,
+deletion-scheduled, deletion-receipt, sync-reminder-24h, shell.spec) in the
+working tree. They were NOT part of the merged PR. Stashed so the new action-reach
+branch stays clean — a stash is recoverable but easy to forget.
+**How:** Resumed in a fresh worktree off `origin/main` rather than popping the
+stash back into a live checkout (the stash's branch had moved out from under the
+session). Rebuilt as `feat/d162-email-brand-polish` → #406, which folds in a full
+brand redesign (Fraunces display type, newspaper double-rule masthead) plus an
+in-body unsubscribe link the original stash didn't have.
+**Verifies by:** #406 merged; `git stash list` no longer shows the entry.
+**Status:** Done 2026-07-28 — superseded by #406.
 
 ### 2026-07-26 — GitHub Actions "574% of included minutes" costs $0 and always will; the number to know is what a flip to private would cost
 **Source:** founder question — "How do we reduce GH action minutes? Is that 2000 per month? what are the cost implications?"

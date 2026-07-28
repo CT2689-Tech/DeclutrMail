@@ -5,13 +5,23 @@ import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared'
 import {
   buildActionPresentation,
   defaultLaterWakeAtIso,
+  describeInboxScope,
+  inboxScopeNoticeCopy,
+  tiedWindowNoticeCopy,
   type PresentedAction,
   type UnsubscribeChannel,
 } from '@declutrmail/shared/actions';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
-import type { BulkActionPreviewResult, CompositeActionPreviewResult } from '@/lib/api/use-action';
+import type {
+  BulkActionPreviewResult,
+  CompositeActionPreviewResult,
+  CompositePreviewMessage,
+} from '@/lib/api/use-action';
+import type { ActionReach } from '@/lib/api/actions';
 import { isStandingProtected, verbDisplay, type ActionRequest, type ActionVerb } from './data';
 
 const { color, font } = tokens;
@@ -58,6 +68,12 @@ export interface ConfirmOptions {
    * picks "Archive them".
    */
   archiveHistoric?: boolean;
+  /**
+   * ADR-0028 — set to `all_mail` when the user chose "Inbox + archived"
+   * on a single-sender Delete. Omitted otherwise (the wire default is
+   * inbox-only, and the server rejects the value on any other shape).
+   */
+  reach?: ActionReach;
 }
 
 /**
@@ -116,9 +132,9 @@ function pickBucketCount(
  * (the disclosure renders nothing until real data lands — §10).
  */
 function pickBucketSubjects(
-  buckets: CompositeActionPreviewResult['recentSubjects'] | undefined,
+  buckets: CompositeActionPreviewResult['recentMessages'] | undefined,
   olderThanDays: number | null,
-): string[] | undefined {
+): CompositePreviewMessage[] | undefined {
   if (!buckets) return undefined;
   if (olderThanDays === null) return buckets.all;
   if (olderThanDays === 30) return buckets.olderThan30d;
@@ -210,6 +226,9 @@ export function ConfirmActionModal({
   // Time-window filter for the historic-scope verb (archive/delete
   // primary OR the active secondary).
   const [olderThanDays, setOlderThanDays] = useState<number | null>(null);
+  // ADR-0028 reach — Delete-only chip pair (Inbox only / Inbox +
+  // archived). Always reset to the safe default on open.
+  const [reach, setReach] = useState<ActionReach>('inbox_only');
   const [wakeAt, setWakeAt] = useState<string | null>(null);
   // "Show what currently matches" expand panel state (spec v1.2 Decision 15).
   const [showSubjects, setShowSubjects] = useState(false);
@@ -221,6 +240,7 @@ export function ConfirmActionModal({
     if (!request) return;
     setSecondaryVerb(null);
     setOlderThanDays(defaultWindow(request.verb));
+    setReach('inbox_only');
     setWakeAt(request.verb === 'Later' ? defaultLaterWakeAtIso() : null);
     setShowSubjects(false);
     setShowAllSenders(false);
@@ -254,7 +274,19 @@ export function ConfirmActionModal({
   // single-sender composite preview as the bucket-count source. The
   // confirm-gating rules below are IDENTICAL across both shapes.
   const isBulk = (request?.senders.length ?? 0) > 1;
-  const bucketCounts = isBulk ? bulkPreview?.data?.totals : compositePreview?.counts;
+
+  // ADR-0028 reach. Offered only where the server accepts it — a
+  // single-sender Delete — and only when the preview actually carries
+  // the all-mail block (`allMail` is null against an API predating the
+  // field, so during a deploy skew the choice simply does not appear).
+  const reachAvailable = isDeleteVerb && !isBulk && compositePreview?.allMail != null;
+  const activeReach: ActionReach = reachAvailable ? reach : 'inbox_only';
+
+  const bucketCounts = isBulk
+    ? bulkPreview?.data?.totals
+    : activeReach === 'all_mail'
+      ? compositePreview?.allMail?.counts
+      : compositePreview?.counts;
 
   // A protected sender acted on EXPLICITLY, one at a time. D245 excludes
   // Protected from bulk and automatic actions only, so this path stays
@@ -271,7 +303,8 @@ export function ConfirmActionModal({
 
   // Fail closed on every path that moves current mail. A count from the
   // composite/bulk endpoint is the preview contract for the active time
-  // window; lifetime sender totals and a legacy all-inbox count are not a
+  // window; all-labels received sender totals and a legacy all-inbox count
+  // are not a
   // substitute. Pure Unsubscribe (Leave alone) is the one exception because
   // it does not move existing inbox mail.
   const requiresLivePreview = isArchiveVerb || isLaterVerb || isDeleteVerb || hasSecondaryAction;
@@ -304,12 +337,110 @@ export function ConfirmActionModal({
     ? (bulkPreview?.loading ?? false)
     : Boolean(compositePreviewLoading);
 
-  // An Archive/Delete whose entire effect is moving inbox mail is a pure
-  // no-op when the selected window matches nothing → block confirm. Gated
-  // on the SAME count the headline renders, so "0 emails currently match"
-  // can never sit above an enabled confirm (finding 5.5).
-  const nothingToActOn = (isArchiveVerb || isDeleteVerb) && compositeCount === 0;
+  // A verb whose ENTIRE effect is moving inbox mail is a pure no-op when
+  // the selected window matches nothing → block confirm. Gated on the
+  // SAME count the headline renders, so "0 emails currently match" can
+  // never sit above an enabled confirm (finding 5.5).
+  //
+  // `primaryActsOnInbox`, not just Archive/Delete: Later is the third
+  // verb with no effect outside the current inbox (`ACTION_SEMANTICS.later`
+  // — `futureMail.effect: 'unchanged'`, no policy delta), so confirming it
+  // on an empty inbox enqueued a job, wrote an Activity row and rendered a
+  // receipt for moving nothing — while the footer claimed "Uses 1 of your
+  // N cleanup actions", which is not even true of a no-op
+  // (`EntitlementsService.cleanupUnitsUsed` excludes
+  // `status = 'done' AND affected_count = 0`). Unsubscribe is deliberately
+  // excluded — it cuts FUTURE mail, so it is real work at a zero backlog,
+  // and it IS charged a unit.
+  const nothingToActOn = primaryActsOnInbox && compositeCount === 0;
   const wakeAtInvalid = isLaterVerb && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
+
+  // Reconcile the two ORTHOGONAL populations this modal renders at once:
+  // the context strip's arrival-scoped "N /mo" (last 30 days, any label)
+  // and the INBOX-now bucket counts a verb can actually move. A sender
+  // that mails 71×/month and has all of it already archived produces a
+  // legitimate all-zero chip row under a large "71 /mo" — which reads as
+  // a broken preview unless the modal says why (founder report
+  // 2026-07-27; findings doc 5.14). Gated on `livePreviewReady` so a
+  // stale cache never narrates the inbox.
+  // At all-mail reach the "not in your inbox" reconciliation is moot —
+  // the whole point of the widened reach is that archived mail IS in
+  // scope, so the notice stays silent rather than narrating a scope the
+  // action no longer has.
+  const inboxScopeNotice =
+    livePreviewReady && activeReach === 'inbox_only'
+      ? describeInboxScope({
+          inboxTotal: pickBucketCount(bucketCounts, null),
+          windowCount: compositeCount,
+          olderThanDays: showWindowRow ? olderThanDays : null,
+          // Bulk has no single arrival figure to name — omit rather than
+          // invent one; the copy drops the clause when it is null.
+          recentArrivals: isBulk
+            ? null
+            : (compositePreview?.sender?.monthly ?? request?.senders[0]?.monthlyVolume ?? null),
+        })
+      : ({ kind: 'none' } as const);
+  // Name the verb the COUNT belongs to, not the primary. On Unsubscribe
+  // + a backlog secondary the zero describes the secondary; saying
+  // "Unsubscribe only acts on mail still in the inbox" would be flatly
+  // false — Unsubscribe never touches inbox mail, which is exactly why
+  // it is the one primary that offers a backlog secondary at all.
+  const inboxScopeVerbLabel = hasSecondaryAction
+    ? secondaryVerb === 'delete'
+      ? 'Delete'
+      : 'Archive'
+    : verb
+      ? verbDisplay(verb).label
+      : null;
+  const inboxScopeCopy = inboxScopeVerbLabel
+    ? inboxScopeNoticeCopy(
+        inboxScopeNotice,
+        inboxScopeVerbLabel,
+        isBulk ? 'these senders' : 'this sender',
+        // With the reach chips on screen, "only acts on mail still in
+        // the inbox" would be false one sentence before the hint that
+        // says how to reach past it (ADR-0028).
+        { verbActsBeyondInbox: reachAvailable },
+      )
+    : null;
+  // ADR-0028 — when the inbox is empty but the mailbox still holds mail
+  // this Delete COULD reach, point at the chip that reaches it. Modal-
+  // local on purpose: the shared notice is also rendered by surfaces
+  // (Screener) that have no reach control to point at.
+  const archivedReachHint =
+    inboxScopeNotice.kind === 'empty-inbox' &&
+    reachAvailable &&
+    (compositePreview?.allMail?.counts.all ?? 0) > 0
+      ? `Switch to "Inbox + archived" to reach ${(
+          compositePreview?.allMail?.counts.all ?? 0
+        ).toLocaleString()} archived email${
+          (compositePreview?.allMail?.counts.all ?? 0) === 1 ? '' : 's'
+        }.`
+      : null;
+  // Every window chip reads 0 when the inbox holds nothing from this
+  // sender — five identical zeros no choice can change. Suppress the row
+  // and let the notice carry the story. Deliberately a RENDER flag only:
+  // `showWindowRow` still governs `buildConfirmOpts`, so the wire payload
+  // is byte-identical either way.
+  const showWindowChips = showWindowRow && inboxScopeNotice.kind !== 'empty-inbox';
+  // With the chip row gone the "(older than N days)" qualifier describes
+  // a control the user can no longer see.
+  const showWindowQualifier = olderThanDays !== null && inboxScopeNotice.kind !== 'empty-inbox';
+  // B — a chip row whose top buckets tie reads as a broken control
+  // (github.com: four chips all showing 2,908). Explain WHY instead of
+  // merging them; see `tiedWindowNoticeCopy` for why merging is unsafe.
+  const tiedWindowCopy = livePreviewReady
+    ? tiedWindowNoticeCopy(
+        TIME_WINDOW_PRESETS.map((preset) => ({
+          label: preset.label,
+          count: pickBucketCount(bucketCounts, preset.days),
+        })),
+        // The age clause explains INBOX ties; at all-mail reach the tie
+        // has a different denominator, so pass null and let the copy
+        // state the tie without an inbox age it no longer describes.
+        isBulk || activeReach === 'all_mail' ? null : newestInboxDays(compositePreview),
+      )
+    : null;
 
   // A3 quota-aware preview. One unit = one sender acted upon; every
   // modal verb counts (Keep never opens this modal). Bulk needs one
@@ -323,11 +454,9 @@ export function ConfirmActionModal({
     : 1;
   const quotaShort = quotaRemaining !== null && unitsNeeded > quotaRemaining;
 
-  const confirmDisabled =
-    livePreviewBlocksConfirm ||
-    ((isArchiveVerb || isDeleteVerb) && nothingToActOn) ||
-    wakeAtInvalid ||
-    quotaShort;
+  // `nothingToActOn` already carries its own verb test — repeating a
+  // narrower one here would silently re-exclude Later.
+  const confirmDisabled = livePreviewBlocksConfirm || nothingToActOn || wakeAtInvalid || quotaShort;
 
   // Swap confirm for a truthful upgrade action when the quota cannot
   // cover this click — routed through the same upgrade-gate store the
@@ -353,6 +482,9 @@ export function ConfirmActionModal({
     const opts: ConfirmOptions = {};
     if (isLaterVerb && wakeAt !== null) opts.wakeAt = wakeAt;
     if (showWindowRow) opts.olderThanDays = olderThanDays;
+    // ADR-0028 — only the non-default value travels; the server treats
+    // an absent field as inbox_only and rejects all_mail anywhere else.
+    if (reachAvailable && activeReach === 'all_mail') opts.reach = 'all_mail';
     if (hasSecondaryAction) {
       opts.secondary = {
         type: secondaryVerb as 'archive' | 'delete',
@@ -388,6 +520,9 @@ export function ConfirmActionModal({
     request,
     secondaryVerb,
     olderThanDays,
+    reach,
+    reachAvailable,
+    activeReach,
     wakeAt,
     onCancel,
     onConfirm,
@@ -397,6 +532,7 @@ export function ConfirmActionModal({
     hasSecondaryAction,
   ]);
 
+  const auth = useOptionalAuth();
   const trapRef = useFocusTrap<HTMLDivElement>(request !== null);
 
   if (!request) return null;
@@ -478,7 +614,7 @@ export function ConfirmActionModal({
 
   // Subjects for the "Show what currently matches" panel (spec v1.3 — recent
   // beats oldest for 3-sec sender recognition). Single-sender single-
-  // verb path reads top-5 from `compositePreview.recentSubjects[bucket]`;
+  // verb path reads top-5 from `compositePreview.recentMessages[bucket]`;
   // falls back to the fixture pool ONLY while the preview is in flight
   // so the panel never blanks during the load flash. Bulk flow (>1
   // sender) hides the panel entirely — per-sender drilldown is a
@@ -492,7 +628,12 @@ export function ConfirmActionModal({
   // advertised count always equals what expanding shows.
   const subjectsFromWire =
     senders.length === 1
-      ? pickBucketSubjects(compositePreview?.recentSubjects, olderThanDays)
+      ? pickBucketSubjects(
+          activeReach === 'all_mail'
+            ? compositePreview?.allMail?.recentMessages
+            : compositePreview?.recentMessages,
+          olderThanDays,
+        )
       : undefined;
   // Wire subjects ONLY — no fixture fallback. Before the composite
   // preview resolves, `compositeCount` is undefined so the disclosure
@@ -504,6 +645,26 @@ export function ConfirmActionModal({
   // D226 honesty — when the eligibility gate narrowed the selection
   // before this preview opened, say so: the user saw "N selected" in
   // the bar and must not wonder why the sheet covers fewer senders.
+  // D — a Gmail search mirroring THIS preview's scope, so the user can
+  // eyeball the real messages before confirming. Only when the preview
+  // has resolved and only for a single sender (bulk has no one `from:`).
+  // Approximate by construction — see `buildActionScopeSearchLink`.
+  const verifyInGmailUrl = (() => {
+    if (!livePreviewReady || senders.length !== 1) return null;
+    const email = mailboxEmail ?? (auth ? getActiveMailboxEmail(auth.me) : null);
+    if (!email) return null;
+    return GmailOpenLinkService.buildActionScopeSearchLink({
+      mailboxEmail: email,
+      from: senders[0]!.email,
+      olderThanDays: showWindowRow ? olderThanDays : null,
+      // ADR-0028 — mirror the selected reach: dropping `in:inbox` makes
+      // the Gmail search cover archived mail too (Gmail excludes Trash
+      // and Spam from a plain search by default, matching the reach's
+      // own exclusions).
+      inboxOnly: activeReach !== 'all_mail',
+    });
+  })();
+
   const skippedNote = (() => {
     const skipped = request.skipped;
     if (!skipped) return null;
@@ -585,11 +746,19 @@ export function ConfirmActionModal({
                 {compositePreview?.sender?.domain ?? senders[0]!.domain}
               </span>
               <span>·</span>
+              {/* Arrival-scoped, and now labelled as such. Unqualified
+                  "N /mo" beside INBOX-now counts reads as their
+                  denominator; it is a different population entirely.
+                  Unknown renders "—", never a factual 0 (finding 5.15). */}
               <span>
                 <strong style={{ color: color.fg, fontFamily: font.sans, fontWeight: 600 }}>
-                  {compositePreview?.sender?.monthly ?? senders[0]!.monthlyVolume ?? 0}
+                  {(() => {
+                    const monthly =
+                      compositePreview?.sender?.monthly ?? senders[0]!.monthlyVolume ?? null;
+                    return monthly === null ? '—' : monthly.toLocaleString();
+                  })()}
                 </strong>{' '}
-                /mo
+                /mo arriving
               </span>
               <span>·</span>
               <span>
@@ -830,10 +999,108 @@ export function ConfirmActionModal({
               );
             })()}
 
+          {/* ADR-0028 reach chip pair — Delete only. Rendered even when
+              the window chips are suppressed for an empty inbox: it is
+              exactly then that "Inbox + archived" is the escape hatch. */}
+          {reachAvailable && (
+            <div
+              role="radiogroup"
+              aria-label="Where it applies"
+              style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+            >
+              <div
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: 10,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: color.fgMuted,
+                }}
+              >
+                Where it applies
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {(
+                  [
+                    { value: 'inbox_only', label: 'Inbox only' },
+                    { value: 'all_mail', label: 'Inbox + archived' },
+                  ] as const satisfies ReadonlyArray<{ value: ActionReach; label: string }>
+                ).map((opt) => {
+                  const active = activeReach === opt.value;
+                  const optCounts =
+                    opt.value === 'all_mail'
+                      ? compositePreview?.allMail?.counts
+                      : compositePreview?.counts;
+                  // Window-scoped only while the window row is VISIBLE.
+                  // With the chips suppressed (empty inbox) a hidden
+                  // 180d default would put an unexplained smaller figure
+                  // on the pair — live smoke 2026-07-28 read "reach 977
+                  // archived emails" beside a chip saying 933.
+                  const optCount = pickBucketCount(
+                    optCounts,
+                    showWindowChips ? olderThanDays : null,
+                  );
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => {
+                        // Clicking a chip that advertised its
+                        // UN-WINDOWED count (the window row was hidden
+                        // for an empty inbox) must arm exactly that
+                        // number — so the window resets to "All mail"
+                        // instead of a hidden 180d default silently
+                        // shaving the figure the user just chose
+                        // (design-system gate, 2026-07-28).
+                        if (opt.value === 'all_mail' && !showWindowChips) {
+                          setOlderThanDays(null);
+                        }
+                        setReach(opt.value);
+                      }}
+                      style={{
+                        fontFamily: font.sans,
+                        fontSize: 12.5,
+                        fontWeight: 500,
+                        padding: '6px 12px',
+                        borderRadius: 999,
+                        background: active ? color.fg : 'transparent',
+                        color: active ? color.fgInverse : color.fgSoft,
+                        border: `1px solid ${active ? color.fg : color.line}`,
+                        cursor: 'pointer',
+                        transition: 'background 120ms, color 120ms',
+                      }}
+                    >
+                      {opt.label}
+                      {optCount !== undefined && (
+                        <span
+                          style={{
+                            marginLeft: 6,
+                            fontVariantNumeric: 'tabular-nums',
+                            opacity: active ? 0.85 : 0.7,
+                          }}
+                        >
+                          {optCount.toLocaleString()}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              {activeReach === 'all_mail' && (
+                <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
+                  Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo
+                  restores every email — inbox mail to the inbox, archived mail to the archive.
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Time-window chip row (spec v1.2 Decision 15). Visible when
               the action acts on historic mail — Archive/Delete primary
               OR the active secondary historic action. */}
-          {showWindowRow && (
+          {showWindowChips && (
             <div
               role="radiogroup"
               aria-label="How far back to act on"
@@ -864,6 +1131,10 @@ export function ConfirmActionModal({
                 {TIME_WINDOW_PRESETS.map((preset) => {
                   const active = olderThanDays === preset.days;
                   const bucketCount = pickBucketCount(bucketCounts, preset.days);
+                  // "All inbox" is a lie once the reach covers archived
+                  // mail — rename the un-windowed chip to match scope.
+                  const label =
+                    preset.days === null && activeReach === 'all_mail' ? 'All mail' : preset.label;
                   return (
                     <button
                       key={preset.label}
@@ -884,7 +1155,7 @@ export function ConfirmActionModal({
                         transition: 'background 120ms, color 120ms',
                       }}
                     >
-                      {preset.label}
+                      {label}
                       {bucketCount !== undefined && (
                         <span
                           style={{
@@ -900,6 +1171,11 @@ export function ConfirmActionModal({
                   );
                 })}
               </div>
+              {tiedWindowCopy && (
+                <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
+                  {tiedWindowCopy}
+                </span>
+              )}
             </div>
           )}
 
@@ -1012,7 +1288,8 @@ export function ConfirmActionModal({
                         <strong style={numberStyle}>{compositeCount.toLocaleString()}</strong>
                         <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                           email{compositeCount === 1 ? '' : 's'} currently match
-                          {olderThanDays !== null
+                          {activeReach === 'all_mail' ? ' across inbox + archived' : ''}
+                          {showWindowQualifier
                             ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
                             : ''}
                           {isDeleteVerb
@@ -1031,7 +1308,7 @@ export function ConfirmActionModal({
                         <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                           email{compositeCount === 1 ? '' : 's'} currently match the backlog{' '}
                           {secondaryVerb === 'delete' ? 'Trash' : 'Archive'} action
-                          {olderThanDays !== null
+                          {showWindowQualifier
                             ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
                             : ''}
                           .
@@ -1088,11 +1365,47 @@ export function ConfirmActionModal({
               })()}
             </div>
 
+            {/* Why a true count can still read as a contradiction — see
+                `describeInboxScope`. Rendered as a status so a screen
+                reader hears the reconciliation, not just the bare 0. */}
+            {inboxScopeCopy && (
+              <span role="status" style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
+                {inboxScopeCopy}
+                {archivedReachHint ? ` ${archivedReachHint}` : ''}
+              </span>
+            )}
+
             {livePreviewReady && (
               <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
                 Gmail is checked again when this runs. If your inbox changes, the final moved count
                 can differ from this preview.
               </span>
+            )}
+
+            {/* D — let the reader verify the real set in Gmail BEFORE
+                confirming. Single-sender only: a bulk sheet has no one
+                `from:` to search. The copy says "roughly" on purpose —
+                Gmail's `older_than:` is day-granular and resolves live,
+                so its result count can differ from the preview's exact
+                `internal_date` filter. Never claim the two match. */}
+            {verifyInGmailUrl && (
+              <a
+                href={verifyInGmailUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  alignSelf: 'flex-start',
+                  fontFamily: font.mono,
+                  fontSize: 11,
+                  letterSpacing: '0.04em',
+                  color: color.fgSoft,
+                  fontWeight: 600,
+                  textDecoration: 'none',
+                }}
+                title="Opens a Gmail search roughly matching this preview. Gmail filters by whole days and searches live, so its count can differ slightly."
+              >
+                Check these in Gmail first ↗
+              </a>
             )}
 
             {/* Current matches (5 of N) ▾ — privacy-safe subjects panel.
@@ -1134,6 +1447,9 @@ export function ConfirmActionModal({
                   marginTop: 4,
                 }}
               >
+                {/* Date first: on a windowed action this sample is the 5
+                    most recent WITHIN the bucket, and the date is how the
+                    reader checks it respects the window they picked. */}
                 {subjectsPreview.map((s, i) => (
                   <div
                     key={i}
@@ -1149,7 +1465,19 @@ export function ConfirmActionModal({
                     <span style={{ width: 18, color: color.fgMuted }}>
                       {String(i + 1).padStart(2, '0')}
                     </span>
-                    <span style={{ color: color.fg }}>{s}</span>
+                    {s.date !== null && (
+                      <time
+                        dateTime={s.date}
+                        style={{
+                          color: color.fgMuted,
+                          flex: '0 0 auto',
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        {shortDate(s.date)}
+                      </time>
+                    )}
+                    <span style={{ color: color.fg, minWidth: 0 }}>{s.subject}</span>
                   </div>
                 ))}
                 <div
@@ -1270,6 +1598,51 @@ function recoveryFacts(primary: PresentedAction, secondary: PresentedAction | nu
         ]),
     ),
   ];
+}
+
+/**
+ * Age in days of the newest message IN THE INBOX for this sender, or
+ * `null` when unknown.
+ *
+ * Derived from the un-windowed sample's first row, which the BE orders
+ * `internal_date DESC` over the INBOX-scoped predicate — so it is the
+ * newest inbox message by construction.
+ *
+ * Deliberately NOT `sender.lastSeenDays`: that is `senders.last_seen_at`,
+ * the newest message across ALL labels. The two diverge wildly once mail
+ * is archived — measured 2026-07-27 on the dev mailbox, `linkedin.com`
+ * reported lastSeen 0 days while its newest INBOX message was 5,269 days
+ * old, and `tcs.com` 4,539 vs 20,662. Using it here would have printed a
+ * confident, wrong age on a trust surface.
+ */
+function newestInboxDays(preview: CompositeActionPreviewResult | undefined): number | null {
+  const iso = preview?.recentMessages?.all?.[0]?.date ?? null;
+  if (iso === null) return null;
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  return Math.max(0, Math.floor((Date.now() - ms) / 86_400_000));
+}
+
+/**
+ * `2026-04-12` — ISO-ORDERED but rendered from LOCAL calendar parts, the
+ * same convention as `toLocalDateTimeInput` below.
+ *
+ * Not `toISOString().slice(0,10)`: that prints the UTC day, so a message
+ * received at 20:00 PST would show as the NEXT day and disagree with the
+ * date Gmail shows the user — an off-by-one on a trust panel whose whole
+ * job is letting them verify the set. Ordered YYYY-MM-DD rather than a
+ * locale format so it cannot be misread as D/M vs M/D.
+ *
+ * Returns '' for an unparseable value so the row still renders its
+ * subject instead of "Invalid Date" (the BE already drops dateless rows;
+ * this is the render-side guard).
+ */
+function shortDate(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return '';
+  const date = new Date(ms);
+  const two = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}`;
 }
 
 function toLocalDateTimeInput(iso: string): string {

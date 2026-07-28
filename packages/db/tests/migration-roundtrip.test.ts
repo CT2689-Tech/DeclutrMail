@@ -130,6 +130,7 @@ describe('migration round-trip', () => {
       'enum:account_deletion_status',
       'enum:action_direction',
       'enum:action_job_status',
+      'enum:action_reach',
       'enum:action_recovery_outcome',
       'enum:action_recovery_preview_status',
       'enum:action_verb',

@@ -268,7 +268,30 @@ export function ScreenerRow({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 12, color: color.fgSoft }}>
               <span style={{ fontWeight: 600 }}>First seen:</span> {firstSeenLabel(row.firstSeenAt)}{' '}
-              · <span style={{ fontWeight: 600 }}>Messages so far:</span> {row.messageCount}
+              ·{' '}
+              {/* `senders.total_received` — every label, not inbox-only.
+                  Named so it cannot be read as the denominator of the
+                  INBOX-now count in the decide preview below: "40"
+                  beside "2 emails currently match in Inbox" reads as 38
+                  lost messages (findings doc 5.11).
+
+                  "received" is MANDATED, not chosen: ADR-0014 §Neutral
+                  — "`total_received` is 'within retention,' not
+                  'all-time in Gmail.' UI copy says 'received', never
+                  'all-time'." The counter is recounted from
+                  `mail_messages` nightly by
+                  `SendersCounterReconciliationWorker` (its docstring
+                  names the "retention-prune drift case") and rebuilt on
+                  every connect / reconnect / OAuth re-grant, so it is
+                  not a lifetime total — verified 2026-07-27: 0 of 7,902
+                  senders diverge from COUNT(mail_messages). */}
+              <span
+                style={{ fontWeight: 600 }}
+                title="Inbound messages received from this sender and still within DeclutrMail's retention — archived mail included, not inbox-only. Mail deleted from Gmail drops out of this count."
+              >
+                Messages received:
+              </span>{' '}
+              {row.messageCount.toLocaleString()}
             </span>
             {row.recommendation != null && (
               <span style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>

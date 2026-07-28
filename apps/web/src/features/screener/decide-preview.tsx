@@ -1,7 +1,11 @@
 'use client';
 
 import { Button, tokens } from '@declutrmail/shared';
-import { buildActionPresentation } from '@declutrmail/shared/actions';
+import {
+  buildActionPresentation,
+  describeInboxScope,
+  inboxScopeNoticeCopy,
+} from '@declutrmail/shared/actions';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 
 import {
@@ -141,6 +145,9 @@ export function DecidePreview({
         style={{
           display: 'flex',
           alignItems: 'baseline',
+          // Wraps so the scope notice can take its own line under the
+          // figure instead of squeezing the count.
+          flexWrap: 'wrap',
           gap: 8,
           padding: '10px 12px',
           background: color.card,
@@ -148,7 +155,7 @@ export function DecidePreview({
           borderRadius: 8,
         }}
       >
-        <ImpactFigure moves={moves} inboxCount={inboxCount} />
+        <ImpactFigure moves={moves} inboxCount={inboxCount} verbLabel={VERB_LABEL[verb]} />
       </div>
 
       {/* Protected acknowledgement (D42/D245) — stated before the
@@ -202,7 +209,15 @@ export function DecidePreview({
 }
 
 /** The "N emails move" strip — all four edge states rendered (D211). */
-function ImpactFigure({ moves, inboxCount }: { moves: boolean; inboxCount: DecidePreviewCount }) {
+function ImpactFigure({
+  moves,
+  inboxCount,
+  verbLabel,
+}: {
+  moves: boolean;
+  inboxCount: DecidePreviewCount;
+  verbLabel: string;
+}) {
   const strongStyle: React.CSSProperties = {
     fontFamily: font.display,
     fontSize: 18,
@@ -231,6 +246,22 @@ function ImpactFigure({ moves, inboxCount }: { moves: boolean; inboxCount: Decid
       </span>
     );
   }
+  // A bare "0" beside the row's "Messages received" count reads as lost
+  // mail. Same reconciliation the senders confirm modal does, from the
+  // same helper. The screener has no windowing and no 30-day arrival
+  // figure on its row, so `recentArrivals` is null and the copy omits
+  // that clause rather than passing off an all-labels received count as a
+  // 30-day arrival count.
+  const scopeCopy = inboxScopeNoticeCopy(
+    describeInboxScope({
+      inboxTotal: inboxCount,
+      windowCount: inboxCount,
+      olderThanDays: null,
+      recentArrivals: null,
+    }),
+    verbLabel,
+  );
+
   return (
     <>
       <strong style={strongStyle}>{inboxCount.toLocaleString()}</strong>
@@ -238,6 +269,11 @@ function ImpactFigure({ moves, inboxCount }: { moves: boolean; inboxCount: Decid
         email{inboxCount === 1 ? '' : 's'} currently match in Inbox. Gmail is checked again at
         execution, so the final moved count can change.
       </span>
+      {scopeCopy && (
+        <span role="status" style={{ ...captionStyle, flexBasis: '100%' }}>
+          {scopeCopy}
+        </span>
+      )}
     </>
   );
 }

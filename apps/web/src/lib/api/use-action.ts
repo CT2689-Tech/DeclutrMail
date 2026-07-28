@@ -36,12 +36,14 @@ import {
   recordUnsubscribeIntent,
   recordUnsubscribeManualStatus,
   revertUndo,
+  type ActionReach,
   type ActionStatusResult,
   type BatchStatusResult,
   type BulkActionEnqueueResult,
   type BulkActionPreviewResult,
   type CompositeActionEnqueueResult,
   type CompositeActionPreviewResult,
+  type CompositePreviewMessage,
   type CompositePrimaryVerb,
   type CompositeSecondaryVerb,
   type UndoRevertResult,
@@ -112,7 +114,13 @@ export function useEnqueueComposite() {
     Error,
     {
       senderId: string;
-      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
+      primary: {
+        type: CompositePrimaryVerb;
+        olderThanDays?: number | null;
+        wakeAt?: string;
+        /** ADR-0028 — omit for `inbox_only` (Delete-only field). */
+        reach?: ActionReach;
+      };
       secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
       override?: boolean;
     }
@@ -255,4 +263,4 @@ export function useRecordUnsubscribeManualStatus() {
 }
 
 /** Re-export the preview types so hook consumers don't also import from the transport module. */
-export type { BulkActionPreviewResult, CompositeActionPreviewResult };
+export type { BulkActionPreviewResult, CompositeActionPreviewResult, CompositePreviewMessage };

@@ -156,7 +156,15 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
       />,
     );
     expect(html).toContain('First seen:');
-    expect(html).toContain('Messages so far:');
+    // Every label, not inbox-only — named so it cannot be read as the
+    // denominator of the INBOX-now count in the preview below it.
+    // ADR-0014 §Neutral: UI copy says "received", never "all-time".
+    expect(html).toContain('Messages received:');
+    expect(html).not.toContain('Messages so far:');
+    // `total_received` is recounted from `mail_messages` nightly, so no
+    // label on this row may claim completeness. Also bans the two words
+    // this session wrongly reached for before reading the ADR.
+    expect(html).not.toMatch(/total ever|all[- ]time|\bever\b|messages (seen|indexed)/i);
     expect(html).toContain(row.recommendation!.reasoning);
     expect(html).toContain(`/senders/${row.senderId}`);
     expect(html).toContain('Open sender →');
