@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-28 — Closed two followups on the half of their status that said "shipped"
+**PR:** [#421](https://github.com/CT2689-Tech/DeclutrMail/pull/421)
+**Caught by:** Codex stop-time review (first instance), then a mechanical sweep of every closure in the same change (second instance)
+**What happened:** Triaging FOUNDER-FOLLOWUPS.md, I closed 31 entries as verifiably dead. Two of them were not. Both had a **Status line reading `Open` above a body describing work that had shipped** — and in both cases the shipped part was the setup and the unshipped part was the entire point of the entry. The `read_count` RATIFY said "founder ratified the rename… PR-A already ships `read_count`. **Remaining: the plan-file edit**"; I read as far as "already ships" and wrote "No open action." The plan mirror still contains zero occurrences of `read_count` and still declares `opens int` at line 1659, so it names a metric Gmail cannot produce. The `/billing` post-purchase entry stated its own two-part bar — "#367 merges **and** one sandbox purchase flips in place" — and I closed it having verified only the merge, which is precisely the overclaim shape the fix in #367 existed to eliminate.
+**Correct approach:** An entry's `**Status:**` prose and its `**Verifies by:**` line are the exit criteria; the `**Why:**` is background. Read the criteria and check each conjunct separately. When a status narrates progress, the sentence that matters is the one after the progress.
+**Rule:** Before closing any followup, grep its ORIGINAL status for `remaining|still|awaiting|pending|founder action|not yet` and satisfy every conjunct of its `Verifies by` line — a partially-met criterion is an open item, not a closed one.
+**Enforcement update:** Rule recorded in the reopened entries and in the "seven calls" brief at the top of FOUNDER-FOLLOWUPS.md Open, so the next triage inherits it. The sweep that caught the second instance is the mechanical form and is cheap to re-run.
+
 ## 2026-07-28 — Renaming a JWT claim silently killed every unsubscribe link already in someone's inbox
 **PR:** [#406](https://github.com/CT2689-Tech/DeclutrMail/pull/406)
 **Caught by:** Codex stop-time review
