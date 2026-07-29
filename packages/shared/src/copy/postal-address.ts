@@ -28,16 +28,21 @@
 
 /**
  * The business postal address, one line per array element.
- * `null` = not yet established; commercial email is blocked.
+ * EMPTY = not yet established; commercial email is blocked.
+ *
+ * Empty rather than `null` so there is exactly one representation of
+ * "no address" and callers never juggle a nullable: every consumer
+ * asks {@link hasPostalAddress} and reads the array, instead of each
+ * one re-deciding what a null means.
  */
-export const BUSINESS_POSTAL_ADDRESS: readonly string[] | null = null;
-
-/** Single-line form for plain-text email + compact surfaces. */
-export function postalAddressLine(): string | null {
-  return BUSINESS_POSTAL_ADDRESS ? BUSINESS_POSTAL_ADDRESS.join(', ') : null;
-}
+export const BUSINESS_POSTAL_ADDRESS: readonly string[] = [];
 
 /** Is a physical postal address currently configured? */
 export function hasPostalAddress(): boolean {
-  return BUSINESS_POSTAL_ADDRESS !== null && BUSINESS_POSTAL_ADDRESS.length > 0;
+  return BUSINESS_POSTAL_ADDRESS.length > 0;
+}
+
+/** Single-line form for plain-text email + compact surfaces. */
+export function postalAddressLine(): string | null {
+  return hasPostalAddress() ? BUSINESS_POSTAL_ADDRESS.join(', ') : null;
 }

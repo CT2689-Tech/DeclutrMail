@@ -10,7 +10,7 @@ import type { Metadata } from 'next';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
-import { BUSINESS_POSTAL_ADDRESS } from '@declutrmail/shared/copy';
+import { BUSINESS_POSTAL_ADDRESS, hasPostalAddress } from '@declutrmail/shared/copy';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Contact — DeclutrMail',
@@ -26,7 +26,7 @@ const TOC = [
   { id: 'privacy-requests', label: 'Privacy and data requests' },
   // Rendered only once a physical address exists (CAN-SPAM/CASL) —
   // the constant in @declutrmail/shared/copy is the single switch.
-  ...(BUSINESS_POSTAL_ADDRESS ? [{ id: 'postal-address', label: 'Postal address' }] : []),
+  ...(hasPostalAddress() ? [{ id: 'postal-address', label: 'Postal address' }] : []),
   { id: 'before-you-write', label: 'Before you write' },
 ] as const;
 
@@ -50,7 +50,7 @@ export default function ContactPage() {
         </p>
       </LegalSection>
 
-      {BUSINESS_POSTAL_ADDRESS ? (
+      {hasPostalAddress() ? (
         <LegalSection id="postal-address" title="Postal address">
           <p>
             {BUSINESS_POSTAL_ADDRESS.map((line, i) => (

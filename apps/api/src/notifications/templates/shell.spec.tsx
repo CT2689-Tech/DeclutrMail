@@ -12,6 +12,8 @@ vi.mock('@declutrmail/shared/copy', async (importOriginal) => ({
   // A configured address, so the footer block under test actually
   // renders. The unset case (nothing rendered) is asserted below.
   BUSINESS_POSTAL_ADDRESS: ['DeclutrMail', '1 Example Street', 'Example City, EX 00000'],
+  // The footer asks the predicate, so the mock must answer it too.
+  hasPostalAddress: () => true,
 }));
 
 describe('shell', () => {

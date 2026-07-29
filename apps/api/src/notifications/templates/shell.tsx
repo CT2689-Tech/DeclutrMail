@@ -2,7 +2,11 @@ import { Body, Container, Head, Hr, Html, Preview, Section, Text } from '@react-
 import { render } from '@react-email/render';
 import type { ReactElement, ReactNode } from 'react';
 
-import { BUSINESS_POSTAL_ADDRESS, PRIVACY_BADGE_HEADLINE } from '@declutrmail/shared/copy';
+import {
+  BUSINESS_POSTAL_ADDRESS,
+  hasPostalAddress,
+  PRIVACY_BADGE_HEADLINE,
+} from '@declutrmail/shared/copy';
 
 /** Rendered email — what the EmailSendWorker job carries. */
 export interface RenderedEmail {
@@ -195,7 +199,7 @@ export function Shell(props: {
               constant renders nothing here — the send worker is what
               refuses the send, so this can never be the silent half of
               a compliance gap. */}
-          {props.optOut && BUSINESS_POSTAL_ADDRESS ? (
+          {props.optOut && hasPostalAddress() ? (
             <Text style={{ color: MUTED, fontSize: '12px', lineHeight: '18px', margin: '8px 0 0' }}>
               {BUSINESS_POSTAL_ADDRESS.map((line, i) => (
                 <span key={line}>
