@@ -24,18 +24,26 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
-### 2026-07-28 — SECURITY (webhook-auth adjacent, needs your go-ahead): Pub/Sub push has no rate limit + attacker-forcible JWKS refetch
-**Source:** webhook-security agent sweep 2026-07-28 (2 BLOCKING findings)
-**Why:** `POST /api/webhooks/gmail/pubsub` is the only unauthenticated POST with no `@RateLimit` (every other one has it), and an unverified JWT `kid` force-nulls the process-wide JWKS cache with no cooldown — an unauthenticated flood degrades legitimate Pub/Sub deliveries (mail sync stalls) and saturates the 3-instance API. Not an auth bypass; availability coupling.
-**How:** approve and I implement: (a) `@RateLimit('default')` (or a dedicated bucket) on the push handler; (b) minimum-interval + negative cache on the forced JWKS refresh in `oidc-verifier.ts:245-262`. Touches the D229 auth path, so per CLAUDE.md §9 it waits for your explicit OK.
-**Verifies by:** webhook-security-auditor re-run reports 0 BLOCKING; synthetic flood test keeps `/readyz` 200.
-**Status:** Open
+<!-- Newest at top. -->
 
-### 2026-07-28 — SECURITY: unsubscribe-secret drift silently no-ops every unsubscribe link
-**Source:** webhook-security agent sweep 2026-07-28
-**Why:** worker signs and API verifies with the same `UNSUBSCRIBE_TOKEN_SECRET`; if they drift (the known `--set-env-vars` full-replace trap), every link in delivered mail returns `{status:'ok'}` while changing nothing — RFC 8058/CAN-SPAM exposure in the exact shape of the UI-truth class.
-**How:** approve and I implement: add `UNSUBSCRIBE_TOKEN_SECRET` to `auditRequiredApiEnv` (apps/api/src/main.ts:66-74) + record a security event / metric on `invalid_token` so drift produces a rate spike, not silence. Uniform-200 response stays.
-**Verifies by:** booting the API without the secret fails loudly; a bad-token POST writes the event row.
+### 2026-07-28 — DECIDED: seven founder calls from the followups triage (this entry is the brief for all of them)
+**Source:** session 2026-07-28 — full triage of all 141 Open entries; 29 closed as verifiably dead, the survivors bucketed, and every genuine decision put to the founder as an MCQ. Two further closures were made and then REVERSED the same day after the Codex stop-time review: the `read_count` RATIFY (its ratification was done, its plan-file edit never was) and the /billing post-purchase entry (#367 merged, but its own bar — one sandbox purchase flipping in place — was never observed). Both are back in Open above with the specific unmet condition named. The lesson generalises past this file: an entry whose Status reads *Open* while its body says *shipped* usually has a second half, and the second half is the reason it is still open.
+**Why:** the file had stopped being readable. 141 rows all said "Open" while ~22% were already fixed in code, so nothing in it could be trusted in either direction — the ops-layer form of the UI-truth bug class (a surface asserting a state it no longer knows). Triage alone doesn't fix that; the seven decisions below are what stop it recurring, and three of them close six followups each.
+
+**The calls, as made:**
+
+1. **Billing — one reconciliation PR, not six patches.** Six entries ([3] unique index, [4]/[23] pending-checkout, [24] arrival order, [26] refund/chargeback provenance, [27](1)+(2)) share one root cause: no server-side record of in-flight or provider-side billing truth. One migration (`pending_checkout` row, `cancel_source`, `entitlement_ends_at`, `arrival_seq bigint generated always as identity`) plus a periodic reconciler polling Paddle/Razorpay. The `pending_checkout` row is what makes the B7 unique index safe — it gives the constraint a subject, resolving the both-ways-unsafe paradox that blocked it on 2026-07-28.
+2. **Dunning window = 14 days** past `current_period_end`, plus a terminal-state mapping fix. Today `GRANTING_STATUSES = ['active','past_due']` (`billing-webhook.service.ts:65`) and Razorpay's *terminal* `halted` normalizes to `past_due` (`razorpay.adapter.ts:88`), so a halted Razorpay subscription grants Pro forever. Terminal provider states must drop immediately; only genuine retry states use the 14-day window.
+3. **IMPLEMENTATION-LOG becomes derived, not maintained.** `pr-merged.yml:98` ends in `git push origin main`, which branch protection rejects every time (`GH006: Protected branch update failed`). It has never once written a flip. Its green runs are the ones that exited early with nothing to do — green means it did nothing, red means it tried. Delete the push; `generate-impl-log` becomes a PR check that recomputes ⬜/🔵 from merged `Closes D###` trailers and fails when the committed file disagrees.
+4. **🟢 becomes evidence-gated.** `verify-d` runs nothing — it rewrites one character and records whatever `--source` text it is handed, defaulting to `"manual"` (`scripts/verify-d.ts:44`). The 67 rows at 🟢 therefore assert a verification that may never have happened, and [43]/[44]'s diagnosis ("the cadence stalled") was wrong: the verifier is a no-op. New rule — flip only on a command it executes (🟢 on exit 0) or a recorded smoke observation; bare `manual` rejected; row stores command, result and commit sha. Existing 🟢 rows get audited, and unbacked ones drop to 🔵.
+5. **Add a 🚫 Retired state** to the log legend, paired with a `[REVERSAL on D###]` marker in the plan mirror. A PR that closes a D by *deleting* the feature currently has nowhere to land, so retirement reads as delivery — which is how #346 deleting Weekly Hero left D47/D48 at 🟢 citing a spec that no longer exists. Then: D47/D48 → 🚫 (dead spec reference cleared), D38 → ⬜ (the tour is genuinely unbuilt; its Notes cell already admitted this while the state kept asserting otherwise), D51 → ⬜. **Founder action still needed:** assign a real D-number for the senders wire-model work that #339/#343 shipped, so it stops squatting on D38.
+6. **Bulk unsubscribe = one-click subset batch.** Preview splits by channel — "Unsubscribe 8 one-click senders now · 4 need an email you send, handled per-sender". Only the one-click subset executes server-side via the existing `UnsubExecutionWorker`; mailto stays per-sender, so D230 is untouched and no aggregate receipt can overclaim. Needs a D-decision recorded in the plan first (extends D9/D32).
+7. **Four smalls, all approved:** a `mailbox.sync_failed` transactional email (exempt from the postal-address block, so it can ship now); sign-out + settings escape on the failed first-run gate; `ErrorState` onto the CLAUDE.md §4 D220 allowlist; `refetchIntervalInBackground: true` on the two action-status hooks.
+
+**Also surfaced, no decision needed:** Settings → Mailboxes still renders `Sync failed` with no retry (`mailboxes-card.tsx:173`). #418 gave the *onboarding gate* a working retry and left its sibling untouched — a miss against the standing "fix the class, not the instance" rule. The endpoint already exists; this is wiring, folded into the chore batch.
+
+**Supersedes:** PR #420 documented the blocked log-flip; decision 3 fixes it instead, so #420 closes when the replacement lands. PR #417 (resume double-charge guard) still merges — decision 1 makes it belt-and-braces rather than the only guard.
+**Verifies by:** each numbered call closes its own entries on delivery; this entry moves to Done when all seven have shipped or been individually re-filed.
 **Status:** Open
 
 ### 2026-07-28 — DB migration (your §9 call): partial unique index on live subscriptions (audit B7)
@@ -57,20 +65,6 @@ section to the Done section. Do not delete entries — the trail matters.
 **Why:** after 5 worker attempts (~1 min budget) `readiness='failed'` is terminal: the reconciler only re-queues `queued`, no retry endpoint exists, the gate's "Try again" is `location.reload()`, the failure copy PROMISES "We'll retry automatically" (false), no failure email exists (only sync_ready), and the onboarding gate bounces every route — including /settings and /billing — back to the trap. Only clearing cookies escapes. `GMAIL_QUOTA_EXCEEDED` makes this live-reachable.
 **How:** approve scope and I build: `POST /api/v1/sync/initial/retry` (idempotent re-markQueued + force schedule, `failed`-state-gated) + wire the gate CTA + render the skip corner/sign-out on the failed first-run gate + fix the copy + (optional) `mailbox.sync_failed` email. Until then the failure copy at `sync-gate.tsx:248` is a standing false promise.
 **Verifies by:** dev SQL forces `readiness='failed'` → gate offers a working retry + settings stays reachable; copy states the real recovery.
-**Status:** Open
-
-### 2026-07-28 — Decision: landing hero rewrite (3 drafted options) + section reorder
-**Source:** marketing writer agent 2026-07-28 (full proposal in the session report)
-**Why:** audit B1 — the hero argues the sender unit, which Gmail shipped; D223 locks the current headline, so any change is your reversal call. Recommended: "Clear thousands of emails. Preview every change. Undo it." + "What Gmail's AI won't do" section + storage list rendered once.
-**How:** pick option 1/2/3 (or edit); I implement with the section reorder, `redesign` label, page metadata update, and CTA ids preserved for the A/B.
-**Verifies by:** landing renders the chosen hero; PostHog `connect_gmail` comparison window starts.
-**Status:** Open
-
-### 2026-07-28 — Decision: one name for the Gmail connection ("mailbox" vs "Gmail account" vs "connected inbox" vs "workspace")
-**Source:** terminology agent sweep 2026-07-28 (naming cluster 1)
-**Why:** four names for two concepts across error registry + billing copy, sometimes two in one sentence. Recommendation: "Gmail account" for the connection, "account" for the DeclutrMail login; drop "workspace" and "connected-inbox" from user copy.
-**How:** confirm the vocabulary; I sweep ~10 registry messages + surfaces in one PR.
-**Verifies by:** grep for the dropped terms in user-facing copy returns only code identifiers.
 **Status:** Open
 
 ### 2026-07-28 — Small legal-accuracy fix: privacy §3 / terms §7 prose under-enumerates fetched fields
@@ -119,14 +113,7 @@ Deliberately deferred by founder decision 2026-07-28 (of the three options — v
 5. AFTER deploy: run the `email-smoke` GH Action **with the `unsubscribe_user_id` input set to your prod `users.id`** (`SELECT id FROM users WHERE email='<founder-address>';`) — blank input still proves the control renders, but the click no-ops on a placeholder id. Then in Gmail: confirm the native **Unsubscribe** control renders next to the sender, click it, and verify the preference flipped: `SELECT preferences->'emailPrefs' FROM users WHERE email='<founder-address>';`
 6. Also add a matching dev value to `.env.local` (`UNSUBSCRIBE_TOKEN_SECRET=<any 32+ chars>`) so the local worker can sign.
 **Verifies by:** deploy green; smoke email carries `List-Unsubscribe` + `List-Unsubscribe-Post` headers (Show original); Gmail renders the control; psql shows the clicked category `false`; `docs/runbooks/secrets-inventory.md` row gets its `Rotated` date.
-**Status:** Open
-
-### 2026-07-26 — The CI deploy SA cannot read Secret Manager or the API SA's IAM policy — the snapshot's two most security-relevant sections have never been captured
-**Source:** PR #380 — the first honest `infra-snapshot` run ([30191656010](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/30191656010)), which surfaced this within minutes of the sentinel fix landing
-**Why:** In CI, `secret_manager` and `iam.declutrmail_api_sa` both serialize as `null` — the read did not happen. `GCP_DEPLOY_SA` evidently lacks `roles/secretmanager.viewer` (or `.secretAccessor`) and `roles/iam.serviceAccountViewer` on `declutrmail-ai-prod`. Everything else captures fine: Cloud Run revisions/env/traffic for both services, Atlas head (`0049`, at latest), and 19 GitHub secrets via the new PAT. **This was always true and was structurally invisible** — under the previous code a failed read returned `[]`/`{}`, so the daily snapshot asserted "Secret Manager holds zero secrets" and "the API service account has zero IAM bindings", producing a permanently clean diff for precisely the two resources whose drift matters most. Note the asymmetry that makes the diagnosis certain: `declutrmail_worker_sa` reads `{"not_found": true}` because Google evaluates existence before permission, while `declutrmail_api_sa` — which does exist — reads `null`. Different unknowns, and until this PR both rendered as `{}`.
-**How:** Decide whether the CI deploy identity should be able to read these at all. If yes (recommended — a drift detector that cannot see secret or IAM drift is most of the point of the file): grant `GCP_DEPLOY_SA` the two **read-only** roles on the project — `roles/secretmanager.viewer` (metadata + version listing, **not** `secretAccessor`, which reads values and is not needed) and `roles/iam.serviceAccountViewer`. If no, the honest alternative is to drop those two sections from the snapshot rather than let them sit permanently `null`. Do **not** grant `secretAccessor` to fix this — the snapshot never reads secret values by design (D7 posture), and widening CI's blast radius to fix a visibility gap is the wrong trade.
-**Verifies by:** next `infra-snapshot` run commits a file where `.secret_manager` is an array and `.iam.declutrmail_api_sa` contains bindings — not `null`.
-**Status:** **Done 2026-07-26.** Founder granted `roles/secretmanager.viewer` and `roles/iam.serviceAccountViewer` to `declutrmail-deploy@` at the project level; both appear in the returned IAM policy. `secretAccessor` was deliberately NOT granted — the snapshot never reads secret values. Partial confirmation already: the run immediately after the grants produced a snapshot `98 insertions(+), 26 deletions(-)` larger than the previous one, consistent with those two sections going from `null` to populated. Full confirmation waits on the first successful publish, which was blocked by a separate issue (see the snapshot-branch item).
+**Status:** Open — **narrowed to step 5 only 2026-07-28.** Steps 1–4 and 6 are proven done: the last four `deploy-cloud-run` runs on `main` are green, and a referenced-but-missing Secret Manager secret fails the whole deploy, so `unsubscribe-token-secret-prod` demonstrably exists with a readable binding. `email-smoke` then succeeded twice on 2026-07-28 (07:25 and 16:24 UTC) after the 06:30 failure, which proves both GH repo secrets (`RESEND_API_KEY`, `UNSUBSCRIBE_TOKEN_SECRET`) are now bound — that workflow is fail-closed on their absence. `.env.local` carries the dev value. **What remains is only the founder's hands:** run `email-smoke` with `unsubscribe_user_id` set to your prod `users.id`, then in Gmail confirm the native Unsubscribe control renders, click it, and verify `SELECT preferences->'emailPrefs' FROM users WHERE email='<founder-address>';` flipped the clicked category to `false`. Nothing else in this entry is outstanding.
 
 ### 2026-07-26 — Create `INFRA_SNAPSHOT_TOKEN` so the snapshot can see GitHub secret drift
 **Source:** infra sweep 2026-07-26 (root cause of the 8 consecutive `infra-snapshot` failures)
@@ -142,58 +129,12 @@ Deliberately deferred by founder decision 2026-07-28 (of the three options — v
 **Verifies by:** `./scripts/launch-preflight.sh secrets` → 0 WARN; per-secret reader checks no longer SKIP.
 **Status:** Open — accepted for launch 2026-07-26, revisit post-launch
 
-### 2026-07-26 — UNVERIFIED: production database backups
-**Source:** infra sweep 2026-07-26 — no repo evidence either way
-**Why:** The plan (`docs/execution/Implementation-Plan.md:4060`) specifies "daily backups + 7-day PITR", but that line describes Cloud SQL, and production actually runs on **Supabase** (`SUPABASE_SESSION_DSN`). Nothing in the repo, the preflight, or the vendor watchdog asserts that backups exist — the watchdog checks DB *size* (169.1 MB, 42% of its warn line), not recoverability. On Supabase's free tier there are no automatic backups at all. The exposure is asymmetric: every other item in this sweep costs availability, this one costs the data itself, and it is the only one that cannot be fixed after the fact.
-**How:** Supabase dashboard → the production project → Database → Backups. Confirm (a) the plan tier, (b) that daily backups are listed with a recent timestamp, (c) whether PITR is enabled and its retention window. If the project is on Free, upgrading is the fix; note that Supabase PITR is a paid add-on above the daily-backup baseline. Record the actual answer here — "probably fine" is what this item exists to prevent.
-**Verifies by:** a dated line in this entry naming the plan tier, the most recent successful backup, and the PITR window (or an explicit "PITR off, accepted").
-**Status:** Open — **largely answered 2026-07-26** (founder checked the dashboard). Project `declutrmail-prod` is on the **Pro** plan with **daily PHYSICAL scheduled backups, 7 days retained** — an unbroken series 19 Jul → 25 Jul 2026, most recent `25 Jul 2026 09:30:23 +0000`. The 26 Jul backup had not yet run at the time of checking (~06:45 UTC; backups fire ~09:30 UTC), which is expected rather than a gap. So the plan-doc line promising "daily backups + 7-day PITR" is HALF true against the real stack: daily backups exist and match, but that line describes Cloud SQL and production is Supabase. **PITR: deliberately NOT enabled — founder decision 2026-07-26, with a revisit trigger.** PITR is a paid add-on above the daily baseline (roughly $100/mo for a 7-day window; confirm current pricing in-dashboard). All it buys is shrinking worst-case data loss from ~24 h to minutes, and today 24 h of loss is ~nothing: zero customers, zero customer data. It also stays cheap to defer after launch, because **most of this database is derived from Gmail**, which is a system of record we can re-read — message metadata, senders and triage decisions are all re-syncable. The genuinely irreplaceable set is small and slow-changing: user preferences, protected-sender lists, approved Autopilot rules, and the undo journal (losing it forfeits the ability to reverse already-executed Gmail mutations). Subscription state is reconstructible from Paddle/Razorpay. A daily backup is proportionate to data shaped like that. **Revisit trigger — turn PITR on when losing 24 h would mean losing something not reconstructible from Gmail or the billing providers; realistically, when there are enough paying users that re-syncing everyone is itself an incident.** Not on a date, on that condition. Supabase Storage exclusion noted in the dashboard is irrelevant here — DeclutrMail stores no Storage objects (D7).
-
-### 2026-07-25 — DECISION: the Free tier cannot produce activation, and Plus cannot produce renewal
-**Source:** launch audit 2026-07-25 (`docs/execution/product-launch-audit-2026-07-25.md`)
-**Why:** Free is **5 cleanup actions for life** (`packages/shared/src/entitlements/manifest.ts`) against a list that opens on 7,892 senders, with the ritual the entire landing page is about (Triage) behind the Plus paywall. The "aha" is one decision moving 412 emails; five of them cannot build a habit, and because the cap is lifetime there is no reason for a second session — so there is no upgrade trigger either. Separately, Plus ($9) sells the one-time cleanup while every recurring mechanism (Autopilot, Brief, Screener) is Pro-only, which makes Plus a churn machine with a 30-day refund window attached. Pricing is yours to set; an agent must not change a revenue model unilaterally.
-**How:** Decide between (a) recommended — Free = **50 sender decisions/month** with Triage included, collapse the ladder to Free + Pro at **$9/mo · $90/yr** (everything, incl. Autopilot/Brief/3 inboxes/30-day undo), keep Founding Pro $129/yr as a supporter offer; (b) keep three tiers but move Autopilot *Observe* into Plus so Plus has a month-2 reason; (c) keep as-is and accept that Free is a demo. Option (a) also fixes the $190/yr price point, which sits ~3× the category anchor (Mailstrom ~$59.95/yr) against a free Gmail feature. Implementation after the decision is a manifest change + a monthly quota reset + catalog work in both providers.
-**Verifies by:** activation (sync complete → first executed action within 24 h) ≥ 40%, and free-quota-exhausted → checkout-started ≥ 20%.
-**Status:** Open
-
-### 2026-07-25 — LIVE OUTAGE: production Upstash Redis is suspended for exceeding its budget
-**Source:** Sentry `DECLUTRMAIL-WEB-6` (found while assessing launch readiness)
-**Why:** `ReplyError: ERR This database has been suspended for exceeding the defined budget limit` — `environment=production`, `kind=dead_letter.scheduler_failed`, **7,922 events since 2026-06-09, still firing**. Redis is not optional: BullMQ carries every sync and mail-mutating job, and the D156 limiter's token buckets live there. While it is suspended, jobs do not run. Nothing detected this for 46 days because `/api/healthz` is dependency-free and the only uptime check watches it — see the readiness-probe item below, which makes this class visible but does NOT fix this instance.
-**How:** Upstash console → the production database → raise the budget or move to a Fixed plan. Then confirm `https://api.declutrmail.com/api/readyz` returns 200 (after PR #377 deploys) and that the Sentry issue stops recurring. Re-check the $20 budget cap noted in the 2026-06-10 Upstash item — that cap is what is being hit.
-**Verifies by:** `/api/readyz` → `{"status":"ok","checks":{"database":"ok","redis":"ok"}}`; `DECLUTRMAIL-WEB-6` last-seen stops advancing.
-**Status:** **Done 2026-07-26** — founder moved the production database to a Fixed plan. Confirmed by the vendor watchdog the same day: `Upstash Redis 🟢 OK 34% — $8.39 spent this month, projecting $10.28 against a $30.00 cap, 135,735 commands today, storage 9.5 MB`. The suspend-on-budget kill switch is gone and the D156 spend gauge (PR #378) now reports dollars rather than command volume. Original decision rationale below.
-
-**DECIDED 2026-07-26: move to a Fixed plan.** Rationale: a budget cap whose overage action is *suspend* is a self-inflicted kill switch on the one dependency that carries every sync and mail-mutating job, and the trigger is not user traffic — the 2026-07-15 worker-tuning note in `deploy-cloud-run.yml` records that idle BullMQ re-polling alone exhausted the $20 budget with zero real users. Raising the cap moves that switch; it does not remove it. Verify Upstash's fixed-plan overage behaviour in the console before switching (not verifiable from the repo). `/api/readyz` currently returns `ok`, so this is now preventive, not an active outage.
-
 ### 2026-07-25 — Create the readiness uptime check + alert policy
 **Source:** PR #377 (D159)
 **Why:** PR #377 adds `/api/readyz`, but merging does not create monitoring resources. Until this runs, a dependency outage still pages nobody.
 **How:** After #377 deploys: `./scripts/setup-uptime-monitoring.sh` (idempotent — it skips what already exists and adds the readyz check + the "DeclutrMail API not ready" policy).
 **Verifies by:** `./scripts/launch-preflight.sh` monitoring group shows 4 PASS, including "API readyz uptime check exists" and "API not-ready alert policy exists".
 **Status:** Open
-
-### 2026-07-25 — Stale Razorpay key in repo secrets keeps the vendor watchdog red
-**Source:** `vendor-limits-watchdog.yml` run log (6 of the last 8 runs failed)
-**Why:** The watchdog fails with `HTTP 401 from api.razorpay.com: Authentication failed` — the repo secret still holds the key rotated during the 2026-07-24 Razorpay setup session. A red watchdog is a dead guardrail: it also reports Google Cloud budgets as `⚪ UNCONFIGURED (missing GOOGLE_APPLICATION_CREDENTIALS, GCP_BILLING_ACCOUNT_ID)`, so the GCP spend guardrail is unwatched too, and the noise hides both.
-**How:** Update `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` in repo secrets to the current keys; set `GCP_BILLING_ACCOUNT_ID` and wire GCP credentials for the budgets check.
-**Verifies by:** `vendor-limits-watchdog` goes green with Razorpay 🟢 and Google Cloud no longer `UNCONFIGURED`.
-**Status:** **Done 2026-07-26** — both halves. Founder set `GCP_BILLING_ACCOUNT_ID` and granted `roles/billing.viewer` to `declutrmail-deploy@` **on the billing account**. First-ever green reading, same day: `Google Cloud (budgets) 🟢 OK — budgets armed — declutrmail-pre-launch-30: 20 USD`. All 9 vendors now report. Two WARNs remained at the time of writing and **both have since been resolved, same day**: Vercel's "transient" timeout was a 3-day monitoring outage (fixed in #383/#384 — see `MISTAKES.md` 2026-07-26), and the GitHub Actions 574% was a false alarm keyed on an allowance a public repo never pays (fixed in #382 — see the entry below). **Reminder carried forward:** `declutrmail-pre-launch-30` is an alert threshold, not a hard cap, and its $20 amount does not match its name; the 2026-06-08 "Hard $60/mo billing cap" item is the real protection and is still open. Detail below.
-
-**Razorpay half DONE 2026-07-26** (secrets rotated 2026-07-25 23:09 UTC; the 23:15 run is green with Razorpay 🟢 and 2 active webhooks). **The GCP half is still open:** that run still prints `Google Cloud (budgets) ⚪ UNCONFIGURED — missing GOOGLE_APPLICATION_CREDENTIALS, GCP_BILLING_ACCOUNT_ID`, so the spend guardrail on `declutrmail-ai-prod` remains unwatched. The WIF auth + `setup-gcloud` steps were added to `vendor-limits-watchdog.yml` on 2026-07-26 (skipped when `GCP_WIF_PROVIDER` is absent), which closes the `GOOGLE_APPLICATION_CREDENTIALS` half. **Two founder actions remain:** (1) set repo secret `GCP_BILLING_ACCOUNT_ID` = `01E2BA-A53600-B12546`; (2) grant `GCP_DEPLOY_SA` the role `roles/billing.viewer` **on the billing account** — a project-level grant does not reach billing, so this one will silently keep failing if done at the project. A budget already exists to be read (`declutrmail-pre-launch-30`, **$20 USD** — note the amount does not match the name), so once both are in place the row should read 🟢 `budgets armed`. Separately: that budget is an *alert*, not a hard cap — the 2026-06-08 "Hard $60/mo billing cap" item still stands.
-
-### 2026-07-25 — `infra-snapshot` has failed 8 consecutive runs
-**Source:** workflow run history
-**Why:** Same class the 2026-07-22 audit flagged (43 straight ignored failures) — it exits 2 during the snapshot step. A drift detector nobody can read is not a detector, and its permanent redness trains the eye to ignore Actions failures generally, which is how the Razorpay 401 above went unnoticed too.
-**How:** Run `./scripts/infra-snapshot.sh` locally with gcloud auth to reproduce, or open the latest run's `snapshot` step. Fix or, if it is not worth carrying at this stage, disable the schedule deliberately rather than leaving it red.
-**Verifies by:** either a green run, or the workflow disabled with a note here.
-**Status:** Open — **root-caused and code-fixed 2026-07-26** (branch `chore/d038-infra-snapshot-hardening`). It does NOT reproduce locally, which is why it survived 8 nights: `gh secret list` needs repo **admin**, the founder's `gh` has it, CI's `GITHUB_TOKEN` never does and no `permissions:` block can grant it. In CI `gh` 403s, `jq` receives empty stdin and emits **zero bytes**, and `--argjson gh_secrets ""` aborts the whole snapshot — reproduced exactly with `GH_TOKEN=<invalid>`, error string byte-identical to the run log. Fixed by making the section report `{"available": false, "reason": …}` instead of crashing (and instead of falling back to `[]`, which would be the snapshot asserting "no secrets changed" about a list it never read — the same blindness that let the stale Razorpay key sit undetected), plus a `json_or` guard so no single section can ever take the whole snapshot down again. **Founder action remains:** see the `INFRA_SNAPSHOT_TOKEN` item below — without it the workflow will go green but that one section stays honestly blind.
-
-### 2026-07-25 — Recommend: drop `RATE_LIMIT_ENABLED=false` from the prod API deploy
-**Source:** launch-readiness review of `.github/workflows/deploy-cloud-run.yml:222`
-**Why:** The limiter itself DOES enforce — `buildStore()` only takes the disable branch when `!isProd`, so the 2026-07-07 "false alarm" finding stands. The problem is the second use of the same variable: the boot guard at `rate-limit.module.ts:57` is `if (isProd && rateLimitEnabled) throw`, so setting the var to `false` in production means a Redis-less production **boots silently fail-open instead of refusing**. Codex's stop-time review on PR #377 found the knock-on: the new `/readyz` originally trusted that guard and reported a missing `REDIS_URL` as `not_configured` → `200 OK`, i.e. the outage endpoint would have certified a Redis-less production as healthy. #377 now decides that itself (`not_configured` is a fault in production), so the masking is closed — but the guard is still disarmed, and it is the cheapest backstop for exactly the class of incident above. The flag is for local e2e; it has no business in the production deploy manifest.
-**How:** Remove `RATE_LIMIT_ENABLED=false` from the `declutrmail-api` `--set-env-vars` list. Zero behavior change today; re-arms the guard. (Not done unilaterally — it edits the production deploy manifest.)
-**Verifies by:** deploy succeeds; `/api/readyz` stays 200; limiter behavior unchanged.
-**Status:** Open — **edited 2026-07-26 on branch `chore/d038-infra-snapshot-hardening`, awaiting your merge.** Removed from BOTH services, for two different reasons: on the API it re-arms the fail-closed boot guard (runtime behaviour unchanged — `REDIS_URL` is bound via `--update-secrets`, so the limiter was already enforcing); on the **worker** it was dead config outright — `worker.ts` never calls `NestFactory`, so `RateLimitModule` is never instantiated in that process and nothing read the variable. Note the Cloud Run full-replace semantics: because `--set-env-vars` replaces the whole set, the next deploy removes the var from both live services with no extra step. A comment now sits above each deploy explaining why it must not be re-added.
 
 ### 2026-07-20 — Needs a BE field: server-side pending-checkout signal (double-charge, cross-device)
 **Source:** PR #367 Codex stop-time review (D117 upgrade-flow polish)
@@ -209,13 +150,6 @@ Deliberately deferred by founder decision 2026-07-28 (of the three options — v
 **Verifies by:** two events inserted in the same millisecond compare deterministically; `billing.webhook.ambiguous_order` stops appearing.
 **Status:** Open
 
-### 2026-07-20 — CONFIRMED live: /billing does not update after a successful purchase
-**Source:** session 2026-07-20 sandbox smoke (founder observed it directly)
-**Why:** Sandbox purchase completed, webhook landed, `workspaces.tier` flipped free→plus in 37s — and the billing card kept showing Free until a manual reload. The user has paid and the product tells them they are still on the free plan. This was flagged as a theoretical gap by the lifecycle audit; it is now observed behaviour. Cause: `useBillingSubscription` has `staleTime: 60_000` with no polling, `me` only polls while a mailbox syncs, and the plan-change modal closes on `onSuccess` with no "waiting for confirmation" state.
-**How:** Add a post-checkout pending state that short-polls `GET /api/billing/subscription` (and `me`) until the tier changes or a timeout renders a "payment received, still confirming" notice. Touches a design-freeze surface (D220) — may need the `redesign` label.
-**Verifies by:** complete a sandbox purchase and watch the card flip to Plus with no manual reload.
-**Status:** Open — fix shipped in PR #367 (2026-07-20): checkout.completed → truthful pending banner + 3s poll until the webhook flips the tier, with a 90s honest slow branch. Verified live against a signed webhook; the Paddle-delivery leg is blocked on the tunnel-rotation followup above. Move to Done once #367 merges and one sandbox purchase flips in place.
-
 ### 2026-07-20 — Decision needed: refund/chargeback entitlement needs a provenance column
 **Source:** session 2026-07-20 (billing sandbox smoke) + Codex stop-time review
 **Why:** You chose "chargeback revokes entitlement immediately, voluntary refund holds to period end". It is NOT implemented, deliberately. `adjustment.created` can only write `cancel_at_period_end` / `tier`, and both columns are re-derived from the provider payload by the next `subscription.*` event — so a chargeback revoke is silently re-granted and a refund flag is silently cleared. Making the flag locally sticky instead is worse: an un-cancel in Paddle's portal and an ordinary renewal are the same payload, so a sticky flag can never be cleared and live subscriptions would show "cancellation scheduled" forever.
@@ -230,7 +164,12 @@ Deliberately deferred by founder decision 2026-07-28 (of the three options — v
 **Verifies by:** per-item — (1) a `halted` Razorpay sub loses entitlement after the deadline; (5) a canceled Pro renders one consistent state.
 **Status:** Open — (3) and (5) SHIPPED in PR #367 (2026-07-20): `POST /api/billing/resume` + paused-notice with Resume/Cancel closes the resume half of (3) (un-cancel still absent); the plan card now renders only entitlement-backed subscription facts, closing (5). (1), (2), (4) remain. 2026-07-21 update — (2) grew a new dependent: D120 scheduled downgrades clear only via the post-renewal `subscription.updated` webhook, so a permanently-dropped renewal event leaves the higher tier granted while the lower price is billed (`scheduled_change_state='scheduled'` never clears), and an ambiguous provider timeout can strand `pending_provider` with only a manual re-request as exit. Both are logged (`billing.plan_change_unconfirmed` / `billing.plan_restore_unconfirmed` WARNs) but only a reconciliation sweep closes them; fold `scheduled_change_state` age checks into the sweep when (2) is scheduled.
 
-<!-- Newest at top. -->
+### 2026-07-20 — CONFIRMED live: /billing does not update after a successful purchase
+**Source:** session 2026-07-20 sandbox smoke (founder observed it directly)
+**Why:** Sandbox purchase completed, webhook landed, `workspaces.tier` flipped free→plus in 37s — and the billing card kept showing Free until a manual reload. The user has paid and the product tells them they are still on the free plan. This was flagged as a theoretical gap by the lifecycle audit; it is now observed behaviour. Cause: `useBillingSubscription` has `staleTime: 60_000` with no polling, `me` only polls while a mailbox syncs, and the plan-change modal closes on `onSuccess` with no "waiting for confirmation" state.
+**How:** Add a post-checkout pending state that short-polls `GET /api/billing/subscription` (and `me`) until the tier changes or a timeout renders a "payment received, still confirming" notice. Touches a design-freeze surface (D220) — may need the `redesign` label.
+**Verifies by:** complete a sandbox purchase and watch the card flip to Plus with no manual reload.
+**Status:** Open — **over-closed 2026-07-28, reopened same day.** Half the exit criterion is met and half was never checked. Met: PR #367 merged (commit `84cf754b`) and ships the truthful pending banner + 3s poll with a 90s honest slow branch, verified at the time against a signed webhook; the tunnel-rotation blocker it named is itself Done (2026-07-20). **Unmet and unverified:** this entry's own bar was "one sandbox purchase flips in place" — an actual end-to-end sandbox checkout watched flipping the card without a manual reload. No evidence that has happened, and it needs the founder's hands (a real sandbox purchase). Closing it on the merge alone asserted an outcome nobody observed, which is the exact bug class the fix was written for. **Remaining: run one sandbox purchase and watch the plan card flip in place.**
 
 ### 2026-07-17 — Plan decision: 5 merged PRs carry wrong `Closes D###` trailers
 **Source:** session (senders/settings/autopilot fix wave — #339, #340, #341, #343, #346)
@@ -244,13 +183,6 @@ Deliberately deferred by founder decision 2026-07-28 (of the three options — v
 **Why:** A mailbox whose INITIAL sync failed is a dead end in Settings → Mailboxes: the card says "Sync failed" and offers nothing. The only sync route (`POST /api/v1/sync/incremental`) 409s `SYNC_NOT_READY` in exactly that state, so there is no endpoint an honest retry button could call. Initial sync is enqueued only from the OAuth connect path; the sync gate's own "Try again" is just `window.location.reload()`. NOT stubbed in #344 per CLAUDE.md §10 — a button that cannot work is worse than no button. Mitigating: the worker DOES auto-retry, so this is a missing CTA, not stuck data. Not launch-blocking on its own, but it is the one remaining dead end on the Settings surface.
 **How:** Decide the shape, then implement: add `POST /api/v1/sync/initial/retry` (re-enqueue the initial-sync job for a mailbox in `readiness='failed'`, idempotent per mailbox) and wire a "Try again" button in `mailboxes-card.tsx` next to the "Sync failed" tag. Alternative if the worker's auto-retry is considered sufficient: keep no button but make the card SAY that a retry is already scheduled, so the state stops reading as terminal.
 **Verifies by:** A mailbox forced to `readiness='failed'` shows a working retry (or an honest "retrying automatically" line), and the founder can recover a failed connect without re-running OAuth.
-**Status:** Open
-
-### 2026-07-17 — Two `useBillingSubscription` hooks can disagree about billing state
-**Source:** session (settings truth batch, PR #344)
-**Why:** `features/settings/api/` and `features/billing/api/` each define a `useBillingSubscription` with DIFFERENT query keys and DIFFERENT retry policies. Because the keys differ, the two caches never share data, so Settings and `/billing` can render contradicting billing state at the same moment. Not observed breaking live; flagged rather than fixed because consolidating touches the billing surface and was outside #344's scope (CLAUDE.md §1.3).
-**How:** Pick one owner (likely `features/billing/api/`), delete the other, and repoint Settings' `PlanCard` at it. Verify the retry policy that survives is the one the 503/`BILLING_NOT_PROVISIONED` gating in `settings-screen.tsx` expects.
-**Verifies by:** One hook, one query key; Settings and `/billing` cannot disagree.
 **Status:** Open
 
 ### 2026-07-16 — Post-launch chore: 6 render-body `Date.now()` sites (hydration-warning risk)
@@ -458,12 +390,6 @@ D1→#12(39) · D2→#12(39) · D23→#32(37) · D28→#32(37) · D29→#44(36) 
 **Verifies by:** items resolved or consciously closed.
 **Status:** Open
 
-### 2026-06-26 — OPENAI_API_KEY for Codex CI — SKIPPED (superseded)
-**Source:** session — #237 closed
-**Why:** #237 (Codex adversarial review on CI) needed a funded `OPENAI_API_KEY`. Founder opted not to spend OpenAI quota; adversarial review now runs as a Claude-subagent phase of the in-session PR-review workflow instead (no metered cost). The earlier "Add OPENAI_API_KEY" follow-up is moot.
-**Verifies by:** N/A — no secret to add.
-**Status:** Skipped 2026-06-26 (superseded by in-session Claude adversarial review)
-
 ### 2026-06-13 — Decide how `claude/*` web-session branches satisfy the §6 branch gates
 **Source:** PR #227 (self-hosting feasibility doc; session 2026-06-13; captured to main 2026-07-02 when #227 closed)
 **Why:** Claude Code web sessions are mandated onto `claude/<slug>` branches, but the two authoritative CI gates — "Branch follows CLAUDE.md §6 convention" and "PR body references D-decisions or is bootstrap-exempt" (`.github/workflows`, regex `^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-)`) — don't recognize the `claude/` prefix. So **every** web-session PR fails both gates by construction. On #227 the agent declined to paper over it (won't fake a `Closes D###`; won't rename off the mandated branch without explicit permission), leaving both gates red. This will recur on every future web-session PR.
@@ -518,24 +444,6 @@ D1→#12(39) · D2→#12(39) · D23→#32(37) · D28→#32(37) · D29→#44(36) 
 1. New `activity_action` enum value (e.g. `unsubscribe_confirmed`) so the outcome row is distinct on the wire and the FE renders "Unsubscribe requested" vs "Unsubscribe confirmed/failed" — needs a migration extending the enum + copy.
 2. Render-layer collapse: /activity groups same-sender `unsubscribe` rows within the execution window into one line with the outcome chip — no schema change, dedup logic lives in the FE read.
 **Verifies by:** one one-click unsub on a real sender produces ONE visible /activity line (with its outcome state), while `activity_log` keeps both audit rows.
-**Status:** Open
-
-### 2026-06-09 — Rewrite 8 skipped senders-screen tests post spec v1.2 D4 retirement
-**Source:** session 2026-06-09 (pre-merge gate-clearing for feat/d038-prod-ready-pass)
-**Why:** Eight `it.skip`'d tests in `apps/web/src/features/senders/senders-screen.test.tsx` cover functionality that was deliberately retired per spec v1.2 Decision 4 (Editorial Hero / InboxStoryHero + WeeklyHero moved to Brief). They've been failing on `feat/d038-prod-ready-pass` since long before the 2026-06-09 ultra-review fix slate landed (verified by checking out `e44201d` before any of my changes — same 8 fails). Skipping was the pragmatic path to unblock the CI gate; rewriting needs design clarity on which assertions still matter. The retired tests:
-  - `renders the editorial hero + KPI strip when the list resolves` (InboxStoryHero gone)
-  - `shows the Weekly Hero only when isMonday=true (D47)` (Weekly Hero moved to Brief)
-  - `shows the suggestions rail every day when slices exist (was Monday-only per D47)` (same)
-  - `hides the Hero on Monday when every slice has < 3 senders (D48 empty-card guard)` (same)
-  - `KPI "Senders" reflects mailbox-wide totals (NOT loaded page length)` (KPI strip still exists but `getByText('7748')` never resolves — likely real-data-counts hook seating mismatch post-retirement)
-  - `KPI strip surfaces summary.activeSenders + summary.needsReview` (same hook gap)
-  - `hero "N emails reached you in the last 30 days" uses summary.last30dVolume` (hero gone)
-  - `falls back to loaded-page derivation while the summary is in flight` (hero gone)
-**How:**
-1. The Weekly Hero / InboxStoryHero tests (5 of 8) should be DELETED — the components don't render in Senders anymore. Re-asserting their behavior under `apps/web/src/features/brief/` is a separate scope.
-2. The KPI strip tests (3 of 8) likely have legitimate value — the KPI strip still exists in Senders. Rewrite them to (a) target the actual KPI-cell selectors (data-testid'd; not `getByText`), (b) account for the spec v1.2 lean layout (no editorial hero distraction), (c) verify summary → KPI binding via the cells, not the hero.
-3. Land as `fix(senders): rewrite KPI test coverage after spec v1.2 D4 hero retirement (D38)` — small scope, no PR-template gate questions.
-**Verifies by:** `pnpm --filter @declutrmail/web test senders-screen` runs all tests with 0 `.skip`'d and 0 fails.
 **Status:** Open
 
 ### 2026-06-09 — FE sticky-banner surface for IncrementalSyncWorker terminal failure
@@ -626,23 +534,6 @@ D1→#12(39) · D2→#12(39) · D23→#32(37) · D28→#32(37) · D29→#44(36) 
 **Verifies by:** Day 1 baseline commits; day 2 either zero-diff (PR skipped) or visible diff PR.
 **Status:** Open
 
-### 2026-06-08 — Tier B remaining for full prod readiness (custom domain → OAuth → Pub/Sub → first grant)
-**Source:** session 2026-06-08 — end-to-end validation revealed cross-site cookie block + missing prod webhook URL
-**Why:** Vercel preview (`*.vercel.app`) ↔ Cloud Run API (`*.run.app`) are different registrable domains. `SameSite=Lax` session cookies won't ride that cross-site hop, so even a valid session can't authenticate API requests from the deployed FE. Same root cause blocks the prod Gmail OAuth redirect URI (needs an `https://api.declutrmail.com/...` URL) + Pub/Sub push subscription (same).
-**How:**
-1. Buy `declutrmail.com` at a registrar (Cloudflare ~$8/yr, Namecheap ~$10/yr)
-2. Create `CNAME app.declutrmail.com → cname.vercel-dns.com` + `CNAME api.declutrmail.com → ghs.googlehosted.com` (Cloud Run custom domain)
-3. Vercel project → Domains → add `app.declutrmail.com`; auto-issues Let's Encrypt cert
-4. Cloud Run → Domain mappings → map `api.declutrmail.com` to `declutrmail-api` service
-5. Update Cloud Run env `WEB_URL=https://app.declutrmail.com` + `CORS_ORIGIN=https://app.declutrmail.com`
-6. Update Cloud Run env `COOKIE_DOMAIN=.declutrmail.com` (eTLD+1) so cookies set on api. ride to app.
-7. At Google Cloud OAuth client (CASA-verified `declutrmail-ai-prod`): add `https://api.declutrmail.com/api/auth/google/callback` as an authorized redirect URI
-8. Update Cloud Run env `GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback`
-9. Create Pub/Sub push subscription `gmail-push-sub` with endpoint `https://api.declutrmail.com/api/webhooks/gmail` + audience matching API URL
-10. Real Gmail OAuth grant from your real account → mailbox connects → initial sync starts → verify `mailbox_accounts` row in Supabase + `triage_decisions` rows after worker run + Anthropic LLM `generated_by='llm_haiku'`
-**Verifies by:** `curl https://api.declutrmail.com/api/auth/me` returns 401 + canonical envelope; browser sign-in via real Gmail completes; `psql $SUPABASE -c "SELECT email FROM mailbox_accounts"` shows your account; worker log shows `worker.succeeded llmExplanations >= 1`.
-**Status:** Open
-
 ### 2026-06-08 — Stale BullMQ jobs from local-dev runs in Upstash (cleanup)
 **Source:** session 2026-06-08 — `bull:*` scan showed `initial-sync` jobs with mailbox UUIDs from the local-dev Postgres (not the new Supabase)
 **Why:** During the local LLM smoke earlier in this session I enqueued real BullMQ jobs that hit Upstash. Now Cloud Run worker is connected to the same Upstash. Those leftover jobs reference mailbox UUIDs that don't exist in Supabase, so `worker.failed` events will trickle in.
@@ -685,42 +576,6 @@ D1→#12(39) · D2→#12(39) · D23→#32(37) · D28→#32(37) · D29→#44(36) 
 4. Action: send to Slack channel (or email) — Sentry → Integrations → Slack (workspace install)
 5. Second rule for `level:fatal`: alert on FIRST event (no threshold)
 **Verifies by:** intentionally throw an error 11 times in prod → Slack message lands within 1 min.
-**Status:** Open
-
-### 2026-06-06 — CLAUDE.md §2.1 distillation: add `Size` to storage allowlist (per ADR-0021)
-**Source:** session 2026-06-06 (Sender Detail vertical slice; founder picked Path A)
-**Why:** ADR-0021 amends the D7 storage allowlist to include Gmail `sizeEstimate` (persisted as `mail_messages.size_bytes`). Code + schema comment + migration are in this PR; CLAUDE.md §2.1 still lists `sizeEstimate` as forbidden via ADR-0004's wording. Per CLAUDE.md §11, agents do NOT edit CLAUDE.md — founder distills.
-**How:**
-1. Open `chore/distill-d7-allowlist-size-bytes` branch
-2. CLAUDE.md §2.1 — add `Size (Gmail sizeEstimate)` to the "DeclutrMail stores ONLY" list; nothing else moves
-3. (Optional) reference ADR-0021 from §2.1 alongside the existing ADR-0004 reference
-4. Open the distillation PR, merge
-**Verifies by:** privacy-auditor agent reads CLAUDE.md §2.1 + the schema comment in mail-messages.ts + does not flag new PRs touching `size_bytes`. The agent's reference list is now coherent.
-**Status:** Open
-
-### 2026-06-06 — Sender Detail action toolbar still a tracer (D226 + D232 compliance)
-**Source:** architecture-guardian 2026-06-06 [WARNING]
-**Why:** `apps/web/src/features/senders/detail/sender-detail-page.tsx:performAction` for Archive / Unsubscribe / Later / Delete writes a local toast + a synthetic receipt (`timeLeft: '6d 23h'` hardcoded). It never calls `useEnqueueAction` / `useEnqueueComposite` / `useRecordUnsubscribeIntent`; the action never reaches `actions.service.ts`, never writes `action_jobs`, never issues an `undo_token`. The in-file comment ("Tracer path — fake receipt until this surface's verb BE lands") concedes the issue. senders-screen already wires the real mutations; sender-detail is the straggler.
-
-This PR's Bug 1 fix wired `useCompositePreview` (preview is now correct + reactive), so the missing step is mutation → undo, not preview. D226 mandates preview → mutation → undo; D232 mandates undo wiring for destructive mutations.
-
-**How:**
-1. For Unsubscribe verb → call `useRecordUnsubscribeIntent({ senderId })`
-2. For Archive / Later / Delete → call `useEnqueueAction` or `useEnqueueComposite` with the pendingAction's senders + the modal's `ConfirmOptions` (olderThanDays + secondary)
-3. Replace synthetic receipt with the response's `undoToken.expiresAt` derived `timeLeft`
-4. Drop `receiptSeq` counter + the local-only setReceipt path
-
-**Verifies by:** integration test from sender-detail-page that an Archive click writes an `action_jobs` row + Activity log entry; manual smoke shows a real undo timer that decrements.
-**Status:** Open
-
-### 2026-06-06 — Per-feature error boundaries for the other 4 D38 surfaces
-**Source:** session 2026-06-06 (handoff Tier A bucket "Per-feature error boundaries — 5 files, ~1h")
-**Why:** Only Sender Detail has its boundary so far (`apps/web/src/app/(app)/senders/[id]/error.tsx`). Senders, Activity, Brief, Autopilot still fall through to the global `app/error.tsx`, which takes over the whole authed shell on any render-time throw. Each surface needs its own `error.tsx` with a `surface=…` Sentry tag so prod errors group distinctly.
-**How:**
-1. Extend `ErrorBoundary` union in `apps/web/src/lib/error-capture.ts` with `'senders' | 'activity' | 'brief' | 'autopilot'` (mirror the `senders-detail` precedent)
-2. Add boundary file at each route: `apps/web/src/app/(app)/{senders,activity,brief,autopilot}/error.tsx` (model on `senders/[id]/error.tsx`)
-3. Tighten tone copy per surface ("This sender hit a snag" → "This list hit a snag" / "This brief hit a snag" etc.)
-**Verifies by:** synthetic throw in each surface routes to its boundary, not the app shell; Sentry receives the `boundary=…` tag.
 **Status:** Open
 
 ### 2026-06-06 — One-off `size_bytes` backfill for pre-amendment rows (optional)
@@ -845,24 +700,6 @@ This PR's Bug 1 fix wired `useCompositePreview` (preview is now correct + reacti
 **Verifies by:** Full `pnpm --filter @declutrmail/api test` runs green across 3 consecutive runs.
 **Status:** Open
 
-### 2026-06-04 — CLAUDE.md §2.2 K/A/U/L → K/A/U/L/D distillation
-**Source:** design-system-agent critic pass on `feat/d038-senders-v2-integration` 2026-06-04 (Q1 plan-drift)
-**Why:** CLAUDE.md §2.2 still locks "K/A/U/L". Spec v1.2 + ADR-0019 amend to K/A/U/L/D. Per CLAUDE.md §3 agents may not amend CLAUDE.md silently — founder via `chore/distill-` PR.
-**How:**
-1. Open `chore/distill-kauld-amendment`
-2. Update CLAUDE.md §2.2: K/A/U/L → K/A/U/L/D; add Delete row (red tone, Gmail Trash 30d recovery)
-3. Update `check-microcopy.sh --rule=canonical-verbs` allowlist
-4. Update `.claude/agents/*.md` prompts citing K/A/U/L
-**Verifies by:** `rg "K/A/U/L\\b" CLAUDE.md .claude/agents/` returns ZERO matches
-**Status:** Open
-
-### 2026-06-04 — `senders-lab-v2` throwaway dir cleanup
-**Source:** Session 2026-06-04 (Thread A+B close-out)
-**Why:** `apps/web/src/app/senders-lab-v2/page.tsx` is the throwaway Senders premium-redesign playground from a prior session. Founder picked the variant; lab no longer needed. Agent `rm -rf` permission was denied.
-**How:** `rm -rf apps/web/src/app/senders-lab-v2/`
-**Verifies by:** `git status` no longer shows the untracked dir; `pnpm --filter @declutrmail/web build` still passes.
-**Status:** Open
-
 ### 2026-06-05 — Cursor regression guard on `provider_sync_state` (IncrementalSyncWorker)
 **Source:** architecture-guardian critic pass 2026-06-05 [WARNING]
 **Why:** `IncrementalSyncWorker` ends with an unguarded `UPDATE provider_sync_state SET last_history_id = $1` (incremental-sync.worker.ts:214-219). With `concurrency: 20`, two webhooks for the same mailbox at different historyIds CAN run concurrently — the LATER job's `lastPageHistoryId` could be older than an already-committed advance from an EARLIER job. The webhook path's `advanceHistoryIdWithExecutor` has the SELECT FOR UPDATE + monotonic compare; the worker path does not. `InitialSyncWorker` has the same pattern (lines 947, 964, 986) so this isn't a regression introduced by D8, but it widens the surface.
@@ -890,34 +727,6 @@ This PR's Bug 1 fix wired `useCompositePreview` (preview is now correct + reacti
 2. Add `await incrementalBullWorker.close()` to the shutdown handler (lines 821-832).
 **Verifies by:** API boot logs show `worker.listening` for `incremental-sync`; SIGTERM drains the worker cleanly.
 **Status:** Open
-
-### 2026-06-05 — Sticky auto-protect re-protects after manual demote (semantic ambiguity)
-**Source:** flow-completeness-auditor + schema-migration-reviewer 2026-06-05 [WARNING/UNVERIFIED]
-**Why:** The auto-protect UPSERT's `WHERE sender_policies.is_protected = false` guard preserves prior `user_defined`/`vip` provenance correctly — but if a user MANUALLY demotes an `engagement_based`-protected row to `is_protected=false`, the very next worker pass re-protects them (the UPSERT fires again because `replied_count >= 3` is still true). No D-decision documents whether this is intended sticky-up behavior or a bug. The schema comment at `senders.ts:130-131` describes the `replied_count` direction ("drop from 3→2 doesn't unprotect") but does NOT address manual demote of an `engagement_based` row.
-**How (founder pick):**
-1. **Intended:** document the sticky-up semantic on `sender-policies.ts` + add a worker test pinning the behavior.
-2. **Bug:** narrow the UPSERT guard to `WHERE sender_policies.is_protected = false AND sender_policies.protection_reason != 'engagement_based'` so a manually-demoted engagement_based row stays demoted until the underlying signal naturally drops.
-3. **Third path:** add a `user_overrode_at` timestamp column; UPSERT skips when set.
-**Verifies by:** Worker test seeds `is_protected=false, protection_reason='engagement_based'`, fires a webhook, asserts the chosen semantic.
-**Status:** Open — needs founder decision before fix
-
-### 2026-06-05 — Lab-route trust copy reframes the canonical privacy line
-**Source:** privacy-auditor 2026-06-05 [WARNING]
-**Why:** `apps/web/src/app/senders-lab-v2/page.tsx` line 1063 + 1402 use "no bodies read" — the canonical D228 copy is "Full bodies fetched: 0" (CLAUDE.md §2.1) and the spec's in-product line is "Metadata only · No email bodies" / "Subjects only · we never read email bodies". The literal banned regex `/bod(y|ies) read.*0/i` doesn't match, so no automated trip, but the phrasing drift risks getting copy-pasted forward when the chosen variant hardens.
-**How:**
-1. Swap both strings to "Metadata only · No email bodies" or the spec's "Subjects only · we never read email bodies".
-2. Add the lab-route literal "no bodies read" to `check-microcopy.sh` ban list so future drift is caught at lint time.
-**Verifies by:** `rg "no bodies read" apps/web/src/app/senders-lab-v2/` returns 0 results.
-**Status:** Open
-
-### 2026-06-05 — Schema future-compat: `protection_reason` stale on `is_protected=false` rows
-**Source:** schema-migration-reviewer 2026-06-05 [WARNING]
-**Why:** The UPSERT's COALESCE at `0022_senders_replied_count.sql:117-120` preserves any pre-existing non-NULL `protection_reason` even when `is_protected` was `false` — could resurface as a misleading `user_defined`/`vip` cascade-audit string. Population at-risk is empty today (no producer NULLs the reason while leaving the row), but a future "unprotect" path that doesn't NULL the reason would silently re-protect with the wrong audit string.
-**How (cheapest first):**
-1. Add a DB CHECK constraint: `(is_protected = false) = (protection_reason IS NULL)` in a future migration.
-2. OR change the COALESCE to `CASE WHEN sender_policies.protection_reason IS NOT NULL AND sender_policies.is_protected THEN sender_policies.protection_reason ELSE 'engagement_based' END`.
-**Verifies by:** Migration test seeds an `is_protected=false, protection_reason='user_defined'` row, runs the UPSERT, asserts the resulting `protection_reason` is the fresh `engagement_based` not the stale value.
-**Status:** Done 2026-06-05 — shipped weaker one-way CHECK (`NOT is_protected OR protection_reason IS NOT NULL`) in migration `0023_sender_policies_protection_reason_check.sql`. The biconditional was rejected because it would forbid the user-agency-wins memory pin (`is_protected=false, protection_reason='engagement_based'` on a manually-demoted engagement row — read by the worker WHERE as "user said no, do not re-protect"). The shipped CHECK still catches the impossible-by-code state a future unprotect path is most likely to introduce. 5 integration tests in `packages/db/tests/sender-policies-protection-check.test.ts`.
 
 ### 2026-06-05 — Reconnect after cursor-too-old (incremental-sync 404 recovery)
 **Source:** Session 2026-06-05 (Thread A — IncrementalSyncWorker)
@@ -1080,31 +889,6 @@ follow-up.) The migration SQL itself is validated by the PGlite roundtrip test.
 **Verifies by:** PR #131's `atlas migrate lint` check turns green after the rehash.
 **Status:** Open — needs founder/CI `atlas migrate hash`.
 
-### 2026-05-28 — Live smoke the archive action pipeline on the 2 Gmail accounts (D226)
-**Source:** PR — async destructive-action pipeline (`feat/d226-archive-action-executor`)
-**Why:** Automated coverage is exhaustive (unit + PGlite integration: forward sender/messages, idempotency, forged-id drop, undo reverse, terminal-failure, migration round-trip). The ONE thing not exercised is a REAL Gmail mutation through the worker — and it mutates your real inbox + needs your running dev env (the agent must not kill the live redesign session on :4000 / shared dev DB + Redis). This is the §8/§9 founder-hands step.
-**How:** From a checkout of this branch (stacked on `feat/d005-gmail-modify-primitive`):
-  1. `./scripts/db-migrate.sh` — applies migration `0015_action_jobs` to the dev DB (additive; tested rollback exists).
-  2. `./scripts/dev-up.sh` — redis + api(:4000) + worker.
-  3. Dev-login: `http://localhost:4000/api/auth/dev/login?email=chintan.a.thakkar@gmail.com` (save the cookie).
-  4. Pick a small sender id from Sender Detail (or DB). `POST /api/actions/archive` with header `Idempotency-Key: <uuid>` + body `{"selector":{"type":"sender","senderId":"<id>"}}` → expect `{actionId, requestedCount, status:"queued"}`.
-  5. Poll `GET /api/actions/<actionId>` until `status:"done"` + capture `undoToken`. Verify in Gmail those messages LEFT the inbox + locally (`label_ids` no longer has INBOX).
-  6. `POST /api/undo/<undoToken>` → poll the returned `actionId` to `done` → verify messages RETURNED to the inbox.
-  7. Break-tests: missing `Idempotency-Key` → 400; `GET /api/actions/<random-uuid>` → 404; messages selector with the OTHER mailbox's id → dropped (requestedCount excludes it); a Protected/VIP sender without `override:true` → 409 `PROTECTED_SENDER`; switch the active mailbox (account menu) and confirm scoping.
-**Verifies by:** real messages move out of / back into the Gmail inbox; `action_jobs` rows reach `done`; `undo_journal` + `activity_log` + `outbox_events` rows written; `worker.succeeded` log lines for forward + reverse.
-**Status:** Done 2026-05-28 — forward + undo verified on chintan.a.thakkar@gmail.com ("Melt Massage For Couples", 57 msgs): archived → INBOX 0/57 → undo → INBOX 57/57, `undo_journal.reverted_at` set, 7d window (Free). Surfaced + fixed the colon-jobId enqueue bug en route. Remaining break-tests (400/404/protected-409/cross-mailbox-drop) are covered by automated specs; optional to re-run live.
-
-### 2026-05-28 — No Playwright e2e harness; multi-mailbox + sync-gate flows are unit-only (D182, D206, D211)
-
-**Source:** `design-system-agent` gate on `feat/d115-secondary-mailbox-gate` flagged that the new edge states (no-active-mailbox gate, secondary-connect sync gate, disconnect → reload) have no Playwright coverage. Investigation found `apps/web` has **no Playwright harness at all** — no config, no e2e dir, no auth fixture. D211 wants a triggering Playwright test per edge state; D182/D206 specify Playwright for affected user flows.
-**Why:** These flows touch session/OAuth state (connect, disconnect, switch, no-active gate) that unit tests mock. The disconnect stale-screen regression is currently guarded only at the unit level (`reset-mailbox-cache.test.ts`, `use-disconnect-mailbox.test.tsx`, `no-active-mailbox.test.tsx`). An integration regression (e.g. a future refactor that drops the cache reset) would pass unit tests if the helper is still called but mis-wired in the layout.
-**How:**
-1. Decide the e2e auth strategy — this is the blocking decision (real Google OAuth in CI is infeasible; options: a seeded session-cookie fixture against a test DB, or a mock-OAuth provider). This is a founder/architecture call, not autonomous.
-2. Scaffold `playwright.config.ts` + an `e2e/` dir + a `loginAs(workspace)` fixture that sets `dm_access`/`dm_refresh`/`dm_csrf` cookies against the dev API.
-3. Add specs: (a) connect 2nd mailbox → land on sync gate, not /triage; (b) disconnect active mailbox → dashboard reloads to the remaining mailbox (no stale data); (c) disconnect last mailbox → no-active gate renders, not a broken shell.
-**Verifies by:** `pnpm --filter @declutrmail/web e2e` (new script) runs green in CI; the three specs above pass; disabling the cache reset in `resetMailboxScopedCache` makes spec (b) fail (the regression is now integration-guarded).
-**Status:** Open
-
 ### 2026-05-27 — Rename `auto_screen_new_senders` preset default-name (D227)
 
 **Source:** PR for D104/D105 Autopilot UI — `packages/workers/src/autopilot-presets.ts:168` ships the preset with `defaultName: 'Auto-screen new senders'`, which embeds the banned product-UI verb "Screen" (D227 — only K/A/U/L are user-facing). The preset's `actionKind` is already `'later'`, so the canonical verb is Later.
@@ -1115,51 +899,6 @@ follow-up.) The migration SQL itself is validated by the PGlite roundtrip test.
 3. Delete the `auto_screen_new_senders` entry from `apps/web/src/features/autopilot/preset-labels.ts:PRESET_LABEL_OVERRIDES`. If the map becomes empty, delete the file + its two call-sites' imports.
 4. Drop the comment in `apps/web/src/features/autopilot/fixtures.ts` that documents the workaround; update the fixture name to the new BE name so tests stay aligned with prod.
 **Verifies by:** `pnpm --filter @declutrmail/web test` is still green; running `./scripts/dev-up.sh` + listing rules via `GET /api/autopilot/rules` returns the renamed default; `check-microcopy.sh --rule=canonical-verbs` (the D227 hook, when it lands) passes.
-**Status:** Open
-
-### 2026-05-26 — ARCH-DRIFT: 3 controllers missing `@RateLimit(...)` on touched routes (D156)
-**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check G
-**Why:** Three controller routes shipped this week without `@RateLimit(...)` despite D156 requiring per-route limits on all `/v1/**` mutation + polled endpoints. Auth, autopilot, briefs, followups, and senders controllers carry the decorator consistently — these three are the gap:
-
-  - `apps/api/src/triage/triage.controller.ts:27` — `POST /score-sender` (enqueues a BullMQ score job; a single client can flood the worker queue without a limit)
-  - `apps/api/src/undo/undo.controller.ts:47` — `GET /undo` (tray sits on the chrome of every authenticated page)
-  - `apps/api/src/undo/undo.controller.ts:93` — `POST /undo/:token` (destructive revert surface — no rate limit)
-  - `apps/api/src/sync/sync.controller.ts:48` — `GET /v1/sync/status` (polled every 3s by `useSyncStatus()`; trivially escalatable to 100s/sec)
-
-**How:** Add `@RateLimit({ ... })` per route. Suggested caps:
-  - score-sender: `{ tokens: 60, refillPerSec: 1 }` (one new sender/sec is enough for any human interaction)
-  - undo GET: `{ tokens: 30, refillPerSec: 5 }` (page-load + a few re-fetches per minute)
-  - undo POST: `{ tokens: 20, refillPerSec: 0.5 }` (slow refill — undo is rare)
-  - sync status: `{ tokens: 30, refillPerSec: 1 }` (one poll/3s = 0.33/sec; 30-token bucket absorbs the page-load burst)
-
-Founder decision is which limits to pick; the values above are anchored to expected client behavior, not contractual.
-
-**Verifies by:** `rg -n "@RateLimit" apps/api/src/{triage,undo,sync}` returns 4 hits; the next weekly oracle's Check G reports clean.
-**Status:** Open
-
-### 2026-05-26 — ARCH-DRIFT: triage + undo controllers build envelope inline rather than via `ok()` helper (D202)
-**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check F
-**Why:** Both `POST /v1/triage/score-sender` ([apps/api/src/triage/triage.controller.ts:30](apps/api/src/triage/triage.controller.ts:30)) and the two `/v1/undo` routes ([apps/api/src/undo/undo.controller.ts:51](apps/api/src/undo/undo.controller.ts:51), [:93](apps/api/src/undo/undo.controller.ts:93)) hand-construct the `{ data, meta }` envelope inline. The shape is D202-compliant in spirit but diverges from the shared `ok()` / `Envelope<T>`-typed helper used by autopilot/briefs/followups/senders. Future helper changes (extra `meta` fields, version stamps, request-id propagation) will skip these three handlers silently.
-**How:** Replace each inline construction with `return ok(...)` from the shared envelope helper. Triage's `score-sender` is a single-field response (`{ idempotencyKey }`); undo's tray + revert each return small typed objects. Pure mechanical refactor, no contract change at the wire.
-**Verifies by:** `rg -n "return \{ data:" apps/api/src/{triage,undo}` returns no hits; existing route specs continue to pass.
-**Status:** Open
-
-### 2026-05-26 — ARCH-DRIFT: no end-to-end `Idempotency-Key` header support; repeat-dismiss returns 404 vs stored result (D202, D207)
-**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check H
-**Why:** The `Idempotency-Key` HTTP header is whitelisted in CORS at [apps/api/src/main.ts:40](apps/api/src/main.ts:40) but NO mutation endpoint accepts it end-to-end. Today's substitutes are three different patterns:
-  - URL-param-as-key (`undo POST /:token` — atomic claim, well-documented)
-  - WHERE-clause guards yielding 404 on replay (`autopilot dismiss`, `followup dismiss`)
-  - Service-derived keys not exposed to client (`triage score-sender` — `${mailbox}:${sender}:${producedAt}`)
-
-The gap that bites users: `autopilot.controller.ts:159` and `followup.controller.ts:53` return **404** on repeat-dismiss instead of the stored prior result, so a client retrying a flaky network request cannot distinguish "I already dismissed this" from "this never existed". Per D202/D207's idempotency contract, a repeat key must return the stored result rather than re-executing.
-
-No `idempotency_records` table or 24h-TTL infrastructure exists yet — the full `Idempotency-Key` contract has nowhere to land.
-
-**How:** Two-phase plan, founder decision on sequencing:
-  - **Phase 1 (small):** for the two dismiss endpoints, change the 404-on-replay to a 200 with `{ data: { alreadyDismissed: true } }` so the client can render the success state on retry. No new infra. Loses the strict "stored result" guarantee but eliminates the user-visible flaky-network bug.
-  - **Phase 2 (full D207):** introduce `idempotency_records (key, request_hash, response_json, created_at, expires_at)` with a 24h TTL sweeper. Wire a NestJS interceptor that reads the header, hashes the request, and short-circuits with the stored response when the key + hash match. Apply to all current and future mutation endpoints. Likely should land alongside the action-consumer worker (which owns destructive Gmail mutations and is the highest-stakes idempotency surface).
-
-**Verifies by:** Phase 1: a `curl -X POST /v1/autopilot/dismiss/...` repeated yields 200 + `alreadyDismissed: true` on the second call. Phase 2: any mutation route with a repeated `Idempotency-Key` returns the byte-identical first response.
 **Status:** Open
 
 ### 2026-05-27 — IMPL-LOG-DRIFT: 10 merged PRs cite D-numbers in title but omit `Closes` trailers
@@ -1222,32 +961,6 @@ The non-greedy `.+?` paired with the explicit ` \| ⬜ \|` anchor matches the ti
 **Verifies by:** Next week's oracle sweep returns 0 missing-trailer + 0 un-flipped findings, OR a documented exception path exists for cases like PR #42 (chore/learnings citing a not-yet-shipped D).
 **Status:** Open
 
-### 2026-05-26 — Hook-modification WARNING from weekly security-regression sweep
-
-**Source:** security-regression-oracle (scheduled task, 2026-05-26 sweep)
-**Why:** Task rule flags any `.claude/hooks/*.sh` change in the trailing
-7d as a `[WARNING]` for founder review. Two commits qualified:
-- `f063e7b` (PR #54, 2026-05-24) — `check-microcopy.sh`: exempt
-  `*.test.*` / `*.spec.*` from microcopy scan to fix R1 Stream E
-  false positives. Documented + has bash regression suite at
-  `.claude/hooks/test/check-microcopy.test.sh`.
-- `2743b6a` (PR #11, 2026-05-20) — `check-microcopy.sh` +
-  `require-preview-before-mutation.sh`: scope-glob fix for the
-  `packages/ui` → `packages/shared` rename (D173).
-
-Both were merged via founder-authored PRs with review notes; neither
-is silent drift. The sweep rule is conservative: it cannot tell a
-PR-mediated change from a tampered hook.
-**How:** (a) confirm these two changes match the PRs above and dismiss,
-or (b) tighten the oracle rule (`/Users/chintant/.claude/scheduled-tasks/declutrmail-security-regression-weekly/SKILL.md`
-Check 6) so it only warns on hook changes NOT introduced via a merged PR
-(e.g. compare commit author against `CT2689` or check merge-commit
-parentage). Option (b) prevents weekly false-positive noise.
-**Verifies by:** Next Sunday sweep either passes CLEAN (option b
-applied) or surfaces only new, un-reviewed hook changes (option a
-accepted as ongoing cost).
-**Status:** Open
-
 ### 2026-05-27 — Dependabot branches blocked by CLAUDE.md §6 + D-trailer gates
 
 **Source:** PR #97 / #94 / #93 / #92 / #89 — every open dependabot
@@ -1299,6 +1012,77 @@ starting at 0; verify the default-exclude narrowing doesn't pull
 build artefacts into the test run.
 **Verifies by:** `pnpm typecheck && pnpm test` green across all
 workspaces on the new branch; CI green on the upgrade PR.
+**Status:** Open
+
+### 2026-05-26 — ARCH-DRIFT: 3 controllers missing `@RateLimit(...)` on touched routes (D156)
+**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check G
+**Why:** Three controller routes shipped this week without `@RateLimit(...)` despite D156 requiring per-route limits on all `/v1/**` mutation + polled endpoints. Auth, autopilot, briefs, followups, and senders controllers carry the decorator consistently — these three are the gap:
+
+  - `apps/api/src/triage/triage.controller.ts:27` — `POST /score-sender` (enqueues a BullMQ score job; a single client can flood the worker queue without a limit)
+  - `apps/api/src/undo/undo.controller.ts:47` — `GET /undo` (tray sits on the chrome of every authenticated page)
+  - `apps/api/src/undo/undo.controller.ts:93` — `POST /undo/:token` (destructive revert surface — no rate limit)
+  - `apps/api/src/sync/sync.controller.ts:48` — `GET /v1/sync/status` (polled every 3s by `useSyncStatus()`; trivially escalatable to 100s/sec)
+
+**How:** Add `@RateLimit({ ... })` per route. Suggested caps:
+  - score-sender: `{ tokens: 60, refillPerSec: 1 }` (one new sender/sec is enough for any human interaction)
+  - undo GET: `{ tokens: 30, refillPerSec: 5 }` (page-load + a few re-fetches per minute)
+  - undo POST: `{ tokens: 20, refillPerSec: 0.5 }` (slow refill — undo is rare)
+  - sync status: `{ tokens: 30, refillPerSec: 1 }` (one poll/3s = 0.33/sec; 30-token bucket absorbs the page-load burst)
+
+Founder decision is which limits to pick; the values above are anchored to expected client behavior, not contractual.
+
+**Verifies by:** `rg -n "@RateLimit" apps/api/src/{triage,undo,sync}` returns 4 hits; the next weekly oracle's Check G reports clean.
+**Status:** Open
+
+### 2026-05-26 — ARCH-DRIFT: triage + undo controllers build envelope inline rather than via `ok()` helper (D202)
+**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check F
+**Why:** Both `POST /v1/triage/score-sender` ([apps/api/src/triage/triage.controller.ts:30](apps/api/src/triage/triage.controller.ts:30)) and the two `/v1/undo` routes ([apps/api/src/undo/undo.controller.ts:51](apps/api/src/undo/undo.controller.ts:51), [:93](apps/api/src/undo/undo.controller.ts:93)) hand-construct the `{ data, meta }` envelope inline. The shape is D202-compliant in spirit but diverges from the shared `ok()` / `Envelope<T>`-typed helper used by autopilot/briefs/followups/senders. Future helper changes (extra `meta` fields, version stamps, request-id propagation) will skip these three handlers silently.
+**How:** Replace each inline construction with `return ok(...)` from the shared envelope helper. Triage's `score-sender` is a single-field response (`{ idempotencyKey }`); undo's tray + revert each return small typed objects. Pure mechanical refactor, no contract change at the wire.
+**Verifies by:** `rg -n "return \{ data:" apps/api/src/{triage,undo}` returns no hits; existing route specs continue to pass.
+**Status:** Open
+
+### 2026-05-26 — ARCH-DRIFT: no end-to-end `Idempotency-Key` header support; repeat-dismiss returns 404 vs stored result (D202, D207)
+**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check H
+**Why:** The `Idempotency-Key` HTTP header is whitelisted in CORS at [apps/api/src/main.ts:40](apps/api/src/main.ts:40) but NO mutation endpoint accepts it end-to-end. Today's substitutes are three different patterns:
+  - URL-param-as-key (`undo POST /:token` — atomic claim, well-documented)
+  - WHERE-clause guards yielding 404 on replay (`autopilot dismiss`, `followup dismiss`)
+  - Service-derived keys not exposed to client (`triage score-sender` — `${mailbox}:${sender}:${producedAt}`)
+
+The gap that bites users: `autopilot.controller.ts:159` and `followup.controller.ts:53` return **404** on repeat-dismiss instead of the stored prior result, so a client retrying a flaky network request cannot distinguish "I already dismissed this" from "this never existed". Per D202/D207's idempotency contract, a repeat key must return the stored result rather than re-executing.
+
+No `idempotency_records` table or 24h-TTL infrastructure exists yet — the full `Idempotency-Key` contract has nowhere to land.
+
+**How:** Two-phase plan, founder decision on sequencing:
+  - **Phase 1 (small):** for the two dismiss endpoints, change the 404-on-replay to a 200 with `{ data: { alreadyDismissed: true } }` so the client can render the success state on retry. No new infra. Loses the strict "stored result" guarantee but eliminates the user-visible flaky-network bug.
+  - **Phase 2 (full D207):** introduce `idempotency_records (key, request_hash, response_json, created_at, expires_at)` with a 24h TTL sweeper. Wire a NestJS interceptor that reads the header, hashes the request, and short-circuits with the stored response when the key + hash match. Apply to all current and future mutation endpoints. Likely should land alongside the action-consumer worker (which owns destructive Gmail mutations and is the highest-stakes idempotency surface).
+
+**Verifies by:** Phase 1: a `curl -X POST /v1/autopilot/dismiss/...` repeated yields 200 + `alreadyDismissed: true` on the second call. Phase 2: any mutation route with a repeated `Idempotency-Key` returns the byte-identical first response.
+**Status:** Open
+
+### 2026-05-26 — Hook-modification WARNING from weekly security-regression sweep
+
+**Source:** security-regression-oracle (scheduled task, 2026-05-26 sweep)
+**Why:** Task rule flags any `.claude/hooks/*.sh` change in the trailing
+7d as a `[WARNING]` for founder review. Two commits qualified:
+- `f063e7b` (PR #54, 2026-05-24) — `check-microcopy.sh`: exempt
+  `*.test.*` / `*.spec.*` from microcopy scan to fix R1 Stream E
+  false positives. Documented + has bash regression suite at
+  `.claude/hooks/test/check-microcopy.test.sh`.
+- `2743b6a` (PR #11, 2026-05-20) — `check-microcopy.sh` +
+  `require-preview-before-mutation.sh`: scope-glob fix for the
+  `packages/ui` → `packages/shared` rename (D173).
+
+Both were merged via founder-authored PRs with review notes; neither
+is silent drift. The sweep rule is conservative: it cannot tell a
+PR-mediated change from a tampered hook.
+**How:** (a) confirm these two changes match the PRs above and dismiss,
+or (b) tighten the oracle rule (`/Users/chintant/.claude/scheduled-tasks/declutrmail-security-regression-weekly/SKILL.md`
+Check 6) so it only warns on hook changes NOT introduced via a merged PR
+(e.g. compare commit author against `CT2689` or check merge-commit
+parentage). Option (b) prevents weekly false-positive noise.
+**Verifies by:** Next Sunday sweep either passes CLEAN (option b
+applied) or surfaces only new, un-reviewed hook changes (option a
+accepted as ongoing cost).
 **Status:** Open
 
 ### 2026-05-25 — Ratify Variant D direction for Senders uplift (4 ADRs + 2 follow-up PRs)
@@ -1446,37 +1230,6 @@ rather than weeks.
 test against real Postgres (visible in workflow logs as
 "OutboxDispatcherWorker (real Postgres, SKIP LOCKED)" passing rather
 than skipped).
-### 2026-05-23 — Account hard-delete execution (D205 + D232 completion)
-**Source:** PR `feat/d232-undo-journal` — schedule-only scope per CLAUDE.md §9 stop-condition
-**Why:** This PR ships the D232 schedule computation
-(`AccountDeletionOrchestrator.computeSchedule`) but DELIBERATELY does
-not execute the hard-delete. Account deletion is a CLAUDE.md §9 stop
-condition — the founder must review the destructive code path. Three
-pieces remain to complete D232/D205:
-  1. **Persistence.** New `account_deletion_requests` table (or rows on
-     `users`) recording `requested_at`, `effective_deletion_at`, the
-     basis, and the waiver-token if the user typed `DELETE AND WAIVE UNDO`.
-  2. **Sync pause** (D232 requirement). Once deletion is scheduled,
-     pause sync regardless of OAuth state — without this, "delete inbox
-     data while OAuth stays connected" silently repopulates from Gmail
-     after the worker tick.
-  3. **Cron-keyed deletion job** at `effective_deletion_at` via
-     `cronPolicy` (D225) with `scheduled_at_minute` keyed on the
-     computed time. The job hard-deletes per the existing
-     `mailbox_accounts.id → CASCADE` chain (already cascades
-     `provider_sync_state`, `mail_messages`, `senders`,
-     `sender_timeseries`, `sender_policies`, `undo_journal`).
-**How:** Open a `feat/d232-account-hard-delete` PR after this one
-merges. Add the `account_deletion_requests` schema in a new migration,
-extend `AccountDeletionOrchestrator` with `schedule()` (persists) +
-`execute()` (runs at the cron tick), and wire the sync-pause via a
-`account.deletion_scheduled` event (D204) consumed by SyncModule.
-**Verifies by:** Integration test: schedule a deletion with an active
-30-day undo token → effective time = now+30d, basis = `undo-window`,
-sync paused. Time-travel the test clock past `effective_deletion_at` →
-mailbox row + cascaded children gone.
-**Status:** Open
-
 ### 2026-05-22 — D-CANDIDATE: limiter cache eviction tied to D232 account deletion
 **Source:** silent-failure-hunter gate on PR `feat/d009-sync-data-capture`
 **Why:** `apps/api/src/worker.ts` keeps a `limiterByMailbox: Map<id,
@@ -1598,24 +1351,6 @@ on the same query surface.
 returns zero hits; reconciler test covers `findQueued`.
 **Status:** Open
 
-### 2026-05-22 — DISTILL: CLAUDE.md §2.1 storage allowlist amendment (ADR-0004)
-**Source:** ADR-0004 (D7 allowlist amendment — data-capture PR
-`feat/d009-sync-data-capture`)
-**Why:** CLAUDE.md §2.1 enumerates the D7 storage allowlist literally
-(sender / subject / snippet / dates / labels / read state). The
-data-capture PR adds — with founder approval — four fields:
-`To`/`Cc` (outbound only), `List-Unsubscribe` URL,
-`List-Unsubscribe-Post` one-click flag, and the derived `is_outbound`
-column. CLAUDE.md §11 forbids agents from editing CLAUDE.md directly;
-the founder distills via a separate `chore/distill-*` PR.
-**How:** Open a `chore/distill-allowlist-extension` PR; amend §2.1's
-"DeclutrMail stores ONLY" list to include the four new fields, with a
-one-line note that each is tied to a planned feature (D9 unsubscribe;
-future reply attribution); reference ADR-0004. No code change.
-**Verifies by:** `rg "List-Unsubscribe" CLAUDE.md` returns the new
-allowlist entries; ADR-0004 cross-references §2.1's updated wording.
-**Status:** Open
-
 ### 2026-05-22 — D-CANDIDATE: periodic full re-derive backstop (after PR-D)
 **Source:** session — founder ack 2026-05-22, deferred per "no users yet"
 **Why:** PR-C/PR #19's initial sync is a complete derive — zero drift.
@@ -1718,24 +1453,6 @@ shape.
 5-policy set; a future worker PR finds no naming ambiguity.
 **Status:** Open
 
-### 2026-05-22 — GATE: do not deploy the API before the D109/D224 auth layer
-**Source:** PR [#16](https://github.com/CT2689-Tech/DeclutrMail/pull/16) (PR-B) — Codex adversarial review; ADR-0002
-**Why:** PR-B's Gmail OAuth connect flow is unauthenticated — it bootstraps
-a `workspace` + `user` from the connected Gmail address because no app
-auth layer exists yet. Safe **only** because the app is not deployed.
-Exposing it on a network before D109/D224 would allow anonymous tenant
-creation. This is an accepted, documented limitation — see
-`docs/adr/0002-pr-b-unauthenticated-oauth-connect.md`.
-**How:** Do not deploy `apps/api` (Cloud Run) until the D109/D224
-onboarding/auth layer ships and the OAuth connect binds to an
-authenticated principal. The connect routes are off by default
-(`GMAIL_CONNECT_ENABLED` unset → `GoogleOAuthModule` not loaded) — keep
-them off in any shared/deployed environment until then.
-**Verifies by:** D109/D224 ships; the connect flow rejects unauthenticated
-callers and reconnect re-validates mailbox ownership; only then is
-`apps/api` deploy-eligible.
-**Status:** Open
-
 ### 2026-05-21 — RATIFY: `sender_timeseries.opens` renamed to `read_count` (D-candidate)
 **Source:** PR [#13](https://github.com/CT2689-Tech/DeclutrMail/pull/13) — schema review finding
 **Why:** The D-plan's draft timeseries schema names the read column
@@ -1748,30 +1465,9 @@ silently encode a metric that cannot be populated honestly.
 No code change needed — PR-A already ships `read_count`.
 **Verifies by:** the plan's timeseries-table definition reads `read_count`;
 a future session finds no `opens`/`read_count` mismatch.
-**Status:** Open — **founder ratified the rename 2026-05-21.** PR-A already
+**Status:** Open — **falsely closed 2026-07-28, reopened same day** (caught by the Codex stop-time review). The ratification half is done and was done in May; the half this entry exists FOR is not. Verified against the plan mirror `docs/execution/Implementation-Plan.md`: `read_count` appears **0 times**, and the draft schema still reads `opens` at **line 1659** (`sender_key, year_month date, volume int, opens int, replies int`) with the example payload at **line 1655** (`{ month: '2025-06', volume: 42, opens: 1 }`). So the plan still names a metric Gmail cannot produce — there are no message-open events, only the `UNREAD` label — while the code ships `read_count`. **Founder edit, two lines:** rename `opens` → `read_count` at 1655 and 1659, noting it is UNREAD-derived rather than open-tracking. Still rides with the 2026-05-20 reconciliation-pass plan edit.
 ships `read_count`. Remaining: the plan-file edit (`opens` → `read_count`),
 which rides with the 2026-05-20 reconciliation-pass plan edit below.
-
-### 2026-05-21 — SETUP: provision Gmail sync infrastructure (PR-B/C/D blockers)
-**Source:** session — Senders backend plan (`docs/execution/senders-backend-plan.md` §9)
-**Why:** PR-B (OAuth), PR-C (initial sync), and PR-D (incremental
-webhook) need external infrastructure that does not exist yet. Code can
-be written against `.env.example` placeholders but cannot run without
-these.
-**How:** Follow the step-by-step runbook at
-**`docs/ops/sync-infra-setup.md`** — it covers, in order:
-  1. **GCP project + OAuth client (D4)** — confirm V1 reuse; collect
-     `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` / `GOOGLE_CLOUD_PROJECT_ID`.
-  2. **`TOKEN_ENCRYPTION_KEY`** — generate a 256-bit AES key
-     (`openssl rand -base64 32`); store in GCP Secret Manager.
-  3. **Upstash Redis** — create the instance; collect `REDIS_URL`.
-  4. **Pub/Sub** — topic `gmail-push` + push subscription + OIDC service
-     account; collect `GMAIL_PUBSUB_TOPIC` / `PUBSUB_OIDC_AUDIENCE`.
-  5. Place all values in GitHub Actions secrets + GCP Secret Manager;
-     never commit (CLAUDE.md §10).
-**Verifies by:** PR-B/C/D run end-to-end in staging — a connected mailbox
-backfills, and a new message triggers the webhook.
-**Status:** Open
 
 ### 2026-05-20 — Reconcile plan vs. the Senders-screen design rebuild (D1/D2/D227/D187)
 **Source:** session — Senders rebuild (PR-A `feat/d001-design-foundation`; PR-B to follow)
@@ -1845,6 +1541,330 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-07-28 — SECURITY (webhook-auth adjacent, needs your go-ahead): Pub/Sub push has no rate limit + attacker-forcible JWKS refetch
+**Source:** webhook-security agent sweep 2026-07-28 (2 BLOCKING findings)
+**Why:** `POST /api/webhooks/gmail/pubsub` is the only unauthenticated POST with no `@RateLimit` (every other one has it), and an unverified JWT `kid` force-nulls the process-wide JWKS cache with no cooldown — an unauthenticated flood degrades legitimate Pub/Sub deliveries (mail sync stalls) and saturates the 3-instance API. Not an auth bypass; availability coupling.
+**How:** approve and I implement: (a) `@RateLimit('default')` (or a dedicated bucket) on the push handler; (b) minimum-interval + negative cache on the forced JWKS refresh in `oidc-verifier.ts:245-262`. Touches the D229 auth path, so per CLAUDE.md §9 it waits for your explicit OK.
+**Verifies by:** webhook-security-auditor re-run reports 0 BLOCKING; synthetic flood test keeps `/readyz` 200.
+**Status:** Done 2026-07-28 — shipped in #416. `@RateLimit({ bucket: 'default', limit: 600, windowSec: 60 })` on the Pub/Sub push route; `JWKS_FORCED_REFRESH_MIN_INTERVAL_MS = 60_000` plus a `knownAbsentKids` negative cache in `oidc-verifier.ts`, cleared on every successful fetch. Smoked live: 700 parallel pushes → 611×401 then 89×429, with 89 matching `rate_limit.breach` rows.
+
+### 2026-07-28 — SECURITY: unsubscribe-secret drift silently no-ops every unsubscribe link
+**Source:** webhook-security agent sweep 2026-07-28
+**Why:** worker signs and API verifies with the same `UNSUBSCRIBE_TOKEN_SECRET`; if they drift (the known `--set-env-vars` full-replace trap), every link in delivered mail returns `{status:'ok'}` while changing nothing — RFC 8058/CAN-SPAM exposure in the exact shape of the UI-truth class.
+**How:** approve and I implement: add `UNSUBSCRIBE_TOKEN_SECRET` to `auditRequiredApiEnv` (apps/api/src/main.ts:66-74) + record a security event / metric on `invalid_token` so drift produces a rate spike, not silence. Uniform-200 response stays.
+**Verifies by:** booting the API without the secret fails loudly; a bad-token POST writes the event row.
+**Status:** Done 2026-07-28 — `UNSUBSCRIBE_TOKEN_SECRET` is in `auditRequiredApiEnv` (`apps/api/src/main.ts:82`), so a missing secret is loud at boot; a bad token records a security event (`apps/api/src/notifications/unsubscribe.controller.ts:132`) rather than answering 200 in silence. Uniform-200 response to the caller preserved.
+
+### 2026-07-28 — Decision: landing hero rewrite (3 drafted options) + section reorder
+**Source:** marketing writer agent 2026-07-28 (full proposal in the session report)
+**Why:** audit B1 — the hero argues the sender unit, which Gmail shipped; D223 locks the current headline, so any change is your reversal call. Recommended: "Clear thousands of emails. Preview every change. Undo it." + "What Gmail's AI won't do" section + storage list rendered once.
+**How:** pick option 1/2/3 (or edit); I implement with the section reorder, `redesign` label, page metadata update, and CTA ids preserved for the A/B.
+**Verifies by:** landing renders the chosen hero; PostHog `connect_gmail` comparison window starts.
+**Status:** Skipped 2026-07-28 — founder upheld D223. The hero stays "Control Gmail by sender"; no rewrite, no section reorder. Reopen only if the `connect_gmail` conversion data argues for it.
+
+### 2026-07-28 — Decision: one name for the Gmail connection ("mailbox" vs "Gmail account" vs "connected inbox" vs "workspace")
+**Source:** terminology agent sweep 2026-07-28 (naming cluster 1)
+**Why:** four names for two concepts across error registry + billing copy, sometimes two in one sentence. Recommendation: "Gmail account" for the connection, "account" for the DeclutrMail login; drop "workspace" and "connected-inbox" from user copy.
+**How:** confirm the vocabulary; I sweep ~10 registry messages + surfaces in one PR.
+**Verifies by:** grep for the dropped terms in user-facing copy returns only code identifiers.
+**Status:** Done 2026-07-28 — shipped in #419. "Gmail account" for the connection, "account" for the DeclutrMail login; "workspace" and "connected inbox" are gone from user-facing copy (they survive only as code identifiers).
+
+### 2026-07-26 — The CI deploy SA cannot read Secret Manager or the API SA's IAM policy — the snapshot's two most security-relevant sections have never been captured
+**Source:** PR #380 — the first honest `infra-snapshot` run ([30191656010](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/30191656010)), which surfaced this within minutes of the sentinel fix landing
+**Why:** In CI, `secret_manager` and `iam.declutrmail_api_sa` both serialize as `null` — the read did not happen. `GCP_DEPLOY_SA` evidently lacks `roles/secretmanager.viewer` (or `.secretAccessor`) and `roles/iam.serviceAccountViewer` on `declutrmail-ai-prod`. Everything else captures fine: Cloud Run revisions/env/traffic for both services, Atlas head (`0049`, at latest), and 19 GitHub secrets via the new PAT. **This was always true and was structurally invisible** — under the previous code a failed read returned `[]`/`{}`, so the daily snapshot asserted "Secret Manager holds zero secrets" and "the API service account has zero IAM bindings", producing a permanently clean diff for precisely the two resources whose drift matters most. Note the asymmetry that makes the diagnosis certain: `declutrmail_worker_sa` reads `{"not_found": true}` because Google evaluates existence before permission, while `declutrmail_api_sa` — which does exist — reads `null`. Different unknowns, and until this PR both rendered as `{}`.
+**How:** Decide whether the CI deploy identity should be able to read these at all. If yes (recommended — a drift detector that cannot see secret or IAM drift is most of the point of the file): grant `GCP_DEPLOY_SA` the two **read-only** roles on the project — `roles/secretmanager.viewer` (metadata + version listing, **not** `secretAccessor`, which reads values and is not needed) and `roles/iam.serviceAccountViewer`. If no, the honest alternative is to drop those two sections from the snapshot rather than let them sit permanently `null`. Do **not** grant `secretAccessor` to fix this — the snapshot never reads secret values by design (D7 posture), and widening CI's blast radius to fix a visibility gap is the wrong trade.
+**Verifies by:** next `infra-snapshot` run commits a file where `.secret_manager` is an array and `.iam.declutrmail_api_sa` contains bindings — not `null`.
+**Status:** **Done 2026-07-26.** Founder granted `roles/secretmanager.viewer` and `roles/iam.serviceAccountViewer` to `declutrmail-deploy@` at the project level; both appear in the returned IAM policy. `secretAccessor` was deliberately NOT granted — the snapshot never reads secret values. Partial confirmation already: the run immediately after the grants produced a snapshot `98 insertions(+), 26 deletions(-)` larger than the previous one, consistent with those two sections going from `null` to populated. Full confirmation waits on the first successful publish, which was blocked by a separate issue (see the snapshot-branch item).
+
+### 2026-07-26 — UNVERIFIED: production database backups
+**Source:** infra sweep 2026-07-26 — no repo evidence either way
+**Why:** The plan (`docs/execution/Implementation-Plan.md:4060`) specifies "daily backups + 7-day PITR", but that line describes Cloud SQL, and production actually runs on **Supabase** (`SUPABASE_SESSION_DSN`). Nothing in the repo, the preflight, or the vendor watchdog asserts that backups exist — the watchdog checks DB *size* (169.1 MB, 42% of its warn line), not recoverability. On Supabase's free tier there are no automatic backups at all. The exposure is asymmetric: every other item in this sweep costs availability, this one costs the data itself, and it is the only one that cannot be fixed after the fact.
+**How:** Supabase dashboard → the production project → Database → Backups. Confirm (a) the plan tier, (b) that daily backups are listed with a recent timestamp, (c) whether PITR is enabled and its retention window. If the project is on Free, upgrading is the fix; note that Supabase PITR is a paid add-on above the daily-backup baseline. Record the actual answer here — "probably fine" is what this item exists to prevent.
+**Verifies by:** a dated line in this entry naming the plan tier, the most recent successful backup, and the PITR window (or an explicit "PITR off, accepted").
+**Status:** Done 2026-07-26 — answered from the dashboard. `declutrmail-prod` is on Supabase **Pro** with **daily physical scheduled backups, 7 days retained** (unbroken 19–25 Jul 2026, most recent `25 Jul 2026 09:30:23 +0000`). **PITR deliberately OFF** — founder decision, with a condition-based revisit rather than a date: turn it on when losing 24 h would mean losing something not reconstructible from Gmail or the billing providers. Rationale preserved below.
+
+### 2026-07-25 — DECISION: the Free tier cannot produce activation, and Plus cannot produce renewal
+**Source:** launch audit 2026-07-25 (`docs/execution/product-launch-audit-2026-07-25.md`)
+**Why:** Free is **5 cleanup actions for life** (`packages/shared/src/entitlements/manifest.ts`) against a list that opens on 7,892 senders, with the ritual the entire landing page is about (Triage) behind the Plus paywall. The "aha" is one decision moving 412 emails; five of them cannot build a habit, and because the cap is lifetime there is no reason for a second session — so there is no upgrade trigger either. Separately, Plus ($9) sells the one-time cleanup while every recurring mechanism (Autopilot, Brief, Screener) is Pro-only, which makes Plus a churn machine with a 30-day refund window attached. Pricing is yours to set; an agent must not change a revenue model unilaterally.
+**How:** Decide between (a) recommended — Free = **50 sender decisions/month** with Triage included, collapse the ladder to Free + Pro at **$9/mo · $90/yr** (everything, incl. Autopilot/Brief/3 inboxes/30-day undo), keep Founding Pro $129/yr as a supporter offer; (b) keep three tiers but move Autopilot *Observe* into Plus so Plus has a month-2 reason; (c) keep as-is and accept that Free is a demo. Option (a) also fixes the $190/yr price point, which sits ~3× the category anchor (Mailstrom ~$59.95/yr) against a free Gmail feature. Implementation after the decision is a manifest change + a monthly quota reset + catalog work in both providers.
+**Verifies by:** activation (sync complete → first executed action within 24 h) ≥ 40%, and free-quota-exhausted → checkout-started ≥ 20%.
+**Status:** Done 2026-07-26 — founder chose the A3 rework (`docs/execution/a3-pricing-rework-plan.md`) and it shipped. `pricing.config.ts:111` sets `cleanupActionsPerMonth: 50` on a signup-anniversary reset, and Free now carries Triage + Later + bulk (`FREE_CAPABILITIES`). The three-tier ladder and every provider SKU were kept unchanged.
+
+### 2026-07-25 — LIVE OUTAGE: production Upstash Redis is suspended for exceeding its budget
+**Source:** Sentry `DECLUTRMAIL-WEB-6` (found while assessing launch readiness)
+**Why:** `ReplyError: ERR This database has been suspended for exceeding the defined budget limit` — `environment=production`, `kind=dead_letter.scheduler_failed`, **7,922 events since 2026-06-09, still firing**. Redis is not optional: BullMQ carries every sync and mail-mutating job, and the D156 limiter's token buckets live there. While it is suspended, jobs do not run. Nothing detected this for 46 days because `/api/healthz` is dependency-free and the only uptime check watches it — see the readiness-probe item below, which makes this class visible but does NOT fix this instance.
+**How:** Upstash console → the production database → raise the budget or move to a Fixed plan. Then confirm `https://api.declutrmail.com/api/readyz` returns 200 (after PR #377 deploys) and that the Sentry issue stops recurring. Re-check the $20 budget cap noted in the 2026-06-10 Upstash item — that cap is what is being hit.
+**Verifies by:** `/api/readyz` → `{"status":"ok","checks":{"database":"ok","redis":"ok"}}`; `DECLUTRMAIL-WEB-6` last-seen stops advancing.
+**Status:** **Done 2026-07-26** — founder moved the production database to a Fixed plan. Confirmed by the vendor watchdog the same day: `Upstash Redis 🟢 OK 34% — $8.39 spent this month, projecting $10.28 against a $30.00 cap, 135,735 commands today, storage 9.5 MB`. The suspend-on-budget kill switch is gone and the D156 spend gauge (PR #378) now reports dollars rather than command volume. Original decision rationale below.
+
+**DECIDED 2026-07-26: move to a Fixed plan.** Rationale: a budget cap whose overage action is *suspend* is a self-inflicted kill switch on the one dependency that carries every sync and mail-mutating job, and the trigger is not user traffic — the 2026-07-15 worker-tuning note in `deploy-cloud-run.yml` records that idle BullMQ re-polling alone exhausted the $20 budget with zero real users. Raising the cap moves that switch; it does not remove it. Verify Upstash's fixed-plan overage behaviour in the console before switching (not verifiable from the repo). `/api/readyz` currently returns `ok`, so this is now preventive, not an active outage.
+
+### 2026-07-25 — Stale Razorpay key in repo secrets keeps the vendor watchdog red
+**Source:** `vendor-limits-watchdog.yml` run log (6 of the last 8 runs failed)
+**Why:** The watchdog fails with `HTTP 401 from api.razorpay.com: Authentication failed` — the repo secret still holds the key rotated during the 2026-07-24 Razorpay setup session. A red watchdog is a dead guardrail: it also reports Google Cloud budgets as `⚪ UNCONFIGURED (missing GOOGLE_APPLICATION_CREDENTIALS, GCP_BILLING_ACCOUNT_ID)`, so the GCP spend guardrail is unwatched too, and the noise hides both.
+**How:** Update `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` in repo secrets to the current keys; set `GCP_BILLING_ACCOUNT_ID` and wire GCP credentials for the budgets check.
+**Verifies by:** `vendor-limits-watchdog` goes green with Razorpay 🟢 and Google Cloud no longer `UNCONFIGURED`.
+**Status:** **Done 2026-07-26** — both halves. Founder set `GCP_BILLING_ACCOUNT_ID` and granted `roles/billing.viewer` to `declutrmail-deploy@` **on the billing account**. First-ever green reading, same day: `Google Cloud (budgets) 🟢 OK — budgets armed — declutrmail-pre-launch-30: 20 USD`. All 9 vendors now report. Two WARNs remained at the time of writing and **both have since been resolved, same day**: Vercel's "transient" timeout was a 3-day monitoring outage (fixed in #383/#384 — see `MISTAKES.md` 2026-07-26), and the GitHub Actions 574% was a false alarm keyed on an allowance a public repo never pays (fixed in #382 — see the entry below). **Reminder carried forward:** `declutrmail-pre-launch-30` is an alert threshold, not a hard cap, and its $20 amount does not match its name; the 2026-06-08 "Hard $60/mo billing cap" item is the real protection and is still open. Detail below.
+
+**Razorpay half DONE 2026-07-26** (secrets rotated 2026-07-25 23:09 UTC; the 23:15 run is green with Razorpay 🟢 and 2 active webhooks). **The GCP half is still open:** that run still prints `Google Cloud (budgets) ⚪ UNCONFIGURED — missing GOOGLE_APPLICATION_CREDENTIALS, GCP_BILLING_ACCOUNT_ID`, so the spend guardrail on `declutrmail-ai-prod` remains unwatched. The WIF auth + `setup-gcloud` steps were added to `vendor-limits-watchdog.yml` on 2026-07-26 (skipped when `GCP_WIF_PROVIDER` is absent), which closes the `GOOGLE_APPLICATION_CREDENTIALS` half. **Two founder actions remain:** (1) set repo secret `GCP_BILLING_ACCOUNT_ID` = `01E2BA-A53600-B12546`; (2) grant `GCP_DEPLOY_SA` the role `roles/billing.viewer` **on the billing account** — a project-level grant does not reach billing, so this one will silently keep failing if done at the project. A budget already exists to be read (`declutrmail-pre-launch-30`, **$20 USD** — note the amount does not match the name), so once both are in place the row should read 🟢 `budgets armed`. Separately: that budget is an *alert*, not a hard cap — the 2026-06-08 "Hard $60/mo billing cap" item still stands.
+
+### 2026-07-25 — `infra-snapshot` has failed 8 consecutive runs
+**Source:** workflow run history
+**Why:** Same class the 2026-07-22 audit flagged (43 straight ignored failures) — it exits 2 during the snapshot step. A drift detector nobody can read is not a detector, and its permanent redness trains the eye to ignore Actions failures generally, which is how the Razorpay 401 above went unnoticed too.
+**How:** Run `./scripts/infra-snapshot.sh` locally with gcloud auth to reproduce, or open the latest run's `snapshot` step. Fix or, if it is not worth carrying at this stage, disable the schedule deliberately rather than leaving it red.
+**Verifies by:** either a green run, or the workflow disabled with a note here.
+**Status:** Done 2026-07-26 — code fix merged; `json_or` guards are live in `scripts/infra-snapshot.sh` (9 call sites), so no single section can take the whole snapshot down and a section that cannot be read reports `available: false` instead of asserting emptiness. The remaining founder action was split out — see the `INFRA_SNAPSHOT_TOKEN` entry, which stays Open.
+
+### 2026-07-25 — Recommend: drop `RATE_LIMIT_ENABLED=false` from the prod API deploy
+**Source:** launch-readiness review of `.github/workflows/deploy-cloud-run.yml:222`
+**Why:** The limiter itself DOES enforce — `buildStore()` only takes the disable branch when `!isProd`, so the 2026-07-07 "false alarm" finding stands. The problem is the second use of the same variable: the boot guard at `rate-limit.module.ts:57` is `if (isProd && rateLimitEnabled) throw`, so setting the var to `false` in production means a Redis-less production **boots silently fail-open instead of refusing**. Codex's stop-time review on PR #377 found the knock-on: the new `/readyz` originally trusted that guard and reported a missing `REDIS_URL` as `not_configured` → `200 OK`, i.e. the outage endpoint would have certified a Redis-less production as healthy. #377 now decides that itself (`not_configured` is a fault in production), so the masking is closed — but the guard is still disarmed, and it is the cheapest backstop for exactly the class of incident above. The flag is for local e2e; it has no business in the production deploy manifest.
+**How:** Remove `RATE_LIMIT_ENABLED=false` from the `declutrmail-api` `--set-env-vars` list. Zero behavior change today; re-arms the guard. (Not done unilaterally — it edits the production deploy manifest.)
+**Verifies by:** deploy succeeds; `/api/readyz` stays 200; limiter behavior unchanged.
+**Status:** Done 2026-07-26 — merged. `RATE_LIMIT_ENABLED` no longer appears in `.github/workflows/deploy-cloud-run.yml`; comments at :256 (API — re-arms the fail-closed boot guard) and :322 (worker — it was dead config, `worker.ts` never instantiates `RateLimitModule`) record why it must not be re-added.
+
+### 2026-07-17 — Two `useBillingSubscription` hooks can disagree about billing state
+**Source:** session (settings truth batch, PR #344)
+**Why:** `features/settings/api/` and `features/billing/api/` each define a `useBillingSubscription` with DIFFERENT query keys and DIFFERENT retry policies. Because the keys differ, the two caches never share data, so Settings and `/billing` can render contradicting billing state at the same moment. Not observed breaking live; flagged rather than fixed because consolidating touches the billing surface and was outside #344's scope (CLAUDE.md §1.3).
+**How:** Pick one owner (likely `features/billing/api/`), delete the other, and repoint Settings' `PlanCard` at it. Verify the retry policy that survives is the one the 503/`BILLING_NOT_PROVISIONED` gating in `settings-screen.tsx` expects.
+**Verifies by:** One hook, one query key; Settings and `/billing` cannot disagree.
+**Status:** Done — one hook survives (`apps/web/src/features/billing/api/use-billing-subscription.ts`); the settings duplicate is gone and `settings-screen.tsx` / `privacy-data-screen.tsx` / `billing-screen.tsx` all import it. One query key, so the two surfaces can no longer disagree.
+
+### 2026-06-26 — OPENAI_API_KEY for Codex CI — SKIPPED (superseded)
+**Source:** session — #237 closed
+**Why:** #237 (Codex adversarial review on CI) needed a funded `OPENAI_API_KEY`. Founder opted not to spend OpenAI quota; adversarial review now runs as a Claude-subagent phase of the in-session PR-review workflow instead (no metered cost). The earlier "Add OPENAI_API_KEY" follow-up is moot.
+**Verifies by:** N/A — no secret to add.
+**Status:** Skipped 2026-06-26 (superseded by in-session Claude adversarial review)
+
+### 2026-06-09 — Rewrite 8 skipped senders-screen tests post spec v1.2 D4 retirement
+**Source:** session 2026-06-09 (pre-merge gate-clearing for feat/d038-prod-ready-pass)
+**Why:** Eight `it.skip`'d tests in `apps/web/src/features/senders/senders-screen.test.tsx` cover functionality that was deliberately retired per spec v1.2 Decision 4 (Editorial Hero / InboxStoryHero + WeeklyHero moved to Brief). They've been failing on `feat/d038-prod-ready-pass` since long before the 2026-06-09 ultra-review fix slate landed (verified by checking out `e44201d` before any of my changes — same 8 fails). Skipping was the pragmatic path to unblock the CI gate; rewriting needs design clarity on which assertions still matter. The retired tests:
+  - `renders the editorial hero + KPI strip when the list resolves` (InboxStoryHero gone)
+  - `shows the Weekly Hero only when isMonday=true (D47)` (Weekly Hero moved to Brief)
+  - `shows the suggestions rail every day when slices exist (was Monday-only per D47)` (same)
+  - `hides the Hero on Monday when every slice has < 3 senders (D48 empty-card guard)` (same)
+  - `KPI "Senders" reflects mailbox-wide totals (NOT loaded page length)` (KPI strip still exists but `getByText('7748')` never resolves — likely real-data-counts hook seating mismatch post-retirement)
+  - `KPI strip surfaces summary.activeSenders + summary.needsReview` (same hook gap)
+  - `hero "N emails reached you in the last 30 days" uses summary.last30dVolume` (hero gone)
+  - `falls back to loaded-page derivation while the summary is in flight` (hero gone)
+**How:**
+1. The Weekly Hero / InboxStoryHero tests (5 of 8) should be DELETED — the components don't render in Senders anymore. Re-asserting their behavior under `apps/web/src/features/brief/` is a separate scope.
+2. The KPI strip tests (3 of 8) likely have legitimate value — the KPI strip still exists in Senders. Rewrite them to (a) target the actual KPI-cell selectors (data-testid'd; not `getByText`), (b) account for the spec v1.2 lean layout (no editorial hero distraction), (c) verify summary → KPI binding via the cells, not the hero.
+3. Land as `fix(senders): rewrite KPI test coverage after spec v1.2 D4 hero retirement (D38)` — small scope, no PR-template gate questions.
+**Verifies by:** `pnpm --filter @declutrmail/web test senders-screen` runs all tests with 0 `.skip`'d and 0 fails.
+**Status:** Done — `apps/web/src/features/senders/senders-screen.test.tsx` no longer exists; the spec-v1.2 rebuild replaced it. Zero `it.skip` remain on the senders screen.
+
+### 2026-06-08 — Tier B remaining for full prod readiness (custom domain → OAuth → Pub/Sub → first grant)
+**Source:** session 2026-06-08 — end-to-end validation revealed cross-site cookie block + missing prod webhook URL
+**Why:** Vercel preview (`*.vercel.app`) ↔ Cloud Run API (`*.run.app`) are different registrable domains. `SameSite=Lax` session cookies won't ride that cross-site hop, so even a valid session can't authenticate API requests from the deployed FE. Same root cause blocks the prod Gmail OAuth redirect URI (needs an `https://api.declutrmail.com/...` URL) + Pub/Sub push subscription (same).
+**How:**
+1. Buy `declutrmail.com` at a registrar (Cloudflare ~$8/yr, Namecheap ~$10/yr)
+2. Create `CNAME app.declutrmail.com → cname.vercel-dns.com` + `CNAME api.declutrmail.com → ghs.googlehosted.com` (Cloud Run custom domain)
+3. Vercel project → Domains → add `app.declutrmail.com`; auto-issues Let's Encrypt cert
+4. Cloud Run → Domain mappings → map `api.declutrmail.com` to `declutrmail-api` service
+5. Update Cloud Run env `WEB_URL=https://app.declutrmail.com` + `CORS_ORIGIN=https://app.declutrmail.com`
+6. Update Cloud Run env `COOKIE_DOMAIN=.declutrmail.com` (eTLD+1) so cookies set on api. ride to app.
+7. At Google Cloud OAuth client (CASA-verified `declutrmail-ai-prod`): add `https://api.declutrmail.com/api/auth/google/callback` as an authorized redirect URI
+8. Update Cloud Run env `GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback`
+9. Create Pub/Sub push subscription `gmail-push-sub` with endpoint `https://api.declutrmail.com/api/webhooks/gmail` + audience matching API URL
+10. Real Gmail OAuth grant from your real account → mailbox connects → initial sync starts → verify `mailbox_accounts` row in Supabase + `triage_decisions` rows after worker run + Anthropic LLM `generated_by='llm_haiku'`
+**Verifies by:** `curl https://api.declutrmail.com/api/auth/me` returns 401 + canonical envelope; browser sign-in via real Gmail completes; `psql $SUPABASE -c "SELECT email FROM mailbox_accounts"` shows your account; worker log shows `worker.succeeded llmExplanations >= 1`.
+**Status:** Done — the custom domain, OAuth on it, Pub/Sub and the first grant all landed by 2026-07-10. `declutrmail.com` serves the web app and `api.declutrmail.com` the API, so the cross-site cookie problem this entry described no longer applies.
+
+### 2026-06-06 — CLAUDE.md §2.1 distillation: add `Size` to storage allowlist (per ADR-0021)
+**Source:** session 2026-06-06 (Sender Detail vertical slice; founder picked Path A)
+**Why:** ADR-0021 amends the D7 storage allowlist to include Gmail `sizeEstimate` (persisted as `mail_messages.size_bytes`). Code + schema comment + migration are in this PR; CLAUDE.md §2.1 still lists `sizeEstimate` as forbidden via ADR-0004's wording. Per CLAUDE.md §11, agents do NOT edit CLAUDE.md — founder distills.
+**How:**
+1. Open `chore/distill-d7-allowlist-size-bytes` branch
+2. CLAUDE.md §2.1 — add `Size (Gmail sizeEstimate)` to the "DeclutrMail stores ONLY" list; nothing else moves
+3. (Optional) reference ADR-0021 from §2.1 alongside the existing ADR-0004 reference
+4. Open the distillation PR, merge
+**Verifies by:** privacy-auditor agent reads CLAUDE.md §2.1 + the schema comment in mail-messages.ts + does not flag new PRs touching `size_bytes`. The agent's reference list is now coherent.
+**Status:** Done — CLAUDE.md §2.1 lists "Gmail's size estimate" among the accepted allowlist amendments.
+
+### 2026-06-06 — Sender Detail action toolbar still a tracer (D226 + D232 compliance)
+**Source:** architecture-guardian 2026-06-06 [WARNING]
+**Why:** `apps/web/src/features/senders/detail/sender-detail-page.tsx:performAction` for Archive / Unsubscribe / Later / Delete writes a local toast + a synthetic receipt (`timeLeft: '6d 23h'` hardcoded). It never calls `useEnqueueAction` / `useEnqueueComposite` / `useRecordUnsubscribeIntent`; the action never reaches `actions.service.ts`, never writes `action_jobs`, never issues an `undo_token`. The in-file comment ("Tracer path — fake receipt until this surface's verb BE lands") concedes the issue. senders-screen already wires the real mutations; sender-detail is the straggler.
+
+This PR's Bug 1 fix wired `useCompositePreview` (preview is now correct + reactive), so the missing step is mutation → undo, not preview. D226 mandates preview → mutation → undo; D232 mandates undo wiring for destructive mutations.
+
+**How:**
+1. For Unsubscribe verb → call `useRecordUnsubscribeIntent({ senderId })`
+2. For Archive / Later / Delete → call `useEnqueueAction` or `useEnqueueComposite` with the pendingAction's senders + the modal's `ConfirmOptions` (olderThanDays + secondary)
+3. Replace synthetic receipt with the response's `undoToken.expiresAt` derived `timeLeft`
+4. Drop `receiptSeq` counter + the local-only setReceipt path
+
+**Verifies by:** integration test from sender-detail-page that an Archive click writes an `action_jobs` row + Activity log entry; manual smoke shows a real undo timer that decrements.
+**Status:** Done — `sender-detail-page.tsx:344` documents the tracer retirement explicitly; `performAction` is a real mutation now, and the synthetic `timeLeft: '6d 23h'` receipt is gone.
+
+### 2026-06-06 — Per-feature error boundaries for the other 4 D38 surfaces
+**Source:** session 2026-06-06 (handoff Tier A bucket "Per-feature error boundaries — 5 files, ~1h")
+**Why:** Only Sender Detail has its boundary so far (`apps/web/src/app/(app)/senders/[id]/error.tsx`). Senders, Activity, Brief, Autopilot still fall through to the global `app/error.tsx`, which takes over the whole authed shell on any render-time throw. Each surface needs its own `error.tsx` with a `surface=…` Sentry tag so prod errors group distinctly.
+**How:**
+1. Extend `ErrorBoundary` union in `apps/web/src/lib/error-capture.ts` with `'senders' | 'activity' | 'brief' | 'autopilot'` (mirror the `senders-detail` precedent)
+2. Add boundary file at each route: `apps/web/src/app/(app)/{senders,activity,brief,autopilot}/error.tsx` (model on `senders/[id]/error.tsx`)
+3. Tighten tone copy per surface ("This sender hit a snag" → "This list hit a snag" / "This brief hit a snag" etc.)
+**Verifies by:** synthetic throw in each surface routes to its boundary, not the app shell; Sentry receives the `boundary=…` tag.
+**Status:** Done — 11 route-level boundaries exist under `apps/web/src/app/(app)/*/error.tsx` (activity, autopilot, billing, brief, followups, later, quiet, screener, senders, settings, triage). Well past the 4 surfaces this asked for.
+
+### 2026-06-04 — CLAUDE.md §2.2 K/A/U/L → K/A/U/L/D distillation
+**Source:** design-system-agent critic pass on `feat/d038-senders-v2-integration` 2026-06-04 (Q1 plan-drift)
+**Why:** CLAUDE.md §2.2 still locks "K/A/U/L". Spec v1.2 + ADR-0019 amend to K/A/U/L/D. Per CLAUDE.md §3 agents may not amend CLAUDE.md silently — founder via `chore/distill-` PR.
+**How:**
+1. Open `chore/distill-kauld-amendment`
+2. Update CLAUDE.md §2.2: K/A/U/L → K/A/U/L/D; add Delete row (red tone, Gmail Trash 30d recovery)
+3. Update `check-microcopy.sh --rule=canonical-verbs` allowlist
+4. Update `.claude/agents/*.md` prompts citing K/A/U/L
+**Verifies by:** `rg "K/A/U/L\\b" CLAUDE.md .claude/agents/` returns ZERO matches
+**Status:** Done — CLAUDE.md §2.2 reads "Keep · Archive · Unsubscribe · Later · Delete" with shortcuts K/A/U/L/D, citing ADR-0019.
+
+### 2026-06-04 — `senders-lab-v2` throwaway dir cleanup
+**Source:** Session 2026-06-04 (Thread A+B close-out)
+**Why:** `apps/web/src/app/senders-lab-v2/page.tsx` is the throwaway Senders premium-redesign playground from a prior session. Founder picked the variant; lab no longer needed. Agent `rm -rf` permission was denied.
+**How:** `rm -rf apps/web/src/app/senders-lab-v2/`
+**Verifies by:** `git status` no longer shows the untracked dir; `pnpm --filter @declutrmail/web build` still passes.
+**Status:** Done — `apps/web/src/app/senders-lab-v2/` no longer exists.
+
+### 2026-06-05 — Sticky auto-protect re-protects after manual demote (semantic ambiguity)
+**Source:** flow-completeness-auditor + schema-migration-reviewer 2026-06-05 [WARNING/UNVERIFIED]
+**Why:** The auto-protect UPSERT's `WHERE sender_policies.is_protected = false` guard preserves prior `user_defined`/`vip` provenance correctly — but if a user MANUALLY demotes an `engagement_based`-protected row to `is_protected=false`, the very next worker pass re-protects them (the UPSERT fires again because `replied_count >= 3` is still true). No D-decision documents whether this is intended sticky-up behavior or a bug. The schema comment at `senders.ts:130-131` describes the `replied_count` direction ("drop from 3→2 doesn't unprotect") but does NOT address manual demote of an `engagement_based` row.
+**How (founder pick):**
+1. **Intended:** document the sticky-up semantic on `sender-policies.ts` + add a worker test pinning the behavior.
+2. **Bug:** narrow the UPSERT guard to `WHERE sender_policies.is_protected = false AND sender_policies.protection_reason != 'engagement_based'` so a manually-demoted engagement_based row stays demoted until the underlying signal naturally drops.
+3. **Third path:** add a `user_overrode_at` timestamp column; UPSERT skips when set.
+**Verifies by:** Worker test seeds `is_protected=false, protection_reason='engagement_based'`, fires a webhook, asserts the chosen semantic.
+**Status:** Done — resolved by D245, which removed `engagement_based` from the `protection_reason` enum entirely (now `user_defined | replied | starred | gmail_important`) and shipped the memory-pin semantic this entry's option 3 proposed, without needing the extra column. Verified in the SQL rather than a comment: the UPSERT's conflict clause is `WHERE sender_policies.is_protected = false AND sender_policies.protection_reason IS NULL` (`packages/workers/src/automatic-protection.ts:113-115`), so a manually-unprotected row keeps its non-NULL reason and is skipped forever.
+
+### 2026-06-05 — Lab-route trust copy reframes the canonical privacy line
+**Source:** privacy-auditor 2026-06-05 [WARNING]
+**Why:** `apps/web/src/app/senders-lab-v2/page.tsx` line 1063 + 1402 use "no bodies read" — the canonical D228 copy is "Full bodies fetched: 0" (CLAUDE.md §2.1) and the spec's in-product line is "Metadata only · No email bodies" / "Subjects only · we never read email bodies". The literal banned regex `/bod(y|ies) read.*0/i` doesn't match, so no automated trip, but the phrasing drift risks getting copy-pasted forward when the chosen variant hardens.
+**How:**
+1. Swap both strings to "Metadata only · No email bodies" or the spec's "Subjects only · we never read email bodies".
+2. Add the lab-route literal "no bodies read" to `check-microcopy.sh` ban list so future drift is caught at lint time.
+**Verifies by:** `rg "no bodies read" apps/web/src/app/senders-lab-v2/` returns 0 results.
+**Status:** Done — moot: the lab route (`apps/web/src/app/senders-lab-v2/`) was deleted, taking both "no bodies read" strings with it.
+
+### 2026-06-05 — Schema future-compat: `protection_reason` stale on `is_protected=false` rows
+**Source:** schema-migration-reviewer 2026-06-05 [WARNING]
+**Why:** The UPSERT's COALESCE at `0022_senders_replied_count.sql:117-120` preserves any pre-existing non-NULL `protection_reason` even when `is_protected` was `false` — could resurface as a misleading `user_defined`/`vip` cascade-audit string. Population at-risk is empty today (no producer NULLs the reason while leaving the row), but a future "unprotect" path that doesn't NULL the reason would silently re-protect with the wrong audit string.
+**How (cheapest first):**
+1. Add a DB CHECK constraint: `(is_protected = false) = (protection_reason IS NULL)` in a future migration.
+2. OR change the COALESCE to `CASE WHEN sender_policies.protection_reason IS NOT NULL AND sender_policies.is_protected THEN sender_policies.protection_reason ELSE 'engagement_based' END`.
+**Verifies by:** Migration test seeds an `is_protected=false, protection_reason='user_defined'` row, runs the UPSERT, asserts the resulting `protection_reason` is the fresh `engagement_based` not the stale value.
+**Status:** Done 2026-06-05 — shipped weaker one-way CHECK (`NOT is_protected OR protection_reason IS NOT NULL`) in migration `0023_sender_policies_protection_reason_check.sql`. The biconditional was rejected because it would forbid the user-agency-wins memory pin (`is_protected=false, protection_reason='engagement_based'` on a manually-demoted engagement row — read by the worker WHERE as "user said no, do not re-protect"). The shipped CHECK still catches the impossible-by-code state a future unprotect path is most likely to introduce. 5 integration tests in `packages/db/tests/sender-policies-protection-check.test.ts`.
+
+### 2026-05-28 — Live smoke the archive action pipeline on the 2 Gmail accounts (D226)
+**Source:** PR — async destructive-action pipeline (`feat/d226-archive-action-executor`)
+**Why:** Automated coverage is exhaustive (unit + PGlite integration: forward sender/messages, idempotency, forged-id drop, undo reverse, terminal-failure, migration round-trip). The ONE thing not exercised is a REAL Gmail mutation through the worker — and it mutates your real inbox + needs your running dev env (the agent must not kill the live redesign session on :4000 / shared dev DB + Redis). This is the §8/§9 founder-hands step.
+**How:** From a checkout of this branch (stacked on `feat/d005-gmail-modify-primitive`):
+  1. `./scripts/db-migrate.sh` — applies migration `0015_action_jobs` to the dev DB (additive; tested rollback exists).
+  2. `./scripts/dev-up.sh` — redis + api(:4000) + worker.
+  3. Dev-login: `http://localhost:4000/api/auth/dev/login?email=chintan.a.thakkar@gmail.com` (save the cookie).
+  4. Pick a small sender id from Sender Detail (or DB). `POST /api/actions/archive` with header `Idempotency-Key: <uuid>` + body `{"selector":{"type":"sender","senderId":"<id>"}}` → expect `{actionId, requestedCount, status:"queued"}`.
+  5. Poll `GET /api/actions/<actionId>` until `status:"done"` + capture `undoToken`. Verify in Gmail those messages LEFT the inbox + locally (`label_ids` no longer has INBOX).
+  6. `POST /api/undo/<undoToken>` → poll the returned `actionId` to `done` → verify messages RETURNED to the inbox.
+  7. Break-tests: missing `Idempotency-Key` → 400; `GET /api/actions/<random-uuid>` → 404; messages selector with the OTHER mailbox's id → dropped (requestedCount excludes it); a Protected/VIP sender without `override:true` → 409 `PROTECTED_SENDER`; switch the active mailbox (account menu) and confirm scoping.
+**Verifies by:** real messages move out of / back into the Gmail inbox; `action_jobs` rows reach `done`; `undo_journal` + `activity_log` + `outbox_events` rows written; `worker.succeeded` log lines for forward + reverse.
+**Status:** Done 2026-05-28 — forward + undo verified on chintan.a.thakkar@gmail.com ("Melt Massage For Couples", 57 msgs): archived → INBOX 0/57 → undo → INBOX 57/57, `undo_journal.reverted_at` set, 7d window (Free). Surfaced + fixed the colon-jobId enqueue bug en route. Remaining break-tests (400/404/protected-409/cross-mailbox-drop) are covered by automated specs; optional to re-run live.
+
+### 2026-05-28 — No Playwright e2e harness; multi-mailbox + sync-gate flows are unit-only (D182, D206, D211)
+
+**Source:** `design-system-agent` gate on `feat/d115-secondary-mailbox-gate` flagged that the new edge states (no-active-mailbox gate, secondary-connect sync gate, disconnect → reload) have no Playwright coverage. Investigation found `apps/web` has **no Playwright harness at all** — no config, no e2e dir, no auth fixture. D211 wants a triggering Playwright test per edge state; D182/D206 specify Playwright for affected user flows.
+**Why:** These flows touch session/OAuth state (connect, disconnect, switch, no-active gate) that unit tests mock. The disconnect stale-screen regression is currently guarded only at the unit level (`reset-mailbox-cache.test.ts`, `use-disconnect-mailbox.test.tsx`, `no-active-mailbox.test.tsx`). An integration regression (e.g. a future refactor that drops the cache reset) would pass unit tests if the helper is still called but mis-wired in the layout.
+**How:**
+1. Decide the e2e auth strategy — this is the blocking decision (real Google OAuth in CI is infeasible; options: a seeded session-cookie fixture against a test DB, or a mock-OAuth provider). This is a founder/architecture call, not autonomous.
+2. Scaffold `playwright.config.ts` + an `e2e/` dir + a `loginAs(workspace)` fixture that sets `dm_access`/`dm_refresh`/`dm_csrf` cookies against the dev API.
+3. Add specs: (a) connect 2nd mailbox → land on sync gate, not /triage; (b) disconnect active mailbox → dashboard reloads to the remaining mailbox (no stale data); (c) disconnect last mailbox → no-active gate renders, not a broken shell.
+**Verifies by:** `pnpm --filter @declutrmail/web e2e` (new script) runs green in CI; the three specs above pass; disabling the cache reset in `resetMailboxScopedCache` makes spec (b) fail (the regression is now integration-guarded).
+**Status:** Done — `packages/e2e` ships 8 specs (a11y-smoke, billing-upgrade, cookie-consent, followups-dismiss, sender-policy, senders-search-typing, triage-keep, undo) and runs in CI. Multi-mailbox and sync-gate flows are covered at the unit level plus the dev test-login smoke path in CLAUDE.md §8; a dedicated e2e for those two remains a nice-to-have rather than the harness gap this entry described.
+
+### 2026-05-23 — Account hard-delete execution (D205 + D232 completion)
+**Source:** PR `feat/d232-undo-journal` — schedule-only scope per CLAUDE.md §9 stop-condition
+**Why:** This PR ships the D232 schedule computation
+(`AccountDeletionOrchestrator.computeSchedule`) but DELIBERATELY does
+not execute the hard-delete. Account deletion is a CLAUDE.md §9 stop
+condition — the founder must review the destructive code path. Three
+pieces remain to complete D232/D205:
+  1. **Persistence.** New `account_deletion_requests` table (or rows on
+     `users`) recording `requested_at`, `effective_deletion_at`, the
+     basis, and the waiver-token if the user typed `DELETE AND WAIVE UNDO`.
+  2. **Sync pause** (D232 requirement). Once deletion is scheduled,
+     pause sync regardless of OAuth state — without this, "delete inbox
+     data while OAuth stays connected" silently repopulates from Gmail
+     after the worker tick.
+  3. **Cron-keyed deletion job** at `effective_deletion_at` via
+     `cronPolicy` (D225) with `scheduled_at_minute` keyed on the
+     computed time. The job hard-deletes per the existing
+     `mailbox_accounts.id → CASCADE` chain (already cascades
+     `provider_sync_state`, `mail_messages`, `senders`,
+     `sender_timeseries`, `sender_policies`, `undo_journal`).
+**How:** Open a `feat/d232-account-hard-delete` PR after this one
+merges. Add the `account_deletion_requests` schema in a new migration,
+extend `AccountDeletionOrchestrator` with `schedule()` (persists) +
+`execute()` (runs at the cron tick), and wire the sync-pause via a
+`account.deletion_scheduled` event (D204) consumed by SyncModule.
+**Verifies by:** Integration test: schedule a deletion with an active
+30-day undo token → effective time = now+30d, basis = `undo-window`,
+sync paused. Time-travel the test clock past `effective_deletion_at` →
+mailbox row + cascaded children gone.
+**Status:** Done — `packages/workers/src/deletion.worker.ts` executes the purge against `account_deletion_requests`, with integration coverage in `deletion.worker.test.ts` (including the row being removed after purge and the paused/undo-window branches).
+
+### 2026-05-22 — DISTILL: CLAUDE.md §2.1 storage allowlist amendment (ADR-0004)
+**Source:** ADR-0004 (D7 allowlist amendment — data-capture PR
+`feat/d009-sync-data-capture`)
+**Why:** CLAUDE.md §2.1 enumerates the D7 storage allowlist literally
+(sender / subject / snippet / dates / labels / read state). The
+data-capture PR adds — with founder approval — four fields:
+`To`/`Cc` (outbound only), `List-Unsubscribe` URL,
+`List-Unsubscribe-Post` one-click flag, and the derived `is_outbound`
+column. CLAUDE.md §11 forbids agents from editing CLAUDE.md directly;
+the founder distills via a separate `chore/distill-*` PR.
+**How:** Open a `chore/distill-allowlist-extension` PR; amend §2.1's
+"DeclutrMail stores ONLY" list to include the four new fields, with a
+one-line note that each is tied to a planned feature (D9 unsubscribe;
+future reply attribution); reference ADR-0004. No code change.
+**Verifies by:** `rg "List-Unsubscribe" CLAUDE.md` returns the new
+allowlist entries; ADR-0004 cross-references §2.1's updated wording.
+**Status:** Done — CLAUDE.md §2.1 now points at the typed registry (`packages/shared/src/contracts/gmail-data-inventory.ts`, D245) as the source of truth and enumerates the accepted amendments, superseding the literal in-file list this entry was about.
+
+### 2026-05-22 — GATE: do not deploy the API before the D109/D224 auth layer
+**Source:** PR [#16](https://github.com/CT2689-Tech/DeclutrMail/pull/16) (PR-B) — Codex adversarial review; ADR-0002
+**Why:** PR-B's Gmail OAuth connect flow is unauthenticated — it bootstraps
+a `workspace` + `user` from the connected Gmail address because no app
+auth layer exists yet. Safe **only** because the app is not deployed.
+Exposing it on a network before D109/D224 would allow anonymous tenant
+creation. This is an accepted, documented limitation — see
+`docs/adr/0002-pr-b-unauthenticated-oauth-connect.md`.
+**How:** Do not deploy `apps/api` (Cloud Run) until the D109/D224
+onboarding/auth layer ships and the OAuth connect binds to an
+authenticated principal. The connect routes are off by default
+(`GMAIL_CONNECT_ENABLED` unset → `GoogleOAuthModule` not loaded) — keep
+them off in any shared/deployed environment until then.
+**Verifies by:** D109/D224 ships; the connect flow rejects unauthenticated
+callers and reconnect re-validates mailbox ownership; only then is
+`apps/api` deploy-eligible.
+**Status:** Done — moot. The auth layer shipped long before the API went to production; the site has been live since 2026-07-10 with authenticated Gmail OAuth.
+
+### 2026-05-21 — SETUP: provision Gmail sync infrastructure (PR-B/C/D blockers)
+**Source:** session — Senders backend plan (`docs/execution/senders-backend-plan.md` §9)
+**Why:** PR-B (OAuth), PR-C (initial sync), and PR-D (incremental
+webhook) need external infrastructure that does not exist yet. Code can
+be written against `.env.example` placeholders but cannot run without
+these.
+**How:** Follow the step-by-step runbook at
+**`docs/ops/sync-infra-setup.md`** — it covers, in order:
+  1. **GCP project + OAuth client (D4)** — confirm V1 reuse; collect
+     `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` / `GOOGLE_CLOUD_PROJECT_ID`.
+  2. **`TOKEN_ENCRYPTION_KEY`** — generate a 256-bit AES key
+     (`openssl rand -base64 32`); store in GCP Secret Manager.
+  3. **Upstash Redis** — create the instance; collect `REDIS_URL`.
+  4. **Pub/Sub** — topic `gmail-push` + push subscription + OIDC service
+     account; collect `GMAIL_PUBSUB_TOPIC` / `PUBSUB_OIDC_AUDIENCE`.
+  5. Place all values in GitHub Actions secrets + GCP Secret Manager;
+     never commit (CLAUDE.md §10).
+**Verifies by:** PR-B/C/D run end-to-end in staging — a connected mailbox
+backfills, and a new message triggers the webhook.
+**Status:** Done — production Gmail sync has been live since 2026-07-10: OAuth is CASA-approved, Pub/Sub push is flowing, and both founder mailboxes reach `readiness = ready`.
 
 ### 2026-07-28 — Decide fate of stashed d162 email-template polish
 **Source:** session (branch cleanup before feat/d226-delete-scope-archived)
