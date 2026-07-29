@@ -50,19 +50,19 @@ export const QuietHoursConfigSchema = z
   .object({
     enabled: z.boolean(),
     /** Window start, local wall-clock "HH:MM" (inclusive). */
-    startLocal: z.string().regex(TIME_RE, 'startLocal must be "HH:MM" (24h)'),
+    startLocal: z.string().regex(TIME_RE, 'Start time must look like 22:00 (24-hour clock).'),
     /** Window end, local wall-clock "HH:MM" (exclusive). */
-    endLocal: z.string().regex(TIME_RE, 'endLocal must be "HH:MM" (24h)'),
+    endLocal: z.string().regex(TIME_RE, 'End time must look like 07:00 (24-hour clock).'),
     /** IANA timezone name, e.g. "Asia/Kolkata". */
     timezone: z
       .string()
       .min(1)
       .max(64)
-      .refine(isValidTimeZone, 'timezone must be a valid IANA timezone name'),
+      .refine(isValidTimeZone, 'Pick a valid timezone from the list.'),
   })
   .strict()
   .refine((c) => c.startLocal !== c.endLocal, {
-    message: 'startLocal and endLocal must differ (zero-length window)',
+    message: "Start and end times can't be the same.",
     path: ['endLocal'],
   });
 export type QuietHoursConfig = z.infer<typeof QuietHoursConfigSchema>;

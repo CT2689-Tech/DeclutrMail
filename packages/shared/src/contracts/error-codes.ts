@@ -49,7 +49,7 @@ export const ERROR_CODES = {
     status: 400,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'The request was invalid.',
+    message: "Something about that didn't look right. Check the details and try again.",
   },
   UNAUTHORIZED: {
     status: 401,
@@ -73,7 +73,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'That action conflicts with the current state.',
+    message: "That didn't apply — something changed since this page loaded. Refresh and try again.",
   },
   RATE_LIMITED: {
     status: 429,
@@ -85,7 +85,7 @@ export const ERROR_CODES = {
     status: 500,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Internal server error',
+    message: 'Something went wrong on our side. Your mail is untouched — try again in a moment.',
   },
 
   // --- domain: mailbox scope (current-mailbox.guard, auth orchestrator) ---

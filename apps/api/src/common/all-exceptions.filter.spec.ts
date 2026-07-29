@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
+import { ERROR_CODES } from '@declutrmail/shared/contracts';
 
 import { AllExceptionsFilter } from './all-exceptions.filter.js';
 import { AppException } from './app-exception.js';
@@ -123,7 +124,7 @@ describe('AllExceptionsFilter — D168 envelope + D169 tiers', () => {
     );
 
     expect(status).toBe(500);
-    expect(body.error.message).toBe('Internal server error');
+    expect(body.error.message).toBe(ERROR_CODES.INTERNAL_ERROR.message);
     expect(body.error.retryable).toBe(true);
   });
 
@@ -189,7 +190,7 @@ describe('AllExceptionsFilter — D168 envelope + D169 tiers', () => {
 
     expect(status).toBe(500);
     expect(body.error.code).toBe('INTERNAL_ERROR');
-    expect(body.error.message).toBe('Internal server error');
+    expect(body.error.message).toBe(ERROR_CODES.INTERNAL_ERROR.message);
   });
 
   it('defensively fills correlation ids when the middleware did not run', () => {

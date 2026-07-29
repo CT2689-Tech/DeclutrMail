@@ -103,7 +103,7 @@ export function AutopilotRoute() {
       const err = rulesQuery.error ?? suggestionsQuery.error ?? patternQuery.error;
       const message =
         err instanceof ApiError
-          ? `We couldn't load Autopilot (HTTP ${err.status}).`
+          ? "We couldn't load Autopilot."
           : "We couldn't load Autopilot right now.";
       return { kind: 'error', message, retry };
     }
