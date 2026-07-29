@@ -14,8 +14,13 @@ pending_checkouts=0`. The first person to pay is currently the test case.
 ## 0. STOP — environment safety
 
 Groups A–I run against **sandbox providers and the dev database**. Group J is
-the only production step. Mixing those is the way to charge a real card or
-corrupt real billing rows, so the separation is mechanical, not a convention.
+the only production step. Mixing them is how you charge a real card or corrupt
+real billing rows.
+
+Be honest about the strength of what follows: these are **checks you have to
+run**, not enforcement. Nothing in the code stops a shell pointed at production
+from executing the SQL in C4. §0.2 is a two-second command that turns "I think
+this is dev" into "I checked" — its whole value is that you actually run it.
 
 ### 0.1 Four rules
 
@@ -34,15 +39,45 @@ corrupt real billing rows, so the separation is mechanical, not a convention.
 
 ### 0.2 Prove which database you are on — before anything else
 
+A gate that cannot fail is worse than no gate, because you will trust it. The
+first version of this section told you to compare `inet_server_addr()` against
+`db.hewwqjkvrngxbihciewr.supabase.co` — but that function returns an **IP
+address** (`::1` locally), never a hostname, so the comparison could never
+match and the check always looked clean. Do not reintroduce it.
+
+**The connection string in `.env.local` is the only thing that decides which
+database the API writes to.** So check that string, where a match is exact:
+
 ```bash
-psql "$DATABASE_URL" -c "SELECT current_database(), inet_server_addr();"
+if grep -q 'hewwqjkvrngxbihciewr' .env.local; then
+  echo "REFUSE — .env.local names declutrmail-prod"; exit 1
+else
+  echo "OK — not the production project"
+fi
 ```
 
-The host must **not** be `db.hewwqjkvrngxbihciewr.supabase.co` (that is
-`declutrmail-prod`). If it is, stop and fix `.env.local` before continuing.
+```bash
+# and see the host you ARE pointed at, from the same file
+sed -n 's/^DATABASE_URL=//p' .env.local | sed 's#.*@##; s#[/?].*##'
+```
 
-Re-run this check any time you reopen a shell. It is two seconds and it is the
-only thing standing between a test script and production billing data.
+`hewwqjkvrngxbihciewr` is the production Supabase project ref. It appears
+verbatim in any prod connection string, so `grep` either matches it or the
+string does not name prod.
+
+**A second, independent signal:** the dev-login route only exists when
+`DEV_AUTH_ENABLED=true`, which is never set on production — it appears zero
+times in `deploy-cloud-run.yml`, and that deploy uses `--set-env-vars`, a full
+replace, so it cannot linger from an earlier revision. If dev-login works, you
+are not talking to the production **API**.
+
+> Be clear about what each check proves. The `grep` proves your local API is
+> not configured against the prod **database**. Dev-login proves you are not
+> hitting the prod **API**. Neither implies the other — a local API with
+> dev-auth on can still be pointed at the prod DB, which is exactly the
+> accident the `grep` is there to catch. Run both.
+
+Re-run the `grep` any time you edit `.env.local` or reopen a shell.
 
 ### 0.3 Sandbox setup (one time)
 
@@ -197,22 +232,24 @@ webhook does. A tier that flips _before_ the webhook lands is a bug.
 delete the dev rows). B6 needs an **active Plus** subscription — do it right
 after A5, before A7.
 
-| #   | Step                                                                           | Expect                                                                                           |
-| --- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| B1  | Open the plan picker in **two browser tabs**, start checkout in both           | Second tab stands down (Web Locks); only one overlay                                             |
-| B2  | Start checkout, then in a **second browser profile** try again                 | `CHECKOUT_IN_FLIGHT`                                                                             |
-| B3  | From B2, click "I checked — no charge went through"                            | `DELETE /api/billing/checkout/pending` → `{released:true}`; checkout allowed again               |
-| B4  | Start checkout, close the overlay **without paying**, retry immediately        | Still `CHECKOUT_IN_FLIGHT`. The claim is **surfaced, not released** — 3DS can settle after close |
-| B5  | Force a provider failure (bad `PADDLE_API_KEY`), then retry                    | The claim is **HELD**, by design — a thrown provider error is not proof the provider saw nothing |
-| B6  | On active **Plus**, try to buy Plus again                                      | `SUBSCRIPTION_EXISTS`                                                                            |
-| B7  | Double-click **Confirm** as fast as possible                                   | One charge. **Verify in the Paddle dashboard, not just the UI**                                  |
-| B8  | Abandon a checkout, wait past the **30-minute TTL**, restart the worker (§0.5) | The expired claim is deleted by the sweep; checkout reopens                                      |
+| #   | Step                                                                    | Expect                                                                                           |
+| --- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| B1  | Open the plan picker in **two browser tabs**, start checkout in both    | Second tab stands down (Web Locks); only one overlay                                             |
+| B2  | Start checkout, then in a **second browser profile** try again          | `CHECKOUT_IN_FLIGHT`                                                                             |
+| B3  | From B2, click "I checked — no charge went through"                     | `DELETE /api/billing/checkout/pending` → `{released:true}`; checkout allowed again               |
+| B4  | Start checkout, close the overlay **without paying**, retry immediately | Still `CHECKOUT_IN_FLIGHT`. The claim is **surfaced, not released** — 3DS can settle after close |
+| B5  | Force a provider failure (bad `PADDLE_API_KEY`), then retry             | The claim is **HELD**, by design — a thrown provider error is not proof the provider saw nothing |
+| B6  | On active **Plus**, try to buy Plus again                               | `SUBSCRIPTION_EXISTS`                                                                            |
+| B7  | Double-click **Confirm** as fast as possible                            | One charge. **Verify in the Paddle dashboard, not just the UI**                                  |
+| B8  | Abandon a checkout, wait past the **30-minute TTL**, retry checkout     | Succeeds — **no sweep needed.** The claim upsert reclaims any row whose `expires_at` has passed  |
+| B9  | After B8, restart the worker (§0.5)                                     | The stale row is also deleted (`pendingCheckoutsCleared`) — housekeeping, not the reopener       |
 
-> B8's timing is the real contract: an abandoned claim reopens via the
-> **30-minute TTL** or the user's explicit release — **never** by inference
-> from an unknown provider outcome. The sweep only deletes claims that have
-> already expired, so "wait for the sweep" without waiting out the TTL proves
-> nothing.
+> B8/B9 separate two things the first version of this table conflated. What
+> reopens checkout is the **30-minute TTL** — the claim upsert's
+> `expires_at < now()` predicate — or the user's explicit release. **Never** an
+> inference from an unknown provider outcome. The sweep's deletion of expired
+> rows is tidying that happens later, so a step telling you to restart the
+> worker in order to reopen checkout was exercising the wrong mechanism.
 
 ---
 
@@ -220,17 +257,30 @@ after A5, before A7.
 
 Use Paddle's declining test card.
 
-| #   | Step                                                                                                                        | Expect                                                                                       |
-| --- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| C1  | Buy Plus with a card that declines at checkout                                                                              | No subscription row; no tier grant; legible error, not a raw 5xx                             |
-| C2  | On an active sub, force a **renewal** failure                                                                               | `status=past_due`; **tier still granted** (dunning)                                          |
-| C3  | Read the deadline                                                                                                           | `entitlement_ends_at` = `current_period_end` **+ 14 days**                                   |
-| C4  | **[DEV DB ONLY]** `UPDATE subscriptions SET entitlement_ends_at = now() - interval '1 day';` then restart the worker (§0.5) | Sweep flips the row to `canceled` and recomputes the tier; `/autopilot` re-gates             |
-| C5  | Recover the card mid-dunning                                                                                                | `status=active`; `entitlement_ends_at` becomes **NULL** (only `past_due` carries a deadline) |
+| #   | Step                                                                                            | Expect                                                                                       |
+| --- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| C1  | Buy Plus with a card that declines at checkout                                                  | No subscription row; no tier grant; legible error, not a raw 5xx                             |
+| C2  | On an active sub, force a **renewal** failure                                                   | `status=past_due`; **tier still granted** (dunning)                                          |
+| C3  | Read the deadline                                                                               | `entitlement_ends_at` = `current_period_end` **+ 14 days**                                   |
+| C4  | **[DEV DB ONLY]** expire the deadline with the scoped SQL below, then restart the worker (§0.5) | Sweep flips that row to `canceled` and recomputes the tier; `/autopilot` re-gates            |
+| C5  | Recover the card mid-dunning                                                                    | `status=active`; `entitlement_ends_at` becomes **NULL** (only `past_due` carries a deadline) |
 
 > **C2/C3 are the founder decision of 2026-07-28** — 14 days for _genuine
 > retry_ states only. **D6** is the paired half: a terminal state must drop
 > immediately and never get the window.
+
+C4's SQL, scoped. An unqualified `UPDATE subscriptions SET …` rewrites every
+row in the table, and the sweep's dunning step only acts on rows that are
+already `past_due` — so run **C2 first**, then expire exactly that row:
+
+```sql
+-- [DEV DB ONLY] verify §0.2 first
+UPDATE subscriptions
+   SET entitlement_ends_at = now() - interval '1 day'
+ WHERE status = 'past_due'
+   AND workspace_id = '<your-workspace-id>';
+-- expect: UPDATE 1   (UPDATE 0 means the row is not past_due — redo C2)
+```
 
 ---
 
@@ -321,16 +371,26 @@ replaying an event after a refund.
 
 ## I. Webhook integrity
 
-| #   | Step                                                    | Expect                                                       |
-| --- | ------------------------------------------------------- | ------------------------------------------------------------ |
-| I1  | POST `/api/webhooks/paddle` with **no** signature       | 401                                                          |
-| I2  | POST with a **wrong** signature                         | 401                                                          |
-| I3  | Replay a valid webhook twice                            | Deduped; applied once                                        |
-| I4  | Deliver events **out of order** (new, then old)         | `arrival_seq` ordering holds; the old one does not overwrite |
-| I5  | Drop a webhook entirely, then restart the worker (§0.5) | The sweep recovers entitlement without manual intervention   |
+| #   | Step                                                                                      | Expect                                                           |
+| --- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| I1  | POST `/api/webhooks/paddle` with **no** signature                                         | 401                                                              |
+| I2  | POST with a **wrong** signature                                                           | 401                                                              |
+| I3  | Replay a valid webhook twice                                                              | Deduped; applied once                                            |
+| I4  | Deliver events **out of order** (new, then old)                                           | `arrival_seq` ordering holds; the old one does not overwrite     |
+| I5  | Drop a **cancel or renewal** webhook, expire the deadline (C4), restart the worker (§0.5) | The tier drops on the deadline rather than being granted forever |
 
-I4 and I5 are what #430 and #432–#434 were built for and have never run
-against a real provider.
+> **What I5 does NOT test, and what the first version of this row wrongly
+> claimed.** The sweep does **not** poll Paddle or Razorpay — the adapters
+> expose no read methods, and provider-truth polling is explicitly deferred.
+> So a dropped `subscription.created` webhook leaves **no row at all**, and
+> nothing recovers it: the purchase is invisible to us until the provider sends
+> something else. What the deadline system removes is the narrower
+> **forever-grant** class — a dropped cancel or renewal cannot leave a stale
+> grant standing past its deadline. Testing "drop any webhook, the sweep fixes
+> it" would have passed for the wrong reason and hidden the real gap.
+
+I4 and the deadline half of I5 are what #430 and #432–#434 were built for and
+have never run against a real provider.
 
 ---
 
