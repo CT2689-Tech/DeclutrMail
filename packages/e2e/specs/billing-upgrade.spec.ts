@@ -323,7 +323,11 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // ---- 5. Gates open: /screener now renders the seeded queue (fresh
   // page load ⇒ fresh me fetch — no stale client cache in play).
   await page.goto('/screener');
-  const queueList = page.getByRole('list', { name: 'Screener queue' });
+  // Accessible name comes from the screen's aria-label, which the
+  // plain-language sweep (#410) changed from the internal-sounding
+  // "Screener queue" to what a user would actually call it. This spec
+  // and that rename landed in the same session; CI caught the drift.
+  const queueList = page.getByRole('list', { name: 'Senders waiting for your decision' });
   await expect(queueList).toBeVisible({ timeout: 60_000 });
   await expect(queueList).toContainText(BILLING_SEED.screenerSenderName);
   await expect(page.getByText('A queue of new senders, ready when you are.')).toHaveCount(0);
