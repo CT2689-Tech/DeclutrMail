@@ -1373,3 +1373,30 @@ claims to cover; all git calls pinned to `TZ=UTC`; every cited commit must resol
 to its stated PR. Wired into lint-staged keyed on `changelog-content.ts` so it cannot rot
 unrun; `sh .husky/pre-commit` smoked to exit 1 on a backdated entry and 0 on a clean one. All
 five failure modes verified firing. CI wiring must add `fetch-depth: 0` in the same PR.
+
+## 2026-07-29 — Reading a guard's exit code instead of its message
+**PR:** #435 (third review round, same session)
+**Caught by:** Codex stop-time review — "the new receipt-to-PR validation is nonfunctional"
+**What happened:** The receipt-to-PR check added by the entry above never executed a single
+comparison. Both git-log call sites carried their own `--pretty` string and their own
+`.split()`, each holding a raw U+0001 byte — invisible in an editor, in a diff, and in review.
+One lost its separator in an edit and became `--pretty=%h%s` with `line.split('')`; splitting
+on the empty string yields single CHARACTERS, so the map was keyed `'8' -> '4'`, every
+`.get(sha)` returned undefined, and an `if (!subject) return false` guard swallowed it.
+**And I had recorded it as verified.** The fixture — a receipt filed under PR #999 — did exit
+1, but because the OMISSION check caught the now-orphaned #367, not because the receipt check
+fired. I asserted on the exit code and never read the message. So the previous entry's own
+lesson ("prove the mechanism, not the outcome") was violated one commit after writing it, at
+the next level down.
+**Correct approach:** A pass/fail assertion is not enough when several checks share a fixture —
+a neighbouring check will happily fail for you and look like proof. Assert on the specific
+message, and design each fixture so only ONE check can produce it. Separately: two places that
+must agree on an invisible delimiter will eventually disagree; the fix is one place, not two
+careful ones. Never put raw control bytes in source — `%x01` and `` are both plain ASCII.
+**Rule:** Test a guard by the message it prints, not the code it exits with — and never let a
+delimiter live in two places or as an invisible byte.
+**Enforcement update:** `logFields(revArgs, fields)` builds the format and splits in ONE place
+and exits 1 if a row does not split into the requested arity; zero raw control bytes remain in
+the file. All six failure modes re-proven asserting on message text, including a new case the
+old code also missed (a receipt pointing at a different PR's real sha). `sh .husky/pre-commit`
+re-smoked 1/0.
