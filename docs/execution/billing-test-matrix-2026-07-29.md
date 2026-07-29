@@ -143,7 +143,8 @@ Use Paddle's declining test card.
 | C5  | Recover the card mid-dunning                                          | `status=active`; `entitlement_ends_at` clears                            |
 
 > **C2/C3 are the founder decision from 2026-07-28** — 14 days for _genuine
-> retry_ states only. C6 below is the paired half.
+> retry_ states only. **D6** is the paired half: a terminal state must drop
+> immediately and never get the window.
 
 ---
 
