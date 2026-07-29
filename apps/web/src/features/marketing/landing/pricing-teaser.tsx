@@ -61,7 +61,7 @@ export function PricingTeaser() {
           </div>
           <ul className="dm-mkt-tier-feats">
             <li>Unlimited cleanup actions</li>
-            <li>The full Triage ritual</li>
+            <li>Everything in Free, without the monthly cap</li>
             <li>
               {plus.inboxLimit} inbox · {plus.undoWindowDays}-day Activity Undo for Archive, Later,
               and Delete

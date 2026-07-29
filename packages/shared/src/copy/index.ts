@@ -14,6 +14,8 @@ export {
   GMAIL_PREVIEW_FIELD_LABEL,
 } from './privacy';
 
+export { BUSINESS_POSTAL_ADDRESS, postalAddressLine, hasPostalAddress } from './postal-address';
+
 export {
   ACTION_SAFETY_SUMMARY,
   ACTION_PREVIEW_CLAIM,

@@ -24,6 +24,76 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-07-28 — SECURITY (webhook-auth adjacent, needs your go-ahead): Pub/Sub push has no rate limit + attacker-forcible JWKS refetch
+**Source:** webhook-security agent sweep 2026-07-28 (2 BLOCKING findings)
+**Why:** `POST /api/webhooks/gmail/pubsub` is the only unauthenticated POST with no `@RateLimit` (every other one has it), and an unverified JWT `kid` force-nulls the process-wide JWKS cache with no cooldown — an unauthenticated flood degrades legitimate Pub/Sub deliveries (mail sync stalls) and saturates the 3-instance API. Not an auth bypass; availability coupling.
+**How:** approve and I implement: (a) `@RateLimit('default')` (or a dedicated bucket) on the push handler; (b) minimum-interval + negative cache on the forced JWKS refresh in `oidc-verifier.ts:245-262`. Touches the D229 auth path, so per CLAUDE.md §9 it waits for your explicit OK.
+**Verifies by:** webhook-security-auditor re-run reports 0 BLOCKING; synthetic flood test keeps `/readyz` 200.
+**Status:** Open
+
+### 2026-07-28 — SECURITY: unsubscribe-secret drift silently no-ops every unsubscribe link
+**Source:** webhook-security agent sweep 2026-07-28
+**Why:** worker signs and API verifies with the same `UNSUBSCRIBE_TOKEN_SECRET`; if they drift (the known `--set-env-vars` full-replace trap), every link in delivered mail returns `{status:'ok'}` while changing nothing — RFC 8058/CAN-SPAM exposure in the exact shape of the UI-truth class.
+**How:** approve and I implement: add `UNSUBSCRIBE_TOKEN_SECRET` to `auditRequiredApiEnv` (apps/api/src/main.ts:66-74) + record a security event / metric on `invalid_token` so drift produces a rate spike, not silence. Uniform-200 response stays.
+**Verifies by:** booting the API without the secret fails loudly; a bad-token POST writes the event row.
+**Status:** Open
+
+### 2026-07-28 — DB migration (your §9 call): partial unique index on live subscriptions (audit B7)
+**Source:** billing agent sweep 2026-07-28 (launch-blocker rank)
+**Why:** nothing constrains one live subscription per workspace — the only guard is a racy SELECT-then-throw at checkout creation. Two completed checkouts (cross-device, see next entry) double-bill silently: recompute grants max rank, cancel targets only the newest row.
+**How:** approve and I ship the migration: `CREATE UNIQUE INDEX ... ON subscriptions (workspace_id) WHERE status IN ('active','past_due','paused')` + Atlas plan + a test that the second insert errors loudly.
+**Verifies by:** migration applied in dev + revert path; duplicate-insert spec red→green.
+**Status:** Open
+
+### 2026-07-28 — BE field: server-side pending-checkout signal is still the missing half of the double-charge guard
+**Source:** billing agent sweep 2026-07-28 (launch-blocker rank; extends the 2026-07-20 entry)
+**Why:** the checkout lock is localStorage + Web Locks — same browser only. Laptop-pays / phone-opens-/billing still shows live checkout CTAs; with the index above absent, the second payment lands silently.
+**How:** decide the shape (e.g. `pendingCheckout` on `GET /api/billing/subscription` derived from a provider-checkout-created event) and I build it. The DB index is the backstop either way.
+**Verifies by:** open checkout on device A → /billing on device B shows the pending state, CTAs blocked.
+**Status:** Open
+
+### 2026-07-28 — FIRST-RUN TRAP (severity upgrade of the 2026-07-17 retry-CTA entry): terminally failed INITIAL sync locks a new user out of the entire product
+**Source:** first-run flow agent sweep 2026-07-28 (3 BLOCKING findings on one chain)
+**Why:** after 5 worker attempts (~1 min budget) `readiness='failed'` is terminal: the reconciler only re-queues `queued`, no retry endpoint exists, the gate's "Try again" is `location.reload()`, the failure copy PROMISES "We'll retry automatically" (false), no failure email exists (only sync_ready), and the onboarding gate bounces every route — including /settings and /billing — back to the trap. Only clearing cookies escapes. `GMAIL_QUOTA_EXCEEDED` makes this live-reachable.
+**How:** approve scope and I build: `POST /api/v1/sync/initial/retry` (idempotent re-markQueued + force schedule, `failed`-state-gated) + wire the gate CTA + render the skip corner/sign-out on the failed first-run gate + fix the copy + (optional) `mailbox.sync_failed` email. Until then the failure copy at `sync-gate.tsx:248` is a standing false promise.
+**Verifies by:** dev SQL forces `readiness='failed'` → gate offers a working retry + settings stays reachable; copy states the real recovery.
+**Status:** Open
+
+### 2026-07-28 — Decision: landing hero rewrite (3 drafted options) + section reorder
+**Source:** marketing writer agent 2026-07-28 (full proposal in the session report)
+**Why:** audit B1 — the hero argues the sender unit, which Gmail shipped; D223 locks the current headline, so any change is your reversal call. Recommended: "Clear thousands of emails. Preview every change. Undo it." + "What Gmail's AI won't do" section + storage list rendered once.
+**How:** pick option 1/2/3 (or edit); I implement with the section reorder, `redesign` label, page metadata update, and CTA ids preserved for the A/B.
+**Verifies by:** landing renders the chosen hero; PostHog `connect_gmail` comparison window starts.
+**Status:** Open
+
+### 2026-07-28 — Decision: one name for the Gmail connection ("mailbox" vs "Gmail account" vs "connected inbox" vs "workspace")
+**Source:** terminology agent sweep 2026-07-28 (naming cluster 1)
+**Why:** four names for two concepts across error registry + billing copy, sometimes two in one sentence. Recommendation: "Gmail account" for the connection, "account" for the DeclutrMail login; drop "workspace" and "connected-inbox" from user copy.
+**How:** confirm the vocabulary; I sweep ~10 registry messages + surfaces in one PR.
+**Verifies by:** grep for the dropped terms in user-facing copy returns only code identifiers.
+**Status:** Open
+
+### 2026-07-28 — Small legal-accuracy fix: privacy §3 / terms §7 prose under-enumerates fetched fields
+**Source:** legal agent sweep 2026-07-28 (only NEW finding; everything else verified OK)
+**Why:** the hand-written "fetched" sentence omits To/Cc on sent mail, List-Unsubscribe headers, and size estimate, all of which the D245 registry records. The complete generated list sits directly above, so it is drift, not a false claim — still worth closing before scrutiny.
+**How:** approve and I soften to "including" or append the three items in both files (`privacy/page.tsx:117-121`, `terms/page.tsx:137-139`).
+**Verifies by:** prose matches the registry-derived list.
+**Status:** Open
+
+### 2026-07-28 — Privacy hardening pair (latent, not leaking): worker Sentry scrubber + body-storage hook regex
+**Source:** privacy agent sweep 2026-07-28 (2 SUGGESTIONS; all 5 audit items otherwise clean)
+**Why:** (a) the API/worker Sentry path ships raw `Error.message` through the weaker key-denylist scrubber while the browser path uses the deny-by-default rebuild — a future `throw new Error` that interpolates a subject into its message would ship to Sentry unguarded; (b) `verify-no-body-storage.sh` greps object-literal `format:` syntax only — `params.set('format','full')` or flipping the METADATA_FORMAT constant passes the hook clean.
+**How:** approve and I (a) route worker/API Sentry through `scrubSentryEvent`, (b) extend the hook regex to the `params.set`/constant forms.
+**Verifies by:** scrubber unit test on a message-bearing Error; hook self-test rejects the two bypass forms.
+**Status:** Open
+
+### 2026-07-28 — Low webhook hygiene: Resend svix-id dedup + webhook_dedup TTL that nothing enforces
+**Source:** webhook-security agent sweep 2026-07-28 (SUGGESTION tier)
+**Why:** Resend webhook verifies signature + 5-min window but records no delivery id (replay inside the window re-applies an idempotent suppression — low impact, only outlier); `webhook_dedup.expires_at` is written and indexed but no sweep reads it — dedup is effectively permanent (safe direction) and the table grows unbounded.
+**How:** batch into a hygiene PR when convenient: record svix-id, add a retention sweep or drop the TTL column.
+**Verifies by:** replayed Resend event acks duplicate; webhook_dedup row count stops growing monotonically.
+**Status:** Open
+
 ### 2026-07-28 — LAUNCH BLOCKER: transactional email carries no physical postal address (CAN-SPAM / CASL)
 **Source:** #406 email compliance audit (founder asked whether we meet the legal/industry bar for sending)
 **Why:** CAN-SPAM §7704(a)(5)(A)(iii) requires a **valid physical postal address of the sender** in commercial email; Canada's CASL requires it too. We ship none — not in the templates, not on the legal pages (checked: `terms`, `privacy`, `contact` have jurisdiction and email addresses, no postal address anywhere). These statutes bind on **recipient** location, so US and Canadian users pull them in regardless of the Terms' India/Mumbai jurisdiction.

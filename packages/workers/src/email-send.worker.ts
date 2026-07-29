@@ -4,6 +4,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { activeSessions, users } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 import { parseEmailPrefs, type EmailPrefs } from '@declutrmail/shared/contracts';
+import { hasPostalAddress } from '@declutrmail/shared/copy';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { PermanentError, TransientError, ValidationError } from './worker-errors.js';
@@ -173,6 +174,22 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
       !payload.idempotencyKey
     ) {
       throw new ValidationError('email-send job payload is missing required fields.');
+    }
+
+    // CAN-SPAM §316.5 / CASL: commercial email MUST carry a physical
+    // postal address. Every opt-out-able kind is commercial by that
+    // test; required account notices (deletion) are transactional and
+    // exempt. Until `BUSINESS_POSTAL_ADDRESS` is set, refuse rather
+    // than send a non-compliant message — a PermanentError, not a
+    // retry: no amount of retrying conjures an address, and the
+    // failure must be loud in the worker metrics rather than a quiet
+    // footer omission nobody notices until a complaint arrives.
+    if (OPT_OUT_PREF_BY_KIND[payload.kind] && !hasPostalAddress()) {
+      throw new PermanentError(
+        `Refusing to send commercial email kind "${payload.kind}": no physical postal ` +
+          'address is configured (CAN-SPAM §316.5 / CASL). Set BUSINESS_POSTAL_ADDRESS in ' +
+          'packages/shared/src/copy/postal-address.ts.',
+      );
     }
 
     // Recipient resolution. `recipientOverride` short-circuits the

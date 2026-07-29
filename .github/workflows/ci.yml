@@ -349,6 +349,12 @@ jobs:
       E2E_LOGIN_EMAIL: chintan.e2e.billing@synthetic.test
       E2E_BILLING_LOGIN_EMAIL: chintan.e2e.billing@synthetic.test
       NEXT_PUBLIC_API_URL: http://127.0.0.1:4104
+      # Money-path spec (billing-upgrade.spec.ts) — synthetic provider
+      # config; secrets are e2e-only literals, never real credentials.
+      BILLING_ENABLED: 'true'
+      PADDLE_WEBHOOK_SECRET: e2e_local_paddle_webhook_secret
+      E2E_PADDLE_WEBHOOK_SECRET: e2e_local_paddle_webhook_secret
+      BILLING_CATALOG_JSON: '{"paddle":{"pro_monthly":"pri_e2e_pro_monthly"}}'
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -400,6 +406,11 @@ jobs:
           exit 1
       - name: Run the authenticated accessibility gate
         run: pnpm e2e:a11y
+      - name: Run the billing money-path spec
+        # Was runnable-but-never-run: PR #401 changed the Free tier and
+        # this spec rotted invisibly (flow audit 2026-07-28). In CI it
+        # guards the paywall → signed webhook → entitlement flip chain.
+        run: pnpm --filter @declutrmail/e2e run e2e:billing
       - name: Upload accessibility diagnostics
         if: failure()
         uses: actions/upload-artifact@v6

@@ -10,8 +10,9 @@
  * sessions never fire a request the server would 402.
  */
 
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { apiGet, apiPost } from '@/lib/api/client';
 import { defaultLaterWakeAt, newIdempotencyKey } from '@/lib/api/actions';
 
@@ -59,11 +60,12 @@ export function useScreenerCount(options: { enabled?: boolean } = {}) {
  * Record a decision for a queued sender. One fresh idempotency key per
  * mutate call (D202): a network-retried POST replays server-side; a
  * fresh user click is a new decision. A 402 FREE_CAP_REACHED (Free
- * tier exhausting its 5 lifetime cleanup actions via the delegated
+ * tier exhausting its 50 cleanup actions/month via the delegated
  * pipeline) surfaces the UpgradeModal via the global MutationCache
  * handler (lib/query-client) — no per-hook wiring needed.
  */
 export function useScreenerDecide() {
+  const qc = useQueryClient();
   return useMutation<
     ScreenerDecideResult,
     Error,
@@ -89,6 +91,11 @@ export function useScreenerDecide() {
         { headers: { 'Idempotency-Key': newIdempotencyKey() } },
       );
       return envelope.data;
+    },
+    onSuccess: () => {
+      // Screener decides ride the same metered pipeline — refresh the
+      // frozen quota counter (flow audit 2026-07-28).
+      void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
     },
   });
 }

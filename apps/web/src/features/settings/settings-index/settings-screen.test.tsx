@@ -2,7 +2,7 @@
  * Tests for `SettingsScreen` (U23 — D34/D114/D116/D216) — the live
  * wiring of the settings index:
  *
- *   - every section renders (Mailboxes / Actions / Notifications /
+ *   - every section renders (Gmail accounts / Actions / Notifications /
  *     Autopilot / Quiet hours / Senders / Privacy / Cookies / Plan /
  *     Account) with #218's deletion section mounted, plus the D114
  *     left-nav anchor rail
@@ -186,7 +186,7 @@ describe('SettingsScreen', () => {
   it('renders every section, including the mounted deletion section', async () => {
     renderScreen();
 
-    expect(screen.getByRole('heading', { name: 'Mailboxes' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Gmail accounts' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Action preferences' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Email notifications' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Autopilot rules' })).toBeInTheDocument();
@@ -674,7 +674,7 @@ describe('SettingsScreen', () => {
     );
     expect(screen.getByText(/could not load email preferences/i)).toBeInTheDocument();
     // The rest of the page is intact (partial-error by construction).
-    expect(screen.getByRole('heading', { name: 'Mailboxes' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Gmail accounts' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /retry/i }).length).toBeGreaterThanOrEqual(2);
   });
 
