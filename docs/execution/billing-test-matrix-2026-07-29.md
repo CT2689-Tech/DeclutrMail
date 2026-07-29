@@ -40,14 +40,23 @@ this is dev" into "I checked" — its whole value is that you actually run it.
 ### 0.2 Prove which database you are on — before anything else
 
 ```bash
-./scripts/assert-dev-db.sh --record   # once, pointed at your dev database
+./scripts/assert-dev-db.sh --record        # once, pointed at your dev database
 ```
 
 ```bash
-./scripts/assert-dev-db.sh            # before Groups A–I, and after anything that could change the connection
+./scripts/assert-dev-db.sh --exec "<SQL>"  # every [DEV DB ONLY] mutation goes through this
+```
+
+```bash
+./scripts/assert-dev-db.sh                 # bare check — informational only
 ```
 
 Exit 0 means proceed. Exit 1 prints why and you stop.
+
+The bare check tells you where you are **right now, for the URL it resolved
+itself**. It cannot vouch for a separate `psql` command, which resolves its own
+target — so it is a sanity check, not a licence to write. Anything that writes
+uses `--exec`.
 
 The check lives in the script, not in this page, deliberately: a runbook is
 executable, and a second copy of the logic in prose is a copy that will drift
@@ -290,11 +299,11 @@ C4's SQL, scoped. An unqualified `UPDATE subscriptions SET …` rewrites every
 row in the table, and the sweep's dunning step only acts on rows that are
 already `past_due` — so run **C2 first**, then expire exactly that row:
 
-Run the gate in the same command as the mutation, so the two cannot drift
-apart — `&&` means the `UPDATE` never executes unless the gate passed:
+Run it through `--exec`, which asserts the cluster in the **same session and
+transaction** as the statement:
 
 ```bash
-./scripts/assert-dev-db.sh && psql "$DATABASE_URL" -c "
+./scripts/assert-dev-db.sh --exec "
 UPDATE subscriptions
    SET entitlement_ends_at = now() - interval '1 day'
  WHERE status = 'past_due'
@@ -302,11 +311,17 @@ UPDATE subscriptions
 # expect: UPDATE 1   (UPDATE 0 means the row is not past_due — redo C2)
 ```
 
-The same `./scripts/assert-dev-db.sh && …` prefix belongs on **every**
-`[DEV DB ONLY]` mutation, including G4 and H6. A gate you ran ten minutes ago
-does not cover the shell you are typing in now — an exported `DATABASE_URL` or
-a newly-opened tunnel changes the destination without changing anything you can
-see.
+**Every `[DEV DB ONLY]` mutation goes through `--exec`** — G4 and H6 included.
+
+> **Do not use `assert-dev-db.sh && psql …`.** It looks equivalent and is not:
+> the two halves resolve their target independently. With `DATABASE_URL` unset
+> in the shell, the script falls back to `.env.local` and validates that
+> cluster, while `psql "$DATABASE_URL"` becomes `psql ""` and connects to libpq
+> defaults — `PGHOST` / `PGDATABASE` / `PGSERVICE` or the local socket.
+> Demonstrated: the guard printed OK for the recorded dev cluster while the next
+> command reached a different database. `--exec` resolves the URL once and
+> asserts identity inside the transaction, so there is no second connection to
+> divert and no window between check and write.
 
 ---
 

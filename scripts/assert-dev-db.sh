@@ -5,10 +5,26 @@
 # Used by docs/execution/billing-test-matrix-2026-07-29.md §0.2, which has
 # `[DEV DB ONLY]` steps that mutate billing rows.
 #
-#   ./scripts/assert-dev-db.sh            # the gate: am I on the approved dev cluster?
-#   ./scripts/assert-dev-db.sh --record   # one-time enrollment of your dev cluster
+#   ./scripts/assert-dev-db.sh --record        # one-time enrollment of your dev cluster
+#   ./scripts/assert-dev-db.sh --exec "<SQL>"  # run a mutation, guarded IN THE SAME SESSION
+#   ./scripts/assert-dev-db.sh                 # bare check (informational only — see below)
 #
 # Exit 0 = safe to proceed. Exit 1 = refuse.
+#
+# ## Use --exec for anything that writes
+#
+# `assert-dev-db.sh && psql "$DATABASE_URL" -c '…'` is NOT safe, because the
+# two halves resolve their target independently (Codex stop-review 2026-07-29).
+# With `DATABASE_URL` unset in the shell, this script falls back to `.env.local`
+# and validates THAT cluster, while `psql "$DATABASE_URL"` expands to `psql ""`
+# and connects to libpq defaults — `PGHOST`/`PGDATABASE`/`PGSERVICE` or the
+# local socket. Demonstrated: the guard printed OK for the recorded dev cluster
+# while the very next command reached a different database entirely.
+#
+# `--exec` closes it by construction: ONE resolution of the URL, and the
+# identity assertion runs in the SAME psql session and transaction as the
+# statement, so there is no second connection to divert and no window between
+# check and write.
 #
 # ## Why identity, and not the connection string
 #
@@ -90,6 +106,35 @@ if is_production "$EXPECTED"; then
   Delete it and re-enroll against your dev database."
 fi
 
+# --exec: assert identity and run the statement in ONE session, ONE transaction.
+if [ "${1:-}" = "--exec" ]; then
+  shift
+  SQL="${1:-}"
+  [ -n "$SQL" ] || refuse "--exec needs a SQL statement"
+
+  TMP=$(mktemp -t assert-dev-db) || refuse "could not create a temp file"
+  trap 'rm -f "$TMP"' EXIT
+
+  # Single-quoted format strings: $$ must reach psql literally, not expand to
+  # the shell's PID.
+  {
+    printf 'BEGIN;\n'
+    printf 'DO $$\nBEGIN\n'
+    printf '  IF (SELECT system_identifier::text FROM pg_control_system()) <> %s THEN\n' "'$EXPECTED'"
+    printf '    RAISE EXCEPTION %s, (SELECT system_identifier FROM pg_control_system());\n' \
+      "'assert-dev-db: REFUSING — connected cluster % is not the recorded dev cluster $EXPECTED'"
+    printf '  END IF;\nEND $$;\n'
+    printf '%s\n' "$SQL"
+    printf 'COMMIT;\n'
+  } > "$TMP"
+
+  psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$TMP" || refuse "statement did not run (see the error above)"
+  exit 0
+fi
+
+# Bare mode: informational. It proves the destination AT THIS MOMENT for the
+# URL resolved HERE — it cannot vouch for a separate psql invocation, which is
+# why every mutation must go through --exec.
 ACTUAL=$(live_cluster_id "$DB_URL")
 [ -n "$ACTUAL" ] || refuse "could not read the server's identity (unreachable, or the function is restricted)"
 
@@ -104,3 +149,4 @@ if [ "$ACTUAL" != "$EXPECTED" ]; then
 fi
 
 echo "OK — connected to the recorded dev cluster ($ACTUAL)"
+echo "     (informational: use --exec for anything that writes)"
