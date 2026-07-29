@@ -248,6 +248,70 @@ describe('PubSubOidcVerifier', () => {
     expect(fetchCount).toBe(1);
   });
 
+  it('a repeated unknown kid cannot force a JWKS refetch per request', async () => {
+    // `kid` comes from the UNVERIFIED header and is read before
+    // issuer/audience/email, so an unauthenticated caller picks it.
+    // Un-throttled, each bogus kid nulled the process-wide cache and
+    // forced an outbound GET to Google — an amplifier whose victims
+    // are the legitimate deliveries that then wait on a throttled
+    // fetch. One forced refresh may happen; the rest must not.
+    const goodKey = createTestKey('real-kid');
+    let fetchCount = 0;
+    const verifier = new PubSubOidcVerifier({
+      audience: AUDIENCE,
+      serviceAccountEmail: SA_EMAIL,
+      jwksFetcher: async () => {
+        fetchCount++;
+        return { keys: [goodKey.publicJwk] };
+      },
+    });
+
+    // Prime the cache with a legitimate delivery.
+    expect((await verifier.verify(`Bearer ${goodKey.signJwt({}, pubsubClaims())}`)).ok).toBe(true);
+    expect(fetchCount).toBe(1);
+
+    // 25 probes, each naming a DIFFERENT bogus kid (so the negative
+    // cache alone cannot explain the result — the interval floor has
+    // to hold too).
+    for (let i = 0; i < 25; i++) {
+      const bogus = createTestKey(`bogus-kid-${i}`);
+      const result = await verifier.verify(`Bearer ${bogus.signJwt({}, pubsubClaims())}`);
+      expect(result.ok).toBe(false);
+    }
+    // At most ONE forced refresh across the whole burst.
+    expect(fetchCount).toBeLessThanOrEqual(2);
+
+    // And the cache the flood tried to poison still serves real traffic.
+    expect((await verifier.verify(`Bearer ${goodKey.signJwt({}, pubsubClaims())}`)).ok).toBe(true);
+  });
+
+  it('the same bogus kid short-circuits without touching the network at all', async () => {
+    const goodKey = createTestKey('real-kid-2');
+    const bogus = createTestKey('never-real');
+    let fetchCount = 0;
+    const verifier = new PubSubOidcVerifier({
+      audience: AUDIENCE,
+      serviceAccountEmail: SA_EMAIL,
+      jwksFetcher: async () => {
+        fetchCount++;
+        return { keys: [goodKey.publicJwk] };
+      },
+    });
+
+    await verifier.verify(`Bearer ${goodKey.signJwt({}, pubsubClaims())}`);
+    const primed = fetchCount;
+    // First probe may force one refresh; it then lands in the
+    // known-absent set.
+    await verifier.verify(`Bearer ${bogus.signJwt({}, pubsubClaims())}`);
+    const afterFirst = fetchCount;
+    for (let i = 0; i < 10; i++) {
+      const r = await verifier.verify(`Bearer ${bogus.signJwt({}, pubsubClaims())}`);
+      expect(r.ok).toBe(false);
+    }
+    expect(fetchCount).toBe(afterFirst);
+    expect(afterFirst - primed).toBeLessThanOrEqual(1);
+  });
+
   it('handles JWKS rotation — refetches once on unknown kid then succeeds', async () => {
     const oldKey = createTestKey('old-kid');
     const newKey = createTestKey('new-kid');

@@ -10,6 +10,7 @@ import {
   Post,
 } from '@nestjs/common';
 
+import { RateLimit } from '../common/rate-limit/index.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { PubSubOidcVerifier, type OidcVerifyFailure } from './oidc-verifier.js';
 import {
@@ -75,6 +76,17 @@ export class GmailWebhookController {
 
   @Post('pubsub')
   @HttpCode(HttpStatus.OK)
+  // The ONLY unauthenticated POST that lacked one. Every request costs
+  // an RSA verify plus (pre-hardening) a possible outbound JWKS fetch
+  // and an unconditional security_events INSERT on failure, on a
+  // service deployed --allow-unauthenticated with max-instances=3 — so
+  // an unthrottled flood here starves every other route.
+  //
+  // 600/min/IP, not the 120 `default`: real Pub/Sub delivery must never
+  // be the thing this throttles. A 429 is safe for Google regardless —
+  // Pub/Sub is at-least-once and retries with backoff, and the
+  // messageId dedup makes the replay a no-op.
+  @RateLimit({ bucket: 'default', limit: 600, windowSec: 60 })
   async push(
     @Headers('authorization') authorization: string | undefined,
     @Body() body: PubSubEnvelope,
