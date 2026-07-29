@@ -3,7 +3,14 @@ import { join } from 'node:path';
 
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
-import { schema, subscriptionEvents, subscriptions, users, workspaces } from '@declutrmail/db';
+import {
+  pendingCheckouts,
+  schema,
+  subscriptionEvents,
+  subscriptions,
+  users,
+  workspaces,
+} from '@declutrmail/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -159,6 +166,70 @@ describe('BillingService', () => {
     });
     const [user] = await db.select().from(users).where(eq(users.id, principal.userId));
     expect(user!.billingRegion).toBe('international');
+  });
+
+  it('refuses a SECOND checkout while an unexpired claim exists — atomic, cross-device (CHECKOUT_IN_FLIGHT)', async () => {
+    // The race the 0051 index only made LOUD: two devices opening
+    // checkout inside the read window both reached the provider and
+    // both could complete. The claim is one conditional upsert — it
+    // wins iff no row exists or the existing one expired — so the
+    // second opener is refused BEFORE any provider session exists.
+    await service.createCheckout(principal, {
+      tierId: 'plus',
+      cycle: 'monthly',
+      provider: 'paddle',
+    });
+    await expect(
+      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+    ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
+    expect(paddleCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  it('an EXPIRED claim is reclaimable — abandoned checkouts self-heal at the TTL', async () => {
+    await service.createCheckout(principal, {
+      tierId: 'plus',
+      cycle: 'monthly',
+      provider: 'paddle',
+    });
+    await db
+      .update(pendingCheckouts)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
+    await service.createCheckout(principal, {
+      tierId: 'plus',
+      cycle: 'monthly',
+      provider: 'paddle',
+    });
+    expect(paddleCheckout).toHaveBeenCalledTimes(2);
+  });
+
+  it('a provider failure RELEASES the claim — a transient error never locks the retry out', async () => {
+    paddleCheckout.mockRejectedValueOnce(new Error('paddle 502'));
+    await expect(
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
+    ).rejects.toThrow('paddle 502');
+    // The claim came down with the failure; the immediate retry wins it.
+    await service.createCheckout(principal, {
+      tierId: 'plus',
+      cycle: 'monthly',
+      provider: 'paddle',
+    });
+    expect(paddleCheckout).toHaveBeenCalledTimes(2);
+  });
+
+  it('releasePendingCheckout clears the claim (the user-asserted "no charge" path)', async () => {
+    await service.createCheckout(principal, {
+      tierId: 'plus',
+      cycle: 'monthly',
+      provider: 'paddle',
+    });
+    await service.releasePendingCheckout(principal.workspaceId);
+    await service.createCheckout(principal, {
+      tierId: 'pro',
+      cycle: 'annual',
+      provider: 'paddle',
+    });
+    expect(paddleCheckout).toHaveBeenCalledTimes(2);
   });
 
   it('fails closed (BILLING_NOT_PROVISIONED) when the catalog has no id for the price point', async () => {

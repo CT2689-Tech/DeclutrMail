@@ -15,7 +15,7 @@
 // `BILLING_ENABLED=true` — the module is always loaded so the routes
 // exist and fail CLEANLY (not 404) while billing is dark.
 
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Delete, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import {
   CancelRequestSchema,
   CheckoutRequestSchema,
@@ -69,6 +69,23 @@ export class BillingController {
       });
     }
     return ok(await this.billing.createCheckout(principal, parsed.data));
+  }
+
+  /**
+   * DELETE /api/billing/checkout/pending — the user-asserted release of
+   * the cross-device checkout claim ("I checked — no charge went
+   * through"). Mirrors the FE's local-lock release; also the recovery
+   * path out of CHECKOUT_IN_FLIGHT after an abandoned session.
+   */
+  @Delete('checkout/pending')
+  @UseGuards(CsrfGuard)
+  @RateLimit({ bucket: 'default', limit: 10, windowSec: 60 })
+  async releasePendingCheckout(
+    @CurrentUser() principal: Principal,
+  ): Promise<Envelope<{ released: true }>> {
+    assertBillingEnabled();
+    await this.billing.releasePendingCheckout(principal.workspaceId);
+    return ok({ released: true } as const);
   }
 
   /** GET /api/billing/subscription — current sub + tier + founding flag. */

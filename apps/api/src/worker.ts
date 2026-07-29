@@ -128,6 +128,7 @@ import { EmailService } from './notifications/email.service.js';
 import { EmailSuppressionService } from './notifications/email-suppression.service.js';
 import { buildSyncReadyEmailHandler } from './notifications/sync-ready-email.trigger.js';
 import { buildSyncFailedEmailHandler } from './notifications/sync-failed-email.trigger.js';
+import { runBillingReconciliationSweep } from './billing/billing-reconciliation.sweep.js';
 import { initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
 import { SecurityEventsService } from './security-events/security-events.service.js';
@@ -1716,111 +1717,16 @@ async function bootstrap(): Promise<void> {
   webhookDedupSweepHandle.unref();
 
   /**
-   * Billing reconciliation sweep (0051; founder decisions 1+2,
-   * 2026-07-28). The webhook is the only billing channel and it can
-   * drop — this sweep is the backstop that keeps entitlement honest
-   * without one:
-   *
-   *   1. DUNNING EXPIRY — a `past_due` row whose 14-day deadline
-   *      passed flips to canceled (provenance kept; 'provider' when
-   *      none). Without this, a permanently-dropped webhook stream
-   *      granted the tier forever.
-   *   2. TIER RECOMPUTE for every workspace holding a granting-status
-   *      row with an expired deadline (covers refunds past period end
-   *      whose final webhook never arrived). The SQL mirrors
-   *      BillingWebhookService.recomputeWorkspaceTier — same statuses,
-   *      same deadline predicate, same max-rank rule; a drift between
-   *      the two IS a bug (cross-referenced in both places).
-   *   3. Expired `pending_checkouts` rows deleted (the FE lock horizon).
-   *   4. Stale D120 scheduled changes (> 7 days) surfaced as WARNs —
-   *      the `billing.plan_change_unconfirmed` class only a sweep can
-   *      age out.
-   *
-   * What this deliberately does NOT do yet: poll the providers' APIs
-   * for subscription state (the adapters expose no read methods). The
-   * deadline system removes the forever-grant class without polling;
-   * provider-truth polling is tracked in FOUNDER-FOLLOWUPS.
+   * Billing reconciliation sweep — 6h + boot. The what and why live
+   * with the SQL in billing-reconciliation.sweep.ts (unit-tested
+   * there); this wrapper owns scheduling, logging and failure capture.
    */
   const BILLING_RECONCILE_INTERVAL_MS = 6 * 60 * 60 * 1000;
   async function sweepBillingReconciliation(): Promise<void> {
     if (shuttingDown) return;
     try {
-      const flipped = await db.execute(sql`
-        UPDATE subscriptions
-        SET status = 'canceled',
-            cancel_source = COALESCE(cancel_source, 'provider'),
-            updated_at = now()
-        WHERE status = 'past_due'
-          AND entitlement_ends_at IS NOT NULL
-          AND entitlement_ends_at < now()
-      `);
-
-      // Workspaces whose granted tier may now overstate reality: any
-      // granting-status row past its deadline, plus the rows flipped
-      // above (already out of granting status, so the recompute below
-      // simply no longer counts them).
-      const recomputed = await db.execute(sql`
-        UPDATE workspaces w
-        SET tier = COALESCE(
-              (SELECT s.tier FROM subscriptions s
-               WHERE s.workspace_id = w.id
-                 AND s.status IN ('active', 'past_due')
-                 AND (s.entitlement_ends_at IS NULL OR s.entitlement_ends_at > now())
-               ORDER BY CASE s.tier
-                 WHEN 'enterprise' THEN 5 WHEN 'team' THEN 4
-                 WHEN 'pro' THEN 3 WHEN 'plus' THEN 2 ELSE 1 END DESC
-               LIMIT 1),
-              'free'),
-            founding_member = COALESCE(
-              (SELECT bool_or(s.founding_member) FROM subscriptions s
-               WHERE s.workspace_id = w.id
-                 AND s.status IN ('active', 'past_due')
-                 AND (s.entitlement_ends_at IS NULL OR s.entitlement_ends_at > now())),
-              false),
-            updated_at = now()
-        WHERE EXISTS (
-          SELECT 1 FROM subscriptions s
-          WHERE s.workspace_id = w.id
-            AND s.entitlement_ends_at IS NOT NULL
-            AND s.entitlement_ends_at < now()
-            AND s.updated_at > now() - interval '30 days'
-        )
-      `);
-
-      const cleared = await db.execute(sql`
-        DELETE FROM pending_checkouts WHERE expires_at < now()
-      `);
-
-      const stale = await db.execute(sql`
-        SELECT workspace_id, scheduled_change_state, scheduled_change_requested_at
-        FROM subscriptions
-        WHERE scheduled_change_state IS NOT NULL
-          AND scheduled_change_requested_at < now() - interval '7 days'
-      `);
-      const staleRows = stale as unknown as Array<Record<string, unknown>>;
-      for (const row of staleRows) {
-        console.warn(
-          JSON.stringify({
-            level: 'warn',
-            kind: 'billing.reconcile.stale_scheduled_change',
-            workspaceId: row.workspace_id,
-            state: row.scheduled_change_state,
-            requestedAt: row.scheduled_change_requested_at,
-          }),
-        );
-      }
-
-      const count = (r: unknown): number => (r as { count?: number }).count ?? 0;
-      console.log(
-        JSON.stringify({
-          level: 'info',
-          kind: 'billing.reconcile.swept',
-          dunningFlipped: count(flipped),
-          workspacesRecomputed: count(recomputed),
-          pendingCheckoutsCleared: count(cleared),
-          staleScheduledChanges: staleRows.length,
-        }),
-      );
+      const result = await runBillingReconciliationSweep(db);
+      console.log(JSON.stringify({ level: 'info', kind: 'billing.reconcile.swept', ...result }));
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error(

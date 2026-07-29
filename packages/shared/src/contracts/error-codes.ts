@@ -188,6 +188,13 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'Your DeclutrMail account already has an active subscription.',
   },
+  CHECKOUT_IN_FLIGHT: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'A checkout for this account is already in progress — finish it there, or use "I didn\u2019t complete a payment" to release it.',
+  },
   NO_ACTIVE_SUBSCRIPTION: {
     status: 409,
     severityTier: 'inline_recoverable',
