@@ -774,8 +774,16 @@ export class BillingWebhookService {
           // tier in the same transaction. Refund: entitlement holds to
           // the period the user paid for (falling back to now when no
           // period end is known — never grant on a missing fact).
+          // sql now() (not a JS Date): the recompute in this SAME
+          // transaction compares `entitlement_ends_at > now()`, and
+          // Postgres now() is transaction-start time — a JS clock read
+          // mid-transaction lands AFTER it, so a JS deadline would
+          // still grant inside this tx and only drop on the next
+          // recompute (CI caught exactly that race; local PGlite hid
+          // it). tx-now == tx-now compares NOT-greater → excluded,
+          // deterministically.
           entitlementEndsAt: isChargeback
-            ? new Date()
+            ? sql`now()`
             : sql`COALESCE(${subscriptions.currentPeriodEnd}, now())`,
           updatedAt: new Date(),
         })

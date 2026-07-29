@@ -107,6 +107,7 @@ const SUBSCRIPTION_PAYLOAD = {
   tier: 'pro' as const,
   foundingMember: false,
   subscription: null,
+  pendingCheckout: null,
 };
 
 /** Healthy per-mailbox sync status (the useMailboxesHealth read). */
