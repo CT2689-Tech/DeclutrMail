@@ -107,6 +107,28 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
 
+  impl-log:
+    name: Implementation log is derived and current
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Recomputes ⬜/🔵 from the plan + merged `Closes D###` trailers and
+      # fails when the committed IMPLEMENTATION-LOG.md disagrees. This
+      # replaced pr-merged.yml's push-to-main flip, which branch
+      # protection rejected on EVERY run — it never once wrote a flip
+      # (D158, 2026-07-28). Fix a failure here with:
+      #   pnpm generate-impl-log && git add IMPLEMENTATION-LOG.md
+      - run: pnpm generate-impl-log --check
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -252,13 +274,14 @@ jobs:
   test:
     name: Test
     if: ${{ always() }}
-    needs: [changes, test-api, test-workers, test-db, test-web, test-units]
+    needs: [changes, impl-log, test-api, test-workers, test-db, test-web, test-units]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Require every selected test shard
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
+          IMPL_LOG_RESULT: ${{ needs.impl-log.result }}
           API_RESULT: ${{ needs.test-api.result }}
           WORKERS_RESULT: ${{ needs.test-workers.result }}
           DB_RESULT: ${{ needs.test-db.result }}
@@ -271,6 +294,14 @@ jobs:
           if [ "$CHANGES_RESULT" != success ]; then
             echo "::error::path detection did not succeed ($CHANGES_RESULT) —" \
                  "shard selection is unknown, so this cannot pass"
+            exit 1
+          fi
+
+          # The derived implementation log is a MUST-PASS, never skipped:
+          # a stale log means a merged PR's Closes flip was not committed.
+          if [ "$IMPL_LOG_RESULT" != success ]; then
+            echo "::error::implementation log check did not succeed ($IMPL_LOG_RESULT) —" \
+                 "run 'pnpm generate-impl-log' and commit the result"
             exit 1
           fi
 

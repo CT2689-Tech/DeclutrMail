@@ -56,13 +56,6 @@ section to the Done section. Do not delete entries — the trail matters.
 **Verifies by:** CLAUDE.md §11 states the build-status/constraint axis; a future session choosing between the registries has a rule that answers, rather than two clauses that both miss.
 **Status:** Open
 
-### 2026-07-28 — IMPLEMENTATION-LOG has no rows for D236–D247
-**Source:** session 2026-07-28 — found while adding the D248 row
-**Why:** the log's D-rows stop at D235, matching the plan's original "235 decisions". But the plan has since grown: D245 (unified product clarity), D246 (behavioral activation) and D247 (senders brand grouping, in flight on `feat/d247-senders-brand-grouping`) all exist as decisions with no row, so the log cannot report their build status at all — and D245 in particular is load-bearing, since it supersedes or amends at least D42, D43, D67, D93 and D124. Not fixed in this change because backfilling a dozen rows is its own scope, and the derived-generator work decided this session (call 3) will produce them from the merged `Closes D###` trailers rather than by hand.
-**How:** no founder action needed if call 3 ships as decided — the generator emits a row for every D in the plan and reconciles it against merged trailers, which surfaces D236–D247 automatically. Listed here so the gap is not mistaken for "those decisions have no work".
-**Verifies by:** the regenerated log contains a row for every D-number present in `docs/execution/Implementation-Plan.md`.
-**Status:** Open
-
 ### 2026-07-28 — DECIDED: seven founder calls from the followups triage (this entry is the brief for all of them)
 **Source:** session 2026-07-28 — full triage of all 141 Open entries; 29 closed as verifiably dead, the survivors bucketed, and every genuine decision put to the founder as an MCQ. Two further closures were made and then REVERSED the same day after the Codex stop-time review: the `read_count` RATIFY (its ratification was done, its plan-file edit never was) and the /billing post-purchase entry (#367 merged, but its own bar — one sandbox purchase flipping in place — was never observed). Both are back in Open above with the specific unmet condition named. The lesson generalises past this file: an entry whose Status reads *Open* while its body says *shipped* usually has a second half, and the second half is the reason it is still open.
 **Why:** the file had stopped being readable. 141 rows all said "Open" while ~22% were already fixed in code, so nothing in it could be trusted in either direction — the ops-layer form of the UI-truth bug class (a surface asserting a state it no longer knows). Triage alone doesn't fix that; the seven decisions below are what stop it recurring, and three of them close six followups each.
@@ -381,21 +374,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 **Why:** the new incremental-sync delta trigger makes enabled Autopilot rules re-fire on new mail — but its REAL-TIME path only runs in prod once Gmail webhooks flow. The Pub/Sub **topic** is provisioned and `GMAIL_PUBSUB_TOPIC` is set (local + GH secrets; `sync-infra-state.md` §at-a-glance), while the push **subscription** + Cloud Run deploy remain ⏳ Deferred — tracked in the Open 2026-05-21 "SETUP: provision Gmail sync infrastructure" entry (step 4 tail). Until those land, the trigger still works but at drift-sweep cadence (the 5-min `incremental_drift` sweep enqueues syncs for cursors stale >10 min), i.e. rules re-fire within ~5-15 min of new mail rather than within the 5-min debounce window of a webhook.
 **How:** no new steps — finish the 2026-05-21 entry (Cloud Run deploy → create the Pub/Sub push subscription pointing at `/api/webhooks/gmail` with the OIDC service account).
 **Verifies by:** prod log line `worker.succeeded` for `AutopilotApplyWorker` with a `-delta-` jobId within ~5 min of sending a mail from an already-known sender to a connected mailbox.
-### 2026-06-29 — IMPL-LOG-DRIFT: 49 🔵 rows stale >14 days un-verified (verify-d backlog)
-**Source:** impl-log-drift-oracle (scheduled task, 2026-06-29 sweep)
-**Why:** 49 D-rows sit at 🔵 (merge-shipped) but were never flipped 🔵→🟢 via `pnpm verify-d`; all merged ≥17 days ago (oldest 40d). 🔵 is meant to be transient — a large stale backlog means the plan's verified-state is no longer trustworthy as a launch-readiness signal. This is the first run to flag stale-🔵 (prior 2026-05-27 sweep predated the backlog).
-**How:** run `pnpm verify-d D###` for each row whose verification actually passes; for rows where it does not, that's a real gap to fix, not a flip. Backlog (D# → PR, days-since-merge from 2026-06-29):
-D1→#12(39) · D2→#12(39) · D23→#32(37) · D28→#32(37) · D29→#44(36) · D41→#30(37) · D42→#181(19) · D43→#181(19) · D49→#115(33) · D52→#183(19) · D55→#138(28) · D57→#214(17) · D64→#194(17) · D78→#194(17) · D79→#215(17) · D80→#215(17) · D90→#111(33) · D92→#216(17) · D107→#212(17) · D109→#122(32) · D110→#212(17) · D112→#212(17) · D113→#194(17) · D115→#126(32) · D117→#194(17) · D118→#207(17) · D134→#202(17) · D155→#121(32) · D158→#189(18) · D162→#204(17) · D166→#50(35) · D168→#131(31) · D169→#131(31) · D173→#11(40) · D179→#46(36) · D181→#131(31) · D183→#197(18) · D193→#221(17) · D199→#29(37) · D205→#121(32) · D206→#127(32) · D210→#12(39) · D211→#195(18) · D212→#51(36) · D216→#218(17) · D220→#12(39) · D223→#202(17) · D228→#192(18) · D230→#185(19).
-**Verifies by:** the flagged rows flip 🔵→🟢 in IMPLEMENTATION-LOG.md (or are reopened with a logged gap); next oracle sweep reports a shrinking backlog.
-**Status:** Open
-
-### 2026-06-29 — IMPL-LOG-DRIFT: process-break — 49 findings this week — verify-d cadence has stalled
-**Source:** impl-log-drift-oracle (scheduled task, 2026-06-29 sweep)
-**Why:** 49 stale-🔵 findings (Check 1) vs 0 missing-trailer (Check 2) and 0 un-flipped-⬜ (Check 3) — the merge→🔵 auto-flip and `Closes` trailer discipline are healthy; the broken leg is the 🔵→🟢 verify-d step, which appears not to have run since the 2026-06-09→12 launch-buildout merges. Surfaced separately so the volume is visible.
-**How:** decide whether post-launch verify-d is a cadence the solo workflow keeps. If yes, schedule a verify-d sweep; if no (verified-state not worth maintaining manually), adjust this oracle's stale-🔵 threshold so it stops flagging the standing backlog every week.
-**Verifies by:** either the backlog above shrinks across sweeps, or the oracle threshold/policy is updated so 🔵 is no longer treated as transient.
-**Status:** Open
-
 ### 2026-06-26 — Merge sequence + sign-offs for the reviewed PR stack
 **Source:** session — review + fix of the 7-PR Fable-5 stack (#199 #201 #206 #219 #220 #224 #226; #237 closed)
 **Why:** all code defects are fixed + test-backed, but merge order is load-bearing and several PRs need a founder-only sign-off no agent can give.
@@ -972,23 +950,6 @@ follow-up.) The migration SQL itself is validated by the PGlite roundtrip test.
 **Verifies by:** Each affected row in `IMPLEMENTATION-LOG.md` shows the originating PR # in the `PR` column and state 🔵 (or 🟢 after `pnpm verify-d`). `gh pr list --base main --state merged --search "merged:>2026-05-20"` re-checked → title-Ds ⊆ Closes-Ds for every PR.
 **Status:** Resolution in-flight via `chore/distill-closes-trailers` (this session) — 21 ⬜ rows flipped to 🔵 with originating PR refs in `IMPLEMENTATION-LOG.md`; 11 merged PR bodies (`#44, #47, #50, #52, #77, #102, #103, #105, #107, #108, #109`) edited via `gh pr edit` to add the missing `Closes D###` lines so future oracle sweeps stay clean. Will move to Done once the chore PR merges. Pending founder action: `pnpm verify-d D###` for each row to advance 🔵 → 🟢 when the implementation is actually verified (oracle does not run the verifier).
 
-### 2026-05-27 — IMPL-LOG-DRIFT: pr-merged.yml flip regex breaks on D-row titles containing `|`
-**Source:** impl-log-drift-oracle (scheduled task, 2026-05-27 sweep) — discovered while patching D12 manually
-**Why:** `.github/workflows/pr-merged.yml`'s flip step uses `[^|]+` to capture the row title between the first and second `|` separators. D12's row title (`sender_key formula: **sha256("v1|" + normalized_email)`) contains a literal `|` inside `"v1|"`, so the regex stops short and the row never flips even when the PR body carries `Closes D12`. PR #48 shipped with the correct trailer; the flip silently no-op'd. This is a latent bug — any future D-row with `|` in the title will silently fail to flip and the only signal is the weekly oracle catching it as un-flipped.
-**How:** Patch the regex in `.github/workflows/pr-merged.yml` to anchor on the trailing `| ⬜ |` token rather than greedy-stopping at the first `|`:
-
-```python
-# replace
-pattern = re.compile(rf'^\| D{re.escape(num)} \| ([^|]+) \| ⬜ \|  \|(.*)$', re.MULTILINE)
-# with
-pattern = re.compile(rf'^\| D{re.escape(num)} \| (.+?) \| ⬜ \|  \|(.*)$', re.MULTILINE)
-```
-
-The non-greedy `.+?` paired with the explicit ` \| ⬜ \|` anchor matches the title regardless of embedded `|`. Add a regression line to whatever workflow test harness covers `pr-merged.yml` (or a fixture row with `|` in the title) so a future regression fires loudly.
-
-**Verifies by:** Create a throwaway branch, drop a row like `| D999 | foo |bar baz | ⬜ |  |  |  |` into `IMPLEMENTATION-LOG.md` in a test, run the python block locally with `PR_NUMBER=999` + `d_numbers=D999` → row flips to `🔵 | #999 |`.
-**Status:** Open
-
 ### 2026-05-27 — IMPL-LOG-DRIFT: process-break — 13 findings this week — pr-merged.yml or author trailer discipline is broken
 **Source:** impl-log-drift-oracle (scheduled task, 2026-05-27 sweep)
 **Why:** 13 PR-level drift findings in a single 7-day window (10 missing-trailer + 9 un-flipped commits, deduped to ~12 unique PRs) signals a systemic break, not author oversight. Either (a) `pr-merged.yml` should be extended to flip Ds it finds in the PR title in addition to `Closes` lines, OR (b) commitlint / a PR-open gate should reject PRs whose title cites D-numbers not present in the body's `Closes` list. Today's policy puts the burden on each author to keep title + body in lockstep, and the burden is being dropped consistently.
@@ -1562,6 +1523,45 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-07-28 — IMPLEMENTATION-LOG has no rows for D236–D247
+**Source:** session 2026-07-28 — found while adding the D248 row
+**Why:** the log's D-rows stop at D235, matching the plan's original "235 decisions". But the plan has since grown: D245 (unified product clarity), D246 (behavioral activation) and D247 (senders brand grouping, in flight on `feat/d247-senders-brand-grouping`) all exist as decisions with no row, so the log cannot report their build status at all — and D245 in particular is load-bearing, since it supersedes or amends at least D42, D43, D67, D93 and D124. Not fixed in this change because backfilling a dozen rows is its own scope, and the derived-generator work decided this session (call 3) will produce them from the merged `Closes D###` trailers rather than by hand.
+**How:** no founder action needed if call 3 ships as decided — the generator emits a row for every D in the plan and reconciles it against merged trailers, which surfaces D236–D247 automatically. Listed here so the gap is not mistaken for "those decisions have no work".
+**Verifies by:** the regenerated log contains a row for every D-number present in `docs/execution/Implementation-Plan.md`.
+**Status:** Done 2026-07-28 (D158) — the derived generator emits a row for every `### D<n>` heading in the plan: 238 rows including D245, D246, D248 (D236–D244 and D247 have no plan headings yet — D247's arrives when its branch lands its plan edit, and the row will appear automatically).
+
+### 2026-06-29 — IMPL-LOG-DRIFT: 49 🔵 rows stale >14 days un-verified (verify-d backlog)
+**Source:** impl-log-drift-oracle (scheduled task, 2026-06-29 sweep)
+**Why:** 49 D-rows sit at 🔵 (merge-shipped) but were never flipped 🔵→🟢 via `pnpm verify-d`; all merged ≥17 days ago (oldest 40d). 🔵 is meant to be transient — a large stale backlog means the plan's verified-state is no longer trustworthy as a launch-readiness signal. This is the first run to flag stale-🔵 (prior 2026-05-27 sweep predated the backlog).
+**How:** run `pnpm verify-d D###` for each row whose verification actually passes; for rows where it does not, that's a real gap to fix, not a flip. Backlog (D# → PR, days-since-merge from 2026-06-29):
+D1→#12(39) · D2→#12(39) · D23→#32(37) · D28→#32(37) · D29→#44(36) · D41→#30(37) · D42→#181(19) · D43→#181(19) · D49→#115(33) · D52→#183(19) · D55→#138(28) · D57→#214(17) · D64→#194(17) · D78→#194(17) · D79→#215(17) · D80→#215(17) · D90→#111(33) · D92→#216(17) · D107→#212(17) · D109→#122(32) · D110→#212(17) · D112→#212(17) · D113→#194(17) · D115→#126(32) · D117→#194(17) · D118→#207(17) · D134→#202(17) · D155→#121(32) · D158→#189(18) · D162→#204(17) · D166→#50(35) · D168→#131(31) · D169→#131(31) · D173→#11(40) · D179→#46(36) · D181→#131(31) · D183→#197(18) · D193→#221(17) · D199→#29(37) · D205→#121(32) · D206→#127(32) · D210→#12(39) · D211→#195(18) · D212→#51(36) · D216→#218(17) · D220→#12(39) · D223→#202(17) · D228→#192(18) · D230→#185(19).
+**Verifies by:** the flagged rows flip 🔵→🟢 in IMPLEMENTATION-LOG.md (or are reopened with a logged gap); next oracle sweep reports a shrinking backlog.
+**Status:** Done 2026-07-28 (D158) — the diagnosis was wrong and the fix ships in the derived-log PR: `verify-d` was a NO-OP (it rewrote one character and recorded free text, default "manual"), so the stale-🔵 backlog was un-actionable. Now ⬜/🔵 derive from merged `Closes` trailers, `verify-d` requires executed-command or recorded-observation evidence, and the 🟢 audit demoted 10 rows whose evidence was empty or cited deleted files. The 🔵 rows remaining are the honest verification queue, visible in the summary block.
+
+### 2026-06-29 — IMPL-LOG-DRIFT: process-break — 49 findings this week — verify-d cadence has stalled
+**Source:** impl-log-drift-oracle (scheduled task, 2026-06-29 sweep)
+**Why:** 49 stale-🔵 findings (Check 1) vs 0 missing-trailer (Check 2) and 0 un-flipped-⬜ (Check 3) — the merge→🔵 auto-flip and `Closes` trailer discipline are healthy; the broken leg is the 🔵→🟢 verify-d step, which appears not to have run since the 2026-06-09→12 launch-buildout merges. Surfaced separately so the volume is visible.
+**How:** decide whether post-launch verify-d is a cadence the solo workflow keeps. If yes, schedule a verify-d sweep; if no (verified-state not worth maintaining manually), adjust this oracle's stale-🔵 threshold so it stops flagging the standing backlog every week.
+**Verifies by:** either the backlog above shrinks across sweeps, or the oracle threshold/policy is updated so 🔵 is no longer treated as transient.
+**Status:** Done 2026-07-28 (D158) — root cause was not cadence but a verifier that verified nothing; see the entry above. The derived generator + evidence-gated verify-d replace the process.
+
+### 2026-05-27 — IMPL-LOG-DRIFT: pr-merged.yml flip regex breaks on D-row titles containing `|`
+**Source:** impl-log-drift-oracle (scheduled task, 2026-05-27 sweep) — discovered while patching D12 manually
+**Why:** `.github/workflows/pr-merged.yml`'s flip step uses `[^|]+` to capture the row title between the first and second `|` separators. D12's row title (`sender_key formula: **sha256("v1|" + normalized_email)`) contains a literal `|` inside `"v1|"`, so the regex stops short and the row never flips even when the PR body carries `Closes D12`. PR #48 shipped with the correct trailer; the flip silently no-op'd. This is a latent bug — any future D-row with `|` in the title will silently fail to flip and the only signal is the weekly oracle catching it as un-flipped.
+**How:** Patch the regex in `.github/workflows/pr-merged.yml` to anchor on the trailing `| ⬜ |` token rather than greedy-stopping at the first `|`:
+
+```python
+# replace
+pattern = re.compile(rf'^\| D{re.escape(num)} \| ([^|]+) \| ⬜ \|  \|(.*)$', re.MULTILINE)
+# with
+pattern = re.compile(rf'^\| D{re.escape(num)} \| (.+?) \| ⬜ \|  \|(.*)$', re.MULTILINE)
+```
+
+The non-greedy `.+?` paired with the explicit ` \| ⬜ \|` anchor matches the title regardless of embedded `|`. Add a regression line to whatever workflow test harness covers `pr-merged.yml` (or a fixture row with `|` in the title) so a future regression fires loudly.
+
+**Verifies by:** Create a throwaway branch, drop a row like `| D999 | foo |bar baz | ⬜ |  |  |  |` into `IMPLEMENTATION-LOG.md` in a test, run the python block locally with `PR_NUMBER=999` + `d_numbers=D999` → row flips to `🔵 | #999 |`.
+**Status:** Done 2026-07-28 (D158) — pr-merged.yml is DELETED (its push-to-main was rejected by branch protection on every run; it never flipped a row). The generator emits pipe-escaped titles (`\|`) and both scripts parse rows by locating the status cell positionally, so a title pipe can never break column extraction again. D12's row renders correctly.
 
 ### 2026-05-21 — RATIFY: `sender_timeseries.opens` renamed to `read_count` (D-candidate)
 **Source:** PR [#13](https://github.com/CT2689-Tech/DeclutrMail/pull/13) — schema review finding
