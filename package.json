@@ -21,6 +21,7 @@
     "build": "pnpm -r --parallel build",
     "verify-d": "tsx scripts/verify-d.ts",
     "generate-impl-log": "tsx scripts/generate-impl-log.ts",
+    "check-changelog": "tsx scripts/check-changelog.ts",
     "status": "tsx scripts/status.ts",
     "db:migrate": "./scripts/db-migrate.sh",
     "db:migrate:status": "./scripts/db-migrate.sh --status",

@@ -137,27 +137,93 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     ],
   },
   {
+    id: '2026-07-24',
+    date: '2026-07-24',
+    title: 'Paddle production billing',
+    summary: 'Paid plans became purchasable for customers outside India.',
+    added: ['Paddle production billing for customers outside India.'],
+    improved: [],
+    fixed: [],
+    evidence: [{ commit: '407fdcbd', pullRequest: 374, summary: 'Paddle production billing' }],
+  },
+  {
+    id: '2026-07-23',
+    date: '2026-07-23',
+    title: 'Recovery tables get row-level access control',
+    summary:
+      'Database-level access control was extended to the tables that hold recovery and deletion state.',
+    added: [],
+    improved: [],
+    fixed: ['Row-level security is enforced on the recovery and deletion tables.'],
+    evidence: [
+      { commit: '5bf9645b', pullRequest: 373, summary: 'Recovery-table row-level security' },
+    ],
+  },
+  {
     id: '2026-07-22',
     date: '2026-07-22',
-    title: 'Production billing, deletion, and sync hardening',
+    title: 'Deletion, monitoring, and sync recovery',
     summary:
-      'Paddle production billing was enabled, and account deletion, sync recovery, and database access control were hardened ahead of it.',
-    added: ['Paddle production billing for customers outside India.'],
+      'Account deletion, sync recovery, and the production monitoring floor were hardened ahead of enabling paid billing.',
+    added: [],
     improved: [
       'Account deletion revokes the Google grant before encrypted refresh tokens are erased, and applies the same guarantee to per-mailbox data deletion.',
-      'One API instance stays warm so a first request does not wait on a cold start.',
+      'One API instance stays warm, so a first request does not wait on a cold start.',
     ],
     fixed: [
       'Incremental message persistence and sender counters are transactional and safe to replay, so a queue failure stays recoverable.',
-      'Row-level security is enforced on the recovery tables.',
     ],
     evidence: [
-      { commit: '407fdcbd', pullRequest: 374, summary: 'Paddle production billing' },
       { commit: '8822f910', pullRequest: 372, summary: 'Grant revocation on deletion' },
       { commit: 'ef144860', pullRequest: 371, summary: 'API launch floor' },
       { commit: '14aac856', pullRequest: 370, summary: 'Sync recovery hardening' },
-      { commit: '5bf9645b', pullRequest: 373, summary: 'Recovery-table row-level security' },
     ],
+  },
+  {
+    id: '2026-07-21',
+    date: '2026-07-21',
+    title: 'Self-serve plan changes',
+    summary:
+      'Changing plan stopped requiring support: upgrades, downgrades, and the monthly/annual switch became self-serve, with the timing stated before you commit.',
+    added: [
+      'Upgrade, downgrade, and switch between monthly and annual from the billing screen.',
+      'A one-tap interval toggle on the plan picker.',
+    ],
+    improved: [
+      'An upgrade applies immediately and is prorated by the provider; a downgrade is scheduled for the end of the period you already paid for, and the screen says which of the two will happen before you confirm.',
+      'Choosing to keep your current plan restores it and reconciles against the provider record rather than assuming the change was undone.',
+    ],
+    fixed: [],
+    evidence: [{ commit: '84cf754b', pullRequest: 367, summary: 'Self-serve plan changes' }],
+  },
+  {
+    id: '2026-07-20',
+    date: '2026-07-20',
+    title: 'Purchases land, and arrive in order',
+    summary:
+      'Two defects in the payment path: a completed purchase could fail to attach to the account that made it, and a provider event delivered late could overwrite a newer one.',
+    added: [],
+    improved: [],
+    fixed: [
+      'A completed Paddle purchase is attributed to the account that made it, so the plan actually applies.',
+      'A provider event that is dropped and later redelivered is recovered without applying an older state over a newer one.',
+    ],
+    evidence: [
+      { commit: '38651429', pullRequest: 362, summary: 'Paddle purchase attribution' },
+      { commit: '6da7fc85', pullRequest: 364, summary: 'Webhook recovery and event order' },
+    ],
+  },
+  {
+    id: '2026-07-18',
+    date: '2026-07-18',
+    title: 'A sort that says what it sorts',
+    summary: 'One rename on the Senders screen.',
+    added: [],
+    improved: [
+      'The Senders sort formerly labelled by first-seen date now reads Newest arrivals, which is what it orders by.',
+    ],
+    fixed: [],
+    evidence: [{ commit: '5c904e56', pullRequest: 353, summary: 'Newest arrivals sort label' }],
   },
   {
     id: '2026-07-17',
@@ -178,6 +244,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
       'Triage keyboard handling uses a single listener with an explicit inline confirm.',
       'Autopilot approve-all states its true scope and resets its slider.',
       'The Screener heading states the true pending count rather than the current page size.',
+      'The Weekly Hero panel was removed. It was retired with the editorial-hero direction and its remaining stack was deleted rather than left dormant.',
     ],
     evidence: [
       { commit: 'efd89816', pullRequest: 339, summary: 'Sender wire model' },
@@ -188,6 +255,53 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
       { commit: '2a6ab186', pullRequest: 342, summary: 'Triage keyboard and confirm' },
       { commit: '21d190de', pullRequest: 345, summary: 'Autopilot approve-all scope' },
       { commit: '42ac4c08', pullRequest: 350, summary: 'Screener pending count' },
+      { commit: 'a5700c53', pullRequest: 346, summary: 'Weekly Hero removal' },
+      { commit: '638cd55e', pullRequest: 351, summary: 'Single subscription read' },
+    ],
+  },
+  {
+    id: '2026-07-15',
+    date: '2026-07-15',
+    title: 'Protection that can explain itself',
+    summary:
+      'Automatic protection was narrowed to signals a person can check, and the senders it had wrongly protected were released.',
+    added: [
+      'An Activity support bundle you can export for the active mailbox — a summary and a CSV of the rows your current filters select, with sender addresses masked unless you explicitly opt in to full addresses.',
+      'A Daily Brief generated in your own local time from one stored timezone, and a finite first-relief onboarding that ends rather than scrolling forever.',
+    ],
+    improved: [
+      'Automatic protection from Gmail importance now also requires the sender to be in Gmail’s own Primary category. On the founder mailbox, 176 of 187 importance-only protections were promotions, updates, social, or forums; those were released and only genuine Primary senders kept.',
+      'The protection sweep reconciles before it escalates, so a protection that no longer qualifies is withdrawn rather than left standing. Manual protection and manual unprotect are never touched.',
+      'Automation suggestions observe a repeated pattern first and carry the evidence for it.',
+    ],
+    fixed: [
+      'Protection reasons that referred to retired concepts were cleared so those senders re-qualify under a current, stated signal.',
+      'An undone action stays excluded from review outcomes for every date range, rather than reappearing once its journal entry is pruned.',
+    ],
+    evidence: [
+      { commit: '5b64dcf8', pullRequest: 335, summary: 'Primary gate on importance protection' },
+      { commit: '9bc6b739', pullRequest: 333, summary: 'Activity support bundle export' },
+      { commit: 'c72b86ea', pullRequest: 334, summary: 'Behavioral activation and trust' },
+      { commit: '8017db6d', pullRequest: 336, summary: 'Protection-reason cleanup' },
+    ],
+  },
+  {
+    id: '2026-07-14',
+    date: '2026-07-14',
+    title: 'The public site, and one product vocabulary',
+    summary:
+      'The public marketing surface went live — including this log — alongside a program that gave every screen one name for each concept.',
+    added: [
+      'A public site across 36 indexable routes: landing, pricing, sign-in, how it works, methodology, FAQ, comparisons, Gmail guides, direct-answer pages, journal, legal, security, support, a synthetic demo, and this evidence-linked build log with its RSS feed.',
+    ],
+    improved: [
+      'Protected became the single visible safety state. The separate VIP concept was retired rather than kept as an alias, so there is one answer to whether a sender is shielded from bulk and automatic actions.',
+      'Recovery, Later, and unsubscribe wording was aligned to what each one actually does.',
+    ],
+    fixed: [],
+    evidence: [
+      { commit: 'e0295e38', pullRequest: 325, summary: 'Public product experience' },
+      { commit: 'eb4932bd', pullRequest: 332, summary: 'Product clarity contract' },
     ],
   },
   {
@@ -208,6 +322,9 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     fixed: [
       'Closing the optional analytics consent banner is recorded as a decline.',
       'The authentication loading state now matches the shape of the app shell.',
+      'Gmail push notifications carrying a numeric history id are accepted, so real-time sync keeps up instead of stalling.',
+      'A second initial sync for a mailbox that is already ready does nothing, rather than repeating the work.',
+      'The sync-complete email states what it can actually do next.',
     ],
     evidence: [
       { commit: '5b8f9174', pullRequest: 322, summary: 'Noise-prevented payoff' },
@@ -216,6 +333,9 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
       { commit: 'e2da5221', pullRequest: 318, summary: 'Protected-sender recommendation fix' },
       { commit: '5ab85737', pullRequest: 317, summary: 'Pro route gating' },
       { commit: 'b3bd07f3', pullRequest: 316, summary: 'First-Triage practice contrast' },
+      { commit: 'e9e48dd9', pullRequest: 311, summary: 'Numeric historyId in Gmail push' },
+      { commit: '248f673d', pullRequest: 314, summary: 'Duplicate initial sync no-op' },
+      { commit: '540ebe54', pullRequest: 315, summary: 'Sync-complete email copy' },
     ],
   },
   {
@@ -260,8 +380,13 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     fixed: [
       'Activity gained a distinct confirmed-unsubscribe outcome instead of treating intent as success.',
       'The database action vocabulary and URL checks were hardened for unsubscribe outcomes.',
+      'The refund guarantee, governing law, and India DPDP disclosures were made consistent across the public legal pages.',
+      'A page that does not exist now offers next steps suited to whether you are signed in.',
     ],
     evidence: [
+      { commit: 'b2da2269', pullRequest: 291, summary: 'Refund, governing law, DPDP' },
+      { commit: '358079fa', pullRequest: 292, summary: 'Database vocabulary hardening' },
+      { commit: '4da2f6b7', pullRequest: 302, summary: 'Audience-aware 404' },
       { commit: 'db1ad7bb', pullRequest: 294, summary: 'Sender rollups and bulk actions' },
       { commit: '902cbdba', pullRequest: 295, summary: 'Autopilot observe and activation' },
       { commit: '2c59ac96', pullRequest: 293, summary: 'Triage interaction suite' },
