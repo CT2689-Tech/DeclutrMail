@@ -10,8 +10,9 @@
  * sessions never fire a request the server would 402.
  */
 
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { apiGet, apiPost } from '@/lib/api/client';
 import { defaultLaterWakeAt, newIdempotencyKey } from '@/lib/api/actions';
 
@@ -64,6 +65,7 @@ export function useScreenerCount(options: { enabled?: boolean } = {}) {
  * handler (lib/query-client) — no per-hook wiring needed.
  */
 export function useScreenerDecide() {
+  const qc = useQueryClient();
   return useMutation<
     ScreenerDecideResult,
     Error,
@@ -89,6 +91,11 @@ export function useScreenerDecide() {
         { headers: { 'Idempotency-Key': newIdempotencyKey() } },
       );
       return envelope.data;
+    },
+    onSuccess: () => {
+      // Screener decides ride the same metered pipeline — refresh the
+      // frozen quota counter (flow audit 2026-07-28).
+      void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
     },
   });
 }
