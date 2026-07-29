@@ -1692,7 +1692,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(notice).toHaveTextContent('Your Plus subscription is paused');
     // The entitlement claim is DERIVED from the server read, never
     // hardcoded — this fixture's tier is free, so the copy may say so.
-    expect(notice).toHaveTextContent('your workspace is on Free');
+    expect(notice).toHaveTextContent('your account is on Free');
     expect(within(notice).getByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
 
     // Plan changes stay locked while paused.
@@ -1735,7 +1735,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(within(card).getByText('Pro')).toBeInTheDocument();
     expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
     expect(within(card).queryByText(quotedPlanPrice('plus', 'monthly')!)).not.toBeInTheDocument();
-    expect(within(card).getByText('Included with your workspace')).toBeInTheDocument();
+    expect(within(card).getByText('Included with your account')).toBeInTheDocument();
     expect(
       within(card).queryByRole('button', { name: 'Cancel subscription' }),
     ).not.toBeInTheDocument();
@@ -1746,9 +1746,9 @@ describe('BillingScreen — one billing story (A6)', () => {
     // from subscription rows, which can move the workspace off Pro.
     const notice = screen.getByTestId('non-backing-subscription-notice');
     expect(notice).toHaveTextContent('paused Plus subscription');
-    expect(notice).toHaveTextContent('Your workspace is on Pro');
+    expect(notice).toHaveTextContent('Your account is on Pro');
     expect(notice).not.toHaveTextContent('Resume to reactivate Plus');
-    expect(notice).toHaveTextContent(/can move your workspace off Pro/);
+    expect(notice).toHaveTextContent(/can move your account off Pro/);
     expect(within(notice).getByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
 
     // The paused row still occupies the server's one-live-subscription
@@ -1773,7 +1773,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     // not render the quote as if it were the bill.
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Pro')).toBeInTheDocument();
-    expect(within(card).getByText('Included with your workspace')).toBeInTheDocument();
+    expect(within(card).getByText('Included with your account')).toBeInTheDocument();
     expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
     expect(within(card).queryByText(quotedPlanPrice('pro', 'annual')!)).not.toBeInTheDocument();
     expect(screen.queryByTestId('non-backing-subscription-notice')).not.toBeInTheDocument();
@@ -1795,7 +1795,7 @@ describe('BillingScreen — one billing story (A6)', () => {
 
     const notice = await screen.findByTestId('non-backing-subscription-notice');
     expect(notice).toHaveTextContent('Payment past due — update your payment method');
-    expect(notice).toHaveTextContent('Your workspace is on Pro');
+    expect(notice).toHaveTextContent('Your account is on Pro');
     // The mismatch row never puts its price on the card…
     const card = screen.getByTestId('current-plan-card');
     expect(within(card).queryByText(quotedPlanPrice('plus', 'monthly')!)).not.toBeInTheDocument();
@@ -1822,7 +1822,7 @@ describe('BillingScreen — one billing story (A6)', () => {
 
     const notice = await screen.findByTestId('non-backing-subscription-notice');
     expect(notice).toHaveTextContent('Your Pro subscription ended.');
-    expect(notice).toHaveTextContent('Your workspace is on Free.');
+    expect(notice).toHaveTextContent('Your account is on Free.');
     // No resume/cancel verbs on an ended row.
     expect(within(notice).queryByRole('button')).not.toBeInTheDocument();
     // "No card on file" stays off while a provider record exists, and

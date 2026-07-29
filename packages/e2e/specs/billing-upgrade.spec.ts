@@ -13,7 +13,12 @@ import {
 } from '../helpers/billing';
 import { dbConnect } from '../helpers/db';
 import { E2E_ENV } from '../helpers/env';
-import { applyBillingSeed, BILLING_SEED, resetBillingVolatileState } from '../helpers/seed-billing';
+import {
+  applyBillingSeed,
+  BILLING_SEED,
+  FREE_CLEANUP_LIMIT,
+  resetBillingVolatileState,
+} from '../helpers/seed-billing';
 
 /**
  * Money-path spec (D183 / D19 / D77 / D117 / D180) — free user hits the
@@ -21,7 +26,8 @@ import { applyBillingSeed, BILLING_SEED, resetBillingVolatileState } from '../he
  * entitlements flip → gates open.
  *
  * WHAT IT PROVES
- *   1. A Free workspace at its 5-lifetime-cleanup cap (D19) gets the
+ *   1. A Free workspace with its monthly cleanup allowance spent (D19,
+ *      limit derived from TIER_MANIFEST) gets the
  *      designed upsell: Archive confirm → server 402 FREE_CAP_REACHED →
  *      UpgradeModal — and NO action row was written (the gate fires
  *      before insert).
@@ -194,7 +200,7 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // assume a prior step's state survived).
   const me = await api.get<BillingMe>('/api/auth/me');
   expect(me.tier).toBe('free');
-  expect(me.cleanupRemaining, 'seed must leave 0 of 5 lifetime cleanup actions').toBe(0);
+  expect(me.cleanupRemaining, 'seed must exhaust the monthly cleanup allowance').toBe(0);
 
   // ---- 1. Paywall: Archive on /senders → D226 preview → confirm →
   // server 402 FREE_CAP_REACHED → the designed UpgradeModal.
@@ -208,18 +214,25 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   const preview = page.getByRole('dialog');
   await expect(preview).toBeVisible();
   await expect(preview).toContainText('Preview · before anything changes');
-  // Confirm button reads "📥 Archive ⌘⏎" (count moved into the match
-  // line) — match the verb, not a stale "Archive <n>" shape.
-  const confirm = preview.getByRole('button', { name: /Archive/ });
-  await expect(confirm).toBeEnabled();
-  await confirm.click();
+  // A3 client pre-refusal (#401): with the monthly allowance spent, the
+  // confirm CTA is REPLACED by the upgrade CTA — the shortfall is
+  // stated in the modal and no request is ever sent (the server 402
+  // path stays covered by actions.service.postgres.spec).
+  await expect(preview).toContainText(
+    'This needs 1 cleanup action but only 0 are left this month.',
+  );
+  const upgradeCta = preview.getByRole('button', { name: 'Upgrade for unlimited cleanup' });
+  await expect(upgradeCta).toBeEnabled();
+  await upgradeCta.click();
 
   const upgradeModal = page.getByTestId('upgrade-modal');
   await expect(upgradeModal).toBeVisible({ timeout: 15_000 });
-  await expect(upgradeModal).toContainText(/used all 5 free sender actions/);
+  await expect(upgradeModal).toContainText(
+    `You've used all ${FREE_CLEANUP_LIMIT} cleanup actions for this month`,
+  );
 
   // The gate fired BEFORE any insert — the quota ledger still holds
-  // exactly the 5 seeded units and nothing else.
+  // exactly the seeded units and nothing else.
   const stray = await sql<{ n: number }[]>`
     SELECT count(*)::int AS n FROM action_jobs
     WHERE mailbox_account_id = ${BILLING_SEED.mailboxId}
@@ -235,7 +248,9 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   const planCard = page.getByTestId('current-plan-card');
   await expect(planCard).toBeVisible({ timeout: 60_000 });
   await expect(planCard).toContainText('Free');
-  await expect(planCard).toContainText('0 of 5 lifetime cleanup actions left.');
+  await expect(planCard).toContainText(
+    `0 of ${FREE_CLEANUP_LIMIT} cleanup actions left this month.`,
+  );
   await expect(page.getByTestId('checkout-panel')).toBeVisible();
   await expect(page.getByTestId('checkout-panel')).toContainText(
     'Preview · before anything changes',
@@ -308,7 +323,11 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // ---- 5. Gates open: /screener now renders the seeded queue (fresh
   // page load ⇒ fresh me fetch — no stale client cache in play).
   await page.goto('/screener');
-  const queueList = page.getByRole('list', { name: 'Screener queue' });
+  // Accessible name comes from the screen's aria-label, which the
+  // plain-language sweep (#410) changed from the internal-sounding
+  // "Screener queue" to what a user would actually call it. This spec
+  // and that rename landed in the same session; CI caught the drift.
+  const queueList = page.getByRole('list', { name: 'Senders waiting for your decision' });
   await expect(queueList).toBeVisible({ timeout: 60_000 });
   await expect(queueList).toContainText(BILLING_SEED.screenerSenderName);
   await expect(page.getByText('A queue of new senders, ready when you are.')).toHaveCount(0);

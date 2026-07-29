@@ -605,7 +605,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         id="autopilot"
         title="How Autopilot works"
         body="Observe and Active are set per rule. Observe records matches as suggestions and changes no mail until you approve one. Active applies future matches automatically; every result is recorded in Activity. Pause all stops every rule across every inbox at once."
-        tip="Custom rule creation is not available for this workspace. Only the launch preset rules can be enabled."
+        tip="Custom rule creation is not available on your account. Only the launch preset rules can be enabled."
       />
 
       <ContextualHelp question="What changes between Observe and Active?">
