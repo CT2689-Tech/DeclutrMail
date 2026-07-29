@@ -154,6 +154,21 @@ export const BillingSubscriptionSchema = z.object({
         .nullable(),
     })
     .nullable(),
+  /**
+   * Cross-device in-flight checkout (0051). Non-null while a checkout
+   * this workspace opened has neither granted (webhook clears it) nor
+   * expired. The FE locks checkout CTAs on it — the localStorage lock
+   * covers only the same browser. Expired/absent = "we no longer claim
+   * a checkout is in flight", never "the payment failed".
+   */
+  pendingCheckout: z
+    .object({
+      provider: BillingProviderIdSchema,
+      tier: PurchasableTierSchema,
+      cycle: BillingCycleSchema,
+      expiresAt: z.iso.datetime(),
+    })
+    .nullable(),
 });
 export type BillingSubscription = z.infer<typeof BillingSubscriptionSchema>;
 

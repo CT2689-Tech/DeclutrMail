@@ -62,7 +62,12 @@ import { annualMonthsFree, quotedPlanPrice } from './billing-model';
 import { BillingScreen } from './billing-screen';
 import { pendingCheckoutKey, writePendingCheckout } from './pending-checkout';
 
-const FREE_BODY: BillingSubscription = { tier: 'free', foundingMember: false, subscription: null };
+const FREE_BODY: BillingSubscription = {
+  tier: 'free',
+  foundingMember: false,
+  subscription: null,
+  pendingCheckout: null,
+};
 
 const SUB: NonNullable<BillingSubscription['subscription']> = {
   provider: 'paddle',
@@ -76,11 +81,17 @@ const SUB: NonNullable<BillingSubscription['subscription']> = {
   scheduledChange: null,
 };
 
-const PRO_SUB: BillingSubscription = { tier: 'pro', foundingMember: false, subscription: SUB };
+const PRO_SUB: BillingSubscription = {
+  tier: 'pro',
+  foundingMember: false,
+  subscription: SUB,
+  pendingCheckout: null,
+};
 
 const PLUS_SUB: BillingSubscription = {
   tier: 'plus',
   foundingMember: false,
+  pendingCheckout: null,
   subscription: { ...SUB, tier: 'plus' },
 };
 
@@ -960,6 +971,7 @@ describe('BillingScreen — paid subscriber', () => {
         data: {
           ...PRO_SUB,
           foundingMember: true,
+          pendingCheckout: null,
           subscription: { ...SUB, cycle: 'annual', foundingMember: true },
         },
       }),
@@ -1656,6 +1668,7 @@ describe('BillingScreen — paid subscriber', () => {
     const pausedBody: BillingSubscription = {
       tier: 'free',
       foundingMember: false,
+      pendingCheckout: null,
       subscription: { ...SUB, tier: 'plus', status: 'paused' },
     };
     installFetchStub([
@@ -1723,6 +1736,7 @@ describe('BillingScreen — one billing story (A6)', () => {
         data: {
           tier: 'pro',
           foundingMember: false,
+          pendingCheckout: null,
           subscription: { ...SUB, tier: 'plus', status: 'paused' },
         },
       }),
@@ -1765,7 +1779,9 @@ describe('BillingScreen — one billing story (A6)', () => {
     mockTier = 'pro';
     mockCleanupRemaining = null;
     stubSubscription(() =>
-      jsonOk({ data: { tier: 'pro', foundingMember: false, subscription: null } }),
+      jsonOk({
+        data: { tier: 'pro', foundingMember: false, subscription: null, pendingCheckout: null },
+      }),
     );
     renderScreen();
 
@@ -1787,6 +1803,7 @@ describe('BillingScreen — one billing story (A6)', () => {
         data: {
           tier: 'pro',
           foundingMember: false,
+          pendingCheckout: null,
           subscription: { ...SUB, tier: 'plus', status: 'past_due' },
         },
       }),
@@ -1814,6 +1831,7 @@ describe('BillingScreen — one billing story (A6)', () => {
         data: {
           tier: 'free',
           foundingMember: false,
+          pendingCheckout: null,
           subscription: { ...SUB, status: 'canceled', currentPeriodEnd: null },
         },
       }),

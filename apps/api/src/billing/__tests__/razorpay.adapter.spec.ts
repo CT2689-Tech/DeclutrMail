@@ -96,9 +96,9 @@ describe('RazorpayAdapter.mapWebhookEvent', () => {
     });
   });
 
-  it('maps lifecycle statuses: halted→past_due, paused→paused, cancelled/completed→canceled', () => {
+  it('maps lifecycle statuses: halted→CANCELED (terminal, decision 2), paused→paused, cancelled/completed→canceled', () => {
     const cases: Array<[string, string, string]> = [
-      ['subscription.halted', 'halted', 'past_due'],
+      ['subscription.halted', 'halted', 'canceled'],
       ['subscription.pending', 'pending', 'past_due'],
       ['subscription.paused', 'paused', 'paused'],
       ['subscription.cancelled', 'cancelled', 'canceled'],

@@ -47,7 +47,13 @@
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
-import { billingCustomers, subscriptionEvents, subscriptions, workspaces } from '@declutrmail/db';
+import {
+  pendingCheckouts,
+  billingCustomers,
+  subscriptionEvents,
+  subscriptions,
+  workspaces,
+} from '@declutrmail/db';
 import { TIER_RANK } from '@declutrmail/shared/entitlements';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
@@ -64,6 +70,27 @@ const FOUNDING_LOCK_KEY = 117_126;
 /** Statuses that grant their tier (see header — paused grants nothing). */
 const GRANTING_STATUSES = ['active', 'past_due'] as const;
 
+/**
+ * Founder decision 2026-07-28: a failed payment keeps its tier for 14
+ * days past the period end, then entitlement drops. Terminal provider
+ * states (Razorpay `halted` → canceled) drop immediately — the window
+ * applies ONLY to genuine retry states.
+ */
+const DUNNING_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+/** Postgres unique_violation (23505) on a NAMED constraint/index. */
+function isUniqueViolation(err: unknown, constraint: string): boolean {
+  // Drizzle wraps the driver error as `cause`; postgres.js exposes the
+  // index name as `constraint_name`, PGlite/pg as `constraint`. Check
+  // both shapes on both levels.
+  type PgErr = { code?: string; constraint_name?: string; constraint?: string };
+  const e = err as PgErr & { cause?: PgErr };
+  const code = e?.code ?? e?.cause?.code;
+  const name =
+    e?.constraint_name ?? e?.constraint ?? e?.cause?.constraint_name ?? e?.cause?.constraint;
+  return code === '23505' && name === constraint;
+}
+
 export type WebhookProcessOutcome =
   | { kind: 'processed'; effect: string }
   | { kind: 'duplicate' }
@@ -74,7 +101,7 @@ export type WebhookProcessOutcome =
   // controller answers 503 so a retry actually happens. Stamping here
   // is what made a real sandbox payment permanently unrecoverable
   // (2026-07-20) — every retry short-circuited as `duplicate`.
-  | { kind: 'unresolved'; reason: 'unknown_price' | 'unattributable' };
+  | { kind: 'unresolved'; reason: 'unknown_price' | 'unattributable' | 'live_conflict' };
 
 /** Safe property read — no throw on null/array/scalar inputs. */
 function prop(obj: unknown, key: string): unknown {
@@ -216,19 +243,22 @@ export class BillingWebhookService {
         payload: projectWebhookPayload(event, rawPayload),
       })
       .onConflictDoNothing()
-      .returning({ id: subscriptionEvents.id, createdAt: subscriptionEvents.createdAt });
+      .returning({
+        id: subscriptionEvents.id,
+        arrivalSeq: subscriptionEvents.arrivalSeq,
+      });
 
     let eventRowId: string;
     // Arrival order of THIS event. A retry reuses the original row, so
     // this stays the first-attempt timestamp — which is what makes it
     // usable as a staleness reference against later-arrived events.
-    let eventCreatedAt: Date;
+    let eventArrivalSeq: number;
     if (inserted.length === 0) {
       const [existing] = await this.db
         .select({
           id: subscriptionEvents.id,
           processedAt: subscriptionEvents.processedAt,
-          createdAt: subscriptionEvents.createdAt,
+          arrivalSeq: subscriptionEvents.arrivalSeq,
         })
         .from(subscriptionEvents)
         .where(
@@ -246,19 +276,19 @@ export class BillingWebhookService {
       }
       // Crash-recovery resume: insert committed, effect didn't.
       eventRowId = existing.id;
-      eventCreatedAt = existing.createdAt;
+      eventArrivalSeq = existing.arrivalSeq;
       this.logger.warn(
         `billing.webhook.resume_unprocessed provider=${provider} event=${event.providerEventId}`,
       );
     } else {
       eventRowId = inserted[0]!.id;
-      eventCreatedAt = inserted[0]!.createdAt;
+      eventArrivalSeq = inserted[0]!.arrivalSeq;
     }
 
     // 2. Apply the domain effect + stamp processed_at atomically.
     switch (event.kind) {
       case 'subscription':
-        return this.applySubscription(provider, event, eventRowId, eventCreatedAt);
+        return this.applySubscription(provider, event, eventRowId, eventArrivalSeq);
       case 'cancellation_scheduled':
         return this.applyScheduledCancellation(provider, event, eventRowId);
       case 'payment':
@@ -291,7 +321,7 @@ export class BillingWebhookService {
     provider: BillingProviderId,
     event: Extract<NormalizedBillingEvent, { kind: 'subscription' }>,
     eventRowId: string,
-    eventCreatedAt: Date,
+    eventArrivalSeq: number,
   ): Promise<WebhookProcessOutcome> {
     const sub = event.subscription;
     const entry = this.catalog.resolveByPriceId(provider, sub.providerPriceId);
@@ -321,248 +351,150 @@ export class BillingWebhookService {
     // landed — e.g. a `subscription.created` retry that only becomes
     // attributable after a `subscription.canceled` has been applied.
     // Re-driving it would upsert `status: active` over the cancel and
-    // hand back entitlement. Arrival order (`created_at`, stamped on
+    // hand back entitlement. Arrival order (`arrival_seq`, stamped on
     // first receipt and preserved across retries) is the ordering
     // truth: providers give no reliable monotonic sequence, and
     // `occurred_at` lives only inside the audit payload.
     let appliedTier: 'free' | 'plus' | 'pro' | 'team' | 'enterprise' = entry.tierId;
-    const outcome = await this.db.transaction(async (tx) => {
-      await this.lockSubscription(tx, provider, sub.providerSubscriptionId);
+    let outcome: WebhookProcessOutcome | null;
+    try {
+      outcome = await this.db.transaction(async (tx) => {
+        await this.lockSubscription(tx, provider, sub.providerSubscriptionId);
 
-      // Peers = every processed, STATE-WRITING event for this
-      // subscription, excluding this row.
-      //
-      // Ordering is by the PROVIDER's `occurred_at`, not by arrival.
-      // Arrival is wrong for late FIRST deliveries: a `subscription.
-      // updated` stamped 10:00 can be delayed past a `subscription.
-      // canceled` stamped 10:05, land at 10:07 with the newest
-      // created_at of all, and resurrect the cancelled subscription.
-      // Filtering peers by arrival would hide exactly that case, so
-      // every peer is considered and compared on event time.
-      //
-      // `created_at` is the fallback when either side lacks
-      // occurred_at. It is not a total order on its own — now() is
-      // transaction-scoped, so rows written in quick succession share a
-      // timestamp — and `id` cannot break the tie (gen_random_uuid()
-      // would decide by coin flip). Equal on both is treated as
-      // simultaneous: neither is newer, so the event applies rather
-      // than deferring forever (both timestamps are FIXED, so a retry
-      // re-runs the identical comparison).
-      const [self] = await tx
-        .select({ occurredAt: sql<string | null>`${subscriptionEvents.payload}->>'occurred_at'` })
-        .from(subscriptionEvents)
-        .where(eq(subscriptionEvents.id, eventRowId))
-        .limit(1);
-      const selfOccurredAt = self?.occurredAt ?? null;
+        // Peers = every processed, STATE-WRITING event for this
+        // subscription, excluding this row.
+        //
+        // Ordering is by the PROVIDER's `occurred_at`, not by arrival.
+        // Arrival is wrong for late FIRST deliveries: a `subscription.
+        // updated` stamped 10:00 can be delayed past a `subscription.
+        // canceled` stamped 10:05, land at 10:07 with the newest
+        // created_at of all, and resurrect the cancelled subscription.
+        // Filtering peers by arrival would hide exactly that case, so
+        // every peer is considered and compared on event time.
+        //
+        // `arrival_seq` is the fallback when either side lacks
+        // occurred_at — a bigint identity stamped at insert, so arrival
+        // is a total order and the created_at tie class (transaction-
+        // scoped now(); uuid coin-flip) is gone by construction (0051).
+        const [self] = await tx
+          .select({ occurredAt: sql<string | null>`${subscriptionEvents.payload}->>'occurred_at'` })
+          .from(subscriptionEvents)
+          .where(eq(subscriptionEvents.id, eventRowId))
+          .limit(1);
+        const selfOccurredAt = self?.occurredAt ?? null;
 
-      const peers = await tx
-        .select({
-          createdAt: subscriptionEvents.createdAt,
-          occurredAt: sql<string | null>`${subscriptionEvents.payload}->>'occurred_at'`,
-          status: sql<string | null>`${subscriptionEvents.payload}->>'status'`,
-        })
-        .from(subscriptionEvents)
-        .where(
-          and(
-            eq(subscriptionEvents.provider, provider),
-            isNotNull(subscriptionEvents.processedAt),
-            sql`${subscriptionEvents.id} <> ${eventRowId}::uuid`,
-            sql`${subscriptionEvents.payload}->>'provider_subscription_id' = ${sub.providerSubscriptionId}`,
-            // ONLY state-writing kinds count as "newer state". A payment
-            // event carries the same provider_subscription_id but writes
-            // no subscription row — and `transaction.completed` is
-            // precisely what seeds billing_customers to make a stranded
-            // activation attributable. Counting it here would discard
-            // the activation this recovery path exists to rescue.
-            sql`${subscriptionEvents.payload}->>'kind' IN ('subscription', 'cancellation_scheduled')`,
-          ),
-        );
-
-      // Providers disagree on format: Paddle sends an ISO string,
-      // Razorpay unix SECONDS. Normalize to epoch millis so a marker
-      // written by our own cancel path (ISO) compares correctly against
-      // either. A subscription belongs to one provider, but the local
-      // cancel marker crosses that boundary.
-      const toMillis = (value: string | null): number | null => {
-        if (value === null) return null;
-        if (/^\d+$/.test(value)) return Number(value) * 1000;
-        const parsed = Date.parse(value);
-        return Number.isNaN(parsed) ? null : parsed;
-      };
-      const selfMs = toMillis(selfOccurredAt);
-
-      // Does THIS event grant a tier? Only a granting event can wrongly
-      // resurrect a committed non-granting state. Derived from the SAME
-      // GRANTING_STATUSES that recomputeWorkspaceTier uses, so the
-      // partition can never drift between the two.
-      const selfGrants = (GRANTING_STATUSES as readonly string[]).includes(sub.status);
-      const nonGranting = (status: string | null): boolean =>
-        status !== null && !(GRANTING_STATUSES as readonly string[]).includes(status);
-
-      const isNewer = (peer: {
-        createdAt: Date;
-        occurredAt: string | null;
-        status: string | null;
-      }): boolean => {
-        const peerMs = toMillis(peer.occurredAt);
-        // Distinct event times: the provider's order is authoritative.
-        // A genuine resume (occurred_at strictly after the pause) is
-        // resolved HERE and correctly applies.
-        if (peerMs !== null && selfMs !== null && peerMs !== selfMs) return peerMs > selfMs;
-        // Equal (or missing) event time — fall back to arrival order,
-        // STRICT. Whichever event arrived later is treated as newer:
-        //   - a user-cancel marker, written AFTER an in-flight renewal
-        //     arrived, wins and refuses the renewal (its flag-revert);
-        //   - a real cancel arriving after a committed active peer is
-        //     NOT refused — it arrived later, so it is not older, and
-        //     `>=` here would wrongly DISCARD it.
-        if (peer.createdAt.getTime() > eventCreatedAt.getTime()) return true;
-        // On an unresolved event-time tie a granting event must NOT
-        // overwrite a committed NON-GRANTING peer (paused or canceled) —
-        // the stale-active resurrection the arrival order cannot catch
-        // because it genuinely arrives last. `canceled` is also caught
-        // by the terminal floor below; `paused` (D118 tier lock) has no
-        // other guard.
-        return selfGrants && nonGranting(peer.status);
-      };
-
-      if (peers.some(isNewer)) {
-        // Terminal: a newer event already won. Stamp it so the provider
-        // stops retrying — unlike the unresolved cases above, replaying
-        // this can never produce a better outcome. Deferring instead
-        // would loop forever: both timestamps are fixed, so every retry
-        // re-runs the same comparison.
-        this.logger.warn(
-          `billing.webhook.stale_replay provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
-        );
-        await tx
-          .update(subscriptionEvents)
-          .set({ processedAt: new Date() })
-          .where(eq(subscriptionEvents.id, eventRowId));
-        return { kind: 'ignored' } as const;
-      }
-
-      // TERMINAL-CANCELED FLOOR. `canceled` is terminal on both
-      // providers — the same subscription id never reactivates
-      // (reactivation is a fresh subscription). This catches the one
-      // resurrection the timestamp guard above cannot: a stale active
-      // event sharing the cancel's event-time (Razorpay stamps unix
-      // SECONDS, so any two events in the same second are unorderable)
-      // that arrives AFTER the cancel — nothing in the event stream
-      // marks it older, yet it must not move the row out of canceled.
-      const [current] = await tx
-        .select({
-          status: subscriptions.status,
-          tier: subscriptions.tier,
-          billingCycle: subscriptions.billingCycle,
-          providerPriceId: subscriptions.providerPriceId,
-          currentPeriodEnd: subscriptions.currentPeriodEnd,
-          scheduledTier: subscriptions.scheduledTier,
-          scheduledBillingCycle: subscriptions.scheduledBillingCycle,
-          scheduledProviderPriceId: subscriptions.scheduledProviderPriceId,
-          scheduledChangeAt: subscriptions.scheduledChangeAt,
-          scheduledChangeState: subscriptions.scheduledChangeState,
-          scheduledChangeRequestedAt: subscriptions.scheduledChangeRequestedAt,
-        })
-        .from(subscriptions)
-        .where(
-          and(
-            eq(subscriptions.provider, provider),
-            eq(subscriptions.providerSubscriptionId, sub.providerSubscriptionId),
-          ),
-        )
-        .limit(1);
-      if (current?.status === 'canceled' && sub.status !== 'canceled') {
-        this.logger.warn(
-          `billing.webhook.canceled_is_terminal provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
-        );
-        await tx
-          .update(subscriptionEvents)
-          .set({ processedAt: new Date() })
-          .where(eq(subscriptionEvents.id, eventRowId));
-        return { kind: 'ignored' } as const;
-      }
-
-      // D120 scheduled downgrade. Paddle updates the subscription item
-      // immediately even with `do_not_bill`; until the provider advances
-      // the period beyond our stored effective date, that target price is
-      // only a billing schedule — it must not revoke current access.
-      const incomingPeriodEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
-      const matchesScheduledTarget =
-        current?.scheduledChangeState != null &&
-        current?.scheduledProviderPriceId === sub.providerPriceId;
-      const scheduledChangeApplied =
-        matchesScheduledTarget &&
-        current?.scheduledChangeState !== 'restoring_current' &&
-        current?.scheduledChangeAt !== null &&
-        incomingPeriodEnd !== null &&
-        incomingPeriodEnd.getTime() > current.scheduledChangeAt.getTime();
-      const restoreConfirmed =
-        current?.scheduledChangeState === 'restoring_current' &&
-        current.providerPriceId === sub.providerPriceId &&
-        current.scheduledChangeRequestedAt !== null &&
-        selfMs !== null &&
-        selfMs >= current.scheduledChangeRequestedAt.getTime();
-      // If an ambiguous restore never reached Paddle, the target item
-      // eventually renews. That post-boundary provider snapshot is
-      // authoritative: do not keep granting the old tier after the
-      // customer has actually renewed on the lower plan.
-      const restoreFailedAtRenewal =
-        current?.scheduledChangeState === 'restoring_current' &&
-        matchesScheduledTarget &&
-        current.scheduledChangeAt !== null &&
-        incomingPeriodEnd !== null &&
-        incomingPeriodEnd.getTime() > current.scheduledChangeAt.getTime() &&
-        current.scheduledChangeRequestedAt !== null &&
-        selfMs !== null &&
-        selfMs >= current.scheduledChangeRequestedAt.getTime();
-      const maskRestoreInFlight =
-        current?.scheduledChangeState === 'restoring_current' &&
-        !restoreConfirmed &&
-        !restoreFailedAtRenewal;
-      const maskScheduledDowngrade =
-        ((matchesScheduledTarget && !scheduledChangeApplied && !restoreFailedAtRenewal) ||
-          maskRestoreInFlight) &&
-        sub.status !== 'canceled';
-      const effectiveTier = maskScheduledDowngrade && current ? current.tier : entry.tierId;
-      appliedTier = effectiveTier;
-      const effectiveCycle = maskScheduledDowngrade && current ? current.billingCycle : entry.cycle;
-      const effectiveProviderPriceId =
-        maskScheduledDowngrade && current ? current.providerPriceId : sub.providerPriceId;
-      const clearScheduledChange =
-        scheduledChangeApplied ||
-        restoreConfirmed ||
-        restoreFailedAtRenewal ||
-        sub.status === 'canceled';
-      const nextScheduledChangeState = clearScheduledChange
-        ? null
-        : matchesScheduledTarget && current?.scheduledChangeState === 'pending_provider'
-          ? 'scheduled'
-          : current?.scheduledChangeState;
-      // Paddle nulls `current_billing_period` while paused, but its
-      // no-charge resume option depends on the retained period. Keep the
-      // last known end locally so the UI can explain the continuity.
-      const effectivePeriodEnd =
-        incomingPeriodEnd ?? (sub.status === 'paused' ? (current?.currentPeriodEnd ?? null) : null);
-
-      // Customer record (webhook hot path resolves workspace from it).
-      if (sub.providerCustomerId) {
-        await tx
-          .insert(billingCustomers)
-          .values({
-            workspaceId,
-            provider,
-            providerCustomerId: sub.providerCustomerId,
-            region: provider === 'razorpay' ? 'india' : 'international',
+        const peers = await tx
+          .select({
+            arrivalSeq: subscriptionEvents.arrivalSeq,
+            occurredAt: sql<string | null>`${subscriptionEvents.payload}->>'occurred_at'`,
+            status: sql<string | null>`${subscriptionEvents.payload}->>'status'`,
           })
-          .onConflictDoNothing();
-      }
+          .from(subscriptionEvents)
+          .where(
+            and(
+              eq(subscriptionEvents.provider, provider),
+              isNotNull(subscriptionEvents.processedAt),
+              sql`${subscriptionEvents.id} <> ${eventRowId}::uuid`,
+              sql`${subscriptionEvents.payload}->>'provider_subscription_id' = ${sub.providerSubscriptionId}`,
+              // ONLY state-writing kinds count as "newer state". A payment
+              // event carries the same provider_subscription_id but writes
+              // no subscription row — and `transaction.completed` is
+              // precisely what seeds billing_customers to make a stranded
+              // activation attributable. Counting it here would discard
+              // the activation this recovery path exists to rescue.
+              sql`${subscriptionEvents.payload}->>'kind' IN ('subscription', 'cancellation_scheduled')`,
+            ),
+          );
 
-      // D126 founding assignment — advisory lock + count, race-safe.
-      let founding = false;
-      if (entry.founding) {
-        const [existing] = await tx
-          .select({ foundingMember: subscriptions.foundingMember })
+        // Providers disagree on format: Paddle sends an ISO string,
+        // Razorpay unix SECONDS. Normalize to epoch millis so a marker
+        // written by our own cancel path (ISO) compares correctly against
+        // either. A subscription belongs to one provider, but the local
+        // cancel marker crosses that boundary.
+        const toMillis = (value: string | null): number | null => {
+          if (value === null) return null;
+          if (/^\d+$/.test(value)) return Number(value) * 1000;
+          const parsed = Date.parse(value);
+          return Number.isNaN(parsed) ? null : parsed;
+        };
+        const selfMs = toMillis(selfOccurredAt);
+
+        // Does THIS event grant a tier? Only a granting event can wrongly
+        // resurrect a committed non-granting state. Derived from the SAME
+        // GRANTING_STATUSES that recomputeWorkspaceTier uses, so the
+        // partition can never drift between the two.
+        const selfGrants = (GRANTING_STATUSES as readonly string[]).includes(sub.status);
+        const nonGranting = (status: string | null): boolean =>
+          status !== null && !(GRANTING_STATUSES as readonly string[]).includes(status);
+
+        const isNewer = (peer: {
+          arrivalSeq: number;
+          occurredAt: string | null;
+          status: string | null;
+        }): boolean => {
+          const peerMs = toMillis(peer.occurredAt);
+          // Distinct event times: the provider's order is authoritative.
+          // A genuine resume (occurred_at strictly after the pause) is
+          // resolved HERE and correctly applies.
+          if (peerMs !== null && selfMs !== null && peerMs !== selfMs) return peerMs > selfMs;
+          // Equal (or missing) event time — fall back to arrival order.
+          // `arrival_seq` is a bigint identity, so arrival is a TOTAL
+          // order (0051): two events can never tie the way `created_at`
+          // could when transaction-scoped now() stamped them identically.
+          //   - a user-cancel marker, written AFTER an in-flight renewal
+          //     arrived, wins and refuses the renewal (its flag-revert);
+          //   - a real cancel arriving after a committed active peer is
+          //     NOT refused — it arrived later, so it is not older.
+          if (peer.arrivalSeq > eventArrivalSeq) return true;
+          // On an unresolved event-time tie a granting event must NOT
+          // overwrite a committed NON-GRANTING peer (paused or canceled) —
+          // the stale-active resurrection the arrival order cannot catch
+          // because it genuinely arrives last. `canceled` is also caught
+          // by the terminal floor below; `paused` (D118 tier lock) has no
+          // other guard.
+          return selfGrants && nonGranting(peer.status);
+        };
+
+        if (peers.some(isNewer)) {
+          // Terminal: a newer event already won. Stamp it so the provider
+          // stops retrying — unlike the unresolved cases above, replaying
+          // this can never produce a better outcome. Deferring instead
+          // would loop forever: both timestamps are fixed, so every retry
+          // re-runs the same comparison.
+          this.logger.warn(
+            `billing.webhook.stale_replay provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
+          );
+          await tx
+            .update(subscriptionEvents)
+            .set({ processedAt: new Date() })
+            .where(eq(subscriptionEvents.id, eventRowId));
+          return { kind: 'ignored' } as const;
+        }
+
+        // TERMINAL-CANCELED FLOOR. `canceled` is terminal on both
+        // providers — the same subscription id never reactivates
+        // (reactivation is a fresh subscription). This catches the one
+        // resurrection the timestamp guard above cannot: a stale active
+        // event sharing the cancel's event-time (Razorpay stamps unix
+        // SECONDS, so any two events in the same second are unorderable)
+        // that arrives AFTER the cancel — nothing in the event stream
+        // marks it older, yet it must not move the row out of canceled.
+        const [current] = await tx
+          .select({
+            status: subscriptions.status,
+            tier: subscriptions.tier,
+            billingCycle: subscriptions.billingCycle,
+            providerPriceId: subscriptions.providerPriceId,
+            currentPeriodEnd: subscriptions.currentPeriodEnd,
+            scheduledTier: subscriptions.scheduledTier,
+            scheduledBillingCycle: subscriptions.scheduledBillingCycle,
+            scheduledProviderPriceId: subscriptions.scheduledProviderPriceId,
+            scheduledChangeAt: subscriptions.scheduledChangeAt,
+            scheduledChangeState: subscriptions.scheduledChangeState,
+            scheduledChangeRequestedAt: subscriptions.scheduledChangeRequestedAt,
+            cancelSource: subscriptions.cancelSource,
+            entitlementEndsAt: subscriptions.entitlementEndsAt,
+          })
           .from(subscriptions)
           .where(
             and(
@@ -571,81 +503,228 @@ export class BillingWebhookService {
             ),
           )
           .limit(1);
-        if (existing?.foundingMember) {
-          founding = true; // already claimed — replays never re-count
-        } else {
-          await tx.execute(sql`SELECT pg_advisory_xact_lock(${FOUNDING_LOCK_KEY})`);
-          const [row] = await tx
-            .select({ count: sql<number>`count(*)::int` })
+        if (current?.status === 'canceled' && sub.status !== 'canceled') {
+          this.logger.warn(
+            `billing.webhook.canceled_is_terminal provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
+          );
+          await tx
+            .update(subscriptionEvents)
+            .set({ processedAt: new Date() })
+            .where(eq(subscriptionEvents.id, eventRowId));
+          return { kind: 'ignored' } as const;
+        }
+
+        // D120 scheduled downgrade. Paddle updates the subscription item
+        // immediately even with `do_not_bill`; until the provider advances
+        // the period beyond our stored effective date, that target price is
+        // only a billing schedule — it must not revoke current access.
+        const incomingPeriodEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
+        const matchesScheduledTarget =
+          current?.scheduledChangeState != null &&
+          current?.scheduledProviderPriceId === sub.providerPriceId;
+        const scheduledChangeApplied =
+          matchesScheduledTarget &&
+          current?.scheduledChangeState !== 'restoring_current' &&
+          current?.scheduledChangeAt !== null &&
+          incomingPeriodEnd !== null &&
+          incomingPeriodEnd.getTime() > current.scheduledChangeAt.getTime();
+        const restoreConfirmed =
+          current?.scheduledChangeState === 'restoring_current' &&
+          current.providerPriceId === sub.providerPriceId &&
+          current.scheduledChangeRequestedAt !== null &&
+          selfMs !== null &&
+          selfMs >= current.scheduledChangeRequestedAt.getTime();
+        // If an ambiguous restore never reached Paddle, the target item
+        // eventually renews. That post-boundary provider snapshot is
+        // authoritative: do not keep granting the old tier after the
+        // customer has actually renewed on the lower plan.
+        const restoreFailedAtRenewal =
+          current?.scheduledChangeState === 'restoring_current' &&
+          matchesScheduledTarget &&
+          current.scheduledChangeAt !== null &&
+          incomingPeriodEnd !== null &&
+          incomingPeriodEnd.getTime() > current.scheduledChangeAt.getTime() &&
+          current.scheduledChangeRequestedAt !== null &&
+          selfMs !== null &&
+          selfMs >= current.scheduledChangeRequestedAt.getTime();
+        const maskRestoreInFlight =
+          current?.scheduledChangeState === 'restoring_current' &&
+          !restoreConfirmed &&
+          !restoreFailedAtRenewal;
+        const maskScheduledDowngrade =
+          ((matchesScheduledTarget && !scheduledChangeApplied && !restoreFailedAtRenewal) ||
+            maskRestoreInFlight) &&
+          sub.status !== 'canceled';
+        const effectiveTier = maskScheduledDowngrade && current ? current.tier : entry.tierId;
+        appliedTier = effectiveTier;
+        const effectiveCycle =
+          maskScheduledDowngrade && current ? current.billingCycle : entry.cycle;
+        const effectiveProviderPriceId =
+          maskScheduledDowngrade && current ? current.providerPriceId : sub.providerPriceId;
+        const clearScheduledChange =
+          scheduledChangeApplied ||
+          restoreConfirmed ||
+          restoreFailedAtRenewal ||
+          sub.status === 'canceled';
+        const nextScheduledChangeState = clearScheduledChange
+          ? null
+          : matchesScheduledTarget && current?.scheduledChangeState === 'pending_provider'
+            ? 'scheduled'
+            : current?.scheduledChangeState;
+        // Paddle nulls `current_billing_period` while paused, but its
+        // no-charge resume option depends on the retained period. Keep the
+        // last known end locally so the UI can explain the continuity.
+        const effectivePeriodEnd =
+          incomingPeriodEnd ??
+          (sub.status === 'paused' ? (current?.currentPeriodEnd ?? null) : null);
+
+        // Provenance + entitlement deadline (0051; founder rules
+        // 2026-07-20 + 2026-07-28). A LOCAL verdict — refund or
+        // chargeback — must survive every later provider payload: the
+        // old code's KNOWN GAP was exactly a renewal event silently
+        // re-granting a charged-back subscription. Provider-derived
+        // states compute fresh each event:
+        //   past_due → deadline = period end + 14d (the dunning window;
+        //     a terminal provider state never reaches here — Razorpay
+        //     `halted` maps to canceled at the adapter);
+        //   anything else → no deadline.
+        const localVerdict =
+          current?.cancelSource === 'refund' || current?.cancelSource === 'chargeback';
+        const nextEntitlementEndsAt = localVerdict
+          ? (current?.entitlementEndsAt ?? null)
+          : sub.status === 'past_due'
+            ? new Date((effectivePeriodEnd ?? new Date()).getTime() + DUNNING_WINDOW_MS)
+            : null;
+        const nextCancelSource = localVerdict
+          ? (current?.cancelSource ?? null)
+          : sub.status === 'canceled'
+            ? ('provider' as const)
+            : null;
+
+        // Customer record (webhook hot path resolves workspace from it).
+        if (sub.providerCustomerId) {
+          await tx
+            .insert(billingCustomers)
+            .values({
+              workspaceId,
+              provider,
+              providerCustomerId: sub.providerCustomerId,
+              region: provider === 'razorpay' ? 'india' : 'international',
+            })
+            .onConflictDoNothing();
+        }
+
+        // D126 founding assignment — advisory lock + count, race-safe.
+        let founding = false;
+        if (entry.founding) {
+          const [existing] = await tx
+            .select({ foundingMember: subscriptions.foundingMember })
             .from(subscriptions)
-            .where(eq(subscriptions.foundingMember, true));
-          founding = (row?.count ?? 0) < this.catalog.foundingMaxRedemptions;
-          if (!founding) {
-            this.logger.warn(
-              `billing.founding.sold_out_purchase sub=${sub.providerSubscriptionId} — pro_annual_founding past 250, granting pro without price-lock flag`,
-            );
+            .where(
+              and(
+                eq(subscriptions.provider, provider),
+                eq(subscriptions.providerSubscriptionId, sub.providerSubscriptionId),
+              ),
+            )
+            .limit(1);
+          if (existing?.foundingMember) {
+            founding = true; // already claimed — replays never re-count
+          } else {
+            await tx.execute(sql`SELECT pg_advisory_xact_lock(${FOUNDING_LOCK_KEY})`);
+            const [row] = await tx
+              .select({ count: sql<number>`count(*)::int` })
+              .from(subscriptions)
+              .where(eq(subscriptions.foundingMember, true));
+            founding = (row?.count ?? 0) < this.catalog.foundingMaxRedemptions;
+            if (!founding) {
+              this.logger.warn(
+                `billing.founding.sold_out_purchase sub=${sub.providerSubscriptionId} — pro_annual_founding past 250, granting pro without price-lock flag`,
+              );
+            }
           }
         }
-      }
 
-      await tx
-        .insert(subscriptions)
-        .values({
-          workspaceId,
-          provider,
-          providerSubscriptionId: sub.providerSubscriptionId,
-          tier: effectiveTier,
-          status: sub.status,
-          providerPriceId: effectiveProviderPriceId,
-          billingCycle: effectiveCycle,
-          currentPeriodEnd: effectivePeriodEnd,
-          cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
-          pauseUntil: sub.pauseUntil ? new Date(sub.pauseUntil) : null,
-          foundingMember: founding,
-        })
-        .onConflictDoUpdate({
-          target: [subscriptions.provider, subscriptions.providerSubscriptionId],
-          set: {
+        await tx
+          .insert(subscriptions)
+          .values({
+            workspaceId,
+            provider,
+            providerSubscriptionId: sub.providerSubscriptionId,
             tier: effectiveTier,
             status: sub.status,
             providerPriceId: effectiveProviderPriceId,
             billingCycle: effectiveCycle,
             currentPeriodEnd: effectivePeriodEnd,
-            // KNOWN GAP (2026-07-20): a refund/chargeback sets this
-            // flag locally, and the next renewal event overwrites it
-            // back to false — the user keeps entitlement they were
-            // refunded for. Mirroring the provider is still correct
-            // here: a locally-sticky flag has NO clearing path (an
-            // un-cancel in Paddle's portal and a plain renewal are the
-            // same payload), which would strand active subscriptions
-            // showing "cancellation scheduled" forever. The real fix
-            // is a provenance column so local and provider-derived
-            // cancellations are distinguishable. Tracked, not stubbed.
             cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+            cancelSource: nextCancelSource,
+            entitlementEndsAt: nextEntitlementEndsAt,
             pauseUntil: sub.pauseUntil ? new Date(sub.pauseUntil) : null,
             foundingMember: founding,
-            scheduledTier: clearScheduledChange ? null : current?.scheduledTier,
-            scheduledBillingCycle: clearScheduledChange ? null : current?.scheduledBillingCycle,
-            scheduledProviderPriceId: clearScheduledChange
-              ? null
-              : current?.scheduledProviderPriceId,
-            scheduledChangeAt: clearScheduledChange ? null : current?.scheduledChangeAt,
-            scheduledChangeState: nextScheduledChangeState,
-            scheduledChangeRequestedAt: clearScheduledChange
-              ? null
-              : current?.scheduledChangeRequestedAt,
-            updatedAt: new Date(),
-          },
-        });
+          })
+          .onConflictDoUpdate({
+            target: [subscriptions.provider, subscriptions.providerSubscriptionId],
+            set: {
+              tier: effectiveTier,
+              status: sub.status,
+              providerPriceId: effectiveProviderPriceId,
+              billingCycle: effectiveCycle,
+              currentPeriodEnd: effectivePeriodEnd,
+              // The flag mirrors the provider (a locally-sticky flag has
+              // no clearing path); the LOCAL verdict lives in
+              // `cancel_source`/`entitlement_ends_at` below, which a
+              // provider payload can no longer clobber — closing the
+              // 2026-07-20 KNOWN GAP this comment used to describe.
+              cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+              cancelSource: nextCancelSource,
+              entitlementEndsAt: nextEntitlementEndsAt,
+              pauseUntil: sub.pauseUntil ? new Date(sub.pauseUntil) : null,
+              foundingMember: founding,
+              scheduledTier: clearScheduledChange ? null : current?.scheduledTier,
+              scheduledBillingCycle: clearScheduledChange ? null : current?.scheduledBillingCycle,
+              scheduledProviderPriceId: clearScheduledChange
+                ? null
+                : current?.scheduledProviderPriceId,
+              scheduledChangeAt: clearScheduledChange ? null : current?.scheduledChangeAt,
+              scheduledChangeState: nextScheduledChangeState,
+              scheduledChangeRequestedAt: clearScheduledChange
+                ? null
+                : current?.scheduledChangeRequestedAt,
+              updatedAt: new Date(),
+            },
+          });
 
-      await this.recomputeWorkspaceTier(tx, workspaceId);
+        await this.recomputeWorkspaceTier(tx, workspaceId);
 
-      await tx
-        .update(subscriptionEvents)
-        .set({ processedAt: new Date() })
-        .where(eq(subscriptionEvents.id, eventRowId));
-      return null;
-    });
+        // A granting webhook is the cross-device "payment landed" signal
+        // — the pending-checkout row it supersedes comes down with it
+        // (0051; the FE lock derives from GET /billing/subscription).
+        if ((GRANTING_STATUSES as readonly string[]).includes(sub.status)) {
+          await tx.delete(pendingCheckouts).where(eq(pendingCheckouts.workspaceId, workspaceId));
+        }
+
+        await tx
+          .update(subscriptionEvents)
+          .set({ processedAt: new Date() })
+          .where(eq(subscriptionEvents.id, eventRowId));
+        return null;
+      });
+    } catch (err) {
+      // The 0051 partial unique index refused a SECOND live
+      // subscription for this workspace. The charge exists at the
+      // provider and our DB will not record it — the one failure mode
+      // the B7 analysis called worse than no index, made LOUD instead
+      // of silent: ERROR on every delivery attempt, event left
+      // UNPROCESSED so the provider's retry schedule keeps it alive.
+      // Self-heals if the conflicting subscription is cancelled
+      // (provider-side or via support); the retry then applies clean.
+      if (isUniqueViolation(err, 'subscriptions_one_live_per_workspace')) {
+        this.logger.error(
+          `billing.webhook.live_conflict provider=${provider} sub=${sub.providerSubscriptionId} workspace_has_live_subscription event=${event.providerEventId} — charge exists at provider, refusing to record a second live subscription; resolve the conflicting row`,
+        );
+        return { kind: 'unresolved', reason: 'live_conflict' };
+      }
+      throw err;
+    }
     // Stale replays exit here; everything below is the applied path.
     if (outcome) return outcome;
 
@@ -670,13 +749,11 @@ export class BillingWebhookService {
     event: Extract<NormalizedBillingEvent, { kind: 'cancellation_scheduled' }>,
     eventRowId: string,
   ): Promise<WebhookProcessOutcome> {
-    // NOTE: the founder chose "chargeback revokes entitlement now,
-    // voluntary refund holds to period end" (2026-07-20). That is NOT
-    // implemented here yet — writing tier=free on a chargeback is
-    // undone by the very next subscription.* event, which re-grants
-    // `entry.tierId` from the provider payload. Landing it soundly
-    // needs the same provenance column as the flag above, so it ships
-    // in that change rather than as a revert-prone half-measure.
+    // Founder rules (2026-07-20, implemented 0051): a CHARGEBACK
+    // revokes entitlement immediately and sticks; a voluntary REFUND
+    // holds to period end, then drops. Both are LOCAL verdicts —
+    // `cancel_source` marks them so the next subscription.* payload
+    // cannot re-grant what the provenance says is ending.
     const outcome = await this.db.transaction(async (tx) => {
       // Same lock as the subscription upsert — this is the OTHER writer
       // of `subscriptions` state. Without it a cancellation can
@@ -684,9 +761,32 @@ export class BillingWebhookService {
       // already ran, and the upsert's `cancel_at_period_end` lands last.
       await this.lockSubscription(tx, provider, event.providerSubscriptionId);
 
+      const isChargeback = event.reason === 'chargeback';
       const [row] = await tx
         .update(subscriptions)
-        .set({ cancelAtPeriodEnd: true, updatedAt: new Date() })
+        .set({
+          cancelAtPeriodEnd: true,
+          // `provider_scheduled` (an ordinary provider-side scheduled
+          // cancel) is provenance 'provider'; refund/chargeback map
+          // verbatim — they are the local verdicts.
+          cancelSource: event.reason === 'provider_scheduled' ? 'provider' : event.reason,
+          // Chargeback: the deadline is NOW — recompute below drops the
+          // tier in the same transaction. Refund: entitlement holds to
+          // the period the user paid for (falling back to now when no
+          // period end is known — never grant on a missing fact).
+          // sql now() (not a JS Date): the recompute in this SAME
+          // transaction compares `entitlement_ends_at > now()`, and
+          // Postgres now() is transaction-start time — a JS clock read
+          // mid-transaction lands AFTER it, so a JS deadline would
+          // still grant inside this tx and only drop on the next
+          // recompute (CI caught exactly that race; local PGlite hid
+          // it). tx-now == tx-now compares NOT-greater → excluded,
+          // deterministically.
+          entitlementEndsAt: isChargeback
+            ? sql`now()`
+            : sql`COALESCE(${subscriptions.currentPeriodEnd}, now())`,
+          updatedAt: new Date(),
+        })
         .where(
           and(
             eq(subscriptions.provider, provider),
@@ -709,6 +809,12 @@ export class BillingWebhookService {
       this.logger.log(
         `billing.subscription_changed workspace=${row.workspaceId} tier=${row.tier} cancel_at_period_end=true reason=${event.reason} provider=${provider}`,
       );
+
+      if (isChargeback) {
+        // Immediate revoke — the deadline above excludes this row from
+        // GRANTING inside recompute, so the tier drops here and now.
+        await this.recomputeWorkspaceTier(tx, row.workspaceId);
+      }
 
       await tx
         .update(subscriptionEvents)
@@ -828,6 +934,10 @@ export class BillingWebhookService {
   }
 
   /** Recompute `workspaces.tier` + `founding_member` from all sub rows. */
+  // NOTE: the worker's billing reconciliation sweep
+  // (apps/api/src/worker.ts, sweepBillingReconciliation) mirrors this
+  // logic in SQL — same statuses, same deadline predicate, same
+  // max-rank rule. Change one, change both.
   private async recomputeWorkspaceTier(
     tx: Pick<DrizzleDb, 'select' | 'update'>,
     workspaceId: string,
@@ -839,6 +949,11 @@ export class BillingWebhookService {
         and(
           eq(subscriptions.workspaceId, workspaceId),
           inArray(subscriptions.status, [...GRANTING_STATUSES]),
+          // 0051: a deadline in the past stops granting regardless of
+          // status — expired dunning, refund past period end, and a
+          // chargeback (deadline = the moment it landed) all fall out
+          // here. NULL = no deadline (healthy active row).
+          sql`(${subscriptions.entitlementEndsAt} IS NULL OR ${subscriptions.entitlementEndsAt} > now())`,
         ),
       );
 

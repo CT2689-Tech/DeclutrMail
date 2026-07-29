@@ -52,7 +52,7 @@ function body(
   subscription: SubscriptionRecord | null,
   foundingMember = false,
 ): BillingSubscription {
-  return { tier, foundingMember, subscription };
+  return { tier, foundingMember, subscription, pendingCheckout: null };
 }
 
 function snapshot(overrides: Partial<BillingReadSnapshot>): BillingReadSnapshot {

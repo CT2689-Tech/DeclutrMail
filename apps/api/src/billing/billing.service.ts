@@ -20,7 +20,13 @@
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { subscriptionEvents, subscriptions, users, workspaces } from '@declutrmail/db';
+import {
+  pendingCheckouts,
+  subscriptionEvents,
+  subscriptions,
+  users,
+  workspaces,
+} from '@declutrmail/db';
 import type {
   BillingSubscription,
   CancelRequest,
@@ -36,6 +42,9 @@ import { BillingCatalog } from './billing-catalog.js';
 import { lockSubscription } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
+
+/** 0051 — pending-checkout display/lock horizon. */
+const PENDING_CHECKOUT_TTL_MS = 30 * 60 * 1000;
 
 @Injectable()
 export class BillingService {
@@ -112,6 +121,30 @@ export class BillingService {
       providerPriceId: priceId,
     });
 
+    // Cross-device pending signal (0051): one row per workspace,
+    // refreshed on re-open. Cleared by the webhook grant or expiry.
+    // 30 minutes comfortably covers a checkout session without locking
+    // a genuinely-abandoned device out for long.
+    await this.db
+      .insert(pendingCheckouts)
+      .values({
+        workspaceId: principal.workspaceId,
+        provider: dto.provider,
+        tier: dto.tierId,
+        billingCycle: dto.cycle,
+        expiresAt: new Date(Date.now() + PENDING_CHECKOUT_TTL_MS),
+      })
+      .onConflictDoUpdate({
+        target: pendingCheckouts.workspaceId,
+        set: {
+          provider: dto.provider,
+          tier: dto.tierId,
+          billingCycle: dto.cycle,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + PENDING_CHECKOUT_TTL_MS),
+        },
+      });
+
     this.logger.log(
       `billing.checkout_created workspace=${principal.workspaceId} provider=${dto.provider} tier=${dto.tierId} cycle=${dto.cycle} founding=${founding}`,
     );
@@ -142,9 +175,33 @@ export class BillingService {
       .orderBy(desc(subscriptions.updatedAt));
     const sub = rows.find((r) => r.status === 'active' || r.status === 'past_due') ?? rows[0];
 
+    // 0051 cross-device pending checkout: serve only while unexpired
+    // AND no granting subscription exists — once the webhook grants,
+    // the row is deleted, but the guard here means a race can never
+    // show "payment in flight" beside an active plan.
+    const [pending] = await this.db
+      .select()
+      .from(pendingCheckouts)
+      .where(eq(pendingCheckouts.workspaceId, workspaceId))
+      .limit(1);
+    const hasGranting = rows.some((r) => r.status === 'active' || r.status === 'past_due');
+    const pendingCheckout =
+      pending &&
+      !hasGranting &&
+      pending.expiresAt.getTime() > Date.now() &&
+      (pending.tier === 'plus' || pending.tier === 'pro')
+        ? {
+            provider: pending.provider,
+            tier: pending.tier,
+            cycle: pending.billingCycle,
+            expiresAt: pending.expiresAt.toISOString(),
+          }
+        : null;
+
     return {
       tier: ws.tier,
       foundingMember: ws.foundingMember,
+      pendingCheckout,
       subscription:
         sub && (sub.tier === 'plus' || sub.tier === 'pro')
           ? {

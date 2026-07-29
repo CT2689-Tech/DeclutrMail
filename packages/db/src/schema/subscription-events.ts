@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  index,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { billingProvider } from './billing-customers';
 
@@ -52,6 +61,14 @@ export const subscriptionEvents = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
+    /**
+     * Monotonic arrival order (0051, decision 1 2026-07-28). `created_at`
+     * is transaction-scoped `now()` — two rows written in quick
+     * succession tie, and `gen_random_uuid()` cannot break the tie. The
+     * staleness guard orders same-event-time peers on THIS column;
+     * ties are impossible by construction.
+     */
+    arrivalSeq: bigint('arrival_seq', { mode: 'number' }).generatedAlwaysAsIdentity(),
   },
   (table) => ({
     /** Webhook dedup/replay gate — `ON CONFLICT DO NOTHING` target. */
