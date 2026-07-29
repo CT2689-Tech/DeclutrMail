@@ -1400,3 +1400,31 @@ and exits 1 if a row does not split into the requested arity; zero raw control b
 the file. All six failure modes re-proven asserting on message text, including a new case the
 old code also missed (a receipt pointing at a different PR's real sha). `sh .husky/pre-commit`
 re-smoked 1/0.
+
+## 2026-07-29 — A check with a scheduled, silent death (abbreviated-sha coupling)
+**PR:** #435 (fourth review round, same session)
+**Caught by:** Codex stop-time review — "the repaired receipt check can still silently skip every comparison"
+**What happened:** After repairing the receipt-to-PR check so it *ran*, it was still keyed on
+`%h` — whose width git AUTO-SCALES from repository size (`core.abbrev` unset = auto). The
+changelog cites fixed 8-character shas. The day git decides on 9, every `.get(sha)` misses.
+Forcing the width proved it on the same fixture: at `core.abbrev=8` a wrong-PR receipt was
+reported; at `core.abbrev=12` the receipt error vanished entirely and only the neighbouring
+omission check fired. So the check was correct on the day it shipped and scheduled to go dark
+a few hundred commits later, announcing nothing. What made that fatal rather than noisy was
+`if (!subject) return false` — could-not-look-this-up scoring as verified-fine. The BACKDATING
+check had the identical shape (`mergeDateBySha.get()`, unknown sha silently skipped) and died
+at the same widths, so it was a class, not an instance.
+**Correct approach:** Never join on a value whose FORMAT is chosen at runtime by something
+else — an abbreviation, a truncation, a locale-formatted date. Join on the full, stable
+identity. And a lookup that misses must fail, never fall through to a pass: the question to ask
+of every `.get()`/`find()`/`??` in verification code is "if this misses, do I report a problem
+or report success?" Test guards against the ENVIRONMENT drifting, not just the data — force the
+knob (`core.abbrev`, `TZ`, locale, clone depth) and re-run.
+**Rule:** In verification code, join on full identities and make every failed lookup an error;
+prove it by forcing the runtime knob, not just by mutating the input.
+**Enforcement update:** `resolveReceipts()` resolves each cited abbreviation to its full 40-char
+sha via `cat-file --batch-check`, joins on that, and returns commit + merge date + subject or
+exits 1. The date check now reads those resolved receipts instead of a window lookup, which also
+removed its "older than the walked window" skip. Verified at `core.abbrev` 8/9/12/20: both a
+wrong-PR receipt and a backdated entry report at EVERY width, and a clean tree passes at every
+width. Grep-swept the file for residual silent-skip shapes; one `.get()` remains and it exits 1.
