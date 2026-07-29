@@ -22,6 +22,7 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { undoKeys } from '@/features/undo/query-keys';
 
 import {
@@ -109,6 +110,7 @@ export function useRevertUndo() {
  * network-retry dedupes while a fresh click is a new action.
  */
 export function useEnqueueComposite() {
+  const qc = useQueryClient();
   return useMutation<
     CompositeActionEnqueueResult,
     Error,
@@ -133,6 +135,13 @@ export function useEnqueueComposite() {
         ...(override !== undefined ? { override } : {}),
         idempotencyKey: newIdempotencyKey(),
       }),
+    onSuccess: () => {
+      // The server debits the monthly cleanup quota at enqueue, so the
+      // frozen `me.cleanupRemaining` is stale the moment this resolves —
+      // without this, "N of 50 left" never counts down for a whole SPA
+      // session (flow audit 2026-07-28, UI-truth class).
+      void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
+    },
   });
 }
 
@@ -160,6 +169,7 @@ export function useCompositePreview(senderId: string | null) {
  * a fresh click is a new batch.
  */
 export function useEnqueueBulkAction() {
+  const qc = useQueryClient();
   return useMutation<
     BulkActionEnqueueResult,
     Error,
@@ -176,6 +186,11 @@ export function useEnqueueBulkAction() {
         ...(secondary ? { secondary } : {}),
         idempotencyKey: newIdempotencyKey(),
       }),
+    onSuccess: () => {
+      // Bulk debits N quota units at enqueue — same staleness as the
+      // composite hook above.
+      void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
+    },
   });
 }
 

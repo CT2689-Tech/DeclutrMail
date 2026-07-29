@@ -80,7 +80,7 @@ export function StepFirstTriage({
           title="Couldn't load your practice run"
           description={
             err instanceof ApiError
-              ? `We couldn't load your first-triage candidates (${err.status}). Try again in a moment.`
+              ? "We couldn't load your first senders to review. Try again in a moment."
               : "We couldn't load your first-triage candidates right now. Try again in a moment."
           }
           action={
@@ -124,13 +124,13 @@ export function StepFirstTriage({
         <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
           {meta.pinned === 0
             ? "We didn't find a useful first decision right now — open Senders to review the inbox DeclutrMail indexed."
-            : `You made ${meta.decided} sender ${meta.decided === 1 ? 'decision' : 'decisions'}. Manual Archive and Later affected matching inbox mail when they ran; they did not create future-mail rules. A delivered unsubscribe request is one-way. Reversible moves remain available in Activity while their token is live. Welcome aboard.`}
+            : `You made ${meta.decided} sender ${meta.decided === 1 ? 'decision' : 'decisions'}. Manual Archive and Later affected matching inbox mail when they ran; they did not create future-mail rules. A delivered unsubscribe request is one-way. Reversible moves remain available in Activity while their undo window is open. Welcome aboard.`}
         </p>
         <p style={{ color: color.fgMuted, fontSize: 13, margin: '-12px 0 24px', maxWidth: 500 }}>
           {/* Tier-aware: the Free caveat is untrue for Plus/Pro. Unknown
               tier (stats hiccup) gets the tier-free sentence only. */}
           {stats.data?.tier === 'free'
-            ? 'Senders stays available after onboarding. On Free, any cleanup actions you have left remain available there; ongoing Triage queues require Plus.'
+            ? 'Senders and Triage both stay available after onboarding. On Free, cleanup actions are metered monthly — the counter resets on your signup anniversary.'
             : stats.data
               ? 'Senders stays available after onboarding, and Triage keeps a queue ready whenever you want it.'
               : 'Senders stays available after onboarding.'}
