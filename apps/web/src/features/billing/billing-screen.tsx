@@ -23,7 +23,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
 import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiDelete } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
 import { apiErrorCode, useBillingSubscription } from './api/use-billing-subscription';
@@ -267,6 +267,15 @@ export function BillingScreen({
   function onReleasePendingLock() {
     clearPendingCheckout(workspaceId);
     setPending(null);
+    // Release the SERVER claim too (0051) — without this, the local
+    // release re-arms this browser while CHECKOUT_IN_FLIGHT still
+    // refuses the retry for up to 30 minutes, and other devices keep
+    // showing the processing banner. Best-effort: a failed release
+    // self-heals at the TTL, and the retry checkout's error message
+    // names this control as the way out.
+    void apiDelete<{ released: true }>('/api/billing/checkout/pending')
+      .then(() => queryClient.invalidateQueries({ queryKey: billingKeys.subscription() }))
+      .catch(() => undefined);
   }
 
   if (view.kind === 'loading') {

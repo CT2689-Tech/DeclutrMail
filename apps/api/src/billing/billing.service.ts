@@ -113,19 +113,18 @@ export class BillingService {
       .set({ billingRegion: dto.provider === 'razorpay' ? 'india' : 'international' })
       .where(eq(users.id, principal.userId));
 
-    const session = await this.adapterFor(dto.provider).createCheckout({
-      workspaceId: principal.workspaceId,
-      userEmail: user.email,
-      tierId: dto.tierId,
-      cycle: dto.cycle,
-      providerPriceId: priceId,
-    });
-
-    // Cross-device pending signal (0051): one row per workspace,
-    // refreshed on re-open. Cleared by the webhook grant or expiry.
-    // 30 minutes comfortably covers a checkout session without locking
-    // a genuinely-abandoned device out for long.
-    await this.db
+    // ATOMIC cross-device claim (Codex stop-review 2026-07-29). The
+    // SELECT-then-throw above closes the subscription-exists case but
+    // not the in-flight one: two devices opening checkout inside the
+    // read window both used to reach the provider, and both could
+    // complete — the 0051 index then made the second charge LOUD, not
+    // prevented. This upsert claims the workspace's single pending slot
+    // in one statement: it wins iff no row exists (INSERT) or the
+    // existing row is expired (the conditional DO UPDATE). Zero rows
+    // back = someone else's unexpired claim → refuse BEFORE any
+    // provider session exists. The claim precedes the provider call on
+    // purpose; a provider failure releases it below.
+    const claimed = await this.db
       .insert(pendingCheckouts)
       .values({
         workspaceId: principal.workspaceId,
@@ -143,12 +142,45 @@ export class BillingService {
           createdAt: new Date(),
           expiresAt: new Date(Date.now() + PENDING_CHECKOUT_TTL_MS),
         },
+        setWhere: sql`${pendingCheckouts.expiresAt} < now()`,
+      })
+      .returning({ workspaceId: pendingCheckouts.workspaceId });
+    if (claimed.length === 0) {
+      throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    }
+
+    let session: CheckoutSession;
+    try {
+      session = await this.adapterFor(dto.provider).createCheckout({
+        workspaceId: principal.workspaceId,
+        userEmail: user.email,
+        tierId: dto.tierId,
+        cycle: dto.cycle,
+        providerPriceId: priceId,
       });
+    } catch (err) {
+      // No provider session exists — a transient provider failure must
+      // not hold the 30-minute claim against the user's retry.
+      await this.releasePendingCheckout(principal.workspaceId);
+      throw err;
+    }
 
     this.logger.log(
       `billing.checkout_created workspace=${principal.workspaceId} provider=${dto.provider} tier=${dto.tierId} cycle=${dto.cycle} founding=${founding}`,
     );
     return session;
+  }
+
+  /**
+   * User-asserted release of the pending-checkout claim ("I checked —
+   * no charge went through"), mirroring the FE's local-lock release.
+   * Idempotent; also the recovery path when CHECKOUT_IN_FLIGHT blocks a
+   * retry after an abandoned session. If a payment DID complete
+   * despite the assertion, the webhook grant still lands — the claim
+   * gates checkout opening, never payment processing.
+   */
+  async releasePendingCheckout(workspaceId: string): Promise<void> {
+    await this.db.delete(pendingCheckouts).where(eq(pendingCheckouts.workspaceId, workspaceId));
   }
 
   async getSubscription(workspaceId: string): Promise<BillingSubscription> {
