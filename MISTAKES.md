@@ -1316,3 +1316,30 @@ archive (degraded, findable), never toward the flood.
 input "what does a migration rollback + re-apply do to this?"
 **Enforcement update:** decision table + all three branches locked by worker tests
 (split-with-corrupted-column, degrade, legacy); rollback file documents the invariant.
+
+## 2026-07-29 — Regenerating a claims surface without checking it against its source
+**PR:** #435
+**Caught by:** Codex stop-time review
+**What happened:** The public `/changelog` was 19 days and 112 PRs stale, so it was
+regenerated from `git log`. The regeneration shipped two defects. (1) OMISSION — it
+covered 2026-07-17 onward and silently dropped 07-14..07-21, which held the period's
+biggest releases: self-serve plan changes (#367), the Paddle attribution repair that
+made purchases land at all (#362), the D245 contract that retired VIP (#332), and the
+public site itself (#325). (2) BACKDATING — one entry grouped five PRs and took its
+date from the earliest member, so #374 (merged 07-24) and #373 (07-23) read as having
+shipped up to two days early. Typecheck, lint, the unit tests and every CI gate were
+green on both. A later sweep found eight MORE uncited merges in the three pre-existing
+entries, so the defect predated this session.
+**Correct approach:** A surface that makes claims about a source of truth needs a check
+that compares it to that source. Reading git by hand and transcribing is the same
+unverified-transcription class as a hand-maintained counter — it drifts silently and
+looks complete. Group entries by the true event date; grouping by the earliest member
+backdates every other member.
+**Rule:** When a surface asserts facts derived from another system, ship the diff check
+with it — and prove the check FAILS on the defect it was written for before trusting it.
+**Enforcement update:** `scripts/check-changelog.ts` + `pnpm check-changelog` — walks
+first-parent merges since the oldest entry, fails on any uncited product merge and on
+any evidence commit whose merge date differs from its entry's date. Verified failing on
+both reintroduced defects. Infra filtered by type AND scope; judged-internal merges are
+listed by number with a reason and printed on success, so a suppression cannot read as
+coverage. CI wiring deferred to its own PR (workflow-scope merge quirk).
