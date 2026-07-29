@@ -1,10 +1,45 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { PRIVACY_BADGE_HEADLINE } from '@declutrmail/shared/copy';
+import type * as SharedCopy from '@declutrmail/shared/copy';
+
+type SharedCopyModule = typeof SharedCopy;
 
 import { DISPLAY, EMAIL_FROM, formatCount, formatNumber, renderShell, Shell } from './shell.js';
 
+vi.mock('@declutrmail/shared/copy', async (importOriginal) => ({
+  ...(await importOriginal<SharedCopyModule>()),
+  // A configured address, so the footer block under test actually
+  // renders. The unset case (nothing rendered) is asserted below.
+  BUSINESS_POSTAL_ADDRESS: ['DeclutrMail', '1 Example Street', 'Example City, EX 00000'],
+}));
+
 describe('shell', () => {
+  it('renders the CAN-SPAM postal address on opt-out-able (commercial) mail', async () => {
+    const html = await renderShell(
+      <Shell
+        preview="p"
+        footer="f"
+        optOut={{ unsubscribeUrl: 'https://x.test/u', preferencesUrl: 'https://x.test/p' }}
+      >
+        <p>Body</p>
+      </Shell>,
+    );
+    expect(html).toContain('1 Example Street');
+    expect(html).toContain('Example City, EX 00000');
+  });
+
+  it('omits the postal address on transactional mail (no opt-out block)', async () => {
+    // Deletion notices are required account notices — exempt from the
+    // commercial-mail address rule, and they carry no unsubscribe.
+    const html = await renderShell(
+      <Shell preview="p" footer="f">
+        <p>Body</p>
+      </Shell>,
+    );
+    expect(html).not.toContain('1 Example Street');
+  });
+
   it('keeps the locked From header', () => {
     expect(EMAIL_FROM).toBe('DeclutrMail <hello@send.declutrmail.com>');
   });

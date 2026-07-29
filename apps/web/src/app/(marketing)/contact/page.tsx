@@ -10,6 +10,7 @@ import type { Metadata } from 'next';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
+import { BUSINESS_POSTAL_ADDRESS } from '@declutrmail/shared/copy';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Contact — DeclutrMail',
@@ -23,6 +24,9 @@ const LAST_UPDATED = '2026-07-07';
 const TOC = [
   { id: 'support', label: 'General questions and support' },
   { id: 'privacy-requests', label: 'Privacy and data requests' },
+  // Rendered only once a physical address exists (CAN-SPAM/CASL) —
+  // the constant in @declutrmail/shared/copy is the single switch.
+  ...(BUSINESS_POSTAL_ADDRESS ? [{ id: 'postal-address', label: 'Postal address' }] : []),
   { id: 'before-you-write', label: 'Before you write' },
 ] as const;
 
@@ -45,6 +49,19 @@ export default function ContactPage() {
           is also the grievance contact named in the <a href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
+
+      {BUSINESS_POSTAL_ADDRESS ? (
+        <LegalSection id="postal-address" title="Postal address">
+          <p>
+            {BUSINESS_POSTAL_ADDRESS.map((line, i) => (
+              <span key={line}>
+                {i > 0 ? <br /> : null}
+                {line}
+              </span>
+            ))}
+          </p>
+        </LegalSection>
+      ) : null}
 
       <LegalSection id="before-you-write" title="Before you write">
         <p>

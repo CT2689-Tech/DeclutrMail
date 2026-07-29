@@ -2,7 +2,7 @@ import { Body, Container, Head, Hr, Html, Preview, Section, Text } from '@react-
 import { render } from '@react-email/render';
 import type { ReactElement, ReactNode } from 'react';
 
-import { PRIVACY_BADGE_HEADLINE } from '@declutrmail/shared/copy';
+import { BUSINESS_POSTAL_ADDRESS, PRIVACY_BADGE_HEADLINE } from '@declutrmail/shared/copy';
 
 /** Rendered email — what the EmailSendWorker job carries. */
 export interface RenderedEmail {
@@ -186,6 +186,23 @@ export function Shell(props: {
               <a href={props.optOut.preferencesUrl} style={FOOTER_LINK}>
                 Email preferences
               </a>
+            </Text>
+          ) : null}
+
+          {/* CAN-SPAM §316.5 / CASL physical postal address. Rendered
+              on every kind that carries an opt-out (i.e. the commercial
+              ones); transactional deletion notices omit both. Absent
+              constant renders nothing here — the send worker is what
+              refuses the send, so this can never be the silent half of
+              a compliance gap. */}
+          {props.optOut && BUSINESS_POSTAL_ADDRESS ? (
+            <Text style={{ color: MUTED, fontSize: '12px', lineHeight: '18px', margin: '8px 0 0' }}>
+              {BUSINESS_POSTAL_ADDRESS.map((line, i) => (
+                <span key={line}>
+                  {i > 0 ? <br /> : null}
+                  {line}
+                </span>
+              ))}
             </Text>
           ) : null}
         </Container>

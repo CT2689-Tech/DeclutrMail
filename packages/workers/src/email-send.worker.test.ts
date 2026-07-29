@@ -6,7 +6,7 @@ import { citext } from '@electric-sql/pglite/contrib/citext';
 import { activeSessions, schema, users, workspaces } from '@declutrmail/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   EmailSendWorker,
@@ -21,6 +21,21 @@ import {
 } from './email-send.queue.js';
 import { PermanentError, TransientError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
+import { hasPostalAddress } from '@declutrmail/shared/copy';
+import type * as SharedCopy from '@declutrmail/shared/copy';
+
+type SharedCopyModule = typeof SharedCopy;
+
+/**
+ * The suite runs in the COMPLIANT configuration (a postal address is
+ * configured), because that is the state every other behaviour under
+ * test assumes. The CAN-SPAM refusal itself is pinned by its own two
+ * tests below, which flip this mock.
+ */
+vi.mock('@declutrmail/shared/copy', async (importOriginal) => ({
+  ...(await importOriginal<SharedCopyModule>()),
+  hasPostalAddress: vi.fn(() => true),
+}));
 
 /**
  * EmailSendWorker tests (D162, D225).
@@ -88,6 +103,48 @@ function jobData(userId: string, overrides: Partial<EmailSendJobData> = {}): Ema
 }
 
 describe('EmailSendWorker', () => {
+  // Reset to the compliant default before every test — a `…Once` here
+  // would leak: the transactional path short-circuits before it ever
+  // calls `hasPostalAddress`, so a queued one-shot survives into the
+  // next test.
+  beforeEach(() => vi.mocked(hasPostalAddress).mockReturnValue(true));
+
+  it('REFUSES a commercial kind when no postal address is configured (CAN-SPAM)', async () => {
+    // Permanent, not transient: retrying cannot conjure an address, and
+    // the failure must be loud in worker metrics rather than a silently
+    // missing footer.
+    vi.mocked(hasPostalAddress).mockReturnValue(false);
+    const db = await freshDb();
+    const userId = await seedUser(db);
+    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_1' });
+    const worker = new EmailSendWorker({ db: db as never, delivery });
+
+    await expect(worker.processJob(jobData(userId), CTX)).rejects.toBeInstanceOf(PermanentError);
+    expect(delivery.deliver).not.toHaveBeenCalled();
+  });
+
+  it('still sends TRANSACTIONAL kinds without a postal address (deletion notices)', async () => {
+    // Required account notices are exempt from the commercial-mail
+    // address rule — blocking them would break the D216/D232 deletion
+    // paper trail for a rule that does not apply to them.
+    vi.mocked(hasPostalAddress).mockReturnValue(false);
+    const db = await freshDb();
+    const userId = await seedUser(db, 'deleting@b.com');
+    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_del' });
+    const worker = new EmailSendWorker({ db: db as never, delivery });
+
+    const result = await worker.processJob(
+      jobData(userId, {
+        kind: 'deletion-scheduled',
+        idempotencyKey: 'email__deletion-scheduled__ev1',
+      }),
+      CTX,
+    );
+
+    expect(result.outcome).toBe('sent');
+    expect(delivery.deliver).toHaveBeenCalled();
+  });
+
   it('resolves the recipient at execution time and delivers', async () => {
     const db = await freshDb();
     const userId = await seedUser(db, 'send-to@b.com');

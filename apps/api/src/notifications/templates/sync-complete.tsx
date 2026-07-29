@@ -1,5 +1,7 @@
 import { Button, Text } from '@react-email/components';
 
+import { postalAddressLine } from '@declutrmail/shared/copy';
+
 import {
   BODY_TEXT,
   CTA_BUTTON,
@@ -56,6 +58,9 @@ export async function syncCompleteEmail(input: SyncCompleteEmailInput): Promise<
     // reader must not be left without one.
     `Unsubscribe: ${input.unsubscribeUrl}`,
     `Email preferences: ${preferencesUrl}`,
+    // CAN-SPAM / CASL postal address — the text alternative must carry
+    // it too; a text-only reader gets the same legal footer.
+    ...(postalAddressLine() ? [postalAddressLine() as string] : []),
   ].join('\n');
 
   const html = await renderShell(
