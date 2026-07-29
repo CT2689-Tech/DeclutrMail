@@ -9552,14 +9552,21 @@ partitions on four states and treats each differently:
   prevent, and the same shape as `readRate: null` once rendering as
   "Never read".
 
-**No undo — the preview is the reversal point.** Unsubscribe declares no
-inverse. Its `execution.kind` is `'unsubscribe'`, carrying only the
-standing `DeclutrMail/Unsubscribed` side-effect label; unlike the
-`label-modify` verbs it has no forward/inverse pair and writes no undo
-journal entry. This matches the plan's own existing statement that the
-unsub portion is permanently un-undoable. The batch must therefore not
-offer or imply undo. The mandatory modal preview is the last reversible
-moment, which is exactly why D226 makes it non-skippable.
+**No undo on the delivered request — the preview is the reversal
+point.** A network unsubscribe that has been delivered is one-way (D58):
+`UnsubExecutionWorker` writes every outcome row with `undoToken: null`.
+Note the `undo_action_kind` enum *does* contain `'unsubscribe'` — that
+covers the reversible intent/policy layer, where a standing unsubscribe
+decision can be withdrawn. The distinction is load-bearing: the standing
+decision is revocable, the delivered POST is not, and a batch control
+must speak to the second. Unsubscribe's `execution.kind` is
+`'unsubscribe'`, carrying only the standing `DeclutrMail/Unsubscribed`
+side-effect label, with no forward/inverse pair of the kind the
+`label-modify` verbs use. This matches the plan's own existing statement
+that the unsub portion is permanently un-undoable. The batch must
+therefore not offer or imply undo of a sent request. The mandatory modal
+preview is the last reversible moment, which is exactly why D226 makes
+it non-skippable.
 
 **Receipt reports per-state counts and accepted-not-unsubscribed.** Two
 rules, both about not claiming more than happened.
@@ -9570,19 +9577,31 @@ One number spanning the four groups would claim an outcome the product
 did not achieve for three of them. If a selection contains no
 `one_click` senders, the batch control does not offer itself.
 
-*Accepted, not unsubscribed.* `UnsubExecutionWorker` writes exactly two
-terminal outcomes for this path — `unsubscribe_endpoint_accepted` on a
-2xx and `unsubscribe_failed` otherwise — and the canonical label for the
-former is **"Unsubscribe request accepted"**, not "Unsubscribed". A 2xx
-means the brand's endpoint accepted the request; whether the mail
-actually stops is unobservable to us. The batch receipt uses that same
-vocabulary and aggregates those observed outcome rows, never asserting
-success at enqueue. It does **not** use `unsubscribe_confirmed`: that
-value is a D56-era predecessor with no producer in the tree, superseded
-by the D245 truthful-outcome set in migration 0037. The remaining
-outcome actions (`unsubscribe_action_required`,
-`unsubscribe_draft_opened`, `unsubscribe_user_marked_sent`,
-`unsubscribe_unconfirmed`, `unsubscribe_unavailable`) belong to the
+*Accepted, not unsubscribed — and unknown stays unknown.*
+`UnsubExecutionWorker` writes **three** terminal outcomes for this path,
+and the receipt carries all three rather than collapsing them:
+
+- `unsubscribe_endpoint_accepted` — "Unsubscribe request accepted".
+- `unsubscribe_unconfirmed` — "Unsubscribe result unconfirmed". The
+  request went out and we could not establish what happened. Rounding
+  this into either accepted or failed is the same unknown-as-fact
+  substitution the `NULL` method state above exists to prevent, and it
+  is the reason the receipt cannot be a two-column success/failure tally.
+- `unsubscribe_failed` — "Unsubscribe request failed".
+
+Note the first label: **"Unsubscribe request accepted"**, not
+"Unsubscribed". A 2xx means the brand's endpoint accepted the request;
+whether the mail actually stops is unobservable to us. The batch receipt
+uses that same vocabulary and aggregates observed outcome rows, never
+asserting success at enqueue — a bulk run must not claim in aggregate
+what a single run is careful not to claim.
+
+It does **not** use `unsubscribe_confirmed`: that value is a D56-era
+predecessor with no producer anywhere in the tree, superseded by the
+D245 truthful-outcome set in migration
+`0038_truthful_unsubscribe_lifecycle.sql`. The remaining outcome actions
+(`unsubscribe_action_required`, `unsubscribe_draft_opened`,
+`unsubscribe_user_marked_sent`, `unsubscribe_unavailable`) belong to the
 mailto and manual paths and are untouched here.
 
 **Boundaries.** The `multi-sender` selector's D-Q1 cap of 1000 senders
