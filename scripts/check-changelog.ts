@@ -197,53 +197,108 @@ function assertHistoryIsVisible(oldestEntryDate: string, merges: Merge[]): void 
   }
 }
 
+interface Receipt {
+  readonly entry: string;
+  readonly commit: string;
+  readonly pullRequest: number;
+}
+
+interface ResolvedReceipt extends Receipt {
+  readonly mergedOn: string;
+  readonly subject: string;
+}
+
 /**
- * Every cited commit must exist and must belong to the PR it is filed
- * under. This page's whole claim is that its receipts are real; a typo'd
- * or invented sha renders a dead link and there is nothing else in the
- * build that would notice.
+ * Resolve every cited receipt to the real commit it names — or fail.
+ *
+ * Two rules here, both learned the hard way on this file:
+ *
+ * 1. NEVER key on an abbreviated sha. `%h` width is auto-scaled by git
+ *    from repository size (`core.abbrev` unset = auto), so a map keyed by
+ *    `%h` and looked up with the changelog's fixed 8-char strings starts
+ *    missing EVERY entry the day git decides on 9. Demonstrated: at
+ *    `core.abbrev=12` the PR-ownership check stopped reporting a receipt
+ *    filed under the wrong PR entirely. Everything below joins on the
+ *    full 40-char sha.
+ *
+ * 2. NEVER treat a failed lookup as a pass. The previous version did
+ *    `if (!subject) return false` — "I could not look this up" scored as
+ *    "verified fine", which is how (1) stayed silent. A receipt that
+ *    cannot be resolved is a FAILURE, not a skip.
  */
-function assertReceiptsResolve(): void {
-  const cited = CHANGELOG_ENTRIES.flatMap((entry) =>
-    entry.evidence.map((evidence) => ({ ...evidence, entry: entry.date })),
+function resolveReceipts(): ResolvedReceipt[] {
+  const cited: Receipt[] = CHANGELOG_ENTRIES.flatMap((entry) =>
+    entry.evidence.map((evidence) => ({
+      entry: entry.date,
+      commit: evidence.commit,
+      pullRequest: evidence.pullRequest,
+    })),
   );
+
+  // Abbreviation -> full sha. `missing`/`ambiguous` land here as-is.
   const probe = git(
     ['cat-file', '--batch-check'],
     cited.map((c) => `${c.commit}^{commit}`).join('\n'),
-  );
-  const missing = probe
+  )
     .split('\n')
-    .filter(Boolean)
-    .flatMap((line, i) => (/\bmissing\b|\bambiguous\b/.test(line) ? [cited[i]!] : []));
-  if (missing.length > 0) {
-    console.error(`✗ ${missing.length} cited commit(s) do not resolve in this repository:`);
-    for (const c of missing)
-      console.error(`  entry ${c.entry} cites #${c.pullRequest} (${c.commit})`);
+    .filter(Boolean);
+  if (probe.length !== cited.length) {
+    console.error(
+      `✗ Resolved ${probe.length} object(s) for ${cited.length} receipt(s). Refusing to guess which is which.`,
+    );
     process.exit(1);
   }
+  const unresolved = cited.filter((_, i) => !/^[0-9a-f]{40} commit /.test(probe[i] as string));
+  if (unresolved.length > 0) {
+    console.error(`✗ ${unresolved.length} cited commit(s) do not resolve in this repository:`);
+    for (const c of unresolved) {
+      console.error(`  entry ${c.entry} cites #${c.pullRequest} (${c.commit})`);
+    }
+    process.exit(1);
+  }
+  const fullSha = new Map(cited.map((c, i) => [c, (probe[i] as string).slice(0, 40)]));
 
-  // The sha exists — but is it the merge of the PR it is filed under?
-  const subjects = new Map<string, string>(
-    logFields(['log', '--no-walk', ...cited.map((c) => c.commit)], ['%h', '%s']).map(
-      ([sha, subject]) => [sha as string, subject as string] as const,
-    ),
+  // One --no-walk pass keyed on the FULL sha, so nothing depends on how
+  // wide git feels like abbreviating today.
+  const details = new Map(
+    logFields(
+      ['log', '--no-walk', '--date=short', ...new Set([...fullSha.values()])],
+      ['%H', '%cd', '%s'],
+    ).map(([sha, date, subject]) => [
+      sha as string,
+      { date: date as string, subject: subject as string },
+    ]),
   );
 
-  const mismatched = cited.filter((c) => {
-    const subject = subjects.get(c.commit);
-    if (!subject) return false;
-    const actual = pullRequestNumber(subject);
-    return actual !== null && actual !== c.pullRequest;
+  const resolved = cited.map((c) => {
+    const detail = details.get(fullSha.get(c) as string);
+    if (!detail) {
+      // Cannot happen after the probe above — which is exactly why it must
+      // be loud if it ever does, instead of quietly skipping the comparison.
+      console.error(
+        `✗ Receipt #${c.pullRequest} (${c.commit}) resolved to an object git then would not describe.\n` +
+          '  Refusing to report this receipt as verified.',
+      );
+      process.exit(1);
+    }
+    return { ...c, mergedOn: detail.date, subject: detail.subject };
+  });
+
+  const mismatched = resolved.filter((r) => {
+    const actual = pullRequestNumber(r.subject);
+    return actual !== null && actual !== r.pullRequest;
   });
   if (mismatched.length > 0) {
     console.error(`✗ ${mismatched.length} receipt(s) cite a commit belonging to a different PR:`);
-    for (const c of mismatched) {
+    for (const r of mismatched) {
       console.error(
-        `  entry ${c.entry} cites #${c.pullRequest} (${c.commit}) — that commit is ${subjects.get(c.commit)}`,
+        `  entry ${r.entry} cites #${r.pullRequest} (${r.commit}) — that commit is ${r.subject}`,
       );
     }
     process.exit(1);
   }
+
+  return resolved;
 }
 
 /** `feat(x): thing (D1) (#123)` or `Merge pull request #123 from …` */
@@ -278,7 +333,7 @@ function main(): void {
   // Before reporting on anything: prove we can actually see the history,
   // and that every receipt on the page is real. Both fail closed.
   assertHistoryIsVisible(oldest, merges);
-  assertReceiptsResolve();
+  const receipts = resolveReceipts();
 
   const cited = new Map<number, string>();
   for (const entry of CHANGELOG_ENTRIES) {
@@ -296,21 +351,20 @@ function main(): void {
   // 2. BACKDATING — an entry whose date is not the merge date of the
   //    commit it cites. Forward-dating is the same defect mirrored, so
   //    this compares for equality rather than for "not earlier than".
-  const mergeDateBySha = new Map(merges.map((m) => [m.sha, m.date]));
-  const misdated: string[] = [];
-  for (const entry of CHANGELOG_ENTRIES) {
-    for (const evidence of entry.evidence) {
-      const actual = mergeDateBySha.get(evidence.commit);
-      // Unknown sha = a commit older than the window we walked; the unit
-      // tests already pin the shape, and rewriting history is not a case
-      // worth failing a build over.
-      if (actual && actual !== entry.date) {
-        misdated.push(
-          `  entry ${entry.date} cites PR #${evidence.pullRequest} (${evidence.commit}), merged ${actual}`,
-        );
-      }
-    }
-  }
+  //
+  //    Driven off `receipts`, where every commit is already resolved and
+  //    dated, rather than off a lookup into the merge-window map. That
+  //    map is keyed by abbreviated sha and only covers the walked window,
+  //    so a miss meant "silently skip this comparison" — the same
+  //    could-not-verify-scored-as-verified shape that hid the broken
+  //    PR-ownership check. There is no miss case here by construction:
+  //    resolveReceipts() has already failed the run for anything it could
+  //    not resolve.
+  const misdated = receipts
+    .filter((r) => r.mergedOn !== r.entry)
+    .map(
+      (r) => `  entry ${r.entry} cites PR #${r.pullRequest} (${r.commit}), merged ${r.mergedOn}`,
+    );
 
   if (omissions.length === 0 && misdated.length === 0) {
     const excluded = Object.keys(JUDGED_NOT_USER_VISIBLE).length;
