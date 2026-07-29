@@ -1343,3 +1343,33 @@ any evidence commit whose merge date differs from its entry's date. Verified fai
 both reintroduced defects. Infra filtered by type AND scope; judged-internal merges are
 listed by number with a reason and printed on success, so a suppression cannot read as
 coverage. CI wiring deferred to its own PR (workflow-scope merge quirk).
+
+## 2026-07-29 — Shipping a guard that passes when it cannot see its subject
+**PR:** #435 (same session as the entry above)
+**Caught by:** Codex stop-time review — "the changelog data is repaired, but the new guard is not ship-safe"
+**What happened:** The enforcement written for the entry above — `check-changelog.ts` — was
+verified against the two defects it was written for, and that was mistaken for verifying the
+guard. It was blind in the case that matters. Every check ran OVER the git merge walk, so an
+empty walk made all of them vacuously clean and the script printed `✓ covers every product
+merge ... (0 merges walked)` and exited 0. `actions/checkout@v7` sets no `fetch-depth`
+anywhere in ci.yml and therefore defaults to depth 1, so wiring it into CI — the follow-up
+the same PR proposed — would have produced a permanently green, permanently blind gate. That
+is the FOURTH instance of this class here: the dependency-free healthz probe with an uptime
+check pointed at it, pr-merged.yml's push that branch protection rejected on every run,
+verify-d recording verifications it never executed, and now this. Three further defects came
+out of the same pass: local-timezone dates (`--date=short` + `--since` are both local, so an
+entry-date equality check passes for the author in PDT and fails on a UTC runner), cited
+commits never checked for existence or PR ownership on a page whose whole claim is that its
+receipts are real, and a matcher built by string-splicing one regex's `.source` into another.
+**Correct approach:** Proving a check catches the bug it was written for is necessary and not
+sufficient. The question that finds this class is "what does this do when it can see
+NOTHING?" — because every filter over an empty collection is clean, and clean prints green. A
+check whose subject is invisible must fail closed, and must say why.
+**Rule:** For any new guard, test the blind case before the positive case: starve it of its
+input and require exit 1. If it goes green, it is a green light, not a guard.
+**Enforcement update:** `check-changelog.ts` now refuses on a shallow repository (naming the
+`fetch-depth: 0` fix), on an empty walk, and on a walk that does not reach the oldest entry it
+claims to cover; all git calls pinned to `TZ=UTC`; every cited commit must resolve and belong
+to its stated PR. Wired into lint-staged keyed on `changelog-content.ts` so it cannot rot
+unrun; `sh .husky/pre-commit` smoked to exit 1 on a backdated entry and 0 on a clean one. All
+five failure modes verified firing. CI wiring must add `fetch-depth: 0` in the same PR.
