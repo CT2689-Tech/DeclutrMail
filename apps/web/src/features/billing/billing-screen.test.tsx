@@ -414,7 +414,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(launchCheckout).not.toHaveBeenCalled();
   });
 
-  it('keeps the confirm panel open with a retryable error when the provider window fails', async () => {
+  it('a failed provider WINDOW surfaces the held claim — the session already exists', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -449,9 +449,83 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
     );
 
-    expect(await within(panel).findByRole('alert')).toHaveTextContent(
-      'The secure checkout window could not be opened. Nothing was charged',
+    // The truth CHANGED with #433: the provider SESSION exists and the
+    // server claim is held (an orphaned Razorpay subscription is
+    // payable from its emailed link), so the reservation SURFACES
+    // instead of releasing. The banner — not a panel-local alert — is
+    // the canonical surface for this state: it renders the
+    // outcome-neutral intent anchor and owns the release path.
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('Checkout started');
+  });
+
+  it('a failed checkout CREATE surfaces the held claim — no invisible-lock trap (Codex 2026-07-29)', async () => {
+    // Post-claim ambiguous failure (BILLING_PROVIDER_ERROR): the server
+    // holds the claim, so releasing locally left live CTAs beside a
+    // server refusing the retry with CHECKOUT_IN_FLIGHT that named a
+    // release control the user could not see.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'BILLING_PROVIDER_ERROR', message: 'provider unreachable' },
+            }),
+            { status: 502, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = screen.getByTestId('checkout-panel');
+    fireEvent.click(
+      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
     );
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('Checkout started');
+  });
+
+  it('a PRE-CLAIM rejection still releases and shows only the inline message', async () => {
+    // SUBSCRIPTION_EXISTS throws before the claim exists server-side —
+    // surfacing a lock here would assert an in-flight checkout that
+    // never was. The 409 test above pins the inline alert; this pins
+    // the ABSENCE of the banner.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'SUBSCRIPTION_EXISTS', message: 'already subscribed' },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = screen.getByTestId('checkout-panel');
+    fireEvent.click(
+      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+
+    await within(panel).findByRole('alert');
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
   });
 
