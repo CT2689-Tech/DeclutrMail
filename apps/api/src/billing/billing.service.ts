@@ -159,9 +159,22 @@ export class BillingService {
         providerPriceId: priceId,
       });
     } catch (err) {
-      // No provider session exists — a transient provider failure must
-      // not hold the 30-minute claim against the user's retry.
-      await this.releasePendingCheckout(principal.workspaceId);
+      // The claim SURVIVES a provider-call failure — deliberately
+      // (Codex stop-review 2026-07-29). A thrown error here is not
+      // proof the provider saw nothing: a timeout after the request
+      // landed still creates the artifact, and Razorpay's create runs
+      // with `customer_notify: 1`, so an orphaned subscription is
+      // PAYABLE from the provider's own emailed authorization link —
+      // outside our FE entirely. Auto-releasing on that ambiguity
+      // reopened checkout for attempt #2 while #1 could still be paid:
+      // the exact double-charge this claim exists to prevent. The two
+      // honest reopeners are the 30-minute TTL and the user's explicit
+      // "I checked — no charge" assertion (DELETE /billing/checkout/
+      // pending) — a human or a horizon, never an inference from an
+      // unknown outcome.
+      this.logger.error(
+        `billing.checkout.create_failed workspace=${principal.workspaceId} provider=${dto.provider} claim_held=true — claim reopens via TTL or user release only`,
+      );
       throw err;
     }
 
