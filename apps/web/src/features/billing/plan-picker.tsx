@@ -81,6 +81,22 @@ function razorpayIdFor(target: PaidTier, cycle: BillingCycle, founding: boolean)
  * the cards visible — the plans are final (D119) — but withholds every
  * checkout affordance.
  */
+/**
+ * Error codes BillingService.createCheckout throws BEFORE the atomic
+ * pending-checkout claim (and therefore before any provider session can
+ * exist). Mirrors the service's throw ordering — extend BOTH together.
+ * Anything not in this set is treated as post-claim/ambiguous and
+ * surfaces the reservation instead of releasing it.
+ */
+const PRE_CLAIM_REJECTIONS = new Set([
+  'SUBSCRIPTION_EXISTS',
+  'FOUNDING_PRO_SOLD_OUT',
+  'BILLING_NOT_PROVISIONED',
+  'BILLING_DISABLED',
+  'BAD_REQUEST',
+  'UNAUTHORIZED',
+]);
+
 export function PlanPicker({
   currentTier,
   grantingSub,
@@ -129,11 +145,15 @@ export function PlanPicker({
    *  POST failed / provider script never loaded) — hard-release it
    *  (id-matched). NEVER used for `checkout.closed`: a closed overlay
    *  is not proof no payment occurred. */
-  onCheckoutAbandoned: (attemptId: string) => void;
   /** The overlay CLOSED without a completed event — strong evidence of
    *  no payment but not proof (popup/3DS edges). The screen surfaces
    *  the reservation (outcome-neutral, polling, immediate two-step
    *  release) instead of unlocking checkout. */
+  /** Pre-claim rejection — the server refused BEFORE any claim/session
+   *  existed (SUBSCRIPTION_EXISTS, catalog gaps, billing dark). Nothing
+   *  is at risk; the reservation releases and the inline alert owns the
+   *  message. */
+  onCheckoutAbandoned: (attemptId: string) => void;
   onCheckoutClosed: (attemptId: string) => void;
   /** The change-plan endpoint accepted the switch — the screen enters
    *  the pending state until the webhook lands. `attemptId` identifies
@@ -290,18 +310,44 @@ export function PlanPicker({
             },
           }).then(
             () => undefined,
-            // Provider script failed to load — no surface ever opened.
+            // Provider script failed to load — no overlay opened, but
+            // the SESSION exists server-side and the claim is held: a
+            // Razorpay subscription created with customer_notify is
+            // payable from the provider's own emailed link, so this is
+            // NOT "nothing at risk" (Codex 2026-07-29). Surface the
+            // reservation — the banner explains the locked state and
+            // owns the release path.
             () => {
               checkout.reset();
               setLaunchError(
-                'The secure checkout window could not be opened. Nothing was charged — please try again.',
+                'The secure checkout window could not be opened. Nothing was charged.',
               );
-              onCheckoutAbandoned(attemptId);
+              onCheckoutClosed(attemptId);
             },
           );
         },
-        // Session creation failed — no overlay, nothing at risk.
-        onError: () => onCheckoutAbandoned(attemptId),
+        // Two different failures wear this callback (Codex
+        // 2026-07-29). A PRE-CLAIM rejection — the server refused
+        // before any claim or provider session existed — releases the
+        // reservation and lets the inline alert own the message
+        // (SUBSCRIPTION_EXISTS and friends throw ahead of the claim in
+        // BillingService.createCheckout; the code list below mirrors
+        // that ordering). Everything else is POST-CLAIM: the server
+        // holds the claim (#433 — a thrown error is not proof the
+        // provider saw nothing, and an orphaned Razorpay subscription
+        // is payable from its emailed link), so releasing locally left
+        // live CTAs beside a server that refused the retry with
+        // CHECKOUT_IN_FLIGHT naming a control the user could not see.
+        // Those surface the reservation: the banner states the locked
+        // reality and owns the release.
+        onError: (err) => {
+          const code = apiErrorCode(err);
+          if (code !== null && PRE_CLAIM_REJECTIONS.has(code)) {
+            onCheckoutAbandoned(attemptId);
+          } else {
+            onCheckoutClosed(attemptId);
+          }
+        },
       },
     );
   }

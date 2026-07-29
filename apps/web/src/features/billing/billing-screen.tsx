@@ -174,7 +174,12 @@ export function BillingScreen({
     if (Date.parse(serverPending.expiresAt) <= Date.now()) return;
     setPending({
       workspaceId,
-      kind: 'checkout',
+      // 'checkout_intent', NOT 'checkout': the server row proves a
+      // checkout was OPENED and is unresolved — not that a payment was
+      // received. The intent anchor renders "Checkout started", which
+      // is all this browser actually knows (Codex 2026-07-29 — the
+      // synthesized banner previously overclaimed "Payment received").
+      kind: 'checkout_intent',
       // TierId is the purchasable ladder; team/enterprise never checkout.
       fromTier: data.tier === 'plus' || data.tier === 'pro' ? data.tier : 'free',
       fromCycle: data.subscription?.cycle ?? null,
