@@ -118,6 +118,42 @@ function git(args: string[], input?: string): string {
 }
 
 /**
+ * Field-separated `git log`, as ONE helper.
+ *
+ * This exists because the two call sites previously each carried their own
+ * `--pretty` string and their own `.split()`, with a raw U+0001 byte in
+ * both — invisible in an editor and in review. One of them lost its
+ * separator in an edit (`%h%s` + `split('')`, which splits into single
+ * CHARACTERS), so its lookup map was garbage, every `.get()` returned
+ * undefined, and the receipt-to-PR check silently never fired. It looked
+ * verified because a NEIGHBOURING check failed on the same fixture.
+ *
+ * Two places that must agree on a delimiter will eventually disagree. One
+ * place cannot.
+ */
+function logFields(revArgs: string[], fields: readonly string[]): string[][] {
+  const SEP = '\u0001'; // must match the %x01 joined into the format above
+  const out = git([...revArgs, `--pretty=format:${fields.join('%x01')}`]);
+  return out
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => line.split(SEP))
+    .filter((parts) => {
+      // A row that did not split into the requested arity means the format
+      // and the separator have drifted apart again. Fail loud rather than
+      // silently dropping rows, which is how the last one hid.
+      if (parts.length !== fields.length) {
+        console.error(
+          `✗ git log returned ${parts.length} field(s) where ${fields.length} were requested.\n` +
+            '  The --pretty format and the separator have drifted. This is a bug in this script.',
+        );
+        process.exit(1);
+      }
+      return true;
+    });
+}
+
+/**
  * Refuse to run against history we cannot actually see.
  *
  * `actions/checkout` defaults to `fetch-depth: 1`. On a shallow clone the
@@ -187,14 +223,11 @@ function assertReceiptsResolve(): void {
   }
 
   // The sha exists — but is it the merge of the PR it is filed under?
-  const subjects = git(['log', '--no-walk', '--pretty=%h%s', ...cited.map((c) => c.commit)])
-    .split('\n')
-    .filter(Boolean)
-    .reduce<Map<string, string>>((acc, line) => {
-      const [sha, subject] = line.split('');
-      if (sha && subject) acc.set(sha, subject);
-      return acc;
-    }, new Map());
+  const subjects = new Map<string, string>(
+    logFields(['log', '--no-walk', ...cited.map((c) => c.commit)], ['%h', '%s']).map(
+      ([sha, subject]) => [sha as string, subject as string] as const,
+    ),
+  );
 
   const mismatched = cited.filter((c) => {
     const subject = subjects.get(c.commit);
@@ -222,23 +255,14 @@ function pullRequestNumber(subject: string): number | null {
 }
 
 function mergesSince(since: string): Merge[] {
-  const raw = git([
-    'log',
-    '--first-parent',
-    `--since=${since}`,
-    '--pretty=%h%cd%s',
-    '--date=short',
-  ]);
-  return raw
-    .split('\n')
-    .filter(Boolean)
-    .flatMap((line) => {
-      const [sha, date, subject] = line.split('');
-      if (!sha || !date || !subject) return [];
-      const pullRequest = pullRequestNumber(subject);
-      if (pullRequest === null) return [];
-      return [{ sha, date, subject, pullRequest }];
-    });
+  return logFields(
+    ['log', '--first-parent', `--since=${since}`, '--date=short'],
+    ['%h', '%cd', '%s'],
+  ).flatMap(([sha, date, subject]) => {
+    const pullRequest = pullRequestNumber(subject as string);
+    if (pullRequest === null) return [];
+    return [{ sha: sha as string, date: date as string, subject: subject as string, pullRequest }];
+  });
 }
 
 function main(): void {
