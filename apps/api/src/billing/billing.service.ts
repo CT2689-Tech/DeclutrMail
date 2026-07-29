@@ -637,6 +637,31 @@ export class BillingService {
       throw new AppException({ code: 'NO_ACTIVE_SUBSCRIPTION' });
     }
 
+    // Refuse to resume alongside a subscription that is already
+    // billing. `resume` is a provider-side call whose effect returns
+    // via webhook, so without this check the sequence is: user resumes
+    // paused Plus while Pro is active -> the provider starts charging
+    // for BOTH -> `subscription.updated` writes a second granting row,
+    // and `recomputeWorkspaceTier` quietly grants the max rank. The
+    // customer pays twice and no surface says so.
+    //
+    // Checkout has always guarded this (`SUBSCRIPTION_EXISTS`, above);
+    // resume is the same "workspace gains a second billing
+    // subscription" transition and was simply missed.
+    const [alreadyBilling] = await this.db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.workspaceId, principal.workspaceId),
+          inArray(subscriptions.status, ['active', 'past_due']),
+        ),
+      )
+      .limit(1);
+    if (alreadyBilling) {
+      throw new AppException({ code: 'SUBSCRIPTION_EXISTS' });
+    }
+
     await this.adapterFor(sub.provider).resumeSubscription(sub.providerSubscriptionId);
 
     this.logger.log(

@@ -116,22 +116,6 @@ export const subscriptions = pgTable(
     ),
     /** "Current subscription for this workspace" read path (billing screen, tier gate). */
     workspaceIdx: index('subscriptions_workspace_id_idx').on(table.workspaceId),
-    /**
-     * Mirrors migration 0051 — at most ONE BILLING subscription per
-     * workspace (launch-audit B7). The application guard at checkout is
-     * a non-transactional SELECT-then-throw; two cross-device checkouts
-     * mint distinct provider ids and slip past it, and the resulting
-     * second subscription bills silently.
-     *
-     * Only 'active' and 'past_due' charge, so only they are
-     * constrained. A paused row alongside an active one is a supported
-     * state (the A6 read prefers the granting row); canceled rows are
-     * history. The app's SUBSCRIPTION_EXISTS guard is stricter and also
-     * blocks checkout while paused — policy above the invariant.
-     */
-    oneLivePerWorkspaceUniq: uniqueIndex('subscriptions_one_live_per_workspace_uniq')
-      .on(table.workspaceId)
-      .where(sql`${table.status} IN ('active', 'past_due')`),
     /** Mirrors migration 0048 — scheduled-change state machine vocabulary. */
     scheduledChangeStateCheck: check(
       'subscriptions_scheduled_change_state_check',
