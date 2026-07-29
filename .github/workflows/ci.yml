@@ -109,6 +109,14 @@ jobs:
 
   impl-log:
     name: Implementation log is derived and current
+    # PR-only BY DESIGN. A merged PR's own `Closes` trailer adds itself to
+    # the derived table, so main is legitimately one regeneration behind
+    # between a Closes-bearing merge and the next PR — each PR absorbs the
+    # pending drift to pass this gate, and main converges on every merge.
+    # Running this on push-to-main would leave main red in that window,
+    # which is the permanently-red-guardrail class this repo keeps
+    # relearning (a red nobody acts on trains everyone to ignore CI).
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -281,6 +289,7 @@ jobs:
       - name: Require every selected test shard
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
+          EVENT_NAME: ${{ github.event_name }}
           IMPL_LOG_RESULT: ${{ needs.impl-log.result }}
           API_RESULT: ${{ needs.test-api.result }}
           WORKERS_RESULT: ${{ needs.test-workers.result }}
@@ -297,12 +306,16 @@ jobs:
             exit 1
           fi
 
-          # The derived implementation log is a MUST-PASS, never skipped:
+          # The derived implementation log is a MUST-PASS on pull requests:
           # a stale log means a merged PR's Closes flip was not committed.
+          # On push-to-main the job is skipped by design (see its `if`) —
+          # only an outright failure or a PR-context skip is an error.
           if [ "$IMPL_LOG_RESULT" != success ]; then
-            echo "::error::implementation log check did not succeed ($IMPL_LOG_RESULT) —" \
-                 "run 'pnpm generate-impl-log' and commit the result"
-            exit 1
+            if [ "$EVENT_NAME" = pull_request ] || [ "$IMPL_LOG_RESULT" != skipped ]; then
+              echo "::error::implementation log check did not succeed ($IMPL_LOG_RESULT) —" \
+                   "run 'pnpm generate-impl-log' and commit the result"
+              exit 1
+            fi
           fi
 
           ran=''; skipped=''; bad=''
