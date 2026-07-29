@@ -48,6 +48,19 @@ export function syncReminderEmailJobId(mailboxAccountId: string): string {
   return `email__sync-reminder-24h__${mailboxAccountId}`;
 }
 
+/**
+ * Sync-FAILED notice — keyed per mailbox per UTC day. Event-id keying
+ * would email every distinct terminal failure, and a user hammering the
+ * new retry against a broken mailbox can produce one every few minutes;
+ * mailbox-only keying would suppress a genuinely new failure next week
+ * once the old job ages out unpredictably. Per-day is deterministic:
+ * at most one failure notice per mailbox per day, however many retries
+ * fail behind it.
+ */
+export function syncFailedEmailJobId(mailboxAccountId: string, failedAtIso: string): string {
+  return `email__sync-failed__${mailboxAccountId}__${failedAtIso.slice(0, 10)}`;
+}
+
 /** Job options for any email send. `delayMs` schedules the reminder. */
 export function emailSendJobOptions(jobId: string, delayMs = 0): JobsOptions {
   const policy = WORKER_POLICIES.batchPolicy;

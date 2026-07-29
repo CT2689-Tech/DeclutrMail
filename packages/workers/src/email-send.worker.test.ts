@@ -145,6 +145,29 @@ describe('EmailSendWorker', () => {
     expect(delivery.deliver).toHaveBeenCalled();
   });
 
+  it('sync-failed sends without a postal address — it is a system notice, not commercial', async () => {
+    // The failure notice must reach a user whose FIRST sync died even
+    // while the postal-address slot is empty and every commercial kind
+    // is blocked. Classifying it commercial would silently suppress the
+    // one email that tells a trapped user how to get out.
+    vi.mocked(hasPostalAddress).mockReturnValue(false);
+    const db = await freshDb();
+    const userId = await seedUser(db, 'failed-scan@b.com');
+    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_fail' });
+    const worker = new EmailSendWorker({ db: db as never, delivery });
+
+    const result = await worker.processJob(
+      jobData(userId, {
+        kind: 'sync-failed',
+        idempotencyKey: 'email__sync-failed__mb-1__2026-07-29',
+      }),
+      CTX,
+    );
+
+    expect(result.outcome).toBe('sent');
+    expect(delivery.deliver).toHaveBeenCalled();
+  });
+
   it('resolves the recipient at execution time and delivers', async () => {
     const db = await freshDb();
     const userId = await seedUser(db, 'send-to@b.com');

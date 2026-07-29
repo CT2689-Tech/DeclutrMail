@@ -241,6 +241,61 @@ describe('cross-cutting privacy assertion (the headline guarantee)', () => {
   });
 });
 
+describe('scrubSentryEvent — server profile (D158)', () => {
+  const serverEvent = {
+    event_id: 'a'.repeat(32),
+    level: 'error',
+    environment: 'production',
+    exception: {
+      values: [
+        {
+          type: 'PermanentError',
+          // The exact leak the profile exists to stop: a subject line
+          // interpolated into Error.message.
+          value: 'Refusing to send: subject was "Re: your invoice from Acme"',
+          stacktrace: { frames: [{ filename: 'app:///worker.js', lineno: 12, colno: 3 }] },
+        },
+      ],
+    },
+    tags: {
+      worker: 'unsub-execution',
+      policy: 'mail-mutation',
+      job_id: 'unsub__mb-1__42',
+      mailbox_account_id: '576df4e8-795b-4722-9aac-4ed22eafae99',
+      kind: 'dead_letter.scheduler_failed',
+      smuggled: 'user@example.com wrote about...',
+    },
+  };
+
+  it('omits Error.message while keeping the server error type + stack', () => {
+    const out = scrubSentryEvent(serverEvent, 'server');
+    const exc = (out?.exception as { values: Record<string, unknown>[] }).values[0]!;
+    expect(exc.type).toBe('PermanentError');
+    expect(exc.value).toBeUndefined();
+    expect(exc.stacktrace).toBeDefined();
+    expect(JSON.stringify(out)).not.toContain('invoice');
+  });
+
+  it('keeps the triage tags and drops everything else', () => {
+    const out = scrubSentryEvent(serverEvent, 'server');
+    expect(out?.tags).toEqual({
+      worker: 'unsub-execution',
+      policy: 'mail-mutation',
+      job_id: 'unsub__mb-1__42',
+      mailbox_account_id: '576df4e8-795b-4722-9aac-4ed22eafae99',
+      kind: 'dead_letter.scheduler_failed',
+    });
+  });
+
+  it('the browser profile does NOT gain the server tags or types', () => {
+    const out = scrubSentryEvent(serverEvent);
+    expect(out?.tags).toBeUndefined();
+    const exc = (out?.exception as { values: Record<string, unknown>[] } | undefined)?.values?.[0];
+    // PermanentError is not a browser-approved type; the frame survives.
+    expect(exc?.type).toBeUndefined();
+  });
+});
+
 describe('scrubSentryEvent (deny-by-default browser wire policy)', () => {
   const LEAK = 'LEAK-MARKER-private.user@example.com';
   const EVENT_ID = '0123456789abcdef0123456789abcdef';

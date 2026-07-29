@@ -261,6 +261,26 @@ export const MailboxSyncReadyPayloadSchema = z
   .strict();
 export type MailboxSyncReadyPayload = z.infer<typeof MailboxSyncReadyPayloadSchema>;
 
+/**
+ * Initial sync failed TERMINALLY (worker retries exhausted;
+ * `readiness_status = 'failed'`). Published in the SAME transaction as
+ * the failed upsert (transactional outbox). Consumers: the D162
+ * sync-failed email trigger — the user must hear that the scan stopped
+ * and how to retry, not discover it by sitting on the gate
+ * (first-run-trap audit, 2026-07-28).
+ */
+export const MailboxSyncFailedPayloadSchema = z
+  .object({
+    mailboxAccountId: UuidSchema,
+    workspaceId: UuidSchema,
+    /** ISO-8601 — when the terminal failure was recorded. */
+    failedAt: z.string().datetime(),
+    /** Error class name recorded on `provider_sync_state.error_code`. */
+    errorCode: z.string().min(1),
+  })
+  .strict();
+export type MailboxSyncFailedPayload = z.infer<typeof MailboxSyncFailedPayloadSchema>;
+
 // ──────────────────────────────────────────────────────────────────────
 // mailbox.deleted
 // ──────────────────────────────────────────────────────────────────────
@@ -390,6 +410,7 @@ export const EVENT_SCHEMAS = {
   [TOPICS.AUTOPILOT_ACTION_INTENT_EMITTED]: AutopilotActionIntentEmittedPayloadSchema,
   [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayloadSchema,
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayloadSchema,
+  [TOPICS.MAILBOX_SYNC_FAILED]: MailboxSyncFailedPayloadSchema,
   [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayloadSchema,
   [TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED]: ActionsUnsubscribeIntentRecordedPayloadSchema,
   [TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED]: ActionsUnsubscribeExecutedPayloadSchema,

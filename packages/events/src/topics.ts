@@ -91,6 +91,12 @@ export const TOPICS = {
   MAILBOX_SYNC_READY: 'mailbox.sync_ready',
 
   /**
+   * Initial sync failed terminally (retries exhausted, readiness =
+   * 'failed'). Consumers: sync-failed email trigger (D162).
+   */
+  MAILBOX_SYNC_FAILED: 'mailbox.sync_failed',
+
+  /**
    * Mailbox was deleted (D232 hard-delete path completed). Consumers:
    * per-mailbox cache evictions (e.g. the worker's
    * `limiterByMailbox: Map<id, RateLimiter>` — FOUNDER-FOLLOWUPS

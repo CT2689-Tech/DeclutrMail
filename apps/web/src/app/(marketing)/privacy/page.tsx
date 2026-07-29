@@ -116,8 +116,9 @@ export default function PrivacyPolicyPage() {
         <ul>
           <li>
             Message data is fetched in <strong>metadata format only</strong>: sender, subject,
-            Gmail&rsquo;s snippet, dates, labels, and read/unread state. We do not request message
-            bodies or attachments from the API.
+            Gmail&rsquo;s snippet, dates, labels, read/unread state, recipient addresses on mail you
+            sent, unsubscribe headers (<code>List-Unsubscribe</code>), and Gmail&rsquo;s size
+            estimate. We do not request message bodies or attachments from the API.
           </li>
           <li>{ACTION_SAFETY_SUMMARY}</li>
           <li>

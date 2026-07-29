@@ -335,6 +335,7 @@ export {
   enqueueEmailSend,
   SYNC_REMINDER_DELAY_MS,
   syncCompleteEmailJobId,
+  syncFailedEmailJobId,
   syncReminderEmailJobId,
 } from './email-send.queue.js';
 export { SnoozeWakeWorker, laterLabelName } from './snooze-wake.worker.js';

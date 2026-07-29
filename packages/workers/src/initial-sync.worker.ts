@@ -13,7 +13,11 @@ import type {
   NewSenderTimeseries,
   schema,
 } from '@declutrmail/db';
-import { MailboxSyncReadyPayloadSchema, TOPICS } from '@declutrmail/events';
+import {
+  MailboxSyncFailedPayloadSchema,
+  MailboxSyncReadyPayloadSchema,
+  TOPICS,
+} from '@declutrmail/events';
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -413,23 +417,70 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     if (!mailboxAccountId) {
       return;
     }
-    await this.deps.db
-      .insert(providerSyncState)
-      .values({
-        mailboxAccountId,
-        currentStage: 'failed',
-        readinessStatus: 'failed',
-        errorCode: error.name,
-      })
-      .onConflictDoUpdate({
-        target: providerSyncState.mailboxAccountId,
-        set: {
+    const failedUpsert = (tx: OutboxTx) =>
+      tx
+        .insert(providerSyncState)
+        .values({
+          mailboxAccountId,
           currentStage: 'failed',
           readinessStatus: 'failed',
           errorCode: error.name,
-          updatedAt: sql`now()`,
+        })
+        .onConflictDoUpdate({
+          target: providerSyncState.mailboxAccountId,
+          set: {
+            currentStage: 'failed',
+            readinessStatus: 'failed',
+            errorCode: error.name,
+            updatedAt: sql`now()`,
+          },
+        });
+
+    // `mailbox.sync_failed` rides the SAME transaction as the failed
+    // upsert (transactional outbox — mirror of markReady's publish).
+    // Without it a terminal failure was silent: no email, no event, the
+    // user discovers the dead gate by sitting on it (first-run-trap
+    // audit 2026-07-28). A missing publisher must never block recording
+    // the failure itself — the state write is the load-bearing half.
+    const outbox = this.deps.outbox;
+    if (!outbox) {
+      await failedUpsert(this.deps.db);
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'sync.sync_failed_publish_skipped',
+          worker: this.workerName,
+          mailboxAccountId,
+          reason: 'InitialSyncDeps.outbox not wired',
+        }),
+      );
+      return;
+    }
+
+    const [account] = await this.deps.db
+      .select({ workspaceId: mailboxAccounts.workspaceId })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxAccountId))
+      .limit(1);
+    if (!account) {
+      // Mailbox deleted mid-flight — record nothing, email no one.
+      return;
+    }
+
+    await this.deps.db.transaction(async (tx) => {
+      await failedUpsert(tx);
+      await outbox.publish(tx, {
+        topic: TOPICS.MAILBOX_SYNC_FAILED,
+        aggregateId: mailboxAccountId,
+        payload: {
+          mailboxAccountId,
+          workspaceId: account.workspaceId,
+          failedAt: new Date().toISOString(),
+          errorCode: error.name,
         },
+        schema: MailboxSyncFailedPayloadSchema,
       });
+    });
   }
 
   /**
