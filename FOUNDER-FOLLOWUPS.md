@@ -24,6 +24,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-07-28 — BROKEN AUTOMATION: IMPLEMENTATION-LOG D-row flips can no longer push to main
+**Source:** observed on every merge this session (first seen on PR #419, run 30418941078)
+**Why:** `.github/workflows/pr-merged.yml` ("Flip D-rows ⬜ → 🔵") commits `IMPLEMENTATION-LOG.md` and pushes straight to `main`. Branch protection — correctly added after the launch audit — now rejects it: `GH006: Protected branch update failed … Changes must be made through a pull request`. The job fails on EVERY merge, so CLAUDE.md §8's "Merge auto-flips D# to 🔵" is no longer true and the log silently stops tracking. It is post-merge only (`pull_request: closed`), so it never blocks a merge — which is exactly why it can rot unnoticed, and it also means a red X now appears on every merged PR, training you to ignore red.
+**How:** pick one — (a) give the workflow a token that can bypass protection (a GitHub App installation token or an admin PAT in secrets, then `permissions: contents: write` + that token on checkout); (b) have it open a small PR instead of pushing, auto-merged by the same workflow; or (c) retire the automation and let `pnpm generate-impl-log` run locally, updating CLAUDE.md §8 to match. Do NOT loosen branch protection for this.
+**Verifies by:** the next merged PR shows the flip job green and the D-row moves to 🔵.
+**Status:** Open
+
 ### 2026-07-28 — SECURITY (webhook-auth adjacent, needs your go-ahead): Pub/Sub push has no rate limit + attacker-forcible JWKS refetch
 **Source:** webhook-security agent sweep 2026-07-28 (2 BLOCKING findings)
 **Why:** `POST /api/webhooks/gmail/pubsub` is the only unauthenticated POST with no `@RateLimit` (every other one has it), and an unverified JWT `kid` force-nulls the process-wide JWKS cache with no cooldown — an unauthenticated flood degrades legitimate Pub/Sub deliveries (mail sync stalls) and saturates the 3-instance API. Not an auth bypass; availability coupling.
