@@ -59,7 +59,7 @@ export function useScreenerCount(options: { enabled?: boolean } = {}) {
  * Record a decision for a queued sender. One fresh idempotency key per
  * mutate call (D202): a network-retried POST replays server-side; a
  * fresh user click is a new decision. A 402 FREE_CAP_REACHED (Free
- * tier exhausting its 5 lifetime cleanup actions via the delegated
+ * tier exhausting its 50 cleanup actions/month via the delegated
  * pipeline) surfaces the UpgradeModal via the global MutationCache
  * handler (lib/query-client) — no per-hook wiring needed.
  */

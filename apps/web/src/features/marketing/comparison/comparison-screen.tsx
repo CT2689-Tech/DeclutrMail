@@ -1,3 +1,5 @@
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
 import { JsonLd } from '../json-ld';
 import { TrackedCta } from '../landing/tracked-cta';
 import { oauthStartUrl, siteUrl } from '../landing/urls';
@@ -62,8 +64,9 @@ function FinalCta({ competitorName }: { competitorName?: string }) {
           : 'The right cleanup method is the one you will keep using.'}
       </h2>
       <p>
-        Connect one Gmail inbox, inspect the sender index, and use up to five cleanup actions on
-        Free. Full message bodies and attachments are not fetched.
+        Connect one Gmail inbox, review every sender, and use{' '}
+        {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month on Free. Full message
+        bodies and attachments are not fetched.
       </p>
       <div className="dm-mkt-hero-ctas">
         <TrackedCta
