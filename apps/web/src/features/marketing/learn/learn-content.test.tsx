@@ -157,14 +157,29 @@ describe('shared learning surfaces', () => {
   // data so `pnpm check-changelog` can verify the page against git, which
   // makes accidentally rendering it a live risk rather than a theoretical
   // one — and every such link would 404 once the repository goes private.
+  //
+  // A pure absence test is worthless on its own: it passes identically when
+  // the page renders nothing, and its loop runs ZERO assertions if
+  // `evidence` is ever emptied. The first version of this test had both
+  // holes (Codex stop-review 2026-07-29). Hence the positive controls — the
+  // test must first prove it can SEE the thing it claims is clean.
   it('leaks no pull-request number, commit hash, or repository link', () => {
     const { container } = render(<ChangelogPage />);
     const text = container.textContent ?? '';
-    for (const entry of CHANGELOG_ENTRIES) {
-      for (const evidence of entry.evidence) {
-        expect(text).not.toContain(evidence.commit);
-        expect(text).not.toContain(`#${evidence.pullRequest}`);
-      }
+
+    // Positive controls: there is a page, it has entries, and there is
+    // something to look for. Without these the absence checks below are
+    // vacuous.
+    const receipts = CHANGELOG_ENTRIES.flatMap((entry) => entry.evidence);
+    expect(receipts.length).toBeGreaterThan(0);
+    expect(text).toContain('What changed');
+    expect(text).toContain(CHANGELOG_ENTRIES[0]!.title);
+    expect(container.querySelectorAll('article[id]').length).toBe(CHANGELOG_ENTRIES.length);
+    expect(container.querySelectorAll('a').length).toBeGreaterThan(0);
+
+    for (const receipt of receipts) {
+      expect(text).not.toContain(receipt.commit);
+      expect(text).not.toContain(`#${receipt.pullRequest}`);
     }
     const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? '');
     expect(hrefs.filter((href) => /github\.com|\/pull\//.test(href))).toEqual([]);

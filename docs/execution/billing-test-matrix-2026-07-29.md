@@ -39,31 +39,50 @@ this is dev" into "I checked" — its whole value is that you actually run it.
 
 ### 0.2 Prove which database you are on — before anything else
 
-A gate that cannot fail is worse than no gate, because you will trust it. The
-first version of this section told you to compare `inet_server_addr()` against
-`db.hewwqjkvrngxbihciewr.supabase.co` — but that function returns an **IP
-address** (`::1` locally), never a hostname, so the comparison could never
-match and the check always looked clean. Do not reintroduce it.
+Two earlier versions of this gate were unsafe, both in the same way: they could
+not fail. Do not reintroduce either.
 
-**The connection string in `.env.local` is the only thing that decides which
-database the API writes to.** So check that string, where a match is exact:
+- `inet_server_addr()` compared against `db.…supabase.co` — that function
+  returns an **IP** (`::1` locally), never a hostname, so the comparison never
+  matched.
+- `grep` for the production project ref in `.env.local` — a **denylist**, and a
+  denylist cannot enumerate every route to production. It printed OK when the
+  file was missing, when `DATABASE_URL` was exported in the shell (which wins
+  over the file at runtime), when the file carried no `DATABASE_URL` at all,
+  and when production was reached by IP or pooler host, where the ref never
+  appears.
+
+Use an **allowlist**: resolve the connection string the way the app does, then
+require the host to be local. Anything it cannot positively identify as local
+is refused.
 
 ```bash
-if grep -q 'hewwqjkvrngxbihciewr' .env.local; then
-  echo "REFUSE — .env.local names declutrmail-prod"; exit 1
-else
-  echo "OK — not the production project"
-fi
+DB="${DATABASE_URL:-$(sed -n 's/^DATABASE_URL=//p' .env.local 2>/dev/null | tail -1)}"
+[ -n "$DB" ] || { echo "REFUSE — no DATABASE_URL resolved; cannot tell which database this writes to"; exit 1; }
+HOST=$(printf '%s' "$DB" | sed 's#^.*://##; s#^[^@]*@##; s#[/?].*##; s#:[0-9]*$##')
+case "$HOST" in
+  localhost|127.0.0.1|'::1'|'[::1]') echo "OK — local dev database ($HOST)" ;;
+  *) echo "REFUSE — non-local database host: $HOST"; exit 1 ;;
+esac
 ```
 
-```bash
-# and see the host you ARE pointed at, from the same file
-sed -n 's/^DATABASE_URL=//p' .env.local | sed 's#.*@##; s#[/?].*##'
-```
+Verified against every bypass that defeated the denylist, plus the cases that
+must still pass:
 
-`hewwqjkvrngxbihciewr` is the production Supabase project ref. It appears
-verbatim in any prod connection string, so `grep` either matches it or the
-string does not name prod.
+| Situation                                 | Result |
+| ----------------------------------------- | ------ |
+| `.env.local` missing                      | REFUSE |
+| file says dev, shell exports the prod URL | REFUSE |
+| file exists but carries no `DATABASE_URL` | REFUSE |
+| production reached by bare IP             | REFUSE |
+| production via `…pooler.supabase.com`     | REFUSE |
+| genuine local dev DB (`localhost`)        | OK     |
+| genuine local dev DB (`127.0.0.1`)        | OK     |
+
+**If your dev database is deliberately remote,** this refuses it — on purpose.
+Add that exact host to the `case` list by name rather than loosening the
+pattern. Being blocked from a legitimate dev database costs you thirty seconds;
+being waved through to production costs real money and real rows.
 
 **A second, independent signal:** the dev-login route only exists when
 `DEV_AUTH_ENABLED=true`, which is never set on production — it appears zero
@@ -71,13 +90,13 @@ times in `deploy-cloud-run.yml`, and that deploy uses `--set-env-vars`, a full
 replace, so it cannot linger from an earlier revision. If dev-login works, you
 are not talking to the production **API**.
 
-> Be clear about what each check proves. The `grep` proves your local API is
-> not configured against the prod **database**. Dev-login proves you are not
-> hitting the prod **API**. Neither implies the other — a local API with
-> dev-auth on can still be pointed at the prod DB, which is exactly the
-> accident the `grep` is there to catch. Run both.
+> Be clear about what each check proves. The host allowlist proves the API is
+> pointed at a local **database**. Dev-login proves you are not hitting the prod
+> **API**. Neither implies the other — a local API with dev-auth on can still be
+> pointed at a remote DB, which is what the allowlist catches. Run both.
 
-Re-run the `grep` any time you edit `.env.local` or reopen a shell.
+Re-run the allowlist any time you edit `.env.local`, export `DATABASE_URL`, or
+open a new shell.
 
 ### 0.3 Sandbox setup (one time)
 
