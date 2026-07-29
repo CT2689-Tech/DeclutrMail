@@ -332,7 +332,7 @@ export const ProEntitlementPausedPlusRow: Story<typeof BillingScreen> = {
 };
 
 /** Entitlement without any subscription (admin grant): the card makes
- *  NO price claim — "Included with your workspace", never a quote
+ *  NO price claim — "Included with your account", never a quote
  *  presented as the bill (A6). */
 export const ProWithoutSubscription: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>

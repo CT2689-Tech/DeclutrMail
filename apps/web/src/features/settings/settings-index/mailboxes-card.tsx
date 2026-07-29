@@ -52,7 +52,9 @@ export function MailboxesCard({
   return (
     <Card padding={0}>
       <div style={{ padding: '18px 20px', fontFamily: font.sans }}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: color.fg }}>Mailboxes</h3>
+        <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: color.fg }}>
+          Gmail accounts
+        </h3>
         <p style={mutedTextStyle}>
           Connected Gmail accounts and their connection health. Switch or disconnect from the
           account menu in the top bar.

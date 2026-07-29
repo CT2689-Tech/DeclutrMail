@@ -152,8 +152,12 @@ describe('UpgradeModal', () => {
       .report({ reason: 'inbox_limit', details: { limit: 1, connected: 1 } });
     render(<UpgradeModal />);
 
-    expect(screen.getByText('Your Plus plan includes 1 connected inbox')).toBeInTheDocument();
-    expect(screen.getByText(/Pro raises the limit to 3 connected inboxes/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Your Plus plan includes 1 connected Gmail account'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Pro raises the limit to 3 connected Gmail accounts/),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Upgrade to Pro' })).toHaveAttribute(
       'href',
       '/billing?plan=pro&cycle=monthly',
@@ -167,7 +171,9 @@ describe('UpgradeModal', () => {
       .report({ reason: 'inbox_limit', details: { limit: 2, connected: 2 } });
     render(<UpgradeModal />);
 
-    expect(screen.getByText('Your Pro plan includes 2 connected inboxes')).toBeInTheDocument();
+    expect(
+      screen.getByText('Your Pro plan includes 2 connected Gmail accounts'),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Upgrade to/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/money-back/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Keep current inboxes' })).toBeInTheDocument();

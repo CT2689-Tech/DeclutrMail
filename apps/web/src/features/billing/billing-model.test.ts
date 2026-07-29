@@ -243,13 +243,13 @@ describe('currentPlanPriceLabel', () => {
   });
 
   it('a paid tier with NO backing record makes no price claim', () => {
-    expect(currentPlanPriceLabel(emptyPlanView('pro'))).toBe('Included with your workspace');
+    expect(currentPlanPriceLabel(emptyPlanView('pro'))).toBe('Included with your account');
     // Even with a non-backing row present, its price never leaks.
     const view = deriveBillingViewState(
       snapshot({ data: body('pro', { ...SUB, tier: 'plus', status: 'paused' }) }),
     );
     if (view.kind !== 'plan') throw new Error('expected plan');
-    expect(currentPlanPriceLabel(view)).toBe('Included with your workspace');
+    expect(currentPlanPriceLabel(view)).toBe('Included with your account');
   });
 });
 
