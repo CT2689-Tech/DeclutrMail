@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-28 (documenting a decision implemented 2026-07-16/17)
 - **Deciders:** founder, Claude
-- **Related D-decisions:** D38 (reclaimed — see "Relationship to D38"), D40, D42, D245
+- **Related D-decisions:** D38 (reclaimed — see "Relationship to D38"), D245
 
 ## Context
 
@@ -110,17 +110,31 @@ fails rather than letting a computed value quietly replace a real one.
   `enrichSenderRow`, and the no-shadow assertion.
 - `apps/web/src/lib/api/senders.ts` — `SenderListRow`, the source of truth
   for the wire shape.
-- Shipped by PRs #339–#346 (2026-07-17).
+- Shipped by PR #339 (2026-07-16).
 - When adding a derived field, confirm the name does not exist on
   `SenderListRow`; the assertion will tell you, but naming it distinctly
   up front is cheaper.
 
 ## Relationship to D38
 
-This work was originally merged citing `Closes D38`, which was a
-mis-tag: D38 is "First-time education: onboarding-only tour + tooltips",
-a feature that has never been built. That mis-tag left
+Two PRs cited `Closes D38` — **#339** (this wire model) and **#343**
+(one rolling-30-day window shared by the list and detail read paths).
+Neither is D38, which is "First-time education: onboarding-only tour +
+tooltips", a feature that has never been built. That mis-tag left
 `IMPLEMENTATION-LOG.md` asserting the tour was shipped.
+
+**#343 is recorded here too**, because reverting D38 to ⬜ would
+otherwise leave it with no home at all — the same defect this ADR
+exists to correct. Its invariant belongs to the same seam: `GET
+/api/senders` and `GET /api/senders/:id` returned the same field names
+computed over different windows (rolling 30 days vs latest calendar
+month), so the product contradicted itself about one sender — the list
+showed `readRate` unknown while the detail asserted "100% marked read".
+The fix extracted `buildRollingWindowSubqueries()` so both paths share
+**one** definition rather than mirroring it, and kept `readRate`
+nullable on an empty window. **Rule: a field name means one thing
+across every endpoint that returns it; if two paths compute it, they
+share the computation rather than reimplement it.**
 
 Recording the wire model here rather than as a new D-decision follows the
 registry rule adopted 2026-07-28: **a D-number is something you will ask

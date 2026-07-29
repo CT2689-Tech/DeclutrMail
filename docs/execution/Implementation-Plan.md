@@ -9519,25 +9519,53 @@ The complete contract, acceptance checklist, and handoff checkpoint live in
 
 ### D248 — Bulk unsubscribe: one-click subset only, per-channel receipt
 
-Multi-sender unsubscribe executes server-side for senders whose
-`unsubscribe_channel = 'one_click'` (RFC 8058) and for those only. Senders
-reachable only by `mailto:` stay in the per-sender flow, preserving D230's
-rule that mailto unsubscribes are user-sent at launch. A batch never sends
-mail on the user's behalf.
+**What exists already.** The action manifest already declares
+`'multi-sender': true` for the `unsubscribe` verb, and `preview: 'modal'`
+is already mandatory on it. What does not exist is a multi-sender
+*execution* path: `POST /api/actions/unsubscribe-intent` accepts a single
+`senderId` (uuid). This decision fills that gap and does not re-open the
+selector or preview questions.
 
-The preview and the receipt report **per-channel counts and never an
-aggregate**: "Unsubscribe 8 one-click senders now · 4 need an email you
-send, handled per-sender." A single number spanning both channels would
-claim an outcome the product did not achieve for the mailto half — the
-same overclaim D9 Wave 2 removed from the Activity unsubscribe counter.
-If the selection contains no one-click senders, the batch control does
-not offer itself; it does not offer a batch that would do nothing.
+**Channel split.** A sender's capability is `senders.unsubscribe_method`
+(pg enum `gmail_unsubscribe_method`), derived by `building_sender_index`
+from `mail_messages.unsubscribe_url` + `unsubscribe_one_click`. It has
+**three** values, and the batch treats each differently:
 
-Selection remains the existing `multi-sender` selector, so the D-Q1 cap
-of 1000 senders per batch and the standard action lifecycle apply
-unchanged: sheet → preview → mutation → undo (D226). Execution fans out
-through the existing `UnsubExecutionWorker`; the per-sender unsubscribe
-contract is untouched.
+- `one_click` — executes server-side in the batch (RFC 8058).
+- `mailto` — excluded from execution; stays in the per-sender flow,
+  preserving D230's rule that mailto unsubscribes are user-sent at
+  launch. A batch never sends mail on the user's behalf.
+- `none` — no `List-Unsubscribe` header was ever seen, so there is no
+  channel to use. Excluded, and named as such rather than folded in with
+  `mailto`, because "you must send this one yourself" and "this sender
+  offers no unsubscribe at all" are different facts and the second one
+  the user cannot act on.
+
+**No undo — the preview is the reversal point.** Unsubscribe declares no
+inverse. Its `execution.kind` is `'unsubscribe'`, carrying only the
+standing `DeclutrMail/Unsubscribed` side-effect label; unlike the
+`label-modify` verbs it has no forward/inverse pair and writes no undo
+journal entry. The batch must therefore not offer or imply undo. The
+mandatory modal preview is the last reversible moment, which is exactly
+why D226 makes it non-skippable.
+
+**Receipt reports per-channel counts, never an aggregate.** "Unsubscribe
+8 one-click senders now · 4 need an email you send · 2 offer no
+unsubscribe." One number spanning the three groups would claim an
+outcome the product did not achieve for two of them. Success is likewise
+not asserted at enqueue: the per-sender outcome rows already exist
+(`unsubscribe_confirmed`, `unsubscribe_endpoint_accepted`,
+`unsubscribe_failed` — D56 / D9 Wave 2, distinct from the intent row), so
+the batch receipt aggregates observed outcomes rather than intent. If a
+selection contains no `one_click` senders, the batch control does not
+offer itself.
+
+**Boundaries.** The `multi-sender` selector's D-Q1 cap of 1000 senders
+per batch applies unchanged. Execution fans out through the existing
+`UnsubExecutionWorker` (`packages/workers/src/unsub-execution.worker.ts`);
+the per-sender unsubscribe contract is untouched. The one-click-vs-mailto
+*resolver* remains scheduled at P9 per D230 — this decision consumes the
+already-derived `unsubscribe_method` and does not move that work.
 
 Extends D9 and D32. Does not amend D230.
 
