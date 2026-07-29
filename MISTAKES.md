@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-28 — A shell footgun wiped 30 merged PR bodies (fully recovered)
+**PR:** none — `gh pr edit` bulk operation during the D158 derived-log work
+**Caught by:** the very next generator run deriving D38 from PRs whose bodies should no longer say `Closes D38`, then direct length checks
+**What happened:** A bulk trailer rewrite piped each PR body into `python3 - "$arg" < file <<'PY'`. The file redirect and the heredoc both bind stdin: python received the PR BODY as its *program*, died with SyntaxError, and wrote an empty stdout — and because `set -e` does not propagate out of a function invoked in a loop under zsh, the loop marched on. The next step diffed original-vs-empty, saw a difference, and `gh pr edit --body-file`'d the EMPTY file into 30 merged PRs. Every safeguard that would have caught it was absent: no pre-snapshot, no non-empty sanity check on the replacement, no single-PR trial before the loop.
+**Correct approach:** Recovery worked because GitHub keeps `userContentEdits` per PR (GraphQL): the newest non-null `diff` node is the pre-wipe body. All 30 restored full-length with the intended trailer fix applied in the same write, verified by length + old-trailer-absent + replacement-present on every one, plus `Closes D49` surviving untouched on #341. Second bug found during the redo: the replacement regex was case-SENSITIVE while the generator's is case-INSENSITIVE, so a lowercase `closes D38` (#69) still derived — matcher and rewriter must share one pattern.
+**Rule:** Bulk-editing anything remote: (1) snapshot every current value to the scratchpad BEFORE the first write; (2) trial the transform on ONE item and verify the result end-to-end before looping; (3) the write step must refuse content that is empty or missing an expected marker; (4) any regex that undoes what another regex matches must use the same flags.
+**Enforcement update:** none mechanical — recorded here; the restore script pattern (GraphQL userContentEdits) is in the session transcript for reuse.
+
 ## 2026-07-28 — Closed two followups on the half of their status that said "shipped"
 **PR:** [#421](https://github.com/CT2689-Tech/DeclutrMail/pull/421)
 **Caught by:** Codex stop-time review (first instance), then a mechanical sweep of every closure in the same change (second instance)

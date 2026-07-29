@@ -1705,6 +1705,13 @@ charts, decision history. Ready for Topic 4.
 
 ### D47 — Senders shape: **Weekly Hero (Mondays) + grid/table below + Review Session overlay**
 
+**⚠️ RETIRED 2026-07-17 (PR #346).** The Weekly Hero was retired with the
+editorial-hero era (spec v1.2 Decision 4) and the surviving dead stack —
+endpoint, hook, DTOs, slice computation — was removed per D245's
+prelaunch rule. This is a reversal, not a delivery: the feature was
+built, shipped (#115), and deliberately deleted. Recorded 🚫 Retired in
+IMPLEMENTATION-LOG.md (state added 2026-07-28, D158).
+
 Bundle's structure preserved. Senders screen has three integrated parts:
 
 1. **Weekly Hero** at top — refreshes Monday morning per user timezone.
@@ -1733,6 +1740,9 @@ Bundle's structure preserved. Senders screen has three integrated parts:
   Triage decisions do — single uniform action lifecycle.
 
 ### D48 — Weekly Hero slices: **3 — High-confidence cleanups / Volume spikes / Long-quiet senders**
+
+**⚠️ RETIRED 2026-07-17 (PR #346).** Retired with D47 — the slices died
+with the hero.
 
 Three slice cards on the hero, refreshed Monday morning:
 
