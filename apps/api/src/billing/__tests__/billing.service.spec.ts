@@ -626,6 +626,46 @@ describe('BillingService', () => {
       expect(result.subscription).toMatchObject({ status: 'paused' });
     });
 
+    it('REFUSES to resume while another subscription is already billing', async () => {
+      // The double-charge path. `resume` is a provider-side call whose
+      // effect lands via webhook, so with no guard the provider starts
+      // charging for BOTH and the webhook writes a second granting row
+      // — `recomputeWorkspaceTier` then quietly grants the max rank and
+      // nothing on any screen says the customer is paying twice.
+      // Checkout has always guarded this; resume was missed.
+      // Providers chosen deliberately: `resume` calls the adapter of the
+      // PAUSED subscription, so that one must be paddle — the only
+      // adapter whose `resumeSubscription` is an observable mock here.
+      // Seeding it as razorpay would make the assertion below vacuous:
+      // paddleResume could not have fired either way.
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'razorpay',
+        providerSubscriptionId: 'sub_active_pro',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_m',
+        billingCycle: 'monthly',
+      });
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_paused_plus',
+        tier: 'plus',
+        status: 'paused',
+        providerPriceId: 'pri_plus_m',
+        billingCycle: 'monthly',
+      });
+
+      await expect(service.resume(principal)).rejects.toMatchObject({
+        code: 'SUBSCRIPTION_EXISTS',
+      });
+      // The refusal must land BEFORE the provider call — a resume that
+      // rejected locally but still reached Paddle would bill the
+      // customer anyway, which is the whole failure being prevented.
+      expect(paddleResume).not.toHaveBeenCalled();
+    });
+
     it('no paused subscription → NO_ACTIVE_SUBSCRIPTION', async () => {
       await expect(service.resume(principal)).rejects.toMatchObject({
         code: 'NO_ACTIVE_SUBSCRIPTION',

@@ -26,6 +26,22 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-28 — DECISION: the subscriptions unique index needs a predicate you pick (B7 half two)
+**Source:** launch audit B7; attempted in PR #417, withdrawn after two Codex reviews found both candidate predicates unsafe
+**Why:** the app-level `resume` double-charge is now fixed in code (#417 ships that guard), but the DB still cannot stop two billing subscriptions if a guard is ever missed again. Both obvious predicates have a real cost:
+  - `IN ('active','past_due')` — allows a paused row beside an active one. If that paused row is ever resumed by the PROVIDER (dunning recovery, a support action in Paddle, a race the app guard cannot see), the webhook write is rejected by the index and retries forever: the customer is charged while our DB refuses to record it. Strictly worse than no index.
+  - `IN ('active','past_due','paused')` — the safe invariant, but it forbids a state that already exists: your dev DB holds TWO paused rows on workspace `fab42715…` (paddle `sub_pz` + razorpay `sub_THdjxRKddrqsNK`), and `billing.service.spec` deliberately seeds active-Pro + paused-Plus to test the A6 read. The migration cannot apply until those rows are resolved and that test is reworked.
+**How:** decide (a) resolve the two paused rows + rework the A6 test, then ship the strict predicate — my recommendation, since it is the only one that is safe under provider-initiated resume; or (b) leave the DB unconstrained and rely on the app guards alone, accepting that a future missed guard double-charges silently.
+**Verifies by:** pre-flight returns zero rows, migration applies, and a second billing insert errors 23505.
+**Status:** Open — **superseded in shape by the 2026-07-28 reconciliation decision (call 1 of the seven).** The reconciliation PR ships `IN ('active','past_due')` — but with the failure mode the first bullet feared made LOUD instead of silent: `arrival_seq` ordering + the provider reconciler flag a rejected webhook write for manual resolution rather than retrying forever, and the `pending_checkout` row closes the cross-device window that motivated the strict predicate. The two-paused-rows entry below stays a real founder action regardless.
+
+### 2026-07-28 — Resolve the two paused subscriptions on the founder workspace
+**Source:** launch audit B7 / PR #417 investigation
+**Why:** workspace `fab42715…` holds two paused subscriptions (paddle `sub_pz`, razorpay `sub_THdjxRKddrqsNK`). Whichever is not real should be cancelled at the provider; this also unblocks the strict index above. Which one is genuine is a billing fact only you have.
+**How:** check both in the Paddle and Razorpay dashboards, cancel the stale one there, let the webhook reconcile the row.
+**Verifies by:** `SELECT workspace_id, count(*) FROM subscriptions WHERE status IN ('active','past_due','paused') GROUP BY 1 HAVING count(*) > 1;` returns nothing.
+**Status:** Open
+
 ### 2026-07-28 — Stale migration reference in the activity-log schema comment
 **Source:** session 2026-07-28 — found while verifying D248's claims against the tree
 **Why:** `packages/db/src/schema/activity-log.ts:77` annotates the D245 truthful unsubscribe outcome values with "(0037)". Migration 0037 is `0037_mailbox_data_deletion_requests.sql`; the values actually land in **`0038_truthful_unsubscribe_lifecycle.sql`**. Harmless at runtime, but it is a pointer that sends a reader to the wrong file, and it already cost real time — D248's first draft cited migration 0037 because I copied the number out of this comment instead of checking the migrations directory. A wrong cross-reference in a schema file is the cheapest kind of lie to fix and the most expensive kind to trust.
