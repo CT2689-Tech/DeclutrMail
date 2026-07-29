@@ -95,13 +95,22 @@ export function SyncGate({
   status,
   escape,
   eyebrow = DEFAULT_EYEBROW,
+  mailboxId,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
   eyebrow?: string;
+  /**
+   * The mailbox this gate is WATCHING. Required whenever that is not
+   * the active mailbox — the secondary-connect gate (D116) shows
+   * `?mailbox=<id>` while a different mailbox stays active, so the
+   * retry must name it or the server would re-queue the active one.
+   * Omitted by the first-run gate, where they are the same mailbox.
+   */
+  mailboxId?: string | undefined;
 }) {
   if (status.readiness_status === 'failed') {
-    return <SyncFailed status={status} escape={escape} />;
+    return <SyncFailed status={status} escape={escape} mailboxId={mailboxId} />;
   }
   return <SyncProgress status={status} escape={escape} eyebrow={eyebrow} />;
 }
@@ -249,11 +258,13 @@ function SyncEscapeHatch({ escape }: { escape: SyncGateEscape }) {
 function SyncFailed({
   status,
   escape,
+  mailboxId,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
+  mailboxId?: string | undefined;
 }) {
-  const retry = useRetryInitialSync();
+  const retry = useRetryInitialSync(mailboxId);
   const copy =
     (status.error_code && ERROR_COPY[status.error_code]) ??
     'Something interrupted the scan and it stopped. Your Gmail is untouched — starting it again is safe.';
@@ -279,12 +290,7 @@ function SyncFailed({
             was `window.location.reload()`, which re-rendered the same
             dead screen — the reconciler sweeps `queued` rows only, so
             nothing re-queued a `failed` one. */}
-        <Button
-          tone="primary"
-          onClick={() => retry.mutate()}
-          disabled={retry.isPending}
-          data-testid="sync-retry"
-        >
+        <Button tone="primary" onClick={() => retry.mutate()} disabled={retry.isPending}>
           {retry.isPending ? 'Starting…' : 'Try again'}
         </Button>
         {/* Don't strand a secondary connect on a failed gate — let them

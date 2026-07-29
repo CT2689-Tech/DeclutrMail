@@ -328,7 +328,9 @@ function SecondaryConnectGate({
   };
 
   // Not part of the 5-step flow — no step counter in the eyebrow.
-  return <SyncGate status={status} escape={escape} eyebrow="One-time scan" />;
+  // `mailboxId` — this gate watches the ?mailbox= target, NOT the
+  // active mailbox, so the retry has to name it explicitly.
+  return <SyncGate status={status} escape={escape} eyebrow="One-time scan" mailboxId={mailboxId} />;
 }
 
 /**

@@ -30,11 +30,21 @@ export interface InitialSyncRetryResponse {
  * On success the sync-status query is invalidated so the gate flips
  * from the failure screen to live progress without a reload.
  */
-export function useRetryInitialSync() {
+export function useRetryInitialSync(mailboxId?: string) {
   const qc = useQueryClient();
   return useMutation<InitialSyncRetryResponse, Error, void>({
     mutationFn: async () => {
-      const envelope = await apiPost<InitialSyncRetryResponse>('/api/v1/sync/initial/retry');
+      // Scope to the mailbox the GATE is showing, not the active one.
+      // The secondary-connect gate (D116) watches `?mailbox=<id>` while
+      // a DIFFERENT mailbox stays active — without this header the
+      // guard would resolve the active mailbox, so the retry would
+      // re-queue the wrong one (or, since that one is usually `ready`,
+      // silently answer `not_failed` and do nothing at all).
+      const envelope = await apiPost<InitialSyncRetryResponse>(
+        '/api/v1/sync/initial/retry',
+        undefined,
+        mailboxId ? { mailboxId } : {},
+      );
       return envelope.data;
     },
     onSuccess: (data) => {
@@ -45,6 +55,7 @@ export function useRetryInitialSync() {
       });
       // Refresh readiness whatever the outcome — `not_failed` means the
       // screen is already stale and should re-render from server truth.
+      // Key prefix, so the per-mailbox entry the gate reads is included.
       void qc.invalidateQueries({ queryKey: SYNC_STATUS_KEY });
     },
   });
