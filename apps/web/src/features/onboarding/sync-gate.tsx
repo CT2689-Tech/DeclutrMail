@@ -5,6 +5,8 @@ import { Button, Eyebrow, PrivacyBadge, tokens } from '@declutrmail/shared';
 import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
 
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
+import { useLogout } from '@/features/auth/api/use-logout';
+import { useDisconnectMailbox } from '@/features/mailboxes/api/use-disconnect-mailbox';
 
 const { color, font } = tokens;
 
@@ -266,6 +268,8 @@ function SyncFailed({
   mailboxId?: string | null | undefined;
 }) {
   const retry = useRetryInitialSync(mailboxId);
+  const logout = useLogout();
+  const disconnect = useDisconnectMailbox();
   // No id, no retry — an unscoped request would re-queue whatever the
   // server considers active, which is exactly the mailbox this screen
   // cannot vouch for.
@@ -308,6 +312,28 @@ function SyncFailed({
           <Button tone="ghost" onClick={escape.onReturn} disabled={escape.returning ?? false}>
             {escape.returning ? 'Switching…' : `Go back to ${escape.returnToEmail}`}
           </Button>
+        )}
+        {/* FIRST-RUN trap exits (D158 triage, founder-approved): with no
+            secondary mailbox to hop to, a user whose retry also fails
+            was walled in — the onboarding guard bounces every route back
+            here. Two real ways out, neither optimistic:
+            - Disconnect returns the onboarding machine to the connect
+              step (mailboxes drop to zero), so they can re-grant OAuth
+              or walk away. Uses the row-scoped id; disabled without one.
+            - Sign out ends the session outright. */}
+        {!escape && (
+          <>
+            <Button
+              tone="ghost"
+              onClick={() => mailboxId && disconnect.mutate(mailboxId)}
+              disabled={!mailboxId || disconnect.isPending}
+            >
+              {disconnect.isPending ? 'Disconnecting…' : 'Disconnect and start over'}
+            </Button>
+            <Button tone="ghost" onClick={() => logout.mutate()} disabled={logout.isPending}>
+              {logout.isPending ? 'Signing out…' : 'Sign out'}
+            </Button>
+          </>
         )}
       </div>
       <PrivacyBadge style={PRIVACY_BADGE_STYLE} />

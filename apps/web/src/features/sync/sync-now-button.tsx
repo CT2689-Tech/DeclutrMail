@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useNow } from '@/lib/use-now';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast, tokens } from '@declutrmail/shared';
 
@@ -104,6 +105,7 @@ export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } 
   const [watching, setWatching] = useState(false);
   // Re-render tick so "2m ago" ages without any data change.
   const [, setTick] = useState(0);
+  const now = useNow();
 
   const lastSyncedAt = status.data?.last_synced_at ?? null;
   const lastErrorAt = status.data?.last_sync_error_at ?? null;
@@ -213,7 +215,7 @@ export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } 
             whiteSpace: 'nowrap',
           }}
         >
-          synced {relAge(lastSyncedAt, Date.now())}
+          synced {relAge(lastSyncedAt, now)}
         </span>
       )}
       <button

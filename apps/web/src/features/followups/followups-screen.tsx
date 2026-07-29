@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, type FocusEvent, type MouseEvent } from 'react';
+import { useNow } from '@/lib/use-now';
 
 import {
   EmptyState,
@@ -333,7 +334,8 @@ export function FollowupListItem({
 }) {
   const recipient = recipientLine(row);
   const subject = truncate(row.subject, 60);
-  const relative = relativeTime(row.sentAt);
+  const now = useNow();
+  const relative = relativeTime(row.sentAt, now);
   const gmailHref = mailboxEmail
     ? GmailOpenLinkService.buildOpenLink({
         mailboxEmail,

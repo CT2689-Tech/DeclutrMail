@@ -79,6 +79,12 @@ export function useActionStatus(actionId: string | null, mailboxId?: string) {
     queryFn: () => getActionStatus(actionId as string, mailboxId ? { mailboxId } : undefined),
     enabled: actionId !== null,
     refetchInterval: (query) => actionRefetchInterval(query.state.data),
+    // Keep polling while the tab is unfocused (FOUNDER-FOLLOWUPS
+    // 2026-07-10): the interval already self-terminates on a terminal
+    // status, so this costs only the in-flight window — without it a
+    // batch finishing in a background tab shows a stale busy row for one
+    // refetch beat on refocus.
+    refetchIntervalInBackground: true,
     retry: false,
   });
 
@@ -234,6 +240,12 @@ export function useBatchStatus(batchId: string | null) {
     queryFn: () => getBatchStatus(batchId as string),
     enabled: batchId !== null,
     refetchInterval: (query) => batchRefetchInterval(query.state.data),
+    // Keep polling while the tab is unfocused (FOUNDER-FOLLOWUPS
+    // 2026-07-10): the interval already self-terminates on a terminal
+    // status, so this costs only the in-flight window — without it a
+    // batch finishing in a background tab shows a stale busy row for one
+    // refetch beat on refocus.
+    refetchIntervalInBackground: true,
     retry: false,
   });
 
