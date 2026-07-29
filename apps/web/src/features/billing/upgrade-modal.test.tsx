@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 // Parametrizable tier — useTier() reads useAuth() from this module.
 let mockTier = 'free';
@@ -47,6 +47,33 @@ describe('UpgradeModal', () => {
   it('renders nothing without a gate hit', () => {
     render(<UpgradeModal />);
     expect(screen.queryByTestId('upgrade-modal')).not.toBeInTheDocument();
+  });
+
+  it('opens on a 402 arriving AFTER mount without a hook-order violation', () => {
+    // The real paywall moment: the modal is mounted (no hit) and a 402
+    // flips the store. useRegionProvider used to sit below the early
+    // return, so this exact transition fired React's hook-order error
+    // (billing audit 2026-07-28). Assert the transition is silent.
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      render(<UpgradeModal />);
+      expect(screen.queryByTestId('upgrade-modal')).not.toBeInTheDocument();
+
+      act(() => {
+        useUpgradeGateStore.getState().report({
+          reason: 'free_cap',
+          details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
+        });
+      });
+
+      expect(screen.getByTestId('upgrade-modal')).toBeInTheDocument();
+      const hookOrderError = consoleError.mock.calls.find((args) =>
+        args.some((a) => typeof a === 'string' && a.includes('change in the order of Hooks')),
+      );
+      expect(hookOrderError).toBeUndefined();
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('free_cap (spent): headline + Plus/Pro pitch + money-back note + Plus deep link', () => {
@@ -125,8 +152,12 @@ describe('UpgradeModal', () => {
       .report({ reason: 'inbox_limit', details: { limit: 1, connected: 1 } });
     render(<UpgradeModal />);
 
-    expect(screen.getByText('Your Plus plan includes 1 connected inbox')).toBeInTheDocument();
-    expect(screen.getByText(/Pro raises the limit to 3 connected inboxes/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Your Plus plan includes 1 connected Gmail account'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Pro raises the limit to 3 connected Gmail accounts/),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Upgrade to Pro' })).toHaveAttribute(
       'href',
       '/billing?plan=pro&cycle=monthly',
@@ -140,7 +171,9 @@ describe('UpgradeModal', () => {
       .report({ reason: 'inbox_limit', details: { limit: 2, connected: 2 } });
     render(<UpgradeModal />);
 
-    expect(screen.getByText('Your Pro plan includes 2 connected inboxes')).toBeInTheDocument();
+    expect(
+      screen.getByText('Your Pro plan includes 2 connected Gmail accounts'),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Upgrade to/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/money-back/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Keep current inboxes' })).toBeInTheDocument();

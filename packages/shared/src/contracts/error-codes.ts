@@ -49,7 +49,7 @@ export const ERROR_CODES = {
     status: 400,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'The request was invalid.',
+    message: "Something about that didn't look right. Check the details and try again.",
   },
   UNAUTHORIZED: {
     status: 401,
@@ -73,7 +73,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'That action conflicts with the current state.',
+    message: "That didn't apply — something changed since this page loaded. Refresh and try again.",
   },
   RATE_LIMITED: {
     status: 429,
@@ -85,7 +85,7 @@ export const ERROR_CODES = {
     status: 500,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Internal server error',
+    message: 'Something went wrong on our side. Your mail is untouched — try again in a moment.',
   },
 
   // --- domain: mailbox scope (current-mailbox.guard, auth orchestrator) ---
@@ -99,21 +99,21 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'Select a mailbox to continue.',
+    message: 'Choose which Gmail account to work in.',
   },
   MAILBOX_NOT_OWNED: {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'Selected mailbox is not connected to your workspace.',
+    message: "That Gmail account isn't connected to your DeclutrMail account.",
   },
   MAILBOX_OWNED_BY_OTHER_WORKSPACE: {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
     message:
-      'This Google account is already connected to another DeclutrMail workspace. ' +
-      "Sign in to the existing workspace to use it. Moving Gmail accounts between workspaces isn't supported yet.",
+      'This Gmail account is already connected to a different DeclutrMail account. ' +
+      "Sign in to that one to use it — moving a Gmail account between DeclutrMail accounts isn't supported yet.",
   },
 
   // --- domain: tier entitlements (D19, D77, D81) ---
@@ -135,7 +135,7 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: false,
     message:
-      'Your plan has reached its connected-inbox limit. Upgrade to connect another Gmail account.',
+      'Your plan has reached its limit on connected Gmail accounts. Upgrade to connect another.',
   },
   PRO_FEATURE_REQUIRED: {
     status: 402,
@@ -186,7 +186,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'This workspace already has an active subscription.',
+    message: 'Your DeclutrMail account already has an active subscription.',
   },
   NO_ACTIVE_SUBSCRIPTION: {
     status: 409,

@@ -325,7 +325,7 @@ export function currentPlanPriceLabel(view: BillingPlanView): string {
     return chargedPlanPrice(sub.tier, sub.cycle, sub.provider, sub.foundingMember) ?? '';
   }
   if (view.entitlementTier === 'free') return formatUsd(0);
-  return 'Included with your workspace';
+  return 'Included with your account';
 }
 
 /**

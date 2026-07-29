@@ -61,13 +61,16 @@ export function UpgradeModal() {
   }, [hit, dismiss]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(hit != null);
+  // Hooks before the early return — calling useRegionProvider below
+  // `if (!hit) return null` fired a hook-order violation the moment a
+  // 402 flipped `hit` on a mounted modal (billing audit 2026-07-28).
+  const regionProvider = useRegionProvider();
 
   if (!hit) return null;
 
   // Pro+ tiers have no upgrade path to offer (Team isn't purchasable)
   // — the honest limit statement with no nudge (D123's Pro rung).
   const nudge = tier === 'free' || tier === 'plus';
-  const regionProvider = useRegionProvider();
   const proMonthly = quotedPlanPrice('pro', 'monthly', regionProvider);
   const actionTier = hit.reason === 'action_tier' ? hit.details.requiredTier : null;
   const actionTierName = actionTier ? TIER_MANIFEST[actionTier].name : null;
@@ -159,7 +162,7 @@ export function UpgradeModal() {
               <>
                 Your existing connection{hit.details.connected === 1 ? ' keeps' : 's keep'} working
                 &mdash; only adding is blocked. {TIER_MANIFEST.pro.name} raises the limit to{' '}
-                {TIER_MANIFEST.pro.inboxLimit} connected inboxes for {proMonthly}.
+                {TIER_MANIFEST.pro.inboxLimit} connected Gmail accounts for {proMonthly}.
               </>
             ) : (
               <>
@@ -234,7 +237,7 @@ function resetDateLabel(iso: string): string {
 }
 
 function inboxLimitTitle(d: InboxLimitDetails, tierLabel: string): string {
-  return `Your ${tierLabel} plan includes ${d.limit} connected ${d.limit === 1 ? 'inbox' : 'inboxes'}`;
+  return `Your ${tierLabel} plan includes ${d.limit} connected Gmail ${d.limit === 1 ? 'account' : 'accounts'}`;
 }
 
 function actionTierTitle(d: ActionTierDetails): string {

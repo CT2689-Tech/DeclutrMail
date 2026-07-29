@@ -248,7 +248,7 @@ export function BillingScreen({
   // poll failure must NOT swap the screen for the error state — its
   // "no charge was made" copy would be false, and the poll self-heals.
   if (view.kind === 'read_failed') {
-    return <BillingErrorState error={view.error} onRetry={() => subscriptionQuery.refetch()} />;
+    return <BillingErrorState onRetry={() => subscriptionQuery.refetch()} />;
   }
   // Malformed 200 body — honest ignorance, never TIER_MANIFEST[garbage].
   if (view.kind === 'unknown') {
@@ -891,7 +891,7 @@ function ScheduledPlanChangeNotice({
         <span style={{ color: color.fgMuted, fontSize: 12 }}>
           {restoring
             ? 'Paddle has not confirmed whether your renewal was restored. Retry before renewal or contact support.'
-            : 'The payment provider’s response was interrupted, so billing changes are locked while we reconcile it.'}{' '}
+            : 'The payment provider’s response was interrupted, so billing changes are paused until we confirm what happened.'}{' '}
           {restoring ? '' : 'Your current plan and renewal remain unchanged. '}Email{' '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com
@@ -983,7 +983,7 @@ function NonBackingSubscriptionNotice({
         <span>
           <strong style={{ fontWeight: 600 }}>Your {tierName} subscription ended.</strong>{' '}
           <span style={{ color: color.fgSoft }}>
-            Your workspace is on {entitlementName}. Pick a plan below any time to subscribe again.
+            Your account is on {entitlementName}. Pick a plan below any time to subscribe again.
           </span>
         </span>
       </div>
@@ -1009,9 +1009,9 @@ function NonBackingSubscriptionNotice({
               your account{isPaused && until ? ` (paused until ${until})` : ''}.
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
-              Your workspace is on {entitlementName} — this subscription isn&rsquo;t what grants it.{' '}
+              Your account is on {entitlementName} — this subscription isn&rsquo;t what grants it.{' '}
               {isPaused
-                ? `Resuming makes ${tierName} your paid subscription again; your plan is then recomputed from your subscriptions, which can move your workspace off ${entitlementName}. Cancel it if you’re done with it.`
+                ? `Resuming makes ${tierName} your paid subscription again; your plan is then recomputed from your subscriptions, which can move your account off ${entitlementName}. Cancel it if you’re done with it.`
                 : 'Cancel it if you’re done with it.'}
             </span>
           </>
@@ -1021,7 +1021,7 @@ function NonBackingSubscriptionNotice({
               Your {tierName} subscription is paused{until ? ` until ${until}` : ''}.
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
-              While it&rsquo;s paused you aren&rsquo;t billed, and your workspace is on{' '}
+              While it&rsquo;s paused you aren&rsquo;t billed, and your account is on{' '}
               {entitlementName}. Resume to reactivate {tierName}, or cancel if you&rsquo;re done
               with it.
             </span>
@@ -1080,7 +1080,7 @@ function NonBackingSubscriptionNotice({
             and billing changes take effect from the next billing period. If that retained period
             has already ended, resume will stop safely instead of starting a new charge.
             {mismatch
-              ? ` Resuming re-grants ${tierName} from this subscription; your workspace’s plan is then recomputed from your subscriptions and can change from ${entitlementName}.`
+              ? ` Resuming re-grants ${tierName} from this subscription; your account’s plan is then recomputed from your subscriptions and can change from ${entitlementName}.`
               : null}
           </span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1170,7 +1170,7 @@ function BillingDisabledNotice() {
     >
       <strong style={{ fontWeight: 600, color: color.fg }}>Billing isn&rsquo;t live yet.</strong>{' '}
       Checkout and subscription management open here once it is — the plans below are final, and
-      nothing about your workspace changes until you choose one.
+      nothing about your account changes until you choose one.
     </div>
   );
 }
@@ -1207,8 +1207,7 @@ function LoadingState() {
   );
 }
 
-function BillingErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
+function BillingErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       style={{
@@ -1222,7 +1221,7 @@ function BillingErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
     >
       <RecoverableErrorState
         title="We couldn't load your billing details"
-        description={`${status}No charge or plan change was made. Try again in a moment.`}
+        description="No charge or plan change was made. Try again in a moment."
         onRetry={onRetry}
       />
     </div>
