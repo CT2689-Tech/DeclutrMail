@@ -161,16 +161,35 @@ describe('shared learning surfaces', () => {
 });
 
 describe('changelog evidence', () => {
+  // Invariants, not a pinned count: the log GROWS on every release, so
+  // asserting a length (or a fixed set of dates) would fail the next
+  // honest append and teach the author to edit the assertion rather
+  // than read it. What must hold for every entry, forever, is that it
+  // is dated, ordered, and carries a real repository receipt.
   it('uses real repository-shaped receipts without invented semver', () => {
-    expect(CHANGELOG_ENTRIES).toHaveLength(3);
+    expect(CHANGELOG_ENTRIES.length).toBeGreaterThan(0);
     for (const entry of CHANGELOG_ENTRIES) {
-      expect(entry.date).toMatch(/^2026-07-(08|09|10)$/);
+      expect(entry.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // The anchor the RSS <guid> and the on-page heading share.
+      expect(entry.id).toBe(entry.date);
       expect(entry.title).not.toMatch(/^v?\d+\.\d+/);
       expect(entry.evidence.length).toBeGreaterThan(0);
       for (const evidence of entry.evidence) {
         expect(evidence.commit).toMatch(/^[0-9a-f]{8}$/);
         expect(evidence.pullRequest).toBeGreaterThan(0);
       }
+    }
+  });
+
+  it('reads newest first', () => {
+    const dates = CHANGELOG_ENTRIES.map((entry) => entry.date);
+    expect(dates).toEqual([...dates].sort().reverse());
+  });
+
+  it('gives every entry at least one user-facing line', () => {
+    for (const entry of CHANGELOG_ENTRIES) {
+      const lines = [...entry.added, ...entry.improved, ...entry.fixed];
+      expect(lines.length, `${entry.id} has no Added/Improved/Fixed lines`).toBeGreaterThan(0);
     }
   });
 });
