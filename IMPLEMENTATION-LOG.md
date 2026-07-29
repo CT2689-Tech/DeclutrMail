@@ -172,7 +172,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D114 | Settings structure: **9 sections, left-nav (Linear/Notion-style) | 🔵 | #297 |  |  |
 | D115 | Inboxes management: **Settings → Inboxes section + top-bar Account Switcher | 🔵 | #126 |  |  |
 | D116 | Privacy & Data section: **Rich with 3 deletion actions + data export + CASA evidence | 🔵 | #224, #308 |  |  |
-| D117 | Billing providers: **Paddle (international) + Razorpay (India) | 🔵 | #194, #207, #362, #364, #365, #366, #367, #370, #374, #375, #376, #379, #417, #430 |  |  |
+| D117 | Billing providers: **Paddle (international) + Razorpay (India) | 🔵 | #194, #207, #362, #364, #365, #366, #367, #370, #374, #375, #376, #379, #417, #430, #432 |  |  |
 | D118 | Cancellation: **Respectful flow with optional reason + pause-30-days offer | 🔵 | #207, #364, #374 |  |  |
 | D119 | Plan comparison: **Current plan card + condensed 3-tier strip + link to /pricing | 🔵 | #219, #351, #402 |  |  |
 | D120 | Plan-change flows | 🔵 | #219, #367, #430 |  |  |

@@ -203,12 +203,24 @@ describe('BillingService', () => {
     expect(paddleCheckout).toHaveBeenCalledTimes(2);
   });
 
-  it('a provider failure RELEASES the claim — a transient error never locks the retry out', async () => {
-    paddleCheckout.mockRejectedValueOnce(new Error('paddle 502'));
+  it('a provider failure KEEPS the claim — an ambiguous outcome may be payable provider-side', async () => {
+    // A timeout after the request landed still creates the provider
+    // artifact, and Razorpay creates with customer_notify — the orphan
+    // is payable from the provider's own emailed link. Auto-releasing
+    // here reopened checkout for attempt #2 while #1 could still be
+    // paid (Codex stop-review 2026-07-29). Only the TTL or the user's
+    // explicit no-charge assertion reopens.
+    paddleCheckout.mockRejectedValueOnce(new Error('paddle timeout'));
     await expect(
       service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
-    ).rejects.toThrow('paddle 502');
-    // The claim came down with the failure; the immediate retry wins it.
+    ).rejects.toThrow('paddle timeout');
+    await expect(
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
+    ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
+    expect(paddleCheckout).toHaveBeenCalledTimes(1);
+
+    // The user-asserted release is the recovery path — then retry wins.
+    await service.releasePendingCheckout(principal.workspaceId);
     await service.createCheckout(principal, {
       tierId: 'plus',
       cycle: 'monthly',
