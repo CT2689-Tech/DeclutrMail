@@ -968,7 +968,7 @@ export function TriageScreen({
           id="triage"
           title="How Triage works"
           body="One row, one decision. K keeps, A archives, U unsubscribes, L moves to Later. Every destructive action shows a preview before anything changes."
-          tip="We never read message bodies. The triage engine reasons from sender, subject, Gmail's preview snippet, dates, and aggregate read/volume stats — that's it."
+          tip="We never read message bodies. Triage reasons from sender, subject, Gmail's preview snippet, dates, and aggregate read/volume stats — that's it."
         />
       )}
 
@@ -1075,7 +1075,7 @@ export function TriageScreen({
 function TriageErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const message =
     error instanceof ApiError
-      ? `We couldn't load your triage queue (${error.status}). Try again in a moment.`
+      ? "We couldn't load Triage. Try again in a moment."
       : "We couldn't load your triage queue right now. Try again in a moment.";
   return <ErrorState title="Your queue didn't load" description={message} onRetry={onRetry} />;
 }

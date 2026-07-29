@@ -218,7 +218,7 @@ export function SenderTable(props: SenderTableProps) {
           {loading ? (
             <SkeletonRows pad={pad} />
           ) : error ? (
-            <ErrorRow error={error} onRetry={props.onRetry} />
+            <ErrorRow onRetry={props.onRetry} />
           ) : rows.length === 0 ? (
             <EmptyRow kind={props.emptyKind ?? 'no-senders'} />
           ) : (
@@ -852,13 +852,7 @@ function SkeletonRows({ pad }: { pad: string }) {
   );
 }
 
-function ErrorRow({
-  error,
-  onRetry,
-}: {
-  error: { message: string };
-  onRetry: SenderTableProps['onRetry'];
-}) {
+function ErrorRow({ onRetry }: { onRetry: SenderTableProps['onRetry'] }) {
   return (
     <tr>
       <td
@@ -871,7 +865,10 @@ function ErrorRow({
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
-          <span>Failed to load senders. {error.message}</span>
+          {/* Never render the raw ApiError/fetch message — it carries
+              method + path + status ("GET /api/senders failed: 500…").
+              Plain copy here; the console keeps the technical detail. */}
+          <span>Couldn&apos;t load senders. Your mail is unchanged — try again.</span>
           {onRetry ? (
             <button
               type="button"

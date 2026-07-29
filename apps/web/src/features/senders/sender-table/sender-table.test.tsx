@@ -366,7 +366,7 @@ describe('SenderTable', () => {
   it('renders an error row with retry when error + onRetry are provided', () => {
     const onRetry = vi.fn();
     render(<Harness rows={[]} error={{ message: 'Network down' }} onRetry={onRetry} />);
-    expect(screen.getByText(/network down/i)).toBeTruthy();
+    expect(screen.getByText(/couldn['’]t load senders/i)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
