@@ -1652,11 +1652,16 @@ Both ~280px wide, side-by-side on desktop, stacked on mobile.
 
 **Implications:**
 - API: `GET /api/senders/:sender_key/timeseries?mailbox_account_id=&months=12`
-  returns `[{ month: '2025-06', volume: 42, opens: 1 }, …]`.
+  returns `[{ month: '2025-06', volume: 42, read_count: 1 }, …]`.
 - Pre-aggregated nightly into `sender_monthly_aggregates` table to keep
   the chart endpoint cheap. New table:
   `sender_monthly_aggregates(workspace_id, mailbox_account_id,
-  sender_key, year_month date, volume int, opens int, replies int)`.
+  sender_key, year_month date, volume int, read_count int, replies int)`.
+  `read_count` is UNREAD-derived — the count of that month's messages
+  WITHOUT the `UNREAD` label. It is **not** open-tracking: the Gmail API
+  exposes no message-open events, so an `opens` column could never be
+  populated honestly. Rename ratified by the founder 2026-05-21; PR-A
+  shipped the column as `read_count` from the start.
   PK on (mailbox_account_id, sender_key, year_month).
 - Chart library: Recharts or visx; lean toward visx for control. Final
   pick during Topic 22 (frontend stack).
@@ -9511,3 +9516,31 @@ or the unrestricted custom Autopilot builder.
 
 The complete contract, acceptance checklist, and handoff checkpoint live in
 `docs/execution/behavioral-activation-trust-d246.md`.
+
+### D248 — Bulk unsubscribe: one-click subset only, per-channel receipt
+
+Multi-sender unsubscribe executes server-side for senders whose
+`unsubscribe_channel = 'one_click'` (RFC 8058) and for those only. Senders
+reachable only by `mailto:` stay in the per-sender flow, preserving D230's
+rule that mailto unsubscribes are user-sent at launch. A batch never sends
+mail on the user's behalf.
+
+The preview and the receipt report **per-channel counts and never an
+aggregate**: "Unsubscribe 8 one-click senders now · 4 need an email you
+send, handled per-sender." A single number spanning both channels would
+claim an outcome the product did not achieve for the mailto half — the
+same overclaim D9 Wave 2 removed from the Activity unsubscribe counter.
+If the selection contains no one-click senders, the batch control does
+not offer itself; it does not offer a batch that would do nothing.
+
+Selection remains the existing `multi-sender` selector, so the D-Q1 cap
+of 1000 senders per batch and the standard action lifecycle apply
+unchanged: sheet → preview → mutation → undo (D226). Execution fans out
+through the existing `UnsubExecutionWorker`; the per-sender unsubscribe
+contract is untouched.
+
+Extends D9 and D32. Does not amend D230.
+
+**Origin:** the founder's own dogfood queue ran 12 consecutive
+Unsubscribe decisions with no batch path, while Archive and Later had one
+(#321). Decided 2026-07-28.

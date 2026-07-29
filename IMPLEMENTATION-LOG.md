@@ -89,7 +89,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D35 | Undo via persistent action tray (Doc 05 §11) | 🟢 | #33, #180, #182 | apps/api/src/undo/undo.service.spec.ts | Evidence updated 2026-06-11: tray wired to triage in #180; tray requires injected dataSource in #182 |
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🟢 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) |  |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | 🔵 | #293 |  |  |
-| D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #261 |  | Drift fix 2026-06-11: no tour/coachmark code exists; prior "(D38)" tags on PRs #12 and #158–#178 were umbrella mis-tags — that evidence is invalid for D38 |
+| D38 | First-time education: **Onboarding-only tour + tooltips on hover | ⬜ |  |  | Reclaimed 2026-07-28 (🔵→⬜): the tour has never been built. PRs #339–#346 cited `Closes D38` for the senders wire-model rebuild, which is a different thing entirely — that work is now recorded as ADR-0029, not as a D-row, because it is already shipped and its lasting value is a constraint on future code. Supersedes the 2026-06-11 drift note, which documented the mis-tag without correcting the state |
 | D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
 | D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts |  |
 | D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | 🔵 | #30 |  |  |
@@ -287,5 +287,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D233 | Offline destructive actions are draft intents, never auto-replay | ⬜ |  |  |  |
 | D234 | Custom-rule production API gated at `is_preset=false` | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule null for is_preset=false → 404 |  |
 | D235 | Partitioning deferred behind measured thresholds | ⬜ |  |  |  |
+| D248 | Bulk unsubscribe: **one-click subset only, per-channel receipt | ⬜ |  |  | Decided 2026-07-28. Batch executes `unsubscribe_channel='one_click'` server-side only; mailto stays per-sender under D230. Receipt reports per-channel counts, never an aggregate. Extends D9/D32 |
 
 <!-- AUTO:DECISIONS:END -->

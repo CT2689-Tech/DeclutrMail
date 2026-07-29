@@ -20,6 +20,12 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-07-28 — "D or ADR?" is answered by who asks later, not by when it was decided
+**Context:** Two pieces of work needed a home in the decision registries: the senders wire-model rebuild (already shipped) and bulk unsubscribe (about to be built). I proposed a D-number for each, purely because "next free number" is the local pattern. The founder pushed back and asked what I would do ignoring the existing D's.
+**Finding:** CLAUDE.md §11 splits the registries by *timing* — "D-decisions: product/architecture decisions made during **planning**; ADRs: technical decisions made during **implementation**." That split has a hole: a **product** decision made during **implementation** matches neither clause, and both of these did. Timing turns out to be the wrong axis anyway, because the two artifacts are consumed differently: `IMPLEMENTATION-LOG.md` tracks D-rows for build status and does not track ADRs at all. So the question a registry choice actually answers is "will someone ask whether this is built?"
+**Rule (provisional):** **A D-number is something you will ask "is it built yet?" about. An ADR is a rule that constrains how code gets written.** Orthogonal to when it was decided, and it has no gap. Applied here: the wire model is already shipped and its lasting value is the constraint (rows are the server shape, extended by spread, never re-assembled) → ADR-0029, no D. Bulk unsubscribe is unbuilt and will be asked about → D248. Two candidates, one number.
+**Distillation trigger:** promote to CLAUDE.md §11 now rather than on recurrence — it is a direct correction to a rule already written there, and the gap has already produced one mis-tag (PRs #339–#346 citing `Closes D38`, which left the log asserting an unbuilt onboarding tour was shipped). Founder followup filed.
+
 ## 2026-07-07 — Trailing-edge debounce via BullMQ window-end jobId + delay
 
 **Context:** fix/d100 — collapsing incremental-sync webhook bursts into one
