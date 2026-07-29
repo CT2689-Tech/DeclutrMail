@@ -251,7 +251,12 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
         progress_pct: 0,
         is_ready_for_triage: false,
       };
-      return <SyncGate status={status} />;
+      // Pass the SAME id the status query is scoped to. Without it the
+      // retry would resolve "active" server-side, which can differ from
+      // this cached `me.activeMailboxId` (another tab switched, a
+      // disconnect auto-selected another) — the button would then act
+      // on a mailbox other than the one this gate is describing.
+      return <SyncGate status={status} mailboxId={activeMailboxId} />;
     }
     case 'preset-pick':
       return hasCapability(me.tier, 'autopilot') ? (

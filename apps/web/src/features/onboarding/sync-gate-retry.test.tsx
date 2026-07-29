@@ -32,6 +32,7 @@ const FAILED: SyncStatus = {
 };
 
 const SECONDARY_ID = 'mb-secondary-0000-0000-000000000002';
+const FIRST_RUN_ID = 'mb-first-run-0000-0000-000000000001';
 
 function renderGate(props: { mailboxId?: string } = {}) {
   return render(
@@ -64,26 +65,52 @@ describe('SyncGate retry — mailbox scoping', () => {
     await waitFor(() => expect(seenHeader).toBe(SECONDARY_ID));
   });
 
-  it('omits the header on the first-run gate, where watched IS active', async () => {
-    let called = false;
-    let seenHeader: string | null = 'unset';
+  it('names the mailbox on the FIRST-RUN gate too — active is resolved twice otherwise', async () => {
+    // The first-run gate scopes its status GET to the client's cached
+    // `me.activeMailboxId`, while an unscoped POST would resolve
+    // whatever is active server-side right now. Those are two different
+    // mechanisms and they diverge whenever `me` is stale (another tab
+    // switched, a disconnect auto-selected another mailbox) — so the
+    // header is required here as well, not just on the secondary gate.
+    let seenHeader: string | null = null;
     installFetchStub([
       {
         method: 'POST',
         path: '/api/v1/sync/initial/retry',
         respond: (req) => {
-          called = true;
           seenHeader = req.headers.get('X-Active-Mailbox-Id');
           return jsonOk({ outcome: 'requeued' });
         },
       },
     ]);
 
-    renderGate();
+    renderGate({ mailboxId: FIRST_RUN_ID });
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
 
-    await waitFor(() => expect(called).toBe(true));
-    // No override — the guard resolving the active mailbox is correct here.
-    expect(seenHeader).toBeNull();
+    await waitFor(() => expect(seenHeader).toBe(FIRST_RUN_ID));
+  });
+
+  it('disables the retry entirely when no mailbox id is known', async () => {
+    // Never fire an unscoped request as a fallback: it would re-queue
+    // whatever the server considers active, which is precisely the
+    // mailbox this screen cannot vouch for.
+    let called = false;
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/v1/sync/initial/retry',
+        respond: () => {
+          called = true;
+          return jsonOk({ outcome: 'requeued' });
+        },
+      },
+    ]);
+
+    renderGate();
+    const button = screen.getByRole('button', { name: 'Try again' });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(called).toBe(false);
   });
 });

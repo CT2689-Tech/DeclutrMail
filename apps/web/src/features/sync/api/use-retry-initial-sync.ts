@@ -30,20 +30,32 @@ export interface InitialSyncRetryResponse {
  * On success the sync-status query is invalidated so the gate flips
  * from the failure screen to live progress without a reload.
  */
-export function useRetryInitialSync(mailboxId?: string) {
+export function useRetryInitialSync(mailboxId: string | null | undefined) {
   const qc = useQueryClient();
   return useMutation<InitialSyncRetryResponse, Error, void>({
     mutationFn: async () => {
-      // Scope to the mailbox the GATE is showing, not the active one.
-      // The secondary-connect gate (D116) watches `?mailbox=<id>` while
-      // a DIFFERENT mailbox stays active — without this header the
-      // guard would resolve the active mailbox, so the retry would
-      // re-queue the wrong one (or, since that one is usually `ready`,
-      // silently answer `not_failed` and do nothing at all).
+      // ALWAYS name the mailbox the gate is displaying — never let the
+      // server resolve "active" for us.
+      //
+      // Two different mechanisms decide "which mailbox" otherwise: the
+      // gate's status GET is scoped by an explicit id, while an
+      // unscoped POST resolves whatever is active server-side RIGHT
+      // NOW. They diverge whenever `me` is stale — another tab
+      // switched, a disconnect auto-selected a different mailbox — and
+      // on the secondary-connect gate (D116) they differ by design,
+      // because that gate deliberately watches `?mailbox=<id>` while
+      // another mailbox stays active. Either way the button would act
+      // on a mailbox other than the one on screen.
+      //
+      // No id means no retry: the caller disables the control rather
+      // than firing a request that could hit the wrong mailbox.
+      if (!mailboxId) {
+        throw new Error('useRetryInitialSync requires the mailbox id the gate is displaying.');
+      }
       const envelope = await apiPost<InitialSyncRetryResponse>(
         '/api/v1/sync/initial/retry',
         undefined,
-        mailboxId ? { mailboxId } : {},
+        { mailboxId },
       );
       return envelope.data;
     },

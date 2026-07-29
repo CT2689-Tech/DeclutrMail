@@ -101,13 +101,14 @@ export function SyncGate({
   escape?: SyncGateEscape | undefined;
   eyebrow?: string;
   /**
-   * The mailbox this gate is WATCHING. Required whenever that is not
-   * the active mailbox — the secondary-connect gate (D116) shows
-   * `?mailbox=<id>` while a different mailbox stays active, so the
-   * retry must name it or the server would re-queue the active one.
-   * Omitted by the first-run gate, where they are the same mailbox.
+   * The mailbox this gate is DISPLAYING. BOTH gates pass it — including
+   * first-run, where "the active mailbox" is resolved from a cached
+   * `me` on the client but from live session state on the server, so
+   * the two can disagree. Naming it makes the retry act on the mailbox
+   * actually on screen. Absent (stories only) the retry is disabled
+   * rather than aimed at whatever happens to be active.
    */
-  mailboxId?: string | undefined;
+  mailboxId?: string | null | undefined;
 }) {
   if (status.readiness_status === 'failed') {
     return <SyncFailed status={status} escape={escape} mailboxId={mailboxId} />;
@@ -262,9 +263,13 @@ function SyncFailed({
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
-  mailboxId?: string | undefined;
+  mailboxId?: string | null | undefined;
 }) {
   const retry = useRetryInitialSync(mailboxId);
+  // No id, no retry — an unscoped request would re-queue whatever the
+  // server considers active, which is exactly the mailbox this screen
+  // cannot vouch for.
+  const canRetry = mailboxId != null && mailboxId !== '';
   const copy =
     (status.error_code && ERROR_COPY[status.error_code]) ??
     'Something interrupted the scan and it stopped. Your Gmail is untouched — starting it again is safe.';
@@ -290,7 +295,11 @@ function SyncFailed({
             was `window.location.reload()`, which re-rendered the same
             dead screen — the reconciler sweeps `queued` rows only, so
             nothing re-queued a `failed` one. */}
-        <Button tone="primary" onClick={() => retry.mutate()} disabled={retry.isPending}>
+        <Button
+          tone="primary"
+          onClick={() => canRetry && retry.mutate()}
+          disabled={!canRetry || retry.isPending}
+        >
           {retry.isPending ? 'Starting…' : 'Try again'}
         </Button>
         {/* Don't strand a secondary connect on a failed gate — let them
