@@ -3,12 +3,23 @@
 // SSR render-shape assertions (same approach as triage-screen.test.tsx)
 // plus pure-function coverage of the stage-mapping helper.
 
+import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 
 import { SyncGate, activeStageIndex, UI_STAGES } from './sync-gate';
+import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+
+/**
+ * The failed gate mounts `useRetryInitialSync` (its "Try again" is a
+ * real server re-queue now, not a page reload), so any render of a
+ * FAILED status needs a QueryClient in scope.
+ */
+function withClient(node: ReactNode) {
+  return <QueryWrapper client={createTestQueryClient()}>{node}</QueryWrapper>;
+}
 
 const SYNCING: SyncStatus = {
   readiness_status: 'syncing',
@@ -83,13 +94,30 @@ describe('SyncGate render', () => {
   });
 
   it('failed: shows the error copy + retry, still shows the trust badge', () => {
-    const html = renderToStaticMarkup(<SyncGate status={FAILED} />);
+    const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} />));
     expect(html).toContain('snag');
     expect(html).toContain('Try again');
     // D228 trust artifact present on the failed state too — banned copy absent.
     expect(html).toContain('Full bodies fetched: 0');
     expect(html).toContain('Sender name and email address');
     expect(html).not.toContain('Bodies read: 0');
+  });
+
+  it('never promises an automatic retry it cannot deliver', () => {
+    // The old copy said "We'll retry automatically — check back
+    // shortly". After maxAttempts the state is TERMINAL: the
+    // reconciler sweeps `queued` rows only, so nothing re-queued a
+    // `failed` one and the user waited forever (flow audit
+    // 2026-07-28). The screen must point at the button instead.
+    const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} />));
+    expect(html).not.toContain('retry automatically');
+    expect(html).not.toContain('check back shortly');
+    expect(html).toContain('Try again');
+
+    const quota = renderToStaticMarkup(
+      withClient(<SyncGate status={{ ...FAILED, error_code: 'GMAIL_QUOTA_EXCEEDED' }} />),
+    );
+    expect(quota).not.toContain('retry automatically');
   });
 
   it('never renders the word "Screen" anywhere (D227 hard rule)', () => {
@@ -129,7 +157,9 @@ describe('SyncGate escape hatch (D116 — secondary connect)', () => {
   it('failed + escape: offers "Go back" so a secondary connect is not stranded', () => {
     const onReturn = vi.fn();
     render(
-      <SyncGate status={FAILED} escape={{ returnToEmail: 'primary@example.com', onReturn }} />,
+      withClient(
+        <SyncGate status={FAILED} escape={{ returnToEmail: 'primary@example.com', onReturn }} />,
+      ),
     );
     fireEvent.click(screen.getByRole('button', { name: /Go back to primary@example\.com/ }));
     expect(onReturn).toHaveBeenCalledOnce();

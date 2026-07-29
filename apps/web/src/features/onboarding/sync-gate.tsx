@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { Button, Eyebrow, PrivacyBadge, tokens } from '@declutrmail/shared';
 import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
 
+import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
+
 const { color, font } = tokens;
 
 /**
@@ -53,10 +55,18 @@ function activeStageIndex(status: SyncStatus): number {
   return Math.min(UI_STAGES.length - 1, Math.max(0, bucket));
 }
 
-/** Friendly copy for the known terminal error codes. */
+/**
+ * Friendly copy for the known terminal error codes.
+ *
+ * These describe a TERMINAL state — the worker has spent its attempts
+ * and nothing re-queues the mailbox on its own. The old copy promised
+ * "we'll retry automatically", which was simply untrue and left users
+ * waiting for a retry that never came (first-run flow audit,
+ * 2026-07-28). Every string here now points at the button instead.
+ */
 const ERROR_COPY: Record<string, string> = {
   GMAIL_QUOTA_EXCEEDED:
-    'Gmail is rate-limiting the scan. We’ll retry automatically — check back shortly.',
+    'Gmail was rate-limiting the scan, so we stopped. Waiting a minute before trying again usually clears it.',
 };
 
 /**
@@ -85,13 +95,23 @@ export function SyncGate({
   status,
   escape,
   eyebrow = DEFAULT_EYEBROW,
+  mailboxId,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
   eyebrow?: string;
+  /**
+   * The mailbox this gate is DISPLAYING. BOTH gates pass it — including
+   * first-run, where "the active mailbox" is resolved from a cached
+   * `me` on the client but from live session state on the server, so
+   * the two can disagree. Naming it makes the retry act on the mailbox
+   * actually on screen. Absent (stories only) the retry is disabled
+   * rather than aimed at whatever happens to be active.
+   */
+  mailboxId?: string | null | undefined;
 }) {
   if (status.readiness_status === 'failed') {
-    return <SyncFailed status={status} escape={escape} />;
+    return <SyncFailed status={status} escape={escape} mailboxId={mailboxId} />;
   }
   return <SyncProgress status={status} escape={escape} eyebrow={eyebrow} />;
 }
@@ -239,13 +259,20 @@ function SyncEscapeHatch({ escape }: { escape: SyncGateEscape }) {
 function SyncFailed({
   status,
   escape,
+  mailboxId,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
+  mailboxId?: string | null | undefined;
 }) {
+  const retry = useRetryInitialSync(mailboxId);
+  // No id, no retry — an unscoped request would re-queue whatever the
+  // server considers active, which is exactly the mailbox this screen
+  // cannot vouch for.
+  const canRetry = mailboxId != null && mailboxId !== '';
   const copy =
     (status.error_code && ERROR_COPY[status.error_code]) ??
-    'Something interrupted the scan. We’ll retry automatically — check back shortly.';
+    'Something interrupted the scan and it stopped. Your Gmail is untouched — starting it again is safe.';
   return (
     <Shell>
       <Eyebrow tone="amber">Scan interrupted</Eyebrow>
@@ -264,8 +291,16 @@ function SyncFailed({
         {copy}
       </p>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-        <Button tone="primary" onClick={() => window.location.reload()}>
-          Try again
+        {/* A REAL retry: re-queues the failed sync server-side. This
+            was `window.location.reload()`, which re-rendered the same
+            dead screen — the reconciler sweeps `queued` rows only, so
+            nothing re-queued a `failed` one. */}
+        <Button
+          tone="primary"
+          onClick={() => canRetry && retry.mutate()}
+          disabled={!canRetry || retry.isPending}
+        >
+          {retry.isPending ? 'Starting…' : 'Try again'}
         </Button>
         {/* Don't strand a secondary connect on a failed gate — let them
             hop back to their (working) primary mailbox (D116). */}

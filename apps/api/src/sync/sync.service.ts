@@ -197,6 +197,29 @@ export class SyncService {
   }
 
   /**
+   * Retry a terminally-failed INITIAL sync. See
+   * {@link InitialSyncRetryOutcome} for why this is gated to `failed`.
+   *
+   * Idempotent by construction: the guard reads the CURRENT readiness
+   * inside the same call that re-queues, so a double-click makes the
+   * second attempt a `not_failed` no-op rather than a second full sync.
+   */
+  async retryFailedInitialSync(mailboxAccountId: string): Promise<InitialSyncRetryOutcome> {
+    const rows = await this.db
+      .select({ readinessStatus: providerSyncState.readinessStatus })
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+      .limit(1);
+
+    const current = rows[0];
+    if (!current) return 'no_state';
+    if (current.readinessStatus !== 'failed') return 'not_failed';
+
+    await this.enqueueInitialSync(mailboxAccountId);
+    return 'requeued';
+  }
+
+  /**
    * Plan an incremental-sync range inside the webhook transaction.
    * `last_history_id` is the APPLIED cursor: only IncrementalSyncWorker
    * advances it after Gmail history records have been persisted. Keeping
@@ -396,6 +419,27 @@ export class SyncService {
  * 400 — earlier draft of this code used BadRequestException by mistake;
  * architecture-guardian flagged the contract drift 2026-06-06).
  */
+/**
+ * Re-queue a mailbox whose INITIAL sync ended terminally failed.
+ *
+ * Why this exists: after `maxAttempts` the worker writes
+ * `readiness_status = 'failed'`, and NOTHING re-queues it — the
+ * continuous reconciler sweeps `'queued'` only. A brand-new user
+ * therefore lands in a gate whose "Try again" was a page reload, whose
+ * copy promised an automatic retry that does not exist, and whose
+ * onboarding guard bounces every other route (settings and billing
+ * included) back to that same screen. Clearing cookies was the only
+ * exit (first-run flow audit, 2026-07-28).
+ *
+ * Gated to `failed` on purpose. Re-queuing a `syncing` mailbox would
+ * race the live worker, and re-queuing a `ready` one would wipe the
+ * applied cursor (`markQueued` clears `last_history_id` by design) and
+ * force a needless full re-sync. Both non-failed cases return
+ * `not_failed`, which the controller renders as a designed state, not
+ * an error.
+ */
+export type InitialSyncRetryOutcome = 'requeued' | 'not_failed' | 'no_state';
+
 export function syncNotReady(): ConflictException {
   return new ConflictException({
     code: 'SYNC_NOT_READY',
