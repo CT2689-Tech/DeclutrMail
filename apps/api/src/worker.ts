@@ -127,6 +127,7 @@ import { deletionReceiptEmail } from './notifications/templates/index.js';
 import { EmailService } from './notifications/email.service.js';
 import { EmailSuppressionService } from './notifications/email-suppression.service.js';
 import { buildSyncReadyEmailHandler } from './notifications/sync-ready-email.trigger.js';
+import { buildSyncFailedEmailHandler } from './notifications/sync-failed-email.trigger.js';
 import { initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
 import { SecurityEventsService } from './security-events/security-events.service.js';
@@ -1670,6 +1671,51 @@ async function bootstrap(): Promise<void> {
   snoozeWakeSchedulerHandle.unref();
 
   /**
+   * webhook_dedup TTL sweep (webhook hygiene, 2026-07-28). The schema
+   * promised "a separate cleanup worker reaps rows past expires_at"
+   * since 0030 and nothing ever did — dedup rows were effectively
+   * permanent (safe direction, unbounded growth). Hourly bounded batch:
+   * one DELETE of up to 5000 expired rows per tick keeps the sweep
+   * cheap; a backlog drains across ticks. Plain interval, no queue —
+   * this is bookkeeping on our own table, a missed tick self-heals on
+   * the next one, and rows keep deduping until deleted (expiry is a
+   * floor, not a contract).
+   */
+  const WEBHOOK_DEDUP_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+  async function sweepWebhookDedup(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      const swept = await db.execute(sql`
+        DELETE FROM webhook_dedup
+        WHERE message_id IN (
+          SELECT message_id FROM webhook_dedup
+          WHERE expires_at < now()
+          LIMIT 5000
+        )
+      `);
+      const count = (swept as unknown as { count?: number }).count ?? 0;
+      if (count > 0) {
+        console.log(JSON.stringify({ level: 'info', kind: 'webhook_dedup.swept', deleted: count }));
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'webhook_dedup.sweep_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, { kind: 'webhook_dedup.sweep_failed' });
+    }
+  }
+  void sweepWebhookDedup();
+  const webhookDedupSweepHandle = setInterval(() => {
+    void sweepWebhookDedup();
+  }, WEBHOOK_DEDUP_SWEEP_INTERVAL_MS);
+  webhookDedupSweepHandle.unref();
+
+  /**
    * DeadLetterWorker sweep + 60s scheduler (D225 — adminPolicy). Scans
    * `dead_letter_jobs` for unreplayed rows and alerts exactly once per
    * row per process lifetime: one `dead_letter.parked` error log + one
@@ -1933,6 +1979,12 @@ async function bootstrap(): Promise<void> {
         emailQueue: emailSendQueue,
         appUrl: process.env.WEB_URL ?? 'http://localhost:3000',
         apiUrl: process.env.API_URL ?? 'http://localhost:4000',
+      }),
+      // D162/D224 — terminal-failure notice; per-mailbox-per-day dedup.
+      onMailboxSyncFailed: buildSyncFailedEmailHandler({
+        db,
+        emailQueue: emailSendQueue,
+        appUrl: process.env.WEB_URL ?? 'http://localhost:3000',
       }),
     }),
     observer: {

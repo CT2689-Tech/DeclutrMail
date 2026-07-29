@@ -73,7 +73,8 @@ export const activityAction = pgEnum('activity_action', [
   // in the activity-suite PR (value ships ahead of it — 0024 staging
   // precedent).
   'unsubscribe_confirmed',
-  // D245 truthful unsubscribe outcome/progress records (0037). These
+  // D245 truthful unsubscribe outcome/progress records
+  // (0038_truthful_unsubscribe_lifecycle.sql). These
   // rows are distinct from the canonical `unsubscribe` intent row and
   // therefore never double-count the user's decision in K/A/U/L/D stats.
   'unsubscribe_endpoint_accepted',

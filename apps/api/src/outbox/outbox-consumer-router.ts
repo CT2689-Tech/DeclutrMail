@@ -5,6 +5,7 @@ import {
   ActionLabelAppliedPayloadSchema,
   ActionsUnsubscribeExecutedPayloadSchema,
   ActionsUnsubscribeIntentRecordedPayloadSchema,
+  MailboxSyncFailedPayloadSchema,
   MailboxSyncReadyPayloadSchema,
   TOPICS,
   TriageScoreRunCompletedPayloadSchema,
@@ -14,6 +15,7 @@ import type {
   ActionLabelAppliedPayload,
   ActionsUnsubscribeExecutedPayload,
   ActionsUnsubscribeIntentRecordedPayload,
+  MailboxSyncFailedPayload,
   MailboxSyncReadyPayload,
   TriageVerdictAppliedPayload,
 } from '@declutrmail/events';
@@ -47,6 +49,13 @@ export interface OutboxConsumerDeps {
    * `eventId` keys the send's idempotency (one send per logical event).
    */
   onMailboxSyncReady?: (payload: MailboxSyncReadyPayload, eventId: string) => Promise<void>;
+  /**
+   * D162/D224 transactional notice for `mailbox.sync_failed` — built
+   * via `buildSyncFailedEmailHandler`. Job-id dedup is per mailbox per
+   * UTC day (see `syncFailedEmailJobId`), so redelivery AND rapid
+   * retry-failure loops both collapse to one notice.
+   */
+  onMailboxSyncFailed?: (payload: MailboxSyncFailedPayload, eventId: string) => Promise<void>;
 }
 
 /**
@@ -102,6 +111,25 @@ export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}
             JSON.stringify({
               level: 'error',
               kind: 'outbox.consumer.sync_ready_email_unwired',
+              eventId: event.id,
+              mailboxAccountId: payload.mailboxAccountId,
+            }),
+          );
+        }
+        return;
+      }
+      case TOPICS.MAILBOX_SYNC_FAILED: {
+        // D162/D224 — terminal initial-sync failure ⇒ the user hears
+        // about it instead of discovering a dead gate. Same unwired
+        // posture as sync_ready: ERROR + ACK, never wedge.
+        const payload = MailboxSyncFailedPayloadSchema.parse(event.payload);
+        if (deps.onMailboxSyncFailed) {
+          await deps.onMailboxSyncFailed(payload, event.id);
+        } else {
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              kind: 'outbox.consumer.sync_failed_email_unwired',
               eventId: event.id,
               mailboxAccountId: payload.mailboxAccountId,
             }),

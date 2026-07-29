@@ -161,6 +161,21 @@ export function scrubTelemetryPayload<T extends Record<string, unknown>>(
  */
 
 const SENTRY_TAG_ALLOWLIST = new Set(['surface', 'reason', 'boundary']);
+/**
+ * Server profile (D158 chore batch, 2026-07-28): the API/worker events
+ * carry triage tags the browser never sets — dropping them would gut
+ * the D159 failure-triage workflow, so the server profile allowlists
+ * them explicitly rather than widening the browser set. Values still
+ * pass SAFE_SERVER_TAG (ids/tokens only, never free text).
+ */
+const SENTRY_SERVER_TAG_ALLOWLIST = new Set([
+  ...SENTRY_TAG_ALLOWLIST,
+  'worker',
+  'policy',
+  'job_id',
+  'mailbox_account_id',
+  'kind',
+]);
 const SENTRY_BREADCRUMB_CATEGORIES = new Set([
   'sync',
   'action',
@@ -179,6 +194,23 @@ const SENTRY_BREADCRUMB_DATA_KEYS = new Set([
 ]);
 const SENTRY_BREADCRUMB_VERBS = new Set(['keep', 'archive', 'unsubscribe', 'later', 'delete']);
 const SENTRY_LEVELS = new Set(['fatal', 'error', 'warning', 'info', 'debug', 'log']);
+/**
+ * Server error classes (thrown by workers/API): named so the exception
+ * `type` survives the rebuild — the stacktrace identifies the site, the
+ * type identifies the class of failure. `value` (Error.message) stays
+ * deliberately omitted in BOTH profiles.
+ */
+const SENTRY_SERVER_EXCEPTION_TYPES = new Set([
+  'AppException',
+  'ValidationError',
+  'TransientError',
+  'PermanentError',
+  'RateLimitError',
+  'InvalidGrantError',
+  'EmailRaceLostError',
+  'ReplyError',
+  'ZodError',
+]);
 const SENTRY_EXCEPTION_TYPES = new Set([
   'Error',
   'TypeError',
@@ -200,6 +232,10 @@ const SENTRY_MECHANISM_TYPES = new Set([
   'auto.browser.global_handlers.onunhandledrejection',
 ]);
 const SAFE_TOKEN = /^[a-z][a-z0-9_-]{0,63}$/;
+// Server tag values: worker job ids and mailbox uuids include uppercase
+// hex, colons and dots (BullMQ ids) — still tokens, never prose (no
+// spaces, no '@', bounded).
+const SAFE_SERVER_TAG = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const SAFE_EVENT_ID = /^[a-fA-F0-9]{32}$/;
 const SAFE_DEBUG_ID = /^[a-fA-F0-9-]{8,64}$/;
 const SAFE_DIGEST = /^(?:\d{1,20}|[a-f0-9]{8,64})$/;
@@ -290,12 +326,17 @@ function scrubSentryStacktrace(value: unknown): Record<string, unknown> | undefi
   return frames.length > 0 ? { frames } : undefined;
 }
 
-function scrubSentryException(value: unknown): Record<string, unknown> | undefined {
+function scrubSentryException(
+  value: unknown,
+  profile: SentryScrubProfile,
+): Record<string, unknown> | undefined {
   if (!isPlainObject(value)) return undefined;
 
   const out: Record<string, unknown> = {};
   const type =
-    typeof value.type === 'string' && SENTRY_EXCEPTION_TYPES.has(value.type)
+    typeof value.type === 'string' &&
+    (SENTRY_EXCEPTION_TYPES.has(value.type) ||
+      (profile === 'server' && SENTRY_SERVER_EXCEPTION_TYPES.has(value.type)))
       ? value.type
       : undefined;
   const mechanism = scrubSentryMechanism(value.mechanism);
@@ -309,19 +350,27 @@ function scrubSentryException(value: unknown): Record<string, unknown> | undefin
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function scrubSentryExceptions(value: unknown): Record<string, unknown> | undefined {
+function scrubSentryExceptions(
+  value: unknown,
+  profile: SentryScrubProfile,
+): Record<string, unknown> | undefined {
   if (!isPlainObject(value) || !Array.isArray(value.values)) return undefined;
   const values = value.values
-    .map((exception) => scrubSentryException(exception))
+    .map((exception) => scrubSentryException(exception, profile))
     .filter((exception): exception is Record<string, unknown> => exception !== undefined);
   return values.length > 0 ? { values } : undefined;
 }
 
-function scrubSentryTags(value: unknown): Record<string, unknown> | undefined {
+function scrubSentryTags(
+  value: unknown,
+  profile: SentryScrubProfile,
+): Record<string, unknown> | undefined {
   if (!isPlainObject(value)) return undefined;
+  const allowlist = profile === 'server' ? SENTRY_SERVER_TAG_ALLOWLIST : SENTRY_TAG_ALLOWLIST;
+  const pattern = profile === 'server' ? SAFE_SERVER_TAG : SAFE_TOKEN;
   const tags: Record<string, unknown> = {};
-  for (const key of SENTRY_TAG_ALLOWLIST) {
-    const tag = copyString(value[key], SAFE_TOKEN, 64);
+  for (const key of allowlist) {
+    const tag = copyString(value[key], pattern, 64);
     if (tag !== undefined) tags[key] = tag;
   }
   return Object.keys(tags).length > 0 ? tags : undefined;
@@ -404,12 +453,20 @@ export function scrubSentryBreadcrumb(
   }
 }
 
+/** Which side of the wire the event came from — selects the allowlists. */
+export type SentryScrubProfile = 'browser' | 'server';
+
 /**
- * Rebuild a browser Sentry event from the diagnostic fields DeclutrMail has
- * explicitly approved. Everything else fails closed.
+ * Rebuild a Sentry event from the diagnostic fields DeclutrMail has
+ * explicitly approved. Everything else fails closed. The `server`
+ * profile (D158, 2026-07-28) additionally admits the worker/API triage
+ * tags and server error class names; `Error.message` stays omitted in
+ * BOTH profiles — it is the field a future \`throw new Error(\${subject})\`
+ * would leak through.
  */
 export function scrubSentryEvent(
   event: Record<string, unknown> | null | undefined,
+  profile: SentryScrubProfile = 'browser',
 ): Record<string, unknown> | null {
   if (!event) return null;
   try {
@@ -431,9 +488,9 @@ export function scrubSentryEvent(
       out.environment = event.environment;
     }
 
-    const exception = scrubSentryExceptions(event.exception);
+    const exception = scrubSentryExceptions(event.exception, profile);
     if (exception !== undefined) out.exception = exception;
-    const tags = scrubSentryTags(event.tags);
+    const tags = scrubSentryTags(event.tags, profile);
     if (tags !== undefined) out.tags = tags;
     const digest = scrubSentryDigest(event.extra);
     if (digest !== undefined) out.extra = digest;

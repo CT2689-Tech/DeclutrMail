@@ -24,11 +24,22 @@ function makeController() {
     isSuppressed: vi.fn(),
   };
   const securityEvents = { record: vi.fn().mockResolvedValue(undefined) };
+  // svix-id dedup insert: `returning` yields ONE row on first sight,
+  // ZERO rows on conflict. Default: first sight (each test's delivery
+  // is new). `dedupSeen()` flips it to the replay case.
+  const returning = vi.fn().mockResolvedValue([{ messageId: 'resend:seen' }]);
+  const db = {
+    insert: vi.fn(() => ({
+      values: () => ({ onConflictDoNothing: () => ({ returning }) }),
+    })),
+  };
   const controller = new ResendWebhookController(
     suppression as unknown as EmailSuppressionService,
     securityEvents as unknown as SecurityEventsService,
+    db as unknown as never,
   );
-  return { controller, suppression, securityEvents };
+  const dedupSeen = () => returning.mockResolvedValue([]);
+  return { controller, suppression, securityEvents, db, dedupSeen };
 }
 
 function signedHeaders(
@@ -181,5 +192,18 @@ describe('ResendWebhookController', () => {
       ),
       400,
     );
+  });
+
+  it('a verified REPLAY inside the window acks as duplicate and suppresses nothing', async () => {
+    const { controller, suppression, dedupSeen } = makeController();
+    dedupSeen();
+    const body = JSON.stringify({
+      type: 'email.bounced',
+      data: { to: 'person@example.com' },
+    });
+    const h = signedHeaders(body);
+    const res = await controller.handle(req(body), h.svixId, h.svixTimestamp, h.svixSignature);
+    expect(res).toEqual({ status: 'duplicate' });
+    expect(suppression.suppress).not.toHaveBeenCalled();
   });
 });

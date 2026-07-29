@@ -53,10 +53,26 @@ if grep -nE "\b(msg|message|email|gmsg)\.(payload|body|raw|html|textBody)\b" "$f
 fi
 
 # Pattern 2: Gmail API called with format='full' or format='raw'.
-# Only these formats return body content.
+# Only these formats return body content. Three spellings (privacy
+# sweep 2026-07-28 — the object-literal grep alone passed
+# `params.set('format','full')` and a flipped METADATA_FORMAT constant
+# clean):
+#   a. object literal        format: 'full'
+#   b. URLSearchParams       .set('format', 'full') / .append(...)
+#   c. constant assignment   FORMAT = 'full' (any *FORMAT* identifier)
 if grep -nE "format:\s*['\"](full|raw)['\"]" "$file_path" >/dev/null 2>&1; then
   echo "⚠️  verify-no-body-storage: Gmail API format=full/raw in $file_path" >&2
   grep -nE "format:\s*['\"](full|raw)['\"]" "$file_path" | sed 's/^/   /' >&2
+  findings=$((findings + 1))
+fi
+if grep -nE "\.(set|append)\(\s*['\"]format['\"]\s*,\s*['\"](full|raw)['\"]" "$file_path" >/dev/null 2>&1; then
+  echo "⚠️  verify-no-body-storage: URLSearchParams format=full/raw in $file_path" >&2
+  grep -nE "\.(set|append)\(\s*['\"]format['\"]\s*,\s*['\"](full|raw)['\"]" "$file_path" | sed 's/^/   /' >&2
+  findings=$((findings + 1))
+fi
+if grep -nE "[A-Za-z_]*FORMAT[A-Za-z_]*\s*=\s*['\"](full|raw)['\"]" "$file_path" >/dev/null 2>&1; then
+  echo "⚠️  verify-no-body-storage: *FORMAT* constant set to full/raw in $file_path" >&2
+  grep -nE "[A-Za-z_]*FORMAT[A-Za-z_]*\s*=\s*['\"](full|raw)['\"]" "$file_path" | sed 's/^/   /' >&2
   findings=$((findings + 1))
 fi
 

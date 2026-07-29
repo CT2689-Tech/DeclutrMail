@@ -135,9 +135,11 @@ export default function TermsOfServicePage() {
         <p>
           Your mailbox is yours. What we store, what we never store, and how to export or delete
           your data are described in the <a href="/privacy">Privacy Policy</a> — in short: we store
-          sender, subject, Gmail&rsquo;s short preview, dates, labels and read/unread state, and we
-          never fetch or store full message bodies or attachments. You grant us only the limited
-          license needed to operate the service on that data for you.
+          message details including sender, subject, Gmail&rsquo;s short preview, dates, labels,
+          read/unread state, recipient addresses on mail you sent, unsubscribe headers, and
+          Gmail&rsquo;s size estimate — and we never fetch or store full message bodies or
+          attachments. You grant us only the limited license needed to operate the service on that
+          data for you.
         </p>
       </LegalSection>
 

@@ -1,4 +1,5 @@
 import {
+  Inject,
   Controller,
   Headers,
   HttpCode,
@@ -9,6 +10,8 @@ import {
   Req,
 } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
+import { webhookDedup } from '@declutrmail/db';
+import { DRIZZLE, type DrizzleDb } from '../../db/db.module.js';
 import type { Request } from 'express';
 import { z } from 'zod';
 
@@ -75,6 +78,7 @@ export class ResendWebhookController {
   constructor(
     private readonly suppression: EmailSuppressionService,
     private readonly securityEvents: SecurityEventsService,
+    @Inject(DRIZZLE) private readonly db: DrizzleDb,
   ) {}
 
   @Post()
@@ -134,6 +138,30 @@ export class ResendWebhookController {
         { error: { code: 'UNAUTHORIZED', message: 'Webhook signature verification failed.' } },
         HttpStatus.UNAUTHORIZED,
       );
+    }
+
+    // svix-id delivery dedup (webhook hygiene, 2026-07-28). The
+    // signature check above binds svix-id into the signed content
+    // (Standard Webhooks signs `id.timestamp.body`), so a VERIFIED
+    // delivery id is attacker-stable — a replay inside the 5-minute
+    // timestamp window carries the same id and lands here as a
+    // duplicate instead of re-applying the suppression. Namespaced so
+    // Resend ids can never collide with Pub/Sub messageIds in the
+    // shared table. Verified-only: unverified traffic (401 above)
+    // must not be able to consume dedup space.
+    if (svixId) {
+      const dedup = await this.db
+        .insert(webhookDedup)
+        .values({
+          messageId: `resend:${svixId}`,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        })
+        .onConflictDoNothing({ target: webhookDedup.messageId })
+        .returning({ messageId: webhookDedup.messageId });
+      if (dedup.length === 0) {
+        this.logger.log(`resend.webhook.duplicate svix_id=${svixId}`);
+        return { status: 'duplicate' };
+      }
     }
 
     let event: z.infer<typeof ResendEventSchema>;

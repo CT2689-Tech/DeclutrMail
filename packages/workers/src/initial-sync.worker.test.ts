@@ -1352,6 +1352,64 @@ describe('InitialSyncWorker', () => {
   });
 });
 
+describe('InitialSyncWorker — mailbox.sync_failed outbox publish (D162/D224)', () => {
+  let db: InitialSyncDeps['db'];
+  let mailboxAccountId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxAccountId = await seedMailbox(db);
+  });
+
+  it('terminal failure publishes mailbox.sync_failed in the SAME tx as the failed upsert', async () => {
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(2, 1))),
+      outbox: new OutboxPublisher(),
+    });
+    const boom = new Error('quota exceeded');
+    boom.name = 'GmailQuotaError';
+    await (
+      worker as unknown as {
+        onTerminalFailure(p: { mailboxAccountId: string }, e: Error): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, boom);
+
+    const [state] = await db.select().from(providerSyncState);
+    expect(state?.readinessStatus).toBe('failed');
+    expect(state?.errorCode).toBe('GmailQuotaError');
+
+    const failedEvents = (await db.select().from(outboxEvents)).filter(
+      (e) => e.topic === TOPICS.MAILBOX_SYNC_FAILED,
+    );
+    expect(failedEvents).toHaveLength(1);
+    const payload = failedEvents[0]!.payload as {
+      mailboxAccountId: string;
+      workspaceId: string;
+      failedAt: string;
+      errorCode: string;
+    };
+    expect(payload.mailboxAccountId).toBe(mailboxAccountId);
+    expect(payload.errorCode).toBe('GmailQuotaError');
+    expect(Date.parse(payload.failedAt)).not.toBeNaN();
+  });
+
+  it('no outbox wired: the failed state STILL commits (the write is the load-bearing half)', async () => {
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(2, 1))),
+    });
+    await (
+      worker as unknown as {
+        onTerminalFailure(p: { mailboxAccountId: string }, e: Error): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, new Error('x'));
+    const [state] = await db.select().from(providerSyncState);
+    expect(state?.readinessStatus).toBe('failed');
+    expect(await db.select().from(outboxEvents)).toHaveLength(0);
+  });
+});
+
 describe('InitialSyncWorker — mailbox.sync_ready outbox publish (U14)', () => {
   let db: InitialSyncDeps['db'];
   let mailboxAccountId: string;

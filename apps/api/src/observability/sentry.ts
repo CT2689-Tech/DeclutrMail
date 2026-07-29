@@ -1,4 +1,4 @@
-import { scrubTelemetryPayload } from '@declutrmail/shared/observability';
+import { scrubSentryEvent, scrubTelemetryPayload } from '@declutrmail/shared/observability';
 
 /**
  * Sentry server bootstrap (D159).
@@ -73,10 +73,16 @@ export async function initSentry(): Promise<void> {
       defaultIntegrations: false,
       integrations: [],
       // Defense-in-depth privacy scrub on every outbound event.
+      // `scrubSentryEvent('server')` REBUILDS the event from approved
+      // fields (deny-by-default, same machinery as the browser path)
+      // rather than deleting known-bad keys: `Error.message` is omitted
+      // outright, so a future `throw new Error(subject)` cannot ship
+      // content to Sentry (privacy sweep 2026-07-28). The server
+      // profile keeps the worker/policy/job_id/mailbox/kind triage
+      // tags the D159 workflow depends on.
       beforeSend: (event) =>
-        scrubTelemetryPayload(
-          event as unknown as Record<string, unknown>,
-        ) as unknown as typeof event,
+        scrubSentryEvent(event as unknown as Record<string, unknown>, 'server') as unknown as
+          typeof event | null,
       beforeBreadcrumb: (breadcrumb) =>
         scrubTelemetryPayload(
           breadcrumb as unknown as Record<string, unknown>,

@@ -49,13 +49,14 @@ import type { WorkerContext } from './worker-context.js';
  * snippets. The result is metric-only.
  */
 
-/** The four template kinds this pipeline delivers (D162; D6; D232). */
+/** The five template kinds this pipeline delivers (D162; D6; D232). */
 export type EmailKind =
-  'sync-complete' | 'sync-reminder-24h' | 'deletion-scheduled' | 'deletion-receipt';
+  'sync-complete' | 'sync-reminder-24h' | 'sync-failed' | 'deletion-scheduled' | 'deletion-receipt';
 
 /**
  * Per-kind D165 opt-out key in `emailPrefs`. Kinds absent here are
- * SYSTEM emails (deletion-scheduled, deletion-receipt) — required
+ * SYSTEM emails (sync-failed, deletion-scheduled, deletion-receipt) —
+ * required
  * account notices with no preference key (CAN-SPAM/GDPR carve-out).
  */
 const OPT_OUT_PREF_BY_KIND: Partial<Record<EmailKind, keyof EmailPrefs>> = {
