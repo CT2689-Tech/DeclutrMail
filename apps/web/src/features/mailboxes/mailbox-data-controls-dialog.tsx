@@ -105,7 +105,7 @@ export function MailboxDataControlsDialog({
         }}
       >
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow>Mailbox data controls</Eyebrow>
+          <Eyebrow>Gmail account data controls</Eyebrow>
           <h2
             id="dm-mailbox-data-controls-title"
             style={{ fontSize: 19, fontWeight: 600, margin: '6px 0 0', color: color.fg }}

@@ -54,7 +54,7 @@ export function CancelModal({
   /** The record this cancel targets — backing or non-backing (A6). */
   sub: SubscriptionRecord | null;
   /** True when `sub` is what GRANTS the entitlement tier — only then
-   *  may the preview claim "then your workspace switches to Free". A
+   *  may the preview claim "then your account switches to Free". A
    *  non-backing record (paused / other tier) doesn't grant the current
    *  plan, and its features are not necessarily active. */
   backsEntitlement: boolean;
@@ -151,9 +151,7 @@ export function CancelModal({
                     ? `Your ${tierLabel} features stay active until ${end}.`
                     : `Your ${tierLabel} features stay active until the end of the current billing period.`}
                 </li>
-                <li>
-                  Then your workspace switches to Free — completed mail actions stay in place.
-                </li>
+                <li>Then your account switches to Free — completed mail actions stay in place.</li>
               </>
             ) : (
               // A NON-BACKING record (A6): its features are not
@@ -166,8 +164,8 @@ export function CancelModal({
                     : `Your ${tierLabel} subscription ends at the end of its paid period and won't renew.`}
                 </li>
                 <li>
-                  Your workspace is on {entitlementName} today — that plan isn&rsquo;t granted by
-                  this subscription.
+                  Your account is on {entitlementName} today — that plan isn&rsquo;t granted by this
+                  subscription.
                 </li>
               </>
             )}

@@ -743,7 +743,7 @@ function ChangePlanPanel({
   fromTier: PaidTier;
   fromCycle: BillingCycle;
   currentPeriodEnd: string | null;
-  /** The GRANTING subscription's own rail — what this workspace is
+  /** The GRANTING subscription's own rail — what this account is
    *  already being charged on, so it is a fact, not a regional guess. */
   provider: BillingProviderId;
   isPending: boolean;
