@@ -39,50 +39,79 @@ this is dev" into "I checked" — its whole value is that you actually run it.
 
 ### 0.2 Prove which database you are on — before anything else
 
-Two earlier versions of this gate were unsafe, both in the same way: they could
-not fail. Do not reintroduce either.
+Three earlier versions of this gate were unsafe. Each failed the same way —
+it could not fail — so read why before changing it.
 
-- `inet_server_addr()` compared against `db.…supabase.co` — that function
-  returns an **IP** (`::1` locally), never a hostname, so the comparison never
-  matched.
-- `grep` for the production project ref in `.env.local` — a **denylist**, and a
-  denylist cannot enumerate every route to production. It printed OK when the
-  file was missing, when `DATABASE_URL` was exported in the shell (which wins
-  over the file at runtime), when the file carried no `DATABASE_URL` at all,
-  and when production was reached by IP or pooler host, where the ref never
-  appears.
+1. `inet_server_addr()` compared against a hostname. That function returns an
+   **IP** (`::1` locally), so the comparison never matched.
+2. `grep` for the production project ref in `.env.local`. A **denylist**, and a
+   denylist cannot enumerate every route to production: it printed OK when the
+   file was missing, when `DATABASE_URL` was exported in the shell (which wins
+   at runtime), when the file carried no `DATABASE_URL`, and when production
+   was reached by IP or pooler host, where the ref never appears.
+3. An **allowlist on the connection-string host** (`localhost` only). Better,
+   but it inspects a _string_ and never connects, so it cannot see identity:
 
-Use an **allowlist**: resolve the connection string the way the app does, then
-require the host to be local. Anything it cannot positively identify as local
-is refused.
+   ```
+   ssh -L 5432:db.<prod-ref>.supabase.co:5432 …
+   DATABASE_URL=postgres://…@localhost:5432/postgres
+   ```
+
+   That is production, and a host allowlist calls it "local dev database". Port
+   forwards (`cloud-sql-proxy`, `kubectl port-forward`, an SSH tunnel left open
+   from yesterday) are ordinary things to have running.
+
+**A connection string cannot prove database identity. Only the server can.**
+`pg_control_system().system_identifier` is a per-cluster value reported BY the
+server, so no tunnel, hosts-file entry or URL shape can fake it.
+
+**One-time setup.** With `.env.local` pointed at your dev database, record its
+identity:
 
 ```bash
-DB="${DATABASE_URL:-$(sed -n 's/^DATABASE_URL=//p' .env.local 2>/dev/null | tail -1)}"
-[ -n "$DB" ] || { echo "REFUSE — no DATABASE_URL resolved; cannot tell which database this writes to"; exit 1; }
-HOST=$(printf '%s' "$DB" | sed 's#^.*://##; s#^[^@]*@##; s#[/?].*##; s#:[0-9]*$##')
-case "$HOST" in
-  localhost|127.0.0.1|'::1'|'[::1]') echo "OK — local dev database ($HOST)" ;;
-  *) echo "REFUSE — non-local database host: $HOST"; exit 1 ;;
-esac
+psql "$DATABASE_URL" -At -c 'SELECT system_identifier FROM pg_control_system();' > .dev-db-identity
 ```
 
-Verified against every bypass that defeated the denylist, plus the cases that
-must still pass:
+**The gate.** Run this before Groups A–I, and again after anything that could
+change the connection:
 
-| Situation                                 | Result |
-| ----------------------------------------- | ------ |
-| `.env.local` missing                      | REFUSE |
-| file says dev, shell exports the prod URL | REFUSE |
-| file exists but carries no `DATABASE_URL` | REFUSE |
-| production reached by bare IP             | REFUSE |
-| production via `…pooler.supabase.com`     | REFUSE |
-| genuine local dev DB (`localhost`)        | OK     |
-| genuine local dev DB (`127.0.0.1`)        | OK     |
+```bash
+#!/usr/bin/env bash
+set -uo pipefail
+EXPECTED_FILE="${EXPECTED_FILE:-.dev-db-identity}"
 
-**If your dev database is deliberately remote,** this refuses it — on purpose.
-Add that exact host to the `case` list by name rather than loosening the
-pattern. Being blocked from a legitimate dev database costs you thirty seconds;
-being waved through to production costs real money and real rows.
+[ -f "$EXPECTED_FILE" ] || { echo "REFUSE — no $EXPECTED_FILE; run the one-time recording step"; exit 1; }
+EXPECTED=$(tr -dc '0-9' < "$EXPECTED_FILE")
+[ -n "$EXPECTED" ] || { echo "REFUSE — $EXPECTED_FILE holds no identifier"; exit 1; }
+
+DB="${DATABASE_URL:-$(sed -n 's/^DATABASE_URL=//p' .env.local 2>/dev/null | tail -1)}"
+[ -n "$DB" ] || { echo "REFUSE — no DATABASE_URL resolved"; exit 1; }
+
+ACTUAL=$(psql "$DB" -At -c 'SELECT system_identifier FROM pg_control_system();' 2>/dev/null | tr -dc '0-9')
+[ -n "$ACTUAL" ] || { echo "REFUSE — could not read the server's identity"; exit 1; }
+
+if [ "$ACTUAL" = "$EXPECTED" ]; then
+  echo "OK — connected to the recorded dev cluster ($ACTUAL)"
+else
+  echo "REFUSE — cluster identity mismatch. expected=$EXPECTED actual=$ACTUAL"; exit 1
+fi
+```
+
+Verified against every case, including the one that defeated version 3:
+
+| Situation                                             | Result |
+| ----------------------------------------------------- | ------ |
+| identity not yet recorded                             | REFUSE |
+| identity file present but empty                       | REFUSE |
+| no `DATABASE_URL` resolves                            | REFUSE |
+| server unreachable                                    | REFUSE |
+| **a different cluster behind `localhost` (a tunnel)** | REFUSE |
+| connected to the recorded dev cluster                 | OK     |
+
+It fails closed in every direction: no file, no identifier, no connection, or
+any cluster other than the one you recorded. `.dev-db-identity` is gitignored —
+it is machine-specific, and committing it would let a stale value approve the
+wrong database on another machine.
 
 **A second, independent signal:** the dev-login route only exists when
 `DEV_AUTH_ENABLED=true`, which is never set on production — it appears zero
@@ -90,13 +119,8 @@ times in `deploy-cloud-run.yml`, and that deploy uses `--set-env-vars`, a full
 replace, so it cannot linger from an earlier revision. If dev-login works, you
 are not talking to the production **API**.
 
-> Be clear about what each check proves. The host allowlist proves the API is
-> pointed at a local **database**. Dev-login proves you are not hitting the prod
-> **API**. Neither implies the other — a local API with dev-auth on can still be
-> pointed at a remote DB, which is what the allowlist catches. Run both.
-
-Re-run the allowlist any time you edit `.env.local`, export `DATABASE_URL`, or
-open a new shell.
+> The identity gate proves which **database** you will write to. Dev-login
+> proves which **API** you are driving. Neither implies the other. Run both.
 
 ### 0.3 Sandbox setup (one time)
 
