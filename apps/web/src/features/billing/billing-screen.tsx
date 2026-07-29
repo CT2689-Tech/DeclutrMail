@@ -248,7 +248,7 @@ export function BillingScreen({
   // poll failure must NOT swap the screen for the error state — its
   // "no charge was made" copy would be false, and the poll self-heals.
   if (view.kind === 'read_failed') {
-    return <BillingErrorState error={view.error} onRetry={() => subscriptionQuery.refetch()} />;
+    return <BillingErrorState onRetry={() => subscriptionQuery.refetch()} />;
   }
   // Malformed 200 body — honest ignorance, never TIER_MANIFEST[garbage].
   if (view.kind === 'unknown') {
@@ -891,7 +891,7 @@ function ScheduledPlanChangeNotice({
         <span style={{ color: color.fgMuted, fontSize: 12 }}>
           {restoring
             ? 'Paddle has not confirmed whether your renewal was restored. Retry before renewal or contact support.'
-            : 'The payment provider’s response was interrupted, so billing changes are locked while we reconcile it.'}{' '}
+            : 'The payment provider’s response was interrupted, so billing changes are paused until we confirm what happened.'}{' '}
           {restoring ? '' : 'Your current plan and renewal remain unchanged. '}Email{' '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com
@@ -1207,8 +1207,7 @@ function LoadingState() {
   );
 }
 
-function BillingErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
+function BillingErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       style={{
@@ -1222,7 +1221,7 @@ function BillingErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
     >
       <RecoverableErrorState
         title="We couldn't load your billing details"
-        description={`${status}No charge or plan change was made. Try again in a moment.`}
+        description="No charge or plan change was made. Try again in a moment."
         onRetry={onRetry}
       />
     </div>

@@ -181,9 +181,7 @@ export function SenderDetailRoute({ id }: { id: string }) {
     return (
       <SenderDetailErrorState
         message={
-          detail.error instanceof ApiError
-            ? `We couldn't load this sender (HTTP ${detail.error.status}).`
-            : GENERIC_RETRY_MESSAGE
+          detail.error instanceof ApiError ? "We couldn't load this sender." : GENERIC_RETRY_MESSAGE
         }
         onRetry={() => {
           detail.refetch();
@@ -1285,7 +1283,7 @@ function NotFoundState() {
     >
       <EmptyState
         title="Sender not found"
-        body="This sender isn't in your mailbox — either the URL is stale, or the sender hasn't mailed you yet."
+        body="This sender isn't in your mailbox — either this link is out of date, or the sender hasn't mailed you yet."
         action={
           <Button tone="primary" onClick={() => window.history.back()}>
             Back to Senders
@@ -1298,12 +1296,10 @@ function NotFoundState() {
 
 function SenderDetailErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   const handleRetry = onRetry ?? (() => window.location.reload());
-  const statusMatch = /^We couldn't load this sender \(HTTP (\d{3})\)\.$/u.exec(message);
-  const context = statusMatch
-    ? `The request returned HTTP ${statusMatch[1]}. `
-    : message === GENERIC_RETRY_MESSAGE
-      ? ''
-      : `${message} `;
+  // Status codes never reach primary copy — the load error is stated
+  // plainly and the reassurance line carries the rest (plain-language
+  // sweep, 2026-07-28).
+  const context = message === GENERIC_RETRY_MESSAGE ? '' : `${message} `;
   return (
     <div
       style={{

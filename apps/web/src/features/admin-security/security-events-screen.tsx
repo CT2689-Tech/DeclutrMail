@@ -120,7 +120,7 @@ function Body({
       {rows.length === 0 ? (
         <EmptyState
           title="No events match these filters."
-          description="Adjust severity / event_type / time range, or clear filters to see the firehose."
+          description="Adjust severity, event type, or time range — or clear filters to see everything."
         />
       ) : (
         <EventsTable rows={rows} />

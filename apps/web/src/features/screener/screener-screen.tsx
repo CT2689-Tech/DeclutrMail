@@ -451,7 +451,7 @@ export function ScreenerScreen({
       {state.kind === 'ready' && state.rows.length > 0 && (
         <div
           role="list"
-          aria-label="Screener queue"
+          aria-label="Senders waiting for your decision"
           style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
         >
           {state.rows.map((row) => (
@@ -480,9 +480,11 @@ export function ScreenerScreen({
 function ScreenerErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const message =
     error instanceof ApiError
-      ? `We couldn't load the Screener queue (${error.status}). Try again in a moment.`
+      ? "We couldn't load the Screener. Try again in a moment."
       : "We couldn't load the Screener queue right now. Try again in a moment.";
-  return <ErrorState title="The queue didn't load" description={message} onRetry={onRetry} />;
+  return (
+    <ErrorState title="Your pending senders didn't load" description={message} onRetry={onRetry} />
+  );
 }
 
 /** Skeleton stack — matches the row's vertical rhythm. */

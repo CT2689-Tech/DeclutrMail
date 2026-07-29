@@ -80,7 +80,7 @@ export function StepFirstTriage({
           title="Couldn't load your practice run"
           description={
             err instanceof ApiError
-              ? `We couldn't load your first-triage candidates (${err.status}). Try again in a moment.`
+              ? "We couldn't load your first senders to review. Try again in a moment."
               : "We couldn't load your first-triage candidates right now. Try again in a moment."
           }
           action={

@@ -145,8 +145,8 @@ export function PrivacyDesk() {
                 called out as such before approval.
               </li>
               <li>
-                Disconnect any time. Deleting your account schedules a full purge of the little we
-                kept.
+                Disconnect any time. Deleting your account schedules permanent deletion of the
+                little we kept.
               </li>
             </ul>
             <a href="/privacy" className="dm-mkt-desk-link">
@@ -215,7 +215,7 @@ export function ProductTour() {
               <b>Archived · GitHub</b>
               <small>74 messages · All Mail</small>
             </span>
-            <em>Undo · 7d</em>
+            <em>Undo · 7 days</em>
           </div>
         </article>
       </div>
