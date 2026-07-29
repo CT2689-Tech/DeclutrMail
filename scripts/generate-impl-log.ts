@@ -165,7 +165,14 @@ function readMergedPrs(): MergedPr[] {
   return prs;
 }
 
-const CLOSES_RE = /Closes\s+D(\d{1,3})\b/gi;
+// A trailer is a LINE that closes a D — optionally list-marked — not any
+// prose that happens to contain the words. The first post-merge run of
+// this generator flagged its own PR: the body QUOTED `Closes D248` while
+// explaining why docs-only PRs must not flip, and the loose regex read
+// the quotation as a trailer. Line-anchoring excludes quoted/inline
+// mentions (they sit mid-line or behind a backtick) while every real
+// trailer in all 343 merged PRs starts its line.
+const CLOSES_RE = /^(?:[-*]\s+)?Closes\s+D(\d{1,3})\b/gim;
 
 /** A PR implements (vs merely records) iff it touches any non-md file. */
 function isImplementing(pr: MergedPr): boolean {
