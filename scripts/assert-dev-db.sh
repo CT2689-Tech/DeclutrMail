@@ -112,23 +112,39 @@ if [ "${1:-}" = "--exec" ]; then
   SQL="${1:-}"
   [ -n "$SQL" ] || refuse "--exec needs a SQL statement"
 
-  TMP=$(mktemp -t assert-dev-db) || refuse "could not create a temp file"
-  trap 'rm -f "$TMP"' EXIT
+  # A psql metacommand can RECONNECT after the assertion has already passed
+  # (Codex stop-review 2026-07-29). Demonstrated: with a correct identity file,
+  #
+  #     \c dm_other_db
+  #     INSERT INTO … VALUES (42);
+  #
+  # asserted against the recorded cluster, then wrote to a DIFFERENT database —
+  # and `\c` silently discarded the surrounding transaction ("WARNING: there is
+  # no transaction in progress"), so BEGIN/COMMIT framing protected nothing.
+  # `\c` accepts a full conninfo, so the same trick reaches another cluster.
+  #
+  # Two defences:
+  #   1. Refuse any backslash sequence outright. Nothing in this runbook needs
+  #      one, and an allowlist of "safe" metacommands is a bigger surface than
+  #      the feature is worth.
+  case $SQL in
+    *\\*) refuse "backslash metacommands are not allowed in --exec.
+  A metacommand such as \\c can reconnect AFTER the identity assertion passes,
+  which would run your statement on an unverified database. Split the work into
+  separate --exec calls instead." ;;
+  esac
 
-  # Single-quoted format strings: $$ must reach psql literally, not expand to
-  # the shell's PID.
-  {
-    printf 'BEGIN;\n'
-    printf 'DO $$\nBEGIN\n'
-    printf '  IF (SELECT system_identifier::text FROM pg_control_system()) <> %s THEN\n' "'$EXPECTED'"
-    printf '    RAISE EXCEPTION %s, (SELECT system_identifier FROM pg_control_system());\n' \
-      "'assert-dev-db: REFUSING — connected cluster % is not the recorded dev cluster $EXPECTED'"
-    printf '  END IF;\nEND $$;\n'
-    printf '%s\n' "$SQL"
-    printf 'COMMIT;\n'
-  } > "$TMP"
+  #   2. Send everything as ONE simple-query batch via -c, not -f. psql does not
+  #      process metacommands inside a -c string, and a single batch is one
+  #      round trip — there is no "next command" for psql to reconnect for, so
+  #      the assertion and the statement cannot end up on different sessions.
+  #      Single-quoted printf: $$ must reach psql literally, not expand to $PID.
+  GUARD=$(printf 'DO $$ BEGIN IF (SELECT system_identifier::text FROM pg_control_system()) <> %s THEN RAISE EXCEPTION %s, (SELECT system_identifier FROM pg_control_system()); END IF; END $$;' \
+    "'$EXPECTED'" \
+    "'assert-dev-db: REFUSING — connected cluster % is not the recorded dev cluster $EXPECTED'")
 
-  psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$TMP" || refuse "statement did not run (see the error above)"
+  psql "$DB_URL" -v ON_ERROR_STOP=1 -c "BEGIN; $GUARD $SQL COMMIT;" ||
+    refuse "statement did not run (see the error above)"
   exit 0
 fi
 

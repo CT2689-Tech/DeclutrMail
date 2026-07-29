@@ -313,15 +313,20 @@ UPDATE subscriptions
 
 **Every `[DEV DB ONLY]` mutation goes through `--exec`** — G4 and H6 included.
 
+Plain SQL only — `--exec` refuses backslash metacommands. A `\c` can reconnect
+_after_ the identity assertion passes, and it silently discards the surrounding
+transaction while doing it, so the statement would land on an unverified
+database. Need two databases? Two `--exec` calls.
+
 > **Do not use `assert-dev-db.sh && psql …`.** It looks equivalent and is not:
 > the two halves resolve their target independently. With `DATABASE_URL` unset
 > in the shell, the script falls back to `.env.local` and validates that
 > cluster, while `psql "$DATABASE_URL"` becomes `psql ""` and connects to libpq
 > defaults — `PGHOST` / `PGDATABASE` / `PGSERVICE` or the local socket.
 > Demonstrated: the guard printed OK for the recorded dev cluster while the next
-> command reached a different database. `--exec` resolves the URL once and
-> asserts identity inside the transaction, so there is no second connection to
-> divert and no window between check and write.
+> command reached a different database. `--exec` resolves the URL once and sends
+> the assertion and the statement as a single query batch, so there is no second
+> connection to divert and no window between check and write.
 
 ---
 
