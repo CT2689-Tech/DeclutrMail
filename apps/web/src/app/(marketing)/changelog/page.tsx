@@ -3,9 +3,9 @@ import { ChangelogPage as ChangelogSurface } from '@/features/marketing/learn/in
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 export const metadata: Metadata = marketingPageMetadata({
-  title: 'DeclutrMail changelog — evidence-linked build history',
+  title: 'DeclutrMail product updates — what changed, and when',
   description:
-    'An evidence-linked build log derived from DeclutrMail repository history, with Added, Improved, and Fixed notes plus pull-request receipts.',
+    'What changed in DeclutrMail and when, listed by date with Added, Improved, and Fixed notes.',
   path: '/changelog',
 });
 

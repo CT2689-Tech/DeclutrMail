@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
-import { CHANGELOG_ENTRIES, REPOSITORY_URL, changelogEvidenceUrl } from './changelog-content';
+import { CHANGELOG_ENTRIES } from './changelog-content';
 import { FAQ_ENTRIES } from './faq-content';
 import { LearnEyebrow, LearnShell } from './learn-shell';
 
@@ -98,27 +98,23 @@ export function ChangelogPage() {
     <LearnShell>
       <header className="dm-learn-hero dm-learn-hero--solo">
         <div>
-          <LearnEyebrow>Evidence-linked build log</LearnEyebrow>
-          <h1 className="dm-learn-title">What changed, with the repository receipts</h1>
+          <LearnEyebrow>Product updates</LearnEyebrow>
+          <h1 className="dm-learn-title">What changed, and when</h1>
           <p className="dm-learn-lead">
-            DeclutrMail does not have public semantic-version tags yet. This log mirrors user-facing
-            changes in first-parent repository history instead of inventing release numbers. A
-            merged change is evidence of the build, not a promise that every account has received a
+            DeclutrMail does not use public version numbers yet, so updates are listed by the date
+            they shipped rather than under invented release names. Every entry describes a change
+            you can see in the product — it is not a promise that every account has received a
             rollout.
           </p>
           <div className="dm-learn-meta">
             <Link href="/changelog/rss.xml">RSS feed</Link>
-            <span aria-hidden="true">·</span>
-            <a href={REPOSITORY_URL} rel="noreferrer">
-              Source repository
-            </a>
           </div>
         </div>
       </header>
-      <section className="dm-learn-log" aria-label="Repository build history">
+      <section className="dm-learn-log" aria-label="Product update history">
         {CHANGELOG_ENTRIES.map((entry) => (
           <article key={entry.id} id={entry.id}>
-            <LearnEyebrow>Repository build · {entry.date}</LearnEyebrow>
+            <LearnEyebrow>Update · {entry.date}</LearnEyebrow>
             <h2>{entry.title}</h2>
             <p>{entry.summary}</p>
             {entry.added.length ? (
@@ -151,18 +147,14 @@ export function ChangelogPage() {
                 </ul>
               </>
             ) : null}
-            <div className="dm-learn-evidence" aria-label="Repository evidence">
-              {entry.evidence.map((evidence) => (
-                <a
-                  href={changelogEvidenceUrl(evidence.pullRequest)}
-                  key={evidence.commit}
-                  rel="noreferrer"
-                  title={`${evidence.summary} · commit ${evidence.commit}`}
-                >
-                  PR #{evidence.pullRequest} · {evidence.commit}
-                </a>
-              ))}
-            </div>
+            {/*
+              `entry.evidence` is deliberately NOT rendered. It stays in the
+              data as build-time provenance so `pnpm check-changelog` can
+              verify this page against git history — but pull-request numbers
+              and commit hashes are internal, and every link to them would
+              404 for the public the moment the repository goes private.
+              Founder decision 2026-07-29.
+            */}
           </article>
         ))}
       </section>

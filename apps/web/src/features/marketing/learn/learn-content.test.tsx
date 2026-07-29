@@ -144,19 +144,30 @@ describe('shared learning surfaces', () => {
     expect(jsonLd.mainEntity).toHaveLength(FAQ_ENTRIES.length);
   });
 
-  it('renders evidence links for every changelog item', () => {
+  it('renders every changelog entry', () => {
     render(<ChangelogPage />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/repository receipts/i);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/what changed/i);
     for (const entry of CHANGELOG_ENTRIES) {
       expect(screen.getByText(entry.title)).toBeInTheDocument();
+    }
+  });
+
+  // The inverse of the old assertion, and the more important one now: the
+  // page must leak NO internal identifier. `evidence` is retained in the
+  // data so `pnpm check-changelog` can verify the page against git, which
+  // makes accidentally rendering it a live risk rather than a theoretical
+  // one — and every such link would 404 once the repository goes private.
+  it('leaks no pull-request number, commit hash, or repository link', () => {
+    const { container } = render(<ChangelogPage />);
+    const text = container.textContent ?? '';
+    for (const entry of CHANGELOG_ENTRIES) {
       for (const evidence of entry.evidence) {
-        expect(
-          screen.getByRole('link', {
-            name: `PR #${evidence.pullRequest} · ${evidence.commit}`,
-          }),
-        ).toHaveAttribute('href', expect.stringContaining(`/pull/${evidence.pullRequest}`));
+        expect(text).not.toContain(evidence.commit);
+        expect(text).not.toContain(`#${evidence.pullRequest}`);
       }
     }
+    const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? '');
+    expect(hrefs.filter((href) => /github\.com|\/pull\//.test(href))).toEqual([]);
   });
 });
 

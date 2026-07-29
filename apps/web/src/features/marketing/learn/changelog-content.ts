@@ -1,28 +1,48 @@
 import type { ChangelogEntry } from './types';
 
 /**
- * Evidence comes from `git log --first-parent` on the repository. There are
- * currently no public semver tags, so the public surface calls these
- * repository builds instead of inventing release numbers.
+ * Public product updates, newest first.
+ *
+ * ## Editorial rules (founder decision 2026-07-29)
+ *
+ * HIGH LEVEL ONLY. Entries say what a user would notice, in the words they
+ * would use. No internal mechanics ("one shared predicate", "recorded
+ * server-side before the provider is contacted"), no module names, no
+ * counts from the founder's own mailbox. The previous version read as an
+ * engineering log and volunteered a public defect history — "the repair
+ * that made purchases land at all" tells a competitor more than it tells a
+ * customer.
+ *
+ * NO INTERNAL IDENTIFIERS ON THE PAGE. `evidence` stays in this data as
+ * build-time provenance — `pnpm check-changelog` uses it to verify this
+ * file against git history, and the guard is the only reason the page can
+ * be trusted at all — but it is NOT rendered. Pull-request numbers and
+ * commit hashes are internal, and every link to them would 404 for the
+ * public the moment the repository goes private.
+ *
+ * DATE = MERGE DATE, in UTC. One entry per date; grouping several dates
+ * under the earliest one backdates the rest. The guard enforces this.
+ *
+ * REMOVALS COUNT. A feature that was taken away is a change a user can see,
+ * so it belongs here as much as an addition does.
  */
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     id: '2026-07-29',
     date: '2026-07-29',
-    title: 'Billing truth and sync recovery',
-    summary:
-      'This repository build gave in-flight purchases a server-side record and gave a failed first sync a visible outcome instead of silence.',
+    title: 'Steadier payments and syncs',
+    summary: 'Payments and first-time syncs became harder to get stuck in.',
     added: [
-      'A payment in progress is now recorded server-side before the provider is contacted, so a purchase that completes during an outage is still reconciled to the correct plan.',
-      'A terminal first-sync failure sends an account notice instead of failing silently.',
+      'A payment that completes during an interruption still lands on the right plan.',
+      'If a first sync fails for good, you get an email about it instead of silence.',
     ],
     improved: [
-      'Every screen that could strand a failed sync now offers a way forward.',
-      'Cancellation provenance and the end of a paid entitlement are recorded explicitly rather than inferred.',
+      'Every screen that can show a failed sync now offers a way forward.',
+      'Plan changes and cancellations are recorded with their reason, so billing history reads clearly.',
     ],
     fixed: [
-      'A checkout that ends ambiguously at the provider no longer strands the record of the attempt.',
-      'Plan states that were rejected before a payment claim was held are reported inline rather than as a blocking error.',
+      'An interrupted checkout no longer leaves your account stuck mid-purchase.',
+      'Plan problems are explained where you are, instead of as a blocking error.',
     ],
     evidence: [
       { commit: 'd3df6c34', pullRequest: 430, summary: 'Server-side billing reconciliation' },
@@ -38,24 +58,24 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     date: '2026-07-28',
     title: 'Delete reaches filtered mail',
     summary:
-      'The largest user-facing change in this range: senders whose mail a Gmail filter files past the inbox can now be cleaned up. Account email and product language were rebuilt alongside it.',
+      'Delete can now reach mail that never touched your inbox. Account email and wording across the app were reworked alongside it.',
     added: [
-      'Delete can now include archived mail. A sender whose messages skip the inbox by Gmail filter previously previewed zero under every verb and could not be cleaned up at all. Inbox only remains the default; Inbox and archived is an explicit per-action choice on a single sender.',
-      'Undo for that wider Delete returns each message to where it was, re-inboxing only the messages that carried Inbox and returning the rest to the archive.',
-      'The sender row detail states how many of a sender’s messages are still in the inbox before you open an action.',
+      'Delete can now include archived mail. If a Gmail filter sends a sender straight past your inbox, that backlog was previously untouchable. Inbox only stays the default; including archived mail is a deliberate choice you make per sender.',
+      'Undo puts every message back exactly where it was — inbox mail to the inbox, archived mail to the archive.',
+      'A sender now tells you how much of its mail is still in your inbox before you act.',
       'A failed first sync has an explicit way out rather than a dead end.',
-      'Account email moved onto the DeclutrMail brand system, carrying a one-click unsubscribe header and a working per-category opt-out.',
+      'Account email looks like DeclutrMail, and every kind you can opt out of is one click to turn off.',
     ],
     improved: [
       'Plain language across every user-facing surface.',
       'One name for a Gmail connection everywhere it appears.',
-      'Senders opens on active senders, with counts that state what is known and a reachable peek.',
-      'Gmail push delivery is rate-limited, and an unrecognized signing key is refetched rather than trusted.',
+      'Senders opens on senders still mailing you, with counts that say what is actually known.',
+      'Real-time Gmail updates handle bursts and key rotation without falling behind.',
     ],
     fixed: [
-      'The monthly cleanup-action counter counts down toward the limit rather than up from zero.',
-      'Public pricing no longer describes a retired Free-tier allowance.',
-      'Resuming a paused plan is refused while a billing subscription is already active.',
+      'The monthly cleanup counter counts down, so it reads as what is left.',
+      'Pricing describes the Free plan as it actually works.',
+      'Resuming a paused plan is refused when a subscription is already active.',
     ],
     evidence: [
       { commit: 'be6956cb', pullRequest: 407, summary: 'Delete reach and in-inbox count' },
@@ -77,16 +97,16 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     date: '2026-07-27',
     title: 'The Free tier opens',
     summary:
-      'Free became a usable plan rather than a preview, and the action preview and its receipt were made to resolve the same messages.',
+      'Free became a plan you can actually work in, and previews were made to match their results.',
     added: [
       'The Free tier is live: Senders, Sender detail, Activity history, Triage sessions, and the Later review queue, metered at 50 cleanup actions each month on your signup anniversary.',
       'A preview that will not fit within the remaining monthly allowance says so and offers the upgrade instead of a confirm.',
     ],
-    improved: ['Each billing screen tells one plan story rather than several partial ones.'],
+    improved: ['Billing screens tell one consistent story about your plan.'],
     fixed: [
-      'A preview and its receipt now resolve the same messages through one shared predicate.',
-      'Confirm is never armed against a stale cached preview.',
-      'Triage batches only the messages that can legally be acted on in bulk.',
+      'A preview and the result it produces now always describe the same messages.',
+      'Confirm is never active against an out-of-date preview.',
+      'Triage only batches messages it is allowed to act on in bulk — Protected senders stay out.',
     ],
     evidence: [
       { commit: 'de90ebd5', pullRequest: 401, summary: 'Free tier activation' },
@@ -99,16 +119,16 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     id: '2026-07-26',
     date: '2026-07-26',
-    title: 'Verb surfaces state what they will do',
+    title: 'Actions say what they will do',
     summary:
-      'A correctness pass over the places where an action described a scope it would not actually act on.',
+      'A pass over the places where an action described a scope it would not actually act on.',
     added: [],
     improved: [
-      'Every verb surface reports the scope it will actually act on, including when that scope is empty.',
+      'Keep, Archive, Unsubscribe, Later and Delete each state the scope they will really act on — including when it is empty.',
     ],
     fixed: [
-      'An explicit Screener decision now overrides an automatic Protected classification.',
-      'Autopilot no longer offers matches built on evidence that has since been deleted.',
+      'A decision you make in the Screener now overrides automatic protection.',
+      'Autopilot no longer suggests rules based on mail that no longer exists.',
     ],
     evidence: [
       { commit: '4b044a1d', pullRequest: 394, summary: 'Verb surface scope truth' },
@@ -119,16 +139,13 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     id: '2026-07-25',
     date: '2026-07-25',
-    title: 'India opens; readiness becomes observable',
-    summary:
-      'Razorpay checkout went live for India, and the service gained a probe that can actually report a dependency outage.',
+    title: 'India can pay in rupees',
+    summary: 'Checkout opened for India, and service health checks learned to notice an outage.',
     added: [
-      'Razorpay checkout for India, with prices quoted in rupees only where that price point is genuinely purchasable in rupees.',
-      'A readiness endpoint that reports database and queue reachability, alongside the existing dependency-free health endpoint.',
+      'Checkout in Indian rupees, quoted in rupees only where that exact price can be charged in rupees.',
+      'Service health checks now notice an outage instead of reporting OK regardless.',
     ],
-    improved: [
-      'The currency shown on a price is the currency that price will be charged in, resolved per price point rather than by region alone.',
-    ],
+    improved: ['The currency shown on a price is the currency you will be charged in.'],
     fixed: [],
     evidence: [
       { commit: '05816101', pullRequest: 379, summary: 'Razorpay live catalog' },
@@ -139,9 +156,9 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     id: '2026-07-24',
     date: '2026-07-24',
-    title: 'Paddle production billing',
-    summary: 'Paid plans became purchasable for customers outside India.',
-    added: ['Paddle production billing for customers outside India.'],
+    title: 'Paid plans open outside India',
+    summary: 'Paid plans became purchasable outside India.',
+    added: ['Paid plans became purchasable outside India.'],
     improved: [],
     fixed: [],
     evidence: [{ commit: '407fdcbd', pullRequest: 374, summary: 'Paddle production billing' }],
@@ -149,12 +166,11 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     id: '2026-07-23',
     date: '2026-07-23',
-    title: 'Recovery tables get row-level access control',
-    summary:
-      'Database-level access control was extended to the tables that hold recovery and deletion state.',
+    title: 'Tighter access controls',
+    summary: 'Access controls were tightened on the records behind recovery and deletion.',
     added: [],
     improved: [],
-    fixed: ['Row-level security is enforced on the recovery and deletion tables.'],
+    fixed: ['Recovery and deletion records are locked down at the database level.'],
     evidence: [
       { commit: '5bf9645b', pullRequest: 373, summary: 'Recovery-table row-level security' },
     ],
@@ -162,17 +178,14 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     id: '2026-07-22',
     date: '2026-07-22',
-    title: 'Deletion, monitoring, and sync recovery',
-    summary:
-      'Account deletion, sync recovery, and the production monitoring floor were hardened ahead of enabling paid billing.',
+    title: 'Safer deletion and sync recovery',
+    summary: 'Account deletion and sync recovery were hardened before paid plans opened.',
     added: [],
     improved: [
-      'Account deletion revokes the Google grant before encrypted refresh tokens are erased, and applies the same guarantee to per-mailbox data deletion.',
-      'One API instance stays warm, so a first request does not wait on a cold start.',
+      'Deleting your account revokes DeclutrMail’s Google access first, so nothing is left connected. Deleting a single mailbox gets the same guarantee.',
+      'The app answers the first request without a cold start.',
     ],
-    fixed: [
-      'Incremental message persistence and sender counters are transactional and safe to replay, so a queue failure stays recoverable.',
-    ],
+    fixed: ['An interrupted sync resumes cleanly instead of double-counting or losing its place.'],
     evidence: [
       { commit: '8822f910', pullRequest: 372, summary: 'Grant revocation on deletion' },
       { commit: 'ef144860', pullRequest: 371, summary: 'API launch floor' },
@@ -183,15 +196,14 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     id: '2026-07-21',
     date: '2026-07-21',
     title: 'Self-serve plan changes',
-    summary:
-      'Changing plan stopped requiring support: upgrades, downgrades, and the monthly/annual switch became self-serve, with the timing stated before you commit.',
+    summary: 'Changing plan stopped requiring an email to support.',
     added: [
       'Upgrade, downgrade, and switch between monthly and annual from the billing screen.',
       'A one-tap interval toggle on the plan picker.',
     ],
     improved: [
-      'An upgrade applies immediately and is prorated by the provider; a downgrade is scheduled for the end of the period you already paid for, and the screen says which of the two will happen before you confirm.',
-      'Choosing to keep your current plan restores it and reconciles against the provider record rather than assuming the change was undone.',
+      'An upgrade applies straight away and is prorated. A downgrade takes effect at the end of the period you already paid for — and the screen says which will happen before you confirm.',
+      'Changing your mind restores your current plan and confirms it against your real subscription.',
     ],
     fixed: [],
     evidence: [{ commit: '84cf754b', pullRequest: 367, summary: 'Self-serve plan changes' }],
@@ -199,14 +211,14 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     id: '2026-07-20',
     date: '2026-07-20',
-    title: 'Purchases land, and arrive in order',
+    title: 'Two payment problems fixed',
     summary:
-      'Two defects in the payment path: a completed purchase could fail to attach to the account that made it, and a provider event delivered late could overwrite a newer one.',
+      'A purchase could fail to apply to the account that made it, and a late payment update could overwrite a newer one.',
     added: [],
     improved: [],
     fixed: [
-      'A completed Paddle purchase is attributed to the account that made it, so the plan actually applies.',
-      'A provider event that is dropped and later redelivered is recovered without applying an older state over a newer one.',
+      'A completed purchase applies to the account that made it.',
+      'A delayed payment update can no longer overwrite a newer one.',
     ],
     evidence: [
       { commit: '38651429', pullRequest: 362, summary: 'Paddle purchase attribution' },
@@ -216,35 +228,33 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     id: '2026-07-18',
     date: '2026-07-18',
-    title: 'A sort that says what it sorts',
-    summary: 'One rename on the Senders screen.',
+    title: 'A clearer sort label',
+    summary: 'One label fixed on Senders.',
     added: [],
-    improved: [
-      'The Senders sort formerly labelled by first-seen date now reads Newest arrivals, which is what it orders by.',
-    ],
+    improved: ['The Senders sort now reads Newest arrivals, which is what it actually orders by.'],
     fixed: [],
     evidence: [{ commit: '5c904e56', pullRequest: 353, summary: 'Newest arrivals sort label' }],
   },
   {
     id: '2026-07-17',
     date: '2026-07-17',
-    title: 'Senders states one window and one count',
+    title: 'Senders agrees with itself',
     summary:
-      'A truth pass across Senders, Triage, Screener, and Settings, where a list and its detail view could disagree about the same sender.',
+      'A pass across Senders, Triage, Screener and Settings, where a list and a detail view could disagree about the same sender.',
     added: [
       'A coverage line and a grid/table toggle at the top of the Senders screen.',
-      'A peek affordance on a sender row, with grid and table showing the same facts.',
+      'A quick peek at a sender from its row, with grid and table showing the same facts.',
     ],
     improved: [
-      'The sender list and sender detail share one rolling 30-day window instead of drifting apart.',
-      'Sender rows are assembled from the wire row plus derived fields, so a value cannot be lost between the server and the screen.',
+      'The sender list and sender detail now describe the same 30 days.',
+      'Sender numbers can no longer be lost on the way to the screen.',
       'Settings states only what is known, and every dead end offers a way out.',
     ],
     fixed: [
-      'Triage keyboard handling uses a single listener with an explicit inline confirm.',
-      'Autopilot approve-all states its true scope and resets its slider.',
-      'The Screener heading states the true pending count rather than the current page size.',
-      'The Weekly Hero panel was removed. It was retired with the editorial-hero direction and its remaining stack was deleted rather than left dormant.',
+      'Triage keyboard shortcuts stopped double-firing, and confirmation is explicit.',
+      'Autopilot’s approve-all states how many rules it will really approve.',
+      'The Screener heading counts everything pending, not just the current page.',
+      'The Weekly Hero panel was removed.',
     ],
     evidence: [
       { commit: 'efd89816', pullRequest: 339, summary: 'Sender wire model' },
@@ -262,21 +272,21 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     id: '2026-07-15',
     date: '2026-07-15',
-    title: 'Protection that can explain itself',
+    title: 'Protection you can check',
     summary:
-      'Automatic protection was narrowed to signals a person can check, and the senders it had wrongly protected were released.',
+      'Automatic protection was narrowed to signals you can check, and senders it had wrongly protected were released.',
     added: [
-      'An Activity support bundle you can export for the active mailbox — a summary and a CSV of the rows your current filters select, with sender addresses masked unless you explicitly opt in to full addresses.',
-      'A Daily Brief generated in your own local time from one stored timezone, and a finite first-relief onboarding that ends rather than scrolling forever.',
+      'You can export your Activity history as a summary and a spreadsheet. Sender addresses are masked unless you choose otherwise.',
+      'Daily Brief arrives on your own local schedule, and first-run cleanup has an end rather than scrolling forever.',
     ],
     improved: [
-      'Automatic protection from Gmail importance now also requires the sender to be in Gmail’s own Primary category. On the founder mailbox, 176 of 187 importance-only protections were promotions, updates, social, or forums; those were released and only genuine Primary senders kept.',
-      'The protection sweep reconciles before it escalates, so a protection that no longer qualifies is withdrawn rather than left standing. Manual protection and manual unprotect are never touched.',
-      'Automation suggestions observe a repeated pattern first and carry the evidence for it.',
+      'A sender is only auto-protected for importance if Gmail also files it in Primary. Promotions and updates that Gmail merely marks important no longer qualify, and ones protected under the old rule were released.',
+      'Protection that no longer qualifies is withdrawn rather than left standing. Anything you protected or unprotected by hand is never touched.',
+      'Automation is only suggested after a pattern repeats, and shows you why.',
     ],
     fixed: [
-      'Protection reasons that referred to retired concepts were cleared so those senders re-qualify under a current, stated signal.',
-      'An undone action stays excluded from review outcomes for every date range, rather than reappearing once its journal entry is pruned.',
+      'Protection reasons left over from retired rules were cleared, so every protected sender shows a reason that still means something.',
+      'An action you undid stays undone in your history, however far back you look.',
     ],
     evidence: [
       { commit: '5b64dcf8', pullRequest: 335, summary: 'Primary gate on importance protection' },
@@ -288,15 +298,15 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     id: '2026-07-14',
     date: '2026-07-14',
-    title: 'The public site, and one product vocabulary',
+    title: 'The public site, and one name per idea',
     summary:
-      'The public marketing surface went live — including this log — alongside a program that gave every screen one name for each concept.',
+      'The public site went live, alongside a pass that gave every screen one name for each idea.',
     added: [
-      'A public site across 36 indexable routes: landing, pricing, sign-in, how it works, methodology, FAQ, comparisons, Gmail guides, direct-answer pages, journal, legal, security, support, a synthetic demo, and this evidence-linked build log with its RSS feed.',
+      'A public site: how it works, pricing, methodology, FAQ, comparisons, Gmail guides, a journal, legal and security pages, a demo built on synthetic data, and these updates with an RSS feed.',
     ],
     improved: [
-      'Protected became the single visible safety state. The separate VIP concept was retired rather than kept as an alias, so there is one answer to whether a sender is shielded from bulk and automatic actions.',
-      'Recovery, Later, and unsubscribe wording was aligned to what each one actually does.',
+      'Protected became the one safety state. The separate VIP idea was retired, so there is a single answer to whether a sender is shielded from bulk and automatic actions.',
+      'Recovery, Later and Unsubscribe wording was aligned to what each one actually does.',
     ],
     fixed: [],
     evidence: [
@@ -309,7 +319,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     date: '2026-07-10',
     title: 'Decision flow and trust polish',
     summary:
-      'The latest repository build tightened sender decisions, protected-sender behavior, consent handling, and plan gating across the app.',
+      'Sender decisions, protected-sender behaviour, consent handling, and plan gating were all tightened.',
     added: [
       'A noise-prevented payoff shared by Triage, Senders, and Activity.',
       'Same-verdict Archive and Later batch banners in Triage.',
@@ -343,7 +353,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     date: '2026-07-09',
     title: 'Mobile and public-surface build',
     summary:
-      'This repository build expanded public discovery and made secondary product surfaces usable on smaller screens.',
+      'The public pages became easier to find, and the secondary screens became usable on a phone.',
     added: [
       'Public SEO, answer-engine, and structured-data foundations for the marketing surface.',
       'A mobile Activity card list with a bottom-sheet filter drawer.',
@@ -365,7 +375,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     date: '2026-07-08',
     title: 'Launch workflows take shape',
     summary:
-      'A broad set of user-facing sender, triage, automation, Brief, Quiet, Activity, and settings workflows landed in repository history.',
+      'A broad set of sender, Triage, automation, Brief, Quiet, Activity, and settings workflows landed.',
     added: [
       'Sender brand rollups, multi-sender actions, and saved views.',
       'Autopilot observe digests, activation previews, and rule statistics.',
@@ -399,8 +409,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   },
 ];
 
-export const REPOSITORY_URL = 'https://github.com/CT2689-Tech/DeclutrMail';
-
-export function changelogEvidenceUrl(pullRequest: number): string {
-  return `${REPOSITORY_URL}/pull/${pullRequest}`;
-}
+// `REPOSITORY_URL` / `changelogEvidenceUrl()` were deleted 2026-07-29 with
+// the receipt links they built. They had no other consumer, and pointing the
+// public at a repository that is going private would produce a page of 404s
+// under a heading that claimed to be evidence.
