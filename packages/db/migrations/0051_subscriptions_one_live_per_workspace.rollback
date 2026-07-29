@@ -12,7 +12,7 @@
 -- decision. Pre-flight before re-applying:
 --
 --   SELECT workspace_id, count(*) FROM subscriptions
---   WHERE status IN ('active','past_due','paused')
+--   WHERE status IN ('active','past_due')
 --   GROUP BY 1 HAVING count(*) > 1;
 
 DROP INDEX IF EXISTS "subscriptions_one_live_per_workspace_uniq";

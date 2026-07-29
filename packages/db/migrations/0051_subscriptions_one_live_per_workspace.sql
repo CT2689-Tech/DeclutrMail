@@ -12,10 +12,20 @@
 -- `ORDER BY updated_at DESC LIMIT 1` — so the second subscription keeps
 -- charging with no surface that mentions it.
 --
--- 'canceled' and 'incomplete' are deliberately EXCLUDED from the
--- predicate: a workspace that cancels and later resubscribes must keep
--- its history, and only the states that actually grant entitlement or
--- bill money are constrained.
+-- The predicate is about MONEY, not presence: only 'active' and
+-- 'past_due' actually charge. 'paused' is deliberately EXCLUDED —
+-- pausing Plus and then subscribing to Pro is a legitimate state the
+-- product already renders (the A6 read prefers the row in a granting
+-- status, billing.service.spec 'serves the GRANTING row even when a
+-- non-granting row is newer'). Constraining it would forbid a
+-- supported state while preventing no double charge. 'canceled' and
+-- 'incomplete' are excluded for the same reason plus history: a
+-- workspace that cancels and resubscribes must keep its record.
+--
+-- The application guard (SUBSCRIPTION_EXISTS) is stricter — it also
+-- blocks a new checkout while a paused row exists. That is policy
+-- sitting on top of this invariant, which is fine: app policy may be
+-- a superset of what the database enforces, never a subset.
 --
 -- This index will FAIL to build if a workspace already holds two live
 -- rows. That is intended — a duplicate is a live double-billing
@@ -23,9 +33,9 @@
 -- something a migration may take silently. Pre-flight:
 --
 --   SELECT workspace_id, count(*) FROM subscriptions
---   WHERE status IN ('active','past_due','paused')
+--   WHERE status IN ('active','past_due')
 --   GROUP BY 1 HAVING count(*) > 1;
 
 CREATE UNIQUE INDEX "subscriptions_one_live_per_workspace_uniq"
   ON "subscriptions" ("workspace_id")
-  WHERE "status" IN ('active', 'past_due', 'paused');
+  WHERE "status" IN ('active', 'past_due');
