@@ -47,6 +47,7 @@
     "typescript-eslint": "^8.20.0"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx,mjs,cjs,md,json,yaml,yml,css}": "prettier --check"
+    "*.{ts,tsx,js,jsx,mjs,cjs,md,json,yaml,yml,css}": "prettier --check",
+    "apps/web/src/features/marketing/learn/changelog-content.ts": "pnpm check-changelog --"
   }
 }
