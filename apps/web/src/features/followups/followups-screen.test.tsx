@@ -90,7 +90,7 @@ describe('FollowupsScreen — edge states', () => {
     renderScreen();
     const alert = await screen.findByRole('alert');
     expect(
-      within(alert).getByRole('heading', { name: /couldn[’']t load your followups/i }),
+      within(alert).getByRole('heading', { name: /couldn[’']t load your follow-ups/i }),
     ).toBeInTheDocument();
     expect(within(alert).getByText(/tracked follow-ups are unchanged/i)).toBeInTheDocument();
 
@@ -116,7 +116,7 @@ describe('FollowupsScreen — edge states', () => {
         screen.getByRole('heading', { name: /no follow-ups observed\./i }),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByText(/current 60-day window/i)).toBeInTheDocument();
+    expect(screen.getByText(/in the last 60 days/i)).toBeInTheDocument();
     expect(screen.getByText(/next check runs within about six hours/i)).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -174,7 +174,7 @@ describe('FollowupsScreen — populated list', () => {
 
     renderScreen();
 
-    expect(await screen.findByText(/observed from indexed sent mail/i)).toBeInTheDocument();
+    expect(await screen.findByText(/based on your sent mail/i)).toBeInTheDocument();
     expect(screen.getByText(/not live gmail status/i)).toBeInTheDocument();
     const disclosure = screen
       .getByText('Why a thread may still appear — and how to hide it')

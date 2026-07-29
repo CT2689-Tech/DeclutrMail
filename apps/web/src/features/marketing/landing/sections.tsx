@@ -63,9 +63,8 @@ export function HowItWorks() {
           <div className="dm-mkt-step-no">STEP 2</div>
           <h3 className="dm-mkt-step-title">Review</h3>
           <p className="dm-mkt-step-body">
-            Every plan can review ranked senders in Senders. Plus and Pro add the focused Triage
-            queue. Choose Keep, Archive, Unsubscribe, Later, or Delete with a preview before mail
-            moves.
+            Every plan reviews ranked senders in Senders and the focused Triage queue. Choose Keep,
+            Archive, Unsubscribe, Later, or Delete with a preview before mail moves.
           </p>
         </div>
         <div className="dm-mkt-step">
@@ -146,8 +145,8 @@ export function PrivacyDesk() {
                 called out as such before approval.
               </li>
               <li>
-                Disconnect any time. Deleting your account schedules a full purge of the little we
-                kept.
+                Disconnect any time. Deleting your account schedules permanent deletion of the
+                little we kept.
               </li>
             </ul>
             <a href="/privacy" className="dm-mkt-desk-link">
@@ -170,16 +169,17 @@ export function ProductTour() {
       <p className="dm-mkt-eyebrow">№ 05 — What you actually get</p>
       <h2 className="dm-mkt-h2">Three product chapters, not three quota bands.</h2>
       <p className="dm-mkt-lede">
-        Free helps you see the sender pattern. Plus opens the manual review workflow. Pro adds
-        preset automation for recurring matches. The same Activity record ties all three together.
+        Free is the full manual cleanup workflow with a monthly meter. Plus removes the meter. Pro
+        adds preset automation for recurring matches. The same Activity record ties all three
+        together.
       </p>
       <div className="dm-mkt-product-tour">
         <article>
-          <div className="dm-mkt-product-tier">Plus · Decide</div>
+          <div className="dm-mkt-product-tier">All plans · Decide</div>
           <h3>Triage</h3>
           <p>
-            A ranked sender queue with Keep, Archive, Unsubscribe, and Later. Expand a row, inspect
-            the signals, then approve the current count-and-sample preview.
+            A ranked sender queue with Keep, Archive, Unsubscribe, Later, and Delete. Expand a row,
+            inspect the signals, then approve the current count-and-sample preview.
           </p>
           <div className="dm-mkt-product-mini" aria-hidden="true">
             <span className="dm-mkt-product-avatar">L</span>
@@ -215,7 +215,7 @@ export function ProductTour() {
               <b>Archived · GitHub</b>
               <small>74 messages · All Mail</small>
             </span>
-            <em>Undo · 7d</em>
+            <em>Undo · 7 days</em>
           </div>
         </article>
       </div>

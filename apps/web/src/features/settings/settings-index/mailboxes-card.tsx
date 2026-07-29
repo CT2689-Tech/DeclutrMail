@@ -247,7 +247,7 @@ export function MailboxesCard({
 function mailboxDataStatusLabel(state: NonNullable<MeMailbox['indexedDataState']>): string {
   switch (state) {
     case 'deletion_pending':
-      return 'Deletion queued';
+      return 'Deletion scheduled';
     case 'deleting':
       return 'Deleting data…';
     case 'deletion_delayed':

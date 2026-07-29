@@ -722,7 +722,7 @@ function LoadingState() {
 function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const message =
     error instanceof ApiError
-      ? `We couldn't load your Brief (${error.status}). Try again in a moment.`
+      ? "We couldn't load your Brief. Try again in a moment."
       : "We couldn't load your Brief right now. Try again in a moment.";
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>

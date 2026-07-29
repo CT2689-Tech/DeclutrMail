@@ -222,10 +222,10 @@ export function ActionLifecycleFigure() {
         ))}
       </ol>
       <p className="dm-story-figure-note">
-        Gmail confirms label mutations. A sender&rsquo;s list endpoint reports a one-click
-        unsubscribe outcome. The delivered unsubscribe request cannot be undone; any paired Archive
-        has its own reversible record. Active Pro Autopilot follows the separate rule path below and
-        does not ask for per-message confirmation.
+        Gmail confirms each label change. For one-click lists, the sender&rsquo;s system reports
+        whether it accepted the request. The delivered unsubscribe request cannot be undone; any
+        paired Archive has its own reversible record. Active Pro Autopilot follows the separate rule
+        path below and does not ask for per-message confirmation.
       </p>
     </figure>
   );
