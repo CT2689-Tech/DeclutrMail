@@ -633,9 +633,14 @@ describe('BillingService', () => {
       // — `recomputeWorkspaceTier` then quietly grants the max rank and
       // nothing on any screen says the customer is paying twice.
       // Checkout has always guarded this; resume was missed.
+      // Providers chosen deliberately: `resume` calls the adapter of the
+      // PAUSED subscription, so that one must be paddle — the only
+      // adapter whose `resumeSubscription` is an observable mock here.
+      // Seeding it as razorpay would make the assertion below vacuous:
+      // paddleResume could not have fired either way.
       await db.insert(subscriptions).values({
         workspaceId: principal.workspaceId,
-        provider: 'paddle',
+        provider: 'razorpay',
         providerSubscriptionId: 'sub_active_pro',
         tier: 'pro',
         status: 'active',
@@ -644,7 +649,7 @@ describe('BillingService', () => {
       });
       await db.insert(subscriptions).values({
         workspaceId: principal.workspaceId,
-        provider: 'razorpay',
+        provider: 'paddle',
         providerSubscriptionId: 'sub_paused_plus',
         tier: 'plus',
         status: 'paused',
@@ -655,8 +660,9 @@ describe('BillingService', () => {
       await expect(service.resume(principal)).rejects.toMatchObject({
         code: 'SUBSCRIPTION_EXISTS',
       });
-      // The provider must never have been called — a refused resume
-      // that still hit Paddle would bill the customer anyway.
+      // The refusal must land BEFORE the provider call — a resume that
+      // rejected locally but still reached Paddle would bill the
+      // customer anyway, which is the whole failure being prevented.
       expect(paddleResume).not.toHaveBeenCalled();
     });
 
