@@ -228,13 +228,17 @@ If only the local path exists (pre-PR 1), use it.
 
 When uncertain about a decision, search the plan for the D-number.
 
-**D220 launch allowlist amendments.** Two `packages/shared` components
+**D220 launch allowlist amendments.** Three `packages/shared` components
 are added to the D220 launch allowlist beyond the original set:
 
 - `NumericDisplay` — tabular-figure numeric primitive; see
   `docs/adr/0016-senders-visual-language.md` (ADR-0016).
 - `ActionPopover` — verb-registry-driven action menu; see
   `docs/adr/0019-verb-registry-and-kauld.md` (ADR-0019).
+- `ErrorState` — shared error surface used by 13+ feature screens
+  (`packages/shared/src/components/error-state/`); founder-ratified
+  2026-07-28, well past the ≥2-consumer promotion rule, with a
+  Storybook story.
 
 ### Repo layout
 
@@ -727,11 +731,20 @@ proceed.
 For technical decisions NOT covered by the D-plan that emerge during
 implementation, write an ADR in `docs/adr/`.
 
-ADRs vs D-decisions:
+ADRs vs D-decisions — pick by who asks about it later, not by when it
+was decided:
 
-- **D-decisions:** product / architecture decisions made during planning
-- **ADRs:** technical decisions made during implementation (library
-  choice, encoding format, queue impl, retry policy, etc.)
+- **A D-number is something you will ask "is it built yet?" about.** It
+  gets an IMPLEMENTATION-LOG row and a build status.
+- **An ADR is a rule that constrains how code gets written.** It has no
+  build status — it is either followed or violated.
+
+(The previous split — "D = planning, ADR = implementation" — had a gap:
+a product decision made during implementation matched neither clause,
+which produced the D38 umbrella mis-tags. Founder-ratified 2026-07-28;
+worked example: the shipped senders wire model went to ADR-0029 with no
+D-number, while unbuilt bulk unsubscribe became D248. See LEARNINGS.md
+2026-07-28.)
 
 ADR template lives at `docs/adr/0000-template.md` (created in PR 1).
 
