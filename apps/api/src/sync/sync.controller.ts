@@ -17,7 +17,7 @@ import {
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
-import { SyncService, syncNotReady } from './sync.service.js';
+import { SyncService, syncNotReady, type InitialSyncRetryOutcome } from './sync.service.js';
 
 /**
  * Sync gate transport (D224, D109) + on-demand "Sync now" producer
@@ -97,6 +97,30 @@ export class SyncController {
    * renders the sync-gate progress card instead of an error toast,
    * per CLAUDE.md §8 "guard-4xx-as-designed-state".
    */
+  /**
+   * Retry a terminally-failed INITIAL sync (first-run flow audit,
+   * 2026-07-28). Without this the failed gate had no exit: the
+   * reconciler sweeps `queued` only, no route re-queued a `failed`
+   * row, and the onboarding guard bounces every other route back to
+   * the gate — clearing cookies was the only way out.
+   *
+   * `gmail-action` at 3/min: one real click needs one, and a full
+   * re-sync is the most Gmail-expensive thing a user can trigger.
+   *
+   * 202 for a real re-queue; `not_failed` / `no_state` come back 200
+   * with the outcome so the FE renders the current state rather than
+   * an error (guard-4xx-as-designed-state, §8) — a user whose sync
+   * recovered between render and click must not see a failure.
+   */
+  @RateLimit({ bucket: 'gmail-action', limit: 3, windowSec: 60 })
+  @Post('initial/retry')
+  @HttpCode(202)
+  async postInitialRetry(
+    @CurrentMailbox() mailbox: { id: string },
+  ): Promise<Envelope<{ outcome: InitialSyncRetryOutcome }>> {
+    return ok({ outcome: await this.sync.retryFailedInitialSync(mailbox.id) });
+  }
+
   @RateLimit({ bucket: 'gmail-action', limit: 6, windowSec: 60 })
   @Post('incremental')
   @HttpCode(202)
