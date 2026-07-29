@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
+import { useNow } from '@/lib/use-now';
 import { Button, Card, tokens } from '@declutrmail/shared';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import type { MailboxHealth } from '../api/use-mailbox-health';
@@ -46,6 +48,7 @@ export function MailboxesCard({
   /** OAuth start bound to the disconnected mailbox being reactivated. */
   onReactivate: (mailboxId: string) => void;
 }) {
+  const now = useNow();
   const activeCount = mailboxes.filter((m) => m.status === 'active').length;
   const atLimit = inboxLimit !== null && activeCount >= inboxLimit;
 
@@ -141,7 +144,7 @@ export function MailboxesCard({
                         style={{ display: 'block', fontSize: 11, color: color.fgMuted }}
                         title={new Date(health.lastSyncedAt).toLocaleString()}
                       >
-                        Synced {relAge(health.lastSyncedAt)}
+                        Synced {relAge(health.lastSyncedAt, now)}
                       </span>
                     )}
                   </span>
@@ -170,7 +173,15 @@ export function MailboxesCard({
                     ) : m.readiness === 'queued' || m.readiness === 'syncing' ? (
                       <StatusTag tone="muted">Syncing…</StatusTag>
                     ) : m.readiness === 'failed' ? (
-                      <StatusTag tone="danger">Sync failed</StatusTag>
+                      <>
+                        <StatusTag tone="danger">Sync failed</StatusTag>
+                        {/* The sibling #418 missed: the onboarding gate got a
+                            real retry while this card kept a dead-end tag
+                            (fix-the-class, D158 triage). Same endpoint, same
+                            explicit mailbox scoping — the row's id, never
+                            "whatever is active". */}
+                        <RetrySyncButton mailboxId={m.id} />
+                      </>
                     ) : m.readiness === 'ready' ? (
                       <StatusTag tone="muted">Ready</StatusTag>
                     ) : (
@@ -307,9 +318,39 @@ function ReconnectButton({
   );
 }
 
+/**
+ * Row-scoped retry for a failed INITIAL sync. Each failed row owns its
+ * own mutation instance so two failed mailboxes cannot share pending
+ * state. `useRetryInitialSync` names the row's mailbox explicitly via
+ * `X-Active-Mailbox-Id` and invalidates the `SYNC_STATUS_KEY` prefix on
+ * success — which is exactly the key family `useMailboxesHealth` reads,
+ * so the tag flips to "Syncing…" from server truth, not optimism.
+ */
+function RetrySyncButton({ mailboxId }: { mailboxId: string }) {
+  const retry = useRetryInitialSync(mailboxId);
+  return (
+    <button
+      type="button"
+      onClick={() => retry.mutate()}
+      disabled={retry.isPending}
+      style={{
+        border: `1px solid ${color.line}`,
+        background: 'transparent',
+        color: color.fg,
+        borderRadius: 6,
+        padding: '3px 10px',
+        fontSize: 12,
+        cursor: retry.isPending ? 'default' : 'pointer',
+      }}
+    >
+      {retry.isPending ? 'Starting…' : 'Try again'}
+    </button>
+  );
+}
+
 /** ISO → compact relative age (same shape as SyncNowButton's label). */
-function relAge(iso: string): string {
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+function relAge(iso: string, now: number): string {
+  const mins = Math.floor((now - new Date(iso).getTime()) / 60_000);
   if (mins < 1) return 'just now';
   if (mins < 60) return `${mins}m ago`;
   const hours = Math.floor(mins / 60);

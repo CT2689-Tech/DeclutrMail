@@ -1,6 +1,7 @@
 'use client';
 
 import { Button, tokens } from '@declutrmail/shared';
+import { useNow } from '@/lib/use-now';
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { PendingSuggestionRow } from './pending-suggestion-row';
 import { presetDisplayName } from './preset-labels';
@@ -41,9 +42,10 @@ export function SuggestionGroup({
   /** Opens the approve preview covering the selected subset. */
   onApproveSelected: (rule: AutopilotRuleDto, matches: AutopilotMatchDto[]) => void;
 }) {
+  const now = useNow();
   const name = rule == null ? 'Unknown rule' : presetDisplayName(rule.presetKey, rule.name);
   const selectedInGroup = matches.filter((m) => selectedIds.has(m.id));
-  const daysLeft = observeDaysLeft(rule);
+  const daysLeft = observeDaysLeft(rule, now);
 
   return (
     <section
@@ -128,11 +130,11 @@ export function SuggestionGroup({
 }
 
 /** "(N days left)" while the rule's observe window is running (D104 header). */
-function observeDaysLeft(rule: AutopilotRuleDto | null): string | null {
+function observeDaysLeft(rule: AutopilotRuleDto | null, now: number): string | null {
   if (rule == null || rule.mode !== 'observe' || rule.observeWindowEndsAt == null) return null;
   if (rule.observeWindowElapsed) return 'observe window complete';
   const ends = new Date(rule.observeWindowEndsAt).getTime();
   if (Number.isNaN(ends)) return null;
-  const days = Math.max(1, Math.ceil((ends - Date.now()) / (24 * 60 * 60 * 1000)));
+  const days = Math.max(1, Math.ceil((ends - now) / (24 * 60 * 60 * 1000)));
   return `${days} day${days === 1 ? '' : 's'} left`;
 }

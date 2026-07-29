@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useNow } from '@/lib/use-now';
 import {
   useCallback,
   useEffect,
@@ -2170,7 +2171,8 @@ function ActivityRow({
   const senderDomain = row.sender?.domain ?? '';
   const verbLabel = activityRowActionLabel(row);
   const sourceLabel = SOURCE_LABEL[row.source];
-  const relative = relativeTime(row.occurredAt);
+  const now = useNow();
+  const relative = relativeTime(row.occurredAt, now);
   const isSyntheticReviewEvidence =
     row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected';
   const dotColor =

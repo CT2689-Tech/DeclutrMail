@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useNow } from '@/lib/use-now';
 import { Button, Pill, tokens } from '@declutrmail/shared';
 import type { AutopilotActionKind, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { observeDigestSummary } from './observe-digest';
@@ -66,6 +67,7 @@ export function RuleCard({
   onTogglePreview: () => void;
   onRetryPreview: () => void;
 }) {
+  const now = useNow();
   const name = presetDisplayName(rule.presetKey, rule.name);
   // D10/D101 — Observe-mode digest, only meaningful while the rule is
   // actually watching (enabled + Observe). Disabled rules stay quiet.
@@ -125,10 +127,10 @@ export function RuleCard({
             ? `${pendingCount} pending in the latest 50`
             : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
         </span>
-        {observeWindowSummary(rule) != null && (
+        {observeWindowSummary(rule, now) != null && (
           <>
             <span aria-hidden="true">·</span>
-            <span>{observeWindowSummary(rule)}</span>
+            <span>{observeWindowSummary(rule, now)}</span>
           </>
         )}
       </div>
@@ -235,12 +237,12 @@ function lastRunSummary(rule: AutopilotRuleDto): string {
 }
 
 /** D10 observe-window countdown; null when not in Observe mode. */
-function observeWindowSummary(rule: AutopilotRuleDto): string | null {
+function observeWindowSummary(rule: AutopilotRuleDto, now: number): string | null {
   if (rule.mode !== 'observe' || rule.observeWindowEndsAt == null) return null;
   if (rule.observeWindowElapsed) return 'Observe window complete';
   const ends = new Date(rule.observeWindowEndsAt).getTime();
   if (Number.isNaN(ends)) return null;
-  const daysLeft = Math.max(1, Math.ceil((ends - Date.now()) / (24 * 60 * 60 * 1000)));
+  const daysLeft = Math.max(1, Math.ceil((ends - now) / (24 * 60 * 60 * 1000)));
   return `Observing · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
 }
 
