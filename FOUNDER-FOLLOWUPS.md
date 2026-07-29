@@ -42,13 +42,6 @@ section to the Done section. Do not delete entries — the trail matters.
 **Verifies by:** `SELECT workspace_id, count(*) FROM subscriptions WHERE status IN ('active','past_due','paused') GROUP BY 1 HAVING count(*) > 1;` returns nothing.
 **Status:** Open
 
-### 2026-07-28 — Stale migration reference in the activity-log schema comment
-**Source:** session 2026-07-28 — found while verifying D248's claims against the tree
-**Why:** `packages/db/src/schema/activity-log.ts:77` annotates the D245 truthful unsubscribe outcome values with "(0037)". Migration 0037 is `0037_mailbox_data_deletion_requests.sql`; the values actually land in **`0038_truthful_unsubscribe_lifecycle.sql`**. Harmless at runtime, but it is a pointer that sends a reader to the wrong file, and it already cost real time — D248's first draft cited migration 0037 because I copied the number out of this comment instead of checking the migrations directory. A wrong cross-reference in a schema file is the cheapest kind of lie to fix and the most expensive kind to trust.
-**How:** one-token comment fix in `activity-log.ts`. Not done in the D248 PR deliberately — that PR is docs-only, and touching `packages/db/src/schema/**` pulls in the schema-migration-reviewer gate for a comment. Batch it into the next chore run.
-**Verifies by:** the comment cites `0038_truthful_unsubscribe_lifecycle.sql`; `rg "\(0037\)" packages/db/src/schema` returns nothing.
-**Status:** Open
-
 ### 2026-07-28 — DECIDED: seven founder calls from the followups triage (this entry is the brief for all of them)
 **Source:** session 2026-07-28 — full triage of all 141 Open entries; 29 closed as verifiably dead, the survivors bucketed, and every genuine decision put to the founder as an MCQ. Two further closures were made and then REVERSED the same day after the Codex stop-time review: the `read_count` RATIFY (its ratification was done, its plan-file edit never was) and the /billing post-purchase entry (#367 merged, but its own bar — one sandbox purchase flipping in place — was never observed). Both are back in Open above with the specific unmet condition named. The lesson generalises past this file: an entry whose Status reads *Open* while its body says *shipped* usually has a second half, and the second half is the reason it is still open.
 **Why:** the file had stopped being readable. 141 rows all said "Open" while ~22% were already fixed in code, so nothing in it could be trusted in either direction — the ops-layer form of the UI-truth bug class (a surface asserting a state it no longer knows). Triage alone doesn't fix that; the seven decisions below are what stop it recurring, and three of them close six followups each.
@@ -81,34 +74,6 @@ section to the Done section. Do not delete entries — the trail matters.
 **Why:** the checkout lock is localStorage + Web Locks — same browser only. Laptop-pays / phone-opens-/billing still shows live checkout CTAs; with the index above absent, the second payment lands silently.
 **How:** decide the shape (e.g. `pendingCheckout` on `GET /api/billing/subscription` derived from a provider-checkout-created event) and I build it. The DB index is the backstop either way.
 **Verifies by:** open checkout on device A → /billing on device B shows the pending state, CTAs blocked.
-**Status:** Open
-
-### 2026-07-28 — FIRST-RUN TRAP (severity upgrade of the 2026-07-17 retry-CTA entry): terminally failed INITIAL sync locks a new user out of the entire product
-**Source:** first-run flow agent sweep 2026-07-28 (3 BLOCKING findings on one chain)
-**Why:** after 5 worker attempts (~1 min budget) `readiness='failed'` is terminal: the reconciler only re-queues `queued`, no retry endpoint exists, the gate's "Try again" is `location.reload()`, the failure copy PROMISES "We'll retry automatically" (false), no failure email exists (only sync_ready), and the onboarding gate bounces every route — including /settings and /billing — back to the trap. Only clearing cookies escapes. `GMAIL_QUOTA_EXCEEDED` makes this live-reachable.
-**How:** approve scope and I build: `POST /api/v1/sync/initial/retry` (idempotent re-markQueued + force schedule, `failed`-state-gated) + wire the gate CTA + render the skip corner/sign-out on the failed first-run gate + fix the copy + (optional) `mailbox.sync_failed` email. Until then the failure copy at `sync-gate.tsx:248` is a standing false promise.
-**Verifies by:** dev SQL forces `readiness='failed'` → gate offers a working retry + settings stays reachable; copy states the real recovery.
-**Status:** Open
-
-### 2026-07-28 — Small legal-accuracy fix: privacy §3 / terms §7 prose under-enumerates fetched fields
-**Source:** legal agent sweep 2026-07-28 (only NEW finding; everything else verified OK)
-**Why:** the hand-written "fetched" sentence omits To/Cc on sent mail, List-Unsubscribe headers, and size estimate, all of which the D245 registry records. The complete generated list sits directly above, so it is drift, not a false claim — still worth closing before scrutiny.
-**How:** approve and I soften to "including" or append the three items in both files (`privacy/page.tsx:117-121`, `terms/page.tsx:137-139`).
-**Verifies by:** prose matches the registry-derived list.
-**Status:** Open
-
-### 2026-07-28 — Privacy hardening pair (latent, not leaking): worker Sentry scrubber + body-storage hook regex
-**Source:** privacy agent sweep 2026-07-28 (2 SUGGESTIONS; all 5 audit items otherwise clean)
-**Why:** (a) the API/worker Sentry path ships raw `Error.message` through the weaker key-denylist scrubber while the browser path uses the deny-by-default rebuild — a future `throw new Error` that interpolates a subject into its message would ship to Sentry unguarded; (b) `verify-no-body-storage.sh` greps object-literal `format:` syntax only — `params.set('format','full')` or flipping the METADATA_FORMAT constant passes the hook clean.
-**How:** approve and I (a) route worker/API Sentry through `scrubSentryEvent`, (b) extend the hook regex to the `params.set`/constant forms.
-**Verifies by:** scrubber unit test on a message-bearing Error; hook self-test rejects the two bypass forms.
-**Status:** Open
-
-### 2026-07-28 — Low webhook hygiene: Resend svix-id dedup + webhook_dedup TTL that nothing enforces
-**Source:** webhook-security agent sweep 2026-07-28 (SUGGESTION tier)
-**Why:** Resend webhook verifies signature + 5-min window but records no delivery id (replay inside the window re-applies an idempotent suppression — low impact, only outlier); `webhook_dedup.expires_at` is written and indexed but no sweep reads it — dedup is effectively permanent (safe direction) and the table grows unbounded.
-**How:** batch into a hygiene PR when convenient: record svix-id, add a retention sweep or drop the TTL column.
-**Verifies by:** replayed Resend event acks duplicate; webhook_dedup row count stops growing monotonically.
 **Status:** Open
 
 ### 2026-07-28 — LAUNCH BLOCKER: transactional email carries no physical postal address (CAN-SPAM / CASL)
@@ -201,20 +166,6 @@ Deliberately deferred by founder decision 2026-07-28 (of the three options — v
 **Verifies by:** No IMPLEMENTATION-LOG row claims a feature that does not exist in code, and no row cites a spec file that has been deleted.
 **Status:** Open
 
-### 2026-07-17 — Needs a BE endpoint: failed INITIAL sync has no retry CTA
-**Source:** session (settings truth batch, PR #344)
-**Why:** A mailbox whose INITIAL sync failed is a dead end in Settings → Mailboxes: the card says "Sync failed" and offers nothing. The only sync route (`POST /api/v1/sync/incremental`) 409s `SYNC_NOT_READY` in exactly that state, so there is no endpoint an honest retry button could call. Initial sync is enqueued only from the OAuth connect path; the sync gate's own "Try again" is just `window.location.reload()`. NOT stubbed in #344 per CLAUDE.md §10 — a button that cannot work is worse than no button. Mitigating: the worker DOES auto-retry, so this is a missing CTA, not stuck data. Not launch-blocking on its own, but it is the one remaining dead end on the Settings surface.
-**How:** Decide the shape, then implement: add `POST /api/v1/sync/initial/retry` (re-enqueue the initial-sync job for a mailbox in `readiness='failed'`, idempotent per mailbox) and wire a "Try again" button in `mailboxes-card.tsx` next to the "Sync failed" tag. Alternative if the worker's auto-retry is considered sufficient: keep no button but make the card SAY that a retry is already scheduled, so the state stops reading as terminal.
-**Verifies by:** A mailbox forced to `readiness='failed'` shows a working retry (or an honest "retrying automatically" line), and the founder can recover a failed connect without re-running OAuth.
-**Status:** Open
-
-### 2026-07-16 — Post-launch chore: 6 render-body `Date.now()` sites (hydration-warning risk)
-**Source:** session (prelaunch product audit, wire-model refactor sweep)
-**Why:** Six components call `Date.now()` (directly or via a defaulted param) in the render body, so a server render and the client hydration can compute different relative-time labels — a React hydration warning at worst, no data corruption. All render client-fetched data, so real-world impact is cosmetic; explicitly NOT launch-blocking.
-**How:** Batch chore PR: `apps/web/src/features/sync/sync-now-button.tsx:216`, `apps/web/src/features/autopilot/rule-card.tsx:228`, `apps/web/src/features/autopilot/suggestion-group.tsx:46,136`, `apps/web/src/features/activity/activity-screen.tsx:2173`, `apps/web/src/features/followups/followups-screen.tsx:337`, `apps/web/src/features/settings/settings-index/mailboxes-card.tsx:137,286`. Standard fix: compute in an effect/`useSyncExternalStore` tick or pass `now` from a per-render `useMemo` seeded client-side.
-**Verifies by:** No hydration warnings in dev console on those routes; labels still tick.
-**Status:** Open
-
 ### 2026-07-16 — Plan patch: D49 rationale is stale + dead Weekly-Hero stack
 **Source:** session (senders smoke triage)
 **Why:** Two doc/code truths drifted. (1) D49's rationale ("grid surfaces decisions — card format with verdict badge visible") describes the pre-D245 card; D245 removed engine-verdict presentation from cards. The DECISION (grid default, table toggle) still stands — only the reasoning is stale, and a future agent could "restore" verdict badges to match the text. (2) The Weekly-Hero stack is dead code: `useWeeklyHero` (apps/web/src/features/senders/api/use-weekly-hero.ts) has zero consumers; the BE endpoint (senders.controller.ts weekly-hero), `fetchWeeklyHero`, and the `WeeklyHero*Dto` wire types survive as orphans of the retired editorial-hero era. D245 prelaunch says remove directly — flagged rather than deleted because it predates the current change (CLAUDE.md §1.3).
@@ -239,24 +190,6 @@ UnsubExecutionWorker, and a channel-split preview sheet. Not
 smallest-diff — scope as its own PR after ratifying.
 **Verifies by:** D-decision recorded in the plan mirror; batch banner
 offers the one-click subset; mailto senders remain per-row.
-**Status:** Open
-
-### 2026-07-10 — Observation: status polls pause in background tabs
-**Source:** session 2026-07-10 wave smoke (two archive confirms looked
-"stuck busy" in an unfocused automation tab; worker had finished in
-2.6s both times)
-**Why:** Every FE status poll (`useActionStatus`, `useBatchStatus`,
-sync status) uses `refetchInterval` without
-`refetchIntervalInBackground`, so TanStack pauses polling while the tab
-is unfocused. Invisible to a real user mid-click (their tab IS
-focused), and it self-heals on refocus — but a user who switches tabs
-during a long batch returns to a stale busy row for one refetch beat.
-Cosmetic; NOT a launch blocker. Decide deliberately rather than flip
-the flag reflexively (background polling costs battery/requests).
-**How:** If desired: `refetchIntervalInBackground: true` on the two
-action-status hooks only (`apps/web/src/lib/api/use-action.ts:90,228`).
-**Verifies by:** archive in tab A, switch to tab B, return — row
-already gone without a refetch beat.
 **Status:** Open
 
 ### 2026-07-10 — Give `declutrmail-worker` its own service account
@@ -1500,6 +1433,73 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-07-28 — Stale migration reference in the activity-log schema comment
+**Source:** session 2026-07-28 — found while verifying D248's claims against the tree
+**Why:** `packages/db/src/schema/activity-log.ts:77` annotates the D245 truthful unsubscribe outcome values with "(0037)". Migration 0037 is `0037_mailbox_data_deletion_requests.sql`; the values actually land in **`0038_truthful_unsubscribe_lifecycle.sql`**. Harmless at runtime, but it is a pointer that sends a reader to the wrong file, and it already cost real time — D248's first draft cited migration 0037 because I copied the number out of this comment instead of checking the migrations directory. A wrong cross-reference in a schema file is the cheapest kind of lie to fix and the most expensive kind to trust.
+**How:** one-token comment fix in `activity-log.ts`. Not done in the D248 PR deliberately — that PR is docs-only, and touching `packages/db/src/schema/**` pulls in the schema-migration-reviewer gate for a comment. Batch it into the next chore run.
+**Verifies by:** the comment cites `0038_truthful_unsubscribe_lifecycle.sql`; `rg "\(0037\)" packages/db/src/schema` returns nothing.
+**Status:** Done 2026-07-29 — shipped in #428; the comment cites 0038_truthful_unsubscribe_lifecycle.sql.
+
+### 2026-07-28 — FIRST-RUN TRAP (severity upgrade of the 2026-07-17 retry-CTA entry): terminally failed INITIAL sync locks a new user out of the entire product
+**Source:** first-run flow agent sweep 2026-07-28 (3 BLOCKING findings on one chain)
+**Why:** after 5 worker attempts (~1 min budget) `readiness='failed'` is terminal: the reconciler only re-queues `queued`, no retry endpoint exists, the gate's "Try again" is `location.reload()`, the failure copy PROMISES "We'll retry automatically" (false), no failure email exists (only sync_ready), and the onboarding gate bounces every route — including /settings and /billing — back to the trap. Only clearing cookies escapes. `GMAIL_QUOTA_EXCEEDED` makes this live-reachable.
+**How:** approve scope and I build: `POST /api/v1/sync/initial/retry` (idempotent re-markQueued + force schedule, `failed`-state-gated) + wire the gate CTA + render the skip corner/sign-out on the failed first-run gate + fix the copy + (optional) `mailbox.sync_failed` email. Until then the failure copy at `sync-gate.tsx:248` is a standing false promise.
+**Verifies by:** dev SQL forces `readiness='failed'` → gate offers a working retry + settings stays reachable; copy states the real recovery.
+**Status:** Done 2026-07-29 — the full chain is closed across #418 (retry endpoint + gate CTA + honest copy), #427 (settings-card retry sibling; Disconnect-and-start-over + Sign out on the failed first-run gate — deliberate deviation from the literal "/settings" wording, since the onboarding guard would bounce /settings straight back; flagged for veto in #427's body) and #428 (`mailbox.sync_failed` transactional email, per-mailbox-per-day dedup, copy promises no auto-retry). Every exit smoked live on the real account with forced failed state.
+
+### 2026-07-28 — Small legal-accuracy fix: privacy §3 / terms §7 prose under-enumerates fetched fields
+**Source:** legal agent sweep 2026-07-28 (only NEW finding; everything else verified OK)
+**Why:** the hand-written "fetched" sentence omits To/Cc on sent mail, List-Unsubscribe headers, and size estimate, all of which the D245 registry records. The complete generated list sits directly above, so it is drift, not a false claim — still worth closing before scrutiny.
+**How:** approve and I soften to "including" or append the three items in both files (`privacy/page.tsx:117-121`, `terms/page.tsx:137-139`).
+**Verifies by:** prose matches the registry-derived list.
+**Status:** Done 2026-07-29 — shipped in #428. Both pages now enumerate recipient addresses on sent mail, List-Unsubscribe headers, and Gmail's size estimate; the 242 legal-page guard tests pass.
+
+### 2026-07-28 — Privacy hardening pair (latent, not leaking): worker Sentry scrubber + body-storage hook regex
+**Source:** privacy agent sweep 2026-07-28 (2 SUGGESTIONS; all 5 audit items otherwise clean)
+**Why:** (a) the API/worker Sentry path ships raw `Error.message` through the weaker key-denylist scrubber while the browser path uses the deny-by-default rebuild — a future `throw new Error` that interpolates a subject into its message would ship to Sentry unguarded; (b) `verify-no-body-storage.sh` greps object-literal `format:` syntax only — `params.set('format','full')` or flipping the METADATA_FORMAT constant passes the hook clean.
+**How:** approve and I (a) route worker/API Sentry through `scrubSentryEvent`, (b) extend the hook regex to the `params.set`/constant forms.
+**Verifies by:** scrubber unit test on a message-bearing Error; hook self-test rejects the two bypass forms.
+**Status:** Done 2026-07-29 — shipped in #428. (a) API/worker `beforeSend` now REBUILDS events via `scrubSentryEvent('server')` — deny-by-default, `Error.message` omitted outright, triage tags (worker/policy/job_id/mailbox/kind) preserved via a server allowlist; red-green tested. (b) `verify-no-body-storage.sh` catches `params.set('format','full')` and `*FORMAT*='full'` constant flips; hook self-tested on all three bypass forms + clean file + the real Gmail adapter.
+
+### 2026-07-28 — Low webhook hygiene: Resend svix-id dedup + webhook_dedup TTL that nothing enforces
+**Source:** webhook-security agent sweep 2026-07-28 (SUGGESTION tier)
+**Why:** Resend webhook verifies signature + 5-min window but records no delivery id (replay inside the window re-applies an idempotent suppression — low impact, only outlier); `webhook_dedup.expires_at` is written and indexed but no sweep reads it — dedup is effectively permanent (safe direction) and the table grows unbounded.
+**How:** batch into a hygiene PR when convenient: record svix-id, add a retention sweep or drop the TTL column.
+**Verifies by:** replayed Resend event acks duplicate; webhook_dedup row count stops growing monotonically.
+**Status:** Done 2026-07-29 — shipped in #428. Verified deliveries dedup on `resend:<svix-id>` in webhook_dedup (replay inside the signature window acks duplicate; red-green spec), and the TTL promised since 0030 is enforced by an hourly bounded sweep in the worker root — smoked live (expired row deleted on boot, live row retained).
+
+### 2026-07-17 — Needs a BE endpoint: failed INITIAL sync has no retry CTA
+**Source:** session (settings truth batch, PR #344)
+**Why:** A mailbox whose INITIAL sync failed is a dead end in Settings → Mailboxes: the card says "Sync failed" and offers nothing. The only sync route (`POST /api/v1/sync/incremental`) 409s `SYNC_NOT_READY` in exactly that state, so there is no endpoint an honest retry button could call. Initial sync is enqueued only from the OAuth connect path; the sync gate's own "Try again" is just `window.location.reload()`. NOT stubbed in #344 per CLAUDE.md §10 — a button that cannot work is worse than no button. Mitigating: the worker DOES auto-retry, so this is a missing CTA, not stuck data. Not launch-blocking on its own, but it is the one remaining dead end on the Settings surface.
+**How:** Decide the shape, then implement: add `POST /api/v1/sync/initial/retry` (re-enqueue the initial-sync job for a mailbox in `readiness='failed'`, idempotent per mailbox) and wire a "Try again" button in `mailboxes-card.tsx` next to the "Sync failed" tag. Alternative if the worker's auto-retry is considered sufficient: keep no button but make the card SAY that a retry is already scheduled, so the state stops reading as terminal.
+**Verifies by:** A mailbox forced to `readiness='failed'` shows a working retry (or an honest "retrying automatically" line), and the founder can recover a failed connect without re-running OAuth.
+**Status:** Done 2026-07-29 — superseded by the chain above: `POST /api/v1/sync/initial/retry` shipped in #418, the Settings → Mailboxes card retry shipped in #427 (row-scoped, X-Active-Mailbox-Id), smoked live failed→click→requeued→ready.
+
+### 2026-07-16 — Post-launch chore: 6 render-body `Date.now()` sites (hydration-warning risk)
+**Source:** session (prelaunch product audit, wire-model refactor sweep)
+**Why:** Six components call `Date.now()` (directly or via a defaulted param) in the render body, so a server render and the client hydration can compute different relative-time labels — a React hydration warning at worst, no data corruption. All render client-fetched data, so real-world impact is cosmetic; explicitly NOT launch-blocking.
+**How:** Batch chore PR: `apps/web/src/features/sync/sync-now-button.tsx:216`, `apps/web/src/features/autopilot/rule-card.tsx:228`, `apps/web/src/features/autopilot/suggestion-group.tsx:46,136`, `apps/web/src/features/activity/activity-screen.tsx:2173`, `apps/web/src/features/followups/followups-screen.tsx:337`, `apps/web/src/features/settings/settings-index/mailboxes-card.tsx:137,286`. Standard fix: compute in an effect/`useSyncExternalStore` tick or pass `now` from a per-render `useMemo` seeded client-side.
+**Verifies by:** No hydration warnings in dev console on those routes; labels still tick.
+**Status:** Done 2026-07-29 — shipped in #427 via `useNow()` (lazy init + one mount correction); helpers stay pure and take `now` explicitly. NOTE the wider class remains by choice: the senders enrich path (`enrichSenderRow`, sender-table/detail render bodies, `fmtLastReview`) still defaults `now = Date.now()` — deliberately not expanded into the hottest render path in a chore batch; take it with the next senders PR if hydration warnings ever actually appear there.
+
+### 2026-07-10 — Observation: status polls pause in background tabs
+**Source:** session 2026-07-10 wave smoke (two archive confirms looked
+"stuck busy" in an unfocused automation tab; worker had finished in
+2.6s both times)
+**Why:** Every FE status poll (`useActionStatus`, `useBatchStatus`,
+sync status) uses `refetchInterval` without
+`refetchIntervalInBackground`, so TanStack pauses polling while the tab
+is unfocused. Invisible to a real user mid-click (their tab IS
+focused), and it self-heals on refocus — but a user who switches tabs
+during a long batch returns to a stale busy row for one refetch beat.
+Cosmetic; NOT a launch blocker. Decide deliberately rather than flip
+the flag reflexively (background polling costs battery/requests).
+**How:** If desired: `refetchIntervalInBackground: true` on the two
+action-status hooks only (`apps/web/src/lib/api/use-action.ts:90,228`).
+**Verifies by:** archive in tab A, switch to tab B, return — row
+already gone without a refetch beat.
+**Status:** Done 2026-07-29 — shipped in #427: `refetchIntervalInBackground: true` on the two action-status hooks only, exactly as scoped; interval still self-terminates on terminal status.
 
 ### 2026-07-28 — CLAUDE.md §11 distill: the D-vs-ADR rule has a hole, and it already caused a mis-tag
 **Source:** session 2026-07-28 — founder asked what the ideal split would be, ignoring the existing D-numbers
