@@ -245,7 +245,7 @@ describe('the current-plan headline makes no price claim without a backing sub (
     renderScreen({ initialProvider: 'razorpay' });
 
     const card = await screen.findByTestId('current-plan-card');
-    expect(card).toHaveTextContent('Included with your workspace');
+    expect(card).toHaveTextContent('Included with your account');
     expect(card).not.toHaveTextContent('₹1,599/mo');
     expect(card).not.toHaveTextContent('$19/mo');
   });
@@ -255,7 +255,7 @@ describe('the current-plan headline makes no price claim without a backing sub (
     renderScreen({ initialProvider: 'paddle' });
 
     const card = await screen.findByTestId('current-plan-card');
-    expect(card).toHaveTextContent('Included with your workspace');
+    expect(card).toHaveTextContent('Included with your account');
     expect(card).not.toHaveTextContent('$19/mo');
   });
 });

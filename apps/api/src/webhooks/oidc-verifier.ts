@@ -36,6 +36,22 @@ const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 /** JWKS cache TTL — 1h. Google rotates keys daily; short TTL is cheap insurance. */
 const JWKS_CACHE_TTL_MS = 60 * 60 * 1000;
 
+/**
+ * Minimum gap between UNKNOWN-KID forced refreshes.
+ *
+ * `kid` arrives in the UNVERIFIED JWT header, and it is read before
+ * issuer/audience/email are checked — so any unauthenticated caller can
+ * name a random kid. Without a floor, each such request nulls the
+ * process-wide cache and forces a fresh HTTPS GET to Google: an
+ * outbound-request amplifier whose real victims are the LEGITIMATE
+ * Pub/Sub deliveries that then wait on (or fail with) a throttled
+ * fetch, stalling mail sync.
+ *
+ * 60s is well under Google's rotation cadence, so a genuine mid-TTL
+ * rotation still recovers on the next delivery — Pub/Sub retries.
+ */
+const JWKS_FORCED_REFRESH_MIN_INTERVAL_MS = 60 * 1000;
+
 /** Acceptable `iss` values (Google returns both forms historically). */
 const ALLOWED_ISSUERS: ReadonlySet<string> = new Set([
   'https://accounts.google.com',
@@ -142,6 +158,17 @@ export class PubSubOidcVerifier {
   /** De-dupe concurrent refreshes — first caller does the work, others await. */
   private inflight: Promise<Map<string, Jwk>> | null = null;
 
+  /** Epoch ms of the last unknown-kid forced refresh (0 = never). */
+  private lastForcedRefreshMs = 0;
+
+  /**
+   * Kids already proven absent from a FRESHLY fetched JWKS. A repeat of
+   * the same bogus kid short-circuits to `unknown_kid` without touching
+   * the cache or the network. Cleared whenever a real fetch lands, so a
+   * kid that later appears in a rotation is never permanently rejected.
+   */
+  private readonly knownAbsentKids = new Set<string>();
+
   constructor(config: PubSubOidcVerifierConfig) {
     if (!config.audience) {
       throw new Error('PubSubOidcVerifier: `audience` is required (env PUBSUB_PUSH_AUDIENCE).');
@@ -244,6 +271,19 @@ export class PubSubOidcVerifier {
     }
     let jwk = keys.get(decoded.header.kid);
     if (!jwk) {
+      // Already proven absent against a fresh fetch — answer from
+      // memory. No cache bust, no network.
+      if (this.knownAbsentKids.has(decoded.header.kid)) {
+        return { ok: false, step: 2, reason: 'unknown_kid' };
+      }
+      // Throttle the forced refresh itself: a genuine rotation needs
+      // ONE of these per minute, an attacker would want one per
+      // request. Inside the window, answer from the cache we have.
+      const nowMs = this.now() * 1000;
+      if (nowMs - this.lastForcedRefreshMs < JWKS_FORCED_REFRESH_MIN_INTERVAL_MS) {
+        return { ok: false, step: 2, reason: 'unknown_kid' };
+      }
+      this.lastForcedRefreshMs = nowMs;
       this.cache = null;
       try {
         keys = await this.getJwks();
@@ -257,6 +297,9 @@ export class PubSubOidcVerifier {
       }
       jwk = keys.get(decoded.header.kid);
       if (!jwk) {
+        // Fresh JWKS genuinely lacks this kid — remember it so the
+        // next identical probe costs nothing.
+        this.knownAbsentKids.add(decoded.header.kid);
         return { ok: false, step: 2, reason: 'unknown_kid' };
       }
     }
@@ -289,6 +332,9 @@ export class PubSubOidcVerifier {
           }
         }
         this.cache = { keys: map, expiresAt: nowMs + JWKS_CACHE_TTL_MS };
+        // A fresh key set may legitimately contain a kid we previously
+        // rejected — never let the negative cache outlive its evidence.
+        this.knownAbsentKids.clear();
         return map;
       } finally {
         this.inflight = null;

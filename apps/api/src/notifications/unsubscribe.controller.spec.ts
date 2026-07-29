@@ -6,7 +6,7 @@ import { citext } from '@electric-sql/pglite/contrib/citext';
 import { drizzle, type PgliteDatabase } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { schema, users, workspaces } from '@declutrmail/db';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { UnsubscribeController } from './unsubscribe.controller.js';
 import { signUnsubscribeToken } from './unsubscribe-token.js';
@@ -52,6 +52,15 @@ async function readPrefs(db: DrizzleDb, userId: string): Promise<Record<string, 
   return row!.preferences as Record<string, unknown>;
 }
 
+/**
+ * Security-events stub. The controller records an `invalid_token`
+ * event so a worker/API signing-key drift shows up as a rate spike
+ * instead of the uniform-200 silence that would otherwise hide it.
+ */
+function securityEventsStub() {
+  return { record: vi.fn().mockResolvedValue(undefined) } as never;
+}
+
 describe('UnsubscribeController', () => {
   beforeAll(() => {
     process.env.UNSUBSCRIBE_TOKEN_SECRET = 'y'.repeat(32);
@@ -65,7 +74,7 @@ describe('UnsubscribeController', () => {
     // it spam.
     const db = await freshDb();
     const userId = await seedUser(db, {});
-    const controller = new UnsubscribeController(db);
+    const controller = new UnsubscribeController(db, securityEventsStub());
     const token = await signUnsubscribeToken({ userId, scope: 'all' });
 
     const res = await controller.unsubscribe(token);
@@ -81,7 +90,7 @@ describe('UnsubscribeController', () => {
     // leave the sibling category untouched rather than defaulted.
     const db = await freshDb();
     const userId = await seedUser(db, {});
-    const controller = new UnsubscribeController(db);
+    const controller = new UnsubscribeController(db, securityEventsStub());
     const token = await signUnsubscribeToken({ userId, scope: 'reminders' });
 
     await controller.unsubscribe(token);
@@ -94,7 +103,7 @@ describe('UnsubscribeController', () => {
   it('returns ok for an invalid token and writes nothing', async () => {
     const db = await freshDb();
     const userId = await seedUser(db, { emailPrefs: { reminders: true } });
-    const controller = new UnsubscribeController(db);
+    const controller = new UnsubscribeController(db, securityEventsStub());
 
     const res = await controller.unsubscribe('garbage');
 
@@ -105,7 +114,7 @@ describe('UnsubscribeController', () => {
   it('returns ok for a missing token and writes nothing', async () => {
     const db = await freshDb();
     const userId = await seedUser(db, {});
-    const controller = new UnsubscribeController(db);
+    const controller = new UnsubscribeController(db, securityEventsStub());
 
     const res = await controller.unsubscribe(undefined);
 
@@ -115,7 +124,7 @@ describe('UnsubscribeController', () => {
 
   it('returns ok when the user row is gone', async () => {
     const db = await freshDb();
-    const controller = new UnsubscribeController(db);
+    const controller = new UnsubscribeController(db, securityEventsStub());
     const token = await signUnsubscribeToken({
       userId: '00000000-0000-4000-8000-00000000dead',
       scope: 'all',
@@ -131,7 +140,7 @@ describe('UnsubscribeController', () => {
     // flip anything back ON.
     const db = await freshDb();
     const userId = await seedUser(db, { emailPrefs: { reminders: false } });
-    const controller = new UnsubscribeController(db);
+    const controller = new UnsubscribeController(db, securityEventsStub());
     const token = await signUnsubscribeToken({ userId, scope: 'all' });
 
     await controller.unsubscribe(token);
@@ -149,7 +158,7 @@ describe('UnsubscribeController', () => {
       profilePreset: 'calm',
       emailPrefs: { reminders: false, futureCategory: true },
     });
-    const controller = new UnsubscribeController(db);
+    const controller = new UnsubscribeController(db, securityEventsStub());
     const token = await signUnsubscribeToken({ userId, scope: 'all' });
 
     await controller.unsubscribe(token);
@@ -166,7 +175,7 @@ describe('UnsubscribeController', () => {
     // repair the root to an object first.
     const db = await freshDb();
     const userId = await seedUser(db, [1, 2] as unknown as Record<string, unknown>);
-    const controller = new UnsubscribeController(db);
+    const controller = new UnsubscribeController(db, securityEventsStub());
     const token = await signUnsubscribeToken({ userId, scope: 'all' });
 
     const res = await controller.unsubscribe(token);
@@ -183,7 +192,7 @@ describe('UnsubscribeController', () => {
     // actually lands.
     const db = await freshDb();
     const userId = await seedUser(db, { emailPrefs: 'corrupted' });
-    const controller = new UnsubscribeController(db);
+    const controller = new UnsubscribeController(db, securityEventsStub());
     const token = await signUnsubscribeToken({ userId, scope: 'all' });
 
     await controller.unsubscribe(token);
@@ -196,7 +205,7 @@ describe('UnsubscribeController', () => {
   it('GET never mutates, even with a perfectly valid token', async () => {
     const db = await freshDb();
     const userId = await seedUser(db, { emailPrefs: { reminders: true } });
-    const controller = new UnsubscribeController(db);
+    const controller = new UnsubscribeController(db, securityEventsStub());
     const token = await signUnsubscribeToken({ userId, scope: 'all' });
 
     // Link prefetchers (Outlook Safe Links, malware scanners) issue this
@@ -211,7 +220,7 @@ describe('UnsubscribeController', () => {
 
   it('GET escapes the token into the form action', async () => {
     const db = await freshDb();
-    const controller = new UnsubscribeController(db);
+    const controller = new UnsubscribeController(db, securityEventsStub());
 
     const html = await controller.confirmPage('a"><script>alert(1)</script>');
 

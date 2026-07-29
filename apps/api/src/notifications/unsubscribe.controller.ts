@@ -16,6 +16,7 @@ import { eq, sql } from 'drizzle-orm';
 import { users } from '@declutrmail/db';
 
 import { RateLimit } from '../common/rate-limit/index.js';
+import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { OPT_OUT_CATEGORIES, verifyUnsubscribeToken } from './unsubscribe-token.js';
 
@@ -60,7 +61,10 @@ function escapeHtmlAttr(value: string): string {
 export class UnsubscribeController {
   private readonly logger = new Logger(UnsubscribeController.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    private readonly securityEvents: SecurityEventsService,
+  ) {}
 
   /** The mutating route. Gmail's one-click POST lands here. */
   @Post()
@@ -116,6 +120,17 @@ export class UnsubscribeController {
     const claims = await verifyUnsubscribeToken(token);
     if (!claims) {
       this.logger.warn('email.unsubscribe.invalid_token');
+      // A signing-key drift between the worker (signs) and the API
+      // (verifies) makes EVERY delivered link fail here while the
+      // response stays a uniform 200 — silence by design, which is
+      // exactly what hid it. Emitting a security event turns that
+      // silence into a rate spike an operator can see. Carries no
+      // token bytes: the token is attacker-suppliable input.
+      void this.securityEvents.record({
+        eventType: 'webhook.signature_failure',
+        severity: 'warning',
+        payload: { source: 'email.unsubscribe', reason: 'invalid_token' },
+      });
       return;
     }
     // Which keys this token turns off. `'all'` is what every email

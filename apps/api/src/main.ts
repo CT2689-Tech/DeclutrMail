@@ -71,6 +71,15 @@ function auditRequiredApiEnv(): void {
     'GOOGLE_CLIENT_SECRET',
     'GOOGLE_REDIRECT_URI',
     'WEB_URL',
+    // The worker SIGNS unsubscribe tokens with this and the API
+    // VERIFIES with it. If the two ever drift — the known Cloud Run
+    // --set-env-vars full-replace trap — every unsubscribe link in
+    // already-delivered mail silently no-ops while still answering
+    // 200 to the user and to Gmail. RFC 8058 / CAN-SPAM consequences,
+    // and the UI-truth shape: a surface asserting an outcome it did
+    // not achieve. Surfacing the slot at boot is the cheap half of
+    // catching that; the invalid-token security event is the other.
+    'UNSUBSCRIBE_TOKEN_SECRET',
   ] as const;
   const missing = required.filter((k) => !process.env[k]);
   const kmsLocal = process.env.KMS_KEY_RESOURCE || process.env.ENCRYPTION_LOCAL_KEY;
