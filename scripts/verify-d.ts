@@ -173,7 +173,7 @@ function main(): void {
   writeFileSync(LOG_PATH, lines.join('\n'));
   console.log(`✓ ${d} 🔵 → 🟢`);
   console.log(`  evidence: ${evidence}`);
-  console.log('  Run \`pnpm generate-impl-log\` to recompute the summary block.');
+  console.log('  Run `pnpm generate-impl-log` to recompute the summary block.');
 }
 
 main();
