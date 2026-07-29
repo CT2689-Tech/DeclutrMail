@@ -3,11 +3,11 @@
  *
  * Marketing and the app used to answer "what does Pro cost?" from
  * different places: every in-app surface resolved the visitor's region,
- * while /pricing and the landing teaser were hardcoded USD. Today that
- * is invisible — every `razorpayPlanId` is null, so both sides say $19 —
- * but it becomes a public contradiction the moment the Razorpay catalog
- * is provisioned: /pricing quoting "$19/mo" over a checkout charging
- * ₹1,599.
+ * while /pricing and the landing teaser were hardcoded USD. That was
+ * invisible while India was deferred and every `razorpayPlanId` was null,
+ * so both sides said $19. Razorpay went live 2026-07-25, so the
+ * contradiction this guards is now LIVE rather than hypothetical:
+ * /pricing quoting "$19/mo" over a checkout charging ₹1,599.
  *
  * The manifest is mocked with a PARTIALLY provisioned catalog, because
  * that is the state a go-live actually produces: Pro's standard points

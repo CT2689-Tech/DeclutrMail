@@ -2,14 +2,15 @@
  * The provider gate under a PARTIALLY provisioned Razorpay catalog
  * (D117).
  *
- * Today every `razorpayPlanId` is null, so the radio never renders and
- * `provider` can only ever be `paddle` — which is exactly what hides
- * the bug this file guards. Standard annual and the Founding Pro promo
- * are SEPARATE price points with separate catalog ids, and the promo
- * checkbox swaps between them WITHOUT remounting the confirm panel. So
- * the day Razorpay ships for standard annual but not the promo, a pick
- * made while the radio was visible would survive the radio's removal
- * and ride a promo checkout with no Razorpay id — a
+ * While India was deferred every `razorpayPlanId` was null, so the radio
+ * never rendered and `provider` could only ever be `paddle` — which is
+ * exactly what hid the bug this file guards. Razorpay went live
+ * 2026-07-25, so the radio now renders for real. Standard annual and the
+ * Founding Pro promo are SEPARATE price points with separate catalog ids,
+ * and the promo checkbox swaps between them WITHOUT remounting the
+ * confirm panel. So whenever Razorpay covers standard annual but not the
+ * promo, a pick made while the radio was visible would survive the
+ * radio's removal and ride a promo checkout with no Razorpay id — a
  * BILLING_NOT_PROVISIONED dead end at the moment of purchase.
  *
  * The manifest is mocked (not the component) so the assertion is about
