@@ -249,7 +249,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     return {
       status: HttpStatus.INTERNAL_SERVER_ERROR,
       code: 'INTERNAL_ERROR',
-      message: 'Internal server error',
+      message: ERROR_CODES.INTERNAL_ERROR.message,
       ...classifyHttpError(HttpStatus.INTERNAL_SERVER_ERROR),
     };
   }
@@ -262,7 +262,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
    */
   private safeHttpMessage(exception: HttpException): string {
     if (exception.getStatus() >= HttpStatus.INTERNAL_SERVER_ERROR) {
-      return 'Internal server error';
+      return ERROR_CODES.INTERNAL_ERROR.message;
     }
     const body = exception.getResponse();
     if (typeof body === 'string') {

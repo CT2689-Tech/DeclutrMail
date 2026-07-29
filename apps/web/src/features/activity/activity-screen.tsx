@@ -776,9 +776,9 @@ const VERB_CHIPS: ReadonlyArray<{
 ];
 
 const WINDOWS: ReadonlyArray<{ value: ActivityWindowWire; label: string }> = [
-  { value: '7d', label: '7d' },
-  { value: '30d', label: '30d' },
-  { value: '90d', label: '90d' },
+  { value: '7d', label: '7 days' },
+  { value: '30d', label: '30 days' },
+  { value: '90d', label: '90 days' },
   { value: 'all', label: 'All' },
 ];
 
@@ -3113,7 +3113,8 @@ function formatRecoveryDate(iso: string): string {
   const date = new Date(iso);
   return Number.isFinite(date.getTime())
     ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
-    : iso;
+    : // An unparseable wire date must not leak the raw ISO string into copy.
+      'an unknown time';
 }
 
 function recoveryConfirmErrorMessage(error: Error): string {
@@ -3133,7 +3134,7 @@ function recoveryConfirmErrorMessage(error: Error): string {
   if (code === 'IDEMPOTENCY_KEY_CONFLICT' || code === 'RECOVERY_ALREADY_REQUESTED') {
     return 'This recovery review was already used. Refresh Activity to see the current attempt.';
   }
-  return 'DeclutrMail could not confirm that the queued attempt reached the worker. Gmail may not have changed yet. Try the same confirmation again; it will not create a duplicate.';
+  return 'DeclutrMail could not confirm the retry went through. Gmail may not have changed yet. Trying the same confirmation again is safe — it will not create a duplicate.';
 }
 
 function recoveryConfirmNeedsRecheck(error: Error): boolean {
@@ -3383,7 +3384,7 @@ function ActivityErrorState({
   const message = isClientInput
     ? 'Nothing changed. Activity could not load this filter. Use a valid outcome and valid dates with From earlier than To, or reset the filters and try again.'
     : error instanceof ApiError
-      ? `Your mailbox and actions are unchanged. Activity could not load (${error.status}). Try again in a moment.`
+      ? 'Your mailbox and actions are unchanged. Activity could not load. Try again in a moment.'
       : 'Your mailbox and actions are unchanged. Activity could not load right now. Try again in a moment.';
   return (
     <div
