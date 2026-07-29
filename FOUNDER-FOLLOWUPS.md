@@ -49,13 +49,6 @@ section to the Done section. Do not delete entries — the trail matters.
 **Verifies by:** the comment cites `0038_truthful_unsubscribe_lifecycle.sql`; `rg "\(0037\)" packages/db/src/schema` returns nothing.
 **Status:** Open
 
-### 2026-07-28 — CLAUDE.md §11 distill: the D-vs-ADR rule has a hole, and it already caused a mis-tag
-**Source:** session 2026-07-28 — founder asked what the ideal split would be, ignoring the existing D-numbers
-**Why:** §11 splits the two registries by *timing*: "D-decisions: product / architecture decisions made during **planning**; ADRs: technical decisions made during **implementation**." A **product** decision made during **implementation** matches neither clause, and that is exactly what both of this session's candidates were. Timing is the wrong axis regardless, because the artifacts are consumed differently — `IMPLEMENTATION-LOG.md` tracks D-rows for build status and does not track ADRs at all. The hole is not theoretical: PRs #339 and #343 filed the senders wire-model rebuild and the list/detail window unification as `Closes D38`, and D38 is an onboarding tour that has never been built, so the log asserted a shipped feature that does not exist until this session corrected it.
-**How:** replace the timing split in §11 with the axis that has no gap, via a `chore/distill-*` PR (CLAUDE.md is founder-curated, so an agent cannot make this edit): **"A D-number is something you will ask 'is it built yet?' about. An ADR is a rule that constrains how code gets written."** Full reasoning in LEARNINGS.md 2026-07-28; the rule is already applied in practice — ADR-0029 for the shipped wire model, D248 for the unbuilt bulk unsubscribe.
-**Verifies by:** CLAUDE.md §11 states the build-status/constraint axis; a future session choosing between the registries has a rule that answers, rather than two clauses that both miss.
-**Status:** Open
-
 ### 2026-07-28 — DECIDED: seven founder calls from the followups triage (this entry is the brief for all of them)
 **Source:** session 2026-07-28 — full triage of all 141 Open entries; 29 closed as verifiably dead, the survivors bucketed, and every genuine decision put to the founder as an MCQ. Two further closures were made and then REVERSED the same day after the Codex stop-time review: the `read_count` RATIFY (its ratification was done, its plan-file edit never was) and the /billing post-purchase entry (#367 merged, but its own bar — one sandbox purchase flipping in place — was never observed). Both are back in Open above with the specific unmet condition named. The lesson generalises past this file: an entry whose Status reads *Open* while its body says *shipped* usually has a second half, and the second half is the reason it is still open.
 **Why:** the file had stopped being readable. 141 rows all said "Open" while ~22% were already fixed in code, so nothing in it could be trusted in either direction — the ops-layer form of the UI-truth bug class (a surface asserting a state it no longer knows). Triage alone doesn't fix that; the seven decisions below are what stop it recurring, and three of them close six followups each.
@@ -227,22 +220,6 @@ Deliberately deferred by founder decision 2026-07-28 (of the three options — v
 **Why:** Two doc/code truths drifted. (1) D49's rationale ("grid surfaces decisions — card format with verdict badge visible") describes the pre-D245 card; D245 removed engine-verdict presentation from cards. The DECISION (grid default, table toggle) still stands — only the reasoning is stale, and a future agent could "restore" verdict badges to match the text. (2) The Weekly-Hero stack is dead code: `useWeeklyHero` (apps/web/src/features/senders/api/use-weekly-hero.ts) has zero consumers; the BE endpoint (senders.controller.ts weekly-hero), `fetchWeeklyHero`, and the `WeeklyHero*Dto` wire types survive as orphans of the retired editorial-hero era. D245 prelaunch says remove directly — flagged rather than deleted because it predates the current change (CLAUDE.md §1.3).
 **How:** (1) Add `[AUDIT PATCH on D49]` note to the plan: decision unchanged; rationale now "brand rollup + fact stat strip", not verdict badges. (2) Approve a `chore/` PR deleting the Weekly-Hero endpoint + hook + DTOs + `sendersKeys.weeklyHero()`.
 **Verifies by:** Plan shows the patch marker; `rg -i weeklyhero` returns nothing after the chore PR.
-**Status:** Open
-
-### 2026-07-13 — Ratify `ErrorState` onto the D220 launch allowlist
-**Source:** PR #325 design-system gate review
-**Why:** The branch promotes a shared `ErrorState` component
-(`packages/shared/src/components/error-state/`) used by 13 feature
-screens — well past the ≥2-consumer promotion rule, with a Storybook
-story — but it is not on the D220 launch allowlist. CLAUDE.md is
-founder-curated, so the allowlist amendment (same shape as the
-ADR-0016 `NumericDisplay` / ADR-0019 `ActionPopover` entries) needs a
-founder edit.
-**How:** Add `ErrorState` to the "D220 launch allowlist amendments"
-list in CLAUDE.md §4 via a `chore/distill-*` PR, or reject and demote
-the component.
-**Verifies by:** CLAUDE.md lists `ErrorState`; design-system gate stops
-flagging it.
 **Status:** Open
 
 ### 2026-07-10 — D-candidate: bulk unsubscribe for one-click senders
@@ -1523,6 +1500,29 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-07-28 — CLAUDE.md §11 distill: the D-vs-ADR rule has a hole, and it already caused a mis-tag
+**Source:** session 2026-07-28 — founder asked what the ideal split would be, ignoring the existing D-numbers
+**Why:** §11 splits the two registries by *timing*: "D-decisions: product / architecture decisions made during **planning**; ADRs: technical decisions made during **implementation**." A **product** decision made during **implementation** matches neither clause, and that is exactly what both of this session's candidates were. Timing is the wrong axis regardless, because the artifacts are consumed differently — `IMPLEMENTATION-LOG.md` tracks D-rows for build status and does not track ADRs at all. The hole is not theoretical: PRs #339 and #343 filed the senders wire-model rebuild and the list/detail window unification as `Closes D38`, and D38 is an onboarding tour that has never been built, so the log asserted a shipped feature that does not exist until this session corrected it.
+**How:** replace the timing split in §11 with the axis that has no gap, via a `chore/distill-*` PR (CLAUDE.md is founder-curated, so an agent cannot make this edit): **"A D-number is something you will ask 'is it built yet?' about. An ADR is a rule that constrains how code gets written."** Full reasoning in LEARNINGS.md 2026-07-28; the rule is already applied in practice — ADR-0029 for the shipped wire model, D248 for the unbuilt bulk unsubscribe.
+**Verifies by:** CLAUDE.md §11 states the build-status/constraint axis; a future session choosing between the registries has a rule that answers, rather than two clauses that both miss.
+**Status:** Done 2026-07-28 — CLAUDE.md §11 now states the build-status/constraint axis with the D38/ADR-0029/D248 worked example (chore/distill PR, executing the founder's "Do it").
+
+### 2026-07-13 — Ratify `ErrorState` onto the D220 launch allowlist
+**Source:** PR #325 design-system gate review
+**Why:** The branch promotes a shared `ErrorState` component
+(`packages/shared/src/components/error-state/`) used by 13 feature
+screens — well past the ≥2-consumer promotion rule, with a Storybook
+story — but it is not on the D220 launch allowlist. CLAUDE.md is
+founder-curated, so the allowlist amendment (same shape as the
+ADR-0016 `NumericDisplay` / ADR-0019 `ActionPopover` entries) needs a
+founder edit.
+**How:** Add `ErrorState` to the "D220 launch allowlist amendments"
+list in CLAUDE.md §4 via a `chore/distill-*` PR, or reject and demote
+the component.
+**Verifies by:** CLAUDE.md lists `ErrorState`; design-system gate stops
+flagging it.
+**Status:** Done 2026-07-28 — founder approved in the triage MCQs; CLAUDE.md §4 now lists `ErrorState` as the third D220 allowlist amendment (chore/distill PR, executing the approval).
 
 ### 2026-07-28 — IMPLEMENTATION-LOG has no rows for D236–D247
 **Source:** session 2026-07-28 — found while adding the D248 row
