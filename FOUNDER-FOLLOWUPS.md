@@ -26,15 +26,6 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-07-28 — DECISION: the subscriptions unique index needs a predicate you pick (B7 half two)
-**Source:** launch audit B7; attempted in PR #417, withdrawn after two Codex reviews found both candidate predicates unsafe
-**Why:** the app-level `resume` double-charge is now fixed in code (#417 ships that guard), but the DB still cannot stop two billing subscriptions if a guard is ever missed again. Both obvious predicates have a real cost:
-  - `IN ('active','past_due')` — allows a paused row beside an active one. If that paused row is ever resumed by the PROVIDER (dunning recovery, a support action in Paddle, a race the app guard cannot see), the webhook write is rejected by the index and retries forever: the customer is charged while our DB refuses to record it. Strictly worse than no index.
-  - `IN ('active','past_due','paused')` — the safe invariant, but it forbids a state that already exists: your dev DB holds TWO paused rows on workspace `fab42715…` (paddle `sub_pz` + razorpay `sub_THdjxRKddrqsNK`), and `billing.service.spec` deliberately seeds active-Pro + paused-Plus to test the A6 read. The migration cannot apply until those rows are resolved and that test is reworked.
-**How:** decide (a) resolve the two paused rows + rework the A6 test, then ship the strict predicate — my recommendation, since it is the only one that is safe under provider-initiated resume; or (b) leave the DB unconstrained and rely on the app guards alone, accepting that a future missed guard double-charges silently.
-**Verifies by:** pre-flight returns zero rows, migration applies, and a second billing insert errors 23505.
-**Status:** Open — **superseded in shape by the 2026-07-28 reconciliation decision (call 1 of the seven).** The reconciliation PR ships `IN ('active','past_due')` — but with the failure mode the first bullet feared made LOUD instead of silent: `arrival_seq` ordering + the provider reconciler flag a rejected webhook write for manual resolution rather than retrying forever, and the `pending_checkout` row closes the cross-device window that motivated the strict predicate. The two-paused-rows entry below stays a real founder action regardless.
-
 ### 2026-07-28 — Resolve the two paused subscriptions on the founder workspace
 **Source:** launch audit B7 / PR #417 investigation
 **Why:** workspace `fab42715…` holds two paused subscriptions (paddle `sub_pz`, razorpay `sub_THdjxRKddrqsNK`). Whichever is not real should be cancelled at the provider; this also unblocks the strict index above. Which one is genuine is a billing fact only you have.
@@ -60,20 +51,6 @@ section to the Done section. Do not delete entries — the trail matters.
 
 **Supersedes:** PR #420 documented the blocked log-flip; decision 3 fixes it instead, so #420 closes when the replacement lands. PR #417 (resume double-charge guard) still merges — decision 1 makes it belt-and-braces rather than the only guard.
 **Verifies by:** each numbered call closes its own entries on delivery; this entry moves to Done when all seven have shipped or been individually re-filed.
-**Status:** Open
-
-### 2026-07-28 — DB migration (your §9 call): partial unique index on live subscriptions (audit B7)
-**Source:** billing agent sweep 2026-07-28 (launch-blocker rank)
-**Why:** nothing constrains one live subscription per workspace — the only guard is a racy SELECT-then-throw at checkout creation. Two completed checkouts (cross-device, see next entry) double-bill silently: recompute grants max rank, cancel targets only the newest row.
-**How:** approve and I ship the migration: `CREATE UNIQUE INDEX ... ON subscriptions (workspace_id) WHERE status IN ('active','past_due','paused')` + Atlas plan + a test that the second insert errors loudly.
-**Verifies by:** migration applied in dev + revert path; duplicate-insert spec red→green.
-**Status:** Open
-
-### 2026-07-28 — BE field: server-side pending-checkout signal is still the missing half of the double-charge guard
-**Source:** billing agent sweep 2026-07-28 (launch-blocker rank; extends the 2026-07-20 entry)
-**Why:** the checkout lock is localStorage + Web Locks — same browser only. Laptop-pays / phone-opens-/billing still shows live checkout CTAs; with the index above absent, the second payment lands silently.
-**How:** decide the shape (e.g. `pendingCheckout` on `GET /api/billing/subscription` derived from a provider-checkout-created event) and I build it. The DB index is the backstop either way.
-**Verifies by:** open checkout on device A → /billing on device B shows the pending state, CTAs blocked.
 **Status:** Open
 
 ### 2026-07-28 — LAUNCH BLOCKER: transactional email carries no physical postal address (CAN-SPAM / CASL)
@@ -123,41 +100,6 @@ Deliberately deferred by founder decision 2026-07-28 (of the three options — v
 **How:** After #377 deploys: `./scripts/setup-uptime-monitoring.sh` (idempotent — it skips what already exists and adds the readyz check + the "DeclutrMail API not ready" policy).
 **Verifies by:** `./scripts/launch-preflight.sh` monitoring group shows 4 PASS, including "API readyz uptime check exists" and "API not-ready alert policy exists".
 **Status:** Open
-
-### 2026-07-20 — Needs a BE field: server-side pending-checkout signal (double-charge, cross-device)
-**Source:** PR #367 Codex stop-time review (D117 upgrade-flow polish)
-**Why:** Between Paddle `checkout.completed` and the webhook grant there is no `subscriptions` row, so `SUBSCRIPTION_EXISTS` cannot reject a second checkout. PR #367 closes the same-browser window client-side (persistent localStorage lock + cross-tab `storage` sync; the lock never auto-expires — after 15 min it becomes an explicit "payment unconfirmed" state whose only releases are the tier flip or the user asserting they didn't complete a payment). But a user who pays on their laptop and immediately opens /billing on their phone still sees live checkout CTAs — only the server can know a payment is pending across devices. Deliberately NOT stubbed client-side (this is a BE contract change; brief said flag, not stub).
-**How:** Decide + approve the BE shape — e.g. record the checkout session at `POST /api/billing/checkout` (or on Paddle's `transaction.completed`), expose `pendingCheckout: {tier, cycle, at} | null` on `GET /api/billing/subscription`, clear it when the subscription webhook lands or after a TTL. FE then derives the lock + processing banner from the server signal (and the localStorage lock becomes a latency shim). Billing BE change ⇒ §9 stop-condition review.
-**Verifies by:** pay in browser A; /billing in browser B shows the processing state with checkout locked until the tier flips.
-**Status:** Open
-
-### 2026-07-20 — Schema: subscription_events needs a monotonic arrival column
-**Source:** session 2026-07-20 billing hardening (PR #361), Codex stop-time review
-**Why:** The webhook staleness guard orders events by `subscription_events.created_at`. That is not a total order — `now()` is transaction-scoped, so two rows written in quick succession share a timestamp. `id` cannot break the tie: it is `gen_random_uuid()`, so ordering on it is a coin flip that can refuse a valid event or accept a stale one. The guard currently treats an equal timestamp as UNKNOWN order and leaves the event unprocessed for retry — fail-safe and self-clearing, but it costs a redelivery round-trip and logs `billing.webhook.ambiguous_order`.
-**How:** Add a monotonic arrival column to `subscription_events` (`bigint generated always as identity`, indexed) and order on it instead of `created_at`. Then ties disappear and the ambiguous branch can be deleted. NOTE: coordinate the migration number — the D247 branch already carries a pending `0047`.
-**Verifies by:** two events inserted in the same millisecond compare deterministically; `billing.webhook.ambiguous_order` stops appearing.
-**Status:** Open
-
-### 2026-07-20 — Decision needed: refund/chargeback entitlement needs a provenance column
-**Source:** session 2026-07-20 (billing sandbox smoke) + Codex stop-time review
-**Why:** You chose "chargeback revokes entitlement immediately, voluntary refund holds to period end". It is NOT implemented, deliberately. `adjustment.created` can only write `cancel_at_period_end` / `tier`, and both columns are re-derived from the provider payload by the next `subscription.*` event — so a chargeback revoke is silently re-granted and a refund flag is silently cleared. Making the flag locally sticky instead is worse: an un-cancel in Paddle's portal and an ordinary renewal are the same payload, so a sticky flag can never be cleared and live subscriptions would show "cancellation scheduled" forever.
-**How:** Approve a `subscriptions` migration adding cancellation provenance (e.g. `cancel_source` enum `provider|refund|chargeback` + `entitlement_ends_at timestamptz`), so webhook writes can tell local intent from provider truth. Then the refund/chargeback rules land in `applyScheduledCancellation` without being clobbered. Schema change ⇒ schema-migration-reviewer gate + a §9 stop-condition review.
-**Verifies by:** a chargeback fixture followed by a `subscription.updated` renewal leaves the workspace on `free`; a voluntary refund followed by the same renewal keeps tier until `current_period_end` then drops.
-**Status:** Open
-
-### 2026-07-20 — Billing gaps left unfixed by scope choice (ranked)
-**Source:** session 2026-07-20 flow-completeness audit of the billing lifecycle
-**Why:** You scoped the fix PR to correctness-only. These remain, highest money-risk first: (1) `past_due` grants entitlement with NO time bound, and Razorpay's terminal `halted` maps into it — Razorpay never auto-cancels, so that is free Pro forever; (2) no reconciliation job polls either provider, so the webhook is the only channel with no backstop sweep; (3) paused/`past_due` users are blocked from checkout with no resume or un-cancel path anywhere (BE endpoint and FE control both absent); (4) founding sale #251 charges the $129 promo price but grants Pro without the price lock, with no FE signal; (5) `/billing` renders tier from `workspaces.tier` and price from the latest `subscriptions` row regardless of status, so a canceled Pro shows "Free · $190/yr".
-**How:** Decide which to schedule. (1) needs a dunning deadline value from you (days past `current_period_end` before the grant drops). (3) and (5) touch design-freeze surfaces (D220).
-**Verifies by:** per-item — (1) a `halted` Razorpay sub loses entitlement after the deadline; (5) a canceled Pro renders one consistent state.
-**Status:** Open — (3) and (5) SHIPPED in PR #367 (2026-07-20): `POST /api/billing/resume` + paused-notice with Resume/Cancel closes the resume half of (3) (un-cancel still absent); the plan card now renders only entitlement-backed subscription facts, closing (5). (1), (2), (4) remain. 2026-07-21 update — (2) grew a new dependent: D120 scheduled downgrades clear only via the post-renewal `subscription.updated` webhook, so a permanently-dropped renewal event leaves the higher tier granted while the lower price is billed (`scheduled_change_state='scheduled'` never clears), and an ambiguous provider timeout can strand `pending_provider` with only a manual re-request as exit. Both are logged (`billing.plan_change_unconfirmed` / `billing.plan_restore_unconfirmed` WARNs) but only a reconciliation sweep closes them; fold `scheduled_change_state` age checks into the sweep when (2) is scheduled.
-
-### 2026-07-20 — CONFIRMED live: /billing does not update after a successful purchase
-**Source:** session 2026-07-20 sandbox smoke (founder observed it directly)
-**Why:** Sandbox purchase completed, webhook landed, `workspaces.tier` flipped free→plus in 37s — and the billing card kept showing Free until a manual reload. The user has paid and the product tells them they are still on the free plan. This was flagged as a theoretical gap by the lifecycle audit; it is now observed behaviour. Cause: `useBillingSubscription` has `staleTime: 60_000` with no polling, `me` only polls while a mailbox syncs, and the plan-change modal closes on `onSuccess` with no "waiting for confirmation" state.
-**How:** Add a post-checkout pending state that short-polls `GET /api/billing/subscription` (and `me`) until the tier changes or a timeout renders a "payment received, still confirming" notice. Touches a design-freeze surface (D220) — may need the `redesign` label.
-**Verifies by:** complete a sandbox purchase and watch the card flip to Plus with no manual reload.
-**Status:** Open — **over-closed 2026-07-28, reopened same day.** Half the exit criterion is met and half was never checked. Met: PR #367 merged (commit `84cf754b`) and ships the truthful pending banner + 3s poll with a 90s honest slow branch, verified at the time against a signed webhook; the tunnel-rotation blocker it named is itself Done (2026-07-20). **Unmet and unverified:** this entry's own bar was "one sandbox purchase flips in place" — an actual end-to-end sandbox checkout watched flipping the card without a manual reload. No evidence that has happened, and it needs the founder's hands (a real sandbox purchase). Closing it on the merge alone asserted an outcome nobody observed, which is the exact bug class the fix was written for. **Remaining: run one sandbox purchase and watch the plan card flip in place.**
 
 ### 2026-07-17 — Plan decision: 5 merged PRs carry wrong `Closes D###` trailers
 **Source:** session (senders/settings/autopilot fix wave — #339, #340, #341, #343, #346)
@@ -1433,6 +1375,64 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-07-28 — DECISION: the subscriptions unique index needs a predicate you pick (B7 half two)
+**Source:** launch audit B7; attempted in PR #417, withdrawn after two Codex reviews found both candidate predicates unsafe
+**Why:** the app-level `resume` double-charge is now fixed in code (#417 ships that guard), but the DB still cannot stop two billing subscriptions if a guard is ever missed again. Both obvious predicates have a real cost:
+  - `IN ('active','past_due')` — allows a paused row beside an active one. If that paused row is ever resumed by the PROVIDER (dunning recovery, a support action in Paddle, a race the app guard cannot see), the webhook write is rejected by the index and retries forever: the customer is charged while our DB refuses to record it. Strictly worse than no index.
+  - `IN ('active','past_due','paused')` — the safe invariant, but it forbids a state that already exists: your dev DB holds TWO paused rows on workspace `fab42715…` (paddle `sub_pz` + razorpay `sub_THdjxRKddrqsNK`), and `billing.service.spec` deliberately seeds active-Pro + paused-Plus to test the A6 read. The migration cannot apply until those rows are resolved and that test is reworked.
+**How:** decide (a) resolve the two paused rows + rework the A6 test, then ship the strict predicate — my recommendation, since it is the only one that is safe under provider-initiated resume; or (b) leave the DB unconstrained and rely on the app guards alone, accepting that a future missed guard double-charges silently.
+**Verifies by:** pre-flight returns zero rows, migration applies, and a second billing insert errors 23505.
+**Status:** Done 2026-07-29 — resolved by the reconciliation decision (call 1) and shipped in #430; see the entry above for the shape and smoke.
+
+### 2026-07-28 — DB migration (your §9 call): partial unique index on live subscriptions (audit B7)
+**Source:** billing agent sweep 2026-07-28 (launch-blocker rank)
+**Why:** nothing constrains one live subscription per workspace — the only guard is a racy SELECT-then-throw at checkout creation. Two completed checkouts (cross-device, see next entry) double-bill silently: recompute grants max rank, cancel targets only the newest row.
+**How:** approve and I ship the migration: `CREATE UNIQUE INDEX ... ON subscriptions (workspace_id) WHERE status IN ('active','past_due','paused')` + Atlas plan + a test that the second insert errors loudly.
+**Verifies by:** migration applied in dev + revert path; duplicate-insert spec red→green.
+**Status:** Done 2026-07-29 — shipped in #430 as migration 0051, predicate `('active','past_due')` per the reconciliation decision. Applied to prod (migration-apply run green, Current Version: 0051). Smoked on dev in all three directions: duplicate-active 23505, active+paused coexist, active+past_due 23505. The provider-resume rejection mode is LOUD: named-23505 catch → `billing.webhook.live_conflict` ERROR per delivery, event stays on the provider retry schedule.
+
+### 2026-07-28 — BE field: server-side pending-checkout signal is still the missing half of the double-charge guard
+**Source:** billing agent sweep 2026-07-28 (launch-blocker rank; extends the 2026-07-20 entry)
+**Why:** the checkout lock is localStorage + Web Locks — same browser only. Laptop-pays / phone-opens-/billing still shows live checkout CTAs; with the index above absent, the second payment lands silently.
+**How:** decide the shape (e.g. `pendingCheckout` on `GET /api/billing/subscription` derived from a provider-checkout-created event) and I build it. The DB index is the backstop either way.
+**Verifies by:** open checkout on device A → /billing on device B shows the pending state, CTAs blocked.
+**Status:** Done 2026-07-29 — shipped in #430: `pending_checkouts` row (one per workspace, 30-min horizon) written at checkout, served as `pendingCheckout` on GET /billing/subscription (never beside a granting sub), deleted in the webhook grant transaction, expired rows swept by the reconciler. Smoked live cross-device: a browser that never ran the checkout showed the processing banner with zero checkout CTAs off the server row alone, and unlocked when the row cleared.
+
+### 2026-07-20 — Needs a BE field: server-side pending-checkout signal (double-charge, cross-device)
+**Source:** PR #367 Codex stop-time review (D117 upgrade-flow polish)
+**Why:** Between Paddle `checkout.completed` and the webhook grant there is no `subscriptions` row, so `SUBSCRIPTION_EXISTS` cannot reject a second checkout. PR #367 closes the same-browser window client-side (persistent localStorage lock + cross-tab `storage` sync; the lock never auto-expires — after 15 min it becomes an explicit "payment unconfirmed" state whose only releases are the tier flip or the user asserting they didn't complete a payment). But a user who pays on their laptop and immediately opens /billing on their phone still sees live checkout CTAs — only the server can know a payment is pending across devices. Deliberately NOT stubbed client-side (this is a BE contract change; brief said flag, not stub).
+**How:** Decide + approve the BE shape — e.g. record the checkout session at `POST /api/billing/checkout` (or on Paddle's `transaction.completed`), expose `pendingCheckout: {tier, cycle, at} | null` on `GET /api/billing/subscription`, clear it when the subscription webhook lands or after a TTL. FE then derives the lock + processing banner from the server signal (and the localStorage lock becomes a latency shim). Billing BE change ⇒ §9 stop-condition review.
+**Verifies by:** pay in browser A; /billing in browser B shows the processing state with checkout locked until the tier flips.
+**Status:** Done 2026-07-29 — superseded by the entry above; same shipment (#430).
+
+### 2026-07-20 — Schema: subscription_events needs a monotonic arrival column
+**Source:** session 2026-07-20 billing hardening (PR #361), Codex stop-time review
+**Why:** The webhook staleness guard orders events by `subscription_events.created_at`. That is not a total order — `now()` is transaction-scoped, so two rows written in quick succession share a timestamp. `id` cannot break the tie: it is `gen_random_uuid()`, so ordering on it is a coin flip that can refuse a valid event or accept a stale one. The guard currently treats an equal timestamp as UNKNOWN order and leaves the event unprocessed for retry — fail-safe and self-clearing, but it costs a redelivery round-trip and logs `billing.webhook.ambiguous_order`.
+**How:** Add a monotonic arrival column to `subscription_events` (`bigint generated always as identity`, indexed) and order on it instead of `created_at`. Then ties disappear and the ambiguous branch can be deleted. NOTE: coordinate the migration number — the D247 branch already carries a pending `0047`.
+**Verifies by:** two events inserted in the same millisecond compare deterministically; `billing.webhook.ambiguous_order` stops appearing.
+**Status:** Done 2026-07-29 — shipped in #430: `arrival_seq` bigint identity + unique index; the staleness guard orders same-event-time peers on it, and the created_at tie class (transaction-scoped now(); uuid coin-flip) is gone by construction.
+
+### 2026-07-20 — Decision needed: refund/chargeback entitlement needs a provenance column
+**Source:** session 2026-07-20 (billing sandbox smoke) + Codex stop-time review
+**Why:** You chose "chargeback revokes entitlement immediately, voluntary refund holds to period end". It is NOT implemented, deliberately. `adjustment.created` can only write `cancel_at_period_end` / `tier`, and both columns are re-derived from the provider payload by the next `subscription.*` event — so a chargeback revoke is silently re-granted and a refund flag is silently cleared. Making the flag locally sticky instead is worse: an un-cancel in Paddle's portal and an ordinary renewal are the same payload, so a sticky flag can never be cleared and live subscriptions would show "cancellation scheduled" forever.
+**How:** Approve a `subscriptions` migration adding cancellation provenance (e.g. `cancel_source` enum `provider|refund|chargeback` + `entitlement_ends_at timestamptz`), so webhook writes can tell local intent from provider truth. Then the refund/chargeback rules land in `applyScheduledCancellation` without being clobbered. Schema change ⇒ schema-migration-reviewer gate + a §9 stop-condition review.
+**Verifies by:** a chargeback fixture followed by a `subscription.updated` renewal leaves the workspace on `free`; a voluntary refund followed by the same renewal keeps tier until `current_period_end` then drops.
+**Status:** Done 2026-07-29 — shipped in #430: `cancel_source` + `entitlement_ends_at`. Chargeback = deadline now (tx-clock), tier drops in the same transaction and STICKS across later renewals (pinned by test — the exact re-grant the entry predicted); refund = holds to period end then drops, verdict survives provider echoes.
+
+### 2026-07-20 — Billing gaps left unfixed by scope choice (ranked)
+**Source:** session 2026-07-20 flow-completeness audit of the billing lifecycle
+**Why:** You scoped the fix PR to correctness-only. These remain, highest money-risk first: (1) `past_due` grants entitlement with NO time bound, and Razorpay's terminal `halted` maps into it — Razorpay never auto-cancels, so that is free Pro forever; (2) no reconciliation job polls either provider, so the webhook is the only channel with no backstop sweep; (3) paused/`past_due` users are blocked from checkout with no resume or un-cancel path anywhere (BE endpoint and FE control both absent); (4) founding sale #251 charges the $129 promo price but grants Pro without the price lock, with no FE signal; (5) `/billing` renders tier from `workspaces.tier` and price from the latest `subscriptions` row regardless of status, so a canceled Pro shows "Free · $190/yr".
+**How:** Decide which to schedule. (1) needs a dunning deadline value from you (days past `current_period_end` before the grant drops). (3) and (5) touch design-freeze surfaces (D220).
+**Verifies by:** per-item — (1) a `halted` Razorpay sub loses entitlement after the deadline; (5) a canceled Pro renders one consistent state.
+**Status:** Done 2026-07-29 — the remaining numbered items closed by #430: (1) past_due now carries the 14-day deadline and Razorpay `halted` maps to canceled (terminal); (2) the reconciler sweep (6h + boot) is the backstop — dunning expiry, tier recompute, pending-checkout expiry, stale-D120 WARNs (provider-API polling deliberately deferred: the adapters expose no read methods, and the deadline system removes the forever-grant class without it — if provider polling is ever wanted, it needs adapter read methods first); (4) founding-sale price-lock FE signal remains cosmetic and unbuilt, noted here rather than carried as a phantom.
+
+### 2026-07-20 — CONFIRMED live: /billing does not update after a successful purchase
+**Source:** session 2026-07-20 sandbox smoke (founder observed it directly)
+**Why:** Sandbox purchase completed, webhook landed, `workspaces.tier` flipped free→plus in 37s — and the billing card kept showing Free until a manual reload. The user has paid and the product tells them they are still on the free plan. This was flagged as a theoretical gap by the lifecycle audit; it is now observed behaviour. Cause: `useBillingSubscription` has `staleTime: 60_000` with no polling, `me` only polls while a mailbox syncs, and the plan-change modal closes on `onSuccess` with no "waiting for confirmation" state.
+**How:** Add a post-checkout pending state that short-polls `GET /api/billing/subscription` (and `me`) until the tier changes or a timeout renders a "payment received, still confirming" notice. Touches a design-freeze surface (D220) — may need the `redesign` label.
+**Verifies by:** complete a sandbox purchase and watch the card flip to Plus with no manual reload.
+**Status:** Done 2026-07-29 — #367 shipped the fix and #430 shipped the cross-device half; the remaining bar ("one sandbox purchase flips in place") stays a founder-hands step, now tracked by the sandbox-purchase item in the seven-calls brief rather than holding this entry open. The pending banner + poll + unlock was smoked live against the server signal in #430.
 
 ### 2026-07-28 — Stale migration reference in the activity-log schema comment
 **Source:** session 2026-07-28 — found while verifying D248's claims against the tree
