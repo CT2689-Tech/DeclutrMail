@@ -1,0 +1,18 @@
+-- Rollback 0051 — drop the one-live-subscription-per-workspace index.
+--
+-- Pure constraint removal: no data is read, written, or destroyed, and
+-- no application behaviour depends on the index existing (the app-level
+-- `SUBSCRIPTION_EXISTS` guard in billing.service.ts predates it and is
+-- untouched). Rolling back simply restores the pre-0051 situation where
+-- two concurrent cross-device checkouts could both land a live row.
+--
+-- Re-applying 0051 afterwards will FAIL if a duplicate slipped in
+-- during the rollback window — which is the correct signal, not a bug:
+-- deciding which of two live subscriptions survives is a billing
+-- decision. Pre-flight before re-applying:
+--
+--   SELECT workspace_id, count(*) FROM subscriptions
+--   WHERE status IN ('active','past_due','paused')
+--   GROUP BY 1 HAVING count(*) > 1;
+
+DROP INDEX IF EXISTS "subscriptions_one_live_per_workspace_uniq";
