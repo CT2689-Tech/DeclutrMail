@@ -39,79 +39,53 @@ this is dev" into "I checked" — its whole value is that you actually run it.
 
 ### 0.2 Prove which database you are on — before anything else
 
-Three earlier versions of this gate were unsafe. Each failed the same way —
-it could not fail — so read why before changing it.
-
-1. `inet_server_addr()` compared against a hostname. That function returns an
-   **IP** (`::1` locally), so the comparison never matched.
-2. `grep` for the production project ref in `.env.local`. A **denylist**, and a
-   denylist cannot enumerate every route to production: it printed OK when the
-   file was missing, when `DATABASE_URL` was exported in the shell (which wins
-   at runtime), when the file carried no `DATABASE_URL`, and when production
-   was reached by IP or pooler host, where the ref never appears.
-3. An **allowlist on the connection-string host** (`localhost` only). Better,
-   but it inspects a _string_ and never connects, so it cannot see identity:
-
-   ```
-   ssh -L 5432:db.<prod-ref>.supabase.co:5432 …
-   DATABASE_URL=postgres://…@localhost:5432/postgres
-   ```
-
-   That is production, and a host allowlist calls it "local dev database". Port
-   forwards (`cloud-sql-proxy`, `kubectl port-forward`, an SSH tunnel left open
-   from yesterday) are ordinary things to have running.
-
-**A connection string cannot prove database identity. Only the server can.**
-`pg_control_system().system_identifier` is a per-cluster value reported BY the
-server, so no tunnel, hosts-file entry or URL shape can fake it.
-
-**One-time setup.** With `.env.local` pointed at your dev database, record its
-identity:
-
 ```bash
-psql "$DATABASE_URL" -At -c 'SELECT system_identifier FROM pg_control_system();' > .dev-db-identity
+./scripts/assert-dev-db.sh --record   # once, pointed at your dev database
 ```
 
-**The gate.** Run this before Groups A–I, and again after anything that could
-change the connection:
-
 ```bash
-#!/usr/bin/env bash
-set -uo pipefail
-EXPECTED_FILE="${EXPECTED_FILE:-.dev-db-identity}"
-
-[ -f "$EXPECTED_FILE" ] || { echo "REFUSE — no $EXPECTED_FILE; run the one-time recording step"; exit 1; }
-EXPECTED=$(tr -dc '0-9' < "$EXPECTED_FILE")
-[ -n "$EXPECTED" ] || { echo "REFUSE — $EXPECTED_FILE holds no identifier"; exit 1; }
-
-DB="${DATABASE_URL:-$(sed -n 's/^DATABASE_URL=//p' .env.local 2>/dev/null | tail -1)}"
-[ -n "$DB" ] || { echo "REFUSE — no DATABASE_URL resolved"; exit 1; }
-
-ACTUAL=$(psql "$DB" -At -c 'SELECT system_identifier FROM pg_control_system();' 2>/dev/null | tr -dc '0-9')
-[ -n "$ACTUAL" ] || { echo "REFUSE — could not read the server's identity"; exit 1; }
-
-if [ "$ACTUAL" = "$EXPECTED" ]; then
-  echo "OK — connected to the recorded dev cluster ($ACTUAL)"
-else
-  echo "REFUSE — cluster identity mismatch. expected=$EXPECTED actual=$ACTUAL"; exit 1
-fi
+./scripts/assert-dev-db.sh            # before Groups A–I, and after anything that could change the connection
 ```
 
-Verified against every case, including the one that defeated version 3:
+Exit 0 means proceed. Exit 1 prints why and you stop.
 
-| Situation                                             | Result |
-| ----------------------------------------------------- | ------ |
-| identity not yet recorded                             | REFUSE |
-| identity file present but empty                       | REFUSE |
-| no `DATABASE_URL` resolves                            | REFUSE |
-| server unreachable                                    | REFUSE |
-| **a different cluster behind `localhost` (a tunnel)** | REFUSE |
-| connected to the recorded dev cluster                 | OK     |
+The check lives in the script, not in this page, deliberately: a runbook is
+executable, and a second copy of the logic in prose is a copy that will drift
+from the one people run.
 
-It fails closed in every direction: no file, no identifier, no connection, or
-any cluster other than the one you recorded. `.dev-db-identity` is gitignored —
-it is machine-specific, and committing it would let a stale value approve the
-wrong database on another machine.
+**Why it asks the server rather than reading your config.** Five earlier
+versions of this gate could not fail. The full history is in the script header;
+the short version is that each inspected a _description_ of the connection
+instead of the connection's destination:
+
+| Version                                   | Bypassed by                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------ |
+| `inet_server_addr()` vs a hostname        | the function returns an IP, so it never matched                          |
+| grep the prod project ref in `.env.local` | missing file · shell export wins · no `DATABASE_URL` · prod by IP/pooler |
+| allowlist the connection-string host      | a port forward makes production answer on `localhost`                    |
+| cluster identity, enrolled on first use   | recording it while pointed at prod approves prod forever                 |
+
+The current gate closes all of them: identity comes from
+`pg_control_system()` — reported **by the server**, so no URL or tunnel can
+fake it — enrollment refuses a known production cluster, and the stored value
+is re-validated on every run, so an identity file written before this guard
+existed (or copied from another machine) cannot keep approving production.
+
+Verified behaviour:
+
+| Situation                                         | Result |
+| ------------------------------------------------- | ------ |
+| `--record` while pointed at a production cluster  | REFUSE |
+| `--record` while pointed at your dev cluster      | OK     |
+| identity file names a production cluster          | REFUSE |
+| identity file missing or empty                    | REFUSE |
+| no `DATABASE_URL` resolves                        | REFUSE |
+| server unreachable                                | REFUSE |
+| a different cluster behind `localhost` (a tunnel) | REFUSE |
+| connected to the recorded dev cluster             | OK     |
+
+`.dev-db-identity` is gitignored — it is machine-specific, and a committed
+value would approve the wrong database elsewhere.
 
 **A second, independent signal:** the dev-login route only exists when
 `DEV_AUTH_ENABLED=true`, which is never set on production — it appears zero
@@ -316,14 +290,23 @@ C4's SQL, scoped. An unqualified `UPDATE subscriptions SET …` rewrites every
 row in the table, and the sweep's dunning step only acts on rows that are
 already `past_due` — so run **C2 first**, then expire exactly that row:
 
-```sql
--- [DEV DB ONLY] verify §0.2 first
+Run the gate in the same command as the mutation, so the two cannot drift
+apart — `&&` means the `UPDATE` never executes unless the gate passed:
+
+```bash
+./scripts/assert-dev-db.sh && psql "$DATABASE_URL" -c "
 UPDATE subscriptions
    SET entitlement_ends_at = now() - interval '1 day'
  WHERE status = 'past_due'
-   AND workspace_id = '<your-workspace-id>';
--- expect: UPDATE 1   (UPDATE 0 means the row is not past_due — redo C2)
+   AND workspace_id = '<your-workspace-id>';"
+# expect: UPDATE 1   (UPDATE 0 means the row is not past_due — redo C2)
 ```
+
+The same `./scripts/assert-dev-db.sh && …` prefix belongs on **every**
+`[DEV DB ONLY]` mutation, including G4 and H6. A gate you ran ten minutes ago
+does not cover the shell you are typing in now — an exported `DATABASE_URL` or
+a newly-opened tunnel changes the destination without changing anything you can
+see.
 
 ---
 
