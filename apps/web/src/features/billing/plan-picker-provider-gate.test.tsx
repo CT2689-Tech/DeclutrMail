@@ -79,7 +79,12 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { BillingScreen } from './billing-screen';
 
-const FREE_BODY: BillingSubscription = { tier: 'free', foundingMember: false, subscription: null };
+const FREE_BODY: BillingSubscription = {
+  tier: 'free',
+  foundingMember: false,
+  subscription: null,
+  pendingCheckout: null,
+};
 
 let checkoutBody: unknown = null;
 let subscriptionBody: BillingSubscription = FREE_BODY;
@@ -241,7 +246,12 @@ describe('the current-plan headline makes no price claim without a backing sub (
   // price — a charge nobody pays. The headline now claims no price at
   // all, on ANY rail, so it can never disagree with the strip either.
   it('an India-routed visitor reads NO price for an unbacked paid tier', async () => {
-    subscriptionBody = { tier: 'pro', foundingMember: false, subscription: null };
+    subscriptionBody = {
+      tier: 'pro',
+      foundingMember: false,
+      subscription: null,
+      pendingCheckout: null,
+    };
     renderScreen({ initialProvider: 'razorpay' });
 
     const card = await screen.findByTestId('current-plan-card');
@@ -251,7 +261,12 @@ describe('the current-plan headline makes no price claim without a backing sub (
   });
 
   it('same for a visitor outside India', async () => {
-    subscriptionBody = { tier: 'pro', foundingMember: false, subscription: null };
+    subscriptionBody = {
+      tier: 'pro',
+      foundingMember: false,
+      subscription: null,
+      pendingCheckout: null,
+    };
     renderScreen({ initialProvider: 'paddle' });
 
     const card = await screen.findByTestId('current-plan-card');

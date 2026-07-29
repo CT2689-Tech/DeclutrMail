@@ -73,7 +73,10 @@ interface RazorpayWebhookBody {
  *   - `created` / `authenticated` — checkout in flight; the first
  *     charge hasn't happened. No entitlement yet → handled upstream
  *     as `ignored` (we only persist from `active`-reachable states).
- *   - `active` → active. `pending` / `halted` → past_due (dunning).
+ *   - `active` → active. `pending` → past_due (dunning). `halted` →
+ *     CANCELED: Razorpay never auto-cancels a halted subscription, so
+ *     mapping it to past_due granted the tier forever (decision 2,
+ *     2026-07-28). Halted is terminal — entitlement drops immediately.
  *   - `cancelled` / `expired` → canceled. `completed` (ran its full
  *     total_count) → canceled. `paused` → paused.
  */
@@ -85,8 +88,12 @@ function mapStatus(rzpStatus: string): SubscriptionStatus | null {
     case 'active':
       return 'active';
     case 'pending':
-    case 'halted':
+      // Genuine retry state — dunning; the 14-day deadline bounds it.
       return 'past_due';
+    case 'halted':
+      // TERMINAL. Razorpay never auto-cancels a halted subscription;
+      // mapping it to past_due granted the tier forever (decision 2).
+      return 'canceled';
     case 'paused':
       return 'paused';
     case 'cancelled':

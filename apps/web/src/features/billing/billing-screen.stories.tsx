@@ -51,11 +51,17 @@ function meFixture(tier: Me['tier'], cleanupRemaining: number | null): Me {
   };
 }
 
-const FREE_BODY: BillingSubscription = { tier: 'free', foundingMember: false, subscription: null };
+const FREE_BODY: BillingSubscription = {
+  tier: 'free',
+  foundingMember: false,
+  subscription: null,
+  pendingCheckout: null,
+};
 
 const PRO_SUB: BillingSubscription = {
   tier: 'pro',
   foundingMember: false,
+  pendingCheckout: null,
   subscription: {
     provider: 'paddle',
     tier: 'pro',
@@ -234,6 +240,7 @@ export const FoundingMember: Story<typeof BillingScreen> = {
       makeClient(meFixture('pro', null), {
         ...PRO_SUB,
         foundingMember: true,
+        pendingCheckout: null,
         subscription: PRO_SUB.subscription
           ? { ...PRO_SUB.subscription, cycle: 'annual', foundingMember: true }
           : null,
@@ -274,6 +281,7 @@ export const Paused: Story<typeof BillingScreen> = {
       makeClient(meFixture('free', 0), {
         tier: 'free',
         foundingMember: false,
+        pendingCheckout: null,
         subscription: PRO_SUB.subscription
           ? {
               ...PRO_SUB.subscription,
@@ -295,6 +303,7 @@ export const PausedRazorpay: Story<typeof BillingScreen> = {
       makeClient(meFixture('free', 0), {
         tier: 'free',
         foundingMember: false,
+        pendingCheckout: null,
         subscription: PRO_SUB.subscription
           ? {
               ...PRO_SUB.subscription,
@@ -319,6 +328,7 @@ export const ProEntitlementPausedPlusRow: Story<typeof BillingScreen> = {
       makeClient(meFixture('pro', null), {
         tier: 'pro',
         foundingMember: false,
+        pendingCheckout: null,
         subscription: PRO_SUB.subscription
           ? {
               ...PRO_SUB.subscription,
@@ -340,6 +350,7 @@ export const ProWithoutSubscription: Story<typeof BillingScreen> = {
       makeClient(meFixture('pro', null), {
         tier: 'pro',
         foundingMember: false,
+        pendingCheckout: null,
         subscription: null,
       }),
     ),
@@ -353,6 +364,7 @@ export const NonBackingPastDue: Story<typeof BillingScreen> = {
       makeClient(meFixture('pro', null), {
         tier: 'pro',
         foundingMember: false,
+        pendingCheckout: null,
         subscription: PRO_SUB.subscription
           ? { ...PRO_SUB.subscription, tier: 'plus', status: 'past_due' }
           : null,
@@ -368,6 +380,7 @@ export const SubscriptionEnded: Story<typeof BillingScreen> = {
       makeClient(meFixture('free', 0), {
         tier: 'free',
         foundingMember: false,
+        pendingCheckout: null,
         subscription: PRO_SUB.subscription
           ? { ...PRO_SUB.subscription, status: 'canceled', currentPeriodEnd: null }
           : null,
@@ -402,6 +415,7 @@ export const PlusSubscriber: Story<typeof BillingScreen> = {
       makeClient(meFixture('plus', null), {
         tier: 'plus',
         foundingMember: false,
+        pendingCheckout: null,
         subscription: PRO_SUB.subscription ? { ...PRO_SUB.subscription, tier: 'plus' } : null,
       }),
     ),

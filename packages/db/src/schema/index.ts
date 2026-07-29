@@ -23,6 +23,7 @@ export * from './sender-policies';
 export * from './sender-timeseries';
 export * from './senders';
 export * from './subscription-events';
+export * from './pending-checkouts';
 export * from './subscriptions';
 export * from './triage-decisions';
 export * from './undo-journal';

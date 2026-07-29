@@ -52,6 +52,16 @@ import { workspaces, workspaceTier } from './workspaces';
  */
 
 /** D117 statuses; `trialing` excluded per CODEX PATCH (D121 no-trial). */
+/**
+ * WHY entitlement is ending (0051). Lets webhook writes tell local
+ * verdicts from provider truth: 'refund' and 'chargeback' are LOCAL
+ * verdicts a provider payload must never clobber — a chargeback revoke
+ * used to be silently re-granted by the next subscription.updated.
+ * 'provider' marks an ordinary provider-driven cancel (incl. Razorpay
+ * `halted`, which is terminal and maps to canceled).
+ */
+export const cancelSource = pgEnum('cancel_source', ['provider', 'refund', 'chargeback']);
+
 export const subscriptionStatus = pgEnum('subscription_status', [
   'active',
   'past_due',
@@ -81,6 +91,17 @@ export const subscriptions = pgTable(
     /** Null on terminal cancellation (provider nulls the billing period). */
     currentPeriodEnd: timestamp('current_period_end', { withTimezone: true, mode: 'date' }),
     cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
+    /** See `cancelSource` enum doc — provenance of an ending entitlement. */
+    cancelSource: cancelSource('cancel_source'),
+    /**
+     * Hard deadline after which this row stops granting its tier
+     * (0051, 14-day dunning decision). NULL = no deadline (a healthy
+     * `active` row). Written by the webhook handler: past_due →
+     * current_period_end + 14d; refund → current_period_end;
+     * chargeback → now. `recomputeWorkspaceTier` honors it, and the
+     * reconciler sweep flips expired past_due rows to canceled.
+     */
+    entitlementEndsAt: timestamp('entitlement_ends_at', { withTimezone: true, mode: 'date' }),
     /** D118 pause offer — set with `status='paused'`; null otherwise. */
     pauseUntil: timestamp('pause_until', { withTimezone: true, mode: 'date' }),
     /** D126 — on the founding-member price lock (`pro_annual_founding`). */

@@ -160,6 +160,35 @@ export function BillingScreen({
 
   const data = subscriptionQuery.data ?? null;
 
+  // 0051 cross-device lock: the SERVER's pending-checkout signal covers
+  // the device that did NOT run the checkout (localStorage is
+  // same-browser only — laptop pays, phone opens /billing). When the
+  // server says a checkout is in flight and this browser holds no
+  // local lock, synthesize one: the existing processing state machine
+  // (banner + poll + unlock-on-tier-flip) then runs unchanged. The
+  // local lock stays authoritative when present — it carries the
+  // richer fromTier/kind context the server row doesn't.
+  const serverPending = data?.pendingCheckout ?? null;
+  useEffect(() => {
+    if (!serverPending || pending !== null || data === null) return;
+    if (Date.parse(serverPending.expiresAt) <= Date.now()) return;
+    setPending({
+      workspaceId,
+      kind: 'checkout',
+      // TierId is the purchasable ladder; team/enterprise never checkout.
+      fromTier: data.tier === 'plus' || data.tier === 'pro' ? data.tier : 'free',
+      fromCycle: data.subscription?.cycle ?? null,
+      // The server row names what the checkout is buying — the flip
+      // detector unlocks the moment the workspace reaches it.
+      toTier: serverPending.tier,
+      toCycle: serverPending.cycle,
+      at: Date.now(),
+    });
+    // Deliberately NOT written to localStorage: the server row is the
+    // source; a synthesized local copy would outlive it and re-lock
+    // after the server cleared.
+  }, [serverPending, pending, data, workspaceId]);
+
   // A6 — the ONE interpretation of the billing read. Every rendered
   // surface derives from `view`; no component reads the raw
   // subscription row for plan facts anymore

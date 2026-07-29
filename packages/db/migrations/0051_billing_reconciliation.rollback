@@ -1,0 +1,8 @@
+-- Rollback for 0051_billing_reconciliation.sql
+DROP INDEX IF EXISTS "subscriptions_one_live_per_workspace";
+DROP TABLE IF EXISTS "pending_checkouts";
+DROP INDEX IF EXISTS "subscription_events_arrival_seq_uniq";
+ALTER TABLE "subscription_events" DROP COLUMN IF EXISTS "arrival_seq";
+ALTER TABLE "subscriptions" DROP COLUMN IF EXISTS "entitlement_ends_at";
+ALTER TABLE "subscriptions" DROP COLUMN IF EXISTS "cancel_source";
+DROP TYPE IF EXISTS "cancel_source";

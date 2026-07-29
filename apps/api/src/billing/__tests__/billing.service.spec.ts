@@ -215,6 +215,7 @@ describe('BillingService', () => {
       tier: 'free',
       foundingMember: false,
       subscription: null,
+      pendingCheckout: null,
     });
   });
 

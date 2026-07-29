@@ -462,18 +462,127 @@ describe('BillingWebhookService.process', () => {
     });
   });
 
-  it('past_due keeps the entitlement (dunning grace)', async () => {
+  it('past_due keeps the entitlement INSIDE the 14-day dunning window (decision 2)', async () => {
     const activate = paddleSubscriptionActivated({ workspaceId, eventId: 'evt_pd_1' });
     await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+    // Period ends tomorrow → the deadline (period end + 14d) is ~15
+    // days out; the retry state still grants.
+    const periodEnd = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const pastDue = paddleSubscriptionActivated({
       workspaceId,
       eventId: 'evt_pd_2',
       eventType: 'subscription.past_due',
       status: 'past_due',
+      periodEndsAt: periodEnd,
     });
     await service.process('paddle', paddle.mapWebhookEvent(pastDue), pastDue);
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
     expect(ws!.tier).toBe('plus');
+    const [row] = await db.select().from(subscriptions);
+    expect(row!.entitlementEndsAt).not.toBeNull();
+    expect(row!.entitlementEndsAt!.getTime()).toBe(
+      new Date(periodEnd).getTime() + 14 * 24 * 60 * 60 * 1000,
+    );
+  });
+
+  it('past_due STOPS granting once 14 days past the period end (decision 2)', async () => {
+    // The forever-grant class this closes: before 0051, `past_due` had
+    // no time bound, and Razorpay's terminal `halted` mapped into it —
+    // free Pro forever on a dead card.
+    const activate = paddleSubscriptionActivated({ workspaceId, eventId: 'evt_pdx_1' });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+    const pastDue = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_pdx_2',
+      eventType: 'subscription.past_due',
+      status: 'past_due',
+      periodEndsAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+      occurredAt: new Date().toISOString(),
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(pastDue), pastDue);
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+  });
+
+  it('a CHARGEBACK revokes immediately and a later renewal cannot re-grant (0051 provenance)', async () => {
+    // The KNOWN GAP this closes: writing tier=free on a chargeback used
+    // to be undone by the very next subscription.* event.
+    const activate = paddleSubscriptionActivated({ workspaceId, eventId: 'evt_cb_1' });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const chargeback = paddleAdjustmentCreated({
+      subscriptionId: 'sub_01paddle000001',
+      action: 'chargeback',
+      eventId: 'evt_cb_2',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(chargeback), chargeback);
+    let [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+
+    // Renewal arrives AFTER the chargeback — provider says active, the
+    // local verdict says charged back. The verdict wins.
+    const renewal = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_cb_3',
+      eventType: 'subscription.updated',
+      occurredAt: new Date().toISOString(),
+      periodEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(renewal), renewal);
+    [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+    const [row] = await db.select().from(subscriptions);
+    expect(row!.cancelSource).toBe('chargeback');
+  });
+
+  it('a REFUND holds entitlement to the period end, and a renewal preserves the verdict', async () => {
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_rf_1',
+      periodEndsAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const refund = paddleAdjustmentCreated({
+      subscriptionId: 'sub_01paddle000001',
+      action: 'refund',
+      eventId: 'evt_rf_2',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(refund), refund);
+
+    // Inside the paid period: still granted.
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('plus');
+    const [row] = await db.select().from(subscriptions);
+    expect(row!.cancelSource).toBe('refund');
+    expect(row!.entitlementEndsAt).not.toBeNull();
+
+    // A same-status provider event cannot clear the verdict.
+    const echo = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_rf_3',
+      eventType: 'subscription.updated',
+      occurredAt: new Date().toISOString(),
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(echo), echo);
+    const [after] = await db.select().from(subscriptions);
+    expect(after!.cancelSource).toBe('refund');
+  });
+
+  it('a SECOND live subscription for the workspace is refused loudly (0051 index)', async () => {
+    const a = paddleSubscriptionActivated({ workspaceId, eventId: 'evt_lc_1' });
+    await service.process('paddle', paddle.mapWebhookEvent(a), a);
+    const b = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_lc_2',
+      subscriptionId: 'sub_01paddle_second_01',
+    });
+    const outcome = await service.process('paddle', paddle.mapWebhookEvent(b), b);
+    expect(outcome).toEqual({ kind: 'unresolved', reason: 'live_conflict' });
+    // One live row — the charge exists at the provider, the log line is
+    // the alarm, and the event stays unprocessed for the retry schedule.
+    const rows = await db.select().from(subscriptions);
+    expect(rows.filter((r) => r.status === 'active')).toHaveLength(1);
   });
 
   it('applies Razorpay events via notes attribution and flips pro tier', async () => {

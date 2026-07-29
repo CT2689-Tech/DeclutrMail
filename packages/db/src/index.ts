@@ -131,9 +131,15 @@ export { gmailCategory, gmailUnsubscribeMethod, senders } from './schema/senders
 export type { NewSender, Sender } from './schema/senders';
 import type { gmailCategory as _gmailCategory } from './schema/senders';
 export type GmailCategory = (typeof _gmailCategory.enumValues)[number];
+export * from './schema/pending-checkouts';
 export { subscriptionEvents } from './schema/subscription-events';
 export type { NewSubscriptionEvent, SubscriptionEvent } from './schema/subscription-events';
-export { billingCycle, subscriptionStatus, subscriptions } from './schema/subscriptions';
+export {
+  billingCycle,
+  cancelSource,
+  subscriptionStatus,
+  subscriptions,
+} from './schema/subscriptions';
 export type { NewSubscription, Subscription } from './schema/subscriptions';
 export { triageDecisions, triageReasoningSource, triageVerdict } from './schema/triage-decisions';
 export type {
