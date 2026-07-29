@@ -26,6 +26,27 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-28 — Stale migration reference in the activity-log schema comment
+**Source:** session 2026-07-28 — found while verifying D248's claims against the tree
+**Why:** `packages/db/src/schema/activity-log.ts:77` annotates the D245 truthful unsubscribe outcome values with "(0037)". Migration 0037 is `0037_mailbox_data_deletion_requests.sql`; the values actually land in **`0038_truthful_unsubscribe_lifecycle.sql`**. Harmless at runtime, but it is a pointer that sends a reader to the wrong file, and it already cost real time — D248's first draft cited migration 0037 because I copied the number out of this comment instead of checking the migrations directory. A wrong cross-reference in a schema file is the cheapest kind of lie to fix and the most expensive kind to trust.
+**How:** one-token comment fix in `activity-log.ts`. Not done in the D248 PR deliberately — that PR is docs-only, and touching `packages/db/src/schema/**` pulls in the schema-migration-reviewer gate for a comment. Batch it into the next chore run.
+**Verifies by:** the comment cites `0038_truthful_unsubscribe_lifecycle.sql`; `rg "\(0037\)" packages/db/src/schema` returns nothing.
+**Status:** Open
+
+### 2026-07-28 — CLAUDE.md §11 distill: the D-vs-ADR rule has a hole, and it already caused a mis-tag
+**Source:** session 2026-07-28 — founder asked what the ideal split would be, ignoring the existing D-numbers
+**Why:** §11 splits the two registries by *timing*: "D-decisions: product / architecture decisions made during **planning**; ADRs: technical decisions made during **implementation**." A **product** decision made during **implementation** matches neither clause, and that is exactly what both of this session's candidates were. Timing is the wrong axis regardless, because the artifacts are consumed differently — `IMPLEMENTATION-LOG.md` tracks D-rows for build status and does not track ADRs at all. The hole is not theoretical: PRs #339 and #343 filed the senders wire-model rebuild and the list/detail window unification as `Closes D38`, and D38 is an onboarding tour that has never been built, so the log asserted a shipped feature that does not exist until this session corrected it.
+**How:** replace the timing split in §11 with the axis that has no gap, via a `chore/distill-*` PR (CLAUDE.md is founder-curated, so an agent cannot make this edit): **"A D-number is something you will ask 'is it built yet?' about. An ADR is a rule that constrains how code gets written."** Full reasoning in LEARNINGS.md 2026-07-28; the rule is already applied in practice — ADR-0029 for the shipped wire model, D248 for the unbuilt bulk unsubscribe.
+**Verifies by:** CLAUDE.md §11 states the build-status/constraint axis; a future session choosing between the registries has a rule that answers, rather than two clauses that both miss.
+**Status:** Open
+
+### 2026-07-28 — IMPLEMENTATION-LOG has no rows for D236–D247
+**Source:** session 2026-07-28 — found while adding the D248 row
+**Why:** the log's D-rows stop at D235, matching the plan's original "235 decisions". But the plan has since grown: D245 (unified product clarity), D246 (behavioral activation) and D247 (senders brand grouping, in flight on `feat/d247-senders-brand-grouping`) all exist as decisions with no row, so the log cannot report their build status at all — and D245 in particular is load-bearing, since it supersedes or amends at least D42, D43, D67, D93 and D124. Not fixed in this change because backfilling a dozen rows is its own scope, and the derived-generator work decided this session (call 3) will produce them from the merged `Closes D###` trailers rather than by hand.
+**How:** no founder action needed if call 3 ships as decided — the generator emits a row for every D in the plan and reconciles it against merged trailers, which surfaces D236–D247 automatically. Listed here so the gap is not mistaken for "those decisions have no work".
+**Verifies by:** the regenerated log contains a row for every D-number present in `docs/execution/Implementation-Plan.md`.
+**Status:** Open
+
 ### 2026-07-28 — DECIDED: seven founder calls from the followups triage (this entry is the brief for all of them)
 **Source:** session 2026-07-28 — full triage of all 141 Open entries; 29 closed as verifiably dead, the survivors bucketed, and every genuine decision put to the founder as an MCQ. Two further closures were made and then REVERSED the same day after the Codex stop-time review: the `read_count` RATIFY (its ratification was done, its plan-file edit never was) and the /billing post-purchase entry (#367 merged, but its own bar — one sandbox purchase flipping in place — was never observed). Both are back in Open above with the specific unmet condition named. The lesson generalises past this file: an entry whose Status reads *Open* while its body says *shipped* usually has a second half, and the second half is the reason it is still open.
 **Why:** the file had stopped being readable. 141 rows all said "Open" while ~22% were already fixed in code, so nothing in it could be trusted in either direction — the ops-layer form of the UI-truth bug class (a surface asserting a state it no longer knows). Triage alone doesn't fix that; the seven decisions below are what stop it recurring, and three of them close six followups each.
@@ -36,8 +57,8 @@ section to the Done section. Do not delete entries — the trail matters.
 2. **Dunning window = 14 days** past `current_period_end`, plus a terminal-state mapping fix. Today `GRANTING_STATUSES = ['active','past_due']` (`billing-webhook.service.ts:65`) and Razorpay's *terminal* `halted` normalizes to `past_due` (`razorpay.adapter.ts:88`), so a halted Razorpay subscription grants Pro forever. Terminal provider states must drop immediately; only genuine retry states use the 14-day window.
 3. **IMPLEMENTATION-LOG becomes derived, not maintained.** `pr-merged.yml:98` ends in `git push origin main`, which branch protection rejects every time (`GH006: Protected branch update failed`). It has never once written a flip. Its green runs are the ones that exited early with nothing to do — green means it did nothing, red means it tried. Delete the push; `generate-impl-log` becomes a PR check that recomputes ⬜/🔵 from merged `Closes D###` trailers and fails when the committed file disagrees.
 4. **🟢 becomes evidence-gated.** `verify-d` runs nothing — it rewrites one character and records whatever `--source` text it is handed, defaulting to `"manual"` (`scripts/verify-d.ts:44`). The 67 rows at 🟢 therefore assert a verification that may never have happened, and [43]/[44]'s diagnosis ("the cadence stalled") was wrong: the verifier is a no-op. New rule — flip only on a command it executes (🟢 on exit 0) or a recorded smoke observation; bare `manual` rejected; row stores command, result and commit sha. Existing 🟢 rows get audited, and unbacked ones drop to 🔵.
-5. **Add a 🚫 Retired state** to the log legend, paired with a `[REVERSAL on D###]` marker in the plan mirror. A PR that closes a D by *deleting* the feature currently has nowhere to land, so retirement reads as delivery — which is how #346 deleting Weekly Hero left D47/D48 at 🟢 citing a spec that no longer exists. Then: D47/D48 → 🚫 (dead spec reference cleared), D38 → ⬜ (the tour is genuinely unbuilt; its Notes cell already admitted this while the state kept asserting otherwise), D51 → ⬜. **Founder action still needed:** assign a real D-number for the senders wire-model work that #339/#343 shipped, so it stops squatting on D38.
-6. **Bulk unsubscribe = one-click subset batch.** Preview splits by channel — "Unsubscribe 8 one-click senders now · 4 need an email you send, handled per-sender". Only the one-click subset executes server-side via the existing `UnsubExecutionWorker`; mailto stays per-sender, so D230 is untouched and no aggregate receipt can overclaim. Needs a D-decision recorded in the plan first (extends D9/D32).
+5. **Add a 🚫 Retired state** to the log legend, paired with a `[REVERSAL on D###]` marker in the plan mirror. A PR that closes a D by *deleting* the feature currently has nowhere to land, so retirement reads as delivery — which is how #346 deleting Weekly Hero left D47/D48 at 🟢 citing a spec that no longer exists. Then: D47/D48 → 🚫 (dead spec reference cleared), D38 → ⬜ (the tour is genuinely unbuilt; its Notes cell already admitted this while the state kept asserting otherwise), D51 → ⬜. **Resolved 2026-07-28:** the senders wire-model work did NOT get a D-number. Founder adopted the registry rule "a D-number is something you will ask 'is it built yet?' about; an ADR is a rule that constrains how code gets written" — the wire model is already shipped and its lasting value is the constraint, so it is recorded as **ADR-0029** and D38 returns to ⬜ for its own unbuilt scope. Two candidates, one number. The CLAUDE.md §11 amendment that closes the underlying gap is filed as its own entry above.
+6. **Bulk unsubscribe = one-click subset batch.** Preview splits by `senders.unsubscribe_method`, which is NULLABLE and so has FOUR states — "Unsubscribe 8 one-click senders now · 4 need an email you send · 2 offer no unsubscribe · 1 not yet indexed". Only `one_click` executes server-side via the existing `UnsubExecutionWorker`; `mailto` stays per-sender so D230 is untouched; `none` is named separately because "send it yourself" and "no unsubscribe exists" are different facts; and `NULL` is reported as unknown rather than folded into `none`, since not having looked is not the same as having found nothing. The receipt says **"request accepted"**, never "unsubscribed" — the worker writes `unsubscribe_endpoint_accepted` on a 2xx, and whether the mail actually stops is unobservable to us. It carries all THREE outcomes the worker writes, including `unsubscribe_unconfirmed` ("we could not establish what happened"), rather than collapsing unknown into success or failure. **No undo** — unsubscribe declares no inverse (its execution kind carries only the standing label, unlike the label-modify verbs), so the mandatory modal preview is the reversal point and the batch must not imply otherwise. Recorded as **D248** in the plan mirror 2026-07-28 (extends D9/D32, does not amend D230), with a ⬜ row in IMPLEMENTATION-LOG. Ready to build.
 7. **Four smalls, all approved:** a `mailbox.sync_failed` transactional email (exempt from the postal-address block, so it can ship now); sign-out + settings escape on the failed first-run gate; `ErrorState` onto the CLAUDE.md §4 D220 allowlist; `refetchIntervalInBackground: true` on the two action-status hooks.
 
 **Also surfaced, no decision needed:** Settings → Mailboxes still renders `Sync failed` with no retry (`mailboxes-card.tsx:173`). #418 gave the *onboarding gate* a working retry and left its sibling untouched — a miss against the standing "fix the class, not the instance" rule. The endpoint already exists; this is wiring, folded into the chore batch.
@@ -1453,22 +1474,6 @@ shape.
 5-policy set; a future worker PR finds no naming ambiguity.
 **Status:** Open
 
-### 2026-05-21 — RATIFY: `sender_timeseries.opens` renamed to `read_count` (D-candidate)
-**Source:** PR [#13](https://github.com/CT2689-Tech/DeclutrMail/pull/13) — schema review finding
-**Why:** The D-plan's draft timeseries schema names the read column
-`opens`. The Gmail API exposes **no message-open events** — the only
-read signal is the `UNREAD` label. PR-A shipped the column as
-`read_count` (count of a month's messages without `UNREAD`) rather than
-silently encode a metric that cannot be populated honestly.
-**How:** Amend the plan's `sender_timeseries` schema definition: rename
-`opens` → `read_count`, noting it is UNREAD-derived, not open-tracking.
-No code change needed — PR-A already ships `read_count`.
-**Verifies by:** the plan's timeseries-table definition reads `read_count`;
-a future session finds no `opens`/`read_count` mismatch.
-**Status:** Open — **falsely closed 2026-07-28, reopened same day** (caught by the Codex stop-time review). The ratification half is done and was done in May; the half this entry exists FOR is not. Verified against the plan mirror `docs/execution/Implementation-Plan.md`: `read_count` appears **0 times**, and the draft schema still reads `opens` at **line 1659** (`sender_key, year_month date, volume int, opens int, replies int`) with the example payload at **line 1655** (`{ month: '2025-06', volume: 42, opens: 1 }`). So the plan still names a metric Gmail cannot produce — there are no message-open events, only the `UNREAD` label — while the code ships `read_count`. **Founder edit, two lines:** rename `opens` → `read_count` at 1655 and 1659, noting it is UNREAD-derived rather than open-tracking. Still rides with the 2026-05-20 reconciliation-pass plan edit.
-ships `read_count`. Remaining: the plan-file edit (`opens` → `read_count`),
-which rides with the 2026-05-20 reconciliation-pass plan edit below.
-
 ### 2026-05-20 — Reconcile plan vs. the Senders-screen design rebuild (D1/D2/D227/D187)
 **Source:** session — Senders rebuild (PR-A `feat/d001-design-foundation`; PR-B to follow)
 **Why:** The founder approved rebuilding the canonical DeclutrMail-v2 Senders
@@ -1541,6 +1546,20 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-05-21 — RATIFY: `sender_timeseries.opens` renamed to `read_count` (D-candidate)
+**Source:** PR [#13](https://github.com/CT2689-Tech/DeclutrMail/pull/13) — schema review finding
+**Why:** The D-plan's draft timeseries schema names the read column
+`opens`. The Gmail API exposes **no message-open events** — the only
+read signal is the `UNREAD` label. PR-A shipped the column as
+`read_count` (count of a month's messages without `UNREAD`) rather than
+silently encode a metric that cannot be populated honestly.
+**How:** Amend the plan's `sender_timeseries` schema definition: rename
+`opens` → `read_count`, noting it is UNREAD-derived, not open-tracking.
+No code change needed — PR-A already ships `read_count`.
+**Verifies by:** the plan's timeseries-table definition reads `read_count`;
+a future session finds no `opens`/`read_count` mismatch.
+**Status:** Done 2026-07-28 — the plan edit is made, closing the half that kept this open. `docs/execution/Implementation-Plan.md` now declares `sender_monthly_aggregates(... volume int, read_count int, replies int)` and the example payload reads `{ month: '2025-06', volume: 42, read_count: 1 }`, with an added note that `read_count` is UNREAD-derived (count of the month's messages WITHOUT the `UNREAD` label) and explicitly NOT open-tracking, because the Gmail API exposes no message-open events. Every remaining `opens` in the plan is the English verb (a sheet opens, a tier opens a chapter), not the column. Judged clerical rather than a decision: the founder ratified this exact rename on 2026-05-21 and the code has shipped `read_count` since PR-A, so applying it to the plan text executes a decision already made. **History worth keeping:** this entry was falsely closed earlier the same day and reopened after the Codex stop-time review — its status said `Open` above a body describing shipped work, and the unshipped half was the entire point. See MISTAKES.md 2026-07-28.
 
 ### 2026-07-28 — SECURITY (webhook-auth adjacent, needs your go-ahead): Pub/Sub push has no rate limit + attacker-forcible JWKS refetch
 **Source:** webhook-security agent sweep 2026-07-28 (2 BLOCKING findings)

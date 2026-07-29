@@ -1652,11 +1652,16 @@ Both ~280px wide, side-by-side on desktop, stacked on mobile.
 
 **Implications:**
 - API: `GET /api/senders/:sender_key/timeseries?mailbox_account_id=&months=12`
-  returns `[{ month: '2025-06', volume: 42, opens: 1 }, …]`.
+  returns `[{ month: '2025-06', volume: 42, read_count: 1 }, …]`.
 - Pre-aggregated nightly into `sender_monthly_aggregates` table to keep
   the chart endpoint cheap. New table:
   `sender_monthly_aggregates(workspace_id, mailbox_account_id,
-  sender_key, year_month date, volume int, opens int, replies int)`.
+  sender_key, year_month date, volume int, read_count int, replies int)`.
+  `read_count` is UNREAD-derived — the count of that month's messages
+  WITHOUT the `UNREAD` label. It is **not** open-tracking: the Gmail API
+  exposes no message-open events, so an `opens` column could never be
+  populated honestly. Rename ratified by the founder 2026-05-21; PR-A
+  shipped the column as `read_count` from the start.
   PK on (mailbox_account_id, sender_key, year_month).
 - Chart library: Recharts or visx; lean toward visx for control. Final
   pick during Topic 22 (frontend stack).
@@ -9511,3 +9516,103 @@ or the unrestricted custom Autopilot builder.
 
 The complete contract, acceptance checklist, and handoff checkpoint live in
 `docs/execution/behavioral-activation-trust-d246.md`.
+
+### D248 — Bulk unsubscribe: one-click subset only, per-channel receipt
+
+**What exists already.** The action manifest already declares
+`'multi-sender': true` for the `unsubscribe` verb, and `preview: 'modal'`
+is already mandatory on it. What does not exist is a multi-sender
+*execution* path: `POST /api/actions/unsubscribe-intent` accepts a single
+`senderId` (uuid). This decision fills that gap and does not re-open the
+selector or preview questions.
+
+**Channel split — four states, not three.** A sender's capability is
+`senders.unsubscribe_method` (pg enum `gmail_unsubscribe_method`),
+derived by `building_sender_index` from `mail_messages.unsubscribe_url`
++ `unsubscribe_one_click`. The column is **nullable**, so the batch
+partitions on four states and treats each differently:
+
+- `one_click` — executes server-side in the batch (RFC 8058).
+- `mailto` — excluded from execution; stays in the per-sender flow,
+  preserving D230's rule that mailto unsubscribes are user-sent at
+  launch. A batch never sends mail on the user's behalf.
+- `none` — we looked and no `List-Unsubscribe` header was ever seen, so
+  no channel exists. Excluded and named separately from `mailto`,
+  because "send it yourself" and "there is nothing to send" are
+  different facts and only one is actionable. Matches the existing
+  `unsubscribe_unavailable` outcome ("No unsubscribe channel
+  available").
+- `NULL` — **not yet derived.** The sender index has not computed a
+  method for this sender. This is *unknown*, not *absent*: such a sender
+  may well have a one-click channel once indexed. It is excluded from
+  execution and reported as unknown, never folded into `none`.
+  Collapsing NULL into `none` would assert "this sender offers no
+  unsubscribe" on the strength of not having looked — the exact
+  unknown-as-fact substitution D245's honesty posture exists to
+  prevent, and the same shape as `readRate: null` once rendering as
+  "Never read".
+
+**No undo on the delivered request — the preview is the reversal
+point.** A network unsubscribe that has been delivered is one-way (D58):
+`UnsubExecutionWorker` writes every outcome row with `undoToken: null`.
+Note the `undo_action_kind` enum *does* contain `'unsubscribe'` — that
+covers the reversible intent/policy layer, where a standing unsubscribe
+decision can be withdrawn. The distinction is load-bearing: the standing
+decision is revocable, the delivered POST is not, and a batch control
+must speak to the second. Unsubscribe's `execution.kind` is
+`'unsubscribe'`, carrying only the standing `DeclutrMail/Unsubscribed`
+side-effect label, with no forward/inverse pair of the kind the
+`label-modify` verbs use. This matches the plan's own existing statement
+that the unsub portion is permanently un-undoable. The batch must
+therefore not offer or imply undo of a sent request. The mandatory modal
+preview is the last reversible moment, which is exactly why D226 makes
+it non-skippable.
+
+**Receipt reports per-state counts and accepted-not-unsubscribed.** Two
+rules, both about not claiming more than happened.
+
+*Per-state, never an aggregate.* "Unsubscribe 8 one-click senders now ·
+4 need an email you send · 2 offer no unsubscribe · 1 not yet indexed."
+One number spanning the four groups would claim an outcome the product
+did not achieve for three of them. If a selection contains no
+`one_click` senders, the batch control does not offer itself.
+
+*Accepted, not unsubscribed — and unknown stays unknown.*
+`UnsubExecutionWorker` writes **three** terminal outcomes for this path,
+and the receipt carries all three rather than collapsing them:
+
+- `unsubscribe_endpoint_accepted` — "Unsubscribe request accepted".
+- `unsubscribe_unconfirmed` — "Unsubscribe result unconfirmed". The
+  request went out and we could not establish what happened. Rounding
+  this into either accepted or failed is the same unknown-as-fact
+  substitution the `NULL` method state above exists to prevent, and it
+  is the reason the receipt cannot be a two-column success/failure tally.
+- `unsubscribe_failed` — "Unsubscribe request failed".
+
+Note the first label: **"Unsubscribe request accepted"**, not
+"Unsubscribed". A 2xx means the brand's endpoint accepted the request;
+whether the mail actually stops is unobservable to us. The batch receipt
+uses that same vocabulary and aggregates observed outcome rows, never
+asserting success at enqueue — a bulk run must not claim in aggregate
+what a single run is careful not to claim.
+
+It does **not** use `unsubscribe_confirmed`: that value is a D56-era
+predecessor with no producer anywhere in the tree, superseded by the
+D245 truthful-outcome set in migration
+`0038_truthful_unsubscribe_lifecycle.sql`. The remaining outcome actions
+(`unsubscribe_action_required`, `unsubscribe_draft_opened`,
+`unsubscribe_user_marked_sent`, `unsubscribe_unavailable`) belong to the
+mailto and manual paths and are untouched here.
+
+**Boundaries.** The `multi-sender` selector's D-Q1 cap of 1000 senders
+per batch applies unchanged. Execution fans out through the existing
+`UnsubExecutionWorker` (`packages/workers/src/unsub-execution.worker.ts`);
+the per-sender unsubscribe contract is untouched. The one-click-vs-mailto
+*resolver* remains scheduled at P9 per D230 — this decision consumes the
+already-derived `unsubscribe_method` and does not move that work.
+
+Extends D9 and D32. Does not amend D230.
+
+**Origin:** the founder's own dogfood queue ran 12 consecutive
+Unsubscribe decisions with no batch path, while Archive and Later had one
+(#321). Decided 2026-07-28.
