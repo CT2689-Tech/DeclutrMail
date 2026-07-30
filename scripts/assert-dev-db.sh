@@ -134,16 +134,28 @@ if [ "${1:-}" = "--exec" ]; then
   separate --exec calls instead." ;;
   esac
 
-  #   2. Send everything as ONE simple-query batch via -c, not -f. psql does not
-  #      process metacommands inside a -c string, and a single batch is one
-  #      round trip — there is no "next command" for psql to reconnect for, so
-  #      the assertion and the statement cannot end up on different sessions.
+  #   2. Send the guard and the statement as -c strings on ONE invocation, so
+  #      they share ONE connection. psql does not process metacommands inside a
+  #      -c string, and with ON_ERROR_STOP=1 a failed guard aborts before the
+  #      statement is sent — so the two cannot end up on different sessions and
+  #      there is no window between the check and the write.
   #      Single-quoted printf: $$ must reach psql literally, not expand to $PID.
+  #
+  #      Two -c strings rather than one batch, because psql returns only the
+  #      LAST result set in a -c string: with the guard (or a COMMIT) sharing
+  #      the batch, every SELECT printed nothing. A read-back that silently
+  #      shows no rows is worse than useless here — it reads as "no rows" and
+  #      pushes the next caller to an UNGUARDED psql for reads, which is the
+  #      exact split-resolution hole this script exists to close.
+  #      Atomicity is unchanged: psql already wraps a multi-statement -c string
+  #      in one implicit transaction, so a mutation batch still all-or-nothings
+  #      without explicit BEGIN/COMMIT framing (framing that, per the note
+  #      above, `\c` discarded anyway — the real defence is single-session).
   GUARD=$(printf 'DO $$ BEGIN IF (SELECT system_identifier::text FROM pg_control_system()) <> %s THEN RAISE EXCEPTION %s, (SELECT system_identifier FROM pg_control_system()); END IF; END $$;' \
     "'$EXPECTED'" \
     "'assert-dev-db: REFUSING — connected cluster % is not the recorded dev cluster $EXPECTED'")
 
-  psql "$DB_URL" -v ON_ERROR_STOP=1 -c "BEGIN; $GUARD $SQL COMMIT;" ||
+  psql "$DB_URL" -v ON_ERROR_STOP=1 -c "$GUARD" -c "$SQL" ||
     refuse "statement did not run (see the error above)"
   exit 0
 fi

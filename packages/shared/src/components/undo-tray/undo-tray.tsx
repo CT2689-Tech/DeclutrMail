@@ -1,11 +1,75 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, type CSSProperties } from 'react';
 
 import { Button } from '../button';
 import { color, font, radius, shadow } from '../../tokens/tokens';
 import { getActionSemantics } from '../../actions/action-semantics';
 import type { UndoActionKind, UndoTrayDataSource } from './undo-tray.types';
+
+/**
+ * Live height of the mounted tray, in px, published on the document
+ * root — `0px` when no tray is mounted.
+ *
+ * Scroll containers reserve this as bottom padding so content can
+ * always scroll clear of the tray. `AppShell` is the one consumer that
+ * matters (every product screen scrolls inside it).
+ *
+ * A custom property rather than a shared constant because the tray's
+ * height is not knowable ahead of time: it grows with the entry count,
+ * and any fixed reserve would be wrong for every other count.
+ */
+export const UNDO_TRAY_INSET_VAR = '--dm-undo-tray-inset';
+
+/** Gap below the tray, matching its own `bottom: 16`. */
+const TRAY_BOTTOM_GAP = 16;
+
+/**
+ * Publish the tray's measured height on the document root while it is
+ * mounted, and clear it on unmount.
+ *
+ * Why this exists: the tray is `position: fixed`, mounted by the app
+ * layout OUTSIDE the content scroller, so it overlaps whatever the
+ * last ~90px of content happens to be. On `/billing` that was the
+ * checkout Confirm button — occluded AND unreachable, because the
+ * scroller was already at its end (browser smoke 2026-07-29:
+ * `elementFromPoint` at the button's centre returned a tray span).
+ * A revenue-blocking overlap, and not billing-specific: it reaches
+ * every bottom-anchored control on every product screen.
+ */
+function useTrayInset(): (node: HTMLElement | null) => void {
+  const observerRef = useRef<ResizeObserver | null>(null);
+
+  useEffect(
+    () => () => {
+      observerRef.current?.disconnect();
+      document.documentElement.style.removeProperty(UNDO_TRAY_INSET_VAR);
+    },
+    [],
+  );
+
+  return useCallback((node: HTMLElement | null) => {
+    observerRef.current?.disconnect();
+    if (!node) {
+      document.documentElement.style.removeProperty(UNDO_TRAY_INSET_VAR);
+      return;
+    }
+    const publish = () => {
+      document.documentElement.style.setProperty(
+        UNDO_TRAY_INSET_VAR,
+        `${Math.ceil(node.getBoundingClientRect().height) + TRAY_BOTTOM_GAP * 2}px`,
+      );
+    };
+    publish();
+    // Entry count (and so the height) changes without a remount.
+    // Guarded because jsdom has no ResizeObserver; the initial publish
+    // above is what unit tests assert on.
+    if (typeof ResizeObserver !== 'undefined') {
+      observerRef.current = new ResizeObserver(publish);
+      observerRef.current.observe(node);
+    }
+  }, []);
+}
 
 /**
  * Persistent undo tray (D35) — strip across the bottom of every
@@ -62,6 +126,7 @@ export function UndoTray({
   style?: CSSProperties;
 }) {
   const source = dataSource;
+  const trayRef = useTrayInset();
 
   // Render-order guards — order matters to avoid flicker between
   // an in-progress refetch and a transient error.
@@ -79,6 +144,7 @@ export function UndoTray({
   if (source.isError && source.entries.length === 0) {
     return (
       <aside
+        ref={trayRef}
         data-dm-undo-tray="error"
         role="alert"
         aria-label="Recent actions failed to load"
@@ -136,6 +202,7 @@ export function UndoTray({
 
   return (
     <aside
+      ref={trayRef}
       data-dm-undo-tray
       role="region"
       aria-label="Recent actions — undo available"
