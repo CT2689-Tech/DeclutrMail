@@ -74,7 +74,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D16 | Doc location: **Move 14 Drive docs into `/docs/` in the repo | ⬜ |  |  |  |
 | D17 | ADR system: **`/docs/adr/` with template; backfill from this grill | 🟢 | #25, #205 | docs/adr/ has template + 6 ADRs |  |
 | D18 | Legal/DPA review trigger: **Add to Human-Approval-Gates | ⬜ |  |  |  |
-| D19 | Pricing/tier structure (resolves gaps #8 + #9) | 🔵 | #193, #401, #404, #411, #412 |  |  |
+| D19 | Pricing/tier structure (resolves gaps #8 + #9) | 🔵 | #193, #401, #404, #411, #412, #438 |  |  |
 | D20 | Verdict set: **4 verdicts (Keep / Archive / Unsubscribe / Screen) | 🟢 | #32 | packages/workers/src/reasoning.test.ts — VERDICT_LABEL exhaustiveness |  |
 | D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🟢 | #32, #118 | packages/workers/src/score-cascade.test.ts |  |
 | D22 | Protection model: **Sender-layer-only, engagement-respect + user-defined | 🟢 | #32 | packages/workers/src/score.worker.test.ts |  |
@@ -291,7 +291,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D233 | Offline destructive actions are draft intents, never auto-replay | ⬜ |  |  |  |
 | D234 | Custom-rule production API gated at `is_preset=false` | 🟢 | #107, #109 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule null for is_preset=false → 404 |  |
 | D235 | Partitioning deferred behind measured thresholds | ⬜ |  |  |  |
-| D245 | Unified product clarity and control contract | 🔵 | #332, #333, #335, #336, #368, #393, #394, #400, #403, #409 |  |  |
+| D245 | Unified product clarity and control contract | 🔵 | #332, #333, #335, #336, #368, #393, #394, #400, #403, #409, #438 |  |  |
 | D246 | Finite first relief and evidence-based automation authority | 🔵 | #334 |  |  |
 | D248 | Bulk unsubscribe: one-click subset only, per-channel receipt | ⬜ |  |  | Decided 2026-07-28. Batch executes `senders.unsubscribe_method='one_click'` server-side only. The column is nullable, so four states are reported separately: `mailto` (per-sender, D230), `none` (no channel exists), and `NULL` (not yet indexed — unknown, never folded into `none`). No undo — unsubscribe declares no inverse, so the mandatory modal preview is the reversal point. Receipt aggregates the THREE outcomes the worker writes (`unsubscribe_endpoint_accepted` / `unsubscribe_unconfirmed` / `unsubscribe_failed`) and says "request accepted", not "unsubscribed". Extends D9/D32 |
 
