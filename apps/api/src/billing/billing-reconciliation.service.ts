@@ -132,6 +132,31 @@ export class BillingReconciliationService {
   }
 
   /**
+   * The one acceptance rule for a reconciliation candidate: catalog
+   * entry matches the awaited tier (and cycle when known), the status
+   * grants, and creation postdates the wait's floor. Used both to
+   * accept the ref fast-path and to decide whether the search fallback
+   * must still run — one predicate, so the two can never disagree.
+   */
+  private filterMatches(
+    candidates: Array<{ provider: BillingProviderId; sub: NormalizedSubscription }>,
+    target: { tier: string; cycle: 'monthly' | 'annual' | null },
+    floorMs: number | null,
+  ): Array<{ provider: BillingProviderId; sub: NormalizedSubscription }> {
+    return candidates.filter(({ provider, sub }) => {
+      const entry = this.catalog.resolveByPriceId(provider, sub.providerPriceId);
+      if (!entry || entry.tierId !== target.tier) return false;
+      if (target.cycle !== null && entry.cycle !== target.cycle) return false;
+      if (!(GRANTING_STATUSES as readonly string[]).includes(sub.status)) return false;
+      if (floorMs !== null && sub.providerCreatedAt) {
+        const createdMs = Date.parse(sub.providerCreatedAt);
+        if (!Number.isNaN(createdMs) && createdMs < floorMs) return false;
+      }
+      return true;
+    });
+  }
+
+  /**
    * Every catalog id the wait could resolve to on one provider — both
    * cycles when the hint carries none, plus the founding variant for
    * pro. Razorpay's search lists per plan_id, so this set IS its
@@ -204,8 +229,7 @@ export class BillingReconciliationService {
     // Timestamp BEFORE any provider read — see ORDERING in the header.
     const observedAt = new Date().toISOString();
     // With a claim, only its provider is asked. Hint-only reconciles
-    // ask both (the hint does not know the provider; Razorpay's search
-    // is a documented no-op, so this stays one real fan-out).
+    // ask both (the hint does not know the provider).
     const providers: BillingProviderId[] = claim ? [claim.provider] : ['paddle', 'razorpay'];
 
     const candidates: Array<{ provider: BillingProviderId; sub: NormalizedSubscription }> = [];
@@ -214,6 +238,11 @@ export class BillingReconciliationService {
     // "no payment found".
     let inProgress = 0;
     try {
+      // The claim's provider_ref is a FAST PATH, never the only
+      // witness (Codex round 4): a 404 on a rotten ref, or a reclaimed
+      // claim pointing at attempt #2 while attempt #1 carried the
+      // money, must not conclude none_found from the ref alone. The
+      // search below always runs when the ref produced no candidate.
       if (claim?.providerRef) {
         const result = await this.adapterFor(claim.provider).fetchSubscription(claim.providerRef);
         if (result.kind === 'found_unmapped') {
@@ -228,7 +257,12 @@ export class BillingReconciliationService {
         if (result.kind === 'found') {
           candidates.push({ provider: claim.provider, sub: result.subscription });
         }
-      } else {
+      }
+      // Fall back to the search unless the ref produced a candidate
+      // that actually SURVIVES the filter — a found-but-canceled ref
+      // (a reclaimed claim's attempt #2) must not suppress the search
+      // that would find attempt #1's money.
+      if (this.filterMatches(candidates, target, searchFloorMs).length === 0) {
         const [owner] = await this.db
           .select({ email: users.email })
           .from(users)
@@ -261,18 +295,7 @@ export class BillingReconciliationService {
       return 'provider_unavailable';
     }
 
-    const floorMs = searchFloorMs;
-    const matches = candidates.filter(({ provider, sub }) => {
-      const entry = this.catalog.resolveByPriceId(provider, sub.providerPriceId);
-      if (!entry || entry.tierId !== target.tier) return false;
-      if (target.cycle !== null && entry.cycle !== target.cycle) return false;
-      if (!(GRANTING_STATUSES as readonly string[]).includes(sub.status)) return false;
-      if (floorMs !== null && sub.providerCreatedAt) {
-        const createdMs = Date.parse(sub.providerCreatedAt);
-        if (!Number.isNaN(createdMs) && createdMs < floorMs) return false;
-      }
-      return true;
-    });
+    const matches = this.filterMatches(candidates, target, searchFloorMs);
 
     if (matches.length === 0) {
       if (inProgress > 0) {

@@ -322,37 +322,59 @@ export class RazorpayAdapter implements BillingProvider {
     const auth = this.authHeader();
     const fromSec = query.createdAfter ? Math.floor(Date.parse(query.createdAfter) / 1000) : null;
     for (const planId of query.providerPriceIds) {
-      const params = new URLSearchParams({ plan_id: planId, count: '100' });
-      if (fromSec !== null && Number.isFinite(fromSec)) params.set('from', String(fromSec));
-      let res: Response;
-      try {
-        res = await fetch(`${API_BASE}/v1/subscriptions?${params.toString()}`, {
-          headers: { Authorization: auth },
-          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      // Paginate: a single count=100 page silently hid any match past
+      // page one — a plan-wide false "no payment" (Codex round 4). The
+      // page cap bounds a pathological plan; hitting it is logged, so
+      // truncation can never read as "covered everything".
+      const PAGE = 100;
+      const MAX_PAGES = 5;
+      let page = 0;
+      for (;;) {
+        const params = new URLSearchParams({
+          plan_id: planId,
+          count: String(PAGE),
+          skip: String(page * PAGE),
         });
-      } catch (err) {
-        this.logger.error(
-          `razorpay.reconcile_search.network_error plan=${planId} err=${err instanceof Error ? err.message : String(err)}`,
-        );
-        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
-      }
-      if (!res.ok) {
-        this.logger.error(`razorpay.reconcile_search.failed plan=${planId} status=${res.status}`);
-        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
-      }
-      const body = (await res.json()) as { items?: RazorpaySubscription[] };
-      for (const entity of body.items ?? []) {
-        if (!entity?.id) continue;
-        // Only artifacts the server attributed to THIS workspace at
-        // creation — a plan-wide listing must never leak across
-        // workspaces into a projection candidate.
-        if (readWorkspaceId(entity.notes) !== query.workspaceId) continue;
-        const normalized = toNormalizedSubscription(entity);
-        if (normalized !== null) {
-          result.subscriptions.push(normalized);
-        } else {
-          // created/authenticated — the 3DS window. Real activity.
-          result.inProgress += 1;
+        if (fromSec !== null && Number.isFinite(fromSec)) params.set('from', String(fromSec));
+        let res: Response;
+        try {
+          res = await fetch(`${API_BASE}/v1/subscriptions?${params.toString()}`, {
+            headers: { Authorization: auth },
+            signal: AbortSignal.timeout(API_TIMEOUT_MS),
+          });
+        } catch (err) {
+          this.logger.error(
+            `razorpay.reconcile_search.network_error plan=${planId} err=${err instanceof Error ? err.message : String(err)}`,
+          );
+          throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+        }
+        if (!res.ok) {
+          this.logger.error(`razorpay.reconcile_search.failed plan=${planId} status=${res.status}`);
+          throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+        }
+        const body = (await res.json()) as { items?: RazorpaySubscription[] };
+        const items = body.items ?? [];
+        for (const entity of items) {
+          if (!entity?.id) continue;
+          // Only artifacts the server attributed to THIS workspace at
+          // creation — a plan-wide listing must never leak across
+          // workspaces into a projection candidate.
+          if (readWorkspaceId(entity.notes) !== query.workspaceId) continue;
+          const normalized = toNormalizedSubscription(entity);
+          if (normalized !== null) {
+            result.subscriptions.push(normalized);
+          } else {
+            // created/authenticated — the 3DS window. Real activity.
+            result.inProgress += 1;
+          }
+        }
+        if (items.length < PAGE) break;
+        page += 1;
+        if (page >= MAX_PAGES) {
+          this.logger.warn(
+            `razorpay.reconcile_search.truncated plan=${planId} pages=${MAX_PAGES} — listing larger than the page cap; narrow with createdAfter or raise MAX_PAGES`,
+          );
+          break;
         }
       }
     }

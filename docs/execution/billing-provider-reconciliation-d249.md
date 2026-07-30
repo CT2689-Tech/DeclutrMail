@@ -83,6 +83,16 @@ checkout whose `custom_data.sig` no longer verifies recoverable, the exact
   lets the payer type any address — alias-typed checkouts are invisible
   to the email search and rely on the signed-attribution / claim paths
   (which is how they grant today).
+- **The ref is a fast path, never the only witness** (round 4). A
+  `provider_ref` fetch that comes back 404, or finds an artifact that
+  fails the acceptance filter (a reclaimed claim pointing at attempt
+  #2 while attempt #1 carried the money), no longer concludes
+  `none_found` on its own — the search fallback always runs when the
+  ref yields no accepted match, and one shared predicate
+  (`filterMatches`) decides both, so the two paths cannot disagree.
+  Razorpay's listing also paginates (5×100 per plan, truncation
+  logged) — a single count=100 page silently hid any match past page
+  one.
 - **A stale lock reconciles via the FE hint.** The browser lock never
   auto-expires, but the server claim TTLs at 30 min and is swept — so a
   claimless reconcile used to answer `no_pending` without asking any
