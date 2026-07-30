@@ -7,6 +7,7 @@ import {
   inboxScopeNoticeCopy,
 } from '@declutrmail/shared/actions';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
+import type { ActionReach } from '@/lib/api/actions';
 
 import {
   needsProtectedOverride,
@@ -44,6 +45,9 @@ export function DecidePreview({
   verb,
   row,
   inboxCount,
+  allMailCount = null,
+  reach = 'inbox_only',
+  onReachChange,
   wakeAt,
   confirming,
   mailboxEmail,
@@ -53,6 +57,15 @@ export function DecidePreview({
   verb: ScreenerDecideVerb;
   row: ScreenerQueueRow;
   inboxCount: DecidePreviewCount;
+  /**
+   * ADR-0028 — the sender's all-mail count (inbox + archived) from the
+   * same composite preview. `null` = the API predates the field or the
+   * preview has not resolved; the reach chips then do not render.
+   */
+  allMailCount?: number | null;
+  /** ADR-0028 — the selected reach for a pending Delete. */
+  reach?: ActionReach;
+  onReachChange?: ((reach: ActionReach) => void) | undefined;
   wakeAt?: string | null;
   /** True while the decide POST / worker confirmation is in flight. */
   confirming: boolean;
@@ -62,7 +75,15 @@ export function DecidePreview({
   onCancel: () => void;
 }) {
   const name = row.senderName;
-  const liveCount = typeof inboxCount === 'number' ? inboxCount : null;
+  // ADR-0028 reach. Offered only where the server accepts it — a Delete
+  // — and only when the preview actually carries the all-mail block
+  // (mirrors the senders confirm modal's `reachAvailable` gate).
+  const reachAvailable = verb === 'delete' && allMailCount != null;
+  const activeReach: ActionReach = reachAvailable ? reach : 'inbox_only';
+  // The ONE count the preview arms — under the SELECTED reach.
+  const effectiveCount: DecidePreviewCount =
+    activeReach === 'all_mail' && allMailCount != null ? allMailCount : inboxCount;
+  const liveCount = typeof effectiveCount === 'number' ? effectiveCount : null;
   const presentation = buildActionPresentation({
     verb,
     liveCount: verb === 'keep' || verb === 'unsubscribe' ? 0 : liveCount,
@@ -80,7 +101,9 @@ export function DecidePreview({
           ? `Move ${name} to Later`
           : verb === 'unsubscribe'
             ? `Unsubscribe from ${name}`
-            : `Delete ${name}'s inbox mail`;
+            : activeReach === 'all_mail'
+              ? `Delete ${name}'s inbox + archived mail`
+              : `Delete ${name}'s inbox mail`;
 
   const lead = presentation.previewCopy;
 
@@ -140,6 +163,84 @@ export function DecidePreview({
         </p>
       </div>
 
+      {/* ADR-0028 reach chip pair — Delete only, adapted from the
+          senders confirm modal's presentation. The chips carry the live
+          counts so "Inbox + archived" is discoverable exactly when the
+          inbox count reads low. */}
+      {reachAvailable && (
+        <div
+          role="radiogroup"
+          aria-label="Where it applies"
+          style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+        >
+          <div
+            style={{
+              fontFamily: font.mono,
+              fontSize: 10,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: color.fgMuted,
+            }}
+          >
+            Where it applies
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {(
+              [
+                { value: 'inbox_only', label: 'Inbox only', count: liveInboxNumber(inboxCount) },
+                { value: 'all_mail', label: 'Inbox + archived', count: allMailCount },
+              ] as const satisfies ReadonlyArray<{
+                value: ActionReach;
+                label: string;
+                count: number | null;
+              }>
+            ).map((opt) => {
+              const active = activeReach === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => onReachChange?.(opt.value)}
+                  style={{
+                    fontFamily: font.sans,
+                    fontSize: 12.5,
+                    fontWeight: 500,
+                    padding: '6px 12px',
+                    borderRadius: 999,
+                    background: active ? color.fg : 'transparent',
+                    color: active ? color.fgInverse : color.fgSoft,
+                    border: `1px solid ${active ? color.fg : color.line}`,
+                    cursor: 'pointer',
+                    transition: 'background 120ms, color 120ms',
+                  }}
+                >
+                  {opt.label}
+                  {opt.count !== null && (
+                    <span
+                      style={{
+                        marginLeft: 6,
+                        fontVariantNumeric: 'tabular-nums',
+                        opacity: active ? 0.85 : 0.7,
+                      }}
+                    >
+                      {opt.count.toLocaleString()}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {activeReach === 'all_mail' && (
+            <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
+              Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo restores
+              every email — inbox mail to the inbox, archived mail to the archive.
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Current match count, fetched server-side (D226). */}
       <div
         style={{
@@ -155,7 +256,13 @@ export function DecidePreview({
           borderRadius: 8,
         }}
       >
-        <ImpactFigure moves={moves} inboxCount={inboxCount} verbLabel={VERB_LABEL[verb]} />
+        <ImpactFigure
+          moves={moves}
+          count={effectiveCount}
+          verbLabel={VERB_LABEL[verb]}
+          allMailReach={activeReach === 'all_mail'}
+          reachAvailable={reachAvailable}
+        />
       </div>
 
       {/* Protected acknowledgement (D42/D245) — stated before the
@@ -208,15 +315,27 @@ export function DecidePreview({
   );
 }
 
+/** Chip-count coercion — a not-yet-resolved live count renders no figure. */
+function liveInboxNumber(count: DecidePreviewCount): number | null {
+  return typeof count === 'number' ? count : null;
+}
+
 /** The "N emails move" strip — all four edge states rendered (D211). */
 function ImpactFigure({
   moves,
-  inboxCount,
+  count,
   verbLabel,
+  allMailReach,
+  reachAvailable,
 }: {
   moves: boolean;
-  inboxCount: DecidePreviewCount;
+  /** Live count under the SELECTED reach (ADR-0028). */
+  count: DecidePreviewCount;
   verbLabel: string;
+  /** True when the widened `all_mail` reach is active. */
+  allMailReach: boolean;
+  /** True when the reach chips are on screen (softens the scope notice). */
+  reachAvailable: boolean;
 }) {
   const strongStyle: React.CSSProperties = {
     fontFamily: font.display,
@@ -236,10 +355,10 @@ function ImpactFigure({
       </>
     );
   }
-  if (inboxCount === 'loading') {
+  if (count === 'loading') {
     return <span style={captionStyle}>Counting the inbox…</span>;
   }
-  if (inboxCount === 'unavailable') {
+  if (count === 'unavailable') {
     return (
       <span style={captionStyle}>
         Couldn&apos;t load a live preview. Cancel and retry — no inbox mail can move without one.
@@ -251,22 +370,31 @@ function ImpactFigure({
   // same helper. The screener has no windowing and no 30-day arrival
   // figure on its row, so `recentArrivals` is null and the copy omits
   // that clause rather than passing off an all-labels received count as a
-  // 30-day arrival count.
-  const scopeCopy = inboxScopeNoticeCopy(
-    describeInboxScope({
-      inboxTotal: inboxCount,
-      windowCount: inboxCount,
-      olderThanDays: null,
-      recentArrivals: null,
-    }),
-    verbLabel,
-  );
+  // 30-day arrival count. At all-mail reach the notice stays silent —
+  // archived mail IS in scope, so an inbox reconciliation would narrate
+  // a scope the action no longer has (same suppression as the senders
+  // modal). With the chips on screen, `verbActsBeyondInbox` swaps
+  // "only acts on" for "acts on inbox mail by default" (ADR-0028).
+  const scopeCopy = allMailReach
+    ? null
+    : inboxScopeNoticeCopy(
+        describeInboxScope({
+          inboxTotal: count,
+          windowCount: count,
+          olderThanDays: null,
+          recentArrivals: null,
+        }),
+        verbLabel,
+        'this sender',
+        { verbActsBeyondInbox: reachAvailable },
+      );
 
   return (
     <>
-      <strong style={strongStyle}>{inboxCount.toLocaleString()}</strong>
+      <strong style={strongStyle}>{count.toLocaleString()}</strong>
       <span style={captionStyle}>
-        email{inboxCount === 1 ? '' : 's'} currently match in Inbox. Gmail is checked again at
+        email{count === 1 ? '' : 's'} currently match{' '}
+        {allMailReach ? 'across inbox + archived' : 'in Inbox'}. Gmail is checked again at
         execution, so the final moved count can change.
       </span>
       {scopeCopy && (

@@ -14,7 +14,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { apiGet, apiPost } from '@/lib/api/client';
-import { defaultLaterWakeAt, newIdempotencyKey } from '@/lib/api/actions';
+import { defaultLaterWakeAt, newIdempotencyKey, type ActionReach } from '@/lib/api/actions';
 
 import type { ScreenerDecideResult, ScreenerDecideVerb, ScreenerQueueRow } from '../data';
 
@@ -73,18 +73,25 @@ export function useScreenerDecide() {
       senderId: string;
       verb: ScreenerDecideVerb;
       olderThanDays?: number | null;
+      /**
+       * ADR-0028 — Delete-only. Only the non-default value travels; the
+       * server treats an absent field as inbox_only and rejects
+       * all_mail on any other verb.
+       */
+      reach?: ActionReach;
       wakeAt?: string;
       /** Explicit "act anyway" on a Protected sender (D42/D245). */
       override?: boolean;
     }
   >({
-    mutationFn: async ({ senderId, verb, olderThanDays, wakeAt, override }) => {
+    mutationFn: async ({ senderId, verb, olderThanDays, reach, wakeAt, override }) => {
       const envelope = await apiPost<ScreenerDecideResult>(
         '/api/screener/decide',
         {
           senderId,
           verb,
           ...(olderThanDays != null ? { olderThanDays } : {}),
+          ...(reach === 'all_mail' ? { reach } : {}),
           ...(verb === 'later' ? { wakeAt: wakeAt ?? defaultLaterWakeAt() } : {}),
           ...(override === true ? { override: true } : {}),
         },

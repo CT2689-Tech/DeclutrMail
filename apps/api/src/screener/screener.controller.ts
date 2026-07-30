@@ -115,6 +115,7 @@ export class ScreenerController {
       senderId: parsed.data.senderId,
       verb: parsed.data.verb,
       olderThanDays: parsed.data.olderThanDays ?? null,
+      reach: parsed.data.reach,
       wakeAt: parsed.data.wakeAt ? new Date(parsed.data.wakeAt) : null,
       override: parsed.data.override ?? false,
       idempotencyKey: idempotencyKey.trim(),

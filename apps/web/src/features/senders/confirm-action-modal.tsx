@@ -406,7 +406,8 @@ export function ConfirmActionModal({
   // ADR-0028 — when the inbox is empty but the mailbox still holds mail
   // this Delete COULD reach, point at the chip that reaches it. Modal-
   // local on purpose: the shared notice is also rendered by surfaces
-  // (Screener) that have no reach control to point at.
+  // that may have no reach control to point at (the Screener's chips
+  // carry their own live counts instead of this hint).
   const archivedReachHint =
     inboxScopeNotice.kind === 'empty-inbox' &&
     reachAvailable &&

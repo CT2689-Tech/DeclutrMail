@@ -184,6 +184,80 @@ describe('ScreenerReadService (D71–D74)', () => {
     // LEFT JOIN that silently drops policy-less senders would fail.
     expect(alpha.isProtected).toBe(false);
     expect(alpha.protectionReason).toBeNull();
+
+    // Both seeded messages carry INBOX — the ADR-0028 companion count
+    // matches the received count when nothing sits outside the inbox.
+    expect(alpha.inboxCount).toBe(2);
+  });
+
+  it('carries a live per-row inboxCount — received mail outside the inbox is excluded (ADR-0028)', async () => {
+    // Founder repro (2026-07-30): total_received 1 with the one message
+    // in SPAM, so Delete's inbox preview truthfully found 0 and the row
+    // read as a bug. The row now states both numbers. Three senders
+    // with three DISTINCT counts (2 / 1 / 0), ≥2 message rows per
+    // sender — a degenerate correlation (the Drizzle bare-column
+    // pitfall) would report one mailbox-wide count on every row.
+    const SENDER_C = 'c'.repeat(64);
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_C,
+      email: 'gamma@spam.example',
+      displayName: 'gamma',
+      domain: 'spam.example',
+      gmailCategory: 'updates',
+      firstSeenAt: new Date('2026-06-09T10:00:00Z'),
+      lastSeenAt: new Date('2026-06-10T10:00:00Z'),
+      totalReceived: 2,
+    });
+    await db.insert(mailMessages).values([
+      {
+        // The founder's exact shape — spam-foldered, never in the inbox.
+        mailboxAccountId: mailboxId,
+        providerMessageId: 'cccccc-spam',
+        providerThreadId: 't3',
+        senderKey: SENDER_C,
+        subject: 'Spam-folder arrival',
+        snippet: '',
+        internalDate: new Date('2026-06-09T11:00:00Z'),
+        labelIds: ['CATEGORY_PROMOTIONS', 'UNREAD', 'SPAM'],
+        isUnread: true,
+      },
+      {
+        // Outbound carrying INBOX — excluded too (`is_outbound = false`).
+        mailboxAccountId: mailboxId,
+        providerMessageId: 'cccccc-out',
+        providerThreadId: 't3',
+        senderKey: SENDER_C,
+        subject: 'Re: Spam-folder arrival',
+        snippet: '',
+        internalDate: new Date('2026-06-09T12:00:00Z'),
+        labelIds: ['INBOX'],
+        isUnread: false,
+        isOutbound: true,
+      },
+    ]);
+    await db
+      .insert(screenerQuarantine)
+      .values({ mailboxAccountId: mailboxId, senderKey: SENDER_C });
+    // Archive one of beta's two inbox messages so all three rows carry
+    // different true values.
+    await db
+      .update(mailMessages)
+      .set({ labelIds: ['CATEGORY_UPDATES'] })
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, mailboxId),
+          eq(mailMessages.providerMessageId, `${SENDER_B.slice(0, 6)}-old`),
+        ),
+      );
+
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 50 });
+    const byKey = new Map(rows.map((r) => [r.senderKey, r]));
+    expect(byKey.get(SENDER_A)!.inboxCount).toBe(2);
+    expect(byKey.get(SENDER_B)!.inboxCount).toBe(1);
+    const gamma = byKey.get(SENDER_C)!;
+    expect(gamma.messageCount).toBe(2);
+    expect(gamma.inboxCount).toBe(0);
   });
 
   it('carries standing protection so the decide preview can name it (D42/D245)', async () => {

@@ -19,6 +19,7 @@ import type { ActionsService } from '../actions/actions.service.js';
 import { AppException } from '../common/app-exception.js';
 import type { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { ScreenerService } from './screener.service.js';
+import { screenerDecideRequestSchema } from './screener.types.js';
 
 /**
  * ScreenerService.decide integration tests (D72, D77, D226).
@@ -229,6 +230,25 @@ describe('ScreenerService.decide (D72, D226)', () => {
     );
   });
 
+  it('threads the ADR-0028 reach into the delegated primary intent', async () => {
+    // The Zod boundary already limits `all_mail` to Delete; the service
+    // only carries the value — `enqueueComposite` owns defaulting and
+    // the authoritative INVALID_REACH check.
+    await svc.decide({
+      mailboxAccountId: mailboxId,
+      senderId,
+      verb: 'delete',
+      olderThanDays: null,
+      reach: 'all_mail',
+      idempotencyKey: 'key-reach-1',
+    });
+    expect(actions.enqueueComposite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        primary: { type: 'delete', olderThanDays: null, wakeAt: null, reach: 'all_mail' },
+      }),
+    );
+  });
+
   it('a 0-message async action (terminal no-op) resolves the row immediately', async () => {
     actions.enqueueComposite.mockResolvedValueOnce({
       actionId: 'action-noop',
@@ -341,6 +361,43 @@ describe('ScreenerService.decide (D72, D226)', () => {
       }),
     ).rejects.toMatchObject({ status: 404 });
     expect(actions.recordKeepIntent).not.toHaveBeenCalled();
+  });
+});
+
+describe('screenerDecideRequestSchema — ADR-0028 reach', () => {
+  const SENDER_ID = '00000000-0000-4000-8000-000000000001';
+
+  it('accepts all_mail on a Delete decision', () => {
+    const res = screenerDecideRequestSchema.safeParse({
+      senderId: SENDER_ID,
+      verb: 'delete',
+      reach: 'all_mail',
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it('accepts an absent reach — the pre-reach wire stays valid', () => {
+    const res = screenerDecideRequestSchema.safeParse({ senderId: SENDER_ID, verb: 'delete' });
+    expect(res.success).toBe(true);
+  });
+
+  it('rejects all_mail on a non-Delete decision', () => {
+    const res = screenerDecideRequestSchema.safeParse({
+      senderId: SENDER_ID,
+      verb: 'archive',
+      reach: 'all_mail',
+    });
+    expect(res.success).toBe(false);
+    expect(res.success ? '' : res.error.issues[0]?.message).toMatch(/Only Delete/);
+  });
+
+  it('rejects a forged reach value', () => {
+    const res = screenerDecideRequestSchema.safeParse({
+      senderId: SENDER_ID,
+      verb: 'delete',
+      reach: 'everything',
+    });
+    expect(res.success).toBe(false);
   });
 });
 

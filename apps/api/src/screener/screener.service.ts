@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 
 import { screenerQuarantine, senders } from '@declutrmail/db';
+import type { SenderActionReach } from '@declutrmail/db';
 
 import { ActionsService } from '../actions/actions.service.js';
 import {
@@ -69,6 +70,13 @@ export class ScreenerService {
     senderId: string;
     verb: ScreenerDecideVerb;
     olderThanDays: number | null;
+    /**
+     * ADR-0028 — how far a Delete decision reaches. Absent =
+     * `inbox_only` (the pre-reach wire); the Zod boundary already
+     * rejected `all_mail` on any other verb, and the delegated
+     * `enqueueComposite` owns defaulting + the authoritative check.
+     */
+    reach?: SenderActionReach | undefined;
     wakeAt?: Date | null;
     /**
      * The user's explicit "act anyway" on a Protected sender (D42/D245).
@@ -79,7 +87,8 @@ export class ScreenerService {
     override?: boolean;
     idempotencyKey: string;
   }): Promise<ScreenerDecideResult> {
-    const { mailboxAccountId, senderId, verb, olderThanDays, wakeAt, idempotencyKey } = input;
+    const { mailboxAccountId, senderId, verb, olderThanDays, reach, wakeAt, idempotencyKey } =
+      input;
     const override = input.override ?? false;
 
     // Ownership + senderKey resolution (needed for the quarantine row;
@@ -133,7 +142,7 @@ export class ScreenerService {
       const res = await this.actions.enqueueComposite({
         mailboxAccountId,
         selector: { type: 'sender', senderId },
-        primary: { type: verb, olderThanDays, wakeAt: wakeAt ?? null },
+        primary: { type: verb, olderThanDays, wakeAt: wakeAt ?? null, reach },
         idempotencyKey,
         override,
       });

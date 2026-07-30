@@ -12,6 +12,7 @@
 //   • RowExpanded    — D73 accordion body with the K/A/U/L/D toolbar
 //   • PreviewPending — the mandatory D226 preview (Archive, real count)
 //   • DeletePreview  — the red-toned Delete preview (30-day recovery)
+//   • DeleteReachPreview — ADR-0028 "Where it applies" chips on Delete
 //   • ProUpsell      — the D77 under-tier surface (D194-approved copy)
 
 import type { ComponentProps } from 'react';
@@ -170,6 +171,30 @@ export const DeletePreview: Story<typeof ScreenerRow> = {
     docs: {
       description: {
         story: 'Delete preview — red tone + the Gmail Trash 30-day recovery-window copy.',
+      },
+    },
+  },
+};
+
+export const DeleteReachPreview: Story<typeof ScreenerRow> = {
+  render: () => (
+    <Shell>
+      <div style={{ maxWidth: 900, margin: '24px auto' }}>
+        <ScreenerRow
+          {...rowBase}
+          pendingVerb="delete"
+          previewInboxCount={2}
+          previewAllMailCount={9}
+          pendingReach="all_mail"
+        />
+      </div>
+    </Shell>
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'ADR-0028 — the Delete-only "Where it applies" chip pair (Inbox only / Inbox + archived) with live counts, matching the senders confirm modal. At the widened reach the title, headline count and explainer state the inbox + archived scope; Trash, Spam, Drafts and Chat stay out of reach by design.',
       },
     },
   },

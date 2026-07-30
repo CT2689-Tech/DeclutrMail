@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { Avatar, Pill, tokens } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 
+import type { ActionReach } from '@/lib/api/actions';
+
 import {
   canScreenerUnsubscribe,
   firstSeenLabel,
@@ -39,6 +41,9 @@ export function ScreenerRow({
   busy = false,
   pendingVerb = null,
   previewInboxCount = 'loading',
+  previewAllMailCount = null,
+  pendingReach = 'inbox_only',
+  onReachChange,
   wakeAt = null,
   onToggleExpand,
   onVerbClick,
@@ -52,6 +57,11 @@ export function ScreenerRow({
   /** Verb awaiting confirmation in this row's preview (D226). */
   pendingVerb?: ScreenerDecideVerb | null;
   previewInboxCount?: DecidePreviewCount;
+  /** ADR-0028 all-mail count — `null` hides the Delete reach chips. */
+  previewAllMailCount?: number | null;
+  /** ADR-0028 — the pending Delete's selected reach. */
+  pendingReach?: ActionReach;
+  onReachChange?: ((reach: ActionReach) => void) | undefined;
   wakeAt?: string | null;
   onToggleExpand: () => void;
   onVerbClick: (verb: ScreenerDecideVerb) => void;
@@ -287,11 +297,11 @@ export function ScreenerRow({
                   senders diverge from COUNT(mail_messages). */}
               <span
                 style={{ fontWeight: 600 }}
-                title="Inbound messages received from this sender and still within DeclutrMail's retention — archived mail included, not inbox-only. Mail deleted from Gmail drops out of this count."
+                title="Inbound messages received from this sender and still within DeclutrMail's retention — archived mail included, not inbox-only. Mail deleted from Gmail drops out of this count. The second number is how many are in your inbox right now — mail in the archive, Spam, or Trash is received but not in the inbox, so an inbox action can find fewer matches than were received."
               >
                 Messages received:
               </span>{' '}
-              {row.messageCount.toLocaleString()}
+              {row.messageCount.toLocaleString()} · {row.inboxCount.toLocaleString()} in inbox
             </span>
             {row.recommendation != null && (
               <span style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>
@@ -321,6 +331,9 @@ export function ScreenerRow({
               verb={pendingVerb}
               row={row}
               inboxCount={previewInboxCount}
+              allMailCount={previewAllMailCount}
+              reach={pendingReach}
+              onReachChange={onReachChange}
               wakeAt={wakeAt}
               confirming={busy}
               onConfirm={onConfirm}

@@ -15,7 +15,7 @@ import { sendersKeys } from '@/features/senders/api/query-keys';
 import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
 import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE, type ActionReach } from '@/lib/api/actions';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
@@ -97,6 +97,8 @@ export function ScreenerScreen({
     rowId: string;
     verb: ScreenerDecideVerb;
     wakeAt: string | null;
+    /** ADR-0028 — Delete's reach. Reset to the safe default per verb click. */
+    reach: ActionReach;
   } | null>(null);
   /** The enqueued label-modify action being polled to terminal. */
   const [activeAction, setActiveAction] = useState<{
@@ -169,6 +171,13 @@ export function ScreenerScreen({
     : compositePreview.isFetching || compositePreview.data == null
       ? ('loading' as const)
       : compositePreview.data.counts.all;
+  // ADR-0028 — the widened Delete count from the SAME settled preview.
+  // `null` = the API predates the field (deploy skew) or the preview
+  // has not resolved: the reach chips simply do not render.
+  const previewAllMailCount =
+    typeof previewInboxCount === 'number'
+      ? (compositePreview.data?.allMail?.counts.all ?? null)
+      : null;
   const pendingMovesMail =
     pending?.verb === 'archive' || pending?.verb === 'later' || pending?.verb === 'delete';
   const pendingPreviewBlocked = pendingMovesMail && typeof previewInboxCount !== 'number';
@@ -247,6 +256,7 @@ export function ScreenerScreen({
         rowId: row.id,
         verb,
         wakeAt: verb === 'later' ? defaultLaterWakeAtIso() : null,
+        reach: 'inbox_only',
       });
       setExpandedRowId(row.id);
     },
@@ -269,6 +279,15 @@ export function ScreenerScreen({
         {
           senderId: row.senderId,
           verb,
+          // ADR-0028 — only the non-default reach travels, and only on
+          // Delete (the one verb the chips render for; the server
+          // rejects it anywhere else). Gated on the same all-mail block
+          // the chips rendered from, so a refetch that lost the block
+          // (deploy skew) can never send a reach the preview stopped
+          // showing.
+          ...(verb === 'delete' && pending.reach === 'all_mail' && previewAllMailCount != null
+            ? { reach: 'all_mail' as const }
+            : {}),
           ...(verb === 'later' && pending.wakeAt ? { wakeAt: pending.wakeAt } : {}),
           // The preview named the protection and the confirm said
           // "anyway" — carry that acknowledgement to the server, which
@@ -336,7 +355,7 @@ export function ScreenerScreen({
         },
       );
     },
-    [pending, pendingPreviewBlocked, busyRowId, decide, qc],
+    [pending, pendingPreviewBlocked, previewAllMailCount, busyRowId, decide, qc],
   );
 
   // Keyboard shortcuts (Triage parity, D29/D227). Act on the EXPANDED
@@ -462,6 +481,11 @@ export function ScreenerScreen({
                 busy={busyRowId === row.id}
                 pendingVerb={pending?.rowId === row.id ? pending.verb : null}
                 previewInboxCount={previewInboxCount}
+                previewAllMailCount={previewAllMailCount}
+                pendingReach={pending?.rowId === row.id ? pending.reach : 'inbox_only'}
+                onReachChange={(reach) =>
+                  setPending((cur) => (cur && cur.rowId === row.id ? { ...cur, reach } : cur))
+                }
                 wakeAt={pending?.rowId === row.id ? pending.wakeAt : null}
                 onToggleExpand={() => setExpandedRowId((cur) => (cur === row.id ? null : row.id))}
                 onVerbClick={(verb) => onVerbClick(verb, row)}

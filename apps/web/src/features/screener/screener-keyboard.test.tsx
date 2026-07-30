@@ -35,7 +35,7 @@ afterEach(() => {
   resetFetchStub();
 });
 
-function livePreviewHandler(all: number) {
+function livePreviewHandler(all: number, allMailTotal?: number) {
   return {
     method: 'GET' as const,
     path: '/api/actions/preview',
@@ -64,6 +64,28 @@ function livePreviewHandler(all: number) {
             olderThan180d: [],
             olderThan365d: [],
           },
+          // ADR-0028 — present only when the test wants the reach chips
+          // (absent = an API predating the field; the chips must hide).
+          ...(allMailTotal !== undefined
+            ? {
+                allMail: {
+                  counts: {
+                    all: allMailTotal,
+                    olderThan30d: 0,
+                    olderThan90d: 0,
+                    olderThan180d: 0,
+                    olderThan365d: 0,
+                  },
+                  recentMessages: {
+                    all: [],
+                    olderThan30d: [],
+                    olderThan90d: [],
+                    olderThan180d: [],
+                    olderThan365d: [],
+                  },
+                },
+              }
+            : {}),
           unsubAvailable: true,
           protected: false,
         },
@@ -194,5 +216,96 @@ describe('Screener keyboard handler (#220, D226)', () => {
 
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(decidePosted).toBe(true));
+  });
+});
+
+describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () => {
+  const actionId = '99999999-9999-4999-8999-999999999999';
+
+  function installDecideStub(opts: { allMailTotal?: number; bodies: Record<string, unknown>[] }) {
+    installFetchStub([
+      livePreviewHandler(2, opts.allMailTotal),
+      {
+        method: 'POST',
+        path: '/api/screener/decide',
+        respond: async (req: Request) => {
+          opts.bodies.push((await req.json()) as Record<string, unknown>);
+          return jsonOk({
+            data: {
+              senderId: firstRow.senderId,
+              verb: 'delete',
+              resolved: true,
+              execution: { kind: 'enqueued', actionId, status: 'queued', requestedCount: 2 },
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/${actionId}`,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId,
+              status: 'executing',
+              requestedCount: 2,
+              affectedCount: 0,
+              undoToken: null,
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+  }
+
+  it('Enter with a reach chip focused confirms the decision — the chip never owns Enter', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    installDecideStub({ allMailTotal: 9, bodies });
+
+    renderReady();
+    expandFirstRow();
+    fireEvent.keyDown(window, { key: 'd' });
+    const allMailChip = await screen.findByRole('radio', { name: /Inbox \+ archived/ });
+    fireEvent.click(allMailChip);
+    await screen.findByText(/currently match across inbox \+ archived/i);
+
+    // Enter while the chip has focus: the screen handler claims the key
+    // (defaultPrevented → fireEvent returns false), so in a real
+    // browser the button's native Enter-activation cannot re-toggle the
+    // chip — the decision confirms instead.
+    allMailChip.focus();
+    const notPrevented = fireEvent.keyDown(allMailChip, { key: 'Enter' });
+    expect(notPrevented).toBe(false);
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ verb: 'delete', reach: 'all_mail' });
+  });
+
+  it('the default reach travels as NO field at all (pre-reach wire shape)', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    installDecideStub({ allMailTotal: 9, bodies });
+
+    renderReady();
+    expandFirstRow();
+    fireEvent.keyDown(window, { key: 'd' });
+    await screen.findByRole('radio', { name: /Inbox only/ });
+
+    fireEvent.keyDown(window, { key: 'Enter' });
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(Object.keys(bodies[0]!)).not.toContain('reach');
+  });
+
+  it('hides the chips entirely against an API without the all-mail block (deploy skew)', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    installDecideStub({ bodies });
+
+    renderReady();
+    expandFirstRow();
+    fireEvent.keyDown(window, { key: 'd' });
+    await screen.findByText(/emails currently match in Inbox/i);
+    expect(screen.queryByRole('radiogroup', { name: 'Where it applies' })).toBeNull();
+
+    fireEvent.keyDown(window, { key: 'Enter' });
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(Object.keys(bodies[0]!)).not.toContain('reach');
   });
 });
