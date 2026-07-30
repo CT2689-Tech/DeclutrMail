@@ -262,8 +262,10 @@ function AppChrome({ children }: { children: ReactNode }) {
       <UpgradeModal />
       {/* D245 — one receipt/undo host survives navigation between every
           mailbox-backed product surface. The Z shortcut remains a Triage
-          affordance; other screens still show the same server-backed tray. */}
-      {hasActiveMailbox && (
+          affordance; other screens still show the same server-backed tray.
+          Account (user-scoped) surfaces — settings/billing — are excluded;
+          receipts remain in /activity and on mailbox-backed surfaces. */}
+      {hasActiveMailbox && !userScopedRoute && (
         <ProductUndoTray
           enableShortcut={active === 'triage'}
           mailboxId={me.activeMailboxId ?? undefined}
