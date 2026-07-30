@@ -432,22 +432,24 @@ export class BillingReconciliationService {
         ),
       );
     if (rows.length === 0) return 'no_pending';
-    let granted = false;
+    let projected = false;
     let providerError = false;
     let unreadable = false;
     for (const row of rows) {
       const checked = await this.reconcileSubscriptionRow(row);
-      if (checked === 'granted') granted = true;
+      if (checked === 'granted') projected = true;
       else if (checked === 'provider_error') providerError = true;
       else if (checked === 'unreadable') unreadable = true;
     }
-    if (granted) return 'granted';
-    if (providerError) return 'provider_unavailable';
-    if (unreadable) return 'unresolved';
     if (hint?.tier && hint.cycle) {
-      // Post-projection truth: does ANY granting row hold what the
-      // caller awaited? Same status partition as the projector
-      // (GRANTING_STATUSES) so this cannot drift from what grants.
+      // The hint gates EVERY outcome, not just the unchanged branch: a
+      // never-reconciled row projects its first snapshot even when the
+      // provider still holds the OLD plan, and that bookkeeping write
+      // is not the awaited change (Codex 2026-07-30, second round —
+      // "granted" here falsely confirmed an unapplied change on the
+      // very first check). Post-loop recorded truth is the only thing
+      // allowed to answer; same GRANTING_STATUSES partition as the
+      // projector so this cannot drift from what grants.
       const grantingRows = await this.db
         .select({ tier: subscriptions.tier, billingCycle: subscriptions.billingCycle })
         .from(subscriptions)
@@ -460,13 +462,19 @@ export class BillingReconciliationService {
       const matched = grantingRows.some(
         (r) => r.tier === hint.tier && r.billingCycle === hint.cycle,
       );
-      if (!matched) {
-        this.logger.log(
-          `billing.reconcile.change_absent workspace=${workspaceId} awaited=${hint.tier}/${hint.cycle}`,
-        );
-        return 'none_found';
-      }
+      if (matched) return projected ? 'granted' : 'already_recorded';
+      // Not recorded — but an unasked/unreadable row could still hold
+      // it, so absence may only be asserted when every row answered.
+      if (providerError) return 'provider_unavailable';
+      if (unreadable) return 'unresolved';
+      this.logger.log(
+        `billing.reconcile.change_absent workspace=${workspaceId} awaited=${hint.tier}/${hint.cycle}`,
+      );
+      return 'none_found';
     }
+    if (projected) return 'granted';
+    if (providerError) return 'provider_unavailable';
+    if (unreadable) return 'unresolved';
     return 'already_recorded';
   }
 

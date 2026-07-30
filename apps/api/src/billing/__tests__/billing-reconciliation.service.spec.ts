@@ -555,8 +555,9 @@ describe('BillingReconciliationService (D249)', () => {
     expect(await db.select().from(subscriptionEvents)).toHaveLength(1);
   });
 
-  it('workspace reconcile with a target hint: recorded match → already_recorded; absent target → none_found', async () => {
-    // Provider and DB agree on plus/monthly — nothing new to project.
+  it('workspace reconcile with a target hint: the hint gates every outcome, including the first pass', async () => {
+    // Provider and DB agree on plus/monthly — the awaited pro/annual
+    // change NEVER HAPPENED.
     await db.insert(subscriptions).values({
       workspaceId,
       provider: 'paddle',
@@ -572,16 +573,17 @@ describe('BillingReconciliationService (D249)', () => {
     const svc = service(
       fakeAdapter({ fetchSubscription: async () => ({ kind: 'found', subscription: truth }) }),
     );
-    // Seed the snapshot so the next pass is genuinely "unchanged".
-    await svc.reconcileWorkspaceSubscriptions(workspaceId);
 
-    // Awaiting pro/annual while the provider still holds plus/monthly:
-    // the change NEVER HAPPENED — saying already_recorded here rendered
-    // "Confirmed — your plan is updating now" about a change that
-    // doesn't exist (Codex 2026-07-30).
+    // FIRST pass — the never-reconciled row projects its bookkeeping
+    // snapshot ('processed' in the ledger), which is NOT the awaited
+    // change. Mapping that projection to 'granted' falsely confirmed an
+    // unapplied change on the very first check (Codex 2026-07-30,
+    // second round).
     expect(
       await svc.reconcileWorkspaceSubscriptions(workspaceId, { tier: 'pro', cycle: 'annual' }),
     ).toBe('none_found');
+    // The snapshot WAS written — the answer stayed truthful anyway.
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(1);
 
     // Awaiting the state that IS recorded → a true confirmation.
     expect(
