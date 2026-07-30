@@ -139,23 +139,16 @@ pnpm --filter @declutrmail/web dev
 Expose the webhook:
 
 ```bash
-cloudflared tunnel --url http://localhost:4000
+./scripts/dev-tunnel.sh
 ```
 
-Register the printed hostname + `/api/webhooks/billing/paddle` as the
-**sandbox** notification destination. The `billing` segment is not optional —
-`@Controller('webhooks/billing')` + `@Post('paddle')` in
-`apps/api/src/webhooks/billing-paddle.controller.ts` is the whole route, and
-the shorter `/api/webhooks/paddle` returns a **404** rather than an auth error.
-Verified 2026-07-29. Razorpay is `/api/webhooks/billing/razorpay`.
-
-> **Trap:** cloudflared _quick_ tunnels rotate their hostname on every
-> restart. If a purchase stops flipping the tier, re-check the hostname before
-> debugging code:
->
-> ```bash
-> curl -s 127.0.0.1:20241/quicktunnel
-> ```
+Starts (or reuses) a cloudflared quick tunnel and PATCHes the existing Paddle
+**sandbox** notification destination to the new hostname +
+`/api/webhooks/billing/paddle` — same destination, same endpoint secret, so
+`PADDLE_WEBHOOK_SECRET` stays valid. Quick tunnels rotate their hostname on
+every restart; re-run the script after any restart and Paddle follows.
+Razorpay stays manual: set `<tunnel-url>/api/webhooks/billing/razorpay` in its
+dashboard (no webhook-update API on standard accounts).
 
 Sign in without OAuth:
 

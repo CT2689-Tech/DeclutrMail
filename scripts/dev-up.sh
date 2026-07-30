@@ -115,6 +115,13 @@ echo "→ starting worker → $WORKER_LOG"
 ( "$REPO_ROOT/scripts/dev-worker.sh" >"$WORKER_LOG" 2>&1 ) &
 echo $! > "$WORKER_PID"
 
+# Optional billing-webhook tunnel (opt-in — needs network + Paddle creds).
+# Re-points the Paddle sandbox destination at the fresh hostname; non-fatal
+# because most dev loops don't need billing webhooks.
+if [[ "${DEV_BILLING_TUNNEL:-}" == "1" ]]; then
+  "$REPO_ROOT/scripts/dev-tunnel.sh" || echo "⚠ dev-tunnel failed — billing webhooks won't arrive (see $LOG_DIR/tunnel.log)"
+fi
+
 echo "→ starting web → $WEB_LOG"
 ( pnpm --filter @declutrmail/web dev >"$WEB_LOG" 2>&1 ) &
 echo $! > "$WEB_PID"
@@ -134,3 +141,6 @@ echo "  web:     open http://localhost:3000"
 echo "  api:     http://localhost:4000"
 echo "  studio:  open https://local.drizzle.studio (proxies :4983)"
 echo "  auth:    open http://localhost:4000/api/auth/google/start"
+if [[ "${DEV_BILLING_TUNNEL:-}" == "1" && -f "$LOG_DIR/tunnel.url" ]]; then
+  echo "  tunnel:  $(cat "$LOG_DIR/tunnel.url") (Paddle sandbox webhook re-pointed)"
+fi
