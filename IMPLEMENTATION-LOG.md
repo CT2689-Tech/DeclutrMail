@@ -32,9 +32,9 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-- ⬜ Not started: 82
+- ⬜ Not started: 81
 - 🟡 In progress: 1
-- 🔵 Shipped: 98
+- 🔵 Shipped: 99
 - 🟢 Verified: 55
 - 🚫 Retired: 2
 - 🔴 Blocked: 0
@@ -90,7 +90,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D32 | No bulk operations in Triage | 🔵 | #44, #183, #321 | apps/web/src/features/triage/triage-screen.test.tsx — no bulk-select UI asserted | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D33 | Empty state: **Stats summary + come back tomorrow + subtle upgrade nudge | 🔵 | #44, #112, #318, #322 | apps/web/src/features/triage/triage-screen.test.tsx — empty-state stats+nudge | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D34 | Action sheet on Archive/Unsubscribe: **Always show + remember-preference toggle in Settings | 🔵 | #44, #224, #344, #427 | apps/web/src/features/triage/action-sheet.test.tsx — remember-preference + always-show | Truth sweep 2026-07-02 (🟡→🔵): server-side persistence under users.preferences.actionSheetPrefs (store.ts:32 documents it) + per-verb ActionSheetPrefsCard in Settings shipped via #224 — 2026-06-11 in-memory-only note stale. Pending verify-d |
-| D35 | Undo via persistent action tray (Doc 05 §11) | 🟢 | #33, #180, #182 | apps/api/src/undo/undo.service.spec.ts | Evidence updated 2026-06-11: tray wired to triage in #180; tray requires injected dataSource in #182 |
+| D35 | Undo via persistent action tray (Doc 05 §11) | 🟢 | #33, #180, #182, #435 | apps/api/src/undo/undo.service.spec.ts | Evidence updated 2026-06-11: tray wired to triage in #180; tray requires injected dataSource in #182 |
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🔵 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | 🔵 | #293 |  |  |
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | ⬜ |  |  | Reclaimed 2026-07-28 (D158): the tour has never been built. Prior D38 trailers were umbrella mis-tags, now rewritten in the source PR bodies; the senders wire-model work lives at ADR-0029 |
@@ -172,9 +172,9 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D114 | Settings structure: **9 sections, left-nav (Linear/Notion-style) | 🔵 | #297 |  |  |
 | D115 | Inboxes management: **Settings → Inboxes section + top-bar Account Switcher | 🔵 | #126 |  |  |
 | D116 | Privacy & Data section: **Rich with 3 deletion actions + data export + CASA evidence | 🔵 | #224, #308 |  |  |
-| D117 | Billing providers: **Paddle (international) + Razorpay (India) | 🔵 | #194, #207, #362, #364, #365, #366, #367, #370, #374, #375, #376, #379, #417, #430, #432, #433, #434 |  |  |
+| D117 | Billing providers: **Paddle (international) + Razorpay (India) | 🔵 | #194, #207, #362, #364, #365, #366, #367, #370, #374, #375, #376, #379, #417, #430, #432, #433, #434, #435 |  |  |
 | D118 | Cancellation: **Respectful flow with optional reason + pause-30-days offer | 🔵 | #207, #364, #374 |  |  |
-| D119 | Plan comparison: **Current plan card + condensed 3-tier strip + link to /pricing | 🔵 | #219, #351, #402 |  |  |
+| D119 | Plan comparison: **Current plan card + condensed 3-tier strip + link to /pricing | 🔵 | #219, #351, #402, #435 |  |  |
 | D120 | Plan-change flows | 🔵 | #219, #367, #430 |  |  |
 | D121 | No trial mechanic; 30-day Money-Back Guarantee on Pro | 🔵 | #219, #291, #308 |  |  |
 | D122 | Triage S key renamed: **"Decide later" (keyboard L key) | ⬜ |  |  |  |
@@ -217,7 +217,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
 | D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
-| D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428 |  |  |
+| D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
 | D164 | Mobile push: **Deferred to V2.1+ | ⬜ |  |  |  |
 | D165 | Notification preferences: **Per-category toggles in Settings | 🔵 | #405, #415 |  |  |
@@ -273,7 +273,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D215 | Senders list owns Search and Protected filter (no separate screens) | ⬜ |  |  |  |
 | D216 | Account deletion UI flow at launch (Settings → Account) | 🔵 | #218, #224, #308 |  |  |
 | D217 | Privacy & Data settings sub-page at launch | 🔵 | #308 |  |  |
-| D218 | Public `/changelog` at launch | ⬜ |  |  |  |
+| D218 | Public `/changelog` at launch | 🔵 | #435 |  |  |
 | D219 | Single-page FAQ `/help` at launch; full Help Center deferred to V2.1 | 🔵 | #290 |  |  |
 | D220 | Component naming inventory (locks Codex §6) | 🔵 | #12 |  |  |
 | D221 | Decision Queue framing copy (locks Codex §8 framing) | ⬜ |  |  |  |
