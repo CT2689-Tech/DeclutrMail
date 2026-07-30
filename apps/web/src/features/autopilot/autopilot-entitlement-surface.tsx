@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Button, EmptyState, Eyebrow, Pill, tokens } from '@declutrmail/shared';
+import { Button, EmptyState, Eyebrow, tokens } from '@declutrmail/shared';
 import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
@@ -134,7 +134,12 @@ export function AutopilotObservePreview() {
                   {presetDisplayName(rule.presetKey, rule.name)}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Pill tone="default">{actionLabel(rule.actionKind)}</Pill>
+                  {/* Descriptive label (which verb the preset applies), never a
+                      control on any tier — a Pill here read as clickable next
+                      to the real preview Button. */}
+                  <span style={{ fontSize: 12, color: color.fgMuted, whiteSpace: 'nowrap' }}>
+                    {actionLabel(rule.actionKind)}
+                  </span>
                   <Button
                     size="sm"
                     tone="default"
