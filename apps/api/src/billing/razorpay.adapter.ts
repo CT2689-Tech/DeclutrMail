@@ -27,6 +27,7 @@ import { AppException } from '../common/app-exception.js';
 import type {
   BillingProvider,
   CreateCheckoutInput,
+  FetchSubscriptionResult,
   NormalizedBillingEvent,
   NormalizedSubscription,
   PlanChangeResult,
@@ -263,8 +264,8 @@ export class RazorpayAdapter implements BillingProvider {
     throw new AppException({ code: 'RESUME_UNSUPPORTED' });
   }
 
-  /** D249 — GET /v1/subscriptions/{id}; null on 404 or unmapped status. */
-  async fetchSubscription(providerSubscriptionId: string): Promise<NormalizedSubscription | null> {
+  /** D249 — GET /v1/subscriptions/{id}. See FetchSubscriptionResult. */
+  async fetchSubscription(providerSubscriptionId: string): Promise<FetchSubscriptionResult> {
     const auth = this.authHeader();
     let res: Response;
     try {
@@ -281,7 +282,7 @@ export class RazorpayAdapter implements BillingProvider {
       );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
-    if (res.status === 404) return null;
+    if (res.status === 404) return { kind: 'not_found' };
     if (!res.ok) {
       this.logger.error(
         `razorpay.reconcile_read.failed sub=${providerSubscriptionId} status=${res.status}`,
@@ -293,9 +294,14 @@ export class RazorpayAdapter implements BillingProvider {
       this.logger.error(`razorpay.reconcile_read.malformed sub=${providerSubscriptionId}`);
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
-    // Unmapped status (created/authenticated/unknown) → no usable
-    // truth; the reconciler treats it like a 404, never a state write.
-    return toNormalizedSubscription(entity);
+    const normalized = toNormalizedSubscription(entity);
+    // created/authenticated (the 3DS window) or unknown — the
+    // subscription EXISTS; reporting "not found" here is what invited
+    // a double charge (Codex 2026-07-30).
+    if (normalized === null) {
+      return { kind: 'found_unmapped', providerStatus: entity.status ?? 'unknown' };
+    }
+    return { kind: 'found', subscription: normalized };
   }
 
   /**

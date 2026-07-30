@@ -117,6 +117,14 @@ export interface NormalizedSubscription {
   providerCreatedAt?: string | null;
 }
 
+/** D249 — what a provider-truth subscription read actually found. */
+export type FetchSubscriptionResult =
+  | { kind: 'not_found' }
+  | { kind: 'found'; subscription: NormalizedSubscription }
+  /** Exists at the provider in a status our normalization does not
+   *  map (pre-grant / unknown). Real activity — never "no payment". */
+  | { kind: 'found_unmapped'; providerStatus: string };
+
 /** Outcome of webhook signature verification (D180/D229-bar). */
 export type SignatureVerifyResult =
   | { ok: true }
@@ -182,10 +190,15 @@ export interface BillingProvider {
    * GETs. Both throw `BILLING_PROVIDER_ERROR` on network/5xx (the
    * reconciler maps that to `provider_unavailable`, writes nothing).
    *
-   * `fetchSubscription`: one subscription by provider id; `null` when
-   * the provider answers 404 (a read miss is never a state write).
+   * `fetchSubscription` distinguishes three answers because they mean
+   * three different things to a pending checkout: `not_found` (provider
+   * 404 — nothing exists), `found` (a mappable subscription), and
+   * `found_unmapped` (the subscription EXISTS in a status we do not
+   * map — Razorpay `created`/`authenticated` is the 3DS-in-flight
+   * window). Collapsing the last into `not_found` told users "no
+   * payment found" seconds before a charge settled (Codex 2026-07-30).
    */
-  fetchSubscription(providerSubscriptionId: string): Promise<NormalizedSubscription | null>;
+  fetchSubscription(providerSubscriptionId: string): Promise<FetchSubscriptionResult>;
 
   /**
    * Subscriptions attributable to a customer email, for claims with no

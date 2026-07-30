@@ -58,9 +58,26 @@ export type PendingReconcileOutcome =
   | 'granted' // provider truth found and projected — the tier flipped
   | 'already_recorded' // truth unchanged since last look (ledger dedup)
   | 'none_found' // provider answered and holds NO matching subscription
-  | 'no_pending' // nothing to reconcile — no open claim
+  | 'payment_in_progress' // provider holds a PRE-GRANT subscription (3DS window) — never "no payment"
+  | 'no_pending' // no open claim AND no hint to search by
   | 'unresolved' // projected but refused (live_conflict / unknown_price)
   | 'provider_unavailable'; // could not ask — nothing asserted, nothing written
+
+/**
+ * The FE's local pending record, passed as a search hint. Load-bearing
+ * for the stale-lock case (Codex 2026-07-30): a local lock outlives the
+ * server claim by design (the claim TTLs at 30 min and is swept), so
+ * without the hint a stale lock reconciled to `no_pending` WITHOUT ever
+ * asking the provider — the exact lost-webhook state this service
+ * exists to resolve. Hint fields only filter a search over the
+ * workspace's own subscriptions; a match still projects through the
+ * fully-guarded webhook path.
+ */
+export interface ReconcileHint {
+  tier?: 'plus' | 'pro' | undefined;
+  cycle?: 'monthly' | 'annual' | undefined;
+  startedAt?: string | undefined;
+}
 
 export interface DriftSweepResult {
   subscriptionsChecked: number;
@@ -129,23 +146,54 @@ export class BillingReconciliationService {
    * server-derived, which is what makes a checkout whose signed
    * custom_data no longer verifies recoverable.
    */
-  async reconcilePendingCheckout(workspaceId: string): Promise<PendingReconcileOutcome> {
+  async reconcilePendingCheckout(
+    workspaceId: string,
+    hint?: ReconcileHint,
+  ): Promise<PendingReconcileOutcome> {
     const [claim] = await this.db
       .select()
       .from(pendingCheckouts)
       .where(eq(pendingCheckouts.workspaceId, workspaceId))
       .limit(1);
-    if (!claim) return 'no_pending';
+
+    // What the search must match, and since when. The server claim is
+    // authoritative when present; a stale local lock (claim already
+    // TTL'd and swept) still reconciles via the FE hint instead of
+    // answering `no_pending` without asking the provider.
+    const target = claim
+      ? { tier: claim.tier, cycle: claim.billingCycle, floorMs: claim.createdAt.getTime() }
+      : hint?.tier
+        ? {
+            tier: hint.tier,
+            cycle: hint.cycle ?? null,
+            floorMs: hint.startedAt ? Date.parse(hint.startedAt) : Number.NaN,
+          }
+        : null;
+    if (!target) return 'no_pending';
 
     // Timestamp BEFORE any provider read — see ORDERING in the header.
     const observedAt = new Date().toISOString();
-    const adapter = this.adapterFor(claim.provider);
+    // With a claim, only its provider is asked. Hint-only reconciles
+    // ask both (the hint does not know the provider; Razorpay's search
+    // is a documented no-op, so this stays one real fan-out).
+    const providers: BillingProviderId[] = claim ? [claim.provider] : ['paddle', 'razorpay'];
 
-    let candidates: NormalizedSubscription[];
+    const candidates: Array<{ provider: BillingProviderId; sub: NormalizedSubscription }> = [];
     try {
-      if (claim.providerRef) {
-        const sub = await adapter.fetchSubscription(claim.providerRef);
-        candidates = sub ? [sub] : [];
+      if (claim?.providerRef) {
+        const result = await this.adapterFor(claim.provider).fetchSubscription(claim.providerRef);
+        if (result.kind === 'found_unmapped') {
+          // The checkout's own artifact EXISTS pre-grant (Razorpay
+          // created/authenticated — the 3DS window). "No payment
+          // found" here invited the double charge; keep it locked.
+          this.logger.log(
+            `billing.reconcile.pending_in_progress workspace=${workspaceId} provider=${claim.provider} provider_status=${result.providerStatus}`,
+          );
+          return 'payment_in_progress';
+        }
+        if (result.kind === 'found') {
+          candidates.push({ provider: claim.provider, sub: result.subscription });
+        }
       } else {
         const [owner] = await this.db
           .select({ email: users.email })
@@ -154,30 +202,34 @@ export class BillingReconciliationService {
           .orderBy(asc(users.createdAt))
           .limit(1);
         if (!owner) return 'none_found';
-        candidates = await adapter.searchSubscriptionsByEmail(owner.email);
+        for (const provider of providers) {
+          const subs = await this.adapterFor(provider).searchSubscriptionsByEmail(owner.email);
+          for (const sub of subs) candidates.push({ provider, sub });
+        }
       }
     } catch (err) {
       this.logger.warn(
-        `billing.reconcile.pending_provider_unavailable workspace=${workspaceId} provider=${claim.provider} err=${err instanceof Error ? err.message : String(err)}`,
+        `billing.reconcile.pending_provider_unavailable workspace=${workspaceId} err=${err instanceof Error ? err.message : String(err)}`,
       );
       return 'provider_unavailable';
     }
 
-    const claimFloorMs = claim.createdAt.getTime() - CLAIM_MATCH_SKEW_MS;
-    const matches = candidates.filter((sub) => {
-      const entry = this.catalog.resolveByPriceId(claim.provider, sub.providerPriceId);
-      if (!entry || entry.tierId !== claim.tier || entry.cycle !== claim.billingCycle) return false;
+    const floorMs = Number.isNaN(target.floorMs) ? null : target.floorMs - CLAIM_MATCH_SKEW_MS;
+    const matches = candidates.filter(({ provider, sub }) => {
+      const entry = this.catalog.resolveByPriceId(provider, sub.providerPriceId);
+      if (!entry || entry.tierId !== target.tier) return false;
+      if (target.cycle !== null && entry.cycle !== target.cycle) return false;
       if (!(GRANTING_STATUSES as readonly string[]).includes(sub.status)) return false;
-      if (sub.providerCreatedAt) {
+      if (floorMs !== null && sub.providerCreatedAt) {
         const createdMs = Date.parse(sub.providerCreatedAt);
-        if (!Number.isNaN(createdMs) && createdMs < claimFloorMs) return false;
+        if (!Number.isNaN(createdMs) && createdMs < floorMs) return false;
       }
       return true;
     });
 
     if (matches.length === 0) {
       this.logger.log(
-        `billing.reconcile.pending_none_found workspace=${workspaceId} provider=${claim.provider} candidates=${candidates.length}`,
+        `billing.reconcile.pending_none_found workspace=${workspaceId} via=${claim ? 'claim' : 'hint'} candidates=${candidates.length}`,
       );
       return 'none_found';
     }
@@ -185,22 +237,24 @@ export class BillingReconciliationService {
       // Project only the newest — the extras are real provider state
       // and belong to support, not to an automatic guess.
       this.logger.warn(
-        `billing.reconcile.pending_multiple_matches workspace=${workspaceId} provider=${claim.provider} count=${matches.length}`,
+        `billing.reconcile.pending_multiple_matches workspace=${workspaceId} count=${matches.length}`,
       );
       matches.sort(
-        (a, b) => Date.parse(b.providerCreatedAt ?? '0') - Date.parse(a.providerCreatedAt ?? '0'),
+        (a, b) =>
+          Date.parse(b.sub.providerCreatedAt ?? '0') - Date.parse(a.sub.providerCreatedAt ?? '0'),
       );
     }
     const match = matches[0]!;
 
     const outcome = await this.project(
-      claim.provider,
-      // Server-derived attribution: the claim IS the workspace link.
-      { ...match, workspaceId },
+      match.provider,
+      // Server-derived attribution: the claim (or the authed
+      // workspace's own email search) IS the workspace link.
+      { ...match.sub, workspaceId },
       observedAt,
     );
     this.logger.log(
-      `billing.reconcile.pending_resolved workspace=${workspaceId} provider=${claim.provider} sub=${match.providerSubscriptionId} outcome=${outcome}`,
+      `billing.reconcile.pending_resolved workspace=${workspaceId} provider=${match.provider} sub=${match.sub.providerSubscriptionId} outcome=${outcome}`,
     );
     return outcome;
   }
@@ -234,9 +288,9 @@ export class BillingReconciliationService {
     for (const row of rows) {
       if (consecutiveErrors[row.provider] >= DRIFT_SWEEP_TRIP_AFTER) continue;
       const observedAt = new Date().toISOString();
-      let sub: NormalizedSubscription | null;
+      let fetched: Awaited<ReturnType<BillingProvider['fetchSubscription']>>;
       try {
-        sub = await this.adapterFor(row.provider).fetchSubscription(row.providerSubscriptionId);
+        fetched = await this.adapterFor(row.provider).fetchSubscription(row.providerSubscriptionId);
         consecutiveErrors[row.provider] = 0;
       } catch (err) {
         result.providerErrors += 1;
@@ -247,22 +301,23 @@ export class BillingReconciliationService {
         continue;
       }
       result.subscriptionsChecked += 1;
-      if (sub === null) {
-        // A read miss is never a state write — a 404 here would have to
-        // cancel a live subscription on the strength of one GET.
+      if (fetched.kind !== 'found') {
+        // A read miss or an unmappable status is never a state write —
+        // cancelling a live row on the strength of one GET is the
+        // failure mode this branch refuses.
         result.subscriptionsUnreadable += 1;
         this.logger.warn(
-          `billing.reconcile.provider_missing provider=${row.provider} sub=${row.providerSubscriptionId}`,
+          `billing.reconcile.provider_missing provider=${row.provider} sub=${row.providerSubscriptionId} read=${fetched.kind}${fetched.kind === 'found_unmapped' ? ` provider_status=${fetched.providerStatus}` : ''}`,
         );
         continue;
       }
       // Attribution resolves via the existing subscriptions row (ladder
       // step 1 in resolveWorkspace) — no override needed or wanted.
-      const outcome = await this.project(row.provider, sub, observedAt);
+      const outcome = await this.project(row.provider, fetched.subscription, observedAt);
       if (outcome === 'granted') {
         result.subscriptionsDrifted += 1;
         this.logger.warn(
-          `billing.reconcile.drift_applied provider=${row.provider} sub=${row.providerSubscriptionId} status=${sub.status}`,
+          `billing.reconcile.drift_applied provider=${row.provider} sub=${row.providerSubscriptionId} status=${fetched.subscription.status}`,
         );
       } else {
         result.subscriptionsUnchanged += 1;

@@ -1036,6 +1036,87 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(within(notice).queryByRole('button', { name: /resume checkout/i })).toBeNull();
   });
 
+  it('D249: payment_in_progress keeps the release LOCKED — a 3DS-window resume is the double charge', async () => {
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'checkout',
+        fromTier: 'free',
+        fromCycle: null,
+        toTier: 'plus',
+        toCycle: 'monthly',
+        at: Date.now() - 16 * 60_000,
+      }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/reconcile',
+        respond: () => jsonOk({ data: { outcome: 'payment_in_progress' } }),
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    await waitFor(() =>
+      expect(within(notice).getByTestId('provider-check')).toHaveTextContent('still in progress'),
+    );
+    expect(within(notice).queryByRole('button', { name: /resume checkout/i })).toBeNull();
+    // Re-check stays available — in-progress resolves on its own.
+    expect(within(notice).getByRole('button', { name: 'Check again' })).toBeInTheDocument();
+  });
+
+  it('D249: no_pending states that NOTHING is in flight — never "found your payment"', async () => {
+    // The stale-lock regression (Codex 2026-07-30): claim TTL'd and
+    // swept, local lock alive. The old else-branch rendered no_pending
+    // as "Found your payment" — a lie with the release locked forever.
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'checkout',
+        fromTier: 'free',
+        fromCycle: null,
+        toTier: 'plus',
+        toCycle: 'monthly',
+        at: Date.now() - 40 * 60_000,
+      }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/reconcile',
+        respond: () => jsonOk({ data: { outcome: 'no_pending' } }),
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    await waitFor(() =>
+      expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
+        'Nothing is awaiting confirmation for this checkout',
+      ),
+    );
+    expect(within(notice).getByTestId('provider-check')).not.toHaveTextContent(
+      /found your payment/i,
+    );
+    // Nothing in flight anywhere → the way out is available.
+    expect(
+      within(notice).getByRole('button', { name: 'Nothing in flight — resume checkout' }),
+    ).toBeInTheDocument();
+  });
+
   it('a completing checkout never clobbers a surfaced (id-less) ambiguous change lock', async () => {
     // The surfaced/interrupted change_unconfirmed record carries no
     // attemptId — it is absolutely protected: even a checkout that just

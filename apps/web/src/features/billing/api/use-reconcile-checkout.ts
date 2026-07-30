@@ -14,15 +14,19 @@
 import { useMutation } from '@tanstack/react-query';
 import type {
   BillingReconcileOutcome,
+  BillingReconcileRequest,
   BillingReconcileResponse,
 } from '@declutrmail/shared/contracts';
 
 import { apiPost } from '@/lib/api/client';
 
 export function useReconcileCheckout() {
-  return useMutation<BillingReconcileOutcome, Error, void>({
-    mutationFn: async () => {
-      const envelope = await apiPost<BillingReconcileResponse>('/api/billing/reconcile', {});
+  return useMutation<BillingReconcileOutcome, Error, BillingReconcileRequest>({
+    mutationFn: async (hint) => {
+      // The local pending record rides along as a search hint so a
+      // stale lock (server claim already TTL'd + swept) still gets a
+      // real provider search instead of `no_pending`.
+      const envelope = await apiPost<BillingReconcileResponse>('/api/billing/reconcile', hint);
       return envelope.data.outcome;
     },
   });

@@ -30,6 +30,7 @@ import { AppException } from '../common/app-exception.js';
 import type {
   BillingProvider,
   CreateCheckoutInput,
+  FetchSubscriptionResult,
   NormalizedBillingEvent,
   NormalizedSubscription,
   PlanChangeResult,
@@ -402,23 +403,26 @@ export class PaddleAdapter implements BillingProvider {
     return res.json();
   }
 
-  /** D249 — GET /subscriptions/{id}; null on 404 or unmapped status. */
-  async fetchSubscription(providerSubscriptionId: string): Promise<NormalizedSubscription | null> {
+  /** D249 — GET /subscriptions/{id}. See FetchSubscriptionResult. */
+  async fetchSubscription(providerSubscriptionId: string): Promise<FetchSubscriptionResult> {
     const body = await this.reconciliationGet(
       `/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
       `sub=${providerSubscriptionId}`,
     );
-    if (body === null) return null;
+    if (body === null) return { kind: 'not_found' };
     const sub = (body as { data?: PaddleSubscription }).data;
     if (!sub?.id) {
       this.logger.error(`paddle.reconcile_read.malformed sub=${providerSubscriptionId}`);
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     const normalized = toNormalizedSubscription(sub, this.env.PADDLE_WEBHOOK_SECRET);
-    // Unrecognized status → no usable truth; the reconciler treats it
-    // exactly like a 404 (no candidate, never a state write).
-    if (normalized === null) return null;
-    return { ...normalized, providerCreatedAt: sub.created_at ?? null };
+    // Exists in a status we do not map — REAL provider activity, never
+    // to be reported as "not found" (the 3DS/pre-grant window).
+    if (normalized === null) return { kind: 'found_unmapped', providerStatus: sub.status };
+    return {
+      kind: 'found',
+      subscription: { ...normalized, providerCreatedAt: sub.created_at ?? null },
+    };
   }
 
   /**

@@ -17,6 +17,7 @@
 
 import { Delete, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import {
+  BillingReconcileRequestSchema,
   CancelRequestSchema,
   CheckoutRequestSchema,
   PlanChangeRequestSchema,
@@ -114,9 +115,24 @@ export class BillingController {
   @RateLimit({ bucket: 'default', limit: 5, windowSec: 60 })
   async reconcile(
     @CurrentUser() principal: Principal,
+    @Body() body: unknown,
   ): Promise<Envelope<BillingReconcileResponse>> {
     assertBillingEnabled();
-    const outcome = await this.reconciliation.reconcilePendingCheckout(principal.workspaceId);
+    // The FE's local pending record, as a search hint — load-bearing
+    // when the server claim already TTL'd and was swept (stale-lock
+    // case). Optional and filter-only; see the contract doc.
+    const parsed = BillingReconcileRequestSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new AppException({
+        code: 'BAD_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid reconcile request.',
+      });
+    }
+    const outcome = await this.reconciliation.reconcilePendingCheckout(principal.workspaceId, {
+      tier: parsed.data.toTier,
+      cycle: parsed.data.cycle,
+      startedAt: parsed.data.startedAt,
+    });
     return ok({ outcome });
   }
 

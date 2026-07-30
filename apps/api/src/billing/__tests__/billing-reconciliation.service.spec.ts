@@ -17,7 +17,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
-import type { NormalizedSubscription } from '../billing-provider.interface.js';
+import type {
+  FetchSubscriptionResult,
+  NormalizedSubscription,
+} from '../billing-provider.interface.js';
 import { BillingReconciliationService } from '../billing-reconciliation.service.js';
 import { BillingWebhookService } from '../billing-webhook.service.js';
 import type { PaddleAdapter } from '../paddle.adapter.js';
@@ -88,11 +91,13 @@ function testCatalog(): BillingCatalog {
 
 /** Minimal fake adapter — only the D249 read surface is exercised. */
 function fakeAdapter(overrides: {
-  fetchSubscription?: (id: string) => Promise<NormalizedSubscription | null>;
+  fetchSubscription?: (id: string) => Promise<FetchSubscriptionResult>;
   searchSubscriptionsByEmail?: (email: string) => Promise<NormalizedSubscription[]>;
 }): PaddleAdapter & RazorpayAdapter {
   return {
-    fetchSubscription: overrides.fetchSubscription ?? (async () => null),
+    fetchSubscription:
+      overrides.fetchSubscription ??
+      (async (): Promise<FetchSubscriptionResult> => ({ kind: 'not_found' })),
     searchSubscriptionsByEmail: overrides.searchSubscriptionsByEmail ?? (async () => []),
   } as unknown as PaddleAdapter & RazorpayAdapter;
 }
@@ -165,7 +170,7 @@ describe('BillingReconciliationService (D249)', () => {
       fakeAdapter({
         fetchSubscription: async (id) => {
           fetched.push(id);
-          return razorpaySub;
+          return { kind: 'found', subscription: razorpaySub };
         },
       }),
     );
@@ -218,6 +223,59 @@ describe('BillingReconciliationService (D249)', () => {
     expect(rows[0]!.providerSubscriptionId).toBe('sub_match_newest');
   });
 
+  it('Codex fix 1: a pre-grant provider artifact is payment_in_progress, never none_found', async () => {
+    // Razorpay `created`/`authenticated` — the 3DS window. Reporting
+    // "no payment found" here unlocks the release seconds before a
+    // charge settles: the exact double-charge the lock exists to stop.
+    await seedClaim({ provider: 'razorpay', providerRef: 'sub_3ds' });
+    const svc = service(
+      fakeAdapter({}),
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found_unmapped',
+          providerStatus: 'authenticated',
+        }),
+      }),
+    );
+
+    expect(await svc.reconcilePendingCheckout(workspaceId)).toBe('payment_in_progress');
+    expect(await db.select().from(pendingCheckouts)).toHaveLength(1);
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+  });
+
+  it('Codex fix 2: a stale lock (claim swept) reconciles via the FE hint, not no_pending', async () => {
+    // No pending_checkouts row — the 30-min TTL passed and the sweep
+    // deleted it, but the BROWSER still holds its never-auto-expiring
+    // lock. The hint (what that browser awaited) drives a real
+    // provider search; a match grants exactly like the claim path.
+    const found = activePlusSub('sub_after_ttl', new Date());
+    const svc = service(fakeAdapter({ searchSubscriptionsByEmail: async () => [found] }));
+
+    const outcome = await svc.reconcilePendingCheckout(workspaceId, {
+      tier: 'plus',
+      cycle: 'monthly',
+      startedAt: new Date(Date.now() - 40 * 60_000).toISOString(),
+    });
+    expect(outcome).toBe('granted');
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('plus');
+
+    // And with NOTHING at the provider either, the hint path answers
+    // none_found (we asked!) — no_pending is reserved for hintless
+    // calls only.
+    const empty = service(fakeAdapter({ searchSubscriptionsByEmail: async () => [] }));
+    // New workspace to avoid the granted row above.
+    const [ws2] = await db
+      .insert(workspaces)
+      .values({ name: 'Recon WS 2' })
+      .returning({ id: workspaces.id });
+    await db.insert(users).values({ workspaceId: ws2!.id, email: 'owner2@example.test' });
+    expect(await empty.reconcilePendingCheckout(ws2!.id, { tier: 'plus', cycle: 'monthly' })).toBe(
+      'none_found',
+    );
+    expect(await empty.reconcilePendingCheckout(ws2!.id)).toBe('no_pending');
+  });
+
   it('provider answers empty → none_found; the claim SURVIVES (release stays a user decision)', async () => {
     await seedClaim({ provider: 'paddle' });
     const svc = service(fakeAdapter({ searchSubscriptionsByEmail: async () => [] }));
@@ -262,7 +320,11 @@ describe('BillingReconciliationService (D249)', () => {
       status: 'canceled',
       currentPeriodEnd: null,
     };
-    const svc = service(fakeAdapter({ fetchSubscription: async () => providerTruth }));
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({ kind: 'found', subscription: providerTruth }),
+      }),
+    );
 
     const first = await svc.reconcileLiveSubscriptions();
     expect(first).toMatchObject({
@@ -289,7 +351,9 @@ describe('BillingReconciliationService (D249)', () => {
       cancelAtPeriodEnd: false,
     });
     const truth = activePlusSub('sub_same', new Date());
-    const svc = service(fakeAdapter({ fetchSubscription: async () => truth }));
+    const svc = service(
+      fakeAdapter({ fetchSubscription: async () => ({ kind: 'found', subscription: truth }) }),
+    );
 
     const first = await svc.reconcileLiveSubscriptions();
     // First look records the snapshot (a state write of the same data).
@@ -314,7 +378,7 @@ describe('BillingReconciliationService (D249)', () => {
       currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
       cancelAtPeriodEnd: false,
     });
-    const svc = service(fakeAdapter({ fetchSubscription: async () => null }));
+    const svc = service(fakeAdapter({ fetchSubscription: async () => ({ kind: 'not_found' }) }));
 
     const result = await svc.reconcileLiveSubscriptions();
     expect(result).toMatchObject({ subscriptionsChecked: 1, subscriptionsUnreadable: 1 });

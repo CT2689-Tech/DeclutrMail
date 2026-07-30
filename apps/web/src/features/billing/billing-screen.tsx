@@ -474,12 +474,18 @@ export function BillingScreen({
             // provider's own mutation response and have no claim row.
             pending.kind === 'checkout' || pending.kind === 'checkout_intent'
               ? async () => {
-                  const outcome = await reconcileCheckout.mutateAsync();
-                  if (
-                    outcome === 'granted' ||
-                    outcome === 'already_recorded' ||
-                    outcome === 'no_pending'
-                  ) {
+                  const outcome = await reconcileCheckout.mutateAsync({
+                    // The local record as the hint — load-bearing once
+                    // the server claim has TTL'd and been swept (the
+                    // stale-lock case): the server can still search
+                    // the provider for what THIS browser awaited.
+                    ...(pending.toTier === 'plus' || pending.toTier === 'pro'
+                      ? { toTier: pending.toTier }
+                      : {}),
+                    ...(pending.toCycle ? { cycle: pending.toCycle } : {}),
+                    startedAt: new Date(pending.at).toISOString(),
+                  });
+                  if (outcome === 'granted' || outcome === 'already_recorded') {
                     // The projection (or an earlier webhook) already
                     // wrote the truth — pull it; the tier flip clears
                     // this notice through the normal detector.
@@ -666,10 +672,17 @@ export function PaymentProcessingNotice({
     onProviderCheck().then(setProviderCheck, () => setProviderCheck('provider_unavailable'));
   }
   // The release is legitimate only once the server has actually asked
-  // and come back empty-handed (or genuinely could not ask). Waits
-  // without a provider check keep their existing release behavior.
+  // and come back empty-handed (or genuinely could not ask, or holds
+  // nothing at all for this checkout — `no_pending` with the hint sent
+  // means claim AND provider search both came back empty). NEVER on
+  // `payment_in_progress`: the provider holds a pre-grant artifact and
+  // "no charge" would be false. Waits without a provider check keep
+  // their existing release behavior.
   const releaseUnlocked =
-    !reconcilable || providerCheck === 'none_found' || providerCheck === 'provider_unavailable';
+    !reconcilable ||
+    providerCheck === 'none_found' ||
+    providerCheck === 'no_pending' ||
+    providerCheck === 'provider_unavailable';
   // What the provider acknowledged — the factual anchor per kind.
   // `change_unconfirmed` acknowledges NOTHING: the provider's response
   // was lost, so every claim below stays outcome-neutral for it.
@@ -773,6 +786,12 @@ export function PaymentProcessingNotice({
             'Checking with the payment provider…'
           ) : providerCheck === 'none_found' ? (
             'We checked with the payment provider — no completed payment found for this checkout.'
+          ) : providerCheck === 'no_pending' ? (
+            // Claim AND provider search both empty — nothing is in
+            // flight anywhere. State that, never "found your payment".
+            'Nothing is awaiting confirmation for this checkout — on our server or at the payment provider.'
+          ) : providerCheck === 'payment_in_progress' ? (
+            'The payment provider shows this checkout still in progress — for example awaiting bank confirmation. Waiting is safe; this page keeps checking.'
           ) : providerCheck === 'provider_unavailable' ? (
             'We couldn’t reach the payment provider to check automatically.'
           ) : providerCheck === 'unresolved' ? (
@@ -784,11 +803,25 @@ export function PaymentProcessingNotice({
               .
             </>
           ) : (
-            // granted / already_recorded / no_pending — truth is
-            // written; the poll clears this notice via the tier flip.
+            // granted / already_recorded — the projection wrote the
+            // truth; the poll clears this notice via the tier flip.
             'Found your payment — your plan is updating now.'
           )}
         </p>
+      ) : null}
+      {reconcilable &&
+      (providerCheck === 'none_found' ||
+        providerCheck === 'no_pending' ||
+        providerCheck === 'payment_in_progress' ||
+        providerCheck === 'provider_unavailable') ? (
+        // Standalone re-check for every settled, non-granted answer —
+        // independent of the release, which `payment_in_progress`
+        // rightly keeps locked while still needing a way to re-ask.
+        <div>
+          <Button tone="default" onClick={recheckProvider}>
+            Check again
+          </Button>
+        </div>
       ) : null}
       {(phase === 'unconfirmed' || kind === 'checkout_intent') && onRelease && releaseUnlocked ? (
         kind === 'checkout' || kind === 'checkout_intent' || kind === 'change_unconfirmed' ? (
@@ -836,14 +869,11 @@ export function PaymentProcessingNotice({
                 {kind === 'checkout' || kind === 'checkout_intent'
                   ? providerCheck === 'none_found'
                     ? 'No payment found — resume checkout'
-                    : 'No charge went through — resume checkout'
+                    : providerCheck === 'no_pending'
+                      ? 'Nothing in flight — resume checkout'
+                      : 'No charge went through — resume checkout'
                   : 'The change didn’t apply — let me retry'}
               </Button>
-              {reconcilable ? (
-                <Button tone="default" onClick={recheckProvider}>
-                  Check again
-                </Button>
-              ) : null}
             </div>
           )
         ) : (

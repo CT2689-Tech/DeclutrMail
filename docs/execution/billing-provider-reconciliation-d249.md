@@ -59,6 +59,24 @@ claim's workspace id as attribution (server-derived — this is what makes a
 checkout whose `custom_data.sig` no longer verifies recoverable, the exact
 2026-07-29 failure).
 
+**Two amendments from the 2026-07-30 Codex review:**
+
+- **Pre-grant artifacts are `payment_in_progress`, never "no payment".**
+  `fetchSubscription` distinguishes `not_found` / `found` /
+  `found_unmapped` — a Razorpay subscription in `created`/`authenticated`
+  (the 3DS window) EXISTS, and reporting it as none-found unlocked the
+  release seconds before a charge could settle. The release stays locked
+  for `payment_in_progress`; a standalone "Check again" re-asks.
+- **A stale lock reconciles via the FE hint.** The browser lock never
+  auto-expires, but the server claim TTLs at 30 min and is swept — so a
+  claimless reconcile used to answer `no_pending` without asking any
+  provider, and the FE rendered that as "found your payment" (observed
+  live on the founder's screen). The FE now sends its local record
+  (tier / cycle / startedAt) as a hint; a claimless reconcile searches
+  the provider with it, so `none_found` means "we asked", and
+  `no_pending` survives only for hintless calls. The notice states
+  "nothing is awaiting confirmation" and unlocks the release.
+
 ## Synthesized events and ordering
 
 Reconciliation feeds `process()` a `NormalizedBillingEvent` with:
