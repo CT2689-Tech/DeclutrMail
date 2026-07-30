@@ -182,28 +182,48 @@ export const ERROR_CODES = {
     retryable: true,
     message: 'Our payment provider could not be reached. Please try again.',
   },
+  /**
+   * States the FACT and stops. It must not name a remedy.
+   *
+   * "Change your plan instead" was wrong in the same way the older "already
+   * has an ACTIVE subscription" was: it asserts something this layer cannot
+   * know. Changing plan has six refusal paths — Razorpay
+   * (`PLAN_CHANGE_UNSUPPORTED`), a Founding Pro price lock
+   * (`FOUNDING_PLAN_LOCKED`), an in-flight change (`PLAN_CHANGE_PENDING`), a
+   * scheduled cancel (`SUBSCRIPTION_CANCELING`), a paused row
+   * (`SUBSCRIPTION_PAUSED`), and too close to renewal
+   * (`PLAN_CHANGE_TOO_LATE`). A generic error knows none of them.
+   *
+   * Plan & billing DOES know the rail, the tier and the lock state, and
+   * already renders rail-aware guidance — so point there rather than guess.
+   */
   SUBSCRIPTION_EXISTS: {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'Your DeclutrMail account already has a subscription. Change your plan instead.',
+    message:
+      'Your DeclutrMail account already has a subscription, so a new one cannot be started. Open Plan & billing to see what you can do with it.',
   },
   /**
    * A PAUSED subscription blocking a new checkout — split from
    * `SUBSCRIPTION_EXISTS` (sandbox smoke 2026-07-29).
    *
-   * Two reasons it needs its own code. The old message asserted the account
-   * "already has an ACTIVE subscription", which is untrue of a paused row.
-   * And on Razorpay it was a trap: no no-charge resume, no plan change, and
-   * no stated way forward. Cancelling a paused subscription works on every
-   * rail, so the message names that exit.
+   * It exists because the old message asserted the account "already has an
+   * ACTIVE subscription", which is untrue of a paused row.
+   *
+   * Like SUBSCRIPTION_EXISTS it names no remedy. "Resume it, or cancel it and
+   * subscribe again" was wrong twice over: resume does not exist on Razorpay
+   * (`RESUME_UNSUPPORTED`), and cancelling only sets `cancel_at_period_end` —
+   * the row stays `active` until the provider's period-end webhook, so a new
+   * checkout is still blocked until then. "Subscribe again" implied something
+   * immediate that can be weeks away.
    */
   SUBSCRIPTION_PAUSED_BLOCKS_NEW: {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
     message:
-      'Your subscription is paused, so a new one cannot start yet. Resume it, or cancel it and subscribe again.',
+      'Your subscription is paused, so a new one cannot be started. Open Plan & billing to manage it.',
   },
   CHECKOUT_IN_FLIGHT: {
     status: 409,
@@ -228,7 +248,12 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'This subscription is paused — resume or cancel it before changing plans.',
+    // Pre-existing instance of the same defect as SUBSCRIPTION_EXISTS: it told
+    // the user to "resume or cancel", and resume does not exist on Razorpay
+    // (`RESUME_UNSUPPORTED`). States the blocker; Plan & billing offers the
+    // options that actually apply to this rail.
+    message:
+      'A paused subscription cannot change plans. Open Plan & billing to manage the paused subscription.',
   },
   FOUNDING_PLAN_LOCKED: {
     status: 409,
@@ -267,11 +292,14 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    // Names the self-serve exit first. Support-only was the whole message,
-    // which combined with the paused-blocks-checkout refusal to leave a
-    // Razorpay subscriber with no stated way forward at all.
+    // Support-led on purpose, matching what the billing screen already tells
+    // a paused Razorpay subscriber. An earlier revision offered "cancel and
+    // subscribe again" as the self-serve exit — but cancelling only schedules
+    // the end of the period, so the replacement checkout stays blocked until
+    // the provider's period-end webhook lands. Offering a remedy that does
+    // not work yet is worse than naming the one that does.
     message:
-      'No-charge resume is not available for this payment method yet. You can cancel this subscription and subscribe again, or email support@declutrmail.com.',
+      'No-charge resume is not available for this payment method. Email support@declutrmail.com and we will reactivate it safely.',
   },
   RESUME_PERIOD_ENDED: {
     status: 409,
