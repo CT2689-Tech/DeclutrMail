@@ -7,7 +7,7 @@ import { parseEmailPrefs, type EmailPrefs } from '@declutrmail/shared/contracts'
 import { hasPostalAddress } from '@declutrmail/shared/copy';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
-import { PermanentError, TransientError, ValidationError } from './worker-errors.js';
+import { TransientError, ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
@@ -34,15 +34,30 @@ import type { WorkerContext } from './worker-context.js';
  *     EmailService in apps/api, which fail-closes without an API key
  *     and consults the bounce/complaint suppression list).
  *
- * Error classification (verified by the no-key smoke):
- *   - `disabled` (RESEND_API_KEY unset)  → PermanentError — dead-letters
- *     on attempt 1; a missing key is config, not weather. NEVER retried
- *     forever, never silent (Sentry capture + structured log).
- *   - `permanent` (Resend 4xx)           → PermanentError.
- *   - `transient` (Resend 5xx / network) → TransientError — batchPolicy
- *     retries with backoff.
+ * Delivery classification. The dividing line is NOT severity but
+ * whether the mail can have gone out, because that is what
+ * `enqueueEmailSend`'s dedup consults — a thrown error dead-letters, and
+ * a dead-lettered job is indistinguishable from one that delivered and
+ * lost its confirmation, so it suppresses every later enqueue forever.
+ * Only the genuinely ambiguous case may throw:
+ *   - `transient` (Resend 5xx / network) → TransientError. Resend may
+ *     have accepted the request before the confirmation was lost, so
+ *     batchPolicy retries; exhausting attempts leaves it suppressed
+ *     rather than risking a duplicate.
+ *   - `disabled` (RESEND_API_KEY unset)  → SUCCESS with
+ *     'skipped_delivery_disabled'. The port fail-closes before Resend, so
+ *     nothing was sent — definitively. Loud (warn + metrics) but NOT
+ *     dead-lettered, so setting the key lets the send be retried.
+ *   - `permanent` (Resend 4xx)           → SUCCESS with
+ *     'skipped_delivery_rejected'. Refused outright, so also
+ *     definitively not sent; an unverified sending domain is exactly the
+ *     kind of 4xx that gets fixed and must then be retryable.
  *   - `suppressed`                        → SUCCESS with outcome
  *     'skipped_suppressed' (a suppressed recipient is a designed skip).
+ *
+ * A malformed payload still throws ValidationError, deliberately: that is
+ * a producer bug rather than an operational state, and a re-enqueue under
+ * the same key would carry the same broken payload.
  *
  * Privacy (D7, D228): job payloads carry counts + dates + the user's
  * OWN mailbox address only — never message content, subjects, or
@@ -160,7 +175,9 @@ export interface EmailSendResult {
     | 'skipped_opted_out'
     | 'skipped_suppressed'
     | 'skipped_no_recipient'
-    | 'skipped_no_postal_address';
+    | 'skipped_no_postal_address'
+    | 'skipped_delivery_disabled'
+    | 'skipped_delivery_rejected';
   kind: EmailKind;
   providerId: string | null;
 }
@@ -318,12 +335,43 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
     switch (delivered.reason) {
       case 'suppressed':
         return { outcome: 'skipped_suppressed', kind: payload.kind, providerId: null };
+      // `disabled` and `permanent` are DEFINITIVELY not-sent: the port
+      // fail-closed without a key, or the provider refused outright.
+      // Recording that is what lets `enqueueEmailSend` retry them later,
+      // and the asymmetry makes the choice: a reapable known-unsent
+      // failure costs at worst a futile re-attempt, while suppressing one
+      // costs a real email, silently and permanently.
+      //
+      // They used to throw PermanentError, which is why they dead-lettered
+      // — and a dead-lettered job is indistinguishable from one that
+      // delivered and lost its confirmation, so the dedup had to suppress
+      // it forever. That buried exactly the cases most likely to be FIXED
+      // and retried: an unset RESEND_API_KEY, or an unverified sending
+      // domain (Codex stop-review 2026-07-29, the fourth pass over this
+      // dedup). `transient` below stays a throw because it is the only
+      // genuinely ambiguous outcome — Resend may have accepted the request
+      // before the confirmation was lost.
+      //
+      // Loudness is preserved without burial: warn-level with the reason,
+      // plus the outcome in `worker.succeeded` metrics.
       case 'disabled':
-        // Missing RESEND_API_KEY is configuration, not weather —
-        // dead-letter on attempt 1 instead of burning retries.
-        throw new PermanentError(`email delivery disabled: ${delivered.detail}`);
-      case 'permanent':
-        throw new PermanentError(`email delivery rejected: ${delivered.detail}`);
+      case 'permanent': {
+        const outcome =
+          delivered.reason === 'disabled'
+            ? 'skipped_delivery_disabled'
+            : 'skipped_delivery_rejected';
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'email.not_delivered',
+            worker: this.workerName,
+            emailKind: payload.kind,
+            outcome,
+            detail: delivered.detail,
+          }),
+        );
+        return { outcome, kind: payload.kind, providerId: null };
+      }
       case 'transient':
         throw new TransientError(`email delivery failed transiently: ${delivered.detail}`);
     }

@@ -177,6 +177,8 @@ const DELIVERED_BY_OUTCOME: Record<EmailSendResult['outcome'], boolean> = {
   skipped_suppressed: false,
   skipped_no_recipient: false,
   skipped_no_postal_address: false,
+  skipped_delivery_disabled: false,
+  skipped_delivery_rejected: false,
 };
 
 /**

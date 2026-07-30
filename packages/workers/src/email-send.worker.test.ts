@@ -20,7 +20,7 @@ import {
   syncCompleteEmailJobId,
   syncReminderEmailJobId,
 } from './email-send.queue.js';
-import { PermanentError, TransientError } from './worker-errors.js';
+import { TransientError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 import { hasPostalAddress } from '@declutrmail/shared/copy';
 import type * as SharedCopy from '@declutrmail/shared/copy';
@@ -423,7 +423,7 @@ describe('EmailSendWorker', () => {
     expect(result.outcome).toBe('skipped_suppressed');
   });
 
-  it('fail-closed: missing provider key dead-letters on attempt 1 (PermanentError)', async () => {
+  it('fail-closed: a missing provider key records a not-sent skip, never a throw', async () => {
     const db = await freshDb();
     const userId = await seedUser(db);
     const delivery = deliveryReturning({
@@ -433,20 +433,41 @@ describe('EmailSendWorker', () => {
     });
     const worker = new EmailSendWorker({ db: db as never, delivery });
 
-    // PermanentError → isNonRetryable → BaseDeclutrWorker dead-letters
-    // immediately instead of burning batchPolicy retries.
-    await expect(worker.processJob(jobData(userId), CTX)).rejects.toThrow(PermanentError);
+    // It used to throw PermanentError to dead-letter on attempt 1. But a
+    // dead-lettered job cannot be told apart from one that delivered and
+    // lost its confirmation, so `enqueueEmailSend` had to suppress it
+    // forever — permanently burying every send that failed only because
+    // the key was unset, which is precisely the condition someone FIXES
+    // and then expects to retry (Codex stop-review 2026-07-29).
+    //
+    // The port fail-closes before reaching Resend, so this is definitively
+    // not-sent and recording it is both honest and recoverable. Still not
+    // retried (no TransientError) and still loud (warn + metrics).
+    const result = await worker.processJob(jobData(userId), CTX);
+    expect(result.outcome).toBe('skipped_delivery_disabled');
+    expect(result.providerId).toBeNull();
   });
 
-  it('classifies provider 4xx as permanent and 5xx/network as transient', async () => {
+  // The dividing line is NOT severity but whether the mail can have gone
+  // out — a throw dead-letters, and a dead-letter suppresses every later
+  // enqueue forever, so only the AMBIGUOUS outcome may throw.
+  it('records definitively-not-sent 4xx as a skip and throws only on ambiguous 5xx', async () => {
     const db = await freshDb();
     const userId = await seedUser(db);
+
+    // Refused outright by the provider ⇒ nothing was sent. An unverified
+    // sending domain is exactly this 4xx, and it gets fixed — so it must
+    // stay retryable rather than being buried.
     const worker4xx = new EmailSendWorker({
       db: db as never,
       delivery: deliveryReturning({ ok: false, reason: 'permanent', detail: 'bad from' }),
     });
-    await expect(worker4xx.processJob(jobData(userId), CTX)).rejects.toThrow(PermanentError);
+    const rejected = await worker4xx.processJob(jobData(userId), CTX);
+    expect(rejected.outcome).toBe('skipped_delivery_rejected');
 
+    // 5xx / network: Resend may have accepted the request before the
+    // confirmation was lost. The ONLY case where a duplicate is possible,
+    // so it stays a retryable throw.
     const worker5xx = new EmailSendWorker({
       db: db as never,
       delivery: deliveryReturning({ ok: false, reason: 'transient', detail: '503' }),

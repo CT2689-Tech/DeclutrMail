@@ -113,6 +113,8 @@ describe('enqueueEmailSend', () => {
     'skipped_suppressed',
     'skipped_no_recipient',
     'skipped_no_postal_address',
+    'skipped_delivery_disabled',
+    'skipped_delivery_rejected',
   ] as const) {
     it(`re-enqueues past a completed '${outcome}' job — nothing was delivered`, async () => {
       expect(await enqueueAgainst('completed', result(outcome))).toMatchObject({
