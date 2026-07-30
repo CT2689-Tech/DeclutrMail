@@ -146,18 +146,22 @@ describe('EmailSendWorker', () => {
       delivery: reminderDelivery,
     });
 
-    // Permanent, not transient: retrying cannot conjure an address, and
-    // the failure must be loud in worker metrics rather than a silently
-    // missing footer.
-    await expect(
-      reminderWorker.processJob(
-        jobData(reminderUser, {
-          kind: 'sync-reminder-24h',
-          idempotencyKey: 'email__sync-reminder-24h__ev1',
-        }),
-        CTX,
-      ),
-    ).rejects.toBeInstanceOf(PermanentError);
+    // A designed SKIP, not a throw. It used to be a PermanentError for
+    // loudness, which made the job terminal-`failed` — and a failed job
+    // is indistinguishable from one that delivered and lost its
+    // confirmation, so the enqueue dedup had to suppress it, permanently
+    // burying this mailbox's reminder (Codex stop-reviews 2026-07-29).
+    // Recording the refusal keeps the send blocked while leaving a later
+    // attempt possible once an address exists.
+    const reminderResult = await reminderWorker.processJob(
+      jobData(reminderUser, {
+        kind: 'sync-reminder-24h',
+        idempotencyKey: 'email__sync-reminder-24h__ev1',
+      }),
+      CTX,
+    );
+
+    expect(reminderResult.outcome).toBe('skipped_no_postal_address');
     expect(reminderDelivery.deliver).not.toHaveBeenCalled();
   });
 

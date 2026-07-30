@@ -159,7 +159,8 @@ export interface EmailSendResult {
     | 'skipped_user_returned'
     | 'skipped_opted_out'
     | 'skipped_suppressed'
-    | 'skipped_no_recipient';
+    | 'skipped_no_recipient'
+    | 'skipped_no_postal_address';
   kind: EmailKind;
   providerId: string | null;
 }
@@ -225,11 +226,41 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
     // failure must be loud in the worker metrics rather than a quiet
     // footer omission nobody notices until a complaint arrives.
     if (COMMERCIAL_KINDS.has(payload.kind) && !hasPostalAddress()) {
-      throw new PermanentError(
-        `Refusing to send commercial email kind "${payload.kind}": no physical postal ` +
-          'address is configured (CAN-SPAM §316.5 / CASL). Set BUSINESS_POSTAL_ADDRESS in ' +
-          'packages/shared/src/copy/postal-address.ts.',
+      // A designed SKIP, not a failure — the send is refused either way,
+      // but the distinction decides whether this mailbox can ever
+      // receive the email again.
+      //
+      // It used to throw PermanentError for loudness. That made the job
+      // terminal-`failed`, and a failed job cannot be told apart from
+      // one that delivered and then lost its confirmation, so the dedup
+      // in `enqueueEmailSend` must suppress it — permanently burying the
+      // email for that mailbox (the reminder's jobId is per-MAILBOX with
+      // nothing re-deriving it). Reaping failed jobs instead would risk
+      // duplicating a genuinely-sent message. Both Codex stop-reviews,
+      // 2026-07-29.
+      //
+      // Skipping escapes that bind: nothing was delivered and we KNOW
+      // it, so the outcome is recorded, the enqueue dedup can safely
+      // allow a later attempt, and setting BUSINESS_POSTAL_ADDRESS
+      // genuinely restores delivery.
+      //
+      // Loudness is preserved without poisoning the queue: warn-level
+      // with the reason, plus the outcome in `worker.succeeded` metrics.
+      // A dead-letter row was never the only way to be loud, and it was
+      // the one way that also broke delivery.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'email.refused_no_postal_address',
+          worker: this.workerName,
+          emailKind: payload.kind,
+          detail:
+            'Commercial email cannot send without a physical postal address ' +
+            '(CAN-SPAM §316.5 / CASL). Set BUSINESS_POSTAL_ADDRESS in ' +
+            'packages/shared/src/copy/postal-address.ts.',
+        }),
       );
+      return { outcome: 'skipped_no_postal_address', kind: payload.kind, providerId: null };
     }
 
     // Recipient resolution. `recipientOverride` short-circuits the

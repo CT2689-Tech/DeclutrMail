@@ -1,7 +1,7 @@
 import type { JobsOptions, Queue } from 'bullmq';
 
 import { WORKER_POLICIES } from './worker-policies.js';
-import type { EmailSendJobData } from './email-send.worker.js';
+import type { EmailSendJobData, EmailSendResult } from './email-send.worker.js';
 
 /**
  * BullMQ contract for the transactional-email pipeline (D162, D225).
@@ -12,12 +12,14 @@ import type { EmailSendJobData } from './email-send.worker.js';
  * keeps producers and the worker from drifting on dedup semantics.
  *
  * Idempotency model — ONE SEND PER LOGICAL EVENT:
- *   - The BullMQ `jobId` dedups enqueues (a redelivered outbox event
- *     cannot create a second job while the first is live or within the
- *     removeOnComplete window).
+ *   - The BullMQ `jobId` dedups enqueues, but on the job's RECORDED
+ *     OUTCOME rather than its mere existence — see `enqueueEmailSend`
+ *     for why the state alone is the wrong signal in both directions.
  *   - The job's `idempotencyKey` (set to the same value) is forwarded
- *     to Resend as the `Idempotency-Key` header, so even a BullMQ
- *     retry after a sent-but-crashed attempt cannot double-send.
+ *     to Resend as the `Idempotency-Key` header, so a BullMQ RETRY of
+ *     the same job cannot double-send. That protection is scoped to the
+ *     provider's key-retention window, so it covers in-job retries and
+ *     must not be leaned on to justify re-adding a job days later.
  *
  * jobId encodings use `__` separators — BullMQ ≥5.77 rejects ':' in
  * jobIds (see `incrementalSyncJobOptions`).
@@ -83,35 +85,54 @@ export function emailSendJobOptions(jobId: string, delayMs = 0): JobsOptions {
  * the BullMQ jobId) — safe to call from an at-least-once outbox
  * consumer without coordination.
  *
- * ## A failed job must not suppress a re-enqueue
+ * ## Suppress only when the email demonstrably WENT OUT
  *
- * `removeOnFail: false` keeps failed jobs forever, and these jobIds are
- * permanent per logical event — the 24h reminder's is keyed per MAILBOX,
- * with nothing that ever re-derives it. So a bare `if (existing) return
- * 'noop'` let ONE terminal failure bury that email for good: every later
- * enqueue no-ops and no configuration change revives it.
+ * The question this dedup must answer is "did this email already send?"
+ * BullMQ's job state is a proxy for that, and it is wrong in BOTH
+ * directions — which is how two separate bugs hid here (Codex
+ * stop-reviews, 2026-07-29):
  *
- * Observed with the CAN-SPAM postal refusal (Codex stop-review
- * 2026-07-29): a mailbox whose reminder failed for a missing address
- * could never receive a reminder again, even after the address was set.
- * Proven against dev Redis — `getJob` returned the failed job and the
- * enqueue no-oped. "Set the address and reminders resume" was false.
+ *   - `completed` does NOT mean sent. Four outcomes complete without
+ *     delivering anything (`skipped_opted_out`, `skipped_user_returned`,
+ *     `skipped_suppressed`, `skipped_no_recipient`). Suppressing on
+ *     `completed` alone buried a legitimate later send: a user with
+ *     reminders off completes as `skipped_opted_out`, and after they turn
+ *     reminders back on nothing could be enqueued for that mailbox.
  *
- * The dedup window exists to prevent DUPLICATE sends, not to permanently
- * bury an email that never sent. So the state, not mere existence,
- * decides — the same correction `ensureInitialSyncJob` already carries
- * for initial sync (see queue.ts), which this function had drifted from.
+ *   - `failed` does NOT mean not-sent. A `transient` failure can mean
+ *     Resend accepted the request and the confirmation was lost; if every
+ *     attempt fails that way the job is `failed` with the mail delivered.
+ *     An earlier revision reaped failed jobs and claimed the provider
+ *     `Idempotency-Key` made that safe — it does not, because that key
+ *     has a finite retention window and the reminder's own 24h delay
+ *     lands a re-add right at its edge.
  *
- * `completed` still suppresses, and that difference from the sync case
- * is the point: for email, completed means the message WAS sent, so the
- * `removeOnComplete` age IS the dedup window. Reaping it would
- * double-send.
+ * So the decision is made on the RECORDED OUTCOME, which the worker
+ * writes as the job's return value and which cannot be ambiguous — it
+ * says whether `deliver()` confirmed:
  *
- * `failed` and `unknown` do not suppress. `unknown` means the job hash
- * was evicted (Redis flush, TTL, failover) so BullMQ can no longer
- * schedule it; treating that as live stranded the send forever. Neither
- * state can double-send in practice: the same value rides to Resend as
- * `Idempotency-Key`, which covers even the sent-then-crashed case.
+ *   - completed + `sent`      → noop. The mail exists; this is the real
+ *                               dedup window doing its job.
+ *   - completed + `skipped_*` → reap and re-add. Nothing was delivered
+ *                               and we KNOW it, so a fresh enqueue is a
+ *                               legitimate new attempt, not a duplicate.
+ *   - `failed`                → noop. Delivery may have happened, and
+ *                               duplicating a real email is worse than a
+ *                               missed one. Nothing manufactures failed
+ *                               jobs for merely-refused sends any more:
+ *                               the postal gate returns
+ *                               `skipped_no_postal_address` precisely so
+ *                               it lands in the reapable branch above.
+ *   - `unknown`               → reap and re-add. The hash was evicted
+ *                               (Redis flush, TTL, failover) so BullMQ
+ *                               can no longer schedule it. Suppressing
+ *                               strands the send forever for no benefit.
+ *   - live states             → noop, or a redelivered event stacks a
+ *                               second send beside the pending one.
+ *
+ * `ensureInitialSyncJob` reaps `completed` outright, and copying that
+ * here would double-send — re-running a sync is idempotent, re-sending
+ * an email is not.
  */
 export async function enqueueEmailSend(
   queue: Queue<EmailSendJobData>,
@@ -121,13 +142,15 @@ export async function enqueueEmailSend(
   const existing = await queue.getJob(data.idempotencyKey);
   if (existing) {
     const state = await existing.getState();
-    if (state !== 'failed' && state !== 'unknown') {
+    const reapable =
+      state === 'unknown' || (state === 'completed' && !didSend(existing.returnvalue));
+    if (!reapable) {
       return 'noop';
     }
     // `remove()` REJECTS if a worker locked the job between `getState()`
     // and here. Treat that lost race as a no-op rather than adding under
     // a half-removed hash — the attempt that won the race runs, and a
-    // later enqueue reaps it if it fails again.
+    // later enqueue reconsiders it.
     try {
       await existing.remove();
     } catch {
@@ -136,4 +159,50 @@ export async function enqueueEmailSend(
   }
   await queue.add(EMAIL_SEND_JOB, data, emailSendJobOptions(data.idempotencyKey, delayMs));
   return 'added';
+}
+
+/**
+ * Whether each recorded outcome means the mail actually went out.
+ *
+ * A total Record rather than a set of "skip" strings, so adding an
+ * outcome to `EmailSendResult['outcome']` fails TYPECHECK until it is
+ * classified here. Forgetting to classify one would otherwise silently
+ * decide whether a duplicate email is allowed — exactly the kind of
+ * omission that should not compile.
+ */
+const DELIVERED_BY_OUTCOME: Record<EmailSendResult['outcome'], boolean> = {
+  sent: true,
+  skipped_user_returned: false,
+  skipped_opted_out: false,
+  skipped_suppressed: false,
+  skipped_no_recipient: false,
+  skipped_no_postal_address: false,
+};
+
+/**
+ * Did a completed job's recorded outcome confirm a delivery?
+ *
+ * Fails CLOSED: anything unreadable — absent, a JSON string from an older
+ * BullMQ, an outcome this build does not know — counts as delivered, so a
+ * record we cannot parse never authorises a duplicate. Being wrong that
+ * way costs one missed send; being wrong the other way sends a real
+ * person a second copy.
+ */
+function didSend(returnvalue: unknown): boolean {
+  let raw: unknown = returnvalue;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return true;
+    }
+  }
+  if (raw === null || typeof raw !== 'object') {
+    return true;
+  }
+  const outcome = (raw as { outcome?: unknown }).outcome;
+  if (typeof outcome !== 'string' || !(outcome in DELIVERED_BY_OUTCOME)) {
+    return true;
+  }
+  return DELIVERED_BY_OUTCOME[outcome as EmailSendResult['outcome']];
 }
