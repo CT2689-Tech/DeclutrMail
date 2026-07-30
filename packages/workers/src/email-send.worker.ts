@@ -392,13 +392,17 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
       // that it stopped is a silent mail outage — the same blind spot a
       // dependency-free health check already created here once.
       //
-      // CAVEAT, and it is the founder's call to close: a parked email job
-      // is NOT replayable via `replayDeadLetterJob`. The D7 write-boundary
-      // allowlist (`DEAD_LETTER_PAYLOAD_ALLOWED_KEYS`) omits this payload's
-      // render fields — kind, userId, subject, text — so the persisted copy
-      // replays as a ValidationError. That predates this change and is why
-      // the row is a RECORD, not yet a retry. Extending that allowlist is a
-      // privacy-posture decision (CLAUDE.md §9), not one to make here.
+      // The parked row is a RECORD, not a retry — founder-ratified
+      // 2026-07-29. `replayDeadLetterJob` cannot replay an email job: the
+      // D7 write-boundary allowlist (`DEAD_LETTER_PAYLOAD_ALLOWED_KEYS`)
+      // strips this payload's render fields (kind, userId, subject, text),
+      // so the persisted copy replays as a ValidationError. That predates
+      // the skip conversion — replay was equally broken when these paths
+      // threw. Ratified as acceptable prelaunch (D245: no real users; new
+      // events send fine once config is fixed, and a stale 24h reminder
+      // should not be replayed weeks late). If replay is ever wanted,
+      // build replay-by-RE-RENDER from identifiers — do NOT persist
+      // subject/text, which carry the user's mailbox address.
       case 'disabled':
       case 'permanent': {
         const outcome =
