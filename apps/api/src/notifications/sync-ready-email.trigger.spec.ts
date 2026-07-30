@@ -37,13 +37,23 @@ interface FakeQueue {
   getJob: ReturnType<typeof vi.fn>;
 }
 
-function fakeQueue(existingJobIds: string[] = []): FakeQueue {
+/**
+ * `state` is what `enqueueEmailSend` actually consults — mere existence
+ * is not enough, because `removeOnFail: false` keeps failed jobs forever
+ * and a permanent jobId would otherwise bury that email for good. Live
+ * by default so the redelivery-dedup tests read as intended.
+ */
+function fakeQueue(existingJobIds: string[] = [], state = 'delayed'): FakeQueue {
   return {
     add: vi.fn().mockResolvedValue(undefined),
     getJob: vi
       .fn()
       .mockImplementation((jobId: string) =>
-        Promise.resolve(existingJobIds.includes(jobId) ? { id: jobId } : undefined),
+        Promise.resolve(
+          existingJobIds.includes(jobId)
+            ? { id: jobId, getState: async () => state, remove: async () => undefined }
+            : undefined,
+        ),
       ),
   };
 }
@@ -173,6 +183,28 @@ describe('buildSyncReadyEmailHandler', () => {
 
     await handler(payload(), 'ev-1');
     expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  // The reminder's jobId is keyed per MAILBOX and failed jobs are kept
+  // forever, so a single terminal failure used to bury that mailbox's
+  // reminder permanently — every later enqueue no-oped. Surfaced by the
+  // CAN-SPAM postal refusal, where "set the address and reminders
+  // resume" was simply false (Codex stop-review 2026-07-29).
+  it('re-enqueues past a FAILED job so a terminal failure is not permanent', async () => {
+    const queue = fakeQueue([`email__sync-reminder-24h__${mailboxId}`], 'failed');
+    const handler = buildSyncReadyEmailHandler({
+      db,
+      emailQueue: queue as unknown as Queue<EmailSendJobData>,
+      appUrl: 'https://app.declutrmail.com',
+      apiUrl: 'https://api.declutrmail.com',
+    });
+
+    await handler(payload(), 'ev-1');
+
+    const reminderAdds = queue.add.mock.calls.filter(
+      (call) => (call[1] as EmailSendJobData).kind === 'sync-reminder-24h',
+    );
+    expect(reminderAdds).toHaveLength(1);
   });
 
   it('ACKs without enqueueing when the mailbox row is gone', async () => {
