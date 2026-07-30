@@ -77,33 +77,31 @@ const OPT_OUT_PREF_BY_KIND: Partial<Record<EmailKind, keyof EmailPrefs>> = {
  * offer a preference switch. A transactional notice may carry an
  * unsubscribe link without becoming an advertisement.
  *
- * Under the correct test, both opt-out-able kinds are transactional:
+ * But the two opt-out-able kinds do NOT land on the same side of it, and
+ * an earlier revision of this comment wrongly said they did.
+ *
  * `sync-complete` ("Your inbox is ready" — N messages indexed, here is
- * the link) and `sync-reminder-24h` ("Your inbox is still ready")
- * report the result of a sync the recipient themselves started. Neither
- * carries a price, an upgrade pitch, or any promotional offer; both are
- * squarely §7702(17) relationship messages — information about the
- * recipient's own account and delivery of a service they requested.
+ * the link) is transactional: it delivers the result of a service the
+ * recipient asked for, which is §7702(17)(A)(v) almost verbatim. The old
+ * conflation blocked it — the first email every signup receives, six
+ * dead-lettered sends in dev from 2026-07-28 — for a rule that does not
+ * apply to it.
  *
- * The old conflation blocked the first email every signup receives
- * (six dead-lettered sends observed in dev, 2026-07-28 onward) for a
- * rule that did not apply to it.
+ * `sync-reminder-24h` is commercial, and stays gated. Its body opens by
+ * restating YESTERDAY's completion, which `sync-complete` already
+ * reported, so it carries no new transactional information; it exists
+ * only because the recipient did not come back, and "five minutes of
+ * triage is usually enough to feel the difference" is a value claim
+ * about the product rather than a status report. Under the mixed-message
+ * primary-purpose test that is promotional — and it is what every ESP
+ * classifies as re-engagement/win-back. Sending it without a postal
+ * address is the violation the rule is actually about.
  *
- * ## Why the set is EMPTY rather than deleted
- *
- * Empty is a classification result, not an oversight: every kind
- * shipped today is a service notice. The gate stays so the first
- * genuinely promotional email — a feature announcement, a launch
- * blast, a win-back offer — is refused until an address exists, which
- * is the case the rule is actually about. Add the kind here and the
- * refusal below arms itself.
- *
- * The refusal path is therefore not currently reachable in production,
- * which would make it untested dead code. `email-send.worker.test.ts`
- * covers it by adding a kind to this set, so the wiring is pinned
- * independently of what is classified commercial today.
+ * The distinction to hold on to: a reminder is not transactional merely
+ * because the thing it reminds you of was. What makes a message
+ * transactional is the information IT carries.
  */
-export const COMMERCIAL_KINDS: ReadonlySet<EmailKind> = new Set<EmailKind>();
+export const COMMERCIAL_KINDS: ReadonlySet<EmailKind> = new Set<EmailKind>(['sync-reminder-24h']);
 
 /** One transactional email send. */
 export interface EmailSendJobData {

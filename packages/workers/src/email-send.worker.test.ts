@@ -6,14 +6,13 @@ import { citext } from '@electric-sql/pglite/contrib/citext';
 import { activeSessions, schema, users, workspaces } from '@declutrmail/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   COMMERCIAL_KINDS,
   EmailSendWorker,
   type EmailDeliveryOutcome,
   type EmailDeliveryPort,
-  type EmailKind,
   type EmailSendJobData,
 } from './email-send.worker.js';
 import {
@@ -111,54 +110,62 @@ describe('EmailSendWorker', () => {
   // next test.
   beforeEach(() => vi.mocked(hasPostalAddress).mockReturnValue(true));
 
-  // COMMERCIAL_KINDS is empty today — every shipped kind is a service
-  // notice — so the refusal below has no live input and would sit in the
-  // tree as untested dead code, the exact shape of a guardrail that
-  // reports fine while verifying nothing. Adding a kind for the duration
-  // of the test pins the WIRING (classified commercial + no address ⇒
-  // refuse), independently of today's classification, which the next
-  // test pins separately.
-  const asMutable = COMMERCIAL_KINDS as Set<EmailKind>;
-  afterEach(() => asMutable.delete('sync-complete'));
+  // The two opt-out-able kinds sit on OPPOSITE sides of the CAN-SPAM
+  // primary-purpose test, which is the whole point of separating the
+  // postal gate from the opt-out map. Pinning them in one test keeps the
+  // contrast visible: a future edit that collapses them back together —
+  // in either direction — fails here rather than shipping.
+  //
+  // The earlier fix got this wrong in the permissive direction, letting
+  // the re-engagement email through (Codex stop-review 2026-07-29).
+  it('gates the re-engagement email on a postal address but not the completion notice', async () => {
+    vi.mocked(hasPostalAddress).mockReturnValue(false);
 
-  it('REFUSES a kind classified commercial when no postal address is configured (CAN-SPAM)', async () => {
+    // sync-complete DELIVERS the result of a sync the recipient asked
+    // for — §7702(17)(A)(v). Blocking it dead-lettered the first email
+    // every new signup receives.
+    const completeDb = await freshDb();
+    const completeUser = await seedUser(completeDb, 'complete@b.com');
+    const completeDelivery = deliveryReturning({ ok: true, providerId: 'rsnd_svc' });
+    const completeResult = await new EmailSendWorker({
+      db: completeDb as never,
+      delivery: completeDelivery,
+    }).processJob(jobData(completeUser), CTX);
+    expect(completeResult.outcome).toBe('sent');
+
+    // sync-reminder-24h carries no NEW transactional information — the
+    // completion it restates was already reported by sync-complete. It
+    // exists because the recipient did not return, and its body makes a
+    // value claim about the product. That is promotional, so it must not
+    // send without an address.
+    const reminderDb = await freshDb();
+    const reminderUser = await seedUser(reminderDb, 'reminder@b.com');
+    const reminderDelivery = deliveryReturning({ ok: true, providerId: 'rsnd_promo' });
+    const reminderWorker = new EmailSendWorker({
+      db: reminderDb as never,
+      delivery: reminderDelivery,
+    });
+
     // Permanent, not transient: retrying cannot conjure an address, and
     // the failure must be loud in worker metrics rather than a silently
     // missing footer.
-    asMutable.add('sync-complete');
-    vi.mocked(hasPostalAddress).mockReturnValue(false);
-    const db = await freshDb();
-    const userId = await seedUser(db);
-    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_1' });
-    const worker = new EmailSendWorker({ db: db as never, delivery });
-
-    await expect(worker.processJob(jobData(userId), CTX)).rejects.toBeInstanceOf(PermanentError);
-    expect(delivery.deliver).not.toHaveBeenCalled();
+    await expect(
+      reminderWorker.processJob(
+        jobData(reminderUser, {
+          kind: 'sync-reminder-24h',
+          idempotencyKey: 'email__sync-reminder-24h__ev1',
+        }),
+        CTX,
+      ),
+    ).rejects.toBeInstanceOf(PermanentError);
+    expect(reminderDelivery.deliver).not.toHaveBeenCalled();
   });
 
-  // The classification itself, which is what actually unblocked signups.
-  // `sync-complete` and `sync-reminder-24h` are opt-out-able but NOT
-  // commercial: they report the result of a sync the recipient started
-  // and carry no price, pitch, or offer. Keying the gate off the opt-out
-  // map instead of primary purpose dead-lettered the first email every
-  // new signup receives.
-  it('sends the opt-out-able service notices without an address — opt-out-able is not commercial', async () => {
-    vi.mocked(hasPostalAddress).mockReturnValue(false);
-    expect([...COMMERCIAL_KINDS]).toEqual([]);
-
-    for (const kind of ['sync-complete', 'sync-reminder-24h'] as const) {
-      const db = await freshDb();
-      const userId = await seedUser(db, `${kind}@b.com`);
-      const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_svc' });
-      const worker = new EmailSendWorker({ db: db as never, delivery });
-
-      const result = await worker.processJob(
-        jobData(userId, { kind, idempotencyKey: `email__${kind}__ev1` }),
-        CTX,
-      );
-
-      expect(result.outcome, `${kind} must not be blocked by the postal gate`).toBe('sent');
-    }
+  // Guards the classification itself against silent drift. Emptying this
+  // set would disarm the postal gate everywhere while every other test
+  // stayed green — the blind-guard shape.
+  it('classifies exactly the promotional kinds as commercial', () => {
+    expect([...COMMERCIAL_KINDS]).toEqual(['sync-reminder-24h']);
   });
 
   it('still sends TRANSACTIONAL kinds without a postal address (deletion notices)', async () => {
