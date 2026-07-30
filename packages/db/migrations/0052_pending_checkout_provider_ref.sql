@@ -1,0 +1,16 @@
+-- D249 provider-truth reconciliation: the pending-checkout claim learns
+-- the provider-side subscription id when the server itself created it.
+--
+-- Razorpay's createCheckout creates the provider subscription BEFORE
+-- payment, so the id exists at claim time; storing it lets the
+-- reconciler ask the provider "what happened to THIS checkout" exactly,
+-- instead of asking the customer whether they believe they were
+-- charged. Paddle's overlay creates the transaction client-side, so the
+-- column stays NULL there and reconciliation falls back to the
+-- customer-email search.
+--
+-- Nullable by design: absence means "no server-known provider artifact",
+-- which is itself signal. This is a subscription id, not a payment
+-- credential — the table's minimum-storage posture is amended, not
+-- violated (see packages/db/src/schema/pending-checkouts.ts).
+ALTER TABLE "pending_checkouts" ADD COLUMN "provider_ref" text;

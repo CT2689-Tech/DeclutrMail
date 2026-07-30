@@ -1,0 +1,2 @@
+-- Rollback for 0052_pending_checkout_provider_ref.sql
+ALTER TABLE "pending_checkouts" DROP COLUMN IF EXISTS "provider_ref";
