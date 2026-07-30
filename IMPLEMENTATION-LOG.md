@@ -34,12 +34,12 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 - ⬜ Not started: 81
 - 🟡 In progress: 1
-- 🔵 Shipped: 99
+- 🔵 Shipped: 100
 - 🟢 Verified: 55
 - 🚫 Retired: 2
 - 🔴 Blocked: 0
 - ⏸️ Deferred: 0
-- **Total: 238 D-decisions**
+- **Total: 239 D-decisions**
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -294,5 +294,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D245 | Unified product clarity and control contract | 🔵 | #332, #333, #335, #336, #368, #393, #394, #400, #403, #409 |  |  |
 | D246 | Finite first relief and evidence-based automation authority | 🔵 | #334 |  |  |
 | D248 | Bulk unsubscribe: one-click subset only, per-channel receipt | ⬜ |  |  | Decided 2026-07-28. Batch executes `senders.unsubscribe_method='one_click'` server-side only. The column is nullable, so four states are reported separately: `mailto` (per-sender, D230), `none` (no channel exists), and `NULL` (not yet indexed — unknown, never folded into `none`). No undo — unsubscribe declares no inverse, so the mandatory modal preview is the reversal point. Receipt aggregates the THREE outcomes the worker writes (`unsubscribe_endpoint_accepted` / `unsubscribe_unconfirmed` / `unsubscribe_failed`) and says "request accepted", not "unsubscribed". Extends D9/D32 |
+| D249 | Billing reconciles against provider truth, not customer memory | 🔵 | #436 |  |  |
 
 <!-- AUTO:DECISIONS:END -->

@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-30 — Diagnosed a two-input derived gate against only one of its inputs
+**PR:** none — FOUNDER-FOLLOWUPS entry written during D249 CI triage, corrected same day
+**Caught by:** observed CI behavior contradicting the prediction (#436 merged closing D249; the gate I predicted would fail on the next PR passed)
+**What happened:** `generate-impl-log` derives the ROW SET from the plan mirror and the STATUS from merged PR trailers. I diagnosed the #435 failure correctly (existing rows, merged flips, next PR fails) then generalized it to #436 — but D249 had no plan entry, so there was no row to be stale: the gate stayed green and the D was silently untracked instead. I recorded a confident, wrong prediction in FOUNDER-FOLLOWUPS as the basis for a founder decision.
+**Correct approach:** Before predicting a derived artifact's failure mode, enumerate its inputs and trace the specific case through EACH — "absent from the log" has two causes here (unmerged trailer vs. missing plan row) with opposite consequences (loud failure vs. silent untracking).
+**Rule:** A derived gate drifts once per input; diagnose against every input before predicting, and prefer running the generator over reasoning about it (`pnpm generate-impl-log` + diff would have shown no D249 drift in seconds).
+**Enforcement update:** FOUNDER-FOLLOWUPS entry rewritten with both drift classes; Class-B rule now in effect (a PR shipping a new D appends it to the plan mirror + regenerates the log in the same PR — done for D249).
+
 ## 2026-07-30 — Three Codex rounds on D249: each safety rule died at the boundary of the case it was scoped to
 **PR:** [#436](https://github.com/CT2689-Tech/DeclutrMail/pull/436)
 **Caught by:** Codex stop-time review, three consecutive rounds on the same feature

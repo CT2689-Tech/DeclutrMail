@@ -30,10 +30,11 @@ import type { DrizzleDb } from '../db/db.module.js';
  *      `billing.plan_change_unconfirmed` class only a sweep can age
  *      out.
  *
- * What this deliberately does NOT do yet: poll the providers' APIs for
- * subscription state (the adapters expose no read methods). The
- * deadline system removes the forever-grant class without polling;
- * provider-truth polling is tracked in FOUNDER-FOLLOWUPS.
+ * Provider-truth polling itself lives NEXT DOOR, not here: the worker
+ * runs `BillingReconciliationService.reconcileLiveSubscriptions()`
+ * (D249) in the same 6h/boot cadence, fetching provider state for live
+ * rows and projecting drift. This file stays pure SQL so it remains
+ * unit-testable against PGlite without provider stubs.
  */
 export interface BillingSweepResult {
   dunningFlipped: number;
