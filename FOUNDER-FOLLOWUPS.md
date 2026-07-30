@@ -26,6 +26,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-30 — The derived impl-log gate charges the wrong PR author
+**Source:** session 2026-07-30 (D249 CI triage)
+**Why:** `ci.yml` runs `pnpm generate-impl-log --check` but nothing regenerates the log when a PR merges. So a PR that closes D-rows leaves `main` stale, and the gate then fails on **the next PR opened** — whoever that is, including docs-only ones. Observed live: #435's merge left five rows stale (D35/D117/D119/D162/D218), which failed CI on both #436 and #437; each had to carry an unrelated mechanical commit to go green. The rolled-up `Test` check also reports red purely because it aggregates the impl-log job, so "Test failed" is misleading — every real shard passed.
+**How:** pick one — (a) re-add a post-merge job on `main` that runs `pnpm generate-impl-log` and commits the result (the `pr-merged.yml` push-to-main flip that ci.yml:132 says this replaced), or (b) keep `--check` but make it non-blocking and let a scheduled job repair `main` daily. (a) is the honest one: the log claims to be derived, so derivation should be automatic.
+**Verifies by:** merge any PR that closes a D-row, then open a throwaway PR — its "Implementation log is derived and current" check passes with no impl-log commit on the branch.
+**Status:** Open
+
 ### 2026-07-28 — Resolve the two paused subscriptions on the founder workspace
 **Source:** launch audit B7 / PR #417 investigation
 **Why:** workspace `fab42715…` holds two paused subscriptions (paddle `sub_pz`, razorpay `sub_THdjxRKddrqsNK`). Whichever is not real should be cancelled at the provider; this also unblocks the strict index above. Which one is genuine is a billing fact only you have.
