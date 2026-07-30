@@ -448,6 +448,35 @@ describe('EmailSendWorker', () => {
     expect(result.providerId).toBeNull();
   });
 
+  // Dropping the throw also dropped these out of the dead-letter sweep,
+  // which is what forwards to Sentry. Losing delivery is bad; losing
+  // delivery AND the signal that it stopped is a silent mail outage, so
+  // the observer call is pinned here — a refactor that removes it would
+  // otherwise leave every other test green.
+  it('still reports a not-delivered send to the observer, having stopped dead-lettering', async () => {
+    const db = await freshDb();
+    const userId = await seedUser(db);
+    const captured: { kind: string; tags?: Record<string, string | number> }[] = [];
+    const worker = new EmailSendWorker({
+      db: db as never,
+      delivery: deliveryReturning({
+        ok: false,
+        reason: 'disabled',
+        detail: 'RESEND_API_KEY is not configured.',
+      }),
+    });
+    worker.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (_err, ctx) => captured.push(ctx),
+    });
+
+    await worker.processJob(jobData(userId), CTX);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.kind).toBe('email.not_delivered');
+    expect(captured[0]?.tags?.outcome).toBe('skipped_delivery_disabled');
+  });
+
   // The dividing line is NOT severity but whether the mail can have gone
   // out — a throw dead-letters, and a dead-letter suppresses every later
   // enqueue forever, so only the AMBIGUOUS outcome may throw.

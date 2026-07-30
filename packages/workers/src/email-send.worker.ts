@@ -352,14 +352,23 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
       // genuinely ambiguous outcome — Resend may have accepted the request
       // before the confirmation was lost.
       //
-      // Loudness is preserved without burial: warn-level with the reason,
-      // plus the outcome in `worker.succeeded` metrics.
+      // Loudness is preserved without burial, and deliberately on BOTH
+      // channels. Dropping the throw also dropped these out of the
+      // dead-letter sweep, which is what forwards to Sentry — so the
+      // observer is called directly. Losing delivery is bad; losing
+      // delivery AND the signal that it stopped is how a mail outage sits
+      // unnoticed, the same blind spot a dependency-free health check
+      // already created here once.
       case 'disabled':
       case 'permanent': {
         const outcome =
           delivered.reason === 'disabled'
             ? 'skipped_delivery_disabled'
             : 'skipped_delivery_rejected';
+        this.observer.captureBackgroundFailure(
+          new Error(`email not delivered (${delivered.reason}): ${delivered.detail}`),
+          { kind: 'email.not_delivered', tags: { emailKind: payload.kind, outcome } },
+        );
         console.warn(
           JSON.stringify({
             level: 'warn',

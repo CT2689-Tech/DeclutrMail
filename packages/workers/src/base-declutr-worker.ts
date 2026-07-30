@@ -114,8 +114,17 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
    * Pluggable failure-capture sink (D159 Sentry seam). Defaults to a
    * no-op so unit tests and dev (no `SENTRY_DSN`) need no wiring. The
    * composition root replaces it via `setObserver()` at boot.
+   *
+   * `protected` so a subclass can report a condition that needs a human
+   * WITHOUT throwing. Those were the same act until EmailSendWorker had
+   * to separate them: a throw dead-letters, and a dead-lettered email job
+   * is indistinguishable from one that delivered and lost its
+   * confirmation, so it suppresses every later enqueue forever. Returning
+   * a recorded skip keeps delivery recoverable but leaves the Sentry
+   * channel behind — and "emails silently not sending because the API key
+   * is unset" is precisely a condition that must still page someone.
    */
-  private observer: WorkerObserver = NOOP_WORKER_OBSERVER;
+  protected observer: WorkerObserver = NOOP_WORKER_OBSERVER;
 
   /**
    * Durable dead-letter sink (D225). `null` until the composition root
