@@ -258,17 +258,17 @@ webhook does. A tier that flips _before_ the webhook lands is a bug.
 delete the dev rows). B6 needs an **active Plus** subscription — do it right
 after A5, before A7.
 
-| #   | Step                                                                    | Expect                                                                                           |
-| --- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| B1  | Open the plan picker in **two browser tabs**, start checkout in both    | Second tab stands down (Web Locks); only one overlay                                             |
-| B2  | Start checkout, then in a **second browser profile** try again          | `CHECKOUT_IN_FLIGHT`                                                                             |
-| B3  | From B2, click "I checked — no charge went through"                     | `DELETE /api/billing/checkout/pending` → `{released:true}`; checkout allowed again               |
-| B4  | Start checkout, close the overlay **without paying**, retry immediately | Still `CHECKOUT_IN_FLIGHT`. The claim is **surfaced, not released** — 3DS can settle after close |
-| B5  | Force a provider failure (bad `PADDLE_API_KEY`), then retry             | The claim is **HELD**, by design — a thrown provider error is not proof the provider saw nothing |
-| B6  | On active **Plus**, try to buy Plus again                               | `SUBSCRIPTION_EXISTS`                                                                            |
-| B7  | Double-click **Confirm** as fast as possible                            | One charge. **Verify in the Paddle dashboard, not just the UI**                                  |
-| B8  | Abandon a checkout, wait past the **30-minute TTL**, retry checkout     | Succeeds — **no sweep needed.** The claim upsert reclaims any row whose `expires_at` has passed  |
-| B9  | After B8, restart the worker (§0.5)                                     | The stale row is also deleted (`pendingCheckoutsCleared`) — housekeeping, not the reopener       |
+| #   | Step                                                                                                                                                                                                | Expect                                                                                           |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| B1  | Open the plan picker in **two browser tabs**, start checkout in both                                                                                                                                | Second tab stands down (Web Locks); only one overlay                                             |
+| B2  | Start checkout, then in a **second browser profile** try again                                                                                                                                      | `CHECKOUT_IN_FLIGHT`                                                                             |
+| B3  | From B2, click the release. **D249 amended:** the button now renders only AFTER `POST /api/billing/reconcile` ran — the server asks the provider first; a found payment grants instead of releasing | `DELETE /api/billing/checkout/pending` → `{released:true}`; checkout allowed again               |
+| B4  | Start checkout, close the overlay **without paying**, retry immediately                                                                                                                             | Still `CHECKOUT_IN_FLIGHT`. The claim is **surfaced, not released** — 3DS can settle after close |
+| B5  | Force a provider failure (bad `PADDLE_API_KEY`), then retry                                                                                                                                         | The claim is **HELD**, by design — a thrown provider error is not proof the provider saw nothing |
+| B6  | On active **Plus**, try to buy Plus again                                                                                                                                                           | `SUBSCRIPTION_EXISTS`                                                                            |
+| B7  | Double-click **Confirm** as fast as possible                                                                                                                                                        | One charge. **Verify in the Paddle dashboard, not just the UI**                                  |
+| B8  | Abandon a checkout, wait past the **30-minute TTL**, retry checkout                                                                                                                                 | Succeeds — **no sweep needed.** The claim upsert reclaims any row whose `expires_at` has passed  |
+| B9  | After B8, restart the worker (§0.5)                                                                                                                                                                 | The stale row is also deleted (`pendingCheckoutsCleared`) — housekeeping, not the reopener       |
 
 > B8/B9 separate two things the first version of this table conflated. What
 > reopens checkout is the **30-minute TTL** — the claim upsert's
