@@ -265,6 +265,57 @@ describe('BillingService', () => {
     ).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXISTS' });
   });
 
+  // A PAUSED blocker is a different refusal from a live one, and it used to
+  // share `SUBSCRIPTION_EXISTS` — whose copy asserts the account "already has
+  // an ACTIVE subscription", untrue of a paused row. On Razorpay that made a
+  // real trap (sandbox smoke 2026-07-29): no no-charge resume, no plan change,
+  // and the only message claimed an active subscription the user did not have.
+  // The exit is cancel-then-resubscribe, so the code has to be distinguishable
+  // for the UI to say that.
+  it('distinguishes a PAUSED blocker from a live one (SUBSCRIPTION_PAUSED_BLOCKS_NEW)', async () => {
+    await db.insert(subscriptions).values({
+      workspaceId: principal.workspaceId,
+      provider: 'razorpay',
+      providerSubscriptionId: 'sub_paused_rzp',
+      tier: 'plus',
+      status: 'paused',
+      providerPriceId: 'plan_plus_m',
+      billingCycle: 'monthly',
+    });
+    await expect(
+      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+    ).rejects.toMatchObject({ code: 'SUBSCRIPTION_PAUSED_BLOCKS_NEW' });
+  });
+
+  it('a live row outranks a paused one, so the stronger blocker is reported', async () => {
+    // Both present: the message must name the live subscription, not the
+    // paused one, or it would offer a cancel-and-resubscribe exit to someone
+    // whose real answer is "change your plan".
+    await db.insert(subscriptions).values([
+      {
+        workspaceId: principal.workspaceId,
+        provider: 'razorpay',
+        providerSubscriptionId: 'sub_paused_sibling',
+        tier: 'plus',
+        status: 'paused',
+        providerPriceId: 'plan_plus_m',
+        billingCycle: 'monthly',
+      },
+      {
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_live_sibling',
+        tier: 'plus',
+        status: 'active',
+        providerPriceId: 'pri_plus_m',
+        billingCycle: 'monthly',
+      },
+    ]);
+    await expect(
+      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+    ).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXISTS' });
+  });
+
   it('blocks foundingPro checkout when the 250-cap (here 2) is exhausted', async () => {
     // Two founding subscriptions in OTHER workspaces exhaust the cap.
     for (const n of [1, 2]) {

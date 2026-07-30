@@ -90,6 +90,11 @@ function razorpayIdFor(target: PaidTier, cycle: BillingCycle, founding: boolean)
  */
 const PRE_CLAIM_REJECTIONS = new Set([
   'SUBSCRIPTION_EXISTS',
+  // Thrown by the SAME guard as SUBSCRIPTION_EXISTS, one branch apart, so it
+  // is equally pre-claim. Omitting it would treat a paused-subscription
+  // refusal as an ambiguous post-claim outcome and surface a payment
+  // reservation for a checkout that never reached a provider.
+  'SUBSCRIPTION_PAUSED_BLOCKS_NEW',
   'FOUNDING_PRO_SOLD_OUT',
   'BILLING_NOT_PROVISIONED',
   'BILLING_DISABLED',
@@ -185,9 +190,15 @@ export function PlanPicker({
   const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
   const [selected, setSelected] = useState<StripTierId | null>(null);
   const [provider, setProvider] = useState<BillingProviderId>(initialProvider);
-  const [claimFounding, setClaimFounding] = useState(
-    initialIntent ? initialIntent.promo === 'foundingPro' : true,
-  );
+  // Default OFF. The control reads "Claim Founding Pro", which is the
+  // language of an opt-in, and it was pre-ticked — so the quoted price and
+  // the confirm button committed to a promotional price point the user never
+  // chose. Founding Pro is also change-LOCKED once bought
+  // (`FOUNDING_PLAN_LOCKED`), so a default-on discount silently opts someone
+  // into a subscription they cannot re-plan. An explicit deep link
+  // (`initialIntent.promo`) still arrives pre-ticked, because there the user
+  // did choose it. Founder call, 2026-07-29.
+  const [claimFounding, setClaimFounding] = useState(initialIntent?.promo === 'foundingPro');
   const checkout = useCheckout();
   const changePlan = useChangePlan();
   const [launchError, setLaunchError] = useState<string | null>(null);

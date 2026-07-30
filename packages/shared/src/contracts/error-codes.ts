@@ -186,7 +186,24 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'Your DeclutrMail account already has an active subscription.',
+    message: 'Your DeclutrMail account already has a subscription. Change your plan instead.',
+  },
+  /**
+   * A PAUSED subscription blocking a new checkout — split from
+   * `SUBSCRIPTION_EXISTS` (sandbox smoke 2026-07-29).
+   *
+   * Two reasons it needs its own code. The old message asserted the account
+   * "already has an ACTIVE subscription", which is untrue of a paused row.
+   * And on Razorpay it was a trap: no no-charge resume, no plan change, and
+   * no stated way forward. Cancelling a paused subscription works on every
+   * rail, so the message names that exit.
+   */
+  SUBSCRIPTION_PAUSED_BLOCKS_NEW: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'Your subscription is paused, so a new one cannot start yet. Resume it, or cancel it and subscribe again.',
   },
   CHECKOUT_IN_FLIGHT: {
     status: 409,
@@ -250,8 +267,11 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
+    // Names the self-serve exit first. Support-only was the whole message,
+    // which combined with the paused-blocks-checkout refusal to leave a
+    // Razorpay subscriber with no stated way forward at all.
     message:
-      'No-charge resume is not available for this payment method yet. Email support@declutrmail.com for help.',
+      'No-charge resume is not available for this payment method yet. You can cancel this subscription and subscribe again, or email support@declutrmail.com.',
   },
   RESUME_PERIOD_ENDED: {
     status: 409,

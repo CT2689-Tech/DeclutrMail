@@ -279,10 +279,17 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = screen.getByTestId('checkout-panel');
     expect(within(panel).getByText('Preview · before anything changes')).toBeInTheDocument();
-    // Defaults: annual cycle, Paddle provider, Founding Pro claimed.
-    expect(within(panel).getByRole('checkbox')).toBeChecked();
+    // Defaults: annual cycle, Paddle provider, Founding Pro NOT claimed.
+    //
+    // The claim is an opt-in — its own control says "Claim" — so it must not
+    // arrive pre-ticked. Pre-ticked, the quoted price and the confirm button
+    // committed to a promotional point the user never chose, and Founding Pro
+    // is change-LOCKED once bought (`FOUNDING_PLAN_LOCKED`). The label still
+    // advertises $129 because that is what the promo costs; the CHARGE line
+    // quotes the standard point the picker is actually standing on.
+    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
     expect(within(panel).getByText(/Claim Founding Pro — \$129\/yr/)).toBeInTheDocument();
-    expect(within(panel).getByText(/\$129 billed annually, starting today/)).toBeInTheDocument();
+    expect(within(panel).getByText(/\$190 billed annually, starting today/)).toBeInTheDocument();
     expect(within(panel).getByText('30-day money-back guarantee')).toBeInTheDocument();
 
     // Click 2 — confirm into the provider surface.
@@ -295,7 +302,6 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
         tierId: 'pro',
         cycle: 'annual',
         provider: 'paddle',
-        promo: 'foundingPro',
       }),
     );
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
@@ -304,6 +310,60 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       priceId: 'pri_test_123',
       customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
     });
+  });
+
+  // The positive half of the default-OFF change. Asserting only that the box
+  // starts unchecked would pass just as well if the claim were broken outright,
+  // so the opt-in has to be exercised: tick it, and the promo must reach the
+  // request body and re-quote the promotional price.
+  it('ticking Claim Founding Pro opts in — promo reaches the body and re-quotes', async () => {
+    let checkoutBody: unknown = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: async (req) => {
+          checkoutBody = await req.json();
+          return jsonOk({
+            data: {
+              provider: 'paddle',
+              kind: 'overlay',
+              priceId: 'pri_test_founding',
+              clientToken: 'test_token',
+              environment: 'sandbox',
+              customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    const panel = screen.getByTestId('checkout-panel');
+    expect(within(panel).getByText(/\$190 billed annually, starting today/)).toBeInTheDocument();
+
+    fireEvent.click(within(panel).getByRole('checkbox'));
+    expect(within(panel).getByRole('checkbox')).toBeChecked();
+    // The charge line follows the claim onto the promotional point.
+    expect(within(panel).getByText(/\$129 billed annually, starting today/)).toBeInTheDocument();
+
+    fireEvent.click(
+      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+    await waitFor(() =>
+      expect(checkoutBody).toEqual({
+        tierId: 'pro',
+        cycle: 'annual',
+        provider: 'paddle',
+        promo: 'foundingPro',
+      }),
+    );
   });
 
   it('monthly cycle drops the promo and still defaults to the Paddle rail (D117)', async () => {

@@ -83,10 +83,14 @@ export function UndoTray({
         role="alert"
         aria-label="Recent actions failed to load"
         style={{
+          // See the note on the main tray below: `left: 50%` + translate
+          // halves the available width for a shrink-to-fit fixed box.
           position: 'fixed',
           bottom: 16,
-          left: '50%',
-          transform: 'translateX(-50%)',
+          left: 16,
+          right: 16,
+          marginInline: 'auto',
+          width: 'fit-content',
           minWidth: 280,
           maxWidth: 480,
           background: color.card,
@@ -136,10 +140,28 @@ export function UndoTray({
       role="region"
       aria-label="Recent actions — undo available"
       style={{
+        // Centred by auto margins against the FULL viewport, not by
+        // `left: 50%` + `translateX(-50%)`.
+        //
+        // That pattern centres correctly but silently halves the layout
+        // width: a fixed box with only `left` set is shrink-to-fit against
+        // `viewport - left`, so at `left: 50%` it can never exceed half the
+        // screen — 351px on a 702px viewport, far under this maxWidth of 640.
+        // The transform then moves the already-too-narrow box into place. It
+        // hid because at 1280px half the viewport IS 640, so the tray looked
+        // correct at desktop width and progressively strangled itself below
+        // it, wrapping the message to roughly one word per line by ~700px
+        // (found by browser smoke, 2026-07-29).
+        //
+        // `left/right: 16` gives a full-width containing block with gutters,
+        // `width: fit-content` still shrink-wraps to the content, and
+        // `marginInline: auto` does the centring.
         position: 'fixed',
         bottom: 16,
-        left: '50%',
-        transform: 'translateX(-50%)',
+        left: 16,
+        right: 16,
+        marginInline: 'auto',
+        width: 'fit-content',
         minWidth: 320,
         maxWidth: 640,
         background: color.card,
