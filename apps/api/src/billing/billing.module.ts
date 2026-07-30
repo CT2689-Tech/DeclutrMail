@@ -28,6 +28,7 @@ import { BillingPaddleWebhookController } from '../webhooks/billing-paddle.contr
 import { BillingRazorpayWebhookController } from '../webhooks/billing-razorpay.controller.js';
 import { BillingCatalog } from './billing-catalog.js';
 import { BillingController } from './billing.controller.js';
+import { BillingReconciliationService } from './billing-reconciliation.service.js';
 import { BillingService } from './billing.service.js';
 import { BillingWebhookService } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
@@ -43,6 +44,7 @@ import { RazorpayAdapter } from './razorpay.adapter.js';
   providers: [
     BillingService,
     BillingWebhookService,
+    BillingReconciliationService,
     // Explicit factories: these classes take plain (non-injectable)
     // constructor args with defaults — Nest must not try to resolve them.
     { provide: BillingCatalog, useFactory: (): BillingCatalog => new BillingCatalog() },

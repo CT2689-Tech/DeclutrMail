@@ -89,6 +89,8 @@ interface PaddleSubscription {
   scheduled_change?: { action?: string; effective_at?: string } | null;
   paused_at?: string | null;
   custom_data?: { workspace_id?: string; sig?: string } | null;
+  /** Read by the D249 reconciliation GETs (claim-age matching). */
+  created_at?: string | null;
 }
 
 /**
@@ -366,6 +368,88 @@ export class PaddleAdapter implements BillingProvider {
       this.logger.error(`paddle.resume.failed sub=${providerSubscriptionId} status=${res.status}`);
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
+  }
+
+  /**
+   * Authenticated GET for the D249 reconciliation reads. Returns the
+   * parsed body, `null` on 404 (a read miss is data, not an error),
+   * and throws `BILLING_PROVIDER_ERROR` on network failure or any
+   * other non-2xx — the reconciler maps that to `provider_unavailable`
+   * and writes nothing.
+   */
+  private async reconciliationGet(path: string, label: string): Promise<unknown | null> {
+    const apiKey = this.env.PADDLE_API_KEY;
+    if (!apiKey) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}${path}`, {
+        headers: { Authorization: `Bearer ${apiKey}`, 'Paddle-Version': '1' },
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      });
+    } catch (err) {
+      this.logger.error(
+        `paddle.reconcile_read.network_error ${label} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      this.logger.error(`paddle.reconcile_read.failed ${label} status=${res.status}`);
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    return res.json();
+  }
+
+  /** D249 — GET /subscriptions/{id}; null on 404 or unmapped status. */
+  async fetchSubscription(providerSubscriptionId: string): Promise<NormalizedSubscription | null> {
+    const body = await this.reconciliationGet(
+      `/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
+      `sub=${providerSubscriptionId}`,
+    );
+    if (body === null) return null;
+    const sub = (body as { data?: PaddleSubscription }).data;
+    if (!sub?.id) {
+      this.logger.error(`paddle.reconcile_read.malformed sub=${providerSubscriptionId}`);
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    const normalized = toNormalizedSubscription(sub, this.env.PADDLE_WEBHOOK_SECRET);
+    // Unrecognized status → no usable truth; the reconciler treats it
+    // exactly like a 404 (no candidate, never a state write).
+    if (normalized === null) return null;
+    return { ...normalized, providerCreatedAt: sub.created_at ?? null };
+  }
+
+  /**
+   * D249 — customers by exact email, then their subscriptions. Two
+   * GETs; used only for claims with no `provider_ref` (Paddle overlay
+   * checkouts, where the server never sees a provider artifact).
+   */
+  async searchSubscriptionsByEmail(email: string): Promise<NormalizedSubscription[]> {
+    const customersBody = await this.reconciliationGet(
+      `/customers?email=${encodeURIComponent(email)}`,
+      `email_search`,
+    );
+    const customers = (customersBody as { data?: Array<{ id?: string }> } | null)?.data ?? [];
+    const ids = customers
+      .map((c) => c.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    if (ids.length === 0) return [];
+    const subsBody = await this.reconciliationGet(
+      `/subscriptions?customer_id=${encodeURIComponent(ids.join(','))}&per_page=50`,
+      `subs_by_customer`,
+    );
+    const subs = (subsBody as { data?: PaddleSubscription[] } | null)?.data ?? [];
+    const normalized: NormalizedSubscription[] = [];
+    for (const sub of subs) {
+      if (!sub?.id) continue;
+      const mapped = toNormalizedSubscription(sub, this.env.PADDLE_WEBHOOK_SECRET);
+      if (mapped !== null) {
+        normalized.push({ ...mapped, providerCreatedAt: sub.created_at ?? null });
+      }
+    }
+    return normalized;
   }
 
   verifyWebhookSignature(args: {

@@ -56,6 +56,38 @@ interface RazorpaySubscription {
   end_at?: number | null;
   notes?: { workspace_id?: string } | Array<unknown> | null;
   short_url?: string;
+  /** Unix seconds; read by the D249 reconciliation GET. */
+  created_at?: number | null;
+}
+
+/**
+ * Entity → NormalizedSubscription, shared by the webhook mapping and
+ * the D249 reconciliation read. Null when the status is one we do not
+ * map (created/authenticated/unknown) — no charge yet, no usable truth.
+ */
+function toNormalizedSubscription(entity: RazorpaySubscription): NormalizedSubscription | null {
+  if (!entity.id || !entity.plan_id) {
+    throw new Error('Razorpay subscription payload missing id or plan_id');
+  }
+  const status = mapStatus(entity.status ?? '');
+  if (status === null) return null;
+  return {
+    providerSubscriptionId: entity.id,
+    providerCustomerId: entity.customer_id ?? null,
+    providerPriceId: entity.plan_id,
+    status,
+    currentPeriodEnd: unixToIso(entity.current_end),
+    // Razorpay's cancel_at_cycle_end keeps status `active` and sets
+    // `end_at` to the cycle boundary; treat a future end_at on an
+    // active sub as a scheduled cancellation.
+    cancelAtPeriodEnd:
+      status === 'active' && entity.end_at != null && entity.current_end != null
+        ? entity.end_at <= entity.current_end
+        : false,
+    pauseUntil: null,
+    workspaceId: readWorkspaceId(entity.notes),
+    providerCreatedAt: unixToIso(entity.created_at),
+  };
 }
 
 /** Razorpay webhook envelope. */
@@ -231,6 +263,53 @@ export class RazorpayAdapter implements BillingProvider {
     throw new AppException({ code: 'RESUME_UNSUPPORTED' });
   }
 
+  /** D249 — GET /v1/subscriptions/{id}; null on 404 or unmapped status. */
+  async fetchSubscription(providerSubscriptionId: string): Promise<NormalizedSubscription | null> {
+    const auth = this.authHeader();
+    let res: Response;
+    try {
+      res = await fetch(
+        `${API_BASE}/v1/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
+        {
+          headers: { Authorization: auth },
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        },
+      );
+    } catch (err) {
+      this.logger.error(
+        `razorpay.reconcile_read.network_error sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      this.logger.error(
+        `razorpay.reconcile_read.failed sub=${providerSubscriptionId} status=${res.status}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    const entity = (await res.json()) as RazorpaySubscription;
+    if (!entity?.id) {
+      this.logger.error(`razorpay.reconcile_read.malformed sub=${providerSubscriptionId}`);
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    // Unmapped status (created/authenticated/unknown) → no usable
+    // truth; the reconciler treats it like a 404, never a state write.
+    return toNormalizedSubscription(entity);
+  }
+
+  /**
+   * D249 — Razorpay's subscription list API has no customer filter, so
+   * email search is unimplementable here. Every Razorpay claim carries
+   * `provider_ref` (createCheckout mints the subscription server-side),
+   * so the reconciliation ladder resolves via fetchSubscription and
+   * never reaches this. Returns [] rather than guessing.
+   */
+  async searchSubscriptionsByEmail(email: string): Promise<NormalizedSubscription[]> {
+    void email;
+    return Promise.resolve([]);
+  }
+
   verifyWebhookSignature(args: {
     rawBody: Buffer;
     signatureHeader: string | undefined;
@@ -275,27 +354,11 @@ export class RazorpayAdapter implements BillingProvider {
         if (!entity?.id || !entity.plan_id) {
           throw new Error('Razorpay subscription payload missing id or plan_id');
         }
-        const status = mapStatus(entity.status ?? '');
-        if (status === null) {
+        const subscription = toNormalizedSubscription(entity);
+        if (subscription === null) {
           // created/authenticated — no charge yet, no entitlement.
           return { kind: 'ignored', providerEventId: eventId, eventType };
         }
-        const subscription: NormalizedSubscription = {
-          providerSubscriptionId: entity.id,
-          providerCustomerId: entity.customer_id ?? null,
-          providerPriceId: entity.plan_id,
-          status,
-          currentPeriodEnd: unixToIso(entity.current_end),
-          // Razorpay's cancel_at_cycle_end keeps status `active` and
-          // sets `end_at` to the cycle boundary; treat a future end_at
-          // on an active sub as a scheduled cancellation.
-          cancelAtPeriodEnd:
-            status === 'active' && entity.end_at != null && entity.current_end != null
-              ? entity.end_at <= entity.current_end
-              : false,
-          pauseUntil: null,
-          workspaceId: readWorkspaceId(entity.notes),
-        };
         return { kind: 'subscription', providerEventId: eventId, eventType, subscription };
       }
       default:

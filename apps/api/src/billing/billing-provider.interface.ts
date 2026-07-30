@@ -109,6 +109,12 @@ export interface NormalizedSubscription {
    * on first contact; later events resolve via `billing_customers`.
    */
   workspaceId: string | null;
+  /**
+   * Provider-side creation time (ISO), when the source carries it.
+   * Consumed by pending-checkout reconciliation (D249) to refuse
+   * candidates that predate the claim; webhook mappings may omit it.
+   */
+  providerCreatedAt?: string | null;
 }
 
 /** Outcome of webhook signature verification (D180/D229-bar). */
@@ -170,4 +176,23 @@ export interface BillingProvider {
    * required fields (surfaces as 400 — provider stops retrying).
    */
   mapWebhookEvent(payload: unknown): NormalizedBillingEvent;
+
+  /**
+   * D249 reconciliation reads — the interface's only provider-truth
+   * GETs. Both throw `BILLING_PROVIDER_ERROR` on network/5xx (the
+   * reconciler maps that to `provider_unavailable`, writes nothing).
+   *
+   * `fetchSubscription`: one subscription by provider id; `null` when
+   * the provider answers 404 (a read miss is never a state write).
+   */
+  fetchSubscription(providerSubscriptionId: string): Promise<NormalizedSubscription | null>;
+
+  /**
+   * Subscriptions attributable to a customer email, for claims with no
+   * `provider_ref` (Paddle — its overlay creates the transaction
+   * client-side). Providers whose list API cannot filter by customer
+   * return `[]` and document it (Razorpay — every Razorpay claim
+   * carries `provider_ref` instead, so the ladder never needs this).
+   */
+  searchSubscriptionsByEmail(email: string): Promise<NormalizedSubscription[]>;
 }

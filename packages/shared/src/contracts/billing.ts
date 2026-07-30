@@ -196,3 +196,37 @@ export const PlanChangeRequestSchema = z.object({
   cycle: BillingCycleSchema,
 });
 export type PlanChangeRequest = z.infer<typeof PlanChangeRequestSchema>;
+
+/**
+ * POST /api/billing/reconcile response (D249 — provider-truth
+ * reconciliation of a pending checkout). The server asks the payment
+ * provider what happened to the workspace's open checkout claim so the
+ * customer never has to guess:
+ *
+ *   - `granted` — a matching subscription was found and projected; the
+ *     tier flip lands on the next subscription read.
+ *   - `already_recorded` — provider truth is unchanged since the last
+ *     look (the synthesized event deduped in the ledger).
+ *   - `none_found` — the provider answered and holds NO matching
+ *     subscription. The only outcome that legitimizes the manual
+ *     release affordance.
+ *   - `no_pending` — nothing to reconcile (no open claim).
+ *   - `unresolved` — provider truth exists but projection refused it
+ *     (live-conflict / unprovisioned price); support territory.
+ *   - `provider_unavailable` — could not ask; nothing was asserted and
+ *     nothing was written.
+ */
+export const BillingReconcileOutcomeSchema = z.enum([
+  'granted',
+  'already_recorded',
+  'none_found',
+  'no_pending',
+  'unresolved',
+  'provider_unavailable',
+]);
+export type BillingReconcileOutcome = z.infer<typeof BillingReconcileOutcomeSchema>;
+
+export const BillingReconcileResponseSchema = z.object({
+  outcome: BillingReconcileOutcomeSchema,
+});
+export type BillingReconcileResponse = z.infer<typeof BillingReconcileResponseSchema>;

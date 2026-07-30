@@ -158,6 +158,9 @@ export class BillingService {
           provider: dto.provider,
           tier: dto.tierId,
           billingCycle: dto.cycle,
+          // New claim cycle — the previous attempt's provider artifact
+          // (if any) no longer describes THIS checkout (D249).
+          providerRef: null,
           createdAt: new Date(),
           expiresAt: new Date(Date.now() + PENDING_CHECKOUT_TTL_MS),
         },
@@ -195,6 +198,24 @@ export class BillingService {
         `billing.checkout.create_failed workspace=${principal.workspaceId} provider=${dto.provider} claim_held=true — claim reopens via TTL or user release only`,
       );
       throw err;
+    }
+
+    // D249 — when the server itself created the provider artifact
+    // (Razorpay mints the subscription before payment), record its id
+    // on the claim so reconciliation can ask the provider about THIS
+    // checkout exactly. Best-effort: a failed stash only means the
+    // reconciler falls back to the email-search ladder.
+    if (session.provider === 'razorpay') {
+      try {
+        await this.db
+          .update(pendingCheckouts)
+          .set({ providerRef: session.subscriptionId })
+          .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
+      } catch (err) {
+        this.logger.warn(
+          `billing.checkout.provider_ref_stash_failed workspace=${principal.workspaceId} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
 
     this.logger.log(
