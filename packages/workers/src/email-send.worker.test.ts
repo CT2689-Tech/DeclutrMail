@@ -6,12 +6,14 @@ import { citext } from '@electric-sql/pglite/contrib/citext';
 import { activeSessions, schema, users, workspaces } from '@declutrmail/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  COMMERCIAL_KINDS,
   EmailSendWorker,
   type EmailDeliveryOutcome,
   type EmailDeliveryPort,
+  type EmailKind,
   type EmailSendJobData,
 } from './email-send.worker.js';
 import {
@@ -109,10 +111,21 @@ describe('EmailSendWorker', () => {
   // next test.
   beforeEach(() => vi.mocked(hasPostalAddress).mockReturnValue(true));
 
-  it('REFUSES a commercial kind when no postal address is configured (CAN-SPAM)', async () => {
+  // COMMERCIAL_KINDS is empty today — every shipped kind is a service
+  // notice — so the refusal below has no live input and would sit in the
+  // tree as untested dead code, the exact shape of a guardrail that
+  // reports fine while verifying nothing. Adding a kind for the duration
+  // of the test pins the WIRING (classified commercial + no address ⇒
+  // refuse), independently of today's classification, which the next
+  // test pins separately.
+  const asMutable = COMMERCIAL_KINDS as Set<EmailKind>;
+  afterEach(() => asMutable.delete('sync-complete'));
+
+  it('REFUSES a kind classified commercial when no postal address is configured (CAN-SPAM)', async () => {
     // Permanent, not transient: retrying cannot conjure an address, and
     // the failure must be loud in worker metrics rather than a silently
     // missing footer.
+    asMutable.add('sync-complete');
     vi.mocked(hasPostalAddress).mockReturnValue(false);
     const db = await freshDb();
     const userId = await seedUser(db);
@@ -121,6 +134,31 @@ describe('EmailSendWorker', () => {
 
     await expect(worker.processJob(jobData(userId), CTX)).rejects.toBeInstanceOf(PermanentError);
     expect(delivery.deliver).not.toHaveBeenCalled();
+  });
+
+  // The classification itself, which is what actually unblocked signups.
+  // `sync-complete` and `sync-reminder-24h` are opt-out-able but NOT
+  // commercial: they report the result of a sync the recipient started
+  // and carry no price, pitch, or offer. Keying the gate off the opt-out
+  // map instead of primary purpose dead-lettered the first email every
+  // new signup receives.
+  it('sends the opt-out-able service notices without an address — opt-out-able is not commercial', async () => {
+    vi.mocked(hasPostalAddress).mockReturnValue(false);
+    expect([...COMMERCIAL_KINDS]).toEqual([]);
+
+    for (const kind of ['sync-complete', 'sync-reminder-24h'] as const) {
+      const db = await freshDb();
+      const userId = await seedUser(db, `${kind}@b.com`);
+      const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_svc' });
+      const worker = new EmailSendWorker({ db: db as never, delivery });
+
+      const result = await worker.processJob(
+        jobData(userId, { kind, idempotencyKey: `email__${kind}__ev1` }),
+        CTX,
+      );
+
+      expect(result.outcome, `${kind} must not be blocked by the postal gate`).toBe('sent');
+    }
   });
 
   it('still sends TRANSACTIONAL kinds without a postal address (deletion notices)', async () => {

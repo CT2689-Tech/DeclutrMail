@@ -64,6 +64,47 @@ const OPT_OUT_PREF_BY_KIND: Partial<Record<EmailKind, keyof EmailPrefs>> = {
   'sync-complete': 'syncComplete',
 };
 
+/**
+ * Kinds whose PRIMARY PURPOSE is commercial advertising or promotion.
+ * Only these require a physical postal address before they may send.
+ *
+ * ## Why this is not `OPT_OUT_PREF_BY_KIND`
+ *
+ * It used to be. The postal gate keyed off "does this kind have an
+ * opt-out toggle", which reads *opt-out-able ⇒ commercial* — and those
+ * are different questions. CAN-SPAM's test (16 CFR §316.3) is the
+ * message's PRIMARY PURPOSE, not whether we were courteous enough to
+ * offer a preference switch. A transactional notice may carry an
+ * unsubscribe link without becoming an advertisement.
+ *
+ * Under the correct test, both opt-out-able kinds are transactional:
+ * `sync-complete` ("Your inbox is ready" — N messages indexed, here is
+ * the link) and `sync-reminder-24h` ("Your inbox is still ready")
+ * report the result of a sync the recipient themselves started. Neither
+ * carries a price, an upgrade pitch, or any promotional offer; both are
+ * squarely §7702(17) relationship messages — information about the
+ * recipient's own account and delivery of a service they requested.
+ *
+ * The old conflation blocked the first email every signup receives
+ * (six dead-lettered sends observed in dev, 2026-07-28 onward) for a
+ * rule that did not apply to it.
+ *
+ * ## Why the set is EMPTY rather than deleted
+ *
+ * Empty is a classification result, not an oversight: every kind
+ * shipped today is a service notice. The gate stays so the first
+ * genuinely promotional email — a feature announcement, a launch
+ * blast, a win-back offer — is refused until an address exists, which
+ * is the case the rule is actually about. Add the kind here and the
+ * refusal below arms itself.
+ *
+ * The refusal path is therefore not currently reachable in production,
+ * which would make it untested dead code. `email-send.worker.test.ts`
+ * covers it by adding a kind to this set, so the wiring is pinned
+ * independently of what is classified commercial today.
+ */
+export const COMMERCIAL_KINDS: ReadonlySet<EmailKind> = new Set<EmailKind>();
+
 /** One transactional email send. */
 export interface EmailSendJobData {
   kind: EmailKind;
@@ -178,14 +219,14 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
     }
 
     // CAN-SPAM §316.5 / CASL: commercial email MUST carry a physical
-    // postal address. Every opt-out-able kind is commercial by that
-    // test; required account notices (deletion) are transactional and
-    // exempt. Until `BUSINESS_POSTAL_ADDRESS` is set, refuse rather
-    // than send a non-compliant message — a PermanentError, not a
-    // retry: no amount of retrying conjures an address, and the
+    // postal address. "Commercial" is decided by primary purpose — see
+    // COMMERCIAL_KINDS, and note that it is deliberately NOT the
+    // opt-out map. Until `BUSINESS_POSTAL_ADDRESS` is set, refuse
+    // rather than send a non-compliant message — a PermanentError, not
+    // a retry: no amount of retrying conjures an address, and the
     // failure must be loud in the worker metrics rather than a quiet
     // footer omission nobody notices until a complaint arrives.
-    if (OPT_OUT_PREF_BY_KIND[payload.kind] && !hasPostalAddress()) {
+    if (COMMERCIAL_KINDS.has(payload.kind) && !hasPostalAddress()) {
       throw new PermanentError(
         `Refusing to send commercial email kind "${payload.kind}": no physical postal ` +
           'address is configured (CAN-SPAM §316.5 / CASL). Set BUSINESS_POSTAL_ADDRESS in ' +
