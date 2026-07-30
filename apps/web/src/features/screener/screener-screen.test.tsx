@@ -174,9 +174,32 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
     // label on this row may claim completeness. Also bans the two words
     // this session wrongly reached for before reading the ADR.
     expect(html).not.toMatch(/total ever|all[- ]time|\bever\b|messages (seen|indexed)/i);
+    // ADR-0028 companion count — received AND in-inbox, side by side,
+    // so "received 1 → Delete finds 0" stops reading as lost mail.
+    expect(html).toContain('1 in inbox');
     expect(html).toContain(row.recommendation!.reasoning);
     expect(html).toContain(`/senders/${row.senderId}`);
     expect(html).toContain('Open sender →');
+  });
+
+  it('states the received · in-inbox split for a spam/archived-only sender (ADR-0028)', () => {
+    // The founder repro shape (2026-07-30): messages received, none in
+    // the inbox (SPAM/archive). The row must say BOTH numbers before
+    // any preview opens — that split is the surface that explains a
+    // 0-match Delete on a sender with received mail.
+    const spamShapeRow = SCREENER_QUEUE.find((r) => r.inboxCount === 0)!;
+    const html = render(
+      <ScreenerRow
+        row={spamShapeRow}
+        expanded
+        onToggleExpand={noop}
+        onVerbClick={noop}
+        onConfirm={noop}
+        onCancel={noop}
+      />,
+    );
+    expect(html).toContain('Messages received:');
+    expect(html).toContain('2 · 0 in inbox');
   });
 
   it('mounts the mandatory preview with Confirm/Cancel when a verb is pending (D226)', () => {

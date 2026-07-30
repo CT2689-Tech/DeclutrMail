@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { ProtectionReason, TriageVerdict } from '@declutrmail/db';
+import { ACTION_REACHES } from '@declutrmail/shared/contracts';
 import type { ActionJobStatus, CanonicalVerb } from '@declutrmail/shared/contracts';
 
 /**
@@ -48,6 +49,13 @@ export const screenerDecideRequestSchema = z
     senderId: z.string().uuid(),
     verb: z.enum(SCREENER_DECIDE_VERBS),
     olderThanDays: z.number().int().min(1).max(3650).nullable().optional(),
+    /**
+     * ADR-0028 — how far the verb reaches. Optional (absent =
+     * `inbox_only`, the pre-reach wire). `all_mail` is legal only on a
+     * Delete decision; the superRefine below rejects everything else
+     * with a 400 before the delegated pipeline could.
+     */
+    reach: z.enum(ACTION_REACHES).optional(),
     wakeAt: z.string().datetime({ offset: true }).optional(),
     /**
      * The explicit "act anyway" acknowledgement for a Protected sender
@@ -84,6 +92,13 @@ export const screenerDecideRequestSchema = z
         message: 'wakeAt is only valid for Later.',
       });
     }
+    if (body.reach === 'all_mail' && body.verb !== 'delete') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reach'],
+        message: 'Only Delete may reach past the inbox.',
+      });
+    }
   });
 export type ScreenerDecideRequest = z.infer<typeof screenerDecideRequestSchema>;
 
@@ -110,6 +125,14 @@ export interface ScreenerQueueRow {
   queuedAt: string;
   /** Messages received from this sender so far (D73 expanded body). */
   messageCount: number;
+  /**
+   * How many of those currently carry INBOX (inbound only) — the set an
+   * inbox-reach verb can act on. Live correlated count per ADR-0028's
+   * companion-surface rule, so "received 1" beside a 0-match Delete
+   * preview stops reading as lost mail (a message in Spam/Trash/the
+   * archive is received but not in the inbox).
+   */
+  inboxCount: number;
   /** Latest message's subject — the D71 sample subject. Empty when none. */
   sampleSubject: string;
   /** Sender-level unsubscribe channel (drives the U affordance copy). */

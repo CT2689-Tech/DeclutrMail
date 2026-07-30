@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, count, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, getTableName, inArray, isNull, sql } from 'drizzle-orm';
 
 import {
   mailMessages,
@@ -36,6 +36,14 @@ export class ScreenerReadService {
    * predicates ride `screener_quarantine_pending_idx`.
    */
   async listQueue(input: { mailboxAccountId: string; limit: number }): Promise<ScreenerQueueRow[]> {
+    // CORRELATION QUOTE-TRAP (MISTAKES.md 2026-05-23). Outer-scope refs
+    // use `sql.identifier(getTableName(senders))` so the Drizzle
+    // template can't degenerate to a tautology that counts the whole
+    // mailbox on every row — same idiom as the senders list's
+    // `inboxCount` (ADR-0028 companion surface: a live correlated
+    // count, deliberately not a maintained counter).
+    const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
+    const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
     const rows = await this.db
       .select({
         id: screenerQuarantine.id,
@@ -47,6 +55,20 @@ export class ScreenerReadService {
         senderDomain: senders.domain,
         firstSeenAt: senders.firstSeenAt,
         totalReceived: senders.totalReceived,
+        // Messages currently carrying INBOX — what an inbox-reach verb
+        // can act on. Rendered beside `totalReceived` so "received 1"
+        // over a 0-match Delete preview stops reading as lost mail
+        // (the founder's SPAM repro, 2026-07-30). `sql<number|string>`:
+        // postgres-js returns scalar subquery columns as strings even
+        // with `::int` — coerced at the map site below.
+        inboxCount: sql<number | string>`(
+          SELECT COUNT(*)::int
+          FROM ${mailMessages}
+          WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+            AND ${mailMessages.senderKey} = ${outerSenderKey}
+            AND ${mailMessages.isOutbound} = false
+            AND 'INBOX' = ANY(${mailMessages.labelIds})
+        )`,
         unsubscribeMethod: senders.unsubscribeMethod,
         isProtected: senderPolicies.isProtected,
         protectionReason: senderPolicies.protectionReason,
@@ -119,6 +141,7 @@ export class ScreenerReadService {
       firstSeenAt: r.firstSeenAt.toISOString(),
       queuedAt: r.queuedAt.toISOString(),
       messageCount: r.totalReceived,
+      inboxCount: Number(r.inboxCount),
       sampleSubject: subjectBySender.get(r.senderKey) ?? '',
       unsubscribeMethod: r.unsubscribeMethod ?? 'none',
       // No policy row ⇒ never protected. Keep reason and flag in

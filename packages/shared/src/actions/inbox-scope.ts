@@ -132,9 +132,10 @@ export function inboxScopeNoticeCopy(
      * this verb act beyond the inbox. The tail then says "by default"
      * instead of "only": "Delete only acts on mail still in the inbox"
      * is FALSE one sentence before "Switch to Inbox + archived…"
-     * (design-system gate, 2026-07-28). Surfaces with no reach control
-     * (Screener) omit this and keep the absolute wording, which is true
-     * there.
+     * (design-system gate, 2026-07-28). Both Delete surfaces — the
+     * senders confirm modal and the Screener decide preview — now carry
+     * the reach chips and pass this; a surface with no reach control
+     * omits it and keeps the absolute wording, which is true there.
      */
     verbActsBeyondInbox?: boolean;
   } = {},

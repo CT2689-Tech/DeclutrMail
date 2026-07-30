@@ -35,6 +35,12 @@ export interface ScreenerQueueRow {
   queuedAt: string;
   /** Messages received from this sender so far (D73 expanded body). */
   messageCount: number;
+  /**
+   * How many of those are in the inbox right now (ADR-0028 companion
+   * count) — mail in Spam/Trash/the archive is received but not in the
+   * inbox, so "received 1" beside a 0-match preview needs both numbers.
+   */
+  inboxCount: number;
   /** Latest message's subject — D71 sample subject. Empty when none. */
   sampleSubject: string;
   unsubscribeMethod: 'one_click' | 'mailto' | 'none';
@@ -140,6 +146,7 @@ export const SCREENER_QUEUE: ScreenerQueueRow[] = [
     firstSeenAt: new Date(Date.now() - 8 * 60_000).toISOString(),
     queuedAt: new Date(Date.now() - 8 * 60_000).toISOString(),
     messageCount: 1,
+    inboxCount: 1,
     sampleSubject: 'Welcome — confirm your seat preferences',
     unsubscribeMethod: 'one_click',
     isProtected: false,
@@ -160,6 +167,7 @@ export const SCREENER_QUEUE: ScreenerQueueRow[] = [
     firstSeenAt: new Date(Date.now() - 26 * HOUR).toISOString(),
     queuedAt: new Date(Date.now() - 25 * HOUR).toISOString(),
     messageCount: 2,
+    inboxCount: 2,
     sampleSubject: 'Your appointment on Friday, 10:30',
     unsubscribeMethod: 'none',
     // Protected while queued — the state that used to be a silent 409.
@@ -181,6 +189,9 @@ export const SCREENER_QUEUE: ScreenerQueueRow[] = [
     firstSeenAt: new Date(Date.now() - 3 * 24 * HOUR).toISOString(),
     queuedAt: new Date(Date.now() - 3 * 24 * HOUR).toISOString(),
     messageCount: 2,
+    // Received but nothing in the inbox — the shape that used to read
+    // as "Delete found 0 of my 2 messages" (spam/archived arrivals).
+    inboxCount: 0,
     sampleSubject: '48 hours only: everything 40% off',
     unsubscribeMethod: 'mailto',
     isProtected: false,
