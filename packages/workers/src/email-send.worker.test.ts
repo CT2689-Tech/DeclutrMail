@@ -477,6 +477,102 @@ describe('EmailSendWorker', () => {
     expect(captured[0]?.tags?.outcome).toBe('skipped_delivery_disabled');
   });
 
+  // Completing without a durable row ACKNOWLEDGES an email nobody sent:
+  // the job ages out of removeOnComplete and nothing records that one is
+  // owed. The skip keeps delivery re-enqueueable; the parked row keeps the
+  // loss from vanishing (Codex stop-review 2026-07-29, fifth pass).
+  it('parks a durable row for every known-unsent outcome, while still completing', async () => {
+    for (const [reason, outcome] of [
+      ['disabled', 'skipped_delivery_disabled'],
+      ['permanent', 'skipped_delivery_rejected'],
+    ] as const) {
+      const db = await freshDb();
+      const userId = await seedUser(db, `${reason}@b.com`);
+      const parked: { queue: string; jobId: string; error: string }[] = [];
+      const worker = new EmailSendWorker({
+        db: db as never,
+        delivery: deliveryReturning({ ok: false, reason, detail: 'nope' }),
+      });
+      worker.setDeadLetterRecorder({
+        record: async (entry) => {
+          parked.push({ queue: entry.queue, jobId: entry.jobId, error: entry.error });
+        },
+      });
+
+      const res = await worker.processJob(jobData(userId), CTX);
+
+      expect(res.outcome, reason).toBe(outcome);
+      expect(parked, `${reason} must leave a durable record`).toHaveLength(1);
+      expect(parked[0]?.queue).toBe('email-send');
+    }
+  });
+
+  // The refusal this whole arc started from needs the same durability —
+  // leaving it unparked would be the identical bug one branch over.
+  it('parks a durable row AND reports the observer when a commercial send is refused for no address', async () => {
+    vi.mocked(hasPostalAddress).mockReturnValue(false);
+    const db = await freshDb();
+    const userId = await seedUser(db, 'postal-park@b.com');
+    const parked: string[] = [];
+    const captured: { kind: string; tags?: Record<string, string | number> }[] = [];
+    const worker = new EmailSendWorker({
+      db: db as never,
+      delivery: deliveryReturning({ ok: true, providerId: 'rsnd_x' }),
+    });
+    worker.setDeadLetterRecorder({
+      record: async (entry) => {
+        parked.push(entry.error);
+      },
+    });
+    worker.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (_err, obsCtx) => captured.push(obsCtx),
+    });
+
+    const res = await worker.processJob(
+      jobData(userId, {
+        kind: 'sync-reminder-24h',
+        idempotencyKey: 'email__sync-reminder-24h__park',
+      }),
+      CTX,
+    );
+
+    expect(res.outcome).toBe('skipped_no_postal_address');
+    expect(parked).toHaveLength(1);
+    expect(parked[0]).toContain('postal address');
+    // Uniform rule: every known-unsent outcome parks AND reports. Without
+    // the direct call, an unwired or failing recorder would leave postal
+    // refusals with no Sentry signal at all.
+    expect(captured.map((c) => c.kind)).toContain('email.refused_no_postal_address');
+  });
+
+  // The park path's own failure contract: a broken recorder must not turn
+  // a designed skip into a job failure — but it MUST page, because the
+  // parked row was the only durable trace of an owed email.
+  it('a failing recorder never fails the job, and the loss itself is reported', async () => {
+    const db = await freshDb();
+    const userId = await seedUser(db, 'recorder-down@b.com');
+    const captured: string[] = [];
+    const worker = new EmailSendWorker({
+      db: db as never,
+      delivery: deliveryReturning({ ok: false, reason: 'disabled', detail: 'no key' }),
+    });
+    worker.setDeadLetterRecorder({
+      record: async () => {
+        throw new Error('insert failed');
+      },
+    });
+    worker.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (_err, obsCtx) => captured.push(obsCtx.kind),
+    });
+
+    const res = await worker.processJob(jobData(userId), CTX);
+
+    expect(res.outcome).toBe('skipped_delivery_disabled');
+    expect(captured).toContain('dead_letter.record_failed');
+  });
+
   // The dividing line is NOT severity but whether the mail can have gone
   // out — a throw dead-letters, and a dead-letter suppresses every later
   // enqueue forever, so only the AMBIGUOUS outcome may throw.

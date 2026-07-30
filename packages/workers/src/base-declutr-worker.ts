@@ -2,7 +2,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 
 import { type Job, UnrecoverableError } from 'bullmq';
 
-import type { DeadLetterRecorder } from './dead-letter.recorder.js';
+import type { DeadLetterEntry, DeadLetterRecorder } from './dead-letter.recorder.js';
 import type { WorkerContext } from './worker-context.js';
 import { isNonRetryable } from './worker-errors.js';
 import {
@@ -134,6 +134,64 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
    * capture, they just are not parked in Postgres.
    */
   private deadLetterRecorder: DeadLetterRecorder | null = null;
+
+  /**
+   * Park a durable row for a job that is NOT failing.
+   *
+   * Normally parking and throwing are the same act, and for
+   * EmailSendWorker they cannot be: a throw dead-letters, a dead-lettered
+   * email job is indistinguishable from one that delivered and lost its
+   * confirmation, and the enqueue dedup must therefore suppress it
+   * forever. Returning a recorded skip keeps delivery re-enqueueable, but
+   * on its own it acknowledges the job with NO durable trace — the row
+   * ages out and nothing anywhere says an email is owed.
+   *
+   * This gives a subclass both: the job completes, and the fact survives.
+   * Never throws — a recorder failure must not turn a designed skip into
+   * a job failure, which is the very outcome the caller is avoiding.
+   */
+  protected async parkWithoutFailing(entry: DeadLetterEntry): Promise<void> {
+    if (!this.deadLetterRecorder) {
+      return;
+    }
+    try {
+      await this.deadLetterRecorder.record(entry);
+    } catch (recorderErr) {
+      const recorderError =
+        recorderErr instanceof Error ? recorderErr : new Error(String(recorderErr));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'worker.dead_letter_record_failed',
+          worker: this.workerName,
+          jobRef: telemetryReference(entry.jobId),
+          error: safeWorkerErrorKind(recorderError),
+        }),
+      );
+      // Same escalation as the terminal-failure record path below: a
+      // failed park means the durable record is LOST, and for a
+      // completing job this row was the only trace — so it must page,
+      // not just log.
+      try {
+        this.observer.captureBackgroundFailure(
+          safeTelemetryError(recorderError, 'Dead-letter recording failed'),
+          {
+            kind: 'dead_letter.record_failed',
+            tags: { worker: this.workerName, job_ref: telemetryReference(entry.jobId) },
+          },
+        );
+      } catch (observerErr) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'worker.observer_failed',
+            worker: this.workerName,
+            error: safeWorkerErrorKind(observerErr),
+          }),
+        );
+      }
+    }
+  }
 
   /**
    * The job body. Subclasses do the real work here.

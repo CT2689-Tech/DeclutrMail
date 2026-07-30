@@ -46,12 +46,18 @@ import type { WorkerContext } from './worker-context.js';
  *     rather than risking a duplicate.
  *   - `disabled` (RESEND_API_KEY unset)  → SUCCESS with
  *     'skipped_delivery_disabled'. The port fail-closes before Resend, so
- *     nothing was sent — definitively. Loud (warn + metrics) but NOT
- *     dead-lettered, so setting the key lets the send be retried.
+ *     nothing was sent — definitively.
  *   - `permanent` (Resend 4xx)           → SUCCESS with
- *     'skipped_delivery_rejected'. Refused outright, so also
- *     definitively not sent; an unverified sending domain is exactly the
- *     kind of 4xx that gets fixed and must then be retryable.
+ *     'skipped_delivery_rejected'. Refused outright, so also definitively
+ *     not sent; an unverified sending domain is exactly the kind of 4xx
+ *     that gets fixed.
+ *
+ * Every known-unsent outcome ALSO parks a durable `dead_letter_jobs` row.
+ * Completing without one would acknowledge an email nobody sent: the job
+ * ages out of `removeOnComplete` and no record survives that one is owed.
+ * The row is a RECORD, not yet an automatic retry — `replayDeadLetterJob`
+ * cannot currently replay an email job because the D7 payload allowlist
+ * strips its render fields. See the note at the parking call site.
  *   - `suppressed`                        → SUCCESS with outcome
  *     'skipped_suppressed' (a suppressed recipient is a designed skip).
  *
@@ -223,7 +229,7 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
     return payload.idempotencyKey;
   }
 
-  async processJob(payload: EmailSendJobData, _ctx: WorkerContext): Promise<EmailSendResult> {
+  async processJob(payload: EmailSendJobData, ctx: WorkerContext): Promise<EmailSendResult> {
     if (
       !payload.userId ||
       !payload.kind ||
@@ -265,16 +271,36 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
       // with the reason, plus the outcome in `worker.succeeded` metrics.
       // A dead-letter row was never the only way to be loud, and it was
       // the one way that also broke delivery.
+      const refusal =
+        'Commercial email cannot send without a physical postal address ' +
+        '(CAN-SPAM §316.5 / CASL). Set BUSINESS_POSTAL_ADDRESS in ' +
+        'packages/shared/src/copy/postal-address.ts.';
+      // Parked for the same reason as the delivery skips below: an email
+      // that is owed must leave a durable record, or completing the job
+      // silently acknowledges a send that never happened.
+      await this.parkWithoutFailing({
+        // Literal rather than importing EMAIL_SEND_QUEUE: the queue module
+        // imports this module's types, so the reverse import is a cycle.
+        queue: 'email-send',
+        jobId: ctx.jobId,
+        payload,
+        error: refusal,
+      });
+      // Same two channels as the delivery skips below — the rule is
+      // uniform: every known-unsent outcome parks AND reports. Without
+      // the direct call, an unwired or failing recorder would leave
+      // postal refusals with no Sentry signal at all.
+      this.observer.captureBackgroundFailure(new Error(refusal), {
+        kind: 'email.refused_no_postal_address',
+        tags: { emailKind: payload.kind, outcome: 'skipped_no_postal_address' },
+      });
       console.warn(
         JSON.stringify({
           level: 'warn',
           kind: 'email.refused_no_postal_address',
           worker: this.workerName,
           emailKind: payload.kind,
-          detail:
-            'Commercial email cannot send without a physical postal address ' +
-            '(CAN-SPAM §316.5 / CASL). Set BUSINESS_POSTAL_ADDRESS in ' +
-            'packages/shared/src/copy/postal-address.ts.',
+          detail: refusal,
         }),
       );
       return { outcome: 'skipped_no_postal_address', kind: payload.kind, providerId: null };
@@ -352,23 +378,48 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
       // genuinely ambiguous outcome — Resend may have accepted the request
       // before the confirmation was lost.
       //
-      // Loudness is preserved without burial, and deliberately on BOTH
-      // channels. Dropping the throw also dropped these out of the
-      // dead-letter sweep, which is what forwards to Sentry — so the
-      // observer is called directly. Losing delivery is bad; losing
-      // delivery AND the signal that it stopped is how a mail outage sits
-      // unnoticed, the same blind spot a dependency-free health check
-      // already created here once.
+      // Completing without a trace would ACKNOWLEDGE an email nobody ever
+      // sent: the job ages out of `removeOnComplete` and no row anywhere
+      // records that one is owed. So the fact is parked durably in
+      // `dead_letter_jobs` while the job still completes — the dedup stays
+      // permissive AND the loss survives (Codex stop-review 2026-07-29,
+      // fifth pass).
+      //
+      // Alerting rides both channels deliberately. `DeadLetterWorker`
+      // sweeps parked rows into Sentry, which is the designed path but
+      // needs the recorder wired; the direct observer call has no wiring
+      // dependency. Losing delivery is bad, losing delivery AND the signal
+      // that it stopped is a silent mail outage — the same blind spot a
+      // dependency-free health check already created here once.
+      //
+      // CAVEAT, and it is the founder's call to close: a parked email job
+      // is NOT replayable via `replayDeadLetterJob`. The D7 write-boundary
+      // allowlist (`DEAD_LETTER_PAYLOAD_ALLOWED_KEYS`) omits this payload's
+      // render fields — kind, userId, subject, text — so the persisted copy
+      // replays as a ValidationError. That predates this change and is why
+      // the row is a RECORD, not yet a retry. Extending that allowlist is a
+      // privacy-posture decision (CLAUDE.md §9), not one to make here.
       case 'disabled':
       case 'permanent': {
         const outcome =
           delivered.reason === 'disabled'
             ? 'skipped_delivery_disabled'
             : 'skipped_delivery_rejected';
-        this.observer.captureBackgroundFailure(
-          new Error(`email not delivered (${delivered.reason}): ${delivered.detail}`),
-          { kind: 'email.not_delivered', tags: { emailKind: payload.kind, outcome } },
+        const notDelivered = new Error(
+          `email not delivered (${delivered.reason}): ${delivered.detail}`,
         );
+        await this.parkWithoutFailing({
+          // Literal rather than importing EMAIL_SEND_QUEUE: the queue module
+          // imports this module's types, so the reverse import is a cycle.
+          queue: 'email-send',
+          jobId: ctx.jobId,
+          payload,
+          error: notDelivered.message,
+        });
+        this.observer.captureBackgroundFailure(notDelivered, {
+          kind: 'email.not_delivered',
+          tags: { emailKind: payload.kind, outcome },
+        });
         console.warn(
           JSON.stringify({
             level: 'warn',
