@@ -137,6 +137,25 @@ export function formatBillingDate(iso: string | null): string | null {
 }
 
 /**
+ * Provider money → display string. Providers quote in the currency's
+ * LOWEST unit ("1900" = $19.00, JPY has no minor unit), so the divisor
+ * comes from the currency's own exponent via Intl, never a hard-coded
+ * 100. Null on anything unparsable — callers fall back to generic copy
+ * rather than showing an invented number (never-fabricate rule).
+ */
+export function formatProviderAmount(amount: string, currencyCode: string): string | null {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return null;
+  try {
+    const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode });
+    const digits = fmt.resolvedOptions().maximumFractionDigits ?? 2;
+    return fmt.format(n / 10 ** digits);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * D121 — the money-back guarantee line. Applies to EVERY paid plan
  * (founder-confirmed 2026-07-08; the published /refunds policy and the
  * cancel flow both surface it for Plus and Pro alike).

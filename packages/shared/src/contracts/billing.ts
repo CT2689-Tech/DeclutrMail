@@ -248,6 +248,24 @@ export const BillingReconcileRequestSchema = z.object({
   toTier: PurchasableTierSchema.optional(),
   cycle: BillingCycleSchema.optional(),
   startedAt: z.iso.datetime().optional(),
+  /**
+   * What the caller is waiting on. `checkout` (default) runs the
+   * pending-checkout ladder above. `change` runs the per-workspace
+   * live-subscription check instead: a stuck PLAN CHANGE has no
+   * checkout claim by construction (an immediate upgrade writes no
+   * server-side marker), and routing it through the checkout ladder
+   * would answer `none_found` — "no completed payment found" — about
+   * an upgrade that DID charge. Distinct waits, distinct questions.
+   *
+   * For `change`, `toTier`/`cycle` are the AWAITED target and are
+   * load-bearing: after the provider check, "nothing new" splits on
+   * them — recorded granting state matches the target →
+   * `already_recorded` (a real confirmation); it does not →
+   * `none_found` (the provider answered and the awaited change exists
+   * nowhere — retry is legitimate). Without them the server cannot
+   * tell those opposite truths apart and stays neutral.
+   */
+  kind: z.enum(['checkout', 'change']).optional(),
 });
 export type BillingReconcileRequest = z.infer<typeof BillingReconcileRequestSchema>;
 
@@ -255,3 +273,42 @@ export const BillingReconcileResponseSchema = z.object({
   outcome: BillingReconcileOutcomeSchema,
 });
 export type BillingReconcileResponse = z.infer<typeof BillingReconcileResponseSchema>;
+
+/**
+ * POST /api/billing/change-plan/preview — read-only dry run of a plan
+ * change (D117/D120) so the confirm panel states the exact charge
+ * instead of "a prorated difference".
+ *
+ *   - `immediate` — an upgrade: `result` is the provider's own
+ *     what-happens-now line (amount in the currency's LOWEST unit, so
+ *     the FE formats via Intl with the currency's exponent), null when
+ *     the provider answered without a parsable summary — the FE falls
+ *     back to generic copy, never an invented number. `nextBilledAt`
+ *     is the post-change renewal.
+ *   - `deferred` — a downgrade: nothing charged now; the change lands
+ *     at `effectiveAt` (period end), matching changePlan semantics.
+ *   - `none` — same plan or a change already pending: nothing to
+ *     preview (the picker disables these paths).
+ */
+export const PlanChangePreviewRequestSchema = PlanChangeRequestSchema;
+export type PlanChangePreviewRequest = z.infer<typeof PlanChangePreviewRequestSchema>;
+
+export const PlanChangePreviewSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('immediate'),
+    result: z
+      .object({
+        action: z.enum(['charge', 'credit']),
+        amount: z.string().min(1),
+        currencyCode: z.string().min(1),
+      })
+      .nullable(),
+    nextBilledAt: z.iso.datetime().nullable(),
+  }),
+  z.object({
+    kind: z.literal('deferred'),
+    effectiveAt: z.iso.datetime().nullable(),
+  }),
+  z.object({ kind: z.literal('none') }),
+]);
+export type PlanChangePreview = z.infer<typeof PlanChangePreviewSchema>;

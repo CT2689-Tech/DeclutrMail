@@ -492,4 +492,142 @@ describe('BillingReconciliationService (D249)', () => {
     const [row] = await db.select().from(subscriptions);
     expect(row!.status).toBe('active');
   });
+
+  // ── reconcileWorkspaceSubscriptions — the stuck-plan-change path ──
+  //
+  // An immediate upgrade writes no scheduled-change marker, so a lost
+  // webhook leaves a row indistinguishable from a healthy pre-change
+  // one. These pin the per-workspace variant's outcome mapping.
+
+  it('workspace reconcile: applies a provider-side upgrade the webhook never delivered → granted', async () => {
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_upg',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      billingCycle: 'monthly',
+      currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      cancelAtPeriodEnd: false,
+    });
+    await db.update(workspaces).set({ tier: 'plus' }).where(eq(workspaces.id, workspaceId));
+    // Provider truth: the founder's live repro — pro/annual applied at
+    // Paddle while the local row still says plus/monthly.
+    const providerTruth: NormalizedSubscription = {
+      ...activePlusSub('sub_upg', new Date()),
+      providerPriceId: TEST_PRICE_IDS.paddle.pro_annual,
+    };
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({ kind: 'found', subscription: providerTruth }),
+      }),
+    );
+
+    expect(await svc.reconcileWorkspaceSubscriptions(workspaceId)).toBe('granted');
+    const [row] = await db.select().from(subscriptions);
+    expect(row!.tier).toBe('pro');
+    expect(row!.billingCycle).toBe('annual');
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('pro');
+  });
+
+  it('workspace reconcile: unchanged provider truth → already_recorded (idempotent, one ledger row)', async () => {
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_ws_same',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      billingCycle: 'monthly',
+      currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      cancelAtPeriodEnd: false,
+    });
+    const truth = activePlusSub('sub_ws_same', new Date());
+    const svc = service(
+      fakeAdapter({ fetchSubscription: async () => ({ kind: 'found', subscription: truth }) }),
+    );
+
+    // First pass records the snapshot; the second dedups in the ledger.
+    expect(await svc.reconcileWorkspaceSubscriptions(workspaceId)).toBe('granted');
+    expect(await svc.reconcileWorkspaceSubscriptions(workspaceId)).toBe('already_recorded');
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(1);
+  });
+
+  it('workspace reconcile with a target hint: the hint gates every outcome, including the first pass', async () => {
+    // Provider and DB agree on plus/monthly — the awaited pro/annual
+    // change NEVER HAPPENED.
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_hint',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      billingCycle: 'monthly',
+      currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      cancelAtPeriodEnd: false,
+    });
+    const truth = activePlusSub('sub_hint', new Date());
+    const svc = service(
+      fakeAdapter({ fetchSubscription: async () => ({ kind: 'found', subscription: truth }) }),
+    );
+
+    // FIRST pass — the never-reconciled row projects its bookkeeping
+    // snapshot ('processed' in the ledger), which is NOT the awaited
+    // change. Mapping that projection to 'granted' falsely confirmed an
+    // unapplied change on the very first check (Codex 2026-07-30,
+    // second round).
+    expect(
+      await svc.reconcileWorkspaceSubscriptions(workspaceId, { tier: 'pro', cycle: 'annual' }),
+    ).toBe('none_found');
+    // The snapshot WAS written — the answer stayed truthful anyway.
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(1);
+
+    // Awaiting the state that IS recorded → a true confirmation.
+    expect(
+      await svc.reconcileWorkspaceSubscriptions(workspaceId, { tier: 'plus', cycle: 'monthly' }),
+    ).toBe('already_recorded');
+
+    // No hint → neutral, never a payment claim in either direction.
+    expect(await svc.reconcileWorkspaceSubscriptions(workspaceId)).toBe('already_recorded');
+  });
+
+  it('workspace reconcile: no live rows → no_pending; provider throw → provider_unavailable; 404 → unresolved', async () => {
+    // No rows at all.
+    const empty = service(fakeAdapter({}));
+    expect(await empty.reconcileWorkspaceSubscriptions(workspaceId)).toBe('no_pending');
+
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_ws_err',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      billingCycle: 'monthly',
+      currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      cancelAtPeriodEnd: false,
+    });
+    const throwing = service(
+      fakeAdapter({
+        fetchSubscription: async () => {
+          throw new Error('ECONNRESET');
+        },
+      }),
+    );
+    expect(await throwing.reconcileWorkspaceSubscriptions(workspaceId)).toBe(
+      'provider_unavailable',
+    );
+
+    const missing = service(
+      fakeAdapter({ fetchSubscription: async () => ({ kind: 'not_found' }) }),
+    );
+    expect(await missing.reconcileWorkspaceSubscriptions(workspaceId)).toBe('unresolved');
+    // Neither outcome wrote anything.
+    const [row] = await db.select().from(subscriptions);
+    expect(row!.status).toBe('active');
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+  });
 });

@@ -34,12 +34,12 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 - ⬜ Not started: 81
 - 🟡 In progress: 1
-- 🔵 Shipped: 99
+- 🔵 Shipped: 100
 - 🟢 Verified: 55
 - 🚫 Retired: 2
 - 🔴 Blocked: 0
 - ⏸️ Deferred: 0
-- **Total: 238 D-decisions**
+- **Total: 239 D-decisions**
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -281,7 +281,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D223 | Landing page primary headline (locks tentative) | 🔵 | #202 |  |  |
 | D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38, #122, #279, #287, #314, #370, #418, #427, #428 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | 🔵 | #194, #208, #209 |  | Truth sweep 2026-07-02 (🟡→🔵): every leg now on disk — policies + cron idempotency (worker-policies.ts:54-101), cron_runs + dead_letter_jobs tables (migration 0030, #194), DeadLetterWorker (worker.ts:1603), WatchRenewalWorker (worker.ts:1239) — 2026-06-11 missing-legs note stale. Pending verify-d |
-| D226 | Action lifecycle ordering (resolves SC-1) | 🔵 | #44, #180, #130, #149, #225, #272, #345, #376, #388, #394, #398, #400, #403, #407, #409 | apps/web/src/features/triage/action-sheet.test.tsx — sheet → preview → confirm lifecycle | Evidence updated 2026-06-11: lifecycle wired to real K/A/U/L mutations + undo tray in #180. Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D226 | Action lifecycle ordering (resolves SC-1) | 🔵 | #44, #180, #130, #149, #225, #272, #345, #376, #388, #394, #398, #400, #403, #407, #409, #440 | apps/web/src/features/triage/action-sheet.test.tsx — sheet → preview → confirm lifecycle | Evidence updated 2026-06-11: lifecycle wired to real K/A/U/L mutations + undo tray in #180. Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🟢 | #12, #280, #410 | packages/workers/src/reasoning.test.ts — K/A/U/L verdict labels |  |
 | D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🟢 | #192, #26 | 2026-07-02 audit: PrivacyBadge mounted sync-gate/landing/pricing/settings; banned-phrase negative tests; live content check app.declutrmail.com/privacy | Drift fix 2026-06-11: prior 🟢 predated mounts; #192 replaced banned sync-gate copy with PrivacyBadge + microcopy hook rule; settings/landing mounts ride those surfaces — pending verify-d |
 | D229 | Pub/Sub OIDC verification contract | 🟢 | #31, #311, #416 | apps/api/src/webhooks/__tests__/oidc-verifier.spec.ts — full OIDC verification |  |
@@ -294,5 +294,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D245 | Unified product clarity and control contract | 🔵 | #332, #333, #335, #336, #368, #393, #394, #400, #403, #409, #438 |  |  |
 | D246 | Finite first relief and evidence-based automation authority | 🔵 | #334 |  |  |
 | D248 | Bulk unsubscribe: one-click subset only, per-channel receipt | ⬜ |  |  | Decided 2026-07-28. Batch executes `senders.unsubscribe_method='one_click'` server-side only. The column is nullable, so four states are reported separately: `mailto` (per-sender, D230), `none` (no channel exists), and `NULL` (not yet indexed — unknown, never folded into `none`). No undo — unsubscribe declares no inverse, so the mandatory modal preview is the reversal point. Receipt aggregates the THREE outcomes the worker writes (`unsubscribe_endpoint_accepted` / `unsubscribe_unconfirmed` / `unsubscribe_failed`) and says "request accepted", not "unsubscribed". Extends D9/D32 |
+| D249 | Billing reconciles against provider truth, not customer memory | 🔵 | #436 |  |  |
 
 <!-- AUTO:DECISIONS:END -->

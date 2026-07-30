@@ -9626,3 +9626,60 @@ Extends D9 and D32. Does not amend D230.
 **Origin:** the founder's own dogfood queue ran 12 consecutive
 Unsubscribe decisions with no batch path, while Archive and Later had one
 (#321). Decided 2026-07-28.
+
+---
+
+# Billing provider truth — 2026-07-30
+
+### D249 — Billing reconciles against provider truth, not customer memory
+
+**Status:** Accepted — founder-directed 2026-07-30 ("take care of it from
+our end instead of adding friction to customer, in an ideal, production
+ready way"). Shipped in PR #436.
+
+The webhook is the only billing write channel and it can drop (dead
+tunnel in dev, finite provider retry budget in prod: Paddle retries 3
+times then marks the notification failed permanently). Before D249 the
+only recovery for a paid-but-ungranted checkout was the customer
+attesting "I checked — no charge" and releasing their own lock — the
+customer asserting a fact only the provider holds.
+
+**Contract.** The server asks the provider. Three read paths, ONE write
+path:
+
+- `POST /api/billing/reconcile` (CSRF + rate-limited 5/min) reconciles
+  the caller's pending checkout: exact lookup via the claim's
+  `provider_ref` (`pending_checkouts.provider_ref`, migration 0052 —
+  Razorpay mints its subscription server-side pre-payment; Paddle stays
+  NULL and falls back to customer-email search), else a provider search
+  filtered by the workspace's own price ids. The FE always sends its
+  local pending record as a HINT so a swept server claim still searches
+  the provider instead of answering `no_pending` blind.
+- A 6-hourly + boot drift sweep (`reconcileLiveSubscriptions`) fetches
+  provider state for every live subscription row and projects changes —
+  the recovery path for lost cancel/renewal/plan-change webhooks.
+- Outcomes are a closed vocabulary (`granted` / `already_recorded` /
+  `none_found` / `payment_in_progress` / `no_pending` / `unresolved` /
+  `provider_unavailable`); `payment_in_progress` (pre-grant 3DS-window
+  artifacts, unmapped provider statuses) keeps the release LOCKED —
+  "no payment found" would be false and resume is the double-charge
+  case.
+- Every match projects through the SAME `BillingWebhookService.process()`
+  path as a webhook (synthesized `recon:<provider>:<sub>:<state-hash>`
+  event id, deduped in the ledger). No second projector.
+- A read miss is never a state write: `not_found`/unmapped reads log
+  `provider_missing` and change nothing. Manual release stays available
+  but is gated behind a completed provider check (`none_found`).
+
+`pending_checkouts` claims are retained 7 days past expiry so
+`provider_ref` stays reachable for stale-lock reconciliation; expiry
+itself re-arms checkout via the claim upsert.
+
+**Verified live 2026-07-30:** a real Plus→Pro upgrade whose webhook was
+lost (dead tunnel) drifted `plus/monthly` vs Paddle's `pro/annual`; the
+boot sweep fetched, projected, and repaired the row and workspace tier
+with no webhook (`billing.reconcile.drift_applied`).
+
+Extends the 0051 pending-checkout guard (decision 1, 2026-07-28).
+Amends the sweep's original "no provider polling" posture. Does not
+amend D229 (webhook auth) or D121 (no trials).

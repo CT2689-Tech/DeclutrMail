@@ -32,6 +32,7 @@ import type {
   CancelRequest,
   CheckoutRequest,
   CheckoutSession,
+  PlanChangePreview,
   PlanChangeRequest,
 } from '@declutrmail/shared/contracts';
 
@@ -39,6 +40,7 @@ import { AppException } from '../common/app-exception.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { BillingProvider } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
+import { BillingReconciliationService } from './billing-reconciliation.service.js';
 import { lockSubscription } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
@@ -55,6 +57,7 @@ export class BillingService {
     private readonly catalog: BillingCatalog,
     private readonly paddle: PaddleAdapter,
     private readonly razorpay: RazorpayAdapter,
+    private readonly reconciliation: BillingReconciliationService,
   ) {}
 
   private adapterFor(provider: 'paddle' | 'razorpay'): BillingProvider {
@@ -421,10 +424,12 @@ export class BillingService {
    *     with the price point — never end it on a casual click);
    *   - same tier+cycle is an idempotent no-op.
    */
-  async changePlan(
-    principal: { workspaceId: string },
-    dto: PlanChangeRequest,
-  ): Promise<BillingSubscription> {
+  /**
+   * Shared entry guard for changePlan and its read-only preview — ONE
+   * sequence so the dry run can never accept a subscription the real
+   * change would reject (or vice versa).
+   */
+  private async loadChangeableSubscription(workspaceId: string) {
     const [sub] = await this.db
       .select({
         id: subscriptions.id,
@@ -446,7 +451,7 @@ export class BillingService {
       .from(subscriptions)
       .where(
         and(
-          eq(subscriptions.workspaceId, principal.workspaceId),
+          eq(subscriptions.workspaceId, workspaceId),
           inArray(subscriptions.status, ['active', 'past_due', 'paused']),
         ),
       )
@@ -472,6 +477,55 @@ export class BillingService {
       // Checked here too so the answer doesn't depend on catalog state.
       throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
     }
+    return sub;
+  }
+
+  /**
+   * Read-only dry run of `changePlan` (D117/D120). Same guards, same
+   * price resolution, same downgrade classification — then Paddle's
+   * preview endpoint computes the exact immediate charge so the confirm
+   * panel can state a number instead of "a prorated difference".
+   * Nothing is written or applied.
+   */
+  async planChangePreview(
+    principal: { workspaceId: string },
+    dto: PlanChangeRequest,
+  ): Promise<PlanChangePreview> {
+    const sub = await this.loadChangeableSubscription(principal.workspaceId);
+    if (
+      sub.scheduledChangeState !== null ||
+      (sub.tier === dto.tierId && sub.billingCycle === dto.cycle)
+    ) {
+      // Pending change or same-plan: the picker disables these paths;
+      // nothing would be charged now, and nothing is worth previewing.
+      return { kind: 'none' };
+    }
+    const priceId = this.catalog.resolvePriceId(sub.provider, dto.tierId, dto.cycle, false);
+    if (!priceId) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    const isDowngrade =
+      (sub.tier === 'pro' && dto.tierId === 'plus') ||
+      (sub.tier === dto.tierId && sub.billingCycle === 'annual' && dto.cycle === 'monthly');
+    if (isDowngrade) {
+      return {
+        kind: 'deferred',
+        effectiveAt: sub.currentPeriodEnd ? sub.currentPeriodEnd.toISOString() : null,
+      };
+    }
+    const preview = await this.adapterFor(sub.provider).previewPlanChange(
+      sub.providerSubscriptionId,
+      priceId,
+      { kind: 'immediate_prorated' },
+    );
+    return { kind: 'immediate', result: preview.result, nextBilledAt: preview.nextBilledAt };
+  }
+
+  async changePlan(
+    principal: { workspaceId: string },
+    dto: PlanChangeRequest,
+  ): Promise<BillingSubscription> {
+    const sub = await this.loadChangeableSubscription(principal.workspaceId);
 
     // Selecting the effective current plan while a downgrade is queued
     // means “keep my current plan.” Restore Paddle's item first while the
@@ -744,8 +798,8 @@ export class BillingService {
       throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
     }
 
-    // Provider call IS the immediate upgrade; the webhook writes the
-    // new tier/cycle only after the provider accepts the charge.
+    // Provider call IS the immediate upgrade — Paddle applies it
+    // synchronously and the webhook merely confirms.
     await this.adapterFor(sub.provider).changePlan(sub.providerSubscriptionId, priceId, {
       kind: 'immediate_prorated',
     });
@@ -753,6 +807,25 @@ export class BillingService {
     this.logger.log(
       `billing.plan_change_requested workspace=${principal.workspaceId} provider=${sub.provider} from=${sub.tier}/${sub.billingCycle} to=${dto.tierId}/${dto.cycle}`,
     );
+
+    // Project provider truth NOW through the one projector (D249)
+    // instead of leaving the tier flip hostage to webhook delivery —
+    // a lost webhook previously stranded a charged upgrade on the old
+    // tier until the 6h sweep. Fail-open: the change already happened
+    // provider-side, so a projection error must not fail the request;
+    // the webhook, the on-demand reconcile, and the sweep all backstop.
+    try {
+      const projected = await this.reconciliation.reconcileWorkspaceSubscriptions(
+        principal.workspaceId,
+      );
+      this.logger.log(
+        `billing.plan_change_projected workspace=${principal.workspaceId} outcome=${projected}`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `billing.plan_change_project_failed workspace=${principal.workspaceId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     return this.getSubscription(principal.workspaceId);
   }
 

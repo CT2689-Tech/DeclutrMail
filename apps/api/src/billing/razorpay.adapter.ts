@@ -30,6 +30,7 @@ import type {
   FetchSubscriptionResult,
   NormalizedBillingEvent,
   NormalizedSubscription,
+  PlanChangePreviewResult,
   PlanChangeResult,
   SignatureVerifyResult,
   SubscriptionSearchQuery,
@@ -257,6 +258,12 @@ export class RazorpayAdapter implements BillingProvider {
    */
   async changePlan(providerSubscriptionId: string): Promise<PlanChangeResult> {
     this.logger.warn(`razorpay.change_plan.unsupported sub=${providerSubscriptionId}`);
+    throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+  }
+
+  /** Same posture as changePlan — no preview for an unsupported path. */
+  async previewPlanChange(providerSubscriptionId: string): Promise<PlanChangePreviewResult> {
+    this.logger.warn(`razorpay.preview_plan_change.unsupported sub=${providerSubscriptionId}`);
     throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
   }
 

@@ -38,7 +38,7 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { pendingCheckouts, subscriptions, users } from '@declutrmail/db';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
@@ -365,43 +365,157 @@ export class BillingReconciliationService {
 
     for (const row of rows) {
       if (consecutiveErrors[row.provider] >= DRIFT_SWEEP_TRIP_AFTER) continue;
-      const observedAt = new Date().toISOString();
-      let fetched: Awaited<ReturnType<BillingProvider['fetchSubscription']>>;
-      try {
-        fetched = await this.adapterFor(row.provider).fetchSubscription(row.providerSubscriptionId);
-        consecutiveErrors[row.provider] = 0;
-      } catch (err) {
+      const checked = await this.reconcileSubscriptionRow(row);
+      if (checked === 'provider_error') {
         result.providerErrors += 1;
         consecutiveErrors[row.provider] += 1;
-        this.logger.warn(
-          `billing.reconcile.drift_provider_error provider=${row.provider} sub=${row.providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
-        );
         continue;
       }
+      consecutiveErrors[row.provider] = 0;
       result.subscriptionsChecked += 1;
-      if (fetched.kind !== 'found') {
-        // A read miss or an unmappable status is never a state write —
-        // cancelling a live row on the strength of one GET is the
-        // failure mode this branch refuses.
+      if (checked === 'unreadable') {
         result.subscriptionsUnreadable += 1;
-        this.logger.warn(
-          `billing.reconcile.provider_missing provider=${row.provider} sub=${row.providerSubscriptionId} read=${fetched.kind}${fetched.kind === 'found_unmapped' ? ` provider_status=${fetched.providerStatus}` : ''}`,
-        );
-        continue;
-      }
-      // Attribution resolves via the existing subscriptions row (ladder
-      // step 1 in resolveWorkspace) — no override needed or wanted.
-      const outcome = await this.project(row.provider, fetched.subscription, observedAt);
-      if (outcome === 'granted') {
+      } else if (checked === 'granted') {
         result.subscriptionsDrifted += 1;
-        this.logger.warn(
-          `billing.reconcile.drift_applied provider=${row.provider} sub=${row.providerSubscriptionId} status=${fetched.subscription.status}`,
-        );
       } else {
         result.subscriptionsUnchanged += 1;
       }
     }
     return result;
+  }
+
+  /**
+   * Per-workspace, on-demand provider-truth check — the recovery path
+   * for a stuck PLAN CHANGE (D249 follow-on). An immediate upgrade
+   * writes no scheduled-change marker (the provider call IS the
+   * change), so a lost webhook leaves the row indistinguishable from a
+   * healthy pre-change one and the pending-checkout ladder has nothing
+   * to key on. The truthful move is to ask the provider about every
+   * live row this workspace holds and project what comes back through
+   * the ONE projector. BillingService also invokes this right after a
+   * successful upgrade so the tier flip never waits on webhook
+   * delivery.
+   *
+   * Outcome mapping (checkout-reconcile vocabulary, worst-signal-wins
+   * below `granted`): any projection written → `granted`; else any
+   * provider error → `provider_unavailable` (something could not be
+   * asked, nothing asserted); else any unreadable row → `unresolved`
+   * (exists but unmappable — support territory); no live rows at all →
+   * `no_pending`.
+   *
+   * When every row answered and nothing new was projected, "unchanged"
+   * holds two OPPOSITE truths for a caller waiting on a specific
+   * change: the awaited state may already be recorded (an earlier
+   * projection/webhook wrote it — confirmation), or the provider may
+   * still hold the OLD plan (the change never happened — the caller
+   * must not be told "confirmed"; Codex 2026-07-30). The `hint` — what
+   * the caller was waiting FOR — splits them: recorded granting state
+   * matches the target → `already_recorded`; it does not →
+   * `none_found` (provider answered; the awaited change exists
+   * nowhere, so a release/retry is legitimate). Without a hint the
+   * neutral `already_recorded` stands.
+   */
+  async reconcileWorkspaceSubscriptions(
+    workspaceId: string,
+    hint?: ReconcileHint,
+  ): Promise<PendingReconcileOutcome> {
+    const rows = await this.db
+      .select({
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.workspaceId, workspaceId),
+          inArray(subscriptions.status, ['active', 'past_due', 'paused']),
+        ),
+      );
+    if (rows.length === 0) return 'no_pending';
+    let projected = false;
+    let providerError = false;
+    let unreadable = false;
+    for (const row of rows) {
+      const checked = await this.reconcileSubscriptionRow(row);
+      if (checked === 'granted') projected = true;
+      else if (checked === 'provider_error') providerError = true;
+      else if (checked === 'unreadable') unreadable = true;
+    }
+    if (hint?.tier && hint.cycle) {
+      // The hint gates EVERY outcome, not just the unchanged branch: a
+      // never-reconciled row projects its first snapshot even when the
+      // provider still holds the OLD plan, and that bookkeeping write
+      // is not the awaited change (Codex 2026-07-30, second round —
+      // "granted" here falsely confirmed an unapplied change on the
+      // very first check). Post-loop recorded truth is the only thing
+      // allowed to answer; same GRANTING_STATUSES partition as the
+      // projector so this cannot drift from what grants.
+      const grantingRows = await this.db
+        .select({ tier: subscriptions.tier, billingCycle: subscriptions.billingCycle })
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.workspaceId, workspaceId),
+            inArray(subscriptions.status, [...GRANTING_STATUSES]),
+          ),
+        );
+      const matched = grantingRows.some(
+        (r) => r.tier === hint.tier && r.billingCycle === hint.cycle,
+      );
+      if (matched) return projected ? 'granted' : 'already_recorded';
+      // Not recorded — but an unasked/unreadable row could still hold
+      // it, so absence may only be asserted when every row answered.
+      if (providerError) return 'provider_unavailable';
+      if (unreadable) return 'unresolved';
+      this.logger.log(
+        `billing.reconcile.change_absent workspace=${workspaceId} awaited=${hint.tier}/${hint.cycle}`,
+      );
+      return 'none_found';
+    }
+    if (projected) return 'granted';
+    if (providerError) return 'provider_unavailable';
+    if (unreadable) return 'unresolved';
+    return 'already_recorded';
+  }
+
+  /**
+   * One provider-truth check for one live row — shared by the global
+   * drift sweep and the per-workspace reconcile so their semantics
+   * cannot drift. Never writes on a read miss.
+   */
+  private async reconcileSubscriptionRow(row: {
+    provider: BillingProviderId;
+    providerSubscriptionId: string;
+  }): Promise<'granted' | 'unchanged' | 'unreadable' | 'provider_error'> {
+    const observedAt = new Date().toISOString();
+    let fetched: Awaited<ReturnType<BillingProvider['fetchSubscription']>>;
+    try {
+      fetched = await this.adapterFor(row.provider).fetchSubscription(row.providerSubscriptionId);
+    } catch (err) {
+      this.logger.warn(
+        `billing.reconcile.drift_provider_error provider=${row.provider} sub=${row.providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      return 'provider_error';
+    }
+    if (fetched.kind !== 'found') {
+      // A read miss or an unmappable status is never a state write —
+      // cancelling a live row on the strength of one GET is the
+      // failure mode this branch refuses.
+      this.logger.warn(
+        `billing.reconcile.provider_missing provider=${row.provider} sub=${row.providerSubscriptionId} read=${fetched.kind}${fetched.kind === 'found_unmapped' ? ` provider_status=${fetched.providerStatus}` : ''}`,
+      );
+      return 'unreadable';
+    }
+    // Attribution resolves via the existing subscriptions row (ladder
+    // step 1 in resolveWorkspace) — no override needed or wanted.
+    const outcome = await this.project(row.provider, fetched.subscription, observedAt);
+    if (outcome === 'granted') {
+      this.logger.warn(
+        `billing.reconcile.drift_applied provider=${row.provider} sub=${row.providerSubscriptionId} status=${fetched.subscription.status}`,
+      );
+      return 'granted';
+    }
+    return 'unchanged';
   }
 
   /** Synthesize the recon event and run it through the ONE projector. */

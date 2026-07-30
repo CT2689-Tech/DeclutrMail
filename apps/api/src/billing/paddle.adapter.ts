@@ -33,6 +33,7 @@ import type {
   FetchSubscriptionResult,
   NormalizedBillingEvent,
   NormalizedSubscription,
+  PlanChangePreviewResult,
   PlanChangeResult,
   PlanChangeTiming,
   SignatureVerifyResult,
@@ -324,6 +325,83 @@ export class PaddleAdapter implements BillingProvider {
       };
     } catch {
       return { providerPriceId: null, providerUpdatedAt: null };
+    }
+  }
+
+  /**
+   * PATCH /subscriptions/{id}/preview — the same payload as changePlan
+   * against Paddle's read-only preview endpoint. `update_summary.result`
+   * is the provider's own "what happens now" line (charge vs credit, in
+   * the currency's lowest unit); `next_billed_at` is the post-change
+   * renewal. Nothing is applied. Malformed summaries return null fields
+   * — the caller must fall back to generic copy, never invent a number.
+   */
+  async previewPlanChange(
+    providerSubscriptionId: string,
+    providerPriceId: string,
+    timing: PlanChangeTiming,
+  ): Promise<PlanChangePreviewResult> {
+    const apiKey = this.env.PADDLE_API_KEY;
+    if (!apiKey) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.baseUrl}/subscriptions/${encodeURIComponent(providerSubscriptionId)}/preview`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'Paddle-Version': '1',
+          },
+          body: JSON.stringify({
+            items: [{ price_id: providerPriceId, quantity: 1 }],
+            proration_billing_mode:
+              timing.kind === 'immediate_prorated' ? 'prorated_immediately' : 'do_not_bill',
+            ...(timing.kind === 'next_period_no_proration'
+              ? { next_billed_at: timing.effectiveAt }
+              : {}),
+          }),
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        },
+      );
+    } catch (err) {
+      this.logger.error(
+        `paddle.preview_plan_change.network_error sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (!res.ok) {
+      this.logger.error(
+        `paddle.preview_plan_change.failed sub=${providerSubscriptionId} status=${res.status}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    try {
+      const body = (await res.json()) as {
+        data?: {
+          next_billed_at?: unknown;
+          update_summary?: {
+            result?: { action?: unknown; amount?: unknown; currency_code?: unknown };
+          };
+        };
+      };
+      const r = body.data?.update_summary?.result;
+      const nextBilledAt = body.data?.next_billed_at;
+      return {
+        result:
+          r &&
+          (r.action === 'charge' || r.action === 'credit') &&
+          typeof r.amount === 'string' &&
+          typeof r.currency_code === 'string'
+            ? { action: r.action, amount: r.amount, currencyCode: r.currency_code }
+            : null,
+        nextBilledAt: typeof nextBilledAt === 'string' ? nextBilledAt : null,
+      };
+    } catch {
+      return { result: null, nextBilledAt: null };
     }
   }
 

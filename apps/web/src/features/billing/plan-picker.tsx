@@ -26,8 +26,10 @@ import { billingKeys } from './api/query-keys';
 import type { BillingIntent } from './billing-intent';
 import { useChangePlan } from './api/use-change-plan';
 import { useCheckout } from './api/use-checkout';
+import { usePlanChangePreview } from './api/use-plan-change-preview';
 import {
   formatBillingDate,
+  formatProviderAmount,
   isDeferredDowngrade,
   MONEY_BACK_NOTE,
   quotedPlanPrice,
@@ -854,6 +856,23 @@ function ChangePlanPanel({
   const samePlan = target === fromTier && cycle === fromCycle;
   const isDowngrade = isDeferredDowngrade(fromTier, fromCycle, target, cycle);
   const effectiveDate = formatBillingDate(currentPeriodEnd);
+  // Upgrades charge NOW — ask the provider for the exact prorated
+  // number while the panel is open (D117/D120). A failed/slow preview
+  // falls back to generic copy below; it never blocks the change.
+  const preview = usePlanChangePreview({
+    tierId: target,
+    cycle,
+    enabled: !samePlan && !isDowngrade,
+  });
+  const previewData = preview.data;
+  const quoteResult = previewData?.kind === 'immediate' ? previewData.result : null;
+  const quotedCharge = quoteResult
+    ? formatProviderAmount(quoteResult.amount, quoteResult.currencyCode)
+    : null;
+  const nextBilledDate =
+    previewData?.kind === 'immediate' && previewData.nextBilledAt
+      ? formatBillingDate(previewData.nextBilledAt)
+      : null;
   return (
     <div
       data-testid="change-plan-panel"
@@ -900,8 +919,31 @@ function ChangePlanPanel({
             </p>
           ) : (
             <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
-              The upgrade applies after your payment provider confirms it, using your existing
-              payment method. The prorated difference for the rest of this period is charged now.
+              <strong style={{ fontWeight: 600, color: color.fg }}>Effective immediately.</strong>{' '}
+              {quotedCharge && quoteResult?.action === 'charge' ? (
+                <>
+                  {quotedCharge} is charged now to your existing payment method — the prorated
+                  difference for the rest of this period.
+                </>
+              ) : quotedCharge && quoteResult?.action === 'credit' ? (
+                <>
+                  No new charge today — the unused value of your current plan covers it, and{' '}
+                  {quotedCharge} is credited to your balance.
+                </>
+              ) : (
+                // Preview still loading, failed, or unparsable — state
+                // the mechanics without inventing a number.
+                <>
+                  The prorated difference for the rest of this period is charged now to your
+                  existing payment method.
+                </>
+              )}
+              {nextBilledDate && toLabel ? (
+                <>
+                  {' '}
+                  Then {toLabel} from {nextBilledDate}.
+                </>
+              ) : null}
             </p>
           )}
           <p style={{ margin: 0, fontSize: 11.5, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
