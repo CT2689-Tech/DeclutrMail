@@ -555,6 +555,43 @@ describe('BillingReconciliationService (D249)', () => {
     expect(await db.select().from(subscriptionEvents)).toHaveLength(1);
   });
 
+  it('workspace reconcile with a target hint: recorded match → already_recorded; absent target → none_found', async () => {
+    // Provider and DB agree on plus/monthly — nothing new to project.
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_hint',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      billingCycle: 'monthly',
+      currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      cancelAtPeriodEnd: false,
+    });
+    const truth = activePlusSub('sub_hint', new Date());
+    const svc = service(
+      fakeAdapter({ fetchSubscription: async () => ({ kind: 'found', subscription: truth }) }),
+    );
+    // Seed the snapshot so the next pass is genuinely "unchanged".
+    await svc.reconcileWorkspaceSubscriptions(workspaceId);
+
+    // Awaiting pro/annual while the provider still holds plus/monthly:
+    // the change NEVER HAPPENED — saying already_recorded here rendered
+    // "Confirmed — your plan is updating now" about a change that
+    // doesn't exist (Codex 2026-07-30).
+    expect(
+      await svc.reconcileWorkspaceSubscriptions(workspaceId, { tier: 'pro', cycle: 'annual' }),
+    ).toBe('none_found');
+
+    // Awaiting the state that IS recorded → a true confirmation.
+    expect(
+      await svc.reconcileWorkspaceSubscriptions(workspaceId, { tier: 'plus', cycle: 'monthly' }),
+    ).toBe('already_recorded');
+
+    // No hint → neutral, never a payment claim in either direction.
+    expect(await svc.reconcileWorkspaceSubscriptions(workspaceId)).toBe('already_recorded');
+  });
+
   it('workspace reconcile: no live rows → no_pending; provider throw → provider_unavailable; 404 → unresolved', async () => {
     // No rows at all.
     const empty = service(fakeAdapter({}));

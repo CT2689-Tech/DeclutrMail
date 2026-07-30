@@ -1161,7 +1161,53 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // The change wait must never claim a checkout fact in either
     // direction — no "payment found", no "no payment found".
     expect(within(notice).getByTestId('provider-check')).not.toHaveTextContent(/payment found/i);
-    expect(reconcileBody).toEqual({ kind: 'change' });
+    // The awaited target rides along — the server splits "unchanged"
+    // into confirmed vs never-happened on it.
+    expect(reconcileBody).toMatchObject({ kind: 'change', toTier: 'pro', cycle: 'annual' });
+  });
+
+  it('D249: a change the provider never received says so and offers retry — never "Confirmed"', async () => {
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'change',
+        fromTier: 'plus',
+        fromCycle: 'monthly',
+        toTier: 'pro',
+        toCycle: 'annual',
+        at: Date.now() - 16 * 60_000,
+      }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/reconcile',
+        respond: () => jsonOk({ data: { outcome: 'none_found' } }),
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    await waitFor(() =>
+      expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
+        'your plan change hasn’t gone through',
+      ),
+    );
+    // The false confirmation Codex caught — and the checkout wording —
+    // must both be absent.
+    expect(within(notice).getByTestId('provider-check')).not.toHaveTextContent(/Confirmed/);
+    expect(within(notice).getByTestId('provider-check')).not.toHaveTextContent(/payment found/i);
+    // Provider-verified absence unlocks the single-click change release
+    // without the 15-minute timer.
+    expect(
+      within(notice).getByRole('button', { name: 'Stop waiting — let me try again' }),
+    ).toBeInTheDocument();
   });
 
   it('a completing checkout never clobbers a surfaced (id-less) ambiguous change lock', async () => {

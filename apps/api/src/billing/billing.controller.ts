@@ -135,7 +135,14 @@ export class BillingController {
     }
     const outcome =
       parsed.data.kind === 'change'
-        ? await this.reconciliation.reconcileWorkspaceSubscriptions(principal.workspaceId)
+        ? // The hint is what the caller AWAITS — it splits "nothing new"
+          // into confirmed-recorded vs change-never-happened (see the
+          // service doc; a hintless check stays neutral).
+          await this.reconciliation.reconcileWorkspaceSubscriptions(principal.workspaceId, {
+            tier: parsed.data.toTier,
+            cycle: parsed.data.cycle,
+            startedAt: parsed.data.startedAt,
+          })
         : await this.reconciliation.reconcilePendingCheckout(principal.workspaceId, {
             tier: parsed.data.toTier,
             cycle: parsed.data.cycle,

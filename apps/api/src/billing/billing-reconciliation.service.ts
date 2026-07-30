@@ -400,10 +400,25 @@ export class BillingReconciliationService {
    * below `granted`): any projection written → `granted`; else any
    * provider error → `provider_unavailable` (something could not be
    * asked, nothing asserted); else any unreadable row → `unresolved`
-   * (exists but unmappable — support territory); all answered and
-   * unchanged → `already_recorded`; no live rows at all → `no_pending`.
+   * (exists but unmappable — support territory); no live rows at all →
+   * `no_pending`.
+   *
+   * When every row answered and nothing new was projected, "unchanged"
+   * holds two OPPOSITE truths for a caller waiting on a specific
+   * change: the awaited state may already be recorded (an earlier
+   * projection/webhook wrote it — confirmation), or the provider may
+   * still hold the OLD plan (the change never happened — the caller
+   * must not be told "confirmed"; Codex 2026-07-30). The `hint` — what
+   * the caller was waiting FOR — splits them: recorded granting state
+   * matches the target → `already_recorded`; it does not →
+   * `none_found` (provider answered; the awaited change exists
+   * nowhere, so a release/retry is legitimate). Without a hint the
+   * neutral `already_recorded` stands.
    */
-  async reconcileWorkspaceSubscriptions(workspaceId: string): Promise<PendingReconcileOutcome> {
+  async reconcileWorkspaceSubscriptions(
+    workspaceId: string,
+    hint?: ReconcileHint,
+  ): Promise<PendingReconcileOutcome> {
     const rows = await this.db
       .select({
         provider: subscriptions.provider,
@@ -429,6 +444,29 @@ export class BillingReconciliationService {
     if (granted) return 'granted';
     if (providerError) return 'provider_unavailable';
     if (unreadable) return 'unresolved';
+    if (hint?.tier && hint.cycle) {
+      // Post-projection truth: does ANY granting row hold what the
+      // caller awaited? Same status partition as the projector
+      // (GRANTING_STATUSES) so this cannot drift from what grants.
+      const grantingRows = await this.db
+        .select({ tier: subscriptions.tier, billingCycle: subscriptions.billingCycle })
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.workspaceId, workspaceId),
+            inArray(subscriptions.status, [...GRANTING_STATUSES]),
+          ),
+        );
+      const matched = grantingRows.some(
+        (r) => r.tier === hint.tier && r.billingCycle === hint.cycle,
+      );
+      if (!matched) {
+        this.logger.log(
+          `billing.reconcile.change_absent workspace=${workspaceId} awaited=${hint.tier}/${hint.cycle}`,
+        );
+        return 'none_found';
+      }
+    }
     return 'already_recorded';
   }
 

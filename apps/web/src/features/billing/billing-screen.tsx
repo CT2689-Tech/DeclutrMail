@@ -497,7 +497,18 @@ export function BillingScreen({
                 }
               : pending.kind === 'change' || pending.kind === 'change_unconfirmed'
                 ? async () => {
-                    const outcome = await reconcileCheckout.mutateAsync({ kind: 'change' });
+                    const outcome = await reconcileCheckout.mutateAsync({
+                      kind: 'change',
+                      // The awaited target — the server uses it to split
+                      // "unchanged" into recorded-confirmation vs
+                      // change-never-happened. Without it, "no change at
+                      // the provider" would read as "Confirmed".
+                      ...(pending.toTier === 'plus' || pending.toTier === 'pro'
+                        ? { toTier: pending.toTier }
+                        : {}),
+                      ...(pending.toCycle ? { cycle: pending.toCycle } : {}),
+                      startedAt: new Date(pending.at).toISOString(),
+                    });
                     if (outcome === 'granted' || outcome === 'already_recorded') {
                       void subscriptionQuery.refetch();
                     }
@@ -806,7 +817,14 @@ export function PaymentProcessingNotice({
           {providerCheck === 'checking' ? (
             'Checking with the payment provider…'
           ) : providerCheck === 'none_found' ? (
-            'We checked with the payment provider — no completed payment found for this checkout.'
+            isChangeWait ? (
+              // The provider answered and the awaited plan exists
+              // nowhere — the change never happened. Saying "Confirmed"
+              // here was the false-confirmation Codex caught.
+              'We checked with the payment provider — your plan change hasn’t gone through. Your current plan is unchanged, and it’s safe to try again.'
+            ) : (
+              'We checked with the payment provider — no completed payment found for this checkout.'
+            )
           ) : providerCheck === 'no_pending' ? (
             isChangeWait ? (
               // Change reconciles against live subscription rows; zero
@@ -860,7 +878,14 @@ export function PaymentProcessingNotice({
           </Button>
         </div>
       ) : null}
-      {(phase === 'unconfirmed' || kind === 'checkout_intent') && onRelease && releaseUnlocked ? (
+      {(phase === 'unconfirmed' ||
+        kind === 'checkout_intent' ||
+        // A change wait whose awaited plan is verified ABSENT at the
+        // provider needs no 15-minute timer — the verification already
+        // happened and waiting longer cannot change the answer.
+        (isChangeWait && providerCheck === 'none_found')) &&
+      onRelease &&
+      releaseUnlocked ? (
         kind === 'checkout' || kind === 'checkout_intent' || kind === 'change_unconfirmed' ? (
           // A payment happened (checkout) or MAY have (unconfirmed
           // change) — release needs an explicit user assertion, never

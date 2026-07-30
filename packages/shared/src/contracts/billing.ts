@@ -256,6 +256,14 @@ export const BillingReconcileRequestSchema = z.object({
    * server-side marker), and routing it through the checkout ladder
    * would answer `none_found` — "no completed payment found" — about
    * an upgrade that DID charge. Distinct waits, distinct questions.
+   *
+   * For `change`, `toTier`/`cycle` are the AWAITED target and are
+   * load-bearing: after the provider check, "nothing new" splits on
+   * them — recorded granting state matches the target →
+   * `already_recorded` (a real confirmation); it does not →
+   * `none_found` (the provider answered and the awaited change exists
+   * nowhere — retry is legitimate). Without them the server cannot
+   * tell those opposite truths apart and stays neutral.
    */
   kind: z.enum(['checkout', 'change']).optional(),
 });
