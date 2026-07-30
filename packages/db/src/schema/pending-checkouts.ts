@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { billingProvider } from './billing-customers';
 import { billingCycle } from './subscriptions';
@@ -23,9 +23,16 @@ import { workspaces, workspaceTier } from './workspaces';
  * not a payment fact — an expired row means "we no longer claim a
  * checkout is in flight", never "the payment failed".
  *
- * Metadata only — provider + tier + cycle + timestamps. No payment
- * details, no provider session ids (D7 posture: store the minimum that
- * serves the surface).
+ * Metadata only — provider + tier + cycle + timestamps + the
+ * provider-side subscription id when the server itself created it
+ * (`provider_ref`, D249). No payment details. The original "no provider
+ * session ids" posture is amended, not violated: the reconciler
+ * (billing-reconciliation.service.ts) is a legitimate consumer that
+ * needs to ask the provider "what happened to THIS checkout" exactly,
+ * and a subscription id is not a payment credential. Razorpay populates
+ * it (its createCheckout mints the subscription server-side, before
+ * payment); Paddle's overlay creates the transaction client-side, so it
+ * stays NULL there and reconciliation falls back to customer search.
  */
 export const pendingCheckouts = pgTable(
   'pending_checkouts',
@@ -36,6 +43,8 @@ export const pendingCheckouts = pgTable(
     provider: billingProvider('provider').notNull(),
     tier: workspaceTier('tier').notNull(),
     billingCycle: billingCycle('billing_cycle').notNull(),
+    /** Provider subscription id when known at claim time (D249). */
+    providerRef: text('provider_ref'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),

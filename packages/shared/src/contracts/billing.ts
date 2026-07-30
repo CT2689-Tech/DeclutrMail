@@ -196,3 +196,62 @@ export const PlanChangeRequestSchema = z.object({
   cycle: BillingCycleSchema,
 });
 export type PlanChangeRequest = z.infer<typeof PlanChangeRequestSchema>;
+
+/**
+ * POST /api/billing/reconcile response (D249 — provider-truth
+ * reconciliation of a pending checkout). The server asks the payment
+ * provider what happened to the workspace's open checkout claim so the
+ * customer never has to guess:
+ *
+ *   - `granted` — a matching subscription was found and projected; the
+ *     tier flip lands on the next subscription read.
+ *   - `already_recorded` — provider truth is unchanged since the last
+ *     look (the synthesized event deduped in the ledger).
+ *   - `none_found` — the provider answered and holds NO matching
+ *     subscription. Legitimizes the manual release affordance.
+ *   - `payment_in_progress` — the provider holds a subscription for
+ *     this checkout in a PRE-GRANT state (Razorpay created/
+ *     authenticated — the 3DS window; unmapped provider statuses).
+ *     The release must stay LOCKED: "no payment found" would be false
+ *     and a resume here is the double-charge case.
+ *   - `no_pending` — no server claim AND no hint to search by. Never a
+ *     payment claim in either direction; with the FE always sending
+ *     its local record as the hint, a stale >TTL lock reconciles via
+ *     provider search instead of landing here.
+ *   - `unresolved` — provider truth exists but projection refused it
+ *     (live-conflict / unprovisioned price); support territory.
+ *   - `provider_unavailable` — could not ask; nothing was asserted and
+ *     nothing was written.
+ */
+export const BillingReconcileOutcomeSchema = z.enum([
+  'granted',
+  'already_recorded',
+  'none_found',
+  'payment_in_progress',
+  'no_pending',
+  'unresolved',
+  'provider_unavailable',
+]);
+export type BillingReconcileOutcome = z.infer<typeof BillingReconcileOutcomeSchema>;
+
+/**
+ * POST /api/billing/reconcile request body — the FE's local pending
+ * record, sent as a HINT. When the server claim has already expired
+ * and been swept (a stale >30-min lock — exactly the lost-webhook
+ * case), the hint lets reconciliation still search the provider for a
+ * granting subscription matching what the browser was waiting for,
+ * instead of answering `no_pending` without asking anyone. Hint fields
+ * only FILTER a search over the workspace's own subscriptions; a match
+ * still projects through the fully-guarded webhook path.
+ */
+export const BillingReconcileRequestSchema = z.object({
+  toTier: PurchasableTierSchema.optional(),
+  cycle: BillingCycleSchema.optional(),
+  startedAt: z.iso.datetime().optional(),
+});
+export type BillingReconcileRequest = z.infer<typeof BillingReconcileRequestSchema>;
+
+export const BillingReconcileResponseSchema = z.object({
+  outcome: BillingReconcileOutcomeSchema,
+});
+export type BillingReconcileResponse = z.infer<typeof BillingReconcileResponseSchema>;

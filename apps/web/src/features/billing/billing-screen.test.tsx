@@ -901,16 +901,29 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     const notice = await screen.findByTestId('payment-processing-notice');
+    // D249 copy truth: a first purchase awaits a PLAN UPGRADE — the old
+    // string claimed a "plan change" that never existed.
     expect(notice).toHaveTextContent(
-      'Payment received — your plan change hasn’t come through yet.',
+      'Payment received — your plan upgrade hasn’t come through yet.',
     );
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+
+    // D249: the release renders only after a provider check actually
+    // ran. The reconcile route is UNSTUBBED here (599), so the check
+    // lands in the honest "couldn't reach the provider" fallback — the
+    // one non-verified state that still legitimizes a manual release.
+    await within(notice).findByTestId('provider-check');
+    expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
+      'We couldn’t reach the payment provider to check automatically.',
+    );
 
     // The explicit, user-asserted release — the only non-flip way out —
     // is TWO-step: the first click states the double-charge risk and
     // releases nothing yet.
     fireEvent.click(
-      within(notice).getByRole('button', { name: 'No charge went through — resume checkout' }),
+      await within(notice).findByRole('button', {
+        name: 'No charge went through — resume checkout',
+      }),
     );
     const releaseConfirm = within(notice).getByTestId('release-confirm');
     expect(releaseConfirm).toHaveTextContent(/you could be charged twice/i);
@@ -933,6 +946,175 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+  });
+
+  it('D249: the release stays hidden until the provider check comes back empty', async () => {
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'checkout',
+        fromTier: 'free',
+        fromCycle: null,
+        toTier: 'plus',
+        toCycle: 'monthly',
+        at: Date.now() - 16 * 60_000,
+      }),
+    );
+    // Reconcile answers slowly with a VERIFIED empty result — the gate
+    // this test pins: no release while checking, server-verified copy
+    // (not "I checked") once the provider answered.
+    let resolveReconcile: (r: Response) => void = () => undefined;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/reconcile',
+        respond: () => new Promise<Response>((resolve) => (resolveReconcile = resolve)),
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    await within(notice).findByTestId('provider-check');
+    expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
+      'Checking with the payment provider…',
+    );
+    // While the server is asking the provider, the customer is NOT
+    // asked to guess — no release affordance exists yet.
+    expect(within(notice).queryByRole('button', { name: /resume checkout/i })).toBeNull();
+
+    resolveReconcile(jsonOk({ data: { outcome: 'none_found' } }));
+    await within(notice).findByRole('button', { name: 'No payment found — resume checkout' });
+    expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
+      'We checked with the payment provider — no completed payment found for this checkout.',
+    );
+    // Re-check affordance rides along; the two-step confirm still
+    // guards the release itself (3DS can settle after any search).
+    expect(within(notice).getByRole('button', { name: 'Check again' })).toBeInTheDocument();
+  });
+
+  it('D249: a granted provider check reports the found payment and never offers a release', async () => {
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'checkout',
+        fromTier: 'free',
+        fromCycle: null,
+        toTier: 'plus',
+        toCycle: 'monthly',
+        at: Date.now() - 16 * 60_000,
+      }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/reconcile',
+        respond: () => jsonOk({ data: { outcome: 'granted' } }),
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    await waitFor(() =>
+      expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
+        'Found your payment — your plan is updating now.',
+      ),
+    );
+    // Truth is written server-side; asking the customer to assert "no
+    // charge" now would invite releasing a PAID checkout.
+    expect(within(notice).queryByRole('button', { name: /resume checkout/i })).toBeNull();
+  });
+
+  it('D249: payment_in_progress keeps the release LOCKED — a 3DS-window resume is the double charge', async () => {
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'checkout',
+        fromTier: 'free',
+        fromCycle: null,
+        toTier: 'plus',
+        toCycle: 'monthly',
+        at: Date.now() - 16 * 60_000,
+      }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/reconcile',
+        respond: () => jsonOk({ data: { outcome: 'payment_in_progress' } }),
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    await waitFor(() =>
+      expect(within(notice).getByTestId('provider-check')).toHaveTextContent('still in progress'),
+    );
+    expect(within(notice).queryByRole('button', { name: /resume checkout/i })).toBeNull();
+    // Re-check stays available — in-progress resolves on its own.
+    expect(within(notice).getByRole('button', { name: 'Check again' })).toBeInTheDocument();
+  });
+
+  it('D249: no_pending states that NOTHING is in flight — never "found your payment"', async () => {
+    // The stale-lock regression (Codex 2026-07-30): claim TTL'd and
+    // swept, local lock alive. The old else-branch rendered no_pending
+    // as "Found your payment" — a lie with the release locked forever.
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'checkout',
+        fromTier: 'free',
+        fromCycle: null,
+        toTier: 'plus',
+        toCycle: 'monthly',
+        at: Date.now() - 40 * 60_000,
+      }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/reconcile',
+        respond: () => jsonOk({ data: { outcome: 'no_pending' } }),
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    await waitFor(() =>
+      expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
+        'Nothing is awaiting confirmation for this checkout',
+      ),
+    );
+    expect(within(notice).getByTestId('provider-check')).not.toHaveTextContent(
+      /found your payment/i,
+    );
+    // Nothing in flight anywhere → the way out is available.
+    expect(
+      within(notice).getByRole('button', { name: 'Nothing in flight — resume checkout' }),
+    ).toBeInTheDocument();
   });
 
   it('a completing checkout never clobbers a surfaced (id-less) ambiguous change lock', async () => {

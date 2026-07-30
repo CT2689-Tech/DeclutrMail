@@ -127,19 +127,33 @@ describe('runBillingReconciliationSweep', () => {
     expect(ws!.tier).toBe('pro');
   });
 
-  it('clears expired pending checkouts, keeps live ones', async () => {
-    const wsA = await seedWorkspace(db, 'free');
-    const wsB = await seedWorkspace(db, 'free');
+  it('clears claims expired >7 days; RETAINS freshly-expired ones (stale-lock reconciliation)', async () => {
+    // D249 (Codex 2026-07-30): a freshly-expired claim is no longer
+    // deleted — its provider_ref is the only exact link a stale
+    // browser lock has to a still-payable Razorpay artifact. Expiry
+    // already re-arms checkout via the claim upsert; deletion is pure
+    // housekeeping and can wait 7 days.
+    const wsOld = await seedWorkspace(db, 'free');
+    const wsFresh = await seedWorkspace(db, 'free');
+    const wsLive = await seedWorkspace(db, 'free');
     await db.insert(pendingCheckouts).values([
       {
-        workspaceId: wsA,
+        workspaceId: wsOld,
         provider: 'paddle',
         tier: 'pro',
         billingCycle: 'annual',
+        expiresAt: new Date(Date.now() - 8 * 24 * 3600 * 1000),
+      },
+      {
+        workspaceId: wsFresh,
+        provider: 'razorpay',
+        tier: 'plus',
+        billingCycle: 'monthly',
+        providerRef: 'sub_stale_lock_link',
         expiresAt: new Date(Date.now() - 1000),
       },
       {
-        workspaceId: wsB,
+        workspaceId: wsLive,
         provider: 'razorpay',
         tier: 'plus',
         billingCycle: 'monthly',
@@ -150,7 +164,10 @@ describe('runBillingReconciliationSweep', () => {
     const result = await runBillingReconciliationSweep(db);
     expect(result.pendingCheckoutsCleared).toBe(1);
     const remaining = await db.select().from(pendingCheckouts);
-    expect(remaining).toHaveLength(1);
-    expect(remaining[0]!.workspaceId).toBe(wsB);
+    expect(remaining.map((r) => r.workspaceId).sort()).toEqual([wsFresh, wsLive].sort());
+    // The retained expired row still carries the reconciliation link.
+    expect(remaining.find((r) => r.workspaceId === wsFresh)!.providerRef).toBe(
+      'sub_stale_lock_link',
+    );
   });
 });

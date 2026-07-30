@@ -67,8 +67,10 @@ import { BillingCatalog } from './billing-catalog.js';
 /** Advisory-lock key for the D126 founding counter (arbitrary, unique). */
 const FOUNDING_LOCK_KEY = 117_126;
 
-/** Statuses that grant their tier (see header — paused grants nothing). */
-const GRANTING_STATUSES = ['active', 'past_due'] as const;
+/** Statuses that grant their tier (see header — paused grants nothing).
+ *  Exported for the D249 reconciler, whose candidate filter must be the
+ *  SAME partition — a second copy would silently diverge. */
+export const GRANTING_STATUSES = ['active', 'past_due'] as const;
 
 /**
  * Founder decision 2026-07-28: a failed payment keeps its tier for 14

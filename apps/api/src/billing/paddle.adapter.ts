@@ -30,11 +30,14 @@ import { AppException } from '../common/app-exception.js';
 import type {
   BillingProvider,
   CreateCheckoutInput,
+  FetchSubscriptionResult,
   NormalizedBillingEvent,
   NormalizedSubscription,
   PlanChangeResult,
   PlanChangeTiming,
   SignatureVerifyResult,
+  SubscriptionSearchQuery,
+  SubscriptionSearchResult,
 } from './billing-provider.interface.js';
 
 /** Default tolerated clock skew between Paddle's `ts` and now (seconds). */
@@ -89,6 +92,8 @@ interface PaddleSubscription {
   scheduled_change?: { action?: string; effective_at?: string } | null;
   paused_at?: string | null;
   custom_data?: { workspace_id?: string; sig?: string } | null;
+  /** Read by the D249 reconciliation GETs (claim-age matching). */
+  created_at?: string | null;
 }
 
 /**
@@ -366,6 +371,97 @@ export class PaddleAdapter implements BillingProvider {
       this.logger.error(`paddle.resume.failed sub=${providerSubscriptionId} status=${res.status}`);
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
+  }
+
+  /**
+   * Authenticated GET for the D249 reconciliation reads. Returns the
+   * parsed body, `null` on 404 (a read miss is data, not an error),
+   * and throws `BILLING_PROVIDER_ERROR` on network failure or any
+   * other non-2xx — the reconciler maps that to `provider_unavailable`
+   * and writes nothing.
+   */
+  private async reconciliationGet(path: string, label: string): Promise<unknown | null> {
+    const apiKey = this.env.PADDLE_API_KEY;
+    if (!apiKey) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}${path}`, {
+        headers: { Authorization: `Bearer ${apiKey}`, 'Paddle-Version': '1' },
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      });
+    } catch (err) {
+      this.logger.error(
+        `paddle.reconcile_read.network_error ${label} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      this.logger.error(`paddle.reconcile_read.failed ${label} status=${res.status}`);
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    return res.json();
+  }
+
+  /** D249 — GET /subscriptions/{id}. See FetchSubscriptionResult. */
+  async fetchSubscription(providerSubscriptionId: string): Promise<FetchSubscriptionResult> {
+    const body = await this.reconciliationGet(
+      `/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
+      `sub=${providerSubscriptionId}`,
+    );
+    if (body === null) return { kind: 'not_found' };
+    const sub = (body as { data?: PaddleSubscription }).data;
+    if (!sub?.id) {
+      this.logger.error(`paddle.reconcile_read.malformed sub=${providerSubscriptionId}`);
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    const normalized = toNormalizedSubscription(sub, this.env.PADDLE_WEBHOOK_SECRET);
+    // Exists in a status we do not map — REAL provider activity, never
+    // to be reported as "not found" (the 3DS/pre-grant window).
+    if (normalized === null) return { kind: 'found_unmapped', providerStatus: sub.status };
+    return {
+      kind: 'found',
+      subscription: { ...normalized, providerCreatedAt: sub.created_at ?? null },
+    };
+  }
+
+  /**
+   * D249 — customers by exact OWNER email, then their subscriptions.
+   * Two GETs. Known limit: the overlay lets the payer type ANY email,
+   * so an alias-typed checkout creates a customer this search cannot
+   * see — the signed custom_data / claim paths are what grant those;
+   * this search is the claimless backstop, not the primary.
+   */
+  async searchSubscriptions(query: SubscriptionSearchQuery): Promise<SubscriptionSearchResult> {
+    const customersBody = await this.reconciliationGet(
+      `/customers?email=${encodeURIComponent(query.email)}`,
+      `email_search`,
+    );
+    const customers = (customersBody as { data?: Array<{ id?: string }> } | null)?.data ?? [];
+    const ids = customers
+      .map((c) => c.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    if (ids.length === 0) return { subscriptions: [], inProgress: 0 };
+    const subsBody = await this.reconciliationGet(
+      `/subscriptions?customer_id=${encodeURIComponent(ids.join(','))}&per_page=50`,
+      `subs_by_customer`,
+    );
+    const subs = (subsBody as { data?: PaddleSubscription[] } | null)?.data ?? [];
+    const result: SubscriptionSearchResult = { subscriptions: [], inProgress: 0 };
+    for (const sub of subs) {
+      if (!sub?.id) continue;
+      const mapped = toNormalizedSubscription(sub, this.env.PADDLE_WEBHOOK_SECRET);
+      if (mapped !== null) {
+        result.subscriptions.push({ ...mapped, providerCreatedAt: sub.created_at ?? null });
+      } else {
+        // Unmapped status on the customer's own subscription — real
+        // pre-grant activity, reported so it never reads "no payment".
+        result.inProgress += 1;
+      }
+    }
+    return result;
   }
 
   verifyWebhookSignature(args: {

@@ -17,10 +17,12 @@
 
 import { Delete, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import {
+  BillingReconcileRequestSchema,
   CancelRequestSchema,
   CheckoutRequestSchema,
   PlanChangeRequestSchema,
   ok,
+  type BillingReconcileResponse,
   type BillingSubscription,
   type CheckoutSession,
   type Envelope,
@@ -30,6 +32,7 @@ import { AppException } from '../common/app-exception.js';
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
+import { BillingReconciliationService } from './billing-reconciliation.service.js';
 import { BillingService } from './billing.service.js';
 
 /** Session principal shape attached by JwtGuard. */
@@ -47,7 +50,10 @@ function assertBillingEnabled(): void {
 @Controller('billing')
 @UseGuards(JwtGuard)
 export class BillingController {
-  constructor(private readonly billing: BillingService) {}
+  constructor(
+    private readonly billing: BillingService,
+    private readonly reconciliation: BillingReconciliationService,
+  ) {}
 
   /**
    * POST /api/billing/checkout — provider-specific checkout payload.
@@ -94,6 +100,40 @@ export class BillingController {
   async subscription(@CurrentUser() principal: Principal): Promise<Envelope<BillingSubscription>> {
     assertBillingEnabled();
     return ok(await this.billing.getSubscription(principal.workspaceId));
+  }
+
+  /**
+   * POST /api/billing/reconcile — D249 provider-truth reconciliation of
+   * the workspace's pending checkout. The server asks the provider what
+   * happened to the claim so the customer never has to guess; a found
+   * match projects through the SAME webhook path (never a second grant
+   * path). Stricter rate limit than the other mutations: every call can
+   * fan out to provider GETs.
+   */
+  @Post('reconcile')
+  @UseGuards(CsrfGuard)
+  @RateLimit({ bucket: 'default', limit: 5, windowSec: 60 })
+  async reconcile(
+    @CurrentUser() principal: Principal,
+    @Body() body: unknown,
+  ): Promise<Envelope<BillingReconcileResponse>> {
+    assertBillingEnabled();
+    // The FE's local pending record, as a search hint — load-bearing
+    // when the server claim already TTL'd and was swept (stale-lock
+    // case). Optional and filter-only; see the contract doc.
+    const parsed = BillingReconcileRequestSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new AppException({
+        code: 'BAD_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid reconcile request.',
+      });
+    }
+    const outcome = await this.reconciliation.reconcilePendingCheckout(principal.workspaceId, {
+      tier: parsed.data.toTier,
+      cycle: parsed.data.cycle,
+      startedAt: parsed.data.startedAt,
+    });
+    return ok({ outcome });
   }
 
   /** POST /api/billing/cancel — D118 cancel at period end (no proration). */

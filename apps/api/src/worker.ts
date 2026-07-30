@@ -129,6 +129,11 @@ import { EmailSuppressionService } from './notifications/email-suppression.servi
 import { buildSyncReadyEmailHandler } from './notifications/sync-ready-email.trigger.js';
 import { buildSyncFailedEmailHandler } from './notifications/sync-failed-email.trigger.js';
 import { runBillingReconciliationSweep } from './billing/billing-reconciliation.sweep.js';
+import { BillingCatalog } from './billing/billing-catalog.js';
+import { BillingReconciliationService } from './billing/billing-reconciliation.service.js';
+import { BillingWebhookService } from './billing/billing-webhook.service.js';
+import { PaddleAdapter } from './billing/paddle.adapter.js';
+import { RazorpayAdapter } from './billing/razorpay.adapter.js';
 import { initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
 import { SecurityEventsService } from './security-events/security-events.service.js';
@@ -1722,11 +1727,27 @@ async function bootstrap(): Promise<void> {
    * there); this wrapper owns scheduling, logging and failure capture.
    */
   const BILLING_RECONCILE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+  // D249 drift verification rides the same 6-hourly pass. Constructed
+  // plainly (no Nest context in the worker); every dep is env/db-only.
+  const billingCatalog = new BillingCatalog();
+  const billingReconciliationService = new BillingReconciliationService(
+    db,
+    billingCatalog,
+    new BillingWebhookService(db, billingCatalog),
+    new PaddleAdapter(),
+    new RazorpayAdapter(),
+  );
   async function sweepBillingReconciliation(): Promise<void> {
     if (shuttingDown) return;
     try {
       const result = await runBillingReconciliationSweep(db);
-      console.log(JSON.stringify({ level: 'info', kind: 'billing.reconcile.swept', ...result }));
+      // Provider-truth drift check AFTER the local sweep: the local
+      // pass may flip dunning rows; the drift pass then verifies what
+      // remains live against the provider (D249).
+      const drift = await billingReconciliationService.reconcileLiveSubscriptions();
+      console.log(
+        JSON.stringify({ level: 'info', kind: 'billing.reconcile.swept', ...result, ...drift }),
+      );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error(

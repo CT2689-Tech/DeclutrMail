@@ -14,6 +14,7 @@ import {
 import type {
   BillingCycle,
   BillingProviderId,
+  BillingReconcileOutcome,
   BillingSubscription,
   CancelRequest,
 } from '@declutrmail/shared/contracts';
@@ -31,6 +32,7 @@ import { billingKeys } from './api/query-keys';
 import type { BillingIntent } from './billing-intent';
 import { useCancelSubscription } from './api/use-cancel-subscription';
 import { useChangePlan } from './api/use-change-plan';
+import { useReconcileCheckout } from './api/use-reconcile-checkout';
 import {
   backingStatusNote,
   currentPlanPriceLabel,
@@ -138,6 +140,7 @@ export function BillingScreen({
           : PAYMENT_PROCESSING_POLL_MS,
   });
   const cancel = useCancelSubscription();
+  const reconcileCheckout = useReconcileCheckout();
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
 
@@ -465,6 +468,33 @@ export function BillingScreen({
           phase={processingPhase}
           kind={pending.kind}
           onRelease={onReleasePendingLock}
+          onProviderCheck={
+            // D249 — checkout-shaped waits are answerable by the server
+            // asking the provider; change/resume waits ride the
+            // provider's own mutation response and have no claim row.
+            pending.kind === 'checkout' || pending.kind === 'checkout_intent'
+              ? async () => {
+                  const outcome = await reconcileCheckout.mutateAsync({
+                    // The local record as the hint — load-bearing once
+                    // the server claim has TTL'd and been swept (the
+                    // stale-lock case): the server can still search
+                    // the provider for what THIS browser awaited.
+                    ...(pending.toTier === 'plus' || pending.toTier === 'pro'
+                      ? { toTier: pending.toTier }
+                      : {}),
+                    ...(pending.toCycle ? { cycle: pending.toCycle } : {}),
+                    startedAt: new Date(pending.at).toISOString(),
+                  });
+                  if (outcome === 'granted' || outcome === 'already_recorded') {
+                    // The projection (or an earlier webhook) already
+                    // wrote the truth — pull it; the tier flip clears
+                    // this notice through the normal detector.
+                    void subscriptionQuery.refetch();
+                  }
+                  return outcome;
+                }
+              : undefined
+          }
         />
       ) : null}
 
@@ -598,6 +628,7 @@ export function PaymentProcessingNotice({
   phase = 'fresh',
   kind = 'checkout',
   onRelease,
+  onProviderCheck,
 }: {
   phase?: 'fresh' | 'slow' | 'unconfirmed';
   /** What started the wait — a new checkout payment, a plan change on
@@ -610,8 +641,48 @@ export function PaymentProcessingNotice({
    *  invites a second charge, so the risk is stated before the act
    *  (the D226 preview-before-consequence shape). */
   onRelease?: () => void;
+  /** D249 — server-side provider-truth check for checkout-shaped
+   *  waits. When present, the manual release renders only AFTER a
+   *  check has actually run and found nothing (or the provider was
+   *  unreachable): the system answers its own question before ever
+   *  asking the customer to. */
+  onProviderCheck?: (() => Promise<BillingReconcileOutcome>) | undefined;
 }) {
   const [confirmingRelease, setConfirmingRelease] = useState(false);
+  // Provider-check lifecycle for checkout-shaped waits. `idle` before
+  // the first run; afterwards the last outcome. A change/resume wait
+  // never checks (no claim row to reconcile).
+  const [providerCheck, setProviderCheck] = useState<'idle' | 'checking' | BillingReconcileOutcome>(
+    'idle',
+  );
+  const reconcilable =
+    (kind === 'checkout' || kind === 'checkout_intent') && onProviderCheck !== undefined;
+  // checkout_intent surfaces with an UNKNOWN outcome at any phase — ask
+  // the provider immediately; a confirmed payment (`checkout`) only
+  // needs the check once the wait crosses into `unconfirmed`.
+  const checkWanted = reconcilable && (phase === 'unconfirmed' || kind === 'checkout_intent');
+  useEffect(() => {
+    if (!checkWanted || providerCheck !== 'idle' || onProviderCheck === undefined) return;
+    setProviderCheck('checking');
+    onProviderCheck().then(setProviderCheck, () => setProviderCheck('provider_unavailable'));
+  }, [checkWanted, providerCheck, onProviderCheck]);
+  function recheckProvider() {
+    if (onProviderCheck === undefined || providerCheck === 'checking') return;
+    setProviderCheck('checking');
+    onProviderCheck().then(setProviderCheck, () => setProviderCheck('provider_unavailable'));
+  }
+  // The release is legitimate only once the server has actually asked
+  // and come back empty-handed (or genuinely could not ask, or holds
+  // nothing at all for this checkout — `no_pending` with the hint sent
+  // means claim AND provider search both came back empty). NEVER on
+  // `payment_in_progress`: the provider holds a pre-grant artifact and
+  // "no charge" would be false. Waits without a provider check keep
+  // their existing release behavior.
+  const releaseUnlocked =
+    !reconcilable ||
+    providerCheck === 'none_found' ||
+    providerCheck === 'no_pending' ||
+    providerCheck === 'provider_unavailable';
   // What the provider acknowledged — the factual anchor per kind.
   // `change_unconfirmed` acknowledges NOTHING: the provider's response
   // was lost, so every claim below stays outcome-neutral for it.
@@ -625,6 +696,14 @@ export function PaymentProcessingNotice({
           : kind === 'change_unconfirmed'
             ? 'Plan change unconfirmed'
             : 'Resume accepted';
+  // What the wait is FOR, per kind — a first purchase is not a "plan
+  // change" and the copy must not claim one (UI-truth rule).
+  const awaited =
+    kind === 'change' || kind === 'change_unconfirmed'
+      ? 'plan change'
+      : kind === 'resume'
+        ? 'resume'
+        : 'plan upgrade';
   return (
     <div
       role="status"
@@ -648,12 +727,13 @@ export function PaymentProcessingNotice({
         {phase === 'unconfirmed' ? (
           <span>
             <strong style={{ fontWeight: 600 }}>
-              {acted} — your plan change hasn&rsquo;t come through yet.
+              {acted} — your {awaited} hasn&rsquo;t come through yet.
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
-              The provider&rsquo;s confirmation hasn&rsquo;t reached our server, so plan changes
-              stay paused — starting another could charge you twice. Waiting is always safe: this
-              page keeps checking, and your plan updates the moment the confirmation arrives. Email{' '}
+              The provider&rsquo;s confirmation hasn&rsquo;t reached our server, so further billing
+              changes stay paused — starting another could charge you twice. Waiting is always safe:
+              this page keeps checking, and your plan updates the moment the confirmation arrives.
+              Email{' '}
               <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
                 support@declutrmail.com
               </a>{' '}
@@ -694,7 +774,56 @@ export function PaymentProcessingNotice({
           </span>
         )}
       </span>
-      {(phase === 'unconfirmed' || kind === 'checkout_intent') && onRelease ? (
+      {reconcilable && providerCheck !== 'idle' ? (
+        // D249 — the server's own answer, stated before any customer
+        // question. Each line asserts only what the check verified.
+        <p
+          data-testid="provider-check"
+          style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}
+          aria-live="polite"
+        >
+          {providerCheck === 'checking' ? (
+            'Checking with the payment provider…'
+          ) : providerCheck === 'none_found' ? (
+            'We checked with the payment provider — no completed payment found for this checkout.'
+          ) : providerCheck === 'no_pending' ? (
+            // Claim AND provider search both empty — nothing is in
+            // flight anywhere. State that, never "found your payment".
+            'Nothing is awaiting confirmation for this checkout — on our server or at the payment provider.'
+          ) : providerCheck === 'payment_in_progress' ? (
+            'The payment provider shows this checkout still in progress — for example awaiting bank confirmation. Waiting is safe; this page keeps checking.'
+          ) : providerCheck === 'provider_unavailable' ? (
+            'We couldn’t reach the payment provider to check automatically.'
+          ) : providerCheck === 'unresolved' ? (
+            <>
+              We found payment activity that needs a manual look — email{' '}
+              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                support@declutrmail.com
+              </a>
+              .
+            </>
+          ) : (
+            // granted / already_recorded — the projection wrote the
+            // truth; the poll clears this notice via the tier flip.
+            'Found your payment — your plan is updating now.'
+          )}
+        </p>
+      ) : null}
+      {reconcilable &&
+      (providerCheck === 'none_found' ||
+        providerCheck === 'no_pending' ||
+        providerCheck === 'payment_in_progress' ||
+        providerCheck === 'provider_unavailable') ? (
+        // Standalone re-check for every settled, non-granted answer —
+        // independent of the release, which `payment_in_progress`
+        // rightly keeps locked while still needing a way to re-ask.
+        <div>
+          <Button tone="default" onClick={recheckProvider}>
+            Check again
+          </Button>
+        </div>
+      ) : null}
+      {(phase === 'unconfirmed' || kind === 'checkout_intent') && onRelease && releaseUnlocked ? (
         kind === 'checkout' || kind === 'checkout_intent' || kind === 'change_unconfirmed' ? (
           // A payment happened (checkout) or MAY have (unconfirmed
           // change) — release needs an explicit user assertion, never
@@ -735,10 +864,14 @@ export function PaymentProcessingNotice({
               </div>
             </div>
           ) : (
-            <div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Button tone="default" onClick={() => setConfirmingRelease(true)}>
                 {kind === 'checkout' || kind === 'checkout_intent'
-                  ? 'No charge went through — resume checkout'
+                  ? providerCheck === 'none_found'
+                    ? 'No payment found — resume checkout'
+                    : providerCheck === 'no_pending'
+                      ? 'Nothing in flight — resume checkout'
+                      : 'No charge went through — resume checkout'
                   : 'The change didn’t apply — let me retry'}
               </Button>
             </div>

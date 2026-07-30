@@ -109,6 +109,46 @@ export interface NormalizedSubscription {
    * on first contact; later events resolve via `billing_customers`.
    */
   workspaceId: string | null;
+  /**
+   * Provider-side creation time (ISO), when the source carries it.
+   * Consumed by pending-checkout reconciliation (D249) to refuse
+   * candidates that predate the claim; webhook mappings may omit it.
+   */
+  providerCreatedAt?: string | null;
+}
+
+/** D249 — what a provider-truth subscription read actually found. */
+export type FetchSubscriptionResult =
+  | { kind: 'not_found' }
+  | { kind: 'found'; subscription: NormalizedSubscription }
+  /** Exists at the provider in a status our normalization does not
+   *  map (pre-grant / unknown). Real activity — never "no payment". */
+  | { kind: 'found_unmapped'; providerStatus: string };
+
+/**
+ * D249 — inputs to the claimless/hint subscription search. Each
+ * provider uses the keys it can actually query by: Paddle looks
+ * customers up by `email`; Razorpay lists by `providerPriceIds`
+ * (plan_id filter) and matches the server-written `notes.workspace_id`
+ * against `workspaceId` — its list API has no customer filter, and the
+ * overlay-typed email may not even match the owner's (aliases).
+ */
+export interface SubscriptionSearchQuery {
+  /** Authed workspace — matched against server-written attribution. */
+  workspaceId: string;
+  /** Workspace owner's email — Paddle's customer lookup key. */
+  email: string;
+  /** Catalog price/plan ids the wait could resolve to, THIS provider's. */
+  providerPriceIds: string[];
+  /** Only consider artifacts created at/after this instant (ISO). */
+  createdAfter?: string | undefined;
+}
+
+export interface SubscriptionSearchResult {
+  subscriptions: NormalizedSubscription[];
+  /** Matching artifacts in pre-grant/unmapped statuses (3DS window) —
+   *  real provider activity that must never read as "no payment". */
+  inProgress: number;
 }
 
 /** Outcome of webhook signature verification (D180/D229-bar). */
@@ -170,4 +210,29 @@ export interface BillingProvider {
    * required fields (surfaces as 400 — provider stops retrying).
    */
   mapWebhookEvent(payload: unknown): NormalizedBillingEvent;
+
+  /**
+   * D249 reconciliation reads — the interface's only provider-truth
+   * GETs. Both throw `BILLING_PROVIDER_ERROR` on network/5xx (the
+   * reconciler maps that to `provider_unavailable`, writes nothing).
+   *
+   * `fetchSubscription` distinguishes three answers because they mean
+   * three different things to a pending checkout: `not_found` (provider
+   * 404 — nothing exists), `found` (a mappable subscription), and
+   * `found_unmapped` (the subscription EXISTS in a status we do not
+   * map — Razorpay `created`/`authenticated` is the 3DS-in-flight
+   * window). Collapsing the last into `not_found` told users "no
+   * payment found" seconds before a charge settled (Codex 2026-07-30).
+   */
+  fetchSubscription(providerSubscriptionId: string): Promise<FetchSubscriptionResult>;
+
+  /**
+   * Subscriptions attributable to this workspace, for reconciles with
+   * no usable `provider_ref` — Paddle claims never carry one, and a
+   * stale lock may outlive the claim row entirely (Codex 2026-07-30:
+   * the "Razorpay always has provider_ref" assumption died exactly
+   * there). Each adapter searches by what its API supports; see
+   * SubscriptionSearchQuery.
+   */
+  searchSubscriptions(query: SubscriptionSearchQuery): Promise<SubscriptionSearchResult>;
 }

@@ -180,6 +180,9 @@ export type { WaitlistJoinRequest, WaitlistJoinResult } from './waitlist';
 export {
   BillingCycleSchema,
   BillingProviderIdSchema,
+  BillingReconcileOutcomeSchema,
+  BillingReconcileRequestSchema,
+  BillingReconcileResponseSchema,
   BillingSubscriptionSchema,
   CancelRequestSchema,
   CheckoutRequestSchema,
@@ -193,6 +196,9 @@ export {
 export type {
   BillingCycle,
   BillingProviderId,
+  BillingReconcileOutcome,
+  BillingReconcileRequest,
+  BillingReconcileResponse,
   BillingSubscription,
   CancelRequest,
   CheckoutRequest,
