@@ -194,15 +194,17 @@ export const ERROR_CODES = {
    * (`SUBSCRIPTION_PAUSED`), and too close to renewal
    * (`PLAN_CHANGE_TOO_LATE`). A generic error knows none of them.
    *
-   * Plan & billing DOES know the rail, the tier and the lock state, and
-   * already renders rail-aware guidance — so point there rather than guess.
+   * It also names no PLACE. These billing errors render inline in the plan
+   * picker on Plan & billing, so "Open Plan & billing" pointed at the screen
+   * already displaying the message. The controls that resolve it — the plan
+   * cards, Cancel subscription, resume where the rail supports it — are on
+   * that screen around the error. Stating the blocker is the whole job.
    */
   SUBSCRIPTION_EXISTS: {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message:
-      'Your DeclutrMail account already has a subscription, so a new one cannot be started. Open Plan & billing to see what you can do with it.',
+    message: 'Your DeclutrMail account already has a subscription, so a new one cannot be started.',
   },
   /**
    * A PAUSED subscription blocking a new checkout — split from
@@ -222,8 +224,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message:
-      'Your subscription is paused, so a new one cannot be started. Open Plan & billing to manage it.',
+    message: 'Your subscription is paused, so a new one cannot be started.',
   },
   CHECKOUT_IN_FLIGHT: {
     status: 409,
@@ -250,10 +251,9 @@ export const ERROR_CODES = {
     retryable: false,
     // Pre-existing instance of the same defect as SUBSCRIPTION_EXISTS: it told
     // the user to "resume or cancel", and resume does not exist on Razorpay
-    // (`RESUME_UNSUPPORTED`). States the blocker; Plan & billing offers the
-    // options that actually apply to this rail.
-    message:
-      'A paused subscription cannot change plans. Open Plan & billing to manage the paused subscription.',
+    // (`RESUME_UNSUPPORTED`). States the blocker only — the rail-appropriate
+    // options are the controls surrounding this message on Plan & billing.
+    message: 'A paused subscription cannot change plans.',
   },
   FOUNDING_PLAN_LOCKED: {
     status: 409,
