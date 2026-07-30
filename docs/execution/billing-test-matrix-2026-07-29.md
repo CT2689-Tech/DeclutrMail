@@ -142,8 +142,12 @@ Expose the webhook:
 cloudflared tunnel --url http://localhost:4000
 ```
 
-Register the printed hostname + `/api/webhooks/paddle` as the **sandbox**
-notification destination.
+Register the printed hostname + `/api/webhooks/billing/paddle` as the
+**sandbox** notification destination. The `billing` segment is not optional —
+`@Controller('webhooks/billing')` + `@Post('paddle')` in
+`apps/api/src/webhooks/billing-paddle.controller.ts` is the whole route, and
+the shorter `/api/webhooks/paddle` returns a **404** rather than an auth error.
+Verified 2026-07-29. Razorpay is `/api/webhooks/billing/razorpay`.
 
 > **Trap:** cloudflared _quick_ tunnels rotate their hostname on every
 > restart. If a purchase stops flipping the tier, re-check the hostname before
@@ -417,13 +421,13 @@ replaying an event after a refund.
 
 ## I. Webhook integrity
 
-| #   | Step                                                                                      | Expect                                                           |
-| --- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| I1  | POST `/api/webhooks/paddle` with **no** signature                                         | 401                                                              |
-| I2  | POST with a **wrong** signature                                                           | 401                                                              |
-| I3  | Replay a valid webhook twice                                                              | Deduped; applied once                                            |
-| I4  | Deliver events **out of order** (new, then old)                                           | `arrival_seq` ordering holds; the old one does not overwrite     |
-| I5  | Drop a **cancel or renewal** webhook, expire the deadline (C4), restart the worker (§0.5) | The tier drops on the deadline rather than being granted forever |
+| #   | Step                                                                                      | Expect                                                                        |
+| --- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| I1  | POST `/api/webhooks/billing/paddle` with **no** signature                                 | 401 `UNAUTHORIZED` / "Signature verification failed." — **PASSED 2026-07-29** |
+| I2  | POST with a **wrong** signature                                                           | Same 401 — **PASSED 2026-07-29**. Razorpay's route rejects identically        |
+| I3  | Replay a valid webhook twice                                                              | Deduped; applied once                                                         |
+| I4  | Deliver events **out of order** (new, then old)                                           | `arrival_seq` ordering holds; the old one does not overwrite                  |
+| I5  | Drop a **cancel or renewal** webhook, expire the deadline (C4), restart the worker (§0.5) | The tier drops on the deadline rather than being granted forever              |
 
 > **What I5 does NOT test, and what the first version of this row wrongly
 > claimed.** The sweep does **not** poll Paddle or Razorpay — the adapters
