@@ -48,14 +48,18 @@ mkdir -p "$LOG_DIR"
 # Pid identity, not pid existence: after a reboot the OS reuses pids, so a
 # stale pidfile can name an UNRELATED process. Killing (or trusting) it on
 # `kill -0` alone kills bystanders / "reuses" a tunnel that is not there
-# (Codex stop-review 2026-07-30). A pid counts only if its command line is
-# OUR cloudflared invocation (or the backgrounding subshell that carries it
-# in its own argv).
+# (Codex stop-review 2026-07-30). A pid counts ONLY if its command line is
+# our exact invocation — port included. No bare-`cloudflared` fallback:
+# that accepted any cloudflared on the box (another project's tunnel, a
+# named tunnel), which --stop would then kill (second Codex round). The
+# `( cmd ) & ` backgrounding idiom exec-optimizes, so the recorded pid IS
+# cloudflared with this exact argv (verified live via `ps -o command=`);
+# a wrapper-subshell pid would fail the match and safely read as stale.
 is_our_tunnel() {
   local pid="$1" cmd
   [[ -n "$pid" ]] || return 1
   cmd=$(ps -p "$pid" -o command= 2>/dev/null) || return 1
-  [[ "$cmd" == *"$TUNNEL_CMD_MATCH"* || "$cmd" == *cloudflared* ]]
+  [[ "$cmd" == *"$TUNNEL_CMD_MATCH"* ]]
 }
 
 # Probe a tunnel URL, BYPASSING the system resolver. Load-bearing: probing
