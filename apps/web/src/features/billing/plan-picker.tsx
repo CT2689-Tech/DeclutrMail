@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { Button, Eyebrow, tokens } from '@declutrmail/shared';
 import { ERROR_CODES, isErrorCode } from '@declutrmail/shared/contracts';
@@ -21,6 +22,7 @@ import {
 import { track } from '@/lib/posthog';
 
 import { apiErrorCode, apiErrorDetail } from './api/use-billing-subscription';
+import { billingKeys } from './api/query-keys';
 import type { BillingIntent } from './billing-intent';
 import { useChangePlan } from './api/use-change-plan';
 import { useCheckout } from './api/use-checkout';
@@ -88,6 +90,31 @@ function razorpayIdFor(target: PaidTier, cycle: BillingCycle, founding: boolean)
  * Anything not in this set is treated as post-claim/ambiguous and
  * surfaces the reservation instead of releasing it.
  */
+/**
+ * Codes that PROVE this screen's billing read is stale.
+ *
+ * Each one is the server saying "the subscription state you just acted on is
+ * not the state I hold". Left alone, the user is stranded: the cards still
+ * invite an upgrade because the cached read shows no subscription, the inline
+ * error says one already exists, and nothing on screen can reconcile them —
+ * so there is no control to reach for. Copy cannot fix that; only refetching
+ * can (Codex stop-review 2026-07-29).
+ *
+ * Reaching one of these therefore invalidates the subscription query, so the
+ * real state — and with it the real controls (Cancel subscription, resume
+ * where the rail supports it, the pending-change notice) — renders under the
+ * message. This is the same rule the app already follows for a guard's 4xx:
+ * it is a designed state to reconcile with, not a retry (CLAUDE.md §8).
+ */
+const STALE_BILLING_READ = new Set([
+  'SUBSCRIPTION_EXISTS',
+  'SUBSCRIPTION_PAUSED_BLOCKS_NEW',
+  'SUBSCRIPTION_PAUSED',
+  'SUBSCRIPTION_CANCELING',
+  'FOUNDING_PLAN_LOCKED',
+  'PLAN_CHANGE_PENDING',
+]);
+
 const PRE_CLAIM_REJECTIONS = new Set([
   'SUBSCRIPTION_EXISTS',
   // Thrown by the SAME guard as SUBSCRIPTION_EXISTS, one branch apart, so it
@@ -199,7 +226,20 @@ export function PlanPicker({
   // (`initialIntent.promo`) still arrives pre-ticked, because there the user
   // did choose it. Founder call, 2026-07-29.
   const [claimFounding, setClaimFounding] = useState(initialIntent?.promo === 'foundingPro');
+  const queryClient = useQueryClient();
   const checkout = useCheckout();
+
+  /**
+   * The server just contradicted our billing read — refetch so the screen
+   * stops arguing with it. Called from BOTH mutation error paths; without it
+   * the plan cards keep inviting an action the server has already refused,
+   * with no control on screen able to resolve the disagreement.
+   */
+  function reconcileIfStale(code: string | null): void {
+    if (code !== null && STALE_BILLING_READ.has(code)) {
+      void queryClient.invalidateQueries({ queryKey: billingKeys.subscription() });
+    }
+  }
   const changePlan = useChangePlan();
   const [launchError, setLaunchError] = useState<string | null>(null);
   const consumedIntent = useRef(false);
@@ -353,6 +393,7 @@ export function PlanPicker({
         // reality and owns the release.
         onError: (err) => {
           const code = apiErrorCode(err);
+          reconcileIfStale(code);
           if (code !== null && PRE_CLAIM_REJECTIONS.has(code)) {
             onCheckoutAbandoned(attemptId);
           } else {
@@ -390,6 +431,7 @@ export function PlanPicker({
           onPlanChangeAccepted(next, target, cycle, attemptId);
         },
         onError: (error) => {
+          reconcileIfStale(apiErrorCode(error));
           // AMBIGUOUS provider error on an immediate upgrade — the
           // prorated charge may have applied before the response was
           // lost. Hand off to the screen's lock+poll instead of leaving
