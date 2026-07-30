@@ -2,14 +2,15 @@
  * The provider gate under a PARTIALLY provisioned Razorpay catalog
  * (D117).
  *
- * Today every `razorpayPlanId` is null, so the radio never renders and
- * `provider` can only ever be `paddle` — which is exactly what hides
- * the bug this file guards. Standard annual and the Founding Pro promo
- * are SEPARATE price points with separate catalog ids, and the promo
- * checkbox swaps between them WITHOUT remounting the confirm panel. So
- * the day Razorpay ships for standard annual but not the promo, a pick
- * made while the radio was visible would survive the radio's removal
- * and ride a promo checkout with no Razorpay id — a
+ * While India was deferred every `razorpayPlanId` was null, so the radio
+ * never rendered and `provider` could only ever be `paddle` — which is
+ * exactly what hid the bug this file guards. Razorpay went live
+ * 2026-07-25, so the radio now renders for real. Standard annual and the
+ * Founding Pro promo are SEPARATE price points with separate catalog ids,
+ * and the promo checkbox swaps between them WITHOUT remounting the
+ * confirm panel. So whenever Razorpay covers standard annual but not the
+ * promo, a pick made while the radio was visible would survive the
+ * radio's removal and ride a promo checkout with no Razorpay id — a
  * BILLING_NOT_PROVISIONED dead end at the moment of purchase.
  *
  * The manifest is mocked (not the component) so the assertion is about
@@ -136,8 +137,11 @@ describe('checkout provider gate (D117)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = screen.getByTestId('checkout-panel');
 
-    // Standard Pro annual — drop the promo claim to reach that point.
-    fireEvent.click(within(panel).getByRole('checkbox'));
+    // Founding Pro now defaults OFF — the claim is an opt-in, so standard
+    // annual is where the picker already stands. Asserted rather than
+    // clicked: this used to click the box to UNCHECK it, which silently
+    // encoded the old default-on and inverted the moment it changed.
+    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeInTheDocument();
 
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
@@ -155,11 +159,11 @@ describe('checkout provider gate (D117)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = screen.getByTestId('checkout-panel');
 
-    // Standard annual → Razorpay is offered; pick it.
-    fireEvent.click(within(panel).getByRole('checkbox'));
+    // Standard annual (the default) → Razorpay is offered; pick it.
+    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
 
-    // Re-claim Founding Pro — a DIFFERENT price point, with no Razorpay
+    // Claim Founding Pro — a DIFFERENT price point, with no Razorpay
     // id. The radio goes away; the stale pick must not survive it.
     fireEvent.click(within(panel).getByRole('checkbox'));
     expect(within(panel).queryByLabelText(/UPI · cards · netbanking/)).not.toBeInTheDocument();
@@ -185,9 +189,10 @@ describe('checkout currency (D117/D226)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = screen.getByTestId('checkout-panel');
 
-    // Founding Pro is unprovisioned on Razorpay in this fixture, so drop
-    // the promo to reach the standard annual point that IS provisioned.
-    fireEvent.click(within(panel).getByRole('checkbox'));
+    // Founding Pro is unprovisioned on Razorpay in this fixture. The claim
+    // defaults OFF, so the picker already stands on the standard annual
+    // point that IS provisioned.
+    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
     expect(panel).toHaveTextContent(/\$190 billed annually/);
 
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
@@ -203,7 +208,7 @@ describe('checkout currency (D117/D226)', () => {
     renderScreen();
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = screen.getByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('checkbox'));
+    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
 
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
     expect(panel).toHaveTextContent(/₹15,999/);
@@ -215,7 +220,7 @@ describe('checkout currency (D117/D226)', () => {
     renderScreen({ initialProvider: 'razorpay' });
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = screen.getByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('checkbox'));
+    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
 
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
     expect(panel).toHaveTextContent(/₹15,999 billed annually/);
@@ -231,7 +236,7 @@ describe('checkout currency (D117/D226)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = screen.getByTestId('checkout-panel');
 
-    fireEvent.click(within(panel).getByRole('checkbox'));
+    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
     expect(panel).toHaveTextContent(/₹15,999 billed annually/);
 
     const claim = within(panel).getByText(/Claim Founding Pro/);

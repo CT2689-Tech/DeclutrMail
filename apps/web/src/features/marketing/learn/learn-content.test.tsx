@@ -144,33 +144,78 @@ describe('shared learning surfaces', () => {
     expect(jsonLd.mainEntity).toHaveLength(FAQ_ENTRIES.length);
   });
 
-  it('renders evidence links for every changelog item', () => {
+  it('renders every changelog entry', () => {
     render(<ChangelogPage />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/repository receipts/i);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/what changed/i);
     for (const entry of CHANGELOG_ENTRIES) {
       expect(screen.getByText(entry.title)).toBeInTheDocument();
-      for (const evidence of entry.evidence) {
-        expect(
-          screen.getByRole('link', {
-            name: `PR #${evidence.pullRequest} · ${evidence.commit}`,
-          }),
-        ).toHaveAttribute('href', expect.stringContaining(`/pull/${evidence.pullRequest}`));
-      }
     }
+  });
+
+  // The inverse of the old assertion, and the more important one now: the
+  // page must leak NO internal identifier. `evidence` is retained in the
+  // data so `pnpm check-changelog` can verify the page against git, which
+  // makes accidentally rendering it a live risk rather than a theoretical
+  // one — and every such link would 404 once the repository goes private.
+  //
+  // A pure absence test is worthless on its own: it passes identically when
+  // the page renders nothing, and its loop runs ZERO assertions if
+  // `evidence` is ever emptied. The first version of this test had both
+  // holes (Codex stop-review 2026-07-29). Hence the positive controls — the
+  // test must first prove it can SEE the thing it claims is clean.
+  it('leaks no pull-request number, commit hash, or repository link', () => {
+    const { container } = render(<ChangelogPage />);
+    const text = container.textContent ?? '';
+
+    // Positive controls: there is a page, it has entries, and there is
+    // something to look for. Without these the absence checks below are
+    // vacuous.
+    const receipts = CHANGELOG_ENTRIES.flatMap((entry) => entry.evidence);
+    expect(receipts.length).toBeGreaterThan(0);
+    expect(text).toContain('What changed');
+    expect(text).toContain(CHANGELOG_ENTRIES[0]!.title);
+    expect(container.querySelectorAll('article[id]').length).toBe(CHANGELOG_ENTRIES.length);
+    expect(container.querySelectorAll('a').length).toBeGreaterThan(0);
+
+    for (const receipt of receipts) {
+      expect(text).not.toContain(receipt.commit);
+      expect(text).not.toContain(`#${receipt.pullRequest}`);
+    }
+    const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? '');
+    expect(hrefs.filter((href) => /github\.com|\/pull\//.test(href))).toEqual([]);
   });
 });
 
 describe('changelog evidence', () => {
+  // Invariants, not a pinned count: the log GROWS on every release, so
+  // asserting a length (or a fixed set of dates) would fail the next
+  // honest append and teach the author to edit the assertion rather
+  // than read it. What must hold for every entry, forever, is that it
+  // is dated, ordered, and carries a real repository receipt.
   it('uses real repository-shaped receipts without invented semver', () => {
-    expect(CHANGELOG_ENTRIES).toHaveLength(3);
+    expect(CHANGELOG_ENTRIES.length).toBeGreaterThan(0);
     for (const entry of CHANGELOG_ENTRIES) {
-      expect(entry.date).toMatch(/^2026-07-(08|09|10)$/);
+      expect(entry.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // The anchor the RSS <guid> and the on-page heading share.
+      expect(entry.id).toBe(entry.date);
       expect(entry.title).not.toMatch(/^v?\d+\.\d+/);
       expect(entry.evidence.length).toBeGreaterThan(0);
       for (const evidence of entry.evidence) {
         expect(evidence.commit).toMatch(/^[0-9a-f]{8}$/);
         expect(evidence.pullRequest).toBeGreaterThan(0);
       }
+    }
+  });
+
+  it('reads newest first', () => {
+    const dates = CHANGELOG_ENTRIES.map((entry) => entry.date);
+    expect(dates).toEqual([...dates].sort().reverse());
+  });
+
+  it('gives every entry at least one user-facing line', () => {
+    for (const entry of CHANGELOG_ENTRIES) {
+      const lines = [...entry.added, ...entry.improved, ...entry.fixed];
+      expect(lines.length, `${entry.id} has no Added/Improved/Fixed lines`).toBeGreaterThan(0);
     }
   });
 });

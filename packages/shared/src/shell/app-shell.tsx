@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { PRIVACY_STORAGE_ITEMS } from '../copy/privacy';
 import { color, font } from '../tokens/tokens';
 import { useFocusTrap } from '../hooks/use-focus-trap';
+import { UNDO_TRAY_INSET_VAR } from '../components/undo-tray/undo-tray';
 import { Sidebar } from './sidebar';
 
 const TRUST_CLAIMS = [
@@ -280,7 +281,21 @@ export function AppShell({
           ) : null}
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            // Reserve the undo tray's footprint. The tray is fixed to the
+            // viewport bottom and mounted OUTSIDE this scroller, so without
+            // this it occludes the content's last ~90px — and the content
+            // cannot scroll past it, because this container is already at
+            // its end. See UNDO_TRAY_INSET_VAR; resolves to 0px whenever no
+            // tray is mounted.
+            paddingBottom: `var(${UNDO_TRAY_INSET_VAR}, 0px)`,
+          }}
+        >
           {children}
         </div>
       </main>

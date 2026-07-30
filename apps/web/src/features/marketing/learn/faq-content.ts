@@ -50,7 +50,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'action-effects',
     question: 'What do Keep, Archive, Later, and Delete do?',
     answer:
-      'Keep records a sender decision. Archive removes Inbox from current matching mail but keeps it in Gmail All Mail. Later removes Inbox and adds DeclutrMail/Later to current matching mail. Delete moves current matching mail to Gmail Trash. Manual Archive, Later, and Delete do not create standing future-mail rules.',
+      'Keep records a sender decision. Archive removes Inbox from current matching mail but keeps it in Gmail All Mail. Later removes Inbox and adds DeclutrMail/Later to current matching mail. Delete moves current matching mail to Gmail Trash. Every verb acts on inbox mail by default; Delete alone can be widened to include a sender’s archived mail, which you choose per sender before you confirm. Manual Archive, Later, and Delete do not create standing future-mail rules.',
   },
   {
     id: 'future-mail',

@@ -76,14 +76,19 @@ export function currencyForProvider(provider: 'paddle' | 'razorpay'): Currency {
  * The currency a SPECIFIC price point would actually be charged in on a
  * given rail.
  *
- * Region preference alone is not enough to quote INR: Razorpay is
- * deferred at launch, so every `razorpayPlanId` is null and checkout
- * clamps to Paddle/USD. Quoting ₹1,599 to an India visitor whose
- * checkout will charge $19 is the same defect as the reverse, and
- * region-only resolution makes it easy to reintroduce. Taking the POINT
- * — not just the provider — makes an unpurchasable currency
- * unrepresentable: INR requires that this exact point is purchasable on
- * Razorpay.
+ * Region preference alone is not enough to quote INR, because provisioning
+ * is per PRICE POINT, not per provider. Razorpay went live for India on
+ * 2026-07-25 and every paid point currently carries a `razorpayPlanId`
+ * (Free is null — it is $0 and never reaches checkout), but that is a fact
+ * about today's catalog, not an invariant: a new tier or promo can ship on
+ * Paddle first, and a point whose Razorpay id is missing must clamp back to
+ * USD rather than quote a price no checkout will honour.
+ *
+ * Quoting ₹1,599 to an India visitor whose checkout charges $19 is the same
+ * defect as the reverse, and region-only resolution makes it easy to
+ * reintroduce. Taking the POINT — not just the provider — makes an
+ * unpurchasable currency unrepresentable: INR requires that this exact
+ * point is purchasable on Razorpay.
  */
 export function currencyForPricePoint(
   point: { razorpayPlanId: string | null },

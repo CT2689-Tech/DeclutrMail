@@ -37,13 +37,28 @@ interface FakeQueue {
   getJob: ReturnType<typeof vi.fn>;
 }
 
-function fakeQueue(existingJobIds: string[] = []): FakeQueue {
+/**
+ * `enqueueEmailSend` consults the job's STATE and its RECORDED OUTCOME,
+ * not mere existence: `completed` does not imply the mail went out (four
+ * outcomes skip without delivering), and suppressing on existence alone
+ * permanently buried this mailbox's reminder. Live-with-no-outcome by
+ * default, so the redelivery-dedup tests read as intended.
+ */
+function fakeQueue(
+  existingJobIds: string[] = [],
+  state = 'delayed',
+  returnvalue: unknown = null,
+): FakeQueue {
   return {
     add: vi.fn().mockResolvedValue(undefined),
     getJob: vi
       .fn()
       .mockImplementation((jobId: string) =>
-        Promise.resolve(existingJobIds.includes(jobId) ? { id: jobId } : undefined),
+        Promise.resolve(
+          existingJobIds.includes(jobId)
+            ? { id: jobId, returnvalue, getState: async () => state, remove: async () => undefined }
+            : undefined,
+        ),
       ),
   };
 }
@@ -173,6 +188,57 @@ describe('buildSyncReadyEmailHandler', () => {
 
     await handler(payload(), 'ev-1');
     expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  // The reminder's jobId is keyed per MAILBOX with nothing re-deriving
+  // it, so whether a terminal job suppresses the next enqueue decides
+  // whether that mailbox can ever get a reminder again. It hinges on the
+  // RECORDED OUTCOME, not the job state — a completed job that skipped
+  // delivered nothing, so a later enqueue is a legitimate new attempt
+  // rather than a duplicate (Codex stop-reviews 2026-07-29).
+  it('re-enqueues past a completed job that skipped without delivering', async () => {
+    const queue = fakeQueue([`email__sync-reminder-24h__${mailboxId}`], 'completed', {
+      outcome: 'skipped_no_postal_address',
+      kind: 'sync-reminder-24h',
+      providerId: null,
+    });
+    const handler = buildSyncReadyEmailHandler({
+      db,
+      emailQueue: queue as unknown as Queue<EmailSendJobData>,
+      appUrl: 'https://app.declutrmail.com',
+      apiUrl: 'https://api.declutrmail.com',
+    });
+
+    await handler(payload(), 'ev-1');
+
+    const reminderAdds = queue.add.mock.calls.filter(
+      (call) => (call[1] as EmailSendJobData).kind === 'sync-reminder-24h',
+    );
+    expect(reminderAdds).toHaveLength(1);
+  });
+
+  // The other direction, which matters more: a job that DID deliver must
+  // keep suppressing, or an outbox redelivery sends a real person a
+  // second copy.
+  it('does not re-enqueue past a completed job that actually sent', async () => {
+    const queue = fakeQueue([`email__sync-reminder-24h__${mailboxId}`], 'completed', {
+      outcome: 'sent',
+      kind: 'sync-reminder-24h',
+      providerId: 'rsnd_1',
+    });
+    const handler = buildSyncReadyEmailHandler({
+      db,
+      emailQueue: queue as unknown as Queue<EmailSendJobData>,
+      appUrl: 'https://app.declutrmail.com',
+      apiUrl: 'https://api.declutrmail.com',
+    });
+
+    await handler(payload(), 'ev-1');
+
+    const reminderAdds = queue.add.mock.calls.filter(
+      (call) => (call[1] as EmailSendJobData).kind === 'sync-reminder-24h',
+    );
+    expect(reminderAdds).toHaveLength(0);
   });
 
   it('ACKs without enqueueing when the mailbox row is gone', async () => {

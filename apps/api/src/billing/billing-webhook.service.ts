@@ -810,11 +810,27 @@ export class BillingWebhookService {
         `billing.subscription_changed workspace=${row.workspaceId} tier=${row.tier} cancel_at_period_end=true reason=${event.reason} provider=${provider}`,
       );
 
-      if (isChargeback) {
-        // Immediate revoke — the deadline above excludes this row from
-        // GRANTING inside recompute, so the tier drops here and now.
-        await this.recomputeWorkspaceTier(tx, row.workspaceId);
-      }
+      // ALWAYS recompute, chargeback or refund.
+      //
+      // This was gated on `isChargeback`, on the reasoning that a refund's
+      // deadline is `COALESCE(current_period_end, now())` and therefore in
+      // the future, making the recompute a no-op. That holds mid-period and
+      // fails in the two cases where the deadline is NOT in the future:
+      //
+      //   - the paid period has already ended, so the row must stop granting
+      //     the moment the refund lands;
+      //   - `current_period_end` is NULL, so the deadline collapses to
+      //     `now()`, which is not `> now()` either.
+      //
+      // In both, the row stopped granting while `workspaces.tier` kept the
+      // paid tier — free Pro until the next webhook or the 6-hourly sweep.
+      // Found by sandbox smoke 2026-07-29: pre-refund tier=pro, one refund
+      // with period end 18 days past, row grants=no, tier still pro.
+      //
+      // Recomputing unconditionally is cheap (one select, one update) and
+      // idempotent: mid-period it writes the same tier back, which is the
+      // behaviour the "tier holds until period end" test pins.
+      await this.recomputeWorkspaceTier(tx, row.workspaceId);
 
       await tx
         .update(subscriptionEvents)

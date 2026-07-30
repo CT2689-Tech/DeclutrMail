@@ -9,6 +9,7 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  COMMERCIAL_KINDS,
   EmailSendWorker,
   type EmailDeliveryOutcome,
   type EmailDeliveryPort,
@@ -19,7 +20,7 @@ import {
   syncCompleteEmailJobId,
   syncReminderEmailJobId,
 } from './email-send.queue.js';
-import { PermanentError, TransientError } from './worker-errors.js';
+import { TransientError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 import { hasPostalAddress } from '@declutrmail/shared/copy';
 import type * as SharedCopy from '@declutrmail/shared/copy';
@@ -109,18 +110,66 @@ describe('EmailSendWorker', () => {
   // next test.
   beforeEach(() => vi.mocked(hasPostalAddress).mockReturnValue(true));
 
-  it('REFUSES a commercial kind when no postal address is configured (CAN-SPAM)', async () => {
-    // Permanent, not transient: retrying cannot conjure an address, and
-    // the failure must be loud in worker metrics rather than a silently
-    // missing footer.
+  // The two opt-out-able kinds sit on OPPOSITE sides of the CAN-SPAM
+  // primary-purpose test, which is the whole point of separating the
+  // postal gate from the opt-out map. Pinning them in one test keeps the
+  // contrast visible: a future edit that collapses them back together —
+  // in either direction — fails here rather than shipping.
+  //
+  // The earlier fix got this wrong in the permissive direction, letting
+  // the re-engagement email through (Codex stop-review 2026-07-29).
+  it('gates the re-engagement email on a postal address but not the completion notice', async () => {
     vi.mocked(hasPostalAddress).mockReturnValue(false);
-    const db = await freshDb();
-    const userId = await seedUser(db);
-    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_1' });
-    const worker = new EmailSendWorker({ db: db as never, delivery });
 
-    await expect(worker.processJob(jobData(userId), CTX)).rejects.toBeInstanceOf(PermanentError);
-    expect(delivery.deliver).not.toHaveBeenCalled();
+    // sync-complete DELIVERS the result of a sync the recipient asked
+    // for — §7702(17)(A)(v). Blocking it dead-lettered the first email
+    // every new signup receives.
+    const completeDb = await freshDb();
+    const completeUser = await seedUser(completeDb, 'complete@b.com');
+    const completeDelivery = deliveryReturning({ ok: true, providerId: 'rsnd_svc' });
+    const completeResult = await new EmailSendWorker({
+      db: completeDb as never,
+      delivery: completeDelivery,
+    }).processJob(jobData(completeUser), CTX);
+    expect(completeResult.outcome).toBe('sent');
+
+    // sync-reminder-24h carries no NEW transactional information — the
+    // completion it restates was already reported by sync-complete. It
+    // exists because the recipient did not return, and its body makes a
+    // value claim about the product. That is promotional, so it must not
+    // send without an address.
+    const reminderDb = await freshDb();
+    const reminderUser = await seedUser(reminderDb, 'reminder@b.com');
+    const reminderDelivery = deliveryReturning({ ok: true, providerId: 'rsnd_promo' });
+    const reminderWorker = new EmailSendWorker({
+      db: reminderDb as never,
+      delivery: reminderDelivery,
+    });
+
+    // A designed SKIP, not a throw. It used to be a PermanentError for
+    // loudness, which made the job terminal-`failed` — and a failed job
+    // is indistinguishable from one that delivered and lost its
+    // confirmation, so the enqueue dedup had to suppress it, permanently
+    // burying this mailbox's reminder (Codex stop-reviews 2026-07-29).
+    // Recording the refusal keeps the send blocked while leaving a later
+    // attempt possible once an address exists.
+    const reminderResult = await reminderWorker.processJob(
+      jobData(reminderUser, {
+        kind: 'sync-reminder-24h',
+        idempotencyKey: 'email__sync-reminder-24h__ev1',
+      }),
+      CTX,
+    );
+
+    expect(reminderResult.outcome).toBe('skipped_no_postal_address');
+    expect(reminderDelivery.deliver).not.toHaveBeenCalled();
+  });
+
+  // Guards the classification itself against silent drift. Emptying this
+  // set would disarm the postal gate everywhere while every other test
+  // stayed green — the blind-guard shape.
+  it('classifies exactly the promotional kinds as commercial', () => {
+    expect([...COMMERCIAL_KINDS]).toEqual(['sync-reminder-24h']);
   });
 
   it('still sends TRANSACTIONAL kinds without a postal address (deletion notices)', async () => {
@@ -374,7 +423,7 @@ describe('EmailSendWorker', () => {
     expect(result.outcome).toBe('skipped_suppressed');
   });
 
-  it('fail-closed: missing provider key dead-letters on attempt 1 (PermanentError)', async () => {
+  it('fail-closed: a missing provider key records a not-sent skip, never a throw', async () => {
     const db = await freshDb();
     const userId = await seedUser(db);
     const delivery = deliveryReturning({
@@ -384,20 +433,166 @@ describe('EmailSendWorker', () => {
     });
     const worker = new EmailSendWorker({ db: db as never, delivery });
 
-    // PermanentError → isNonRetryable → BaseDeclutrWorker dead-letters
-    // immediately instead of burning batchPolicy retries.
-    await expect(worker.processJob(jobData(userId), CTX)).rejects.toThrow(PermanentError);
+    // It used to throw PermanentError to dead-letter on attempt 1. But a
+    // dead-lettered job cannot be told apart from one that delivered and
+    // lost its confirmation, so `enqueueEmailSend` had to suppress it
+    // forever — permanently burying every send that failed only because
+    // the key was unset, which is precisely the condition someone FIXES
+    // and then expects to retry (Codex stop-review 2026-07-29).
+    //
+    // The port fail-closes before reaching Resend, so this is definitively
+    // not-sent and recording it is both honest and recoverable. Still not
+    // retried (no TransientError) and still loud (warn + metrics).
+    const result = await worker.processJob(jobData(userId), CTX);
+    expect(result.outcome).toBe('skipped_delivery_disabled');
+    expect(result.providerId).toBeNull();
   });
 
-  it('classifies provider 4xx as permanent and 5xx/network as transient', async () => {
+  // Dropping the throw also dropped these out of the dead-letter sweep,
+  // which is what forwards to Sentry. Losing delivery is bad; losing
+  // delivery AND the signal that it stopped is a silent mail outage, so
+  // the observer call is pinned here — a refactor that removes it would
+  // otherwise leave every other test green.
+  it('still reports a not-delivered send to the observer, having stopped dead-lettering', async () => {
     const db = await freshDb();
     const userId = await seedUser(db);
+    const captured: { kind: string; tags?: Record<string, string | number> }[] = [];
+    const worker = new EmailSendWorker({
+      db: db as never,
+      delivery: deliveryReturning({
+        ok: false,
+        reason: 'disabled',
+        detail: 'RESEND_API_KEY is not configured.',
+      }),
+    });
+    worker.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (_err, ctx) => captured.push(ctx),
+    });
+
+    await worker.processJob(jobData(userId), CTX);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.kind).toBe('email.not_delivered');
+    expect(captured[0]?.tags?.outcome).toBe('skipped_delivery_disabled');
+  });
+
+  // Completing without a durable row ACKNOWLEDGES an email nobody sent:
+  // the job ages out of removeOnComplete and nothing records that one is
+  // owed. The skip keeps delivery re-enqueueable; the parked row keeps the
+  // loss from vanishing (Codex stop-review 2026-07-29, fifth pass).
+  it('parks a durable row for every known-unsent outcome, while still completing', async () => {
+    for (const [reason, outcome] of [
+      ['disabled', 'skipped_delivery_disabled'],
+      ['permanent', 'skipped_delivery_rejected'],
+    ] as const) {
+      const db = await freshDb();
+      const userId = await seedUser(db, `${reason}@b.com`);
+      const parked: { queue: string; jobId: string; error: string }[] = [];
+      const worker = new EmailSendWorker({
+        db: db as never,
+        delivery: deliveryReturning({ ok: false, reason, detail: 'nope' }),
+      });
+      worker.setDeadLetterRecorder({
+        record: async (entry) => {
+          parked.push({ queue: entry.queue, jobId: entry.jobId, error: entry.error });
+        },
+      });
+
+      const res = await worker.processJob(jobData(userId), CTX);
+
+      expect(res.outcome, reason).toBe(outcome);
+      expect(parked, `${reason} must leave a durable record`).toHaveLength(1);
+      expect(parked[0]?.queue).toBe('email-send');
+    }
+  });
+
+  // The refusal this whole arc started from needs the same durability —
+  // leaving it unparked would be the identical bug one branch over.
+  it('parks a durable row AND reports the observer when a commercial send is refused for no address', async () => {
+    vi.mocked(hasPostalAddress).mockReturnValue(false);
+    const db = await freshDb();
+    const userId = await seedUser(db, 'postal-park@b.com');
+    const parked: string[] = [];
+    const captured: { kind: string; tags?: Record<string, string | number> }[] = [];
+    const worker = new EmailSendWorker({
+      db: db as never,
+      delivery: deliveryReturning({ ok: true, providerId: 'rsnd_x' }),
+    });
+    worker.setDeadLetterRecorder({
+      record: async (entry) => {
+        parked.push(entry.error);
+      },
+    });
+    worker.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (_err, obsCtx) => captured.push(obsCtx),
+    });
+
+    const res = await worker.processJob(
+      jobData(userId, {
+        kind: 'sync-reminder-24h',
+        idempotencyKey: 'email__sync-reminder-24h__park',
+      }),
+      CTX,
+    );
+
+    expect(res.outcome).toBe('skipped_no_postal_address');
+    expect(parked).toHaveLength(1);
+    expect(parked[0]).toContain('postal address');
+    // Uniform rule: every known-unsent outcome parks AND reports. Without
+    // the direct call, an unwired or failing recorder would leave postal
+    // refusals with no Sentry signal at all.
+    expect(captured.map((c) => c.kind)).toContain('email.refused_no_postal_address');
+  });
+
+  // The park path's own failure contract: a broken recorder must not turn
+  // a designed skip into a job failure — but it MUST page, because the
+  // parked row was the only durable trace of an owed email.
+  it('a failing recorder never fails the job, and the loss itself is reported', async () => {
+    const db = await freshDb();
+    const userId = await seedUser(db, 'recorder-down@b.com');
+    const captured: string[] = [];
+    const worker = new EmailSendWorker({
+      db: db as never,
+      delivery: deliveryReturning({ ok: false, reason: 'disabled', detail: 'no key' }),
+    });
+    worker.setDeadLetterRecorder({
+      record: async () => {
+        throw new Error('insert failed');
+      },
+    });
+    worker.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (_err, obsCtx) => captured.push(obsCtx.kind),
+    });
+
+    const res = await worker.processJob(jobData(userId), CTX);
+
+    expect(res.outcome).toBe('skipped_delivery_disabled');
+    expect(captured).toContain('dead_letter.record_failed');
+  });
+
+  // The dividing line is NOT severity but whether the mail can have gone
+  // out — a throw dead-letters, and a dead-letter suppresses every later
+  // enqueue forever, so only the AMBIGUOUS outcome may throw.
+  it('records definitively-not-sent 4xx as a skip and throws only on ambiguous 5xx', async () => {
+    const db = await freshDb();
+    const userId = await seedUser(db);
+
+    // Refused outright by the provider ⇒ nothing was sent. An unverified
+    // sending domain is exactly this 4xx, and it gets fixed — so it must
+    // stay retryable rather than being buried.
     const worker4xx = new EmailSendWorker({
       db: db as never,
       delivery: deliveryReturning({ ok: false, reason: 'permanent', detail: 'bad from' }),
     });
-    await expect(worker4xx.processJob(jobData(userId), CTX)).rejects.toThrow(PermanentError);
+    const rejected = await worker4xx.processJob(jobData(userId), CTX);
+    expect(rejected.outcome).toBe('skipped_delivery_rejected');
 
+    // 5xx / network: Resend may have accepted the request before the
+    // confirmation was lost. The ONLY case where a duplicate is possible,
+    // so it stays a retryable throw.
     const worker5xx = new EmailSendWorker({
       db: db as never,
       delivery: deliveryReturning({ ok: false, reason: 'transient', detail: '503' }),

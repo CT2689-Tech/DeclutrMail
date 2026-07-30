@@ -21,6 +21,9 @@ yarn-debug.log*
 # Environment
 .env
 .env.local
+# Recorded dev-database cluster identity (billing-test-matrix §0.2).
+# Machine-specific: a committed value would approve the wrong database elsewhere.
+.dev-db-identity
 .env.*.local
 !.env.example
 

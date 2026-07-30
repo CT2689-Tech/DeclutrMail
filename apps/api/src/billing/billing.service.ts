@@ -67,8 +67,21 @@ export class BillingService {
   ): Promise<CheckoutSession> {
     // One subscription per workspace at a time — plan CHANGES are a
     // provider-side update flow (D120), not a second checkout.
+    //
+    // A PAUSED blocker gets its own code. Both are refusals, but they need
+    // different next steps, and `SUBSCRIPTION_EXISTS` claims the account
+    // "already has an ACTIVE subscription" — false for a paused row, and
+    // exactly the assert-what-you-don't-know defect this codebase keeps
+    // hitting. It also left a real trap (sandbox smoke 2026-07-29): a paused
+    // Razorpay subscriber cannot resume (`RESUME_UNSUPPORTED` — the rail has
+    // no no-charge resume), cannot change plan (`PLAN_CHANGE_UNSUPPORTED`),
+    // and was told only that they already had an "active" subscription. The
+    // exit does exist — cancel, then subscribe again, which Razorpay's
+    // adapter fully supports — so the fix is to SAY so rather than to loosen
+    // the guard. Loosening it would let a second live subscription start
+    // while the provider could still resume the paused one.
     const [existing] = await this.db
-      .select({ id: subscriptions.id })
+      .select({ id: subscriptions.id, status: subscriptions.status })
       .from(subscriptions)
       .where(
         and(
@@ -76,9 +89,15 @@ export class BillingService {
           inArray(subscriptions.status, ['active', 'past_due', 'paused']),
         ),
       )
+      // Deterministic pick: a live row outranks a paused one, so the message
+      // names the stronger blocker when both exist.
+      .orderBy(sql`CASE WHEN ${subscriptions.status} = 'paused' THEN 1 ELSE 0 END`)
       .limit(1);
     if (existing) {
-      throw new AppException({ code: 'SUBSCRIPTION_EXISTS' });
+      throw new AppException({
+        code:
+          existing.status === 'paused' ? 'SUBSCRIPTION_PAUSED_BLOCKS_NEW' : 'SUBSCRIPTION_EXISTS',
+      });
     }
 
     const founding = dto.promo === 'foundingPro';

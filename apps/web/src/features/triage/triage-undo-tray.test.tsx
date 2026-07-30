@@ -118,6 +118,26 @@ describe('TriageUndoTray (D35)', () => {
     expect(screen.getAllByText('Undo')).toHaveLength(2);
   });
 
+  // The tray is `position: fixed` at the viewport bottom and mounted
+  // outside AppShell's content scroller, so it overlaps the content's
+  // last ~90px. It publishes its height for the scroller to reserve as
+  // bottom padding; without that, /billing's checkout Confirm button
+  // was covered AND unreachable, since the scroller was already at its
+  // end (browser smoke 2026-07-29). Unmount must clear the reserve or
+  // every screen keeps dead space under it forever.
+  it('publishes its height for scrollers to reserve, and clears it on unmount', async () => {
+    stubRevertLoop();
+    const { unmount } = renderTray();
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+
+    const published = document.documentElement.style.getPropertyValue('--dm-undo-tray-inset');
+    expect(published).toMatch(/^\d+px$/);
+    expect(Number.parseInt(published, 10)).toBeGreaterThan(0);
+
+    unmount();
+    expect(document.documentElement.style.getPropertyValue('--dm-undo-tray-inset')).toBe('');
+  });
+
   it('Z reverts the NEWEST entry (undo last) and polls to completion', async () => {
     const { posts } = stubRevertLoop();
     renderTray();

@@ -1316,3 +1316,115 @@ archive (degraded, findable), never toward the flood.
 input "what does a migration rollback + re-apply do to this?"
 **Enforcement update:** decision table + all three branches locked by worker tests
 (split-with-corrupted-column, degrade, legacy); rollback file documents the invariant.
+
+## 2026-07-29 — Regenerating a claims surface without checking it against its source
+**PR:** #435
+**Caught by:** Codex stop-time review
+**What happened:** The public `/changelog` was 19 days and 112 PRs stale, so it was
+regenerated from `git log`. The regeneration shipped two defects. (1) OMISSION — it
+covered 2026-07-17 onward and silently dropped 07-14..07-21, which held the period's
+biggest releases: self-serve plan changes (#367), the Paddle attribution repair that
+made purchases land at all (#362), the D245 contract that retired VIP (#332), and the
+public site itself (#325). (2) BACKDATING — one entry grouped five PRs and took its
+date from the earliest member, so #374 (merged 07-24) and #373 (07-23) read as having
+shipped up to two days early. Typecheck, lint, the unit tests and every CI gate were
+green on both. A later sweep found eight MORE uncited merges in the three pre-existing
+entries, so the defect predated this session.
+**Correct approach:** A surface that makes claims about a source of truth needs a check
+that compares it to that source. Reading git by hand and transcribing is the same
+unverified-transcription class as a hand-maintained counter — it drifts silently and
+looks complete. Group entries by the true event date; grouping by the earliest member
+backdates every other member.
+**Rule:** When a surface asserts facts derived from another system, ship the diff check
+with it — and prove the check FAILS on the defect it was written for before trusting it.
+**Enforcement update:** `scripts/check-changelog.ts` + `pnpm check-changelog` — walks
+first-parent merges since the oldest entry, fails on any uncited product merge and on
+any evidence commit whose merge date differs from its entry's date. Verified failing on
+both reintroduced defects. Infra filtered by type AND scope; judged-internal merges are
+listed by number with a reason and printed on success, so a suppression cannot read as
+coverage. CI wiring deferred to its own PR (workflow-scope merge quirk).
+
+## 2026-07-29 — Shipping a guard that passes when it cannot see its subject
+**PR:** #435 (same session as the entry above)
+**Caught by:** Codex stop-time review — "the changelog data is repaired, but the new guard is not ship-safe"
+**What happened:** The enforcement written for the entry above — `check-changelog.ts` — was
+verified against the two defects it was written for, and that was mistaken for verifying the
+guard. It was blind in the case that matters. Every check ran OVER the git merge walk, so an
+empty walk made all of them vacuously clean and the script printed `✓ covers every product
+merge ... (0 merges walked)` and exited 0. `actions/checkout@v7` sets no `fetch-depth`
+anywhere in ci.yml and therefore defaults to depth 1, so wiring it into CI — the follow-up
+the same PR proposed — would have produced a permanently green, permanently blind gate. That
+is the FOURTH instance of this class here: the dependency-free healthz probe with an uptime
+check pointed at it, pr-merged.yml's push that branch protection rejected on every run,
+verify-d recording verifications it never executed, and now this. Three further defects came
+out of the same pass: local-timezone dates (`--date=short` + `--since` are both local, so an
+entry-date equality check passes for the author in PDT and fails on a UTC runner), cited
+commits never checked for existence or PR ownership on a page whose whole claim is that its
+receipts are real, and a matcher built by string-splicing one regex's `.source` into another.
+**Correct approach:** Proving a check catches the bug it was written for is necessary and not
+sufficient. The question that finds this class is "what does this do when it can see
+NOTHING?" — because every filter over an empty collection is clean, and clean prints green. A
+check whose subject is invisible must fail closed, and must say why.
+**Rule:** For any new guard, test the blind case before the positive case: starve it of its
+input and require exit 1. If it goes green, it is a green light, not a guard.
+**Enforcement update:** `check-changelog.ts` now refuses on a shallow repository (naming the
+`fetch-depth: 0` fix), on an empty walk, and on a walk that does not reach the oldest entry it
+claims to cover; all git calls pinned to `TZ=UTC`; every cited commit must resolve and belong
+to its stated PR. Wired into lint-staged keyed on `changelog-content.ts` so it cannot rot
+unrun; `sh .husky/pre-commit` smoked to exit 1 on a backdated entry and 0 on a clean one. All
+five failure modes verified firing. CI wiring must add `fetch-depth: 0` in the same PR.
+
+## 2026-07-29 — Reading a guard's exit code instead of its message
+**PR:** #435 (third review round, same session)
+**Caught by:** Codex stop-time review — "the new receipt-to-PR validation is nonfunctional"
+**What happened:** The receipt-to-PR check added by the entry above never executed a single
+comparison. Both git-log call sites carried their own `--pretty` string and their own
+`.split()`, each holding a raw U+0001 byte — invisible in an editor, in a diff, and in review.
+One lost its separator in an edit and became `--pretty=%h%s` with `line.split('')`; splitting
+on the empty string yields single CHARACTERS, so the map was keyed `'8' -> '4'`, every
+`.get(sha)` returned undefined, and an `if (!subject) return false` guard swallowed it.
+**And I had recorded it as verified.** The fixture — a receipt filed under PR #999 — did exit
+1, but because the OMISSION check caught the now-orphaned #367, not because the receipt check
+fired. I asserted on the exit code and never read the message. So the previous entry's own
+lesson ("prove the mechanism, not the outcome") was violated one commit after writing it, at
+the next level down.
+**Correct approach:** A pass/fail assertion is not enough when several checks share a fixture —
+a neighbouring check will happily fail for you and look like proof. Assert on the specific
+message, and design each fixture so only ONE check can produce it. Separately: two places that
+must agree on an invisible delimiter will eventually disagree; the fix is one place, not two
+careful ones. Never put raw control bytes in source — `%x01` and `` are both plain ASCII.
+**Rule:** Test a guard by the message it prints, not the code it exits with — and never let a
+delimiter live in two places or as an invisible byte.
+**Enforcement update:** `logFields(revArgs, fields)` builds the format and splits in ONE place
+and exits 1 if a row does not split into the requested arity; zero raw control bytes remain in
+the file. All six failure modes re-proven asserting on message text, including a new case the
+old code also missed (a receipt pointing at a different PR's real sha). `sh .husky/pre-commit`
+re-smoked 1/0.
+
+## 2026-07-29 — A check with a scheduled, silent death (abbreviated-sha coupling)
+**PR:** #435 (fourth review round, same session)
+**Caught by:** Codex stop-time review — "the repaired receipt check can still silently skip every comparison"
+**What happened:** After repairing the receipt-to-PR check so it *ran*, it was still keyed on
+`%h` — whose width git AUTO-SCALES from repository size (`core.abbrev` unset = auto). The
+changelog cites fixed 8-character shas. The day git decides on 9, every `.get(sha)` misses.
+Forcing the width proved it on the same fixture: at `core.abbrev=8` a wrong-PR receipt was
+reported; at `core.abbrev=12` the receipt error vanished entirely and only the neighbouring
+omission check fired. So the check was correct on the day it shipped and scheduled to go dark
+a few hundred commits later, announcing nothing. What made that fatal rather than noisy was
+`if (!subject) return false` — could-not-look-this-up scoring as verified-fine. The BACKDATING
+check had the identical shape (`mergeDateBySha.get()`, unknown sha silently skipped) and died
+at the same widths, so it was a class, not an instance.
+**Correct approach:** Never join on a value whose FORMAT is chosen at runtime by something
+else — an abbreviation, a truncation, a locale-formatted date. Join on the full, stable
+identity. And a lookup that misses must fail, never fall through to a pass: the question to ask
+of every `.get()`/`find()`/`??` in verification code is "if this misses, do I report a problem
+or report success?" Test guards against the ENVIRONMENT drifting, not just the data — force the
+knob (`core.abbrev`, `TZ`, locale, clone depth) and re-run.
+**Rule:** In verification code, join on full identities and make every failed lookup an error;
+prove it by forcing the runtime knob, not just by mutating the input.
+**Enforcement update:** `resolveReceipts()` resolves each cited abbreviation to its full 40-char
+sha via `cat-file --batch-check`, joins on that, and returns commit + merge date + subject or
+exits 1. The date check now reads those resolved receipts instead of a window lookup, which also
+removed its "older than the walked window" skip. Verified at `core.abbrev` 8/9/12/20: both a
+wrong-PR receipt and a backdated entry report at EVERY width, and a clean tree passes at every
+width. Grep-swept the file for residual silent-skip shapes; one `.get()` remains and it exits 1.

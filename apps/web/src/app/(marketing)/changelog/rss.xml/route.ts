@@ -33,9 +33,9 @@ export function GET() {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
     <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
       <channel>
-        <title>DeclutrMail build log</title>
+        <title>DeclutrMail product updates</title>
         <link>${origin}/changelog</link>
-        <description>Evidence-linked user-facing changes from DeclutrMail repository history.</description>
+        <description>User-facing changes to DeclutrMail, newest first.</description>
         <language>en-US</language>
         <atom:link href="${origin}/changelog/rss.xml" rel="self" type="application/rss+xml" />
         ${items}

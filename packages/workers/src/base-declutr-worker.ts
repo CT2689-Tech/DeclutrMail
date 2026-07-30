@@ -2,7 +2,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 
 import { type Job, UnrecoverableError } from 'bullmq';
 
-import type { DeadLetterRecorder } from './dead-letter.recorder.js';
+import type { DeadLetterEntry, DeadLetterRecorder } from './dead-letter.recorder.js';
 import type { WorkerContext } from './worker-context.js';
 import { isNonRetryable } from './worker-errors.js';
 import {
@@ -114,8 +114,17 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
    * Pluggable failure-capture sink (D159 Sentry seam). Defaults to a
    * no-op so unit tests and dev (no `SENTRY_DSN`) need no wiring. The
    * composition root replaces it via `setObserver()` at boot.
+   *
+   * `protected` so a subclass can report a condition that needs a human
+   * WITHOUT throwing. Those were the same act until EmailSendWorker had
+   * to separate them: a throw dead-letters, and a dead-lettered email job
+   * is indistinguishable from one that delivered and lost its
+   * confirmation, so it suppresses every later enqueue forever. Returning
+   * a recorded skip keeps delivery recoverable but leaves the Sentry
+   * channel behind — and "emails silently not sending because the API key
+   * is unset" is precisely a condition that must still page someone.
    */
-  private observer: WorkerObserver = NOOP_WORKER_OBSERVER;
+  protected observer: WorkerObserver = NOOP_WORKER_OBSERVER;
 
   /**
    * Durable dead-letter sink (D225). `null` until the composition root
@@ -125,6 +134,64 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
    * capture, they just are not parked in Postgres.
    */
   private deadLetterRecorder: DeadLetterRecorder | null = null;
+
+  /**
+   * Park a durable row for a job that is NOT failing.
+   *
+   * Normally parking and throwing are the same act, and for
+   * EmailSendWorker they cannot be: a throw dead-letters, a dead-lettered
+   * email job is indistinguishable from one that delivered and lost its
+   * confirmation, and the enqueue dedup must therefore suppress it
+   * forever. Returning a recorded skip keeps delivery re-enqueueable, but
+   * on its own it acknowledges the job with NO durable trace — the row
+   * ages out and nothing anywhere says an email is owed.
+   *
+   * This gives a subclass both: the job completes, and the fact survives.
+   * Never throws — a recorder failure must not turn a designed skip into
+   * a job failure, which is the very outcome the caller is avoiding.
+   */
+  protected async parkWithoutFailing(entry: DeadLetterEntry): Promise<void> {
+    if (!this.deadLetterRecorder) {
+      return;
+    }
+    try {
+      await this.deadLetterRecorder.record(entry);
+    } catch (recorderErr) {
+      const recorderError =
+        recorderErr instanceof Error ? recorderErr : new Error(String(recorderErr));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'worker.dead_letter_record_failed',
+          worker: this.workerName,
+          jobRef: telemetryReference(entry.jobId),
+          error: safeWorkerErrorKind(recorderError),
+        }),
+      );
+      // Same escalation as the terminal-failure record path below: a
+      // failed park means the durable record is LOST, and for a
+      // completing job this row was the only trace — so it must page,
+      // not just log.
+      try {
+        this.observer.captureBackgroundFailure(
+          safeTelemetryError(recorderError, 'Dead-letter recording failed'),
+          {
+            kind: 'dead_letter.record_failed',
+            tags: { worker: this.workerName, job_ref: telemetryReference(entry.jobId) },
+          },
+        );
+      } catch (observerErr) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'worker.observer_failed',
+            worker: this.workerName,
+            error: safeWorkerErrorKind(observerErr),
+          }),
+        );
+      }
+    }
+  }
 
   /**
    * The job body. Subclasses do the real work here.

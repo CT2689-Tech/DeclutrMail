@@ -638,7 +638,18 @@ describe('BillingWebhookService.process', () => {
   });
 
   it('refund adjustment schedules cancel-at-period-end; tier holds until period end', async () => {
-    const activate = paddleSubscriptionActivated({ workspaceId, eventId: 'evt_ref_1' });
+    // The period end must be genuinely IN THE FUTURE for "holds until period
+    // end" to mean anything. This used the fixture default (2026-07-11), which
+    // silently became a PAST date, so from 2026-07-12 onward the test was
+    // asserting that an expired period still grants — and it passed only
+    // because the refund path skipped the recompute. Fixing that skip made this
+    // fail, which is the test finally reporting its own stale premise.
+    // Computed relative to now so it cannot rot again.
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_ref_1',
+      periodEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
     await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
 
     const refund = paddleAdjustmentCreated({ eventId: 'evt_ref_2', action: 'refund' });
@@ -650,6 +661,51 @@ describe('BillingWebhookService.process', () => {
     expect(sub!.status).toBe('active');
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
     expect(ws!.tier).toBe('plus'); // holds until the provider ends the period
+  });
+
+  // The two cases where a refund's deadline is NOT in the future. The
+  // recompute used to be gated on `isChargeback`, on the reasoning that a
+  // refund always has a future deadline and so recomputing was a no-op —
+  // true mid-period (the test above) and false in both of these. The row
+  // stopped granting while `workspaces.tier` kept the paid tier, i.e. free
+  // Pro until the next webhook or the 6-hourly sweep. Found by sandbox
+  // smoke 2026-07-29.
+  it('refund on an ALREADY-ENDED period drops the tier in the same transaction', async () => {
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_ref_past_1',
+      // Period ended before the refund arrives.
+      periodEndsAt: '2026-06-20T10:00:00.000000Z',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+    const [granted] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(granted!.tier).toBe('plus');
+
+    const refund = paddleAdjustmentCreated({ eventId: 'evt_ref_past_2', action: 'refund' });
+    await service.process('paddle', paddle.mapWebhookEvent(refund), refund);
+
+    const [sub] = await db.select().from(subscriptions);
+    expect(sub!.cancelSource).toBe('refund');
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+  });
+
+  it('refund with NO known period end drops the tier — never grant on a missing fact', async () => {
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_ref_null_1',
+      periodEndsAt: null, // no current_billing_period at all
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+    const [granted] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(granted!.tier).toBe('plus');
+
+    const refund = paddleAdjustmentCreated({ eventId: 'evt_ref_null_2', action: 'refund' });
+    await service.process('paddle', paddle.mapWebhookEvent(refund), refund);
+
+    // deadline collapses to now(), which is not `> now()` — so it stops granting.
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
   });
 
   it('payment events are observability-only; unknown price ids are recorded but never flip', async () => {
