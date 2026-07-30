@@ -20,12 +20,14 @@ import {
   BillingReconcileRequestSchema,
   CancelRequestSchema,
   CheckoutRequestSchema,
+  PlanChangePreviewRequestSchema,
   PlanChangeRequestSchema,
   ok,
   type BillingReconcileResponse,
   type BillingSubscription,
   type CheckoutSession,
   type Envelope,
+  type PlanChangePreview,
 } from '@declutrmail/shared/contracts';
 
 import { AppException } from '../common/app-exception.js';
@@ -104,11 +106,14 @@ export class BillingController {
 
   /**
    * POST /api/billing/reconcile — D249 provider-truth reconciliation of
-   * the workspace's pending checkout. The server asks the provider what
-   * happened to the claim so the customer never has to guess; a found
-   * match projects through the SAME webhook path (never a second grant
-   * path). Stricter rate limit than the other mutations: every call can
-   * fan out to provider GETs.
+   * whatever the workspace is waiting on. `kind: 'checkout'` (default)
+   * runs the pending-checkout ladder; `kind: 'change'` checks the
+   * workspace's live subscriptions instead — a stuck plan change has no
+   * checkout claim, and the checkout ladder would call a charged
+   * upgrade "no completed payment found". Either way a found match
+   * projects through the SAME webhook path (never a second grant path).
+   * Stricter rate limit than the other mutations: every call can fan
+   * out to provider GETs.
    */
   @Post('reconcile')
   @UseGuards(CsrfGuard)
@@ -128,11 +133,14 @@ export class BillingController {
         message: parsed.error.issues[0]?.message ?? 'Invalid reconcile request.',
       });
     }
-    const outcome = await this.reconciliation.reconcilePendingCheckout(principal.workspaceId, {
-      tier: parsed.data.toTier,
-      cycle: parsed.data.cycle,
-      startedAt: parsed.data.startedAt,
-    });
+    const outcome =
+      parsed.data.kind === 'change'
+        ? await this.reconciliation.reconcileWorkspaceSubscriptions(principal.workspaceId)
+        : await this.reconciliation.reconcilePendingCheckout(principal.workspaceId, {
+            tier: parsed.data.toTier,
+            cycle: parsed.data.cycle,
+            startedAt: parsed.data.startedAt,
+          });
     return ok({ outcome });
   }
 
@@ -153,9 +161,32 @@ export class BillingController {
   }
 
   /**
+   * POST /api/billing/change-plan/preview — read-only dry run: the
+   * provider computes the exact immediate charge so the confirm panel
+   * states a number (D117/D120). Nothing is written or applied. POST
+   * (not GET) purely for the JSON body + CSRF symmetry with the
+   * mutation it previews.
+   */
+  @Post('change-plan/preview')
+  @UseGuards(CsrfGuard)
+  @RateLimit({ bucket: 'default', limit: 10, windowSec: 60 })
+  async planChangePreview(
+    @CurrentUser() principal: Principal,
+    @Body() body: unknown,
+  ): Promise<Envelope<PlanChangePreview>> {
+    assertBillingEnabled();
+    const parsed = PlanChangePreviewRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new AppException({ code: 'BAD_REQUEST', message: 'Invalid plan change request.' });
+    }
+    return ok(await this.billing.planChangePreview(principal, parsed.data));
+  }
+
+  /**
    * POST /api/billing/change-plan — D117/D120 paid↔paid switch on the
-   * existing provider subscription (provider-prorated; tier flips via
-   * webhook only).
+   * existing provider subscription (provider-prorated; an immediate
+   * upgrade is projected in-request from the provider's synchronous
+   * response, with the webhook as confirmation).
    */
   @Post('change-plan')
   @UseGuards(CsrfGuard)

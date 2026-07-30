@@ -388,6 +388,67 @@ describe('PaddleAdapter checkout + cancel', () => {
     });
   });
 
+  it('previewPlanChange hits the read-only preview endpoint and returns the update summary', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            next_billed_at: '2027-07-30T18:00:27.060Z',
+            update_summary: {
+              credit: { amount: '-18999', currency_code: 'USD' },
+              charge: { amount: '1900', currency_code: 'USD' },
+              result: { action: 'charge', amount: '18101', currency_code: 'USD' },
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+
+    const preview = await adapter.previewPlanChange('sub_prev', 'pri_pro_a', {
+      kind: 'immediate_prorated',
+    });
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://sandbox-api.paddle.com/subscriptions/sub_prev/preview');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(String(init.body))).toEqual({
+      items: [{ price_id: 'pri_pro_a', quantity: 1 }],
+      proration_billing_mode: 'prorated_immediately',
+    });
+    expect(preview).toEqual({
+      result: { action: 'charge', amount: '18101', currencyCode: 'USD' },
+      nextBilledAt: '2027-07-30T18:00:27.060Z',
+    });
+  });
+
+  it('previewPlanChange returns null fields on a malformed summary and throws on 5xx', async () => {
+    const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+    // Provider answered 200 with an unexpected shape — no invented
+    // numbers, null fields instead.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ data: { update_summary: { result: { action: 'refund' } } } }),
+          {
+            status: 200,
+          },
+        ),
+      ),
+    );
+    expect(
+      await adapter.previewPlanChange('sub_odd', 'pri_pro_a', { kind: 'immediate_prorated' }),
+    ).toEqual({ result: null, nextBilledAt: null });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 503 })));
+    await expect(
+      adapter.previewPlanChange('sub_down', 'pri_pro_a', { kind: 'immediate_prorated' }),
+    ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+  });
+
   it('classifies provider 4xx as definitive but keeps 5xx ambiguous', async () => {
     const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 422 })));

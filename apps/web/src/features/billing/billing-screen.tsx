@@ -469,9 +469,11 @@ export function BillingScreen({
           kind={pending.kind}
           onRelease={onReleasePendingLock}
           onProviderCheck={
-            // D249 — checkout-shaped waits are answerable by the server
-            // asking the provider; change/resume waits ride the
-            // provider's own mutation response and have no claim row.
+            // D249 — checkout-shaped waits run the pending-checkout
+            // ladder; a change wait asks about the workspace's LIVE
+            // subscriptions instead (an immediate upgrade leaves no
+            // claim row, and the checkout ladder would call a charged
+            // upgrade "no payment found"). Resume waits stay un-checked.
             pending.kind === 'checkout' || pending.kind === 'checkout_intent'
               ? async () => {
                   const outcome = await reconcileCheckout.mutateAsync({
@@ -493,7 +495,15 @@ export function BillingScreen({
                   }
                   return outcome;
                 }
-              : undefined
+              : pending.kind === 'change' || pending.kind === 'change_unconfirmed'
+                ? async () => {
+                    const outcome = await reconcileCheckout.mutateAsync({ kind: 'change' });
+                    if (outcome === 'granted' || outcome === 'already_recorded') {
+                      void subscriptionQuery.refetch();
+                    }
+                    return outcome;
+                  }
+                : undefined
           }
         />
       ) : null}
@@ -649,18 +659,29 @@ export function PaymentProcessingNotice({
   onProviderCheck?: (() => Promise<BillingReconcileOutcome>) | undefined;
 }) {
   const [confirmingRelease, setConfirmingRelease] = useState(false);
-  // Provider-check lifecycle for checkout-shaped waits. `idle` before
-  // the first run; afterwards the last outcome. A change/resume wait
-  // never checks (no claim row to reconcile).
+  // Provider-check lifecycle for reconcilable waits. `idle` before the
+  // first run; afterwards the last outcome. Checkout kinds run the
+  // pending-checkout ladder; change kinds check the workspace's live
+  // subscriptions (no claim row exists for a plan change). Resume waits
+  // never check.
   const [providerCheck, setProviderCheck] = useState<'idle' | 'checking' | BillingReconcileOutcome>(
     'idle',
   );
+  const isChangeWait = kind === 'change' || kind === 'change_unconfirmed';
   const reconcilable =
-    (kind === 'checkout' || kind === 'checkout_intent') && onProviderCheck !== undefined;
-  // checkout_intent surfaces with an UNKNOWN outcome at any phase — ask
-  // the provider immediately; a confirmed payment (`checkout`) only
-  // needs the check once the wait crosses into `unconfirmed`.
-  const checkWanted = reconcilable && (phase === 'unconfirmed' || kind === 'checkout_intent');
+    (kind === 'checkout' || kind === 'checkout_intent' || isChangeWait) &&
+    onProviderCheck !== undefined;
+  // checkout_intent and change_unconfirmed surface with an UNKNOWN
+  // outcome at any phase — ask the provider immediately. A confirmed
+  // payment (`checkout`) waits for `unconfirmed`; a confirmed change
+  // normally projects in-request, so still showing at `slow` already
+  // means something dropped — ask then.
+  const checkWanted =
+    reconcilable &&
+    (phase === 'unconfirmed' ||
+      kind === 'checkout_intent' ||
+      kind === 'change_unconfirmed' ||
+      (kind === 'change' && phase !== 'fresh'));
   useEffect(() => {
     if (!checkWanted || providerCheck !== 'idle' || onProviderCheck === undefined) return;
     setProviderCheck('checking');
@@ -787,9 +808,21 @@ export function PaymentProcessingNotice({
           ) : providerCheck === 'none_found' ? (
             'We checked with the payment provider — no completed payment found for this checkout.'
           ) : providerCheck === 'no_pending' ? (
-            // Claim AND provider search both empty — nothing is in
-            // flight anywhere. State that, never "found your payment".
-            'Nothing is awaiting confirmation for this checkout — on our server or at the payment provider.'
+            isChangeWait ? (
+              // Change reconciles against live subscription rows; zero
+              // rows mid-change is a state worth a human look.
+              <>
+                We found no live subscription to check against — email{' '}
+                <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                  support@declutrmail.com
+                </a>
+                .
+              </>
+            ) : (
+              // Claim AND provider search both empty — nothing is in
+              // flight anywhere. State that, never "found your payment".
+              'Nothing is awaiting confirmation for this checkout — on our server or at the payment provider.'
+            )
           ) : providerCheck === 'payment_in_progress' ? (
             'The payment provider shows this checkout still in progress — for example awaiting bank confirmation. Waiting is safe; this page keeps checking.'
           ) : providerCheck === 'provider_unavailable' ? (
@@ -802,6 +835,10 @@ export function PaymentProcessingNotice({
               </a>
               .
             </>
+          ) : isChangeWait ? (
+            // granted / already_recorded on a change wait — provider
+            // truth is projected; the poll clears this via the flip.
+            'Confirmed with the payment provider — your plan is updating now.'
           ) : (
             // granted / already_recorded — the projection wrote the
             // truth; the poll clears this notice via the tier flip.

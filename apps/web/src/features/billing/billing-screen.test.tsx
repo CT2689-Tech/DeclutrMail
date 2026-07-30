@@ -1117,6 +1117,53 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ).toBeInTheDocument();
   });
 
+  it('D249: a stuck plan change reconciles via kind=change and reports change wording', async () => {
+    // An immediate upgrade leaves no checkout claim — the change wait
+    // must ask about the workspace's LIVE subscriptions, not the
+    // checkout ladder (which would answer "no payment found" about an
+    // upgrade that DID charge).
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'change',
+        fromTier: 'plus',
+        fromCycle: 'monthly',
+        toTier: 'pro',
+        toCycle: 'annual',
+        at: Date.now() - 16 * 60_000,
+      }),
+    );
+    let reconcileBody: unknown = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/reconcile',
+        respond: async (req) => {
+          reconcileBody = await req.json();
+          return jsonOk({ data: { outcome: 'already_recorded' } });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    await waitFor(() =>
+      expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
+        'Confirmed with the payment provider — your plan is updating now.',
+      ),
+    );
+    // The change wait must never claim a checkout fact in either
+    // direction — no "payment found", no "no payment found".
+    expect(within(notice).getByTestId('provider-check')).not.toHaveTextContent(/payment found/i);
+    expect(reconcileBody).toEqual({ kind: 'change' });
+  });
+
   it('a completing checkout never clobbers a surfaced (id-less) ambiguous change lock', async () => {
     // The surfaced/interrupted change_unconfirmed record carries no
     // attemptId — it is absolutely protected: even a checkout that just
@@ -1528,6 +1575,64 @@ describe('BillingScreen — paid subscriber', () => {
     );
     expect(within(screen.getByTestId('current-plan-card')).getByText('Plus')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Switch to/ })).not.toBeInTheDocument();
+  });
+
+  it('upgrade panel states the exact prorated charge from the provider preview', async () => {
+    mockTier = 'plus';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              kind: 'immediate',
+              result: { action: 'charge', amount: '18101', currencyCode: 'USD' },
+              nextBilledAt: '2027-07-30T18:00:27.060Z',
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    const panel = screen.getByTestId('change-plan-panel');
+    // Immediate effect stated up front — the old copy read as deferred
+    // ("applies after your payment provider confirms it").
+    expect(await within(panel).findByText('Effective immediately.')).toBeInTheDocument();
+    // The provider's own number, lowest-denomination → formatted; the
+    // date is the post-change renewal from the same preview. Text is
+    // split across inline nodes, so assert on the panel's textContent.
+    await waitFor(() => expect(panel).toHaveTextContent('$181.01 is charged now'));
+    expect(panel).toHaveTextContent('from Jul 30, 2027.');
+  });
+
+  it('upgrade panel falls back to generic mechanics when the preview fails — never an invented number', async () => {
+    mockTier = 'plus';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      // No /change-plan/preview handler — the stub 599s it (a failed
+      // preview must degrade to copy, not block or fabricate).
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    const panel = screen.getByTestId('change-plan-panel');
+    expect(await within(panel).findByText('Effective immediately.')).toBeInTheDocument();
+    expect(panel).toHaveTextContent('The prorated difference for the rest of this period');
+    // No quoted amount without provider truth — the mechanics sentence
+    // stays numberless (the header's $190/yr is a list price, not a
+    // proration claim).
+    expect(panel).not.toHaveTextContent(/\$\d+(\.\d+)? is charged now/);
   });
 
   it('Pro→Plus schedules the downgrade without a charge or a weeks-long processing lock', async () => {

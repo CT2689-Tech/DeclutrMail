@@ -19,6 +19,7 @@ import type { DrizzleDb } from '../../db/db.module.js';
 import { AppException } from '../../common/app-exception.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import { BillingService } from '../billing.service.js';
+import type { BillingReconciliationService } from '../billing-reconciliation.service.js';
 import type { PaddleAdapter } from '../paddle.adapter.js';
 import type { RazorpayAdapter } from '../razorpay.adapter.js';
 
@@ -105,11 +106,18 @@ describe('BillingService', () => {
   let paddleCheckout: ReturnType<typeof vi.fn>;
   let paddleCancel: ReturnType<typeof vi.fn>;
   let paddleChangePlan: ReturnType<typeof vi.fn>;
+  let paddlePreviewPlanChange: ReturnType<typeof vi.fn>;
   let paddleResume: ReturnType<typeof vi.fn>;
+  let reconcileWorkspace: ReturnType<typeof vi.fn>;
+  let reconciliationStub: BillingReconciliationService;
   let principal: { userId: string; workspaceId: string };
 
   beforeEach(async () => {
     db = await freshDb();
+    reconcileWorkspace = vi.fn().mockResolvedValue('already_recorded');
+    reconciliationStub = {
+      reconcileWorkspaceSubscriptions: reconcileWorkspace,
+    } as unknown as BillingReconciliationService;
     paddleCheckout = vi.fn().mockResolvedValue({
       provider: 'paddle',
       kind: 'overlay',
@@ -123,12 +131,14 @@ describe('BillingService', () => {
       providerPriceId: null,
       providerUpdatedAt: null,
     });
+    paddlePreviewPlanChange = vi.fn().mockResolvedValue({ result: null, nextBilledAt: null });
     paddleResume = vi.fn().mockResolvedValue(undefined);
     const paddle = {
       id: 'paddle',
       createCheckout: paddleCheckout,
       cancelSubscription: paddleCancel,
       changePlan: paddleChangePlan,
+      previewPlanChange: paddlePreviewPlanChange,
       resumeSubscription: paddleResume,
     } as unknown as PaddleAdapter;
     const razorpay = {
@@ -138,7 +148,16 @@ describe('BillingService', () => {
       changePlan: vi.fn(),
       resumeSubscription: vi.fn(),
     } as unknown as RazorpayAdapter;
-    service = new BillingService(db, new BillingCatalog(CATALOG_ENTRIES, 2), paddle, razorpay);
+    service = new BillingService(
+      db,
+      new BillingCatalog(CATALOG_ENTRIES, 2),
+      paddle,
+      razorpay,
+      // The upgrade path projects provider truth post-changePlan; specs
+      // here assert the adapter calls, not the projection (covered in
+      // billing-reconciliation.service.spec.ts).
+      reconciliationStub,
+    );
 
     const [ws] = await db
       .insert(workspaces)
@@ -489,17 +508,79 @@ describe('BillingService', () => {
       expect(paddleChangePlan).toHaveBeenCalledWith('sub_change_me', 'pri_pro_a', {
         kind: 'immediate_prorated',
       });
-      // §10: the endpoint never grants — the webhook does. Local state
-      // still shows the pre-change subscription.
+      // The endpoint itself never grants — the tier flip arrives via
+      // projection (stubbed here as a no-op) or the webhook. Local
+      // state still shows the pre-change subscription.
       expect(result.tier).toBe('plus');
       expect(result.subscription).toMatchObject({ tier: 'plus', cycle: 'monthly' });
+      // The upgrade projects provider truth in-request (D249) so a
+      // lost webhook cannot strand a charged upgrade on the old tier.
+      expect(reconcileWorkspace).toHaveBeenCalledWith(principal.workspaceId);
+    });
+
+    it('a projection failure never fails the upgrade request (fail-open, webhook backstops)', async () => {
+      await seedActivePlus();
+      reconcileWorkspace.mockRejectedValueOnce(new Error('projector down'));
+      const result = await service.changePlan(principal, { tierId: 'pro', cycle: 'annual' });
+      expect(result.subscription).toMatchObject({ tier: 'plus' });
     });
 
     it('same tier+cycle is an idempotent no-op (no provider call)', async () => {
       await seedActivePlus();
       const result = await service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' });
       expect(paddleChangePlan).not.toHaveBeenCalled();
+      expect(reconcileWorkspace).not.toHaveBeenCalled();
       expect(result.subscription).toMatchObject({ tier: 'plus', cycle: 'monthly' });
+    });
+
+    it('planChangePreview: upgrade previews via the provider; downgrade/same-plan never call it', async () => {
+      await seedActivePlus();
+      paddlePreviewPlanChange.mockResolvedValueOnce({
+        result: { action: 'charge', amount: '18101', currencyCode: 'USD' },
+        nextBilledAt: '2027-07-30T18:00:27.060Z',
+      });
+      const up = await service.planChangePreview(principal, { tierId: 'pro', cycle: 'annual' });
+      expect(paddlePreviewPlanChange).toHaveBeenCalledWith('sub_change_me', 'pri_pro_a', {
+        kind: 'immediate_prorated',
+      });
+      expect(up).toEqual({
+        kind: 'immediate',
+        result: { action: 'charge', amount: '18101', currencyCode: 'USD' },
+        nextBilledAt: '2027-07-30T18:00:27.060Z',
+      });
+
+      // Same plan — nothing to preview, no provider call.
+      const same = await service.planChangePreview(principal, {
+        tierId: 'plus',
+        cycle: 'monthly',
+      });
+      expect(same).toEqual({ kind: 'none' });
+
+      // Downgrade — deferred to period end, still no provider call.
+      paddlePreviewPlanChange.mockClear();
+      await db
+        .update(subscriptions)
+        .set({ currentPeriodEnd: new Date('2026-08-20T12:00:00.000Z') })
+        .where(eq(subscriptions.providerSubscriptionId, 'sub_change_me'));
+      const down = await service.planChangePreview(principal, {
+        tierId: 'plus',
+        cycle: 'monthly',
+      });
+      // plus/monthly IS the current plan — use annual→monthly instead.
+      expect(down).toEqual({ kind: 'none' });
+      await db
+        .update(subscriptions)
+        .set({ billingCycle: 'annual', providerPriceId: 'pri_plus_a' })
+        .where(eq(subscriptions.providerSubscriptionId, 'sub_change_me'));
+      const cycleDown = await service.planChangePreview(principal, {
+        tierId: 'plus',
+        cycle: 'monthly',
+      });
+      expect(cycleDown).toEqual({
+        kind: 'deferred',
+        effectiveAt: '2026-08-20T12:00:00.000Z',
+      });
+      expect(paddlePreviewPlanChange).not.toHaveBeenCalled();
     });
 
     it('stores a Pro→Plus downgrade for period end and charges nothing now', async () => {

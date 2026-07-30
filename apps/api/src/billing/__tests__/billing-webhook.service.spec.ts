@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
+import type { BillingReconciliationService } from '../billing-reconciliation.service.js';
 import { BillingService } from '../billing.service.js';
 import { BillingWebhookService, projectWebhookPayload } from '../billing-webhook.service.js';
 import { PaddleAdapter } from '../paddle.adapter.js';
@@ -812,6 +813,8 @@ describe('BillingWebhookService.process', () => {
       testCatalog(),
       { id: 'paddle', cancelSubscription: async () => {} } as unknown as PaddleAdapter,
       { id: 'razorpay' } as unknown as RazorpayAdapter,
+      // cancelAtPeriodEnd never touches reconciliation.
+      {} as unknown as BillingReconciliationService,
     );
     await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'too_expensive' });
 
@@ -846,6 +849,8 @@ describe('BillingWebhookService.process', () => {
       testCatalog(),
       { id: 'paddle', cancelSubscription: async () => {} } as unknown as PaddleAdapter,
       { id: 'razorpay' } as unknown as RazorpayAdapter,
+      // cancelAtPeriodEnd never touches reconciliation.
+      {} as unknown as BillingReconciliationService,
     );
     await billing.cancelAtPeriodEnd({ workspaceId }, { reason: 'too_expensive' });
 

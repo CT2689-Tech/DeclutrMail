@@ -39,6 +39,19 @@ export interface PlanChangeResult {
 }
 
 /**
+ * Read-only dry run of a plan change (D117/D120 upgrade-copy truth).
+ * `result` is the provider's own "what happens right now" summary —
+ * Paddle's `update_summary.result` — in the currency's lowest unit.
+ * Null when the provider answered but the summary was absent/unparsable
+ * (the caller falls back to generic copy, never to an invented number).
+ */
+export interface PlanChangePreviewResult {
+  result: { action: 'charge' | 'credit'; amount: string; currencyCode: string } | null;
+  /** Post-change next billing timestamp, when the provider reports it. */
+  nextBilledAt: string | null;
+}
+
+/**
  * The domain effect of one verified webhook event, normalized across
  * providers. `kind` drives the BillingWebhookService switch:
  *
@@ -185,6 +198,18 @@ export interface BillingProvider {
     providerPriceId: string,
     timing: PlanChangeTiming,
   ): Promise<PlanChangeResult>;
+
+  /**
+   * Preview `changePlan` without applying it — the provider computes
+   * the immediate proration so the confirm panel can show the exact
+   * charge instead of "a prorated difference" (D117/D120). Read-only;
+   * throws `BILLING_PROVIDER_ERROR` on network/5xx like the reads.
+   */
+  previewPlanChange(
+    providerSubscriptionId: string,
+    providerPriceId: string,
+    timing: PlanChangeTiming,
+  ): Promise<PlanChangePreviewResult>;
 
   /**
    * Resume a paused subscription immediately. Entitlement returns via
