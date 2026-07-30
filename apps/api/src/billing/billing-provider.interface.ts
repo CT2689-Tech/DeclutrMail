@@ -125,6 +125,32 @@ export type FetchSubscriptionResult =
    *  map (pre-grant / unknown). Real activity — never "no payment". */
   | { kind: 'found_unmapped'; providerStatus: string };
 
+/**
+ * D249 — inputs to the claimless/hint subscription search. Each
+ * provider uses the keys it can actually query by: Paddle looks
+ * customers up by `email`; Razorpay lists by `providerPriceIds`
+ * (plan_id filter) and matches the server-written `notes.workspace_id`
+ * against `workspaceId` — its list API has no customer filter, and the
+ * overlay-typed email may not even match the owner's (aliases).
+ */
+export interface SubscriptionSearchQuery {
+  /** Authed workspace — matched against server-written attribution. */
+  workspaceId: string;
+  /** Workspace owner's email — Paddle's customer lookup key. */
+  email: string;
+  /** Catalog price/plan ids the wait could resolve to, THIS provider's. */
+  providerPriceIds: string[];
+  /** Only consider artifacts created at/after this instant (ISO). */
+  createdAfter?: string | undefined;
+}
+
+export interface SubscriptionSearchResult {
+  subscriptions: NormalizedSubscription[];
+  /** Matching artifacts in pre-grant/unmapped statuses (3DS window) —
+   *  real provider activity that must never read as "no payment". */
+  inProgress: number;
+}
+
 /** Outcome of webhook signature verification (D180/D229-bar). */
 export type SignatureVerifyResult =
   | { ok: true }
@@ -201,11 +227,12 @@ export interface BillingProvider {
   fetchSubscription(providerSubscriptionId: string): Promise<FetchSubscriptionResult>;
 
   /**
-   * Subscriptions attributable to a customer email, for claims with no
-   * `provider_ref` (Paddle — its overlay creates the transaction
-   * client-side). Providers whose list API cannot filter by customer
-   * return `[]` and document it (Razorpay — every Razorpay claim
-   * carries `provider_ref` instead, so the ladder never needs this).
+   * Subscriptions attributable to this workspace, for reconciles with
+   * no usable `provider_ref` — Paddle claims never carry one, and a
+   * stale lock may outlive the claim row entirely (Codex 2026-07-30:
+   * the "Razorpay always has provider_ref" assumption died exactly
+   * there). Each adapter searches by what its API supports; see
+   * SubscriptionSearchQuery.
    */
-  searchSubscriptionsByEmail(email: string): Promise<NormalizedSubscription[]>;
+  searchSubscriptions(query: SubscriptionSearchQuery): Promise<SubscriptionSearchResult>;
 }

@@ -67,6 +67,22 @@ checkout whose `custom_data.sig` no longer verifies recoverable, the exact
   (the 3DS window) EXISTS, and reporting it as none-found unlocked the
   release seconds before a charge could settle. The release stays locked
   for `payment_in_progress`; a standalone "Check again" re-asks.
+- **Stale Razorpay locks are actually checked against Razorpay** (round
+  3). The hint path exposed a dead assumption: "Razorpay always
+  resolves via `provider_ref`" fails precisely when the claim row (and
+  its ref) has been swept, and the first-cut `[]` search meant
+  `none_found` without asking Razorpay about a still-payable artifact.
+  Two changes: the sweep retains expired claims for 7 days (expiry
+  already re-arms checkout via the claim upsert; deletion was pure
+  housekeeping), and `searchSubscriptions` is now real on Razorpay —
+  list per catalog `plan_id`, keep entries whose server-written
+  `notes.workspace_id` names the workspace. The search also reports
+  pre-grant matches (`inProgress`), which surface as
+  `payment_in_progress` rather than "no payment". Known limit, both
+  providers: Paddle's search keys on the OWNER email, and the overlay
+  lets the payer type any address — alias-typed checkouts are invisible
+  to the email search and rely on the signed-attribution / claim paths
+  (which is how they grant today).
 - **A stale lock reconciles via the FE hint.** The browser lock never
   auto-expires, but the server claim TTLs at 30 min and is swept — so a
   claimless reconcile used to answer `no_pending` without asking any

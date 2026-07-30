@@ -132,6 +132,32 @@ export class BillingReconciliationService {
   }
 
   /**
+   * Every catalog id the wait could resolve to on one provider — both
+   * cycles when the hint carries none, plus the founding variant for
+   * pro. Razorpay's search lists per plan_id, so this set IS its
+   * search key; Paddle ignores it (email lookup) and the shared
+   * candidate filter re-checks tier/cycle either way.
+   */
+  private candidatePriceIds(
+    provider: BillingProviderId,
+    tier: string,
+    cycle: 'monthly' | 'annual' | null,
+  ): string[] {
+    if (tier !== 'plus' && tier !== 'pro') return [];
+    const cycles = cycle ? [cycle] : (['monthly', 'annual'] as const);
+    const ids: string[] = [];
+    for (const c of cycles) {
+      const standard = this.catalog.resolvePriceId(provider, tier, c, false);
+      if (standard) ids.push(standard);
+      if (tier === 'pro') {
+        const founding = this.catalog.resolvePriceId(provider, tier, c, true);
+        if (founding) ids.push(founding);
+      }
+    }
+    return ids;
+  }
+
+  /**
    * On-demand: reconcile a workspace's open pending checkout against
    * provider truth. Resolution ladder, strictest first:
    *
@@ -170,6 +196,10 @@ export class BillingReconciliationService {
           }
         : null;
     if (!target) return 'no_pending';
+    // Candidate floor: the wait's start minus skew; null = no floor.
+    const searchFloorMs = Number.isNaN(target.floorMs)
+      ? null
+      : target.floorMs - CLAIM_MATCH_SKEW_MS;
 
     // Timestamp BEFORE any provider read — see ORDERING in the header.
     const observedAt = new Date().toISOString();
@@ -179,6 +209,10 @@ export class BillingReconciliationService {
     const providers: BillingProviderId[] = claim ? [claim.provider] : ['paddle', 'razorpay'];
 
     const candidates: Array<{ provider: BillingProviderId; sub: NormalizedSubscription }> = [];
+    // Pre-grant artifacts seen anywhere along the way (the 3DS window)
+    // — a non-zero count must surface as payment_in_progress, never as
+    // "no payment found".
+    let inProgress = 0;
     try {
       if (claim?.providerRef) {
         const result = await this.adapterFor(claim.provider).fetchSubscription(claim.providerRef);
@@ -202,9 +236,22 @@ export class BillingReconciliationService {
           .orderBy(asc(users.createdAt))
           .limit(1);
         if (!owner) return 'none_found';
+        const createdAfter =
+          searchFloorMs !== null ? new Date(searchFloorMs).toISOString() : undefined;
         for (const provider of providers) {
-          const subs = await this.adapterFor(provider).searchSubscriptionsByEmail(owner.email);
-          for (const sub of subs) candidates.push({ provider, sub });
+          // Every catalog id the wait could resolve to on THIS provider
+          // (both cycles when the hint has none; founding variant for
+          // pro) — Razorpay's search lists per plan_id, so the id set
+          // IS its search key.
+          const priceIds = this.candidatePriceIds(provider, target.tier, target.cycle);
+          const found = await this.adapterFor(provider).searchSubscriptions({
+            workspaceId,
+            email: owner.email,
+            providerPriceIds: priceIds,
+            createdAfter,
+          });
+          inProgress += found.inProgress;
+          for (const sub of found.subscriptions) candidates.push({ provider, sub });
         }
       }
     } catch (err) {
@@ -214,7 +261,7 @@ export class BillingReconciliationService {
       return 'provider_unavailable';
     }
 
-    const floorMs = Number.isNaN(target.floorMs) ? null : target.floorMs - CLAIM_MATCH_SKEW_MS;
+    const floorMs = searchFloorMs;
     const matches = candidates.filter(({ provider, sub }) => {
       const entry = this.catalog.resolveByPriceId(provider, sub.providerPriceId);
       if (!entry || entry.tierId !== target.tier) return false;
@@ -228,6 +275,14 @@ export class BillingReconciliationService {
     });
 
     if (matches.length === 0) {
+      if (inProgress > 0) {
+        // Nothing granting YET, but the provider holds matching
+        // pre-grant activity — the release must stay locked.
+        this.logger.log(
+          `billing.reconcile.pending_in_progress workspace=${workspaceId} via=${claim ? 'claim' : 'hint'} in_progress=${inProgress}`,
+        );
+        return 'payment_in_progress';
+      }
       this.logger.log(
         `billing.reconcile.pending_none_found workspace=${workspaceId} via=${claim ? 'claim' : 'hint'} candidates=${candidates.length}`,
       );

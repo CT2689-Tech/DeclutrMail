@@ -32,6 +32,8 @@ import type {
   NormalizedSubscription,
   PlanChangeResult,
   SignatureVerifyResult,
+  SubscriptionSearchQuery,
+  SubscriptionSearchResult,
 } from './billing-provider.interface.js';
 
 const API_BASE = 'https://api.razorpay.com';
@@ -305,15 +307,56 @@ export class RazorpayAdapter implements BillingProvider {
   }
 
   /**
-   * D249 — Razorpay's subscription list API has no customer filter, so
-   * email search is unimplementable here. Every Razorpay claim carries
-   * `provider_ref` (createCheckout mints the subscription server-side),
-   * so the reconciliation ladder resolves via fetchSubscription and
-   * never reaches this. Returns [] rather than guessing.
+   * D249 — Razorpay's list API has no customer filter and the payer's
+   * email is theirs, not ours, so the search keys on what the server
+   * itself wrote: list subscriptions per catalog plan_id, keep the
+   * ones whose `notes.workspace_id` (set by createCheckout) names this
+   * workspace. The first cut returned [] here on the assumption that
+   * `provider_ref` always covers Razorpay — a stale lock outliving the
+   * claim row broke exactly that (Codex 2026-07-30), leaving a
+   * still-payable subscription findable by nobody.
    */
-  async searchSubscriptionsByEmail(email: string): Promise<NormalizedSubscription[]> {
-    void email;
-    return Promise.resolve([]);
+  async searchSubscriptions(query: SubscriptionSearchQuery): Promise<SubscriptionSearchResult> {
+    const result: SubscriptionSearchResult = { subscriptions: [], inProgress: 0 };
+    if (query.providerPriceIds.length === 0) return result;
+    const auth = this.authHeader();
+    const fromSec = query.createdAfter ? Math.floor(Date.parse(query.createdAfter) / 1000) : null;
+    for (const planId of query.providerPriceIds) {
+      const params = new URLSearchParams({ plan_id: planId, count: '100' });
+      if (fromSec !== null && Number.isFinite(fromSec)) params.set('from', String(fromSec));
+      let res: Response;
+      try {
+        res = await fetch(`${API_BASE}/v1/subscriptions?${params.toString()}`, {
+          headers: { Authorization: auth },
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        });
+      } catch (err) {
+        this.logger.error(
+          `razorpay.reconcile_search.network_error plan=${planId} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      }
+      if (!res.ok) {
+        this.logger.error(`razorpay.reconcile_search.failed plan=${planId} status=${res.status}`);
+        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      }
+      const body = (await res.json()) as { items?: RazorpaySubscription[] };
+      for (const entity of body.items ?? []) {
+        if (!entity?.id) continue;
+        // Only artifacts the server attributed to THIS workspace at
+        // creation — a plan-wide listing must never leak across
+        // workspaces into a projection candidate.
+        if (readWorkspaceId(entity.notes) !== query.workspaceId) continue;
+        const normalized = toNormalizedSubscription(entity);
+        if (normalized !== null) {
+          result.subscriptions.push(normalized);
+        } else {
+          // created/authenticated — the 3DS window. Real activity.
+          result.inProgress += 1;
+        }
+      }
+    }
+    return result;
   }
 
   verifyWebhookSignature(args: {

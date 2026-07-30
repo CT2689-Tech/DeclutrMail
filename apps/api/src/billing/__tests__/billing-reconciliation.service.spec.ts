@@ -20,6 +20,8 @@ import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import type {
   FetchSubscriptionResult,
   NormalizedSubscription,
+  SubscriptionSearchQuery,
+  SubscriptionSearchResult,
 } from '../billing-provider.interface.js';
 import { BillingReconciliationService } from '../billing-reconciliation.service.js';
 import { BillingWebhookService } from '../billing-webhook.service.js';
@@ -92,13 +94,15 @@ function testCatalog(): BillingCatalog {
 /** Minimal fake adapter — only the D249 read surface is exercised. */
 function fakeAdapter(overrides: {
   fetchSubscription?: (id: string) => Promise<FetchSubscriptionResult>;
-  searchSubscriptionsByEmail?: (email: string) => Promise<NormalizedSubscription[]>;
+  searchSubscriptions?: (query: SubscriptionSearchQuery) => Promise<SubscriptionSearchResult>;
 }): PaddleAdapter & RazorpayAdapter {
   return {
     fetchSubscription:
       overrides.fetchSubscription ??
       (async (): Promise<FetchSubscriptionResult> => ({ kind: 'not_found' })),
-    searchSubscriptionsByEmail: overrides.searchSubscriptionsByEmail ?? (async () => []),
+    searchSubscriptions:
+      overrides.searchSubscriptions ??
+      (async (): Promise<SubscriptionSearchResult> => ({ subscriptions: [], inProgress: 0 })),
   } as unknown as PaddleAdapter & RazorpayAdapter;
 }
 
@@ -209,9 +213,9 @@ describe('BillingReconciliationService (D249)', () => {
     const searched: string[] = [];
     const svc = service(
       fakeAdapter({
-        searchSubscriptionsByEmail: async (email) => {
-          searched.push(email);
-          return [tooOld, wrongTier, canceled, older, newest];
+        searchSubscriptions: async (query) => {
+          searched.push(query.email);
+          return { subscriptions: [tooOld, wrongTier, canceled, older, newest], inProgress: 0 };
         },
       }),
     );
@@ -243,13 +247,64 @@ describe('BillingReconciliationService (D249)', () => {
     expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
   });
 
+  it('Codex fix 3: a stale RAZORPAY lock is found via plan_id + notes — Razorpay IS asked', async () => {
+    // No claim row (swept), no provider_ref — the first cut's "[]"
+    // Razorpay search meant none_found without asking Razorpay, while
+    // its orphan stayed payable from the provider's own email.
+    const rzpQueries: SubscriptionSearchQuery[] = [];
+    const rzpSub: NormalizedSubscription = {
+      ...activePlusSub('sub_rzp_stale', new Date()),
+      providerPriceId: TEST_PRICE_IDS.razorpay.plus_monthly,
+      workspaceId: null,
+    };
+    const svc = service(
+      fakeAdapter({}), // paddle finds nothing
+      fakeAdapter({
+        searchSubscriptions: async (query) => {
+          rzpQueries.push(query);
+          return { subscriptions: [rzpSub], inProgress: 0 };
+        },
+      }),
+    );
+
+    const outcome = await svc.reconcilePendingCheckout(workspaceId, {
+      tier: 'plus',
+      cycle: 'monthly',
+      startedAt: new Date(Date.now() - 40 * 60_000).toISOString(),
+    });
+    expect(outcome).toBe('granted');
+    // Razorpay was queried with ITS plan ids + the workspace to match
+    // notes against — the search key set that makes it answerable.
+    expect(rzpQueries).toHaveLength(1);
+    expect(rzpQueries[0]!.workspaceId).toBe(workspaceId);
+    expect(rzpQueries[0]!.providerPriceIds).toContain(TEST_PRICE_IDS.razorpay.plus_monthly);
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('plus');
+  });
+
+  it('Codex fix 3: search-path pre-grant activity is payment_in_progress, not none_found', async () => {
+    const svc = service(
+      fakeAdapter({
+        searchSubscriptions: async () => ({ subscriptions: [], inProgress: 1 }),
+      }),
+    );
+    const outcome = await svc.reconcilePendingCheckout(workspaceId, {
+      tier: 'plus',
+      cycle: 'monthly',
+    });
+    expect(outcome).toBe('payment_in_progress');
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+  });
+
   it('Codex fix 2: a stale lock (claim swept) reconciles via the FE hint, not no_pending', async () => {
     // No pending_checkouts row — the 30-min TTL passed and the sweep
     // deleted it, but the BROWSER still holds its never-auto-expiring
     // lock. The hint (what that browser awaited) drives a real
     // provider search; a match grants exactly like the claim path.
     const found = activePlusSub('sub_after_ttl', new Date());
-    const svc = service(fakeAdapter({ searchSubscriptionsByEmail: async () => [found] }));
+    const svc = service(
+      fakeAdapter({ searchSubscriptions: async () => ({ subscriptions: [found], inProgress: 0 }) }),
+    );
 
     const outcome = await svc.reconcilePendingCheckout(workspaceId, {
       tier: 'plus',
@@ -263,7 +318,9 @@ describe('BillingReconciliationService (D249)', () => {
     // And with NOTHING at the provider either, the hint path answers
     // none_found (we asked!) — no_pending is reserved for hintless
     // calls only.
-    const empty = service(fakeAdapter({ searchSubscriptionsByEmail: async () => [] }));
+    const empty = service(
+      fakeAdapter({ searchSubscriptions: async () => ({ subscriptions: [], inProgress: 0 }) }),
+    );
     // New workspace to avoid the granted row above.
     const [ws2] = await db
       .insert(workspaces)
@@ -278,7 +335,9 @@ describe('BillingReconciliationService (D249)', () => {
 
   it('provider answers empty → none_found; the claim SURVIVES (release stays a user decision)', async () => {
     await seedClaim({ provider: 'paddle' });
-    const svc = service(fakeAdapter({ searchSubscriptionsByEmail: async () => [] }));
+    const svc = service(
+      fakeAdapter({ searchSubscriptions: async () => ({ subscriptions: [], inProgress: 0 }) }),
+    );
 
     expect(await svc.reconcilePendingCheckout(workspaceId)).toBe('none_found');
     expect(await db.select().from(pendingCheckouts)).toHaveLength(1);
@@ -289,7 +348,7 @@ describe('BillingReconciliationService (D249)', () => {
     await seedClaim({ provider: 'paddle' });
     const svc = service(
       fakeAdapter({
-        searchSubscriptionsByEmail: async () => {
+        searchSubscriptions: async () => {
           throw new Error('ECONNRESET');
         },
       }),

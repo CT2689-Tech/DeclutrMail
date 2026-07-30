@@ -36,6 +36,8 @@ import type {
   PlanChangeResult,
   PlanChangeTiming,
   SignatureVerifyResult,
+  SubscriptionSearchQuery,
+  SubscriptionSearchResult,
 } from './billing-provider.interface.js';
 
 /** Default tolerated clock skew between Paddle's `ts` and now (seconds). */
@@ -426,34 +428,40 @@ export class PaddleAdapter implements BillingProvider {
   }
 
   /**
-   * D249 — customers by exact email, then their subscriptions. Two
-   * GETs; used only for claims with no `provider_ref` (Paddle overlay
-   * checkouts, where the server never sees a provider artifact).
+   * D249 — customers by exact OWNER email, then their subscriptions.
+   * Two GETs. Known limit: the overlay lets the payer type ANY email,
+   * so an alias-typed checkout creates a customer this search cannot
+   * see — the signed custom_data / claim paths are what grant those;
+   * this search is the claimless backstop, not the primary.
    */
-  async searchSubscriptionsByEmail(email: string): Promise<NormalizedSubscription[]> {
+  async searchSubscriptions(query: SubscriptionSearchQuery): Promise<SubscriptionSearchResult> {
     const customersBody = await this.reconciliationGet(
-      `/customers?email=${encodeURIComponent(email)}`,
+      `/customers?email=${encodeURIComponent(query.email)}`,
       `email_search`,
     );
     const customers = (customersBody as { data?: Array<{ id?: string }> } | null)?.data ?? [];
     const ids = customers
       .map((c) => c.id)
       .filter((id): id is string => typeof id === 'string' && id.length > 0);
-    if (ids.length === 0) return [];
+    if (ids.length === 0) return { subscriptions: [], inProgress: 0 };
     const subsBody = await this.reconciliationGet(
       `/subscriptions?customer_id=${encodeURIComponent(ids.join(','))}&per_page=50`,
       `subs_by_customer`,
     );
     const subs = (subsBody as { data?: PaddleSubscription[] } | null)?.data ?? [];
-    const normalized: NormalizedSubscription[] = [];
+    const result: SubscriptionSearchResult = { subscriptions: [], inProgress: 0 };
     for (const sub of subs) {
       if (!sub?.id) continue;
       const mapped = toNormalizedSubscription(sub, this.env.PADDLE_WEBHOOK_SECRET);
       if (mapped !== null) {
-        normalized.push({ ...mapped, providerCreatedAt: sub.created_at ?? null });
+        result.subscriptions.push({ ...mapped, providerCreatedAt: sub.created_at ?? null });
+      } else {
+        // Unmapped status on the customer's own subscription — real
+        // pre-grant activity, reported so it never reads "no payment".
+        result.inProgress += 1;
       }
     }
-    return normalized;
+    return result;
   }
 
   verifyWebhookSignature(args: {

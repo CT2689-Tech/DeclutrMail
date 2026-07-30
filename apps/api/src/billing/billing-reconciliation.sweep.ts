@@ -23,7 +23,9 @@ import type { DrizzleDb } from '../db/db.module.js';
  *      mirrors BillingWebhookService.recomputeWorkspaceTier — same
  *      statuses, same deadline predicate, same max-rank rule; a drift
  *      between the two IS a bug (cross-referenced in both places).
- *   3. Expired `pending_checkouts` rows deleted (the FE lock horizon).
+ *   3. `pending_checkouts` rows expired > 7 days deleted — retention
+ *      keeps `provider_ref` reachable for stale-lock reconciliation
+ *      (D249); expiry itself re-arms checkout via the claim upsert.
  *   4. Stale D120 scheduled changes (> 7 days) surfaced as WARNs — the
  *      `billing.plan_change_unconfirmed` class only a sweep can age
  *      out.
@@ -88,8 +90,16 @@ export async function runBillingReconciliationSweep(db: DrizzleDb): Promise<Bill
     OR ${flippedFilter(flippedWorkspaceIds)}
   `);
 
+  // D249 (Codex 2026-07-30): retain expired claims for 7 days instead
+  // of deleting at expiry. Checkout-reopening never depended on this
+  // deletion (the claim upsert reclaims any row past expires_at, and
+  // the FE ignores expired rows) — but the row's `provider_ref` is the
+  // ONLY exact link to a Razorpay artifact, and a browser's stale lock
+  // (which never auto-expires) reconciles through it. Deleting at
+  // expiry left stale Razorpay locks releasable without ever asking
+  // Razorpay about the still-payable subscription.
   const cleared = await db.execute(sql`
-    DELETE FROM pending_checkouts WHERE expires_at < now()
+    DELETE FROM pending_checkouts WHERE expires_at < now() - interval '7 days'
   `);
 
   const stale = await db.execute(sql`
