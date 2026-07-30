@@ -629,3 +629,49 @@ describe('(app) layout — user-scoped routes stay reachable with no active mail
     expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
   });
 });
+
+describe('(app) layout — undo tray stays off account surfaces (D245)', () => {
+  /** Fully-authed handlers with an active mailbox (tier pro default). */
+  function activeMailboxHandlers(): FetchStubHandler[] {
+    return [
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => ok({ data: { pending: 0 } }),
+      },
+    ];
+  }
+
+  it('does not mount the tray on /billing even with an active mailbox', async () => {
+    // Billing is user-scoped, not mailbox-backed — the tray was
+    // overlaying the plan cards.
+    pathnameRef.current = '/billing';
+    installFetchStub(activeMailboxHandlers());
+
+    renderLayout();
+
+    expect(await screen.findByText('authed app body')).toBeInTheDocument();
+    expect(screen.queryByTestId('triage-undo-tray')).not.toBeInTheDocument();
+  });
+
+  it('does not mount the tray on /settings even with an active mailbox', async () => {
+    pathnameRef.current = '/settings';
+    installFetchStub(activeMailboxHandlers());
+
+    renderLayout();
+
+    expect(await screen.findByText('authed app body')).toBeInTheDocument();
+    expect(screen.queryByTestId('triage-undo-tray')).not.toBeInTheDocument();
+  });
+
+  it('mounts the tray on a mailbox-backed route (/senders) with an active mailbox', async () => {
+    pathnameRef.current = '/senders';
+    installFetchStub(activeMailboxHandlers());
+
+    renderLayout();
+
+    expect(await screen.findByText('authed app body')).toBeInTheDocument();
+    expect(screen.getByTestId('triage-undo-tray')).toBeInTheDocument();
+  });
+});
