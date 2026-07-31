@@ -1444,14 +1444,19 @@ removed its "older than the walked window" skip. Verified at `core.abbrev` 8/9/1
 wrong-PR receipt and a backdated entry report at EVERY width, and a clean tree passes at every
 width. Grep-swept the file for residual silent-skip shapes; one `.get()` remains and it exits 1.
 
-## 2026-07-31 — A refund's verdict is recorded twice, and only the cosmetic half survives
+## 2026-07-31 — Called a launch blocker off the wrong column
 
-**PR:** found while driving billing-test-matrix group H (no PR — flagged, not fixed)
-**Caught by:** manual matrix run (H2, the step the doc names its most valuable)
-**What happened:** `adjustment.created`/`refund` writes two things — `cancel_source='refund'` (a marker) and `cancel_at_period_end=true` (the part that actually ends the subscription). A single subsequent `subscription.updated`, which Paddle sends routinely and which carries `scheduled_change: null` because the provider never knew we cancelled, resets the flag. The marker survives. So the row reads "refunded" in the audit column while renewing forever, and the tier never drops. Reproduced twice in two steps.
-**Correct approach:** a local verdict that contradicts the provider has to be enforced on every later write, not recorded alongside one. The terminal-canceled floor already does this for `status='canceled'`; a refunded-but-`active` row has no equivalent.
-**Rule:** when a decision is stored as (marker + effect), the guard must key on the MARKER — otherwise a later writer clears the effect and the marker turns into a lie about state rather than a record of it.
-**Enforcement update:** none yet — `billing-webhook.service.ts` is a CLAUDE.md §9 stop condition, so this is founder-gated. FOUNDER-FOLLOWUPS 2026-07-31 carries the proposed shape and a regression test to pin it.
+**PR:** #450 (the claim), corrected in the follow-up PR
+**Caught by:** Codex stop-review
+**What happened:** driving matrix H2 I saw `cancel_at_period_end` flip from `t` to `f` after a replayed renewal, concluded "a refunded customer keeps Pro forever", and published it as a launch blocker in FOUNDER-FOLLOWUPS, the matrix, MISTAKES.md and a merged PR — then told the founder to block a production purchase on it. I never checked `entitlement_ends_at`, which is the column the tier recompute actually reads. It survives. Pushing the deadline past after the replay dropped the workspace to `free`: the refund verdict was enforced the whole time.
+
+The review's objection was not "you read the wrong column" — it was that my proposed fix (make `cancel_source` sticky so it protects `cancel_at_period_end`) could not stop Paddle renewing. Chasing why that was true is what exposed the misdiagnosis: no local column stops Paddle billing, because the webhook service is a projector with no provider adapters at all.
+
+**Correct approach:** before naming a defect, find the column the OUTCOME depends on and assert on that. I asserted on the flag whose name matched my hypothesis. And a severity label is a claim like any other — "launch blocker" needed the end-to-end demonstration (deadline passes → tier drops or does not), which takes one more step and would have refuted it.
+
+**Rule:** trace a money claim to the value that actually gates the money, and demonstrate the end state, before assigning severity. A flag that reads like the thing you are testing is not evidence that it governs it.
+
+**Enforcement update:** none — same family as the BLIND-GUARD rule below (a check that appears to verify and does not). Third occurrence in this session; a CLAUDE.md §8 line is now warranted if it recurs.
 
 ## 2026-07-31 — Two "verifications" that verified nothing, in one session
 
