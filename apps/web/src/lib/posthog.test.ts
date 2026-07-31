@@ -234,6 +234,20 @@ describe('withdrawal stops the SDK, not just the stored choice (GDPR Art. 7(3))'
     expect(resetAt).toBeLessThan(optOutAt);
   });
 
+  it('still opts out when reset() throws — the stop must not depend on cleanup', async () => {
+    await loadSdkViaTrack();
+    // `reset()` has to run first (it clears posthog's own opt-out flag), so
+    // sharing a catch with the opt-out made identity cleanup a single point
+    // of failure for the thing that actually stops capture.
+    posthogMock.reset.mockImplementationOnce(() => {
+      throw new Error('persistence unavailable');
+    });
+
+    await expect(withdrawAnalyticsConsent()).resolves.toBeUndefined();
+
+    expect(posthogMock.opt_out_capturing).toHaveBeenCalledTimes(1);
+  });
+
   it('opts out when consent is withdrawn DURING the SDK load, and captures nothing', async () => {
     // The race: `loadSdk` checks consent before `await import(...)`, but
     // `init()` — which starts the autocapture extensions — runs after it. A

@@ -217,16 +217,37 @@ export async function withdrawAnalyticsConsent(): Promise<void> {
   storeConsent('essential');
   const pendingSdk = sdkPromise;
   if (!pendingSdk) return;
+  let sdk: PosthogSdk | null = null;
   try {
-    const sdk = await pendingSdk;
-    if (!sdk) return;
-    // ORDER IS LOAD-BEARING. posthog's `reset()` calls its internal
-    // `consent.reset()`, which clears the opt-out flag — so opting out first
-    // and resetting second would silently switch capture back on.
+    sdk = await pendingSdk;
+  } catch {
+    // The load itself rejected, so there is no live SDK to stop.
+    return;
+  }
+  if (!sdk) return;
+
+  // ORDER IS LOAD-BEARING. posthog's `reset()` calls its internal
+  // `consent.reset()`, which clears the opt-out flag — so opting out first
+  // and resetting second would silently switch capture back on.
+  //
+  // They also need SEPARATE catches, precisely because that order puts the
+  // cheap step in front of the critical one. Sharing a catch meant a throw
+  // from `reset()` skipped the opt-out entirely and left `$pageview` /
+  // `$pageleave` reporting after the visitor withdrew.
+  try {
     sdk.reset();
+  } catch {
+    // Identity cleanup is hygiene. The opt-out below is what actually stops
+    // capture, so a failure here must never prevent it from running.
+  }
+
+  try {
     sdk.opt_out_capturing();
   } catch {
-    // Consent is already withdrawn. SDK cleanup is best-effort only.
+    // Nothing further can be done in-page. The stored choice already reads
+    // "essential", so `loadSdk` will opt out on its next call — though that
+    // only fires on an explicit `track()`, which is why the call above is
+    // the one that matters for autocaptured events.
   }
 }
 
