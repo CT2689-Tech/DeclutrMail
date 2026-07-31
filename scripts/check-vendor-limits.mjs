@@ -299,8 +299,28 @@ async function checkUpstash() {
   // exactly that standing WARN — 574% of an allowance a public repo never
   // pays — and is now cost-keyed instead. Keep it that way.)
   const warnAt = budget * envNum('UPSTASH_BUDGET_WARN_FRACTION', 0.8);
+  // BREACH at the WARN line — this row alone, and deliberately.
+  //
+  // Upstash's cap is not a spend threshold, it is a kill switch: crossing
+  // it SUSPENDS the database, and a suspended Redis stops every BullMQ
+  // queue at once — Gmail watch renewal included, which lapses the push
+  // subscription after ~7 days and stops mail arriving even once Redis is
+  // back. That is a total outage, so "on track to be suspended" is a hard
+  // signal in the sense BREACH already documents ("a vendor-native hard
+  // signal"), not the soft, costs-money signal WARN is for.
+  //
+  // Every other row keeps WARN: overshooting Vercel or Sentry costs money
+  // or drops telemetry, and making those fail the run would leave a
+  // permanently red workflow that trains the alert away — the objection
+  // that (correctly) rules out flipping WARN_IS_FAILURE globally.
+  //
+  // The 80% projection is what makes this an alert BEFORE the outage. The
+  // pre-existing `projected >= budget` BREACH fires only once month-end
+  // spend is already modelled to hit the cap; on 2026-07-25 actual usage
+  // reached the cap while the projection still sat under it, the 80% line
+  // WARNed into a green run, and prod Redis suspended unannounced.
   const spend = {
-    status: projected >= budget ? 'BREACH' : projected >= warnAt ? 'WARN' : 'OK',
+    status: projected >= warnAt ? 'BREACH' : 'OK',
     // Against the cap, so 100% reads as "projecting exactly the budget".
     usagePct: Math.round((projected / budget) * 100),
   };
