@@ -686,6 +686,18 @@ function PlanCard({
 }) {
   const tier = TIER_MANIFEST[tierId];
   const price = priceLineFor(tier, cycle, provider);
+  // The badge marks the plan you are ON — tier AND cycle. Tier alone
+  // made it follow the cycle toggle: a Pro ANNUAL subscriber flipping
+  // the strip to Monthly saw "Pro · $19/mo · CURRENT", i.e. the badge
+  // asserting a price they do not pay ($190/yr) on a card that is
+  // actually a switch target (founder screenshot, 2026-07-31). The CTA
+  // below already drew this distinction — "Switch to monthly billing" —
+  // so the card contradicted itself.
+  //
+  // `currentCycle` is null when the cycle is unknowable (non-Paddle
+  // rail); there the tier badge stays, because tier is the most this
+  // layer honestly knows. Narrowing THAT case needs its own decision.
+  const isCurrentPlan = isCurrent && (currentCycle === null || currentCycle === cycle);
   // CTA per card state. Every non-current card gets one so the row
   // reads as equals; the current card's only action is switching its
   // billing cycle via the toggle.
@@ -721,7 +733,7 @@ function PlanCard({
           {tierId === 'pro' ? '⭐ ' : ''}
           {tier.name}
         </span>
-        {isCurrent ? (
+        {isCurrentPlan ? (
           <span
             style={{
               fontFamily: font.mono,

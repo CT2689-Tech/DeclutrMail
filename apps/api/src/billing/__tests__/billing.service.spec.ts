@@ -622,13 +622,24 @@ describe('BillingService', () => {
       const days = (new Date(resumeAt).getTime() - before) / (24 * 60 * 60 * 1000);
       expect(days).toBeGreaterThan(29.9);
       expect(days).toBeLessThan(30.1);
-      expect(result.subscription?.pauseUntil).toBe(resumeAt);
 
-      // The ENTITLEMENT does not move here — `subscription.paused` owns
-      // that, like every other grant/revoke (D117). Claiming it locally
-      // would revoke access for a pause the provider might reject.
+      // NOTHING about the pause is written locally — not `status`, and
+      // not `pause_until`. Both belong to `subscription.paused`, like
+      // every other grant/revoke (D117). Writing either here strands the
+      // two stores if the pause does not take effect, and Paddle's
+      // `scheduled_change.action='resume'` already supplies the date
+      // through the webhook alongside the status that makes it true.
       expect(result.subscription?.status).toBe('active');
+      expect(result.subscription?.pauseUntil).toBeNull();
       expect(result.tier).toBe('pro');
+
+      // The audit marker IS written — the request happened, whatever the
+      // provider ultimately does with it.
+      const markers = await db
+        .select()
+        .from(subscriptionEvents)
+        .where(eq(subscriptionEvents.eventType, 'local.pause_requested'));
+      expect(markers).toHaveLength(1);
     });
 
     it('refuses a subscription already on its way out (two conflicting schedules)', async () => {
