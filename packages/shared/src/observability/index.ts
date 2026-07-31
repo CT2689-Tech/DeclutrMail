@@ -10,6 +10,6 @@ export {
   scrubSentryEvent,
   type SentryScrubProfile,
   scrubTelemetryPayload,
-  scrubUrlQueries,
+  scrubUrlDerived,
 } from './scrubber.js';
 export type { EventName, EventPayloads, EventProps, OnboardingFunnelStep, Verb } from './events.js';

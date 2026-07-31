@@ -110,7 +110,7 @@ function scrubHeaders(headers: unknown): unknown {
  * a shared reference, and a shared reference serializes perfectly well
  * (a true cycle would have died in the SDK's own `JSON.stringify`). So
  * `{a: msg, b: msg}` shipped a full Gmail body under `b`. Found by
- * Codex stop-review, 2026-07-31, against `scrubUrlQueries`; the same
+ * Codex stop-review, 2026-07-31, against `scrubUrlDerived`; the same
  * line had been here since the scrubber was written.
  *
  * A `WeakMap` keyed on the input holds the OUTPUT container, and the
@@ -236,23 +236,48 @@ function stripUrlQuery(value: string): string {
 }
 
 /**
- * Recursively strip non-attribution query params from every URL-shaped
- * string in a payload. Applied at the wire boundary rather than to the
- * handful of keys known to hold URLs today — an SDK can add
- * `$initial_current_url`, `$referrer`, `$pathname` and more without
+ * Property keys that hold a campaign param the SDK PARSED OUT of the
+ * URL. posthog-js lifts its whole campaign list into top-level
+ * properties — `utm_content`, and a `$initial_utm_content` person
+ * property that persists — beside `$current_url`.
+ *
+ * Cleaning the URL string alone is therefore not enough, and this is
+ * exactly how the value allowlist above got defeated: for a visit to
+ * `/?utm_content=someone@example.com` the address was removed from
+ * `$current_url` and shipped anyway in `utm_content` (Codex
+ * stop-review, 2026-07-31).
+ *
+ * `utm_[a-z_]+` is a pattern, not a list, because PostHog's set grows;
+ * the click ids are enumerated because they share no prefix.
+ */
+const CAMPAIGN_PROPERTY_KEY =
+  /^\$?(initial_)?(utm_[a-z_]+|gclid|gad_source|gclsrc|dclid|gbraid|wbraid|fbclid|msclkid|twclid|li_fat_id|mc_cid|igshid|ttclid|rdt_cid|irclid|_kx|epik|qclid|sccid)$/i;
+
+/**
+ * Remove URL-DERIVED identity from a payload — both the URL strings and
+ * the properties an SDK parsed out of them.
+ *
+ * Named for the whole job on purpose. Its first name said "queries",
+ * which is one component of one of the two channels, and both times a
+ * guard in this file has been named for less than it guards, the gap
+ * turned out to be where the leak lived (see `scrubObject`'s note on
+ * `WeakSet`).
+ *
+ * URL strings are matched by SHAPE, at any depth and under any key: an
+ * SDK adds `$referrer` / `$initial_current_url` / `$pathname` without
  * asking us, and a key allowlist would silently miss each new one.
  *
  * Repeat-visit handling is `scrubObject`'s — see the note there on why
  * a `WeakSet` is a bypass rather than cycle-safety.
  */
-export function scrubUrlQueries<T>(input: T, seen: WeakMap<object, unknown> = new WeakMap()): T {
+export function scrubUrlDerived<T>(input: T, seen: WeakMap<object, unknown> = new WeakMap()): T {
   if (typeof input === 'string') return stripUrlQuery(input) as unknown as T;
   if (Array.isArray(input)) {
     const cached = seen.get(input);
     if (cached !== undefined) return cached as T;
     const out: unknown[] = [];
     seen.set(input, out);
-    for (const item of input) out.push(scrubUrlQueries(item, seen));
+    for (const item of input) out.push(scrubUrlDerived(item, seen));
     return out as unknown as T;
   }
   if (isPlainObject(input)) {
@@ -261,7 +286,17 @@ export function scrubUrlQueries<T>(input: T, seen: WeakMap<object, unknown> = ne
     const out: Record<string, unknown> = {};
     seen.set(input, out);
     for (const [key, value] of Object.entries(input)) {
-      out[key] = scrubUrlQueries(value, seen);
+      // The extracted copy answers to the SAME value rule as the query
+      // it came from, or the rule is worth nothing.
+      if (
+        CAMPAIGN_PROPERTY_KEY.test(key) &&
+        typeof value === 'string' &&
+        !SAFE_CAMPAIGN_VALUE.test(value)
+      ) {
+        out[key] = REDACTED;
+        continue;
+      }
+      out[key] = scrubUrlDerived(value, seen);
     }
     return out as unknown as T;
   }
@@ -278,7 +313,7 @@ export function scrubTelemetryPayload<T extends Record<string, unknown>>(
 ): T | null {
   if (!event) return null;
   try {
-    return scrubUrlQueries(scrubObject(event));
+    return scrubUrlDerived(scrubObject(event));
   } catch {
     return null;
   }

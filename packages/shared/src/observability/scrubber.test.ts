@@ -6,7 +6,7 @@ import {
   scrubSentryBreadcrumb,
   scrubSentryEvent,
   scrubTelemetryPayload,
-  scrubUrlQueries,
+  scrubUrlDerived,
 } from './scrubber.js';
 
 /**
@@ -646,23 +646,23 @@ describe('scrubSentryBreadcrumb (manual-only wire policy)', () => {
  * banner promises it "receives product-usage events, never Gmail
  * message data".
  */
-describe('scrubUrlQueries', () => {
+describe('scrubUrlDerived', () => {
   it('strips a sender address from the real leaking URL', () => {
     expect(
-      scrubUrlQueries({
+      scrubUrlDerived({
         $current_url: 'https://declutrmail.com/activity?sender_q=someone%40example.com',
       }),
     ).toEqual({ $current_url: 'https://declutrmail.com/activity' });
   });
 
   it('strips the senders free-text query too', () => {
-    const out = scrubUrlQueries({ $current_url: 'https://declutrmail.com/senders?q=acme.com' });
+    const out = scrubUrlDerived({ $current_url: 'https://declutrmail.com/senders?q=acme.com' });
     expect(out.$current_url).toBe('https://declutrmail.com/senders');
   });
 
   it('keeps campaign attribution and drops everything beside it', () => {
     expect(
-      scrubUrlQueries({
+      scrubUrlDerived({
         $current_url: 'https://declutrmail.com/?utm_source=x&sender_q=a%40b.com&utm_medium=email',
       }),
     ).toEqual({ $current_url: 'https://declutrmail.com/?utm_source=x&utm_medium=email' });
@@ -672,7 +672,7 @@ describe('scrubUrlQueries', () => {
     // The SDK owns these key names and can add more without asking us,
     // which is why this walks values rather than an allowlist of keys.
     expect(
-      scrubUrlQueries({
+      scrubUrlDerived({
         $referrer: 'https://declutrmail.com/senders?q=a%40b.com',
         nested: { $initial_current_url: 'https://declutrmail.com/x?token=abc' },
         list: ['https://declutrmail.com/y?sender_q=c%40d.com'],
@@ -692,7 +692,7 @@ describe('scrubUrlQueries', () => {
     // A fragment-only URL skipped the function entirely: the fast path
     // keyed on `?`, and the address bar carries the hash too.
     expect(
-      scrubUrlQueries({
+      scrubUrlDerived({
         a: 'https://declutrmail.com/activity#sender_q=someone@example.com',
         b: 'https://declutrmail.com/activity?x=1#token=someone@example.com',
       }),
@@ -705,19 +705,19 @@ describe('scrubUrlQueries', () => {
   it('drops an allowed param whose VALUE carries identity', () => {
     // A name allowlist constrains who may speak, not what they may say.
     expect(
-      scrubUrlQueries({ u: 'https://declutrmail.com/?utm_content=someone@example.com' }),
+      scrubUrlDerived({ u: 'https://declutrmail.com/?utm_content=someone@example.com' }),
     ).toEqual({ u: 'https://declutrmail.com/' });
   });
 
   it('drops `ref` entirely — not a param any analytics tool reads', () => {
-    expect(scrubUrlQueries({ u: 'https://declutrmail.com/?ref=someone@example.com' })).toEqual({
+    expect(scrubUrlDerived({ u: 'https://declutrmail.com/?ref=someone@example.com' })).toEqual({
       u: 'https://declutrmail.com/',
     });
   });
 
   it('keeps ordinary campaign values, so attribution still works', () => {
     expect(
-      scrubUrlQueries({
+      scrubUrlDerived({
         u: 'https://declutrmail.com/?utm_source=twitter&utm_campaign=launch-2026&gclid=Cj0KCQ_abc123',
       }),
     ).toEqual({
@@ -727,9 +727,52 @@ describe('scrubUrlQueries', () => {
 
   it('drops `user:pass@host` userinfo', () => {
     // An address parked in the userinfo position survives a query strip.
-    expect(scrubUrlQueries({ u: 'https://someone%40example.com:x@declutrmail.com/a?b=1' })).toEqual(
+    expect(scrubUrlDerived({ u: 'https://someone%40example.com:x@declutrmail.com/a?b=1' })).toEqual(
       { u: 'https://declutrmail.com/a' },
     );
+  });
+
+  // The SDK PARSES campaign params out of the URL into their own
+  // properties. Cleaning `$current_url` alone left the copy — which is
+  // precisely how the value rule above got defeated.
+  it('redacts an unsafe value in the EXTRACTED campaign property, not just the URL', () => {
+    expect(
+      scrubUrlDerived({
+        $current_url: 'https://declutrmail.com/?utm_content=someone@example.com',
+        utm_content: 'someone@example.com',
+        $initial_utm_content: 'someone@example.com',
+      }),
+    ).toEqual({
+      $current_url: 'https://declutrmail.com/',
+      utm_content: '[redacted]',
+      $initial_utm_content: '[redacted]',
+    });
+  });
+
+  it('leaves ordinary extracted campaign values alone', () => {
+    // Attribution has to keep working, or the fix trades one problem
+    // for another.
+    const props = {
+      utm_source: 'twitter',
+      $initial_utm_campaign: 'launch-2026',
+      gclid: 'Cj0KCQ_abc123',
+      $utm_medium: 'email',
+    };
+    expect(scrubUrlDerived(props)).toEqual(props);
+  });
+
+  it('covers click ids and unknown utm_* names the SDK may add later', () => {
+    expect(
+      scrubUrlDerived({
+        msclkid: 'someone@example.com',
+        utm_something_new: 'someone@example.com',
+        li_fat_id: 'someone@example.com',
+      }),
+    ).toEqual({
+      msclkid: '[redacted]',
+      utm_something_new: '[redacted]',
+      li_fat_id: '[redacted]',
+    });
   });
 
   it('leaves non-URL strings, query-less URLs and non-http schemes untouched', () => {
@@ -742,7 +785,7 @@ describe('scrubUrlQueries', () => {
       flag: true,
       nothing: null,
     };
-    expect(scrubUrlQueries(input)).toEqual(input);
+    expect(scrubUrlDerived(input)).toEqual(input);
   });
 
   // A REVISIT MUST RETURN THE SCRUBBED COPY, not the input.
@@ -757,7 +800,7 @@ describe('scrubUrlQueries', () => {
       $current_url: 'https://declutrmail.com/a?sender_q=x%40y.com',
     };
     cyclic.self = cyclic;
-    const out = scrubUrlQueries(cyclic);
+    const out = scrubUrlDerived(cyclic);
     expect(out.$current_url).toBe('https://declutrmail.com/a');
     expect((out.self as Record<string, unknown>).$current_url).toBe('https://declutrmail.com/a');
     // The scrubbed copy points at ITSELF — never back at the raw input.
@@ -770,7 +813,7 @@ describe('scrubUrlQueries', () => {
     // but a shared reference serializes perfectly and used to come back
     // raw on its second appearance.
     const shared = { $current_url: 'https://declutrmail.com/a?sender_q=x%40y.com' };
-    const out = scrubUrlQueries({ one: shared, two: shared });
+    const out = scrubUrlDerived({ one: shared, two: shared });
     expect(out.one.$current_url).toBe('https://declutrmail.com/a');
     expect(out.two.$current_url).toBe('https://declutrmail.com/a');
     expect(out.one).toBe(out.two);
