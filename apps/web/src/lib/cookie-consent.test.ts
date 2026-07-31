@@ -31,10 +31,65 @@ describe('cookie-consent persistence (D147)', () => {
     expect(readStoredConsent()).toBe('essential');
   });
 
-  it('prefers localStorage over the cookie when both are present', () => {
-    document.cookie = `${COOKIE_NAME}=essential; Path=/`;
+  it('agreeing stores read straight through', () => {
+    document.cookie = `${COOKIE_NAME}=all; Path=/`;
     window.localStorage.setItem(STORAGE_KEY, 'all');
     expect(readStoredConsent()).toBe('all');
+    expect(hasAnalyticsConsent()).toBe(true);
+  });
+
+  it('a stale localStorage "all" cannot outlive a withdrawal — divergence fails closed', () => {
+    // `storeConsent` swallows a rejected `localStorage.setItem` (quota /
+    // private mode) and still writes the cookie, so after "Essential only"
+    // the two stores can disagree with localStorage holding the OLD "all".
+    // Preferring localStorage here would leave analytics running against
+    // the visitor's stated choice.
+    document.cookie = `${COOKIE_NAME}=essential; Path=/`;
+    window.localStorage.setItem(STORAGE_KEY, 'all');
+
+    expect(readStoredConsent()).toBe('essential');
+    expect(hasAnalyticsConsent()).toBe(false);
+  });
+
+  it('divergence fails closed in the other direction too', () => {
+    // A failed localStorage write of "all" is the mirror case. Treating the
+    // visitor as declined is the safe way to be wrong.
+    document.cookie = `${COOKIE_NAME}=all; Path=/`;
+    window.localStorage.setItem(STORAGE_KEY, 'essential');
+
+    expect(readStoredConsent()).toBe('essential');
+    expect(hasAnalyticsConsent()).toBe(false);
+  });
+
+  it('a withdrawal survives localStorage refusing the write', () => {
+    // Storage that still READS the old "all" but rejects every write — the
+    // quota / private-mode case `storeConsent` swallows. Swapped wholesale
+    // rather than spied: happy-dom's localStorage is Proxy-backed, so both
+    // assigning `.setItem` and spying on `Storage.prototype` leave the real
+    // write working and this test would pass vacuously.
+    const real = Object.getOwnPropertyDescriptor(window, 'localStorage');
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => (key === STORAGE_KEY ? 'all' : null),
+        setItem: () => {
+          throw new DOMException('QuotaExceededError');
+        },
+        removeItem: () => undefined,
+      },
+    });
+
+    try {
+      storeConsent('essential');
+
+      // The cookie took the write even though localStorage refused it...
+      expect(document.cookie).toContain(`${COOKIE_NAME}=essential`);
+      // ...and the stale "all" still readable in localStorage must not win.
+      expect(readStoredConsent()).toBe('essential');
+      expect(hasAnalyticsConsent()).toBe(false);
+    } finally {
+      if (real) Object.defineProperty(window, 'localStorage', real);
+    }
   });
 
   it('reads unrecognized values as null — fails closed, never into tracking', () => {

@@ -60,14 +60,28 @@ function readConsentCookie(): CookieConsent | null {
  */
 export function readStoredConsent(): CookieConsent | null {
   if (typeof window === 'undefined') return null;
+  let stored: CookieConsent | null = null;
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (isCookieConsent(stored)) return stored;
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (isCookieConsent(raw)) stored = raw;
   } catch {
     // localStorage can throw (storage disabled, private-mode quota).
-    // The mirror cookie below is the designed fallback path.
+    // The mirror cookie is the designed fallback path.
   }
-  return readConsentCookie();
+  const mirrored = readConsentCookie();
+
+  if (stored === null) return mirrored;
+  if (mirrored === null) return stored;
+
+  // The two stores DISAGREE, which means one of them failed to take the
+  // last write — `storeConsent` swallows a rejected `localStorage.setItem`
+  // (quota/private mode) and still writes the cookie, so a stale "all" can
+  // outlive a withdrawal. Reading localStorage first and returning early
+  // would let that stale value win and leave analytics running after the
+  // visitor chose "Essential only". The restrictive value wins instead, so
+  // divergence always fails CLOSED — the same rule this module already
+  // applies to unrecognized values.
+  return stored === 'essential' || mirrored === 'essential' ? 'essential' : 'all';
 }
 
 /** Persist a choice to both stores. The banner never returns after this. */

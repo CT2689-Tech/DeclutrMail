@@ -6,6 +6,7 @@ import {
   scrubSentryBreadcrumb,
   scrubSentryEvent,
   scrubTelemetryPayload,
+  scrubUrlDerived,
 } from './scrubber.js';
 
 /**
@@ -630,5 +631,267 @@ describe('scrubSentryBreadcrumb (manual-only wire policy)', () => {
       },
     });
     expect(scrubSentryBreadcrumb(breadcrumb)).toBeNull();
+  });
+});
+
+/**
+ * URL query scrubbing (Codex stop-review, 2026-07-31).
+ *
+ * `scrubObject` removes banned KEYS and never inspects a string VALUE,
+ * so PostHog's `$current_url` carried the whole address bar. Two live
+ * routes put Gmail-derived identity in the query —
+ * `/activity?sender_q=<address>` (sender detail → Activity) and
+ * `/senders?q=<free text>` — so every automatic pageview after such a
+ * navigation shipped a sender's email to PostHog, while the cookie
+ * banner promises it "receives product-usage events, never Gmail
+ * message data".
+ */
+describe('scrubUrlDerived', () => {
+  it('strips a sender address from the real leaking URL', () => {
+    expect(
+      scrubUrlDerived({
+        $current_url: 'https://declutrmail.com/activity?sender_q=someone%40example.com',
+      }),
+    ).toEqual({ $current_url: 'https://declutrmail.com/activity' });
+  });
+
+  it('strips the senders free-text query too', () => {
+    const out = scrubUrlDerived({ $current_url: 'https://declutrmail.com/senders?q=acme.com' });
+    expect(out.$current_url).toBe('https://declutrmail.com/senders');
+  });
+
+  it('keeps campaign attribution and drops everything beside it', () => {
+    expect(
+      scrubUrlDerived({
+        $current_url: 'https://declutrmail.com/?utm_source=x&sender_q=a%40b.com&utm_medium=email',
+      }),
+    ).toEqual({ $current_url: 'https://declutrmail.com/?utm_source=x&utm_medium=email' });
+  });
+
+  it('reaches URL-shaped values under ANY key, at any depth', () => {
+    // The SDK owns these key names and can add more without asking us,
+    // which is why this walks values rather than an allowlist of keys.
+    expect(
+      scrubUrlDerived({
+        $referrer: 'https://declutrmail.com/senders?q=a%40b.com',
+        nested: { $initial_current_url: 'https://declutrmail.com/x?token=abc' },
+        list: ['https://declutrmail.com/y?sender_q=c%40d.com'],
+      }),
+    ).toEqual({
+      $referrer: 'https://declutrmail.com/senders',
+      nested: { $initial_current_url: 'https://declutrmail.com/x' },
+      list: ['https://declutrmail.com/y'],
+    });
+  });
+
+  // The query was only ONE way through. These lock the other four —
+  // three of which shipped in the first version of this scrubber, which
+  // subtracted the part I had thought of instead of rebuilding from the
+  // parts that are safe (Codex stop-review, 2026-07-31).
+  it('strips the FRAGMENT, including when there is no query at all', () => {
+    // A fragment-only URL skipped the function entirely: the fast path
+    // keyed on `?`, and the address bar carries the hash too.
+    expect(
+      scrubUrlDerived({
+        a: 'https://declutrmail.com/activity#sender_q=someone@example.com',
+        b: 'https://declutrmail.com/activity?x=1#token=someone@example.com',
+      }),
+    ).toEqual({
+      a: 'https://declutrmail.com/activity',
+      b: 'https://declutrmail.com/activity',
+    });
+  });
+
+  it('drops an allowed param whose VALUE carries identity', () => {
+    // A name allowlist constrains who may speak, not what they may say.
+    expect(
+      scrubUrlDerived({ u: 'https://declutrmail.com/?utm_content=someone@example.com' }),
+    ).toEqual({ u: 'https://declutrmail.com/' });
+  });
+
+  it('drops `ref` entirely — not a param any analytics tool reads', () => {
+    expect(scrubUrlDerived({ u: 'https://declutrmail.com/?ref=someone@example.com' })).toEqual({
+      u: 'https://declutrmail.com/',
+    });
+  });
+
+  it('keeps ordinary campaign values, so attribution still works', () => {
+    expect(
+      scrubUrlDerived({
+        u: 'https://declutrmail.com/?utm_source=twitter&utm_campaign=launch-2026&gclid=Cj0KCQ_abc123',
+      }),
+    ).toEqual({
+      u: 'https://declutrmail.com/?utm_source=twitter&utm_campaign=launch-2026&gclid=Cj0KCQ_abc123',
+    });
+  });
+
+  it('drops `user:pass@host` userinfo', () => {
+    // An address parked in the userinfo position survives a query strip.
+    expect(scrubUrlDerived({ u: 'https://someone%40example.com:x@declutrmail.com/a?b=1' })).toEqual(
+      { u: 'https://declutrmail.com/a' },
+    );
+  });
+
+  // The SDK PARSES campaign params out of the URL into their own
+  // properties. Cleaning `$current_url` alone left the copy — which is
+  // precisely how the value rule above got defeated.
+  it('redacts an unsafe value in the EXTRACTED campaign property, not just the URL', () => {
+    expect(
+      scrubUrlDerived({
+        $current_url: 'https://declutrmail.com/?utm_content=someone@example.com',
+        utm_content: 'someone@example.com',
+        $initial_utm_content: 'someone@example.com',
+      }),
+    ).toEqual({
+      $current_url: 'https://declutrmail.com/',
+      utm_content: '[redacted]',
+      $initial_utm_content: '[redacted]',
+    });
+  });
+
+  it('leaves ordinary extracted campaign values alone', () => {
+    // Attribution has to keep working, or the fix trades one problem
+    // for another.
+    const props = {
+      utm_source: 'twitter',
+      $initial_utm_campaign: 'launch-2026',
+      gclid: 'Cj0KCQ_abc123',
+      $utm_medium: 'email',
+    };
+    expect(scrubUrlDerived(props)).toEqual(props);
+  });
+
+  it('covers EVERY prefixed copy the SDK keeps, not just the ones named today', () => {
+    // posthog-js keeps three copies of each param: the event property,
+    // the `$initial_*` person property and the `$session_entry_*`
+    // session property. An earlier revision hardcoded `initial_` as the
+    // only prefix and the session copy walked straight past it.
+    expect(
+      scrubUrlDerived({
+        utm_content: 'someone@example.com',
+        $initial_utm_content: 'someone@example.com',
+        $session_entry_utm_content: 'someone@example.com',
+        $session_entry_gclid: 'someone@example.com',
+        // A prefix nobody has invented yet must be covered too — the
+        // NAME is the part that means something, not the prefix.
+        $some_future_prefix_utm_source: 'someone@example.com',
+      }),
+    ).toEqual({
+      utm_content: '[redacted]',
+      $initial_utm_content: '[redacted]',
+      $session_entry_utm_content: '[redacted]',
+      $session_entry_gclid: '[redacted]',
+      $some_future_prefix_utm_source: '[redacted]',
+    });
+  });
+
+  it('leaves ordinary session-entry attribution alone', () => {
+    const props = {
+      $session_entry_utm_source: 'twitter',
+      $session_entry_url: 'https://declutrmail.com/pricing',
+      $session_entry_gclid: 'Cj0KCQ_abc123',
+    };
+    expect(scrubUrlDerived(props)).toEqual(props);
+  });
+
+  it('covers click ids and unknown utm_* names the SDK may add later', () => {
+    expect(
+      scrubUrlDerived({
+        msclkid: 'someone@example.com',
+        utm_something_new: 'someone@example.com',
+        li_fat_id: 'someone@example.com',
+      }),
+    ).toEqual({
+      msclkid: '[redacted]',
+      utm_something_new: '[redacted]',
+      li_fat_id: '[redacted]',
+    });
+  });
+
+  it('leaves non-URL strings, query-less URLs and non-http schemes untouched', () => {
+    const input = {
+      verb: 'archive?',
+      plain: 'https://declutrmail.com/senders',
+      mailto: 'mailto:a@b.com?subject=hi',
+      notAUrl: 'https://?',
+      count: 3,
+      flag: true,
+      nothing: null,
+    };
+    expect(scrubUrlDerived(input)).toEqual(input);
+  });
+
+  // A REVISIT MUST RETURN THE SCRUBBED COPY, not the input.
+  //
+  // These assert one level DOWN on purpose. The first version of the
+  // cycle test checked only the top-level `$current_url` and passed
+  // while `out.self.$current_url` still carried the address — a test
+  // shaped so it could not observe the bug it was named for (Codex
+  // stop-review, 2026-07-31).
+  it('a cycle is scrubbed at every level, and stays a cycle', () => {
+    const cyclic: Record<string, unknown> = {
+      $current_url: 'https://declutrmail.com/a?sender_q=x%40y.com',
+    };
+    cyclic.self = cyclic;
+    const out = scrubUrlDerived(cyclic);
+    expect(out.$current_url).toBe('https://declutrmail.com/a');
+    expect((out.self as Record<string, unknown>).$current_url).toBe('https://declutrmail.com/a');
+    // The scrubbed copy points at ITSELF — never back at the raw input.
+    expect(out.self).toBe(out);
+    expect(out.self).not.toBe(cyclic);
+  });
+
+  it('a SHARED reference is scrubbed on every appearance', () => {
+    // The dangerous half: a cycle dies in the SDK's own JSON.stringify,
+    // but a shared reference serializes perfectly and used to come back
+    // raw on its second appearance.
+    const shared = { $current_url: 'https://declutrmail.com/a?sender_q=x%40y.com' };
+    const out = scrubUrlDerived({ one: shared, two: shared });
+    expect(out.one.$current_url).toBe('https://declutrmail.com/a');
+    expect(out.two.$current_url).toBe('https://declutrmail.com/a');
+    expect(out.one).toBe(out.two);
+  });
+
+  it('runs as part of the wire-boundary hook, not only on its own', () => {
+    // `scrubTelemetryPayload` IS PostHog's `sanitize_properties`. If the
+    // URL scrub is not wired into it, the leak stands however good the
+    // helper is.
+    expect(
+      scrubTelemetryPayload({
+        $current_url: 'https://declutrmail.com/activity?sender_q=someone%40example.com',
+        body: 'should also be redacted',
+      }),
+    ).toEqual({ $current_url: 'https://declutrmail.com/activity', body: '[redacted]' });
+  });
+});
+
+/**
+ * The same repeat-visit bypass lived in `scrubObject` from the day it
+ * was written, where it is a D7 failure rather than a URL one: the
+ * second appearance of a shared object returned the RAW Gmail payload.
+ */
+describe('scrubObject — repeat visits', () => {
+  it('redacts a banned key on every appearance of a shared object', () => {
+    const message = { body: 'FULL GMAIL BODY', id: 'msg_1' };
+    const out = scrubObject({ first: message, second: message });
+    expect(out.first.body).toBe('[redacted]');
+    expect(out.second.body).toBe('[redacted]');
+    expect(out.first).toBe(out.second);
+  });
+
+  it('redacts through a cycle', () => {
+    const node: Record<string, unknown> = { body: 'FULL GMAIL BODY' };
+    node.self = node;
+    const out = scrubObject(node);
+    expect(out.body).toBe('[redacted]');
+    expect((out.self as Record<string, unknown>).body).toBe('[redacted]');
+    expect(out.self).toBe(out);
+  });
+
+  it('redacts a shared object inside an array', () => {
+    const message = { snippet: 'preview text' };
+    const out = scrubObject({ items: [message, message] });
+    expect(out.items[0]?.snippet).toBe('[redacted]');
+    expect(out.items[1]?.snippet).toBe('[redacted]');
   });
 });

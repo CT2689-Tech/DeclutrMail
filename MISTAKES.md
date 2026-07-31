@@ -20,6 +20,30 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-31 — Four rounds of enumerating variants instead of recognising the thing
+**PR:** [#454](https://github.com/CT2689-Tech/DeclutrMail/pull/454)
+**Caught by:** Codex stop-review, four consecutive times on ONE change
+**What happened:** Fixing a telemetry leak, I patched the exact case named and shipped, four times running: (1) stripped the query, left the fragment / allowed-param values / userinfo; (2) constrained param values in the URL, left the SDK's extracted copy of the same param; (3) matched `utm_*` and `$initial_utm_*`, left `$session_entry_utm_*`. Each fix was correct for the instance and blind to its siblings, and each round the reviewer had to name the next one. The tell was there from round one: I was writing lists of shapes I had seen — components, prefixes, key names — where the safe form was to recognise the one part that carries meaning and rebuild everything else from an allowlist.
+**Correct approach:** When a fix is "add the case that was reported", stop and ask what the case is an INSTANCE of, then close that. Here: a URL is not its query (rebuild from origin+path+allowlisted params), and a campaign property is not its prefix (match the NAME wherever it ends the key).
+**Rule:** After any reviewer-reported leak, before committing, write down the axis the report varies along — component, prefix, copy, encoding — and enumerate that axis to exhaustion yourself. If you cannot enumerate it, the fix must be reconstructive rather than subtractive. See also this session's two other entries: all three are the same failure to distinguish the instance from the class.
+**Enforcement update:** none — each variant has its own test and each has a passing negative control. The lasting artifact is the shape of the code: `stripUrlQuery` rebuilds, `isCampaignPropertyKey` matches by name.
+
+## 2026-07-31 — Subtracted the part I thought of instead of rebuilding from safe parts
+**PR:** [#454](https://github.com/CT2689-Tech/DeclutrMail/pull/454)
+**Caught by:** Codex stop-review ("still permits sensitive values through allowed parameters and fragments") — probing on top of that found a third path
+**What happened:** Fixing a URL leak in telemetry, I stripped the query string. A URL has more components than a query: the FRAGMENT went out whole (and a fragment-only URL skipped the function entirely, because my fast path keyed on `?`), the VALUES of allowlisted params were never constrained (`?utm_content=<address>`, `?ref=<address>`), and `user:pass@host` userinfo survived. Five paths, three shipping. I had allowlisted param NAMES and called it an allowlist — a name allowlist constrains who may speak, not what they may say.
+**Correct approach:** For a boundary, REBUILD the value from the parts that are safe rather than removing the parts you thought of. `origin + path + allowlisted params with allowlisted values` closes the components nobody has enumerated yet; subtraction only ever closes today's list.
+**Rule:** A sanitizer that REMOVES known-bad is a denylist wearing an allowlist's name. If the thing being sanitized is structured, reconstruct it from permitted components — and constrain values, not just keys.
+**Enforcement update:** none — each of the five paths has its own test, and the negative control (restoring the subtractive version) fails three of them. Related and worth reading together: the same session's `seen.has(x) → return x` bypass, also a case of the guard's NAME describing something narrower than the hole.
+
+## 2026-07-31 — A "cycle-safe" WeakSet that was really a scrub bypass
+**PR:** [#454](https://github.com/CT2689-Tech/DeclutrMail/pull/454)
+**Caught by:** Codex stop-review ("cyclic payloads bypass the new URL scrubber")
+**What happened:** Both telemetry scrubbers walked the object graph with `if (seen.has(x)) return x` — returning the RAW input on a repeat visit. Written and reviewed as cycle protection; it is a bypass. The second appearance of any object came back unscrubbed, and it needs only a SHARED REFERENCE, not a cycle — `{a: msg, b: msg}` put a full Gmail body on the wire under `b`. The cycle framing is what hid it: a true cycle dies in the SDK's own `JSON.stringify` and never ships, so the only reachable case was the one the name did not mention. `scrubObject` had carried this since it was written; I copied the line into `scrubUrlQueries` without questioning it.
+**Correct approach:** Memoize the OUTPUT, not membership — a `WeakMap` holding the scrubbed container, registered before recursing. The cycle then resolves to the scrubbed copy, shape survives, and every node is scrubbed exactly once.
+**Rule:** `seen.has(x) → return x` is never correct in a TRANSFORMING walk; it is only correct in a read-only one. If the walk produces a new value, the visited-set must map input → output.
+**Enforcement update:** none — tests now assert one level DOWN (`out.self.$current_url`, `out.two.body`) on both scrubbers. My first cycle test checked only the top-level value and passed while the child still carried the address: a test shaped so it could not observe the bug it was named for. Same failure as the 2026-07-31 un-cancel race test earlier in this session — **when a test is named for a structural hazard, assert past the first hop.**
+
 ## 2026-07-31 — Let a caller infer a fact's SUBJECT from the state it was correcting
 **PR:** [#452](https://github.com/CT2689-Tech/DeclutrMail/pull/452)
 **Caught by:** Codex stop-review ("refutation logic can miss or erase the wrong billing verdict")

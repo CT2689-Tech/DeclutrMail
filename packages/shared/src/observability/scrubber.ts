@@ -103,20 +103,36 @@ function scrubHeaders(headers: unknown): unknown {
  * makes it obvious during incident review that a guardrail fired
  * instead of silently dropping the data.
  *
- * Cycles are broken by tracking visited objects via a WeakSet.
+ * REVISITS RETURN THE SCRUBBED COPY, not the input. The previous
+ * revision tracked visited objects in a `WeakSet` and returned `input`
+ * on a repeat — which is a bypass, not cycle-safety: the SECOND
+ * appearance of an object came back raw. It did not need a cycle, only
+ * a shared reference, and a shared reference serializes perfectly well
+ * (a true cycle would have died in the SDK's own `JSON.stringify`). So
+ * `{a: msg, b: msg}` shipped a full Gmail body under `b`. Found by
+ * Codex stop-review, 2026-07-31, against `scrubUrlDerived`; the same
+ * line had been here since the scrubber was written.
+ *
+ * A `WeakMap` keyed on the input holds the OUTPUT container, and the
+ * container is registered BEFORE recursing — so a cycle resolves to
+ * the scrubbed copy and the shape survives, while every node is
+ * scrubbed exactly once.
  */
-export function scrubObject<T>(input: T, seen: WeakSet<object> = new WeakSet()): T {
+export function scrubObject<T>(input: T, seen: WeakMap<object, unknown> = new WeakMap()): T {
   if (Array.isArray(input)) {
-    if (seen.has(input)) return input;
-    seen.add(input);
-    return input.map((item) => scrubObject(item, seen)) as unknown as T;
+    const cached = seen.get(input);
+    if (cached !== undefined) return cached as T;
+    const out: unknown[] = [];
+    seen.set(input, out);
+    for (const item of input) out.push(scrubObject(item, seen));
+    return out as unknown as T;
   }
 
   if (isPlainObject(input)) {
-    if (seen.has(input)) return input;
-    seen.add(input);
-
+    const cached = seen.get(input);
+    if (cached !== undefined) return cached as T;
     const out: Record<string, unknown> = {};
+    seen.set(input, out);
     for (const [key, value] of Object.entries(input)) {
       if (isBannedKey(key)) {
         out[key] = REDACTED;
@@ -135,6 +151,196 @@ export function scrubObject<T>(input: T, seen: WeakSet<object> = new WeakSet()):
 }
 
 /**
+ * Query params allowed to survive on a URL in telemetry. Campaign
+ * attribution only — everything else is dropped.
+ *
+ * WHY an allowlist. `scrubObject` above removes banned KEYS; it never
+ * looks inside a string VALUE. PostHog's `$current_url` (and its
+ * `$referrer` / `$initial_*` siblings) is a plain string carrying the
+ * whole address bar, so a route like
+ * `/activity?sender_q=someone@example.com` shipped that address to
+ * PostHog on every automatic pageview — while the cookie banner
+ * promises "PostHog receives product-usage events, never Gmail message
+ * data". Found by Codex stop-review, 2026-07-31.
+ *
+ * A denylist of "sensitive-looking" params would need updating every
+ * time a route gains one, and would have been written AFTER the leak.
+ * Paths are unaffected: every dynamic segment in this app is a UUID
+ * (`/senders/[id]`), so only the query is at risk.
+ */
+const TELEMETRY_QUERY_ALLOWLIST: ReadonlySet<string> = new Set([
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content',
+  'gclid',
+  'fbclid',
+]);
+
+/**
+ * Allowed params must also carry an allowed VALUE. A name allowlist
+ * constrains only who may speak, not what they may say: `?ref=` and
+ * `?utm_content=` accept arbitrary text, so a malformed campaign link —
+ * or a future route reusing one of these names — puts identity straight
+ * through the gate. Campaign values are slugs and opaque click ids;
+ * anything with `@`, `:`, `/` or `%` in it is not one.
+ *
+ * `ref` was in the name list and is gone: it is not a standard param
+ * any analytics tool reads, and it was the loosest of the set.
+ *
+ * Deliberately lossy. An unusual campaign label is dropped from
+ * analytics; an address is not shipped. That is the right direction for
+ * a privacy boundary to fail in.
+ */
+const SAFE_CAMPAIGN_VALUE = /^[\w .\-+~]{1,96}$/;
+
+/**
+ * Reduce one string to its safe form IF it is an http(s) URL.
+ *
+ * REBUILT from an allowlist of components rather than stripped of the
+ * parts we thought of. The strip version removed the query and left
+ * FOUR other ways through, three of which shipped: the fragment
+ * (`/activity#sender_q=<address>`, and a fragment-only URL skipped the
+ * function entirely because it has no `?`), the values of allowed
+ * params, and `user:pass@host` userinfo. Each was a separate patch
+ * waiting to be requested; reconstruction closes the ones nobody has
+ * thought of yet (Codex stop-review, 2026-07-31).
+ *
+ * Origin and path only, plus allowlisted query params with allowlisted
+ * values. Every other component simply never gets copied.
+ */
+function stripUrlQuery(value: string): string {
+  // Cheap reject before the parse — most telemetry strings are enums.
+  if (!/^https?:\/\//i.test(value)) return value;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return value; // not a URL after all; leave it exactly as it was
+  }
+  let safe: URL;
+  try {
+    // `host` carries the port but never the userinfo, and neither the
+    // fragment nor the search is copied.
+    safe = new URL(`${url.protocol}//${url.host}${url.pathname}`);
+  } catch {
+    return value;
+  }
+  for (const [key, param] of url.searchParams) {
+    if (TELEMETRY_QUERY_ALLOWLIST.has(key.toLowerCase()) && SAFE_CAMPAIGN_VALUE.test(param)) {
+      safe.searchParams.append(key, param);
+    }
+  }
+  return safe.toString();
+}
+
+/**
+ * Property keys that hold a campaign param the SDK PARSED OUT of the
+ * URL. posthog-js lifts its whole campaign list into top-level
+ * properties — `utm_content`, and a `$initial_utm_content` person
+ * property that persists — beside `$current_url`.
+ *
+ * Cleaning the URL string alone is therefore not enough, and this is
+ * exactly how the value allowlist above got defeated: for a visit to
+ * `/?utm_content=someone@example.com` the address was removed from
+ * `$current_url` and shipped anyway in `utm_content` (Codex
+ * stop-review, 2026-07-31).
+ *
+ * `utm_[a-z_]+` is a pattern, not a list, because PostHog's set grows;
+ * the click ids are enumerated because they share no prefix.
+ */
+const CAMPAIGN_CLICK_IDS: ReadonlyArray<string> = [
+  'gclid',
+  'gad_source',
+  'gclsrc',
+  'dclid',
+  'gbraid',
+  'wbraid',
+  'fbclid',
+  'msclkid',
+  'twclid',
+  'li_fat_id',
+  'mc_cid',
+  'igshid',
+  'ttclid',
+  'rdt_cid',
+  'irclid',
+  '_kx',
+  'epik',
+  'qclid',
+  'sccid',
+];
+
+/**
+ * Match on the campaign NAME at the end of the key, whatever prefix the
+ * SDK put in front of it.
+ *
+ * posthog-js keeps THREE copies of each param — the event property, the
+ * `$initial_*` person property, and the `$session_entry_*` session
+ * property — and adds prefixes over time. An earlier revision hardcoded
+ * `(initial_)?` as the only prefix and `$session_entry_utm_content`
+ * walked straight past it (Codex stop-review, 2026-07-31). Enumerating
+ * prefixes is the same losing game as enumerating components was for
+ * the URL itself; the name is the part that means something.
+ */
+function isCampaignPropertyKey(key: string): boolean {
+  const k = key.replace(/^\$/, '').toLowerCase();
+  if (/(^|_)utm_[a-z_]+$/.test(k)) return true;
+  return CAMPAIGN_CLICK_IDS.some((name) => k === name || k.endsWith(`_${name}`));
+}
+
+/**
+ * Remove URL-DERIVED identity from a payload — both the URL strings and
+ * the properties an SDK parsed out of them.
+ *
+ * Named for the whole job on purpose. Its first name said "queries",
+ * which is one component of one of the two channels, and both times a
+ * guard in this file has been named for less than it guards, the gap
+ * turned out to be where the leak lived (see `scrubObject`'s note on
+ * `WeakSet`).
+ *
+ * URL strings are matched by SHAPE, at any depth and under any key: an
+ * SDK adds `$referrer` / `$initial_current_url` / `$pathname` without
+ * asking us, and a key allowlist would silently miss each new one.
+ *
+ * Repeat-visit handling is `scrubObject`'s — see the note there on why
+ * a `WeakSet` is a bypass rather than cycle-safety.
+ */
+export function scrubUrlDerived<T>(input: T, seen: WeakMap<object, unknown> = new WeakMap()): T {
+  if (typeof input === 'string') return stripUrlQuery(input) as unknown as T;
+  if (Array.isArray(input)) {
+    const cached = seen.get(input);
+    if (cached !== undefined) return cached as T;
+    const out: unknown[] = [];
+    seen.set(input, out);
+    for (const item of input) out.push(scrubUrlDerived(item, seen));
+    return out as unknown as T;
+  }
+  if (isPlainObject(input)) {
+    const cached = seen.get(input);
+    if (cached !== undefined) return cached as T;
+    const out: Record<string, unknown> = {};
+    seen.set(input, out);
+    for (const [key, value] of Object.entries(input)) {
+      // The extracted copy answers to the SAME value rule as the query
+      // it came from, or the rule is worth nothing.
+      if (
+        isCampaignPropertyKey(key) &&
+        typeof value === 'string' &&
+        !SAFE_CAMPAIGN_VALUE.test(value)
+      ) {
+        out[key] = REDACTED;
+        continue;
+      }
+      out[key] = scrubUrlDerived(value, seen);
+    }
+    return out as unknown as T;
+  }
+  return input;
+}
+
+/**
  * Convenience for SDK `beforeSend` hooks. Sentry hands a typed Event;
  * we treat it as an opaque record, scrub, and hand it back. If scrub
  * throws, drop the event entirely — defense-in-depth.
@@ -144,7 +350,7 @@ export function scrubTelemetryPayload<T extends Record<string, unknown>>(
 ): T | null {
   if (!event) return null;
   try {
-    return scrubObject(event);
+    return scrubUrlDerived(scrubObject(event));
   } catch {
     return null;
   }

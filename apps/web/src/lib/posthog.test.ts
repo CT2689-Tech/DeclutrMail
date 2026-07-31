@@ -21,6 +21,9 @@ const posthogMock = vi.hoisted(() => ({
   capture: vi.fn(),
   identify: vi.fn(),
   reset: vi.fn(),
+  opt_out_capturing: vi.fn(),
+  opt_in_capturing: vi.fn(),
+  has_opted_out_capturing: vi.fn(() => false),
 }));
 
 vi.mock('posthog-js', () => ({ default: posthogMock }));
@@ -37,6 +40,10 @@ beforeEach(() => {
   posthogMock.capture.mockClear();
   posthogMock.identify.mockClear();
   posthogMock.reset.mockClear();
+  posthogMock.opt_out_capturing.mockClear();
+  posthogMock.opt_in_capturing.mockClear();
+  posthogMock.has_opted_out_capturing.mockClear();
+  posthogMock.has_opted_out_capturing.mockReturnValue(false);
   vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'phc_test');
 });
 
@@ -68,14 +75,12 @@ describe('track() consent gate (D147)', () => {
       'phc_test',
       expect.objectContaining({
         autocapture: false,
-        // `$pageview` is ON so PostHog's Web analytics surfaces resolve.
         // Must be the literal 'history_change': posthog-js gates its
         // HistoryAutocapture on that exact string, and plain `true` would
         // capture only the cold-load pageview — missing every client-side
-        // App Router navigation. `$pageleave` stays OFF because dwell time
-        // is genuinely new data.
+        // App Router navigation.
         capture_pageview: 'history_change',
-        capture_pageleave: false,
+        capture_pageleave: true,
         disable_session_recording: true,
       }),
     );
@@ -188,5 +193,92 @@ describe('withdrawAnalyticsConsent() — GDPR Art. 7(3) (D147)', () => {
     await expect(withdrawAnalyticsConsent()).resolves.toBeUndefined();
     expect(hasAnalyticsConsent()).toBe(false);
     expect(readStoredConsent()).toBe('essential');
+  });
+});
+
+/**
+ * Regression cover for the hole that SDK-side `$pageview` / `$pageleave`
+ * capture opened. Before them, every capture went through `track()`, which
+ * re-reads consent per call — so clearing the stored choice was enough. The
+ * autocapture extensions call `capture()` directly off a pushState and never
+ * consult `track()`, so withdrawal has to stop the library itself or
+ * navigation keeps reporting after opt-out.
+ */
+describe('withdrawal stops the SDK, not just the stored choice (GDPR Art. 7(3))', () => {
+  async function loadSdkViaTrack(): Promise<void> {
+    storeConsent('all');
+    await track('page_viewed', { page: 'senders', mailbox_id: null });
+  }
+
+  it('opts the library out — autocaptured $pageview has no per-call gate', async () => {
+    await loadSdkViaTrack();
+    expect(posthogMock.init).toHaveBeenCalledTimes(1);
+
+    await withdrawAnalyticsConsent();
+
+    expect(posthogMock.opt_out_capturing).toHaveBeenCalledTimes(1);
+  });
+
+  it("opts out AFTER reset — reset() clears posthog's own opt-out flag", async () => {
+    await loadSdkViaTrack();
+
+    await withdrawAnalyticsConsent();
+
+    // Reversing these two silently re-enables capture, which is why the
+    // order is asserted rather than left to reading order.
+    const [resetAt] = posthogMock.reset.mock.invocationCallOrder;
+    const [optOutAt] = posthogMock.opt_out_capturing.mock.invocationCallOrder;
+    if (resetAt === undefined || optOutAt === undefined) {
+      throw new Error('expected both reset() and opt_out_capturing() to have been called');
+    }
+    expect(resetAt).toBeLessThan(optOutAt);
+  });
+
+  it('still opts out when reset() throws — the stop must not depend on cleanup', async () => {
+    await loadSdkViaTrack();
+    // `reset()` has to run first (it clears posthog's own opt-out flag), so
+    // sharing a catch with the opt-out made identity cleanup a single point
+    // of failure for the thing that actually stops capture.
+    posthogMock.reset.mockImplementationOnce(() => {
+      throw new Error('persistence unavailable');
+    });
+
+    await expect(withdrawAnalyticsConsent()).resolves.toBeUndefined();
+
+    expect(posthogMock.opt_out_capturing).toHaveBeenCalledTimes(1);
+  });
+
+  it('opts out when consent is withdrawn DURING the SDK load, and captures nothing', async () => {
+    // The race: `loadSdk` checks consent before `await import(...)`, but
+    // `init()` — which starts the autocapture extensions — runs after it. A
+    // withdrawal inside that window finds `sdkPromise` still unset and returns
+    // having stopped nothing. Withdrawing from inside `init` reproduces it.
+    posthogMock.init.mockImplementationOnce(() => {
+      storeConsent('essential');
+    });
+    storeConsent('all');
+
+    await track('page_viewed', { page: 'senders', mailbox_id: null });
+
+    expect(posthogMock.opt_out_capturing).toHaveBeenCalledTimes(1);
+    expect(posthogMock.capture).not.toHaveBeenCalled();
+  });
+
+  it('re-granting consent re-opts-in — a persisted opt-out would kill capture forever', async () => {
+    await loadSdkViaTrack();
+    await withdrawAnalyticsConsent();
+
+    // posthog-js persists the opt-out, so a live SDK still reports it.
+    posthogMock.has_opted_out_capturing.mockReturnValue(true);
+    posthogMock.capture.mockClear();
+    storeConsent('all');
+
+    await track('page_viewed', { page: 'triage', mailbox_id: null });
+
+    expect(posthogMock.opt_in_capturing).toHaveBeenCalledWith({ captureEventName: false });
+    expect(posthogMock.capture).toHaveBeenCalledWith(
+      'page_viewed',
+      expect.objectContaining({ page: 'triage' }),
+    );
   });
 });

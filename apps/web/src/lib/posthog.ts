@@ -29,8 +29,13 @@ import { hasAnalyticsConsent, storeConsent } from './cookie-consent';
  *     it reaches the SDK, and PostHog's own `sanitize_properties` hook
  *     scrubs again at the wire boundary.
  *   - `disable_session_recording: true` (PostHog's replay is also OFF).
- *   - `disable_surveys`, `autocapture: false`, `capture_pageview: false`
- *     — explicit events only; nothing implicit.
+ *   - `disable_surveys` and `autocapture: false` — no implicit INTERACTION
+ *     capture; clicks, form fields and rageclicks are never recorded.
+ *   - `$pageview` and `$pageleave` ARE captured by the SDK itself, which
+ *     means they do not pass through `track()`. `track()` re-reads consent
+ *     on every call, so it used to be the only gate needed; these two
+ *     bypass it entirely. `withdrawAnalyticsConsent` therefore has to stop
+ *     the library, not just clear the stored choice — see its doc below.
  *   - User identifier is opt-in via `identifyUser(internalUserUuid)`.
  *     Callers MUST pass the internal user UUID, NEVER the Gmail address.
  *
@@ -42,6 +47,9 @@ type PosthogSdk = {
   capture: (eventName: string, props?: Record<string, unknown>) => void;
   identify: (id: string, props?: Record<string, unknown>) => void;
   reset: () => void;
+  opt_out_capturing: () => void;
+  opt_in_capturing: (opts?: { captureEventName?: false }) => void;
+  has_opted_out_capturing: () => boolean;
 };
 
 let sdkPromise: Promise<PosthogSdk | null> | null = null;
@@ -79,9 +87,12 @@ async function loadSdk(): Promise<PosthogSdk | null> {
         // recorded one pageview per cold load and missed every in-app route
         // change. 'history_change' keeps the init-time capture too.
         capture_pageview: 'history_change',
-        // Stays OFF: dwell time / bounce IS new data, so it needs its own
-        // decision rather than riding along with the pageview one.
-        capture_pageleave: false,
+        // Dwell time / bounce rate. This IS new data about a visitor rather
+        // than a restatement of what `track()` already sends, so it was put
+        // to the founder as its own call and approved 2026-07-31 — it does
+        // not ride along with the `$pageview` decision above. Like
+        // `$pageview` it captures outside `track()`.
+        capture_pageleave: true,
         // No session recording / replay (D7 — same reason as Sentry replay).
         disable_session_recording: true,
         disable_surveys: true,
@@ -98,7 +109,40 @@ async function loadSdk(): Promise<PosthogSdk | null> {
       return null;
     });
   }
-  return sdkPromise;
+
+  const sdk = await sdkPromise;
+  if (!sdk) return null;
+
+  // Consent WITHDRAWN while the chunk was in flight. The gate at the top of
+  // this function ran BEFORE the dynamic import, but `init()` — which starts
+  // the `$pageview` / `$pageleave` autocapture — runs after it. A withdrawal
+  // landing inside that window can find `sdkPromise` still unset, return
+  // early having stopped nothing, and leave a live SDK reporting on every
+  // navigation. Re-read consent here, on the far side of the await, now that
+  // the instance actually exists.
+  if (!hasAnalyticsConsent()) {
+    try {
+      sdk.opt_out_capturing();
+    } catch {
+      // Best-effort — the stored choice already says no.
+    }
+    return null;
+  }
+
+  // Consent RE-GRANTED after a withdrawal. `withdrawAnalyticsConsent` opts
+  // the SDK out at the library level and posthog-js PERSISTS that flag, so
+  // storing 'all' again is not enough on its own: an already-initialized SDK
+  // would keep silently dropping every capture forever. Re-opt-in before
+  // handing the instance back. `captureEventName: false` stops this
+  // housekeeping from emitting an event of its own.
+  try {
+    if (sdk.has_opted_out_capturing()) {
+      sdk.opt_in_capturing({ captureEventName: false });
+    }
+  } catch {
+    // Best-effort — a failed re-opt-in must never break the caller.
+  }
+  return sdk;
 }
 
 /**
@@ -158,19 +202,52 @@ export async function resetIdentity(): Promise<void> {
  * exists, reset it best-effort; withdrawal never starts a new analytics
  * download and never depends on reset succeeding.
  *
- * The upgrade path needs no counterpart here: storing "all"
- * (`storeConsent('all')`) is enough, since the same per-call gate picks
- * consent up on the next `track()`.
+ * Clearing the stored choice is NOT sufficient on its own. `track()` re-reads
+ * consent per call, but `$pageview` / `$pageleave` are captured by the SDK
+ * itself and never go through `track()` — HistoryAutocapture calls
+ * `capture('$pageview')` straight off a pushState. So withdrawal must stop the
+ * library too, or navigation keeps reporting after the visitor opted out
+ * (GDPR Art. 7(3)). `opt_out_capturing()` flips `is_capturing()`, which every
+ * capture path — autocaptured or explicit — checks first.
+ *
+ * The re-grant counterpart lives in `loadSdk`: posthog-js persists the opt-out,
+ * so storing "all" again cannot revive capture by itself.
  */
 export async function withdrawAnalyticsConsent(): Promise<void> {
   storeConsent('essential');
   const pendingSdk = sdkPromise;
   if (!pendingSdk) return;
+  let sdk: PosthogSdk | null = null;
   try {
-    const sdk = await pendingSdk;
-    sdk?.reset();
+    sdk = await pendingSdk;
   } catch {
-    // Consent is already withdrawn. SDK cleanup is best-effort only.
+    // The load itself rejected, so there is no live SDK to stop.
+    return;
+  }
+  if (!sdk) return;
+
+  // ORDER IS LOAD-BEARING. posthog's `reset()` calls its internal
+  // `consent.reset()`, which clears the opt-out flag — so opting out first
+  // and resetting second would silently switch capture back on.
+  //
+  // They also need SEPARATE catches, precisely because that order puts the
+  // cheap step in front of the critical one. Sharing a catch meant a throw
+  // from `reset()` skipped the opt-out entirely and left `$pageview` /
+  // `$pageleave` reporting after the visitor withdrew.
+  try {
+    sdk.reset();
+  } catch {
+    // Identity cleanup is hygiene. The opt-out below is what actually stops
+    // capture, so a failure here must never prevent it from running.
+  }
+
+  try {
+    sdk.opt_out_capturing();
+  } catch {
+    // Nothing further can be done in-page. The stored choice already reads
+    // "essential", so `loadSdk` will opt out on its next call — though that
+    // only fires on an explicit `track()`, which is why the call above is
+    // the one that matters for autocaptured events.
   }
 }
 
