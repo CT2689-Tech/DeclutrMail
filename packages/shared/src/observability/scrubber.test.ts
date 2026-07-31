@@ -761,6 +761,39 @@ describe('scrubUrlDerived', () => {
     expect(scrubUrlDerived(props)).toEqual(props);
   });
 
+  it('covers EVERY prefixed copy the SDK keeps, not just the ones named today', () => {
+    // posthog-js keeps three copies of each param: the event property,
+    // the `$initial_*` person property and the `$session_entry_*`
+    // session property. An earlier revision hardcoded `initial_` as the
+    // only prefix and the session copy walked straight past it.
+    expect(
+      scrubUrlDerived({
+        utm_content: 'someone@example.com',
+        $initial_utm_content: 'someone@example.com',
+        $session_entry_utm_content: 'someone@example.com',
+        $session_entry_gclid: 'someone@example.com',
+        // A prefix nobody has invented yet must be covered too — the
+        // NAME is the part that means something, not the prefix.
+        $some_future_prefix_utm_source: 'someone@example.com',
+      }),
+    ).toEqual({
+      utm_content: '[redacted]',
+      $initial_utm_content: '[redacted]',
+      $session_entry_utm_content: '[redacted]',
+      $session_entry_gclid: '[redacted]',
+      $some_future_prefix_utm_source: '[redacted]',
+    });
+  });
+
+  it('leaves ordinary session-entry attribution alone', () => {
+    const props = {
+      $session_entry_utm_source: 'twitter',
+      $session_entry_url: 'https://declutrmail.com/pricing',
+      $session_entry_gclid: 'Cj0KCQ_abc123',
+    };
+    expect(scrubUrlDerived(props)).toEqual(props);
+  });
+
   it('covers click ids and unknown utm_* names the SDK may add later', () => {
     expect(
       scrubUrlDerived({

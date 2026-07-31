@@ -250,8 +250,45 @@ function stripUrlQuery(value: string): string {
  * `utm_[a-z_]+` is a pattern, not a list, because PostHog's set grows;
  * the click ids are enumerated because they share no prefix.
  */
-const CAMPAIGN_PROPERTY_KEY =
-  /^\$?(initial_)?(utm_[a-z_]+|gclid|gad_source|gclsrc|dclid|gbraid|wbraid|fbclid|msclkid|twclid|li_fat_id|mc_cid|igshid|ttclid|rdt_cid|irclid|_kx|epik|qclid|sccid)$/i;
+const CAMPAIGN_CLICK_IDS: ReadonlyArray<string> = [
+  'gclid',
+  'gad_source',
+  'gclsrc',
+  'dclid',
+  'gbraid',
+  'wbraid',
+  'fbclid',
+  'msclkid',
+  'twclid',
+  'li_fat_id',
+  'mc_cid',
+  'igshid',
+  'ttclid',
+  'rdt_cid',
+  'irclid',
+  '_kx',
+  'epik',
+  'qclid',
+  'sccid',
+];
+
+/**
+ * Match on the campaign NAME at the end of the key, whatever prefix the
+ * SDK put in front of it.
+ *
+ * posthog-js keeps THREE copies of each param — the event property, the
+ * `$initial_*` person property, and the `$session_entry_*` session
+ * property — and adds prefixes over time. An earlier revision hardcoded
+ * `(initial_)?` as the only prefix and `$session_entry_utm_content`
+ * walked straight past it (Codex stop-review, 2026-07-31). Enumerating
+ * prefixes is the same losing game as enumerating components was for
+ * the URL itself; the name is the part that means something.
+ */
+function isCampaignPropertyKey(key: string): boolean {
+  const k = key.replace(/^\$/, '').toLowerCase();
+  if (/(^|_)utm_[a-z_]+$/.test(k)) return true;
+  return CAMPAIGN_CLICK_IDS.some((name) => k === name || k.endsWith(`_${name}`));
+}
 
 /**
  * Remove URL-DERIVED identity from a payload — both the URL strings and
@@ -289,7 +326,7 @@ export function scrubUrlDerived<T>(input: T, seen: WeakMap<object, unknown> = ne
       // The extracted copy answers to the SAME value rule as the query
       // it came from, or the rule is worth nothing.
       if (
-        CAMPAIGN_PROPERTY_KEY.test(key) &&
+        isCampaignPropertyKey(key) &&
         typeof value === 'string' &&
         !SAFE_CAMPAIGN_VALUE.test(value)
       ) {
