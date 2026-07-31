@@ -36,6 +36,7 @@ import type {
   PlanChangePreviewResult,
   PlanChangeResult,
   PlanChangeTiming,
+  ProviderCancellationFacts,
   SignatureVerifyResult,
   SubscriptionSearchQuery,
   SubscriptionSearchResult,
@@ -109,6 +110,14 @@ interface PaddleTransaction {
   custom_data?: { workspace_id?: string; sig?: string } | null;
 }
 
+/**
+ * Adjustment statuses that mean UNDONE. Paddle's four are `approved`,
+ * `pending_approval`, `rejected` and `reversed`; these two are the ones
+ * that void an adjustment, and the distinction from `pending_approval`
+ * is the whole point — undone is a decision, pending is its absence.
+ */
+const UNDONE_STATUSES = new Set(['rejected', 'reversed']);
+
 /** The adjustment fields that decide whether a plan ends (API v2). */
 interface PaddleAdjustment {
   action?: string;
@@ -135,9 +144,9 @@ interface PaddleAdjustment {
  * Chargebacks are never filtered: Paddle raises them itself.
  *
  * ONE function because two callers ask this question — the webhook
- * mapping and `settledCancellationCause`'s outbound gate. Mirrored, they
- * would drift, and the drift would read as "the refund ended their plan
- * but we never stopped billing them".
+ * mapping and `providerCancellationFacts`. Mirrored, they would drift,
+ * and the drift would read as "the refund ended their plan but we never
+ * stopped billing them".
  */
 function endsSubscription(adjustment: PaddleAdjustment): boolean {
   if (adjustment.action === 'chargeback') return true;
@@ -642,9 +651,9 @@ export class PaddleAdapter implements BillingProvider {
    * rejects leaves a PAYING customer on Free with every self-serve exit
    * blocked (Codex stop-review, 2026-07-31).
    */
-  async settledCancellationCause(
+  async providerCancellationFacts(
     providerSubscriptionId: string,
-  ): Promise<'refund' | 'chargeback' | 'none' | 'refuted' | 'unknown'> {
+  ): Promise<ProviderCancellationFacts | null> {
     let body: unknown | null;
     try {
       body = await this.reconciliationGet(
@@ -654,11 +663,11 @@ export class PaddleAdapter implements BillingProvider {
     } catch {
       // Already logged by reconciliationGet. A read we could not make is
       // never grounds for an outbound write.
-      return 'unknown';
+      return null;
     }
-    if (body === null) return 'unknown';
+    if (body === null) return null;
     const rows = (body as { data?: PaddleAdjustment[] }).data;
-    if (!Array.isArray(rows)) return 'unknown';
+    if (!Array.isArray(rows)) return null;
 
     // A chargeback IS the settled event — the funds are already gone and
     // Paddle raised it, not us, so there is nothing left to approve. Only
@@ -673,20 +682,31 @@ export class PaddleAdapter implements BillingProvider {
     // each adjustment's own status needs no cross-referencing and cannot
     // mis-pair two disputes.
     const settledChargeback = rows.some(
-      (a) => a.action === 'chargeback' && a.status !== 'rejected' && a.status !== 'reversed',
+      (a) => a.action === 'chargeback' && !UNDONE_STATUSES.has(a.status ?? ''),
     );
-    if (settledChargeback) return 'chargeback';
     // Refunds need Paddle's approval, and only a full one is an exit.
-    if (rows.some((a) => a.action === 'refund' && a.status === 'approved' && endsSubscription(a))) {
-      return 'refund';
-    }
-    // Nothing settled. Distinguish "Paddle SAYS NO" from "not yet": a
-    // refund it rejected, or a chargeback it reversed, is a verdict our
-    // row must stop asserting. A still-pending refund is neither.
-    const refuted =
-      rows.some((a) => a.action === 'refund' && a.status === 'rejected' && endsSubscription(a)) ||
-      rows.some((a) => a.action === 'chargeback' && a.status === 'reversed');
-    return refuted ? 'refuted' : 'none';
+    const settledRefund = rows.some(
+      (a) => a.action === 'refund' && a.status === 'approved' && endsSubscription(a),
+    );
+
+    // "Paddle SAYS NO" is not the same as "not yet", and the two verdicts
+    // are independent — a contradiction of one says nothing about the
+    // other. Both `rejected` and `reversed` undo an adjustment; checking
+    // only `rejected` on refunds left an approved-then-reversed refund
+    // counting as neither settled nor refuted, so its verdict stood
+    // forever. A refund still `pending_approval` is in neither set.
+    return {
+      settled: settledChargeback ? 'chargeback' : settledRefund ? 'refund' : null,
+      refuted: {
+        refund: rows.some(
+          (a) =>
+            a.action === 'refund' && UNDONE_STATUSES.has(a.status ?? '') && endsSubscription(a),
+        ),
+        chargeback: rows.some(
+          (a) => a.action === 'chargeback' && UNDONE_STATUSES.has(a.status ?? ''),
+        ),
+      },
+    };
   }
 
   /**

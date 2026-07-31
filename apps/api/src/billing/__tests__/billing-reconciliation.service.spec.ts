@@ -19,6 +19,7 @@ import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import type {
   FetchSubscriptionResult,
+  ProviderCancellationFacts,
   NormalizedSubscription,
   SubscriptionSearchQuery,
   SubscriptionSearchResult,
@@ -96,9 +97,7 @@ function fakeAdapter(overrides: {
   fetchSubscription?: (id: string) => Promise<FetchSubscriptionResult>;
   searchSubscriptions?: (query: SubscriptionSearchQuery) => Promise<SubscriptionSearchResult>;
   cancelSubscription?: (id: string) => Promise<void>;
-  settledCancellationCause?: (
-    id: string,
-  ) => Promise<'refund' | 'chargeback' | 'none' | 'refuted' | 'unknown'>;
+  providerCancellationFacts?: (id: string) => Promise<ProviderCancellationFacts | null>;
 }): PaddleAdapter & RazorpayAdapter {
   return {
     fetchSubscription:
@@ -111,10 +110,13 @@ function fakeAdapter(overrides: {
     // than silently passing — this adapter's WRITE surface is the thing
     // enforceLocalVerdicts is trusted with.
     cancelSubscription: overrides.cancelSubscription,
-    // Defaults to the REFUSING answer. A test that means to exercise the
-    // cancel has to say so; one that forgets cannot drift into sending a
-    // provider cancel it never asked for.
-    settledCancellationCause: overrides.settledCancellationCause ?? (async () => 'none' as const),
+    // Defaults to the REFUSING answer — nothing settled, nothing
+    // refuted. A test that means to exercise the cancel has to say so;
+    // one that forgets cannot drift into sending a provider cancel it
+    // never asked for.
+    providerCancellationFacts:
+      overrides.providerCancellationFacts ??
+      (async () => ({ settled: null, refuted: { refund: false, chargeback: false } })),
   } as unknown as PaddleAdapter & RazorpayAdapter;
 }
 
@@ -131,6 +133,20 @@ function activePlusSub(id: string, createdAt: Date): NormalizedSubscription {
     providerCreatedAt: createdAt.toISOString(),
   };
 }
+
+const SETTLED_REFUND: ProviderCancellationFacts = {
+  settled: 'refund',
+  refuted: { refund: false, chargeback: false },
+};
+const SETTLED_CHARGEBACK: ProviderCancellationFacts = {
+  settled: 'chargeback',
+  refuted: { refund: false, chargeback: false },
+};
+/** Paddle rejected (or reversed) the refund — our refund verdict is void. */
+const REFUTED_REFUND: ProviderCancellationFacts = {
+  settled: null,
+  refuted: { refund: true, chargeback: false },
+};
 
 describe('BillingReconciliationService (D249)', () => {
   let db: DrizzleDb;
@@ -542,7 +558,7 @@ describe('BillingReconciliationService (D249)', () => {
           kind: 'found',
           subscription: activePlusSub('sub_verdict', new Date()),
         }),
-        settledCancellationCause: async () => 'refund' as const,
+        providerCancellationFacts: async () => SETTLED_REFUND,
         cancelSubscription: async (id) => {
           canceled.push(id);
         },
@@ -563,7 +579,7 @@ describe('BillingReconciliationService (D249)', () => {
           kind: 'found',
           subscription: activePlusSub('sub_verdict', new Date()),
         }),
-        settledCancellationCause: async () => 'chargeback' as const,
+        providerCancellationFacts: async () => SETTLED_CHARGEBACK,
         cancelSubscription: async (id) => {
           canceled.push(id);
         },
@@ -583,7 +599,7 @@ describe('BillingReconciliationService (D249)', () => {
           kind: 'found',
           subscription: { ...activePlusSub('sub_verdict', new Date()), cancelAtPeriodEnd: true },
         }),
-        settledCancellationCause: async () => 'refund' as const,
+        providerCancellationFacts: async () => SETTLED_REFUND,
         cancelSubscription: async (id) => {
           canceled.push(id);
         },
@@ -636,9 +652,19 @@ describe('BillingReconciliationService (D249)', () => {
   // refund is still `pending_approval`; sandbox auto-approves, so this
   // shape never appears in testing. Cancelling on it would end the
   // subscription of a customer Paddle may still decide is paying.
-  for (const [label, cause] of [
-    ['a refund Paddle has NOT approved yet', 'none'],
-    ['an adjustments read we could not make', 'unknown'],
+  const NOTHING_YET: ProviderCancellationFacts = {
+    settled: null,
+    refuted: { refund: false, chargeback: false },
+  };
+  /** An unrelated old dispute was reversed; OUR refund is still pending. */
+  const OTHER_VERDICT_REFUTED: ProviderCancellationFacts = {
+    settled: null,
+    refuted: { refund: false, chargeback: true },
+  };
+  for (const [label, facts] of [
+    ['a refund Paddle has NOT approved yet', NOTHING_YET],
+    ['an adjustments read we could not make', null],
+    ['a reversed CHARGEBACK while our refund is still pending', OTHER_VERDICT_REFUTED],
   ] as const) {
     it(`${label} → no cancel sent`, async () => {
       await seedVerdictRow({ cancelSource: 'refund' });
@@ -649,7 +675,7 @@ describe('BillingReconciliationService (D249)', () => {
             kind: 'found',
             subscription: activePlusSub('sub_verdict', new Date()),
           }),
-          settledCancellationCause: async () => cause,
+          providerCancellationFacts: async () => facts,
           cancelSubscription: async (id) => {
             canceled.push(id);
           },
@@ -678,7 +704,7 @@ describe('BillingReconciliationService (D249)', () => {
           kind: 'found',
           subscription: activePlusSub('sub_verdict', new Date()),
         }),
-        settledCancellationCause: async () => 'refuted' as const,
+        providerCancellationFacts: async () => REFUTED_REFUND,
         cancelSubscription: async (id) => {
           canceled.push(id);
         },
@@ -713,9 +739,9 @@ describe('BillingReconciliationService (D249)', () => {
           kind: 'found',
           subscription: activePlusSub('sub_verdict', new Date()),
         }),
-        settledCancellationCause: async (id) => {
+        providerCancellationFacts: async (id) => {
           asked.push(id);
-          return 'refund' as const;
+          return SETTLED_REFUND;
         },
         cancelSubscription: async (id) => {
           canceled.push(id);

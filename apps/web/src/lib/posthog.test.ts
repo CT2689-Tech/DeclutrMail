@@ -68,7 +68,14 @@ describe('track() consent gate (D147)', () => {
       'phc_test',
       expect.objectContaining({
         autocapture: false,
-        capture_pageview: false,
+        // `$pageview` is ON so PostHog's Web analytics surfaces resolve.
+        // Must be the literal 'history_change': posthog-js gates its
+        // HistoryAutocapture on that exact string, and plain `true` would
+        // capture only the cold-load pageview — missing every client-side
+        // App Router navigation. `$pageleave` stays OFF because dwell time
+        // is genuinely new data.
+        capture_pageview: 'history_change',
+        capture_pageleave: false,
         disable_session_recording: true,
       }),
     );

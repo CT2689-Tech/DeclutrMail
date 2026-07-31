@@ -62,9 +62,25 @@ async function loadSdk(): Promise<PosthogSdk | null> {
       const posthog = mod.default as unknown as PosthogSdk;
       posthog.init(key, {
         api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com',
-        // No implicit data — explicit `track()` calls only.
+        // No implicit INTERACTION capture — clicks, form fields and
+        // rageclicks are never recorded.
         autocapture: false,
-        capture_pageview: false,
+        // `$pageview` is the one implicit event we do send: PostHog's Web
+        // analytics, Web vitals and Page reports read it and nothing else,
+        // so without it those surfaces are permanently empty. It widens no
+        // data category — `$current_url` and `$session_id` already ride
+        // every explicit `track()` call as auto-properties.
+        //
+        // MUST be 'history_change', not `true`. posthog-js only starts its
+        // HistoryAutocapture extension on the literal 'history_change'
+        // (`isEnabled` compares against that exact string); plain `true`
+        // captures a single `$pageview` at init and nothing after. This is an
+        // App Router SPA that navigates via pushState, so `true` would have
+        // recorded one pageview per cold load and missed every in-app route
+        // change. 'history_change' keeps the init-time capture too.
+        capture_pageview: 'history_change',
+        // Stays OFF: dwell time / bounce IS new data, so it needs its own
+        // decision rather than riding along with the pageview one.
         capture_pageleave: false,
         // No session recording / replay (D7 — same reason as Sentry replay).
         disable_session_recording: true,

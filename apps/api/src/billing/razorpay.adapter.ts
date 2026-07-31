@@ -32,6 +32,7 @@ import type {
   NormalizedSubscription,
   PlanChangePreviewResult,
   PlanChangeResult,
+  ProviderCancellationFacts,
   SignatureVerifyResult,
   SubscriptionSearchQuery,
   SubscriptionSearchResult,
@@ -301,11 +302,11 @@ export class RazorpayAdapter implements BillingProvider {
    * Razorpay refunds ARE mapped, the gate fails closed (no outbound
    * cancel) instead of silently claiming the provider confirmed nothing.
    */
-  async settledCancellationCause(
+  async providerCancellationFacts(
     providerSubscriptionId: string,
-  ): Promise<'refund' | 'chargeback' | 'none' | 'refuted' | 'unknown'> {
-    this.logger.warn(`razorpay.settled_cause.unsupported sub=${providerSubscriptionId}`);
-    return 'unknown';
+  ): Promise<ProviderCancellationFacts | null> {
+    this.logger.warn(`razorpay.cancellation_facts.unsupported sub=${providerSubscriptionId}`);
+    return null;
   }
 
   /** D249 — GET /v1/subscriptions/{id}. See FetchSubscriptionResult. */

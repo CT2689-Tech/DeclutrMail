@@ -421,7 +421,7 @@ export class BillingReconciliationService {
    *
    * TWO facts are required before anything is sent, and the local marker
    * is only the first. The second is the provider's own
-   * `settledCancellationCause`, because `adjustment.created` fires on a
+   * `providerCancellationFacts`, because `adjustment.created` fires on a
    * live account while the refund is still `pending_approval` — see the
    * gate below.
    *
@@ -491,34 +491,53 @@ export class BillingReconciliationService {
         // "do not act": a pending refund and a failed read are different
         // reasons for the same restraint, logged apart so a provider
         // outage is never read as a rejected refund.
-        const cause = await this.adapterFor(row.provider).settledCancellationCause(
+        const facts = await this.adapterFor(row.provider).providerCancellationFacts(
           row.providerSubscriptionId,
         );
-        // Paddle says our verdict is WRONG — it rejected the refund, or
-        // reversed the chargeback. Left standing, the row is the cruellest
-        // state this system can produce: the customer is billed normally,
-        // holds Free, and every self-serve exit is shut (plan change and
-        // pause refuse on the pinned flag, un-cancel answers
-        // CANCELLATION_NOT_REVOCABLE, checkout answers
-        // SUBSCRIPTION_EXISTS). Lifting it here rather than from
+        if (facts === null) {
+          unenforced += 1;
+          this.logger.log(
+            `billing.reconcile.verdict_unreadable provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} — could not ask; no action`,
+          );
+          continue;
+        }
+
+        // SETTLED FIRST. A live chargeback beside an old reversed one
+        // still ends the plan, so a settled cause outranks any
+        // refutation — checking refutation first would skip the cancel.
+        if (facts.settled !== null) {
+          await this.adapterFor(row.provider).cancelSubscription(row.providerSubscriptionId);
+          enforced += 1;
+          this.logger.warn(
+            `billing.reconcile.verdict_enforced provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} provider_says=${facts.settled} — provider was still set to renew a ${facts.settled === 'chargeback' ? 'charged-back' : 'refunded'} subscription; scheduled cancel at period end`,
+          );
+          continue;
+        }
+
+        // Paddle contradicts OUR verdict specifically. Left standing, the
+        // row is the cruellest state this system can produce: the
+        // customer is billed normally, holds Free, and every self-serve
+        // exit is shut (plan change and pause refuse on the pinned flag,
+        // un-cancel answers CANCELLATION_NOT_REVOCABLE, checkout answers
+        // SUBSCRIPTION_EXISTS). Doing it here rather than from
         // `adjustment.updated` is deliberate: this read is authoritative
         // and needs no provider-side event subscription to work.
-        if (cause === 'refuted') {
+        //
+        // The MATCH is load-bearing. An earlier revision took a bare
+        // "something was refuted" and inferred the verdict from our own
+        // `cancel_source`, so a reversed chargeback lifted a refund
+        // verdict Paddle had never rejected (Codex stop-review,
+        // 2026-07-31).
+        const verdict = row.cancelSource === 'chargeback' ? 'chargeback' : 'refund';
+        if (facts.refuted[verdict]) {
           await this.liftRefutedVerdict(row, new Date().toISOString());
           refuted += 1;
           continue;
         }
-        if (cause === 'none' || cause === 'unknown') {
-          unenforced += 1;
-          this.logger.log(
-            `billing.reconcile.verdict_unsettled provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} provider_says=${cause} — no cancel sent`,
-          );
-          continue;
-        }
-        await this.adapterFor(row.provider).cancelSubscription(row.providerSubscriptionId);
-        enforced += 1;
-        this.logger.warn(
-          `billing.reconcile.verdict_enforced provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} provider_says=${cause} — provider was still set to renew a ${cause === 'chargeback' ? 'charged-back' : 'refunded'} subscription; scheduled cancel at period end`,
+
+        unenforced += 1;
+        this.logger.log(
+          `billing.reconcile.verdict_unsettled provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} refuted_refund=${facts.refuted.refund} refuted_chargeback=${facts.refuted.chargeback} — nothing settled and our verdict is not contradicted; no action`,
         );
       } catch (err) {
         consecutiveErrors[row.provider] += 1;

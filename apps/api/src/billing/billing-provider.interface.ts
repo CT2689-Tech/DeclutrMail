@@ -198,6 +198,28 @@ export type SignatureVerifyResult =
  * stateless (env + fetch only) so they unit-test against recorded
  * fixtures without network.
  */
+/**
+ * What the PROVIDER's own records say about ending this subscription —
+ * the second fact behind every outbound cancel, and the only thing that
+ * may lift a local verdict.
+ */
+export interface ProviderCancellationFacts {
+  /**
+   * A settled, plan-ending adjustment exists, so the subscription must
+   * not renew. Outranks `refuted`: a live chargeback beside an old
+   * reversed one still ends the plan.
+   */
+  settled: 'refund' | 'chargeback' | null;
+  /**
+   * Verdicts the provider POSITIVELY CONTRADICTS — a refund it rejected
+   * or reversed, a chargeback it reversed. Only the matching local
+   * `cancel_source` may be lifted; a contradiction of the OTHER kind
+   * says nothing about ours. A verdict that is merely unsettled (a
+   * refund still pending approval) appears in neither field.
+   */
+  refuted: { refund: boolean; chargeback: boolean };
+}
+
 export interface BillingProvider {
   readonly id: BillingProviderId;
 
@@ -246,23 +268,23 @@ export interface BillingProvider {
    * so the outbound step tests the fact instead of trusting our own
    * marker (Codex stop-review, 2026-07-31).
    *
-   *   'refund' | 'chargeback' — settled; the subscription must not renew
-   *   'none'    — nothing settled YET (a refund still pending approval).
-   *               Take no outbound action and change nothing locally.
-   *   'refuted' — the provider's records CONTRADICT our marker: the
-   *               refund was rejected, or the chargeback reversed. The
-   *               local verdict is void and must be lifted, or a paying
-   *               customer sits on Free with no self-serve way out.
-   *   'unknown' — could not ask. Take no action either way; a read
-   *               failure is never grounds for a write.
+   * `null` means the provider could not be asked — never "nothing is
+   * settled". A read failure is not grounds for any write.
    *
-   * The `refuted` answer is what lets the correction run WITHOUT
-   * depending on `adjustment.updated` being subscribed at the provider —
-   * an ops setting we cannot verify from here.
+   * Reported PER VERDICT rather than as one verdict-shaped answer,
+   * because a subscription can carry both kinds and they are independent
+   * facts. An earlier revision collapsed refutation to a single boolean
+   * and let the CALLER guess which verdict it referred to from its own
+   * row — so a reversed chargeback lifted a refund verdict that Paddle
+   * had never rejected (Codex stop-review, 2026-07-31).
+   *
+   * Asking the provider is also what lets the correction run WITHOUT
+   * `adjustment.updated` being subscribed — an ops setting we cannot
+   * verify from here.
    */
-  settledCancellationCause(
+  providerCancellationFacts(
     providerSubscriptionId: string,
-  ): Promise<'refund' | 'chargeback' | 'none' | 'refuted' | 'unknown'>;
+  ): Promise<ProviderCancellationFacts | null>;
 
   /**
    * Switch the subscription to a different catalog price. Immediate
