@@ -1443,3 +1443,21 @@ exits 1. The date check now reads those resolved receipts instead of a window lo
 removed its "older than the walked window" skip. Verified at `core.abbrev` 8/9/12/20: both a
 wrong-PR receipt and a backdated entry report at EVERY width, and a clean tree passes at every
 width. Grep-swept the file for residual silent-skip shapes; one `.get()` remains and it exits 1.
+
+## 2026-07-31 — A refund's verdict is recorded twice, and only the cosmetic half survives
+
+**PR:** found while driving billing-test-matrix group H (no PR — flagged, not fixed)
+**Caught by:** manual matrix run (H2, the step the doc names its most valuable)
+**What happened:** `adjustment.created`/`refund` writes two things — `cancel_source='refund'` (a marker) and `cancel_at_period_end=true` (the part that actually ends the subscription). A single subsequent `subscription.updated`, which Paddle sends routinely and which carries `scheduled_change: null` because the provider never knew we cancelled, resets the flag. The marker survives. So the row reads "refunded" in the audit column while renewing forever, and the tier never drops. Reproduced twice in two steps.
+**Correct approach:** a local verdict that contradicts the provider has to be enforced on every later write, not recorded alongside one. The terminal-canceled floor already does this for `status='canceled'`; a refunded-but-`active` row has no equivalent.
+**Rule:** when a decision is stored as (marker + effect), the guard must key on the MARKER — otherwise a later writer clears the effect and the marker turns into a lie about state rather than a record of it.
+**Enforcement update:** none yet — `billing-webhook.service.ts` is a CLAUDE.md §9 stop condition, so this is founder-gated. FOUNDER-FOLLOWUPS 2026-07-31 carries the proposed shape and a regression test to pin it.
+
+## 2026-07-31 — Two "verifications" that verified nothing, in one session
+
+**PR:** #448
+**Caught by:** negative controls (running each test with its fix reverted)
+**What happened:** (1) A race test written to prove the un-cancel's ordering marker worked PASSED with the fix reverted — the pre-existing cancel marker refused the stale event on its own, so the new code path was never exercised. (2) Restoring that same one-line fix with a `python` string replace silently didn't match, and the check `"cancellation_revoked" in source` returned true by matching the COMMENT written moments earlier.
+**Correct approach:** a test that has never been observed to fail proves nothing. Run every new guard's negative control before trusting it, and grep the actual code construct — not a substring that prose can satisfy.
+**Rule:** before trusting a green test, revert its fix and watch it go red. Verify edits with a pattern only the code can match (`rg` the SQL/expression), never one a comment could.
+**Enforcement update:** none — this is the existing BLIND-GUARD rule (LEARNINGS, ui-truth bug class) recurring for the third time. Candidate for a CLAUDE.md §8 line if it appears again.

@@ -176,7 +176,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D118 | Cancellation: **Respectful flow with optional reason + pause-30-days offer | 🔵 | #207, #364, #374, #447, #448 |  |  |
 | D119 | Plan comparison: **Current plan card + condensed 3-tier strip + link to /pricing | 🔵 | #219, #351, #402, #435 |  |  |
 | D120 | Plan-change flows | 🔵 | #219, #367, #430, #445 |  |  |
-| D121 | No trial mechanic; 30-day Money-Back Guarantee on Pro | 🔵 | #219, #291, #308 |  |  |
+| D121 | No trial mechanic; 30-day Money-Back Guarantee on Pro | 🔵 | #219, #291, #308, #449 |  |  |
 | D122 | Triage S key renamed: **"Decide later" (keyboard L key) | ⬜ |  |  |  |
 | D123 | Tier-specific Triage empty-state copy | 🔵 | #219 |  |  |
 | D124 | **PARTIALLY SUPERSEDED by D245; preset #5 replacement retained | ⬜ |  |  |  |
