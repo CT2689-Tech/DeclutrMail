@@ -29,17 +29,10 @@ const REASON_OPTIONS: ReadonlyArray<{ value: CancelReason; label: string }> = [
  * refund (D120 downgrade copy) — before the mutation runs. Not the D226
  * destructive-preview class (no mail is touched), but the same honest
  * shape. EVERY paid plan carries the D121 30-day money-back guarantee
- * (founder-confirmed 2026-07-08 — all paid tiers, not Pro-only), a
- * refund-and-cancel-now alternative surfaced here with a prefilled
- * support request.
+ * (founder-confirmed 2026-07-08 — all paid tiers, not Pro-only); it is
+ * NAMED here so canceling is never mistaken for a refund, and pointed at
+ * /refunds rather than advertised (see the note on the copy below).
  */
-
-/** Prefilled refund request — matches /refunds §7 ("refund" in subject). */
-const REFUND_REQUEST_MAILTO = `mailto:support@declutrmail.com?subject=${encodeURIComponent(
-  'Refund request',
-)}&body=${encodeURIComponent(
-  "I'd like to request a refund under the 30-day money-back guarantee.",
-)}`;
 export function CancelModal({
   open,
   sub,
@@ -171,34 +164,29 @@ export function CancelModal({
             )}
             <li>
               Canceling stops your renewal and takes effect at period end — on its own it
-              isn&rsquo;t a refund. If you want your money back, use the guarantee below.
+              isn&rsquo;t a refund.
             </li>
           </ul>
 
-          {/* Every paid plan carries the 30-day money-back guarantee
-              (D121, founder-confirmed 2026-07-08). `subscription` is
-              non-null here and Free has no subscription, so this always
-              applies — no tier gate. */}
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12.5,
-              color: color.fgMuted,
-              lineHeight: 1.5,
-              background: color.paper,
-              border: `1px solid ${color.line}`,
-              borderRadius: radius.md,
-              padding: '8px 10px',
-            }}
-          >
-            Every paid plan includes a {MONEY_BACK_NOTE}. If you were charged in the last 30 days,
-            you can get a full refund instead — we&rsquo;ll cancel right away and refund the charge.{' '}
-            <a
-              href={REFUND_REQUEST_MAILTO}
-              style={{ color: color.primary, fontWeight: 600, textDecoration: 'none' }}
-            >
-              Request a refund →
-            </a>
+          {/* Stated, not merchandised. Every paid plan carries the D121
+              30-day money-back guarantee and the policy is public, so
+              staying silent about it here would be a trust asymmetry —
+              and would push people toward chargebacks, which cost more
+              than refunds. But the previous revision put it in a filled
+              panel with a primary-weight "Request a refund →" CTA, at the
+              single highest-intent-to-churn moment in the product, shown
+              to everyone regardless of eligibility (founder,
+              2026-07-30). It also flatly promised "you can get a full
+              refund", which /refunds qualifies — once per customer, plus
+              fair-use terms and exclusions. Plain sentence, real link,
+              accurate hedge; the policy page carries the terms and the
+              request address. */}
+          <p style={{ margin: 0, fontSize: 12.5, color: color.fgMuted, lineHeight: 1.5 }}>
+            Charged in the last 30 days? The {MONEY_BACK_NOTE} may apply — the{' '}
+            <a href="/refunds#refund-window" style={{ color: color.fgSoft }}>
+              Refund Policy
+            </a>{' '}
+            has the terms and how to ask.
           </p>
 
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>

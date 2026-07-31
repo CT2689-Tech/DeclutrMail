@@ -1493,10 +1493,16 @@ describe('BillingScreen — paid subscriber', () => {
     // Canceling is framed honestly as "not a refund" instead of the old
     // misleading "No refund for unused time" absolute.
     expect(within(modal).getByText(/on its own it isn.t\s+a refund/i)).toBeInTheDocument();
-    expect(within(modal).getByText(/Every paid plan includes a/)).toBeInTheDocument();
+    // Named, and linked to its terms — never merchandised. The panel that
+    // used to sit here styled a "Request a refund →" CTA as an offer at
+    // the highest-churn-intent moment in the product, to everyone,
+    // eligible or not (founder, 2026-07-30).
+    expect(within(modal).getByText(/Charged in the last 30 days\?/)).toBeInTheDocument();
     expect(within(modal).getByText(/30-day money-back guarantee/)).toBeInTheDocument();
-    const refundLink = within(modal).getByRole('link', { name: /Request a refund/ });
-    expect(refundLink.getAttribute('href')).toContain('mailto:support@declutrmail.com');
+    expect(within(modal).getByRole('link', { name: 'Refund Policy' }).getAttribute('href')).toBe(
+      '/refunds#refund-window',
+    );
+    expect(within(modal).queryByRole('link', { name: /Request a refund/ })).toBeNull();
 
     fireEvent.change(within(modal).getByRole('combobox'), { target: { value: 'too_expensive' } });
     fireEvent.click(within(modal).getByRole('button', { name: 'Cancel subscription' }));
@@ -1511,7 +1517,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByRole('button', { name: 'Cancel subscription' })).not.toBeInTheDocument();
   });
 
-  it('cancel modal surfaces the money-back guarantee + refund request for a PLUS subscriber (D121, all paid tiers)', async () => {
+  it('cancel modal names the money-back guarantee for a PLUS subscriber (D121, all paid tiers)', async () => {
     mockTier = 'plus';
     installFetchStub([
       {
@@ -1527,14 +1533,13 @@ describe('BillingScreen — paid subscriber', () => {
     expect(
       within(modal).getByText('Your Plus features stay active until Jul 1, 2026.'),
     ).toBeInTheDocument();
-    // The refund right is shown to Plus too — the honesty bug this fixes
+    // The refund right is named for Plus too — the honesty bug this fixes
     // (previously gated behind `tier === 'pro'`, so Plus never saw it).
-    expect(within(modal).getByText(/Every paid plan includes a/)).toBeInTheDocument();
+    expect(within(modal).getByText(/Charged in the last 30 days\?/)).toBeInTheDocument();
     expect(within(modal).getByText(/30-day money-back guarantee/)).toBeInTheDocument();
-    const refundLink = within(modal).getByRole('link', { name: /Request a refund/ });
-    const href = refundLink.getAttribute('href') ?? '';
-    expect(href).toContain('mailto:support@declutrmail.com');
-    expect(href).toMatch(/subject=/);
+    expect(within(modal).getByRole('link', { name: 'Refund Policy' }).getAttribute('href')).toBe(
+      '/refunds#refund-window',
+    );
   });
 
   it('cancel error does not persist after closing and reopening the modal', async () => {
@@ -1574,11 +1579,10 @@ describe('BillingScreen — paid subscriber', () => {
     expect(
       within(panel).getByText(/Your Pro features will remain active until Jul 1, 2026\./),
     ).toBeInTheDocument();
-    // Downgrade copy points at the cancel step's money-back guarantee
+    // Downgrade copy routes to the cancel step; the guarantee is named
+    // there, on its own terms, rather than promised here.
     // rather than the old misleading "No refund for unused time" line.
-    expect(
-      within(panel).getByText(/the next step covers cancellation, including the 30-day money-back/),
-    ).toBeInTheDocument();
+    expect(within(panel).getByText(/the next step covers cancellation\./)).toBeInTheDocument();
 
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to cancellation →' }));
     expect(screen.getByTestId('cancel-modal')).toBeInTheDocument();
@@ -1656,6 +1660,9 @@ describe('BillingScreen — paid subscriber', () => {
     // split across inline nodes, so assert on the panel's textContent.
     await waitFor(() => expect(panel).toHaveTextContent('$181.01 is charged now'));
     expect(panel).toHaveTextContent('from Jul 30, 2027.');
+    // Money moves today, so the guarantee is reassurance and belongs here
+    // — unlike the $0 downgrade branch, where it contradicts.
+    expect(panel).toHaveTextContent('30-day money-back guarantee');
   });
 
   it('upgrade panel falls back to generic mechanics when the preview fails — never an invented number', async () => {
@@ -1720,6 +1727,10 @@ describe('BillingScreen — paid subscriber', () => {
     const panel = screen.getByTestId('change-plan-panel');
     expect(panel).toHaveTextContent('$0 today');
     expect(panel).toHaveTextContent('no refund or credit');
+    // …and therefore NOT the money-back line, which read as a flat
+    // contradiction of the sentence right above it (founder, 2026-07-30).
+    // It belongs on the branch where money moves today.
+    expect(panel).not.toHaveTextContent('30-day money-back guarantee');
     fireEvent.click(within(panel).getByRole('button', { name: 'Schedule downgrade' }));
 
     const notice = await screen.findByTestId('scheduled-plan-change-notice');

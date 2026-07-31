@@ -946,7 +946,16 @@ function ChangePlanPanel({
               ) : null}
             </p>
           )}
-          <p style={{ margin: 0, fontSize: 11.5, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
+          {/* Purchase reassurance, so it belongs on the branch where money
+              moves TODAY. On a downgrade the line directly above already
+              says "$0 today … no refund or credit for the period you
+              already paid for" — appending the guarantee there reads as a
+              contradiction of the sentence before it (founder,
+              2026-07-30). The guarantee still governs the ORIGINAL charge;
+              /refunds is where its terms live. */}
+          {isDowngrade ? null : (
+            <p style={{ margin: 0, fontSize: 11.5, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
+          )}
         </>
       )}
 
@@ -1219,8 +1228,7 @@ function DowngradePanel({
         {end
           ? `Your ${tierLabel} features will remain active until ${end}. Then you'll switch to Free.`
           : `Your ${tierLabel} features will remain active until the end of the current period. Then you'll switch to Free.`}{' '}
-        Downgrading to Free means canceling your subscription — the next step covers cancellation,
-        including the 30-day money-back guarantee if you were charged recently.
+        Downgrading to Free means canceling your subscription — the next step covers cancellation.
       </p>
       <div>
         <Button tone="default" onClick={onRequestCancel}>
