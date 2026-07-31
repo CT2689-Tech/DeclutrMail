@@ -26,6 +26,58 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-31 — LAUNCH BLOCKER: a refunded customer keeps their plan forever (matrix H2 FAILS)
+
+**Source:** billing-test-matrix group H, driven 2026-07-31
+
+**Why:** the matrix calls H2 "the most valuable step in this document — the one failure that silently gives away Pro forever". It fails. Reproduced twice, cleanly, two steps:
+
+| step | `cancel_at_period_end` | `cancel_source` |
+|---|---|---|
+| after `adjustment.created` / `refund` | **`t`** | `refund` |
+| after ONE ordinary `subscription.updated` | **`f`** | `refund` |
+
+A refund records its verdict in two places: `cancel_source='refund'` (a marker) and `cancel_at_period_end=true` (the part that actually ends the subscription). The marker survives later provider payloads. **The effect does not.** Any subsequent `subscription.updated` — which Paddle sends routinely, and which carries `scheduled_change: null` because the provider has no idea we decided to cancel — overwrites the flag. The row then reads "refunded" while behaving as a fully paid subscription that renews forever.
+
+There is no floor protecting this the way the terminal-canceled floor protects `status='canceled'`. A refund leaves the row `active`, and `active` rows are freely overwritten by provider truth.
+
+Severity: money. Every refunded or charged-back customer keeps their paid tier indefinitely, and the audit column makes it look handled.
+
+Note also that refund → **downgrade at period end**, not immediate (`paddle.adapter.ts:722`, documented in `billing.module.ts`). So even when it works, a refunded customer keeps Pro until the period ends. That is a separate product call worth making deliberately — for a chargeback especially, the money is already gone.
+
+**How:** this is a `apps/api/src/billing/billing-webhook.service.ts` change and therefore a CLAUDE.md §9 stop condition (billing provider webhooks) — flagged rather than fixed. The shape that fits the existing code: treat a non-null `cancel_source` as a sticky local verdict, the same way the terminal-canceled floor treats `status='canceled'`, so an incoming payload may never clear `cancel_at_period_end` on a row that carries one. Decide the immediate-vs-period-end question at the same time.
+
+**Verifies by:** apply a refund adjustment, replay any later `subscription.updated`, and confirm `cancel_at_period_end` stays `t`; a regression spec pins it.
+
+**Status:** Open — **launch blocker**
+
+### 2026-07-31 — Verify production billing with one real purchase (founder decision: yes)
+
+**Source:** session 2026-07-31 (founder chose "one real purchase, then refund")
+
+**Why:** production billing has **never processed a single event** — 0 subscriptions, 0 webhooks, 0 customers — while `BILLING_ENABLED=true` with real Paddle catalog ids. The sandbox path is now verified end to end, but prod-only configuration is not: live API keys, the live notification destination and its secret, live catalog ids, and the live webhook URL. None of that is exercised by sandbox. The first real payer should be the founder, not a stranger.
+
+**How:** buy **Plus monthly ($9)** on production with a real card, confirm the webhook grants the tier (`subscriptions.status=active`, `workspaces.tier=plus`, a `subscription_events` row), then refund it from the Paddle dashboard. Everything except the card entry can be driven by an agent. Blocked on H2 above: refunding is exactly the path that currently fails, so close H2 first or the refund will leave a live subscription that never ends.
+
+**Verifies by:** a production `subscription_events` row with `processed_at` set, and the tier flip visible on `/billing`.
+
+**Status:** Open — needs the founder's card
+
+### 2026-07-31 — Paddle seller display name reads as a personal name on receipts
+
+**Source:** founder screenshot of the sandbox checkout, 2026-07-31
+
+**Why:** the Paddle overlay footer reads "This order process is conducted by our online reseller & Merchant of Record, Paddle.com… Your data will be shared with **Nayana Ashok Thakkar** for product fulfilment", with the address `3811 Ditmars Blvd #1071, Astoria, NY 11105-1803`. That is the seller display name Paddle prints at checkout and on every receipt. A buyer paying DeclutrMail sees an unfamiliar personal name at the moment of payment — the single worst moment for a trust wobble, and a common chargeback trigger ("I don't recognise this charge").
+
+This is sandbox configuration, but the same field exists in production and defaults from the same account setup.
+
+**How:** Paddle Dashboard → Checkout → Checkout settings (and Business details) → set the public seller/business name to **DeclutrMail**. Check BOTH environments; sandbox and production are configured separately. While there, confirm the business address shown is one that should be public.
+
+**Verifies by:** open a sandbox checkout — the footer names DeclutrMail, not a person.
+
+**Status:** Open
+
+
 ### 2026-07-31 — Cancel is a one-way door: no in-app path back, and D118's pause offer was never built
 
 **Source:** billing-test-matrix groups C/E/F run end-to-end 2026-07-31 (founder: "smoke as much as possible")
@@ -54,7 +106,7 @@ section to the Done section. Do not delete entries — the trail matters.
 
 **Verifies by:** cancel on the sandbox sub, then restore billing entirely from `/billing` with no Paddle dashboard and no SQL; `subscriptions.cancel_at_period_end` returns to `f` and the notice clears.
 
-**Status:** Open
+**Status:** Done 2026-07-31 — option (b), both halves. `POST /api/billing/resume-cancellation` + a two-step confirm on the plan card (#447), and D118's pause offer built end to end: `POST /api/billing/pause`, the "Pause for 30 days" button in the cancel modal, Paddle pause with a 30-day `resume_at`. Verified on the live sandbox subscription — cancel → Keep my subscription → Paddle `scheduled_change: null` in 600ms; pause → `subscription.paused` → tier dropped to free → resume → back to pro in 900ms. Two follow-on defects fixed in #448 (the un-cancel's ordering marker was inert; pause wrote `pause_until` before the provider confirmed).
 
 ### 2026-07-30 — The derived impl-log gate: two drift classes, only one of them loud
 **Source:** session 2026-07-30 (D249 CI triage; corrected same day after observing #436's merge)
@@ -105,7 +157,7 @@ Deliberately deferred by founder decision 2026-07-28 (of the three options — v
 2. Add it to `packages/shared/src/copy/` as a locked constant beside the privacy copy (single source of truth, same as `PRIVACY_BADGE_HEADLINE`), and render it in the `Shell` footer of opt-out-able kinds. Ping me and this is a ~20-minute change; the footer block already exists, it just needs the line.
 3. Publish the same address on the marketing site's contact/legal page — CASL expects it discoverable, not email-only.
 **Verifies by:** a rendered `sync-reminder-24h` shows the postal address in both the HTML and plain-text parts; the address appears on `/contact`.
-**Status:** Open — **must close before the first non-founder send.**
+**Status:** Open — **must close before the first non-founder send.** Reaffirmed deferred by the founder 2026-07-31, with the scope narrowed: `sync-complete` is NOT in scope after all. `COMMERCIAL_KINDS` in `packages/workers/src/email-send.worker.ts` correctly holds only `sync-reminder-24h`, because `sync-complete` delivers the result of a service the recipient asked for (§7702(17)(A)(v)) and is transactional. So a stranger can sign up and be onboarded today without a non-compliant send; what stays blocked is the 24h re-engagement nudge and the deferred D126 Part 3 sequence. Marketing is therefore NOT gated on this — only re-engagement email is.
 
 ### 2026-07-27 — Create `unsubscribe-token-secret-prod` BEFORE merging the D162/D165 email PR
 **Source:** feat/d162-react-email-templates (React Email + RFC 8058 one-click unsubscribe)
