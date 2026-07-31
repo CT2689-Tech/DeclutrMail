@@ -547,17 +547,25 @@ export class BillingService {
       resumeAt.toISOString(),
     );
 
-    // `pause_until` is the DISPLAY fact ("resumes Aug 30") and is safe
-    // to record now — it says when billing is scheduled to restart, not
-    // that the pause has taken effect. `status` stays untouched.
+    // NOTHING about the pause is written locally — not `status`, and not
+    // `pause_until` either. An earlier revision wrote `pause_until` here
+    // as "just a display fact", which stranded the two stores against
+    // each other: if the pause never took effect (provider rejects it
+    // asynchronously, or the webhook never lands) the row kept a
+    // resume date describing a pause that was not happening (Codex
+    // stop-review, 2026-07-31).
+    //
+    // It was redundant as well as unsafe: Paddle answers a pause with
+    // `scheduled_change: {action: 'resume', effective_at}`, which
+    // `toNormalizedSubscription` already maps to `pauseUntil` when the
+    // status is `paused` — so the webhook supplies the same value, and
+    // only ever alongside the status that makes it true.
+    //
+    // What remains is the audit marker: an ordering record of the
+    // request, which is a fact regardless of the outcome.
     const now = new Date();
     await this.db.transaction(async (tx) => {
       await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
-      await tx
-        .update(subscriptions)
-        .set({ pauseUntil: resumeAt, updatedAt: now })
-        .where(eq(subscriptions.id, sub.id));
-
       await tx
         .insert(subscriptionEvents)
         .values({

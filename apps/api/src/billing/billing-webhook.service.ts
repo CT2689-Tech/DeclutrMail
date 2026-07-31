@@ -404,7 +404,16 @@ export class BillingWebhookService {
               // precisely what seeds billing_customers to make a stranded
               // activation attributable. Counting it here would discard
               // the activation this recovery path exists to rescue.
-              sql`${subscriptionEvents.payload}->>'kind' IN ('subscription', 'cancellation_scheduled')`,
+              // `cancellation_revoked` (D118 un-cancel) belongs here for
+              // the same reason `cancellation_scheduled` does, in the
+              // mirror direction: it flips `cancel_at_period_end` and so
+              // IS newer state. Omitting it made the un-cancel's ordering
+              // marker inert — an in-flight event captured before the
+              // un-cancel would not see it as a peer, would not be
+              // refused, and would re-assert the cancel the user just
+              // revoked. The user believes they are renewing and is not
+              // (Codex stop-review, 2026-07-31).
+              sql`${subscriptionEvents.payload}->>'kind' IN ('subscription', 'cancellation_scheduled', 'cancellation_revoked')`,
             ),
           );
 

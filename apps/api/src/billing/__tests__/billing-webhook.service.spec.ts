@@ -832,6 +832,90 @@ describe('BillingWebhookService.process', () => {
     expect(subRow!.cancelAtPeriodEnd).toBe(true);
   });
 
+  it('an un-cancel refuses an in-flight event that would re-assert the cancel', async () => {
+    // The D118 un-cancel's ordering marker was INERT on first ship: the
+    // staleness peer query selected `kind IN ('subscription',
+    // 'cancellation_scheduled')` only, so `cancellation_revoked` was
+    // invisible to it. An event captured BEFORE the un-cancel could then
+    // win the lock afterwards and restore `cancel_at_period_end`, and the
+    // user would believe they were renewing when they were not (Codex
+    // stop-review, 2026-07-31).
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_unc_activate',
+      subscriptionId: 'sub_unc',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const billing = new BillingService(
+      db,
+      testCatalog(),
+      {
+        id: 'paddle',
+        cancelSubscription: async () => {},
+        clearScheduledCancellation: async () => {},
+      } as unknown as PaddleAdapter,
+      { id: 'razorpay' } as unknown as RazorpayAdapter,
+      {} as unknown as BillingReconciliationService,
+    );
+    await billing.cancelAtPeriodEnd({ workspaceId }, {});
+
+    // The in-flight event must occur AFTER the cancel marker and BEFORE
+    // the un-cancel marker. Otherwise the cancel marker alone refuses it
+    // (it is `cancellation_scheduled`, always selected) and the test
+    // passes whether or not `cancellation_revoked` is recognized —
+    // proving nothing. Verified by reverting the fix: with a fixture
+    // default timestamp this test still passed.
+    const [cancelMarker] = await db
+      .select({ payload: subscriptionEvents.payload })
+      .from(subscriptionEvents)
+      .where(eq(subscriptionEvents.eventType, 'local.cancellation_requested'));
+    const cancelMs = Date.parse((cancelMarker!.payload as { occurred_at: string }).occurred_at);
+
+    // Provider event carrying the PRE-un-cancel truth (still cancelling),
+    // delivered and sitting in flight before the user changes their mind.
+    const inFlight = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_unc_inflight',
+      subscriptionId: 'sub_unc',
+      eventType: 'subscription.updated',
+      occurredAt: new Date(cancelMs + 1).toISOString(),
+      scheduledChange: { action: 'cancel', effective_at: '2026-08-01T10:00:00.000000Z' },
+    });
+    const inFlightEvent = paddle.mapWebhookEvent(inFlight);
+    await db.insert(subscriptionEvents).values({
+      provider: 'paddle',
+      providerEventId: inFlightEvent.providerEventId,
+      eventType: inFlightEvent.eventType,
+      payload: projectWebhookPayload(inFlightEvent, inFlight),
+    });
+
+    // Real clock: the un-cancel marker must land strictly after the
+    // in-flight event's occurred_at, or `isNewer` short-circuits on the
+    // time comparison and never reaches the arrival-order tiebreak.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await billing.resumeCancellation({ workspaceId });
+
+    // State the precondition rather than assume it — if the clocks land
+    // the other way this test would silently stop testing anything.
+    const [revokeMarker] = await db
+      .select({ payload: subscriptionEvents.payload })
+      .from(subscriptionEvents)
+      .where(eq(subscriptionEvents.eventType, 'local.cancellation_revoked'));
+    expect(
+      Date.parse((revokeMarker!.payload as { occurred_at: string }).occurred_at),
+    ).toBeGreaterThan(cancelMs + 1);
+
+    // The stale event must lose to the marker written after it.
+    const outcome = await service.process('paddle', inFlightEvent, inFlight);
+    expect(outcome.kind).not.toBe('processed');
+    const [subRow] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_unc'));
+    expect(subRow!.cancelAtPeriodEnd).toBe(false);
+  });
+
   it('a SECOND cancellation writes a fresh ordering marker', async () => {
     // A fixed `local_cancel_<sub>` event id collided with the first
     // cancellation and onConflictDoNothing kept the OLD row, freezing
