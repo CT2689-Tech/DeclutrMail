@@ -108,6 +108,8 @@ describe('BillingService', () => {
   let paddleChangePlan: ReturnType<typeof vi.fn>;
   let paddlePreviewPlanChange: ReturnType<typeof vi.fn>;
   let paddleResume: ReturnType<typeof vi.fn>;
+  let paddleClearScheduledCancellation: ReturnType<typeof vi.fn>;
+  let paddlePause: ReturnType<typeof vi.fn>;
   let reconcileWorkspace: ReturnType<typeof vi.fn>;
   let reconciliationStub: BillingReconciliationService;
   let principal: { userId: string; workspaceId: string };
@@ -133,6 +135,8 @@ describe('BillingService', () => {
     });
     paddlePreviewPlanChange = vi.fn().mockResolvedValue({ result: null, nextBilledAt: null });
     paddleResume = vi.fn().mockResolvedValue(undefined);
+    paddleClearScheduledCancellation = vi.fn().mockResolvedValue(undefined);
+    paddlePause = vi.fn().mockResolvedValue(undefined);
     const paddle = {
       id: 'paddle',
       createCheckout: paddleCheckout,
@@ -140,6 +144,8 @@ describe('BillingService', () => {
       changePlan: paddleChangePlan,
       previewPlanChange: paddlePreviewPlanChange,
       resumeSubscription: paddleResume,
+      clearScheduledCancellation: paddleClearScheduledCancellation,
+      pauseSubscription: paddlePause,
     } as unknown as PaddleAdapter;
     const razorpay = {
       id: 'razorpay',
@@ -147,6 +153,8 @@ describe('BillingService', () => {
       cancelSubscription: vi.fn(),
       changePlan: vi.fn(),
       resumeSubscription: vi.fn(),
+      clearScheduledCancellation: vi.fn(),
+      pauseSubscription: vi.fn(),
     } as unknown as RazorpayAdapter;
     service = new BillingService(
       db,
@@ -482,6 +490,161 @@ describe('BillingService', () => {
   it('cancel without any granting subscription is NO_ACTIVE_SUBSCRIPTION', async () => {
     await expect(service.cancelAtPeriodEnd(principal, {})).rejects.toMatchObject({
       code: 'NO_ACTIVE_SUBSCRIPTION',
+    });
+  });
+
+  describe('resumeCancellation (D118 — the way back out of a cancel)', () => {
+    async function seedCancellingPro(): Promise<void> {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_uncancel',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: new Date('2027-07-30T18:00:00Z'),
+        cancelAtPeriodEnd: true,
+      });
+      await db
+        .update(workspaces)
+        .set({ tier: 'pro' })
+        .where(eq(workspaces.id, principal.workspaceId));
+    }
+
+    it('revokes at the provider, clears the flag, and records a staleness-shaped marker', async () => {
+      await seedCancellingPro();
+
+      const result = await service.resumeCancellation(principal);
+      expect(paddleClearScheduledCancellation).toHaveBeenCalledWith('sub_uncancel');
+      expect(result.subscription).toMatchObject({
+        status: 'active',
+        cancelAtPeriodEnd: false,
+      });
+      expect(result.tier).toBe('pro');
+
+      // Same shape as the cancel marker, for the same reason: a provider
+      // event captured BEFORE this call must not win the lock afterwards
+      // and re-assert `cancel_at_period_end: true`.
+      const audits = await db
+        .select()
+        .from(subscriptionEvents)
+        .where(eq(subscriptionEvents.eventType, 'local.cancellation_revoked'));
+      expect(audits).toHaveLength(1);
+      expect(audits[0]!.payload).toEqual({
+        kind: 'cancellation_revoked',
+        provider_subscription_id: 'sub_uncancel',
+        occurred_at: expect.any(String),
+      });
+    });
+
+    it('is NO_SCHEDULED_CANCELLATION when nothing is scheduled — and never calls the provider', async () => {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_healthy',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: new Date('2027-07-30T18:00:00Z'),
+      });
+
+      await expect(service.resumeCancellation(principal)).rejects.toMatchObject({
+        code: 'NO_SCHEDULED_CANCELLATION',
+      });
+      expect(paddleClearScheduledCancellation).not.toHaveBeenCalled();
+    });
+
+    it('is NO_ACTIVE_SUBSCRIPTION with no subscription at all', async () => {
+      await expect(service.resumeCancellation(principal)).rejects.toMatchObject({
+        code: 'NO_ACTIVE_SUBSCRIPTION',
+      });
+    });
+
+    // The un-cancel must never launder a refund/chargeback verdict.
+    // `cancel_source` is written only by those paths (its enum is
+    // provider/refund/chargeback — a user cancel writes none), so
+    // clearing it here would erase the stickiness matrix H2 exists to
+    // protect: the one failure that silently re-grants Pro forever.
+    it('leaves cancel_source untouched — a refund verdict must survive', async () => {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_refunded',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: new Date('2027-07-30T18:00:00Z'),
+        cancelAtPeriodEnd: true,
+        cancelSource: 'refund',
+      });
+
+      await service.resumeCancellation(principal);
+
+      const [row] = await db
+        .select({ cancelSource: subscriptions.cancelSource })
+        .from(subscriptions)
+        .where(eq(subscriptions.providerSubscriptionId, 'sub_refunded'));
+      expect(row!.cancelSource).toBe('refund');
+    });
+  });
+
+  describe('pauseForThirtyDays (D118 retention offer)', () => {
+    async function seedActivePro(overrides: Record<string, unknown> = {}): Promise<void> {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_pause',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: new Date('2027-07-30T18:00:00Z'),
+        ...overrides,
+      });
+      await db
+        .update(workspaces)
+        .set({ tier: 'pro' })
+        .where(eq(workspaces.id, principal.workspaceId));
+    }
+
+    it('pauses at the provider with a 30-day resume_at and records pause_until', async () => {
+      await seedActivePro();
+      const before = Date.now();
+
+      const result = await service.pauseForThirtyDays(principal);
+
+      expect(paddlePause).toHaveBeenCalledTimes(1);
+      const [subId, resumeAt] = paddlePause.mock.calls[0] as [string, string];
+      expect(subId).toBe('sub_pause');
+      const days = (new Date(resumeAt).getTime() - before) / (24 * 60 * 60 * 1000);
+      expect(days).toBeGreaterThan(29.9);
+      expect(days).toBeLessThan(30.1);
+      expect(result.subscription?.pauseUntil).toBe(resumeAt);
+
+      // The ENTITLEMENT does not move here — `subscription.paused` owns
+      // that, like every other grant/revoke (D117). Claiming it locally
+      // would revoke access for a pause the provider might reject.
+      expect(result.subscription?.status).toBe('active');
+      expect(result.tier).toBe('pro');
+    });
+
+    it('refuses a subscription already on its way out (two conflicting schedules)', async () => {
+      await seedActivePro({ cancelAtPeriodEnd: true });
+      await expect(service.pauseForThirtyDays(principal)).rejects.toMatchObject({
+        code: 'SUBSCRIPTION_CANCELING',
+      });
+      expect(paddlePause).not.toHaveBeenCalled();
+    });
+
+    it('refuses an already-paused subscription', async () => {
+      await seedActivePro({ status: 'paused' });
+      await expect(service.pauseForThirtyDays(principal)).rejects.toMatchObject({
+        code: 'SUBSCRIPTION_PAUSED',
+      });
+      expect(paddlePause).not.toHaveBeenCalled();
     });
   });
 

@@ -48,6 +48,9 @@ import { RazorpayAdapter } from './razorpay.adapter.js';
 /** 0051 — pending-checkout display/lock horizon. */
 const PENDING_CHECKOUT_TTL_MS = 30 * 60 * 1000;
 
+/** D118 — the pause offer's fixed length ("Pause for 30 days"). */
+const PAUSE_DAYS = 30;
+
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
@@ -406,6 +409,175 @@ export class BillingService {
       );
     }
 
+    return this.getSubscription(principal.workspaceId);
+  }
+
+  /**
+   * D118 — revoke a scheduled cancellation and go back on renewal.
+   *
+   * Why this exists: cancelling was a one-way door. `resume` only
+   * un-pauses (`status='paused'`), `checkout` refuses with
+   * `SUBSCRIPTION_EXISTS`, and `changePlan` refuses with
+   * `SUBSCRIPTION_CANCELING` — even for the identical plan. A user who
+   * mis-clicked Cancel on an annual plan had no way back for up to a
+   * year, and support had to PATCH the provider by hand (matrix E3,
+   * verified 2026-07-31).
+   *
+   * Deliberately the exact mirror of `cancelAtPeriodEnd`, including the
+   * staleness-participating marker: an in-flight provider event
+   * captured BEFORE this call must not win the lock afterwards and
+   * re-assert `cancel_at_period_end: true`. Nothing is charged and no
+   * entitlement moves — only the schedule changes — so the local write
+   * is safe here in a way a pause's would not be.
+   */
+  async resumeCancellation(principal: { workspaceId: string }): Promise<BillingSubscription> {
+    const [sub] = await this.db
+      .select({
+        id: subscriptions.id,
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+        cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.workspaceId, principal.workspaceId),
+          inArray(subscriptions.status, ['active', 'past_due']),
+        ),
+      )
+      .orderBy(desc(subscriptions.updatedAt))
+      .limit(1);
+    if (!sub) {
+      throw new AppException({ code: 'NO_ACTIVE_SUBSCRIPTION' });
+    }
+    if (!sub.cancelAtPeriodEnd) {
+      throw new AppException({ code: 'NO_SCHEDULED_CANCELLATION' });
+    }
+
+    // Provider call IS the confirmation — only a successful revoke lets
+    // the local row claim the renewal is back on.
+    await this.adapterFor(sub.provider).clearScheduledCancellation(sub.providerSubscriptionId);
+
+    const now = new Date();
+    await this.db.transaction(async (tx) => {
+      await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+      // `cancel_at_period_end` ONLY — the exact inverse of what
+      // `cancelAtPeriodEnd()` writes. Deliberately NOT `cancel_source`:
+      // that column is never set by a user cancel (its enum is
+      // provider/refund/chargeback), so clearing it here could only ever
+      // erase a REFUND or CHARGEBACK verdict — the sticky local verdict
+      // that must survive every later provider payload (matrix H2, the
+      // one failure that silently re-grants Pro forever). Such a row is
+      // `canceled` and unreachable from the select above; clearing a
+      // column this operation does not own would still be wrong.
+      await tx
+        .update(subscriptions)
+        .set({ cancelAtPeriodEnd: false, updatedAt: now })
+        .where(eq(subscriptions.id, sub.id));
+
+      await tx
+        .insert(subscriptionEvents)
+        .values({
+          provider: sub.provider,
+          providerEventId: `local_uncancel_${sub.providerSubscriptionId}_${now.toISOString()}`,
+          eventType: 'local.cancellation_revoked',
+          payload: {
+            kind: 'cancellation_revoked',
+            provider_subscription_id: sub.providerSubscriptionId,
+            occurred_at: now.toISOString(),
+          },
+          processedAt: now,
+        })
+        .onConflictDoNothing();
+    });
+
+    this.logger.log(
+      `billing_event kind=subscription_uncanceled provider=${sub.provider} workspace=${principal.workspaceId}`,
+    );
+    return this.getSubscription(principal.workspaceId);
+  }
+
+  /**
+   * D118 — "Pause for 30 days" instead of cancelling. The retention
+   * offer the D-body specced; it had no endpoint and no button until
+   * now, so the lever meant to catch a cancellation never ran.
+   *
+   * The entitlement drop is NOT written here. A paused subscription
+   * grants nothing, and every other grant/revoke arrives via webhook
+   * (D117) — `subscription.paused` flips `status` and recomputes the
+   * tier through the single writer that owns that. Writing it locally
+   * would be a third copy of the tier recompute and could revoke access
+   * for a pause the provider ultimately rejected. Erring toward a few
+   * seconds of extra access is the safe direction.
+   */
+  async pauseForThirtyDays(principal: { workspaceId: string }): Promise<BillingSubscription> {
+    const [sub] = await this.db
+      .select({
+        id: subscriptions.id,
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+        status: subscriptions.status,
+        cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.workspaceId, principal.workspaceId),
+          inArray(subscriptions.status, ['active', 'past_due', 'paused']),
+        ),
+      )
+      .orderBy(desc(subscriptions.updatedAt))
+      .limit(1);
+    if (!sub) {
+      throw new AppException({ code: 'NO_ACTIVE_SUBSCRIPTION' });
+    }
+    if (sub.status === 'paused') {
+      throw new AppException({ code: 'SUBSCRIPTION_PAUSED' });
+    }
+    // Pausing a subscription that is already on its way out would leave
+    // two conflicting schedules on the provider row. Revoke the cancel
+    // first — which is now possible.
+    if (sub.cancelAtPeriodEnd) {
+      throw new AppException({ code: 'SUBSCRIPTION_CANCELING' });
+    }
+
+    const resumeAt = new Date(Date.now() + PAUSE_DAYS * 24 * 60 * 60 * 1000);
+    await this.adapterFor(sub.provider).pauseSubscription(
+      sub.providerSubscriptionId,
+      resumeAt.toISOString(),
+    );
+
+    // `pause_until` is the DISPLAY fact ("resumes Aug 30") and is safe
+    // to record now — it says when billing is scheduled to restart, not
+    // that the pause has taken effect. `status` stays untouched.
+    const now = new Date();
+    await this.db.transaction(async (tx) => {
+      await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+      await tx
+        .update(subscriptions)
+        .set({ pauseUntil: resumeAt, updatedAt: now })
+        .where(eq(subscriptions.id, sub.id));
+
+      await tx
+        .insert(subscriptionEvents)
+        .values({
+          provider: sub.provider,
+          providerEventId: `local_pause_${sub.providerSubscriptionId}_${now.toISOString()}`,
+          eventType: 'local.pause_requested',
+          payload: {
+            kind: 'pause_requested',
+            provider_subscription_id: sub.providerSubscriptionId,
+            occurred_at: now.toISOString(),
+            resume_at: resumeAt.toISOString(),
+          },
+          processedAt: now,
+        })
+        .onConflictDoNothing();
+    });
+
+    this.logger.log(
+      `billing_event kind=subscription_pause_requested provider=${sub.provider} workspace=${principal.workspaceId} resume_at=${resumeAt.toISOString()}`,
+    );
     return this.getSubscription(principal.workspaceId);
   }
 

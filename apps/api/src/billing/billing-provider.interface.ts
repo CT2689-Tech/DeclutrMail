@@ -188,6 +188,28 @@ export interface BillingProvider {
   cancelSubscription(providerSubscriptionId: string): Promise<void>;
 
   /**
+   * Revoke a scheduled cancellation, putting the subscription back on
+   * renewal (D118). The inverse of `cancelSubscription`, and the reason
+   * it exists: without it a mis-click is irreversible for up to a year
+   * — checkout refuses (`SUBSCRIPTION_EXISTS`) and change-plan refuses
+   * (`SUBSCRIPTION_CANCELING`), so the only way back was an operator
+   * with a provider API key (matrix E3, 2026-07-31).
+   *
+   * Touches the schedule only: the billing period, price and status are
+   * unchanged, so nothing is charged and no entitlement moves.
+   */
+  clearScheduledCancellation(providerSubscriptionId: string): Promise<void>;
+
+  /**
+   * Pause billing now and auto-resume at `resumeAt` (D118's
+   * pause-30-days offer). A paused subscription grants NOTHING, so the
+   * entitlement drop arrives via the provider's `subscription.paused`
+   * webhook rather than being written here — same rule as every other
+   * grant/revoke.
+   */
+  pauseSubscription(providerSubscriptionId: string, resumeAt: string): Promise<void>;
+
+  /**
    * Switch the subscription to a different catalog price. Immediate
    * upgrades are prorated. For a scheduled downgrade the provider item
    * changes without billing, while the local scheduled-change state

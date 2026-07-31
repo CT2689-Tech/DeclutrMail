@@ -1517,6 +1517,140 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByRole('button', { name: 'Cancel subscription' })).not.toBeInTheDocument();
   });
 
+  // D118 — the way back out of a cancel. Before this, cancelling was a
+  // one-way door for up to a year: `resume` only un-pauses, checkout
+  // answers SUBSCRIPTION_EXISTS and change-plan answers
+  // SUBSCRIPTION_CANCELING (matrix E3, verified on the sandbox
+  // subscription 2026-07-31).
+  it('un-cancel: two-step confirm restores a scheduled cancellation', async () => {
+    mockTier = 'pro';
+    let posted = 0;
+    const scheduled: BillingSubscription = {
+      ...PRO_SUB,
+      subscription: { ...SUB, cancelAtPeriodEnd: true },
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: scheduled }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/resume-cancellation',
+        respond: () => {
+          posted += 1;
+          return jsonOk({ data: PRO_SUB });
+        },
+      },
+    ]);
+    renderScreen();
+
+    // Step 1 — the button only ARMS the confirm; nothing is sent yet.
+    fireEvent.click(await screen.findByRole('button', { name: 'Keep my subscription' }));
+    const confirm = screen.getByTestId('keep-subscription-confirm');
+    expect(within(confirm).getByText(/\$0 today\./)).toBeInTheDocument();
+    expect(within(confirm).getByText(/next charge Jul 1, 2026/)).toBeInTheDocument();
+    expect(posted).toBe(0);
+
+    // Step 2 — confirm sends it, and the cache write-back clears the notice.
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Yes, keep my subscription' }));
+    await waitFor(() => expect(posted).toBe(1));
+    await waitFor(() =>
+      expect(screen.queryByText(/Cancellation scheduled/)).not.toBeInTheDocument(),
+    );
+    expect(await screen.findByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
+  });
+
+  it('un-cancel: "Never mind" disarms without sending anything', async () => {
+    mockTier = 'pro';
+    let posted = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () =>
+          jsonOk({ data: { ...PRO_SUB, subscription: { ...SUB, cancelAtPeriodEnd: true } } }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/resume-cancellation',
+        respond: () => {
+          posted += 1;
+          return jsonOk({ data: PRO_SUB });
+        },
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Keep my subscription' }));
+    fireEvent.click(
+      within(screen.getByTestId('keep-subscription-confirm')).getByRole('button', {
+        name: 'Never mind',
+      }),
+    );
+
+    expect(screen.queryByTestId('keep-subscription-confirm')).not.toBeInTheDocument();
+    expect(posted).toBe(0);
+  });
+
+  // D118's pause-30-days offer, which shipped as nothing until now.
+  it('pause offer: renders in the cancel modal and posts to /api/billing/pause', async () => {
+    mockTier = 'pro';
+    let posted = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PRO_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/pause',
+        respond: () => {
+          posted += 1;
+          return jsonOk({ data: PRO_SUB });
+        },
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel subscription' }));
+    const offer = within(screen.getByTestId('cancel-modal')).getByTestId('pause-offer');
+    expect(within(offer).getByText(/Pause instead\?/)).toBeInTheDocument();
+
+    fireEvent.click(within(offer).getByRole('button', { name: 'Pause for 30 days' }));
+    await waitFor(() => expect(posted).toBe(1));
+    // The modal closes on success; the paused STATE arrives by webhook,
+    // so nothing here claims the subscription is already paused.
+    await waitFor(() => expect(screen.queryByTestId('cancel-modal')).not.toBeInTheDocument());
+  });
+
+  // Offering a control the API would refuse is the assert-what-we-don't-
+  // know defect; the modal's guard mirrors the service's exactly.
+  it('pause offer: hidden for Razorpay, which has no pause primitive', async () => {
+    mockTier = 'plus';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () =>
+          jsonOk({
+            data: {
+              tier: 'plus',
+              foundingMember: false,
+              pendingCheckout: null,
+              subscription: { ...SUB, provider: 'razorpay', tier: 'plus' },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel subscription' }));
+    expect(within(screen.getByTestId('cancel-modal')).queryByTestId('pause-offer')).toBeNull();
+  });
+
   it('cancel modal names the money-back guarantee for a PLUS subscriber (D121, all paid tiers)', async () => {
     mockTier = 'plus';
     installFetchStub([

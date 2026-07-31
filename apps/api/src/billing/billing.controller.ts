@@ -168,6 +168,38 @@ export class BillingController {
   }
 
   /**
+   * POST /api/billing/resume-cancellation — D118 undo of a scheduled
+   * cancel. Separate from `resume` on purpose: that one un-PAUSES
+   * (`status='paused'`), and a cancelling subscription is still
+   * `active`, so overloading it would have made "which state am I in?"
+   * a guess at the call site. Without this route cancelling was a
+   * one-way door for up to a year (matrix E3).
+   */
+  @Post('resume-cancellation')
+  @UseGuards(CsrfGuard)
+  @RateLimit({ bucket: 'default', limit: 10, windowSec: 60 })
+  async resumeCancellation(
+    @CurrentUser() principal: Principal,
+  ): Promise<Envelope<BillingSubscription>> {
+    assertBillingEnabled();
+    return ok(await this.billing.resumeCancellation(principal));
+  }
+
+  /**
+   * POST /api/billing/pause — D118's "Pause for 30 days" retention
+   * offer, surfaced inside the cancel modal. Billing stops now and the
+   * provider auto-resumes at the 30-day mark; the entitlement drop
+   * arrives via the `subscription.paused` webhook, not from here.
+   */
+  @Post('pause')
+  @UseGuards(CsrfGuard)
+  @RateLimit({ bucket: 'default', limit: 10, windowSec: 60 })
+  async pause(@CurrentUser() principal: Principal): Promise<Envelope<BillingSubscription>> {
+    assertBillingEnabled();
+    return ok(await this.billing.pauseForThirtyDays(principal));
+  }
+
+  /**
    * POST /api/billing/change-plan/preview — read-only dry run: the
    * provider computes the exact immediate charge so the confirm panel
    * states a number (D117/D120). Nothing is written or applied. POST
