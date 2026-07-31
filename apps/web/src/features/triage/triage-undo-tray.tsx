@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { toast, UndoTray } from '@declutrmail/shared';
@@ -79,6 +79,15 @@ function useUndoEntries(mailboxId?: string) {
  * Toast discipline (D35 / Doc 05 §7): decisions never toast — the
  * tray IS the decision feedback. Undo completion and failures DO
  * toast: the tray row is already gone, so there is no other channel.
+ *
+ * Scope (D35 "tray persists during the session"): the tray shows the
+ * decisions YOU took on the screen you are on — not every live undo
+ * token. `GET /api/undo` returns tokens for their whole window, and
+ * Delete's is 5 days (ADR-0019), so rendering that list unfiltered
+ * pinned "Moved to Gmail Trash" over Autopilot, Quiet and Billing for
+ * days after the act, and greeted the next session with it. Long-tail
+ * undo is Activity's job — which is exactly what the row's "Activity
+ * Undo until …" line and the footer link already point at.
  */
 export function ProductUndoTray({
   enableShortcut = false,
@@ -89,6 +98,7 @@ export function ProductUndoTray({
 }) {
   const qc = useQueryClient();
   const router = useRouter();
+  const pathname = usePathname();
   const entriesQuery = useUndoEntries(mailboxId);
   const revert = useRevertUndo();
   const pendingAction = useTriageStore((s) => s.pendingAction);
@@ -189,9 +199,40 @@ export function ProductUndoTray({
     setInFlight(null);
   }, [revertStatus.data, revertStatus.isError, inFlight, qc]);
 
+  /**
+   * Tokens already live when this screen was entered — the tray's
+   * baseline. Anything in it is history rather than feedback for
+   * something done HERE, so it stays hidden; the tray fills up again
+   * from the next action on this screen.
+   *
+   * Identity, not timestamps. `entry.createdAt` is SERVER clock and any
+   * epoch we captured would be BROWSER clock, so seconds of skew either
+   * leak stale rows or — far worse — swallow the row for the action just
+   * taken, and decisions have no other feedback channel (D35 bans toasts
+   * for them). Token identity cannot skew.
+   *
+   * Keyed on the mailbox too: query data is per-mailbox, so a switch
+   * without a re-baseline would expose every live token of the mailbox
+   * switched INTO — the same defect on a different axis.
+   *
+   * Set during render, not in an effect: effects commit after paint, so
+   * an effect would flash the stale rows for a frame on every route
+   * change. Self-limiting — the scope check is false immediately after.
+   */
+  const trayScope = `${pathname} ${mailboxId ?? ''}`;
+  const [baseline, setBaseline] = useState<{
+    scope: string;
+    tokens: ReadonlySet<string>;
+  } | null>(null);
+  if (entriesQuery.data && baseline?.scope !== trayScope) {
+    setBaseline({ scope: trayScope, tokens: new Set(entriesQuery.data.map((e) => e.token)) });
+  }
+
   // Entries shown — the in-flight token is hidden until its revert
   // settles (failure paths clear `inFlight`, so it reappears).
-  const entries = (entriesQuery.data ?? []).filter((entry) => entry.token !== inFlight?.token);
+  const entries = (entriesQuery.data ?? []).filter(
+    (entry) => entry.token !== inFlight?.token && !baseline?.tokens.has(entry.token),
+  );
 
   // Z — undo last (D35). Same typing guards as `resolveShortcut` in
   // action-toolbar.tsx; the pending-action surface owns the keyboard
@@ -220,7 +261,12 @@ export function ProductUndoTray({
 
   const dataSource: UndoTrayDataSource = {
     entries,
-    isLoading: entriesQuery.isLoading,
+    // Never a loading state. `isLoading` is true only while the FIRST
+    // fetch of a scope is in flight, and everything that fetch returns
+    // is exactly what the baseline above swallows — so forwarding it
+    // flashes an empty "Loading…" tray on every boot and mailbox
+    // switch, announcing an undo that is never going to arrive.
+    isLoading: false,
     isError: entriesQuery.isError,
     error: entriesQuery.error ?? null,
     revert: revertToken,
