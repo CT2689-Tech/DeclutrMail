@@ -234,15 +234,15 @@ know — so a green UI over a `tier=free` row is the bug, not a display glitch.
 
 **Precondition:** workspace on Free, no subscription row, no pending checkout.
 
-| #   | Step                                                    | Expect                                                                                         |
-| --- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| A1  | `/pricing` → **Get Plus** while signed out              | Lands on sign-in, then returns to the checkout intent                                          |
-| A2  | Signed in, `/billing` → pick **Plus monthly** → confirm | A `pending_checkouts` row is written **before** the provider is called, then the overlay opens |
-| A3  | Pay with the Paddle sandbox test card                   | Overlay closes; UI shows "payment received — confirming your plan" and polls                   |
-| A4  | Wait for the webhook                                    | `subscription_events` gains rows; `subscriptions.status=active`; `workspaces.tier=plus`        |
-| A5  | Reload `/billing`                                       | Plan card reads Plus; the `pending_checkouts` row is gone                                      |
-| A6  | Open `/autopilot`                                       | Still gated — Autopilot is Pro-only, Plus does not include it                                  |
-| A7  | Upgrade Plus → **Pro**                                  | Immediate, provider-prorated; tier flips to `pro`; `/autopilot` now opens                      |
+| #   | Step                                                    | Expect                                                                                                                                                                   |
+| --- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A1  | `/pricing` → **Get Plus** while signed out              | Lands on sign-in, then returns to the checkout intent                                                                                                                    |
+| A2  | Signed in, `/billing` → pick **Plus monthly** → confirm | A `pending_checkouts` row is written **before** the provider is called, then the overlay opens                                                                           |
+| A3  | Pay with the Paddle sandbox test card                   | Overlay closes; UI shows "payment received — confirming your plan" and polls                                                                                             |
+| A4  | Wait for the webhook                                    | `subscription_events` gains rows; `subscriptions.status=active`; `workspaces.tier=plus`                                                                                  |
+| A5  | Reload `/billing`                                       | Plan card reads Plus; the `pending_checkouts` row is gone                                                                                                                |
+| A6  | Open `/autopilot`                                       | Still gated — Autopilot is Pro-only, Plus does not include it — **PASSED 2026-07-31** (0 toggles, "AUTOPILOT PREVIEW", upgrade CTA; read-only match preview still works) |
+| A7  | Upgrade Plus → **Pro**                                  | Immediate, provider-prorated; tier flips to `pro`; `/autopilot` now opens — **PASSED 2026-07-31**                                                                        |
 
 **A4 is the load-bearing one.** Checkout never grants tier — only the verified
 webhook does. A tier that flips _before_ the webhook lands is a bug.
@@ -280,13 +280,13 @@ after A5, before A7.
 
 Use Paddle's declining test card.
 
-| #   | Step                                                                                            | Expect                                                                                       |
-| --- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| C1  | Buy Plus with a card that declines at checkout                                                  | No subscription row; no tier grant; legible error, not a raw 5xx                             |
-| C2  | On an active sub, force a **renewal** failure                                                   | `status=past_due`; **tier still granted** (dunning)                                          |
-| C3  | Read the deadline                                                                               | `entitlement_ends_at` = `current_period_end` **+ 14 days**                                   |
-| C4  | **[DEV DB ONLY]** expire the deadline with the scoped SQL below, then restart the worker (§0.5) | Sweep flips that row to `canceled` and recomputes the tier; `/autopilot` re-gates            |
-| C5  | Recover the card mid-dunning                                                                    | `status=active`; `entitlement_ends_at` becomes **NULL** (only `past_due` carries a deadline) |
+| #   | Step                                                                                            | Expect                                                                                                                                                                                                                                                                                          |
+| --- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1  | Buy Plus with a card that declines at checkout                                                  | No subscription row; no tier grant; legible error, not a raw 5xx                                                                                                                                                                                                                                |
+| C2  | On an active sub, force a **renewal** failure                                                   | `status=past_due`; **tier still granted** (dunning) — **PASSED 2026-07-31** (signed `subscription.past_due`)                                                                                                                                                                                    |
+| C3  | Read the deadline                                                                               | `entitlement_ends_at` = `current_period_end` **+ 14 days** — **PASSED 2026-07-31** (exactly 14 days)                                                                                                                                                                                            |
+| C4  | **[DEV DB ONLY]** expire the deadline with the scoped SQL below, then restart the worker (§0.5) | Sweep flips that row to `canceled` and recomputes the tier; `/autopilot` re-gates — **PASSED 2026-07-31** (`cancel_source=provider`, tier→free, gate closed)                                                                                                                                    |
+| C5  | Recover the card mid-dunning                                                                    | `status=active`; `entitlement_ends_at` becomes **NULL** (only `past_due` carries a deadline) — **PASSED 2026-07-31**. Run C5 BEFORE C4: after C4 the row is `canceled`, and the terminal-canceled floor correctly ignores any later non-canceled event (`billing.webhook.canceled_is_terminal`) |
 
 > **C2/C3 are the founder decision of 2026-07-28** — 14 days for _genuine
 > retry_ states only. **D6** is the paired half: a terminal state must drop
@@ -350,15 +350,15 @@ forever.
 
 **Precondition:** an active Paddle subscription.
 
-| #   | Step                               | Expect                                                             |
-| --- | ---------------------------------- | ------------------------------------------------------------------ |
-| E1  | Cancel Pro                         | Access continues to period end; `cancel_source` records the origin |
-| E2  | During cancelling, try change-plan | `SUBSCRIPTION_CANCELING`                                           |
-| E3  | Resume before period end (Paddle)  | Two-step confirm; continues the existing billing period            |
-| E4  | Resume **after** period end        | `RESUME_PERIOD_ENDED`                                              |
-| E5  | Pause, then try change-plan        | `SUBSCRIPTION_PAUSED`                                              |
-| E6  | While paused                       | Grants **nothing** — only `active` and `past_due` grant            |
-| E7  | Cancel and let the period lapse    | Tier drops to free; Free limits apply again (Group G)              |
+| #   | Step                               | Expect                                                                                                                                                                                                                                                                                                                              |
+| --- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E1  | Cancel Pro                         | Access continues to period end; `cancel_source` records the origin                                                                                                                                                                                                                                                                  |
+| E2  | During cancelling, try change-plan | `SUBSCRIPTION_CANCELING` — **PASSED 2026-07-31** (409, even for the identical plan)                                                                                                                                                                                                                                                 |
+| E3  | Resume before period end (Paddle)  | Two-step confirm; continues the existing billing period — **FAILED 2026-07-31: no such path exists.** `resume` only un-pauses (`status='paused'`); checkout gives `SUBSCRIPTION_EXISTS`; change-plan gives `SUBSCRIPTION_CANCELING`. Recovery today needs a Paddle `PATCH scheduled_change: null`. See FOUNDER-FOLLOWUPS 2026-07-31 |
+| E4  | Resume **after** period end        | `RESUME_PERIOD_ENDED`                                                                                                                                                                                                                                                                                                               |
+| E5  | Pause, then try change-plan        | `SUBSCRIPTION_PAUSED`                                                                                                                                                                                                                                                                                                               |
+| E6  | While paused                       | Grants **nothing** — only `active` and `past_due` grant                                                                                                                                                                                                                                                                             |
+| E7  | Cancel and let the period lapse    | Tier drops to free; Free limits apply again (Group G)                                                                                                                                                                                                                                                                               |
 
 ---
 
@@ -367,30 +367,30 @@ forever.
 A downgrade is scheduled at period end, and the webhook projector **masks**
 Paddle's immediate item swap until a post-boundary event applies it.
 
-| #   | Step                                  | Expect                                                    |
-| --- | ------------------------------------- | --------------------------------------------------------- |
-| F1  | Pro → Plus                            | "Scheduled for <date>", **not** applied now               |
-| F2  | Immediately after F1, read `/billing` | Still **Pro** until the boundary — the mask working       |
-| F3  | Pro annual → Pro monthly              | Same scheduled behaviour                                  |
-| F4  | "Keep current plan" after F1          | Item restored; reconciled against the provider's response |
-| F5  | Second change while one is pending    | `PLAN_CHANGE_PENDING`                                     |
-| F6  | Change very close to the boundary     | `PLAN_CHANGE_TOO_LATE`                                    |
-| F7  | Let the boundary pass                 | Plus applied; tier drops on schedule, not early           |
+| #   | Step                                  | Expect                                                                                                                                                             |
+| --- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| F1  | Pro → Plus                            | "Scheduled for <date>", **not** applied now — **PASSED 2026-07-31**                                                                                                |
+| F2  | Immediately after F1, read `/billing` | Still **Pro** until the boundary — the mask working — **PASSED 2026-07-31** (entitlement and sub tier both `pro`)                                                  |
+| F3  | Pro annual → Pro monthly              | Same scheduled behaviour                                                                                                                                           |
+| F4  | "Keep current plan" after F1          | Item restored; reconciled against the provider's response — **PASSED 2026-07-31** (cleared in ~0.7s; Paddle re-read shows the Pro price, `scheduled_change: null`) |
+| F5  | Second change while one is pending    | `PLAN_CHANGE_PENDING` — **PASSED 2026-07-31**                                                                                                                      |
+| F6  | Change very close to the boundary     | `PLAN_CHANGE_TOO_LATE`                                                                                                                                             |
+| F7  | Let the boundary pass                 | Plus applied; tier drops on schedule, not early                                                                                                                    |
 
 ---
 
 ## G. Free-tier metering (no money involved)
 
-| #   | Step                                                                           | Expect                                                                  |
-| --- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| G1  | On Free, read `/me`                                                            | `tier=free`, `cleanupRemaining`, `cleanupResetsAt` = signup anniversary |
-| G2  | Spend cleanup actions                                                          | Counter counts **down** from 50                                         |
-| G3  | Preview a bulk action that will not fit                                        | Confirm swapped for a truthful upgrade action                           |
-| G4  | **[DEV DB ONLY]** fill the quota by tagging `action_jobs` rows, then exceed it | `FREE_CAP_REACHED`, **zero rows written**. Restore afterwards           |
-| G5  | Open a Pro-only screen on Free                                                 | Tier gate / `ACTION_TIER_REQUIRED`                                      |
-| G6  | Connect a 2nd mailbox on Free or Plus                                          | Blocked — limit is 1; Pro is 3                                          |
-| G7  | Undo window                                                                    | Free and Plus **7 days**, Pro **30 days**                               |
-| G8  | Cross the anniversary                                                          | Counter resets; `cleanupResetsAt` advances one period                   |
+| #   | Step                                                                           | Expect                                                                                                           |
+| --- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| G1  | On Free, read `/me`                                                            | `tier=free`, `cleanupRemaining`, `cleanupResetsAt` = signup anniversary                                          |
+| G2  | Spend cleanup actions                                                          | Counter counts **down** from 50                                                                                  |
+| G3  | Preview a bulk action that will not fit                                        | Confirm swapped for a truthful upgrade action                                                                    |
+| G4  | **[DEV DB ONLY]** fill the quota by tagging `action_jobs` rows, then exceed it | `FREE_CAP_REACHED`, **zero rows written**. Restore afterwards                                                    |
+| G5  | Open a Pro-only screen on Free                                                 | Tier gate / `ACTION_TIER_REQUIRED`                                                                               |
+| G6  | Connect a 2nd mailbox on Free or Plus                                          | Blocked — limit is 1; Pro is 3                                                                                   |
+| G7  | Undo window                                                                    | Free and Plus **7 days**, Pro **30 days** — **PASSED 2026-07-31** (a Pro-tier action got 30d; a Plus-era one 7d) |
+| G8  | Cross the anniversary                                                          | Counter resets; `cleanupResetsAt` advances one period                                                            |
 
 ---
 

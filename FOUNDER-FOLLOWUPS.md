@@ -26,6 +26,36 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-31 — Cancel is a one-way door: no in-app path back, and D118's pause offer was never built
+
+**Source:** billing-test-matrix groups C/E/F run end-to-end 2026-07-31 (founder: "smoke as much as possible")
+
+**Why:** two gaps found by walking Group E on the live sandbox subscription. Both cost revenue, and the second is plan drift.
+
+1. **A scheduled cancellation cannot be undone in the product.** Verified against the live sub, all three exits closed:
+
+   | call | result |
+   |---|---|
+   | `POST /api/billing/resume` | 409 `NO_ACTIVE_SUBSCRIPTION` — `billing.service.ts:836` selects `status = 'paused'` only, so it un-pauses and can never un-cancel |
+   | `POST /api/billing/checkout` | 409 `SUBSCRIPTION_EXISTS` |
+   | `POST /api/billing/change-plan` (even to the identical plan) | 409 `SUBSCRIPTION_CANCELING` |
+
+   So a user who cancels by mistake keeps paying nothing, keeps their access until the period ends — **up to a year on annual** — and has no way to restore billing without emailing support. `/billing` renders no affordance either. To continue the matrix run I had to `PATCH scheduled_change: null` at Paddle directly, which is exactly the point: the only recovery path is an operator with an API key. Matrix step **E3** assumes this works ("Resume before period end — two-step confirm"); it does not.
+
+   Paddle supports the reversal natively (`PATCH /subscriptions/:id {"scheduled_change": null}` returned `status: active, scheduled_change: null`, and the webhook projected it cleanly). The work is a `POST /api/billing/resume-cancellation` (or widening `resume`) plus the affordance on the scheduled-cancel notice.
+
+2. **D118's "Pause for 30 days" retention offer does not exist.** The D-body specs it inside the cancel modal ("Would you like to pause instead? — Keep your settings; resume anytime"). There is **no pause endpoint** — the billing controller has checkout, checkout/pending, subscription, reconcile, cancel, change-plan/preview, change-plan, resume, and nothing else — and no button anywhere in `apps/web/src/features/billing/`.
+
+   The paused *state* is fully built: adapter status mapping, `pause_until`, `entitlement_ends_at` semantics, the `SUBSCRIPTION_PAUSED` guard, `resume`, and two billing-screen stories. It is simply **unreachable from the product** — it can only arise if Paddle pauses the subscription externally. So the retention offer D118 designed to catch cancellations never runs, and the one lever that would soften finding (1) is the one that was skipped.
+
+   Minor, same area: `resume`'s error text reads "There is no active subscription **to cancel**." on the resume path — wrong verb.
+
+**How:** decide the scope, then it is ordinary work. Options, cheapest first: (a) ship the un-cancel only — smallest fix for the one-way door; (b) ship un-cancel **and** D118's pause offer, which is what the plan says; (c) declare the pause offer withdrawn and patch D118 so the plan stops claiming a feature that is not coming. (a) or (b) — (c) alone leaves the one-way door.
+
+**Verifies by:** cancel on the sandbox sub, then restore billing entirely from `/billing` with no Paddle dashboard and no SQL; `subscriptions.cancel_at_period_end` returns to `f` and the notice clears.
+
+**Status:** Open
+
 ### 2026-07-30 — The derived impl-log gate: two drift classes, only one of them loud
 **Source:** session 2026-07-30 (D249 CI triage; corrected same day after observing #436's merge)
 **Why:** the generator has TWO inputs and they drift differently. The **row set** comes from the plan mirror (which D-numbers exist); the **status** (⬜/🔵) comes from `gh pr list --state merged` trailers. That yields two failure classes:
