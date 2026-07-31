@@ -684,6 +684,54 @@ describe('scrubUrlQueries', () => {
     });
   });
 
+  // The query was only ONE way through. These lock the other four —
+  // three of which shipped in the first version of this scrubber, which
+  // subtracted the part I had thought of instead of rebuilding from the
+  // parts that are safe (Codex stop-review, 2026-07-31).
+  it('strips the FRAGMENT, including when there is no query at all', () => {
+    // A fragment-only URL skipped the function entirely: the fast path
+    // keyed on `?`, and the address bar carries the hash too.
+    expect(
+      scrubUrlQueries({
+        a: 'https://declutrmail.com/activity#sender_q=someone@example.com',
+        b: 'https://declutrmail.com/activity?x=1#token=someone@example.com',
+      }),
+    ).toEqual({
+      a: 'https://declutrmail.com/activity',
+      b: 'https://declutrmail.com/activity',
+    });
+  });
+
+  it('drops an allowed param whose VALUE carries identity', () => {
+    // A name allowlist constrains who may speak, not what they may say.
+    expect(
+      scrubUrlQueries({ u: 'https://declutrmail.com/?utm_content=someone@example.com' }),
+    ).toEqual({ u: 'https://declutrmail.com/' });
+  });
+
+  it('drops `ref` entirely — not a param any analytics tool reads', () => {
+    expect(scrubUrlQueries({ u: 'https://declutrmail.com/?ref=someone@example.com' })).toEqual({
+      u: 'https://declutrmail.com/',
+    });
+  });
+
+  it('keeps ordinary campaign values, so attribution still works', () => {
+    expect(
+      scrubUrlQueries({
+        u: 'https://declutrmail.com/?utm_source=twitter&utm_campaign=launch-2026&gclid=Cj0KCQ_abc123',
+      }),
+    ).toEqual({
+      u: 'https://declutrmail.com/?utm_source=twitter&utm_campaign=launch-2026&gclid=Cj0KCQ_abc123',
+    });
+  });
+
+  it('drops `user:pass@host` userinfo', () => {
+    // An address parked in the userinfo position survives a query strip.
+    expect(scrubUrlQueries({ u: 'https://someone%40example.com:x@declutrmail.com/a?b=1' })).toEqual(
+      { u: 'https://declutrmail.com/a' },
+    );
+  });
+
   it('leaves non-URL strings, query-less URLs and non-http schemes untouched', () => {
     const input = {
       verb: 'archive?',

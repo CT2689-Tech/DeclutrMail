@@ -176,25 +176,63 @@ const TELEMETRY_QUERY_ALLOWLIST: ReadonlySet<string> = new Set([
   'utm_content',
   'gclid',
   'fbclid',
-  'ref',
 ]);
 
-/** Rewrite one string IF it is an http(s) URL with a query. */
+/**
+ * Allowed params must also carry an allowed VALUE. A name allowlist
+ * constrains only who may speak, not what they may say: `?ref=` and
+ * `?utm_content=` accept arbitrary text, so a malformed campaign link —
+ * or a future route reusing one of these names — puts identity straight
+ * through the gate. Campaign values are slugs and opaque click ids;
+ * anything with `@`, `:`, `/` or `%` in it is not one.
+ *
+ * `ref` was in the name list and is gone: it is not a standard param
+ * any analytics tool reads, and it was the loosest of the set.
+ *
+ * Deliberately lossy. An unusual campaign label is dropped from
+ * analytics; an address is not shipped. That is the right direction for
+ * a privacy boundary to fail in.
+ */
+const SAFE_CAMPAIGN_VALUE = /^[\w .\-+~]{1,96}$/;
+
+/**
+ * Reduce one string to its safe form IF it is an http(s) URL.
+ *
+ * REBUILT from an allowlist of components rather than stripped of the
+ * parts we thought of. The strip version removed the query and left
+ * FOUR other ways through, three of which shipped: the fragment
+ * (`/activity#sender_q=<address>`, and a fragment-only URL skipped the
+ * function entirely because it has no `?`), the values of allowed
+ * params, and `user:pass@host` userinfo. Each was a separate patch
+ * waiting to be requested; reconstruction closes the ones nobody has
+ * thought of yet (Codex stop-review, 2026-07-31).
+ *
+ * Origin and path only, plus allowlisted query params with allowlisted
+ * values. Every other component simply never gets copied.
+ */
 function stripUrlQuery(value: string): string {
   // Cheap reject before the parse — most telemetry strings are enums.
-  if (!value.includes('?') || !/^https?:\/\//i.test(value)) return value;
+  if (!/^https?:\/\//i.test(value)) return value;
   let url: URL;
   try {
     url = new URL(value);
   } catch {
     return value; // not a URL after all; leave it exactly as it was
   }
-  const kept = new URLSearchParams();
-  for (const [key, param] of url.searchParams) {
-    if (TELEMETRY_QUERY_ALLOWLIST.has(key.toLowerCase())) kept.append(key, param);
+  let safe: URL;
+  try {
+    // `host` carries the port but never the userinfo, and neither the
+    // fragment nor the search is copied.
+    safe = new URL(`${url.protocol}//${url.host}${url.pathname}`);
+  } catch {
+    return value;
   }
-  url.search = kept.toString();
-  return url.toString();
+  for (const [key, param] of url.searchParams) {
+    if (TELEMETRY_QUERY_ALLOWLIST.has(key.toLowerCase()) && SAFE_CAMPAIGN_VALUE.test(param)) {
+      safe.searchParams.append(key, param);
+    }
+  }
+  return safe.toString();
 }
 
 /**
