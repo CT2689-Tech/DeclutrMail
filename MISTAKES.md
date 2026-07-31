@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-31 — Let a caller infer a fact's SUBJECT from the state it was correcting
+**PR:** [#452](https://github.com/CT2689-Tech/DeclutrMail/pull/452)
+**Caught by:** Codex stop-review ("refutation logic can miss or erase the wrong billing verdict")
+**What happened:** I had the Paddle adapter answer a bare `'refuted'` — one boolean covering two independent facts, "the refund was rejected" and "the chargeback was reversed". The caller then decided WHICH by reading its own `cancel_source`. A row holding a pending refund, on a subscription whose unrelated older chargeback had been reversed, got its refund verdict lifted; Paddle had never rejected that refund. The same collapse hid a second bug: refund refutation checked only `rejected`, so an approved-then-`reversed` refund was neither settled nor refuted and its verdict stood forever.
+**Correct approach:** Return the facts as the source holds them (`{settled, refuted: {refund, chargeback}}`), and let the caller match them against its own state explicitly. A single flag standing for several subjects always pushes the disambiguation onto someone who does not have the information.
+**Rule:** When one value could describe more than one subject, name the subject in the value. Never let a caller infer it from the very state the value is supposed to correct — that reasoning is circular and fails exactly when the two disagree, which is the only case that matters.
+**Enforcement update:** none — the adapter spec now pins each shape separately, including "a reversed chargeback beside a pending refund refutes neither the refund", and the reconciliation spec's negative control (lift on any refutation) fails that case.
+
 ## 2026-07-31 — Filed a hazard my own PR created as a "known limitation"
 **PR:** [#452](https://github.com/CT2689-Tech/DeclutrMail/pull/452)
 **Caught by:** Codex stop-review ("pending refunds can cancel subscriptions before Paddle approves them")
