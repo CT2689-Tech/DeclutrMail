@@ -146,6 +146,8 @@ export function paddleAdjustmentCreated(args: {
   eventId?: string;
   action?: string;
   subscriptionId?: string | null;
+  /** Item-level adjustment types. Any `partial` marks a part-refund. */
+  itemTypes?: string[];
 }): Record<string, unknown> {
   return {
     event_id: args.eventId ?? 'evt_01paddle_adj_000001',
@@ -159,6 +161,11 @@ export function paddleAdjustmentCreated(args: {
         args.subscriptionId === undefined ? 'sub_01paddle000001' : args.subscriptionId,
       reason: 'requested_by_customer',
       status: 'pending_approval',
+      items: (args.itemTypes ?? ['full']).map((type, i) => ({
+        id: `adjitm_0${i}`,
+        item_id: `txnitm_0${i}`,
+        type,
+      })),
     },
   };
 }

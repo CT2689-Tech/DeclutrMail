@@ -69,6 +69,7 @@ const PRO_SUB: BillingSubscription = {
     cycle: 'monthly',
     currentPeriodEnd: '2026-08-15T12:00:00.000Z',
     cancelAtPeriodEnd: false,
+    cancelSource: null,
     pauseUntil: null,
     foundingMember: false,
     scheduledChange: null,

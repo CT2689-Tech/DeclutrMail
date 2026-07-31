@@ -32,6 +32,7 @@ const SUB: SubscriptionRecord = {
   cycle: 'monthly',
   currentPeriodEnd: '2026-07-01T12:00:00.000Z',
   cancelAtPeriodEnd: false,
+  cancelSource: null,
   pauseUntil: null,
   foundingMember: false,
   scheduledChange: null,
@@ -272,6 +273,28 @@ describe('backingStatusNote', () => {
       tone: 'warn',
       text: expect.stringContaining('until Jul 1, 2026'),
     });
+    // "Cancellation scheduled" is only right when the user did it.
+    expect(backingStatusNote({ state: 'cancel_scheduled', sub })!.text).toContain(
+      'Cancellation scheduled',
+    );
+  });
+
+  it('names a REFUND as the cause, keeping the honest end date', () => {
+    const sub = { ...SUB, cancelAtPeriodEnd: true, cancelSource: 'refund' as const };
+    const note = backingStatusNote({ state: 'cancel_scheduled', sub })!;
+    expect(note.text).toContain('Ending after a refund');
+    // The refund deadline IS the period end, so the date still holds.
+    expect(note.text).toContain('until Jul 1, 2026');
+  });
+
+  it('makes NO date claim on a chargeback — entitlement already ended', () => {
+    // `entitlement_ends_at` is now() for a chargeback while
+    // `currentPeriodEnd` is still in the future: promising access
+    // "until Jul 1" would be a confident lie.
+    const sub = { ...SUB, cancelAtPeriodEnd: true, cancelSource: 'chargeback' as const };
+    const note = backingStatusNote({ state: 'cancel_scheduled', sub })!;
+    expect(note.text).toContain('chargeback');
+    expect(note.text).not.toContain('Jul 1, 2026');
   });
 });
 

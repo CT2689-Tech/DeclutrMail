@@ -611,6 +611,25 @@ export class BillingWebhookService {
           : sub.status === 'canceled'
             ? ('provider' as const)
             : null;
+        // The DISPLAY flag has to stick to the same verdict, or the
+        // screen contradicts the entitlement. `entitlement_ends_at`
+        // already survives (above) and the tier recompute reads it — so
+        // a refunded plan really does end — but every surface asks
+        // `cancel_at_period_end`, which mirrored the provider. Paddle
+        // does not know about the refund and keeps reporting a healthy
+        // renewal, so the next `subscription.updated` flipped the flag
+        // back to false and Plan & billing went from "your plan ends
+        // Aug 30" to "renews Aug 30" while access was still ending
+        // underneath. The UI-truth defect this codebase keeps paying
+        // for, in its billing form (matrix H2 follow-up, 2026-07-31).
+        //
+        // Safe to make sticky precisely BECAUSE the verdict is terminal:
+        // a refund/chargeback never un-happens, and a customer who comes
+        // back gets a new provider subscription id — a different row. No
+        // clearing path is needed because nothing may clear it; the one
+        // caller that could (`resumeCancellation`) now refuses these rows
+        // outright.
+        const nextCancelAtPeriodEnd = localVerdict ? true : sub.cancelAtPeriodEnd;
 
         // Customer record (webhook hot path resolves workspace from it).
         if (sub.providerCustomerId) {
@@ -666,7 +685,7 @@ export class BillingWebhookService {
             providerPriceId: effectiveProviderPriceId,
             billingCycle: effectiveCycle,
             currentPeriodEnd: effectivePeriodEnd,
-            cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+            cancelAtPeriodEnd: nextCancelAtPeriodEnd,
             cancelSource: nextCancelSource,
             entitlementEndsAt: nextEntitlementEndsAt,
             pauseUntil: sub.pauseUntil ? new Date(sub.pauseUntil) : null,
@@ -680,12 +699,9 @@ export class BillingWebhookService {
               providerPriceId: effectiveProviderPriceId,
               billingCycle: effectiveCycle,
               currentPeriodEnd: effectivePeriodEnd,
-              // The flag mirrors the provider (a locally-sticky flag has
-              // no clearing path); the LOCAL verdict lives in
-              // `cancel_source`/`entitlement_ends_at` below, which a
-              // provider payload can no longer clobber — closing the
-              // 2026-07-20 KNOWN GAP this comment used to describe.
-              cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+              // Mirrors the provider EXCEPT under a local verdict, which
+              // pins it true — see `nextCancelAtPeriodEnd` above.
+              cancelAtPeriodEnd: nextCancelAtPeriodEnd,
               cancelSource: nextCancelSource,
               entitlementEndsAt: nextEntitlementEndsAt,
               pauseUntil: sub.pauseUntil ? new Date(sub.pauseUntil) : null,

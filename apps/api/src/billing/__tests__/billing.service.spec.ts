@@ -563,32 +563,42 @@ describe('BillingService', () => {
     });
 
     // The un-cancel must never launder a refund/chargeback verdict.
-    // `cancel_source` is written only by those paths (its enum is
-    // provider/refund/chargeback — a user cancel writes none), so
-    // clearing it here would erase the stickiness matrix H2 exists to
-    // protect: the one failure that silently re-grants Pro forever.
-    it('leaves cancel_source untouched — a refund verdict must survive', async () => {
-      await db.insert(subscriptions).values({
-        workspaceId: principal.workspaceId,
-        provider: 'paddle',
-        providerSubscriptionId: 'sub_refunded',
-        tier: 'pro',
-        status: 'active',
-        providerPriceId: 'pri_pro_a',
-        billingCycle: 'annual',
-        currentPeriodEnd: new Date('2027-07-30T18:00:00Z'),
-        cancelAtPeriodEnd: true,
-        cancelSource: 'refund',
+    // Since the projector pins `cancel_at_period_end` true under a local
+    // verdict, such a row is REACHABLE here — it can sit in `active` for
+    // the rest of its paid period. Revoking its schedule would clear the
+    // renewal block at the provider while `entitlement_ends_at` (what
+    // the tier recompute reads) keeps ending the plan: a button that
+    // reports a restored subscription the account does not have.
+    for (const source of ['refund', 'chargeback'] as const) {
+      it(`refuses a ${source} verdict — never calls the provider, writes nothing`, async () => {
+        await db.insert(subscriptions).values({
+          workspaceId: principal.workspaceId,
+          provider: 'paddle',
+          providerSubscriptionId: 'sub_refunded',
+          tier: 'pro',
+          status: 'active',
+          providerPriceId: 'pri_pro_a',
+          billingCycle: 'annual',
+          currentPeriodEnd: new Date('2027-07-30T18:00:00Z'),
+          cancelAtPeriodEnd: true,
+          cancelSource: source,
+        });
+
+        await expect(service.resumeCancellation(principal)).rejects.toMatchObject({
+          code: 'CANCELLATION_NOT_REVOCABLE',
+        });
+        expect(paddleClearScheduledCancellation).not.toHaveBeenCalled();
+
+        const [row] = await db
+          .select({
+            cancelSource: subscriptions.cancelSource,
+            cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
+          })
+          .from(subscriptions)
+          .where(eq(subscriptions.providerSubscriptionId, 'sub_refunded'));
+        expect(row).toMatchObject({ cancelSource: source, cancelAtPeriodEnd: true });
       });
-
-      await service.resumeCancellation(principal);
-
-      const [row] = await db
-        .select({ cancelSource: subscriptions.cancelSource })
-        .from(subscriptions)
-        .where(eq(subscriptions.providerSubscriptionId, 'sub_refunded'));
-      expect(row!.cancelSource).toBe('refund');
-    });
+    }
   });
 
   describe('pauseForThirtyDays (D118 retention offer)', () => {

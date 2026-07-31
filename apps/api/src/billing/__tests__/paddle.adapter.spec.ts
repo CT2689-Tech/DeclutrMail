@@ -236,6 +236,48 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
     ).toMatchObject({ kind: 'ignored' });
   });
 
+  it('a PARTIAL refund is not an exit — the subscription is left alone', () => {
+    // Paddle fires the same event for "$2 back for the trouble" as for
+    // "here is your money back". Treating both as an exit ended the plan
+    // of a customer being apologised to — and now that the verdict also
+    // drives a provider-side cancel, it would cancel their subscription.
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentCreated({ action: 'refund', itemTypes: ['partial'] }),
+      ),
+    ).toMatchObject({ kind: 'ignored' });
+    // One partial item among full ones is still a part-refund.
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentCreated({ action: 'refund', itemTypes: ['full', 'partial'] }),
+      ),
+    ).toMatchObject({ kind: 'ignored' });
+  });
+
+  it('a full refund still revokes — including the dashboard shape and an unreadable one', () => {
+    // Paddle's adjustment-level `type` defaults to `partial`, and a
+    // dashboard full-amount refund can arrive as `partial` with every
+    // ITEM marked `full` — which is why the item types decide.
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentCreated({ action: 'refund', itemTypes: ['full', 'full'] }),
+      ),
+    ).toMatchObject({ kind: 'cancellation_scheduled', reason: 'refund' });
+    // No items to read → keep the pre-existing behaviour. Failing to
+    // revoke a real refund is the worse of the two errors.
+    expect(
+      adapter.mapWebhookEvent(paddleAdjustmentCreated({ action: 'refund', itemTypes: [] })),
+    ).toMatchObject({ kind: 'cancellation_scheduled', reason: 'refund' });
+  });
+
+  it('a partial CHARGEBACK is never filtered — Paddle raises it and the money is gone', () => {
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentCreated({ action: 'chargeback', itemTypes: ['partial'] }),
+      ),
+    ).toMatchObject({ kind: 'cancellation_scheduled', reason: 'chargeback' });
+  });
+
   it('ignores unrecognized event types and throws on missing event_id', () => {
     expect(
       adapter.mapWebhookEvent({ event_id: 'evt_x', event_type: 'customer.updated', data: {} }),

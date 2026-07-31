@@ -259,6 +259,22 @@ export const ERROR_CODES = {
     message: 'This subscription is not scheduled to cancel.',
   },
   /**
+   * `resume-cancellation` on a row whose end was decided by a REFUND or
+   * CHARGEBACK, not by the user. Revoking that schedule would clear the
+   * provider's renewal block while `entitlement_ends_at` — the column
+   * the tier recompute actually reads — keeps ending the plan: the
+   * button would report a restored subscription the account does not
+   * have. Support-led because un-doing a refund is a money decision, not
+   * a schedule one.
+   */
+  CANCELLATION_NOT_REVOCABLE: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'This plan is ending because of a refund or chargeback, so it can’t be restored here. Email support@declutrmail.com and we’ll sort it out.',
+  },
+  /**
    * Razorpay has no pause primitive we are willing to drive (same
    * posture as RESUME_UNSUPPORTED — see D118). Fails closed to support
    * rather than half-pausing a subscription that keeps charging.

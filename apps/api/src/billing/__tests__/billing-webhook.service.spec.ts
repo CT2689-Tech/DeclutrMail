@@ -557,6 +557,7 @@ describe('BillingWebhookService.process', () => {
     const [row] = await db.select().from(subscriptions);
     expect(row!.cancelSource).toBe('refund');
     expect(row!.entitlementEndsAt).not.toBeNull();
+    expect(row!.cancelAtPeriodEnd).toBe(true);
 
     // A same-status provider event cannot clear the verdict.
     const echo = paddleSubscriptionActivated({
@@ -568,6 +569,13 @@ describe('BillingWebhookService.process', () => {
     await service.process('paddle', paddle.mapWebhookEvent(echo), echo);
     const [after] = await db.select().from(subscriptions);
     expect(after!.cancelSource).toBe('refund');
+    // …including the DISPLAY flag. Paddle has no record of the refund
+    // and reports a healthy renewal (`cancelAtPeriodEnd: false`), which
+    // used to flip this back and take Plan & billing from "your plan
+    // ends" to "renews" while `entitlement_ends_at` kept ending it.
+    // Every surface asks THIS column (2026-07-31).
+    expect(after!.cancelAtPeriodEnd).toBe(true);
+    expect(after!.entitlementEndsAt).toEqual(row!.entitlementEndsAt);
   });
 
   it('a SECOND live subscription for the workspace is refused loudly (0051 index)', async () => {

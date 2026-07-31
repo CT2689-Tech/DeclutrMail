@@ -1160,8 +1160,18 @@ function CurrentPlanCard({
           irreversible for up to a year: checkout answers
           SUBSCRIPTION_EXISTS and change-plan answers
           SUBSCRIPTION_CANCELING, so support had to PATCH the provider
-          by hand (matrix E3, 2026-07-31). */}
-      {!billingDark && backing.state === 'cancel_scheduled' ? (
+          by hand (matrix E3, 2026-07-31).
+
+          Only for a schedule the USER owns. A refund/chargeback row now
+          reaches `cancel_scheduled` too (the projector pins the flag
+          under a local verdict), and `resume-cancellation` refuses it
+          with CANCELLATION_NOT_REVOCABLE — rendering the button anyway
+          would offer an undo whose only possible answer is a 409. The
+          status note above names the reason instead. */}
+      {!billingDark &&
+      backing.state === 'cancel_scheduled' &&
+      backing.sub.cancelSource !== 'refund' &&
+      backing.sub.cancelSource !== 'chargeback' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {confirmKeep ? (
             <div

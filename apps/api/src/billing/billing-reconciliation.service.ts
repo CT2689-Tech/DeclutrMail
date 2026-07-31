@@ -86,6 +86,10 @@ export interface DriftSweepResult {
   /** Provider answered 404 / unmapped status — logged, never written. */
   subscriptionsUnreadable: number;
   providerErrors: number;
+  /** Local refund/chargeback verdicts newly pushed to the provider. */
+  verdictsEnforced: number;
+  /** Verdict rows the provider would not confirm a cancel for this run. */
+  verdictsUnenforced: number;
 }
 
 /** A candidate must postdate the claim, minus this skew allowance. */
@@ -360,6 +364,8 @@ export class BillingReconciliationService {
       subscriptionsUnchanged: 0,
       subscriptionsUnreadable: 0,
       providerErrors: 0,
+      verdictsEnforced: 0,
+      verdictsUnenforced: 0,
     };
     const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
 
@@ -381,7 +387,98 @@ export class BillingReconciliationService {
         result.subscriptionsUnchanged += 1;
       }
     }
+
+    const enforced = await this.enforceLocalVerdicts();
+    result.verdictsEnforced = enforced.enforced;
+    result.verdictsUnenforced = enforced.unenforced;
     return result;
+  }
+
+  /**
+   * The ONE place local truth is pushed OUTWARD, and the exception that
+   * proves this service's rule (fetch → project, never the reverse).
+   *
+   * A refund or chargeback is a verdict only WE hold. Paddle records the
+   * adjustment against a transaction; the subscription beside it stays
+   * perfectly healthy and renews on schedule. So the row ends up split:
+   * `entitlement_ends_at` stops granting the tier on our side while the
+   * provider keeps charging on theirs — the customer pays for a second
+   * period and gets Free. The divergence points AT the customer, which
+   * is why it outranks the projector's purity (matrix H1/H2 follow-up,
+   * 2026-07-31).
+   *
+   * The projector cannot do this itself: `BillingWebhookService` holds
+   * no adapters by construction, and an outbound provider call inside a
+   * webhook transaction would be retried by the provider's own delivery
+   * schedule. Here it is a plain idempotent convergence loop instead —
+   * once the provider reports the scheduled cancel, the condition below
+   * stops matching and nothing is sent again.
+   *
+   * `cancelSubscription` is `next_billing_period` on both providers: it
+   * stops the RENEWAL, it does not seize access. The entitlement
+   * deadline (period end for a refund, now for a chargeback) remains the
+   * only thing that ends the plan, so this never shortens what someone
+   * paid for.
+   *
+   * Latency is up to one sweep (6h) plus worker boot. That is inside
+   * every renewal window we can bill on, and it buys the retry
+   * durability an inline call would not have.
+   */
+  private async enforceLocalVerdicts(): Promise<{ enforced: number; unenforced: number }> {
+    const rows = await this.db
+      .select({
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+        cancelSource: subscriptions.cancelSource,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          inArray(subscriptions.cancelSource, ['refund', 'chargeback']),
+          inArray(subscriptions.status, ['active', 'past_due', 'paused']),
+        ),
+      )
+      .orderBy(asc(subscriptions.updatedAt))
+      .limit(DRIFT_SWEEP_MAX_ROWS);
+
+    let enforced = 0;
+    let unenforced = 0;
+    const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
+
+    for (const row of rows) {
+      if (consecutiveErrors[row.provider] >= DRIFT_SWEEP_TRIP_AFTER) {
+        unenforced += 1;
+        continue;
+      }
+      try {
+        const fetched = await this.adapterFor(row.provider).fetchSubscription(
+          row.providerSubscriptionId,
+        );
+        consecutiveErrors[row.provider] = 0;
+        if (fetched.kind !== 'found') {
+          // Cannot read it, so cannot claim it renews. Same posture as
+          // the drift pass: a read miss is never grounds for a write.
+          unenforced += 1;
+          continue;
+        }
+        const provider = fetched.subscription;
+        if (provider.status === 'canceled' || provider.cancelAtPeriodEnd) {
+          continue; // already converged — the common steady state
+        }
+        await this.adapterFor(row.provider).cancelSubscription(row.providerSubscriptionId);
+        enforced += 1;
+        this.logger.warn(
+          `billing.reconcile.verdict_enforced provider=${row.provider} sub=${row.providerSubscriptionId} reason=${row.cancelSource} — provider was still set to renew a ${row.cancelSource === 'chargeback' ? 'charged-back' : 'refunded'} subscription; scheduled cancel at period end`,
+        );
+      } catch (err) {
+        consecutiveErrors[row.provider] += 1;
+        unenforced += 1;
+        this.logger.error(
+          `billing.reconcile.verdict_enforce_failed provider=${row.provider} sub=${row.providerSubscriptionId} reason=${row.cancelSource} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    return { enforced, unenforced };
   }
 
   /**

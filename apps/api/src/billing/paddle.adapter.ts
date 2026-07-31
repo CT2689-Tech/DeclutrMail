@@ -723,9 +723,40 @@ export class PaddleAdapter implements BillingProvider {
         // Refund / chargeback → downgrade at period end (documented in
         // billing.module.ts). Adjustments without a subscription link
         // (one-off transactions — we sell none) are ignored.
-        const data = body.data as { action?: string; subscription_id?: string | null } | undefined;
+        const data = body.data as
+          | {
+              action?: string;
+              subscription_id?: string | null;
+              items?: Array<{ type?: string }>;
+            }
+          | undefined;
         const action = data?.action;
         if ((action === 'refund' || action === 'chargeback') && data?.subscription_id) {
+          // A PARTIAL refund is not an exit. Paddle fires the same event
+          // for "here is $2 back for the trouble" as for "here is your
+          // money back", and treating both as an exit ended the plan of a
+          // customer who was being apologised to. It matters more now
+          // that this verdict also drives a provider-side cancel
+          // (BillingReconciliationService.enforceLocalVerdicts) — a
+          // goodwill credit would have cancelled the subscription itself.
+          //
+          // Keyed on the ITEM types, not the adjustment's own `type`:
+          // Paddle's `type` defaults to `partial`, and a dashboard
+          // full-amount refund can arrive as `partial` with every item
+          // marked `full`. Any item explicitly marked `partial` is the
+          // one shape that can only mean a part-refund. Everything else
+          // — including a payload we cannot read — keeps the pre-existing
+          // behaviour and revokes, because failing to revoke a real
+          // refund is the worse error of the two. Chargebacks are never
+          // filtered: Paddle raises them itself and the money is gone.
+          const partialItem =
+            action === 'refund' && (data.items ?? []).some((i) => i?.type === 'partial');
+          if (partialItem) {
+            this.logger.warn(
+              `billing.paddle.partial_refund_ignored sub=${data.subscription_id} event=${eventId} — entitlement left intact; cancel in the Paddle dashboard if this refund was meant to end the plan`,
+            );
+            return { kind: 'ignored', providerEventId: eventId, eventType };
+          }
           return {
             kind: 'cancellation_scheduled',
             providerEventId: eventId,
