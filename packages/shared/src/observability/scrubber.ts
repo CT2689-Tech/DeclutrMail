@@ -103,20 +103,36 @@ function scrubHeaders(headers: unknown): unknown {
  * makes it obvious during incident review that a guardrail fired
  * instead of silently dropping the data.
  *
- * Cycles are broken by tracking visited objects via a WeakSet.
+ * REVISITS RETURN THE SCRUBBED COPY, not the input. The previous
+ * revision tracked visited objects in a `WeakSet` and returned `input`
+ * on a repeat — which is a bypass, not cycle-safety: the SECOND
+ * appearance of an object came back raw. It did not need a cycle, only
+ * a shared reference, and a shared reference serializes perfectly well
+ * (a true cycle would have died in the SDK's own `JSON.stringify`). So
+ * `{a: msg, b: msg}` shipped a full Gmail body under `b`. Found by
+ * Codex stop-review, 2026-07-31, against `scrubUrlQueries`; the same
+ * line had been here since the scrubber was written.
+ *
+ * A `WeakMap` keyed on the input holds the OUTPUT container, and the
+ * container is registered BEFORE recursing — so a cycle resolves to
+ * the scrubbed copy and the shape survives, while every node is
+ * scrubbed exactly once.
  */
-export function scrubObject<T>(input: T, seen: WeakSet<object> = new WeakSet()): T {
+export function scrubObject<T>(input: T, seen: WeakMap<object, unknown> = new WeakMap()): T {
   if (Array.isArray(input)) {
-    if (seen.has(input)) return input;
-    seen.add(input);
-    return input.map((item) => scrubObject(item, seen)) as unknown as T;
+    const cached = seen.get(input);
+    if (cached !== undefined) return cached as T;
+    const out: unknown[] = [];
+    seen.set(input, out);
+    for (const item of input) out.push(scrubObject(item, seen));
+    return out as unknown as T;
   }
 
   if (isPlainObject(input)) {
-    if (seen.has(input)) return input;
-    seen.add(input);
-
+    const cached = seen.get(input);
+    if (cached !== undefined) return cached as T;
     const out: Record<string, unknown> = {};
+    seen.set(input, out);
     for (const [key, value] of Object.entries(input)) {
       if (isBannedKey(key)) {
         out[key] = REDACTED;
@@ -135,6 +151,86 @@ export function scrubObject<T>(input: T, seen: WeakSet<object> = new WeakSet()):
 }
 
 /**
+ * Query params allowed to survive on a URL in telemetry. Campaign
+ * attribution only — everything else is dropped.
+ *
+ * WHY an allowlist. `scrubObject` above removes banned KEYS; it never
+ * looks inside a string VALUE. PostHog's `$current_url` (and its
+ * `$referrer` / `$initial_*` siblings) is a plain string carrying the
+ * whole address bar, so a route like
+ * `/activity?sender_q=someone@example.com` shipped that address to
+ * PostHog on every automatic pageview — while the cookie banner
+ * promises "PostHog receives product-usage events, never Gmail message
+ * data". Found by Codex stop-review, 2026-07-31.
+ *
+ * A denylist of "sensitive-looking" params would need updating every
+ * time a route gains one, and would have been written AFTER the leak.
+ * Paths are unaffected: every dynamic segment in this app is a UUID
+ * (`/senders/[id]`), so only the query is at risk.
+ */
+const TELEMETRY_QUERY_ALLOWLIST: ReadonlySet<string> = new Set([
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content',
+  'gclid',
+  'fbclid',
+  'ref',
+]);
+
+/** Rewrite one string IF it is an http(s) URL with a query. */
+function stripUrlQuery(value: string): string {
+  // Cheap reject before the parse — most telemetry strings are enums.
+  if (!value.includes('?') || !/^https?:\/\//i.test(value)) return value;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return value; // not a URL after all; leave it exactly as it was
+  }
+  const kept = new URLSearchParams();
+  for (const [key, param] of url.searchParams) {
+    if (TELEMETRY_QUERY_ALLOWLIST.has(key.toLowerCase())) kept.append(key, param);
+  }
+  url.search = kept.toString();
+  return url.toString();
+}
+
+/**
+ * Recursively strip non-attribution query params from every URL-shaped
+ * string in a payload. Applied at the wire boundary rather than to the
+ * handful of keys known to hold URLs today — an SDK can add
+ * `$initial_current_url`, `$referrer`, `$pathname` and more without
+ * asking us, and a key allowlist would silently miss each new one.
+ *
+ * Repeat-visit handling is `scrubObject`'s — see the note there on why
+ * a `WeakSet` is a bypass rather than cycle-safety.
+ */
+export function scrubUrlQueries<T>(input: T, seen: WeakMap<object, unknown> = new WeakMap()): T {
+  if (typeof input === 'string') return stripUrlQuery(input) as unknown as T;
+  if (Array.isArray(input)) {
+    const cached = seen.get(input);
+    if (cached !== undefined) return cached as T;
+    const out: unknown[] = [];
+    seen.set(input, out);
+    for (const item of input) out.push(scrubUrlQueries(item, seen));
+    return out as unknown as T;
+  }
+  if (isPlainObject(input)) {
+    const cached = seen.get(input);
+    if (cached !== undefined) return cached as T;
+    const out: Record<string, unknown> = {};
+    seen.set(input, out);
+    for (const [key, value] of Object.entries(input)) {
+      out[key] = scrubUrlQueries(value, seen);
+    }
+    return out as unknown as T;
+  }
+  return input;
+}
+
+/**
  * Convenience for SDK `beforeSend` hooks. Sentry hands a typed Event;
  * we treat it as an opaque record, scrub, and hand it back. If scrub
  * throws, drop the event entirely — defense-in-depth.
@@ -144,7 +240,7 @@ export function scrubTelemetryPayload<T extends Record<string, unknown>>(
 ): T | null {
   if (!event) return null;
   try {
-    return scrubObject(event);
+    return scrubUrlQueries(scrubObject(event));
   } catch {
     return null;
   }
