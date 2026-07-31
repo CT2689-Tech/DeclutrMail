@@ -365,6 +365,138 @@ describe('PaddleAdapter checkout + cancel', () => {
     expect(init.body).toBe(JSON.stringify({ effective_from: 'next_billing_period' }));
   });
 
+  // The gate on the ONE outbound cancel. On a live account
+  // `adjustment.created` fires while a refund is still
+  // `pending_approval`, and sandbox auto-approves — so the pending shape
+  // is invisible to every other test here.
+  describe('settledCancellationCause', () => {
+    const adjustmentsBody = (rows: unknown[]) =>
+      new Response(JSON.stringify({ data: rows }), { status: 200 });
+
+    it('asks for THIS subscription only', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue(adjustmentsBody([]));
+      vi.stubGlobal('fetch', fetchSpy);
+      await makeAdapter({ PADDLE_API_KEY: 'k' }).settledCancellationCause('sub_01paddle000001');
+      const [url] = fetchSpy.mock.calls[0] as [string];
+      expect(url).toBe(
+        'https://sandbox-api.paddle.com/adjustments?subscription_id=sub_01paddle000001&per_page=50',
+      );
+    });
+
+    it('a pending_approval refund is NOT settled', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            adjustmentsBody([
+              { action: 'refund', status: 'pending_approval', items: [{ type: 'full' }] },
+            ]),
+          ),
+      );
+      expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).settledCancellationCause('sub_x')).toBe(
+        'none',
+      );
+    });
+
+    it('a rejected refund is NOT settled — the customer is still paying', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            adjustmentsBody([{ action: 'refund', status: 'rejected', items: [{ type: 'full' }] }]),
+          ),
+      );
+      expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).settledCancellationCause('sub_x')).toBe(
+        'none',
+      );
+    });
+
+    it('an APPROVED full refund is settled', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            adjustmentsBody([{ action: 'refund', status: 'approved', items: [{ type: 'full' }] }]),
+          ),
+      );
+      expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).settledCancellationCause('sub_x')).toBe(
+        'refund',
+      );
+    });
+
+    it('an approved PARTIAL refund is not an exit — same rule as the webhook mapping', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            adjustmentsBody([
+              { action: 'refund', status: 'approved', items: [{ type: 'partial' }] },
+            ]),
+          ),
+      );
+      expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).settledCancellationCause('sub_x')).toBe(
+        'none',
+      );
+    });
+
+    it('a chargeback needs no approval — Paddle raised it and the funds are gone', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            adjustmentsBody([{ action: 'chargeback', status: 'pending_approval' }]),
+          ),
+      );
+      expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).settledCancellationCause('sub_x')).toBe(
+        'chargeback',
+      );
+    });
+
+    it('a WON dispute (chargeback_reverse) clears the chargeback', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          adjustmentsBody([
+            { action: 'chargeback', status: 'approved' },
+            { action: 'chargeback_reverse', status: 'approved' },
+          ]),
+        ),
+      );
+      expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).settledCancellationCause('sub_x')).toBe(
+        'none',
+      );
+    });
+
+    it('an unreadable provider answers `unknown`, never `none`', async () => {
+      // `none` would read as "Paddle confirms nothing is settled" — a
+      // claim a failed read cannot make. Both refuse the cancel, but only
+      // one of them is honest about why.
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+      expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).settledCancellationCause('sub_x')).toBe(
+        'unknown',
+      );
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 500 })));
+      expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).settledCancellationCause('sub_x')).toBe(
+        'unknown',
+      );
+
+      // A 200 whose body is not the documented shape is equally unread.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(new Response('{"data":null}', { status: 200 })),
+      );
+      expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).settledCancellationCause('sub_x')).toBe(
+        'unknown',
+      );
+    });
+  });
+
   it('cancelSubscription maps provider 4xx/5xx + network errors to BILLING_PROVIDER_ERROR', async () => {
     vi.stubGlobal(
       'fetch',

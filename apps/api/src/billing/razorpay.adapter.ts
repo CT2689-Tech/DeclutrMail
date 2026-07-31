@@ -293,6 +293,21 @@ export class RazorpayAdapter implements BillingProvider {
     throw new AppException({ code: 'PAUSE_UNSUPPORTED' });
   }
 
+  /**
+   * Always `unknown` — deliberately, and it costs nothing today: this
+   * adapter maps no refund or chargeback event, so no Razorpay row ever
+   * carries a `cancel_source` verdict for the outbound cancel to act on.
+   * Answering `unknown` rather than `none` keeps that honest: the day
+   * Razorpay refunds ARE mapped, the gate fails closed (no outbound
+   * cancel) instead of silently claiming the provider confirmed nothing.
+   */
+  async settledCancellationCause(
+    providerSubscriptionId: string,
+  ): Promise<'refund' | 'chargeback' | 'none' | 'unknown'> {
+    this.logger.warn(`razorpay.settled_cause.unsupported sub=${providerSubscriptionId}`);
+    return 'unknown';
+  }
+
   /** D249 — GET /v1/subscriptions/{id}. See FetchSubscriptionResult. */
   async fetchSubscription(providerSubscriptionId: string): Promise<FetchSubscriptionResult> {
     const auth = this.authHeader();

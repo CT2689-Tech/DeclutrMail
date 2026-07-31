@@ -414,6 +414,12 @@ export class BillingReconciliationService {
    * once the provider reports the scheduled cancel, the condition below
    * stops matching and nothing is sent again.
    *
+   * TWO facts are required before anything is sent, and the local marker
+   * is only the first. The second is the provider's own
+   * `settledCancellationCause`, because `adjustment.created` fires on a
+   * live account while the refund is still `pending_approval` — see the
+   * gate below.
+   *
    * `cancelSubscription` is `next_billing_period` on both providers: it
    * stops the RENEWAL, it does not seize access. The entitlement
    * deadline (period end for a refund, now for a chargeback) remains the
@@ -465,10 +471,30 @@ export class BillingReconciliationService {
         if (provider.status === 'canceled' || provider.cancelAtPeriodEnd) {
           continue; // already converged — the common steady state
         }
+        // Our own marker is NOT proof. `adjustment.created` fires while a
+        // live-account refund is still `pending_approval`, and Paddle may
+        // yet reject it — cancelling on that would end the subscription of
+        // someone who is still paying. Ending entitlement locally on an
+        // unsettled refund costs a row we can fix; this step cannot be
+        // taken back from the customer's side, so it asks the provider
+        // (Codex stop-review, 2026-07-31). `none` and `unknown` both mean
+        // "do not act": a pending refund and a failed read are different
+        // reasons for the same restraint, logged apart so a provider
+        // outage is never read as a rejected refund.
+        const cause = await this.adapterFor(row.provider).settledCancellationCause(
+          row.providerSubscriptionId,
+        );
+        if (cause === 'none' || cause === 'unknown') {
+          unenforced += 1;
+          this.logger.log(
+            `billing.reconcile.verdict_unsettled provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} provider_says=${cause} — no cancel sent`,
+          );
+          continue;
+        }
         await this.adapterFor(row.provider).cancelSubscription(row.providerSubscriptionId);
         enforced += 1;
         this.logger.warn(
-          `billing.reconcile.verdict_enforced provider=${row.provider} sub=${row.providerSubscriptionId} reason=${row.cancelSource} — provider was still set to renew a ${row.cancelSource === 'chargeback' ? 'charged-back' : 'refunded'} subscription; scheduled cancel at period end`,
+          `billing.reconcile.verdict_enforced provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} provider_says=${cause} — provider was still set to renew a ${cause === 'chargeback' ? 'charged-back' : 'refunded'} subscription; scheduled cancel at period end`,
         );
       } catch (err) {
         consecutiveErrors[row.provider] += 1;

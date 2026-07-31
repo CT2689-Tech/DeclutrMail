@@ -96,6 +96,7 @@ function fakeAdapter(overrides: {
   fetchSubscription?: (id: string) => Promise<FetchSubscriptionResult>;
   searchSubscriptions?: (query: SubscriptionSearchQuery) => Promise<SubscriptionSearchResult>;
   cancelSubscription?: (id: string) => Promise<void>;
+  settledCancellationCause?: (id: string) => Promise<'refund' | 'chargeback' | 'none' | 'unknown'>;
 }): PaddleAdapter & RazorpayAdapter {
   return {
     fetchSubscription:
@@ -108,6 +109,10 @@ function fakeAdapter(overrides: {
     // than silently passing — this adapter's WRITE surface is the thing
     // enforceLocalVerdicts is trusted with.
     cancelSubscription: overrides.cancelSubscription,
+    // Defaults to the REFUSING answer. A test that means to exercise the
+    // cancel has to say so; one that forgets cannot drift into sending a
+    // provider cancel it never asked for.
+    settledCancellationCause: overrides.settledCancellationCause ?? (async () => 'none' as const),
   } as unknown as PaddleAdapter & RazorpayAdapter;
 }
 
@@ -535,6 +540,7 @@ describe('BillingReconciliationService (D249)', () => {
           kind: 'found',
           subscription: activePlusSub('sub_verdict', new Date()),
         }),
+        settledCancellationCause: async () => 'refund' as const,
         cancelSubscription: async (id) => {
           canceled.push(id);
         },
@@ -555,6 +561,7 @@ describe('BillingReconciliationService (D249)', () => {
           kind: 'found',
           subscription: activePlusSub('sub_verdict', new Date()),
         }),
+        settledCancellationCause: async () => 'chargeback' as const,
         cancelSubscription: async (id) => {
           canceled.push(id);
         },
@@ -574,6 +581,7 @@ describe('BillingReconciliationService (D249)', () => {
           kind: 'found',
           subscription: { ...activePlusSub('sub_verdict', new Date()), cancelAtPeriodEnd: true },
         }),
+        settledCancellationCause: async () => 'refund' as const,
         cancelSubscription: async (id) => {
           canceled.push(id);
         },
@@ -619,6 +627,65 @@ describe('BillingReconciliationService (D249)', () => {
 
     const result = await svc.reconcileLiveSubscriptions();
     expect(result).toMatchObject({ verdictsEnforced: 0, verdictsUnenforced: 1 });
+  });
+
+  // The outbound cancel needs TWO facts, and our own marker is only the
+  // first. On a live Paddle account `adjustment.created` fires while the
+  // refund is still `pending_approval`; sandbox auto-approves, so this
+  // shape never appears in testing. Cancelling on it would end the
+  // subscription of a customer Paddle may still decide is paying.
+  for (const [label, cause] of [
+    ['a refund Paddle has NOT approved yet', 'none'],
+    ['an adjustments read we could not make', 'unknown'],
+  ] as const) {
+    it(`${label} → no cancel sent`, async () => {
+      await seedVerdictRow({ cancelSource: 'refund' });
+      const canceled: string[] = [];
+      const svc = service(
+        fakeAdapter({
+          fetchSubscription: async () => ({
+            kind: 'found',
+            subscription: activePlusSub('sub_verdict', new Date()),
+          }),
+          settledCancellationCause: async () => cause,
+          cancelSubscription: async (id) => {
+            canceled.push(id);
+          },
+        }),
+      );
+
+      const result = await svc.reconcileLiveSubscriptions();
+      expect(canceled).toEqual([]);
+      expect(result).toMatchObject({ verdictsEnforced: 0, verdictsUnenforced: 1 });
+    });
+  }
+
+  it('the settled cause is read from the PROVIDER, not from our own row', async () => {
+    // A local `chargeback` marker over a provider that only confirms a
+    // refund still cancels — but the log and the decision follow the
+    // provider. The marker's job is to select candidates, not to decide.
+    await seedVerdictRow({ cancelSource: 'chargeback' });
+    const canceled: string[] = [];
+    const asked: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: activePlusSub('sub_verdict', new Date()),
+        }),
+        settledCancellationCause: async (id) => {
+          asked.push(id);
+          return 'refund' as const;
+        },
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+
+    await svc.reconcileLiveSubscriptions();
+    expect(asked).toEqual(['sub_verdict']);
+    expect(canceled).toEqual(['sub_verdict']);
   });
 
   // ── reconcileWorkspaceSubscriptions — the stuck-plan-change path ──

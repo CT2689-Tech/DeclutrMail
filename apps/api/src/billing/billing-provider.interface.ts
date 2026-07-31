@@ -210,6 +210,29 @@ export interface BillingProvider {
   pauseSubscription(providerSubscriptionId: string, resumeAt: string): Promise<void>;
 
   /**
+   * Ask the PROVIDER whether it holds a settled, plan-ending refund or
+   * chargeback for this subscription.
+   *
+   * Exists because a local `cancel_source` is not proof of a settled
+   * one. On a live Paddle account a refund is created
+   * `pending_approval` and Paddle decides later; sandbox auto-approves,
+   * so the pending shape never appears in testing. Ending entitlement on
+   * an unsettled refund costs a wrong local row we can fix. CANCELLING
+   * AT THE PROVIDER on one cancels a customer who may still be paying —
+   * so the outbound step tests the fact instead of trusting our own
+   * marker (Codex stop-review, 2026-07-31).
+   *
+   *   'refund' | 'chargeback' — settled; the subscription must not renew
+   *   'none'    — provider holds no settled ending adjustment (a pending
+   *               or rejected refund lands here). Take no outbound action.
+   *   'unknown' — could not ask. Also take no outbound action; a read
+   *               failure is never grounds for a write.
+   */
+  settledCancellationCause(
+    providerSubscriptionId: string,
+  ): Promise<'refund' | 'chargeback' | 'none' | 'unknown'>;
+
+  /**
    * Switch the subscription to a different catalog price. Immediate
    * upgrades are prorated. For a scheduled downgrade the provider item
    * changes without billing, while the local scheduled-change state
