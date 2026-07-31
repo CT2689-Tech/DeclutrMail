@@ -254,6 +254,88 @@ export class PaddleAdapter implements BillingProvider {
   }
 
   /**
+   * PATCH /subscriptions/{id} with `scheduled_change: null` — Paddle's
+   * documented way to revoke a pending cancel (or pause/resume) without
+   * touching price, period or status.
+   *
+   * Not the `/resume` endpoint: that one is for PAUSED subscriptions
+   * and 400s on an active-but-cancelling row. A cancelling subscription
+   * is still `active` — the cancel lives entirely in `scheduled_change`
+   * — so clearing that field is the whole operation.
+   */
+  async clearScheduledCancellation(providerSubscriptionId: string): Promise<void> {
+    const apiKey = this.env.PADDLE_API_KEY;
+    if (!apiKey) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.baseUrl}/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'Paddle-Version': '1',
+          },
+          body: JSON.stringify({ scheduled_change: null }),
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        },
+      );
+    } catch (err) {
+      this.logger.error(
+        `paddle.clear_scheduled_cancellation.network_error sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (!res.ok) {
+      this.logger.error(
+        `paddle.clear_scheduled_cancellation.failed sub=${providerSubscriptionId} status=${res.status}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+  }
+
+  /**
+   * POST /subscriptions/{id}/pause — immediate, with an explicit
+   * `resume_at` so the pause self-terminates (D118's 30 days). Paddle
+   * treats an absent `resume_at` as indefinite, which would strand a
+   * user who never comes back to click Resume.
+   */
+  async pauseSubscription(providerSubscriptionId: string, resumeAt: string): Promise<void> {
+    const apiKey = this.env.PADDLE_API_KEY;
+    if (!apiKey) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.baseUrl}/subscriptions/${encodeURIComponent(providerSubscriptionId)}/pause`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'Paddle-Version': '1',
+          },
+          body: JSON.stringify({ effective_from: 'immediately', resume_at: resumeAt }),
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        },
+      );
+    } catch (err) {
+      this.logger.error(
+        `paddle.pause.network_error sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (!res.ok) {
+      this.logger.error(`paddle.pause.failed sub=${providerSubscriptionId} status=${res.status}`);
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+  }
+
+  /**
    * PATCH /subscriptions/{id} — swap the single line item to the new
    * price. Upgrades use `prorated_immediately`; scheduled downgrades use
    * `do_not_bill` and pin the existing renewal date. The webhook

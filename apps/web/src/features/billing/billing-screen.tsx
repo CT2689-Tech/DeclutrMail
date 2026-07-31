@@ -44,6 +44,8 @@ import {
   type NonBackingRecord,
 } from './billing-model';
 import { CancelModal } from './cancel-modal';
+import { usePauseSubscription } from './api/use-pause-subscription';
+import { useResumeCancellation } from './api/use-resume-cancellation';
 import { useResumeSubscription } from './api/use-resume-subscription';
 import {
   clearPendingCheckout,
@@ -140,6 +142,8 @@ export function BillingScreen({
           : PAYMENT_PROCESSING_POLL_MS,
   });
   const cancel = useCancelSubscription();
+  const resumeCancellation = useResumeCancellation();
+  const pause = usePauseSubscription();
   const reconcileCheckout = useReconcileCheckout();
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -526,6 +530,21 @@ export function BillingScreen({
         cleanupRemaining={cleanupRemaining}
         billingDark={billingDark}
         onCancel={() => setCancelOpen(true)}
+        onResumeCancellation={() =>
+          resumeCancellation.mutate(undefined, {
+            onSuccess: (next) => {
+              const end = formatBillingDate(next.subscription?.currentPeriodEnd ?? null);
+              toast(
+                end ? `Subscription restored — it renews on ${end}.` : 'Subscription restored.',
+                'success',
+              );
+            },
+          })
+        }
+        isResumingCancellation={resumeCancellation.isPending}
+        resumeCancellationError={
+          resumeCancellation.error ? resumeCancellationErrorMessage(resumeCancellation.error) : null
+        }
       />
 
       {plan.scheduledChange && backingSub ? (
@@ -619,9 +638,65 @@ export function BillingScreen({
         onConfirm={onConfirmCancel}
         isCanceling={cancel.isPending}
         cancelError={cancel.error ? cancelErrorMessage(cancel.error) : null}
+        onPause={() =>
+          pause.mutate(undefined, {
+            onSuccess: () => {
+              setCancelOpen(false);
+              // No date claimed: `status` flips only when the provider's
+              // `subscription.paused` webhook lands, so promising "paused
+              // until Aug 30" here would assert something unconfirmed.
+              toast('Pause requested — confirming with your payment provider.', 'success');
+            },
+          })
+        }
+        isPausing={pause.isPending}
+        pauseError={pause.error ? pauseErrorMessage(pause.error) : null}
       />
     </div>
   );
+}
+
+/**
+ * D118 un-cancel failures. The 409s are distinguishable and each means
+ * something different, so the generic "try again" would be a lie for
+ * two of the three.
+ */
+function resumeCancellationErrorMessage(error: unknown): string {
+  // Branch on the CODE, not the status: three different 409s reach here
+  // and the generic line would be wrong for two of them (`apiErrorCode`
+  // doc, client.ts).
+  const code = apiErrorCode(error);
+  if (code === 'NO_SCHEDULED_CANCELLATION') {
+    return 'This subscription is already renewing — refresh the page to see the current state.';
+  }
+  if (code === 'RESUME_UNSUPPORTED') {
+    return 'Subscriptions billed in India can’t be restored from here. Email support@declutrmail.com and we’ll do it for you.';
+  }
+  if (code === 'NO_ACTIVE_SUBSCRIPTION') {
+    return 'There is no subscription to restore — refresh the page to see the current state.';
+  }
+  if (error instanceof ApiError && error.status === 503) {
+    return 'Billing isn’t switched on yet.';
+  }
+  return 'Your subscription could not be restored. Please try again.';
+}
+
+/** D118 pause-offer failures. */
+function pauseErrorMessage(error: unknown): string {
+  const code = apiErrorCode(error);
+  if (code === 'PAUSE_UNSUPPORTED') {
+    return 'Pausing isn’t available for subscriptions billed in India. Email support@declutrmail.com and we’ll pause it for you.';
+  }
+  if (code === 'SUBSCRIPTION_PAUSED') {
+    return 'This subscription is already paused — refresh the page to see the current state.';
+  }
+  if (code === 'SUBSCRIPTION_CANCELING') {
+    return 'This subscription is already scheduled to cancel. Choose "Keep my subscription" first, then pause it.';
+  }
+  if (error instanceof ApiError && error.status === 503) {
+    return 'Billing isn’t switched on yet.';
+  }
+  return 'The pause could not be processed. Please try again.';
 }
 
 /** Honest copy for a cancel failure — never a silent swallow. */
@@ -960,14 +1035,26 @@ function CurrentPlanCard({
   cleanupRemaining,
   billingDark,
   onCancel,
+  onResumeCancellation,
+  isResumingCancellation,
+  resumeCancellationError,
 }: {
   plan: BillingPlanView;
   cleanupRemaining: number | null;
   billingDark: boolean;
   onCancel: () => void;
+  /** D118 — revoke a scheduled cancel and go back on renewal. */
+  onResumeCancellation: () => void;
+  isResumingCancellation: boolean;
+  resumeCancellationError: string | null;
 }) {
   const manifest = TIER_MANIFEST[plan.entitlementTier];
   const { backing } = plan;
+  // Two-step (matrix E3): the button arms an inline confirm that states
+  // the renewal date and price before anything is sent. Same
+  // preview-then-confirm shape as every other money action here — this
+  // one puts a charge BACK on, so it earns the same discipline.
+  const [confirmKeep, setConfirmKeep] = useState(false);
 
   // The card tells ONE story: the ENTITLEMENT tier. Subscription facts
   // (price, renewal, status, cancel affordance) render only from the
@@ -1058,6 +1145,77 @@ function CurrentPlanCard({
           <Button tone="default" onClick={onCancel}>
             Cancel subscription
           </Button>
+        </div>
+      ) : null}
+
+      {/* D118 — the way back. Without it a mis-clicked cancel was
+          irreversible for up to a year: checkout answers
+          SUBSCRIPTION_EXISTS and change-plan answers
+          SUBSCRIPTION_CANCELING, so support had to PATCH the provider
+          by hand (matrix E3, 2026-07-31). */}
+      {!billingDark && backing.state === 'cancel_scheduled' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {confirmKeep ? (
+            <div
+              data-testid="keep-subscription-confirm"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                padding: '12px 14px',
+                background: color.paper,
+                border: `1px solid ${color.line}`,
+                borderRadius: radius.md,
+              }}
+            >
+              <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft, lineHeight: 1.5 }}>
+                <strong style={{ fontWeight: 600, color: color.fg }}>$0 today.</strong> Your
+                cancellation is called off and {manifest.name} keeps renewing
+                {formatBillingDate(backing.sub.currentPeriodEnd)
+                  ? ` — next charge ${formatBillingDate(backing.sub.currentPeriodEnd)}`
+                  : ' on its normal schedule'}
+                {currentPlanPriceLabel(plan) ? ` at ${currentPlanPriceLabel(plan)}` : ''}. You can
+                cancel again at any time.
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Button
+                  tone="primary"
+                  onClick={onResumeCancellation}
+                  disabled={isResumingCancellation}
+                >
+                  {isResumingCancellation ? 'Restoring…' : 'Yes, keep my subscription'}
+                </Button>
+                <Button
+                  tone="default"
+                  onClick={() => setConfirmKeep(false)}
+                  disabled={isResumingCancellation}
+                >
+                  Never mind
+                </Button>
+              </div>
+              {resumeCancellationError != null ? (
+                <div
+                  role="alert"
+                  style={{
+                    fontSize: 12,
+                    color: color.red,
+                    background: 'rgba(239,68,68,0.08)',
+                    border: `1px solid ${color.red}`,
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                  }}
+                >
+                  {resumeCancellationError}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button tone="primary" onClick={() => setConfirmKeep(true)}>
+                Keep my subscription
+              </Button>
+            </div>
+          )}
         </div>
       ) : null}
     </section>

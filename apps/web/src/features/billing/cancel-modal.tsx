@@ -42,6 +42,9 @@ export function CancelModal({
   onConfirm,
   isCanceling,
   cancelError,
+  onPause,
+  isPausing,
+  pauseError,
 }: {
   open: boolean;
   /** The record this cancel targets — backing or non-backing (A6). */
@@ -56,6 +59,10 @@ export function CancelModal({
   onConfirm: (reason: CancelReason | undefined) => void;
   isCanceling: boolean;
   cancelError: string | null;
+  /** D118 — "Pause for 30 days" instead of cancelling. */
+  onPause: () => void;
+  isPausing: boolean;
+  pauseError: string | null;
 }) {
   const [reason, setReason] = useState<CancelReason | ''>('');
 
@@ -76,6 +83,9 @@ export function CancelModal({
   const tierLabel = TIER_MANIFEST[sub.tier].name;
   const entitlementName = TIER_MANIFEST[entitlementTier].name;
   const end = formatBillingDate(sub.currentPeriodEnd);
+  // Mirrors `BillingService.pauseForThirtyDays`'s guards exactly, so the
+  // offer never renders on a subscription the API would refuse.
+  const canPause = sub.provider === 'paddle' && sub.status === 'active' && !sub.cancelAtPeriodEnd;
 
   return (
     <>
@@ -167,6 +177,59 @@ export function CancelModal({
               isn&rsquo;t a refund.
             </li>
           </ul>
+
+          {/* D118's retention offer, finally built. It was specced in
+              the D-body ("Would you like to pause instead?") and shipped
+              as nothing: no endpoint, no button — while the paused STATE
+              was fully modeled. So the one lever meant to catch a
+              cancellation never ran (matrix E3 follow-up, 2026-07-31).
+
+              Offered only where it can actually work: Paddle (Razorpay
+              has no pause primitive we drive — `PAUSE_UNSUPPORTED`), on
+              an active row that is not already on its way out. Offering
+              a button that answers 409 would be the same
+              asserting-what-we-don't-know defect this codebase keeps
+              paying for. */}
+          {canPause ? (
+            <div
+              data-testid="pause-offer"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                padding: '10px 12px',
+                background: color.paper,
+                border: `1px solid ${color.line}`,
+                borderRadius: radius.md,
+              }}
+            >
+              <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft, lineHeight: 1.5 }}>
+                <strong style={{ fontWeight: 600, color: color.fg }}>Pause instead?</strong> Billing
+                stops for 30 days and picks up automatically after that. Your senders, rules and
+                history stay exactly as they are.
+              </p>
+              <div>
+                <Button tone="default" onClick={onPause} disabled={isPausing || isCanceling}>
+                  {isPausing ? 'Pausing…' : 'Pause for 30 days'}
+                </Button>
+              </div>
+              {pauseError != null ? (
+                <div
+                  role="alert"
+                  style={{
+                    fontSize: 12,
+                    color: color.red,
+                    background: 'rgba(239,68,68,0.08)',
+                    border: `1px solid ${color.red}`,
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                  }}
+                >
+                  {pauseError}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Stated, not merchandised. Every paid plan carries the D121
               30-day money-back guarantee and the policy is public, so

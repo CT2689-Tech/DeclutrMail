@@ -233,11 +233,42 @@ export const ERROR_CODES = {
     message:
       'A checkout for this account is already in progress — finish it there, or use "I didn\u2019t complete a payment" to release it.',
   },
+  /**
+   * No subscription this route can act on. The message names no verb:
+   * three routes raise it (cancel, pause, resume) and "…to cancel" was
+   * wrong on the other two — it read as a nonsense answer to "resume my
+   * subscription" (sandbox smoke 2026-07-31).
+   */
   NO_ACTIVE_SUBSCRIPTION: {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'There is no active subscription to cancel.',
+    message: 'There is no active subscription on this account.',
+  },
+  /**
+   * `resume-cancellation` with nothing scheduled to revoke. Distinct
+   * from NO_ACTIVE_SUBSCRIPTION: the subscription exists and is
+   * healthy, so the honest answer is "nothing to undo", not "nothing
+   * is there". Idempotent double-click territory — the FE treats it as
+   * success rather than an error worth showing.
+   */
+  NO_SCHEDULED_CANCELLATION: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This subscription is not scheduled to cancel.',
+  },
+  /**
+   * Razorpay has no pause primitive we are willing to drive (same
+   * posture as RESUME_UNSUPPORTED — see D118). Fails closed to support
+   * rather than half-pausing a subscription that keeps charging.
+   */
+  PAUSE_UNSUPPORTED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'Pausing is not available for subscriptions billed in India. Email support@declutrmail.com and we will pause it for you.',
   },
   FOUNDING_PRO_SOLD_OUT: {
     status: 409,

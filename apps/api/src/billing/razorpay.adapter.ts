@@ -273,6 +273,26 @@ export class RazorpayAdapter implements BillingProvider {
     throw new AppException({ code: 'RESUME_UNSUPPORTED' });
   }
 
+  /**
+   * Razorpay cancellation is immediate-or-at-cycle-end and carries no
+   * revocable `scheduled_change` object, so there is nothing to clear —
+   * unlike Paddle, where the pending cancel is a field. Fails closed to
+   * support rather than guessing a reactivation path (same posture as
+   * `resumeSubscription`).
+   */
+  async clearScheduledCancellation(providerSubscriptionId: string): Promise<void> {
+    this.logger.warn(
+      `razorpay.clear_scheduled_cancellation.unsupported sub=${providerSubscriptionId}`,
+    );
+    throw new AppException({ code: 'RESUME_UNSUPPORTED' });
+  }
+
+  /** D118 pause — unsupported here for the same reason as resume. */
+  async pauseSubscription(providerSubscriptionId: string): Promise<void> {
+    this.logger.warn(`razorpay.pause.unsupported sub=${providerSubscriptionId}`);
+    throw new AppException({ code: 'PAUSE_UNSUPPORTED' });
+  }
+
   /** D249 — GET /v1/subscriptions/{id}. See FetchSubscriptionResult. */
   async fetchSubscription(providerSubscriptionId: string): Promise<FetchSubscriptionResult> {
     const auth = this.authHeader();
