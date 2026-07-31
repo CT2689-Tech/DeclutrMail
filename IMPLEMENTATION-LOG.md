@@ -62,7 +62,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D4 | OAuth verification: **Already approved (from V1) | ⬜ |  |  |  |
 | D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | 🔵 | #22 | workers/rate-limiter.test.ts (all green) + ADR 0005 | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🟡 | #21, #28, #204, #315 | initial-sync.worker.test.ts: D6 sync gate stage-sequence + monotonic progress + terminal-ready | Truth sweep 2026-07-02: gate, sync-complete email + 24h reminder (apps/api/src/notifications/sync-ready-email.trigger.ts, worker.ts:593,1841) and push delivery (users.watch via gmail-watch.service.ts:87 + WatchRenewalWorker worker.ts:1239) ALL built — 2026-06-11 note stale. Remaining leg: onboarding funnel events audit |
-| D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🔵 | #26, #373 | ADR 0004 + shared/copy/privacy.ts frame=Gmail Preview | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🔵 | #26, #373, #455 | ADR 0004 + shared/copy/privacy.ts frame=Gmail Preview | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D8 | Inbound Pub/Sub idempotency (no user input needed) | 🟢 | #31, #370 | apps/api/src/webhooks/__tests__/gmail-webhook.service.spec.ts |  |
 | D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🔵 | #23, #185, #198 | initial-sync.worker.test.ts (5 unsub cases) + ADR 0006 | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | 🔵 | #295 |  |  |
@@ -214,7 +214,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🟢 | #35, #48, #113, #188, #211, #337, #378, #380, #382, #383, #384 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425 |  |  |
-| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
+| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
 | D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |
