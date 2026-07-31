@@ -1517,6 +1517,67 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByRole('button', { name: 'Cancel subscription' })).not.toBeInTheDocument();
   });
 
+  // Founder screenshot 2026-07-31: on Pro ANNUAL with a downgrade booked,
+  // the card read "Pro · $190/yr · Next renewal Jul 30, 2027" — but what
+  // happens that day is Plus MONTHLY at $9. The line claims this plan at
+  // this price renews then, which a scheduled change makes false.
+  it('current-plan card drops "Next renewal" while a plan change is scheduled', async () => {
+    mockTier = 'pro';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...PRO_SUB,
+              subscription: {
+                ...SUB,
+                cycle: 'annual',
+                scheduledChange: {
+                  tier: 'plus',
+                  cycle: 'monthly',
+                  effectiveAt: '2027-07-30T18:00:00.000Z',
+                  state: 'scheduled',
+                },
+              },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const card = await screen.findByTestId('current-plan-card');
+    expect(within(card).queryByText(/Next renewal/)).toBeNull();
+    // The notice below still states what actually happens.
+    expect(await screen.findByText(/Downgrade scheduled/)).toBeInTheDocument();
+  });
+
+  // Same screenshot: the strip toggled to Monthly badged "Pro $19/mo"
+  // CURRENT while the subscriber pays $190/yr. The badge marks the plan
+  // you are ON — tier AND cycle — not whichever cycle the toggle shows.
+  it('CURRENT badge does not follow the cycle toggle away from the real plan', async () => {
+    mockTier = 'pro';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: { ...PRO_SUB, subscription: { ...SUB, cycle: 'annual' } } }),
+      },
+    ]);
+    renderScreen();
+
+    // Annual is the default; the Pro card is genuinely current there.
+    await screen.findByTestId('current-plan-card');
+    expect(screen.getByText('Current')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Monthly' }));
+
+    // Now every card on screen is a switch target, so nothing is CURRENT.
+    await waitFor(() => expect(screen.queryByText('Current')).toBeNull());
+    expect(screen.getByText(/Switch to monthly billing/)).toBeInTheDocument();
+  });
+
   // D118 — the way back out of a cancel. Before this, cancelling was a
   // one-way door for up to a year: `resume` only un-pauses, checkout
   // answers SUBSCRIPTION_EXISTS and change-plan answers

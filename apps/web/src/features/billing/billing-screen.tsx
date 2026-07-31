@@ -1066,8 +1066,16 @@ function CurrentPlanCard({
   // paid tier makes no price claim at all — nobody is charged one.
   const note = backingStatusNote(backing);
   const priceLabel = currentPlanPriceLabel(plan);
+  // "Next renewal <date>" claims THIS plan, at THIS price, renews then.
+  // With a scheduled change that is false: on Pro annual with a
+  // downgrade booked, the card read "Pro · $190/yr · Next renewal Jul
+  // 30, 2027" while what actually happens that day is Plus monthly at
+  // $9 (founder screenshot, 2026-07-31). The scheduled-change notice
+  // directly below states the real outcome, so the card stays silent
+  // rather than contradict it — the same reason `cancel_scheduled`
+  // already suppresses this line.
   const renewal =
-    backing.state === 'active' || backing.state === 'past_due'
+    (backing.state === 'active' || backing.state === 'past_due') && plan.scheduledChange === null
       ? formatBillingDate(backing.sub.currentPeriodEnd)
       : null;
 
