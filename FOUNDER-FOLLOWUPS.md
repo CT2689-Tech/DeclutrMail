@@ -26,30 +26,35 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-07-31 — LAUNCH BLOCKER: a refunded customer keeps their plan forever (matrix H2 FAILS)
+### 2026-07-31 — CORRECTED: refunds do end the entitlement; what is missing is the cancel AT PADDLE
 
-**Source:** billing-test-matrix group H, driven 2026-07-31
+**Source:** billing-test-matrix group H, 2026-07-31. **This entry replaces an earlier one that called H2 a launch blocker. That diagnosis was wrong** — see the correction note below before acting on anything here.
 
-**Why:** the matrix calls H2 "the most valuable step in this document — the one failure that silently gives away Pro forever". It fails. Reproduced twice, cleanly, two steps:
+**What is actually true.** A refund adjustment writes THREE things, not two:
 
-| step | `cancel_at_period_end` | `cancel_source` |
+| column | after refund | after a later `subscription.updated` |
 |---|---|---|
-| after `adjustment.created` / `refund` | **`t`** | `refund` |
-| after ONE ordinary `subscription.updated` | **`f`** | `refund` |
+| `cancel_source` | `refund` | `refund` — survives |
+| `entitlement_ends_at` | `current_period_end` | **survives** |
+| `cancel_at_period_end` | `t` | **`f`** — cleared |
 
-A refund records its verdict in two places: `cancel_source='refund'` (a marker) and `cancel_at_period_end=true` (the part that actually ends the subscription). The marker survives later provider payloads. **The effect does not.** Any subsequent `subscription.updated` — which Paddle sends routinely, and which carries `scheduled_change: null` because the provider has no idea we decided to cancel — overwrites the flag. The row then reads "refunded" while behaving as a fully paid subscription that renews forever.
+`entitlement_ends_at` is the column the tier recompute actually reads, and it survives. Verified end to end: after a refund followed by a renewal payload, pushing the deadline past and running the sweep dropped the workspace to `free`. **The refund verdict is enforced.** Nobody keeps a paid tier for free.
 
-There is no floor protecting this the way the terminal-canceled floor protects `status='canceled'`. A refund leaves the row `active`, and `active` rows are freely overwritten by provider truth.
+**The two real defects, both smaller and different from what was first written:**
 
-Severity: money. Every refunded or charged-back customer keeps their paid tier indefinitely, and the audit column makes it look handled.
+1. **UI truth.** `cancel_at_period_end` is cleared by any later provider payload, so `/billing` stops showing "Cancellation scheduled" while the entitlement is still ending on schedule. The customer is told they are renewing when in fact they lose access at period end. Cosmetic in money terms, but it is the assert-what-we-do-not-know class this codebase keeps paying for.
 
-Note also that refund → **downgrade at period end**, not immediate (`paddle.adapter.ts:722`, documented in `billing.module.ts`). So even when it works, a refunded customer keeps Pro until the period ends. That is a separate product call worth making deliberately — for a chargeback especially, the money is already gone.
+2. **The one that costs money — and it points the OTHER way.** `BillingWebhookService` is a projector: its constructor takes only `db` and `catalog`, it holds no provider adapters, and the only `cancelSubscription` call site in the codebase is the user-initiated cancel (`billing.service.ts:354`). So a refund adjustment **never cancels the subscription at Paddle**. Paddle keeps it active and bills again at renewal, while we stop granting the tier at `entitlement_ends_at`. A refunded customer can be charged a second time and receive nothing for it.
 
-**How:** this is a `apps/api/src/billing/billing-webhook.service.ts` change and therefore a CLAUDE.md §9 stop condition (billing provider webhooks) — flagged rather than fixed. The shape that fits the existing code: treat a non-null `cancel_source` as a sticky local verdict, the same way the terminal-canceled floor treats `status='canceled'`, so an incoming payload may never clear `cancel_at_period_end` on a row that carries one. Decide the immediate-vs-period-end question at the same time.
+   In practice an operator refunding in the Paddle dashboard would usually cancel there too, so this bites when a refund is issued without a matching cancel — a partial refund, or a support agent doing one action and not the other.
 
-**Verifies by:** apply a refund adjustment, replay any later `subscription.updated`, and confirm `cancel_at_period_end` stays `t`; a regression spec pins it.
+**Correction note.** The first version of this entry claimed the tier "never drops" and called it a launch blocker. It was diagnosed by watching `cancel_at_period_end` and never checking `entitlement_ends_at` — the column that governs the outcome. Caught by the Codex stop-review, whose objection was that the proposed fix (make `cancel_source` sticky so it protects `cancel_at_period_end`) could not stop Paddle renewing. That objection is correct and it is what exposed the misdiagnosis: no local column stops Paddle billing.
 
-**Status:** Open — **launch blocker**
+**How:** two separable pieces. (a) UI truth — either stop clearing `cancel_at_period_end` on a row carrying a `cancel_source`, or derive the notice from `entitlement_ends_at`, which is the honest source. (b) The billing divergence — decide whether a refund/chargeback adjustment should drive a provider-side cancel. That is a `billing-webhook.service.ts` change and a CLAUDE.md §9 stop condition, and it also needs a product call: today refund holds entitlement to period end while chargeback drops it immediately (`entitlementEndsAt: isChargeback ? now() : COALESCE(current_period_end, now())`).
+
+**Verifies by:** (a) refund, replay a renewal payload, and `/billing` still states the plan is ending. (b) refund a sandbox subscription and confirm Paddle shows it cancelled rather than scheduled to bill again.
+
+**Status:** Open — NOT a launch blocker. (b) is worth closing before real refunds happen; (a) is ordinary UI-truth work.
 
 ### 2026-07-31 — Verify production billing with one real purchase (founder decision: yes)
 
