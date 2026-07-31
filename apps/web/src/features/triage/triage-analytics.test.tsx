@@ -16,7 +16,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import {
   addFetchHandlers,
@@ -25,7 +25,10 @@ import {
   jsonServerError,
   resetFetchStub,
 } from '@/test/fetch-stub';
+import type { UndoTrayEntry } from '@declutrmail/shared';
+
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { undoKeys } from '@/features/undo/query-keys';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore, useTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
@@ -46,6 +49,7 @@ vi.mock('@declutrmail/shared', async (importOriginal) => {
 });
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/triage',
 }));
 const authMe = vi.hoisted(() => ({
   user: { id: 'user-1', email: 'user@example.com', workspaceId: 'workspace-1' },
@@ -355,13 +359,17 @@ describe('undo_clicked (D159)', () => {
 
   function stubTrayLoop() {
     const reverted = new Set<string>();
+    // Starts EMPTY: the tray shows only what lands AFTER it baselines on
+    // mount, so the entries arrive on a refetch, as a real action's
+    // `undoKeys` invalidation delivers them.
+    const state = { live: [] as UndoTrayEntry[] };
     addFetchHandlers([
       {
         method: 'GET',
         path: '/api/undo',
         respond: () =>
           jsonOk({
-            data: [ENTRY_NEWEST, ENTRY_OLDER].filter((e) => !reverted.has(e.token)),
+            data: state.live.filter((e) => !reverted.has(e.token)),
             meta: { nextCursor: null, limit: 50 },
           }),
       },
@@ -399,21 +407,29 @@ describe('undo_clicked (D159)', () => {
           }),
       },
     ]);
+    return state;
   }
 
-  function renderTray() {
+  /** Mount, baseline on an empty tray, then land the two decisions. */
+  async function renderTrayWithDecisions() {
+    const state = stubTrayLoop();
     const client = createTestQueryClient();
-    return render(
+    const view = render(
       <QueryWrapper client={client}>
         <TriageUndoTray />
       </QueryWrapper>,
     );
+    await waitFor(() => expect(client.getQueryData(undoKeys.tray(undefined))).toBeDefined());
+    state.live = [ENTRY_NEWEST, ENTRY_OLDER];
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: undoKeys.all });
+    });
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+    return view;
   }
 
   it('a per-row Undo click fires EXACTLY once with the entry kind + age — never the token', async () => {
-    stubTrayLoop();
-    renderTray();
-    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+    await renderTrayWithDecisions();
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo Later' }));
 
@@ -431,9 +447,7 @@ describe('undo_clicked (D159)', () => {
   });
 
   it('Z (undo last) fires once for the NEWEST entry', async () => {
-    stubTrayLoop();
-    renderTray();
-    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+    await renderTrayWithDecisions();
 
     fireEvent.keyDown(window, { key: 'z' });
 
