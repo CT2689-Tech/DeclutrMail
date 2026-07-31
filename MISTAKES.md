@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-31 — Four rounds of enumerating variants instead of recognising the thing
+**PR:** [#454](https://github.com/CT2689-Tech/DeclutrMail/pull/454)
+**Caught by:** Codex stop-review, four consecutive times on ONE change
+**What happened:** Fixing a telemetry leak, I patched the exact case named and shipped, four times running: (1) stripped the query, left the fragment / allowed-param values / userinfo; (2) constrained param values in the URL, left the SDK's extracted copy of the same param; (3) matched `utm_*` and `$initial_utm_*`, left `$session_entry_utm_*`. Each fix was correct for the instance and blind to its siblings, and each round the reviewer had to name the next one. The tell was there from round one: I was writing lists of shapes I had seen — components, prefixes, key names — where the safe form was to recognise the one part that carries meaning and rebuild everything else from an allowlist.
+**Correct approach:** When a fix is "add the case that was reported", stop and ask what the case is an INSTANCE of, then close that. Here: a URL is not its query (rebuild from origin+path+allowlisted params), and a campaign property is not its prefix (match the NAME wherever it ends the key).
+**Rule:** After any reviewer-reported leak, before committing, write down the axis the report varies along — component, prefix, copy, encoding — and enumerate that axis to exhaustion yourself. If you cannot enumerate it, the fix must be reconstructive rather than subtractive. See also this session's two other entries: all three are the same failure to distinguish the instance from the class.
+**Enforcement update:** none — each variant has its own test and each has a passing negative control. The lasting artifact is the shape of the code: `stripUrlQuery` rebuilds, `isCampaignPropertyKey` matches by name.
+
 ## 2026-07-31 — Subtracted the part I thought of instead of rebuilding from safe parts
 **PR:** [#454](https://github.com/CT2689-Tech/DeclutrMail/pull/454)
 **Caught by:** Codex stop-review ("still permits sensitive values through allowed parameters and fragments") — probing on top of that found a third path
