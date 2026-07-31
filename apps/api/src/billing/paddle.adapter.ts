@@ -36,6 +36,7 @@ import type {
   PlanChangePreviewResult,
   PlanChangeResult,
   PlanChangeTiming,
+  ProviderCancellationFacts,
   SignatureVerifyResult,
   SubscriptionSearchQuery,
   SubscriptionSearchResult,
@@ -107,6 +108,50 @@ interface PaddleTransaction {
   subscription_id?: string | null;
   customer_id?: string | null;
   custom_data?: { workspace_id?: string; sig?: string } | null;
+}
+
+/**
+ * Adjustment statuses that mean UNDONE. Paddle's four are `approved`,
+ * `pending_approval`, `rejected` and `reversed`; these two are the ones
+ * that void an adjustment, and the distinction from `pending_approval`
+ * is the whole point — undone is a decision, pending is its absence.
+ */
+const UNDONE_STATUSES = new Set(['rejected', 'reversed']);
+
+/** The adjustment fields that decide whether a plan ends (API v2). */
+interface PaddleAdjustment {
+  action?: string;
+  status?: string;
+  subscription_id?: string | null;
+  items?: Array<{ type?: string }>;
+}
+
+/**
+ * Does this refund/chargeback END the subscription, or is it a
+ * part-refund that leaves it running?
+ *
+ * A PARTIAL refund is not an exit. Paddle fires the same event for "here
+ * is $2 back for the trouble" as for "here is your money back", and
+ * treating both as an exit ended the plan of a customer who was being
+ * apologised to.
+ *
+ * Keyed on the ITEM types, not the adjustment's own `type`: Paddle
+ * defaults `type` to `partial`, and a dashboard full-amount refund can
+ * arrive as `partial` with every item marked `full`. Any item explicitly
+ * marked `partial` is the one shape that can only mean a part-refund.
+ * Everything else — including a payload we cannot read — revokes,
+ * because failing to revoke a real refund is the worse error of the two.
+ * Chargebacks are never filtered: Paddle raises them itself.
+ *
+ * ONE function because two callers ask this question — the webhook
+ * mapping and `providerCancellationFacts`. Mirrored, they would drift,
+ * and the drift would read as "the refund ended their plan but we never
+ * stopped billing them".
+ */
+function endsSubscription(adjustment: PaddleAdjustment): boolean {
+  if (adjustment.action === 'chargeback') return true;
+  if (adjustment.action !== 'refund') return false;
+  return !(adjustment.items ?? []).some((i) => i?.type === 'partial');
 }
 
 /** Paddle webhook envelope (API v2 notifications). */
@@ -588,6 +633,83 @@ export class PaddleAdapter implements BillingProvider {
   }
 
   /**
+   * Paddle's own answer to "is there a settled reason this subscription
+   * must not renew?" — the gate on the one outbound cancel we send
+   * (`BillingReconciliationService.enforceLocalVerdicts`).
+   *
+   * Our `cancel_source` marker is written from `adjustment.created`,
+   * which on a LIVE account fires while the refund is still
+   * `pending_approval`. Cancelling on that would end a subscription
+   * Paddle may go on to reject the refund for. Sandbox auto-approves, so
+   * no amount of testing here would have shown it.
+   *
+   * `refuted` is the same read pointed the other way, and it is what
+   * makes the correction possible WITHOUT depending on a webhook
+   * subscription: when Paddle's records positively contradict our marker
+   * — the refund was rejected, the chargeback reversed — the verdict is
+   * void and the caller lifts it. Without that, a live refund Paddle
+   * rejects leaves a PAYING customer on Free with every self-serve exit
+   * blocked (Codex stop-review, 2026-07-31).
+   */
+  async providerCancellationFacts(
+    providerSubscriptionId: string,
+  ): Promise<ProviderCancellationFacts | null> {
+    let body: unknown | null;
+    try {
+      body = await this.reconciliationGet(
+        `/adjustments?subscription_id=${encodeURIComponent(providerSubscriptionId)}&per_page=50`,
+        `adjustments sub=${providerSubscriptionId}`,
+      );
+    } catch {
+      // Already logged by reconciliationGet. A read we could not make is
+      // never grounds for an outbound write.
+      return null;
+    }
+    if (body === null) return null;
+    const rows = (body as { data?: PaddleAdjustment[] }).data;
+    if (!Array.isArray(rows)) return null;
+
+    // A chargeback IS the settled event — the funds are already gone and
+    // Paddle raised it, not us, so there is nothing left to approve. Only
+    // the adjustment's OWN status can undo one: a won dispute marks it
+    // `reversed`.
+    //
+    // An earlier revision instead scanned for any `chargeback_reverse`
+    // row and suppressed every chargeback when it found one — so a
+    // subscription that won dispute A and then genuinely lost dispute B
+    // reported `none` forever, and Paddle kept billing a customer whose
+    // entitlement we had ended (Codex stop-review, 2026-07-31). Reading
+    // each adjustment's own status needs no cross-referencing and cannot
+    // mis-pair two disputes.
+    const settledChargeback = rows.some(
+      (a) => a.action === 'chargeback' && !UNDONE_STATUSES.has(a.status ?? ''),
+    );
+    // Refunds need Paddle's approval, and only a full one is an exit.
+    const settledRefund = rows.some(
+      (a) => a.action === 'refund' && a.status === 'approved' && endsSubscription(a),
+    );
+
+    // "Paddle SAYS NO" is not the same as "not yet", and the two verdicts
+    // are independent — a contradiction of one says nothing about the
+    // other. Both `rejected` and `reversed` undo an adjustment; checking
+    // only `rejected` on refunds left an approved-then-reversed refund
+    // counting as neither settled nor refuted, so its verdict stood
+    // forever. A refund still `pending_approval` is in neither set.
+    return {
+      settled: settledChargeback ? 'chargeback' : settledRefund ? 'refund' : null,
+      refuted: {
+        refund: rows.some(
+          (a) =>
+            a.action === 'refund' && UNDONE_STATUSES.has(a.status ?? '') && endsSubscription(a),
+        ),
+        chargeback: rows.some(
+          (a) => a.action === 'chargeback' && UNDONE_STATUSES.has(a.status ?? ''),
+        ),
+      },
+    };
+  }
+
+  /**
    * D249 — customers by exact OWNER email, then their subscriptions.
    * Two GETs. Known limit: the overlay lets the payer type ANY email,
    * so an alias-typed checkout creates a customer this search cannot
@@ -720,12 +842,33 @@ export class PaddleAdapter implements BillingProvider {
         };
       }
       case 'adjustment.created': {
-        // Refund / chargeback → downgrade at period end (documented in
+        // Refund / chargeback → entitlement ends (documented in
         // billing.module.ts). Adjustments without a subscription link
         // (one-off transactions — we sell none) are ignored.
-        const data = body.data as { action?: string; subscription_id?: string | null } | undefined;
+        const data = body.data as PaddleAdjustment | undefined;
         const action = data?.action;
+        // The dispute was WON: Paddle clawed the money back from the bank
+        // and the verdict that revoked this customer is void. Without
+        // this they stay locked out forever while still paying — the
+        // harshest thing this system can do to someone (founder decision,
+        // 2026-07-31). Only chargebacks reverse; a refund is a decision
+        // we made and does not un-happen.
+        if (action === 'chargeback_reverse' && data?.subscription_id) {
+          return {
+            kind: 'cancellation_revoked',
+            providerEventId: eventId,
+            eventType,
+            providerSubscriptionId: data.subscription_id,
+            reason: 'chargeback_reverse',
+          };
+        }
         if ((action === 'refund' || action === 'chargeback') && data?.subscription_id) {
+          if (!endsSubscription(data)) {
+            this.logger.warn(
+              `billing.paddle.partial_refund_ignored sub=${data.subscription_id} event=${eventId} — entitlement left intact; cancel in the Paddle dashboard if this refund was meant to end the plan`,
+            );
+            return { kind: 'ignored', providerEventId: eventId, eventType };
+          }
           return {
             kind: 'cancellation_scheduled',
             providerEventId: eventId,

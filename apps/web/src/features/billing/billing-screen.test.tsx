@@ -86,6 +86,7 @@ const PAUSED_BODY: BillingSubscription = {
     cycle: 'monthly',
     currentPeriodEnd: '2026-08-24T18:30:00.000Z',
     cancelAtPeriodEnd: false,
+    cancelSource: null,
     pauseUntil: null,
     foundingMember: false,
     scheduledChange: null,
@@ -99,6 +100,7 @@ const SUB: NonNullable<BillingSubscription['subscription']> = {
   cycle: 'monthly',
   currentPeriodEnd: '2026-07-01T12:00:00.000Z',
   cancelAtPeriodEnd: false,
+  cancelSource: null,
   pauseUntil: null,
   foundingMember: false,
   scheduledChange: null,
@@ -1620,6 +1622,33 @@ describe('BillingScreen — paid subscriber', () => {
   // answers SUBSCRIPTION_EXISTS and change-plan answers
   // SUBSCRIPTION_CANCELING (matrix E3, verified on the sandbox
   // subscription 2026-07-31).
+  it('un-cancel is NOT offered on a refunded plan — the API would 409 it', async () => {
+    // A refund/chargeback reaches `cancel_scheduled` too (the projector
+    // pins the flag under a local verdict), but `resume-cancellation`
+    // refuses those rows with CANCELLATION_NOT_REVOCABLE. Rendering the
+    // button anyway would be an undo whose only possible answer is an
+    // error — the same assert-what-we-don't-know defect the pause offer
+    // already guards against.
+    mockTier = 'pro';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...PRO_SUB,
+              subscription: { ...SUB, cancelAtPeriodEnd: true, cancelSource: 'refund' },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    expect(await screen.findByText(/This plan ended after a refund/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Keep my subscription' })).not.toBeInTheDocument();
+  });
+
   it('un-cancel: two-step confirm restores a scheduled cancellation', async () => {
     mockTier = 'pro';
     let posted = 0;

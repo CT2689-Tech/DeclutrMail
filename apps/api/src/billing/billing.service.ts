@@ -302,6 +302,7 @@ export class BillingService {
               cycle: sub.billingCycle,
               currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
               cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+              cancelSource: sub.cancelSource,
               pauseUntil: sub.pauseUntil?.toISOString() ?? null,
               foundingMember: sub.foundingMember,
               scheduledChange:
@@ -437,6 +438,7 @@ export class BillingService {
         provider: subscriptions.provider,
         providerSubscriptionId: subscriptions.providerSubscriptionId,
         cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
+        cancelSource: subscriptions.cancelSource,
       })
       .from(subscriptions)
       .where(
@@ -453,6 +455,16 @@ export class BillingService {
     if (!sub.cancelAtPeriodEnd) {
       throw new AppException({ code: 'NO_SCHEDULED_CANCELLATION' });
     }
+    // A refund/chargeback row is now REACHABLE here: the projector pins
+    // `cancel_at_period_end` true under a local verdict (2026-07-31), and
+    // such a row can sit in `active` for the rest of its paid period. Only
+    // the USER's own cancel is revocable. Un-scheduling a refunded plan
+    // would clear the renewal block at the provider while
+    // `entitlement_ends_at` keeps ending it — a button that answers
+    // "you're back on Pro" over an account that is not.
+    if (sub.cancelSource === 'refund' || sub.cancelSource === 'chargeback') {
+      throw new AppException({ code: 'CANCELLATION_NOT_REVOCABLE' });
+    }
 
     // Provider call IS the confirmation — only a successful revoke lets
     // the local row claim the renewal is back on.
@@ -465,11 +477,10 @@ export class BillingService {
       // `cancelAtPeriodEnd()` writes. Deliberately NOT `cancel_source`:
       // that column is never set by a user cancel (its enum is
       // provider/refund/chargeback), so clearing it here could only ever
-      // erase a REFUND or CHARGEBACK verdict — the sticky local verdict
-      // that must survive every later provider payload (matrix H2, the
-      // one failure that silently re-grants Pro forever). Such a row is
-      // `canceled` and unreachable from the select above; clearing a
-      // column this operation does not own would still be wrong.
+      // erase a REFUND or CHARGEBACK verdict — and those rows are refused
+      // by the guard above, so reaching this line already means the
+      // schedule is the user's own. Clearing a column this operation does
+      // not own would still be wrong.
       await tx
         .update(subscriptions)
         .set({ cancelAtPeriodEnd: false, updatedAt: now })
@@ -1018,6 +1029,7 @@ export class BillingService {
       .select({
         provider: subscriptions.provider,
         providerSubscriptionId: subscriptions.providerSubscriptionId,
+        cancelSource: subscriptions.cancelSource,
       })
       .from(subscriptions)
       .where(
@@ -1030,6 +1042,15 @@ export class BillingService {
       .limit(1);
     if (!sub) {
       throw new AppException({ code: 'NO_ACTIVE_SUBSCRIPTION' });
+    }
+    // Same refusal as `resumeCancellation`, for the same reason and on
+    // the same column. A paused row can carry a refund/chargeback verdict
+    // too, and resuming it restarts billing at the provider while
+    // `entitlement_ends_at` keeps the account on Free — the customer pays
+    // and receives nothing, which is worse than the button simply not
+    // working (Codex stop-review, 2026-07-31).
+    if (sub.cancelSource === 'refund' || sub.cancelSource === 'chargeback') {
+      throw new AppException({ code: 'CANCELLATION_NOT_REVOCABLE' });
     }
 
     // Refuse to resume alongside a subscription that is already

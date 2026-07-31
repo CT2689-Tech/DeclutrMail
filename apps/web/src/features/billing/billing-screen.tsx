@@ -1160,8 +1160,18 @@ function CurrentPlanCard({
           irreversible for up to a year: checkout answers
           SUBSCRIPTION_EXISTS and change-plan answers
           SUBSCRIPTION_CANCELING, so support had to PATCH the provider
-          by hand (matrix E3, 2026-07-31). */}
-      {!billingDark && backing.state === 'cancel_scheduled' ? (
+          by hand (matrix E3, 2026-07-31).
+
+          Only for a schedule the USER owns. A refund/chargeback row now
+          reaches `cancel_scheduled` too (the projector pins the flag
+          under a local verdict), and `resume-cancellation` refuses it
+          with CANCELLATION_NOT_REVOCABLE — rendering the button anyway
+          would offer an undo whose only possible answer is a 409. The
+          status note above names the reason instead. */}
+      {!billingDark &&
+      backing.state === 'cancel_scheduled' &&
+      backing.sub.cancelSource !== 'refund' &&
+      backing.sub.cancelSource !== 'chargeback' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {confirmKeep ? (
             <div
@@ -1402,7 +1412,16 @@ function NonBackingSubscriptionNotice({
   // only render that promise when the record IS paused and the retained
   // period is actually known (ui-truth: never assert a period the read
   // can't confirm).
-  const canSelfServeResume = isPaused && sub.provider === 'paddle' && retainedPeriodEnd !== null;
+  //
+  // …and never over a refund/chargeback verdict. Resuming restarts
+  // billing at the provider while `entitlement_ends_at` keeps the account
+  // on Free, so the customer would pay and receive nothing. The API
+  // refuses it (`CANCELLATION_NOT_REVOCABLE`); offering the button anyway
+  // is the same guaranteed-409 defect the pause offer already avoids
+  // (Codex stop-review, 2026-07-31).
+  const verdictBlocked = sub.cancelSource === 'refund' || sub.cancelSource === 'chargeback';
+  const canSelfServeResume =
+    isPaused && sub.provider === 'paddle' && retainedPeriodEnd !== null && !verdictBlocked;
   return (
     <div role="status" data-testid="non-backing-subscription-notice" style={boxStyle}>
       <span>

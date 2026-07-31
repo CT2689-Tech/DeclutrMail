@@ -236,6 +236,64 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
     ).toMatchObject({ kind: 'ignored' });
   });
 
+  it('a PARTIAL refund is not an exit — the subscription is left alone', () => {
+    // Paddle fires the same event for "$2 back for the trouble" as for
+    // "here is your money back". Treating both as an exit ended the plan
+    // of a customer being apologised to — and now that the verdict also
+    // drives a provider-side cancel, it would cancel their subscription.
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentCreated({ action: 'refund', itemTypes: ['partial'] }),
+      ),
+    ).toMatchObject({ kind: 'ignored' });
+    // One partial item among full ones is still a part-refund.
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentCreated({ action: 'refund', itemTypes: ['full', 'partial'] }),
+      ),
+    ).toMatchObject({ kind: 'ignored' });
+  });
+
+  it('a full refund still revokes — including the dashboard shape and an unreadable one', () => {
+    // Paddle's adjustment-level `type` defaults to `partial`, and a
+    // dashboard full-amount refund can arrive as `partial` with every
+    // ITEM marked `full` — which is why the item types decide.
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentCreated({ action: 'refund', itemTypes: ['full', 'full'] }),
+      ),
+    ).toMatchObject({ kind: 'cancellation_scheduled', reason: 'refund' });
+    // No items to read → keep the pre-existing behaviour. Failing to
+    // revoke a real refund is the worse of the two errors.
+    expect(
+      adapter.mapWebhookEvent(paddleAdjustmentCreated({ action: 'refund', itemTypes: [] })),
+    ).toMatchObject({ kind: 'cancellation_scheduled', reason: 'refund' });
+  });
+
+  it('chargeback_reverse maps to cancellation_revoked — the dispute was won', () => {
+    expect(
+      adapter.mapWebhookEvent(paddleAdjustmentCreated({ action: 'chargeback_reverse' })),
+    ).toMatchObject({
+      kind: 'cancellation_revoked',
+      reason: 'chargeback_reverse',
+      providerSubscriptionId: 'sub_01paddle000001',
+    });
+    // Unlinked to a subscription there is nothing to restore.
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentCreated({ action: 'chargeback_reverse', subscriptionId: null }),
+      ),
+    ).toMatchObject({ kind: 'ignored' });
+  });
+
+  it('a partial CHARGEBACK is never filtered — Paddle raises it and the money is gone', () => {
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentCreated({ action: 'chargeback', itemTypes: ['partial'] }),
+      ),
+    ).toMatchObject({ kind: 'cancellation_scheduled', reason: 'chargeback' });
+  });
+
   it('ignores unrecognized event types and throws on missing event_id', () => {
     expect(
       adapter.mapWebhookEvent({ event_id: 'evt_x', event_type: 'customer.updated', data: {} }),
@@ -321,6 +379,138 @@ describe('PaddleAdapter checkout + cancel', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer pdl_test_key');
     expect((init.headers as Record<string, string>)['Paddle-Version']).toBe('1');
     expect(init.body).toBe(JSON.stringify({ effective_from: 'next_billing_period' }));
+  });
+
+  // The gate on the ONE outbound cancel. On a live account
+  // `adjustment.created` fires while a refund is still
+  // `pending_approval`, and sandbox auto-approves — so the pending shape
+  // is invisible to every other test here.
+  // The gate on the ONE outbound cancel, and the only thing allowed to
+  // lift a local verdict. On a live account `adjustment.created` fires
+  // while a refund is still `pending_approval`, and sandbox
+  // auto-approves — so the pending shape is invisible to every other
+  // test here.
+  describe('providerCancellationFacts', () => {
+    const adjustmentsBody = (rows: unknown[]) =>
+      new Response(JSON.stringify({ data: rows }), { status: 200 });
+    const facts = (rows: unknown[]) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(adjustmentsBody(rows)));
+      return makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('sub_x');
+    };
+    const FULL = [{ type: 'full' }];
+
+    it('asks for THIS subscription only', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue(adjustmentsBody([]));
+      vi.stubGlobal('fetch', fetchSpy);
+      await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('sub_01paddle000001');
+      const [url] = fetchSpy.mock.calls[0] as [string];
+      expect(url).toBe(
+        'https://sandbox-api.paddle.com/adjustments?subscription_id=sub_01paddle000001&per_page=50',
+      );
+    });
+
+    it('an APPROVED full refund is settled', async () => {
+      expect(await facts([{ action: 'refund', status: 'approved', items: FULL }])).toEqual({
+        settled: 'refund',
+        refuted: { refund: false, chargeback: false },
+      });
+    });
+
+    it('a still-pending refund is neither settled nor refuted', async () => {
+      // Nothing has been decided — the caller must neither cancel at the
+      // provider nor lift the local verdict.
+      expect(await facts([{ action: 'refund', status: 'pending_approval', items: FULL }])).toEqual({
+        settled: null,
+        refuted: { refund: false, chargeback: false },
+      });
+    });
+
+    it.each(['rejected', 'reversed'])('a %s refund REFUTES the refund verdict', async (status) => {
+      // Checking only `rejected` left an approved-then-`reversed` refund
+      // counting as neither settled nor refuted, so its verdict stood
+      // forever over a paying customer (Codex stop-review, 2026-07-31).
+      expect(await facts([{ action: 'refund', status, items: FULL }])).toEqual({
+        settled: null,
+        refuted: { refund: true, chargeback: false },
+      });
+    });
+
+    it('an approved PARTIAL refund is not an exit — same rule as the webhook mapping', async () => {
+      expect(
+        await facts([{ action: 'refund', status: 'approved', items: [{ type: 'partial' }] }]),
+      ).toEqual({ settled: null, refuted: { refund: false, chargeback: false } });
+    });
+
+    it('a chargeback needs no approval — Paddle raised it and the funds are gone', async () => {
+      expect(await facts([{ action: 'chargeback', status: 'pending_approval' }])).toEqual({
+        settled: 'chargeback',
+        refuted: { refund: false, chargeback: false },
+      });
+    });
+
+    it('a reversed chargeback REFUTES the chargeback verdict only', async () => {
+      // The refund side must stay false. Collapsing both into one
+      // "something was refuted" flag let a reversed chargeback lift a
+      // refund verdict Paddle had never rejected.
+      expect(
+        await facts([
+          { action: 'chargeback', status: 'reversed' },
+          { action: 'chargeback_reverse', status: 'approved' },
+        ]),
+      ).toEqual({ settled: null, refuted: { refund: false, chargeback: true } });
+    });
+
+    it('a reversed chargeback beside a PENDING refund refutes neither the refund', async () => {
+      // The exact mis-erase: our row says `refund`, the refund is still
+      // pending, and an unrelated old chargeback was reversed. Reporting
+      // the facts separately is what stops the caller lifting the refund.
+      expect(
+        await facts([
+          { action: 'chargeback', status: 'reversed' },
+          { action: 'refund', status: 'pending_approval', items: FULL },
+        ]),
+      ).toEqual({ settled: null, refuted: { refund: false, chargeback: true } });
+    });
+
+    it('a LATER chargeback still counts after an earlier one was reversed', async () => {
+      // An earlier revision suppressed every chargeback whenever ANY
+      // `chargeback_reverse` row existed, so a subscription that won
+      // dispute A and then genuinely lost dispute B reported nothing
+      // settled forever while Paddle kept billing.
+      expect(
+        await facts([
+          { action: 'chargeback', status: 'reversed' },
+          { action: 'chargeback_reverse', status: 'approved' },
+          { action: 'chargeback', status: 'approved' },
+        ]),
+      ).toMatchObject({ settled: 'chargeback' });
+    });
+
+    it('SETTLED outranks refuted — a live chargeback beside a rejected refund', async () => {
+      expect(
+        await facts([
+          { action: 'refund', status: 'rejected', items: FULL },
+          { action: 'chargeback', status: 'approved' },
+        ]),
+      ).toEqual({ settled: 'chargeback', refuted: { refund: true, chargeback: false } });
+    });
+
+    it('an unreadable provider answers null, never a fact', async () => {
+      // Any object would read as "Paddle confirms…", a claim a failed
+      // read cannot make.
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+      expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('s')).toBeNull();
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 500 })));
+      expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('s')).toBeNull();
+
+      // A 200 whose body is not the documented shape is equally unread.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(new Response('{"data":null}', { status: 200 })),
+      );
+      expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('s')).toBeNull();
+    });
   });
 
   it('cancelSubscription maps provider 4xx/5xx + network errors to BILLING_PROVIDER_ERROR', async () => {

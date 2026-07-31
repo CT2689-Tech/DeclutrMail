@@ -20,6 +20,30 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-31 — Let a caller infer a fact's SUBJECT from the state it was correcting
+**PR:** [#452](https://github.com/CT2689-Tech/DeclutrMail/pull/452)
+**Caught by:** Codex stop-review ("refutation logic can miss or erase the wrong billing verdict")
+**What happened:** I had the Paddle adapter answer a bare `'refuted'` — one boolean covering two independent facts, "the refund was rejected" and "the chargeback was reversed". The caller then decided WHICH by reading its own `cancel_source`. A row holding a pending refund, on a subscription whose unrelated older chargeback had been reversed, got its refund verdict lifted; Paddle had never rejected that refund. The same collapse hid a second bug: refund refutation checked only `rejected`, so an approved-then-`reversed` refund was neither settled nor refuted and its verdict stood forever.
+**Correct approach:** Return the facts as the source holds them (`{settled, refuted: {refund, chargeback}}`), and let the caller match them against its own state explicitly. A single flag standing for several subjects always pushes the disambiguation onto someone who does not have the information.
+**Rule:** When one value could describe more than one subject, name the subject in the value. Never let a caller infer it from the very state the value is supposed to correct — that reasoning is circular and fails exactly when the two disagree, which is the only case that matters.
+**Enforcement update:** none — the adapter spec now pins each shape separately, including "a reversed chargeback beside a pending refund refutes neither the refund", and the reconciliation spec's negative control (lift on any refutation) fails that case.
+
+## 2026-07-31 — Filed a hazard my own PR created as a "known limitation"
+**PR:** [#452](https://github.com/CT2689-Tech/DeclutrMail/pull/452)
+**Caught by:** Codex stop-review ("pending refunds can cancel subscriptions before Paddle approves them")
+**What happened:** I added an outbound provider cancel driven by a local `cancel_source` marker. I then discovered, and wrote in the PR body under "Known limitation, recorded not assumed away", that live Paddle refunds are created `pending_approval` — so the marker can exist for a refund Paddle later rejects. I filed a followup and shipped. But the limitation was pre-existing only for the LOCAL revocation, which is a row we can fix; my change made it cancel a possibly-still-paying customer's subscription at the provider, which they cannot undo. Naming a risk is not the same as owning it, and the founder has explicitly rejected the ship-a-stub-with-a-note pattern before.
+**Correct approach:** When a change makes an existing gap MORE consequential, that gap becomes part of the change's scope. The test is not "did this exist before" but "does my change raise its cost". Here the fix was small: ask the provider whether the refund actually settled, instead of trusting our own marker.
+**Rule:** Before filing a limitation as a followup, ask whether this PR made it worse. If it did, it is not a followup — it is unfinished work.
+**Enforcement update:** none — the gate is `settledCancellationCause`, and the reconciliation spec's fake adapter now defaults to the REFUSING answer so a test that forgets it cannot drift into sending a cancel.
+
+## 2026-07-31 — Treated every refund as an exit, because the event does not say so
+**PR:** [#452](https://github.com/CT2689-Tech/DeclutrMail/pull/452) (fix); shipped originally in 0051
+**Caught by:** reading the Paddle adjustment schema while building the provider-side cancel — not by any test, gate, or smoke
+**What happened:** `adjustment.created` with `action: 'refund'` ended the subscription's entitlement, full stop. Paddle fires that same event for a full refund and for a $2 goodwill part-refund, and the handler read only `action` — so apologising to a customer with a partial refund silently cancelled their plan. It survived because every test and every smoke I wrote used a full refund: the fixture had no `items` at all, so the field that distinguishes the two cases was never in front of me. Adding the provider-side cancel would have escalated it from "wrongly downgraded" to "cancelled at Paddle".
+**Correct approach:** When a handler branches on one field of a provider payload, read the provider's schema for that entity and ask what ELSE arrives on the same event type. Here `type`, `status`, and `items[].type` all carry meaning we were discarding — including `status: 'pending_approval'`, which live accounts use and sandbox never does.
+**Rule:** A fixture that omits a field asserts that field is irrelevant. Before trusting one, diff it against the provider's own documented example — and make every discriminating field explicit in it, even when the test does not vary it.
+**Enforcement update:** none — `paddleAdjustmentCreated` now takes `itemTypes` and the specs pin full, partial, mixed, empty, and chargeback shapes.
+
 ## 2026-07-30 — Diagnosed a two-input derived gate against only one of its inputs
 **PR:** none — FOUNDER-FOLLOWUPS entry written during D249 CI triage, corrected same day
 **Caught by:** observed CI behavior contradicting the prediction (#436 merged closing D249; the gate I predicted would fail on the next PR passed)

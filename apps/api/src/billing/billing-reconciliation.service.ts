@@ -86,6 +86,13 @@ export interface DriftSweepResult {
   /** Provider answered 404 / unmapped status — logged, never written. */
   subscriptionsUnreadable: number;
   providerErrors: number;
+  /** Local refund/chargeback verdicts newly pushed to the provider. */
+  verdictsEnforced: number;
+  /** Verdict rows the provider would not confirm a cancel for this run. */
+  verdictsUnenforced: number;
+  /** Verdicts the provider CONTRADICTED — refund rejected or chargeback
+   *  reversed — lifted so the customer stops paying for nothing. */
+  verdictsRefuted: number;
 }
 
 /** A candidate must postdate the claim, minus this skew allowance. */
@@ -360,6 +367,9 @@ export class BillingReconciliationService {
       subscriptionsUnchanged: 0,
       subscriptionsUnreadable: 0,
       providerErrors: 0,
+      verdictsEnforced: 0,
+      verdictsUnenforced: 0,
+      verdictsRefuted: 0,
     };
     const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
 
@@ -381,7 +391,208 @@ export class BillingReconciliationService {
         result.subscriptionsUnchanged += 1;
       }
     }
+
+    const enforced = await this.enforceLocalVerdicts();
+    result.verdictsEnforced = enforced.enforced;
+    result.verdictsUnenforced = enforced.unenforced;
+    result.verdictsRefuted = enforced.refuted;
     return result;
+  }
+
+  /**
+   * The ONE place local truth is pushed OUTWARD, and the exception that
+   * proves this service's rule (fetch → project, never the reverse).
+   *
+   * A refund or chargeback is a verdict only WE hold. Paddle records the
+   * adjustment against a transaction; the subscription beside it stays
+   * perfectly healthy and renews on schedule. So the row ends up split:
+   * `entitlement_ends_at` stops granting the tier on our side while the
+   * provider keeps charging on theirs — the customer pays for a second
+   * period and gets Free. The divergence points AT the customer, which
+   * is why it outranks the projector's purity (matrix H1/H2 follow-up,
+   * 2026-07-31).
+   *
+   * The projector cannot do this itself: `BillingWebhookService` holds
+   * no adapters by construction, and an outbound provider call inside a
+   * webhook transaction would be retried by the provider's own delivery
+   * schedule. Here it is a plain idempotent convergence loop instead —
+   * once the provider reports the scheduled cancel, the condition below
+   * stops matching and nothing is sent again.
+   *
+   * TWO facts are required before anything is sent, and the local marker
+   * is only the first. The second is the provider's own
+   * `providerCancellationFacts`, because `adjustment.created` fires on a
+   * live account while the refund is still `pending_approval` — see the
+   * gate below.
+   *
+   * `cancelSubscription` is `next_billing_period` on both providers: it
+   * stops the RENEWAL, it does not seize access. The entitlement
+   * deadline (period end for a refund, now for a chargeback) remains the
+   * only thing that ends the plan, so this never shortens what someone
+   * paid for.
+   *
+   * Latency is up to one sweep (6h) plus worker boot. That is inside
+   * every renewal window we can bill on, and it buys the retry
+   * durability an inline call would not have.
+   */
+  private async enforceLocalVerdicts(): Promise<{
+    enforced: number;
+    unenforced: number;
+    refuted: number;
+  }> {
+    const rows = await this.db
+      .select({
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+        cancelSource: subscriptions.cancelSource,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          inArray(subscriptions.cancelSource, ['refund', 'chargeback']),
+          inArray(subscriptions.status, ['active', 'past_due', 'paused']),
+        ),
+      )
+      .orderBy(asc(subscriptions.updatedAt))
+      .limit(DRIFT_SWEEP_MAX_ROWS);
+
+    let enforced = 0;
+    let unenforced = 0;
+    let refuted = 0;
+    const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
+
+    for (const row of rows) {
+      if (consecutiveErrors[row.provider] >= DRIFT_SWEEP_TRIP_AFTER) {
+        unenforced += 1;
+        continue;
+      }
+      try {
+        const fetched = await this.adapterFor(row.provider).fetchSubscription(
+          row.providerSubscriptionId,
+        );
+        consecutiveErrors[row.provider] = 0;
+        if (fetched.kind !== 'found') {
+          // Cannot read it, so cannot claim it renews. Same posture as
+          // the drift pass: a read miss is never grounds for a write.
+          unenforced += 1;
+          continue;
+        }
+        const provider = fetched.subscription;
+        if (provider.status === 'canceled' || provider.cancelAtPeriodEnd) {
+          continue; // already converged — the common steady state
+        }
+        // Our own marker is NOT proof. `adjustment.created` fires while a
+        // live-account refund is still `pending_approval`, and Paddle may
+        // yet reject it — cancelling on that would end the subscription of
+        // someone who is still paying. Ending entitlement locally on an
+        // unsettled refund costs a row we can fix; this step cannot be
+        // taken back from the customer's side, so it asks the provider
+        // (Codex stop-review, 2026-07-31). `none` and `unknown` both mean
+        // "do not act": a pending refund and a failed read are different
+        // reasons for the same restraint, logged apart so a provider
+        // outage is never read as a rejected refund.
+        const facts = await this.adapterFor(row.provider).providerCancellationFacts(
+          row.providerSubscriptionId,
+        );
+        if (facts === null) {
+          unenforced += 1;
+          this.logger.log(
+            `billing.reconcile.verdict_unreadable provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} — could not ask; no action`,
+          );
+          continue;
+        }
+
+        // SETTLED FIRST. A live chargeback beside an old reversed one
+        // still ends the plan, so a settled cause outranks any
+        // refutation — checking refutation first would skip the cancel.
+        if (facts.settled !== null) {
+          await this.adapterFor(row.provider).cancelSubscription(row.providerSubscriptionId);
+          enforced += 1;
+          this.logger.warn(
+            `billing.reconcile.verdict_enforced provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} provider_says=${facts.settled} — provider was still set to renew a ${facts.settled === 'chargeback' ? 'charged-back' : 'refunded'} subscription; scheduled cancel at period end`,
+          );
+          continue;
+        }
+
+        // Paddle contradicts OUR verdict specifically. Left standing, the
+        // row is the cruellest state this system can produce: the
+        // customer is billed normally, holds Free, and every self-serve
+        // exit is shut (plan change and pause refuse on the pinned flag,
+        // un-cancel answers CANCELLATION_NOT_REVOCABLE, checkout answers
+        // SUBSCRIPTION_EXISTS). Doing it here rather than from
+        // `adjustment.updated` is deliberate: this read is authoritative
+        // and needs no provider-side event subscription to work.
+        //
+        // The MATCH is load-bearing. An earlier revision took a bare
+        // "something was refuted" and inferred the verdict from our own
+        // `cancel_source`, so a reversed chargeback lifted a refund
+        // verdict Paddle had never rejected (Codex stop-review,
+        // 2026-07-31).
+        const verdict = row.cancelSource === 'chargeback' ? 'chargeback' : 'refund';
+        if (facts.refuted[verdict]) {
+          await this.liftRefutedVerdict(row, new Date().toISOString());
+          refuted += 1;
+          continue;
+        }
+
+        unenforced += 1;
+        this.logger.log(
+          `billing.reconcile.verdict_unsettled provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} refuted_refund=${facts.refuted.refund} refuted_chargeback=${facts.refuted.chargeback} — nothing settled and our verdict is not contradicted; no action`,
+        );
+      } catch (err) {
+        consecutiveErrors[row.provider] += 1;
+        unenforced += 1;
+        this.logger.error(
+          `billing.reconcile.verdict_enforce_failed provider=${row.provider} sub=${row.providerSubscriptionId} reason=${row.cancelSource} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    return { enforced, unenforced, refuted };
+  }
+
+  /**
+   * Undo a verdict the provider contradicts, and give the plan back.
+   *
+   * Mirrors `BillingWebhookService.applyRevokedCancellation` — same
+   * columns, same reason — but reached from a poll rather than an event,
+   * so a rejected refund is corrected even where `adjustment.updated` is
+   * not subscribed. `cancel_at_period_end` is left alone for the same
+   * reason it is there: the sweep may already have scheduled a cancel at
+   * the provider, and claiming a renewal over that would be a fresh lie.
+   * With `cancel_source` cleared the D118 "Keep my subscription" button
+   * renders and works, which is the customer's way back.
+   */
+  private async liftRefutedVerdict(
+    row: {
+      provider: BillingProviderId;
+      providerSubscriptionId: string;
+      cancelSource: string | null;
+    },
+    observedAtIso: string,
+  ): Promise<void> {
+    // Through the ONE projector, like every other write this service
+    // causes — dedup, the advisory lock, staleness ordering and the tier
+    // recompute all apply unchanged. Writing the columns here instead
+    // would make this a second writer of `subscriptions`, which is the
+    // precise thing this file's header promises it is not.
+    const reason = row.cancelSource === 'chargeback' ? 'chargeback_reverse' : 'refund_rejected';
+    const outcome = await this.webhookService.process(
+      row.provider,
+      {
+        kind: 'cancellation_revoked',
+        // Deterministic and verdict-scoped: re-observing the SAME
+        // refutation dedups (the lift already happened), while a later
+        // verdict of the other kind mints its own id.
+        providerEventId: `recon-refuted:${row.provider}:${row.providerSubscriptionId}:${row.cancelSource}`,
+        eventType: 'reconciliation.cancellation_revoked',
+        providerSubscriptionId: row.providerSubscriptionId,
+        reason,
+      },
+      { occurred_at: observedAtIso },
+    );
+    this.logger.warn(
+      `billing.reconcile.verdict_refuted provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} outcome=${outcome.kind} — the provider rejected the refund or reversed the chargeback; entitlement restored`,
+    );
   }
 
   /**

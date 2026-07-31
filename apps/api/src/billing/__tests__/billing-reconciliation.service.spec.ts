@@ -19,6 +19,7 @@ import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import type {
   FetchSubscriptionResult,
+  ProviderCancellationFacts,
   NormalizedSubscription,
   SubscriptionSearchQuery,
   SubscriptionSearchResult,
@@ -95,6 +96,8 @@ function testCatalog(): BillingCatalog {
 function fakeAdapter(overrides: {
   fetchSubscription?: (id: string) => Promise<FetchSubscriptionResult>;
   searchSubscriptions?: (query: SubscriptionSearchQuery) => Promise<SubscriptionSearchResult>;
+  cancelSubscription?: (id: string) => Promise<void>;
+  providerCancellationFacts?: (id: string) => Promise<ProviderCancellationFacts | null>;
 }): PaddleAdapter & RazorpayAdapter {
   return {
     fetchSubscription:
@@ -103,6 +106,17 @@ function fakeAdapter(overrides: {
     searchSubscriptions:
       overrides.searchSubscriptions ??
       (async (): Promise<SubscriptionSearchResult> => ({ subscriptions: [], inProgress: 0 })),
+    // Absent by default so an unexpected outbound cancel throws rather
+    // than silently passing — this adapter's WRITE surface is the thing
+    // enforceLocalVerdicts is trusted with.
+    cancelSubscription: overrides.cancelSubscription,
+    // Defaults to the REFUSING answer — nothing settled, nothing
+    // refuted. A test that means to exercise the cancel has to say so;
+    // one that forgets cannot drift into sending a provider cancel it
+    // never asked for.
+    providerCancellationFacts:
+      overrides.providerCancellationFacts ??
+      (async () => ({ settled: null, refuted: { refund: false, chargeback: false } })),
   } as unknown as PaddleAdapter & RazorpayAdapter;
 }
 
@@ -119,6 +133,20 @@ function activePlusSub(id: string, createdAt: Date): NormalizedSubscription {
     providerCreatedAt: createdAt.toISOString(),
   };
 }
+
+const SETTLED_REFUND: ProviderCancellationFacts = {
+  settled: 'refund',
+  refuted: { refund: false, chargeback: false },
+};
+const SETTLED_CHARGEBACK: ProviderCancellationFacts = {
+  settled: 'chargeback',
+  refuted: { refund: false, chargeback: false },
+};
+/** Paddle rejected (or reversed) the refund — our refund verdict is void. */
+const REFUTED_REFUND: ProviderCancellationFacts = {
+  settled: null,
+  refuted: { refund: true, chargeback: false },
+};
 
 describe('BillingReconciliationService (D249)', () => {
   let db: DrizzleDb;
@@ -491,6 +519,239 @@ describe('BillingReconciliationService (D249)', () => {
     expect(result).toMatchObject({ subscriptionsChecked: 1, subscriptionsUnreadable: 1 });
     const [row] = await db.select().from(subscriptions);
     expect(row!.status).toBe('active');
+  });
+
+  // ── enforceLocalVerdicts — the one OUTBOUND write ────────────────
+  //
+  // A refund/chargeback is a verdict only we hold: Paddle records the
+  // adjustment against a transaction and keeps renewing the
+  // subscription beside it. Without this the customer is charged for a
+  // period we no longer grant (matrix H1/H2 follow-up, 2026-07-31).
+
+  /** A live row already carrying a local verdict. */
+  async function seedVerdictRow(input: {
+    cancelSource: 'refund' | 'chargeback';
+    providerSubscriptionId?: string;
+  }) {
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: input.providerSubscriptionId ?? 'sub_verdict',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      billingCycle: 'monthly',
+      currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      cancelAtPeriodEnd: true,
+      cancelSource: input.cancelSource,
+      entitlementEndsAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+    });
+  }
+
+  it('refunded row + provider still renewing → cancels at the provider', async () => {
+    await seedVerdictRow({ cancelSource: 'refund' });
+    const canceled: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        // Paddle's own view: perfectly healthy, renewal on.
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: activePlusSub('sub_verdict', new Date()),
+        }),
+        providerCancellationFacts: async () => SETTLED_REFUND,
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+
+    const result = await svc.reconcileLiveSubscriptions();
+    expect(canceled).toEqual(['sub_verdict']);
+    expect(result).toMatchObject({ verdictsEnforced: 1, verdictsUnenforced: 0 });
+  });
+
+  it('chargeback row is enforced too', async () => {
+    await seedVerdictRow({ cancelSource: 'chargeback' });
+    const canceled: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: activePlusSub('sub_verdict', new Date()),
+        }),
+        providerCancellationFacts: async () => SETTLED_CHARGEBACK,
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+
+    await svc.reconcileLiveSubscriptions();
+    expect(canceled).toEqual(['sub_verdict']);
+  });
+
+  it('provider already scheduled the cancel → converged, nothing sent', async () => {
+    await seedVerdictRow({ cancelSource: 'refund' });
+    const canceled: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: { ...activePlusSub('sub_verdict', new Date()), cancelAtPeriodEnd: true },
+        }),
+        providerCancellationFacts: async () => SETTLED_REFUND,
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+
+    const result = await svc.reconcileLiveSubscriptions();
+    expect(canceled).toEqual([]);
+    expect(result).toMatchObject({ verdictsEnforced: 0, verdictsUnenforced: 0 });
+  });
+
+  it('an ORDINARY live row is never cancelled by the verdict pass', async () => {
+    // The blast radius that matters: a row with no local verdict must
+    // never receive an outbound cancel. `cancelSubscription` is left
+    // undefined, so any call throws instead of passing silently.
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_healthy',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      billingCycle: 'monthly',
+      currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      cancelAtPeriodEnd: false,
+    });
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: activePlusSub('sub_healthy', new Date()),
+        }),
+      }),
+    );
+
+    const result = await svc.reconcileLiveSubscriptions();
+    expect(result.verdictsEnforced).toBe(0);
+  });
+
+  it('provider read miss → no cancel claimed, counted unenforced', async () => {
+    await seedVerdictRow({ cancelSource: 'refund' });
+    const svc = service(fakeAdapter({ fetchSubscription: async () => ({ kind: 'not_found' }) }));
+
+    const result = await svc.reconcileLiveSubscriptions();
+    expect(result).toMatchObject({ verdictsEnforced: 0, verdictsUnenforced: 1 });
+  });
+
+  // The outbound cancel needs TWO facts, and our own marker is only the
+  // first. On a live Paddle account `adjustment.created` fires while the
+  // refund is still `pending_approval`; sandbox auto-approves, so this
+  // shape never appears in testing. Cancelling on it would end the
+  // subscription of a customer Paddle may still decide is paying.
+  const NOTHING_YET: ProviderCancellationFacts = {
+    settled: null,
+    refuted: { refund: false, chargeback: false },
+  };
+  /** An unrelated old dispute was reversed; OUR refund is still pending. */
+  const OTHER_VERDICT_REFUTED: ProviderCancellationFacts = {
+    settled: null,
+    refuted: { refund: false, chargeback: true },
+  };
+  for (const [label, facts] of [
+    ['a refund Paddle has NOT approved yet', NOTHING_YET],
+    ['an adjustments read we could not make', null],
+    ['a reversed CHARGEBACK while our refund is still pending', OTHER_VERDICT_REFUTED],
+  ] as const) {
+    it(`${label} → no cancel sent`, async () => {
+      await seedVerdictRow({ cancelSource: 'refund' });
+      const canceled: string[] = [];
+      const svc = service(
+        fakeAdapter({
+          fetchSubscription: async () => ({
+            kind: 'found',
+            subscription: activePlusSub('sub_verdict', new Date()),
+          }),
+          providerCancellationFacts: async () => facts,
+          cancelSubscription: async (id) => {
+            canceled.push(id);
+          },
+        }),
+      );
+
+      const result = await svc.reconcileLiveSubscriptions();
+      expect(canceled).toEqual([]);
+      expect(result).toMatchObject({ verdictsEnforced: 0, verdictsUnenforced: 1 });
+    });
+  }
+
+  it('a REFUTED verdict is lifted and the plan comes back', async () => {
+    // The cruellest state this system can produce: Paddle rejected the
+    // refund (live accounts create them `pending_approval`), so the
+    // customer is billed normally, holds Free, and every self-serve exit
+    // is shut. Corrected from the POLL rather than `adjustment.updated`
+    // so it works without that event being subscribed at the provider
+    // (Codex stop-review, 2026-07-31).
+    await seedVerdictRow({ cancelSource: 'refund' });
+    await db.update(workspaces).set({ tier: 'free' }).where(eq(workspaces.id, workspaceId));
+    const canceled: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: activePlusSub('sub_verdict', new Date()),
+        }),
+        providerCancellationFacts: async () => REFUTED_REFUND,
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+
+    const result = await svc.reconcileLiveSubscriptions();
+    expect(canceled).toEqual([]); // never cancel a verdict the provider denies
+    expect(result).toMatchObject({ verdictsRefuted: 1, verdictsEnforced: 0 });
+
+    const [row] = await db.select().from(subscriptions);
+    expect(row!.cancelSource).toBeNull();
+    expect(row!.entitlementEndsAt).toBeNull();
+    // …and the flag stays, because the sweep may already have scheduled a
+    // cancel at the provider. With `cancel_source` null the D118 "Keep my
+    // subscription" button renders and works — the customer's way back.
+    expect(row!.cancelAtPeriodEnd).toBe(true);
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('plus');
+  });
+
+  it('the settled cause is read from the PROVIDER, not from our own row', async () => {
+    // A local `chargeback` marker over a provider that only confirms a
+    // refund still cancels — but the log and the decision follow the
+    // provider. The marker's job is to select candidates, not to decide.
+    await seedVerdictRow({ cancelSource: 'chargeback' });
+    const canceled: string[] = [];
+    const asked: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: activePlusSub('sub_verdict', new Date()),
+        }),
+        providerCancellationFacts: async (id) => {
+          asked.push(id);
+          return SETTLED_REFUND;
+        },
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+
+    await svc.reconcileLiveSubscriptions();
+    expect(asked).toEqual(['sub_verdict']);
+    expect(canceled).toEqual(['sub_verdict']);
   });
 
   // ── reconcileWorkspaceSubscriptions — the stuck-plan-change path ──

@@ -536,7 +536,7 @@ describe('BillingWebhookService.process', () => {
     expect(row!.cancelSource).toBe('chargeback');
   });
 
-  it('a REFUND holds entitlement to the period end, and a renewal preserves the verdict', async () => {
+  it('a REFUND ends entitlement at once, and a renewal preserves the verdict', async () => {
     const activate = paddleSubscriptionActivated({
       workspaceId,
       eventId: 'evt_rf_1',
@@ -551,12 +551,16 @@ describe('BillingWebhookService.process', () => {
     });
     await service.process('paddle', paddle.mapWebhookEvent(refund), refund);
 
-    // Inside the paid period: still granted.
+    // The money went back, so the service stops — even though the paid
+    // period runs another 10 days (founder decision, 2026-07-31). The
+    // old rule held to `current_period_end`, which on an ANNUAL plan
+    // returned $190 and granted the rest of the year.
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
-    expect(ws!.tier).toBe('plus');
+    expect(ws!.tier).toBe('free');
     const [row] = await db.select().from(subscriptions);
     expect(row!.cancelSource).toBe('refund');
     expect(row!.entitlementEndsAt).not.toBeNull();
+    expect(row!.cancelAtPeriodEnd).toBe(true);
 
     // A same-status provider event cannot clear the verdict.
     const echo = paddleSubscriptionActivated({
@@ -568,6 +572,13 @@ describe('BillingWebhookService.process', () => {
     await service.process('paddle', paddle.mapWebhookEvent(echo), echo);
     const [after] = await db.select().from(subscriptions);
     expect(after!.cancelSource).toBe('refund');
+    // …including the DISPLAY flag. Paddle has no record of the refund
+    // and reports a healthy renewal (`cancelAtPeriodEnd: false`), which
+    // used to flip this back and take Plan & billing from "your plan
+    // ends" to "renews" while `entitlement_ends_at` kept ending it.
+    // Every surface asks THIS column (2026-07-31).
+    expect(after!.cancelAtPeriodEnd).toBe(true);
+    expect(after!.entitlementEndsAt).toEqual(row!.entitlementEndsAt);
   });
 
   it('a SECOND live subscription for the workspace is refused loudly (0051 index)', async () => {
@@ -638,14 +649,12 @@ describe('BillingWebhookService.process', () => {
     expect(after.filter((s) => s.foundingMember)).toHaveLength(2);
   });
 
-  it('refund adjustment schedules cancel-at-period-end; tier holds until period end', async () => {
-    // The period end must be genuinely IN THE FUTURE for "holds until period
-    // end" to mean anything. This used the fixture default (2026-07-11), which
-    // silently became a PAST date, so from 2026-07-12 onward the test was
-    // asserting that an expired period still grants — and it passed only
-    // because the refund path skipped the recompute. Fixing that skip made this
-    // fail, which is the test finally reporting its own stale premise.
-    // Computed relative to now so it cannot rot again.
+  it('refund drops the tier even with a month of paid period left', async () => {
+    // The period end is genuinely IN THE FUTURE so the assertion means
+    // something: a month of paid time remains and the tier drops anyway.
+    // Computed relative to now so the premise cannot rot (an earlier
+    // revision used the fixture's fixed date, which quietly became a PAST
+    // date and left the test asserting nothing).
     const activate = paddleSubscriptionActivated({
       workspaceId,
       eventId: 'evt_ref_1',
@@ -661,16 +670,18 @@ describe('BillingWebhookService.process', () => {
     expect(sub!.cancelAtPeriodEnd).toBe(true);
     expect(sub!.status).toBe('active');
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
-    expect(ws!.tier).toBe('plus'); // holds until the provider ends the period
+    expect(ws!.tier).toBe('free'); // the money went back; the service stops
+    expect(sub!.entitlementEndsAt).not.toBeNull();
   });
 
-  // The two cases where a refund's deadline is NOT in the future. The
-  // recompute used to be gated on `isChargeback`, on the reasoning that a
-  // refund always has a future deadline and so recomputing was a no-op —
-  // true mid-period (the test above) and false in both of these. The row
-  // stopped granting while `workspaces.tier` kept the paid tier, i.e. free
-  // Pro until the next webhook or the 6-hourly sweep. Found by sandbox
-  // smoke 2026-07-29.
+  // These two used to be the ONLY cases where a refund's deadline was not
+  // in the future — the deadline is now always `now()`, so they no longer
+  // isolate anything a refund does not already do. They stay because the
+  // recompute was once gated on `isChargeback` and silently left
+  // `workspaces.tier` paid while the row stopped granting (free Pro until
+  // the next webhook or the 6-hourly sweep; found by sandbox smoke
+  // 2026-07-29), and a missing period end is still the shape most likely
+  // to resurrect that bug.
   it('refund on an ALREADY-ENDED period drops the tier in the same transaction', async () => {
     const activate = paddleSubscriptionActivated({
       workspaceId,
@@ -707,6 +718,94 @@ describe('BillingWebhookService.process', () => {
     // deadline collapses to now(), which is not `> now()` — so it stops granting.
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
     expect(ws!.tier).toBe('free');
+  });
+
+  // Winning the dispute must not be worse for the customer than losing
+  // it. Paddle returns the funds; without this the revocation stands and
+  // they sit on Free while paying, with nothing in the product able to
+  // undo it (founder decision, 2026-07-31).
+  describe('chargeback_reverse — the dispute was won', () => {
+    async function seedChargeback(): Promise<void> {
+      const activate = paddleSubscriptionActivated({
+        workspaceId,
+        eventId: 'evt_cbr_1',
+        periodEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+      const cb = paddleAdjustmentCreated({ eventId: 'evt_cbr_2', action: 'chargeback' });
+      await service.process('paddle', paddle.mapWebhookEvent(cb), cb);
+      const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+      expect(ws!.tier).toBe('free'); // precondition, not the assertion
+    }
+
+    it('lifts the verdict and gives the plan back', async () => {
+      await seedChargeback();
+      const reverse = paddleAdjustmentCreated({
+        eventId: 'evt_cbr_3',
+        action: 'chargeback_reverse',
+      });
+      const outcome = await service.process('paddle', paddle.mapWebhookEvent(reverse), reverse);
+      expect(outcome).toEqual({
+        kind: 'processed',
+        effect: 'cancellation_revoked:chargeback_reverse',
+      });
+
+      const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+      expect(ws!.tier).toBe('plus');
+      const [row] = await db.select().from(subscriptions);
+      expect(row!.cancelSource).toBeNull();
+      expect(row!.entitlementEndsAt).toBeNull();
+    });
+
+    it('leaves cancel_at_period_end alone — the sweep may already have cancelled at Paddle', async () => {
+      // Clearing it would claim a renewal over a provider that intends to
+      // end the subscription. Left true, the screen reads "cancellation
+      // scheduled" and — because `cancel_source` is now null — the D118
+      // "Keep my subscription" button renders and actually works.
+      await seedChargeback();
+      const reverse = paddleAdjustmentCreated({
+        eventId: 'evt_cbr_4',
+        action: 'chargeback_reverse',
+      });
+      await service.process('paddle', paddle.mapWebhookEvent(reverse), reverse);
+      const [row] = await db.select().from(subscriptions);
+      expect(row!.cancelAtPeriodEnd).toBe(true);
+    });
+
+    it('never lifts a REFUND verdict — different money, not reversible', async () => {
+      const activate = paddleSubscriptionActivated({
+        workspaceId,
+        eventId: 'evt_cbr_5',
+        periodEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+      const refund = paddleAdjustmentCreated({ eventId: 'evt_cbr_6', action: 'refund' });
+      await service.process('paddle', paddle.mapWebhookEvent(refund), refund);
+
+      const reverse = paddleAdjustmentCreated({
+        eventId: 'evt_cbr_7',
+        action: 'chargeback_reverse',
+      });
+      const outcome = await service.process('paddle', paddle.mapWebhookEvent(reverse), reverse);
+      expect(outcome).toEqual({ kind: 'processed', effect: 'cancellation_revoked:no_verdict' });
+
+      const [row] = await db.select().from(subscriptions);
+      expect(row!.cancelSource).toBe('refund');
+      const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+      expect(ws!.tier).toBe('free');
+    });
+
+    it('a SECOND reversal is a no-op, not an un-cancel', async () => {
+      await seedChargeback();
+      for (const eventId of ['evt_cbr_8', 'evt_cbr_9']) {
+        const reverse = paddleAdjustmentCreated({ eventId, action: 'chargeback_reverse' });
+        await service.process('paddle', paddle.mapWebhookEvent(reverse), reverse);
+      }
+      const [row] = await db.select().from(subscriptions);
+      expect(row).toMatchObject({ cancelSource: null, cancelAtPeriodEnd: true });
+      const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+      expect(ws!.tier).toBe('plus');
+    });
   });
 
   it('payment events are observability-only; unknown price ids are recorded but never flip', async () => {

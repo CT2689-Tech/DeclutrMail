@@ -356,6 +356,20 @@ export function backingStatusNote(
   backing: BackingState,
 ): { tone: 'warn' | 'muted'; text: string } | null {
   if (backing.state === 'cancel_scheduled') {
+    // A refund or a chargeback ends entitlement IMMEDIATELY
+    // (`entitlement_ends_at` = now, founder decision 2026-07-31), while
+    // `currentPeriodEnd` is still a future date — so the "stays active
+    // until <date>" line below would be a confident lie for both. Claim
+    // no date, and name the cause: "Cancellation scheduled" reads as
+    // something the user did, and the "Keep my subscription" affordance
+    // beside this note is refused for these rows.
+    if (backing.sub.cancelSource === 'refund' || backing.sub.cancelSource === 'chargeback') {
+      const cause = backing.sub.cancelSource === 'refund' ? 'a refund' : 'a chargeback';
+      return {
+        tone: 'warn',
+        text: `This plan ended after ${cause}. Email support@declutrmail.com if that looks wrong.`,
+      };
+    }
     const end = formatBillingDate(backing.sub.currentPeriodEnd);
     return {
       tone: 'warn',

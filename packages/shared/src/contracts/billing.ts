@@ -142,6 +142,19 @@ export const BillingSubscriptionSchema = z.object({
       cycle: BillingCycleSchema,
       currentPeriodEnd: z.iso.datetime().nullable(),
       cancelAtPeriodEnd: z.boolean(),
+      /**
+       * WHY the plan is ending, when it is. `provider` covers an
+       * ordinary scheduled cancel (the user's own, or one made in the
+       * provider dashboard); `refund`/`chargeback` are LOCAL verdicts
+       * the provider has no record of. Null while nothing is ending.
+       *
+       * On the wire because the two answer different questions for the
+       * user: a scheduled cancel is undoable here, a refund is a money
+       * decision that is not. Without it the screen offered "Keep my
+       * subscription" on a refunded plan — a button whose only possible
+       * reply is a 409 (2026-07-31).
+       */
+      cancelSource: z.enum(['provider', 'refund', 'chargeback']).nullable(),
       pauseUntil: z.iso.datetime().nullable(),
       foundingMember: z.boolean(),
       scheduledChange: z

@@ -98,6 +98,30 @@ export type NormalizedBillingEvent =
       reason: 'refund' | 'chargeback' | 'provider_scheduled';
     }
   | {
+      /**
+       * A local verdict the PROVIDER has contradicted, and it must be
+       * lifted. Without it the customer stays locked out permanently
+       * while paying normally, with every self-serve exit shut — the
+       * harshest outcome this system can produce (founder decision +
+       * Codex stop-review, 2026-07-31).
+       *
+       * `chargeback_reverse` — the dispute was won, funds returned.
+       * `refund_rejected`    — Paddle declined a refund we had already
+       *                        acted on (live accounts create refunds
+       *                        `pending_approval`; sandbox auto-approves,
+       *                        so this shape never appears in testing).
+       *
+       * The reason names which verdict is void, and the handler lifts
+       * only that one — a reversal must never clear a refund, and a
+       * rejection must never clear a chargeback.
+       */
+      kind: 'cancellation_revoked';
+      providerEventId: string;
+      eventType: string;
+      providerSubscriptionId: string;
+      reason: 'chargeback_reverse' | 'refund_rejected';
+    }
+  | {
       kind: 'ignored';
       providerEventId: string;
       eventType: string;
@@ -174,6 +198,28 @@ export type SignatureVerifyResult =
  * stateless (env + fetch only) so they unit-test against recorded
  * fixtures without network.
  */
+/**
+ * What the PROVIDER's own records say about ending this subscription —
+ * the second fact behind every outbound cancel, and the only thing that
+ * may lift a local verdict.
+ */
+export interface ProviderCancellationFacts {
+  /**
+   * A settled, plan-ending adjustment exists, so the subscription must
+   * not renew. Outranks `refuted`: a live chargeback beside an old
+   * reversed one still ends the plan.
+   */
+  settled: 'refund' | 'chargeback' | null;
+  /**
+   * Verdicts the provider POSITIVELY CONTRADICTS — a refund it rejected
+   * or reversed, a chargeback it reversed. Only the matching local
+   * `cancel_source` may be lifted; a contradiction of the OTHER kind
+   * says nothing about ours. A verdict that is merely unsettled (a
+   * refund still pending approval) appears in neither field.
+   */
+  refuted: { refund: boolean; chargeback: boolean };
+}
+
 export interface BillingProvider {
   readonly id: BillingProviderId;
 
@@ -208,6 +254,37 @@ export interface BillingProvider {
    * grant/revoke.
    */
   pauseSubscription(providerSubscriptionId: string, resumeAt: string): Promise<void>;
+
+  /**
+   * Ask the PROVIDER whether it holds a settled, plan-ending refund or
+   * chargeback for this subscription.
+   *
+   * Exists because a local `cancel_source` is not proof of a settled
+   * one. On a live Paddle account a refund is created
+   * `pending_approval` and Paddle decides later; sandbox auto-approves,
+   * so the pending shape never appears in testing. Ending entitlement on
+   * an unsettled refund costs a wrong local row we can fix. CANCELLING
+   * AT THE PROVIDER on one cancels a customer who may still be paying —
+   * so the outbound step tests the fact instead of trusting our own
+   * marker (Codex stop-review, 2026-07-31).
+   *
+   * `null` means the provider could not be asked — never "nothing is
+   * settled". A read failure is not grounds for any write.
+   *
+   * Reported PER VERDICT rather than as one verdict-shaped answer,
+   * because a subscription can carry both kinds and they are independent
+   * facts. An earlier revision collapsed refutation to a single boolean
+   * and let the CALLER guess which verdict it referred to from its own
+   * row — so a reversed chargeback lifted a refund verdict that Paddle
+   * had never rejected (Codex stop-review, 2026-07-31).
+   *
+   * Asking the provider is also what lets the correction run WITHOUT
+   * `adjustment.updated` being subscribed — an ops setting we cannot
+   * verify from here.
+   */
+  providerCancellationFacts(
+    providerSubscriptionId: string,
+  ): Promise<ProviderCancellationFacts | null>;
 
   /**
    * Switch the subscription to a different catalog price. Immediate
