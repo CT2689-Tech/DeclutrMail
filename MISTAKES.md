@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-31 — A "cycle-safe" WeakSet that was really a scrub bypass
+**PR:** [#454](https://github.com/CT2689-Tech/DeclutrMail/pull/454)
+**Caught by:** Codex stop-review ("cyclic payloads bypass the new URL scrubber")
+**What happened:** Both telemetry scrubbers walked the object graph with `if (seen.has(x)) return x` — returning the RAW input on a repeat visit. Written and reviewed as cycle protection; it is a bypass. The second appearance of any object came back unscrubbed, and it needs only a SHARED REFERENCE, not a cycle — `{a: msg, b: msg}` put a full Gmail body on the wire under `b`. The cycle framing is what hid it: a true cycle dies in the SDK's own `JSON.stringify` and never ships, so the only reachable case was the one the name did not mention. `scrubObject` had carried this since it was written; I copied the line into `scrubUrlQueries` without questioning it.
+**Correct approach:** Memoize the OUTPUT, not membership — a `WeakMap` holding the scrubbed container, registered before recursing. The cycle then resolves to the scrubbed copy, shape survives, and every node is scrubbed exactly once.
+**Rule:** `seen.has(x) → return x` is never correct in a TRANSFORMING walk; it is only correct in a read-only one. If the walk produces a new value, the visited-set must map input → output.
+**Enforcement update:** none — tests now assert one level DOWN (`out.self.$current_url`, `out.two.body`) on both scrubbers. My first cycle test checked only the top-level value and passed while the child still carried the address: a test shaped so it could not observe the bug it was named for. Same failure as the 2026-07-31 un-cancel race test earlier in this session — **when a test is named for a structural hazard, assert past the first hop.**
+
 ## 2026-07-31 — Let a caller infer a fact's SUBJECT from the state it was correcting
 **PR:** [#452](https://github.com/CT2689-Tech/DeclutrMail/pull/452)
 **Caught by:** Codex stop-review ("refutation logic can miss or erase the wrong billing verdict")
