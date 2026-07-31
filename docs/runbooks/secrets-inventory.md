@@ -91,26 +91,40 @@ tokens do not.
 
 ### PostHog
 
-**TWO projects, split by environment.** Production analytics live in
-their own PostHog project; local dev and Vercel Preview write to a
-separate sandbox project. Until 2026-07-31 both shared one project and
-~90% of its events came from `localhost` — which is unfixable after the
-fact, since every historical chart, retention cohort and growth curve in
-that project silently folds dev traffic in. The sandbox keeps that
-polluted history; production starts clean, so no number in it needs an
-asterisk. Both the browser key and the server key must point at the SAME
-project for a given environment, or a funnel will span two datasets.
+**ONE project. Production is the only environment that holds a key.**
 
-| Slot            | Vendor label                    | Storage                              | Env var                    | Rotated | Owner   |
-| --------------- | ------------------------------- | ------------------------------------ | -------------------------- | ------- | ------- |
-| Project API key | `declutrmail-analytics` project | Vercel env (**Production** only)     | `NEXT_PUBLIC_POSTHOG_KEY`  | n/a     | founder |
-| Project API key | `DeclutrMail` project (sandbox) | `.env.local` + Vercel env (Preview)  | `NEXT_PUBLIC_POSTHOG_KEY`  | n/a     | founder |
-| Server-side key | same project as the browser key | Cloud Run API (prod) / `.env.local`  | `POSTHOG_API_KEY`          | n/a     | founder |
-| Ingest host     | `us.i.posthog.com` (default)    | `.env.local` + Vercel env (optional) | `NEXT_PUBLIC_POSTHOG_HOST` | n/a     | founder |
+Until 2026-07-31 every environment shared one key and ~90% of that
+project's events came from `localhost`, so the dashboards described the
+founder's dev machine rather than the product. That history is not
+repairable — a retention cohort or growth curve computed over mixed
+traffic stays mixed — so the guard has to stop dev events being sent at
+all.
 
-If the Production key is ever unset, analytics no-ops rather than
-falling back to the sandbox — absent data beats wrong data, and a silent
-fallback is how the two datasets merged in the first place.
+A second PostHog project would be the textbook split, but the plan in use
+allows exactly one and the founder declined the upgrade (2026-07-31). One
+project is not the compromise it sounds like: leaving the key unset
+outside production means dev emits **nothing**, which is strictly cleaner
+than routing dev noise into a sandbox project someone still has to
+ignore. `track()` already no-ops without a key — see `apps/web/src/lib/posthog.ts`.
+
+| Slot            | Vendor label                 | Storage                                | Env var                    | Rotated | Owner   |
+| --------------- | ---------------------------- | -------------------------------------- | -------------------------- | ------- | ------- |
+| Project API key | `DeclutrMail` project        | Vercel env — **Production scope only** | `NEXT_PUBLIC_POSTHOG_KEY`  | n/a     | founder |
+| Server-side key | same project, same rule      | Cloud Run API + worker (**prod only**) | `POSTHOG_API_KEY`          | n/a     | founder |
+| Ingest host     | `us.i.posthog.com` (default) | `.env.local` + Vercel env (optional)   | `NEXT_PUBLIC_POSTHOG_HOST` | n/a     | founder |
+
+Leave both keys **unset** in `.env.local` and in Vercel's Preview scope.
+Absent data beats wrong data: an unset key costs a local event nobody
+reads, while a set one silently rejoins the two datasets.
+
+To exercise analytics locally without touching the real project, point
+`NEXT_PUBLIC_POSTHOG_HOST` at a local echo server and use a throwaway
+key — that is how the `/flags/` leak was found (PR #455).
+
+For the pollution already recorded, set PostHog → Project Settings →
+**Filter out internal and test users** with a rule on `$host` =
+`localhost`. It applies to insights by default, so the filter does not
+have to be remembered on every query.
 
 **Note:** PostHog's project API key is the `phc_...` value shipped to
 the browser. Like a Sentry DSN, it is NOT a hard secret in the strict
