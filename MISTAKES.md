@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-31 — Subtracted the part I thought of instead of rebuilding from safe parts
+**PR:** [#454](https://github.com/CT2689-Tech/DeclutrMail/pull/454)
+**Caught by:** Codex stop-review ("still permits sensitive values through allowed parameters and fragments") — probing on top of that found a third path
+**What happened:** Fixing a URL leak in telemetry, I stripped the query string. A URL has more components than a query: the FRAGMENT went out whole (and a fragment-only URL skipped the function entirely, because my fast path keyed on `?`), the VALUES of allowlisted params were never constrained (`?utm_content=<address>`, `?ref=<address>`), and `user:pass@host` userinfo survived. Five paths, three shipping. I had allowlisted param NAMES and called it an allowlist — a name allowlist constrains who may speak, not what they may say.
+**Correct approach:** For a boundary, REBUILD the value from the parts that are safe rather than removing the parts you thought of. `origin + path + allowlisted params with allowlisted values` closes the components nobody has enumerated yet; subtraction only ever closes today's list.
+**Rule:** A sanitizer that REMOVES known-bad is a denylist wearing an allowlist's name. If the thing being sanitized is structured, reconstruct it from permitted components — and constrain values, not just keys.
+**Enforcement update:** none — each of the five paths has its own test, and the negative control (restoring the subtractive version) fails three of them. Related and worth reading together: the same session's `seen.has(x) → return x` bypass, also a case of the guard's NAME describing something narrower than the hole.
+
 ## 2026-07-31 — A "cycle-safe" WeakSet that was really a scrub bypass
 **PR:** [#454](https://github.com/CT2689-Tech/DeclutrMail/pull/454)
 **Caught by:** Codex stop-review ("cyclic payloads bypass the new URL scrubber")
