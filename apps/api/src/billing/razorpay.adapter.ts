@@ -303,7 +303,7 @@ export class RazorpayAdapter implements BillingProvider {
    */
   async settledCancellationCause(
     providerSubscriptionId: string,
-  ): Promise<'refund' | 'chargeback' | 'none' | 'unknown'> {
+  ): Promise<'refund' | 'chargeback' | 'none' | 'refuted' | 'unknown'> {
     this.logger.warn(`razorpay.settled_cause.unsupported sub=${providerSubscriptionId}`);
     return 'unknown';
   }

@@ -22,7 +22,11 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/refunds',
 });
 
-const LAST_UPDATED = '2026-07-14';
+// Bumped 2026-07-31: Section 3 now states that paid features end when a
+// refund is issued. The behaviour changed with it — a full refund used
+// to hold entitlement to `current_period_end`, which on an annual plan
+// returned the whole charge AND granted the rest of the year.
+const LAST_UPDATED = '2026-07-31';
 
 const TOC = [
   { id: 'summary', label: 'The short version' },
@@ -64,6 +68,13 @@ export default function RefundPolicyPage() {
           monthly and annual, including the Founding Pro annual offer. Refunds are processed through
           the payment provider you purchased from — Paddle outside India, Razorpay in India — back
           to your original payment method (Sections 4 and 5).
+        </p>
+        <p>
+          Because the charge is returned in full,{' '}
+          <strong>paid features end when the refund is issued</strong> and your account moves to the
+          Free plan — this is the one way it differs from cancelling, which keeps your features
+          until the end of the period you paid for (Section 2). Your data is untouched either way,
+          and nothing stops you subscribing again later.
         </p>
         <p>
           One fair-use note, so the guarantee stays sustainable: the money-back guarantee can be

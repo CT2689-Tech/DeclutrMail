@@ -279,23 +279,21 @@ describe('backingStatusNote', () => {
     );
   });
 
-  it('names a REFUND as the cause, keeping the honest end date', () => {
-    const sub = { ...SUB, cancelAtPeriodEnd: true, cancelSource: 'refund' as const };
-    const note = backingStatusNote({ state: 'cancel_scheduled', sub })!;
-    expect(note.text).toContain('Ending after a refund');
-    // The refund deadline IS the period end, so the date still holds.
-    expect(note.text).toContain('until Jul 1, 2026');
-  });
-
-  it('makes NO date claim on a chargeback — entitlement already ended', () => {
-    // `entitlement_ends_at` is now() for a chargeback while
-    // `currentPeriodEnd` is still in the future: promising access
-    // "until Jul 1" would be a confident lie.
-    const sub = { ...SUB, cancelAtPeriodEnd: true, cancelSource: 'chargeback' as const };
-    const note = backingStatusNote({ state: 'cancel_scheduled', sub })!;
-    expect(note.text).toContain('chargeback');
-    expect(note.text).not.toContain('Jul 1, 2026');
-  });
+  // Both verdicts end entitlement at once (`entitlement_ends_at` = now)
+  // while `currentPeriodEnd` is still a future date, so promising access
+  // "until Jul 1" would be a confident lie in either case.
+  for (const [source, word] of [
+    ['refund', 'a refund'],
+    ['chargeback', 'a chargeback'],
+  ] as const) {
+    it(`names ${source} as the cause and claims NO date`, () => {
+      const sub = { ...SUB, cancelAtPeriodEnd: true, cancelSource: source };
+      const note = backingStatusNote({ state: 'cancel_scheduled', sub })!;
+      expect(note.text).toContain(word);
+      expect(note.text).not.toContain('Jul 1, 2026');
+      expect(note.text).not.toContain('Cancellation scheduled');
+    });
+  }
 });
 
 describe('nonBackingBlocksNewCheckout — mirrors the server SUBSCRIPTION_EXISTS set', () => {

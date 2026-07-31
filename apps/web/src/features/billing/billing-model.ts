@@ -356,29 +356,26 @@ export function backingStatusNote(
   backing: BackingState,
 ): { tone: 'warn' | 'muted'; text: string } | null {
   if (backing.state === 'cancel_scheduled') {
-    // A CHARGEBACK ends entitlement immediately (`entitlement_ends_at`
-    // = now), so the "stays active until <period end>" promise below is
-    // false for it — and the period end is still a future date, which
-    // makes the lie a confident one. Claim no date.
-    if (backing.sub.cancelSource === 'chargeback') {
+    // A refund or a chargeback ends entitlement IMMEDIATELY
+    // (`entitlement_ends_at` = now, founder decision 2026-07-31), while
+    // `currentPeriodEnd` is still a future date — so the "stays active
+    // until <date>" line below would be a confident lie for both. Claim
+    // no date, and name the cause: "Cancellation scheduled" reads as
+    // something the user did, and the "Keep my subscription" affordance
+    // beside this note is refused for these rows.
+    if (backing.sub.cancelSource === 'refund' || backing.sub.cancelSource === 'chargeback') {
+      const cause = backing.sub.cancelSource === 'refund' ? 'a refund' : 'a chargeback';
       return {
         tone: 'warn',
-        text: 'This plan ended after a chargeback. Email support@declutrmail.com if that looks wrong.',
+        text: `This plan ended after ${cause}. Email support@declutrmail.com if that looks wrong.`,
       };
     }
     const end = formatBillingDate(backing.sub.currentPeriodEnd);
-    // "Cancellation scheduled" reads as something the user did. A
-    // refunded plan ends on the same timeline but for a reason they did
-    // not choose here — and the "Keep my subscription" affordance this
-    // note sits beside is refused for it, so an unexplained cancel
-    // notice next to a missing undo is the confusing half of the truth.
-    const lead =
-      backing.sub.cancelSource === 'refund' ? 'Ending after a refund' : 'Cancellation scheduled';
     return {
       tone: 'warn',
       text: end
-        ? `${lead} — your plan stays active until ${end}, then you'll switch to Free.`
-        : `${lead} — you'll switch to Free at the end of the current period.`,
+        ? `Cancellation scheduled — your plan stays active until ${end}, then you'll switch to Free.`
+        : "Cancellation scheduled — you'll switch to Free at the end of the current period.",
     };
   }
   if (backing.state === 'past_due') {

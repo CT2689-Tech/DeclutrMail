@@ -1645,7 +1645,7 @@ describe('BillingScreen — paid subscriber', () => {
     ]);
     renderScreen();
 
-    expect(await screen.findByText(/Ending after a refund/)).toBeInTheDocument();
+    expect(await screen.findByText(/This plan ended after a refund/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Keep my subscription' })).not.toBeInTheDocument();
   });
 

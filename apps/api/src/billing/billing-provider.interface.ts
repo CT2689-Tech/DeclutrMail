@@ -98,6 +98,30 @@ export type NormalizedBillingEvent =
       reason: 'refund' | 'chargeback' | 'provider_scheduled';
     }
   | {
+      /**
+       * A local verdict the PROVIDER has contradicted, and it must be
+       * lifted. Without it the customer stays locked out permanently
+       * while paying normally, with every self-serve exit shut — the
+       * harshest outcome this system can produce (founder decision +
+       * Codex stop-review, 2026-07-31).
+       *
+       * `chargeback_reverse` — the dispute was won, funds returned.
+       * `refund_rejected`    — Paddle declined a refund we had already
+       *                        acted on (live accounts create refunds
+       *                        `pending_approval`; sandbox auto-approves,
+       *                        so this shape never appears in testing).
+       *
+       * The reason names which verdict is void, and the handler lifts
+       * only that one — a reversal must never clear a refund, and a
+       * rejection must never clear a chargeback.
+       */
+      kind: 'cancellation_revoked';
+      providerEventId: string;
+      eventType: string;
+      providerSubscriptionId: string;
+      reason: 'chargeback_reverse' | 'refund_rejected';
+    }
+  | {
       kind: 'ignored';
       providerEventId: string;
       eventType: string;
@@ -223,14 +247,22 @@ export interface BillingProvider {
    * marker (Codex stop-review, 2026-07-31).
    *
    *   'refund' | 'chargeback' — settled; the subscription must not renew
-   *   'none'    — provider holds no settled ending adjustment (a pending
-   *               or rejected refund lands here). Take no outbound action.
-   *   'unknown' — could not ask. Also take no outbound action; a read
+   *   'none'    — nothing settled YET (a refund still pending approval).
+   *               Take no outbound action and change nothing locally.
+   *   'refuted' — the provider's records CONTRADICT our marker: the
+   *               refund was rejected, or the chargeback reversed. The
+   *               local verdict is void and must be lifted, or a paying
+   *               customer sits on Free with no self-serve way out.
+   *   'unknown' — could not ask. Take no action either way; a read
    *               failure is never grounds for a write.
+   *
+   * The `refuted` answer is what lets the correction run WITHOUT
+   * depending on `adjustment.updated` being subscribed at the provider —
+   * an ops setting we cannot verify from here.
    */
   settledCancellationCause(
     providerSubscriptionId: string,
-  ): Promise<'refund' | 'chargeback' | 'none' | 'unknown'>;
+  ): Promise<'refund' | 'chargeback' | 'none' | 'refuted' | 'unknown'>;
 
   /**
    * Switch the subscription to a different catalog price. Immediate

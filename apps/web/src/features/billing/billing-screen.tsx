@@ -1412,7 +1412,16 @@ function NonBackingSubscriptionNotice({
   // only render that promise when the record IS paused and the retained
   // period is actually known (ui-truth: never assert a period the read
   // can't confirm).
-  const canSelfServeResume = isPaused && sub.provider === 'paddle' && retainedPeriodEnd !== null;
+  //
+  // …and never over a refund/chargeback verdict. Resuming restarts
+  // billing at the provider while `entitlement_ends_at` keeps the account
+  // on Free, so the customer would pay and receive nothing. The API
+  // refuses it (`CANCELLATION_NOT_REVOCABLE`); offering the button anyway
+  // is the same guaranteed-409 defect the pause offer already avoids
+  // (Codex stop-review, 2026-07-31).
+  const verdictBlocked = sub.cancelSource === 'refund' || sub.cancelSource === 'chargeback';
+  const canSelfServeResume =
+    isPaused && sub.provider === 'paddle' && retainedPeriodEnd !== null && !verdictBlocked;
   return (
     <div role="status" data-testid="non-backing-subscription-notice" style={boxStyle}>
       <span>

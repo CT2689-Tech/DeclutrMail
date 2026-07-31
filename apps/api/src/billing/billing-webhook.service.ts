@@ -191,6 +191,10 @@ export function projectWebhookPayload(
       projected.provider_subscription_id = event.providerSubscriptionId;
       projected.cancellation_reason = event.reason;
       break;
+    case 'cancellation_revoked':
+      projected.provider_subscription_id = event.providerSubscriptionId;
+      projected.cancellation_reason = event.reason;
+      break;
     case 'ignored':
       break;
   }
@@ -293,6 +297,8 @@ export class BillingWebhookService {
         return this.applySubscription(provider, event, eventRowId, eventArrivalSeq);
       case 'cancellation_scheduled':
         return this.applyScheduledCancellation(provider, event, eventRowId);
+      case 'cancellation_revoked':
+        return this.applyRevokedCancellation(provider, event, eventRowId);
       case 'payment':
         return this.applyPayment(provider, event, eventRowId);
       case 'ignored':
@@ -788,7 +794,6 @@ export class BillingWebhookService {
       // already ran, and the upsert's `cancel_at_period_end` lands last.
       await this.lockSubscription(tx, provider, event.providerSubscriptionId);
 
-      const isChargeback = event.reason === 'chargeback';
       const [row] = await tx
         .update(subscriptions)
         .set({
@@ -797,10 +802,23 @@ export class BillingWebhookService {
           // cancel) is provenance 'provider'; refund/chargeback map
           // verbatim — they are the local verdicts.
           cancelSource: event.reason === 'provider_scheduled' ? 'provider' : event.reason,
-          // Chargeback: the deadline is NOW — recompute below drops the
-          // tier in the same transaction. Refund: entitlement holds to
-          // the period the user paid for (falling back to now when no
-          // period end is known — never grant on a missing fact).
+          // The deadline is NOW for BOTH reasons — the recompute below
+          // drops the tier in the same transaction.
+          //
+          // Refunds used to hold to `current_period_end`, from the
+          // 2026-07-20 rule "a voluntary refund holds to the period end".
+          // That is right for a monthly plan — refund the month, let them
+          // finish it — and became a giveaway the moment annual plans
+          // carried a 30-day money-back guarantee: a full refund on an
+          // annual plan returned all $190 AND granted the rest of the
+          // year. Measured, not theorised: a sandbox refund on 2026-07-31
+          // produced `entitlement_ends_at = 2027-07-31`. Money back means
+          // the service stops (founder decision, 2026-07-31).
+          //
+          // Only FULL refunds reach here — a partial one is filtered at
+          // the adapter and never becomes a verdict — so there is no case
+          // left where someone keeps paying for a period this ends.
+          //
           // sql now() (not a JS Date): the recompute in this SAME
           // transaction compares `entitlement_ends_at > now()`, and
           // Postgres now() is transaction-start time — a JS clock read
@@ -809,9 +827,7 @@ export class BillingWebhookService {
           // recompute (CI caught exactly that race; local PGlite hid
           // it). tx-now == tx-now compares NOT-greater → excluded,
           // deterministically.
-          entitlementEndsAt: isChargeback
-            ? sql`now()`
-            : sql`COALESCE(${subscriptions.currentPeriodEnd}, now())`,
+          entitlementEndsAt: sql`now()`,
           updatedAt: new Date(),
         })
         .where(
@@ -867,6 +883,95 @@ export class BillingWebhookService {
     });
 
     return outcome;
+  }
+
+  /**
+   * The dispute was won — lift the chargeback verdict and give the
+   * customer their plan back.
+   *
+   * Without this, winning is worse for the customer than losing: Paddle
+   * returns the funds, we keep the revocation, and they stay on Free
+   * while paying, with nothing in the product able to undo it (founder
+   * decision, 2026-07-31).
+   *
+   * Scoped BY REASON in the WHERE clause: a reversal lifts only a
+   * chargeback verdict, a rejection only a refund one. Crossing them
+   * would let one dispute erase an unrelated verdict, and a row with no
+   * matching verdict updates nothing — so a replay is a no-op rather
+   * than an accidental un-cancel.
+   *
+   * `cancel_at_period_end` is deliberately NOT cleared. The sweep may
+   * already have scheduled a cancel at the provider, and clearing our
+   * flag over a provider that still intends to end the subscription is
+   * the assert-what-we-don't-know defect in its purest form. Leaving it
+   * gives the honest reading — "cancellation scheduled" — and, now that
+   * `cancel_source` is null, the D118 "Keep my subscription" button
+   * renders and WORKS: it clears the schedule at Paddle. The customer
+   * gets a real way back instead of a state only support can exit. If no
+   * cancel was ever sent, the next provider payload mirrors Paddle's
+   * `false` and the flag clears itself.
+   */
+  private async applyRevokedCancellation(
+    provider: BillingProviderId,
+    event: Extract<NormalizedBillingEvent, { kind: 'cancellation_revoked' }>,
+    eventRowId: string,
+  ): Promise<WebhookProcessOutcome> {
+    const voided = event.reason === 'chargeback_reverse' ? 'chargeback' : 'refund';
+    return this.db.transaction(async (tx) => {
+      await this.lockSubscription(tx, provider, event.providerSubscriptionId);
+
+      const [row] = await tx
+        .update(subscriptions)
+        .set({ cancelSource: null, entitlementEndsAt: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(subscriptions.provider, provider),
+            eq(subscriptions.providerSubscriptionId, event.providerSubscriptionId),
+            eq(subscriptions.cancelSource, voided),
+          ),
+        )
+        .returning({
+          workspaceId: subscriptions.workspaceId,
+          tier: subscriptions.tier,
+          status: subscriptions.status,
+        });
+
+      if (!row) {
+        // No chargeback verdict to lift — an unknown subscription, a
+        // refund row, or a replay of a reversal already applied. All
+        // three are correctly a no-op, and none is an error.
+        this.logger.log(
+          `billing.webhook.reverse_no_verdict provider=${provider} sub=${event.providerSubscriptionId} reason=${event.reason}`,
+        );
+        await tx
+          .update(subscriptionEvents)
+          .set({ processedAt: new Date() })
+          .where(eq(subscriptionEvents.id, eventRowId));
+        return { kind: 'processed', effect: `cancellation_revoked:no_verdict` } as const;
+      }
+
+      await this.recomputeWorkspaceTier(tx, row.workspaceId);
+
+      if (!(GRANTING_STATUSES as readonly string[]).includes(row.status)) {
+        // The row left a granting status while the dispute ran (the
+        // dunning sweep, or the provider's own cancel landing), so the
+        // recompute cannot give the tier back. Say so loudly rather than
+        // let a won dispute quietly change nothing.
+        this.logger.warn(
+          `billing.webhook.reverse_not_regranted workspace=${row.workspaceId} sub=${event.providerSubscriptionId} status=${row.status} — chargeback verdict lifted but the subscription is no longer granting; needs support`,
+        );
+      }
+
+      this.logger.log(
+        `billing.subscription_changed workspace=${row.workspaceId} tier=${row.tier} cancel_source=null reason=${event.reason} provider=${provider}`,
+      );
+
+      await tx
+        .update(subscriptionEvents)
+        .set({ processedAt: new Date() })
+        .where(eq(subscriptionEvents.id, eventRowId));
+      return { kind: 'processed', effect: `cancellation_revoked:${event.reason}` } as const;
+    });
   }
 
   private async applyPayment(

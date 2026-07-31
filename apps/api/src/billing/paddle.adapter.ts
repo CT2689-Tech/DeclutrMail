@@ -633,10 +633,18 @@ export class PaddleAdapter implements BillingProvider {
    * `pending_approval`. Cancelling on that would end a subscription
    * Paddle may go on to reject the refund for. Sandbox auto-approves, so
    * no amount of testing here would have shown it.
+   *
+   * `refuted` is the same read pointed the other way, and it is what
+   * makes the correction possible WITHOUT depending on a webhook
+   * subscription: when Paddle's records positively contradict our marker
+   * — the refund was rejected, the chargeback reversed — the verdict is
+   * void and the caller lifts it. Without that, a live refund Paddle
+   * rejects leaves a PAYING customer on Free with every self-serve exit
+   * blocked (Codex stop-review, 2026-07-31).
    */
   async settledCancellationCause(
     providerSubscriptionId: string,
-  ): Promise<'refund' | 'chargeback' | 'none' | 'unknown'> {
+  ): Promise<'refund' | 'chargeback' | 'none' | 'refuted' | 'unknown'> {
     let body: unknown | null;
     try {
       body = await this.reconciliationGet(
@@ -653,25 +661,32 @@ export class PaddleAdapter implements BillingProvider {
     if (!Array.isArray(rows)) return 'unknown';
 
     // A chargeback IS the settled event — the funds are already gone and
-    // Paddle raised it, not us, so there is nothing left to approve.
-    // `rejected`/`reversed` are the only outcomes that undo one, and a
-    // separate `chargeback_reverse` adjustment means we won the dispute.
-    const disputeWon = rows.some(
-      (a) => a.action === 'chargeback_reverse' && a.status !== 'rejected',
+    // Paddle raised it, not us, so there is nothing left to approve. Only
+    // the adjustment's OWN status can undo one: a won dispute marks it
+    // `reversed`.
+    //
+    // An earlier revision instead scanned for any `chargeback_reverse`
+    // row and suppressed every chargeback when it found one — so a
+    // subscription that won dispute A and then genuinely lost dispute B
+    // reported `none` forever, and Paddle kept billing a customer whose
+    // entitlement we had ended (Codex stop-review, 2026-07-31). Reading
+    // each adjustment's own status needs no cross-referencing and cannot
+    // mis-pair two disputes.
+    const settledChargeback = rows.some(
+      (a) => a.action === 'chargeback' && a.status !== 'rejected' && a.status !== 'reversed',
     );
-    if (
-      !disputeWon &&
-      rows.some(
-        (a) => a.action === 'chargeback' && a.status !== 'rejected' && a.status !== 'reversed',
-      )
-    ) {
-      return 'chargeback';
-    }
+    if (settledChargeback) return 'chargeback';
     // Refunds need Paddle's approval, and only a full one is an exit.
     if (rows.some((a) => a.action === 'refund' && a.status === 'approved' && endsSubscription(a))) {
       return 'refund';
     }
-    return 'none';
+    // Nothing settled. Distinguish "Paddle SAYS NO" from "not yet": a
+    // refund it rejected, or a chargeback it reversed, is a verdict our
+    // row must stop asserting. A still-pending refund is neither.
+    const refuted =
+      rows.some((a) => a.action === 'refund' && a.status === 'rejected' && endsSubscription(a)) ||
+      rows.some((a) => a.action === 'chargeback' && a.status === 'reversed');
+    return refuted ? 'refuted' : 'none';
   }
 
   /**
@@ -807,11 +822,26 @@ export class PaddleAdapter implements BillingProvider {
         };
       }
       case 'adjustment.created': {
-        // Refund / chargeback → downgrade at period end (documented in
+        // Refund / chargeback → entitlement ends (documented in
         // billing.module.ts). Adjustments without a subscription link
         // (one-off transactions — we sell none) are ignored.
         const data = body.data as PaddleAdjustment | undefined;
         const action = data?.action;
+        // The dispute was WON: Paddle clawed the money back from the bank
+        // and the verdict that revoked this customer is void. Without
+        // this they stay locked out forever while still paying — the
+        // harshest thing this system can do to someone (founder decision,
+        // 2026-07-31). Only chargebacks reverse; a refund is a decision
+        // we made and does not un-happen.
+        if (action === 'chargeback_reverse' && data?.subscription_id) {
+          return {
+            kind: 'cancellation_revoked',
+            providerEventId: eventId,
+            eventType,
+            providerSubscriptionId: data.subscription_id,
+            reason: 'chargeback_reverse',
+          };
+        }
         if ((action === 'refund' || action === 'chargeback') && data?.subscription_id) {
           if (!endsSubscription(data)) {
             this.logger.warn(

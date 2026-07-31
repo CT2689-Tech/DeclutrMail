@@ -1029,6 +1029,7 @@ export class BillingService {
       .select({
         provider: subscriptions.provider,
         providerSubscriptionId: subscriptions.providerSubscriptionId,
+        cancelSource: subscriptions.cancelSource,
       })
       .from(subscriptions)
       .where(
@@ -1041,6 +1042,15 @@ export class BillingService {
       .limit(1);
     if (!sub) {
       throw new AppException({ code: 'NO_ACTIVE_SUBSCRIPTION' });
+    }
+    // Same refusal as `resumeCancellation`, for the same reason and on
+    // the same column. A paused row can carry a refund/chargeback verdict
+    // too, and resuming it restarts billing at the provider while
+    // `entitlement_ends_at` keeps the account on Free — the customer pays
+    // and receives nothing, which is worse than the button simply not
+    // working (Codex stop-review, 2026-07-31).
+    if (sub.cancelSource === 'refund' || sub.cancelSource === 'chargeback') {
+      throw new AppException({ code: 'CANCELLATION_NOT_REVOCABLE' });
     }
 
     // Refuse to resume alongside a subscription that is already

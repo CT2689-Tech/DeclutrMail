@@ -96,7 +96,9 @@ function fakeAdapter(overrides: {
   fetchSubscription?: (id: string) => Promise<FetchSubscriptionResult>;
   searchSubscriptions?: (query: SubscriptionSearchQuery) => Promise<SubscriptionSearchResult>;
   cancelSubscription?: (id: string) => Promise<void>;
-  settledCancellationCause?: (id: string) => Promise<'refund' | 'chargeback' | 'none' | 'unknown'>;
+  settledCancellationCause?: (
+    id: string,
+  ) => Promise<'refund' | 'chargeback' | 'none' | 'refuted' | 'unknown'>;
 }): PaddleAdapter & RazorpayAdapter {
   return {
     fetchSubscription:
@@ -659,6 +661,44 @@ describe('BillingReconciliationService (D249)', () => {
       expect(result).toMatchObject({ verdictsEnforced: 0, verdictsUnenforced: 1 });
     });
   }
+
+  it('a REFUTED verdict is lifted and the plan comes back', async () => {
+    // The cruellest state this system can produce: Paddle rejected the
+    // refund (live accounts create them `pending_approval`), so the
+    // customer is billed normally, holds Free, and every self-serve exit
+    // is shut. Corrected from the POLL rather than `adjustment.updated`
+    // so it works without that event being subscribed at the provider
+    // (Codex stop-review, 2026-07-31).
+    await seedVerdictRow({ cancelSource: 'refund' });
+    await db.update(workspaces).set({ tier: 'free' }).where(eq(workspaces.id, workspaceId));
+    const canceled: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: activePlusSub('sub_verdict', new Date()),
+        }),
+        settledCancellationCause: async () => 'refuted' as const,
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+
+    const result = await svc.reconcileLiveSubscriptions();
+    expect(canceled).toEqual([]); // never cancel a verdict the provider denies
+    expect(result).toMatchObject({ verdictsRefuted: 1, verdictsEnforced: 0 });
+
+    const [row] = await db.select().from(subscriptions);
+    expect(row!.cancelSource).toBeNull();
+    expect(row!.entitlementEndsAt).toBeNull();
+    // …and the flag stays, because the sweep may already have scheduled a
+    // cancel at the provider. With `cancel_source` null the D118 "Keep my
+    // subscription" button renders and works — the customer's way back.
+    expect(row!.cancelAtPeriodEnd).toBe(true);
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('plus');
+  });
 
   it('the settled cause is read from the PROVIDER, not from our own row', async () => {
     // A local `chargeback` marker over a provider that only confirms a
