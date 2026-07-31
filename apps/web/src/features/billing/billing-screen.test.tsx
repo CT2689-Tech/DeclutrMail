@@ -1493,15 +1493,13 @@ describe('BillingScreen — paid subscriber', () => {
     // Canceling is framed honestly as "not a refund" instead of the old
     // misleading "No refund for unused time" absolute.
     expect(within(modal).getByText(/on its own it isn.t\s+a refund/i)).toBeInTheDocument();
-    // Named, and linked to its terms — never merchandised. The panel that
-    // used to sit here styled a "Request a refund →" CTA as an offer at
-    // the highest-churn-intent moment in the product, to everyone,
-    // eligible or not (founder, 2026-07-30).
-    expect(within(modal).getByText(/Charged in the last 30 days\?/)).toBeInTheDocument();
-    expect(within(modal).getByText(/30-day money-back guarantee/)).toBeInTheDocument();
-    expect(within(modal).getByRole('link', { name: 'Refund Policy' }).getAttribute('href')).toBe(
-      '/refunds#refund-window',
-    );
+    // The guarantee is NOT named here (founder, 2026-07-31): stating it at
+    // the moment of highest churn intent reads as an invitation to claim
+    // it. It stays public on /refunds and in the Plan & billing header,
+    // so nothing is hidden — this screen just stops advertising it.
+    expect(within(modal).queryByText(/Charged in the last 30 days\?/)).toBeNull();
+    expect(within(modal).queryByText(/money-back guarantee/)).toBeNull();
+    expect(within(modal).queryByRole('link', { name: 'Refund Policy' })).toBeNull();
     expect(within(modal).queryByRole('link', { name: /Request a refund/ })).toBeNull();
 
     fireEvent.change(within(modal).getByRole('combobox'), { target: { value: 'too_expensive' } });
@@ -1575,7 +1573,46 @@ describe('BillingScreen — paid subscriber', () => {
 
     // Now every card on screen is a switch target, so nothing is CURRENT.
     await waitFor(() => expect(screen.queryByText('Current')).toBeNull());
+    // Screen readers must hear the same thing sighted users see — the
+    // badge and `aria-current` were driven by different flags, so the
+    // monthly card still announced itself as current (Codex, 2026-07-31).
+    expect(document.querySelector('[aria-current="true"]')).toBeNull();
     expect(screen.getByText(/Switch to monthly billing/)).toBeInTheDocument();
+  });
+
+  // Codex stop-review 2026-07-31: the first cut of the cycle-aware badge
+  // exempted non-Paddle on the grounds the cycle was "unknowable". It is
+  // not — `cycle` is on the record for every provider — so a Razorpay
+  // subscriber kept seeing the exact lie the fix removed for Paddle.
+  it('CURRENT badge is cycle-aware on Razorpay too, without offering a switch', async () => {
+    mockTier = 'plus';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () =>
+          jsonOk({
+            data: {
+              tier: 'plus',
+              foundingMember: false,
+              pendingCheckout: null,
+              subscription: { ...SUB, provider: 'razorpay', tier: 'plus', cycle: 'annual' },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await screen.findByTestId('current-plan-card');
+    expect(screen.getByText('Current')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Monthly' }));
+
+    await waitFor(() => expect(screen.queryByText('Current')).toBeNull());
+    // The badge is a FACT (cycle is known); the switch CTA is an
+    // AFFORDANCE Razorpay does not support. Separate props, separate
+    // answers — the CTA must stay absent.
+    expect(screen.queryByText(/Switch to monthly billing/)).toBeNull();
   });
 
   // D118 — the way back out of a cancel. Before this, cancelling was a
@@ -1712,7 +1749,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(screen.getByTestId('cancel-modal')).queryByTestId('pause-offer')).toBeNull();
   });
 
-  it('cancel modal names the money-back guarantee for a PLUS subscriber (D121, all paid tiers)', async () => {
+  it('cancel modal stays silent on the guarantee for a PLUS subscriber too', async () => {
     mockTier = 'plus';
     installFetchStub([
       {
@@ -1728,13 +1765,14 @@ describe('BillingScreen — paid subscriber', () => {
     expect(
       within(modal).getByText('Your Plus features stay active until Jul 1, 2026.'),
     ).toBeInTheDocument();
-    // The refund right is named for Plus too — the honesty bug this fixes
-    // (previously gated behind `tier === 'pro'`, so Plus never saw it).
-    expect(within(modal).getByText(/Charged in the last 30 days\?/)).toBeInTheDocument();
-    expect(within(modal).getByText(/30-day money-back guarantee/)).toBeInTheDocument();
-    expect(within(modal).getByRole('link', { name: 'Refund Policy' }).getAttribute('href')).toBe(
-      '/refunds#refund-window',
-    );
+    // Silent about the guarantee for Plus exactly as for Pro — the rule is
+    // tier-agnostic in both directions. What survives is the FACT that
+    // canceling is not itself a refund, which is not a denial of the
+    // policy, so the 2026-07-08 contradiction with the public 30-day
+    // promise does not come back.
+    expect(within(modal).queryByText(/money-back guarantee/)).toBeNull();
+    expect(within(modal).queryByRole('link', { name: 'Refund Policy' })).toBeNull();
+    expect(within(modal).getByText(/on its own it isn.t\s+a refund/i)).toBeInTheDocument();
   });
 
   it('cancel error does not persist after closing and reopening the modal', async () => {
