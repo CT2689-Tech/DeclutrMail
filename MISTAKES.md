@@ -1514,3 +1514,31 @@ The review's objection was not "you read the wrong column" — it was that my pr
 **Correct approach:** a test that has never been observed to fail proves nothing. Run every new guard's negative control before trusting it, and grep the actual code construct — not a substring that prose can satisfy.
 **Rule:** before trusting a green test, revert its fix and watch it go red. Verify edits with a pattern only the code can match (`rg` the SQL/expression), never one a comment could.
 **Enforcement update:** none — this is the existing BLIND-GUARD rule (LEARNINGS, ui-truth bug class) recurring for the third time. Candidate for a CLAUDE.md §8 line if it appears again.
+
+## 2026-07-31 — Automatic pageview capture switched on inside a billing PR
+
+**PR:** #452 (`b606e0f4` — "fix(billing): Stop refunds diverging from Paddle (D118, D121)")
+**Caught by:** founder, reading the PostHog dashboards weeks later
+**What happened:** `capture_pageview: false` became `capture_pageview: 'history_change'` in a pull request whose title, scope and D-refs were entirely about refund reconciliation. That one line changes what the product sends about every visitor on every route — `$pageview` carries `$current_url`, so the full address bar started going to a third party automatically, outside any `track()` call. No reviewer reading "Stop refunds diverging from Paddle (D118, D121)" has a reason to look for it, and no gate fires on it: the change is three tokens, typechecks, and every test passes.
+
+It was not a harmless default flip either. Turning on `$pageview` is what put raw URLs on the wire, which is the leak #454 then had to fix — and the `/flags/` variant found the same day. The privacy defect and the packaging mistake are the same event.
+
+**Correct approach:** a change to WHAT TELEMETRY LEAVES THE BROWSER is its own PR, with its own title, whatever else is in the branch. If it rides along, it ships unreviewed by construction — the title is the only signal a reviewer gets about where to look.
+
+**Rule:** telemetry-capture switches (`capture_pageview`, `capture_pageleave`, `autocapture`, `session_recording`, any `advanced_disable_*`) never ride in a PR about something else. Own PR, D-ref, and a stated reason.
+
+**Enforcement update:** none yet. A hook that fails when `apps/web/src/lib/posthog.ts` init options change in a PR whose title has no observability/privacy scope would catch the whole class — candidate if it recurs.
+
+## 2026-07-31 — Closed one door to PostHog, shipped with the other open
+
+**PR:** #454 (the fix that was incomplete), found post-merge by local smoke
+**Caught by:** smoke against a local echo server standing in for PostHog's ingest endpoint
+**What happened:** #454 stripped query strings, fragments and userinfo from telemetry URLs, verified by unit tests and by me against `scrubTelemetryPayload` directly. It was wired through `sanitize_properties` — which posthog-js applies to CAPTURED EVENTS ONLY. The SDK also POSTs to `/flags/`, carrying its own `person_properties`, and that request never passes through the hook. So `$initial_current_url` and `$initial_utm_content` went out with the raw address bar in them — `?sender_q=<address>` included — while `/e/` in the very same session was provably clean. One endpoint fixed, one endpoint leaking, same defect, same page load.
+
+Nothing in the PR was wrong; the scope was. The question asked was "does the scrubber scrub?" when it should have been "what else talks to PostHog?".
+
+**Correct approach:** when a fix hangs off a vendor SDK hook, enumerate every request that SDK makes and check which ones the hook actually covers. Assert on the wire, not on the function — the function was correct in isolation the whole time.
+
+**Rule:** verify a telemetry fix by reading what leaves the browser, not by unit-testing the scrubber. Point the SDK at a local echo server and diff every endpoint it hits.
+
+**Enforcement update:** `advanced_disable_flags: true` removes the endpoint rather than scrubbing it — a door that does not exist cannot be reopened by an SDK upgrade. The general rule stays manual.

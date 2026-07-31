@@ -82,6 +82,16 @@ describe('track() consent gate (D147)', () => {
         capture_pageview: 'history_change',
         capture_pageleave: true,
         disable_session_recording: true,
+        // Kills the `/flags/` request, which is a PRIVACY guard, not a
+        // preference. `sanitize_properties` covers captured events only;
+        // the flags POST carries its own `person_properties` and bypasses
+        // it entirely, so posthog-js shipped `$initial_current_url` built
+        // from the raw address bar (`?sender_q=<address>` included) even
+        // after the `/e/` scrub landed. Nothing reads a PostHog flag —
+        // flags come from env (ADR-0025) — so the endpoint is pure leak
+        // surface. Assert it here so a config refactor cannot quietly
+        // reopen the door.
+        advanced_disable_flags: true,
       }),
     );
     expect(posthogMock.capture).toHaveBeenCalledTimes(2);

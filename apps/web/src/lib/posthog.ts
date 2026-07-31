@@ -96,6 +96,23 @@ async function loadSdk(): Promise<PosthogSdk | null> {
         // No session recording / replay (D7 — same reason as Sentry replay).
         disable_session_recording: true,
         disable_surveys: true,
+        // Kills the `/flags/` request. NOT a preference — a privacy fix.
+        //
+        // `sanitize_properties` below runs on CAPTURED EVENTS only. The flags
+        // request is a separate POST carrying its own `person_properties`,
+        // and it never passes through that hook — so posthog-js computed
+        // `$initial_current_url` / `$initial_utm_content` from the RAW address
+        // bar and shipped them unscrubbed. A smoke against a local echo server
+        // caught `?sender_q=<address>` going out this door on 2026-07-31,
+        // the same day the `/e/` door was closed (#454). Same leak class, one
+        // endpoint over.
+        //
+        // Safe to disable outright: DeclutrMail's flags are resolved from
+        // env vars (ADR-0025, `@/lib/flags`) and nothing reads a PostHog
+        // flag, so this request was pure overhead even before it leaked.
+        // Removing it beats scrubbing it — a door that does not exist cannot
+        // be left open by the next SDK upgrade.
+        advanced_disable_flags: true,
         // Defense-in-depth scrub at the wire boundary.
         sanitize_properties: (props: Record<string, unknown> | null | undefined) =>
           (scrubTelemetryPayload(props) ?? {}) as Record<string, unknown>,
