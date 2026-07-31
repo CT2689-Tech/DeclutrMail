@@ -1033,3 +1033,17 @@ whether an existing mirror is rewritten atomically WITH the consumer of that sta
 transaction ordering may already preserve it.
 **Distillation trigger:** promote if a second feature derives pre-state from the
 mirror's tx ordering.
+
+## 2026-07-31 — A browser-automation tab is `hidden`, so the entry `$pageview` never fires
+
+**Context:** smoking the PostHog capture change on main. `$pageview` fired for the route I navigated to, but not for the page I arrived on — which reads exactly like "the entry pageview is missing, Web Analytics will undercount". I reported it as a defect.
+**Finding:** posthog-js has two pageview capture sites. The history-change one fires on navigation; the INIT one is gated on `document.visibilityState === 'visible'` and defers until the page becomes visible. The preview/automation tab reports `visibilityState: "hidden"`, `hasFocus: false` — so that capture legitimately never ran. Overriding `visibilityState` and dispatching `visibilitychange` made the entry `$pageview` appear immediately, for the entry URL, scrubbed. No product defect existed; the harness manufactured it. Same family as the known TanStack `refetchInterval` focus pause.
+**Rule (provisional):** before reporting "event X never fires" from a browser smoke, check `document.visibilityState`. Anything gated on visibility, focus or `requestIdleCallback` is suspect in an automation tab — force the state and re-observe before writing it up.
+**Distillation trigger:** promote to CLAUDE.md §8 with the focus-pause note if a third visibility/focus-gated false positive appears.
+
+## 2026-07-31 — A grep over a compressed payload is vacuously clean
+
+**Context:** verifying that the `/flags/` privacy fix stopped an address reaching PostHog. The leak check printed "CLEAN — no address, no sender_q in any payload".
+**Finding:** it proved nothing. posthog-js had switched that batch to gzip, so the log held compressed bytes and the pattern could not have matched whether or not the address was there. Worse, the echo server was accumulating the body with `body += chunk`, which utf-8-mangles binary and destroys the gzip irrecoverably — so even decompressing afterwards failed, and a "0 matches" still printed. Fixing the server to collect Buffers and `gunzipSync`, then asserting `decoded > 0` BEFORE trusting the search, turned the same check into real evidence (4/4 payloads decoded, genuinely clean).
+**Rule (provisional):** any assertion of absence must first prove its input was readable. Print the count of successfully parsed records next to the verdict, and treat `parsed == 0` as INVALID, never as PASS.
+**Distillation trigger:** this is the BLIND-GUARD class again (a check that appears to verify and does not) — fourth occurrence. A CLAUDE.md §8 line is now overdue.

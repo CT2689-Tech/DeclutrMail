@@ -91,10 +91,26 @@ tokens do not.
 
 ### PostHog
 
-| Slot            | Vendor label                 | Storage                                          | Env var                    | Rotated | Owner   |
-| --------------- | ---------------------------- | ------------------------------------------------ | -------------------------- | ------- | ------- |
-| Project API key | `declutrmail-prod` project   | `.env.local` + Vercel env (Production + Preview) | `NEXT_PUBLIC_POSTHOG_KEY`  | n/a     | founder |
-| Ingest host     | `us.i.posthog.com` (default) | `.env.local` + Vercel env (optional)             | `NEXT_PUBLIC_POSTHOG_HOST` | n/a     | founder |
+**TWO projects, split by environment.** Production analytics live in
+their own PostHog project; local dev and Vercel Preview write to a
+separate sandbox project. Until 2026-07-31 both shared one project and
+~90% of its events came from `localhost` — which is unfixable after the
+fact, since every historical chart, retention cohort and growth curve in
+that project silently folds dev traffic in. The sandbox keeps that
+polluted history; production starts clean, so no number in it needs an
+asterisk. Both the browser key and the server key must point at the SAME
+project for a given environment, or a funnel will span two datasets.
+
+| Slot            | Vendor label                    | Storage                              | Env var                    | Rotated | Owner   |
+| --------------- | ------------------------------- | ------------------------------------ | -------------------------- | ------- | ------- |
+| Project API key | `declutrmail-analytics` project | Vercel env (**Production** only)     | `NEXT_PUBLIC_POSTHOG_KEY`  | n/a     | founder |
+| Project API key | `DeclutrMail` project (sandbox) | `.env.local` + Vercel env (Preview)  | `NEXT_PUBLIC_POSTHOG_KEY`  | n/a     | founder |
+| Server-side key | same project as the browser key | Cloud Run API (prod) / `.env.local`  | `POSTHOG_API_KEY`          | n/a     | founder |
+| Ingest host     | `us.i.posthog.com` (default)    | `.env.local` + Vercel env (optional) | `NEXT_PUBLIC_POSTHOG_HOST` | n/a     | founder |
+
+If the Production key is ever unset, analytics no-ops rather than
+falling back to the sandbox — absent data beats wrong data, and a silent
+fallback is how the two datasets merged in the first place.
 
 **Note:** PostHog's project API key is the `phc_...` value shipped to
 the browser. Like a Sentry DSN, it is NOT a hard secret in the strict
