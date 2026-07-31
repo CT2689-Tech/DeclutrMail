@@ -26,35 +26,33 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-07-31 — CORRECTED: refunds do end the entitlement; what is missing is the cancel AT PADDLE
+### 2026-07-31 — DECISION: should a chargeback drop access instantly, or hold to period end?
 
-**Source:** billing-test-matrix group H, 2026-07-31. **This entry replaces an earlier one that called H2 a launch blocker. That diagnosis was wrong** — see the correction note below before acting on anything here.
+**Source:** billing-test-matrix H1, verified 2026-07-31 (the refund/cancel work itself shipped — see Done)
 
-**What is actually true.** A refund adjustment writes THREE things, not two:
+**Why:** the two verdicts deliberately differ and only one of them is obviously right. A **refund** holds entitlement to the period the customer paid for; a **chargeback** revokes it immediately (`entitlementEndsAt: isChargeback ? now() : COALESCE(current_period_end, now())`). Instant revocation on a chargeback is the standard posture — the money is gone and the bank decided it, not you — but it also means a customer disputing one charge loses access the moment the dispute is raised, before it is resolved in anyone's favour. Paddle also raises `chargeback_warning` before a real chargeback, which we do not act on at all.
 
-| column | after refund | after a later `subscription.updated` |
-|---|---|---|
-| `cancel_source` | `refund` | `refund` — survives |
-| `entitlement_ends_at` | `current_period_end` | **survives** |
-| `cancel_at_period_end` | `t` | **`f`** — cleared |
+This was implemented from your 2026-07-20 rule and has never been re-examined against a real dispute, because there has never been one.
 
-`entitlement_ends_at` is the column the tier recompute actually reads, and it survives. Verified end to end: after a refund followed by a renewal payload, pushing the deadline past and running the sweep dropped the workspace to `free`. **The refund verdict is enforced.** Nobody keeps a paid tier for free.
+**How:** confirm the current behaviour, or say which of these you want instead: hold to period end like a refund; or act on `chargeback_warning` differently from a settled `chargeback`. Either change is a few lines in `applyScheduledCancellation`.
 
-**The two real defects, both smaller and different from what was first written:**
+**Verifies by:** whichever rule you pick, stated in `docs/adr/` or the D-plan so the next session does not re-litigate it from the code.
 
-1. **UI truth.** `cancel_at_period_end` is cleared by any later provider payload, so `/billing` stops showing "Cancellation scheduled" while the entitlement is still ending on schedule. The customer is told they are renewing when in fact they lose access at period end. Cosmetic in money terms, but it is the assert-what-we-do-not-know class this codebase keeps paying for.
+**Status:** Open — no customer impact until the first dispute; not a launch blocker
 
-2. **The one that costs money — and it points the OTHER way.** `BillingWebhookService` is a projector: its constructor takes only `db` and `catalog`, it holds no provider adapters, and the only `cancelSubscription` call site in the codebase is the user-initiated cancel (`billing.service.ts:354`). So a refund adjustment **never cancels the subscription at Paddle**. Paddle keeps it active and bills again at renewal, while we stop granting the tier at `entitlement_ends_at`. A refunded customer can be charged a second time and receive nothing for it.
+### 2026-07-31 — Paddle prod destination should subscribe to `adjustment.updated`
 
-   In practice an operator refunding in the Paddle dashboard would usually cancel there too, so this bites when a refund is issued without a matching cancel — a partial refund, or a support agent doing one action and not the other.
+**Source:** refund-path work 2026-07-31 (`fix/d118-refund-verdict-provider-cancel`)
 
-**Correction note.** The first version of this entry claimed the tier "never drops" and called it a launch blocker. It was diagnosed by watching `cancel_at_period_end` and never checking `entitlement_ends_at` — the column that governs the outcome. Caught by the Codex stop-review, whose objection was that the proposed fix (make `cancel_source` sticky so it protects `cancel_at_period_end`) could not stop Paddle renewing. That objection is correct and it is what exposed the misdiagnosis: no local column stops Paddle billing.
+**Why:** on a LIVE Paddle account most refunds are created with `status: 'pending_approval'` and Paddle approves them asynchronously; sandbox auto-approves, so this shape has never been seen here. We act on `adjustment.created` immediately, which is the right failure direction (a real refund always revokes) but means a refund Paddle later **rejects** has already ended the customer's plan and scheduled a cancel at the provider. Nothing detects the reversal today.
 
-**How:** two separable pieces. (a) UI truth — either stop clearing `cancel_at_period_end` on a row carrying a `cancel_source`, or derive the notice from `entitlement_ends_at`, which is the honest source. (b) The billing divergence — decide whether a refund/chargeback adjustment should drive a provider-side cancel. That is a `billing-webhook.service.ts` change and a CLAUDE.md §9 stop condition, and it also needs a product call: today refund holds entitlement to period end while chargeback drops it immediately (`entitlementEndsAt: isChargeback ? now() : COALESCE(current_period_end, now())`).
+The active sandbox destination already subscribes to `adjustment.updated`; production's subscription list is a separate dashboard setting and has not been checked.
 
-**Verifies by:** (a) refund, replay a renewal payload, and `/billing` still states the plan is ending. (b) refund a sandbox subscription and confirm Paddle shows it cancelled rather than scheduled to bill again.
+**How:** Paddle dashboard → Developer tools → Notifications → the production destination → confirm `adjustment.updated` is in the subscribed events (add it if not). That alone changes no behaviour — it makes the event available so the rejection path can be built.
 
-**Status:** Open — NOT a launch blocker. (b) is worth closing before real refunds happen; (a) is ordinary UI-truth work.
+**Verifies by:** `adjustment.updated` visible in the production destination's event list.
+
+**Status:** Open — one dashboard toggle; the handler is a separate piece of work
 
 ### 2026-07-31 — Verify production billing with one real purchase (founder decision: yes)
 
@@ -62,7 +60,7 @@ section to the Done section. Do not delete entries — the trail matters.
 
 **Why:** production billing has **never processed a single event** — 0 subscriptions, 0 webhooks, 0 customers — while `BILLING_ENABLED=true` with real Paddle catalog ids. The sandbox path is now verified end to end, but prod-only configuration is not: live API keys, the live notification destination and its secret, live catalog ids, and the live webhook URL. None of that is exercised by sandbox. The first real payer should be the founder, not a stranger.
 
-**How:** buy **Plus monthly ($9)** on production with a real card, confirm the webhook grants the tier (`subscriptions.status=active`, `workspaces.tier=plus`, a `subscription_events` row), then refund it from the Paddle dashboard. Everything except the card entry can be driven by an agent. Blocked on H2 above: refunding is exactly the path that currently fails, so close H2 first or the refund will leave a live subscription that never ends.
+**How:** buy **Plus monthly ($9)** on production with a real card, confirm the webhook grants the tier (`subscriptions.status=active`, `workspaces.tier=plus`, a `subscription_events` row), then refund it from the Paddle dashboard. Everything except the card entry can be driven by an agent. Not blocked: the refund path was reported here as broken on 2026-07-31 and that diagnosis was wrong (see Done). Refund the FULL amount — a partial refund deliberately no longer ends the plan. The provider-side cancel lands on the next reconciliation sweep (6h, or immediately on a worker restart), so allow for that before checking Paddle.
 
 **Verifies by:** a production `subscription_events` row with `processed_at` set, and the tier flip visible on `/billing`.
 
@@ -1472,6 +1470,24 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-07-31 — Refund path: UI truth, partial refunds, and the cancel AT PADDLE
+
+**Source:** billing-test-matrix group H, 2026-07-31
+
+**Why:** three defects on one path, all found chasing matrix H2.
+
+1. **UI truth.** `entitlement_ends_at` survives every later provider payload and the tier recompute reads it, so a refunded plan really does end. But every SURFACE asks `cancel_at_period_end`, which mirrored the provider — and Paddle has no record of the refund, so the next `subscription.updated` cleared it and `/billing` went back to claiming a renewal while access was still ending.
+2. **Partial refunds were exits.** Paddle fires one `adjustment.created` for "$2 back for the trouble" and for "here is your money back"; both ended the plan.
+3. **The provider kept billing.** A refund adjustment never cancelled the subscription at Paddle, so Paddle would charge again at renewal while we stopped granting the tier — a divergence pointing at the CUSTOMER, who could pay twice and get Free.
+
+**What shipped** (`fix/d118-refund-verdict-provider-cancel`): the projector pins `cancel_at_period_end` under a refund/chargeback verdict; the adapter ignores refunds carrying any `partial` item (chargebacks are never filtered); and the 6-hourly reconciliation sweep converges the provider — any live row with a local verdict whose provider is still set to renew gets a scheduled cancel. `resume-cancellation` refuses these rows and the screen drops the undo button instead of offering a guaranteed 409.
+
+**Correction on the record.** The first version of this entry called H2 a **launch blocker** on the claim that a refunded customer keeps Pro forever. That was wrong — diagnosed by watching `cancel_at_period_end` and never checking `entitlement_ends_at`. Caught by the Codex stop-review, whose objection (the proposed fix could not stop Paddle renewing) is what exposed it: no local column stops Paddle billing, because the webhook service holds no adapters.
+
+**Verifies by:** sandbox smoke, 2026-07-31 — full refund → `cape=t`, `cancel_source=refund`; a renewal echo left it `t` (the regression); partial refund → `{"status":"ignored"}`, state untouched; `POST /billing/resume-cancellation` → 409 `CANCELLATION_NOT_REVOCABLE`; worker restart → `verdictsEnforced: 1` and Paddle showed `scheduled_change: {action: cancel}`; second sweep → `verdictsEnforced: 0`. Both stores restored afterward.
+
+**Status:** Done 2026-07-31
 
 ### 2026-07-28 — DECISION: the subscriptions unique index needs a predicate you pick (B7 half two)
 **Source:** launch audit B7; attempted in PR #417, withdrawn after two Codex reviews found both candidate predicates unsafe

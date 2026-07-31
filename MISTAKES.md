@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-31 — Treated every refund as an exit, because the event does not say so
+**PR:** [#452](https://github.com/CT2689-Tech/DeclutrMail/pull/452) (fix); shipped originally in 0051
+**Caught by:** reading the Paddle adjustment schema while building the provider-side cancel — not by any test, gate, or smoke
+**What happened:** `adjustment.created` with `action: 'refund'` ended the subscription's entitlement, full stop. Paddle fires that same event for a full refund and for a $2 goodwill part-refund, and the handler read only `action` — so apologising to a customer with a partial refund silently cancelled their plan. It survived because every test and every smoke I wrote used a full refund: the fixture had no `items` at all, so the field that distinguishes the two cases was never in front of me. Adding the provider-side cancel would have escalated it from "wrongly downgraded" to "cancelled at Paddle".
+**Correct approach:** When a handler branches on one field of a provider payload, read the provider's schema for that entity and ask what ELSE arrives on the same event type. Here `type`, `status`, and `items[].type` all carry meaning we were discarding — including `status: 'pending_approval'`, which live accounts use and sandbox never does.
+**Rule:** A fixture that omits a field asserts that field is irrelevant. Before trusting one, diff it against the provider's own documented example — and make every discriminating field explicit in it, even when the test does not vary it.
+**Enforcement update:** none — `paddleAdjustmentCreated` now takes `itemTypes` and the specs pin full, partial, mixed, empty, and chargeback shapes.
+
 ## 2026-07-30 — Diagnosed a two-input derived gate against only one of its inputs
 **PR:** none — FOUNDER-FOLLOWUPS entry written during D249 CI triage, corrected same day
 **Caught by:** observed CI behavior contradicting the prediction (#436 merged closing D249; the gate I predicted would fail on the next PR passed)
