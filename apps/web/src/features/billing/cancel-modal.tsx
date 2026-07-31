@@ -6,7 +6,7 @@ import { Button, Eyebrow, tokens, useFocusTrap } from '@declutrmail/shared';
 import type { CancelRequest } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 
-import { formatBillingDate, MONEY_BACK_NOTE, type SubscriptionRecord } from './billing-model';
+import { formatBillingDate, type SubscriptionRecord } from './billing-model';
 
 const { color, font, radius } = tokens;
 
@@ -30,8 +30,15 @@ const REASON_OPTIONS: ReadonlyArray<{ value: CancelReason; label: string }> = [
  * destructive-preview class (no mail is touched), but the same honest
  * shape. EVERY paid plan carries the D121 30-day money-back guarantee
  * (founder-confirmed 2026-07-08 — all paid tiers, not Pro-only); it is
- * NAMED here so canceling is never mistaken for a refund, and pointed at
- * /refunds rather than advertised (see the note on the copy below).
+ * The guarantee is NOT mentioned here (founder, 2026-07-31). Naming a
+ * refund at the moment of highest churn intent reads as an invitation —
+ * "if I see this as a term, I will go ahead and ask for a refund every
+ * time". The policy stays public on /refunds and on the Plan & billing
+ * header, so nothing is hidden; this screen simply stops advertising it.
+ * The bullet below still says canceling is not itself a refund, which is
+ * a fact about cancellation, not a denial of the guarantee — so the
+ * 2026-07-08 contradiction with the public 30-day promise does not
+ * return.
  */
 export function CancelModal({
   open,
@@ -230,27 +237,6 @@ export function CancelModal({
               ) : null}
             </div>
           ) : null}
-
-          {/* Stated, not merchandised. Every paid plan carries the D121
-              30-day money-back guarantee and the policy is public, so
-              staying silent about it here would be a trust asymmetry —
-              and would push people toward chargebacks, which cost more
-              than refunds. But the previous revision put it in a filled
-              panel with a primary-weight "Request a refund →" CTA, at the
-              single highest-intent-to-churn moment in the product, shown
-              to everyone regardless of eligibility (founder,
-              2026-07-30). It also flatly promised "you can get a full
-              refund", which /refunds qualifies — once per customer, plus
-              fair-use terms and exclusions. Plain sentence, real link,
-              accurate hedge; the policy page carries the terms and the
-              request address. */}
-          <p style={{ margin: 0, fontSize: 12.5, color: color.fgMuted, lineHeight: 1.5 }}>
-            Charged in the last 30 days? The {MONEY_BACK_NOTE} may apply — the{' '}
-            <a href="/refunds#refund-window" style={{ color: color.fgSoft }}>
-              Refund Policy
-            </a>{' '}
-            has the terms and how to ask.
-          </p>
 
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
             <span style={{ color: color.fgMuted }}>Why are you canceling? (optional)</span>

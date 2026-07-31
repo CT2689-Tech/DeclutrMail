@@ -493,7 +493,8 @@ export function PlanPicker({
             tierId={id}
             cycle={cycle}
             isCurrent={id === currentTier}
-            currentCycle={grantingSub?.provider === 'paddle' ? grantingSub.cycle : null}
+            currentCycle={grantingSub?.cycle ?? null}
+            canSwitchCycle={grantingSub?.provider === 'paddle'}
             isSelected={id === selected}
             disabled={disabled}
             hasGrantingSubscription={grantingSub !== null}
@@ -667,6 +668,7 @@ function PlanCard({
   currentCycle,
   isSelected,
   disabled,
+  canSwitchCycle,
   hasGrantingSubscription,
   provider,
   onSelect,
@@ -678,6 +680,8 @@ function PlanCard({
   currentCycle: BillingCycle | null;
   isSelected: boolean;
   disabled: boolean;
+  /** Whether the rail supports a self-serve cycle switch (Paddle). */
+  canSwitchCycle: boolean;
   hasGrantingSubscription: boolean;
   /** Rail the strip prices against — clamped per point, so the cards
    *  agree with the confirm panel one click later. */
@@ -694,15 +698,23 @@ function PlanCard({
   // below already drew this distinction — "Switch to monthly billing" —
   // so the card contradicted itself.
   //
-  // `currentCycle` is null when the cycle is unknowable (non-Paddle
-  // rail); there the tier badge stays, because tier is the most this
-  // layer honestly knows. Narrowing THAT case needs its own decision.
-  const isCurrentPlan = isCurrent && (currentCycle === null || currentCycle === cycle);
+  // No cycle carve-out by rail. A first pass exempted non-Paddle on the
+  // grounds that the cycle was "unknowable" — it is not: `cycle` is on
+  // the subscription record for every provider, and the call site was
+  // simply refusing to pass it because the SWITCH CTA is Paddle-only.
+  // That left a Razorpay subscriber seeing the exact lie this fix
+  // removed for Paddle (Codex stop-review, 2026-07-31). The two
+  // questions are now separate props: `currentCycle` is a fact on any
+  // rail, `canSwitchCycle` is the affordance.
+  //
+  // `currentCycle` is null only when nothing grants a paid plan, i.e.
+  // Free — which has no cycle, so the toggle cannot make its badge wrong.
+  const isCurrentPlan = isCurrent && (!hasGrantingSubscription || currentCycle === cycle);
   // CTA per card state. Every non-current card gets one so the row
   // reads as equals; the current card's only action is switching its
   // billing cycle via the toggle.
   const cta = isCurrent
-    ? hasGrantingSubscription && currentCycle !== null && currentCycle !== cycle
+    ? hasGrantingSubscription && canSwitchCycle && currentCycle !== null && currentCycle !== cycle
       ? `Switch to ${cycle} billing`
       : null
     : tierId === 'free'
@@ -716,7 +728,7 @@ function PlanCard({
   return (
     <div
       data-testid={`plan-option-${tierId}`}
-      aria-current={isCurrent ? 'true' : undefined}
+      aria-current={isCurrentPlan ? 'true' : undefined}
       style={{
         flex: '1 1 160px',
         padding: '14px 16px',
