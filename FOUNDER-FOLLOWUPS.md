@@ -26,33 +26,33 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-07-31 — DECISION: should a chargeback drop access instantly, or hold to period end?
+### 2026-07-31 — Two refund-enforcement gaps I could not close from here
 
-**Source:** billing-test-matrix H1, verified 2026-07-31 (the refund/cancel work itself shipped — see Done)
+**Source:** Codex adversarial review of PR #452, 2026-07-31. Both are real; both need a Paddle behaviour I cannot verify without a live account in that state, so I did not guess at a fix.
 
-**Why:** the two verdicts deliberately differ and only one of them is obviously right. A **refund** holds entitlement to the period the customer paid for; a **chargeback** revokes it immediately (`entitlementEndsAt: isChargeback ? now() : COALESCE(current_period_end, now())`). Instant revocation on a chargeback is the standard posture — the money is gone and the bank decided it, not you — but it also means a customer disputing one charge loses access the moment the dispute is raised, before it is resolved in anyone's favour. Paddle also raises `chargeback_warning` before a real chargeback, which we do not act on at all.
+**Why (1) — a refund landing just before a renewal misses it.** The provider-side cancel runs on the 6-hourly sweep. If a settled refund arrives just after a sweep and the renewal is less than six hours away, Paddle bills again before we can cancel; Paddle also refuses subscription changes in the final ~30 minutes before renewal, so even an instant call could fail. The customer is charged for one period their entitlement does not grant. The cheap mitigation is to run the verdict pass far more often than the drift pass — it selects almost no rows, so a 10-minute cadence costs nothing and shrinks the window ~36×. I did not ship it because it changes the worker's schedule and deserves its own smoke.
 
-This was implemented from your 2026-07-20 rule and has never been re-examined against a real dispute, because there has never been one.
+**Why (2) — a verdict on a `past_due` row may be unenforceable.** Codex reports that Paddle refuses subscription changes while a subscription is `past_due`. If that is right, a refund/chargeback on a dunning row can never be cancelled: every sweep retries and logs `verdict_enforce_failed`, and if dunning then recovers, Paddle collects the renewal. I could not verify the claim — putting the sandbox subscription into `past_due` needs a genuinely failed payment — so the code still tries and logs loudly rather than pretending.
 
-**How:** confirm the current behaviour, or say which of these you want instead: hold to period end like a refund; or act on `chargeback_warning` differently from a settled `chargeback`. Either change is a few lines in `applyScheduledCancellation`.
+**How:** (1) is a decision to make, then ~10 lines in the worker composition root. (2) needs one confirmation from Paddle support or docs: *can a `past_due` subscription be cancelled at next billing period?* If no, the fallback is a support-visible alert rather than a silent retry loop.
 
-**Verifies by:** whichever rule you pick, stated in `docs/adr/` or the D-plan so the next session does not re-litigate it from the code.
+**Verifies by:** (1) `billing.reconcile.swept` appearing on the faster cadence with `verdictsEnforced` still correct. (2) a documented answer recorded here, and the handling to match.
 
-**Status:** Open — no customer impact until the first dispute; not a launch blocker
+**Status:** Open — neither can bite before there is a paying customer with a failed payment or a same-day renewal
 
-### 2026-07-31 — Paddle prod destination should subscribe to `adjustment.updated`
+### 2026-07-31 — Paddle prod destination: `adjustment.updated` (now optional)
 
-**Source:** refund-path work 2026-07-31 (`fix/d118-refund-verdict-provider-cancel`)
+**Source:** refund-path work 2026-07-31 (PR #452)
 
-**Why:** on a LIVE Paddle account most refunds are created with `status: 'pending_approval'` and Paddle approves them asynchronously; sandbox auto-approves, so this shape has never been seen here. We act on `adjustment.created` immediately, which is the right failure direction (a real refund always revokes) but means a refund Paddle later **rejects** has already ended the customer's plan and scheduled a cancel at the provider. Nothing detects the reversal today.
+**Why:** on a LIVE Paddle account most refunds are created `pending_approval` and Paddle approves them asynchronously; sandbox auto-approves, so that shape has never been seen here. We act on `adjustment.created` immediately, which is the right failure direction, and a refund Paddle later REJECTS is now corrected by the 6-hourly reconciliation sweep — it asks Paddle's `/adjustments` directly and lifts the verdict. So this is no longer a correctness gap.
 
-The active sandbox destination already subscribes to `adjustment.updated`; production's subscription list is a separate dashboard setting and has not been checked.
+What subscribing buys is **latency**: the correction lands in minutes instead of up to six hours, and the same is true for a won dispute (`chargeback_reverse`).
 
-**How:** Paddle dashboard → Developer tools → Notifications → the production destination → confirm `adjustment.updated` is in the subscribed events (add it if not). That alone changes no behaviour — it makes the event available so the rejection path can be built.
+**How:** Paddle dashboard → Developer tools → Notifications → the production destination → add `adjustment.updated` to the subscribed events. Nothing breaks if you skip it.
 
 **Verifies by:** `adjustment.updated` visible in the production destination's event list.
 
-**Status:** Open — one dashboard toggle; the handler is a separate piece of work
+**Status:** Open — nice-to-have, not a blocker
 
 ### 2026-07-31 — Verify production billing with one real purchase (founder decision: yes)
 
@@ -1481,7 +1481,14 @@ cloud sessions auto-discover them on startup.
 2. **Partial refunds were exits.** Paddle fires one `adjustment.created` for "$2 back for the trouble" and for "here is your money back"; both ended the plan.
 3. **The provider kept billing.** A refund adjustment never cancelled the subscription at Paddle, so Paddle would charge again at renewal while we stopped granting the tier — a divergence pointing at the CUSTOMER, who could pay twice and get Free.
 
-**What shipped** (`fix/d118-refund-verdict-provider-cancel`): the projector pins `cancel_at_period_end` under a refund/chargeback verdict; the adapter ignores refunds carrying any `partial` item (chargebacks are never filtered); and the 6-hourly reconciliation sweep converges the provider — any live row with a local verdict whose provider is still set to renew gets a scheduled cancel. `resume-cancellation` refuses these rows and the screen drops the undo button instead of offering a guaranteed 409.
+**What shipped** (PR #452): the projector pins `cancel_at_period_end` under a refund/chargeback verdict; the adapter ignores refunds carrying any `partial` item (chargebacks are never filtered); and the 6-hourly reconciliation sweep converges the provider — any live row with a local verdict whose provider is still set to renew gets a scheduled cancel. `resume-cancellation` and `resume` both refuse these rows, and the screen drops those buttons instead of offering a guaranteed 409.
+
+**Two later rounds on the same PR, both from Codex, both real:**
+
+1. **Pending refunds could cancel before Paddle approves them.** A hazard the PR itself created — the outbound cancel was new and fired on a marker that is not proof. Live accounts create refunds `pending_approval`; sandbox auto-approves, so testing could never show it. The outbound step now needs the provider's own confirmation (`settledCancellationCause`).
+2. **Contradicted verdicts trapped paying customers.** A won dispute restored nothing, a rejected refund left the verdict standing forever, and one old reversal suppressed every later chargeback. All three now lift or enforce correctly, driven from the adjustments poll so no provider-side event subscription is required.
+
+**Also decided here:** a full refund ends access immediately (it used to hold to `current_period_end`, which on an annual plan returned the whole charge and granted the rest of the year); chargebacks keep instant revoke, reviewed and unchanged.
 
 **Correction on the record.** The first version of this entry called H2 a **launch blocker** on the claim that a refunded customer keeps Pro forever. That was wrong — diagnosed by watching `cancel_at_period_end` and never checking `entitlement_ends_at`. Caught by the Codex stop-review, whose objection (the proposed fix could not stop Paddle renewing) is what exposed it: no local column stops Paddle billing, because the webhook service holds no adapters.
 

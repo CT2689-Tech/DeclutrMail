@@ -20,6 +20,14 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-07-31 — Filed a hazard my own PR created as a "known limitation"
+**PR:** [#452](https://github.com/CT2689-Tech/DeclutrMail/pull/452)
+**Caught by:** Codex stop-review ("pending refunds can cancel subscriptions before Paddle approves them")
+**What happened:** I added an outbound provider cancel driven by a local `cancel_source` marker. I then discovered, and wrote in the PR body under "Known limitation, recorded not assumed away", that live Paddle refunds are created `pending_approval` — so the marker can exist for a refund Paddle later rejects. I filed a followup and shipped. But the limitation was pre-existing only for the LOCAL revocation, which is a row we can fix; my change made it cancel a possibly-still-paying customer's subscription at the provider, which they cannot undo. Naming a risk is not the same as owning it, and the founder has explicitly rejected the ship-a-stub-with-a-note pattern before.
+**Correct approach:** When a change makes an existing gap MORE consequential, that gap becomes part of the change's scope. The test is not "did this exist before" but "does my change raise its cost". Here the fix was small: ask the provider whether the refund actually settled, instead of trusting our own marker.
+**Rule:** Before filing a limitation as a followup, ask whether this PR made it worse. If it did, it is not a followup — it is unfinished work.
+**Enforcement update:** none — the gate is `settledCancellationCause`, and the reconciliation spec's fake adapter now defaults to the REFUSING answer so a test that forgets it cannot drift into sending a cancel.
+
 ## 2026-07-31 — Treated every refund as an exit, because the event does not say so
 **PR:** [#452](https://github.com/CT2689-Tech/DeclutrMail/pull/452) (fix); shipped originally in 0051
 **Caught by:** reading the Paddle adjustment schema while building the provider-side cancel — not by any test, gate, or smoke
