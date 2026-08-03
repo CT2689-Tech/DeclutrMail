@@ -32,14 +32,14 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-- ⬜ Not started: 81
+- ⬜ Not started: 83
 - 🟡 In progress: 1
 - 🔵 Shipped: 100
 - 🟢 Verified: 55
 - 🚫 Retired: 2
 - 🔴 Blocked: 0
 - ⏸️ Deferred: 0
-- **Total: 239 D-decisions**
+- **Total: 241 D-decisions**
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -211,7 +211,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D153 | API style: **REST + Zod schemas + Swagger/OpenAPI auto-gen | ⬜ |  |  |  |
 | D154 | API versioning: **URL prefix (`/api/v1/`) | ⬜ |  |  |  |
 | D155 | Auth: **HttpOnly cookies + CSRF + rotating refresh + active_sessions table | 🔵 | #121 |  |  |
-| D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🟢 | #35, #48, #113, #188, #211, #337, #378, #380, #382, #383, #384 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
+| D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🟢 | #35, #48, #113, #188, #211, #337, #378, #380, #382, #383, #384, #456 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425 |  |  |
 | D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
@@ -295,5 +295,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D246 | Finite first relief and evidence-based automation authority | 🔵 | #334 |  |  |
 | D248 | Bulk unsubscribe: one-click subset only, per-channel receipt | ⬜ |  |  | Decided 2026-07-28. Batch executes `senders.unsubscribe_method='one_click'` server-side only. The column is nullable, so four states are reported separately: `mailto` (per-sender, D230), `none` (no channel exists), and `NULL` (not yet indexed — unknown, never folded into `none`). No undo — unsubscribe declares no inverse, so the mandatory modal preview is the reversal point. Receipt aggregates the THREE outcomes the worker writes (`unsubscribe_endpoint_accepted` / `unsubscribe_unconfirmed` / `unsubscribe_failed`) and says "request accepted", not "unsubscribed". Extends D9/D32 |
 | D249 | Billing reconciles against provider truth, not customer memory | 🔵 | #436, #441 |  |  |
+| D250 | Landing page primary headline (reverses D223) | ⬜ |  |  |  |
+| D251 | Autopilot splits on behaviour, not access | ⬜ |  |  |  |
 
 <!-- AUTO:DECISIONS:END -->
