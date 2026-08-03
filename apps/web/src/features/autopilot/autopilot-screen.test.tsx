@@ -45,11 +45,19 @@ import { createTestQueryClient } from '@/test/query-wrapper';
 
 const { trackMock, authState } = vi.hoisted(() => ({
   trackMock: vi.fn(),
-  authState: { activeMailboxId: 'mailbox-a' as string | null },
+  authState: {
+    activeMailboxId: 'mailbox-a' as string | null,
+    tier: 'pro' as 'free' | 'plus' | 'pro',
+  },
 }));
 vi.mock('@/lib/posthog', () => ({ track: trackMock }));
 vi.mock('@/features/auth/auth-provider', () => ({
-  useOptionalAuth: () => ({ me: { activeMailboxId: authState.activeMailboxId } }),
+  // D251 — the screen derives `canActivate` from the tier here. `pro` keeps
+  // these cases exercising the Activate path; the Plus behaviour has its own
+  // cases below.
+  useOptionalAuth: () => ({
+    me: { activeMailboxId: authState.activeMailboxId, tier: authState.tier },
+  }),
   getActiveMailboxEmail: () => 'active@example.com',
 }));
 
@@ -97,6 +105,7 @@ const PATTERN_SUGGESTION: AutopilotPatternSuggestionDto = {
 beforeEach(() => {
   trackMock.mockReset();
   authState.activeMailboxId = 'mailbox-a';
+  authState.tier = 'pro';
 });
 
 describe('AutopilotScreen — edge states', () => {
@@ -507,6 +516,40 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     renderScreen(ready());
     // Fixture rule #1 is elapsed → banner present + honest no-auto-promote copy.
     expect(screen.getByText(/nothing switches on by itself/i)).toBeInTheDocument();
+  });
+
+  // ── D251: Plus reaches this screen but must never be offered Activate ──
+  //
+  // Plus has `autopilot-review` (review and approve) but not `autopilot`
+  // (act unattended). Before this gate the screen offered Activate to Plus,
+  // the PATCH 402'd, and the confirm modal quoted Pro's 30-day undo window
+  // to a user with 7. An action that always fails is worse than no action.
+
+  it('plus: offers an upgrade link instead of Switch to Active', () => {
+    authState.tier = 'plus';
+    renderScreen(ready());
+
+    expect(screen.queryByRole('button', { name: /Switch rule .* to Active/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /requires Pro/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('plan=pro'),
+    );
+  });
+
+  it('plus: the banner does not promise an Active switch it cannot deliver', () => {
+    authState.tier = 'plus';
+    renderScreen(ready());
+
+    expect(screen.queryByText(/until you explicitly switch it to Active/i)).toBeNull();
+    expect(screen.getByText(/part of Pro/i)).toBeInTheDocument();
+  });
+
+  it('pro: still gets the real Activate control', () => {
+    authState.tier = 'pro';
+    renderScreen(ready());
+
+    expect(screen.getByRole('button', { name: /Switch rule .* to Active/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /requires Pro/i })).toBeNull();
   });
 
   it('does NOT render the banner when no observe window has elapsed', () => {

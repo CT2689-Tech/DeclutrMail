@@ -34,6 +34,8 @@ export function ObserveWindowBanner({
   onActivate,
   onDismiss,
   dismissingRuleId,
+  canActivate = true,
+  upgradeHref = '/billing?plan=pro&cycle=monthly',
 }: {
   /**
    * Rules with `enabled && mode==='observe' && observeWindowElapsed &&
@@ -47,6 +49,17 @@ export function ObserveWindowBanner({
   onDismiss: (rule: AutopilotRuleDto) => void;
   /** Rule whose dismissal PATCH is in flight (disables its buttons). */
   dismissingRuleId: string | null;
+  /**
+   * D251 — whether this workspace may let rules act unattended
+   * (`autopilot` capability, Pro). Plus reaches this screen with
+   * `autopilot-review` and can review and approve matches, but MUST NOT
+   * be offered Activate: the PATCH would 402 and the modal would quote
+   * Pro's undo window. Offering an action that always fails is the
+   * defect this flag exists to prevent.
+   */
+  canActivate?: boolean;
+  /** Where the under-tier nudge points. */
+  upgradeHref?: string;
 }) {
   if (rules.length === 0) return null;
 
@@ -73,13 +86,14 @@ export function ObserveWindowBanner({
         </div>
         <div style={{ fontSize: 11.5, color: color.fgMuted, marginTop: 4, lineHeight: 1.5 }}>
           During the window, matches were collected as suggestions without touching your mail.
-          Nothing switches on by itself — each rule keeps observing until you explicitly switch it
-          to Active.
+          {canActivate
+            ? 'Nothing switches on by itself — each rule keeps observing until you explicitly switch it to Active.'
+            : 'Nothing switches on by itself. Approve the matches you want and Autopilot applies them; letting a rule act without asking each time is part of Pro.'}
         </div>
       </div>
 
       <ul
-        aria-label="Rules ready to activate"
+        aria-label={canActivate ? 'Rules ready to activate' : 'Rules with matches ready to review'}
         style={{
           listStyle: 'none',
           margin: 0,
@@ -109,7 +123,7 @@ export function ObserveWindowBanner({
                 {digest != null
                   ? ` — ${lowerFirst(digest)}.`
                   : ` — ${pending} pending suggestion${pending === 1 ? '' : 's'} collected.`}{' '}
-                Activate?
+                {canActivate ? 'Activate?' : 'Review them?'}
               </span>
               <Button
                 tone="default"
@@ -120,15 +134,35 @@ export function ObserveWindowBanner({
               >
                 {isDismissing ? 'Dismissing…' : 'Not now'}
               </Button>
-              <Button
-                tone="default"
-                size="sm"
-                onClick={() => onActivate(rule)}
-                disabled={isDismissing}
-                ariaLabel={`Switch rule ${name} to Active`}
-              >
-                Switch to Active…
-              </Button>
+              {canActivate ? (
+                <Button
+                  tone="default"
+                  size="sm"
+                  onClick={() => onActivate(rule)}
+                  disabled={isDismissing}
+                  ariaLabel={`Switch rule ${name} to Active`}
+                >
+                  Switch to Active…
+                </Button>
+              ) : (
+                // D251 — a link to the upgrade, never a disabled Activate
+                // button. A greyed-out control reads as "temporarily
+                // unavailable"; this states the actual reason and where to
+                // go, and it can never fire a request that 402s.
+                <a
+                  href={upgradeHref}
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: color.fg,
+                    textDecoration: 'underline',
+                    whiteSpace: 'nowrap',
+                  }}
+                  aria-label={`Run rule ${name} without approving each batch — requires Pro`}
+                >
+                  Run without asking → Pro
+                </a>
+              )}
             </li>
           );
         })}

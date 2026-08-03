@@ -21,6 +21,7 @@ import type {
 } from '@/lib/api/autopilot';
 import { ContextualHelp } from '@/features/help/contextual-help';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { hasCapability } from '@declutrmail/shared/entitlements';
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
 import { useApproveMatches } from './api/use-approve-matches';
 import { useAutopilotRules } from './api/use-autopilot-rules';
@@ -162,6 +163,17 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   // preview (D226) — the rule card's inline panel and the modal must
   // not stomp each other's state.
   const activatePreview = useRulePreview();
+  // D251 — Plus reaches this screen via `autopilot-review` and may review
+  // and approve matches, but only `autopilot` (Pro) may let a rule act
+  // unattended. Without this the screen offers Activate to Plus, the
+  // PATCH 402s, and the modal quotes Pro's 30-day undo window to a user
+  // who has 7.
+  // Read the tier from the auth context the screen already consumes rather
+  // than `useTier()`, which pulls in `useAuth()` and would make this screen
+  // un-renderable wherever auth is only optionally present. Same source of
+  // truth, one fewer dependency. Absent tier → treat as not entitled, so a
+  // skewed /me payload hides Activate rather than offering a 402.
+  const canActivate = hasCapability(auth?.me.tier ?? 'free', 'autopilot');
   const decidePattern = useDecidePatternSuggestion();
 
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
@@ -588,7 +600,9 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
               margin: '4px 0 0',
             }}
           >
-            Observe first. Activate when ready.
+            {canActivate
+              ? 'Observe first. Activate when ready.'
+              : 'Rules find it. You approve each batch.'}
           </h1>
         </div>
         <Button
@@ -631,6 +645,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
           onActivate={openActivate}
           onDismiss={onDismissPrompt}
           dismissingRuleId={dismissingPromptRuleId}
+          canActivate={canActivate}
         />
       )}
 
