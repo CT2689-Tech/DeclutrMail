@@ -375,6 +375,14 @@ interface EligibleMatch {
   actionKind: 'archive' | 'unsubscribe' | 'later' | string;
   ruleEnabled: boolean;
   ruleMode: string;
+  /**
+   * D251 — the rule's mode WHEN THIS MATCH WAS RECORDED, which is the
+   * provenance the entitlement gate keys on. `observe` means a human
+   * approved this batch (Plus is entitled to that); `active` means the
+   * rule acted unattended (Pro only). `ruleMode` is the rule's mode NOW
+   * and can have changed since, so it must NOT be used for the gate.
+   */
+  modeAtMatch: string;
   senderId: string | null;
   unsubscribeMethod: 'one_click' | 'mailto' | 'none' | null;
 }
@@ -448,10 +456,22 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // never runs again, so the change was invisible and unrecoverable
     // forever. Record the reason instead and fall through to a
     // completion-only pass over the in-flight claims.
+    // D251 — TWO capabilities, not one, and the split is per-match.
+    //
+    //   `autopilot-review` (Plus, Pro) — a human approved this batch.
+    //   `autopilot`        (Pro only)  — the rule acted unattended.
+    //
+    // A single tier-wide gate cannot express this. Gating the sweep on
+    // `autopilot` would strand the very batch a Plus user just approved;
+    // granting Plus `autopilot` would let an `active` rule fire without
+    // approval, i.e. hand Plus the thing Pro is sold on. So the sweep is
+    // gated only on the review capability, and unattended matches are
+    // filtered per-match below on `modeAtMatch`.
     let gatedBy: 'entitlement' | 'quiet' | null = null;
-    if (!hasCapability(mailbox.tier, 'autopilot')) {
+    if (!hasCapability(mailbox.tier, 'autopilot-review')) {
       gatedBy = 'entitlement';
     }
+    const mayActUnattended = hasCapability(mailbox.tier, 'autopilot');
     if (!gatedBy && isQuietActive(mailbox.quietState, now)) {
       const resumeAfterMs = msUntilQuietEnds(mailbox.quietState, now);
       console.log(
@@ -487,7 +507,30 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // completion-only filter and by every start-gate inside the loop.
     const inFlightBy = await this.loadInFlightFlags(loaded);
 
-    const matches = gatedBy ? loaded.filter((m) => inFlightBy.get(m.matchId)) : loaded;
+    // Unattended matches on a tier without `autopilot` are dropped from
+    // NEW work but, like the sweep gates above, never stranded mid-flight:
+    // a claim that already mutated Gmail still completes so it gets its
+    // Activity row and undo token. This is the path a Pro→Plus downgrade
+    // takes, and it must not silently lose a half-applied change.
+    const entitledLoaded = mayActUnattended
+      ? loaded
+      : loaded.filter((m) => m.modeAtMatch === 'observe' || inFlightBy.get(m.matchId));
+    const droppedUnattended = loaded.length - entitledLoaded.length;
+    if (droppedUnattended > 0) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'autopilot.action.unattended_match_not_entitled',
+          worker: this.workerName,
+          mailboxAccountId,
+          tier: mailbox.tier,
+          dropped: droppedUnattended,
+        }),
+      );
+    }
+    const matches = gatedBy
+      ? entitledLoaded.filter((m) => inFlightBy.get(m.matchId))
+      : entitledLoaded;
     if (gatedBy && matches.length > 0) {
       console.warn(
         JSON.stringify({
@@ -751,6 +794,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
         actionKind: automationRules.actionKind,
         ruleEnabled: automationRules.enabled,
         ruleMode: automationRules.mode,
+        modeAtMatch: ruleMatchLog.modeAtMatch,
         senderId: senders.id,
         unsubscribeMethod: senders.unsubscribeMethod,
       })

@@ -259,7 +259,7 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
       return <SyncGate status={status} mailboxId={activeMailboxId} />;
     }
     case 'preset-pick':
-      return hasCapability(me.tier, 'autopilot') ? (
+      return hasCapability(me.tier, 'autopilot-review') ? (
         <StepPresetPick
           presets={state.data?.presets ?? []}
           initialGoal={state.data?.goal ?? null}

@@ -541,9 +541,20 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
       .where(eq(mailboxAccounts.id, mailboxAccountId))
       .limit(1);
-    if (!workspace || !hasCapability(workspace.tier, 'autopilot')) {
+    // D251 — MATCHING is a Plus capability, so a workspace only needs
+    // `autopilot-review` to have its rules evaluated at all.
+    if (!workspace || !hasCapability(workspace.tier, 'autopilot-review')) {
       return [];
     }
+
+    // ...but ACTING unattended is not. A tier without `autopilot` must not
+    // evaluate `active` rules, because an active match is auto-approved and
+    // would reach the action sweep with no human in the loop. Plus cannot
+    // legitimately create one (the controller blocks the mode change), so
+    // this is the Pro→Plus DOWNGRADE path: previously-active rules go inert
+    // rather than silently continuing to act on a tier that stopped paying
+    // for it. Observe rules keep running, which is exactly what Plus buys.
+    const mayActUnattended = hasCapability(workspace.tier, 'autopilot');
 
     return this.deps.db
       .select()
@@ -553,6 +564,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
           eq(automationRules.mailboxAccountId, mailboxAccountId),
           eq(automationRules.enabled, true),
           ne(automationRules.mode, 'paused'),
+          ...(mayActUnattended ? [] : [ne(automationRules.mode, 'active')]),
           eq(automationRules.isPreset, true),
         ),
       );

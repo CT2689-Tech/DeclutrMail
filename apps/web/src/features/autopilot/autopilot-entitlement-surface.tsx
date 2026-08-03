@@ -28,7 +28,7 @@ const { color, font, radius, shadow } = tokens;
  */
 export function AutopilotEntitlementSurface() {
   const { tier } = useTier();
-  if (hasCapability(tier, 'autopilot')) return <AutopilotRoute />;
+  if (hasCapability(tier, 'autopilot-review')) return <AutopilotRoute />;
   return <AutopilotObservePreview />;
 }
 

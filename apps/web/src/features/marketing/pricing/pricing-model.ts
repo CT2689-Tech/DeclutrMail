@@ -191,9 +191,12 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, string>> = {
   activity: 'Activity history',
   'cleanup-actions': 'Cleanup verbs — Keep · Archive · Unsubscribe · Later · Delete',
   triage: 'Triage sessions',
-  autopilot: 'Autopilot rules',
+  // D251 — one feature name, two behaviours. The ladder reads as an
+  // upgrade in kind ("stop approving"), not as a second product.
+  'autopilot-review': 'Autopilot — finds matching mail, you approve each batch',
+  autopilot: 'Autopilot — runs on its own',
   brief: 'Daily Brief',
-  screener: 'Screener',
+  screener: 'Screener — new senders collected for review',
   quiet: 'Quiet hours',
   snoozed: 'Later review queue',
   followups: 'Follow-ups',

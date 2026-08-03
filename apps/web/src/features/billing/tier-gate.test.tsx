@@ -31,6 +31,9 @@ vi.mock('@/features/auth/auth-provider', () => ({
 import { TierGate } from './tier-gate';
 
 function renderGate(capability: 'brief' | 'triage' | 'screener' = 'brief') {
+  // NOTE (D251): `screener` is now a PLUS capability, so it is the fixture
+  // for "the gate names the cheapest granting plan". `brief` stays Pro and
+  // is the fixture for the Pro path.
   let childMounted = false;
   function Child() {
     childMounted = true;
@@ -67,20 +70,29 @@ describe('TierGate', () => {
     expect(childMounted()).toBe(false);
   });
 
-  it('plus tier: still gated for the Pro automation set (D77)', () => {
+  it('plus tier: still gated for the Pro-only automation set (D77, narrowed by D251)', () => {
     mockTier = 'plus';
-    renderGate();
+    renderGate('brief');
     expect(screen.getByTestId('tier-gate-placeholder')).toBeInTheDocument();
   });
 
-  it('names the granting plan and its manifest price for a Pro capability', () => {
+  it('plus tier: NOT gated for the Screener, which D251 moved to Plus', () => {
+    mockTier = 'plus';
+    const { childMounted } = renderGate('screener');
+    expect(screen.queryByTestId('tier-gate-placeholder')).not.toBeInTheDocument();
+    expect(childMounted()).toBe(true);
+  });
+
+  it('names the CHEAPEST granting plan and its manifest price, not always Pro', () => {
     mockTier = 'free';
     renderGate('screener');
 
-    expect(screen.getByText('Pro feature')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Upgrade to Pro → $19/mo' })).toHaveAttribute(
+    // D251 — Screener is granted by Plus, so the gate must route to Plus at
+    // $9. Before D251 this said Pro/$19. The price and plan are derived from
+    // the manifest, so this assertion moves with the ladder by construction.
+    expect(screen.getByRole('link', { name: 'Upgrade to Plus → $9/mo' })).toHaveAttribute(
       'href',
-      '/billing?plan=pro&cycle=monthly',
+      '/billing?plan=plus&cycle=monthly',
     );
   });
 

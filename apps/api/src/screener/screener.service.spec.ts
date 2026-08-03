@@ -401,7 +401,7 @@ describe('screenerDecideRequestSchema — ADR-0028 reach', () => {
   });
 });
 
-describe('ScreenerService.assertScreenerCapability (D77)', () => {
+describe('ScreenerService.assertScreenerCapability (D77, reversed by D251)', () => {
   function makeSvc(tier: string | null) {
     const entitlements = {
       workspaceForMailbox: vi.fn(async () =>
@@ -411,14 +411,14 @@ describe('ScreenerService.assertScreenerCapability (D77)', () => {
     return new ScreenerService({} as never, {} as never, entitlements);
   }
 
-  it('passes pro / team / enterprise (pro-equivalent capability set)', async () => {
-    for (const tier of ['pro', 'team', 'enterprise']) {
+  it('passes plus / pro / team / enterprise — D251 moved Screener to Plus', async () => {
+    for (const tier of ['plus', 'pro', 'team', 'enterprise']) {
       await expect(makeSvc(tier).assertScreenerCapability('mb-1')).resolves.toBeUndefined();
     }
   });
 
-  it('402s free and plus with PRO_FEATURE_REQUIRED', async () => {
-    for (const tier of ['free', 'plus']) {
+  it('402s free with PRO_FEATURE_REQUIRED', async () => {
+    for (const tier of ['free']) {
       const err = await makeSvc(tier)
         .assertScreenerCapability('mb-1')
         .then(() => null)
