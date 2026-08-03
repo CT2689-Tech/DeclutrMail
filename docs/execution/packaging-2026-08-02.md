@@ -51,21 +51,21 @@ approve every batch; at Pro you approved the rule once.
 
 ### Automation
 
-| Feature                            | What it is                                                                                                                             | Free |     Plus     | Pro |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | :--: | :----------: | :-: |
-| **Screener**                       | New senders collected for review. They still arrive in Gmail — this is where you decide in a batch                                     |  ❌  | ✅ **moves** | ✅  |
-| **Autopilot — finds, you approve** | Rules gather matching mail; you approve each batch before anything moves                                                               |  ❌  | ✅ **moves** | ✅  |
-| **Autopilot — runs on its own**    | Approve the rule once; it acts on future mail without asking                                                                           |  ❌  |      ❌      | ✅  |
-| Quiet hours                        | A window where automatic actions hold off and run after. Only meaningful when Autopilot acts alone — manual actions are never deferred |  ❌  |      ❌      | ✅  |
+| Feature                            | What it is                                                                                                                                                                                                                                                              | Free |     Plus     | Pro |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--: | :----------: | :-: |
+| **Screener**                       | New senders collected for review. They still arrive in Gmail — this is where you decide in a batch                                                                                                                                                                      |  ❌  | ✅ **moves** | ✅  |
+| **Autopilot — finds, you approve** | Rules gather matching mail; you approve each batch before anything moves                                                                                                                                                                                                |  ❌  | ✅ **moves** | ✅  |
+| **Autopilot — runs on its own**    | Approve the rule once; it acts on future mail without asking                                                                                                                                                                                                            |  ❌  |      ❌      | ✅  |
+| Quiet hours                        | A window where automatic actions hold off and run after. Manual actions are never deferred. **Open design question:** an approved Plus batch enqueues the same worker sweep that defers on quiet state, so "Pro-only" may need a check before this becomes pricing copy |  ❌  |      ❌      | ✅  |
 
 ### Knowing what happened
 
-| Feature            | What it is                                                                                   | Free |    Plus    | Pro |
-| ------------------ | -------------------------------------------------------------------------------------------- | :--: | :--------: | :-: |
-| Activity ledger    | Every action taken, what it affected, undo where reversible                                  |  ✅  |     ✅     | ✅  |
-| **Weekly receipt** | One email a week: what rules found, what you approved, how many senders wait in the Screener |  ❌  | ✅ **new** | ✅  |
-| Daily Brief        | Written digest of what's arriving now — reply / FYI / noise                                  |  ❌  |     ❌     | ✅  |
-| Follow-ups         | Mail **you sent** that nobody replied to, grouped by age, mark-as-resolved                   |  ❌  |     ❌     | ✅  |
+| Feature            | What it is                                                                                                                                           | Free |    Plus    | Pro |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | :--: | :--------: | :-: |
+| Activity ledger    | Every action taken, what it affected, undo where reversible                                                                                          |  ✅  |     ✅     | ✅  |
+| **Weekly receipt** | What rules found, what you approved, how many senders wait in the Screener. In-app card at launch; the email is opt-in and default-off (amends D189) |  ❌  | ✅ **new** | ✅  |
+| Daily Brief        | Written digest of what's arriving now — reply / FYI / noise                                                                                          |  ❌  |     ❌     | ✅  |
+| Follow-ups         | Mail **you sent** that nobody replied to, grouped by age, mark-as-resolved                                                                           |  ❌  |     ❌     | ✅  |
 
 ### Safety
 
@@ -78,26 +78,40 @@ approve every batch; at Pro you approved the rule once.
 
 ### Limits, privacy, price
 
-|                               | Free          | Plus          | Pro                                                               |
-| ----------------------------- | ------------- | ------------- | ----------------------------------------------------------------- |
-| Senders actionable            | 50/month      | Unlimited     | Unlimited                                                         |
-| Connected Gmail accounts      | 1             | 1             | 3                                                                 |
-| Bulk cap per action           | 1,000 senders | 1,000         | 1,000                                                             |
-| Bodies/attachments fetched    | Never         | Never         | Never                                                             |
-| Data sent outside DeclutrMail | None          | None          | Daily Brief only — sender, subject, Gmail's snippet, to Anthropic |
-| Price USD                     | $0            | $9 · $90/yr   | $19 · $190/yr                                                     |
-| Price INR                     | ₹0            | ₹749 · ₹7,499 | ₹1,599 · ₹15,999                                                  |
-| Founding Pro                  | —             | —             | $129/yr, first 250, locked while active                           |
+|                              | Free                                                                      | Plus          | Pro                                                               |
+| ---------------------------- | ------------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------- |
+| Senders actionable           | 50/month                                                                  | Unlimited     | Unlimited                                                         |
+| Connected Gmail accounts     | 1                                                                         | 1             | 3                                                                 |
+| Bulk cap per action          | 1,000 senders                                                             | 1,000         | 1,000                                                             |
+| Bodies/attachments fetched   | Never                                                                     | Never         | Never                                                             |
+| Gmail data sent to Anthropic | Recommendation explanations — sender identity, domain, engagement signals | Same as Free  | Same, **plus** the Daily Brief — sender, subject, Gmail's snippet |
+| Price USD                    | $0                                                                        | $9 · $90/yr   | $19 · $190/yr                                                     |
+| Price INR                    | ₹0                                                                        | ₹749 · ₹7,499 | ₹1,599 · ₹15,999                                                  |
+| Founding Pro                 | —                                                                         | —             | $129/yr, first 250, locked while active                           |
+
+> **Corrected 2026-08-02 after review.** An earlier draft of this table read
+> `Data sent outside DeclutrMail | None | None | Daily Brief only`. **That was false on every
+> tier and must never reach public copy.** The D24 recommendation-explanation path sends sender
+> identity, domain and engagement signals to Anthropic regardless of tier — `worker.ts` wires the
+> Anthropic adapter whenever `ANTHROPIC_API_KEY` is set, `deploy-cloud-run.yml` mounts that secret
+> on both the API and the worker in production, and neither the scoring worker nor the triage
+> service consults `hasCapability`. The repo's own locked string says so:
+> `RECOMMENDATION_AI_DISCLOSURE` in `packages/shared/src/copy/action-safety.ts`.
+>
+> The row is also scoped to **Gmail data** deliberately. Telemetry (Sentry, PostHog), transactional
+> email (Resend) and billing (Paddle, Razorpay) are separate processors covered by the privacy
+> policy; collapsing them into a single "none" was the compressed-generated-claim failure ADR-0030
+> exists to prevent. Any public version of this row must render from the registry, not from prose.
 
 ---
 
 ## What actually moves from today
 
-|                                | Today          | Proposed |
-| ------------------------------ | -------------- | -------- |
-| Screener                       | Pro            | **Plus** |
-| Autopilot — finds, you approve | Pro            | **Plus** |
-| Weekly receipt                 | Does not exist | **Plus** |
+|                                | Today                                 | Proposed                                                           |
+| ------------------------------ | ------------------------------------- | ------------------------------------------------------------------ |
+| Screener                       | Pro                                   | **Plus**                                                           |
+| Autopilot — finds, you approve | Pro                                   | **Plus**                                                           |
+| Weekly receipt                 | Specified Pro-only and unbuilt (D189) | **Plus and Pro** — in-app card at launch, email opt-in default-off |
 
 Autopilot-that-acts-alone, Brief, Quiet hours, Follow-ups, bulk-by-filter, 3 inboxes and
 the 30-day undo window all stay at Pro. **Nothing leaves Pro that anyone is paying for**
@@ -122,16 +136,50 @@ Pro on inbox count draws a wall around an empty room.
 
 ## What gets built
 
-| #   | Work                                                                                                                 | Size                                                                                                                                                                                                                  |
-| --- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Split the Autopilot capability gate — Plus gets the read/approve routes; flipping a rule to run on its own stays Pro | Small. `autopilot.controller.ts:70` currently guards all 13 routes with one class-level `@RequiresCapability('autopilot')`                                                                                            |
-| 2   | Move `screener` into `PLUS_CAPABILITIES`                                                                             | One line                                                                                                                                                                                                              |
-| 3   | Weekly receipt email                                                                                                 | The only real build. Derived from the Activity ledger + Screener counts at send time. No new storage, no Gmail fields, no outside API                                                                                 |
-| 4   | Fix the free-tier dead end                                                                                           | `confirm-action-modal.tsx:456,460` folds `quotaShort` into `confirmDisabled`, so a free user's 400-sender bulk with 50 remaining moves **zero** messages. Act on the first 50; the preview must say so before it runs |
+| #   | Work                                                                                                                 | Size                                                                                                                                                                                                                                 |
+| --- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Split the Autopilot capability gate — Plus gets the read/approve routes; flipping a rule to run on its own stays Pro | Small. `autopilot.controller.ts:70` carries a class-level `@RequiresCapability('autopilot')` covering **11 of 13** routes — `GET rules` (`:83`) and `POST rules/:id/preview` (`:294`) already carry `@CapabilityExempt()`            |
+| 2   | Move `screener` into `PLUS_CAPABILITIES`                                                                             | One line                                                                                                                                                                                                                             |
+| 3   | Weekly receipt email — **must be reconciled with D189 first, see below**                                             | The only real build. Derived from the Activity ledger + Screener counts at send time. No new **Gmail** fields and no new AI processor — but it does need a new notification preference, and delivery is a third-party call to Resend |
+| 4   | Fix the free-tier dead end                                                                                           | `confirm-action-modal.tsx:456,460` folds `quotaShort` into `confirmDisabled`, so a free user's 400-sender bulk with 50 remaining moves **zero** messages. Act on the first 50; the preview must say so before it runs                |
 
 The mechanism behind #1 already exists and is tested: `autopilot-apply.worker` records
 `observeMatches` with `modeAtMatch: 'observe'`, and `POST /api/autopilot/matches/approve`
 ("Approve selected", idempotent) flips matches to approved and enqueues the action sweep.
+
+### Two prior decisions this collides with — found in review, both real
+
+**D77 — "Screener is Pro-only; Free/Plus get basic deferred-decision queue"** (🔵 shipped via
+#206, #220). D251 moves Screener to Plus, which directly overrides D77, and the first draft of
+this work named D194/D226/D230/D19 in its "does not amend" list while silently skipping the one
+decision it actually reverses. That asymmetry is the tell. **D251 now carries an explicit
+`[REVERSAL 2026-08-02 on D77]` marker in the plan mirror**, so `rg "on D77"` finds it — the
+patch-awareness contract in CLAUDE.md §3.
+
+Note D77 also grants Free/Plus a _basic deferred-decision queue_ (the `S` key as "decide later",
+no auto-routing, no badge, no recommendations). D251 gives Plus the **full** Screener. Free keeps
+whatever D77's basic queue resolves to today — that is unchanged and must not be silently dropped.
+
+**D189 — "Weekly Value Receipt"** (⬜ unbuilt). It already specifies a weekly receipt, and its
+terms differ from mine on every axis that matters:
+
+|               | D189 (existing)                                   | D251 first draft      |
+| ------------- | ------------------------------------------------- | --------------------- |
+| Tier          | **Pro-only**                                      | Plus and Pro          |
+| Delivery      | In-app card pinned to Triage + **optional** email | Email                 |
+| Email default | **Off**                                           | Unstated — implied on |
+| Cadence       | Sundays 6pm user-local                            | "Weekly"              |
+
+Shipping both would put two live D-decisions in the plan specifying the same artifact at
+different tiers with opposite consent defaults. **D251's receipt is therefore recorded as an
+amendment to D189, not a new artifact**, and it inherits D189's email-default-off unless the
+founder decides otherwise. That decision is open.
+
+**And it is a commercial email.** Recurring value receipts are re-engagement, not transactional,
+so the receipt inherits the postal-address gate that currently blocks `sync-reminder-24h`
+(CAN-SPAM / CASL, open founder follow-up). **The in-app card can ship in the launch release; the
+email cannot until a postal address exists.** The first draft scheduled the email for launch week
+without noticing.
 
 ### Copy
 

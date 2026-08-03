@@ -26,6 +26,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-02 — CLAUDE.md "Plan stats" line is stale in all three numbers
+**Source:** consistency review of PR #458 (D250/D251)
+**Why:** CLAUDE.md:208 and :796 both read "235 decisions + 33 inline patches + 3 reversal markers". On the D250 branch the real counts are **241 D-rows**, **34 patch markers**, and **1 REVERSAL marker** — and `main`'s plan mirror has **zero** REVERSAL markers, so the "3" has never matched the mirror it describes. Agents must not edit CLAUDE.md (§11), so this is surfaced rather than fixed, per §3's plan-drift rule.
+**How:** in a `chore/distill-*` PR, update both lines. Consider deriving the counts instead of hand-maintaining them — `generate-impl-log` already parses the mirror, so a stale hand-written stat is the same class of defect as the log flip that never ran.
+**Verifies by:** both CLAUDE.md lines match `grep -c '^### D[0-9]' docs/execution/Implementation-Plan.md` and the marker counts.
+**Status:** Open
+
 ### 2026-07-31 — Two refund-enforcement gaps I could not close from here
 
 **Source:** Codex adversarial review of PR #452, 2026-07-31. Both are real; both need a Paddle behaviour I cannot verify without a live account in that state, so I did not guess at a fix.

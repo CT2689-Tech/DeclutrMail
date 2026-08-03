@@ -16,7 +16,8 @@ work was defensive.
 
 On 8 July 2025 Gmail shipped _Manage subscriptions_ — senders ranked by volume with
 one-click unsubscribe. The unit of work is now a native Gmail feature. The founder's own
-commissioned audit (`docs/execution/product-launch-audit-2026-07-25.md:110`) grades
+commissioned audit (`docs/execution/product-launch-audit-2026-07-25.md:110`, and `:115` for the
+scope-preview row) grades
 "sender list ranked by volume" a **dead differentiator** and "scope preview before the
 mutation" **durable**.
 

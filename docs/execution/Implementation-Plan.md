@@ -9699,7 +9699,8 @@ carries the replacement.
 rationale expired on 8 July 2025, when Gmail shipped its *Manage
 subscriptions* hub: senders ranked by volume with one-click unsubscribe.
 The founder's own commissioned audit
-(`docs/execution/product-launch-audit-2026-07-25.md:110`) rates "sender
+(`docs/execution/product-launch-audit-2026-07-25.md:110`, and `:115` for the
+second row) rates "sender
 list ranked by volume" a **"Dead differentiator. Stop leading with it,"**
 and rates "scope preview before the mutation" **"Not offered. Durable."**
 The headline named the row Gmail shipped.
@@ -9707,8 +9708,13 @@ The headline named the row Gmail shipped.
 **On what evidence.** Judgement, not conversion data — and the record
 should say so. `FOUNDER-FOLLOWUPS.md` (2026-07-28) upheld D223 with the
 condition *"Reopen only if the `connect_gmail` conversion data argues for
-it."* There are zero customers, so that data cannot exist; the condition
-was unfalsifiable by its own terms. The founder reopened it on 2026-08-02
+it."* That condition was never met, though the first draft of this block
+overstated why: `connect_gmail` conversion needs qualified *visitors*, not
+paying customers, and the funnel is not empty (`upgrade_prompt_shown` 32
+events across 4 people, `checkout_started` 3 across 2). The honest statement
+is that there has never been enough qualified traffic to read a conversion
+difference — a weaker claim than "the data cannot exist", and the one that
+belongs on the record. The founder reopened it on 2026-08-02
 on the strength of the Gmail-parity argument. Launch week is the first
 opportunity to generate the evidence D223 asked for.
 
@@ -9836,12 +9842,21 @@ imply rules act unattended.
 
 **Ships with it, in the same release:** the weekly Plus receipt (derived
 from the Activity ledger and Screener counts at send time — no new
-storage, no Gmail fields, no third-party call), the free-tier quota dead
+storage of Gmail fields and no new AI processor — but delivery is a
+third-party call to Resend and the opt-in needs its own persisted preference;
+the email itself is commercial and gated on the postal address, so only the
+in-app card ships in the launch release), the free-tier quota dead
 end (`confirm-action-modal.tsx:456,460` folds `quotaShort` into
 `confirmDisabled`, so an over-quota bulk currently moves **zero**
 messages — act on the remaining allowance and say so in the D226
 preview), and the public pricing page defaulting to annual.
 
+**Reverses D77** (Screener Pro-only) — see `[REVERSAL 2026-08-02 on D77]`.
+**Amends D189** (Weekly Value Receipt) — see `[AMENDMENT 2026-08-02 on D189]`;
+the receipt is that artifact re-tiered, not a new one, and it inherits D189's
+email-default-off plus the commercial-email postal-address gate.
+**Amends D19's capability table** (Pro's feature list moves; its price points
+do not).
 **Does not amend** D194 (never claim Screener blocks arrival — it is soft
 quarantine and new senders still reach Gmail), D226 (preview stays
 mandatory), D230 (mailto unsubscribe stays manual), or D19's price
@@ -9858,3 +9873,60 @@ Plus — one line, safe direction. **Guard:** below ~20 paid-Plus
 workspaces the rate is not readable; instrument the denominator and
 refuse to render beneath that floor, or the metric becomes the
 blind-guard failure this codebase keeps relearning.
+
+---
+
+### [REVERSAL 2026-08-02 on D77]
+
+**D77's Pro-only Screener fence is retired by D251.** D77 locked "Screener is
+Pro-only; Free/Plus get basic deferred-decision queue" and shipped 🔵 via
+#206/#220. D251 moves the full Screener to Plus.
+
+Recorded as its own marker because the first draft of D251 named D194, D226,
+D230 and D19's price points in its "does not amend" list and silently skipped
+the one decision it actually reverses. Found in review 2026-08-02.
+
+**What changes:** Plus gains the full Screener — auto-routing of new senders,
+the sidebar badge with count, and engine recommendations on rows.
+
+**What does NOT change:** Free keeps D77's basic deferred-decision queue (the
+"decide later" list with no auto-routing, no badge, no recommendations). D251
+gives Free nothing new, and this reversal must not be read as removing that
+queue.
+
+**Unchanged from D77:** the Pro/Power full-Screener spec (D71–D76) and the
+post-launch daily new-sender summary.
+
+---
+
+### [AMENDMENT 2026-08-02 on D189]
+
+**D251's weekly receipt is an amendment to D189, not a second artifact.** D189
+already specifies a Weekly Value Receipt; shipping D251's receipt as new work
+would put two live decisions in the plan describing the same artifact at
+different tiers with opposite consent defaults. Found in review 2026-08-02.
+
+| | D189 as written | D251 amendment |
+|---|---|---|
+| Tier | Pro-only | **Plus and Pro** |
+| Surfaces | In-app card pinned to Triage 24h + optional email | Unchanged |
+| Email default | **Off** | **Off — inherited, not overridden** |
+| Cadence | Sundays 6pm user-local | Unchanged |
+| Content | D189's computation | Extended with Screener queue counts and approved-batch counts |
+
+**Two constraints the D251 draft missed.**
+
+1. **The email is commercial, not transactional.** A recurring value receipt is
+   re-engagement mail, so it inherits the postal-address gate that currently
+   holds `sync-reminder-24h` (CAN-SPAM §7704(a)(5)(A)(iii), CASL). **The in-app
+   card may ship in the launch release; the email may not, until a postal
+   address exists.** D189's email-default-off makes this materially less
+   urgent, but default-off is not an exemption.
+2. **It is not free of storage or third parties.** Delivery goes through Resend,
+   and the opt-in needs its own persisted preference rather than reusing
+   `reminders` or `syncComplete`. The defensible claim is narrower than the
+   draft's: no new **Gmail** fields and no new **AI** processor.
+
+**Open for the founder:** whether the receipt's email opt-in stays default-off
+(D189's position, inherited here) or flips on for paid tiers. Default-off is
+the safer launch posture and is what ships absent a decision.

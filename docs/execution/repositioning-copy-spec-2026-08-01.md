@@ -81,9 +81,32 @@ self-serve event library the coverage is essentially complete. **DATA-01 is ther
 verification task, not a build task** — confirm the chain fires end to end under consent gating,
 do not design new events.
 
-**Declare the activation metric.** `first_relief_session_completed` already exists and is the
-correct definition of activation for this product. Nothing currently reports it. Name it as the
-activation metric before launch so the launch produces a readable number.
+**Correction, 2026-08-02 — the activation instrument has never fired.** An earlier draft of this
+section called DATA-01 "a verification task, not a build task" on the strength of the event
+taxonomy doc. Verification against live PostHog contradicts that:
+
+| Event                                                           | Events in last 120 days                                        |
+| --------------------------------------------------------------- | -------------------------------------------------------------- |
+| `first_relief_session_started` / `_completed` (D246 activation) | **0 — not in project taxonomy**                                |
+| `activation_goal_selected`                                      | **0**                                                          |
+| `payment_succeeded` / `payment_failed`                          | **0**                                                          |
+| `onboarding_step_viewed` / `_completed`                         | 18 total, **one person, last 2026-07-01**                      |
+| `checkout_started`                                              | 3 (2 people, last 2026-07-31) — with no terminal outcome event |
+| `upgrade_prompt_shown`                                          | 32 (4 people) — the paywall is genuinely being hit             |
+
+The emit sites exist and look correct (`step-first-triage.tsx:60,66`,
+`step-preset-pick.tsx:115,277`). The events have simply never been observed, because nobody has run
+onboarding since 1 July — the founder's workspaces are already onboarded, so the path is not
+exercised in normal use. **Emitting-but-unobserved and silently-broken are indistinguishable from
+here**, which is this codebase's recurring blind-guard failure, now sitting on the one code path
+that launch traffic hits first.
+
+**DATA-01 is therefore a P0 smoke, not a doc review.** Run onboarding end to end once via the D206
+dev login before launch and confirm the four activation events land in PostHog. If they do not, the
+launch produces no activation data at all and no amount of copy work is measurable.
+
+`first_relief_session_completed` remains the correct definition of activation for this product —
+it just has to be proven to fire before it can be declared.
 
 **The aha moment is blocked, and this is the highest-value fix on the list.** The onboarding
 framework defines activation as the first time a user _does_ the valuable thing. Here that is
