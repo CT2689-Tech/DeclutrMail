@@ -9683,3 +9683,178 @@ with no webhook (`billing.reconcile.drift_applied`).
 Extends the 0051 pending-checkout guard (decision 1, 2026-07-28).
 Amends the sweep's original "no provider polling" posture. Does not
 amend D229 (webhook auth) or D121 (no trials).
+
+---
+
+### [REVERSAL 2026-08-02 on D223]
+
+**D223's landing headline is retired.** D223 locked
+`Control Gmail by sender, not by email.` and permitted its own reversal:
+*"The primary headline stays the load-bearing line through Phase 5
+iteration unless explicit reversal D."* This is that reversal; D250
+carries the replacement.
+
+**Why it reversed.** D223's stated rationale was that the line is
+"defensive (every competitor opens with 'AI inbox cleaner')". That
+rationale expired on 8 July 2025, when Gmail shipped its *Manage
+subscriptions* hub: senders ranked by volume with one-click unsubscribe.
+The founder's own commissioned audit
+(`docs/execution/product-launch-audit-2026-07-25.md:110`) rates "sender
+list ranked by volume" a **"Dead differentiator. Stop leading with it,"**
+and rates "scope preview before the mutation" **"Not offered. Durable."**
+The headline named the row Gmail shipped.
+
+**On what evidence.** Judgement, not conversion data — and the record
+should say so. `FOUNDER-FOLLOWUPS.md` (2026-07-28) upheld D223 with the
+condition *"Reopen only if the `connect_gmail` conversion data argues for
+it."* There are zero customers, so that data cannot exist; the condition
+was unfalsifiable by its own terms. The founder reopened it on 2026-08-02
+on the strength of the Gmail-parity argument. Launch week is the first
+opportunity to generate the evidence D223 asked for.
+
+**What survives D223.** Its comprehension finding was real and is not
+overturned. Three independent cold readers scored
+`Control Gmail by sender` 9/10 for clarity — the only unanimous top score
+in the 2026-08-01 panel. The clause survives inside D250 as the
+mechanism; what changed is that it no longer leads alone.
+
+---
+
+### D250 — Landing page primary headline (reverses D223)
+
+**Status:** Accepted — founder-directed 2026-08-02, after a 13-agent
+panel (5 expert lenses, 3 cold personas, 4 adversarial refutations,
+1 synthesis) and an independent Codex marketing pass that reached the
+same objection.
+
+**Rule.** The landing page primary headline is:
+
+> **Clear thousands of emails by sender — and see exactly what moves.**
+
+Supporting hero, locked together with it:
+
+| Slot | Copy |
+|---|---|
+| Kicker | For inboxes you gave up on |
+| Subhead | One decision per sender clears thousands of emails at once — you see the count and the exact Gmail changes first. On Plus, rules find the matches for you; you still approve every batch. |
+| CTA note | Free · no card · 7-day undo on Archive, Later and Delete |
+
+Metadata title decouples from the H1 (the H1 overruns the SERP budget):
+`Gmail cleanup by sender, with a preview before every change`.
+
+**Why this line.** Two independent processes — the agent panel and the
+Codex pass — reached the same verdict on the intermediate candidate
+`Nothing moves until you approve it`: it removes fear but creates no
+want. The shipped line leads with the outcome and answers the fear
+second, which is the order the value equation prescribes.
+
+**The constraint that eliminated the alternatives.** The landing CTA
+signs a visitor up for **Free**, so the H1 must be true at Free. That
+killed every `rules find it for you` variant — true only from Plus — so
+that claim lives in the subhead with its tier named. The line also makes
+no *timing* claim, so D251's Pro-tier Autopilot acting without per-batch
+approval can never falsify it.
+
+**Copy constraints that bind every surface carrying this headline.**
+
+- The kicker carries **no privacy claim**. `metadata only` is retired: it
+  is inaccurate, not merely unclear — `gmail-data-inventory.ts` records
+  the Gmail preview snippet as fetched and stored, and a snippet is
+  message content, not metadata. Privacy lives in the locked
+  `PrivacyBadge` in the trust strip, which is generated from the registry
+  and is more complete than any short paraphrase. Do not reintroduce a
+  compressed privacy claim above the fold; move the badge instead.
+- `never reads your email` and every other forward-looking absolute
+  remain banned (CLAUDE.md §2.1, D209).
+- No blanket reversibility claim. A delivered unsubscribe cannot be
+  recalled (`action-safety.ts`), so `undo any of it` and its variants are
+  false.
+
+**Retires.** D223's headline. **Does not amend** D228 (privacy badge
+copy), D209 (microcopy rule) or D194 (Screener marketing rule).
+
+**Verifies by:** the shipped hero matches this table on `/`, on the
+onboarding Promise step, in the default OG image, and in the page title
+and description; `pnpm test` string assertions updated in the same
+change.
+
+---
+
+### D251 — Autopilot splits on behaviour, not access
+
+**Status:** Accepted — founder-directed 2026-08-02. Supersedes the
+narrower 2026-07-28 formulation ("Screener moves Pro → Plus"), which is
+subsumed here.
+
+**Problem.** `PLUS_CAPABILITIES` was a spread of `FREE_CAPABILITIES` with
+nothing added — Plus lifted a usage cap and granted no capability. A
+customer who finished their cleanup had no reason to renew, which the
+2026-07-25 audit named as the largest business risk. The founder's
+objection on 2026-08-02 sharpened it: with one mailbox, the ladder asked
+a customer to pay the **top** price merely to experience the product.
+
+**Rule.** Autopilot is fenced on **what it does**, not on whether the
+workspace has it.
+
+| | Free | Plus | Pro |
+|---|---|---|---|
+| Screener — new senders collected for review | ❌ | ✅ | ✅ |
+| Autopilot — rules find matches, user approves each batch | ❌ | ✅ | ✅ |
+| Autopilot — rules act on future mail without per-batch approval | ❌ | ❌ | ✅ |
+| Brief · Quiet hours · Follow-ups | ❌ | ❌ | ✅ |
+| Inboxes · Activity undo window | 1 · 7d | 1 · 7d | 3 · 30d |
+
+Prices, provider catalog ids, inbox limits and undo windows are
+**unchanged**. Free gains nothing.
+
+**Ladder.** Free: you find it, you approve it (50/month). Plus: rules
+find it, you approve it. Pro: rules find it, rules approve it. The same
+promise at three lengths, and the axis is the one D250's headline names.
+
+**Why not "Plus gets everything, Pro fences on inboxes"** (the founder's
+first proposal, rejected on 2026-08-02 after the panel): `hasCapability`
+is a pure function of the tier enum and **no grandfathering or
+per-workspace capability-override machinery exists in the repo**
+(`founding_member` locks a price, never a capability set). Moving a
+capability *down* later is a one-line edit customers read as a gift;
+moving one *up* later stops paying customers' rules at the next worker
+tick, past the 30-day refund window. At zero customers, preserve the
+direction still travellable — the same principle the founder ratified in
+`a3-pricing-rework-plan.md:59-61`. Secondarily, the stated persona owns
+one personal mailbox, so an inbox-count fence draws a wall around an
+empty room.
+
+**Implementation seam.** The mechanism already exists and is tested:
+`autopilot-apply.worker` records `observeMatches` with
+`modeAtMatch: 'observe'`, and `POST /api/autopilot/matches/approve` is
+idempotent. The work is splitting the class-level
+`@RequiresCapability('autopilot')` at `autopilot.controller.ts:70` so
+Plus reaches the read and approve routes while the transition to `active`
+mode stays Pro. `onboarding/page.tsx:262` branches preset-pick on the
+same capability, so that branch flips for Plus and its copy must not
+imply rules act unattended.
+
+**Ships with it, in the same release:** the weekly Plus receipt (derived
+from the Activity ledger and Screener counts at send time — no new
+storage, no Gmail fields, no third-party call), the free-tier quota dead
+end (`confirm-action-modal.tsx:456,460` folds `quotaShort` into
+`confirmDisabled`, so an over-quota bulk currently moves **zero**
+messages — act on the remaining allowance and say so in the D226
+preview), and the public pricing page defaulting to annual.
+
+**Does not amend** D194 (never claim Screener blocks arrival — it is soft
+quarantine and new senders still reach Gmail), D226 (preview stays
+mandatory), D230 (mailto unsubscribe stays manual), or D19's price
+points.
+
+**Verifies by:** `pnpm verify-d D251` once the capability split, gates,
+pricing surfaces and tests agree; and the measurement below.
+
+**Measurement.** Of Plus workspaces at day 21+, the share that approved
+at least one Autopilot batch or dispositioned at least one Screener
+sender in the trailing 7 days. **Under 40% at day 60 falsifies this
+decision**, and the pre-decided remedy is to move `active` mode down to
+Plus — one line, safe direction. **Guard:** below ~20 paid-Plus
+workspaces the rate is not readable; instrument the denominator and
+refuse to render beneath that floor, or the metric becomes the
+blind-guard failure this codebase keeps relearning.

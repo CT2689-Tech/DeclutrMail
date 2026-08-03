@@ -1716,7 +1716,11 @@ a future session finds no `opens`/`read_count` mismatch.
 **Why:** audit B1 — the hero argues the sender unit, which Gmail shipped; D223 locks the current headline, so any change is your reversal call. Recommended: "Clear thousands of emails. Preview every change. Undo it." + "What Gmail's AI won't do" section + storage list rendered once.
 **How:** pick option 1/2/3 (or edit); I implement with the section reorder, `redesign` label, page metadata update, and CTA ids preserved for the A/B.
 **Verifies by:** landing renders the chosen hero; PostHog `connect_gmail` comparison window starts.
-**Status:** Skipped 2026-07-28 — founder upheld D223. The hero stays "Control Gmail by sender"; no rewrite, no section reorder. Reopen only if the `connect_gmail` conversion data argues for it.
+**Status:** ~~Skipped 2026-07-28~~ → **REOPENED and resolved 2026-08-02 as D250.** The 07-28 skip upheld D223 and set the reopen condition as "only if the `connect_gmail` conversion data argues for it" — a condition that could not be met, because there are zero customers and therefore no such data. It was unfalsifiable by its own terms, which is why it is being recorded here rather than quietly overwritten.
+
+The founder reopened it on judgement on 2026-08-02, after a 13-agent panel and an independent Codex pass reached the same conclusion the 07-28 agent had: the hero argues the sender unit, and Gmail shipped that unit in July 2025. The audit the founder himself commissioned grades it a dead differentiator (`product-launch-audit-2026-07-25.md:110`).
+
+Shipped decision differs from the 07-28 recommendation. That draft — "Clear thousands of emails. Preview every change. Undo it." — is **false**: a delivered unsubscribe cannot be undone (`action-safety.ts`), so the blanket undo clause could not ship. D250's line keeps the outcome-first structure and drops the false promise: **"Clear thousands of emails by sender — and see exactly what moves."** The "What Gmail's AI won't do" section survives as a P0 item (`/vs/gmail`, which still does not exist). Recorded as D250 + ADR-0030; reversal marker on D223 in the plan mirror.
 
 ### 2026-07-28 — Decision: one name for the Gmail connection ("mailbox" vs "Gmail account" vs "connected inbox" vs "workspace")
 **Source:** terminology agent sweep 2026-07-28 (naming cluster 1)
