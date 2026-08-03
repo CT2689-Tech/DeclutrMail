@@ -9830,15 +9830,59 @@ direction still travellable — the same principle the founder ratified in
 one personal mailbox, so an inbox-count fence draws a wall around an
 empty room.
 
-**Implementation seam.** The mechanism already exists and is tested:
-`autopilot-apply.worker` records `observeMatches` with
+**Implementation seam.** The observe/approve mechanism already exists and
+is tested: `autopilot-apply.worker` records `observeMatches` with
 `modeAtMatch: 'observe'`, and `POST /api/autopilot/matches/approve` is
-idempotent. The work is splitting the class-level
-`@RequiresCapability('autopilot')` at `autopilot.controller.ts:70` so
-Plus reaches the read and approve routes while the transition to `active`
-mode stays Pro. `onboarding/page.tsx:262` branches preset-pick on the
-same capability, so that branch flips for Plus and its copy must not
+idempotent. `onboarding/page.tsx:262` branches preset-pick on the
+autopilot capability, so that branch flips for Plus and its copy must not
 imply rules act unattended.
+
+> **[CORRECTION 2026-08-02 — the first draft of this seam was unsafe.]**
+> It said the work is "splitting the class-level
+> `@RequiresCapability('autopilot')` at `autopilot.controller.ts:70` so
+> Plus reaches the read and approve routes while the transition to
+> `active` mode stays Pro." **Implementing that literally ships a product
+> that violates its own pricing.** Found by the Codex stop-time review
+> after D250/D251 merged in #458. Three separate holes, all verified:
+>
+> 1. **The worker gates unattended execution on the wrong capability.**
+>    `packages/workers/src/autopilot-action.worker.ts:452` reads
+>    `if (!hasCapability(mailbox.tier, 'autopilot')) gatedBy = 'entitlement'`.
+>    That single check is the only thing stopping rules from acting
+>    unattended. Grant Plus the `autopilot` capability and the guard stops
+>    firing **for Plus** — Plus users get exactly the unattended execution
+>    D251 says they do not get.
+> 2. **`PATCH rules/:id` has no tier check on the mode value.**
+>    `parseRulePatch` (`autopilot.controller.ts:325-326`) validates `mode`
+>    only against `ALLOWED_MODES` (`observe | active | paused`). Any caller
+>    who reaches the route can set `mode: 'active'`. A route-level guard
+>    cannot fix this, because Plus legitimately needs that route to set
+>    `observe` and `paused`. **The check must be on the value, not the
+>    route.**
+> 3. **Downgrade leaks.** Today a Pro→Plus downgrade is caught by hole 1's
+>    guard, because Plus lacks `autopilot`. After a naive split it is not
+>    caught at all, and a downgraded customer keeps unattended automation
+>    running indefinitely.
+>
+> **Required design.** The split needs a *second* capability, not a
+> relaxed one. `CAPABILITIES`
+> (`packages/shared/src/entitlements/types.ts:66-78`) currently has a
+> single `autopilot` entry and must gain one — name it
+> `autopilot-active` — with:
+>
+> - `autopilot` (create rules, observe, approve batches) → **Plus** and Pro
+> - `autopilot-active` (rules act without per-batch approval) → **Pro only**
+> - `autopilot-action.worker.ts:452` gates on **`autopilot-active`**
+> - `PATCH rules/:id` rejects `mode: 'active'` unless the tier holds
+>   `autopilot-active` — a 402 on the value, next to the existing
+>   `ALLOWED_MODES` check
+> - Pro→Plus downgrade flips existing `active` rules to `observe` so the
+>   stored state stays honest, rather than relying on a worker guard to
+>   silently refuse to execute them
+>
+> **Test the downgrade case first.** A tier check that is never exercised
+> by a downgrade is the blind-guard failure this codebase keeps shipping:
+> starve its input and require the deny.
 
 **Ships with it, in the same release:** the weekly Plus receipt (derived
 from the Activity ledger and Screener counts at send time — no new
