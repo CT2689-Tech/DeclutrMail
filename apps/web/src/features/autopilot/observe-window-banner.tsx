@@ -85,7 +85,10 @@ export function ObserveWindowBanner({
             : `Autopilot has collected matches for a week — ${rules.length} rules are ready.`}
         </div>
         <div style={{ fontSize: 11.5, color: color.fgMuted, marginTop: 4, lineHeight: 1.5 }}>
-          During the window, matches were collected as suggestions without touching your mail.
+          {/* The `{' '}` is load-bearing: JSX drops the newline between a
+              text node and a following expression, so without it this
+              renders "your mail.Nothing switches on by itself". */}
+          During the window, matches were collected as suggestions without touching your mail.{' '}
           {canActivate
             ? 'Nothing switches on by itself — each rule keeps observing until you explicitly switch it to Active.'
             : 'Nothing switches on by itself. Approve the matches you want and Autopilot applies them; letting a rule act without asking each time is part of Pro.'}

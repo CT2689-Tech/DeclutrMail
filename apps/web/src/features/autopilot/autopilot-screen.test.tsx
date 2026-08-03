@@ -516,6 +516,14 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     renderScreen(ready());
     // Fixture rule #1 is elapsed → banner present + honest no-auto-promote copy.
     expect(screen.getByText(/nothing switches on by itself/i)).toBeInTheDocument();
+    // Assert the SENTENCE BOUNDARY, not just the fragment. A fragment match
+    // silently accepted "your mail.Nothing switches on by itself" when a
+    // conditional expression was introduced on the next JSX line and the
+    // newline was stripped. Every assertion here matches a substring, so the
+    // join between the static text and the expression needs its own check.
+    expect(
+      screen.getByText(/touching your mail\. Nothing switches on by itself/i),
+    ).toBeInTheDocument();
   });
 
   // ── D251: Plus reaches this screen but must never be offered Activate ──
