@@ -122,7 +122,9 @@ case "$file_path" in
     # concatenation (`'clean up ' + 'your inbox'`) is joined, which splits
     # a phrase without any newline involved.
     #
-    # Markup is then normalised for the one rule with a proximity window.
+    # Markup is normalised for the same reason the whitespace is: a ban
+    # must not escape by having <Text> or {tier} dropped into the middle
+    # of it.
     # Only a CLOSED list of block-level elements becomes a sentence break;
     # everything else — including every capitalised React component — is
     # stripped as mid-sentence formatting. Listing inline tags instead was
@@ -138,7 +140,12 @@ case "$file_path" in
       sed -E 's/[Ss]oft[- ][Qq]uarantin[a-z]*/SANCTIONEDTERM/g' |
       sed -E 's@\$?\{[^{}]*\}@@g' |
       sed -E 's@</?(p|div|section|article|aside|header|footer|main|nav|h[1-6]|ul|ol|li|table|thead|tbody|tfoot|tr|td|th|blockquote|figure|figcaption|form|fieldset|legend|dl|dt|dd|pre|hr)( [^>]*)?/?>@ . @g' |
-      sed -E 's@</?[A-Za-z][A-Za-z0-9.]*( [^>]*)?/?>@@g')
+      sed -E 's@</?[A-Za-z][A-Za-z0-9.]*( [^>]*)?/?>@@g' |
+      tr -s '[:space:]' ' ')
+    # Collapse AGAIN at the end: every strip above leaves a gap behind it,
+    # so `never reads {x} your email` became `never reads  your email` and
+    # stopped matching a pattern that expects single spaces. The removals
+    # are what create the double space, so the squeeze has to follow them.
 
     # check <label> <extended-regex> [exclude-regex]
     # Reports the matched phrases themselves. Line numbers are
@@ -203,34 +210,34 @@ case "$file_path" in
     check "'clean' as a verb on user data (T6/D209 — 'cleanup' the noun is fine)" \
       "[^“‘’[:alnum:]]clean(s|ing|ed)? (up |out )?(your|their|the|my) ([a-z]+ )?(gmail|inbox|mail|e-?mail|mailbox|messages)"
 
-    # T3 — Screener is soft quarantine: new senders STILL ARRIVE in Gmail.
-    # Never claim it blocks, prevents, intercepts, or quarantines.
+    # T3 (Screener framed as blocking) is deliberately NOT enforced here.
     #
-    # This is the one rule with a PROXIMITY window, and flattening the file
-    # took away the line break that used to contain it. Two bounds put that
-    # back, because without them `import { ScreenerRow } … const blockedIds`
-    # reads as a violation:
+    # It was, for six review rounds, and it failed in a new place every
+    # single one: line-wrapped phrases, a window that crossed code
+    # structure, a closed verb list that lost `quarantining`, a
+    # case-sensitivity flag that `${4:-i}` quietly ignored, inline markup
+    # that bounded the window, an inline-tag list enumerated when the
+    # block list was the closed one, and finally hyphenated custom
+    # elements and attributes containing `>`. Rounds three onward were
+    # all fixes to fixes.
     #
-    #   1. The window cannot cross prose or code structure. Sentence enders
-    #      and JS/JSX punctuation end the run, so a claim has to sit inside
-    #      ONE sentence. Commas and hyphens pass — "the Screener, which
-    #      blocks…" is still the same claim. Straight quotes bound too: in
-    #      this codebase they are string delimiters, since prose uses
-    #      typographic apostrophes (which deliberately do NOT bound, so
-    #      "the Screener’s job is to block…" is still caught).
+    # The reason is structural, not a run of bad luck. Every other rule in
+    # this block matches a FIXED STRING. T3 is the only one that needs
+    # PROXIMITY — "does this sentence attribute blocking to the Screener"
+    # — which is a reading, not a match, and each patch narrowed or
+    # widened a window that has no correct width.
     #
-    #   2. This check alone runs CASE-SENSITIVELY. The verbs keep their
-    #      open `[a-z]*` tail — dropping it to a closed list lost
-    #      `quarantining`, `keeping out`, `blockage` and `prevention` —
-    #      and case-sensitivity is what stops that tail from swallowing
-    #      camelCase: `[a-z]*` cannot eat the `D` of `preventDoubleSubmit`,
-    #      so no word boundary is ever found. Under -i it ate the whole
-    #      identifier and matched.
-    t3_verb="([Bb]lock[a-z]*|[Pp]revent[a-z]*|[Ii]ntercept[a-z]*|[Qq]uarantin[a-z]*|[Kk]eep[a-z]* out|[Kk]ept out|BLOCK[A-Z]*|PREVENT[A-Z]*|INTERCEPT[A-Z]*|QUARANTIN[A-Z]*|KEEP[A-Z]* OUT|KEPT OUT)"
-    t3_gap="[^.!?;=\"'\`]{0,80}"
-    check "Screener framed as blocking (T3/D194 — mail still arrives in Gmail)" \
-      "([Ss]creener|SCREENER)${t3_gap}\b${t3_verb}\b|\b${t3_verb}\b${t3_gap}([Ss]creener|SCREENER)" \
-      "" ""
+    # The copy spec already routes exactly this kind of constraint to a
+    # human: T1 (manual actions create no future-mail rules), T4
+    # (Autopilot tiering) and T7 (Trash is a separate recovery) are all
+    # listed there as needing a reader. T3 belongs with them, in the
+    # review brief at docs/execution/repositioning-copy-spec-2026-08-01.md
+    # §7, not in a regex that reports confident nonsense in both
+    # directions.
+    #
+    # D194's forbidden framings (blocks / prevents / keeps out /
+    # intercepts / quarantines) remain binding on copy. They are simply
+    # checked by review, like the three constraints beside them.
 
     if [ "$truth_violations" -gt 0 ]; then
       echo "" >&2
