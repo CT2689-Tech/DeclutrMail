@@ -14,7 +14,7 @@ import { hasCapability } from '@declutrmail/shared/entitlements';
 import { useTier } from '@/features/auth/api/use-tier';
 import { useScreenerCount, useScreenerQueue } from '@/features/screener/api/use-screener';
 import { composeScreenerState } from '@/features/screener/compose-state';
-import { ScreenerProUpsell } from '@/features/screener/pro-upsell';
+import { ScreenerUpsell } from '@/features/screener/upsell';
 import { ScreenerScreen } from '@/features/screener/screener-screen';
 
 /**
@@ -31,7 +31,7 @@ export default function ScreenerPage() {
   const unlocked = hasCapability(tier, 'screener');
 
   if (!unlocked) {
-    return <ScreenerProUpsell onSeePricing={openPricing} />;
+    return <ScreenerUpsell onSeePricing={openPricing} />;
   }
   return <ScreenerQueueRoute />;
 }

@@ -36,7 +36,7 @@ const meta: StoryMeta<typeof ObserveWindowBanner> = {
     docs: {
       description: {
         component:
-          'D10 day-7 prompt. Listed rules finished their 7-day Observe window with ≥1 pending match — suggestions were collected without touching mail, and the rule keeps observing until the user explicitly switches it to Active (no auto-promote). Each row shows the verb-honest digest, a persisted "Not now" dismissal, and the CTA that opens the D226 ActivateRuleModal preview.',
+          'D10 day-7 prompt. Listed rules finished their 7-day Observe window with ≥1 pending match — suggestions were collected without touching mail, and the rule keeps observing until the user explicitly switches it to Active (Pro) or approves batches by hand (Plus, D251) (no auto-promote). Each row shows the verb-honest digest, a persisted "Not now" dismissal, and the CTA that opens the D226 ActivateRuleModal preview.',
       },
     },
   },
@@ -61,6 +61,7 @@ export const OneRule: Story<typeof ObserveWindowBanner> = {
   args: {
     rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT],
     onActivate: () => undefined,
+    canActivate: true,
     onDismiss: () => undefined,
     dismissingRuleId: null,
   },
@@ -72,6 +73,7 @@ export const MultipleRules: Story<typeof ObserveWindowBanner> = {
   args: {
     rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT, ELAPSED_GRAVEYARD],
     onActivate: () => undefined,
+    canActivate: true,
     onDismiss: () => undefined,
     dismissingRuleId: null,
   },
@@ -83,8 +85,21 @@ export const DismissInFlight: Story<typeof ObserveWindowBanner> = {
   args: {
     rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT, ELAPSED_GRAVEYARD],
     onActivate: () => undefined,
+    canActivate: true,
     onDismiss: () => undefined,
     dismissingRuleId: AUTO_ARCHIVE_LOW_ENGAGEMENT.id,
+  },
+  render: (args: BannerArgs) => frame(<ObserveWindowBanner {...args} />),
+};
+
+/** D251 — Plus under-tier: upgrade link instead of the Activate button. */
+export const PlusReviewTier: Story<typeof ObserveWindowBanner> = {
+  args: {
+    rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT, ELAPSED_GRAVEYARD],
+    onActivate: () => undefined,
+    canActivate: false,
+    onDismiss: () => undefined,
+    dismissingRuleId: null,
   },
   render: (args: BannerArgs) => frame(<ObserveWindowBanner {...args} />),
 };

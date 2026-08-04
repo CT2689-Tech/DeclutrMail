@@ -53,6 +53,7 @@ const noop = () => undefined;
 
 const baseArgs: CardArgs = {
   rule: AUTO_ARCHIVE_LOW_ENGAGEMENT,
+  canActivate: true,
   pendingCount: 2,
   pendingApproximate: false,
   isSaving: false,

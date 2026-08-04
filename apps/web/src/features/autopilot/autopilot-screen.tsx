@@ -163,8 +163,8 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   // preview (D226) — the rule card's inline panel and the modal must
   // not stomp each other's state.
   const activatePreview = useRulePreview();
-  // D251 — Plus reaches this screen via `autopilot-review` and may review
-  // and approve matches, but only `autopilot` (Pro) may let a rule act
+  // D251 — Plus reaches this screen via `autopilot` and may review
+  // and approve matches, but only `autopilot-active` (Pro) may let a rule act
   // unattended. Without this the screen offers Activate to Plus, the
   // PATCH 402s, and the modal quotes Pro's 30-day undo window to a user
   // who has 7.
@@ -173,7 +173,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   // un-renderable wherever auth is only optionally present. Same source of
   // truth, one fewer dependency. Absent tier → treat as not entitled, so a
   // skewed /me payload hides Activate rather than offering a 402.
-  const canActivate = hasCapability(auth?.me.tier ?? 'free', 'autopilot');
+  const canActivate = hasCapability(auth?.me.tier ?? 'free', 'autopilot-active');
   const decidePattern = useDecidePatternSuggestion();
 
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
@@ -615,17 +615,40 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         </Button>
       </div>
 
+      {/* D251 — both explainers are tier-conditional. The Pro wording
+          promises "Active applies future matches automatically", which is
+          a per-rule setting Plus cannot reach; showing it to Plus is a
+          promise that always fails (the same defect class as offering the
+          Activate button). */}
       <ScreenIntro
         id="autopilot"
         title="How Autopilot works"
-        body="Observe and Active are set per rule. Observe records matches as suggestions and changes no mail until you approve one. Active applies future matches automatically; every result is recorded in Activity. Pause all stops every rule across every inbox at once."
+        body={
+          canActivate
+            ? 'Observe and Active are set per rule. Observe records matches as suggestions and changes no mail until you approve one. Active applies future matches automatically; every result is recorded in Activity. Pause all stops every rule across every inbox at once.'
+            : 'Rules run in Observe: they record matches as suggestions and change no mail until you approve a batch. Letting a rule act on future matches without asking each time is part of Pro. Pause all stops every rule across every inbox at once.'
+        }
         tip="Custom rule creation is not available on your account. Only the launch preset rules can be enabled."
       />
 
-      <ContextualHelp question="What changes between Observe and Active?">
-        Observe records matches as suggestions and changes no Gmail mail until you approve them.
-        Active applies future matches automatically after you review the first-sweep preview.
-        Suggestions already collected in Observe stay pending for you to approve or skip.
+      <ContextualHelp
+        question={
+          canActivate ? 'What changes between Observe and Active?' : 'What does Observe do?'
+        }
+      >
+        {canActivate ? (
+          <>
+            Observe records matches as suggestions and changes no Gmail mail until you approve them.
+            Active applies future matches automatically after you review the first-sweep preview.
+            Suggestions already collected in Observe stay pending for you to approve or skip.
+          </>
+        ) : (
+          <>
+            Observe records matches as suggestions and changes no Gmail mail until you approve them.
+            Suggestions stay pending until you approve or skip each batch. Rules that apply future
+            matches automatically — Active mode — are part of Pro.
+          </>
+        )}
       </ContextualHelp>
 
       {patternSuggestion && (
@@ -695,6 +718,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
                   <RuleCard
                     key={rule.id}
                     rule={rule}
+                    canActivate={canActivate}
                     pendingCount={pendingCountByRule.get(rule.id) ?? 0}
                     pendingApproximate={pendingBufferTruncated}
                     isSaving={savingRuleId === rule.id}

@@ -102,7 +102,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'autopilot',
     question: 'What does Autopilot do at launch?',
     answer:
-      'Pro includes five preset rules. Each rule starts in Observe, collecting would-be matches without moving mail. After a seven-day observation period, you review the sample and dry-run scope before choosing Active. Custom rule creation is not part of the launch UI, and every rule can be paused.',
+      'Plus and Pro include five preset rules. Each rule starts in Observe, collecting would-be matches without moving mail, and you approve or dismiss each batch by hand. On Pro you can also switch a rule to Active after the seven-day observation window — reviewing the sample and dry-run scope first — so it acts on future matches without asking. Custom rule creation is not part of the launch UI, and every rule can be paused.',
   },
   {
     id: 'later-vs-snooze',
@@ -114,7 +114,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'plans',
     question: 'What changes between Free, Plus, and Pro?',
     answer:
-      'Free supports one inbox with the full manual cleanup workflow — Senders, Triage, Later, bulk actions, and the activity journal — metered at 50 cleanup actions a month with a seven-day undo window. Plus removes the monthly meter for one inbox. Pro adds up to three inboxes, a thirty-day undo window, and the automation set including Autopilot, Brief, Screener, Quiet, and Follow-ups. Use the pricing page as the current source of truth.',
+      'Free supports one inbox with the full manual cleanup workflow — Senders, Triage, Later, bulk actions, and the activity journal — metered at 50 cleanup actions a month with a seven-day undo window. Plus removes the monthly meter and adds the Screener plus Autopilot rules that find matching mail for your batch approval. Pro adds up to three inboxes, a thirty-day undo window, rules that run without per-batch approval, and the rest of the automation set — Brief, Quiet, and Follow-ups. Use the pricing page as the current source of truth.',
     link: {
       href: '/pricing',
       label: 'Compare current plans',

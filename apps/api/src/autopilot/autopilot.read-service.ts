@@ -41,8 +41,10 @@ import {
   type AutopilotPresetKey,
   type AutopilotRuleMode,
   type AutopilotRuleScope,
+  actionJobs,
   automationRules,
   mailMessages,
+  mailboxAccounts,
   ruleMatchLog,
   senderPolicies,
   senders,
@@ -501,6 +503,104 @@ export class AutopilotReadService {
       )
       .returning({ id: automationRules.id });
     return { pausedCount: updated.length };
+  }
+
+  /**
+   * D251 Pro→Plus downgrade — called by the billing tier writers (via
+   * this module's exported facade; billing never touches
+   * `automation_rules` directly, D204) whenever a workspace's new tier
+   * no longer grants `autopilot-active`:
+   *
+   *   1. Every `active` rule flips back to `observe`, with the same
+   *      field semantics as a user mode change in `patchRule` (fresh
+   *      Observe window, re-armed day-7 prompt). Stored state stays
+   *      honest instead of relying on the worker guards to silently
+   *      refuse — the plan's CORRECTION 2026-08-02 rejects
+   *      worker-refusal-only explicitly.
+   *   2. Auto-approved `active`-provenance matches that never applied
+   *      (`resolution='approved', intent_applied=false`) are dismissed
+   *      with `dismiss_reason='entitlement'`. Left approved they would
+   *      re-arm: a later re-upgrade would execute months-stale matches
+   *      under a rule this very method set back to Observe.
+   *
+   * Matches with an action-job claim are deliberately excluded — a
+   * claim that already mutated Gmail must complete its bookkeeping
+   * (Activity row + undo token), never be relabelled dismissed. The
+   * key construction mirrors the action worker's `claimKey`
+   * (packages/workers/src/autopilot-action.worker.ts) — change one,
+   * change both. A sweep already in flight during the downgrade can
+   * still claim a just-dismissed row; its completion only flips
+   * `intent_applied`/`intent_token`, so the row stays consistent and
+   * the applied action keeps its undo path.
+   *
+   * Accepts the caller's transaction so the demotion commits
+   * atomically with the tier write. Idempotent — safe to re-run from
+   * the reconciliation sweep's SQL mirror.
+   */
+  async demoteUnattendedRules(
+    workspaceId: string,
+    executor: Pick<DrizzleDb, 'update' | 'select'> = this.db,
+  ): Promise<{ demotedRules: number; neutralizedMatches: number }> {
+    const workspaceMailboxIds = executor
+      .select({ id: mailboxAccounts.id })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.workspaceId, workspaceId));
+
+    const demoted = await executor
+      .update(automationRules)
+      .set({
+        mode: 'observe',
+        modeChangedAt: sql`now()`,
+        observePromptDismissedAt: null,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(automationRules.mode, 'active'),
+          inArray(automationRules.mailboxAccountId, workspaceMailboxIds),
+        ),
+      )
+      .returning({ id: automationRules.id });
+
+    const neutralized = await executor
+      .update(ruleMatchLog)
+      .set({
+        resolution: 'dismissed',
+        resolvedAt: sql`now()`,
+        dismissReason: 'entitlement',
+      })
+      .where(
+        and(
+          eq(ruleMatchLog.modeAtMatch, 'active'),
+          eq(ruleMatchLog.resolution, 'approved'),
+          eq(ruleMatchLog.intentApplied, false),
+          inArray(ruleMatchLog.mailboxAccountId, workspaceMailboxIds),
+          // Correlated column MUST be table-qualified via sql.raw — a
+          // `${ruleMatchLog.id}` here emits a bare `id` that resolves
+          // against action_jobs (the SENDER_FIRST_SEEN precedent above).
+          sql`NOT EXISTS (
+            SELECT 1 FROM ${actionJobs}
+            WHERE ${actionJobs.idempotencyKey} IN (
+              'autopilot-' || ${sql.raw('rule_match_log.id')}::text,
+              'autopilot-unsubexec-' || ${sql.raw('rule_match_log.id')}::text
+            )
+          )`,
+        ),
+      )
+      .returning({ id: ruleMatchLog.id });
+
+    if (demoted.length > 0 || neutralized.length > 0) {
+      console.log(
+        JSON.stringify({
+          level: 'info',
+          kind: 'autopilot.rules.demoted_on_downgrade',
+          workspaceId,
+          demotedRules: demoted.length,
+          neutralizedMatches: neutralized.length,
+        }),
+      );
+    }
+    return { demotedRules: demoted.length, neutralizedMatches: neutralized.length };
   }
 
   /**

@@ -184,7 +184,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
       installFetchStub([meAuthed('ready', tier), onboardingState(), syncStatus(true), emptyRules]);
       renderPage();
 
-      // D251 — Plus now has `autopilot-review`, so it reaches the preset
+      // D251 — Plus now has `autopilot`, so it reaches the preset
       // picker too. Before D251 this step was Pro-only and Plus fell through
       // to the sender-review step below.
       expect(await screen.findByText('Pick your starting rules.')).toBeInTheDocument();

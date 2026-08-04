@@ -30,7 +30,7 @@ function makeController(tier: 'free' | 'plus' | 'pro') {
 }
 
 describe('OnboardingController preset capability gate', () => {
-  // D251 — Plus now has `autopilot-review`, so seeding preset rules during
+  // D251 — Plus now has `autopilot`, so seeding preset rules during
   // onboarding is allowed there. The rules land in Observe mode; promoting
   // one to `active` is the Pro step and is gated on the PATCH route.
   it.each(['free'] as const)('rejects non-empty Autopilot picks for %s', async (tier) => {

@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   AUTOPILOT_PRESET_KEYS,
+  actionJobs,
   activityLog,
   automationRules,
   mailboxAccounts,
@@ -523,6 +524,152 @@ describe('AutopilotReadService', () => {
       await service.pauseAll(mailboxA);
       const b = await service.listRules(mailboxB);
       for (const r of b) expect(r.mode).toBe('observe');
+    });
+  });
+
+  describe('demoteUnattendedRules (D251 Pro→Plus downgrade)', () => {
+    async function workspaceOf(mailboxId: string): Promise<string> {
+      const [row] = await db
+        .select({ wsId: mailboxAccounts.workspaceId })
+        .from(mailboxAccounts)
+        .where(eq(mailboxAccounts.id, mailboxId));
+      return row!.wsId;
+    }
+
+    async function seedActiveMatch(
+      mailboxId: string,
+      ruleId: string,
+      senderKey: string,
+      overrides: Partial<typeof ruleMatchLog.$inferInsert> = {},
+    ): Promise<string> {
+      const [row] = await db
+        .insert(ruleMatchLog)
+        .values({
+          ruleId,
+          mailboxAccountId: mailboxId,
+          senderKey,
+          modeAtMatch: 'active',
+          confidence: '0.90',
+          reason: 'test fixture',
+          resolution: 'approved',
+          intentApplied: false,
+          ...overrides,
+        })
+        .returning({ id: ruleMatchLog.id });
+      return row!.id;
+    }
+
+    // Downgrade case first, input starved (the plan's CORRECTION
+    // 2026-08-02 testing order): a workspace with nothing active must
+    // produce zero writes, so a blind predicate cannot pass vacuously.
+    it('is a no-op on a workspace with no active rules or unattended matches', async () => {
+      const out = await service.demoteUnattendedRules(await workspaceOf(mailboxA));
+      expect(out).toEqual({ demotedRules: 0, neutralizedMatches: 0 });
+      const rules = await service.listRules(mailboxA);
+      for (const r of rules) expect(r.mode).toBe('observe');
+    });
+
+    it('flips active rules to observe with patchRule mode-change semantics', async () => {
+      const activeRule = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await service.patchRule(mailboxA, activeRule, {
+        enabled: true,
+        mode: 'active',
+        observePromptDismissed: true,
+      });
+      const [before] = await db
+        .select()
+        .from(automationRules)
+        .where(eq(automationRules.id, activeRule));
+
+      const out = await service.demoteUnattendedRules(await workspaceOf(mailboxA));
+
+      expect(out.demotedRules).toBe(1);
+      const [after] = await db
+        .select()
+        .from(automationRules)
+        .where(eq(automationRules.id, activeRule));
+      expect(after!.mode).toBe('observe');
+      // Fresh Observe window + re-armed day-7 prompt, exactly like a
+      // user mode change through patchRule.
+      expect(after!.observePromptDismissedAt).toBeNull();
+      expect(after!.modeChangedAt.getTime()).toBeGreaterThanOrEqual(
+        before!.modeChangedAt.getTime(),
+      );
+      // Second call is a no-op: state already honest.
+      const again = await service.demoteUnattendedRules(await workspaceOf(mailboxA));
+      expect(again).toEqual({ demotedRules: 0, neutralizedMatches: 0 });
+    });
+
+    it('neutralizes ONLY unapplied, unclaimed active-provenance matches', async () => {
+      const activeRule = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await service.patchRule(mailboxA, activeRule, { enabled: true, mode: 'active' });
+      const [kA, kB, kC, kD] = FIXTURE_SENDER_KEYS;
+
+      // The four at-rest shapes a downgrade can meet:
+      const unclaimed = await seedActiveMatch(mailboxA, activeRule, kA!);
+      const claimed = await seedActiveMatch(mailboxA, activeRule, kB!);
+      const applied = await seedActiveMatch(mailboxA, activeRule, kC!, {
+        intentApplied: true,
+      });
+      const observePending = await db
+        .insert(ruleMatchLog)
+        .values({
+          ruleId: activeRule,
+          mailboxAccountId: mailboxA,
+          senderKey: kD!,
+          modeAtMatch: 'observe',
+          confidence: '0.90',
+          reason: 'test fixture',
+          resolution: 'pending',
+        })
+        .returning({ id: ruleMatchLog.id })
+        .then((r) => r[0]!.id);
+      // The claim mirrors the action worker's `claimKey` — this case is
+      // ALSO the correlated-subquery guard: if the NOT EXISTS ever
+      // degenerates (the bare-column drizzle trap), either this row gets
+      // dismissed or the unclaimed one survives, and the test goes red.
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxA,
+        verb: 'archive',
+        selector: { type: 'messages' },
+        idempotencyKey: `autopilot-${claimed}`,
+        status: 'executing',
+      });
+
+      const out = await service.demoteUnattendedRules(await workspaceOf(mailboxA));
+
+      expect(out.neutralizedMatches).toBe(1);
+      const rows = await db
+        .select({
+          id: ruleMatchLog.id,
+          resolution: ruleMatchLog.resolution,
+          dismissReason: ruleMatchLog.dismissReason,
+        })
+        .from(ruleMatchLog)
+        .where(inArray(ruleMatchLog.id, [unclaimed, claimed, applied, observePending]));
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      expect(byId.get(unclaimed)).toMatchObject({
+        resolution: 'dismissed',
+        dismissReason: 'entitlement',
+      });
+      expect(byId.get(claimed)).toMatchObject({ resolution: 'approved', dismissReason: null });
+      expect(byId.get(applied)).toMatchObject({ resolution: 'approved', dismissReason: null });
+      expect(byId.get(observePending)).toMatchObject({
+        resolution: 'pending',
+        dismissReason: null,
+      });
+    });
+
+    it('never touches another workspace (tenant isolation)', async () => {
+      const ruleB = await getRuleId(db, mailboxB, 'auto_archive_low_engagement');
+      await service.patchRule(mailboxB, ruleB, { enabled: true, mode: 'active' });
+      await seedActiveMatch(mailboxB, ruleB, FIXTURE_SENDER_KEYS[4]!);
+
+      const out = await service.demoteUnattendedRules(await workspaceOf(mailboxA));
+
+      expect(out).toEqual({ demotedRules: 0, neutralizedMatches: 0 });
+      const [rule] = await db.select().from(automationRules).where(eq(automationRules.id, ruleB));
+      expect(rule!.mode).toBe('active');
     });
   });
 

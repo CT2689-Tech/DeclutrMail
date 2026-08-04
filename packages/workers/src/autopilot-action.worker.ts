@@ -94,9 +94,11 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  * job) reverses an autopilot action exactly like a manual one.
  *
  * GUARDS (in evaluation order, all per sweep):
- *   1. ENTITLEMENT: the mailbox workspace must currently grant the
- *      canonical `autopilot` capability. A downgrade stops already-
- *      queued approved matches before any mutation or rescheduling.
+ *   1. ENTITLEMENT: the mailbox workspace must currently grant
+ *      `autopilot` (the review capability, Plus+Pro). Matches with
+ *      `modeAtMatch='active'` additionally require `autopilot-active`
+ *      (D251) — a Pro→Plus downgrade stops unattended matches while
+ *      human-approved batches still complete.
  *   2. QUIET (U18 — D92/D93/D95): when `mailbox_accounts.quiet_state`
  *      says quiet is active — the manual toggle OR the recurring
  *      quiet-hours window (`isQuietActive`, quiet-hours-state.ts) —
@@ -458,20 +460,20 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // completion-only pass over the in-flight claims.
     // D251 — TWO capabilities, not one, and the split is per-match.
     //
-    //   `autopilot-review` (Plus, Pro) — a human approved this batch.
-    //   `autopilot`        (Pro only)  — the rule acted unattended.
+    //   `autopilot` (Plus, Pro) — a human approved this batch.
+    //   `autopilot-active`        (Pro only)  — the rule acted unattended.
     //
     // A single tier-wide gate cannot express this. Gating the sweep on
-    // `autopilot` would strand the very batch a Plus user just approved;
-    // granting Plus `autopilot` would let an `active` rule fire without
+    // `autopilot-active` would strand the very batch a Plus user just approved;
+    // granting Plus `autopilot-active` would let an `active` rule fire without
     // approval, i.e. hand Plus the thing Pro is sold on. So the sweep is
     // gated only on the review capability, and unattended matches are
     // filtered per-match below on `modeAtMatch`.
     let gatedBy: 'entitlement' | 'quiet' | null = null;
-    if (!hasCapability(mailbox.tier, 'autopilot-review')) {
+    if (!hasCapability(mailbox.tier, 'autopilot')) {
       gatedBy = 'entitlement';
     }
-    const mayActUnattended = hasCapability(mailbox.tier, 'autopilot');
+    const mayActUnattended = hasCapability(mailbox.tier, 'autopilot-active');
     if (!gatedBy && isQuietActive(mailbox.quietState, now)) {
       const resumeAfterMs = msUntilQuietEnds(mailbox.quietState, now);
       console.log(
@@ -507,7 +509,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // completion-only filter and by every start-gate inside the loop.
     const inFlightBy = await this.loadInFlightFlags(loaded);
 
-    // Unattended matches on a tier without `autopilot` are dropped from
+    // Unattended matches on a tier without `autopilot-active` are dropped from
     // NEW work but, like the sweep gates above, never stranded mid-flight:
     // a claim that already mutated Gmail still completes so it gets its
     // Activity row and undo token. This is the path a Pro→Plus downgrade

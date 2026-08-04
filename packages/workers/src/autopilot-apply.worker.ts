@@ -131,7 +131,9 @@ export interface AutopilotApplyDeps {
  *
  * What the worker DOES:
  *   - Loads enabled, non-paused rules only when the mailbox workspace
- *     currently grants the canonical `autopilot` capability.
+ *     currently grants `autopilot` (matching is a Plus capability);
+ *     `active`-mode rules are additionally excluded unless the
+ *     workspace grants `autopilot-active` (D251).
  *   - Materializes the minimal `PresetSignals` for every sender (the
  *     rule set does not need the full cascade signal vector).
  *   - Runs each preset matcher; on match, INSERTs into `rule_match_log`.
@@ -542,19 +544,19 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       .where(eq(mailboxAccounts.id, mailboxAccountId))
       .limit(1);
     // D251 — MATCHING is a Plus capability, so a workspace only needs
-    // `autopilot-review` to have its rules evaluated at all.
-    if (!workspace || !hasCapability(workspace.tier, 'autopilot-review')) {
+    // `autopilot` to have its rules evaluated at all.
+    if (!workspace || !hasCapability(workspace.tier, 'autopilot')) {
       return [];
     }
 
-    // ...but ACTING unattended is not. A tier without `autopilot` must not
+    // ...but ACTING unattended is not. A tier without `autopilot-active` must not
     // evaluate `active` rules, because an active match is auto-approved and
     // would reach the action sweep with no human in the loop. Plus cannot
     // legitimately create one (the controller blocks the mode change), so
     // this is the Pro→Plus DOWNGRADE path: previously-active rules go inert
     // rather than silently continuing to act on a tier that stopped paying
     // for it. Observe rules keep running, which is exactly what Plus buys.
-    const mayActUnattended = hasCapability(workspace.tier, 'autopilot');
+    const mayActUnattended = hasCapability(workspace.tier, 'autopilot-active');
 
     return this.deps.db
       .select()

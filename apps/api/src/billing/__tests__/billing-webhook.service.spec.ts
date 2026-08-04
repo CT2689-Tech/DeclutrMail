@@ -4,16 +4,21 @@ import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
+  automationRules,
   billingCustomers,
+  mailboxAccounts,
+  ruleMatchLog,
   schema,
   subscriptionEvents,
   subscriptions,
+  users,
   workspaces,
 } from '@declutrmail/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
 import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import type { BillingReconciliationService } from '../billing-reconciliation.service.js';
@@ -136,7 +141,7 @@ describe('BillingWebhookService.process', () => {
 
   beforeEach(async () => {
     db = await freshDb();
-    service = new BillingWebhookService(db, testCatalog());
+    service = new BillingWebhookService(db, testCatalog(), new AutopilotReadService(db));
     workspaceId = await seedWorkspace(db);
   });
 
@@ -610,7 +615,7 @@ describe('BillingWebhookService.process', () => {
   });
 
   it('D126 — grants founding_member to the first N and stops at the cap (race-safe count)', async () => {
-    service = new BillingWebhookService(db, testCatalog(2));
+    service = new BillingWebhookService(db, testCatalog(2), new AutopilotReadService(db));
     const ws2 = await seedWorkspace(db, 'WS 2');
     const ws3 = await seedWorkspace(db, 'WS 3');
 
@@ -718,6 +723,81 @@ describe('BillingWebhookService.process', () => {
     // deadline collapses to now(), which is not `> now()` — so it stops granting.
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
     expect(ws!.tier).toBe('free');
+  });
+
+  it('D251 — a downgrade demotes active rules and neutralizes unattended matches in the tier write', async () => {
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_d251_grant',
+      priceId: TEST_PRICE_IDS.paddle.pro_annual,
+      periodEndsAt: '2026-06-20T10:00:00.000000Z',
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+    const [granted] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(granted!.tier).toBe('pro');
+
+    // The Pro-era state a downgrade meets: an Active rule plus one
+    // auto-approved match the action sweep has not executed yet.
+    const [user] = await db
+      .insert(users)
+      .values({ workspaceId, email: 'd251@example.test' })
+      .returning({ id: users.id });
+    const [mb] = await db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId,
+        userId: user!.id,
+        provider: 'gmail',
+        providerAccountId: 'd251@example.test',
+      })
+      .returning({ id: mailboxAccounts.id });
+    const [rule] = await db
+      .insert(automationRules)
+      .values({
+        mailboxAccountId: mb!.id,
+        isPreset: true,
+        presetKey: 'auto_archive_low_engagement',
+        name: 'Archive low engagement',
+        enabled: true,
+        mode: 'active',
+        scope: 'account',
+        conditions: {},
+        actionKind: 'archive',
+        actionPayload: {},
+      })
+      .returning({ id: automationRules.id });
+    const [match] = await db
+      .insert(ruleMatchLog)
+      .values({
+        ruleId: rule!.id,
+        mailboxAccountId: mb!.id,
+        senderKey: 'f'.repeat(64),
+        modeAtMatch: 'active',
+        confidence: '0.90',
+        reason: 'test fixture',
+        resolution: 'approved',
+        intentApplied: false,
+      })
+      .returning({ id: ruleMatchLog.id });
+
+    const refund = paddleAdjustmentCreated({ eventId: 'evt_d251_refund', action: 'refund' });
+    await service.process('paddle', paddle.mapWebhookEvent(refund), refund);
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+    // Stored state stays honest (plan CORRECTION 2026-08-02): the rule
+    // is Observe, not a green "Active" the worker silently refuses.
+    const [demoted] = await db
+      .select()
+      .from(automationRules)
+      .where(eq(automationRules.id, rule!.id));
+    expect(demoted!.mode).toBe('observe');
+    const [neutralized] = await db
+      .select()
+      .from(ruleMatchLog)
+      .where(eq(ruleMatchLog.id, match!.id));
+    expect(neutralized!.resolution).toBe('dismissed');
+    expect(neutralized!.dismissReason).toBe('entitlement');
   });
 
   // Winning the dispute must not be worse for the customer than losing

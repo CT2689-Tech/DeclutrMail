@@ -1,6 +1,16 @@
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
-import { subscriptions, workspaces, pendingCheckouts, schema } from '@declutrmail/db';
+import {
+  actionJobs,
+  automationRules,
+  mailboxAccounts,
+  pendingCheckouts,
+  ruleMatchLog,
+  schema,
+  subscriptions,
+  users,
+  workspaces,
+} from '@declutrmail/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -169,5 +179,114 @@ describe('runBillingReconciliationSweep', () => {
     expect(remaining.find((r) => r.workspaceId === wsFresh)!.providerRef).toBe(
       'sub_stale_lock_link',
     );
+  });
+
+  it('D251 — demotes active rules + neutralizes unattended matches on under-entitled tiers ONLY', async () => {
+    async function seedAutomation(tier: 'plus' | 'pro'): Promise<{
+      ruleId: string;
+      matchId: string;
+      claimedMatchId: string;
+      mailboxId: string;
+    }> {
+      const wsId = await seedWorkspace(db, tier);
+      const [user] = await db
+        .insert(users)
+        .values({ workspaceId: wsId, email: `${tier}-sweep@example.test` })
+        .returning({ id: users.id });
+      const [mb] = await db
+        .insert(mailboxAccounts)
+        .values({
+          workspaceId: wsId,
+          userId: user!.id,
+          provider: 'gmail',
+          providerAccountId: `${tier}-sweep@example.test`,
+        })
+        .returning({ id: mailboxAccounts.id });
+      const [rule] = await db
+        .insert(automationRules)
+        .values({
+          mailboxAccountId: mb!.id,
+          isPreset: true,
+          presetKey: 'auto_archive_low_engagement',
+          name: 'Archive low engagement',
+          enabled: true,
+          mode: 'active',
+          scope: 'account',
+          conditions: {},
+          actionKind: 'archive',
+          actionPayload: {},
+        })
+        .returning({ id: automationRules.id });
+      const insertMatch = (senderKey: string) =>
+        db
+          .insert(ruleMatchLog)
+          .values({
+            ruleId: rule!.id,
+            mailboxAccountId: mb!.id,
+            senderKey,
+            modeAtMatch: 'active',
+            confidence: '0.90',
+            reason: 'sweep fixture',
+            resolution: 'approved',
+            intentApplied: false,
+          })
+          .returning({ id: ruleMatchLog.id })
+          .then((r) => r[0]!.id);
+      const matchId = await insertMatch('a'.repeat(64));
+      const claimedMatchId = await insertMatch('b'.repeat(64));
+      // In-flight claim — mirrors the action worker's `claimKey`.
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mb!.id,
+        verb: 'archive',
+        selector: { type: 'messages' },
+        idempotencyKey: `autopilot-${claimedMatchId}`,
+        status: 'executing',
+      });
+      return { ruleId: rule!.id, matchId, claimedMatchId, mailboxId: mb!.id };
+    }
+
+    // Identical state on both sides of the entitlement line: the plus
+    // workspace must converge, the pro one must NOT be touched — that
+    // grant-side row is what keeps the tier predicate from passing
+    // vacuously.
+    const plus = await seedAutomation('plus');
+    const pro = await seedAutomation('pro');
+
+    const result = await runBillingReconciliationSweep(db);
+
+    expect(result.unattendedRulesDemoted).toBe(1);
+    expect(result.unattendedMatchesNeutralized).toBe(1);
+
+    const [plusRule] = await db
+      .select()
+      .from(automationRules)
+      .where(eq(automationRules.id, plus.ruleId));
+    expect(plusRule!.mode).toBe('observe');
+    expect(plusRule!.observePromptDismissedAt).toBeNull();
+    const [plusMatch] = await db
+      .select()
+      .from(ruleMatchLog)
+      .where(eq(ruleMatchLog.id, plus.matchId));
+    expect(plusMatch!.resolution).toBe('dismissed');
+    expect(plusMatch!.dismissReason).toBe('entitlement');
+    // The claimed match completes through the worker, never relabelled.
+    const [plusClaimed] = await db
+      .select()
+      .from(ruleMatchLog)
+      .where(eq(ruleMatchLog.id, plus.claimedMatchId));
+    expect(plusClaimed!.resolution).toBe('approved');
+
+    const [proRule] = await db
+      .select()
+      .from(automationRules)
+      .where(eq(automationRules.id, pro.ruleId));
+    expect(proRule!.mode).toBe('active');
+    const [proMatch] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, pro.matchId));
+    expect(proMatch!.resolution).toBe('approved');
+
+    // Second sweep is a no-op — the demote is idempotent.
+    const again = await runBillingReconciliationSweep(db);
+    expect(again.unattendedRulesDemoted).toBe(0);
+    expect(again.unattendedMatchesNeutralized).toBe(0);
   });
 });

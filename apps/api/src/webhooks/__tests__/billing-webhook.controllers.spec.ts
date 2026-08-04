@@ -11,6 +11,8 @@ import { HttpException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Request } from 'express';
+
+import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
 import type { RawBodyRequest } from '@nestjs/common';
 
 import type { DrizzleDb } from '../../db/db.module.js';
@@ -118,7 +120,7 @@ describe('billing webhook controllers', () => {
 
   beforeEach(async () => {
     db = await freshDb();
-    service = new BillingWebhookService(db, testCatalog());
+    service = new BillingWebhookService(db, testCatalog(), new AutopilotReadService(db));
     record = vi.fn().mockResolvedValue(undefined);
     securityEvents = { record } as unknown as SecurityEventsService;
     const [ws] = await db

@@ -129,6 +129,7 @@ import { EmailSuppressionService } from './notifications/email-suppression.servi
 import { buildSyncReadyEmailHandler } from './notifications/sync-ready-email.trigger.js';
 import { buildSyncFailedEmailHandler } from './notifications/sync-failed-email.trigger.js';
 import { runBillingReconciliationSweep } from './billing/billing-reconciliation.sweep.js';
+import { AutopilotReadService } from './autopilot/autopilot.read-service.js';
 import { BillingCatalog } from './billing/billing-catalog.js';
 import { BillingReconciliationService } from './billing/billing-reconciliation.service.js';
 import { BillingWebhookService } from './billing/billing-webhook.service.js';
@@ -1733,7 +1734,9 @@ async function bootstrap(): Promise<void> {
   const billingReconciliationService = new BillingReconciliationService(
     db,
     billingCatalog,
-    new BillingWebhookService(db, billingCatalog),
+    // Queue-less AutopilotReadService: the D251 demote facade the tier
+    // write calls uses only db reads/updates, never the action queue.
+    new BillingWebhookService(db, billingCatalog, new AutopilotReadService(db)),
     new PaddleAdapter(),
     new RazorpayAdapter(),
   );

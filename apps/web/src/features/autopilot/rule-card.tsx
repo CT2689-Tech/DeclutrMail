@@ -31,6 +31,7 @@ const { color, font } = tokens;
  */
 export function RuleCard({
   rule,
+  canActivate,
   pendingCount,
   pendingApproximate,
   isSaving,
@@ -43,6 +44,12 @@ export function RuleCard({
   onRetryPreview,
 }: {
   rule: AutopilotRuleDto;
+  /**
+   * D251 — whether this workspace's rules may act unattended
+   * (`autopilot-active`, Pro). On Plus an `active` rule is skipped by the apply
+   * worker, so the card must not render it as running.
+   */
+  canActivate: boolean;
   /** Pending Observe-mode suggestions currently buffered for this rule. */
   pendingCount: number;
   /**
@@ -100,7 +107,7 @@ export function RuleCard({
         >
           <span style={{ fontSize: 13.5, fontWeight: 600, color: color.fg }}>{name}</span>
           <Pill tone="default">{describeRuleAction(rule.actionKind)}</Pill>
-          <ModePill rule={rule} />
+          <ModePill rule={rule} canActivate={canActivate} />
         </div>
         <EnabledSwitch
           ruleName={name}
@@ -141,7 +148,7 @@ export function RuleCard({
       )}
 
       <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.5, color: color.fgMuted }}>
-        {ruleModeExplanation(rule)}
+        {ruleModeExplanation(rule, canActivate)}
       </p>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -195,15 +202,21 @@ function describeRuleAction(kind: AutopilotActionKind): string {
   }
 }
 
-/** Rule lifecycle pill — Observing / Active / Paused (D10). */
-function ModePill({ rule }: { rule: AutopilotRuleDto }) {
+/** Rule lifecycle pill — Observing / Active / Not running / Paused (D10, D251). */
+function ModePill({ rule, canActivate }: { rule: AutopilotRuleDto; canActivate: boolean }) {
   if (rule.mode === 'paused') return <Pill tone="amber">Paused</Pill>;
-  if (rule.mode === 'active') return <Pill tone="emerald">Active</Pill>;
+  if (rule.mode === 'active') {
+    // D251 — the apply worker skips `active` rules on a tier without
+    // `autopilot-active` (the Pro→Plus downgrade path). A green "Active" pill
+    // here would assert automation that is not happening.
+    if (!canActivate) return <Pill tone="amber">Not running</Pill>;
+    return <Pill tone="emerald">Active</Pill>;
+  }
   return <Pill tone="default">Observing</Pill>;
 }
 
 /** Rule-local mode explanation — users should not have to remember the page intro. */
-function ruleModeExplanation(rule: AutopilotRuleDto): string {
+function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): string {
   if (!rule.enabled) {
     return 'Off — this rule records no new matches and takes no actions.';
   }
@@ -211,6 +224,9 @@ function ruleModeExplanation(rule: AutopilotRuleDto): string {
     return 'Paused — this rule records no new matches and takes no actions until you resume it.';
   }
   if (rule.mode === 'active') {
+    if (!canActivate) {
+      return 'Set to run on its own, which is part of Pro — on your current plan this rule is not checking new mail. Switch it to Observe to keep collecting matches for your approval.';
+    }
     return 'Active — future matches run automatically. Results and available recovery appear in Activity.';
   }
   return 'Observe — matches become suggestions. Nothing changes until you review a preview and approve the action.';

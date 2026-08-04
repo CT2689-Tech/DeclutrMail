@@ -193,8 +193,8 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, string>> = {
   triage: 'Triage sessions',
   // D251 — one feature name, two behaviours. The ladder reads as an
   // upgrade in kind ("stop approving"), not as a second product.
-  'autopilot-review': 'Autopilot — finds matching mail, you approve each batch',
-  autopilot: 'Autopilot — runs on its own',
+  autopilot: 'Autopilot — finds matching mail, you approve each batch',
+  'autopilot-active': 'Autopilot — runs on its own',
   brief: 'Daily Brief',
   screener: 'Screener — new senders collected for review',
   quiet: 'Quiet hours',

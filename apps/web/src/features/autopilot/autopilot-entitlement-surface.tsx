@@ -3,10 +3,15 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Button, EmptyState, Eyebrow, tokens } from '@declutrmail/shared';
-import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import {
+  hasCapability,
+  minimumTierForCapability,
+  TIER_MANIFEST,
+} from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
 import { useRegionProvider } from '@/features/billing/billing-currency';
+import { billingIntentPath } from '@/features/billing/billing-intent';
 import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
 
 import { useAutopilotRules } from './api/use-autopilot-rules';
@@ -28,7 +33,7 @@ const { color, font, radius, shadow } = tokens;
  */
 export function AutopilotEntitlementSurface() {
   const { tier } = useTier();
-  if (hasCapability(tier, 'autopilot-review')) return <AutopilotRoute />;
+  if (hasCapability(tier, 'autopilot')) return <AutopilotRoute />;
   return <AutopilotObservePreview />;
 }
 
@@ -36,7 +41,16 @@ export function AutopilotObservePreview() {
   const rules = useAutopilotRules();
   const preview = useRulePreview();
   const [previewRuleId, setPreviewRuleId] = useState<string | null>(null);
-  const monthly = TIER_MANIFEST.pro.prices.monthly;
+  // D251 — this preview renders to workspaces WITHOUT `autopilot`,
+  // i.e. Free only. The cheapest plan that unlocks the screen they are
+  // looking at is therefore the review capability's granting tier (Plus),
+  // NOT Pro. Quoting Pro here sent a Free user to a $19 plan for a $9
+  // surface — same bug class as the hardcoded `$` this file already
+  // records below. Derived so the next ladder move rewrites it.
+  const grantingTier = minimumTierForCapability('autopilot');
+  const grantingPlan = grantingTier === 'pro' ? ('pro' as const) : ('plus' as const);
+  const grantingName = TIER_MANIFEST[grantingTier].name;
+  const monthly = TIER_MANIFEST[grantingTier].prices.monthly;
   // Was a hardcoded `$` template — an India-bound user read "$19/mo"
   // here and was charged ₹1,599 at the checkout this nudge leads to.
   const regionProvider = useRegionProvider();
@@ -185,10 +199,11 @@ export function AutopilotObservePreview() {
       >
         <div>
           <strong style={{ display: 'block', fontSize: 13.5 }}>
-            Automatic Active execution is Pro.
+            Rule matching and batch approval are part of {grantingName}.
           </strong>
           <span style={{ color: color.fgMuted, fontSize: 12.5 }}>
-            Custom rule creation remains unavailable; the launch surface uses preset rules only.
+            Letting rules act without per-batch approval is Pro. Custom rule creation remains
+            unavailable; the launch surface uses preset rules only.
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -199,7 +214,7 @@ export function AutopilotObservePreview() {
             Compare plans
           </Link>
           <Link
-            href="/billing"
+            href={billingIntentPath({ plan: grantingPlan, cycle: 'monthly' })}
             style={{
               padding: '9px 14px',
               borderRadius: radius.md,
@@ -210,7 +225,8 @@ export function AutopilotObservePreview() {
               textDecoration: 'none',
             }}
           >
-            Upgrade to Pro{price ? ` · ${price}` : ''}
+            Upgrade to {grantingName}
+            {price ? ` · ${price}` : ''}
           </Link>
         </div>
       </div>

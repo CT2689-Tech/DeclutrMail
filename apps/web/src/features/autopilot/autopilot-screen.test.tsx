@@ -528,7 +528,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 
   // ── D251: Plus reaches this screen but must never be offered Activate ──
   //
-  // Plus has `autopilot-review` (review and approve) but not `autopilot`
+  // Plus has `autopilot` (review and approve) but not `autopilot-active`
   // (act unattended). Before this gate the screen offered Activate to Plus,
   // the PATCH 402'd, and the confirm modal quoted Pro's 30-day undo window
   // to a user with 7. An action that always fails is worse than no action.
@@ -549,7 +549,58 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     renderScreen(ready());
 
     expect(screen.queryByText(/until you explicitly switch it to Active/i)).toBeNull();
-    expect(screen.getByText(/part of Pro/i)).toBeInTheDocument();
+    // Banner AND intro both say "part of Pro" on plus (B2 fix), so this is
+    // deliberately getAllByText — getByText would throw on the second match.
+    expect(screen.getAllByText(/part of Pro/i).length).toBeGreaterThan(0);
+  });
+
+  it('plus: intro and help never promise per-rule Active (design-gate B2)', () => {
+    authState.tier = 'plus';
+    renderScreen(ready());
+
+    // The Pro explainer sentence must be absent everywhere on plus.
+    expect(screen.queryByText(/Active applies future matches automatically/i)).toBeNull();
+    expect(screen.getByText(/Rules run in Observe:/i)).toBeInTheDocument();
+    expect(screen.getByText('What does Observe do?')).toBeInTheDocument();
+    expect(screen.queryByText('What changes between Observe and Active?')).toBeNull();
+  });
+
+  it('pro: intro and help keep the Observe/Active explainer', () => {
+    authState.tier = 'pro';
+    renderScreen(ready());
+
+    expect(screen.getByText(/Active applies future matches automatically;/i)).toBeInTheDocument();
+    expect(screen.getByText('What changes between Observe and Active?')).toBeInTheDocument();
+  });
+
+  it('plus: a leftover active rule renders "Not running", never a green Active pill (design-gate B3)', () => {
+    authState.tier = 'plus';
+    // The Pro→Plus downgrade path: rule was promoted to active while the
+    // workspace was Pro; the apply worker now skips it (D251), so the card
+    // must not assert automation that is not happening.
+    const withActive = [
+      { ...PRESET_RULES_OBSERVE[0]!, mode: 'active' as const },
+      ...PRESET_RULES_OBSERVE.slice(1),
+    ];
+    renderScreen({ kind: 'ready', rules: withActive, suggestions: [] });
+
+    expect(screen.getByText('Not running')).toBeInTheDocument();
+    expect(screen.queryAllByText(/^Active$/)).toHaveLength(0);
+    expect(
+      screen.getByText(/on your current plan this rule is not checking new mail/i),
+    ).toBeInTheDocument();
+  });
+
+  it('pro: an active rule still renders the green Active pill', () => {
+    authState.tier = 'pro';
+    const withActive = [
+      { ...PRESET_RULES_OBSERVE[0]!, mode: 'active' as const },
+      ...PRESET_RULES_OBSERVE.slice(1),
+    ];
+    renderScreen({ kind: 'ready', rules: withActive, suggestions: [] });
+
+    expect(screen.getByText('Active')).toBeInTheDocument();
+    expect(screen.queryByText('Not running')).toBeNull();
   });
 
   it('pro: still gets the real Activate control', () => {

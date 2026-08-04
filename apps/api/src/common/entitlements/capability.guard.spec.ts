@@ -32,12 +32,12 @@ const GUARDS_METADATA = '__guards__';
 
 const PRO_TIERS: readonly TierId[] = ['pro', 'team', 'enterprise'];
 // D251 narrowed the Pro-only set: `screener` and the new
-// `autopilot-review` moved to Plus, so only these four still 402 a Plus
-// workspace. `autopilot` here means UNATTENDED action, which stays Pro.
+// `autopilot` moved to Plus, so only these four still 402 a Plus
+// workspace. `autopilot-active` here means UNATTENDED action, which stays Pro.
 const UNDER_TIERS: readonly TierId[] = ['free', 'plus'];
-const PRO_CAPABILITIES: readonly Capability[] = ['autopilot', 'brief', 'quiet', 'followups'];
+const PRO_CAPABILITIES: readonly Capability[] = ['autopilot-active', 'brief', 'quiet', 'followups'];
 /** D251 — granted at Plus, so they 402 only the free tier. */
-const PLUS_CAPABILITIES: readonly Capability[] = ['screener', 'autopilot-review'];
+const PLUS_CAPABILITIES: readonly Capability[] = ['screener', 'autopilot'];
 
 type ControllerClass = abstract new (...args: never[]) => unknown;
 
@@ -145,7 +145,7 @@ describe('CapabilityGuard (D19) — per-surface wiring', () => {
   }> = [
     {
       surface: 'autopilot',
-      capability: 'autopilot-review',
+      capability: 'autopilot',
       controller: AutopilotController,
       gated: [
         'getRule',

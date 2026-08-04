@@ -76,7 +76,7 @@ export class OnboardingController {
     // only by the client-side tier gate.
     if (parsed.data.presetKeys.length > 0) {
       const tier = await this.entitlements.tierForWorkspace(principal.workspaceId);
-      assertTierCapability(tier, 'autopilot-review');
+      assertTierCapability(tier, 'autopilot');
     }
     return ok(
       await this.onboarding.submitPresetPicks(

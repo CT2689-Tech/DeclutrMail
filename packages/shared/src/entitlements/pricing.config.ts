@@ -42,20 +42,16 @@ const FREE_CAPABILITIES: readonly Capability[] = [
  * Plus = Free + unlimited volume + the Screener + rule-driven matching
  * the user approves by hand (D251, reverses D77's Pro-only Screener).
  *
- * `autopilot-review` WITHOUT `autopilot` is the whole point: rules may
+ * `autopilot` WITHOUT `autopilot-active` is the whole point: rules may
  * find matching mail, but nothing moves until the user approves the
  * batch. Delegated approval — `mode='active'` — stays on Pro.
  */
-const PLUS_CAPABILITIES: readonly Capability[] = [
-  ...FREE_CAPABILITIES,
-  'screener',
-  'autopilot-review',
-];
+const PLUS_CAPABILITIES: readonly Capability[] = [...FREE_CAPABILITIES, 'screener', 'autopilot'];
 
 /** Pro = Plus + unattended automation (D19, D77, D251). */
 const PRO_CAPABILITIES: readonly Capability[] = [
   ...PLUS_CAPABILITIES,
-  'autopilot',
+  'autopilot-active',
   'brief',
   'quiet',
   'followups',

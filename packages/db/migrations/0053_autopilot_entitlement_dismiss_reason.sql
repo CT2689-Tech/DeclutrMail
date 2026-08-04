@@ -1,0 +1,12 @@
+-- D251 Pro→Plus downgrade neutralization. Auto-approved matches from an
+-- `active` rule sit at rest as (mode_at_match='active',
+-- resolution='approved', intent_applied=false) until the action sweep
+-- executes them. When a downgrade removes `autopilot-active`, those rows
+-- must be dismissed — left approved they would re-arm and execute,
+-- possibly months later, on a re-upgrade, under a rule the downgrade
+-- flipped back to Observe. Neither existing reason fits: 'user' claims a
+-- decision the user never made, 'protected' claims a safety check that
+-- never ran. Append-only enum change; no rows are rewritten here — the
+-- billing tier writers (webhook facade call + reconciliation sweep) set
+-- the value.
+ALTER TYPE "autopilot_match_dismiss_reason" ADD VALUE 'entitlement';

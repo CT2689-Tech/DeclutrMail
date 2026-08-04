@@ -15,6 +15,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
 import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import type {
@@ -167,7 +168,7 @@ describe('BillingReconciliationService (D249)', () => {
     return new BillingReconciliationService(
       db,
       catalog,
-      new BillingWebhookService(db, catalog),
+      new BillingWebhookService(db, catalog, new AutopilotReadService(db)),
       paddle,
       razorpay ?? (fakeAdapter({}) as RazorpayAdapter),
     );

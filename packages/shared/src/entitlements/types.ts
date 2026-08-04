@@ -60,14 +60,14 @@ export const TIER_RANK: Readonly<Record<TierId, number>> = {
  *     per-selector minimum tiers resolve from the pricing config.
  *   - `triage` — the core ritual (D29/D33); Free per A3.
  *   - `snoozed` — the Later apparatus; Free per A3 (follows the verb).
- *   - `autopilot-review` — D251. Rules may MATCH and the user approves
+ *   - `autopilot` — D251. Rules may MATCH and the user approves
  *     each batch by hand. Plus and Pro. This is the capability the
  *     Autopilot read/approve surface requires.
- *   - `autopilot` — D251. Rules may ACT on future mail with no per-batch
+ *   - `autopilot-active` — D251. Rules may ACT on future mail with no per-batch
  *     approval, i.e. `mode='active'`. Pro only.
  *
  *     The pair is deliberately two capabilities rather than one. A single
- *     `autopilot` flag cannot express D251's split: granting it to Plus
+ *     all-in-one flag cannot express D251's split: granting it to Plus
  *     would also let an `active` rule fire unattended, and withholding it
  *     would gate the very batch the Plus user just approved (the sweep
  *     gate in `autopilot-action.worker` is tier-level). Per-match
@@ -81,8 +81,8 @@ export const CAPABILITIES = [
   'activity',
   'cleanup-actions',
   'triage',
-  'autopilot-review',
   'autopilot',
+  'autopilot-active',
   'brief',
   'screener',
   'quiet',

@@ -154,7 +154,7 @@ export const AllPaused: Story<typeof AutopilotScreen> = {
   render: (args: PageArgs) => frame(<AutopilotScreen {...args} />),
 };
 
-/** Free/Plus — real installed preset catalog before the Pro Active-execution ask. */
+/** Free — real installed preset catalog before the paid-plan ask (Plus unlocks the full screen after D251). */
 export const PreUpgradeObservePreview: Story<typeof AutopilotObservePreview> = {
   render: () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

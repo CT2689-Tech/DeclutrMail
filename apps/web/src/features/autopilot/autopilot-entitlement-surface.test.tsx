@@ -100,9 +100,11 @@ describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
     );
     expect(screen.getByText(/this check is read-only. nothing changed/i)).toBeInTheDocument();
 
-    expect(screen.getByRole('link', { name: /upgrade to pro · \$19\/mo/i })).toHaveAttribute(
+    // D251 — the CTA names the cheapest plan that unlocks THIS screen
+    // (autopilot → Plus at $9), not Pro. Derived from the manifest.
+    expect(screen.getByRole('link', { name: /upgrade to plus · \$9\/mo/i })).toHaveAttribute(
       'href',
-      '/billing',
+      '/billing?plan=plus&cycle=monthly',
     );
     expect(
       screen.queryByRole('button', { name: /pause every autopilot rule/i }),

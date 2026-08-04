@@ -72,7 +72,7 @@ const ALLOWED_SCOPES = new Set(['account', 'all_accounts', 'workspace']);
 
 @Controller('autopilot')
 @UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard, CapabilityGuard)
-@RequiresCapability('autopilot-review')
+@RequiresCapability('autopilot')
 export class AutopilotController {
   constructor(
     private readonly reads: AutopilotReadService,
@@ -156,14 +156,14 @@ export class AutopilotController {
       throw new BadRequestException('Rule id must be a UUID.');
     }
     const patch = parseRulePatch(body);
-    // D251 — the class guard only requires `autopilot-review`, which Plus
+    // D251 — the class guard only requires `autopilot`, which Plus
     // has. Promoting a rule to `active` is the delegated-approval step and
     // is Pro-only, so it is enforced here rather than at the class level.
     // Without this, a Plus workspace could PATCH mode='active' and get
     // unattended automation it is not paying for.
     if (patch.mode === 'active') {
       const tier = await this.entitlements.tierForWorkspace(principal.workspaceId);
-      assertTierCapability(tier, 'autopilot');
+      assertTierCapability(tier, 'autopilot-active');
     }
     const rule = await this.reads.patchRule(accountId, id, patch);
     if (!rule) {

@@ -20,7 +20,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
 
 import { SCREENER_QUEUE } from './data';
-import { ScreenerProUpsell } from './pro-upsell';
+import { ScreenerUpsell } from './upsell';
 import { ScreenerRow } from './screener-row';
 import { ScreenerScreen } from './screener-screen';
 
@@ -223,10 +223,10 @@ export const ProtectedOverridePreview: Story<typeof ScreenerRow> = {
   },
 };
 
-export const ProUpsell: Story<typeof ScreenerProUpsell> = {
+export const Upsell: Story<typeof ScreenerUpsell> = {
   render: () => (
     <Shell>
-      <ScreenerProUpsell onSeePricing={noop} />
+      <ScreenerUpsell onSeePricing={noop} />
     </Shell>
   ),
   parameters: {

@@ -22,7 +22,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { SCREENER_QUEUE, type ScreenerScreenState } from './data';
 import { ScreenerEmptyState } from './empty-state';
-import { ScreenerProUpsell } from './pro-upsell';
+import { ScreenerUpsell } from './upsell';
 import { ScreenerRow } from './screener-row';
 import { ScreenerScreen } from './screener-screen';
 import { resolveScreenerShortcut, VERB_KEY_HINT, VERB_LABEL, VERB_ORDER } from './verbs';
@@ -260,18 +260,23 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
   });
 });
 
-describe('ScreenerProUpsell — D77 + D194 marketing-copy rule', () => {
-  it('uses approved framing and offers the pricing CTA', () => {
-    const html = render(<ScreenerProUpsell onSeePricing={() => {}} />);
+describe('ScreenerUpsell — D77 (reversed by D251) + D194 marketing-copy rule', () => {
+  it('names the manifest granting plan (Plus), never a hand-rolled Pro', () => {
+    const html = render(<ScreenerUpsell onSeePricing={() => {}} />);
     expect(html).toContain('A queue of new senders, ready when you are.');
     expect(html).toContain('still');
     expect(html).toContain('arrive in your inbox until you decide');
-    expect(html).toContain('See Pro plans');
+    // D251 — the plan name derives from the manifest, so this pin moves
+    // with the ladder. The pre-fix copy quoted Pro/$19 for a $9 capability.
+    expect(html).toContain('Screener · Plus');
+    expect(html).toContain('With Plus, the Screener collects');
+    expect(html).toContain('See Plus plans');
+    expect(html).not.toContain('Pro plan');
     assertNoScreenVerb(html);
   });
 
   it('never uses a D194-forbidden framing', () => {
-    const text = render(<ScreenerProUpsell onSeePricing={() => {}} />).replace(/<[^>]*>/g, ' ');
+    const text = render(<ScreenerUpsell onSeePricing={() => {}} />).replace(/<[^>]*>/g, ' ');
     expect(text).not.toMatch(/won't surprise you/i);
     expect(text).not.toMatch(/block/i);
     expect(text).not.toMatch(/intercept/i);

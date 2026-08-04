@@ -66,11 +66,11 @@ describe('Pricing config — the pinned snapshot (change tripwire)', () => {
       'triage',
     ];
     // D251 — Plus gains the Screener and rule-matching-with-manual-approval;
-    // only unattended action (`autopilot`), Brief, Quiet and Follow-ups
+    // only unattended action (`autopilot-active`), Brief, Quiet and Follow-ups
     // remain Pro. Two capabilities, because one cannot express the split:
     // see packages/shared/src/entitlements/types.ts.
-    const plusSet = [...freeSet, 'autopilot-review', 'screener'].sort();
-    const proSet = [...plusSet, 'autopilot', 'brief', 'followups', 'quiet'].sort();
+    const plusSet = [...freeSet, 'autopilot', 'screener'].sort();
+    const proSet = [...plusSet, 'autopilot-active', 'brief', 'followups', 'quiet'].sort();
 
     expect({
       tiers,
@@ -429,9 +429,9 @@ describe('type-level exhaustiveness', () => {
         return 'free';
       // D251 — Screener and rule-matching-with-manual-approval are Plus.
       case 'screener':
-      case 'autopilot-review':
-        return 'plus';
       case 'autopilot':
+        return 'plus';
+      case 'autopilot-active':
       case 'brief':
       case 'quiet':
       case 'followups':

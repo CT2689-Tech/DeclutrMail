@@ -54,9 +54,10 @@ import {
   subscriptions,
   workspaces,
 } from '@declutrmail/db';
-import { TIER_RANK } from '@declutrmail/shared/entitlements';
+import { TIER_RANK, hasCapability } from '@declutrmail/shared/entitlements';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
+import { AutopilotReadService } from '../autopilot/autopilot.read-service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   NormalizedBillingEvent,
@@ -231,6 +232,8 @@ export class BillingWebhookService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly catalog: BillingCatalog,
+    /** D251 — the exported Autopilot facade the tier write demotes through. */
+    private readonly autopilot: AutopilotReadService,
   ) {}
 
   async process(
@@ -1116,5 +1119,18 @@ export class BillingWebhookService {
       .update(workspaces)
       .set({ tier, foundingMember: founding, updatedAt: new Date() })
       .where(eq(workspaces.id, workspaceId));
+
+    // D251 — a tier that no longer grants `autopilot-active` must not
+    // keep `active` rules on the books: the Autopilot facade flips them
+    // to Observe and neutralizes unapplied auto-approved matches, in
+    // THIS transaction so the tier write and the demotion are atomic
+    // (worker-refusal-only was explicitly rejected — stored state stays
+    // honest). Unconditional on every recompute rather than diffed
+    // against the previous tier: the call is idempotent and two cheap
+    // indexed UPDATEs, and running it always makes it self-healing for
+    // rows that drifted in through any other path.
+    if (!hasCapability(tier, 'autopilot-active')) {
+      await this.autopilot.demoteUnattendedRules(workspaceId, tx);
+    }
   }
 }

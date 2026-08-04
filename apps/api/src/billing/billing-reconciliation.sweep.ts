@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
 
+import { TIER_IDS, hasCapability } from '@declutrmail/shared/entitlements';
+
 import type { DrizzleDb } from '../db/db.module.js';
 
 /**
@@ -29,6 +31,17 @@ import type { DrizzleDb } from '../db/db.module.js';
  *   4. Stale D120 scheduled changes (> 7 days) surfaced as WARNs — the
  *      `billing.plan_change_unconfirmed` class only a sweep can age
  *      out.
+ *   5. D251 UNATTENDED DEMOTE — any workspace whose CURRENT tier does
+ *      not grant `autopilot-active` (list derived from the manifest,
+ *      never hardcoded) has `active` rules flipped to `observe` and
+ *      unapplied auto-approved matches dismissed. GLOBAL predicate on
+ *      purpose, not scoped to workspaces this sweep just recomputed:
+ *      the webhook path demotes atomically with its tier write
+ *      (BillingWebhookService.recomputeWorkspaceTier → the Autopilot
+ *      facade — the SQL here mirrors it; change one, change both), but
+ *      an apply sweep already in flight during a downgrade can insert
+ *      active-provenance matches AFTER that demotion, and this pass is
+ *      the only thing that converges them. Idempotent.
  *
  * Provider-truth polling itself lives NEXT DOOR, not here: the worker
  * runs `BillingReconciliationService.reconcileLiveSubscriptions()`
@@ -41,6 +54,10 @@ export interface BillingSweepResult {
   workspacesRecomputed: number;
   pendingCheckoutsCleared: number;
   staleScheduledChanges: number;
+  /** D251 — `active` rules flipped to `observe` on under-entitled tiers. */
+  unattendedRulesDemoted: number;
+  /** D251 — unapplied auto-approved `active` matches dismissed ('entitlement'). */
+  unattendedMatchesNeutralized: number;
 }
 
 export async function runBillingReconciliationSweep(db: DrizzleDb): Promise<BillingSweepResult> {
@@ -122,12 +139,67 @@ export async function runBillingReconciliationSweep(db: DrizzleDb): Promise<Bill
     );
   }
 
+  // Step 5 — D251 unattended demote (doc block above). Tier list comes
+  // from the manifest so a ladder move rewrites this predicate; the SQL
+  // bodies mirror AutopilotReadService.demoteUnattendedRules (rule-flip
+  // field semantics) and its claim-exclusion key construction mirrors
+  // the action worker's `claimKey` — change one, change both.
+  const demoted = await db.execute(sql`
+    UPDATE automation_rules ar
+    SET mode = 'observe',
+        mode_changed_at = now(),
+        observe_prompt_dismissed_at = NULL,
+        updated_at = now()
+    FROM mailbox_accounts ma
+    JOIN workspaces w ON w.id = ma.workspace_id
+    WHERE ar.mailbox_account_id = ma.id
+      AND ar.mode = 'active'
+      AND ${unentitledTierFilter()}
+  `);
+  const neutralized = await db.execute(sql`
+    UPDATE rule_match_log rml
+    SET resolution = 'dismissed',
+        resolved_at = now(),
+        dismiss_reason = 'entitlement'
+    FROM mailbox_accounts ma
+    JOIN workspaces w ON w.id = ma.workspace_id
+    WHERE rml.mailbox_account_id = ma.id
+      AND rml.mode_at_match = 'active'
+      AND rml.resolution = 'approved'
+      AND rml.intent_applied = false
+      AND ${unentitledTierFilter()}
+      AND NOT EXISTS (
+        SELECT 1 FROM action_jobs aj
+        WHERE aj.idempotency_key IN (
+          'autopilot-' || rml.id::text,
+          'autopilot-unsubexec-' || rml.id::text
+        )
+      )
+  `);
+
   return {
     dunningFlipped: flippedWorkspaceIds.length,
     workspacesRecomputed: affectedCount(recomputed),
     pendingCheckoutsCleared: affectedCount(cleared),
     staleScheduledChanges: staleRows.length,
+    unattendedRulesDemoted: affectedCount(demoted),
+    unattendedMatchesNeutralized: affectedCount(neutralized),
   };
+}
+
+/**
+ * `w.tier IN (<tiers that do NOT grant autopilot-active>)`, derived
+ * from the manifest at call time. Per-value params (the same postgres.js
+ * row-tuple trap `flippedFilter` documents below). The manifest always
+ * has at least one such tier ('free' — an entitlements invariant test
+ * pins Free below the automation set), so the IN list is never empty.
+ */
+function unentitledTierFilter() {
+  const tiers = TIER_IDS.filter((t) => !hasCapability(t, 'autopilot-active'));
+  return sql`w.tier IN (${sql.join(
+    tiers.map((t) => sql`${t}::workspace_tier`),
+    sql`, `,
+  )})`;
 }
 
 /**
