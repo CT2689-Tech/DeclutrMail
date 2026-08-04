@@ -88,10 +88,19 @@ export const autopilotMatchResolution = pgEnum('autopilot_match_resolution', [
   'dismissed',
 ]);
 
-/** D246 — why a pending/approved match reached dismissed terminal state. */
+/**
+ * D246 — why a pending/approved match reached dismissed terminal state.
+ * `entitlement` (D251) marks auto-approved `active`-provenance matches
+ * neutralized by a Pro→Plus downgrade: left `approved, intent_applied
+ * = false` they would re-arm and execute on a later re-upgrade, under a
+ * rule the downgrade flipped back to Observe. Activity's review-outcome
+ * surfaces intentionally exclude this value — it is a system state
+ * change, not a user decision.
+ */
 export const autopilotMatchDismissReason = pgEnum('autopilot_match_dismiss_reason', [
   'user',
   'protected',
+  'entitlement',
 ]);
 
 export const ruleMatchLog = pgTable(

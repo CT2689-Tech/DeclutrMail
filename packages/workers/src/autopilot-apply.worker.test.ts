@@ -418,6 +418,46 @@ describe('AutopilotApplyWorker', () => {
     },
   );
 
+  // The GRANT side of D251 — without this, the deny test above passes
+  // just as happily against a loader that blanket-refuses Plus (the
+  // blind-guard class): a Plus workspace with one Observe and one
+  // Active rule must evaluate EXACTLY the Observe one.
+  it('D251 — plus evaluates Observe rules and writes pending matches; only Active is excluded', async () => {
+    const db = await freshDb();
+    const mbId = await seedMailbox(db, 'plus');
+    await seedAutopilotPresets(db as never, mbId);
+    const observeRuleId = await enablePreset(db, mbId, 'auto_archive_low_engagement', {
+      enabled: true,
+      mode: 'observe',
+    });
+    const activeRuleId = await enablePreset(db, mbId, 'auto_unsubscribe_noisy', {
+      enabled: true,
+      mode: 'active',
+    });
+    await seedSender(db, mbId, {
+      email: 'plus-grant@example.com',
+      decision: { verdict: 'archive', confidence: 0.92 },
+      totalMessages: 10,
+    });
+
+    const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+      FAKE_CTX,
+    );
+
+    expect(result.rulesEvaluated).toBe(1);
+    expect(result.matchesWritten).toBe(1);
+    expect(result.observeMatches).toBe(1);
+    expect(result.activeMatches).toBe(0);
+    const matches = await db
+      .select({ ruleId: ruleMatchLog.ruleId, resolution: ruleMatchLog.resolution })
+      .from(ruleMatchLog);
+    expect(matches).toEqual([{ ruleId: observeRuleId, resolution: 'pending' }]);
+    // Reference activeRuleId so a failure names the excluded rule.
+    expect(matches.find((m) => m.ruleId === activeRuleId)).toBeUndefined();
+  });
+
   it('protected senders are filtered out BEFORE matching', async () => {
     const db = await freshDb();
     const mbId = await seedMailbox(db);

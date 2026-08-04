@@ -9,6 +9,13 @@ import { RulePreviewPanel } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
 const { color, font } = tokens;
+/**
+ * Pro's window, and that is correct BY CONSTRUCTION rather than by
+ * accident: after D251 only a workspace with the `autopilot-active` capability
+ * can open this modal, and `autopilot-active` is Pro-only. If activation is ever
+ * granted to a cheaper tier, this constant becomes a lie — thread the
+ * caller's real tier through instead of widening the gate.
+ */
 const AUTOPILOT_UNDO_WINDOW_DAYS = TIER_MANIFEST.pro.undoWindowDays;
 
 /**

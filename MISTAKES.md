@@ -1542,3 +1542,67 @@ Nothing in the PR was wrong; the scope was. The question asked was "does the scr
 **Rule:** verify a telemetry fix by reading what leaves the browser, not by unit-testing the scrubber. Point the SDK at a local echo server and diff every endpoint it hits.
 
 **Enforcement update:** `advanced_disable_flags: true` removes the endpoint rather than scrubbing it — a door that does not exist cannot be reopened by an SDK upgrade. The general rule stays manual.
+
+## 2026-08-04 — Rollback that re-armed stale unattended Autopilot actions
+
+**PR:** #465
+**Caught by:** Codex stop-time review (after the schema gate passed it as an [INFO])
+**What happened:** 0053's rollback restored every entitlement-dismissed
+match to its bit-exact pre-demotion tuple — `(resolution='approved',
+intent_applied=false)`. A "perfect" restore, and exactly the hazard the
+D251 demotion exists to kill: on any workspace holding (or later
+regaining) `autopilot-active`, the next action sweep would EXECUTE those
+months-stale matches unattended. The reconciliation sweep only
+re-dismisses under-entitled tiers, so an entitled workspace had no
+safety net. The schema gate even praised the fidelity ("bit-exact — not
+an approximation") — restoration accuracy and restoration safety are
+different properties.
+**Correct approach:** the 0045 precedent — documented `SELECT 1;` no-op.
+The enum label stays (Postgres can't drop it; readers allowlist), and
+reversing a specific workspace's demotion is a hand-verified support
+operation, never a blanket migration statement. 0050 shows the only
+acceptable direction for data writes in a rollback: DISARM side effects
+(expire tokens, fail jobs, clear id sets) — never re-arm them.
+**Rule:** a migration rollback reverts schema. Any data statement in a
+rollback must reduce the system's ability to mutate user data, never
+restore it. If a rollback would make mail-moving work executable again,
+it is wrong regardless of how faithfully it restores prior state.
+**Enforcement update:** none yet — candidate roundtrip-test assertion:
+rollback files may not UPDATE rows into states the workers treat as
+executable (`resolution='approved' AND intent_applied=false`).
+
+## 2026-08-04 — One downgrade sentence, five false absolutes in a row
+
+**PR:** #465
+**Caught by:** Codex stop-time review, five consecutive rounds on the
+same rule-card string
+**What happened:** the Plus-facing explanation for a leftover Active
+rule shipped five absolutes in sequence, each replacing the last:
+(1) "its collected matches keep waiting for your approval" — false,
+the demotion dismisses them; (2) "matches …are cleared" — false, a
+match already mid-action is untouched; (3) "finishes, with its normal
+undo" — false for an Unsubscribe rule, whose delivered request is
+one-way (D58); (4) "still completes" — false again, an in-flight
+request can FAIL at the sender's endpoint; (5) "its result lands in
+Activity" — false again: Activity's execution lineages cover only
+archive/later/delete (EXECUTION_VERBS), and no-op terminals write no
+row, so a failed or skipped unsubscribe surfaces nowhere. Every fix answered the
+previous objection with a new unqualified claim instead of asking what
+holds for EVERY verb and EVERY outcome the sentence covers. The
+settled form claims only what the system guarantees: in-flight work is
+not interrupted, and mail that actually moves keeps its Activity
+record (and, for label verbs, its undo).
+**Correct approach:** copy describing automated mail movement is a
+claim over a state space (verb × match lifecycle). Enumerate it before
+writing: unapplied/dismissed, in-flight, applied — and per verb, since
+unsubscribe is one-way while label verbs undo. The final copy branches
+on `rule.actionKind` and states only per-branch facts, with a test
+driving both branches.
+**Rule:** never ship an absolute ("all", "cleared", "keeps",
+"completes", "with undo") in automation copy without walking the
+verb × lifecycle × OUTCOME matrix — outcomes include failure; any undo
+claim adjacent to unsubscribe must name the one-way boundary in the
+same breath (the ACTION_SAFETY_SUMMARY discipline applies to per-rule
+strings too).
+**Enforcement update:** screen test now pins the per-verb branches and
+rejects the three failed absolutes.

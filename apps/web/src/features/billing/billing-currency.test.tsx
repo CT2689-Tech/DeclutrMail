@@ -34,10 +34,13 @@ import { TierGate } from './tier-gate';
 
 const PRO_MONTHLY = TIER_MANIFEST.pro.prices.monthly!;
 
+// `brief` — a capability whose granting tier is Pro, so the PRO_MONTHLY
+// pins below stay meaningful. (D251 moved `autopilot` to Plus; the
+// Plus-quote path is covered in tier-gate.test.tsx.)
 function renderGate(provider: 'paddle' | 'razorpay') {
   return render(
     <BillingCurrencyProvider provider={provider}>
-      <TierGate capability="autopilot" title="Autopilot" pitch="Automate recurring noise.">
+      <TierGate capability="brief" title="Daily Brief" pitch="Get your morning inbox summary.">
         <div>unlocked</div>
       </TierGate>
     </BillingCurrencyProvider>,
@@ -76,7 +79,7 @@ describe('in-app upgrade nudges quote the regional rail (D117)', () => {
 
   it('defaults to USD with no provider — tests/Storybook/non-Vercel hosts have no geo', () => {
     render(
-      <TierGate capability="autopilot" title="Autopilot" pitch="Automate recurring noise.">
+      <TierGate capability="brief" title="Daily Brief" pitch="Get your morning inbox summary.">
         <div>unlocked</div>
       </TierGate>,
     );

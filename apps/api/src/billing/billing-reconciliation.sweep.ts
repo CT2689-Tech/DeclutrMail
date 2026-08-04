@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 
+import type { AutopilotReadService } from '../autopilot/autopilot.read-service.js';
 import type { DrizzleDb } from '../db/db.module.js';
 
 /**
@@ -29,6 +30,19 @@ import type { DrizzleDb } from '../db/db.module.js';
  *   4. Stale D120 scheduled changes (> 7 days) surfaced as WARNs — the
  *      `billing.plan_change_unconfirmed` class only a sweep can age
  *      out.
+ *   5. D251 UNATTENDED DEMOTE — delegated to the Autopilot facade
+ *      (`demoteUnattendedRulesForUnentitledTiers`): any workspace whose
+ *      CURRENT tier does not grant `autopilot-active` has `active`
+ *      rules flipped to `observe` and unapplied auto-approved matches
+ *      dismissed. GLOBAL on purpose, not scoped to workspaces this
+ *      sweep just recomputed: the webhook path demotes atomically with
+ *      its tier write, but an apply sweep already in flight during a
+ *      downgrade can insert active-provenance matches AFTER that
+ *      demotion, and this pass is the only thing that converges them.
+ *      The SQL lives with its owner in `apps/api/src/autopilot/`
+ *      (D204) — billing never writes automation tables, so this one
+ *      step takes the facade as a parameter instead of staying pure
+ *      SQL. Idempotent.
  *
  * Provider-truth polling itself lives NEXT DOOR, not here: the worker
  * runs `BillingReconciliationService.reconcileLiveSubscriptions()`
@@ -41,9 +55,16 @@ export interface BillingSweepResult {
   workspacesRecomputed: number;
   pendingCheckoutsCleared: number;
   staleScheduledChanges: number;
+  /** D251 — `active` rules flipped to `observe` on under-entitled tiers. */
+  unattendedRulesDemoted: number;
+  /** D251 — unapplied auto-approved `active` matches dismissed ('entitlement'). */
+  unattendedMatchesNeutralized: number;
 }
 
-export async function runBillingReconciliationSweep(db: DrizzleDb): Promise<BillingSweepResult> {
+export async function runBillingReconciliationSweep(
+  db: DrizzleDb,
+  autopilot: Pick<AutopilotReadService, 'demoteUnattendedRulesForUnentitledTiers'>,
+): Promise<BillingSweepResult> {
   // RETURNING is load-bearing: the flip converts the row OUT of
   // granting status, so the recompute's EXISTS below can no longer see
   // it — the flipped workspaces must be carried across explicitly
@@ -122,11 +143,18 @@ export async function runBillingReconciliationSweep(db: DrizzleDb): Promise<Bill
     );
   }
 
+  // Step 5 — D251 unattended demote (doc block above), through the
+  // Autopilot facade so the demotion semantics have exactly one
+  // implementation and every converged workspace logs its own line.
+  const demotion = await autopilot.demoteUnattendedRulesForUnentitledTiers();
+
   return {
     dunningFlipped: flippedWorkspaceIds.length,
     workspacesRecomputed: affectedCount(recomputed),
     pendingCheckoutsCleared: affectedCount(cleared),
     staleScheduledChanges: staleRows.length,
+    unattendedRulesDemoted: demotion.demotedRules,
+    unattendedMatchesNeutralized: demotion.neutralizedMatches,
   };
 }
 

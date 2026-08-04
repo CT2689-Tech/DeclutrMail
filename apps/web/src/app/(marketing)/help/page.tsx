@@ -34,7 +34,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/help',
 });
 
-const LAST_UPDATED = '2026-07-14';
+const LAST_UPDATED = '2026-08-04';
 
 /**
  * One source for the rendered Q&A and the FAQPage JSON-LD. Answers are
@@ -61,7 +61,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'bulk-unsubscribe',
     q: 'Can I unsubscribe from all my newsletters at once?',
-    a: 'There is no single “unsubscribe from everything” button — DeclutrMail ranks your senders by how much they email you so you can clear the noisiest first. Paid plans add a reviewed multi-sender flow with the same preview before anything runs. One-click requests are queued separately; every mailto-only list remains in an on-screen checklist with a prefilled Gmail draft you must open and send. Senders without a published unsubscribe channel are excluded; Archive is the reliable fallback.',
+    a: 'There is no single “unsubscribe from everything” button — DeclutrMail ranks your senders by how much they email you so you can clear the noisiest first. A reviewed multi-sender flow with the same preview is included on every plan; Free counts it against the monthly quota. One-click requests are queued separately; every mailto-only list remains in an on-screen checklist with a prefilled Gmail draft you must open and send. Senders without a published unsubscribe channel are excluded; Archive is the reliable fallback.',
     link: { href: '/pricing', label: 'Compare plans →' },
   },
   {
@@ -88,14 +88,14 @@ const FAQS: ReadonlyArray<{
   {
     id: 'autopilot-modes',
     q: 'What is the difference between Autopilot’s Observe and Active modes?',
-    a: 'Autopilot rules are presets you enable, and every rule starts in Observe mode: it collects what it would have done without acting on anything. After the 7-day observe window you review the matches and decide whether to switch the rule to Active, which applies the rule to new matching mail. You can pause a rule at any time.',
+    a: 'Autopilot rules are presets you enable, and every rule starts in Observe mode: it collects what it would have done without acting on anything. After the 7-day observe window you review the matches and decide. Switching a rule to Active — so it applies to new matching mail without per-batch approval — is part of Pro; on Plus, matches keep waiting for your batch approval. You can pause a rule at any time.',
   },
   {
     id: 'pricing-tiers',
     q: 'What do the plans include?',
     // Derived from the pricing config (A3) — no plan number is written
     // here, so retuning the ladder cannot strand this answer.
-    a: `Free includes the full cleanup toolkit — Senders, Triage, the Later list and every cleanup verb — with ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions each month. Plus removes the monthly cap. Pro adds preset automation, ${TIER_MANIFEST.pro.inboxLimit} inboxes, and a ${TIER_MANIFEST.pro.undoWindowDays}-day Activity Undo window for Archive, Later, and Delete. Delete also has separate Gmail Trash recovery, normally up to 30 days on every plan. The pricing page has the current comparison.`,
+    a: `Free includes the full cleanup toolkit — Senders, Triage, the Later list and every cleanup verb — with ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions each month. Plus removes the monthly cap and adds the Screener plus Autopilot rules you approve batch by batch. Pro lets rules run unattended and adds ${TIER_MANIFEST.pro.inboxLimit} inboxes and a ${TIER_MANIFEST.pro.undoWindowDays}-day Activity Undo window for Archive, Later, and Delete. Delete also has separate Gmail Trash recovery, normally up to 30 days on every plan. The pricing page has the current comparison.`,
     link: { href: '/pricing', label: 'Pricing →' },
   },
   {

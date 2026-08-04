@@ -5,9 +5,9 @@
  * mutation that records a K/A/U/L/D verdict (the BE delegates to the
  * existing action pipeline and resolves the quarantine row).
  *
- * Mount-site rule (D77): callers gate these hooks on the workspace
- * tier (`useTier` + `hasCapability(tier, 'screener')`) so Free/Plus
- * sessions never fire a request the server would 402.
+ * Mount-site rule (D77; tiers per D251): callers gate these hooks on
+ * the workspace tier (`useTier` + `hasCapability(tier, 'screener')`)
+ * so Free sessions never fire a request the server would 402.
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

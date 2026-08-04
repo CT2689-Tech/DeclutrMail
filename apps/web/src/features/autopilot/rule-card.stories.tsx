@@ -53,6 +53,7 @@ const noop = () => undefined;
 
 const baseArgs: CardArgs = {
   rule: AUTO_ARCHIVE_LOW_ENGAGEMENT,
+  canActivate: true,
   pendingCount: 2,
   pendingApproximate: false,
   isSaving: false,
@@ -95,6 +96,50 @@ export const Active: Story<typeof RuleCard> = {
       observeWindowEndsAt: null,
       observeWindowElapsed: false,
       // BE contract: the digest is an Observe-mode surface — null otherwise.
+      observeDigest: null,
+    },
+  },
+  render: (args: CardArgs) => frame(<RuleCard {...args} />),
+};
+
+/**
+ * D251 — a leftover `active` rule on a plan without `autopilot-active`
+ * (the Pro→Plus downgrade window before the demotion converges it).
+ * Amber "Not running" pill, never a green Active asserting automation
+ * that is not happening; the explanation names the plan and states the
+ * rule returns to Observe on its own.
+ */
+export const NotRunningOnPlus: Story<typeof RuleCard> = {
+  args: {
+    ...baseArgs,
+    canActivate: false,
+    rule: {
+      ...AUTO_ARCHIVE_LOW_ENGAGEMENT,
+      mode: 'active',
+      observeWindowEndsAt: null,
+      observeWindowElapsed: false,
+      observeDigest: null,
+    },
+  },
+  render: (args: CardArgs) => frame(<RuleCard {...args} />),
+};
+
+/**
+ * D251/D58 — the same leftover-active state on an UNSUBSCRIBE rule.
+ * The in-flight clause is per-verb: no undo promise here, and the
+ * one-way boundary of a delivered request is named instead (five
+ * Codex rounds landed on this exact sentence — see MISTAKES.md
+ * 2026-08-04).
+ */
+export const NotRunningOnPlusUnsubscribe: Story<typeof RuleCard> = {
+  args: {
+    ...baseArgs,
+    canActivate: false,
+    rule: {
+      ...AUTO_UNSUBSCRIBE_NOISY,
+      mode: 'active',
+      observeWindowEndsAt: null,
+      observeWindowElapsed: false,
       observeDigest: null,
     },
   },

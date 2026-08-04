@@ -68,7 +68,7 @@ describe('StepFirstTriage', () => {
     });
   });
 
-  it('hands Free users to Senders and reserves ongoing Triage for Plus', () => {
+  it('hands Free users to Senders (Triage itself is Free per A3)', () => {
     triageStats.data = { tier: 'free' };
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);

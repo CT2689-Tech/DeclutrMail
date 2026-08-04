@@ -41,13 +41,18 @@ import {
 } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
-import { JwtGuard } from '../auth/jwt.guard.js';
+import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import {
   CapabilityExempt,
   CapabilityGuard,
   RequiresCapability,
 } from '../common/entitlements/capability.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
+import type { SessionPrincipal } from '../auth/sessions.service.js';
+import {
+  assertTierCapability,
+  EntitlementsService,
+} from '../common/entitlements/entitlements.service.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { AutopilotReadService } from './autopilot.read-service.js';
 import type { AutopilotRuleMode, AutopilotRuleScope } from '@declutrmail/db';
@@ -69,7 +74,10 @@ const ALLOWED_SCOPES = new Set(['account', 'all_accounts', 'workspace']);
 @UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard, CapabilityGuard)
 @RequiresCapability('autopilot')
 export class AutopilotController {
-  constructor(private readonly reads: AutopilotReadService) {}
+  constructor(
+    private readonly reads: AutopilotReadService,
+    private readonly entitlements: EntitlementsService,
+  ) {}
 
   /**
    * GET /api/autopilot/rules — list all Autopilot rules for the caller's
@@ -139,6 +147,7 @@ export class AutopilotController {
   @RateLimit('triage-load')
   async patchRule(
     @CurrentMailbox() mailbox: { id: string },
+    @CurrentUser() principal: SessionPrincipal,
     @Param('id') id: string,
     @Body() body: unknown,
   ): Promise<Envelope<AutopilotRule>> {
@@ -147,6 +156,15 @@ export class AutopilotController {
       throw new BadRequestException('Rule id must be a UUID.');
     }
     const patch = parseRulePatch(body);
+    // D251 — the class guard only requires `autopilot`, which Plus
+    // has. Promoting a rule to `active` is the delegated-approval step and
+    // is Pro-only, so it is enforced here rather than at the class level.
+    // Without this, a Plus workspace could PATCH mode='active' and get
+    // unattended automation it is not paying for.
+    if (patch.mode === 'active') {
+      const tier = await this.entitlements.tierForWorkspace(principal.workspaceId);
+      assertTierCapability(tier, 'autopilot-active');
+    }
     const rule = await this.reads.patchRule(accountId, id, patch);
     if (!rule) {
       throw notFound('Rule not found.');

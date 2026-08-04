@@ -50,8 +50,8 @@ describe('/methodology', () => {
     expect(copy).toContain('result returned by a sender’s unsubscribe endpoint');
     expect(copy).toContain('delivered unsubscribe request cannot be undone');
     expect(copy).toContain('Manual cleanup and future automation are separate concepts');
-    expect(copy).toContain('starts them in Observe');
-    expect(copy).toContain('switch to Active');
+    expect(copy).toContain('start in Observe');
+    expect(copy).toContain('switching a rule to Active');
     expect(copy).not.toMatch(/every action (?:is |stays |remains )?(?:reversible|undoable)/i);
   });
 

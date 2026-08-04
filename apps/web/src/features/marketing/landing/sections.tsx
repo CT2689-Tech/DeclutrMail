@@ -71,8 +71,9 @@ export function HowItWorks() {
           <div className="dm-mkt-step-no">STEP 3</div>
           <h3 className="dm-mkt-step-title">Done</h3>
           <p className="dm-mkt-step-body">
-            On Pro, Autopilot applies preset rules you explicitly enable to future matches. Manual
-            decisions stay in the activity ledger, with undo for label-changing actions.
+            Autopilot preset rules find matching mail for your batch approval on Plus; on Pro an
+            explicitly activated rule applies future matches on its own. Manual decisions stay in
+            the activity ledger, with undo for label-changing actions.
           </p>
         </div>
       </div>
@@ -140,9 +141,10 @@ export function PrivacyDesk() {
               </li>
               <li>
                 Manual mail-moving actions are previewed before they run and journaled after.
-                Enabled Pro Autopilot rules apply future matches without per-message approval and
-                are journaled after execution. Delivered unsubscribe requests are one-way and are
-                called out as such before approval.
+                Autopilot rules collect matches for batch approval on Plus; on Pro an explicitly
+                activated rule applies future matches without per-batch approval, journaled after
+                execution. Delivered unsubscribe requests are one-way and are called out as such
+                before approval.
               </li>
               <li>
                 Disconnect any time. Deleting your account schedules permanent deletion of the
@@ -169,9 +171,9 @@ export function ProductTour() {
       <p className="dm-mkt-eyebrow">№ 05 — What you actually get</p>
       <h2 className="dm-mkt-h2">Three product chapters, not three quota bands.</h2>
       <p className="dm-mkt-lede">
-        Free is the full manual cleanup workflow with a monthly meter. Plus removes the meter. Pro
-        adds preset automation for recurring matches. The same Activity record ties all three
-        together.
+        Free is the full manual cleanup workflow with a monthly meter. Plus removes the meter and
+        adds preset rules that queue matches for your approval. Pro lets those rules run unattended.
+        The same Activity record ties all three together.
       </p>
       <div className="dm-mkt-product-tour">
         <article>
@@ -191,11 +193,12 @@ export function ProductTour() {
           </div>
         </article>
         <article>
-          <div className="dm-mkt-product-tier">Pro · Automate</div>
+          <div className="dm-mkt-product-tier">Plus &amp; Pro · Automate</div>
           <h3>Autopilot</h3>
           <p>
-            Preset rules begin in Observe mode. Review what a rule would have matched, then enable
-            it for future mail. Pause it whenever you want.
+            Preset rules begin in Observe mode. Review what a rule would have matched and approve
+            batches on Plus; on Pro, a rule you switch to Active handles future mail by itself.
+            Pause it whenever you want.
           </p>
           <div className="dm-mkt-product-rule" aria-hidden="true">
             <span>Observe</span>

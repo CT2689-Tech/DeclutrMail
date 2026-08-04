@@ -146,8 +146,9 @@ export function UpgradeModal() {
                   ? ` — your quota resets on ${resetDateLabel(hit.details.resetsAt)}`
                   : ''}
                 . {TIER_MANIFEST.plus.name} unlocks unlimited cleanup for{' '}
-                {quotedPlanPrice('plus', 'monthly', regionProvider)}. {TIER_MANIFEST.pro.name} could
-                do this for you automatically &mdash; Autopilot, Daily Brief, and Quiet Hours for{' '}
+                {quotedPlanPrice('plus', 'monthly', regionProvider)}, with the Screener and
+                Autopilot rules that queue matches for your approval. On {TIER_MANIFEST.pro.name},
+                rules run without asking &mdash; plus Daily Brief and Quiet Hours &mdash; for{' '}
                 {proMonthly}.
               </>
             ) : hit.reason === 'action_tier' ? (

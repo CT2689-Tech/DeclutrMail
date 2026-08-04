@@ -129,6 +129,7 @@ import { EmailSuppressionService } from './notifications/email-suppression.servi
 import { buildSyncReadyEmailHandler } from './notifications/sync-ready-email.trigger.js';
 import { buildSyncFailedEmailHandler } from './notifications/sync-failed-email.trigger.js';
 import { runBillingReconciliationSweep } from './billing/billing-reconciliation.sweep.js';
+import { AutopilotReadService } from './autopilot/autopilot.read-service.js';
 import { BillingCatalog } from './billing/billing-catalog.js';
 import { BillingReconciliationService } from './billing/billing-reconciliation.service.js';
 import { BillingWebhookService } from './billing/billing-webhook.service.js';
@@ -1730,17 +1731,22 @@ async function bootstrap(): Promise<void> {
   // D249 drift verification rides the same 6-hourly pass. Constructed
   // plainly (no Nest context in the worker); every dep is env/db-only.
   const billingCatalog = new BillingCatalog();
+  // Queue-less AutopilotReadService: the D251 demote facade the tier
+  // writers call uses only db reads/updates, never the action queue.
+  // Shared by the webhook processor (per-workspace, in-tx) and the
+  // sweep's global self-heal below.
+  const autopilotReads = new AutopilotReadService(db);
   const billingReconciliationService = new BillingReconciliationService(
     db,
     billingCatalog,
-    new BillingWebhookService(db, billingCatalog),
+    new BillingWebhookService(db, billingCatalog, autopilotReads),
     new PaddleAdapter(),
     new RazorpayAdapter(),
   );
   async function sweepBillingReconciliation(): Promise<void> {
     if (shuttingDown) return;
     try {
-      const result = await runBillingReconciliationSweep(db);
+      const result = await runBillingReconciliationSweep(db, autopilotReads);
       // Provider-truth drift check AFTER the local sweep: the local
       // pass may flip dunning rows; the drift pass then verifies what
       // remains live against the provider (D249).

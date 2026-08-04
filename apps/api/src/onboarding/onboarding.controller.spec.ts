@@ -30,7 +30,10 @@ function makeController(tier: 'free' | 'plus' | 'pro') {
 }
 
 describe('OnboardingController preset capability gate', () => {
-  it.each(['free', 'plus'] as const)('rejects non-empty Autopilot picks for %s', async (tier) => {
+  // D251 — Plus now has `autopilot`, so seeding preset rules during
+  // onboarding is allowed there. The rules land in Observe mode; promoting
+  // one to `active` is the Pro step and is gated on the PATCH route.
+  it.each(['free'] as const)('rejects non-empty Autopilot picks for %s', async (tier) => {
     const { controller, submitPresetPicks } = makeController(tier);
 
     await expect(
@@ -40,6 +43,18 @@ describe('OnboardingController preset capability gate', () => {
       }),
     ).rejects.toMatchObject({ code: 'PRO_FEATURE_REQUIRED', status: 402 });
     expect(submitPresetPicks).not.toHaveBeenCalled();
+  });
+
+  it('allows non-empty picks on plus — D251 grants rule matching at Plus', async () => {
+    const { controller, submitPresetPicks } = makeController('plus');
+
+    await expect(
+      controller.submitPresetPicks(principal, mailbox, {
+        goal: 'reduce_newsletters',
+        presetKeys: ['auto_archive_low_engagement'],
+      }),
+    ).resolves.toBeDefined();
+    expect(submitPresetPicks).toHaveBeenCalled();
   });
 
   it('allows an empty selection on every tier without an entitlement lookup', async () => {

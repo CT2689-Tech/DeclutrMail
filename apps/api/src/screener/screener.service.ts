@@ -42,10 +42,10 @@ export class ScreenerService {
   ) {}
 
   /**
-   * D77 server-side gate — the full Screener is a Pro capability.
-   * Free/Plus get a 402 `PRO_FEATURE_REQUIRED` (their deferred-decision
-   * path is the Later verb's DeclutrMail/Later queue, not this
-   * surface). Team/enterprise carry the pro capability set.
+   * D77 server-side gate (tiers per D251) — the Screener is granted
+   * from Plus. Free gets a 402 `PRO_FEATURE_REQUIRED` (its
+   * deferred-decision path is the Later verb's DeclutrMail/Later
+   * queue, not this surface). Team/enterprise carry the pro set.
    */
   async assertScreenerCapability(mailboxAccountId: string): Promise<void> {
     const ws = await this.entitlements.workspaceForMailbox(mailboxAccountId);

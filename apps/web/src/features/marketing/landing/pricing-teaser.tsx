@@ -60,8 +60,9 @@ export function PricingTeaser() {
             {plus.prices.annual ? `or ${money(plus.prices.annual)} / year` : ''}
           </div>
           <ul className="dm-mkt-tier-feats">
-            <li>Unlimited cleanup actions</li>
-            <li>Everything in Free, without the monthly cap</li>
+            <li>Unlimited cleanup actions — everything in Free, without the monthly cap</li>
+            <li>Screener collects first-time senders for your review</li>
+            <li>Autopilot finds matching mail; you approve each batch</li>
             <li>
               {plus.inboxLimit} inbox · {plus.undoWindowDays}-day Activity Undo for Archive, Later,
               and Delete
@@ -80,8 +81,8 @@ export function PricingTeaser() {
             {pro.prices.annual ? `or ${money(pro.prices.annual)} / year` : ''}
           </div>
           <ul className="dm-mkt-tier-feats">
-            <li>Everything in {plus.name}, plus automation</li>
-            <li>Autopilot rules, Brief, Screener</li>
+            <li>Everything in {plus.name}</li>
+            <li>Rules run unattended · Brief · Quiet hours · Follow-ups</li>
             <li>
               {pro.inboxLimit} inboxes · {pro.undoWindowDays}-day Activity Undo for Archive, Later,
               and Delete

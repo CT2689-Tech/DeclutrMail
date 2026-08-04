@@ -476,7 +476,21 @@ const CAPABILITY_FEATURE_COPY: Partial<
   Record<Capability, { subject: string; verb: 'is' | 'are'; pitch: string }>
 > = {
   screener: { subject: 'The Screener', verb: 'is', pitch: 'review new senders in one place' },
-  autopilot: { subject: 'Autopilot', verb: 'is', pitch: 'automate your inbox rules' },
+  // D251 — two entries, because the 402 lands on two different audiences.
+  // `autopilot` 402s a FREE workspace probing the surface;
+  // `autopilot-active` 402s a PLUS workspace trying mode='active', and telling
+  // that user "Autopilot is part of the Pro plan" while they stand on the
+  // Autopilot screen would be false — the behaviour is Pro, not the screen.
+  autopilot: {
+    subject: 'Autopilot',
+    verb: 'is',
+    pitch: 'let rules find matches for your batch approval',
+  },
+  'autopilot-active': {
+    subject: 'Running rules without per-batch approval',
+    verb: 'is',
+    pitch: 'let Autopilot act on future matches without asking',
+  },
   brief: { subject: 'The Daily Brief', verb: 'is', pitch: 'get your morning inbox summary' },
   quiet: { subject: 'Quiet hours', verb: 'are', pitch: 'schedule when Autopilot acts' },
   followups: {
@@ -496,7 +510,7 @@ function capabilityUpgradeMessage(capability: Capability): string {
 /**
  * D19/D77 capability gate — throws 402 `PRO_FEATURE_REQUIRED` when
  * `tier`'s manifest capability set lacks `capability`. Team/enterprise
- * carry the pro set, while Triage starts at Plus. The unlock rule falls
+ * carry the pro set; Triage is Free (A3). The unlock rule falls
  * out of the manifest, never a hardcoded tier list. The error-code name
  * is retained for wire compatibility; the per-capability message names
  * the actual required plan.

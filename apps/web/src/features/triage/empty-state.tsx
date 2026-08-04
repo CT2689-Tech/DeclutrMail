@@ -29,7 +29,7 @@ const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth;
  *      finds a repeated sender pattern; there is no daily obligation.
  *
  *   3. A subtle upgrade nudge — tier-gated per D17–D21:
- *        free → "See Plus" (lifts the D19 5-LIFETIME cleanup cap)
+ *        free → "See Plus" (lifts the A3 50/month cleanup cap)
  *        plus → "Pro could do this for you automatically" (D33 quote)
  *        pro  → no nudge; D33 explicitly hides it for Pro users.
  *      `freeRemaining` is the MONTHLY remainder (config-driven via

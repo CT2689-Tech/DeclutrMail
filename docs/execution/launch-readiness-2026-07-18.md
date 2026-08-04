@@ -46,7 +46,7 @@ markers gone; guard tests lock the terms. The "drift" followups were stale
 (now moved to Done). Optional cosmetic: /pricing page shows no money-back
 line (in-app surfaces do) — say the word to add it.
 
-### Step 2 — Mailboxes: add `.com` domain alias (P0, ~10 min) — IN PROGRESS
+### ~~Step 2 — Mailboxes: add `.com` domain alias~~ ✅ DONE 2026-08-02
 
 Workspace aliases (privacy/support/legal/billing/founder@declutrmail.ai)
 created 2026-07-19 ✓. Legal pages promise the **.com** addresses; MX for
@@ -57,7 +57,11 @@ created 2026-07-19 ✓. Legal pages promise the **.com** addresses; MX for
 2. Verify ownership (TXT record).
 3. Send test mail to `privacy@declutrmail.com` + `support@declutrmail.com`.
 
-✅ Done when: both .com test mails land.
+✅ **Done 2026-08-02** — founder confirmed mail received at both
+`support@declutrmail.com` and `privacy@declutrmail.com`. The addresses
+published in the error registry, FAQ and legal pages now reach a human.
+This clears the "support mail may be bouncing" launch risk carried since the
+2026-07-22 launch audit.
 
 ### ~~Step 3 — Deletion-reachability check~~ ✅ DONE 2026-07-19
 

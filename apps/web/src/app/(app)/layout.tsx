@@ -150,10 +150,10 @@ function AppChrome({ children }: { children: ReactNode }) {
         ? `${firstPage.data.length}+`
         : firstPage.data.length;
 
-  // Screener badge (D74) — Screener is Pro-only (D77), so the count
-  // query is gated on the tier capability: a Free/Plus session must
-  // NEVER fire a request the server would 402 (a read 4xx is a
-  // designed state, never an error surface or a retry — §8). Also
+  // Screener badge (D74) — Screener is granted at Plus (D77, reversed
+  // by D251), so the count query is gated on the tier capability: a
+  // FREE session must NEVER fire a request the server would 402 (a
+  // read 4xx is a designed state, never an error surface or a retry — §8). Also
   // gated on an active mailbox (`CurrentMailboxGuard` 409s without
   // one — same rule as the senders chip). On any error the badge is
   // simply absent (`retry: false` in the hook); a nav hint has no
@@ -168,13 +168,17 @@ function AppChrome({ children }: { children: ReactNode }) {
   // discovered paywalls by clicking into them. Chip only when LOCKED —
   // an unlocked feature's slot stays free for real badges (screener
   // pending count below).
+  // D251 — every nav id here doubles as its own gating capability. The
+  // Autopilot chip keys on `autopilot` (the Plus screen capability), never
+  // `autopilot-active`: the behaviour upgrade must not mark a screen Plus
+  // owns as locked.
   const tierChips = Object.fromEntries(
     (['triage', 'brief', 'followups', 'snoozed', 'screener', 'quiet', 'autopilot'] as const)
-      .filter((cap) => !hasCapability(tier, cap))
-      .map((cap) => {
-        const requiredTier = minimumTierForCapability(cap);
+      .filter((navId) => !hasCapability(tier, navId))
+      .map((navId) => {
+        const requiredTier = minimumTierForCapability(navId);
         const plan = TIER_MANIFEST[requiredTier].name;
-        return [cap, <PlanChip key={cap} plan={plan === 'Plus' ? 'Plus' : 'Pro'} />];
+        return [navId, <PlanChip key={navId} plan={plan === 'Plus' ? 'Plus' : 'Pro'} />];
       }),
   );
 

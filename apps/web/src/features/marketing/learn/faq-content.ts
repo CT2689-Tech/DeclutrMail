@@ -56,7 +56,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'future-mail',
     question: 'Does archiving a sender automatically archive future messages?',
     answer:
-      'No. Manual Archive acts on the current matching inbox messages. For exact future routing, create a Gmail filter. DeclutrMail Pro also has preset Autopilot rules; those begin in Observe and must be separately activated after review.',
+      'No. Manual Archive acts on the current matching inbox messages. For exact future routing, create a Gmail filter. DeclutrMail also has preset Autopilot rules on Plus and Pro; those begin in Observe and collect matches for your approval, and only on Pro can a rule be switched to act on future matches by itself.',
     link: {
       href: '/how-to/auto-archive-future-emails-in-gmail',
       label: 'Compare filters and Autopilot',
@@ -102,7 +102,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'autopilot',
     question: 'What does Autopilot do at launch?',
     answer:
-      'Pro includes five preset rules. Each rule starts in Observe, collecting would-be matches without moving mail. After a seven-day observation period, you review the sample and dry-run scope before choosing Active. Custom rule creation is not part of the launch UI, and every rule can be paused.',
+      'Plus and Pro include five preset rules. Each rule starts in Observe, collecting would-be matches without moving mail, and you approve or dismiss each batch by hand. On Pro you can also switch a rule to Active after the seven-day observation window — reviewing the sample and dry-run scope first — so it acts on future matches without asking. Custom rule creation is not part of the launch UI, and every rule can be paused.',
   },
   {
     id: 'later-vs-snooze',
@@ -114,7 +114,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'plans',
     question: 'What changes between Free, Plus, and Pro?',
     answer:
-      'Free supports one inbox with the full manual cleanup workflow — Senders, Triage, Later, bulk actions, and the activity journal — metered at 50 cleanup actions a month with a seven-day undo window. Plus removes the monthly meter for one inbox. Pro adds up to three inboxes, a thirty-day undo window, and the automation set including Autopilot, Brief, Screener, Quiet, and Follow-ups. Use the pricing page as the current source of truth.',
+      'Free supports one inbox with the full manual cleanup workflow — Senders, Triage, Later, bulk actions, and the activity journal — metered at 50 cleanup actions a month with a seven-day undo window. Plus removes the monthly meter and adds the Screener plus Autopilot rules that find matching mail for your batch approval. Pro adds up to three inboxes, a thirty-day undo window, rules that run without per-batch approval, and the rest of the automation set — Brief, Quiet, and Follow-ups. Use the pricing page as the current source of truth.',
     link: {
       href: '/pricing',
       label: 'Compare current plans',

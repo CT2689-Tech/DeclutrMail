@@ -147,18 +147,21 @@ describe('cardBullets — manifest-derived card copy', () => {
     expect(bullets).toContain(CAPABILITY_LABELS.senders);
   });
 
-  it('Plus stacks on Free and lifts the cleanup quota (A3: Triage already Free)', () => {
+  it('Plus stacks on Free: Screener + batch-approval Autopilot + lifted quota (D251)', () => {
     const bullets = cardBullets(TIER_MANIFEST.plus);
     expect(bullets).toContain('Everything in Free');
-    // Triage lives in Free now — Plus adds no surface, only volume.
+    // Triage lives in Free now (A3); Plus's added SURFACES are the
+    // Screener and rule matching with per-batch approval.
     expect(bullets).not.toContain(CAPABILITY_LABELS.triage);
+    expect(bullets).toContain(CAPABILITY_LABELS.screener);
+    expect(bullets).toContain(CAPABILITY_LABELS.autopilot);
     expect(bullets).toContain('Unlimited cleanup actions');
   });
 
   it('Pro adds the automation set and the manifest quota deltas', () => {
     const bullets = cardBullets(TIER_MANIFEST.pro);
     expect(bullets).toContain('Everything in Plus');
-    expect(bullets).toContain(CAPABILITY_LABELS.autopilot);
+    expect(bullets).toContain(CAPABILITY_LABELS['autopilot-active']);
     expect(bullets).toContain(
       `${TIER_MANIFEST.pro.undoWindowDays}-day Activity Undo for Archive, Later, and Delete`,
     );

@@ -1637,7 +1637,7 @@ function SendersScreenContent({
       <ScreenIntro
         id="senders"
         title="How Senders works"
-        body="Every account, list, person, and service that mails you, grouped by sender and a recommended next step. Manual Archive, Later, and Delete affect only matching inbox mail when they run; future matches change only through Pro Autopilot rules you explicitly enable."
+        body="Every account, list, person, and service that mails you, grouped by sender and a recommended next step. Manual Archive, Later, and Delete affect only matching inbox mail when they run; future matches change only through Autopilot rules you explicitly enable."
         tip="Recommendations use sender identity, subject, Gmail's short preview, dates, volume, read and reply history, recency, and protection settings. Full message bodies and attachments are never fetched."
       />
 

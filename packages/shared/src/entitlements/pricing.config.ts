@@ -38,15 +38,21 @@ const FREE_CAPABILITIES: readonly Capability[] = [
   'snoozed',
 ];
 
-/** Plus = Free + unlimited volume — the quota is the ONLY difference. */
-const PLUS_CAPABILITIES: readonly Capability[] = [...FREE_CAPABILITIES];
+/**
+ * Plus = Free + unlimited volume + the Screener + rule-driven matching
+ * the user approves by hand (D251, reverses D77's Pro-only Screener).
+ *
+ * `autopilot` WITHOUT `autopilot-active` is the whole point: rules may
+ * find matching mail, but nothing moves until the user approves the
+ * batch. Delegated approval — `mode='active'` — stays on Pro.
+ */
+const PLUS_CAPABILITIES: readonly Capability[] = [...FREE_CAPABILITIES, 'screener', 'autopilot'];
 
-/** Pro = Plus + the automation set (D19, D77). */
+/** Pro = Plus + unattended automation (D19, D77, D251). */
 const PRO_CAPABILITIES: readonly Capability[] = [
   ...PLUS_CAPABILITIES,
-  'autopilot',
+  'autopilot-active',
   'brief',
-  'screener',
   'quiet',
   'followups',
 ];

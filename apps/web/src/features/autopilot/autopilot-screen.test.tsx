@@ -45,11 +45,19 @@ import { createTestQueryClient } from '@/test/query-wrapper';
 
 const { trackMock, authState } = vi.hoisted(() => ({
   trackMock: vi.fn(),
-  authState: { activeMailboxId: 'mailbox-a' as string | null },
+  authState: {
+    activeMailboxId: 'mailbox-a' as string | null,
+    tier: 'pro' as 'free' | 'plus' | 'pro',
+  },
 }));
 vi.mock('@/lib/posthog', () => ({ track: trackMock }));
 vi.mock('@/features/auth/auth-provider', () => ({
-  useOptionalAuth: () => ({ me: { activeMailboxId: authState.activeMailboxId } }),
+  // D251 — the screen derives `canActivate` from the tier here. `pro` keeps
+  // these cases exercising the Activate path; the Plus behaviour has its own
+  // cases below.
+  useOptionalAuth: () => ({
+    me: { activeMailboxId: authState.activeMailboxId, tier: authState.tier },
+  }),
   getActiveMailboxEmail: () => 'active@example.com',
 }));
 
@@ -97,6 +105,7 @@ const PATTERN_SUGGESTION: AutopilotPatternSuggestionDto = {
 beforeEach(() => {
   trackMock.mockReset();
   authState.activeMailboxId = 'mailbox-a';
+  authState.tier = 'pro';
 });
 
 describe('AutopilotScreen — edge states', () => {
@@ -507,6 +516,132 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     renderScreen(ready());
     // Fixture rule #1 is elapsed → banner present + honest no-auto-promote copy.
     expect(screen.getByText(/nothing switches on by itself/i)).toBeInTheDocument();
+    // Assert the SENTENCE BOUNDARY, not just the fragment. A fragment match
+    // silently accepted "your mail.Nothing switches on by itself" when a
+    // conditional expression was introduced on the next JSX line and the
+    // newline was stripped. Every assertion here matches a substring, so the
+    // join between the static text and the expression needs its own check.
+    expect(
+      screen.getByText(/touching your mail\. Nothing switches on by itself/i),
+    ).toBeInTheDocument();
+  });
+
+  // ── D251: Plus reaches this screen but must never be offered Activate ──
+  //
+  // Plus has `autopilot` (review and approve) but not `autopilot-active`
+  // (act unattended). Before this gate the screen offered Activate to Plus,
+  // the PATCH 402'd, and the confirm modal quoted Pro's 30-day undo window
+  // to a user with 7. An action that always fails is worse than no action.
+
+  it('plus: offers an upgrade link instead of Switch to Active', () => {
+    authState.tier = 'plus';
+    renderScreen(ready());
+
+    expect(screen.queryByRole('button', { name: /Switch rule .* to Active/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /requires Pro/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('plan=pro'),
+    );
+  });
+
+  it('plus: the banner does not promise an Active switch it cannot deliver', () => {
+    authState.tier = 'plus';
+    renderScreen(ready());
+
+    expect(screen.queryByText(/until you explicitly switch it to Active/i)).toBeNull();
+    // Banner AND intro both say "part of Pro" on plus (B2 fix), so this is
+    // deliberately getAllByText — getByText would throw on the second match.
+    expect(screen.getAllByText(/part of Pro/i).length).toBeGreaterThan(0);
+  });
+
+  it('plus: intro and help never promise per-rule Active (design-gate B2)', () => {
+    authState.tier = 'plus';
+    renderScreen(ready());
+
+    // The Pro explainer sentence must be absent everywhere on plus.
+    expect(screen.queryByText(/Active applies future matches automatically/i)).toBeNull();
+    expect(screen.getByText(/Rules run in Observe:/i)).toBeInTheDocument();
+    expect(screen.getByText('What does Observe do?')).toBeInTheDocument();
+    expect(screen.queryByText('What changes between Observe and Active?')).toBeNull();
+  });
+
+  it('pro: intro and help keep the Observe/Active explainer', () => {
+    authState.tier = 'pro';
+    renderScreen(ready());
+
+    expect(screen.getByText(/Active applies future matches automatically;/i)).toBeInTheDocument();
+    expect(screen.getByText('What changes between Observe and Active?')).toBeInTheDocument();
+  });
+
+  it('plus: a leftover active rule renders "Not running", never a green Active pill (design-gate B3)', () => {
+    authState.tier = 'plus';
+    // The Pro→Plus downgrade path: rule was promoted to active while the
+    // workspace was Pro; the apply worker now skips it (D251), so the card
+    // must not assert automation that is not happening.
+    const withActive = [
+      { ...PRESET_RULES_OBSERVE[0]!, mode: 'active' as const },
+      ...PRESET_RULES_OBSERVE.slice(1),
+    ];
+    renderScreen({ kind: 'ready', rules: withActive, suggestions: [] });
+
+    expect(screen.getByText('Not running')).toBeInTheDocument();
+    expect(screen.queryAllByText(/^Active$/)).toHaveLength(0);
+    // Copy contract (four Codex catches): no absolute claims — the
+    // backlog neither "keeps waiting" (demotion dismisses it) nor is
+    // "cleared" (in-flight work is untouched); in-flight work neither
+    // "completes" nor "finishes with undo" unconditionally (it can fail
+    // at the boundary; undo exists only where mail actually moved).
+    const explanation = screen.getByText(/on your current plan this rule starts no new work/i);
+    expect(explanation.textContent).toMatch(/is not interrupted/i);
+    expect(explanation.textContent).toMatch(
+      /mail it actually moves keeps its Activity record and undo/i,
+    );
+    expect(explanation.textContent).toMatch(/returns to Observe automatically/i);
+    // The five failed absolutes, all rejected — incl. round 5's
+    // "result lands in Activity" (unsubscribe is outside
+    // EXECUTION_VERBS; no-op terminals write no Activity row).
+    expect(explanation.textContent).not.toMatch(
+      /keep waiting|are cleared|still completes|still finishes|normal undo|result lands in Activity/i,
+    );
+  });
+
+  it('plus: a leftover active UNSUBSCRIBE rule never promises undo for its in-flight work', () => {
+    authState.tier = 'plus';
+    // D58 — a delivered unsubscribe request is one-way. The in-flight
+    // clause is per-actionKind: promising "its normal undo" here was
+    // the third false absolute this sentence shipped (Codex ×3).
+    const withActiveUnsub = [
+      { ...AUTO_UNSUBSCRIBE_NOISY, mode: 'active' as const },
+      ...PRESET_RULES_OBSERVE.filter((r) => r.id !== AUTO_UNSUBSCRIBE_NOISY.id),
+    ];
+    renderScreen({ kind: 'ready', rules: withActiveUnsub, suggestions: [] });
+
+    const explanation = screen.getByText(/on your current plan this rule starts no new work/i);
+    expect(explanation.textContent).toMatch(/a delivered request cannot be recalled/i);
+    // No undo promise, no success promise, no Activity promise — a
+    // request can fail at the sender's endpoint, and failed/no-op
+    // unsubscribe terminals surface nowhere (Codex rounds 4-5).
+    expect(explanation.textContent).not.toMatch(/undo|still completes|lands in Activity/i);
+  });
+
+  it('pro: an active rule still renders the green Active pill', () => {
+    authState.tier = 'pro';
+    const withActive = [
+      { ...PRESET_RULES_OBSERVE[0]!, mode: 'active' as const },
+      ...PRESET_RULES_OBSERVE.slice(1),
+    ];
+    renderScreen({ kind: 'ready', rules: withActive, suggestions: [] });
+
+    expect(screen.getByText('Active')).toBeInTheDocument();
+    expect(screen.queryByText('Not running')).toBeNull();
+  });
+
+  it('pro: still gets the real Activate control', () => {
+    authState.tier = 'pro';
+    renderScreen(ready());
+
+    expect(screen.getByRole('button', { name: /Switch rule .* to Active/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /requires Pro/i })).toBeNull();
   });
 
   it('does NOT render the banner when no observe window has elapsed', () => {

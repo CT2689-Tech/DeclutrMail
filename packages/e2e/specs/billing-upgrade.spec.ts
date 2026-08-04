@@ -256,13 +256,15 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
     'Preview · before anything changes',
   );
 
-  // ---- 2. Pro surface paywall: /screener renders the upsell for a
+  // ---- 2. Paid-surface paywall: /screener renders the upsell for a
   // Free workspace (client tier gate) AND the API 402s underneath.
+  // D251 moved the Screener to Plus, and the upsell derives its plan
+  // name from the manifest — so the CTA reads Plus, not Pro.
   await page.goto('/screener');
   await expect(page.getByText('A queue of new senders, ready when you are.')).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByRole('button', { name: 'See Pro plans' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'See Plus plans' })).toBeVisible();
   const gated = await api.getRaw('/api/screener/queue?limit=5');
   expect(gated.status, 'screener read must 402 for a Free workspace').toBe(402);
   expect((gated.body as ErrorEnvelope).error?.code).toBe('PRO_FEATURE_REQUIRED');

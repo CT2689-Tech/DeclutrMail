@@ -178,7 +178,21 @@ describe('onboarding page — pre-auth boundary (D107/D108)', () => {
 });
 
 describe('onboarding page — authed resume (D106 derivation)', () => {
-  it('Pro ready mailbox + no picks resumes at the preset picker', async () => {
+  it.each(['pro', 'plus'] as const)(
+    '%s ready mailbox + no picks resumes at the preset picker (D251)',
+    async (tier) => {
+      installFetchStub([meAuthed('ready', tier), onboardingState(), syncStatus(true), emptyRules]);
+      renderPage();
+
+      // D251 — Plus now has `autopilot`, so it reaches the preset
+      // picker too. Before D251 this step was Pro-only and Plus fell through
+      // to the sender-review step below.
+      expect(await screen.findByText('Pick your starting rules.')).toBeInTheDocument();
+      expect(screen.getByText('Auto-archive low-engagement')).toBeInTheDocument();
+    },
+  );
+
+  it('Pro ready mailbox renders the full preset picker controls', async () => {
     installFetchStub([meAuthed('ready'), onboardingState(), syncStatus(true), emptyRules]);
     renderPage();
 
@@ -188,8 +202,9 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     expect(screen.getByRole('radio', { name: /Reduce newsletters/i })).toBeInTheDocument();
   });
 
-  it.each(['free', 'plus'] as const)(
-    '%s continues with no rules and never reads the Pro Autopilot API',
+  // D251 moved `plus` out of this case — it now reaches the preset picker.
+  it.each(['free'] as const)(
+    '%s continues with no rules and never reads the Autopilot API',
     async (tier) => {
       let autopilotReads = 0;
       let submittedPicks: unknown;

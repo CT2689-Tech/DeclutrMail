@@ -24,6 +24,7 @@
 import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module.js';
+import { AutopilotModule } from '../autopilot/autopilot.module.js';
 import { BillingPaddleWebhookController } from '../webhooks/billing-paddle.controller.js';
 import { BillingRazorpayWebhookController } from '../webhooks/billing-razorpay.controller.js';
 import { BillingCatalog } from './billing-catalog.js';
@@ -35,7 +36,10 @@ import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
 
 @Module({
-  imports: [AuthModule],
+  // AutopilotModule exports the AutopilotReadService facade the D251
+  // tier write demotes through (billing never writes automation_rules
+  // directly, D204).
+  imports: [AuthModule, AutopilotModule],
   controllers: [
     BillingController,
     BillingPaddleWebhookController,

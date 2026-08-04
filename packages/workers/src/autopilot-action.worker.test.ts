@@ -193,6 +193,10 @@ async function seedApprovedMatch(
   ruleId: string,
   senderKey: string,
   resolution: 'approved' | 'pending' | 'dismissed' = 'approved',
+  // D251 — provenance is what the entitlement gate keys on, so it has to be
+  // settable independently of `resolution`. Default preserves the original
+  // mapping: an approved match came from an active rule unless stated.
+  modeAtMatch?: 'observe' | 'active',
 ): Promise<string> {
   const [row] = await db
     .insert(ruleMatchLog)
@@ -201,7 +205,7 @@ async function seedApprovedMatch(
       mailboxAccountId,
       senderKey,
       matchedAt: NOW,
-      modeAtMatch: resolution === 'pending' ? 'observe' : 'active',
+      modeAtMatch: modeAtMatch ?? (resolution === 'pending' ? 'observe' : 'active'),
       confidence: '0.90',
       reason: 'test match',
       intentApplied: false,
@@ -741,8 +745,68 @@ describe('AutopilotActionWorker', () => {
     expect((events[0]!.payload as { wakeAt: string }).wakeAt).toBe('2026-06-17T08:00:00.000Z');
   });
 
+  // ── D251: the Plus/Pro split is per-match, not per-tier ──────────────
+  //
+  // These two cases are the whole enforcement contract. If either flips,
+  // the ladder is wrong in a way no pricing copy can rescue: either Plus
+  // silently gets unattended automation, or a Plus user approves a batch
+  // and nothing happens.
+
+  it('plus EXECUTES an approved observe-mode match — the D251 review path', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey } = await seedSender(db, mailboxId, 'reviewed@shop.com', {
+      inboxMessages: 2,
+    });
+    const matchId = await seedApprovedMatch(
+      db,
+      mailboxId,
+      ruleId,
+      senderKey,
+      'approved',
+      'observe',
+    );
+
+    await setMailboxTier(db, mailboxId, 'plus');
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    // A human approved this batch, so Plus is entitled to have it run.
+    expect(result.matchesConsidered).toBe(1);
+    expect(result.labelActionsExecuted).toBe(1);
+    expect(gmail.calls).toHaveLength(1);
+    expect(await db.select().from(activityLog)).toHaveLength(1);
+    expect(await db.select().from(undoJournal)).toHaveLength(1);
+    const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+    expect(match!.intentApplied).toBe(true);
+  });
+
+  it('plus does NOT execute an active-mode match even when approved', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey } = await seedSender(db, mailboxId, 'unattended@shop.com', {
+      inboxMessages: 2,
+    });
+    const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey, 'approved', 'active');
+
+    await setMailboxTier(db, mailboxId, 'plus');
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    // No human in the loop for this one, so Plus must not get it — this is
+    // the Pro→Plus downgrade path and the thing Pro is actually sold on.
+    expect(result.matchesConsidered).toBe(0);
+    expect(result.labelActionsExecuted).toBe(0);
+    expect(gmail.calls).toHaveLength(0);
+    expect(await db.select().from(activityLog)).toHaveLength(0);
+    const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+    expect(match!.intentApplied).toBe(false);
+  });
+
   it.each(['free', 'plus'] as const)(
-    'does not execute an approved match after downgrade to %s',
+    'does not execute an approved ACTIVE-mode match after downgrade to %s',
     async (tier) => {
       const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
       const { senderKey } = await seedSender(db, mailboxId, `${tier}@shop.com`, {

@@ -65,7 +65,12 @@ describe('Pricing config — the pinned snapshot (change tripwire)', () => {
       'snoozed',
       'triage',
     ];
-    const proSet = [...freeSet, 'autopilot', 'brief', 'followups', 'quiet', 'screener'].sort();
+    // D251 — Plus gains the Screener and rule-matching-with-manual-approval;
+    // only unattended action (`autopilot-active`), Brief, Quiet and Follow-ups
+    // remain Pro. Two capabilities, because one cannot express the split:
+    // see packages/shared/src/entitlements/types.ts.
+    const plusSet = [...freeSet, 'autopilot', 'screener'].sort();
+    const proSet = [...plusSet, 'autopilot-active', 'brief', 'followups', 'quiet'].sort();
 
     expect({
       tiers,
@@ -97,7 +102,7 @@ describe('Pricing config — the pinned snapshot (change tripwire)', () => {
           inboxLimit: 1,
           undoWindowDays: 7,
           cleanupActionsPerMonth: null,
-          capabilities: freeSet,
+          capabilities: plusSet,
           purchasable: true,
           nonPurchasableRow: null,
           promo: null,
@@ -412,7 +417,7 @@ describe('type-level exhaustiveness', () => {
     }
   }
 
-  // Exhaustive Capability switch — must list all eleven to compile.
+  // Exhaustive Capability switch — must list all twelve to compile.
   function capabilityBucket(cap: Capability): 'free' | 'plus' | 'pro' {
     switch (cap) {
       case 'senders':
@@ -422,9 +427,12 @@ describe('type-level exhaustiveness', () => {
       case 'triage':
       case 'snoozed':
         return 'free';
-      case 'autopilot':
-      case 'brief':
+      // D251 — Screener and rule-matching-with-manual-approval are Plus.
       case 'screener':
+      case 'autopilot':
+        return 'plus';
+      case 'autopilot-active':
+      case 'brief':
       case 'quiet':
       case 'followups':
         return 'pro';

@@ -31,14 +31,13 @@ const PRINCIPAL = { userId: 'u1', workspaceId: 'ws-1', sessionId: 's1', jti: 'j1
 const GUARDS_METADATA = '__guards__';
 
 const PRO_TIERS: readonly TierId[] = ['pro', 'team', 'enterprise'];
+// D251 narrowed the Pro-only set: `screener` and the new
+// `autopilot` moved to Plus, so only these four still 402 a Plus
+// workspace. `autopilot-active` here means UNATTENDED action, which stays Pro.
 const UNDER_TIERS: readonly TierId[] = ['free', 'plus'];
-const PRO_CAPABILITIES: readonly Capability[] = [
-  'autopilot',
-  'brief',
-  'screener',
-  'quiet',
-  'followups',
-];
+const PRO_CAPABILITIES: readonly Capability[] = ['autopilot-active', 'brief', 'quiet', 'followups'];
+/** D251 — granted at Plus, so they 402 only the free tier. */
+const PLUS_CAPABILITIES: readonly Capability[] = ['screener', 'autopilot'];
 
 type ControllerClass = abstract new (...args: never[]) => unknown;
 
@@ -109,16 +108,26 @@ describe('assertTierCapability (D19)', () => {
     expect(() => assertTierCapability('free', 'cleanup-actions')).not.toThrow();
   });
 
-  it('keeps the screener 402 copy byte-identical to the pre-extraction D77 message', () => {
+  it('names the CHEAPEST granting plan in the 402 copy, not always Pro (D251)', () => {
     let err: unknown = null;
     try {
       assertTierCapability('free', 'screener');
     } catch (e: unknown) {
       err = e;
     }
+    // The plan name is derived from the manifest, so moving `screener` to
+    // Plus rewrote this sentence with no copy edit. That is the contract:
+    // a tier move must never leave a stale plan name in a paywall.
     expect((err as AppException).message).toBe(
-      'The Screener is part of the Pro plan. Upgrade to review new senders in one place.',
+      'The Screener is part of the Plus plan. Upgrade to review new senders in one place.',
     );
+  });
+
+  it('402s ONLY free for the capabilities D251 moved to Plus', () => {
+    for (const capability of PLUS_CAPABILITIES) {
+      expect(() => assertTierCapability('plus', capability), `plus × ${capability}`).not.toThrow();
+      expect(() => assertTierCapability('free', capability), `free × ${capability}`).toThrow();
+    }
   });
 });
 
@@ -197,13 +206,19 @@ describe('CapabilityGuard (D19) — per-surface wiring', () => {
         }
       });
 
-      it('402s the plus tier too (Pro set starts at pro)', async () => {
+      it('gates the plus tier per D251 — allowed iff the surface is Plus-granted', async () => {
         const handlerName = gated[0]!;
         const { guard } = makeGuard('plus');
-        const err = await caught(
-          guard.canActivate(makeCtx({ controller, handlerName, user: PRINCIPAL })),
-        );
-        expect((err as AppException).code).toBe('PRO_FEATURE_REQUIRED');
+        const ctx = makeCtx({ controller, handlerName, user: PRINCIPAL });
+        // D251 — the Autopilot and Screener surfaces are now reachable on
+        // Plus. Everything still in the Pro set keeps its 402. Derived from
+        // the manifest so this stays true if the ladder moves again.
+        if ((PLUS_CAPABILITIES as readonly string[]).includes(capability)) {
+          await expect(guard.canActivate(ctx)).resolves.toBe(true);
+        } else {
+          const err = await caught(guard.canActivate(ctx));
+          expect((err as AppException).code).toBe('PRO_FEATURE_REQUIRED');
+        }
       });
 
       it('passes pro / team / enterprise on every gated route', async () => {

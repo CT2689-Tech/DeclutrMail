@@ -15,7 +15,7 @@ import {
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Methodology — DeclutrMail',
   description:
-    'The inspectable boundaries behind DeclutrMail: metadata-only Gmail indexing, deterministic recommendations, mandatory previews, and explicit Pro automation.',
+    'The inspectable boundaries behind DeclutrMail: a published Gmail field allowlist, deterministic recommendations, mandatory previews, and explicit plan-gated automation.',
   path: '/methodology',
 });
 
@@ -132,9 +132,9 @@ export default function MethodologyPage() {
         title="A current action never smuggles in a future rule."
         intro={
           <p>
-            Manual cleanup and future automation are separate concepts. Pro Autopilot uses preset
-            rules, starts them in Observe, and requires a deliberate switch to Active before future
-            matches can be changed.
+            Manual cleanup and future automation are separate concepts. Autopilot uses preset rules
+            that start in Observe. On Plus you approve each batch; switching a rule to Active — part
+            of Pro — is the deliberate step that lets future matches change without asking.
           </p>
         }
       >

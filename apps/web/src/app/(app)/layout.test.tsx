@@ -28,7 +28,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -673,5 +673,38 @@ describe('(app) layout — undo tray stays off account surfaces (D245)', () => {
 
     expect(await screen.findByText('authed app body')).toBeInTheDocument();
     expect(screen.getByTestId('triage-undo-tray')).toBeInTheDocument();
+  });
+});
+
+describe('nav plan chips after D251 (design-gate B1)', () => {
+  it('plus: Autopilot and Screener carry no lock chip; Brief still chips Pro', async () => {
+    installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'plus' }));
+    renderLayout();
+
+    const nav = await screen.findByRole('navigation');
+    const chips = within(nav).queryAllByLabelText(/^(Plus|Pro) feature$/);
+    // Sidebar nav items render as <button>, not links (sidebar.tsx) —
+    // the chip sits inside the button next to the label span.
+    const chippedFor = (label: string) =>
+      chips.some((chip) => chip.closest('button')?.textContent?.includes(label));
+
+    // Plus OWNS these screens now — a lock chip on them is the chip's
+    // contract inverted (a paying user told their screen is paywalled).
+    expect(chippedFor('Autopilot')).toBe(false);
+    expect(chippedFor('Screener')).toBe(false);
+    // Still genuinely locked on plus.
+    expect(chippedFor('Brief')).toBe(true);
+  });
+
+  it('free: Autopilot chips Plus (the granting tier), not Pro', async () => {
+    installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'free' }));
+    renderLayout();
+
+    const nav = await screen.findByRole('navigation');
+    const autopilotItem = within(nav)
+      .getAllByRole('button')
+      .find((b) => b.textContent?.includes('Autopilot'));
+    expect(autopilotItem).toBeDefined();
+    expect(within(autopilotItem!).getByLabelText('Plus feature')).toBeInTheDocument();
   });
 });
