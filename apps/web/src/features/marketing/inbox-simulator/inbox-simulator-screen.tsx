@@ -20,8 +20,8 @@ import { oauthStartUrl } from '@/features/marketing/landing/urls';
 import { track } from '@/lib/posthog';
 
 // The FULL fixture queue on purpose (was slice(0,7)): the last two
-// rows are the demo's most instructive states — an engagement-protected
-// sender (destructive verbs hidden with the reason shown) and an
+// rows are the demo's most instructive states — a reply-protected
+// sender (destructive verbs hidden, D245 signal shown) and an
 // Unsubscribe recommendation with NO unsubscribe channel (disabled verb
 // with an honest explanation). Trust is the product; show the honest
 // edges, not just the happy path.

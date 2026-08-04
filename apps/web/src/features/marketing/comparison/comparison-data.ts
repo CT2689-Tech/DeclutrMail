@@ -798,7 +798,7 @@ const gmailNative: ComparisonDefinition = {
   description:
     "A source-backed comparison of DeclutrMail and Gmail's own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and sender-level control.",
   verdict:
-    "Gmail's built-in cleanup is free, already there, and requires no third-party access — start with it. DeclutrMail exists for what it leaves out: an exact count-and-sample preview before anything moves, a durable per-sender ledger with undo windows, and one decision workflow across every sender.",
+    "Gmail's built-in cleanup is free, already there, and requires no third-party access — start with it. DeclutrMail exists for what it leaves out: an exact count-and-sample preview before manual moves, a durable per-sender ledger with undo windows, and one decision workflow across every sender.",
   indexSummary:
     'Gmail now lists subscription senders natively; the difference is what you can verify before and after a move.',
   primaryUnit: 'Sender (subscriptions) or search results',
@@ -920,6 +920,11 @@ const gmailNative: ComparisonDefinition = {
       label: 'Gmail Help — manage your subscriptions in Gmail',
       url: 'https://support.google.com/mail/answer/15621070?hl=en',
       note: 'Manage subscriptions: recent-email counts, unsubscribe, gradual rollout note.',
+    },
+    {
+      label: 'Gmail Help — create rules to filter your emails',
+      url: 'https://support.google.com/mail/answer/6579?hl=en',
+      note: 'Filters as the native path for ongoing routing (Future-mail row).',
     },
   ],
 };

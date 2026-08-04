@@ -137,7 +137,7 @@ export type TriageScreenState =
  * Deterministic fixture — 9 rows that cover the edge cases the
  * Storybook variants and tests reason about:
  *
- *   • 2 Keep   — one user-protected, one engagement-protected
+ *   • 2 Keep   — one user-protected, one auto-protected (3+ replies)
  *   • 3 Archive — varied confidence (0.94 / 0.88 / 0.66)
  *   • 3 Unsubscribe — one one-click (D9), one mailto (D230 deferred),
  *     one with NO channel (`unsubscribeMethod: 'none'`) — the live

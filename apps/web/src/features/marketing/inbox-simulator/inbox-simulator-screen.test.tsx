@@ -127,7 +127,9 @@ describe('InboxSimulatorScreen', () => {
 
     // Protected sender: present, and its protection is the D245
     // replies signal — never a read-rate claim (§2.6 guardrail).
-    expect(screen.getByText('Priya Raman')).toBeInTheDocument();
+    const protectedRow = TRIAGE_QUEUE.find((row) => row.protectionReason !== null);
+    expect(protectedRow).toBeDefined();
+    expect(screen.getByText(protectedRow!.senderName)).toBeInTheDocument();
     expect(screen.queryByText(/read rate ≥ 70/i)).not.toBeInTheDocument();
 
     // Unsubscribe-recommended sender with NO channel: present.
