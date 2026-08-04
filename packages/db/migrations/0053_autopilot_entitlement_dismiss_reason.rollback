@@ -1,16 +1,23 @@
 -- Rollback for 0053_autopilot_entitlement_dismiss_reason.sql
 --
 -- Postgres has no `ALTER TYPE ... DROP VALUE`, so the 'entitlement'
--- label itself stays in the type — additive and inert: no reader
--- switches exhaustively on dismiss_reason at the DB boundary, and
--- Activity's review-outcome surfaces allowlist ('user','protected')
--- explicitly, so older code simply never sees it (the 0045 precedent).
+-- label stays in the type — additive and inert: no reader switches
+-- exhaustively on dismiss_reason at the DB boundary, and Activity's
+-- review-outcome surfaces allowlist ('user','protected') explicitly,
+-- so older code simply never sees it (the 0045 precedent).
 --
--- What CAN be reversed is the data this migration exists to enable:
--- any row dismissed by the D251 entitlement demotion returns to the
--- approved-but-unapplied state it held before the demotion ran.
-UPDATE "rule_match_log"
-SET "resolution" = 'approved',
-    "resolved_at" = NULL,
-    "dismiss_reason" = NULL
-WHERE "dismiss_reason" = 'entitlement';
+-- The rows the label was written to are deliberately NOT restored.
+-- An earlier draft flipped every entitlement-dismissed match back to
+-- (resolution='approved', intent_applied=false) — a bit-exact restore
+-- of the pre-demotion tuple, and exactly the hazard D251's demotion
+-- exists to kill: on any workspace that holds (or later regains)
+-- `autopilot-active`, the next action sweep would EXECUTE those
+-- months-stale matches unattended, and the reconciliation sweep only
+-- re-dismisses under-entitled tiers, so an entitled workspace has no
+-- safety net (Codex stop-review 2026-08-04). A migration rollback
+-- reverts schema; it must not re-arm mail-moving side effects.
+--
+-- If a specific workspace's demotion genuinely needs reversing, that
+-- is a support operation: verify the affected rows by hand, confirm
+-- with the customer, and update only those ids.
+SELECT 1;

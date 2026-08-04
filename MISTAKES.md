@@ -1542,3 +1542,31 @@ Nothing in the PR was wrong; the scope was. The question asked was "does the scr
 **Rule:** verify a telemetry fix by reading what leaves the browser, not by unit-testing the scrubber. Point the SDK at a local echo server and diff every endpoint it hits.
 
 **Enforcement update:** `advanced_disable_flags: true` removes the endpoint rather than scrubbing it — a door that does not exist cannot be reopened by an SDK upgrade. The general rule stays manual.
+
+## 2026-08-04 — Rollback that re-armed stale unattended Autopilot actions
+
+**PR:** #465
+**Caught by:** Codex stop-time review (after the schema gate passed it as an [INFO])
+**What happened:** 0053's rollback restored every entitlement-dismissed
+match to its bit-exact pre-demotion tuple — `(resolution='approved',
+intent_applied=false)`. A "perfect" restore, and exactly the hazard the
+D251 demotion exists to kill: on any workspace holding (or later
+regaining) `autopilot-active`, the next action sweep would EXECUTE those
+months-stale matches unattended. The reconciliation sweep only
+re-dismisses under-entitled tiers, so an entitled workspace had no
+safety net. The schema gate even praised the fidelity ("bit-exact — not
+an approximation") — restoration accuracy and restoration safety are
+different properties.
+**Correct approach:** the 0045 precedent — documented `SELECT 1;` no-op.
+The enum label stays (Postgres can't drop it; readers allowlist), and
+reversing a specific workspace's demotion is a hand-verified support
+operation, never a blanket migration statement. 0050 shows the only
+acceptable direction for data writes in a rollback: DISARM side effects
+(expire tokens, fail jobs, clear id sets) — never re-arm them.
+**Rule:** a migration rollback reverts schema. Any data statement in a
+rollback must reduce the system's ability to mutate user data, never
+restore it. If a rollback would make mail-moving work executable again,
+it is wrong regardless of how faithfully it restores prior state.
+**Enforcement update:** none yet — candidate roundtrip-test assertion:
+rollback files may not UPDATE rows into states the workers treat as
+executable (`resolution='approved' AND intent_applied=false`).
