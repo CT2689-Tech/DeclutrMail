@@ -586,9 +586,16 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 
     expect(screen.getByText('Not running')).toBeInTheDocument();
     expect(screen.queryAllByText(/^Active$/)).toHaveLength(0);
-    expect(
-      screen.getByText(/on your current plan this rule is not checking new mail/i),
-    ).toBeInTheDocument();
+    // Copy contract (two Codex catches): no absolute claim about the
+    // collected backlog — matches neither "keep waiting" (the demotion
+    // dismisses them) nor are all "cleared" (an in-flight action still
+    // completes, with undo). Pin the three true facts instead.
+    const explanation = screen.getByText(/on your current plan this rule starts no new work/i);
+    expect(explanation.textContent).toMatch(
+      /already underway still finishes, with its normal undo/i,
+    );
+    expect(explanation.textContent).toMatch(/returns to Observe automatically/i);
+    expect(explanation.textContent).not.toMatch(/keep waiting|are cleared/i);
   });
 
   it('pro: an active rule still renders the green Active pill', () => {

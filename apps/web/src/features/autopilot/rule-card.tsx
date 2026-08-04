@@ -229,7 +229,14 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
   }
   if (rule.mode === 'active') {
     if (!canActivate) {
-      return `Set to run on its own, which is part of ${ACT_PLAN_NAME} — on your current plan this rule is not checking new mail. It switches back to Observe automatically; matches it collected while running on its own are cleared, and it gathers fresh ones for your approval.`;
+      // Copy contract (Codex stop-review ×2): no absolute claim about
+      // the collected backlog. "Keep waiting for approval" was false —
+      // the demotion dismisses auto-approved unapplied matches; "are
+      // cleared" was ALSO false — a match already mid-action completes
+      // (with its normal undo) rather than being cleared. State the
+      // three true facts: no new work starts, in-flight work finishes
+      // with undo, and Observe collects fresh matches for approval.
+      return `Set to run on its own, which is part of ${ACT_PLAN_NAME} — on your current plan this rule starts no new work; an action already underway still finishes, with its normal undo. The rule returns to Observe automatically and collects fresh matches for your approval.`;
     }
     return 'Active — future matches run automatically. Results and available recovery appear in Activity.';
   }
