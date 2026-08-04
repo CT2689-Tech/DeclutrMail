@@ -35,7 +35,7 @@ const { color, font, text } = tokens;
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Open beta — DeclutrMail',
   description:
-    'DeclutrMail is in open beta. Sign in with Google and start cleaning up your inbox — no invite needed.',
+    'DeclutrMail is in open beta. Sign in with Google and start your first Gmail cleanup — no invite needed.',
   path: '/beta',
 });
 
@@ -69,7 +69,9 @@ function CtaLink({
         height: 32,
         padding: '0 14px',
         background: isPrimary ? color.primary : color.card,
-        color: isPrimary ? '#FFFFFF' : color.fg,
+        // fgInverse, not a literal: primary is a deep teal on light and a
+        // bright teal on dark, so the readable lettering flips with it.
+        color: isPrimary ? color.fgInverse : color.fg,
         border: `1px solid ${isPrimary ? color.primary : color.line}`,
         borderRadius: 7,
         fontFamily: font.sans,

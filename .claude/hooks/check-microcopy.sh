@@ -116,15 +116,36 @@ case "$file_path" in
       truth_violations=$((truth_violations + 1))
     fi
 
-    # T6 — D209 forbidden words.
-    if matches=$(grep -nEi "AI magic|supercharg|\bnuke[sd]?\b|obliterat|\bblast\b|AI-powered" "$file_path" 2>/dev/null); then
+    # T6 — D209 forbidden words. The full list is: AI magic, supercharged,
+    # nuke, destroy, blast, obliterate, `smart` standalone, `intelligent`
+    # standalone, `AI-powered` standalone.
+    if matches=$(grep -nEi "AI magic|supercharg|\bnuke[sd]?\b|obliterat|\bblast(s|ed|ing)?\b|\bdestroy(s|ed|ing)?\b|AI-powered" "$file_path" 2>/dev/null); then
       echo "❌ check-microcopy: D209 forbidden marketing word (T6)" >&2
       echo "$matches" | sed 's/^/   /' >&2
       truth_violations=$((truth_violations + 1))
     fi
 
-    # T6 — 'clean' as a verb applied to the user's data.
-    if matches=$(grep -nEi "clean (your|their|the) (gmail|inbox|mail|e-?mail)|cleans your|cleaning (your|the) (inbox|gmail)" "$file_path" 2>/dev/null); then
+    # T6 — `smart` / `intelligent` STANDALONE. Compound product nouns are
+    # legitimate and must not trip this: competitors ship "smart folders"
+    # and "Smart Inbox", and comparison pages have to name them. Only the
+    # bare adjective applied to DeclutrMail is banned.
+    if matches=$(grep -nEiw "smart|intelligent" "$file_path" 2>/dev/null |
+      grep -Eiv "smart[- ](folder|label|inbox|filter|compose|reply|feature|view|list)|smartphone|intelligent[- ](sort|sorting|inbox|filter)"); then
+      echo "❌ check-microcopy: standalone 'smart'/'intelligent' (T6/D209 — name the mechanism instead)" >&2
+      echo "$matches" | sed 's/^/   /' >&2
+      truth_violations=$((truth_violations + 1))
+    fi
+
+    # T6 — 'clean' as a verb applied to the user's data. Covers the bare
+    # verb and the "clean UP" phrasal form, with an optional intensifier
+    # ("clean up your inbox", "cleaning out the mailbox"). The NOUN
+    # "cleanup" is fine and is the product's own category word, so the
+    # pattern requires a following possessive + data object.
+    # A leading quote mark exempts the phrase: copy that QUOTES a vague
+    # goal in order to criticise it ("“Clean my inbox” is too broad to
+    # verify") is discussing the words, not making the claim — the same
+    # carve-out tests and the copy modules get above.
+    if matches=$(grep -nEi "(^|[^\"'“‘’[:alnum:]])clean(s|ing|ed)?[[:space:]]+(up[[:space:]]+|out[[:space:]]+)?(your|their|the|my)[[:space:]]+([a-z]+[[:space:]]+)?(gmail|inbox|mail|e-?mail|mailbox|messages)" "$file_path" 2>/dev/null); then
       echo "❌ check-microcopy: 'clean' as a verb on user data (T6/D209 — 'cleanup' the noun is fine)" >&2
       echo "$matches" | sed 's/^/   /' >&2
       truth_violations=$((truth_violations + 1))
