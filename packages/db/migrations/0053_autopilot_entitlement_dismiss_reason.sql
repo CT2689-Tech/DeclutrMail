@@ -8,5 +8,6 @@
 -- decision the user never made, 'protected' claims a safety check that
 -- never ran. Append-only enum change; no rows are rewritten here — the
 -- billing tier writers (webhook facade call + reconciliation sweep) set
--- the value.
-ALTER TYPE "autopilot_match_dismiss_reason" ADD VALUE 'entitlement';
+-- the value. Idempotent (`IF NOT EXISTS`), matching the repo convention
+-- and the migrate-apply workflow's re-run recovery path.
+ALTER TYPE "public"."autopilot_match_dismiss_reason" ADD VALUE IF NOT EXISTS 'entitlement';
