@@ -586,17 +586,19 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 
     expect(screen.getByText('Not running')).toBeInTheDocument();
     expect(screen.queryAllByText(/^Active$/)).toHaveLength(0);
-    // Copy contract (three Codex catches): no absolute claim about the
-    // collected backlog — matches neither "keep waiting" (the demotion
-    // dismisses them) nor are all "cleared" (an in-flight action still
-    // completes). Pin the three true facts; the undo claim is legal
-    // here because THIS rule's verb is Archive (a label mutation).
+    // Copy contract (four Codex catches): no absolute claims — the
+    // backlog neither "keeps waiting" (demotion dismisses it) nor is
+    // "cleared" (in-flight work is untouched); in-flight work neither
+    // "completes" nor "finishes with undo" unconditionally (it can fail
+    // at the boundary; undo exists only where mail actually moved).
     const explanation = screen.getByText(/on your current plan this rule starts no new work/i);
-    expect(explanation.textContent).toMatch(
-      /already underway still finishes, with its normal undo/i,
-    );
+    expect(explanation.textContent).toMatch(/is not interrupted/i);
+    expect(explanation.textContent).toMatch(/result lands in Activity/i);
+    expect(explanation.textContent).toMatch(/undo where mail actually moved/i);
     expect(explanation.textContent).toMatch(/returns to Observe automatically/i);
-    expect(explanation.textContent).not.toMatch(/keep waiting|are cleared/i);
+    expect(explanation.textContent).not.toMatch(
+      /keep waiting|are cleared|still completes|still finishes|normal undo/i,
+    );
   });
 
   it('plus: a leftover active UNSUBSCRIBE rule never promises undo for its in-flight work', () => {
@@ -612,7 +614,10 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 
     const explanation = screen.getByText(/on your current plan this rule starts no new work/i);
     expect(explanation.textContent).toMatch(/a delivered request cannot be recalled/i);
-    expect(explanation.textContent).not.toMatch(/normal undo/i);
+    expect(explanation.textContent).toMatch(/result lands in Activity/i);
+    // No undo promise AND no success promise — a request can fail at
+    // the sender's endpoint (Codex round 4).
+    expect(explanation.textContent).not.toMatch(/undo|still completes/i);
   });
 
   it('pro: an active rule still renders the green Active pill', () => {

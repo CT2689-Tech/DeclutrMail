@@ -229,18 +229,20 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
   }
   if (rule.mode === 'active') {
     if (!canActivate) {
-      // Copy contract (Codex stop-review ×3): no absolute claims. "Keep
+      // Copy contract (Codex stop-review ×4): no absolute claims. "Keep
       // waiting for approval" was false — the demotion dismisses
       // auto-approved unapplied matches. "Are cleared" was false — a
-      // match already mid-action completes rather than being cleared.
-      // "With its normal undo" was false for THIS rule's verb when it
-      // is Unsubscribe — a delivered request is one-way (D58). The
-      // in-flight clause is therefore per-actionKind: label verbs keep
-      // their undo claim; unsubscribe names the one-way boundary.
+      // match already mid-action is not cleared. "With its normal undo"
+      // was false for an Unsubscribe rule — a delivered request is
+      // one-way (D58). "Still completes" was false too — an in-flight
+      // request can FAIL at the sender's endpoint. What the system
+      // guarantees: in-flight work is not interrupted, its result
+      // (success or failure) lands in Activity, undo exists only where
+      // mail actually moved, and unsubscribe names its one-way boundary.
       const inFlightClause =
         rule.actionKind === 'unsubscribe'
-          ? 'an unsubscribe already underway still completes, and a delivered request cannot be recalled'
-          : 'an action already underway still finishes, with its normal undo';
+          ? 'an unsubscribe already underway is not interrupted — its result lands in Activity, and a delivered request cannot be recalled'
+          : 'an action already underway is not interrupted — its result lands in Activity, with undo where mail actually moved';
       return `Set to run on its own, which is part of ${ACT_PLAN_NAME} — on your current plan this rule starts no new work; ${inFlightClause}. The rule returns to Observe automatically and collects fresh matches for your approval.`;
     }
     return 'Active — future matches run automatically. Results and available recovery appear in Activity.';
