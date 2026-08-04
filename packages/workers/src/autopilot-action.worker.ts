@@ -194,11 +194,22 @@ function claimIsInFlight(
   return claim.status !== 'queued' || claim.resolvedMessageIds.length > 0;
 }
 
+/**
+ * Idempotency-key prefixes of a match's durable execution claim
+ * (`<prefix><matchId>`). Exported for the D251 demotion facade
+ * (`AutopilotReadService.demoteUnattendedRules`), whose claim-exclusion
+ * SQL must recognize every claim this worker can have written — both
+ * sides building from ONE constant is what keeps a future key-format
+ * change from silently dismissing matches whose claim already mutated
+ * Gmail.
+ */
+export const AUTOPILOT_CLAIM_KEY_PREFIXES = ['autopilot-', 'autopilot-unsubexec-'] as const;
+
 /** Idempotency key of a match's durable execution claim. */
 function claimKey(match: { matchId: string; actionKind: string }): string {
   return match.actionKind === 'unsubscribe'
-    ? `autopilot-unsubexec-${match.matchId}`
-    : `autopilot-${match.matchId}`;
+    ? `${AUTOPILOT_CLAIM_KEY_PREFIXES[1]}${match.matchId}`
+    : `${AUTOPILOT_CLAIM_KEY_PREFIXES[0]}${match.matchId}`;
 }
 
 /** Bind-parameter chunk for the sweep's batched claim lookup. */

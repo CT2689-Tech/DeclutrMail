@@ -671,6 +671,82 @@ describe('AutopilotReadService', () => {
       const [rule] = await db.select().from(automationRules).where(eq(automationRules.id, ruleB));
       expect(rule!.mode).toBe('active');
     });
+
+    it('SELF-ENFORCES the tier: a workspace granting autopilot-active is a no-op', async () => {
+      const wsId = await workspaceOf(mailboxA);
+      const activeRule = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await service.patchRule(mailboxA, activeRule, { enabled: true, mode: 'active' });
+      await seedActiveMatch(mailboxA, activeRule, FIXTURE_SENDER_KEYS[0]!);
+      await db.update(workspaces).set({ tier: 'pro' }).where(eq(workspaces.id, wsId));
+
+      // A caller forgetting the entitlement check must not strip Active
+      // rules from a paying Pro workspace (arch-gate S4).
+      const out = await service.demoteUnattendedRules(wsId);
+
+      expect(out).toEqual({ demotedRules: 0, neutralizedMatches: 0 });
+      const [rule] = await db
+        .select()
+        .from(automationRules)
+        .where(eq(automationRules.id, activeRule));
+      expect(rule!.mode).toBe('active');
+    });
+
+    it('dismisses a match whose claim is still queued-and-empty, and fails the orphan claim', async () => {
+      // The worker's own in-flight definition (`claimIsInFlight`): a
+      // `queued` claim with zero resolved ids never touched Gmail and is
+      // re-claimable. Excluding it left the match approved-unapplied
+      // forever — undismissable (claim exists) yet primed to execute on
+      // a re-upgrade (arch-gate finding, 2026-08-04).
+      const activeRule = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await service.patchRule(mailboxA, activeRule, { enabled: true, mode: 'active' });
+      const matchId = await seedActiveMatch(mailboxA, activeRule, FIXTURE_SENDER_KEYS[0]!);
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxA,
+        verb: 'archive',
+        selector: { type: 'messages' },
+        idempotencyKey: `autopilot-${matchId}`,
+        status: 'queued',
+        resolvedMessageIds: [],
+      });
+
+      const out = await service.demoteUnattendedRules(await workspaceOf(mailboxA));
+
+      expect(out.neutralizedMatches).toBe(1);
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match!.resolution).toBe('dismissed');
+      expect(match!.dismissReason).toBe('entitlement');
+      const [claim] = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, `autopilot-${matchId}`));
+      expect(claim!.status).toBe('failed');
+      expect(claim!.errorCode).toBe('ENTITLEMENT_DEMOTED');
+    });
+
+    it('demoteUnattendedRulesForUnentitledTiers converges every under-entitled workspace and no other', async () => {
+      const ruleA = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await service.patchRule(mailboxA, ruleA, { enabled: true, mode: 'active' });
+      await seedActiveMatch(mailboxA, ruleA, FIXTURE_SENDER_KEYS[0]!);
+      // Workspace B is Pro — entitled, must remain untouched.
+      const ruleB = await getRuleId(db, mailboxB, 'auto_archive_low_engagement');
+      await service.patchRule(mailboxB, ruleB, { enabled: true, mode: 'active' });
+      await db
+        .update(workspaces)
+        .set({ tier: 'pro' })
+        .where(eq(workspaces.id, await workspaceOf(mailboxB)));
+
+      const out = await service.demoteUnattendedRulesForUnentitledTiers();
+
+      expect(out).toEqual({ demotedRules: 1, neutralizedMatches: 1, workspaces: 1 });
+      const [a] = await db.select().from(automationRules).where(eq(automationRules.id, ruleA));
+      const [b] = await db.select().from(automationRules).where(eq(automationRules.id, ruleB));
+      expect(a!.mode).toBe('observe');
+      expect(b!.mode).toBe('active');
+
+      // Second pass finds nothing — the discovery predicate is starved.
+      const again = await service.demoteUnattendedRulesForUnentitledTiers();
+      expect(again).toEqual({ demotedRules: 0, neutralizedMatches: 0, workspaces: 0 });
+    });
   });
 
   describe('listPendingSuggestions', () => {

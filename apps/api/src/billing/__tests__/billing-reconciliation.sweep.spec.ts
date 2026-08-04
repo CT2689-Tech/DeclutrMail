@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { runBillingReconciliationSweep } from '../billing-reconciliation.sweep.js';
+import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
 import type { DrizzleDb } from '../../db/db.module.js';
 
 const MIGRATIONS_DIR = join(
@@ -49,9 +50,13 @@ async function seedWorkspace(db: DrizzleDb, tier: 'free' | 'plus' | 'pro'): Prom
 
 describe('runBillingReconciliationSweep', () => {
   let db: DrizzleDb;
+  let autopilot: AutopilotReadService;
 
   beforeEach(async () => {
     db = await freshDb();
+    // Queue-less, like the worker composition root — the sweep only
+    // needs the D251 demotion facade.
+    autopilot = new AutopilotReadService(db as never);
   });
 
   it('drops a STALE refund entitlement — no recency bound (Codex stop-review 2026-07-29)', async () => {
@@ -74,7 +79,7 @@ describe('runBillingReconciliationSweep', () => {
       updatedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
     });
 
-    const result = await runBillingReconciliationSweep(db);
+    const result = await runBillingReconciliationSweep(db, autopilot);
 
     expect(result.workspacesRecomputed).toBe(1);
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, wsId));
@@ -98,7 +103,7 @@ describe('runBillingReconciliationSweep', () => {
       entitlementEndsAt: new Date(Date.now() - 60 * 1000),
     });
 
-    const result = await runBillingReconciliationSweep(db);
+    const result = await runBillingReconciliationSweep(db, autopilot);
 
     expect(result.dunningFlipped).toBe(1);
     const [row] = await db.select().from(subscriptions);
@@ -130,7 +135,7 @@ describe('runBillingReconciliationSweep', () => {
       entitlementEndsAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
     });
 
-    const result = await runBillingReconciliationSweep(db);
+    const result = await runBillingReconciliationSweep(db, autopilot);
     expect(result.dunningFlipped).toBe(0);
     expect(result.workspacesRecomputed).toBe(0);
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, wsId));
@@ -171,7 +176,7 @@ describe('runBillingReconciliationSweep', () => {
       },
     ]);
 
-    const result = await runBillingReconciliationSweep(db);
+    const result = await runBillingReconciliationSweep(db, autopilot);
     expect(result.pendingCheckoutsCleared).toBe(1);
     const remaining = await db.select().from(pendingCheckouts);
     expect(remaining.map((r) => r.workspaceId).sort()).toEqual([wsFresh, wsLive].sort());
@@ -252,7 +257,7 @@ describe('runBillingReconciliationSweep', () => {
     const plus = await seedAutomation('plus');
     const pro = await seedAutomation('pro');
 
-    const result = await runBillingReconciliationSweep(db);
+    const result = await runBillingReconciliationSweep(db, autopilot);
 
     expect(result.unattendedRulesDemoted).toBe(1);
     expect(result.unattendedMatchesNeutralized).toBe(1);
@@ -285,7 +290,7 @@ describe('runBillingReconciliationSweep', () => {
     expect(proMatch!.resolution).toBe('approved');
 
     // Second sweep is a no-op — the demote is idempotent.
-    const again = await runBillingReconciliationSweep(db);
+    const again = await runBillingReconciliationSweep(db, autopilot);
     expect(again.unattendedRulesDemoted).toBe(0);
     expect(again.unattendedMatchesNeutralized).toBe(0);
   });

@@ -46,6 +46,7 @@ import {
   mailMessages,
   mailboxAccounts,
   ruleMatchLog,
+  workspaces,
   senderPolicies,
   senders,
   triageDecisions,
@@ -53,12 +54,14 @@ import {
 } from '@declutrmail/db';
 import {
   AUTOPILOT_ACTION_JOB,
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
   AUTOPILOT_PRESETS,
   autopilotActionJobOptions,
   materializeAutopilotSignals,
   type AutopilotActionJobData,
   type PresetInput,
 } from '@declutrmail/workers';
+import { TIER_IDS, hasCapability } from '@declutrmail/shared/entitlements';
 import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
 import type {
   AutopilotApproveResult,
@@ -134,6 +137,20 @@ const SENDER_INDEXED_AT_MATCH_TIME: SQL = sql`exists (
 const PATTERN_EVIDENCE_WINDOW_DAYS = 30;
 const PATTERN_EVIDENCE_MIN_SENDERS = 3;
 const PATTERN_PRESET_KEYS = ['auto_archive_low_engagement', 'auto_unsubscribe_noisy'] as const;
+
+/**
+ * `'<prefix>' || rule_match_log.id::text` for each exported worker
+ * claim-key prefix — the correlated forms the D251 demotion matches
+ * `action_jobs.idempotency_key` against. Built from
+ * `AUTOPILOT_CLAIM_KEY_PREFIXES` so the SQL cannot drift from
+ * `claimKey` in the action worker.
+ */
+function claimKeySqlForms(): SQL {
+  return sql.join(
+    AUTOPILOT_CLAIM_KEY_PREFIXES.map((p) => sql`${p} || ${sql.raw('rule_match_log.id')}::text`),
+    sql`, `,
+  );
+}
 
 @Injectable()
 export class AutopilotReadService {
@@ -523,24 +540,42 @@ export class AutopilotReadService {
    *      re-arm: a later re-upgrade would execute months-stale matches
    *      under a rule this very method set back to Observe.
    *
-   * Matches with an action-job claim are deliberately excluded — a
+   * Matches whose claim is IN FLIGHT are deliberately excluded — a
    * claim that already mutated Gmail must complete its bookkeeping
    * (Activity row + undo token), never be relabelled dismissed. The
-   * key construction mirrors the action worker's `claimKey`
-   * (packages/workers/src/autopilot-action.worker.ts) — change one,
-   * change both. A sweep already in flight during the downgrade can
-   * still claim a just-dismissed row; its completion only flips
+   * predicate mirrors the action worker's `claimIsInFlight`: a claim
+   * still `queued` with an empty resolved set never touched Gmail, so
+   * its match IS dismissed and the orphaned claim flips to `failed`
+   * (the `abandonStaleClaim` pattern) — excluding those rows left them
+   * `approved, intent_applied=false` forever, primed to execute on a
+   * re-upgrade (arch-gate finding, 2026-08-04). Claim keys build from
+   * the worker's exported `AUTOPILOT_CLAIM_KEY_PREFIXES`, so the two
+   * sides cannot drift. A sweep already in flight during the downgrade
+   * can still claim a just-dismissed row; its completion only flips
    * `intent_applied`/`intent_token`, so the row stays consistent and
    * the applied action keeps its undo path.
    *
-   * Accepts the caller's transaction so the demotion commits
-   * atomically with the tier write. Idempotent — safe to re-run from
-   * the reconciliation sweep's SQL mirror.
+   * SELF-ENFORCING: reads the workspace's CURRENT tier through the
+   * same executor and no-ops when it grants `autopilot-active`, so a
+   * future caller cannot strip Active rules from a paying Pro
+   * workspace by forgetting the check. Accepts the caller's
+   * transaction so the demotion commits atomically with the tier
+   * write (the webhook path passes its tx and therefore sees the tier
+   * value it just wrote). Idempotent.
    */
   async demoteUnattendedRules(
     workspaceId: string,
     executor: Pick<DrizzleDb, 'update' | 'select'> = this.db,
   ): Promise<{ demotedRules: number; neutralizedMatches: number }> {
+    const [ws] = await executor
+      .select({ tier: workspaces.tier })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+    if (!ws || hasCapability(ws.tier, 'autopilot-active')) {
+      return { demotedRules: 0, neutralizedMatches: 0 };
+    }
+
     const workspaceMailboxIds = executor
       .select({ id: mailboxAccounts.id })
       .from(mailboxAccounts)
@@ -575,19 +610,42 @@ export class AutopilotReadService {
           eq(ruleMatchLog.resolution, 'approved'),
           eq(ruleMatchLog.intentApplied, false),
           inArray(ruleMatchLog.mailboxAccountId, workspaceMailboxIds),
-          // Correlated column MUST be table-qualified via sql.raw — a
+          // Exclude only claims that are IN FLIGHT (mirrors the action
+          // worker's `claimIsInFlight`): anything past `queued`, or a
+          // queued claim that already resolved message ids. Correlated
+          // column MUST be table-qualified via sql.raw — a
           // `${ruleMatchLog.id}` here emits a bare `id` that resolves
           // against action_jobs (the SENDER_FIRST_SEEN precedent above).
           sql`NOT EXISTS (
             SELECT 1 FROM ${actionJobs}
-            WHERE ${actionJobs.idempotencyKey} IN (
-              'autopilot-' || ${sql.raw('rule_match_log.id')}::text,
-              'autopilot-unsubexec-' || ${sql.raw('rule_match_log.id')}::text
-            )
+            WHERE ${actionJobs.idempotencyKey} IN (${claimKeySqlForms()})
+              AND (${actionJobs.status} <> 'queued'
+                   OR cardinality(${actionJobs.resolvedMessageIds}) > 0)
           )`,
         ),
       )
       .returning({ id: ruleMatchLog.id });
+
+    // Orphaned never-advanced claims of the matches just dismissed flip
+    // to `failed` (the worker's `abandonStaleClaim` pattern) so a BullMQ
+    // replay finds a terminal row, not a resurrectable queued one. The
+    // WHERE re-asserts the never-touched-Gmail condition rather than
+    // trusting the exclusion above — same defense the worker uses.
+    if (neutralized.length > 0) {
+      await executor
+        .update(actionJobs)
+        .set({ status: 'failed', errorCode: 'ENTITLEMENT_DEMOTED', updatedAt: sql`now()` })
+        .where(
+          and(
+            inArray(
+              actionJobs.idempotencyKey,
+              neutralized.flatMap((r) => AUTOPILOT_CLAIM_KEY_PREFIXES.map((p) => `${p}${r.id}`)),
+            ),
+            eq(actionJobs.status, 'queued'),
+            sql`cardinality(${actionJobs.resolvedMessageIds}) = 0`,
+          ),
+        );
+    }
 
     if (demoted.length > 0 || neutralized.length > 0) {
       console.log(
@@ -601,6 +659,52 @@ export class AutopilotReadService {
       );
     }
     return { demotedRules: demoted.length, neutralizedMatches: neutralized.length };
+  }
+
+  /**
+   * D251 global self-heal — demote every workspace whose CURRENT tier
+   * does not grant `autopilot-active` (list derived from the manifest).
+   * The reconciliation sweep calls this 6-hourly: the webhook path
+   * demotes atomically with its tier write, but an apply sweep already
+   * in flight during a downgrade can insert active-provenance matches
+   * AFTER that demotion, and rows can drift in through any other tier
+   * writer — this pass is what converges them. Loops the per-workspace
+   * facade rather than mirroring its SQL, so the demotion semantics
+   * have exactly one implementation (D204; arch-gate 2026-08-04) and
+   * every converged workspace gets its own log line.
+   */
+  async demoteUnattendedRulesForUnentitledTiers(
+    executor: Pick<DrizzleDb, 'update' | 'select' | 'selectDistinct'> = this.db,
+  ): Promise<{ demotedRules: number; neutralizedMatches: number; workspaces: number }> {
+    const unentitledTiers = TIER_IDS.filter((t) => !hasCapability(t, 'autopilot-active'));
+    const ruleWs = await executor
+      .selectDistinct({ wsId: mailboxAccounts.workspaceId })
+      .from(mailboxAccounts)
+      .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+      .innerJoin(automationRules, eq(automationRules.mailboxAccountId, mailboxAccounts.id))
+      .where(and(inArray(workspaces.tier, unentitledTiers), eq(automationRules.mode, 'active')));
+    const matchWs = await executor
+      .selectDistinct({ wsId: mailboxAccounts.workspaceId })
+      .from(mailboxAccounts)
+      .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+      .innerJoin(ruleMatchLog, eq(ruleMatchLog.mailboxAccountId, mailboxAccounts.id))
+      .where(
+        and(
+          inArray(workspaces.tier, unentitledTiers),
+          eq(ruleMatchLog.modeAtMatch, 'active'),
+          eq(ruleMatchLog.resolution, 'approved'),
+          eq(ruleMatchLog.intentApplied, false),
+        ),
+      );
+    const wsIds = [...new Set([...ruleWs, ...matchWs].map((r) => r.wsId))];
+    let demotedRules = 0;
+    let neutralizedMatches = 0;
+    for (const wsId of wsIds) {
+      const out = await this.demoteUnattendedRules(wsId, executor);
+      demotedRules += out.demotedRules;
+      neutralizedMatches += out.neutralizedMatches;
+    }
+    return { demotedRules, neutralizedMatches, workspaces: wsIds.length };
   }
 
   /**

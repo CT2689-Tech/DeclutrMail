@@ -54,7 +54,7 @@ import {
   subscriptions,
   workspaces,
 } from '@declutrmail/db';
-import { TIER_RANK, hasCapability } from '@declutrmail/shared/entitlements';
+import { TIER_RANK } from '@declutrmail/shared/entitlements';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 import { AutopilotReadService } from '../autopilot/autopilot.read-service.js';
@@ -1125,12 +1125,10 @@ export class BillingWebhookService {
     // to Observe and neutralizes unapplied auto-approved matches, in
     // THIS transaction so the tier write and the demotion are atomic
     // (worker-refusal-only was explicitly rejected — stored state stays
-    // honest). Unconditional on every recompute rather than diffed
-    // against the previous tier: the call is idempotent and two cheap
-    // indexed UPDATEs, and running it always makes it self-healing for
-    // rows that drifted in through any other path.
-    if (!hasCapability(tier, 'autopilot-active')) {
-      await this.autopilot.demoteUnattendedRules(workspaceId, tx);
-    }
+    // honest). Called unconditionally on every recompute — the facade
+    // is SELF-ENFORCING (it re-reads the tier through this tx and
+    // no-ops when the tier grants unattended action), so the
+    // entitlement invariant lives in exactly one place.
+    await this.autopilot.demoteUnattendedRules(workspaceId, tx);
   }
 }
