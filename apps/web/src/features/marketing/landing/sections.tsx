@@ -14,7 +14,7 @@ export function Problem() {
   return (
     <section className="dm-mkt-section dm-mkt-shell">
       <p className="dm-mkt-eyebrow">№ 01 — The arithmetic</p>
-      <h2 className="dm-mkt-h2">The cleanup is N decisions. We shrink N.</h2>
+      <h2 className="dm-mkt-h2">Thousands of emails. A few hundred sender decisions.</h2>
       <p className="dm-mkt-lede">
         Your inbox has thousands of emails — but they come from a few hundred senders. Tools that
         make you process emails leave you with the same N. DeclutrMail makes it N senders.
@@ -26,14 +26,14 @@ export function Problem() {
           <p className="dm-mkt-arith-note">Years of newsletters, receipts, and notifications.</p>
         </div>
         <div className="dm-mkt-arith-cell">
-          <div className="dm-mkt-arith-label">Cleaning it email-by-email</div>
+          <div className="dm-mkt-arith-label">Handled email by email</div>
           <div className="dm-mkt-arith-value">
             <s>12,418 decisions</s>
           </div>
           <p className="dm-mkt-arith-note">That is why every “inbox zero” lapses.</p>
         </div>
         <div className="dm-mkt-arith-cell">
-          <div className="dm-mkt-arith-label">Cleaning it by sender</div>
+          <div className="dm-mkt-arith-label">Handled sender by sender</div>
           <div className="dm-mkt-arith-value">
             <em>143 decisions</em>
           </div>
@@ -49,7 +49,7 @@ export function HowItWorks() {
   return (
     <section id="how-it-works" className="dm-mkt-section dm-mkt-shell">
       <p className="dm-mkt-eyebrow">№ 02 — How it works</p>
-      <h2 className="dm-mkt-h2">Connect. Review. Done.</h2>
+      <h2 className="dm-mkt-h2">Find the pattern. See the scope. Make the call.</h2>
       <div className="dm-mkt-steps">
         <div className="dm-mkt-step">
           <div className="dm-mkt-step-no">STEP 1</div>
@@ -73,7 +73,9 @@ export function HowItWorks() {
           <p className="dm-mkt-step-body">
             Autopilot preset rules find matching mail for your batch approval on Plus; on Pro an
             explicitly activated rule applies future matches on its own. Manual decisions stay in
-            the activity ledger, with undo for label-changing actions.
+            the activity ledger, with undo for label-changing actions. A delivered unsubscribe
+            request cannot be recalled; existing mail stays put unless you separately approve
+            another action.
           </p>
         </div>
       </div>
@@ -98,7 +100,7 @@ export function Ritual() {
   return (
     <section className="dm-mkt-section dm-mkt-shell">
       <p className="dm-mkt-eyebrow">№ 03 — The ritual</p>
-      <h2 className="dm-mkt-h2">Five verbs. One per sender.</h2>
+      <h2 className="dm-mkt-h2">Five verbs. See the scope before manual moves.</h2>
       <p className="dm-mkt-lede">
         Every sender in your inbox gets one of five verdicts, each on a single key. A live preview
         shows the current count, an available sample, and the planned Gmail changes. The worker
@@ -172,8 +174,8 @@ export function ProductTour() {
       <h2 className="dm-mkt-h2">Three product chapters, not three quota bands.</h2>
       <p className="dm-mkt-lede">
         Free is the full manual cleanup workflow with a monthly meter. Plus removes the meter and
-        adds preset rules that queue matches for your approval. Pro lets those rules run unattended.
-        The same Activity record ties all three together.
+        adds the Screener for new senders plus preset rules that queue matches for your approval.
+        Pro lets those rules run unattended. The same Activity record ties all three together.
       </p>
       <div className="dm-mkt-product-tour">
         <article>

@@ -137,7 +137,7 @@ export type TriageScreenState =
  * Deterministic fixture — 9 rows that cover the edge cases the
  * Storybook variants and tests reason about:
  *
- *   • 2 Keep   — one user-protected, one engagement-protected
+ *   • 2 Keep   — one user-protected, one auto-protected (3+ replies)
  *   • 3 Archive — varied confidence (0.94 / 0.88 / 0.66)
  *   • 3 Unsubscribe — one one-click (D9), one mailto (D230 deferred),
  *     one with NO channel (`unsubscribeMethod: 'none'`) — the live
@@ -336,7 +336,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     totalAllTime: 306,
   },
 
-  // ── Keep · engagement-protected (>=70% read) ─────────────────────
+  // ── Keep · auto-protected (3+ replies, D245) ─────────────────────
   {
     id: 't-priya',
     senderId: 'sid-priya',
@@ -352,7 +352,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     signals: [
       'Read rate: 95% over the last 90 days',
       'Volume: 6 messages/month',
-      'Engagement-protected (read rate ≥ 70%) — destructive verbs hidden',
+      'Protected — you replied at least 3 times; destructive verbs hidden',
     ],
     protectionReason: 'replied',
     monthlyVolume: 6,

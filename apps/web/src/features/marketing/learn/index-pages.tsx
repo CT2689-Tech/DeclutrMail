@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
+import { ANSWER_ARTICLES, ANSWER_SLUGS } from './answer-content';
 import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
 import { FAQ_ENTRIES } from './faq-content';
+import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from './how-to-content';
 import { LearnEyebrow, LearnShell } from './learn-shell';
 
 export function BlogIndexPage() {
@@ -47,6 +49,48 @@ export function BlogIndexPage() {
             <span>{article.readingMinutes} minute read</span>
           </Link>
         ))}
+      </section>
+      {/* Guides hub (SEO sweep 2026-08-04): the footer's "Guides" link
+          lands here, and until now the ten how-to/answers pages —
+          the content built to rank — were reachable only through
+          intra-cluster cross-links. */}
+      <header className="dm-learn-hero dm-learn-hero--solo">
+        <div>
+          <LearnEyebrow>Step-by-step</LearnEyebrow>
+          <h2 className="dm-learn-title">How-to guides</h2>
+        </div>
+      </header>
+      <section className="dm-learn-grid" aria-label="How-to guides">
+        {HOW_TO_SLUGS.map((slug) => {
+          const article = HOW_TO_ARTICLES[slug];
+          return (
+            <Link className="dm-learn-card" href={article.path} key={article.slug}>
+              <em>{article.eyebrow}</em>
+              <strong>{article.title}</strong>
+              <span>{article.description}</span>
+              <span>{article.readingMinutes} minute read</span>
+            </Link>
+          );
+        })}
+      </section>
+      <header className="dm-learn-hero dm-learn-hero--solo">
+        <div>
+          <LearnEyebrow>Straight answers</LearnEyebrow>
+          <h2 className="dm-learn-title">Common questions, answered</h2>
+        </div>
+      </header>
+      <section className="dm-learn-grid" aria-label="Direct answers">
+        {ANSWER_SLUGS.map((slug) => {
+          const article = ANSWER_ARTICLES[slug];
+          return (
+            <Link className="dm-learn-card" href={article.path} key={article.slug}>
+              <em>{article.eyebrow}</em>
+              <strong>{article.title}</strong>
+              <span>{article.description}</span>
+              <span>{article.readingMinutes} minute read</span>
+            </Link>
+          );
+        })}
       </section>
     </LearnShell>
   );

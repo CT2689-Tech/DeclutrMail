@@ -25,10 +25,12 @@ function renderLanding() {
 }
 
 describe('landing page — D134', () => {
-  it('renders the locked D223 headline as the page h1', () => {
+  it('renders the locked D250 headline as the page h1', () => {
     renderLanding();
     const h1 = screen.getByRole('heading', { level: 1 });
-    expect(h1.textContent).toBe('Control Gmail by sender, not by email.');
+    expect(h1.textContent).toBe(
+      'Clear thousands of emails by sender — and see exactly what moves.',
+    );
   });
 
   it('mounts the D228 trust copy via the shared PrivacyBadge (trust strip + privacy section)', () => {
@@ -99,9 +101,9 @@ describe('landing page — D134', () => {
     }
   });
 
-  it('carries the D223 headline + subcopy into page metadata', () => {
-    expect(metadata.description).toContain('handful of sender decisions');
-    expect(JSON.stringify(metadata.title)).toContain('Control Gmail by sender, not by email.');
+  it('carries the D250 positioning into page metadata', () => {
+    expect(metadata.description).toContain('Keep, Archive, Unsubscribe, Later, and Delete');
+    expect(JSON.stringify(metadata.title)).toContain('Preview Gmail cleanup by sender');
   });
 
   it('emits FAQPage JSON-LD mirroring the rendered FAQ verbatim (D132 SEO batch)', () => {

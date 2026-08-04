@@ -23,7 +23,7 @@ export function StepPromise({ onConnect }: { onConnect: () => void }) {
   return (
     <StepShell
       eyebrow="Step 1 of 5 · Before we connect"
-      title="Control Gmail by sender, not by email."
+      title="Clear thousands of emails by sender — and see exactly what moves."
       sub="Before you connect, here is exactly what DeclutrMail will and will not access."
     >
       <PrivacyBadge style={{ width: '100%', textAlign: 'left', marginBottom: 24 }} />

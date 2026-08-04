@@ -1,6 +1,6 @@
 # DeclutrMail
 
-> DeclutrMail is a Gmail sender-control companion. Manual Archive, Later, and Delete actions show the current matching count, an available sample, and the planned Gmail changes before approval; the worker re-checks Gmail at execution, so the final affected count can change if the inbox changes in between. These actions do not create future-mail rules. Pro Autopilot applies explicitly enabled presets to future matches without per-message approval. Archive and Later can be reversed from Activity for the plan's undo window. Delete has an up-to-30-day Activity token while Gmail retains Trash; emptying Trash can end recovery sooner. A delivered unsubscribe request cannot be recalled.
+> DeclutrMail is a Gmail cleanup tool for inboxes you gave up on: one decision per sender — Keep, Archive, Unsubscribe, Later, or Delete — clears thousands of emails at once, and you see exactly what moves first. Manual Archive, Later, and Delete actions show the current matching count, an available sample, and the planned Gmail changes before approval; the worker re-checks Gmail at execution, so the final affected count can change if the inbox changes in between. These actions do not create future-mail rules. Autopilot preset rules (Plus and Pro) find future matches — on Plus you approve every batch, and only a rule you deliberately switch to Active on Pro acts without asking. The Screener (Plus) collects first-time senders for batch review; their mail still arrives. Archive and Later can be reversed from Activity for the plan's undo window. Delete has an up-to-30-day Activity token while Gmail retains Trash; emptying Trash can end recovery sooner. A delivered unsubscribe request cannot be recalled.
 
 Privacy is the product's boundary, stated literally: Full bodies fetched: 0.
 DeclutrMail persists bounded Gmail metadata plus the account, preference, action, processor, and billing records described in its privacy policy.
@@ -10,15 +10,15 @@ Recommendation explanations may send Anthropic bounded sender identity, determin
 ## Product and trust
 
 - [Overview](https://declutrmail.com/#how-it-works): the landing-page summary of the sender-first workflow
-- [How it works](https://declutrmail.com/how-it-works): Gmail remains the reading/reply surface; manual actions affect the previewed messages; enabled Pro presets handle future matches
+- [How it works](https://declutrmail.com/how-it-works): Gmail remains the reading/reply surface; manual actions affect the previewed messages; Autopilot presets (Plus and Pro) handle future matches, unattended only on Pro
 - [Interactive inbox simulator](https://declutrmail.com/inbox-simulator): production Triage row and preview components on synthetic, browser-local sender metadata
 - [Methodology](https://declutrmail.com/methodology): data boundary, deterministic recommendation cascade, action lifecycle, automation boundary, and bounded Anthropic processing
 - [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms
 - [Sign in](https://declutrmail.com/sign-in): Google OAuth scope, metadata boundary, sync expectations, and the connect action
 - [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed
 - [FAQ](https://declutrmail.com/faq): concise public questions about Gmail access, action scope, recovery, and automation
-- [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on paid plans), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
-- [Security](https://declutrmail.com/security): metadata-only storage boundary, the single gmail.modify OAuth scope, envelope-encrypted tokens, CASA Tier 2 assessment cycle in progress, vulnerability reporting
+- [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on every plan, metered monthly on Free), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
+- [Security](https://declutrmail.com/security): the published stored-field boundary (full bodies fetched: 0), the single gmail.modify OAuth scope, envelope-encrypted tokens, CASA Tier 2 assessment cycle in progress, vulnerability reporting
 - [Contact](https://declutrmail.com/contact): support@declutrmail.com for general support, privacy@declutrmail.com for privacy and data requests
 - [Privacy policy](https://declutrmail.com/privacy): Gmail message-field disclosure, operational records, Google Limited Use disclosure, processors, retention, and deletion
 
@@ -30,6 +30,7 @@ Recommendation explanations may send Anthropic bounded sender identity, determin
 - [DeclutrMail vs SaneBox](https://declutrmail.com/vs/sanebox)
 - [DeclutrMail vs Leave Me Alone](https://declutrmail.com/vs/leave-me-alone)
 - [DeclutrMail vs Gmail filters](https://declutrmail.com/vs/gmail-filters)
+- [DeclutrMail vs Gmail's built-in cleanup](https://declutrmail.com/vs/gmail)
 
 ## Gmail how-to guides
 

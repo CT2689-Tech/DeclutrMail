@@ -22,6 +22,7 @@ const FOOTER_GROUPS = [
       { href: '/how-it-works', label: 'How it works' },
       { href: '/inbox-simulator', label: 'Inbox simulator' },
       { href: '/pricing', label: 'Pricing' },
+      { href: '/beta', label: 'Open beta' },
       { href: '/changelog', label: 'Changelog' },
     ],
   },
