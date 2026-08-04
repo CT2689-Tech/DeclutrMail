@@ -32,9 +32,9 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-- ⬜ Not started: 83
+- ⬜ Not started: 82
 - 🟡 In progress: 1
-- 🔵 Shipped: 100
+- 🔵 Shipped: 101
 - 🟢 Verified: 55
 - 🚫 Retired: 2
 - 🔴 Blocked: 0
@@ -296,6 +296,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D248 | Bulk unsubscribe: one-click subset only, per-channel receipt | ⬜ |  |  | Decided 2026-07-28. Batch executes `senders.unsubscribe_method='one_click'` server-side only. The column is nullable, so four states are reported separately: `mailto` (per-sender, D230), `none` (no channel exists), and `NULL` (not yet indexed — unknown, never folded into `none`). No undo — unsubscribe declares no inverse, so the mandatory modal preview is the reversal point. Receipt aggregates the THREE outcomes the worker writes (`unsubscribe_endpoint_accepted` / `unsubscribe_unconfirmed` / `unsubscribe_failed`) and says "request accepted", not "unsubscribed". Extends D9/D32 |
 | D249 | Billing reconciles against provider truth, not customer memory | 🔵 | #436, #441 |  |  |
 | D250 | Landing page primary headline (reverses D223) | ⬜ |  |  |  |
-| D251 | Autopilot splits on behaviour, not access | ⬜ |  |  |  |
+| D251 | Autopilot splits on behaviour, not access | 🔵 | #465 |  |  |
 
 <!-- AUTO:DECISIONS:END -->
