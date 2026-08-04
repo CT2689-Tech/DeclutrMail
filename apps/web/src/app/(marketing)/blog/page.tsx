@@ -3,9 +3,9 @@ import { BlogIndexPage } from '@/features/marketing/learn/index-pages';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 export const metadata: Metadata = marketingPageMetadata({
-  title: 'DeclutrMail Journal — sender-first Gmail cleanup',
+  title: 'DeclutrMail Journal — previews, undo, and the limits of bulk email',
   description:
-    'First-party essays about sender-level email decisions, metadata-only privacy boundaries, action previews, and honest Gmail recovery.',
+    'First-party essays about sender-level email decisions, what DeclutrMail stores and never fetches, action previews, and honest Gmail recovery.',
   path: '/blog',
 });
 

@@ -43,7 +43,7 @@ export function PricingTeaser() {
           <div className="dm-mkt-tier-alt" />
           <ul className="dm-mkt-tier-feats">
             <li>{free.cleanupActionsPerMonth} cleanup actions every month</li>
-            <li>Full sender ledger + activity journal</li>
+            <li>Every sender listed, and a record of everything you did</li>
             <li>
               {free.inboxLimit} inbox · {free.undoWindowDays}-day Activity Undo for Archive, Later,
               and Delete

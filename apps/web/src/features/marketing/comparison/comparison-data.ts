@@ -141,7 +141,7 @@ const cleanEmail: ComparisonDefinition = {
   verdict:
     'Clean Email is the broader multi-provider cleanup suite. DeclutrMail is the narrower Gmail workflow when you want to make explicit sender decisions with a preview and a durable record of reversible moves.',
   indexSummary:
-    'Choose between a broad smart-folder cleanup suite and a focused, sender-first Gmail ritual.',
+    'Choose between a broad smart-folder cleanup suite and a Gmail workflow that previews manual Archive, Later, and Delete before they run.',
   primaryUnit: 'Smart folders, groups, senders, and lists',
   providerScope: 'Major providers and IMAP',
   publicEntryPoint: '1,000 messages free; paid price not stated in reviewed help page',
@@ -271,7 +271,7 @@ const trimbox: ComparisonDefinition = {
   verdict:
     'Trimbox is the simpler choice when the job is one-click newsletter cleanup inside a Gmail-shaped experience. DeclutrMail covers a wider sender decision set and makes previews and reversible label actions part of the workflow.',
   indexSummary:
-    'Choose between fast newsletter opt-outs and a broader sender-by-sender Gmail control surface.',
+    'Choose between fast newsletter opt-outs and a broader Gmail workflow with previews for manual mail moves.',
   primaryUnit: 'Mailing list or unwanted sender',
   providerScope: 'Gmail is clearly documented',
   publicEntryPoint: 'Not publicly stated on reviewed product pages',
@@ -401,7 +401,7 @@ const sanebox: ComparisonDefinition = {
   verdict:
     'SaneBox is strongest when you want new mail continuously sorted by learned importance across providers. DeclutrMail is stronger when you want to work through Gmail’s existing clutter as explicit sender decisions with previews.',
   indexSummary:
-    'Choose between learned importance sorting for incoming mail and an explicit sender cleanup ritual.',
+    'Choose between learned importance sorting for incoming mail and explicit sender decisions you approve one at a time.',
   primaryUnit: 'Learned sender importance and training folders',
   providerScope: 'Most IMAP/Exchange-style providers',
   publicEntryPoint: '14-day trial; plans limit accounts and enabled features',
@@ -532,7 +532,7 @@ const leaveMeAlone: ComparisonDefinition = {
   verdict:
     'Leave Me Alone is purpose-built for subscriptions, Rollups, and Inbox Shield across providers. DeclutrMail treats newsletters as one part of a broader Gmail sender-cleanup workflow.',
   indexSummary:
-    'Choose between subscription-focused control and a wider set of Gmail sender outcomes.',
+    'Choose between an unsubscribe specialist and a broader Gmail workflow that also includes supported unsubscribe, Keep, Archive, Later, and Delete.',
   primaryUnit: 'Subscription or shield rule',
   providerScope: 'Google, Microsoft, Yahoo, iCloud, AOL, Fastmail, and IMAP',
   publicEntryPoint: '10 unsubscribes free; $19 seven-day pass',
@@ -666,7 +666,8 @@ const gmailFilters: ComparisonDefinition = {
     'A source-backed comparison of DeclutrMail and native Gmail filters for sender cleanup, future-mail rules, unsubscribe, preview, recovery, and cost.',
   verdict:
     'Gmail filters are the flexible, no-extra-vendor choice when you already know the search criteria and desired action. DeclutrMail adds a ranked sender inventory, an opinionated decision workflow, previews, and a separate activity record.',
-  indexSummary: 'Choose between native rule-building and a guided, ranked sender cleanup workflow.',
+  indexSummary:
+    'Choose between native rule-building and a guided sender workflow that shows the scope before manual moves.',
   primaryUnit: 'Search criteria and rule action',
   providerScope: 'Gmail and Google Workspace',
   publicEntryPoint: 'Included with the Gmail account or Workspace plan',
