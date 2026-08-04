@@ -586,16 +586,33 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 
     expect(screen.getByText('Not running')).toBeInTheDocument();
     expect(screen.queryAllByText(/^Active$/)).toHaveLength(0);
-    // Copy contract (two Codex catches): no absolute claim about the
+    // Copy contract (three Codex catches): no absolute claim about the
     // collected backlog — matches neither "keep waiting" (the demotion
     // dismisses them) nor are all "cleared" (an in-flight action still
-    // completes, with undo). Pin the three true facts instead.
+    // completes). Pin the three true facts; the undo claim is legal
+    // here because THIS rule's verb is Archive (a label mutation).
     const explanation = screen.getByText(/on your current plan this rule starts no new work/i);
     expect(explanation.textContent).toMatch(
       /already underway still finishes, with its normal undo/i,
     );
     expect(explanation.textContent).toMatch(/returns to Observe automatically/i);
     expect(explanation.textContent).not.toMatch(/keep waiting|are cleared/i);
+  });
+
+  it('plus: a leftover active UNSUBSCRIBE rule never promises undo for its in-flight work', () => {
+    authState.tier = 'plus';
+    // D58 — a delivered unsubscribe request is one-way. The in-flight
+    // clause is per-actionKind: promising "its normal undo" here was
+    // the third false absolute this sentence shipped (Codex ×3).
+    const withActiveUnsub = [
+      { ...AUTO_UNSUBSCRIBE_NOISY, mode: 'active' as const },
+      ...PRESET_RULES_OBSERVE.filter((r) => r.id !== AUTO_UNSUBSCRIBE_NOISY.id),
+    ];
+    renderScreen({ kind: 'ready', rules: withActiveUnsub, suggestions: [] });
+
+    const explanation = screen.getByText(/on your current plan this rule starts no new work/i);
+    expect(explanation.textContent).toMatch(/a delivered request cannot be recalled/i);
+    expect(explanation.textContent).not.toMatch(/normal undo/i);
   });
 
   it('pro: an active rule still renders the green Active pill', () => {
