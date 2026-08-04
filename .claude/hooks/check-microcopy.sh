@@ -125,14 +125,17 @@ case "$file_path" in
       tr '\n' ' ' | tr -s '[:space:]' ' ' |
       sed -E 's@/\*[^*]*\*+([^/*][^*]*\*+)*/@ @g' |
       sed -E "s/['\"] *\+ *['\"]//g" |
-      sed -E 's/[Ss]oft[- ][Qq]uarantin[a-z]*/SANCTIONEDTERM/g')
+      sed -E 's/[Ss]oft[- ][Qq]uarantin[a-z]*/SANCTIONEDTERM/g' |
+      sed -E 's@</?(strong|em|b|i|u|span|a|code|small|sup|sub|mark|abbr)( [^>]*)?>@@g' |
+      sed -E 's@\$?\{[^{}]*\}@@g' |
+      sed -E 's@</?[A-Za-z][^>]*>@ . @g')
 
     # check <label> <extended-regex> [exclude-regex]
     # Reports the matched phrases themselves. Line numbers are
     # deliberately omitted: after normalisation a match may span several
     # lines, and pointing at one of them would be misleading.
     check() {
-      local label="$1" pattern="$2" exclude="${3:-}" nocase="${4:-i}" hits
+      local label="$1" pattern="$2" exclude="${3:-}" nocase="${4-i}" hits
       # `|| true` is load-bearing: `set -e` is on, and grep exits 1 when it
       # finds nothing, which is the NORMAL case here. Without it a clean
       # file kills the hook mid-run — exit 1 with no message, so every
@@ -213,10 +216,10 @@ case "$file_path" in
     #      camelCase: `[a-z]*` cannot eat the `D` of `preventDoubleSubmit`,
     #      so no word boundary is ever found. Under -i it ate the whole
     #      identifier and matched.
-    t3_verb="([Bb]lock[a-z]*|[Pp]revent[a-z]*|[Ii]ntercept[a-z]*|[Qq]uarantin[a-z]*|[Kk]eep[a-z]* out|[Kk]ept out)"
-    t3_gap="[^.!?;{}<>=\"'\`]{0,80}"
+    t3_verb="([Bb]lock[a-z]*|[Pp]revent[a-z]*|[Ii]ntercept[a-z]*|[Qq]uarantin[a-z]*|[Kk]eep[a-z]* out|[Kk]ept out|BLOCK[A-Z]*|PREVENT[A-Z]*|INTERCEPT[A-Z]*|QUARANTIN[A-Z]*|KEEP[A-Z]* OUT|KEPT OUT)"
+    t3_gap="[^.!?;=\"'\`]{0,80}"
     check "Screener framed as blocking (T3/D194 — mail still arrives in Gmail)" \
-      "[Ss]creener${t3_gap}\b${t3_verb}\b|\b${t3_verb}\b${t3_gap}[Ss]creener" \
+      "([Ss]creener|SCREENER)${t3_gap}\b${t3_verb}\b|\b${t3_verb}\b${t3_gap}([Ss]creener|SCREENER)" \
       "" ""
 
     if [ "$truth_violations" -gt 0 ]; then
