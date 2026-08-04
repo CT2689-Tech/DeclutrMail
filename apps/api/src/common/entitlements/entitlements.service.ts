@@ -510,7 +510,7 @@ function capabilityUpgradeMessage(capability: Capability): string {
 /**
  * D19/D77 capability gate — throws 402 `PRO_FEATURE_REQUIRED` when
  * `tier`'s manifest capability set lacks `capability`. Team/enterprise
- * carry the pro set, while Triage starts at Plus. The unlock rule falls
+ * carry the pro set; Triage is Free (A3). The unlock rule falls
  * out of the manifest, never a hardcoded tier list. The error-code name
  * is retained for wire compatibility; the per-capability message names
  * the actual required plan.

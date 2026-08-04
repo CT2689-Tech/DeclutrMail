@@ -229,20 +229,20 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
   }
   if (rule.mode === 'active') {
     if (!canActivate) {
-      // Copy contract (Codex stop-review ×4): no absolute claims. "Keep
-      // waiting for approval" was false — the demotion dismisses
-      // auto-approved unapplied matches. "Are cleared" was false — a
-      // match already mid-action is not cleared. "With its normal undo"
-      // was false for an Unsubscribe rule — a delivered request is
-      // one-way (D58). "Still completes" was false too — an in-flight
-      // request can FAIL at the sender's endpoint. What the system
-      // guarantees: in-flight work is not interrupted, its result
-      // (success or failure) lands in Activity, undo exists only where
-      // mail actually moved, and unsubscribe names its one-way boundary.
+      // Copy contract (Codex stop-review ×5): no absolute claims. "Keep
+      // waiting for approval" — false, the demotion dismisses the
+      // backlog. "Are cleared" — false, in-flight work is untouched.
+      // "With its normal undo" — false for Unsubscribe, one-way (D58).
+      // "Still completes" — false, work can fail at the boundary.
+      // "Result lands in Activity" — false too: EXECUTION_VERBS
+      // excludes unsubscribe and no-op terminals write no Activity row.
+      // Claim ONLY the guarantees: in-flight work is not interrupted,
+      // and mail that actually moves keeps its Activity record (and,
+      // for label verbs, its undo).
       const inFlightClause =
         rule.actionKind === 'unsubscribe'
-          ? 'an unsubscribe already underway is not interrupted — its result lands in Activity, and a delivered request cannot be recalled'
-          : 'an action already underway is not interrupted — its result lands in Activity, with undo where mail actually moved';
+          ? 'an unsubscribe already underway is not interrupted, and a delivered request cannot be recalled'
+          : 'an action already underway is not interrupted, and mail it actually moves keeps its Activity record and undo';
       return `Set to run on its own, which is part of ${ACT_PLAN_NAME} — on your current plan this rule starts no new work; ${inFlightClause}. The rule returns to Observe automatically and collects fresh matches for your approval.`;
     }
     return 'Active — future matches run automatically. Results and available recovery appear in Activity.';

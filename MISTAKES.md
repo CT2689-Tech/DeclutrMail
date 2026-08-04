@@ -1571,24 +1571,27 @@ it is wrong regardless of how faithfully it restores prior state.
 rollback files may not UPDATE rows into states the workers treat as
 executable (`resolution='approved' AND intent_applied=false`).
 
-## 2026-08-04 — One downgrade sentence, four false absolutes in a row
+## 2026-08-04 — One downgrade sentence, five false absolutes in a row
 
 **PR:** #465
-**Caught by:** Codex stop-time review, four consecutive rounds on the
+**Caught by:** Codex stop-time review, five consecutive rounds on the
 same rule-card string
 **What happened:** the Plus-facing explanation for a leftover Active
-rule shipped four absolutes in sequence, each replacing the last:
+rule shipped five absolutes in sequence, each replacing the last:
 (1) "its collected matches keep waiting for your approval" — false,
 the demotion dismisses them; (2) "matches …are cleared" — false, a
 match already mid-action is untouched; (3) "finishes, with its normal
 undo" — false for an Unsubscribe rule, whose delivered request is
 one-way (D58); (4) "still completes" — false again, an in-flight
-request can FAIL at the sender's endpoint. Every fix answered the
+request can FAIL at the sender's endpoint; (5) "its result lands in
+Activity" — false again: Activity's execution lineages cover only
+archive/later/delete (EXECUTION_VERBS), and no-op terminals write no
+row, so a failed or skipped unsubscribe surfaces nowhere. Every fix answered the
 previous objection with a new unqualified claim instead of asking what
 holds for EVERY verb and EVERY outcome the sentence covers. The
 settled form claims only what the system guarantees: in-flight work is
-not interrupted, its result (success or failure) lands in Activity,
-undo exists only where mail actually moved.
+not interrupted, and mail that actually moves keeps its Activity
+record (and, for label verbs, its undo).
 **Correct approach:** copy describing automated mail movement is a
 claim over a state space (verb × match lifecycle). Enumerate it before
 writing: unapplied/dismissed, in-flight, applied — and per verb, since

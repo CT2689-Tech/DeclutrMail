@@ -593,11 +593,15 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // at the boundary; undo exists only where mail actually moved).
     const explanation = screen.getByText(/on your current plan this rule starts no new work/i);
     expect(explanation.textContent).toMatch(/is not interrupted/i);
-    expect(explanation.textContent).toMatch(/result lands in Activity/i);
-    expect(explanation.textContent).toMatch(/undo where mail actually moved/i);
+    expect(explanation.textContent).toMatch(
+      /mail it actually moves keeps its Activity record and undo/i,
+    );
     expect(explanation.textContent).toMatch(/returns to Observe automatically/i);
+    // The five failed absolutes, all rejected — incl. round 5's
+    // "result lands in Activity" (unsubscribe is outside
+    // EXECUTION_VERBS; no-op terminals write no Activity row).
     expect(explanation.textContent).not.toMatch(
-      /keep waiting|are cleared|still completes|still finishes|normal undo/i,
+      /keep waiting|are cleared|still completes|still finishes|normal undo|result lands in Activity/i,
     );
   });
 
@@ -614,10 +618,10 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 
     const explanation = screen.getByText(/on your current plan this rule starts no new work/i);
     expect(explanation.textContent).toMatch(/a delivered request cannot be recalled/i);
-    expect(explanation.textContent).toMatch(/result lands in Activity/i);
-    // No undo promise AND no success promise — a request can fail at
-    // the sender's endpoint (Codex round 4).
-    expect(explanation.textContent).not.toMatch(/undo|still completes/i);
+    // No undo promise, no success promise, no Activity promise — a
+    // request can fail at the sender's endpoint, and failed/no-op
+    // unsubscribe terminals surface nowhere (Codex rounds 4-5).
+    expect(explanation.textContent).not.toMatch(/undo|still completes|lands in Activity/i);
   });
 
   it('pro: an active rule still renders the green Active pill', () => {

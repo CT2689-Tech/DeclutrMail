@@ -247,7 +247,10 @@ export function AutomationBoundaryFigure() {
           </p>
         </div>
         <div>
-          <span className="dm-story-step-label">Pro</span>
+          {/* D251 — preset rules (Observe, batch approval) start at
+              Plus; only the switch to Active is Pro. The body below
+              already states that step without a plan claim. */}
+          <span className="dm-story-step-label">Plus · Pro</span>
           <h3>Autopilot preset rule</h3>
           <p>
             A preset starts in Observe, records what it would match, and acts on future matches only
