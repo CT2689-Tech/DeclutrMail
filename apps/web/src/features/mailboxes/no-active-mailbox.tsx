@@ -126,7 +126,7 @@ export function NoActiveMailboxView({
             ) : deletingMailboxes.length > 0 ? (
               'Indexed data deletion is in progress. Gmail access stays disconnected; reconnect becomes available after deletion completes.'
             ) : (
-              'Connect a Gmail account to start cleaning up your inbox.'
+              'Connect a Gmail account to start your first Gmail cleanup.'
             )
           }
           action={

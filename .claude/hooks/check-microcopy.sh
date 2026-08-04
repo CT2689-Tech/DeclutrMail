@@ -107,11 +107,23 @@ case "$file_path" in
   */apps/web/*|*/packages/shared/src/copy/*|*/apps/api/src/notifications/templates/*|*.stories.tsx|*.stories.ts|*.stories.jsx|*.stories.js|*.stories.mdx)
     truth_violations=0
 
-    # One logical line: newlines and runs of whitespace become single
-    # spaces, so wrapped phrases read as continuous prose.
-    # Also joins JS string concatenation (`'clean up ' + 'your inbox'`),
-    # which splits a phrase without any newline involved.
-    flat=$(tr '\n' ' ' < "$file_path" | tr -s '[:space:]' ' ' |
+    # COMMENTS ARE STRIPPED FIRST. They discuss the rules; they are not
+    # copy — the same reason test files are exempt above. Scanning them
+    # produces confident nonsense: `// the property that decides blast
+    # radius` is a T6 hit, `{/* Archive/Later are fully reversible */}` is
+    # a T2 hit, and the Screener's own `— the soft-quarantine` header
+    # comment is a T3 hit, all while the shipped strings are fine.
+    # Line comments go BEFORE flattening, since flattening destroys the
+    # line ends that terminate them. The `[^:]` guard keeps `https://`
+    # intact.
+    #
+    # Then one logical line: newlines and runs of whitespace become single
+    # spaces, so wrapped phrases read as continuous prose. Finally JS
+    # string concatenation (`'clean up ' + 'your inbox'`) is joined, which
+    # splits a phrase without any newline involved.
+    flat=$(sed -E 's@(^|[^:])//.*$@\1@' "$file_path" |
+      tr '\n' ' ' | tr -s '[:space:]' ' ' |
+      sed -E 's@/\*[^*]*\*+([^/*][^*]*\*+)*/@ @g' |
       sed -E "s/['\"] *\+ *['\"]//g")
 
     # check <label> <extended-regex> [exclude-regex]
@@ -179,8 +191,31 @@ case "$file_path" in
 
     # T3 — Screener is soft quarantine: new senders STILL ARRIVE in Gmail.
     # Never claim it blocks, prevents, intercepts, or quarantines.
+    #
+    # This is the one rule with a PROXIMITY window, and flattening the file
+    # took away the line break that used to contain it. Two bounds put that
+    # back, because without them `import { ScreenerRow } … const blockedIds`
+    # reads as a violation:
+    #
+    #   1. The window cannot cross prose or code structure. Sentence enders
+    #      and JS/JSX punctuation (; { } < > = and quote marks) end the run,
+    #      so a claim has to sit inside ONE sentence. Commas and hyphens are
+    #      deliberately allowed through — "the Screener, which blocks…" is
+    #      still the same claim.
+    #   2. The verbs are a closed, fully word-bounded list rather than a stem
+    #      plus [a-z]*. Matching is case-insensitive, so a trailing [a-z]*
+    #      happily eats the tail of `preventDoubleSubmit` and then finds its
+    #      word boundary at the end of the identifier. An explicit list makes
+    #      the boundary land right after the verb, where camelCase fails it.
+    t3_verb="(block|blocks|blocked|blocking|prevent|prevents|prevented|preventing|intercept|intercepts|intercepted|intercepting|quarantine|quarantines|quarantined|keep out|keeps out|kept out)"
+    t3_gap="[^.!?;{}<>=\"'\`]{0,80}"
+    # "soft quarantine" is the SANCTIONED internal term — T3 is literally
+    # phrased "Screener is soft quarantine". The ban is on telling users
+    # mail gets held back, not on naming the mechanism in a Storybook
+    # description or a type doc, so the qualified form is exempt.
     check "Screener framed as blocking (T3/D194 — mail still arrives in Gmail)" \
-      "screener[^.]{0,80}(block|prevent|keeps? out|intercept|quarantin)[a-z]*|(block|prevent|intercept|quarantin)[a-z]*[^.]{0,60}screener"
+      "screener${t3_gap}\b${t3_verb}\b|\b${t3_verb}\b${t3_gap}screener" \
+      "soft[- ]quarantin"
 
     if [ "$truth_violations" -gt 0 ]; then
       echo "" >&2
