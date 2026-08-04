@@ -76,6 +76,77 @@ case "$file_path" in
     ;;
 esac
 
+# ── Marketing truth constraints (ADR-0030 T2/T3/T5/T6) ──────────────
+#
+# ADR-0030:105-108 records that these were NOT hook-enforced: "a false
+# reversibility or privacy claim in marketing copy passes CI silently
+# today." action-safety.test.ts only asserts against ACTION_SAFETY_SUMMARY
+# itself, so a false claim in hero.tsx was never scanned. This block is
+# that missing guard.
+#
+# Only the MECHANICALLY checkable constraints live here. T1 (manual actions
+# create no future-mail rules), T4 (Autopilot tiering) and T7 (Trash is a
+# separate recovery) are claims about scope and tier, not fixed strings —
+# they need a reader, and stay in the copy spec's review brief.
+#
+# Scope: apps/web/**, packages/shared/src/copy/**, and *.stories.*. The two
+# copy modules that DEFINE the bans are exempt: their comments quote the
+# banned wording, which is the rule, not a violation (same carve-out the
+# privacy-badge rule makes above).
+case "$file_path" in
+  */packages/shared/src/copy/privacy.ts|*/packages/shared/src/copy/action-safety.ts)
+    ;;
+  */apps/web/*|*/packages/shared/src/copy/*|*.stories.tsx|*.stories.ts|*.stories.jsx|*.stories.js|*.stories.mdx)
+    truth_violations=0
+
+    # T2 — a delivered unsubscribe cannot be recalled, so blanket
+    # reversibility is false. Scope undo claims to Archive/Later/Delete
+    # and state the window.
+    if matches=$(grep -nEi "every action (is )?(reversible|undoable)|fully reversible|always reversible|100% reversible|nothing is permanent|all actions are (reversible|undoable)" "$file_path" 2>/dev/null); then
+      echo "❌ check-microcopy: blanket reversibility claim (T2 — a delivered unsubscribe cannot be recalled)" >&2
+      echo "$matches" | sed 's/^/   /' >&2
+      truth_violations=$((truth_violations + 1))
+    fi
+
+    # T5 — privacy copy is the locked generated badge. Forward-looking
+    # absolutes about reading are unfalsifiable AND wrong (metadata IS read).
+    if matches=$(grep -nEi "never reads? your (e-?mail|message|inbox)|we never read your|does ?n[o']t read your (e-?mail|message)|never looks? at your (e-?mail|message)" "$file_path" 2>/dev/null); then
+      echo "❌ check-microcopy: forward-looking privacy absolute (T5 — use the locked 'Full bodies fetched: 0' badge)" >&2
+      echo "$matches" | sed 's/^/   /' >&2
+      truth_violations=$((truth_violations + 1))
+    fi
+
+    # T6 — D209 forbidden words.
+    if matches=$(grep -nEi "AI magic|supercharg|\bnuke[sd]?\b|obliterat|\bblast\b|AI-powered" "$file_path" 2>/dev/null); then
+      echo "❌ check-microcopy: D209 forbidden marketing word (T6)" >&2
+      echo "$matches" | sed 's/^/   /' >&2
+      truth_violations=$((truth_violations + 1))
+    fi
+
+    # T6 — 'clean' as a verb applied to the user's data.
+    if matches=$(grep -nEi "clean (your|their|the) (gmail|inbox|mail|e-?mail)|cleans your|cleaning (your|the) (inbox|gmail)" "$file_path" 2>/dev/null); then
+      echo "❌ check-microcopy: 'clean' as a verb on user data (T6/D209 — 'cleanup' the noun is fine)" >&2
+      echo "$matches" | sed 's/^/   /' >&2
+      truth_violations=$((truth_violations + 1))
+    fi
+
+    # T3 — Screener is soft quarantine: new senders STILL ARRIVE in Gmail.
+    # Never claim it blocks, prevents, intercepts, or quarantines.
+    if matches=$(grep -nEi "screener[^.]{0,80}(block|prevent|keeps? +out|intercept|quarantin)|(block|prevent|intercept|quarantin)[a-z]*[^.]{0,60}screener" "$file_path" 2>/dev/null); then
+      echo "❌ check-microcopy: Screener framed as blocking (T3/D194 — mail still arrives in Gmail)" >&2
+      echo "$matches" | sed 's/^/   /' >&2
+      truth_violations=$((truth_violations + 1))
+    fi
+
+    if [ "$truth_violations" -gt 0 ]; then
+      echo "" >&2
+      echo "   Truth constraints live in docs/execution/repositioning-copy-spec-2026-08-01.md §1." >&2
+      echo "   Positioning rules: docs/adr/0030-positioning-preview-guarantee.md." >&2
+      exit 1
+    fi
+    ;;
+esac
+
 # Scope: apps/web/** + any *.stories.* anywhere (Storybook stories live in
 # packages/shared and apps/web both)
 case "$file_path" in
