@@ -124,6 +124,28 @@ export const NotRunningOnPlus: Story<typeof RuleCard> = {
   render: (args: CardArgs) => frame(<RuleCard {...args} />),
 };
 
+/**
+ * D251/D58 — the same leftover-active state on an UNSUBSCRIBE rule.
+ * The in-flight clause is per-verb: no undo promise here, and the
+ * one-way boundary of a delivered request is named instead (five
+ * Codex rounds landed on this exact sentence — see MISTAKES.md
+ * 2026-08-04).
+ */
+export const NotRunningOnPlusUnsubscribe: Story<typeof RuleCard> = {
+  args: {
+    ...baseArgs,
+    canActivate: false,
+    rule: {
+      ...AUTO_UNSUBSCRIBE_NOISY,
+      mode: 'active',
+      observeWindowEndsAt: null,
+      observeWindowElapsed: false,
+      observeDigest: null,
+    },
+  },
+  render: (args: CardArgs) => frame(<RuleCard {...args} />),
+};
+
 /** Paused rule — amber pill + the Resume affordance. */
 export const Paused: Story<typeof RuleCard> = {
   args: {

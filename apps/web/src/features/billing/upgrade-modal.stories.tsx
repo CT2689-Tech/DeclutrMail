@@ -91,12 +91,18 @@ const meta: StoryMeta<typeof UpgradeModal> = {
 
 export default meta;
 
-/** Free workspace spent all 5 lifetime cleanup actions (D19). */
+/** Free workspace spent all 50 monthly cleanup actions (A3). */
 export const FreeCapSpent: Story<typeof UpgradeModal> = {
   render: (_args: ComponentProps<typeof UpgradeModal>) =>
     frame('free', {
       reason: 'free_cap',
-      details: { remaining: 0, limit: 5, used: 5, requiredUnits: 1, resetsAt: null },
+      details: {
+        remaining: 0,
+        limit: 50,
+        used: 50,
+        requiredUnits: 1,
+        resetsAt: '2026-09-01T00:00:00.000Z',
+      },
     }),
 };
 
@@ -105,7 +111,13 @@ export const FreeCapPartial: Story<typeof UpgradeModal> = {
   render: (_args: ComponentProps<typeof UpgradeModal>) =>
     frame('free', {
       reason: 'free_cap',
-      details: { remaining: 2, limit: 5, used: 3, requiredUnits: 4, resetsAt: null },
+      details: {
+        remaining: 2,
+        limit: 50,
+        used: 48,
+        requiredUnits: 4,
+        resetsAt: '2026-09-01T00:00:00.000Z',
+      },
     }),
 };
 

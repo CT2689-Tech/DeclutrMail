@@ -155,8 +155,8 @@ export class TriageReadService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
-    // Free-cap position for the stats block (D19 — 5 LIFETIME cleanup
-    // actions; replaces the old 25/day display counter). `@Optional()`
+    // Free-cap position for the stats block (A3 — 50 cleanup actions
+    // per month; replaces the old 25/day display counter). `@Optional()`
     // + fallback so the existing `new TriageReadService(db)` test
     // wiring keeps working (the service is stateless over the db).
     @Optional() entitlements?: EntitlementsService,

@@ -23,3 +23,18 @@ describe('product-story motion contract', () => {
     );
   });
 });
+
+describe('automation boundary figure — plan labels (D251)', () => {
+  const diagrams = readFileSync(
+    resolve(process.cwd(), 'src/features/marketing/product-story/diagrams.tsx'),
+    'utf8',
+  );
+
+  it('labels the Autopilot preset-rule column with both granting tiers', () => {
+    // Round-3 design gate failed on exactly this string reading "Pro"
+    // while preset rules (Observe + batch approval) start at Plus —
+    // only the switch to Active is Pro. Pin the corrected label.
+    expect(diagrams).toContain('Plus · Pro</span>');
+    expect(diagrams).not.toMatch(/dm-story-step-label">Pro</);
+  });
+});
