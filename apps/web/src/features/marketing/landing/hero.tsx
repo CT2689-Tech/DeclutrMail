@@ -151,9 +151,10 @@ function LedgerCard() {
 function TrustStrip() {
   return (
     <div className="dm-mkt-trust">
-      {/* Fixed light chip on purpose: the badge's designed light palette
-          must stay readable when the marketing surface flips dark — use
-          the marketing token, not a literal. */}
+      {/* The chip deliberately matches the marketing surface token.
+          `.dm-mkt` is color-scheme: light with no dark override today;
+          if a dark marketing theme ever lands, revisit so the badge's
+          designed light palette stays readable. */}
       <span style={{ background: 'var(--mkt-bg)', borderRadius: 8, display: 'inline-flex' }}>
         <PrivacyBadge variant="inline" />
       </span>

@@ -100,7 +100,7 @@ export function Ritual() {
   return (
     <section className="dm-mkt-section dm-mkt-shell">
       <p className="dm-mkt-eyebrow">№ 03 — The ritual</p>
-      <h2 className="dm-mkt-h2">Five verbs. See the scope before anything moves.</h2>
+      <h2 className="dm-mkt-h2">Five verbs. See the scope before manual moves.</h2>
       <p className="dm-mkt-lede">
         Every sender in your inbox gets one of five verdicts, each on a single key. A live preview
         shows the current count, an available sample, and the planned Gmail changes. The worker

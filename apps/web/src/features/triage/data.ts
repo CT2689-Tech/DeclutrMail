@@ -336,7 +336,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     totalAllTime: 306,
   },
 
-  // ── Keep · engagement-protected (>=70% read) ─────────────────────
+  // ── Keep · auto-protected (3+ replies, D245) ─────────────────────
   {
     id: 't-priya',
     senderId: 'sid-priya',
@@ -352,7 +352,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     signals: [
       'Read rate: 95% over the last 90 days',
       'Volume: 6 messages/month',
-      'Engagement-protected (read rate ≥ 70%) — destructive verbs hidden',
+      'Protected — you replied at least 3 times; destructive verbs hidden',
     ],
     protectionReason: 'replied',
     monthlyVolume: 6,

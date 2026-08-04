@@ -9,7 +9,8 @@ import { ImageResponse } from 'next/og';
  * route (marketing + legal) inherits it until a page overrides.
  */
 
-export const alt = 'DeclutrMail — Clear thousands of emails by sender, and see exactly what moves.';
+export const alt =
+  'DeclutrMail — Clear thousands of emails by sender — and see exactly what moves.';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 

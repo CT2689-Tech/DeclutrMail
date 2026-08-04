@@ -119,4 +119,20 @@ describe('InboxSimulatorScreen', () => {
       placement: 'demo',
     });
   });
+
+  it('renders the two honest-edge rows the full queue exists for', () => {
+    // The slice(0,7) → full-queue change is JUSTIFIED by these rows; a
+    // fixture reorder must not silently drop the demo's point.
+    render(<InboxSimulatorScreen />);
+
+    // Protected sender: present, and its protection is the D245
+    // replies signal — never a read-rate claim (§2.6 guardrail).
+    expect(screen.getByText('Priya Raman')).toBeInTheDocument();
+    expect(screen.queryByText(/read rate ≥ 70/i)).not.toBeInTheDocument();
+
+    // Unsubscribe-recommended sender with NO channel: present.
+    const noChannel = TRIAGE_QUEUE.find((row) => row.unsubscribeMethod === 'none');
+    expect(noChannel).toBeDefined();
+    expect(screen.getByText(noChannel!.senderName)).toBeInTheDocument();
+  });
 });

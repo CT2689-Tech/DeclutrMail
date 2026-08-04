@@ -800,22 +800,22 @@ const gmailNative: ComparisonDefinition = {
   verdict:
     "Gmail's built-in cleanup is free, already there, and requires no third-party access — start with it. DeclutrMail exists for what it leaves out: an exact count-and-sample preview before anything moves, a durable per-sender ledger with undo windows, and one decision workflow across every sender.",
   indexSummary:
-    'Gmail now ranks subscription senders natively; the difference is what you can verify before and after a move.',
+    'Gmail now lists subscription senders natively; the difference is what you can verify before and after a move.',
   primaryUnit: 'Sender (subscriptions) or search results',
   providerScope: 'Gmail and Google Workspace',
-  publicEntryPoint: 'Included with every Gmail account',
+  publicEntryPoint: 'Included with Gmail (Manage subscriptions is gradually rolling out)',
   chooseCompetitor: {
     headline: "Choose Gmail's built-in tools when they already cover you",
     points: [
       'You do not want to authorize any additional service against your mailbox.',
-      'Your cleanup is mostly unsubscribing from active subscription senders, which Manage subscriptions lists by volume.',
+      'Your cleanup is mostly unsubscribing from active subscription senders, which Manage subscriptions lists with recent-email counts.',
       'You are comfortable with select-all bulk actions and do not need a record of what moved.',
     ],
   },
   chooseDeclutrMail: {
     headline: 'Choose DeclutrMail to see and verify every move',
     points: [
-      'You want the exact current count and samples BEFORE a bulk move — Gmail select-all acts without showing precisely what will change.',
+      'You want the per-sender current count, samples, and the exact Gmail label changes before you confirm — Gmail shows a selection count, not the per-sender picture or the planned changes.',
       'You want a per-sender ledger of what happened, with an undo window for Archive, Later, and Delete.',
       'You want one ranked queue covering every sender — not only detected subscriptions — with Keep, Archive, Unsubscribe, Later, and Delete in one pass.',
     ],
@@ -827,7 +827,7 @@ const gmailNative: ComparisonDefinition = {
       competitor: {
         summary: 'Native lists and search actions',
         detail:
-          'Manage subscriptions lists active subscription senders by volume with unsubscribe; search plus select-all handles bulk moves.',
+          'Manage subscriptions lists active subscription senders with recent-email counts and unsubscribe; search plus select-all handles bulk moves.',
         state: 'native',
       },
     },
@@ -846,7 +846,7 @@ const gmailNative: ComparisonDefinition = {
       competitor: {
         summary: 'Search + select-all bulk actions',
         detail:
-          'Native search finds current matches and bulk actions move them; Gmail shows the match list, not a committed count-and-change preview.',
+          'Native search finds current matches, select-all shows the selected-conversation count, and bulk actions move them; there is no per-sender preview of the planned label changes.',
         state: 'native',
       },
     },
@@ -874,9 +874,9 @@ const gmailNative: ComparisonDefinition = {
       label: 'Preview and recovery',
       declutrMail: DECLUTR.recovery,
       competitor: {
-        summary: 'No committed preview; Trash only',
+        summary: 'Selection count and brief Undo; no journal',
         detail:
-          'Bulk moves show the selection, not an exact committed count; deletion recovery is the ~30-day Trash, with no separate action journal.',
+          'Bulk moves show the selected count and a brief Undo; archives stay recoverable in All Mail and deletes in ~30-day Trash. There is no durable per-action journal or multi-day undo window.',
         state: 'limited',
       },
     },
@@ -893,8 +893,9 @@ const gmailNative: ComparisonDefinition = {
       label: 'Public starting point',
       declutrMail: DECLUTR.price,
       competitor: {
-        summary: 'Included with every Gmail account',
-        detail: 'No separate subscription for the built-in tools.',
+        summary: 'Included with Gmail',
+        detail:
+          'No separate purchase; Google notes Manage subscriptions is gradually rolling out and may not be available to every account yet.',
         state: 'native',
       },
     },
@@ -913,7 +914,12 @@ const gmailNative: ComparisonDefinition = {
     {
       label: 'Gmail Help — delete or recover deleted Gmail messages',
       url: 'https://support.google.com/mail/answer/7401?hl=en',
-      note: 'Trash retention (~30 days) as the native recovery path.',
+      note: 'Selected-conversation counts on bulk actions; Trash retention (~30 days).',
+    },
+    {
+      label: 'Gmail Help — manage your subscriptions in Gmail',
+      url: 'https://support.google.com/mail/answer/15621070?hl=en',
+      note: 'Manage subscriptions: recent-email counts, unsubscribe, gradual rollout note.',
     },
   ],
 };

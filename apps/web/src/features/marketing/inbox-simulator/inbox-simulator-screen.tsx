@@ -235,7 +235,7 @@ export function InboxSimulatorScreen() {
           <span>
             Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month;
             paid plans are unlimited. Plus adds the Screener and rules you approve per batch; Pro
-            lets approved rules run unattended.
+            lets a rule you activate run on its own.
           </span>
           <a href="/pricing">Compare plans</a>
         </aside>
@@ -263,8 +263,8 @@ export function InboxSimulatorScreen() {
               </p>
               <p>
                 From here the plans change who does the finding: on Plus, the Screener collects new
-                senders and rules queue matching mail for your batch approval; on Pro, approved
-                rules run on their own.
+                senders (their mail still arrives) and rules queue matching mail for your batch
+                approval; on Pro, a rule you activate runs on its own.
               </p>
               <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
                 Run this on your Gmail →
