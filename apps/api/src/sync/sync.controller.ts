@@ -14,6 +14,7 @@ import {
   type SyncStatus,
 } from '@declutrmail/shared/contracts';
 
+import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
@@ -112,6 +113,10 @@ export class SyncController {
    * an error (guard-4xx-as-designed-state, §8) — a user whose sync
    * recovered between render and click must not see a failure.
    */
+  // Security sweep 2026-08-04: the only two mutating routes in the app
+  // without CsrfGuard. SameSite=Lax already blocks cross-site POST
+  // cookie-riding in modern browsers; this closes the inconsistency.
+  @UseGuards(CsrfGuard)
   @RateLimit({ bucket: 'gmail-action', limit: 3, windowSec: 60 })
   @Post('initial/retry')
   @HttpCode(202)
@@ -121,6 +126,7 @@ export class SyncController {
     return ok({ outcome: await this.sync.retryFailedInitialSync(mailbox.id) });
   }
 
+  @UseGuards(CsrfGuard)
   @RateLimit({ bucket: 'gmail-action', limit: 6, windowSec: 60 })
   @Post('incremental')
   @HttpCode(202)
