@@ -56,7 +56,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'future-mail',
     question: 'Does archiving a sender automatically archive future messages?',
     answer:
-      'No. Manual Archive acts on the current matching inbox messages. For exact future routing, create a Gmail filter. DeclutrMail Pro also has preset Autopilot rules; those begin in Observe and must be separately activated after review.',
+      'No. Manual Archive acts on the current matching inbox messages. For exact future routing, create a Gmail filter. DeclutrMail also has preset Autopilot rules on Plus and Pro; those begin in Observe and collect matches for your approval, and only on Pro can a rule be switched to act on future matches by itself.',
     link: {
       href: '/how-to/auto-archive-future-emails-in-gmail',
       label: 'Compare filters and Autopilot',

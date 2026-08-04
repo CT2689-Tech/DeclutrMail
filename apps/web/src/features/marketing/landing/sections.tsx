@@ -71,8 +71,9 @@ export function HowItWorks() {
           <div className="dm-mkt-step-no">STEP 3</div>
           <h3 className="dm-mkt-step-title">Done</h3>
           <p className="dm-mkt-step-body">
-            On Pro, Autopilot applies preset rules you explicitly enable to future matches. Manual
-            decisions stay in the activity ledger, with undo for label-changing actions.
+            Autopilot preset rules find matching mail for your batch approval on Plus; on Pro an
+            explicitly activated rule applies future matches on its own. Manual decisions stay in
+            the activity ledger, with undo for label-changing actions.
           </p>
         </div>
       </div>
@@ -140,9 +141,10 @@ export function PrivacyDesk() {
               </li>
               <li>
                 Manual mail-moving actions are previewed before they run and journaled after.
-                Enabled Pro Autopilot rules apply future matches without per-message approval and
-                are journaled after execution. Delivered unsubscribe requests are one-way and are
-                called out as such before approval.
+                Autopilot rules collect matches for batch approval on Plus; on Pro an explicitly
+                activated rule applies future matches without per-batch approval, journaled after
+                execution. Delivered unsubscribe requests are one-way and are called out as such
+                before approval.
               </li>
               <li>
                 Disconnect any time. Deleting your account schedules permanent deletion of the
