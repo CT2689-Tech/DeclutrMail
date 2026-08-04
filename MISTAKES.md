@@ -1570,3 +1570,31 @@ it is wrong regardless of how faithfully it restores prior state.
 **Enforcement update:** none yet — candidate roundtrip-test assertion:
 rollback files may not UPDATE rows into states the workers treat as
 executable (`resolution='approved' AND intent_applied=false`).
+
+## 2026-08-04 — One downgrade sentence, three false absolutes in a row
+
+**PR:** #465
+**Caught by:** Codex stop-time review, three consecutive rounds on the
+same rule-card string
+**What happened:** the Plus-facing explanation for a leftover Active
+rule shipped three absolutes in sequence, each replacing the last:
+(1) "its collected matches keep waiting for your approval" — false,
+the demotion dismisses them; (2) "matches …are cleared" — false, a
+match already mid-action completes instead; (3) "finishes, with its
+normal undo" — false for an Unsubscribe rule, whose delivered request
+is one-way (D58). Every fix answered the previous objection with a
+new unqualified claim instead of asking what holds for EVERY verb and
+EVERY match state the sentence covers.
+**Correct approach:** copy describing automated mail movement is a
+claim over a state space (verb × match lifecycle). Enumerate it before
+writing: unapplied/dismissed, in-flight, applied — and per verb, since
+unsubscribe is one-way while label verbs undo. The final copy branches
+on `rule.actionKind` and states only per-branch facts, with a test
+driving both branches.
+**Rule:** never ship an absolute ("all", "cleared", "keeps", "with
+undo") in automation copy without walking the verb × lifecycle matrix;
+any undo claim adjacent to unsubscribe must name the one-way boundary
+in the same breath (the ACTION_SAFETY_SUMMARY discipline applies to
+per-rule strings too).
+**Enforcement update:** screen test now pins the per-verb branches and
+rejects the three failed absolutes.
