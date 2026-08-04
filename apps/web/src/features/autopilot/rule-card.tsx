@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNow } from '@/lib/use-now';
 import { Button, Pill, tokens } from '@declutrmail/shared';
+import { TIER_MANIFEST, minimumTierForCapability } from '@declutrmail/shared/entitlements';
 import type { AutopilotActionKind, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { observeDigestSummary } from './observe-digest';
 import { presetDisplayName } from './preset-labels';
@@ -10,6 +11,9 @@ import { RulePreviewPanel } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
 const { color, font } = tokens;
+
+/** The plan granting unattended action — derived, never hardcoded. */
+const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')].name;
 
 /**
  * One preset rule in the D101 rules-management list.
@@ -225,7 +229,7 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
   }
   if (rule.mode === 'active') {
     if (!canActivate) {
-      return 'Set to run on its own, which is part of Pro — on your current plan this rule is not checking new mail. Switch it to Observe to keep collecting matches for your approval.';
+      return `Set to run on its own, which is part of ${ACT_PLAN_NAME} — on your current plan this rule is not checking new mail. It switches back to Observe automatically, and its collected matches keep waiting for your approval.`;
     }
     return 'Active — future matches run automatically. Results and available recovery appear in Activity.';
   }

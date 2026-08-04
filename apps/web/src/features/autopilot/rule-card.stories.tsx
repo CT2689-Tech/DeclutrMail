@@ -102,6 +102,28 @@ export const Active: Story<typeof RuleCard> = {
   render: (args: CardArgs) => frame(<RuleCard {...args} />),
 };
 
+/**
+ * D251 — a leftover `active` rule on a plan without `autopilot-active`
+ * (the Pro→Plus downgrade window before the demotion converges it).
+ * Amber "Not running" pill, never a green Active asserting automation
+ * that is not happening; the explanation names the plan and states the
+ * rule returns to Observe on its own.
+ */
+export const NotRunningOnPlus: Story<typeof RuleCard> = {
+  args: {
+    ...baseArgs,
+    canActivate: false,
+    rule: {
+      ...AUTO_ARCHIVE_LOW_ENGAGEMENT,
+      mode: 'active',
+      observeWindowEndsAt: null,
+      observeWindowElapsed: false,
+      observeDigest: null,
+    },
+  },
+  render: (args: CardArgs) => frame(<RuleCard {...args} />),
+};
+
 /** Paused rule — amber pill + the Resume affordance. */
 export const Paused: Story<typeof RuleCard> = {
   args: {

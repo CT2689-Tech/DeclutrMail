@@ -4,8 +4,9 @@
 //
 // Soft-quarantine review surface for first-time senders (D72 — Gmail
 // untouched until the user decides). "Screener" is the product noun
-// (D227-allowed); the verbs are the canonical K/A/U/L/D set. Pro-only
-// per D77: under-tier workspaces see the upgrade surface and never
+// (D227-allowed); the verbs are the canonical K/A/U/L/D set. Granted
+// from Plus per D251 (reversing D77's Pro-only): under-tier (Free)
+// workspaces see the upgrade surface and never
 // fire a Screener query (the BE 402s them regardless — defense in
 // depth).
 

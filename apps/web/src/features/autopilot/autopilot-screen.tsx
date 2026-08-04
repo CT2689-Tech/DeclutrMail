@@ -21,7 +21,18 @@ import type {
 } from '@/lib/api/autopilot';
 import { ContextualHelp } from '@/features/help/contextual-help';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
-import { hasCapability } from '@declutrmail/shared/entitlements';
+import {
+  TIER_MANIFEST,
+  hasCapability,
+  minimumTierForCapability,
+} from '@declutrmail/shared/entitlements';
+
+/**
+ * The plan that grants unattended action, derived so a ladder move
+ * rewrites every mention at once (design-gate 2026-08-04 — four
+ * hardcoded "Pro" strings sat beside a banner that already derived it).
+ */
+const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')].name;
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
 import { useApproveMatches } from './api/use-approve-matches';
 import { useAutopilotRules } from './api/use-autopilot-rules';
@@ -626,7 +637,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         body={
           canActivate
             ? 'Observe and Active are set per rule. Observe records matches as suggestions and changes no mail until you approve one. Active applies future matches automatically; every result is recorded in Activity. Pause all stops every rule across every inbox at once.'
-            : 'Rules run in Observe: they record matches as suggestions and change no mail until you approve a batch. Letting a rule act on future matches without asking each time is part of Pro. Pause all stops every rule across every inbox at once.'
+            : `Rules run in Observe: they record matches as suggestions and change no mail until you approve a batch. Letting a rule act on future matches without asking each time is part of ${ACT_PLAN_NAME}. Pause all stops every rule across every inbox at once.`
         }
         tip="Custom rule creation is not available on your account. Only the launch preset rules can be enabled."
       />
@@ -646,7 +657,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
           <>
             Observe records matches as suggestions and changes no Gmail mail until you approve them.
             Suggestions stay pending until you approve or skip each batch. Rules that apply future
-            matches automatically — Active mode — are part of Pro.
+            matches automatically — Active mode — are part of {ACT_PLAN_NAME}.
           </>
         )}
       </ContextualHelp>

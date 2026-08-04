@@ -212,7 +212,7 @@ export function InboxSimulatorScreen() {
   return (
     <div className="dm-simulator">
       <section className="dm-simulator-hero">
-        <Eyebrow tone="primary">Interactive demo · Plus/Pro Triage</Eyebrow>
+        <Eyebrow tone="primary">Interactive demo · Real Triage components</Eyebrow>
         <h1>Try the sender review before you connect Gmail.</h1>
         <p>
           This walkthrough uses the production Triage row, recommendation, action, and preview

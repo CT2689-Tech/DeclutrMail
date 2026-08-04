@@ -48,7 +48,7 @@ const meta: StoryMeta<typeof ScreenerScreen> = {
     docs: {
       description: {
         component:
-          'Screener — the soft-quarantine review queue for first-time senders (D72: DB flag only; Gmail untouched until the user decides). Rows are the D73 accordion; decisions are the canonical K/A/U/L/D verbs (D227 — the verb "Screen" never appears in copy); every destructive decision shows the D226 preview before mutation. Pro-only per D77.',
+          'Screener — the soft-quarantine review queue for first-time senders (D72: DB flag only; Gmail untouched until the user decides). Rows are the D73 accordion; decisions are the canonical K/A/U/L/D verbs (D227 — the verb "Screen" never appears in copy); every destructive decision shows the D226 preview before mutation. Granted from Plus per D251 (reversing D77).',
       },
     },
   },

@@ -427,7 +427,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       {
         href: '/pricing',
         label: 'Autopilot plan details',
-        description: 'See the current Pro capabilities.',
+        description: 'See the current plan capabilities.',
       },
     ],
   },
@@ -674,7 +674,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'bulk',
         title: 'Use bulk unsubscribe as a review queue, not a blind sweep',
         paragraphs: [
-          'Paid DeclutrMail plans support multi-sender cleanup. Each sender still has its own method and outcome: one-click requests queue separately, mailto requests stay in a visible Gmail-draft checklist until you send them, and senders without a published channel are excluded so Archive can be chosen instead.',
+          'Multi-sender cleanup works on every plan (Free counts it against the monthly quota). Each sender still has its own method and outcome: one-click requests queue separately, mailto requests stay in a visible Gmail-draft checklist until you send them, and senders without a published channel are excluded so Archive can be chosen instead.',
           'Start with a small batch of obvious lists. Verify outcomes before selecting hundreds. Bulk speed is useful only when per-sender failures and one-way effects remain visible.',
         ],
       },

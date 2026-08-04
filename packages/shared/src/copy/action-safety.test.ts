@@ -20,7 +20,7 @@ describe('canonical public product-truth copy', () => {
 
   it('separates manual message actions from future automation', () => {
     expect(MANUAL_ACTION_SCOPE_CLAIM).toContain('do not create future-mail rules');
-    expect(MANUAL_ACTION_SCOPE_CLAIM).toContain('Pro Autopilot');
+    expect(MANUAL_ACTION_SCOPE_CLAIM).toContain('unattended once switched to Active on Pro');
   });
 
   it('describes the count-and-sample preview without promising a frozen full set', () => {

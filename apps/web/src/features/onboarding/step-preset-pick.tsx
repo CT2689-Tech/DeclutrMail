@@ -249,12 +249,12 @@ export function StepPresetPick({
 }
 
 /**
- * Step 4 for tiers without the Pro Autopilot capability.
+ * Step 4 for tiers without the Autopilot capability (Free, after D251).
  *
  * Persisting an explicit empty pick advances the same server-owned
- * onboarding machine as the Pro picker, but this component deliberately
- * never mounts the Autopilot rules query. Free and Plus users reach their
- * first real sender review before being introduced to automation.
+ * onboarding machine as the preset picker, but this component
+ * deliberately never mounts the Autopilot rules query. Free users reach
+ * their first real sender review before being introduced to automation.
  */
 export function StepFirstSenderReview({
   initialGoal = null,

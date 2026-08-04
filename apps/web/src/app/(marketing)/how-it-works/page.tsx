@@ -16,7 +16,7 @@ import {
 export const metadata: Metadata = marketingPageMetadata({
   title: 'How DeclutrMail works with Gmail — DeclutrMail',
   description:
-    'See how DeclutrMail groups Gmail metadata by sender, previews manual mailbox changes, and keeps one-time cleanup separate from activated Pro Autopilot rules.',
+    'See how DeclutrMail groups Gmail metadata by sender, previews manual mailbox changes, and keeps one-time cleanup separate from Autopilot rules you deliberately enable.',
   path: '/how-it-works',
 });
 
@@ -25,7 +25,7 @@ export default function HowItWorksPage() {
     <ProductStoryShell
       eyebrow="How it works"
       title="A sender-control layer for Gmail."
-      lede="Gmail remains where you read, reply, compose, and search. DeclutrMail groups allowlisted Gmail metadata by sender and helps you make a smaller set of decisions. Manual cleanup changes only the preview you confirm; activated Pro rules are a separate future-mail path."
+      lede="Gmail remains where you read, reply, compose, and search. DeclutrMail groups allowlisted Gmail metadata by sender and helps you make a smaller set of decisions. Manual cleanup changes only the preview you confirm; activated Autopilot rules are a separate future-mail path."
     >
       <StorySection
         id="gmail-stays-home"
@@ -68,8 +68,8 @@ export default function HowItWorksPage() {
           <p>
             After Gmail is connected, a one-time metadata scan builds the sender index. DeclutrMail
             reports the current sync stage and progress; duration varies with mailbox size and
-            Gmail&rsquo;s rate limits. Every plan can review the ranked Senders view; Plus and Pro
-            also turn it into a focused Triage queue.
+            Gmail&rsquo;s rate limits. Every plan reviews the ranked Senders view and the focused
+            Triage queue.
           </p>
         }
         tone="ink"
@@ -83,10 +83,10 @@ export default function HowItWorksPage() {
         title="The verbs, in Gmail terms."
         intro={
           <p>
-            On Plus and Pro, Daily Triage uses four choices: Keep, Archive, Unsubscribe, and Later.
-            Every plan can use the same cleanup verbs from Senders; Delete remains available from
-            Senders and Sender Detail. Keep is not Protect: Keep records a decision; Protect is a
-            separate shield against destructive and bulk actions.
+            Daily Triage uses four choices: Keep, Archive, Unsubscribe, and Later. Every plan can
+            use the same cleanup verbs from Senders; Delete remains available from Senders and
+            Sender Detail. Keep is not Protect: Keep records a decision; Protect is a separate
+            shield against destructive and bulk actions.
           </p>
         }
       >
@@ -117,8 +117,9 @@ export default function HowItWorksPage() {
         intro={
           <p>
             A manual Archive, Later, or Delete applies to the current messages named in its preview.
-            It does not quietly decide what happens to future mail. Future automation is a separate
-            Pro feature with its own controls.
+            It does not quietly decide what happens to future mail. Future automation is separate
+            Autopilot rules with their own controls — rules find matches from Plus, and acting
+            without per-batch approval is Pro.
           </p>
         }
       >

@@ -50,6 +50,8 @@ export function AutopilotObservePreview() {
   const grantingTier = minimumTierForCapability('autopilot');
   const grantingPlan = grantingTier === 'pro' ? ('pro' as const) : ('plus' as const);
   const grantingName = TIER_MANIFEST[grantingTier].name;
+  // The plan granting unattended action — derived, never hardcoded.
+  const actName = TIER_MANIFEST[minimumTierForCapability('autopilot-active')].name;
   const monthly = TIER_MANIFEST[grantingTier].prices.monthly;
   // Was a hardcoded `$` template — an India-bound user read "$19/mo"
   // here and was charged ₹1,599 at the checkout this nudge leads to.
@@ -202,7 +204,7 @@ export function AutopilotObservePreview() {
             Rule matching and batch approval are part of {grantingName}.
           </strong>
           <span style={{ color: color.fgMuted, fontSize: 12.5 }}>
-            Letting rules act without per-batch approval is Pro. Custom rule creation remains
+            Letting rules act without per-batch approval is {actName}. Custom rule creation remains
             unavailable; the launch surface uses preset rules only.
           </span>
         </div>

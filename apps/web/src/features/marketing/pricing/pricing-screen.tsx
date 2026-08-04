@@ -91,9 +91,10 @@ export function PricingScreen() {
             color: color.fgSoft,
           }}
         >
-          Free shows you what’s noisy. Plus adds unlimited manual actions. Pro adds explicit
-          Autopilot rules for recurring mail. Keep, Archive, Unsubscribe, Later, and Delete keep the
-          same meaning on every plan. {ACTION_SAFETY_SUMMARY}
+          Free is the full manual cleanup toolkit with a monthly cap. Plus removes the cap and adds
+          the Screener plus Autopilot rules you approve batch by batch. Pro lets those rules run
+          unattended and adds Brief, Quiet hours, and Follow-ups. Keep, Archive, Unsubscribe, Later,
+          and Delete keep the same meaning on every plan. {ACTION_SAFETY_SUMMARY}
         </p>
       </header>
 

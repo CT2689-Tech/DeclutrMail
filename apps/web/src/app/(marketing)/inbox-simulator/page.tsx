@@ -8,7 +8,7 @@ import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Interactive inbox simulator — DeclutrMail',
   description:
-    'Try DeclutrMail’s Plus/Pro Triage row and action-preview flow on a synthetic inbox. Free uses the same cleanup verbs in Senders. No signup or Gmail access.',
+    'Try DeclutrMail’s Triage row and action-preview flow on a synthetic inbox — the same components every plan uses. No signup or Gmail access.',
   path: '/inbox-simulator',
 });
 

@@ -15,7 +15,7 @@ describe('/how-it-works', () => {
     expect(copy).toContain('companion to Gmail, not a replacement email client');
     expect(copy).toContain('Recent subject links return to Gmail');
     expect(copy).toContain('Manual cleanup changes only the preview you confirm');
-    expect(copy).toContain('activated Pro rules are a separate future-mail path');
+    expect(copy).toContain('activated Autopilot rules are a separate future-mail path');
   });
 
   it('maps every action to honest current-mail and future-mail semantics', () => {
