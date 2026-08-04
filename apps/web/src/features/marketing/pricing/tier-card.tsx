@@ -121,7 +121,9 @@ export function TierCard({
             fontWeight: 700,
             letterSpacing: '0.04em',
             textTransform: 'uppercase',
-            color: '#FFFFFF',
+            // fgInverse, not a literal: primary is a deep teal on light
+            // and a bright teal on dark, so the readable lettering flips.
+            color: color.fgInverse,
             background: color.primary,
             borderRadius: radius.pill,
           }}
@@ -240,7 +242,7 @@ export function TierCard({
           fontFamily: font.sans,
           fontSize: 14,
           fontWeight: 600,
-          color: highlighted ? '#FFFFFF' : color.fg,
+          color: highlighted ? color.fgInverse : color.fg,
           background: busy ? color.fgMuted : highlighted ? color.primary : color.card,
           border: `1px solid ${highlighted ? color.primary : color.border}`,
           borderRadius: radius.md,

@@ -96,7 +96,10 @@ export function WaitlistForm({ tierInterest, source }: { tierInterest: TierId; s
           fontFamily: font.sans,
           fontSize: 13,
           fontWeight: 600,
-          color: '#FFFFFF',
+          // Sits on color.fg, which inverts with the theme — a literal
+          // white here renders white-on-white once the public pages
+          // follow the dark preference.
+          color: color.fgInverse,
           background: status === 'submitting' ? color.fgMuted : color.fg,
           border: `1px solid ${status === 'submitting' ? color.fgMuted : color.fg}`,
           borderRadius: radius.sm,

@@ -1,4 +1,5 @@
-/* Product-story pages: shared, light-pinned marketing dialect. */
+/* Product-story pages: shared marketing dialect, built entirely on the
+   --dm-* app tokens, so it follows the resolved theme. */
 
 .dm-story {
   background: var(--dm-bg);
@@ -94,7 +95,9 @@
 
 .dm-story-badge-paper {
   border-radius: 14px;
-  background: #fafaf7;
+  /* Backs a themed <PrivacyBadge>, so it has to re-resolve with the
+     theme — a fixed light paper would seam against the badge in dark. */
+  background: var(--dm-bg);
   box-shadow: var(--dm-shadow-lift);
 }
 
@@ -108,9 +111,29 @@
   background: var(--dm-paper);
 }
 
+/* The "ink" slab is a dark full-bleed band on light paper. `--dm-fg` gave
+   that for free in light, but it INVERTS to near-white on dark — which
+   both blows out the band and strands the mint eyebrow and inverse-soft
+   intro that are tuned for a dark ground. On dark it therefore steps one
+   shade DARKER than the page instead, exactly as `--mkt-desk` does on the
+   landing page, so the band still reads as a distinct slab. */
 .dm-story-section-ink {
   background: var(--dm-fg);
   color: var(--dm-bg);
+}
+
+[data-theme='dark'] .dm-story-section-ink {
+  background: #080a0a;
+  color: var(--dm-fg);
+}
+
+/* The slab stays dark on dark, so its prose reverts to the normal soft
+   foreground — `--dm-fg-inverse-soft` is dark-on-dark here. The mint
+   eyebrow and callout rule need no override: mint is bright in both
+   themes and was always tuned for this dark ground. */
+[data-theme='dark'] .dm-story-section-ink .dm-story-section-intro,
+[data-theme='dark'] .dm-story-section-ink .dm-story-callout {
+  color: var(--dm-fg-soft);
 }
 
 .dm-story-section h2,

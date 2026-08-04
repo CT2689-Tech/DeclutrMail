@@ -175,7 +175,16 @@ function FoundingProBanner() {
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         <strong
-          style={{ fontFamily: font.display, fontSize: 16, fontWeight: 650, color: color.mint }}
+          // fgInverse tracks the panel: primaryDeep is the hover-brighten
+          // step, so this surface is dark teal on light and BRIGHT teal on
+          // dark. Mint lettering only ever worked against the light-theme
+          // version of it.
+          style={{
+            fontFamily: font.display,
+            fontSize: 16,
+            fontWeight: 650,
+            color: color.fgInverse,
+          }}
         >
           {promo.name} — {formatMoney(promo.annual, promoCurrency)}/yr for the first{' '}
           {promo.maxRedemptions} subscriptions
@@ -209,8 +218,11 @@ function FoundingProBanner() {
           fontFamily: font.sans,
           fontSize: 13.5,
           fontWeight: 700,
+          // Both halves must flip with the panel. mint is bright in BOTH
+          // themes, so mint-on-panel loses all contrast once the panel
+          // brightens; fgInverse/primaryDeep stay anti-correlated.
           color: color.primaryDeep,
-          background: busy ? color.fgInverseMuted : color.mint,
+          background: busy ? color.fgInverseMuted : color.fgInverse,
           border: 'none',
           borderRadius: radius.md,
           cursor: busy ? 'wait' : 'pointer',
@@ -260,7 +272,7 @@ function IntervalToggle({
               fontFamily: font.sans,
               fontSize: 13,
               fontWeight: 600,
-              color: active ? '#FFFFFF' : color.fgSoft,
+              color: active ? color.fgInverse : color.fgSoft,
               background: active ? color.fg : 'transparent',
               border: 'none',
               borderRadius: radius.pill,
