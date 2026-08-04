@@ -124,19 +124,20 @@ case "$file_path" in
     flat=$(sed -E 's@(^|[^:])//.*$@\1@' "$file_path" |
       tr '\n' ' ' | tr -s '[:space:]' ' ' |
       sed -E 's@/\*[^*]*\*+([^/*][^*]*\*+)*/@ @g' |
-      sed -E "s/['\"] *\+ *['\"]//g")
+      sed -E "s/['\"] *\+ *['\"]//g" |
+      sed -E 's/[Ss]oft[- ][Qq]uarantin[a-z]*/SANCTIONEDTERM/g')
 
     # check <label> <extended-regex> [exclude-regex]
     # Reports the matched phrases themselves. Line numbers are
     # deliberately omitted: after normalisation a match may span several
     # lines, and pointing at one of them would be misleading.
     check() {
-      local label="$1" pattern="$2" exclude="${3:-}" hits
+      local label="$1" pattern="$2" exclude="${3:-}" nocase="${4:-i}" hits
       # `|| true` is load-bearing: `set -e` is on, and grep exits 1 when it
       # finds nothing, which is the NORMAL case here. Without it a clean
       # file kills the hook mid-run — exit 1 with no message, so every
       # edit looks blocked and no rule ever gets to report.
-      hits=$(printf '%s' "$flat" | grep -oEi "$pattern" 2>/dev/null | sort -u || true)
+      hits=$(printf '%s' "$flat" | grep -oE${nocase} "$pattern" 2>/dev/null | sort -u || true)
       if [ -n "$exclude" ] && [ -n "$hits" ]; then
         hits=$(printf '%s\n' "$hits" | grep -Eiv "$exclude" || true)
       fi
@@ -198,24 +199,25 @@ case "$file_path" in
     # reads as a violation:
     #
     #   1. The window cannot cross prose or code structure. Sentence enders
-    #      and JS/JSX punctuation (; { } < > = and quote marks) end the run,
-    #      so a claim has to sit inside ONE sentence. Commas and hyphens are
-    #      deliberately allowed through — "the Screener, which blocks…" is
-    #      still the same claim.
-    #   2. The verbs are a closed, fully word-bounded list rather than a stem
-    #      plus [a-z]*. Matching is case-insensitive, so a trailing [a-z]*
-    #      happily eats the tail of `preventDoubleSubmit` and then finds its
-    #      word boundary at the end of the identifier. An explicit list makes
-    #      the boundary land right after the verb, where camelCase fails it.
-    t3_verb="(block|blocks|blocked|blocking|prevent|prevents|prevented|preventing|intercept|intercepts|intercepted|intercepting|quarantine|quarantines|quarantined|keep out|keeps out|kept out)"
+    #      and JS/JSX punctuation end the run, so a claim has to sit inside
+    #      ONE sentence. Commas and hyphens pass — "the Screener, which
+    #      blocks…" is still the same claim. Straight quotes bound too: in
+    #      this codebase they are string delimiters, since prose uses
+    #      typographic apostrophes (which deliberately do NOT bound, so
+    #      "the Screener’s job is to block…" is still caught).
+    #
+    #   2. This check alone runs CASE-SENSITIVELY. The verbs keep their
+    #      open `[a-z]*` tail — dropping it to a closed list lost
+    #      `quarantining`, `keeping out`, `blockage` and `prevention` —
+    #      and case-sensitivity is what stops that tail from swallowing
+    #      camelCase: `[a-z]*` cannot eat the `D` of `preventDoubleSubmit`,
+    #      so no word boundary is ever found. Under -i it ate the whole
+    #      identifier and matched.
+    t3_verb="([Bb]lock[a-z]*|[Pp]revent[a-z]*|[Ii]ntercept[a-z]*|[Qq]uarantin[a-z]*|[Kk]eep[a-z]* out|[Kk]ept out)"
     t3_gap="[^.!?;{}<>=\"'\`]{0,80}"
-    # "soft quarantine" is the SANCTIONED internal term — T3 is literally
-    # phrased "Screener is soft quarantine". The ban is on telling users
-    # mail gets held back, not on naming the mechanism in a Storybook
-    # description or a type doc, so the qualified form is exempt.
     check "Screener framed as blocking (T3/D194 — mail still arrives in Gmail)" \
-      "screener${t3_gap}\b${t3_verb}\b|\b${t3_verb}\b${t3_gap}screener" \
-      "soft[- ]quarantin"
+      "[Ss]creener${t3_gap}\b${t3_verb}\b|\b${t3_verb}\b${t3_gap}[Ss]creener" \
+      "" ""
 
     if [ "$truth_violations" -gt 0 ]; then
       echo "" >&2
