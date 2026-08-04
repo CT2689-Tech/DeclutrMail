@@ -118,17 +118,27 @@ case "$file_path" in
     # intact.
     #
     # Then one logical line: newlines and runs of whitespace become single
-    # spaces, so wrapped phrases read as continuous prose. Finally JS
-    # string concatenation (`'clean up ' + 'your inbox'`) is joined, which
-    # splits a phrase without any newline involved.
+    # spaces, so wrapped phrases read as continuous prose. JS string
+    # concatenation (`'clean up ' + 'your inbox'`) is joined, which splits
+    # a phrase without any newline involved.
+    #
+    # Markup is then normalised for the one rule with a proximity window.
+    # Only a CLOSED list of block-level elements becomes a sentence break;
+    # everything else — including every capitalised React component — is
+    # stripped as mid-sentence formatting. Listing inline tags instead was
+    # the wrong way round: the inline set is open (`<Link>`, `<Text>`,
+    # `<Pill>`, any component a feature invents), so anything unlisted fell
+    # through to the block rule and silently became a full stop, hiding
+    # `The Screener <Link>blocks</Link> new senders`. The block set is the
+    # small, closed one, so it is the one worth enumerating.
     flat=$(sed -E 's@(^|[^:])//.*$@\1@' "$file_path" |
       tr '\n' ' ' | tr -s '[:space:]' ' ' |
       sed -E 's@/\*[^*]*\*+([^/*][^*]*\*+)*/@ @g' |
       sed -E "s/['\"] *\+ *['\"]//g" |
       sed -E 's/[Ss]oft[- ][Qq]uarantin[a-z]*/SANCTIONEDTERM/g' |
-      sed -E 's@</?(strong|em|b|i|u|span|a|code|small|sup|sub|mark|abbr)( [^>]*)?>@@g' |
       sed -E 's@\$?\{[^{}]*\}@@g' |
-      sed -E 's@</?[A-Za-z][^>]*>@ . @g')
+      sed -E 's@</?(p|div|section|article|aside|header|footer|main|nav|h[1-6]|ul|ol|li|table|thead|tbody|tfoot|tr|td|th|blockquote|figure|figcaption|form|fieldset|legend|dl|dt|dd|pre|hr)( [^>]*)?/?>@ . @g' |
+      sed -E 's@</?[A-Za-z][A-Za-z0-9.]*( [^>]*)?/?>@@g')
 
     # check <label> <extended-regex> [exclude-regex]
     # Reports the matched phrases themselves. Line numbers are
