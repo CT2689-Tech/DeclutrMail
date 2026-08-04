@@ -80,6 +80,8 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { AUTHED_APP_PATHS } from './app/robots';
+
 /** Origin of a URL-ish env var, or null when unset/garbage. */
 function originOf(url: string | undefined): string | null {
   if (!url) return null;
@@ -245,6 +247,15 @@ export function middleware(request: NextRequest): NextResponse {
   response.headers.set(headerName, csp);
   for (const [name, value] of STATIC_SECURITY_HEADERS) {
     response.headers.set(name, value);
+  }
+  // Authed app routes must never be indexed (SEO sweep 2026-08-04).
+  // robots.txt Disallow prevents crawling but NOT reference-indexing —
+  // an externally linked /triage could still surface in SERPs as a
+  // bare "indexed, though blocked" entry. Same path list as robots.ts,
+  // one source of truth.
+  const { pathname } = request.nextUrl;
+  if (AUTHED_APP_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow');
   }
   return response;
 }

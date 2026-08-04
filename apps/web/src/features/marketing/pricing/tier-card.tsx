@@ -126,7 +126,9 @@ export function TierCard({
             borderRadius: radius.pill,
           }}
         >
-          Most popular
+          {/* An OPINION label on purpose — never an empirical claim
+              ("Most popular" was false at zero customers). */}
+          Recommended
         </span>
       ) : null}
 

@@ -157,7 +157,9 @@ describe('onboarding page — pre-auth boundary (D107/D108)', () => {
     installFetchStub([me401]);
     renderPage();
 
-    expect(await screen.findByText('Control Gmail by sender, not by email.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Clear thousands of emails by sender — and see exactly what moves.'),
+    ).toBeInTheDocument();
     expect(screen.getByText('Full bodies fetched: 0')).toBeInTheDocument();
     // The banned pre-D228 phrasing must not exist anywhere on step 1.
     expect(screen.queryByText(/Bodies read: 0/)).not.toBeInTheDocument();

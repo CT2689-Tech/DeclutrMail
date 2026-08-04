@@ -19,7 +19,13 @@ import { VERB_ORDER, type ActionVerb } from '@/features/triage/types';
 import { oauthStartUrl } from '@/features/marketing/landing/urls';
 import { track } from '@/lib/posthog';
 
-const DEMO_ROWS = TRIAGE_QUEUE.slice(0, 7);
+// The FULL fixture queue on purpose (was slice(0,7)): the last two
+// rows are the demo's most instructive states — an engagement-protected
+// sender (destructive verbs hidden with the reason shown) and an
+// Unsubscribe recommendation with NO unsubscribe channel (disabled verb
+// with an honest explanation). Trust is the product; show the honest
+// edges, not just the happy path.
+const DEMO_ROWS = TRIAGE_QUEUE;
 const DEMO_ROW_BY_ID = new Map(DEMO_ROWS.map((row) => [row.id, row] as const));
 const DEMO_VERBS: ReadonlySet<string> = new Set(VERB_ORDER);
 const DEMO_DECISION_KEYS = new Set(['rowId', 'verb', 'senderName', 'affectedCount', 'at']);
@@ -228,7 +234,8 @@ export function InboxSimulatorScreen() {
           <strong>Triage is included on every plan.</strong>
           <span>
             Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month;
-            paid plans are unlimited.
+            paid plans are unlimited. Plus adds the Screener and rules you approve per batch; Pro
+            lets approved rules run unattended.
           </span>
           <a href="/pricing">Compare plans</a>
         </aside>
@@ -253,6 +260,11 @@ export function InboxSimulatorScreen() {
               <p>
                 Sender signals led to a decision, the preview made the scope explicit, and the
                 outcome landed in Activity. A real inbox uses live Gmail counts at confirmation.
+              </p>
+              <p>
+                From here the plans change who does the finding: on Plus, the Screener collects new
+                senders and rules queue matching mail for your batch approval; on Pro, approved
+                rules run on their own.
               </p>
               <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
                 Run this on your Gmail →

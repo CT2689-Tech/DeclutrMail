@@ -1,14 +1,15 @@
 import { ImageResponse } from 'next/og';
 
 /**
- * Default Open Graph card (D134 SEO, D223 headline, D1/D2 palette).
+ * Default Open Graph card (D134 SEO, D250 headline — reverses D223,
+ * D1/D2 palette).
  *
  * Programmatic — rendered by Satori at request/build time so the card
  * always carries the locked headline. Lives at the app root so every
  * route (marketing + legal) inherits it until a page overrides.
  */
 
-export const alt = 'DeclutrMail — Control Gmail by sender, not by email.';
+export const alt = 'DeclutrMail — Clear thousands of emails by sender, and see exactly what moves.';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -66,7 +67,7 @@ export default function OpenGraphImage() {
         }}
       >
         <span>DECLUTRMAIL</span>
-        <span style={{ color: TEAL }}>GMAIL CLEANUP, BY SENDER</span>
+        <span style={{ color: TEAL }}>FOR INBOXES YOU GAVE UP ON</span>
       </div>
 
       <div
@@ -75,17 +76,22 @@ export default function OpenGraphImage() {
           flexDirection: 'column',
           flex: 1,
           justifyContent: 'center',
-          fontSize: 92,
+          // 72px fits the locked three-line headline inside 630px with
+          // the eyebrow + badge footer (was 92px for the two-line D223).
+          fontSize: 72,
           fontWeight: 700,
           color: INK,
-          lineHeight: 1.05,
-          letterSpacing: -3,
+          lineHeight: 1.08,
+          letterSpacing: -2,
         }}
       >
-        <span>Control Gmail by</span>
+        <span>Clear thousands of emails</span>
         <span>
-          <span style={{ color: TEAL }}>sender</span>, not by email.
+          {/* Margins, not literal spaces: Satori lays element children
+              out as flex items and drops the whitespace between them. */}
+          by <span style={{ color: TEAL, margin: '0 18px' }}>sender</span> — and see
         </span>
+        <span>exactly what moves.</span>
       </div>
 
       <div
@@ -102,7 +108,7 @@ export default function OpenGraphImage() {
         <span>
           Full bodies fetched: <span style={{ color: TEAL, marginLeft: 10 }}>0</span>
         </span>
-        <span>One sender at a time · preview before mail moves</span>
+        <span>Keep · Archive · Unsubscribe · Later · Delete</span>
       </div>
     </div>,
     size,

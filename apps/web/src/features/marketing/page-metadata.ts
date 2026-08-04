@@ -19,7 +19,7 @@ const OG_IMAGE = {
   url: '/opengraph-image',
   width: 1200,
   height: 630,
-  alt: 'DeclutrMail — Control Gmail by sender, not by email.',
+  alt: 'DeclutrMail — Clear thousands of emails by sender, and see exactly what moves.',
 } as const;
 
 export function marketingPageMetadata({

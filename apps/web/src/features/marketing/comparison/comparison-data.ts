@@ -8,10 +8,19 @@
 
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
-export const COMPARISON_VERIFIED_LABEL = 'Last verified July 2026';
+/**
+ * The ONE comparison-freshness date. The visible label and the WebPage
+ * JSON-LD `dateModified` both derive from it — two hand-edited literals
+ * drifted before (SEO sweep 2026-08-04). Bump it only after actually
+ * re-verifying every competitor claim against primary sources.
+ */
+export const COMPARISON_VERIFIED_ISO = '2026-07-11';
+export const COMPARISON_VERIFIED_LABEL = `Last verified ${new Date(
+  COMPARISON_VERIFIED_ISO,
+).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })}`;
 
 export type ComparisonSlug =
-  'clean-email' | 'trimbox' | 'sanebox' | 'leave-me-alone' | 'gmail-filters';
+  'clean-email' | 'trimbox' | 'sanebox' | 'leave-me-alone' | 'gmail-filters' | 'gmail';
 
 export type EvidenceState = 'supported' | 'limited' | 'not-supported' | 'unknown' | 'native';
 
@@ -775,12 +784,147 @@ const gmailFilters: ComparisonDefinition = {
   ],
 };
 
+/**
+ * The most predictable launch objection, answered on its own page:
+ * "Gmail added sender-ranked cleanup — why does this exist?"
+ * Concessions first, delta second (launch playbook G2). Claims about
+ * Gmail cite its own Help pages only.
+ */
+const gmailNative: ComparisonDefinition = {
+  slug: 'gmail',
+  name: "Gmail's built-in cleanup",
+  category: 'Native tools',
+  title: "DeclutrMail vs Gmail's built-in cleanup",
+  description:
+    "A source-backed comparison of DeclutrMail and Gmail's own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and sender-level control.",
+  verdict:
+    "Gmail's built-in cleanup is free, already there, and requires no third-party access — start with it. DeclutrMail exists for what it leaves out: an exact count-and-sample preview before anything moves, a durable per-sender ledger with undo windows, and one decision workflow across every sender.",
+  indexSummary:
+    'Gmail now ranks subscription senders natively; the difference is what you can verify before and after a move.',
+  primaryUnit: 'Sender (subscriptions) or search results',
+  providerScope: 'Gmail and Google Workspace',
+  publicEntryPoint: 'Included with every Gmail account',
+  chooseCompetitor: {
+    headline: "Choose Gmail's built-in tools when they already cover you",
+    points: [
+      'You do not want to authorize any additional service against your mailbox.',
+      'Your cleanup is mostly unsubscribing from active subscription senders, which Manage subscriptions lists by volume.',
+      'You are comfortable with select-all bulk actions and do not need a record of what moved.',
+    ],
+  },
+  chooseDeclutrMail: {
+    headline: 'Choose DeclutrMail to see and verify every move',
+    points: [
+      'You want the exact current count and samples BEFORE a bulk move — Gmail select-all acts without showing precisely what will change.',
+      'You want a per-sender ledger of what happened, with an undo window for Archive, Later, and Delete.',
+      'You want one ranked queue covering every sender — not only detected subscriptions — with Keep, Archive, Unsubscribe, Later, and Delete in one pass.',
+    ],
+  },
+  rows: [
+    {
+      label: 'Core approach',
+      declutrMail: DECLUTR.focus,
+      competitor: {
+        summary: 'Native lists and search actions',
+        detail:
+          'Manage subscriptions lists active subscription senders by volume with unsubscribe; search plus select-all handles bulk moves.',
+        state: 'native',
+      },
+    },
+    {
+      label: 'Mailbox support',
+      declutrMail: DECLUTR.providers,
+      competitor: {
+        summary: 'Gmail and Google Workspace',
+        detail: 'Built into the mailbox itself; nothing to connect.',
+        state: 'native',
+      },
+    },
+    {
+      label: 'Existing-mail cleanup',
+      declutrMail: DECLUTR.existingMail,
+      competitor: {
+        summary: 'Search + select-all bulk actions',
+        detail:
+          'Native search finds current matches and bulk actions move them; Gmail shows the match list, not a committed count-and-change preview.',
+        state: 'native',
+      },
+    },
+    {
+      label: 'Future-mail automation',
+      declutrMail: DECLUTR.futureMail,
+      competitor: {
+        summary: 'Via filters, built separately',
+        detail:
+          'Manage subscriptions does not create rules; ongoing routing means composing Gmail filters yourself.',
+        state: 'limited',
+      },
+    },
+    {
+      label: 'Unsubscribe',
+      declutrMail: DECLUTR.unsubscribe,
+      competitor: {
+        summary: 'Native unsubscribe on detected senders',
+        detail:
+          'Gmail offers unsubscribe on messages and in Manage subscriptions for senders it detects as subscriptions.',
+        state: 'native',
+      },
+    },
+    {
+      label: 'Preview and recovery',
+      declutrMail: DECLUTR.recovery,
+      competitor: {
+        summary: 'No committed preview; Trash only',
+        detail:
+          'Bulk moves show the selection, not an exact committed count; deletion recovery is the ~30-day Trash, with no separate action journal.',
+        state: 'limited',
+      },
+    },
+    {
+      label: 'Email-data posture',
+      declutrMail: DECLUTR.data,
+      competitor: {
+        summary: 'No additional vendor',
+        detail: 'Cleanup happens inside the service that already hosts the mailbox.',
+        state: 'native',
+      },
+    },
+    {
+      label: 'Public starting point',
+      declutrMail: DECLUTR.price,
+      competitor: {
+        summary: 'Included with every Gmail account',
+        detail: 'No separate subscription for the built-in tools.',
+        state: 'native',
+      },
+    },
+  ],
+  sources: [
+    {
+      label: 'Gmail Help — unsubscribe or change subscription preferences',
+      url: 'https://support.google.com/mail/answer/15433283?hl=en',
+      note: 'Manage subscriptions: active subscription senders listed with unsubscribe.',
+    },
+    {
+      label: 'Gmail Help — organize and archive email',
+      url: 'https://support.google.com/mail/answer/9259770?hl=en',
+      note: 'Native search, bulk select, archive, delete, and label behavior.',
+    },
+    {
+      label: 'Gmail Help — delete or recover deleted Gmail messages',
+      url: 'https://support.google.com/mail/answer/7401?hl=en',
+      note: 'Trash retention (~30 days) as the native recovery path.',
+    },
+  ],
+};
+
 export const COMPARISONS: readonly ComparisonDefinition[] = [
   cleanEmail,
   trimbox,
   sanebox,
   leaveMeAlone,
   gmailFilters,
+  gmailNative,
 ];
 
 export function comparisonBySlug(slug: string): ComparisonDefinition | undefined {

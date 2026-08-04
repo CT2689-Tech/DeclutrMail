@@ -5,6 +5,7 @@ import { TrackedCta } from '../landing/tracked-cta';
 import { oauthStartUrl, siteUrl } from '../landing/urls';
 import {
   COMPARISONS,
+  COMPARISON_VERIFIED_ISO,
   COMPARISON_VERIFIED_LABEL,
   type ComparisonCell,
   type ComparisonDefinition,
@@ -232,7 +233,7 @@ function comparisonJsonLd(comparison: ComparisonDefinition) {
     name: comparison.title,
     description: comparison.description,
     url: `${siteUrl()}/vs/${comparison.slug}`,
-    dateModified: '2026-07-11',
+    dateModified: COMPARISON_VERIFIED_ISO,
     breadcrumb: {
       '@type': 'BreadcrumbList',
       itemListElement: [

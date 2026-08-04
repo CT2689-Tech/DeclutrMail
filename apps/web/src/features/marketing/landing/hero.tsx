@@ -5,8 +5,18 @@ import { oauthStartUrl } from './urls';
 import { TrackedCta } from './tracked-cta';
 
 /**
- * Hero (D223 locked headline) + animated ledger card (D135 adapted)
- * + trust strip (D138 reverbed by D228 — PrivacyBadge copy only).
+ * Hero (D250 locked headline — reverses D223; decision record in
+ * docs/execution/packaging-2026-08-02.md and the spec's DECISIONS
+ * LOCKED block) + animated ledger card (D135 adapted) + trust strip
+ * (D138 reverbed by D228 — PrivacyBadge copy only).
+ *
+ * Copy contracts (do not edit casually):
+ *   - The kicker carries NO privacy claim — its job is recognition in
+ *     the buyer's own language. Privacy lives in the generated
+ *     PrivacyBadge below; never paraphrase it upward.
+ *   - The H1 must stay true for a FREE user (the CTA signs up Free) —
+ *     "rules find it for you" claims are Plus-only and live in the
+ *     subhead with the tier named.
  *
  * Server component: the demo loop is pure CSS (8s keyframes in
  * landing.css). Base styles are frame 0, so the global
@@ -19,15 +29,15 @@ export function Hero() {
       <section className="dm-mkt-hero">
         <div>
           <p className="dm-mkt-hero-kicker dm-mkt-reveal">
-            Gmail cleanup <b>· sender-first</b>
+            For inboxes you <b>gave up on</b>
           </p>
           <h1 className="dm-mkt-h1 dm-mkt-reveal">
-            Control Gmail by <em>sender</em>, not by email.
+            Clear thousands of emails by <em>sender</em> — and see exactly what moves.
           </h1>
           <p className="dm-mkt-hero-sub dm-mkt-reveal-2 dm-mkt-reveal">
-            DeclutrMail turns thousands of emails into a handful of sender decisions — with
-            automation, privacy-first indexing, and 7-day Activity Undo for Archive, Later, and
-            Delete on Free.
+            One decision per sender clears thousands of emails at once — you see the count and the
+            exact Gmail changes first. On Plus, rules find the matches for you; you still approve
+            every batch.
           </p>
           <div className="dm-mkt-hero-ctas dm-mkt-reveal-3 dm-mkt-reveal">
             <TrackedCta
@@ -36,7 +46,7 @@ export function Hero() {
               placement="hero"
               className="dm-mkt-cta dm-mkt-cta-primary"
             >
-              Connect your Gmail
+              Review my Gmail senders
               <span className="dm-mkt-cta-arrow" aria-hidden="true">
                 →
               </span>
@@ -47,17 +57,17 @@ export function Hero() {
               placement="hero"
               className="dm-mkt-cta dm-mkt-cta-ghost"
             >
-              Try the demo first
+              Try the demo — no sign-in
             </TrackedCta>
           </div>
           <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
-            Free tier · no card · preview before mail moves
+            Free · no card · 7-day undo on Archive, Later and Delete
           </p>
         </div>
         <div className="dm-mkt-reveal-3 dm-mkt-reveal">
           <LedgerCard />
           <p className="dm-mkt-ledger-caption">
-            one Archive decision · 412 emails handled · reversible
+            one Archive decision · 412 emails · undoable for 7 days
           </p>
         </div>
       </section>
@@ -141,7 +151,10 @@ function LedgerCard() {
 function TrustStrip() {
   return (
     <div className="dm-mkt-trust">
-      <span style={{ background: '#fafaf7', borderRadius: 8, display: 'inline-flex' }}>
+      {/* Fixed light chip on purpose: the badge's designed light palette
+          must stay readable when the marketing surface flips dark — use
+          the marketing token, not a literal. */}
+      <span style={{ background: 'var(--mkt-bg)', borderRadius: 8, display: 'inline-flex' }}>
         <PrivacyBadge variant="inline" />
       </span>
       <span className="dm-mkt-trust-item">30-day money-back guarantee</span>

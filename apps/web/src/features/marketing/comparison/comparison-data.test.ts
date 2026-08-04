@@ -4,10 +4,17 @@ import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { COMPARISONS, COMPARISON_VERIFIED_LABEL, comparisonBySlug } from './comparison-data';
 
-const EXPECTED_SLUGS = ['clean-email', 'trimbox', 'sanebox', 'leave-me-alone', 'gmail-filters'];
+const EXPECTED_SLUGS = [
+  'clean-email',
+  'trimbox',
+  'sanebox',
+  'leave-me-alone',
+  'gmail-filters',
+  'gmail',
+];
 
 describe('comparison data', () => {
-  it('publishes exactly the five requested, statically addressable comparisons', () => {
+  it('publishes exactly the six requested, statically addressable comparisons', () => {
     expect(COMPARISONS.map((comparison) => comparison.slug)).toEqual(EXPECTED_SLUGS);
     for (const slug of EXPECTED_SLUGS) {
       expect(comparisonBySlug(slug)?.rows.length).toBeGreaterThanOrEqual(8);
