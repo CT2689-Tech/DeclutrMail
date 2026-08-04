@@ -229,7 +229,7 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
   }
   if (rule.mode === 'active') {
     if (!canActivate) {
-      return `Set to run on its own, which is part of ${ACT_PLAN_NAME} — on your current plan this rule is not checking new mail. It switches back to Observe automatically, and its collected matches keep waiting for your approval.`;
+      return `Set to run on its own, which is part of ${ACT_PLAN_NAME} — on your current plan this rule is not checking new mail. It switches back to Observe automatically; matches it collected while running on its own are cleared, and it gathers fresh ones for your approval.`;
     }
     return 'Active — future matches run automatically. Results and available recovery appear in Activity.';
   }

@@ -171,9 +171,9 @@ export function ProductTour() {
       <p className="dm-mkt-eyebrow">№ 05 — What you actually get</p>
       <h2 className="dm-mkt-h2">Three product chapters, not three quota bands.</h2>
       <p className="dm-mkt-lede">
-        Free is the full manual cleanup workflow with a monthly meter. Plus removes the meter. Pro
-        adds preset automation for recurring matches. The same Activity record ties all three
-        together.
+        Free is the full manual cleanup workflow with a monthly meter. Plus removes the meter and
+        adds preset rules that queue matches for your approval. Pro lets those rules run unattended.
+        The same Activity record ties all three together.
       </p>
       <div className="dm-mkt-product-tour">
         <article>
@@ -193,11 +193,12 @@ export function ProductTour() {
           </div>
         </article>
         <article>
-          <div className="dm-mkt-product-tier">Pro · Automate</div>
+          <div className="dm-mkt-product-tier">Plus &amp; Pro · Automate</div>
           <h3>Autopilot</h3>
           <p>
-            Preset rules begin in Observe mode. Review what a rule would have matched, then enable
-            it for future mail. Pause it whenever you want.
+            Preset rules begin in Observe mode. Review what a rule would have matched and approve
+            batches on Plus; on Pro, a rule you switch to Active handles future mail by itself.
+            Pause it whenever you want.
           </p>
           <div className="dm-mkt-product-rule" aria-hidden="true">
             <span>Observe</span>

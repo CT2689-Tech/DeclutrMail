@@ -27,12 +27,6 @@ import {
   minimumTierForCapability,
 } from '@declutrmail/shared/entitlements';
 
-/**
- * The plan that grants unattended action, derived so a ladder move
- * rewrites every mention at once (design-gate 2026-08-04 — four
- * hardcoded "Pro" strings sat beside a banner that already derived it).
- */
-const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')].name;
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
 import { useApproveMatches } from './api/use-approve-matches';
 import { useAutopilotRules } from './api/use-autopilot-rules';
@@ -59,6 +53,13 @@ import type {
   RuleSuggestionGroup,
   SuggestionWithRule,
 } from './types';
+
+/**
+ * The plan that grants unattended action, derived so a ladder move
+ * rewrites every mention at once (design-gate 2026-08-04 — four
+ * hardcoded "Pro" strings sat beside a banner that already derived it).
+ */
+const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')].name;
 
 const { color, font } = tokens;
 

@@ -34,9 +34,10 @@ import {
  * D205): `JwtGuard` + `CurrentMailboxGuard`; the state-changing POST
  * additionally requires `CsrfGuard` (double-submit cookie).
  *
- * D77 — every route is gated on the workspace's `screener` capability
- * (Pro+); Free/Plus get 402 `PRO_FEATURE_REQUIRED` so the FE branches
- * to the upgrade surface instead of an empty queue.
+ * D77 (tiers per D251) — every route is gated on the workspace's
+ * `screener` capability (Plus+; D251 reversed D77's Pro-only); Free
+ * gets 402 `PRO_FEATURE_REQUIRED` so the FE branches to the upgrade
+ * surface instead of an empty queue.
  *
  * D7 / D228: reads are metadata-only. The decide POST mutates Gmail
  * ONLY via the existing action pipeline (D226 lifecycle intact).

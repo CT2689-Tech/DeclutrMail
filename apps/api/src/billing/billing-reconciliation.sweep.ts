@@ -146,7 +146,7 @@ export async function runBillingReconciliationSweep(
   // Step 5 — D251 unattended demote (doc block above), through the
   // Autopilot facade so the demotion semantics have exactly one
   // implementation and every converged workspace logs its own line.
-  const demotion = await autopilot.demoteUnattendedRulesForUnentitledTiers(db);
+  const demotion = await autopilot.demoteUnattendedRulesForUnentitledTiers();
 
   return {
     dunningFlipped: flippedWorkspaceIds.length,

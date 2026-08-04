@@ -610,9 +610,13 @@ export class AutopilotReadService {
           eq(ruleMatchLog.resolution, 'approved'),
           eq(ruleMatchLog.intentApplied, false),
           inArray(ruleMatchLog.mailboxAccountId, workspaceMailboxIds),
-          // Exclude only claims that are IN FLIGHT (mirrors the action
-          // worker's `claimIsInFlight`): anything past `queued`, or a
-          // queued claim that already resolved message ids. Correlated
+          // Exclude only claims that are IN FLIGHT (the action worker's
+          // `claimIsInFlight`): anything past `queued`, or a queued
+          // claim that already resolved message ids. One DELIBERATE
+          // divergence: the worker treats `done` as not-in-flight so a
+          // crashed completion can finish its bookkeeping; here a
+          // `done` claim still blocks dismissal — the action ran, so
+          // relabelling its match dismissed would falsify the audit. Correlated
           // column MUST be table-qualified via sql.raw — a
           // `${ruleMatchLog.id}` here emits a bare `id` that resolves
           // against action_jobs (the SENDER_FIRST_SEEN precedent above).
@@ -673,17 +677,19 @@ export class AutopilotReadService {
    * have exactly one implementation (D204; arch-gate 2026-08-04) and
    * every converged workspace gets its own log line.
    */
-  async demoteUnattendedRulesForUnentitledTiers(
-    executor: Pick<DrizzleDb, 'update' | 'select' | 'selectDistinct'> = this.db,
-  ): Promise<{ demotedRules: number; neutralizedMatches: number; workspaces: number }> {
+  async demoteUnattendedRulesForUnentitledTiers(): Promise<{
+    demotedRules: number;
+    neutralizedMatches: number;
+    workspaces: number;
+  }> {
     const unentitledTiers = TIER_IDS.filter((t) => !hasCapability(t, 'autopilot-active'));
-    const ruleWs = await executor
+    const ruleWs = await this.db
       .selectDistinct({ wsId: mailboxAccounts.workspaceId })
       .from(mailboxAccounts)
       .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
       .innerJoin(automationRules, eq(automationRules.mailboxAccountId, mailboxAccounts.id))
       .where(and(inArray(workspaces.tier, unentitledTiers), eq(automationRules.mode, 'active')));
-    const matchWs = await executor
+    const matchWs = await this.db
       .selectDistinct({ wsId: mailboxAccounts.workspaceId })
       .from(mailboxAccounts)
       .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
@@ -700,7 +706,13 @@ export class AutopilotReadService {
     let demotedRules = 0;
     let neutralizedMatches = 0;
     for (const wsId of wsIds) {
-      const out = await this.demoteUnattendedRules(wsId, executor);
+      // Each workspace converges in ITS OWN transaction (arch-gate
+      // 2026-08-04): without one, a crash between the match dismissal
+      // and the orphan-claim flip leaves a dismissed match with a live
+      // queued claim — a state the discovery predicate above
+      // (`resolution='approved'`) never revisits, so it would sit in
+      // Activity as a queued action forever.
+      const out = await this.db.transaction((tx) => this.demoteUnattendedRules(wsId, tx));
       demotedRules += out.demotedRules;
       neutralizedMatches += out.neutralizedMatches;
     }
