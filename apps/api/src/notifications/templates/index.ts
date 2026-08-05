@@ -4,3 +4,7 @@ export { syncReminder24hEmail, type SyncReminderEmailInput } from './sync-remind
 export { syncFailedEmail, type SyncFailedEmailInput } from './sync-failed.js';
 export { deletionScheduledEmail, type DeletionScheduledEmailInput } from './deletion-scheduled.js';
 export { deletionReceiptEmail, type DeletionReceiptEmailInput } from './deletion-receipt.js';
+export {
+  weeklyValueReceiptEmail,
+  type WeeklyValueReceiptEmailInput,
+} from './weekly-value-receipt.js';

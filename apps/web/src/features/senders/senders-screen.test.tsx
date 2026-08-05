@@ -1381,6 +1381,95 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('filters protected rows before quota-capping the preview request', async () => {
+    mockAuth.tier = 'free';
+    mockAuth.cleanupRemaining = 1;
+    const protectedFirst = {
+      ...ROW,
+      id: 'p',
+      displayName: 'Protected First',
+      email: 'protected@protected.test',
+      domain: 'protected.test',
+      protectionFlags: {
+        ...ROW.protectionFlags,
+        isProtected: true,
+        protectionReason: 'manual',
+      },
+    };
+    const previewedSenderIds: string[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [protectedFirst, ROW, ROW_B],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: {
+                totalMatching: 3,
+                globalMaxTotal: 120,
+                asOf: '2026-05-29T12:00:00.000Z',
+              },
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: (_req, url) => {
+          previewedSenderIds.push(url.searchParams.get('senderId') ?? '');
+          return jsonOk({
+            data: {
+              sender: {
+                id: 'a',
+                name: 'Sender A',
+                domain: 'example.com',
+                lastSeenDays: 2,
+                repliedCount: 0,
+                monthly: 30,
+              },
+              counts: {
+                all: 12,
+                olderThan30d: 8,
+                olderThan90d: 5,
+                olderThan180d: 3,
+                olderThan365d: 1,
+              },
+              recentMessages: {
+                all: [],
+                olderThan30d: [],
+                olderThan90d: [],
+                olderThan180d: [],
+                olderThan365d: [],
+              },
+              allMail: null,
+              unsubAvailable: true,
+              protected: false,
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select protected first/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
+    fireEvent.keyDown(document.body, { key: 'a' });
+
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(previewedSenderIds).toEqual(['a']));
+    expect(within(dialog).getByText('Archive mail from 1 sender')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Bulk action scope')).toHaveTextContent(
+      '3 selected · 2 eligible · 1 skipped',
+    );
+    expect(
+      within(dialog).getByText(/1 protected sender skipped — unprotect to include it/),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/Acting on 1 of the 2 eligible senders/)).toBeVisible();
+  });
+
   it('bulk-archives a selection for real (aggregated preview → enqueue → batch poll → receipt → undo)', async () => {
     let bulkBody: unknown = null;
     let undoPosted = false;

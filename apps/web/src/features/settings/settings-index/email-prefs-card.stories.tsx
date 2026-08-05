@@ -2,8 +2,8 @@
 // (Settings → Notifications). Local CSF shims per the existing pattern.
 //
 // Variants covered (per D211 edge-state inventory + Storybook contract):
-//   • Defaults     — every category on (D165 default)
-//   • OptedOut     — both toggleable categories off; system row stays
+//   • Defaults     — D165 categories on; weekly receipt off by default
+//   • OptedOut     — every toggleable category off; system row stays
 //                    "Always on" (non-opt-out per CAN-SPAM/GDPR)
 //   • Saving       — one toggle's PATCH in flight
 //   • SaveFailed   — PATCH failed, inline alert
@@ -34,7 +34,7 @@ const meta: StoryMeta<typeof EmailPrefsCard> = {
     docs: {
       description: {
         component:
-          'Settings → Notifications (D165). Per-category email toggles — sync completion alerts + reminder emails — with the non-opt-out system row (account/deletion notices) rendered as "Always on" instead of a fake toggle. Persisted under users.preferences.emailPrefs; the EmailSendWorker reads the same key at send time.',
+          'Settings → Notifications (D165, D189/D251). Per-category email toggles — sync completion alerts, reminder emails, and the default-off weekly value receipt — with the non-opt-out system row (account/deletion notices) rendered as "Always on" instead of a fake toggle. Persisted under users.preferences.emailPrefs; the EmailSendWorker reads the same key at send time.',
       },
     },
   },
@@ -48,7 +48,10 @@ type CardArgs = ComponentProps<typeof EmailPrefsCard>;
 const noop = () => undefined;
 
 const baseArgs: CardArgs = {
-  state: { kind: 'ready', prefs: { reminders: true, syncComplete: true } },
+  state: {
+    kind: 'ready',
+    prefs: { reminders: true, syncComplete: true, weeklyReceipt: false },
+  },
   pendingWire: null,
   saveFailed: false,
   onToggle: noop,
@@ -61,7 +64,10 @@ export const Defaults: Story<typeof EmailPrefsCard> = {
 export const OptedOut: Story<typeof EmailPrefsCard> = {
   args: {
     ...baseArgs,
-    state: { kind: 'ready', prefs: { reminders: false, syncComplete: false } },
+    state: {
+      kind: 'ready',
+      prefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
+    },
   },
 };
 

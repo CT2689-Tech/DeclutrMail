@@ -36,7 +36,9 @@ describe('EmailPrefsController', () => {
     // computed from a read would race the D165 one-click endpoint.
     expect(users.mergeEmailPrefs).toHaveBeenCalledWith('u1', { reminders: false });
     // Display view fills defaults for keys storage doesn't carry.
-    expect(result.data).toEqual({ emailPrefs: { reminders: false, syncComplete: true } });
+    expect(result.data).toEqual({
+      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: false },
+    });
   });
 
   it('sets syncComplete=false without touching reminders', async () => {
@@ -45,7 +47,20 @@ describe('EmailPrefsController', () => {
     });
     const result = await controller.patch(USER, { syncComplete: false });
     expect(users.mergeEmailPrefs).toHaveBeenCalledWith('u1', { syncComplete: false });
-    expect(result.data).toEqual({ emailPrefs: { reminders: false, syncComplete: false } });
+    expect(result.data).toEqual({
+      emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
+    });
+  });
+
+  it('sets weeklyReceipt=true without touching existing categories', async () => {
+    const { controller, users } = makeController({
+      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: true },
+    });
+    const result = await controller.patch(USER, { weeklyReceipt: true });
+    expect(users.mergeEmailPrefs).toHaveBeenCalledWith('u1', { weeklyReceipt: true });
+    expect(result.data).toEqual({
+      emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: true },
+    });
   });
 
   it('forwards both keys when the patch carries both', async () => {
@@ -62,7 +77,9 @@ describe('EmailPrefsController', () => {
   it('renders defaults when the post-merge bag is malformed', async () => {
     const { controller } = makeController({ emailPrefs: 'garbage' });
     const result = await controller.patch(USER, { reminders: false });
-    expect(result.data).toEqual({ emailPrefs: { reminders: true, syncComplete: true } });
+    expect(result.data).toEqual({
+      emailPrefs: { reminders: true, syncComplete: true, weeklyReceipt: false },
+    });
   });
 
   it('400 on unknown keys (strict patch)', async () => {
