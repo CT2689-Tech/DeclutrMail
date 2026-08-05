@@ -26,6 +26,41 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-05 — `/blog` metadata title runs 66 chars; no ratified title budget exists
+**Source:** SEO pass during PR #470; Codex stop-time review
+**Why:** `apps/web/src/app/(marketing)/blog/page.tsx:6` carries the D250-prescribed
+`DeclutrMail Journal — previews, undo, and the limits of bulk email` — **66 characters**.
+The copy spec §3.1 itself notes that 60 characters "overruns the ~580px SERP budget", so by
+its own reasoning this title truncates in results. Every other public title fits: the 13
+`/how-to`, `/answers` and blog article titles all land at 42–58.
+
+This session shortened it to 59 and added a CI assertion enforcing ≤60 across 16 routes.
+**Both were reverted** — no D-decision or ADR establishes a global title budget, so the
+assertion invented repo-wide copy policy (§11: agents do not mint constraints), and the
+shortened string overrode a locked D250 value on agent judgement. The route-coverage half of
+that change was kept: six previously untested routes (`/blog`, `/faq`, `/changelog`,
+`/how-it-works`, `/compare`, `/methodology`) now get the canonical/OG/Twitter assertions,
+which add coverage without adding a rule.
+
+**How:** decide one of — (a) accept the truncation and keep the spec string; (b) approve a
+shorter title (`DeclutrMail Journal — previews, undo, and bulk email limits`, 59 chars); or
+(c) ratify a title budget as an ADR, after which the CI assertion becomes legitimate.
+Note the 60-char figure is a rule of thumb — Google renders ~580px, and glyph width varies —
+so an ADR should say what it actually measures.
+**Verifies by:** `/blog` title reflects the decision; if (c), an ADR exists in `docs/adr/`
+and the assertion is restored citing it.
+**Status:** Open
+
+### 2026-08-05 — Six marketing meta descriptions exceed 160 characters
+**Source:** SEO pass during PR #470
+**Why:** `/security` 180, `/compare` 171, `/methodology` 168, `/pricing` 167, `/how-it-works`
+167, `/faq` 165. Google truncates rather than penalises, so this is cosmetic SERP polish, not
+a ranking defect — but the tail of each is currently invisible in results. Left unedited
+because these are copy decisions, and the same "don't mint a constraint" rule applies.
+**How:** trim the six to ≤160, or decide the truncation is acceptable.
+**Verifies by:** each description ≤160, or an explicit decision recorded here.
+**Status:** Open
+
 ### 2026-08-02 — CLAUDE.md "Plan stats" line is stale in all three numbers
 **Source:** consistency review of PR #458 (D250/D251)
 **Why:** CLAUDE.md:208 and :796 both read "235 decisions + 33 inline patches + 3 reversal markers". On the D250 branch the real counts are **241 D-rows**, **34 patch markers**, and **1 REVERSAL marker** — and `main`'s plan mirror has **zero** REVERSAL markers, so the "3" has never matched the mirror it describes. Agents must not edit CLAUDE.md (§11), so this is surfaced rather than fixed, per §3's plan-drift rule.

@@ -48,35 +48,9 @@ const PAGES: ReadonlyArray<{ name: string; metadata: Metadata; path: string }> =
   { name: 'methodology', metadata: methodology, path: '/methodology' },
 ];
 
-/**
- * Google renders roughly 580px of title, which lands near 60 characters.
- * The repositioning spec applies this budget to the landing H1 but nothing
- * enforced it, so `/blog` shipped a 66-character title — and `/blog` was
- * not in the list above, which is why nothing caught it.
- */
-const TITLE_BUDGET = 60;
-
-/**
- * `marketingPageMetadata` emits `title: { absolute }`, so `String(title)`
- * yields "[object Object]" — 15 characters, always under budget. Reading the
- * shape explicitly (and failing on an unknown one) keeps this assertion from
- * passing without measuring anything.
- */
-function titleText(title: Metadata['title']): string {
-  if (typeof title === 'string') return title;
-  if (title && typeof title === 'object' && 'absolute' in title) {
-    return String((title as { absolute: string }).absolute);
-  }
-  throw new Error(`Unrecognised title shape: ${JSON.stringify(title)}`);
-}
-
 describe.each(PAGES)('$name page metadata — D132', ({ metadata, path }) => {
   it('declares the canonical path', () => {
     expect(metadata.alternates?.canonical).toBe(path);
-  });
-
-  it('keeps the title inside the SERP budget', () => {
-    expect(titleText(metadata.title).length).toBeLessThanOrEqual(TITLE_BUDGET);
   });
 
   it('carries an Open Graph card pinned to the same URL', () => {
