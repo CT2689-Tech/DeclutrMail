@@ -20,6 +20,7 @@
 // review brief, alongside T1, T4 and T7.
 
 import { describe, expect, it } from 'vitest';
+import { GMAIL_DERIVED_DATA_INVENTORY, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 
 import { ANSWER_ARTICLES } from './learn/answer-content';
 import { BLOG_ARTICLES } from './learn/blog-content';
@@ -40,25 +41,45 @@ function collectStrings(node: unknown, out: string[] = []): string[] {
   return out;
 }
 
-/**
- * Sentences that mention the Screener AND attribute a blocking action to
- * it. Sentence-scoped on purpose: "The Screener collects new senders.
- * We block nothing." is two claims, and only a single sentence can
- * assert the banned one.
- *
- * "soft quarantine" is the sanctioned description of the mechanism (T3
- * is phrased with it), so it is neutralised before matching rather than
- * filtered afterwards — filtering the whole sentence would let a real
- * claim hide behind the term.
- */
 const FORBIDDEN = /\b(block|prevent|intercept|quarantin|keep(s|ing)? out|kept out)/i;
 
-function offendingSentences(text: string): string[] {
-  return text
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.replace(/soft[- ]quarantin\w*/gi, 'SANCTIONED'))
-    .filter((sentence) => /screener/i.test(sentence) && FORBIDDEN.test(sentence));
+/**
+ * Flags a whole passage that mentions the Screener and anywhere attributes
+ * a blocking action.
+ *
+ * NOT sentence-scoped, deliberately. Scoping to the sentence carrying the
+ * word "Screener" is just a smaller version of the proximity window that
+ * made the old hook rule unworkable, and it fails the same way: prose
+ * refers back with pronouns, so "The Screener is on Plus. It blocks new
+ * senders." reads clean while asserting exactly the banned claim. It also
+ * breaks on any abbreviation, since "e.g." ends a sentence to a splitter.
+ *
+ * The cost asymmetry here is the opposite of the hook's. This runs in CI,
+ * so a false positive fails a build and a human reads one string; a false
+ * negative ships a false claim about what the product does to someone's
+ * mail. Recall wins. If a legitimate passage ever trips this, add it to
+ * ALLOWED below with a note — an explicit, reviewed exception beats a
+ * silent miss.
+ *
+ * "soft quarantine" is the sanctioned name for the mechanism (T3 is
+ * phrased with it), so it is neutralised before matching rather than
+ * filtered after — filtering a whole match would let a real claim hide
+ * behind the term.
+ */
+function isOffending(text: string): boolean {
+  const neutralised = text.replace(/soft[- ]quarantin\w*/gi, 'SANCTIONED');
+  if (!/screener/i.test(neutralised) || !FORBIDDEN.test(neutralised)) return false;
+  return !ALLOWED.some((allowed) => allowed.test(neutralised));
 }
+
+/** Reviewed exceptions. Each entry needs a comment saying why. */
+const ALLOWED: readonly RegExp[] = [
+  // The generated storage list (D245) names the DATASET it retains, not
+  // what happens to mail — `screener_quarantine` is the table behind it.
+  // D228 locks this copy and it is generated from the typed registry, so
+  // rewording it is a privacy-disclosure change, not a copy tweak.
+  /Screener quarantine records/i,
+];
 
 const SURFACES: ReadonlyArray<readonly [string, unknown]> = [
   ['answers', ANSWER_ARTICLES],
@@ -67,6 +88,12 @@ const SURFACES: ReadonlyArray<readonly [string, unknown]> = [
   ['changelog', CHANGELOG_ENTRIES],
   ['faq', FAQ_ENTRIES],
   ['comparisons', COMPARISONS],
+  // The generated public storage list, rendered by PrivacyBadge on
+  // /privacy, /security and the product story.
+  ['privacy storage list', PRIVACY_STORAGE_ITEMS],
+  // Also generated and also user-facing: onboarding step 2 itemises these
+  // labels before the Google consent screen (step-connect.tsx).
+  ['derived data inventory', GMAIL_DERIVED_DATA_INVENTORY],
 ];
 
 describe('D194 — Screener is soft quarantine, never a block', () => {
@@ -74,34 +101,41 @@ describe('D194 — Screener is soft quarantine, never a block', () => {
   // be clean is indistinguishable from a filter that matches nothing, so
   // assert it FIRES before trusting any pass below.
   it('detects a banned framing (guard self-test)', () => {
-    expect(offendingSentences('The Screener blocks new senders.')).toHaveLength(1);
-    expect(offendingSentences('The Screener prevents unwanted mail from arriving.')).toHaveLength(
-      1,
-    );
-    expect(offendingSentences('New senders are quarantined by the Screener.')).toHaveLength(1);
-    expect(offendingSentences('The Screener keeps out first-time senders.')).toHaveLength(1);
+    expect(isOffending('The Screener blocks new senders.')).toBe(true);
+    expect(isOffending('The Screener prevents unwanted mail from arriving.')).toBe(true);
+    expect(isOffending('New senders are quarantined by the Screener.')).toBe(true);
+    expect(isOffending('The Screener keeps out first-time senders.')).toBe(true);
   });
 
-  it('allows the sanctioned description and unrelated neighbouring claims', () => {
-    expect(offendingSentences('The Screener is soft quarantine.')).toHaveLength(0);
+  it('catches a claim that refers back to the Screener across sentences', () => {
+    // The paths a sentence-scoped check missed: pronoun subjects, and any
+    // abbreviation that a naive splitter reads as a full stop.
+    expect(isOffending('The Screener is available on Plus. It blocks new senders.')).toBe(true);
     expect(
-      offendingSentences(
-        'The Screener collects new senders. We block nothing; mail still arrives.',
-      ),
-    ).toHaveLength(0);
-    expect(
-      offendingSentences('New senders are collected for review. They still arrive in Gmail.'),
-    ).toHaveLength(0);
+      isOffending('New senders go to the Screener. They are prevented from reaching your inbox.'),
+    ).toBe(true);
+    expect(isOffending('The Screener (e.g. for newsletters) blocks mail from arriving.')).toBe(
+      true,
+    );
+    expect(isOffending('Wondering about the Screener? It quarantines everything.')).toBe(true);
+  });
+
+  it('allows the sanctioned description', () => {
+    expect(isOffending('The Screener is soft quarantine.')).toBe(false);
+    expect(isOffending('New senders are collected for review. They still arrive in Gmail.')).toBe(
+      false,
+    );
+    expect(isOffending('Autopilot rules you approve batch by batch.')).toBe(false);
   });
 
   it('still catches a real claim sitting next to the sanctioned term', () => {
-    expect(
-      offendingSentences('The Screener is a soft-quarantine that blocks mail from arriving.'),
-    ).toHaveLength(1);
+    expect(isOffending('The Screener is a soft-quarantine that blocks mail from arriving.')).toBe(
+      true,
+    );
   });
 
   it.each(SURFACES)('%s copy never says the Screener blocks mail', (_name, surface) => {
-    const offenders = collectStrings(surface).flatMap(offendingSentences);
+    const offenders = collectStrings(surface).filter(isOffending);
     expect(offenders).toEqual([]);
   });
 
@@ -110,5 +144,18 @@ describe('D194 — Screener is soft quarantine, never a block', () => {
     // above pass while verifying nothing.
     const total = SURFACES.reduce((n, [, surface]) => n + collectStrings(surface).length, 0);
     expect(total).toBeGreaterThan(200);
+  });
+});
+
+describe('gate mechanics', () => {
+  it('the storage-list exception is load-bearing, not decorative', () => {
+    // Without it, the generated list WOULD trip the check — proving the
+    // new surface is actually being read rather than silently skipped.
+    const label = GMAIL_DERIVED_DATA_INVENTORY.map((item) => item.label).find((item) =>
+      /Screener quarantine records/i.test(item),
+    );
+    expect(label, 'derived inventory no longer names Screener quarantine records').toBeDefined();
+    expect(/screener/i.test(label!) && FORBIDDEN.test(label!)).toBe(true);
+    expect(isOffending(label!)).toBe(false);
   });
 });
