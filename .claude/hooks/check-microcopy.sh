@@ -227,17 +227,23 @@ case "$file_path" in
     # — which is a reading, not a match, and each patch narrowed or
     # widened a window that has no correct width.
     #
-    # The copy spec already routes exactly this kind of constraint to a
-    # human: T1 (manual actions create no future-mail rules), T4
-    # (Autopilot tiering) and T7 (Trash is a separate recovery) are all
-    # listed there as needing a reader. T3 belongs with them, in the
-    # review brief at docs/execution/repositioning-copy-spec-2026-08-01.md
-    # §7, not in a regex that reports confident nonsense in both
-    # directions.
+    # It is NOT unguarded. The control moved to
+    # `apps/web/src/features/marketing/screener-truth.test.ts`, which is
+    # strictly stronger than what was here: it runs in CI on every change
+    # rather than only on a PostToolUse edit, and it walks the marketing
+    # content modules — plain prose in structured form — instead of
+    # source. Every failure this rule had came from parsing source, so
+    # removing the source is what removes the failure class. The test
+    # carries its own positive control and a coverage floor.
+    #
+    # What that test cannot reach is prose inlined in JSX (landing
+    # sections, the help page, the Screener screen). That remainder sits
+    # with the copy spec's review brief at
+    # docs/execution/repositioning-copy-spec-2026-08-01.md §7, beside T1,
+    # T4 and T7 — the constraints already routed to a reader.
     #
     # D194's forbidden framings (blocks / prevents / keeps out /
-    # intercepts / quarantines) remain binding on copy. They are simply
-    # checked by review, like the three constraints beside them.
+    # intercepts / quarantines) remain binding on ALL copy.
 
     if [ "$truth_violations" -gt 0 ]; then
       echo "" >&2
