@@ -346,10 +346,12 @@ export interface ActionRequest {
     peopleCount: number;
   };
   /**
-   * Eligible senders before the monthly cleanup quota capped this
-   * request. Set only when the cap actually bit — the user selected more
-   * than the remaining allowance, so the request carries the first N and
-   * this records what N was drawn from.
+   * ELIGIBLE senders before the monthly cleanup quota capped this
+   * request — not the selection total. Set only when the cap actually
+   * bit, and paired with copy that says "eligible": on a selection that
+   * was ALSO eligibility-narrowed the two differ (3 selected, 1
+   * protected, 2 eligible, 1 affordable), and calling 2 the selection
+   * total misreports what the user did.
    *
    * Rides the request for the same reason `skipped` does (D226 honesty):
    * the preview must cover exactly what will run, and must say why it

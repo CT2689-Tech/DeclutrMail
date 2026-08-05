@@ -1538,7 +1538,7 @@ export function ConfirmActionModal({
               : livePreviewLoading
                 ? 'Loading the live preview — confirm stays locked until it is ready.'
                 : quotaCappedFrom
-                  ? `Acting on ${unitsNeeded} of the ${quotaCappedFrom} senders you selected — that is every cleanup action you have left this month. The rest stay untouched.`
+                  ? `Acting on ${unitsNeeded} of the ${quotaCappedFrom} eligible senders — that is every cleanup action you have left this month. The rest stay untouched.`
                   : quotaShort
                     ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
                     : quotaRemaining !== null

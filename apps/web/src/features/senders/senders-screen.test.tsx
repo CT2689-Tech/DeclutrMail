@@ -1368,9 +1368,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     const dialog = await screen.findByRole('dialog');
     // Says what it trimmed, and to what.
-    expect(
-      await within(dialog).findByText(/Acting on 1 of the 2 senders you selected/),
-    ).toBeVisible();
+    expect(await within(dialog).findByText(/Acting on 1 of the 2 eligible senders/)).toBeVisible();
     // D226: every count on the preview must equal what will run. The
     // title and the scope line must both say 1 — a title of "2 senders"
     // over a 1-sender mutation is the contradiction the preview exists
