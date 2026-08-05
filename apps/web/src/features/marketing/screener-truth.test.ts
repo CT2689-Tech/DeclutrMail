@@ -61,24 +61,33 @@ const FORBIDDEN = /\b(block|prevent|intercept|quarantin|keep(s|ing)? out|kept ou
  * ALLOWED below with a note — an explicit, reviewed exception beats a
  * silent miss.
  *
- * "soft quarantine" is the sanctioned name for the mechanism (T3 is
- * phrased with it), so it is neutralised before matching rather than
- * filtered after — filtering a whole match would let a real claim hide
- * behind the term.
+ * Sanctioned phrases are SUBSTITUTED OUT before matching, never used to
+ * exempt the passage that contains them. Exempting is the tempting shape
+ * and it is wrong in a way that is invisible: it means one approved
+ * phrase anywhere in a string silently licenses every other claim beside
+ * it, so "Screener quarantine records are retained. The Screener blocks
+ * new senders." reads clean. Substitution removes only the approved
+ * words and leaves the rest of the passage exposed.
  */
 function isOffending(text: string): boolean {
-  const neutralised = text.replace(/soft[- ]quarantin\w*/gi, 'SANCTIONED');
-  if (!/screener/i.test(neutralised) || !FORBIDDEN.test(neutralised)) return false;
-  return !ALLOWED.some((allowed) => allowed.test(neutralised));
+  let neutralised = text.replace(/soft[- ]quarantin\w*/gi, 'SANCTIONED');
+  for (const allowed of SANCTIONED_PHRASES) {
+    neutralised = neutralised.replace(allowed, 'SANCTIONED');
+  }
+  return /screener/i.test(neutralised) && FORBIDDEN.test(neutralised);
 }
 
-/** Reviewed exceptions. Each entry needs a comment saying why. */
-const ALLOWED: readonly RegExp[] = [
-  // The generated storage list (D245) names the DATASET it retains, not
-  // what happens to mail — `screener_quarantine` is the table behind it.
-  // D228 locks this copy and it is generated from the typed registry, so
+/**
+ * Reviewed exceptions. Each entry needs a comment saying why, and each
+ * MUST be global — a non-global regex neutralises only the first
+ * occurrence and leaves later ones to be judged as claims.
+ */
+const SANCTIONED_PHRASES: readonly RegExp[] = [
+  // The generated inventory (D245) names the DATASET it retains, not what
+  // happens to mail — `screener_quarantine` is the table behind it. D228
+  // locks this copy and it is generated from the typed registry, so
   // rewording it is a privacy-disclosure change, not a copy tweak.
-  /Screener quarantine records/i,
+  /Screener quarantine records/gi,
 ];
 
 const SURFACES: ReadonlyArray<readonly [string, unknown]> = [
@@ -134,6 +143,22 @@ describe('D194 — Screener is soft quarantine, never a block', () => {
     );
   });
 
+  it('a sanctioned phrase does not license the claims around it', () => {
+    // The allowlist neutralises words, it does not excuse passages. An
+    // exempting allowlist would pass all three of these.
+    expect(
+      isOffending(
+        'Screener quarantine records are retained. The Screener blocks new senders before they arrive.',
+      ),
+    ).toBe(true);
+    expect(
+      isOffending('We store Screener quarantine records, and the Screener prevents delivery.'),
+    ).toBe(true);
+    expect(
+      isOffending('The Screener is soft quarantine, but it also keeps out first-time senders.'),
+    ).toBe(true);
+  });
+
   it.each(SURFACES)('%s copy never says the Screener blocks mail', (_name, surface) => {
     const offenders = collectStrings(surface).filter(isOffending);
     expect(offenders).toEqual([]);
@@ -148,6 +173,14 @@ describe('D194 — Screener is soft quarantine, never a block', () => {
 });
 
 describe('gate mechanics', () => {
+  it('every sanctioned phrase is global, so it cannot half-neutralise', () => {
+    // A non-global regex replaces only the first occurrence; the second
+    // would then be read as a claim, failing a build for approved copy.
+    for (const phrase of SANCTIONED_PHRASES) {
+      expect(phrase.flags, `${phrase} must be global`).toContain('g');
+    }
+  });
+
   it('the storage-list exception is load-bearing, not decorative', () => {
     // Without it, the generated list WOULD trip the check — proving the
     // new surface is actually being read rather than silently skipped.
