@@ -70,9 +70,14 @@ import type { WorkerContext } from './worker-context.js';
  * snippets. The result is metric-only.
  */
 
-/** The five template kinds this pipeline delivers (D162; D6; D232). */
+/** The template kinds this pipeline delivers (D162; D6; D189/D251; D232). */
 export type EmailKind =
-  'sync-complete' | 'sync-reminder-24h' | 'sync-failed' | 'deletion-scheduled' | 'deletion-receipt';
+  | 'sync-complete'
+  | 'sync-reminder-24h'
+  | 'sync-failed'
+  | 'weekly-value-receipt'
+  | 'deletion-scheduled'
+  | 'deletion-receipt';
 
 /**
  * Per-kind D165 opt-out key in `emailPrefs`. Kinds absent here are
@@ -83,6 +88,7 @@ export type EmailKind =
 const OPT_OUT_PREF_BY_KIND: Partial<Record<EmailKind, keyof EmailPrefs>> = {
   'sync-reminder-24h': 'reminders',
   'sync-complete': 'syncComplete',
+  'weekly-value-receipt': 'weeklyReceipt',
 };
 
 /**
@@ -122,7 +128,10 @@ const OPT_OUT_PREF_BY_KIND: Partial<Record<EmailKind, keyof EmailPrefs>> = {
  * because the thing it reminds you of was. What makes a message
  * transactional is the information IT carries.
  */
-export const COMMERCIAL_KINDS: ReadonlySet<EmailKind> = new Set<EmailKind>(['sync-reminder-24h']);
+export const COMMERCIAL_KINDS: ReadonlySet<EmailKind> = new Set<EmailKind>([
+  'sync-reminder-24h',
+  'weekly-value-receipt',
+]);
 
 /** One transactional email send. */
 export interface EmailSendJobData {

@@ -16,7 +16,7 @@
  * where it exists, and clamp back to USD where it does not.
  */
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type * as Entitlements from '@declutrmail/shared/entitlements';
 
@@ -74,6 +74,7 @@ import { PricingScreen } from './pricing-screen';
 const PRO_MONTHLY = TIER_MANIFEST.pro.prices.monthly!;
 const PRO_ANNUAL = TIER_MANIFEST.pro.prices.annual!;
 const PLUS_MONTHLY = TIER_MANIFEST.plus.prices.monthly!;
+const PLUS_ANNUAL = TIER_MANIFEST.plus.prices.annual!;
 const PROMO = TIER_MANIFEST.pro.promo!;
 
 function renderIn(provider: 'paddle' | 'razorpay', node: React.ReactNode) {
@@ -105,11 +106,30 @@ describe('the landing teaser quotes the visitor rail (D117)', () => {
 });
 
 describe('/pricing quotes the visitor rail (D117)', () => {
+  it('opens on the annual cycle', () => {
+    // Founder-locked 2026-08-02. Every case below drives the toggle to
+    // Monthly precisely because annual is the opening state — assert it
+    // here so a regression fails on the cause rather than surfacing
+    // downstream as an unexplained currency mismatch.
+    renderIn('paddle', <PricingScreen />);
+    expect(screen.getByRole('button', { name: /^Annual/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^Monthly$/ })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByText(formatUsd(PLUS_ANNUAL.usdCents))).toBeInTheDocument();
+  });
+
   it('prices Pro in INR while an unprovisioned tier stays USD on the SAME page', () => {
     // The mixed page is the point: the clamp is per price point, not
     // per visitor, so one page legitimately carries both currencies —
     // each naming the rail that exact plan is bought on.
     renderIn('razorpay', <PricingScreen />);
+    // /pricing opens on ANNUAL now, where Pro's card shows the Paddle-only
+    // Founding Pro promo (clamped to USD) instead of the Razorpay annual
+    // price. This case is about the mixed-currency MONTHLY rail, so drive
+    // the toggle to it rather than assert against the promo.
+    fireEvent.click(screen.getByRole('button', { name: /^Monthly$/ }));
     expect(screen.getByText(formatInr(PRO_MONTHLY.inrPaise))).toBeInTheDocument();
     expect(screen.getByText(formatUsd(PLUS_MONTHLY.usdCents))).toBeInTheDocument();
     expect(screen.queryByText(formatUsd(PRO_MONTHLY.usdCents))).not.toBeInTheDocument();
@@ -128,6 +148,7 @@ describe('/pricing quotes the visitor rail (D117)', () => {
 
   it('prices Pro in USD for everyone else', () => {
     renderIn('paddle', <PricingScreen />);
+    fireEvent.click(screen.getByRole('button', { name: /^Monthly$/ }));
     expect(screen.getByText(formatUsd(PRO_MONTHLY.usdCents))).toBeInTheDocument();
     expect(screen.queryByText(formatInr(PRO_MONTHLY.inrPaise))).not.toBeInTheDocument();
   });

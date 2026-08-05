@@ -453,11 +453,21 @@ export function ConfirmActionModal({
       ? bulkPreview.data.senders.filter((s) => !s.protected).length
       : (request?.senders.length ?? 0)
     : 1;
+  // Set when `requestAction` already trimmed this request to what the
+  // allowance covers. The senders here ARE the ones that will run, so the
+  // preview above is truthful as-is; all this changes is the copy, which
+  // has to say the selection was larger.
+  const quotaCappedFrom = request?.quotaCappedFrom ?? null;
   const quotaShort = quotaRemaining !== null && unitsNeeded > quotaRemaining;
 
   // `nothingToActOn` already carries its own verb test — repeating a
   // narrower one here would silently re-exclude Later.
-  const confirmDisabled = livePreviewBlocksConfirm || nothingToActOn || wakeAtInvalid || quotaShort;
+  //
+  // `quotaShort` only blocks when NOTHING can run — a capped request has
+  // already been trimmed to fit, so blocking it here would restore the
+  // dead end the cap exists to remove.
+  const confirmDisabled =
+    livePreviewBlocksConfirm || nothingToActOn || wakeAtInvalid || (quotaShort && !quotaCappedFrom);
 
   // Swap confirm for a truthful upgrade action when the quota cannot
   // cover this click — routed through the same upgrade-gate store the
@@ -544,7 +554,9 @@ export function ConfirmActionModal({
   const selectedCount = request.selectedCount ?? requestedSenderCount;
   const skippedCount = (request.skipped?.protectedCount ?? 0) + (request.skipped?.peopleCount ?? 0);
   const eligibleCount = Math.max(0, selectedCount - skippedCount);
-  const n = eligibleCount;
+  // Stated by the caller when known; the old arithmetic is the fallback
+  // for the single-sender paths that never narrow.
+  const n = request.actionableCount ?? eligibleCount;
   const plural = n === 1 ? '' : 's';
   const subject = n === 1 ? 'this sender' : 'these senders';
   // Tone: Delete is the strongest destructive — red eyebrow + amber-red
@@ -818,7 +830,12 @@ export function ConfirmActionModal({
                 margin: '8px 0 0',
               }}
             >
+              {/* The quota segment is what reconciles "eligible" with the
+                  title once a cap is in play: 2 senders can be eligible
+                  while only 1 fits this month's allowance. Without it the
+                  line reads as an unexplained mismatch. */}
               {selectedCount} selected · {eligibleCount} eligible · {skippedCount} skipped
+              {quotaCappedFrom ? ` · ${requestedSenderCount} within this month's actions` : ''}
             </p>
           )}
         </div>
@@ -1520,11 +1537,13 @@ export function ConfirmActionModal({
               ? "Couldn't load the live preview — close and retry before confirming."
               : livePreviewLoading
                 ? 'Loading the live preview — confirm stays locked until it is ready.'
-                : quotaShort
-                  ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
-                  : quotaRemaining !== null
-                    ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.${recoveryCopy ? ` ${recoveryCopy}` : ''}`
-                    : (recoveryCopy ?? '')}
+                : quotaCappedFrom
+                  ? `Acting on ${unitsNeeded} of the ${quotaCappedFrom} eligible senders — that is every cleanup action you have left this month. The rest stay untouched.`
+                  : quotaShort
+                    ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
+                    : quotaRemaining !== null
+                      ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.${recoveryCopy ? ` ${recoveryCopy}` : ''}`
+                      : (recoveryCopy ?? '')}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {livePreviewUnavailable && onRetryPreview && (

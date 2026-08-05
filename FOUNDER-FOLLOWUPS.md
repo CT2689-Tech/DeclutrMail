@@ -26,6 +26,41 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-05 — `/blog` metadata title runs 66 chars; no ratified title budget exists
+**Source:** SEO pass during PR #470; Codex stop-time review
+**Why:** `apps/web/src/app/(marketing)/blog/page.tsx:6` carries the D250-prescribed
+`DeclutrMail Journal — previews, undo, and the limits of bulk email` — **66 characters**.
+The copy spec §3.1 itself notes that 60 characters "overruns the ~580px SERP budget", so by
+its own reasoning this title truncates in results. Every other public title fits: the 13
+`/how-to`, `/answers` and blog article titles all land at 42–58.
+
+This session shortened it to 59 and added a CI assertion enforcing ≤60 across 16 routes.
+**Both were reverted** — no D-decision or ADR establishes a global title budget, so the
+assertion invented repo-wide copy policy (§11: agents do not mint constraints), and the
+shortened string overrode a locked D250 value on agent judgement. The route-coverage half of
+that change was kept: six previously untested routes (`/blog`, `/faq`, `/changelog`,
+`/how-it-works`, `/compare`, `/methodology`) now get the canonical/OG/Twitter assertions,
+which add coverage without adding a rule.
+
+**How:** decide one of — (a) accept the truncation and keep the spec string; (b) approve a
+shorter title (`DeclutrMail Journal — previews, undo, and bulk email limits`, 59 chars); or
+(c) ratify a title budget as an ADR, after which the CI assertion becomes legitimate.
+Note the 60-char figure is a rule of thumb — Google renders ~580px, and glyph width varies —
+so an ADR should say what it actually measures.
+**Verifies by:** `/blog` title reflects the decision; if (c), an ADR exists in `docs/adr/`
+and the assertion is restored citing it.
+**Status:** Open
+
+### 2026-08-05 — Six marketing meta descriptions exceed 160 characters
+**Source:** SEO pass during PR #470
+**Why:** `/security` 180, `/compare` 171, `/methodology` 168, `/pricing` 167, `/how-it-works`
+167, `/faq` 165. Google truncates rather than penalises, so this is cosmetic SERP polish, not
+a ranking defect — but the tail of each is currently invisible in results. Left unedited
+because these are copy decisions, and the same "don't mint a constraint" rule applies.
+**How:** trim the six to ≤160, or decide the truncation is acceptable.
+**Verifies by:** each description ≤160, or an explicit decision recorded here.
+**Status:** Open
+
 ### 2026-08-02 — CLAUDE.md "Plan stats" line is stale in all three numbers
 **Source:** consistency review of PR #458 (D250/D251)
 **Why:** CLAUDE.md:208 and :796 both read "235 decisions + 33 inline patches + 3 reversal markers". On the D250 branch the real counts are **241 D-rows**, **34 patch markers**, and **1 REVERSAL marker** — and `main`'s plan mirror has **zero** REVERSAL markers, so the "3" has never matched the mirror it describes. Agents must not edit CLAUDE.md (§11), so this is surfaced rather than fixed, per §3's plan-drift rule.
@@ -159,15 +194,15 @@ Separately: the rolled-up `Test` check reports red purely because it aggregates 
 **Source:** #406 email compliance audit (founder asked whether we meet the legal/industry bar for sending)
 **Why:** CAN-SPAM §7704(a)(5)(A)(iii) requires a **valid physical postal address of the sender** in commercial email; Canada's CASL requires it too. We ship none — not in the templates, not on the legal pages (checked: `terms`, `privacy`, `contact` have jurisdiction and email addresses, no postal address anywhere). These statutes bind on **recipient** location, so US and Canadian users pull them in regardless of the Terms' India/Mumbai jurisdiction.
 
-Scope is narrower than it sounds: the two deletion emails are genuine transactional/relationship messages and are **exempt**. The exposure is `sync-reminder-24h` (a re-engagement nudge — regulators treat these as commercial) and the deferred D126 Part 3 sequence, which is unambiguously commercial. `sync-complete` is arguably transactional but ships opt-out-able, so treat it as in scope.
+Scope is narrower than it sounds: the two deletion emails are genuine transactional/relationship messages and are **exempt**. The exposure is `sync-reminder-24h` (a re-engagement nudge — regulators treat these as commercial), `weekly-value-receipt` (the opt-in Plus/Pro value cue locked by D189/D251), and the deferred D126 Part 3 sequence, which is unambiguously commercial. `sync-complete` is arguably transactional but ships opt-out-able, so treat it as in scope.
 
 Deliberately deferred by founder decision 2026-07-28 (of the three options — virtual address / home address / defer). Rationale: pre-launch, zero real users, so practical risk today is ~nil; and the alternative was burning a home address into every recipient's permanent archive. **This does not stay deferred past first real send.**
 **How:**
 1. Obtain a usable address — a rented virtual/registered business address in India (~₹500–2000/mo) was the recommended route; a registered company address works equally well if the entity gets set up first.
 2. Add it to `packages/shared/src/copy/` as a locked constant beside the privacy copy (single source of truth, same as `PRIVACY_BADGE_HEADLINE`), and render it in the `Shell` footer of opt-out-able kinds. Ping me and this is a ~20-minute change; the footer block already exists, it just needs the line.
 3. Publish the same address on the marketing site's contact/legal page — CASL expects it discoverable, not email-only.
-**Verifies by:** a rendered `sync-reminder-24h` shows the postal address in both the HTML and plain-text parts; the address appears on `/contact`.
-**Status:** Open — **must close before the first non-founder send.** Reaffirmed deferred by the founder 2026-07-31, with the scope narrowed: `sync-complete` is NOT in scope after all. `COMMERCIAL_KINDS` in `packages/workers/src/email-send.worker.ts` correctly holds only `sync-reminder-24h`, because `sync-complete` delivers the result of a service the recipient asked for (§7702(17)(A)(v)) and is transactional. So a stranger can sign up and be onboarded today without a non-compliant send; what stays blocked is the 24h re-engagement nudge and the deferred D126 Part 3 sequence. Marketing is therefore NOT gated on this — only re-engagement email is.
+**Verifies by:** rendered `sync-reminder-24h` and `weekly-value-receipt` messages show the postal address in every body format they send; the address appears on `/contact`.
+**Status:** Open — **must close before the first non-founder send.** Reaffirmed deferred by the founder 2026-07-31, with the scope narrowed: `sync-complete` is NOT in scope after all. `COMMERCIAL_KINDS` in `packages/workers/src/email-send.worker.ts` correctly holds `sync-reminder-24h` and `weekly-value-receipt`, because `sync-complete` delivers the result of a service the recipient asked for (§7702(17)(A)(v)) and is transactional. So a stranger can sign up and be onboarded today without a non-compliant send; what stays blocked is the 24h re-engagement nudge, the weekly value receipt, and the deferred D126 Part 3 sequence. Marketing is therefore NOT gated on this — only commercial email is.
 
 ### 2026-07-27 — Create `unsubscribe-token-secret-prod` BEFORE merging the D162/D165 email PR
 **Source:** feat/d162-react-email-templates (React Email + RFC 8058 one-click unsubscribe)

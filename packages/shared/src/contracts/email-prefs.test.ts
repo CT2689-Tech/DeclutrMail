@@ -15,7 +15,7 @@ describe('parseEmailPrefs', () => {
     expect(parseEmailPrefs({})).toEqual(DEFAULT_EMAIL_PREFS);
   });
 
-  it('preserves a pre-syncComplete opt-out and fills the new key from defaults', () => {
+  it('preserves a legacy opt-out and defaults the weekly receipt to off', () => {
     // The migration-critical case: `{ reminders: false }` was a valid
     // full bag before D165's per-category expansion. A strict full
     // parse would fail and RESET the opt-out — the partial merge must
@@ -23,13 +23,15 @@ describe('parseEmailPrefs', () => {
     expect(parseEmailPrefs({ emailPrefs: { reminders: false } })).toEqual({
       reminders: false,
       syncComplete: true,
+      weeklyReceipt: false,
     });
   });
 
-  it('reads a full two-key bag verbatim', () => {
+  it('fills the weekly default for a complete pre-weekly bag', () => {
     expect(parseEmailPrefs({ emailPrefs: { reminders: true, syncComplete: false } })).toEqual({
       reminders: true,
       syncComplete: false,
+      weeklyReceipt: false,
     });
   });
 
@@ -43,9 +45,10 @@ describe('parseEmailPrefs', () => {
 });
 
 describe('EmailPrefsPatchSchema', () => {
-  it('accepts single-key patches for either category', () => {
+  it('accepts single-key patches for each category', () => {
     expect(EmailPrefsPatchSchema.safeParse({ reminders: false }).success).toBe(true);
     expect(EmailPrefsPatchSchema.safeParse({ syncComplete: false }).success).toBe(true);
+    expect(EmailPrefsPatchSchema.safeParse({ weeklyReceipt: true }).success).toBe(true);
   });
 
   it('rejects empty patches, unknown keys, and non-boolean values', () => {

@@ -9,7 +9,7 @@
  *   - D34 toggle → PATCH /api/me/action-sheet-prefs with the single
  *     changed key, and the triage Zustand store mirrors the result
  *   - D165 per-category email toggles → PATCH /api/me/email-prefs
- *     round trips (reminders + syncComplete)
+ *     round trips (reminders + syncComplete + weeklyReceipt)
  *   - mailbox health: last-synced stamp renders; an InvalidGrantError
  *     sync status renders "Needs reconnect" + the Reconnect affordance
  *   - billing 503 renders the honest "not enabled" copy (never a fake
@@ -99,7 +99,7 @@ const DELETION_STATUS = {
 };
 
 const SETTINGS_PAYLOAD = {
-  emailPrefs: { reminders: true, syncComplete: true },
+  emailPrefs: { reminders: true, syncComplete: true, weeklyReceipt: false },
   actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
 };
 
@@ -515,6 +515,7 @@ describe('SettingsScreen', () => {
               emailPrefs: {
                 reminders: body.reminders ?? true,
                 syncComplete: body.syncComplete ?? true,
+                weeklyReceipt: body.weeklyReceipt ?? false,
               },
             },
           });
@@ -548,6 +549,7 @@ describe('SettingsScreen', () => {
               emailPrefs: {
                 reminders: body.reminders ?? true,
                 syncComplete: body.syncComplete ?? true,
+                weeklyReceipt: body.weeklyReceipt ?? false,
               },
             },
           });
@@ -570,6 +572,43 @@ describe('SettingsScreen', () => {
     // The system row never grows a toggle — non-opt-out per D165.
     expect(screen.getByText('Always on')).toBeInTheDocument();
     expect(screen.getByText('Account notices')).toBeInTheDocument();
+  });
+
+  it('weekly receipt opt-in PATCHes only weeklyReceipt', async () => {
+    const patches: unknown[] = [];
+    installFetchStub([
+      ...happyHandlers(),
+      {
+        method: 'PATCH',
+        path: '/api/me/email-prefs',
+        respond: async (req) => {
+          const body = (await req.json()) as Record<string, boolean>;
+          patches.push(body);
+          return jsonOk({
+            data: {
+              emailPrefs: {
+                reminders: body.reminders ?? true,
+                syncComplete: body.syncComplete ?? true,
+                weeklyReceipt: body.weeklyReceipt ?? false,
+              },
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const toggle = await screen.findByRole('switch', {
+      name: /^enable weekly value receipt$/i,
+    });
+    await userEvent.click(toggle);
+
+    await waitFor(() => expect(patches).toEqual([{ weeklyReceipt: true }]));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('switch', { name: /^disable weekly value receipt$/i }),
+      ).toBeInTheDocument(),
+    );
   });
 
   it('renders the honest billing-disabled copy on 503 BILLING_DISABLED (no fake Free)', async () => {

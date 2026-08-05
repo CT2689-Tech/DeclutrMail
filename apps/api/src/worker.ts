@@ -27,6 +27,7 @@ import {
   DrizzleDeadLetterRecorder,
   EMAIL_SEND_QUEUE,
   EmailSendWorker,
+  enqueueEmailSend,
   ensureIncrementalSyncJob,
   ensureInitialSyncJob,
   enqueueBriefSnapshotTick,
@@ -36,6 +37,7 @@ import {
   enqueueSendersCounterReconciliationTick,
   enqueueSnoozeWakeTick,
   enqueueUndoExpiryTick,
+  enqueueWeeklyValueReceiptTick,
   FOLLOWUP_CHECK_INTERVAL_MS,
   FOLLOWUP_CHECK_QUEUE,
   FollowupCheckWorker,
@@ -75,6 +77,9 @@ import {
   WATCH_RENEWAL_INTERVAL_MS,
   WATCH_RENEWAL_QUEUE,
   WatchRenewalWorker,
+  WEEKLY_VALUE_RECEIPT_INTERVAL_MS,
+  WEEKLY_VALUE_RECEIPT_QUEUE,
+  WeeklyValueReceiptWorker,
   workerTuningOptions,
 } from '@declutrmail/workers';
 import type {
@@ -116,6 +121,8 @@ import type {
   UnsubExecutionResult,
   WatchRenewalJobData,
   WatchRenewalResult,
+  WeeklyValueReceiptJobData,
+  WeeklyValueReceiptResult,
 } from '@declutrmail/workers';
 
 import { AnthropicHaikuAdapter } from './adapters/anthropic-haiku.adapter.js';
@@ -123,11 +130,12 @@ import { buildBriefLlmAdapter } from './adapters/brief-llm-anthropic.adapter.js'
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
-import { deletionReceiptEmail } from './notifications/templates/index.js';
+import { deletionReceiptEmail, weeklyValueReceiptEmail } from './notifications/templates/index.js';
 import { EmailService } from './notifications/email.service.js';
 import { EmailSuppressionService } from './notifications/email-suppression.service.js';
 import { buildSyncReadyEmailHandler } from './notifications/sync-ready-email.trigger.js';
 import { buildSyncFailedEmailHandler } from './notifications/sync-failed-email.trigger.js';
+import { unsubscribeHeadersFor, unsubscribeUrl } from './notifications/unsubscribe-headers.js';
 import { runBillingReconciliationSweep } from './billing/billing-reconciliation.sweep.js';
 import { AutopilotReadService } from './autopilot/autopilot.read-service.js';
 import { BillingCatalog } from './billing/billing-catalog.js';
@@ -1537,6 +1545,82 @@ async function bootstrap(): Promise<void> {
   });
 
   /**
+   * D189 amended by D251 — hourly producer for the opt-in Plus/Pro
+   * weekly Screener value receipt. The cron worker resolves Sunday
+   * 18:00 in each user's timezone and enqueues only `N > 0`; the
+   * EmailSendWorker remains the execution-time preference + postal gate.
+   */
+  const weeklyValueReceiptQueue = new Queue<WeeklyValueReceiptJobData>(WEEKLY_VALUE_RECEIPT_QUEUE, {
+    connection,
+  });
+  const weeklyValueReceiptWorker = new WeeklyValueReceiptWorker({
+    db,
+    prepareEmail: async ({ userId, pendingCount }) => {
+      const unsubscribe = await unsubscribeUrl({
+        userId,
+        scope: 'all',
+        apiUrl: process.env.API_URL ?? 'http://localhost:4000',
+      });
+      const rendered = weeklyValueReceiptEmail({
+        pendingCount,
+        appUrl: process.env.WEB_URL ?? 'http://localhost:3000',
+        unsubscribeUrl: unsubscribe,
+      });
+      return {
+        subject: rendered.subject,
+        text: rendered.text,
+        headers: unsubscribeHeadersFor(unsubscribe),
+      };
+    },
+    enqueueEmail: (data) => enqueueEmailSend(emailSendQueue, data),
+  });
+  weeklyValueReceiptWorker.setObserver(observer);
+  weeklyValueReceiptWorker.setDeadLetterRecorder(deadLetterRecorder);
+  const weeklyValueReceiptBullWorker = new Worker<
+    WeeklyValueReceiptJobData,
+    WeeklyValueReceiptResult
+  >(WEEKLY_VALUE_RECEIPT_QUEUE, (job) => weeklyValueReceiptWorker.run(job), {
+    connection,
+    concurrency: 1,
+    ...cronTuning,
+  });
+  weeklyValueReceiptBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: WEEKLY_VALUE_RECEIPT_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  async function enqueueWeeklyReceiptTick(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueWeeklyValueReceiptTick(weeklyValueReceiptQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'weekly_value_receipt.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, {
+        kind: 'weekly_value_receipt.scheduler_failed',
+      });
+    }
+  }
+
+  await enqueueWeeklyReceiptTick();
+  const weeklyValueReceiptSchedulerHandle = setInterval(() => {
+    void enqueueWeeklyReceiptTick();
+  }, WEEKLY_VALUE_RECEIPT_INTERVAL_MS);
+  weeklyValueReceiptSchedulerHandle.unref();
+
+  /**
    * Autopilot execution chain (D99/D101/D104, D226 — perMailboxPolicy;
    * quiet-hours deferral D92/D93). `createAutopilotExecutionChain`
    * wires the pair: the APPLY worker matches enabled rules against
@@ -1997,6 +2081,13 @@ async function bootstrap(): Promise<void> {
   console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: FOLLOWUP_CHECK_QUEUE }),
   );
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      kind: 'worker.listening',
+      queue: WEEKLY_VALUE_RECEIPT_QUEUE,
+    }),
+  );
 
   /**
    * OutboxDispatcherWorker (D13, D204) — the single consumer pipeline
@@ -2088,6 +2179,7 @@ async function bootstrap(): Promise<void> {
     clearInterval(deadLetterSchedulerHandle);
     clearInterval(deletionSweepSchedulerHandle);
     clearInterval(followupCheckSchedulerHandle);
+    clearInterval(weeklyValueReceiptSchedulerHandle);
     void (async () => {
       if (inFlight) {
         await inFlight;
@@ -2116,6 +2208,8 @@ async function bootstrap(): Promise<void> {
       await watchRenewalSchedulerQueue.close();
       await emailSendBullWorker.close();
       await emailSendQueue.close();
+      await weeklyValueReceiptBullWorker.close();
+      await weeklyValueReceiptQueue.close();
       await autopilotApplyBullWorker.close();
       await autopilotActionBullWorker.close();
       await autopilotApplyQueue.close();

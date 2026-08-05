@@ -6,6 +6,7 @@ import {
   BUSINESS_POSTAL_ADDRESS,
   hasPostalAddress,
   PRIVACY_BADGE_HEADLINE,
+  PRIVACY_BADGE_LEAD,
 } from '@declutrmail/shared/copy';
 
 /** Rendered email — what the EmailSendWorker job carries. */
@@ -175,6 +176,14 @@ export function Shell(props: {
             }}
           >
             {PRIVACY_BADGE_HEADLINE}
+          </Text>
+
+          {/* The headline is a deliberately literal, falsifiable metric — it
+              reads as jargon on its own. Every other surface that shows it
+              pairs it with a plain-language translation; this footer was the
+              one place it rendered naked. */}
+          <Text style={{ color: MUTED, fontSize: '12px', lineHeight: '18px', margin: '6px 0 0' }}>
+            {PRIVACY_BADGE_LEAD}
           </Text>
 
           <Text style={{ color: MUTED, fontSize: '12px', lineHeight: '18px', margin: '10px 0 0' }}>

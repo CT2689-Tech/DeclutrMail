@@ -22,6 +22,12 @@ import { metadata as cookies } from './cookies/page';
 import { metadata as help } from './help/page';
 import { metadata as contact } from './contact/page';
 import { metadata as security } from './security/page';
+import { metadata as blog } from './blog/page';
+import { metadata as faq } from './faq/page';
+import { metadata as changelog } from './changelog/page';
+import { metadata as howItWorks } from './how-it-works/page';
+import { metadata as compare } from './compare/page';
+import { metadata as methodology } from './methodology/page';
 
 const PAGES: ReadonlyArray<{ name: string; metadata: Metadata; path: string }> = [
   { name: 'landing', metadata: landing, path: '/' },
@@ -34,7 +40,35 @@ const PAGES: ReadonlyArray<{ name: string; metadata: Metadata; path: string }> =
   { name: 'help', metadata: help, path: '/help' },
   { name: 'contact', metadata: contact, path: '/contact' },
   { name: 'security', metadata: security, path: '/security' },
+  { name: 'blog', metadata: blog, path: '/blog' },
+  { name: 'faq', metadata: faq, path: '/faq' },
+  { name: 'changelog', metadata: changelog, path: '/changelog' },
+  { name: 'how-it-works', metadata: howItWorks, path: '/how-it-works' },
+  { name: 'compare', metadata: compare, path: '/compare' },
+  { name: 'methodology', metadata: methodology, path: '/methodology' },
 ];
+
+/**
+ * D250 §3.6 row 21 prescribes this exact title. Nothing asserted it, so the
+ * string was changed twice while shipping D250 before the gap was noticed.
+ *
+ * This pins the VALUE the spec chose — not a length policy. An earlier
+ * attempt asserted a 60-character budget across every route and was
+ * reverted: no D-decision or ADR establishes one, and inventing repo-wide
+ * copy rules is not an agent's call (CLAUDE.md §11). The title's length is
+ * a live question recorded in FOUNDER-FOLLOWUPS; if a budget is ever
+ * ratified, this assertion changes with the string it guards.
+ */
+describe('the blog index title — D250 §3.6 row 21', () => {
+  it('carries the string the spec prescribed, exactly', () => {
+    // Equality, not `toContain`: a substring check passes on any superstring,
+    // so an appended suffix would drift from the prescribed value unnoticed —
+    // which is the failure this assertion exists to catch.
+    expect(blog.title).toEqual({
+      absolute: 'DeclutrMail Journal — previews, undo, and the limits of bulk email',
+    });
+  });
+});
 
 describe.each(PAGES)('$name page metadata — D132', ({ metadata, path }) => {
   it('declares the canonical path', () => {

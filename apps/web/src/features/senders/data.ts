@@ -345,6 +345,32 @@ export interface ActionRequest {
     protectedCount: number;
     peopleCount: number;
   };
+  /**
+   * ELIGIBLE senders before the monthly cleanup quota capped this
+   * request — not the selection total. Set only when the cap actually
+   * bit, and paired with copy that says "eligible": on a selection that
+   * was ALSO eligibility-narrowed the two differ (3 selected, 1
+   * protected, 2 eligible, 1 affordable), and calling 2 the selection
+   * total misreports what the user did.
+   *
+   * Rides the request for the same reason `skipped` does (D226 honesty):
+   * the preview must cover exactly what will run, and must say why it
+   * covers fewer senders than the selection bar showed. Capping BEFORE
+   * the preview query — rather than truncating at mutation time — is
+   * what keeps the two in agreement.
+   */
+  quotaCappedFrom?: number;
+  /**
+   * How many senders this request will actually act on.
+   *
+   * STATED, not derived. The modal used to infer it as `selectedCount -
+   * skipped`, which held only while eligibility was the one reason a
+   * request could cover fewer senders than the selection. The quota cap
+   * is a second reason, and any future narrowing would be a third — each
+   * one silently invalidating an arithmetic identity nobody wrote down.
+   * The caller knows the number; it should say it.
+   */
+  actionableCount?: number;
 }
 
 /** Which curated slice the focused review session is working on. */

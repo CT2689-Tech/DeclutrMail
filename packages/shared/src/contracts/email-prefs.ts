@@ -14,6 +14,8 @@ import { z } from 'zod';
  *       `syncComplete` — the "your inbox is ready" completion alert
  *                        (D114 Notifications section's "completion
  *                        alerts").
+ *       `weeklyReceipt` — the Plus/Pro weekly Screener value receipt
+ *                         (D189 amended by D251). Default off.
  *
  * Shared between the API (PATCH /api/me/email-prefs) and the
  * EmailSendWorker (execution-time opt-out check) so both sides read
@@ -25,12 +27,18 @@ export const EmailPrefsSchema = z
     reminders: z.boolean(),
     /** "Your inbox is ready" sync-completion alerts. Default true. */
     syncComplete: z.boolean(),
+    /** Plus/Pro weekly Screener value receipt. Default false. */
+    weeklyReceipt: z.boolean(),
   })
   .strict();
 
 export type EmailPrefs = z.infer<typeof EmailPrefsSchema>;
 
-export const DEFAULT_EMAIL_PREFS: EmailPrefs = { reminders: true, syncComplete: true };
+export const DEFAULT_EMAIL_PREFS: EmailPrefs = {
+  reminders: true,
+  syncComplete: true,
+  weeklyReceipt: false,
+};
 
 /**
  * PATCH /api/me/email-prefs request body. All keys optional — a patch
@@ -41,6 +49,7 @@ export const EmailPrefsPatchSchema = z
   .object({
     reminders: z.boolean().optional(),
     syncComplete: z.boolean().optional(),
+    weeklyReceipt: z.boolean().optional(),
   })
   .strict()
   .refine((patch) => Object.keys(patch).length > 0, {
@@ -72,5 +81,6 @@ export function parseEmailPrefs(preferences: unknown): EmailPrefs {
   return {
     reminders: parsed.data.reminders ?? DEFAULT_EMAIL_PREFS.reminders,
     syncComplete: parsed.data.syncComplete ?? DEFAULT_EMAIL_PREFS.syncComplete,
+    weeklyReceipt: parsed.data.weeklyReceipt ?? DEFAULT_EMAIL_PREFS.weeklyReceipt,
   };
 }

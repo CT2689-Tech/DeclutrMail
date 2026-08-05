@@ -117,9 +117,10 @@ export function ComparisonIndexScreen() {
               Email cleanup tools solve <em>different problems.</em>
             </h1>
             <p className="dm-mkt-hero-sub">
-              DeclutrMail is a sender-first Gmail cleanup companion. These comparisons show where
-              focused unsubscribers, learned sorters, broad cleanup suites, and Gmail&rsquo;s own
-              filters are genuinely stronger—and where DeclutrMail fits.
+              DeclutrMail is a Gmail cleanup companion that shows the scope of a manual move before
+              it runs. These comparisons show where focused unsubscribers, learned sorters, broad
+              cleanup suites, and Gmail&rsquo;s own filters are genuinely stronger—and where
+              DeclutrMail fits.
             </p>
           </div>
           <div className="dm-compare-index-note">

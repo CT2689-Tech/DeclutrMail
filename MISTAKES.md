@@ -1606,3 +1606,36 @@ same breath (the ACTION_SAFETY_SUMMARY discipline applies to per-rule
 strings too).
 **Enforcement update:** screen test now pins the per-verb branches and
 rejects the three failed absolutes.
+
+## 2026-08-04 — A proximity heuristic in a hook: seven rounds, seven holes
+**PR:** feat/d250-ship-remaining-copy-rows (this branch)
+**Caught by:** Codex stop-time review, seven consecutive rounds
+**What happened:** ADR-0030 records that the copy-spec truth constraints
+were not hook-enforced, so `check-microcopy.sh` gained rules for T2, T3,
+T5 and T6. T2/T5/T6 match fixed strings and have needed no correction
+since the first round. T3 — "does this sentence attribute blocking to the
+Screener" — needs PROXIMITY, and failed in a new place every round:
+line-wrapped phrases; a window crossing code structure; a closed verb list
+that dropped `quarantining`; a case-sensitivity flag `${4:-i}` silently
+ignored (the mechanism the commit message credited was never running);
+inline markup bounding the window; the inline tag set enumerated when the
+block set was the closed one; and finally hyphenated custom elements and
+attributes containing `>`. Rounds three onward were all fixes to fixes.
+Each patch also re-introduced a defect on the other side — narrowing to
+kill false positives cost recall, widening to restore recall brought them
+back.
+**Correct approach:** T3 was removed and returned to the copy spec's
+review brief, where T1, T4 and T7 already sit for exactly this reason.
+The normalisation it motivated (comment stripping, whitespace flattening,
+markup and interpolation removal) was kept, because T2/T5/T6 genuinely
+need it — a ban must not escape by having `<Text>` or `{tier}` dropped
+into the middle of it.
+**Rule:** a hook may enforce a constraint that is a STRING. A constraint
+that needs a window — proximity, distance, "near", "in the same sentence"
+— is a reading, not a match; route it to review instead. The tell is the
+second fix-to-a-fix: if narrowing costs recall and widening costs
+precision, the window has no correct width.
+**Enforcement update:** T3 matcher deleted from
+`.claude/hooks/check-microcopy.sh`, replaced with a comment recording why
+and pointing at the review brief. D194's forbidden framings remain binding
+on copy; they are checked by review.

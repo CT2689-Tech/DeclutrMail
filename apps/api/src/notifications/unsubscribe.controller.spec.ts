@@ -81,7 +81,7 @@ describe('UnsubscribeController', () => {
 
     expect(res.status).toBe('ok');
     expect(await readPrefs(db, userId)).toEqual({
-      emailPrefs: { reminders: false, syncComplete: false },
+      emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
     });
   });
 
@@ -146,7 +146,7 @@ describe('UnsubscribeController', () => {
     await controller.unsubscribe(token);
 
     expect(await readPrefs(db, userId)).toEqual({
-      emailPrefs: { reminders: false, syncComplete: false },
+      emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
     });
   });
 
@@ -165,7 +165,12 @@ describe('UnsubscribeController', () => {
 
     expect(await readPrefs(db, userId)).toEqual({
       profilePreset: 'calm',
-      emailPrefs: { reminders: false, futureCategory: true, syncComplete: false },
+      emailPrefs: {
+        reminders: false,
+        futureCategory: true,
+        syncComplete: false,
+        weeklyReceipt: false,
+      },
     });
   });
 
@@ -182,7 +187,7 @@ describe('UnsubscribeController', () => {
 
     expect(res.status).toBe('ok');
     expect(await readPrefs(db, userId)).toEqual({
-      emailPrefs: { reminders: false, syncComplete: false },
+      emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
     });
   });
 
@@ -198,7 +203,7 @@ describe('UnsubscribeController', () => {
     await controller.unsubscribe(token);
 
     expect(await readPrefs(db, userId)).toEqual({
-      emailPrefs: { reminders: false, syncComplete: false },
+      emailPrefs: { reminders: false, syncComplete: false, weeklyReceipt: false },
     });
   });
 

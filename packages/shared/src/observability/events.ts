@@ -519,10 +519,10 @@ export interface EventPayloads {
   // — Settings surface (U23 — D34/D116/D216) —
   settings_pref_changed: {
     /** Which preference flipped. */
-    pref: 'action_sheet_skip' | 'email_reminders' | 'email_sync_complete';
+    pref: 'action_sheet_skip' | 'email_reminders' | 'email_sync_complete' | 'email_weekly_receipt';
     /**
      * The KAULD verb for `action_sheet_skip` flips; null for
-     * non-verb-scoped prefs (`email_reminders`, `email_sync_complete`).
+     * non-verb-scoped email preferences.
      */
     verb: Verb | null;
     /** State AFTER the change — for skip prefs, true = sheet skipped. */

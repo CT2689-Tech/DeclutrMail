@@ -117,13 +117,13 @@ const SITE_JSON_LD = {
 
 export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
-    // data-theme="light" PINS this public subtree to the light palette
-    // regardless of the app preference — landing.css carries hardcoded
-    // light-design hexes, so following the app's dark theme here would
-    // produce seams. Token custom properties re-resolve at this node
-    // (see [data-theme='light'] in @declutrmail/shared tokens.css).
+    // No data-theme pin: the public subtree follows the app preference,
+    // resolved on <html> by theme-init.js before first paint. This node
+    // previously forced light because landing.css held raw light hexes;
+    // those were only ever the `--mkt-*` alias block, which now has a
+    // dark counterpart, so every rule re-resolves from the aliases.
+    // `color.bg` / `color.fg` are var(--dm-*) references, not literals.
     <div
-      data-theme="light"
       style={{
         minHeight: '100vh',
         background: color.bg,
@@ -137,9 +137,9 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
       <main id="main-content">{children}</main>
       <PublicFooter />
       {/* D147 consent ask — a small client island (the one JS addition
-          this shell carries besides page-level islands). INSIDE the
-          light-pinned <main> so the banner matches the marketing
-          palette even when the app preference is dark. */}
+          this shell carries besides page-level islands). Inside the
+          shell so the banner inherits the same resolved theme as the
+          rest of the marketing palette. */}
       <CookieConsentBanner />
     </div>
   );

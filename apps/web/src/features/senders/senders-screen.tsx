@@ -1467,12 +1467,70 @@ function SendersScreenContent({
       }
       const skippedTotal = selectedSenders.length - eligible.length;
       if (skippedTotal === 0) {
-        requestAction({ verb, senders: eligible, selectedCount: selectedSenders.length });
+        // A free user over the monthly cap used to get a disabled confirm
+        // and zero messages moved — the first bulk attempt, the moment
+        // the product is supposed to prove itself, did nothing. Cap to
+        // what the allowance covers and let it run.
+        //
+        // The cap belongs HERE, not in `requestAction`: only this branch
+        // knows which senders are eligible. Slicing the raw selection
+        // could drop the eligible sender and keep a protected one, and
+        // would charge the quota for senders the server never touches.
+        //
+        // It also lands before `setPendingAction`, because the preview
+        // query keys off the pending request — capping at mutation time
+        // would preview 200 senders and act on 50, exactly the D226
+        // contradiction the preview exists to prevent.
+        //
+        // `selectedCount` becomes the capped count so every derived
+        // count in the modal stays internally consistent; the original
+        // selection size rides `quotaCappedFrom` for the copy that
+        // explains the trim. A remaining allowance of 0 is left alone —
+        // there is no partial action to offer, so the upgrade path stays.
+        const remaining = me.cleanupRemaining ?? null;
+        if (remaining !== null && remaining > 0 && eligible.length > remaining) {
+          requestAction({
+            verb,
+            senders: eligible.slice(0, remaining),
+            selectedCount: selectedSenders.length,
+            actionableCount: remaining,
+            quotaCappedFrom: eligible.length,
+          });
+          return;
+        }
+        requestAction({
+          verb,
+          senders: eligible,
+          selectedCount: selectedSenders.length,
+          actionableCount: eligible.length,
+        });
         return;
       }
       const protectedCount = selectedSenders.filter(
         (s) => !ELIGIBLE[verb](s) && isStandingProtected(s),
       ).length;
+      // Over quota AND eligibility-narrowed. This combination used to
+      // fall through to the disabled confirm — the dead end again, just
+      // reached by a selection that happened to contain a protected
+      // sender. Capping needs the client-narrowed list here, because a
+      // slice of the full selection could land entirely on rows the
+      // server will drop.
+      const remainingWithSkips = me.cleanupRemaining ?? null;
+      if (
+        remainingWithSkips !== null &&
+        remainingWithSkips > 0 &&
+        eligible.length > remainingWithSkips
+      ) {
+        requestAction({
+          verb,
+          senders: eligible.slice(0, remainingWithSkips),
+          selectedCount: selectedSenders.length,
+          actionableCount: remainingWithSkips,
+          quotaCappedFrom: eligible.length,
+          skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
+        });
+        return;
+      }
       requestAction({
         verb,
         // A/L/D keep the original selection so preview and receipt can
@@ -1480,10 +1538,11 @@ function SendersScreenContent({
         // intent requests and therefore remains client-narrowed.
         senders: verb === 'Unsubscribe' ? eligible : selectedSenders,
         selectedCount: selectedSenders.length,
+        actionableCount: eligible.length,
         skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
       });
     },
-    [selectedSenders, requestAction, showingStaleRows, tier],
+    [selectedSenders, requestAction, showingStaleRows, tier, me.cleanupRemaining],
   );
 
   const closePending = useCallback(() => setPendingAction(null), []);

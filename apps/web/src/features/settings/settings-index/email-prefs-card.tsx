@@ -21,6 +21,11 @@ const CATEGORY_ROWS: ReadonlyArray<{
     label: 'Reminder emails',
     detail: 'The 24-hour "your inbox is still ready" nudge and similar re-engagement reminders.',
   },
+  {
+    wire: 'weeklyReceipt',
+    label: 'Weekly value receipt',
+    detail: 'For Plus and Pro: new senders waiting in Screener. Off until you opt in.',
+  },
 ];
 
 export type EmailPrefsCardState =
@@ -31,7 +36,8 @@ export type EmailPrefsCardState =
 /**
  * Settings → Notifications (D165) — per-category email toggles.
  *
- * One switch per opt-out-able category (`syncComplete`, `reminders`);
+ * One switch per opt-out-able category (`syncComplete`, `reminders`,
+ * `weeklyReceipt`);
  * SYSTEM emails (account-deletion notices) are non-opt-out per the
  * CAN-SPAM/GDPR transactional carve-out, so they render as a locked
  * "always send" row instead of a fake toggle.

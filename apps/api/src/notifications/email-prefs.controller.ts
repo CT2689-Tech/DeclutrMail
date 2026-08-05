@@ -23,8 +23,9 @@ import { UsersService } from '../users/users.service.js';
  * send time, so a flipped toggle takes effect on the very next queued
  * reminder.
  *
- * Toggleable categories (D165): `reminders` (the 24h nudge) and
- * `syncComplete` ("your inbox is ready" completion alerts). SYSTEM
+ * Toggleable categories: `reminders` (the 24h nudge), `syncComplete`
+ * ("your inbox is ready" completion alerts), and `weeklyReceipt`
+ * (D189 amended by D251, default off). SYSTEM
  * emails (deletion notices) are non-opt-out per D165 (CAN-SPAM/GDPR
  * transactional carve-out), so no key for them exists.
  */
@@ -55,6 +56,9 @@ export class EmailPrefsController {
     const patch = {
       ...(parsed.data.reminders !== undefined ? { reminders: parsed.data.reminders } : {}),
       ...(parsed.data.syncComplete !== undefined ? { syncComplete: parsed.data.syncComplete } : {}),
+      ...(parsed.data.weeklyReceipt !== undefined
+        ? { weeklyReceipt: parsed.data.weeklyReceipt }
+        : {}),
     };
     const preferences = await this.users.mergeEmailPrefs(user.userId, patch);
     // Display view materialises defaults; storage stays sparse.

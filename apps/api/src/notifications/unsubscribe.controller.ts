@@ -102,7 +102,7 @@ export class UnsubscribeController {
       'max-width:420px;margin:80px auto;padding:0 24px;color:#111">',
       '<h1 style="font-size:20px;margin:0 0 12px">Turn off DeclutrMail emails?</h1>',
       '<p style="color:#666;font-size:14px;line-height:20px;margin:0 0 24px">',
-      'This stops every optional email &mdash; sync updates and reminders. ',
+      'This stops every optional email &mdash; sync updates, reminders, and weekly receipts. ',
       'You will still receive required account notices, such as billing ',
       'and account deletion.</p>',
       `<form method="POST" action="/api/email/unsubscribe?t=${escapeHtmlAttr(token)}">`,

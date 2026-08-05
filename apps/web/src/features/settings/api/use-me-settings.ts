@@ -152,6 +152,14 @@ export function useUpdateEmailPrefs() {
           source: 'settings',
         });
       }
+      if (patch.weeklyReceipt !== undefined) {
+        void track('settings_pref_changed', {
+          pref: 'email_weekly_receipt',
+          verb: null,
+          enabled: patch.weeklyReceipt,
+          source: 'settings',
+        });
+      }
     },
   });
 }

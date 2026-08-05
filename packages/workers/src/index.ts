@@ -339,6 +339,20 @@ export {
   syncFailedEmailJobId,
   syncReminderEmailJobId,
 } from './email-send.queue.js';
+export { WeeklyValueReceiptWorker } from './weekly-value-receipt.worker.js';
+export type {
+  PreparedWeeklyValueReceipt,
+  WeeklyValueReceiptJobData,
+  WeeklyValueReceiptResult,
+  WeeklyValueReceiptWorkerDeps,
+} from './weekly-value-receipt.worker.js';
+export {
+  enqueueWeeklyValueReceiptTick,
+  WEEKLY_VALUE_RECEIPT_INTERVAL_MS,
+  WEEKLY_VALUE_RECEIPT_JOB,
+  WEEKLY_VALUE_RECEIPT_QUEUE,
+  weeklyValueReceiptJobOptions,
+} from './weekly-value-receipt.queue.js';
 export { SnoozeWakeWorker, laterLabelName } from './snooze-wake.worker.js';
 export type { SnoozeWakeDeps, SnoozeWakeJobData, SnoozeWakeResult } from './snooze-wake.worker.js';
 export {

@@ -254,6 +254,93 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+  it('lets a quota-capped bulk RUN, and says what it left behind (A3)', () => {
+    // Covers the modal's HALF of the free-tier dead-end fix: the copy for
+    // an already-trimmed request, and that confirm fires. The trimming
+    // itself lives in `requestAction` and is proved by the senders-screen
+    // test ("caps an over-quota bulk…") — a trimmed request satisfies the
+    // quota by construction, so this test alone cannot show the block was
+    // lifted.
+    const onConfirm = vi.fn();
+    const cappedRequest: ActionRequest = {
+      verb: 'Archive',
+      senders: [sender],
+      quotaCappedFrom: 40,
+    };
+    render(
+      <ConfirmActionModal
+        request={cappedRequest}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={livePreview}
+        cleanupQuota={{ remaining: 1, resetsAt: null }}
+      />,
+    );
+
+    // D226: every count the user reads must be the count that RUNS. The
+    // title comes off the request's senders, not `selectedCount -
+    // skipped` — those agreed only before the quota cap gave a request a
+    // second reason to cover fewer senders than the selection.
+    expect(screen.getByText('Archive mail from 1 sender')).toBeInTheDocument();
+    expect(screen.queryByText(/from 40 senders/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Acting on 1 of the 40 eligible senders/)).toBeInTheDocument();
+    expect(screen.getByText(/The rest stay untouched/)).toBeInTheDocument();
+    // The whole point: confirm is live, and firing it calls through.
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).toHaveBeenCalled();
+    expect(
+      screen.queryByRole('button', { name: /Upgrade for unlimited cleanup/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('reports the combined eligibility+quota narrowing without mixing the two (D226)', () => {
+    // 5 selected, 1 protected -> 4 eligible, allowance of 2 -> act on 2.
+    // (The bulk preview covers exactly the capped senders, as it does in
+    // the real flow, which is what keeps `unitsNeeded` and
+    // `actionableCount` in agreement.)
+    // Every number here means something different, and the round that
+    // added this case got the NOUN wrong: `quotaCappedFrom` holds the
+    // ELIGIBLE total, so calling it the selection told the user they had
+    // selected 2 when they selected 3. The two coincide whenever a
+    // request is only over quota, which is why the wording survived.
+    const second = makeSender({ id: 'sender-c2', displayName: 'Combo Two', email: 'c2@x.com' });
+    const combined: ActionRequest = {
+      verb: 'Archive',
+      senders: [sender, second],
+      selectedCount: 5,
+      actionableCount: 2,
+      quotaCappedFrom: 4,
+      skipped: { protectedCount: 1, peopleCount: 0 },
+    };
+    const bulkData = {
+      senders: [
+        { senderId: sender.id, name: sender.name, counts: buckets, protected: false },
+        { senderId: second.id, name: second.name, counts: buckets, protected: false },
+      ],
+      totals: buckets,
+      protectedCount: 0,
+    };
+    render(
+      <ConfirmActionModal
+        request={combined}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{ data: bulkData, loading: false, error: false }}
+        cleanupQuota={{ remaining: 2, resetsAt: null }}
+      />,
+    );
+
+    // The capped total is the ELIGIBLE count, and says so.
+    expect(screen.getByText(/Acting on 2 of the 4 eligible senders/)).toBeInTheDocument();
+    expect(screen.queryByText(/4 senders you selected/)).not.toBeInTheDocument();
+    // The title is the acted-on count, stated by the caller.
+    expect(screen.getByText('Archive mail from 2 senders')).toBeInTheDocument();
+    // And the scope line keeps the real selection total intact.
+    expect(screen.getByLabelText('Bulk action scope')).toHaveTextContent(
+      '5 selected · 4 eligible · 1 skipped',
+    );
+  });
+
   it('renders no quota line on an unlimited tier', () => {
     render(
       <ConfirmActionModal

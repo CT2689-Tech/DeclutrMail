@@ -579,12 +579,12 @@ toggle confirming with a changed value (`source: 'action_sheet'`).
 
 **Payload.**
 
-| Field     | Type                                       | Notes                                               |
-| --------- | ------------------------------------------ | --------------------------------------------------- |
-| `pref`    | `'action_sheet_skip' \| 'email_reminders'` | Which preference flipped                            |
-| `verb`    | `Verb \| null`                             | KAULD verb for `action_sheet_skip`; null otherwise  |
-| `enabled` | `boolean`                                  | State AFTER the change (skip prefs: true = skipped) |
-| `source`  | `'settings' \| 'action_sheet'`             | Where the flip happened                             |
+| Field     | Type                                                                                          | Notes                                               |
+| --------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `pref`    | `'action_sheet_skip' \| 'email_reminders' \| 'email_sync_complete' \| 'email_weekly_receipt'` | Which preference flipped                            |
+| `verb`    | `Verb \| null`                                                                                | KAULD verb for `action_sheet_skip`; null otherwise  |
+| `enabled` | `boolean`                                                                                     | State AFTER the change (skip prefs: true = skipped) |
+| `source`  | `'settings' \| 'action_sheet'`                                                                | Where the flip happened                             |
 
 **Retention / aggregation.** PostHog default. D34 adoption signal — how
 many power users opt into the skip-sheet path, and from which surface.

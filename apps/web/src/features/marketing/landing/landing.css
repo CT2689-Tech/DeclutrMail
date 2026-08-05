@@ -43,6 +43,43 @@
   min-height: 100vh;
 }
 
+/* Dark = the app's dark palette, verbatim, exactly as the light block
+   above mirrors the light one. Only the aliases are redefined; every
+   rule below consumes `var(--mkt-*)` and re-resolves for free.
+
+   Two relationships INVERT rather than translate:
+   - The "ink desk" is a dark slab on light paper. Recoloured to the
+     dark page background it would vanish, so on dark it goes one step
+     darker than the page instead of lighter.
+   - The filled CTA is a near-black button with light lettering. On dark
+     it flips to a near-white button with dark lettering, which is how
+     filled buttons already behave in the app shell. */
+[data-theme='dark'] .dm-mkt {
+  --mkt-bg: #0f1211;
+  --mkt-paper: #141817;
+  --mkt-card: #1a1f1e;
+  --mkt-ink: #f1f4f3;
+  --mkt-ink-soft: #b6bfbb;
+  --mkt-ink-muted: #8b948f;
+  --mkt-line: rgba(238, 246, 243, 0.16);
+  --mkt-line-soft: rgba(238, 246, 243, 0.08);
+  --mkt-accent: #2fb5a0;
+  --mkt-accent-deep: #52c9b6;
+  --mkt-accent-soft: rgba(47, 181, 160, 0.14);
+  --mkt-accent-border: rgba(47, 181, 160, 0.42);
+  --mkt-mint: #79e6dc;
+  --mkt-amber: #e3a75c;
+  --mkt-danger: #f27d7d;
+  --mkt-desk: #080a0a;
+  --mkt-desk-ink: #f1f4f3;
+  --mkt-desk-ink-soft: rgba(241, 244, 243, 0.66);
+  --mkt-desk-line: rgba(241, 244, 243, 0.16);
+  --mkt-cta-bg: #f1f4f3;
+  --mkt-cta-fg: #0f1211;
+
+  color-scheme: dark;
+}
+
 /* ── Shared primitives ──────────────────────────────────────── */
 
 .dm-mkt-shell {

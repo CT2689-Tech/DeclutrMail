@@ -169,7 +169,7 @@ describe('EmailSendWorker', () => {
   // set would disarm the postal gate everywhere while every other test
   // stayed green — the blind-guard shape.
   it('classifies exactly the promotional kinds as commercial', () => {
-    expect([...COMMERCIAL_KINDS]).toEqual(['sync-reminder-24h']);
+    expect([...COMMERCIAL_KINDS]).toEqual(['sync-reminder-24h', 'weekly-value-receipt']);
   });
 
   it('still sends TRANSACTIONAL kinds without a postal address (deletion notices)', async () => {
@@ -340,6 +340,30 @@ describe('EmailSendWorker', () => {
       CTX,
     );
     expect(system.outcome).toBe('sent');
+  });
+
+  it('requires an execution-time weekly receipt opt-in', async () => {
+    const db = await freshDb();
+    const userId = await seedUser(db, 'weekly@b.com');
+    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_weekly' });
+    const worker = new EmailSendWorker({ db: db as never, delivery });
+    const weeklyJob = jobData(userId, {
+      kind: 'weekly-value-receipt',
+      idempotencyKey: 'email__weekly-value-receipt__u1__2026-08-02',
+    });
+
+    const defaultOff = await worker.processJob(weeklyJob, CTX);
+    expect(defaultOff.outcome).toBe('skipped_opted_out');
+    expect(delivery.deliver).not.toHaveBeenCalled();
+
+    await db
+      .update(users)
+      .set({ preferences: { emailPrefs: { weeklyReceipt: true } } })
+      .where(eq(users.id, userId));
+
+    const optedIn = await worker.processJob(weeklyJob, CTX);
+    expect(optedIn.outcome).toBe('sent');
+    expect(delivery.deliver).toHaveBeenCalledTimes(1);
   });
 
   it('a legacy pre-syncComplete prefs bag still sends sync-complete (default true)', async () => {
