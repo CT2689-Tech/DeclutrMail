@@ -1413,12 +1413,34 @@ function SendersScreenContent({
         req.verb === 'Later' ||
         req.verb === 'Delete'
       ) {
+        // A free user over the monthly cap used to get a disabled confirm
+        // and zero messages moved — the first bulk attempt, which is the
+        // moment the product is supposed to prove itself, did nothing.
+        // Cap to what the allowance covers instead and let it run.
+        //
+        // The cap lands HERE, before `setPendingAction`, because the
+        // preview query keys off the pending request: capping later (at
+        // mutation time) would preview 200 senders and act on 50, which
+        // is exactly the D226 violation the preview exists to prevent.
+        //
+        // One unit = one sender, matching what the server charges. A
+        // remaining allowance of 0 is left alone — there is no partial
+        // action to offer, so the modal keeps its upgrade path.
+        const remaining = me.cleanupRemaining ?? null;
+        if (remaining !== null && remaining > 0 && req.senders.length > remaining) {
+          setPendingAction({
+            ...req,
+            senders: req.senders.slice(0, remaining),
+            quotaCappedFrom: req.senders.length,
+          });
+          return;
+        }
         setPendingAction(req);
       } else {
         performAction(req.verb, req.senders);
       }
     },
-    [performAction, showingStaleRows],
+    [performAction, showingStaleRows, me.cleanupRemaining],
   );
 
   // Bulk verbs (SelectionBar buttons + the selection-scoped shortcuts)

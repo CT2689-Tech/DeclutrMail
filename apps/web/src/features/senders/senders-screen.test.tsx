@@ -11,6 +11,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 
 const mockAuth = vi.hoisted(() => ({
   tier: 'plus' as 'free' | 'plus' | 'pro' | 'team' | 'enterprise',
+  /** null = unlimited. Set per-test to drive the monthly cleanup cap. */
+  cleanupRemaining: null as number | null,
 }));
 
 // The screen reads the active mailbox label via `useAuth`; stub it so the
@@ -21,7 +23,7 @@ vi.mock('@/features/auth/auth-provider', () => {
       user: { id: 'u', email: 'me@example.com', workspaceId: 'w' },
       activeMailboxId: 'mb-1',
       tier: mockAuth.tier,
-      cleanupRemaining: null,
+      cleanupRemaining: mockAuth.cleanupRemaining,
       mailboxes: [
         {
           id: 'mb-1',
@@ -98,6 +100,7 @@ function archiveStatus(
 
 beforeEach(() => {
   mockAuth.tier = 'plus';
+  mockAuth.cleanupRemaining = null;
 });
 
 function renderScreen() {
@@ -1308,6 +1311,72 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(document.body, { key: 'a' });
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
+  it('A3: caps an over-quota bulk to the allowance instead of dead-ending it', async () => {
+    // The free-tier dead end. A selection larger than the remaining
+    // allowance used to open a modal whose confirm was disabled, so the
+    // first bulk a free user tried moved ZERO messages. The request is
+    // now trimmed to what the allowance covers BEFORE the preview runs,
+    // so the preview describes exactly what will happen (D226).
+    mockAuth.tier = 'free';
+    mockAuth.cleanupRemaining = 1;
+    // Capping 2 senders to 1 leaves a SINGLE-sender request, so the modal
+    // asks for the composite preview rather than the bulk one — stub both
+    // so the assertion cannot pass on a "still loading" line.
+    installFetchStub([
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      {
+        method: 'GET' as const,
+        path: '/api/actions/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              sender: {
+                id: 'a',
+                name: 'Sender A',
+                domain: 'example.com',
+                lastSeenDays: 2,
+                repliedCount: 0,
+                monthly: 30,
+              },
+              counts: {
+                all: 12,
+                olderThan30d: 8,
+                olderThan90d: 5,
+                olderThan180d: 3,
+                olderThan365d: 1,
+              },
+              recentMessages: {
+                all: [{ subject: 'Latest', date: '2026-05-20T09:00:00.000Z' }],
+                olderThan30d: [],
+                olderThan90d: [],
+                olderThan180d: [],
+                olderThan365d: [],
+              },
+              allMail: null,
+              unsubAvailable: true,
+              protected: false,
+            },
+          }),
+      },
+    ]);
+    renderScreenWithToasts();
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
+    fireEvent.keyDown(document.body, { key: 'a' });
+
+    const dialog = await screen.findByRole('dialog');
+    // Says what it trimmed, and to what.
+    expect(
+      await within(dialog).findByText(/Acting on 1 of the 2 senders you selected/),
+    ).toBeVisible();
+    // And it can actually run — the upgrade swap is for a ZERO allowance.
+    expect(
+      within(dialog).queryByRole('button', { name: /Upgrade for unlimited cleanup/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it('bulk-archives a selection for real (aggregated preview → enqueue → batch poll → receipt → undo)', async () => {
     let bulkBody: unknown = null;
     let undoPosted = false;

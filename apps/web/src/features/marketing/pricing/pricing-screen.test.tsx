@@ -45,17 +45,23 @@ const annual = (id: 'plus' | 'pro') => formatUsd(TIER_MANIFEST[id].prices.annual
 const promoPrice = formatUsd(TIER_MANIFEST.pro.promo!.annual.usdCents);
 
 describe('PricingScreen (D19)', () => {
-  it('renders all five manifest tiers with monthly prices by default', () => {
+  it('renders all five manifest tiers with ANNUAL prices by default (locked 2026-08-02)', () => {
     render(<PricingScreen />);
 
     for (const id of ['free', 'plus', 'pro', 'team', 'enterprise'] as const) {
       expect(screen.getAllByText(TIER_MANIFEST[id].name).length).toBeGreaterThan(0);
     }
     expect(screen.getByText(formatUsd(0))).toBeInTheDocument();
-    expect(screen.getByText(monthly('plus'))).toBeInTheDocument();
-    expect(screen.getByText(monthly('pro'))).toBeInTheDocument();
+    expect(screen.getByText(annual('plus'))).toBeInTheDocument();
+    // Pro's card carries the Founding Pro promo on annual, not the list
+    // annual price — the promo is annual-only by construction.
+    expect(
+      screen.getAllByText(formatUsd(TIER_MANIFEST.pro.promo!.annual.usdCents)).length,
+    ).toBeGreaterThan(0);
     expect(screen.getAllByText('No card required')).toHaveLength(1);
-    expect(screen.getAllByText('Billed monthly · cancel anytime')).toHaveLength(2);
+    // Annual price lines carry a "/mo effective" note instead of the
+    // monthly billing line, so that string is absent on the default view.
+    expect(screen.queryAllByText('Billed monthly · cancel anytime')).toHaveLength(0);
     expect(screen.getByRole('region', { name: 'Scrollable plan comparison' })).toHaveAttribute(
       'tabindex',
       '0',

@@ -45,7 +45,10 @@ const { color, font, radius, shadow } = tokens;
 const ENTERPRISE_CONTACT_MAILTO = 'mailto:hello@declutrmail.com?subject=DeclutrMail%20Enterprise';
 
 export function PricingScreen() {
-  const [interval, setInterval] = useState<BillingInterval>('monthly');
+  // Annual by default (founder-locked 2026-08-02). The annual price is
+  // the one the tier ladder is designed around — two months free — so
+  // opening on monthly quoted the worse number first.
+  const [interval, setInterval] = useState<BillingInterval>('annual');
 
   useConsentedPageView('pricing');
 

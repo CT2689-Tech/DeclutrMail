@@ -345,6 +345,19 @@ export interface ActionRequest {
     protectedCount: number;
     peopleCount: number;
   };
+  /**
+   * Eligible senders before the monthly cleanup quota capped this
+   * request. Set only when the cap actually bit — the user selected more
+   * than the remaining allowance, so the request carries the first N and
+   * this records what N was drawn from.
+   *
+   * Rides the request for the same reason `skipped` does (D226 honesty):
+   * the preview must cover exactly what will run, and must say why it
+   * covers fewer senders than the selection bar showed. Capping BEFORE
+   * the preview query — rather than truncating at mutation time — is
+   * what keeps the two in agreement.
+   */
+  quotaCappedFrom?: number;
 }
 
 /** Which curated slice the focused review session is working on. */

@@ -254,6 +254,39 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+  it('lets a quota-capped bulk RUN, and says what it left behind (A3)', () => {
+    // Covers the modal's HALF of the free-tier dead-end fix: the copy for
+    // an already-trimmed request, and that confirm fires. The trimming
+    // itself lives in `requestAction` and is proved by the senders-screen
+    // test ("caps an over-quota bulk…") — a trimmed request satisfies the
+    // quota by construction, so this test alone cannot show the block was
+    // lifted.
+    const onConfirm = vi.fn();
+    const cappedRequest: ActionRequest = {
+      verb: 'Archive',
+      senders: [sender],
+      quotaCappedFrom: 40,
+    };
+    render(
+      <ConfirmActionModal
+        request={cappedRequest}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={livePreview}
+        cleanupQuota={{ remaining: 1, resetsAt: null }}
+      />,
+    );
+
+    expect(screen.getByText(/Acting on 1 of the 40 senders you selected/)).toBeInTheDocument();
+    expect(screen.getByText(/The rest stay untouched/)).toBeInTheDocument();
+    // The whole point: confirm is live, and firing it calls through.
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).toHaveBeenCalled();
+    expect(
+      screen.queryByRole('button', { name: /Upgrade for unlimited cleanup/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it('renders no quota line on an unlimited tier', () => {
     render(
       <ConfirmActionModal
