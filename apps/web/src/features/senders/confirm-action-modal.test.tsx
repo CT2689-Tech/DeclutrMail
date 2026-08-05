@@ -277,6 +277,12 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
       />,
     );
 
+    // D226: every count the user reads must be the count that RUNS. The
+    // title comes off the request's senders, not `selectedCount -
+    // skipped` — those agreed only before the quota cap gave a request a
+    // second reason to cover fewer senders than the selection.
+    expect(screen.getByText('Archive mail from 1 sender')).toBeInTheDocument();
+    expect(screen.queryByText(/from 40 senders/)).not.toBeInTheDocument();
     expect(screen.getByText(/Acting on 1 of the 40 senders you selected/)).toBeInTheDocument();
     expect(screen.getByText(/The rest stay untouched/)).toBeInTheDocument();
     // The whole point: confirm is live, and firing it calls through.

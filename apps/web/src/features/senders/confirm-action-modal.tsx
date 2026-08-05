@@ -554,6 +554,11 @@ export function ConfirmActionModal({
   const selectedCount = request.selectedCount ?? requestedSenderCount;
   const skippedCount = (request.skipped?.protectedCount ?? 0) + (request.skipped?.peopleCount ?? 0);
   const eligibleCount = Math.max(0, selectedCount - skippedCount);
+  // `selectedCount` is the capped count on a quota-trimmed request, so
+  // this stays the number that will actually run. It is NOT
+  // `senders.length`: A/L/D send the whole selection and let the server
+  // drop protected rows, so that would overstate an eligibility-narrowed
+  // request.
   const n = eligibleCount;
   const plural = n === 1 ? '' : 's';
   const subject = n === 1 ? 'this sender' : 'these senders';
@@ -828,7 +833,12 @@ export function ConfirmActionModal({
                 margin: '8px 0 0',
               }}
             >
+              {/* The quota segment is what reconciles "eligible" with the
+                  title once a cap is in play: 2 senders can be eligible
+                  while only 1 fits this month's allowance. Without it the
+                  line reads as an unexplained mismatch. */}
               {selectedCount} selected · {eligibleCount} eligible · {skippedCount} skipped
+              {quotaCappedFrom ? ` · ${requestedSenderCount} within this month's actions` : ''}
             </p>
           )}
         </div>

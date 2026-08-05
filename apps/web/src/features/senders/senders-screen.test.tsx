@@ -1371,6 +1371,12 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(
       await within(dialog).findByText(/Acting on 1 of the 2 senders you selected/),
     ).toBeVisible();
+    // D226: every count on the preview must equal what will run. The
+    // title and the scope line must both say 1 — a title of "2 senders"
+    // over a 1-sender mutation is the contradiction the preview exists
+    // to make impossible.
+    expect(within(dialog).getByText(/Archive mail from 1 sender$/)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/from 2 senders/)).not.toBeInTheDocument();
     // And it can actually run — the upgrade swap is for a ZERO allowance.
     expect(
       within(dialog).queryByRole('button', { name: /Upgrade for unlimited cleanup/ }),
