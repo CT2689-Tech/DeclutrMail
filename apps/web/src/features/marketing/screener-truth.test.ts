@@ -61,33 +61,47 @@ const FORBIDDEN = /\b(block|prevent|intercept|quarantin|keep(s|ing)? out|kept ou
  * ALLOWED below with a note — an explicit, reviewed exception beats a
  * silent miss.
  *
- * Sanctioned phrases are SUBSTITUTED OUT before matching, never used to
- * exempt the passage that contains them. Exempting is the tempting shape
- * and it is wrong in a way that is invisible: it means one approved
- * phrase anywhere in a string silently licenses every other claim beside
- * it, so "Screener quarantine records are retained. The Screener blocks
- * new senders." reads clean. Substitution removes only the approved
- * words and leaves the rest of the passage exposed.
+ * Sanctioned phrases are REWRITTEN before matching, never used to exempt
+ * the passage that contains them, and the rewrite removes only the
+ * forbidden word.
+ *
+ * Two ways to get this wrong, both of which read as obviously correct:
+ *
+ *   exempt   — "this passage contains an approved phrase, skip it". One
+ *              approved token then licenses every claim beside it.
+ *   swallow  — replace the whole phrase with a placeholder. That also
+ *              eats the SUBJECT, so "We keep Screener quarantine records.
+ *              It blocks new senders." loses its only mention of the
+ *              Screener and the claim escapes on a pronoun.
+ *
+ * The replacement therefore keeps every word that is not the forbidden
+ * one — `Screener quarantine records` becomes `Screener SANCTIONED
+ * records`, not `SANCTIONED`. A mechanics test below enforces that.
  */
 function isOffending(text: string): boolean {
-  let neutralised = text.replace(/soft[- ]quarantin\w*/gi, 'SANCTIONED');
-  for (const allowed of SANCTIONED_PHRASES) {
-    neutralised = neutralised.replace(allowed, 'SANCTIONED');
+  let neutralised = text.replace(/soft([- ])quarantin\w*/gi, 'soft$1SANCTIONED');
+  for (const { pattern, replacement } of SANCTIONED_PHRASES) {
+    neutralised = neutralised.replace(pattern, replacement);
   }
   return /screener/i.test(neutralised) && FORBIDDEN.test(neutralised);
 }
 
 /**
- * Reviewed exceptions. Each entry needs a comment saying why, and each
- * MUST be global — a non-global regex neutralises only the first
- * occurrence and leaves later ones to be judged as claims.
+ * Reviewed exceptions. Each entry needs a comment saying why. Each
+ * pattern MUST be global — a non-global regex rewrites only the first
+ * occurrence and leaves later ones to be judged as claims — and each
+ * replacement MUST preserve any subject word the pattern consumes.
  */
-const SANCTIONED_PHRASES: readonly RegExp[] = [
-  // The generated inventory (D245) names the DATASET it retains, not what
-  // happens to mail — `screener_quarantine` is the table behind it. D228
-  // locks this copy and it is generated from the typed registry, so
-  // rewording it is a privacy-disclosure change, not a copy tweak.
-  /Screener quarantine records/gi,
+const SANCTIONED_PHRASES: readonly { pattern: RegExp; replacement: string }[] = [
+  {
+    // The generated inventory (D245) names the DATASET it retains, not
+    // what happens to mail — `screener_quarantine` is the table behind
+    // it. D228 locks this copy and it is generated from the typed
+    // registry, so rewording it is a privacy-disclosure change, not a
+    // copy tweak.
+    pattern: /Screener quarantine records/gi,
+    replacement: 'Screener SANCTIONED records',
+  },
 ];
 
 const SURFACES: ReadonlyArray<readonly [string, unknown]> = [
@@ -143,6 +157,19 @@ describe('D194 — Screener is soft quarantine, never a block', () => {
     );
   });
 
+  it('a sanctioned phrase does not carry the subject away with it', () => {
+    // When the approved phrase is the ONLY mention of the Screener, a
+    // rewrite that swallowed it would leave a following pronoun claim
+    // with nothing to attach to, and the passage would read clean.
+    expect(isOffending('We keep Screener quarantine records. It blocks new senders.')).toBe(true);
+    expect(
+      isOffending('Screener quarantine records exist. They are prevented from arriving.'),
+    ).toBe(true);
+    expect(isOffending('Screener quarantine records are kept, and delivery is prevented.')).toBe(
+      true,
+    );
+  });
+
   it('a sanctioned phrase does not license the claims around it', () => {
     // The allowlist neutralises words, it does not excuse passages. An
     // exempting allowlist would pass all three of these.
@@ -176,8 +203,25 @@ describe('gate mechanics', () => {
   it('every sanctioned phrase is global, so it cannot half-neutralise', () => {
     // A non-global regex replaces only the first occurrence; the second
     // would then be read as a claim, failing a build for approved copy.
-    for (const phrase of SANCTIONED_PHRASES) {
-      expect(phrase.flags, `${phrase} must be global`).toContain('g');
+    for (const { pattern } of SANCTIONED_PHRASES) {
+      expect(pattern.flags, `${pattern} must be global`).toContain('g');
+    }
+  });
+
+  it('every replacement preserves the subject its pattern consumes', () => {
+    // Structural version of the swallow bug: a future entry whose pattern
+    // eats "Screener" without putting it back would silently blind the
+    // gate to every claim in that passage.
+    for (const { pattern, replacement } of SANCTIONED_PHRASES) {
+      if (/screener/i.test(pattern.source)) {
+        expect(
+          replacement,
+          `${pattern} consumes the subject; its replacement must keep "Screener"`,
+        ).toMatch(/screener/i);
+      }
+      expect(replacement, `${pattern} must not reintroduce a forbidden word`).not.toMatch(
+        FORBIDDEN,
+      );
     }
   });
 
