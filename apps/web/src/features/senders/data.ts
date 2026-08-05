@@ -358,6 +358,17 @@ export interface ActionRequest {
    * what keeps the two in agreement.
    */
   quotaCappedFrom?: number;
+  /**
+   * How many senders this request will actually act on.
+   *
+   * STATED, not derived. The modal used to infer it as `selectedCount -
+   * skipped`, which held only while eligibility was the one reason a
+   * request could cover fewer senders than the selection. The quota cap
+   * is a second reason, and any future narrowing would be a third — each
+   * one silently invalidating an arithmetic identity nobody wrote down.
+   * The caller knows the number; it should say it.
+   */
+  actionableCount?: number;
 }
 
 /** Which curated slice the focused review session is working on. */

@@ -1492,17 +1492,45 @@ function SendersScreenContent({
           requestAction({
             verb,
             senders: eligible.slice(0, remaining),
-            selectedCount: remaining,
-            quotaCappedFrom: selectedSenders.length,
+            selectedCount: selectedSenders.length,
+            actionableCount: remaining,
+            quotaCappedFrom: eligible.length,
           });
           return;
         }
-        requestAction({ verb, senders: eligible, selectedCount: selectedSenders.length });
+        requestAction({
+          verb,
+          senders: eligible,
+          selectedCount: selectedSenders.length,
+          actionableCount: eligible.length,
+        });
         return;
       }
       const protectedCount = selectedSenders.filter(
         (s) => !ELIGIBLE[verb](s) && isStandingProtected(s),
       ).length;
+      // Over quota AND eligibility-narrowed. This combination used to
+      // fall through to the disabled confirm — the dead end again, just
+      // reached by a selection that happened to contain a protected
+      // sender. Capping needs the client-narrowed list here, because a
+      // slice of the full selection could land entirely on rows the
+      // server will drop.
+      const remainingWithSkips = me.cleanupRemaining ?? null;
+      if (
+        remainingWithSkips !== null &&
+        remainingWithSkips > 0 &&
+        eligible.length > remainingWithSkips
+      ) {
+        requestAction({
+          verb,
+          senders: eligible.slice(0, remainingWithSkips),
+          selectedCount: selectedSenders.length,
+          actionableCount: remainingWithSkips,
+          quotaCappedFrom: eligible.length,
+          skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
+        });
+        return;
+      }
       requestAction({
         verb,
         // A/L/D keep the original selection so preview and receipt can
@@ -1510,6 +1538,7 @@ function SendersScreenContent({
         // intent requests and therefore remains client-narrowed.
         senders: verb === 'Unsubscribe' ? eligible : selectedSenders,
         selectedCount: selectedSenders.length,
+        actionableCount: eligible.length,
         skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
       });
     },

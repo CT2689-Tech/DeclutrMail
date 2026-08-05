@@ -554,12 +554,9 @@ export function ConfirmActionModal({
   const selectedCount = request.selectedCount ?? requestedSenderCount;
   const skippedCount = (request.skipped?.protectedCount ?? 0) + (request.skipped?.peopleCount ?? 0);
   const eligibleCount = Math.max(0, selectedCount - skippedCount);
-  // `selectedCount` is the capped count on a quota-trimmed request, so
-  // this stays the number that will actually run. It is NOT
-  // `senders.length`: A/L/D send the whole selection and let the server
-  // drop protected rows, so that would overstate an eligibility-narrowed
-  // request.
-  const n = eligibleCount;
+  // Stated by the caller when known; the old arithmetic is the fallback
+  // for the single-sender paths that never narrow.
+  const n = request.actionableCount ?? eligibleCount;
   const plural = n === 1 ? '' : 's';
   const subject = n === 1 ? 'this sender' : 'these senders';
   // Tone: Delete is the strongest destructive — red eyebrow + amber-red
