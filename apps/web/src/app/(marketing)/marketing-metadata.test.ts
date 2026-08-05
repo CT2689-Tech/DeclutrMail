@@ -48,6 +48,25 @@ const PAGES: ReadonlyArray<{ name: string; metadata: Metadata; path: string }> =
   { name: 'methodology', metadata: methodology, path: '/methodology' },
 ];
 
+/**
+ * D250 §3.6 row 21 prescribes this exact title. Nothing asserted it, so the
+ * string was changed twice while shipping D250 before the gap was noticed.
+ *
+ * This pins the VALUE the spec chose — not a length policy. An earlier
+ * attempt asserted a 60-character budget across every route and was
+ * reverted: no D-decision or ADR establishes one, and inventing repo-wide
+ * copy rules is not an agent's call (CLAUDE.md §11). The title's length is
+ * a live question recorded in FOUNDER-FOLLOWUPS; if a budget is ever
+ * ratified, this assertion changes with the string it guards.
+ */
+describe('the blog index title — D250 §3.6 row 21', () => {
+  it('carries the string the spec prescribed', () => {
+    expect(JSON.stringify(blog.title)).toContain(
+      'DeclutrMail Journal — previews, undo, and the limits of bulk email',
+    );
+  });
+});
+
 describe.each(PAGES)('$name page metadata — D132', ({ metadata, path }) => {
   it('declares the canonical path', () => {
     expect(metadata.alternates?.canonical).toBe(path);
