@@ -106,6 +106,20 @@ describe('the landing teaser quotes the visitor rail (D117)', () => {
 });
 
 describe('/pricing quotes the visitor rail (D117)', () => {
+  it('opens on the annual cycle', () => {
+    // Founder-locked 2026-08-02. Every case below drives the toggle to
+    // Monthly precisely because annual is the opening state — assert it
+    // here so a regression fails on the cause rather than surfacing
+    // downstream as an unexplained currency mismatch.
+    renderIn('paddle', <PricingScreen />);
+    expect(screen.getByRole('button', { name: /^Annual/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^Monthly$/ })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByText(formatUsd(PLUS_ANNUAL.usdCents))).toBeInTheDocument();
+  });
+
   it('prices Pro in INR while an unprovisioned tier stays USD on the SAME page', () => {
     // The mixed page is the point: the clamp is per price point, not
     // per visitor, so one page legitimately carries both currencies —
