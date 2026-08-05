@@ -14,7 +14,7 @@
     "@declutrmail/db": "workspace:*",
     "@declutrmail/events": "workspace:*",
     "@declutrmail/shared": "workspace:*",
-    "bullmq": "^5.34.0",
+    "bullmq": "^6.0.5",
     "drizzle-orm": "^0.45.2",
     "ioredis": "5.10.1",
     "zod": "^4.4.3"
