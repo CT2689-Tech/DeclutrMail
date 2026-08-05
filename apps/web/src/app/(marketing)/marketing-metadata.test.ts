@@ -60,10 +60,13 @@ const PAGES: ReadonlyArray<{ name: string; metadata: Metadata; path: string }> =
  * ratified, this assertion changes with the string it guards.
  */
 describe('the blog index title — D250 §3.6 row 21', () => {
-  it('carries the string the spec prescribed', () => {
-    expect(JSON.stringify(blog.title)).toContain(
-      'DeclutrMail Journal — previews, undo, and the limits of bulk email',
-    );
+  it('carries the string the spec prescribed, exactly', () => {
+    // Equality, not `toContain`: a substring check passes on any superstring,
+    // so an appended suffix would drift from the prescribed value unnoticed —
+    // which is the failure this assertion exists to catch.
+    expect(blog.title).toEqual({
+      absolute: 'DeclutrMail Journal — previews, undo, and the limits of bulk email',
+    });
   });
 });
 
