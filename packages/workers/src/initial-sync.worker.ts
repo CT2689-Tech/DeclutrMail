@@ -27,7 +27,7 @@ import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
-import { MAX_UNREADABLE_SHARE } from './ports.js';
+import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
 import type { GmailAccess, GmailMessageMetadata, GmailMetadataClient } from './ports.js';
 import { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
 import { TransientError, ValidationError } from './worker-errors.js';
@@ -694,7 +694,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // wrong answer — every message skipped, `flush()` a no-op, and
     // `markReady` presenting an EMPTY mailbox as a finished one. A surface
     // must never assert completeness it does not have.
-    if (attempted > 0 && unreadable > attempted * MAX_UNREADABLE_SHARE) {
+    if (
+      unreadable >= MIN_UNREADABLE_FOR_SYSTEMIC &&
+      unreadable > attempted * MAX_UNREADABLE_SHARE
+    ) {
       throw new TransientError(
         `Gmail refused metadata for ${unreadable} of ${attempted} messages — treating as systemic, not per-message`,
       );
