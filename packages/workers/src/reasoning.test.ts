@@ -23,6 +23,28 @@ describe('runWithTimeout', () => {
     vi.useRealTimers();
   });
 
+  /**
+   * The union return exists so callers can branch WITHOUT try/catch. That
+   * was a promise the helper did not keep: a rejecting task propagated
+   * straight through `Promise.race`, so inside a `Promise.all` fan-out one
+   * item's provider error failed the whole job — the escalation that killed
+   * an 84k-message sync in production 2026-08-06.
+   */
+  it('reports a rejecting task instead of rethrowing it', async () => {
+    const boom = new Error('provider exploded');
+
+    const raced = await runWithTimeout(() => Promise.reject(boom), 1_000);
+
+    expect(raced).toEqual({ kind: 'failed', error: boom });
+  });
+
+  it('wraps a non-Error rejection so callers always get an Error', async () => {
+    const raced = await runWithTimeout(() => Promise.reject('just a string'), 1_000);
+
+    expect(raced.kind).toBe('failed');
+    expect(raced.kind === 'failed' && raced.error).toBeInstanceOf(Error);
+  });
+
   it('resolves to {kind:"timeout"} when the task exceeds the budget (fires within tolerance)', async () => {
     vi.useFakeTimers();
     const pending = runWithTimeout(

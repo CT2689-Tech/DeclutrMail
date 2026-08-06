@@ -29,7 +29,7 @@ import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import type { GmailAccess, GmailMessageMetadata, GmailMetadataClient } from './ports.js';
 import { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
-import { ValidationError } from './worker-errors.js';
+import { TransientError, ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 import type { InitialSyncJobData } from './queue.js';
 
@@ -59,6 +59,13 @@ const CATEGORY_ORDER: readonly GmailCategory[] = [
 const FETCH_CONCURRENCY = 20;
 /** Rows per upsert batch. */
 const UPSERT_BATCH = 500;
+/**
+ * Share of a run's metadata fetches that may be skipped as unreadable
+ * before the sync treats the pattern as systemic and fails instead of
+ * reporting a partial index as complete. A genuine per-message Gmail
+ * quirk is a rounding error; half a mailbox is a different problem.
+ */
+const MAX_UNREADABLE_SHARE = 0.5;
 /**
  * Rows per streaming SELECT page (Codex iter 4 — bounded-memory
  * pagination for 50k–250k+ mailbox targets). Keyset pagination over
@@ -604,6 +611,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     let processed = skipSet.size;
     let pendingMessages: NewMailMessage[] = [];
     let pendingSenders = new Map<string, NewSender>();
+    // Baseline, not an absolute read: the client may outlive one job, so
+    // only the delta belongs to THIS run.
+    const unreadableBefore = client.unreadableMessageCount ?? 0;
+    const attempted = total - skipSet.size;
 
     const flush = async (): Promise<void> => {
       if (pendingMessages.length === 0) {
@@ -667,12 +678,35 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
     await processChunk();
     await flush();
+    // `unreadable` counts messages Gmail refused to render as metadata
+    // (400 FAILED_PRECONDITION) and the client skipped. They are a real
+    // gap in the index, so the sync NAMES them rather than quietly
+    // reporting a total it did not actually reach.
+    const unreadable = (client.unreadableMessageCount ?? 0) - unreadableBefore;
     initialSyncLog('fetch_loop_done', mailboxAccountId, {
       total,
       gmailApiCalls,
+      attempted,
+      unreadable,
     });
 
-    return { messagesSynced: total, gmailApiCalls };
+    // Skipping the odd unreadable message keeps a big sync alive. Skipping
+    // MOST of them is a different animal: a per-message Gmail quirk does
+    // not affect half a mailbox, so that reading is systemic (bad scope,
+    // Gmail-side degradation, an account-state change) and the resulting
+    // index is not one we can stand behind.
+    //
+    // Without this the skip silently converts a loud failure into a quiet
+    // wrong answer — every message skipped, `flush()` a no-op, and
+    // `markReady` presenting an EMPTY mailbox as a finished one. A surface
+    // must never assert completeness it does not have.
+    if (attempted > 0 && unreadable > attempted * MAX_UNREADABLE_SHARE) {
+      throw new TransientError(
+        `Gmail refused metadata for ${unreadable} of ${attempted} messages — treating as systemic, not per-message`,
+      );
+    }
+
+    return { messagesSynced: total - unreadable, gmailApiCalls };
   }
 
   /**

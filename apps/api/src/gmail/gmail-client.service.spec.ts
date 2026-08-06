@@ -218,6 +218,60 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
     });
   });
 
+  /**
+   * Gmail answers `messages.get?format=metadata` with 400
+   * FAILED_PRECONDITION for individual messages it cannot render in the
+   * metadata projection. Production incident 2026-08-06: mailbox
+   * 53e1b4d6 had synced 7,519 of 84,138 messages when index 17 of one
+   * fetch chunk hit this, and because a 400 is (correctly) permanent,
+   * `Promise.all` escalated ONE unreadable message into a terminal
+   * whole-job failure — dead-lettered on attempt 1, onboarding gate
+   * stuck, "Try again" replaying the same doomed message forever.
+   *
+   * Unreadability of a single message is a SKIP, exactly like the 404
+   * above. A 400 that is NOT a precondition failure stays permanent —
+   * that is a genuinely malformed request and must still fail loudly.
+   */
+  describe('getMessageMetadata — per-message unreadability', () => {
+    /** Verbatim body captured from the production dead-letter row. */
+    const FAILED_PRECONDITION = JSON.stringify({
+      error: {
+        code: 400,
+        message: 'Precondition check failed.',
+        errors: [
+          { message: 'Precondition check failed.', domain: 'global', reason: 'failedPrecondition' },
+        ],
+        status: 'FAILED_PRECONDITION',
+      },
+    });
+
+    it('skips a message Gmail cannot render as metadata instead of failing the sync', async () => {
+      fetchMock.mockResolvedValueOnce(makeResponse(400, FAILED_PRECONDITION));
+      const client = new GmailClientService(oauth, limiter);
+
+      await expect(client.getMessageMetadata('unreadable')).resolves.toBeNull();
+    });
+
+    it('still raises PermanentError for a non-precondition 400 (malformed request)', async () => {
+      fetchMock.mockResolvedValueOnce(
+        makeResponse(
+          400,
+          JSON.stringify({ error: { code: 400, errors: [{ reason: 'invalidArgument' }] } }),
+        ),
+      );
+      const client = new GmailClientService(oauth, limiter);
+
+      await expect(client.getMessageMetadata('bad')).rejects.toBeInstanceOf(PermanentError);
+    });
+
+    it('does NOT skip on the recovery-verification read — unreadable must never read as "no labels"', async () => {
+      fetchMock.mockResolvedValueOnce(makeResponse(400, FAILED_PRECONDITION));
+      const client = new GmailClientService(oauth, limiter);
+
+      await expect(client.getMessageLabelIds('unreadable')).rejects.toBeInstanceOf(PermanentError);
+    });
+  });
+
   describe('ensureLabelId', () => {
     it('findLabelId returns null without creating a missing label', async () => {
       fetchMock.mockResolvedValueOnce(jsonOk({ labels: [{ id: 'INBOX', name: 'INBOX' }] }));

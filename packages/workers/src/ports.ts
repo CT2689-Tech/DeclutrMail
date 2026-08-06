@@ -124,9 +124,18 @@ export interface GmailMetadataClient {
   listMessageIds(pageToken?: string): Promise<GmailMessageListPage>;
   /**
    * Fetch one message's metadata — `format=metadata` only (D7). Resolves
-   * `null` when the message no longer exists (deleted between list+get).
+   * `null` when the message no longer exists (deleted between list+get),
+   * OR when Gmail refuses to render it as metadata (400
+   * FAILED_PRECONDITION) — a property of that one message, never a reason
+   * to fail the whole sync.
    */
   getMessageMetadata(messageId: string): Promise<GmailMessageMetadata | null>;
+  /**
+   * How many messages this client skipped as unreadable. Optional so test
+   * doubles need not implement it; a sync reports it so a partial index is
+   * never silently presented as a complete one.
+   */
+  readonly unreadableMessageCount?: number;
   /**
    * Fetch only the provider label ids needed for outcome verification.
    * Implementations must request a minimal/field-limited resource: no
