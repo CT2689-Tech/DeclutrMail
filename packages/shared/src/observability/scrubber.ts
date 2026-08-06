@@ -381,6 +381,13 @@ const SENTRY_SERVER_TAG_ALLOWLIST = new Set([
   'job_id',
   'mailbox_account_id',
   'kind',
+  // Upstream provider reason (Gmail `error.errors[0].reason`). A closed
+  // vendor enum — `SAFE_SERVER_TAG` still rejects anything with a space or
+  // an '@', so no prose can ride in on it. Added 2026-08-06: with
+  // `Error.message` omitted by design, a terminal worker failure otherwise
+  // reached Sentry as a bare class name and took a production database
+  // query to identify.
+  'error_reason',
 ]);
 const SENTRY_BREADCRUMB_CATEGORIES = new Set([
   'sync',

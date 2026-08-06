@@ -40,7 +40,7 @@ const FAILED: SyncStatus = {
   current_stage: 'failed',
   progress_pct: 32,
   is_ready_for_triage: false,
-  error_code: 'GMAIL_QUOTA_EXCEEDED',
+  error_code: 'RateLimitError',
 };
 
 describe('activeStageIndex (D109 stage mapping)', () => {
@@ -115,9 +115,42 @@ describe('SyncGate render', () => {
     expect(html).toContain('Try again');
 
     const quota = renderToStaticMarkup(
-      withClient(<SyncGate status={{ ...FAILED, error_code: 'GMAIL_QUOTA_EXCEEDED' }} />),
+      withClient(<SyncGate status={{ ...FAILED, error_code: 'RateLimitError' }} />),
     );
     expect(quota).not.toContain('retry automatically');
+  });
+
+  /**
+   * The map is keyed on `error.name` of the thrown worker error, because
+   * that is literally what `initial-sync.worker.ts` writes to
+   * `provider_sync_state.error_code` (`errorCode: error.name`).
+   *
+   * It used to be keyed on `GMAIL_QUOTA_EXCEEDED`, a code NO code path has
+   * ever emitted — so every real failure fell through to the generic copy,
+   * and every test "passed" because the fixtures invented the same
+   * fictional code. Production 2026-08-06 surfaced it: a PermanentError
+   * rendered as "Something interrupted the scan". Keep this list in step
+   * with `packages/workers/src/worker-errors.ts`.
+   */
+  it('keys its copy on the error names the worker actually stores', () => {
+    const WORKER_ERROR_NAMES = [
+      'TransientError',
+      'RateLimitError',
+      'AuthExpiredError',
+      'InvalidGrantError',
+      'ValidationError',
+      'PermanentError',
+    ];
+
+    for (const name of WORKER_ERROR_NAMES) {
+      const html = renderToStaticMarkup(
+        withClient(<SyncGate status={{ ...FAILED, error_code: name }} />),
+      );
+      expect(
+        html,
+        `${name} has no specific copy — it falls back to the generic line`,
+      ).not.toContain('Something interrupted the scan');
+    }
   });
 
   it('never renders the word "Screen" anywhere (D227 hard rule)', () => {

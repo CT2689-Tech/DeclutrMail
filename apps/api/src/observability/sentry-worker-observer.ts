@@ -53,6 +53,10 @@ export async function createSentryWorkerObserver(
           policy: ctx.policy,
           job_id: ctx.jobId,
           ...(ctx.mailboxAccountId ? { mailbox_account_id: ctx.mailboxAccountId } : {}),
+          // Closed provider enum only (see WorkerFailureContext.errorReason).
+          // The exception TYPE alone cannot distinguish "Gmail cannot render
+          // this one message" from "we sent a malformed request".
+          ...(ctx.errorReason ? { error_reason: ctx.errorReason } : {}),
         });
         scope.setContext('worker', {
           attempt: ctx.attempt,

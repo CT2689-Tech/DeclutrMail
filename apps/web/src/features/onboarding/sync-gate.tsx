@@ -67,8 +67,18 @@ function activeStageIndex(status: SyncStatus): number {
  * 2026-07-28). Every string here now points at the button instead.
  */
 const ERROR_COPY: Record<string, string> = {
-  GMAIL_QUOTA_EXCEEDED:
+  RateLimitError:
     'Gmail was rate-limiting the scan, so we stopped. Waiting a minute before trying again usually clears it.',
+  AuthExpiredError:
+    'Google stopped accepting our access partway through. Reconnecting the account restores it.',
+  InvalidGrantError:
+    'Google revoked our access to this inbox, so the scan could not finish. Reconnect the account to grant it again.',
+  TransientError:
+    'The scan kept losing its connection to Gmail and ran out of attempts. Starting it again usually works.',
+  PermanentError:
+    'Gmail refused part of the scan, so it stopped. Trying again is safe — if it stops here twice, contact support and we will finish it manually.',
+  ValidationError:
+    'The scan stopped on something we could not process. Trying again is safe; if it stops here twice, contact support.',
 };
 
 /**
