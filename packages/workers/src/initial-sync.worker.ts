@@ -27,6 +27,7 @@ import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
+import { MAX_UNREADABLE_SHARE } from './ports.js';
 import type { GmailAccess, GmailMessageMetadata, GmailMetadataClient } from './ports.js';
 import { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
 import { TransientError, ValidationError } from './worker-errors.js';
@@ -59,13 +60,6 @@ const CATEGORY_ORDER: readonly GmailCategory[] = [
 const FETCH_CONCURRENCY = 20;
 /** Rows per upsert batch. */
 const UPSERT_BATCH = 500;
-/**
- * Share of a run's metadata fetches that may be skipped as unreadable
- * before the sync treats the pattern as systemic and fails instead of
- * reporting a partial index as complete. A genuine per-message Gmail
- * quirk is a rounding error; half a mailbox is a different problem.
- */
-const MAX_UNREADABLE_SHARE = 0.5;
 /**
  * Rows per streaming SELECT page (Codex iter 4 — bounded-memory
  * pagination for 50k–250k+ mailbox targets). Keyset pagination over

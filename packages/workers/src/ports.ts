@@ -167,6 +167,19 @@ export interface GmailMetadataClient {
 }
 
 /**
+ * Share of a run's metadata fetches that may be skipped as unreadable before
+ * a sync treats the pattern as systemic and fails instead of reporting a
+ * partial result as complete.
+ *
+ * A genuine per-message Gmail quirk is a rounding error; half a run is a
+ * different problem (bad scope, provider degradation, account-state change).
+ * Shared by both sync paths so the two cannot drift — and it matters MORE on
+ * the incremental path, where a silent skip ALSO advances the history cursor,
+ * so the message is never revisited.
+ */
+export const MAX_UNREADABLE_SHARE = 0.5;
+
+/**
  * Resolves a per-mailbox authenticated client. The implementation
  * (`apps/api`) loads the mailbox row, decrypts the OAuth refresh token
  * (D14 `TokenCryptoService`), and returns a token-bound client.

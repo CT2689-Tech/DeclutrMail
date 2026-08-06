@@ -254,6 +254,57 @@ describe('GoogleOAuthController.start — an existing session is not replaced', 
     expect(res.redirect).toHaveBeenCalledWith(302, 'https://accounts.google.test/consent');
   });
 
+  /**
+   * The access token lives 15 minutes, the refresh token 30 days. Checking
+   * only the access cookie would miss nearly every returning visitor — they
+   * would still reach the account chooser and could still replace their own
+   * session. Caught by Codex review of PR #471.
+   */
+  it('bounces on a valid refresh session when the access token has expired', async () => {
+    process.env.WEB_URL = 'https://app.declutrmail.test';
+    const jwt = makeJwtService();
+    const { refreshToken } = await jwt.issue({
+      userId: RECONNECT_USER_ID,
+      workspaceId: RECONNECT_WORKSPACE_ID,
+      sessionId: CONNECT_SESSION_ID,
+    });
+    const sessions = {
+      lookupByJti: vi.fn().mockResolvedValue(null),
+      lookupActiveById: vi.fn().mockResolvedValue({ id: CONNECT_SESSION_ID }),
+    } as unknown as SessionsService;
+    const res = { cookie: vi.fn(), redirect: vi.fn() };
+
+    await controllerWith(sessions, jwt).start(
+      { cookies: { dm_refresh: refreshToken } } as unknown as Request,
+      res as unknown as Response,
+    );
+
+    expect(res.redirect).toHaveBeenCalledWith(302, 'https://app.declutrmail.test/senders');
+    expect(res.cookie).not.toHaveBeenCalled();
+  });
+
+  it('starts consent when the refresh session is revoked', async () => {
+    const jwt = makeJwtService();
+    const { refreshToken } = await jwt.issue({
+      userId: RECONNECT_USER_ID,
+      workspaceId: RECONNECT_WORKSPACE_ID,
+      sessionId: CONNECT_SESSION_ID,
+    });
+    const sessions = {
+      lookupByJti: vi.fn().mockResolvedValue(null),
+      lookupActiveById: vi.fn().mockResolvedValue(null),
+    } as unknown as SessionsService;
+    const res = { cookie: vi.fn(), redirect: vi.fn() };
+
+    await controllerWith(sessions, jwt).start(
+      { cookies: { dm_refresh: refreshToken } } as unknown as Request,
+      res as unknown as Response,
+    );
+
+    expect(res.cookie).toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(302, 'https://accounts.google.test/consent');
+  });
+
   it('still starts consent when the access cookie is garbage', async () => {
     const jwt = makeJwtService();
     const res = { cookie: vi.fn(), redirect: vi.fn() };

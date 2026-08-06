@@ -32,7 +32,7 @@ import { BetaGateDeniedError } from './beta-gate.js';
 import { ConnectMailboxStartFilter } from './connect-mailbox-start.filter.js';
 import { GoogleOAuthService } from './google-oauth.service.js';
 import { JwtService } from './jwt.service.js';
-import { ACCESS_COOKIE, CurrentUser, JwtGuard } from './jwt.guard.js';
+import { ACCESS_COOKIE, CurrentUser, JwtGuard, REFRESH_COOKIE } from './jwt.guard.js';
 import { SessionsService, type SessionPrincipal } from './sessions.service.js';
 import { setSessionCookies } from './session-cookies.js';
 
@@ -206,13 +206,32 @@ export class GoogleOAuthController {
    */
   private async hasLiveSession(req: Request): Promise<boolean> {
     const cookies = req.cookies as Record<string, unknown> | undefined;
-    const token = cookies?.[ACCESS_COOKIE];
-    if (typeof token !== 'string' || token.length === 0) {
+
+    const access = cookies?.[ACCESS_COOKIE];
+    if (typeof access === 'string' && access.length > 0) {
+      try {
+        const claims = await this.jwt.verify(access, 'access');
+        if ((await this.sessions.lookupByJti(claims.jti)) !== null) {
+          return true;
+        }
+      } catch {
+        // Fall through to the refresh cookie below.
+      }
+    }
+
+    // The access token lives 15 minutes and the refresh token 30 days, so
+    // checking only the former would miss almost every returning visitor —
+    // they would still be walked through the account chooser and could
+    // still replace their own session. `lookupActiveById` follows
+    // `active_sessions.id`, which survives refresh rotation (the jti does
+    // not) and never matches a revoked row.
+    const refresh = cookies?.[REFRESH_COOKIE];
+    if (typeof refresh !== 'string' || refresh.length === 0) {
       return false;
     }
     try {
-      const claims = await this.jwt.verify(token, 'access');
-      return (await this.sessions.lookupByJti(claims.jti)) !== null;
+      const claims = await this.jwt.verify(refresh, 'refresh');
+      return (await this.sessions.lookupActiveById(claims.sid)) !== null;
     } catch {
       return false;
     }
