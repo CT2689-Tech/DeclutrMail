@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import {
   ACTION_SAFETY_SUMMARY,
+  OAUTH_SCOPE_DISCLOSURE,
   Button,
   Eyebrow,
   TIER_MANIFEST,
@@ -269,6 +270,7 @@ export function InboxSimulatorScreen() {
               <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
                 Run this on your Gmail →
               </TrackedCta>
+              <p>{OAUTH_SCOPE_DISCLOSURE}</p>
             </div>
           ) : (
             <div className="dm-simulator-rows">
@@ -361,6 +363,7 @@ export function InboxSimulatorScreen() {
           </TrackedCta>
           <a href="/methodology">Read the methodology</a>
         </div>
+        <p>{OAUTH_SCOPE_DISCLOSURE}</p>
       </section>
 
       {pending ? (

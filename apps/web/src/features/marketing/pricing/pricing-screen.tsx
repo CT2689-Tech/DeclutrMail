@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { ACTION_SAFETY_SUMMARY, tokens } from '@declutrmail/shared';
+import { ACTION_SAFETY_SUMMARY, OAUTH_SCOPE_DISCLOSURE, tokens } from '@declutrmail/shared';
 import type { TierDefinition } from '@declutrmail/shared/entitlements';
 
 import { useRegionProvider } from '@/features/billing/billing-currency';
@@ -115,6 +115,21 @@ export function PricingScreen() {
           <TierCard key={tier.id} tier={tier} interval={interval} highlighted={tier.id === 'pro'} />
         ))}
       </section>
+
+      {/* Every tier CTA starts Google OAuth for a signed-out visitor
+          (cta.ts routes a live session to the app instead), so the scope
+          and the D228 boundary ride with the plan choice. */}
+      <p
+        style={{
+          margin: '14px 0 0',
+          fontFamily: font.mono,
+          fontSize: 11,
+          letterSpacing: '0.04em',
+          color: color.fgMuted,
+        }}
+      >
+        {OAUTH_SCOPE_DISCLOSURE}
+      </p>
 
       <section
         aria-label="Team and Enterprise"

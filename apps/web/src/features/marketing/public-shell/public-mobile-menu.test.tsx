@@ -10,6 +10,13 @@ import { PublicMobileMenu } from './public-mobile-menu';
 const links = [{ href: '/how-it-works', label: 'How it works' }] as const;
 
 describe('PublicMobileMenu', () => {
+  it('starts Google OAuth directly from both auth actions', () => {
+    render(<PublicMobileMenu links={links} startUrl="/oauth" />);
+
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/oauth');
+    expect(screen.getByRole('link', { name: 'Get started →' })).toHaveAttribute('href', '/oauth');
+  });
+
   it('closes on Escape and restores focus to the summary', () => {
     const { container } = render(<PublicMobileMenu links={links} startUrl="/oauth" />);
     const details = container.querySelector('details')!;

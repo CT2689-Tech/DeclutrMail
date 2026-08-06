@@ -20,7 +20,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
  *
  * Renders inside the `(marketing)` route group — NO AuthProvider in
  * the chain, no auth round-trip before paint. The only session
- * awareness is intentionally absent; Sign in is an explicit public route.
+ * awareness is intentionally absent; auth CTAs start Google OAuth directly.
  *
  * Section order follows D134, trimmed to the launch surface:
  * hero → trust strip → problem → how-it-works → ritual (K/A/U/L/D)

@@ -18,7 +18,7 @@
 // soft-teal label disc, the same CTA-link shape.
 
 import type { Metadata } from 'next';
-import { tokens } from '@declutrmail/shared';
+import { OAUTH_SCOPE_DISCLOSURE, tokens } from '@declutrmail/shared';
 import { BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from '@declutrmail/shared/contracts';
 
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
@@ -180,6 +180,20 @@ export default async function BetaPage({
             </>
           )}
         </div>
+
+        {denied ? null : (
+          <p
+            style={{
+              fontFamily: tokens.font.mono,
+              fontSize: 11,
+              letterSpacing: '0.04em',
+              color: tokens.color.fgMuted,
+              margin: 0,
+            }}
+          >
+            {OAUTH_SCOPE_DISCLOSURE}
+          </p>
+        )}
       </div>
     </div>
   );

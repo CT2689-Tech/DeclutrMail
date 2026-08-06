@@ -1,4 +1,4 @@
-import { ACTION_PREVIEW_CLAIM, PrivacyBadge } from '@declutrmail/shared';
+import { ACTION_PREVIEW_CLAIM, OAUTH_SCOPE_DISCLOSURE, PrivacyBadge } from '@declutrmail/shared';
 import { VERB_REGISTRY } from '@declutrmail/shared/actions';
 
 import { oauthStartUrl } from './urls';
@@ -63,6 +63,9 @@ export function Hero() {
           <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
             Free · no card · 7-day undo on Archive, Later and Delete
           </p>
+          {/* Connect CTAs link straight to Google's consent screen, so the
+              scope + boundary ride with the click (see OAUTH_SCOPE_DISCLOSURE). */}
+          <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">{OAUTH_SCOPE_DISCLOSURE}</p>
         </div>
         <div className="dm-mkt-reveal-3 dm-mkt-reveal">
           <LedgerCard />

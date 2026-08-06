@@ -538,6 +538,17 @@
   justify-content: center;
 }
 
+/* Pre-consent scope + boundary line under every OAuth CTA — connect CTAs
+   link straight to Google's consent screen, so this is the last line the
+   user reads before granting access. Mirrors .dm-mkt-hero-note on landing. */
+.dm-story-scope-note {
+  font-family: var(--dm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--dm-fg-soft);
+  margin: 14px 0 0;
+}
+
 @media (max-width: 900px) {
   .dm-story-hero {
     grid-template-columns: 1fr;

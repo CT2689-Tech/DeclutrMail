@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { TrackedCta } from '../landing/tracked-cta';
@@ -38,9 +37,9 @@ export function PublicMobileMenu({
       <summary aria-label="Open navigation">Menu</summary>
       <nav aria-label="Mobile navigation">
         <PublicNavLinks links={links} onNavigate={close} />
-        <Link href="/sign-in" onClick={close}>
+        <TrackedCta href={startUrl} cta="connect_gmail" placement="nav_sign_in" onClick={close}>
           Sign in
-        </Link>
+        </TrackedCta>
         <TrackedCta
           className="dm-public-menu-start"
           href={startUrl}

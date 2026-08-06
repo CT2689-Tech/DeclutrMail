@@ -12,6 +12,7 @@ export {
   PRIVACY_STORAGE_LABEL,
   PRIVACY_NEVER_LABEL,
   GMAIL_PREVIEW_FIELD_LABEL,
+  OAUTH_SCOPE_DISCLOSURE,
 } from './privacy';
 
 export { BUSINESS_POSTAL_ADDRESS, postalAddressLine, hasPostalAddress } from './postal-address';

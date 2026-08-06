@@ -16,7 +16,10 @@
 //                                   it is never called "summary" or
 //                                   "body" in user-facing copy.)
 
-import { GMAIL_MESSAGE_STORAGE_LABELS } from '../contracts/gmail-data-inventory';
+import {
+  GMAIL_MESSAGE_STORAGE_LABELS,
+  GMAIL_OAUTH_ACCESS,
+} from '../contracts/gmail-data-inventory';
 
 /** The locked headline shown on every trust badge surface (D228). */
 export const PRIVACY_BADGE_HEADLINE = 'Full bodies fetched: 0' as const;
@@ -55,3 +58,20 @@ export const PRIVACY_NEVER_LABEL = 'We never fetch or store:' as const;
 
 /** The user-facing field label for the Gmail snippet (D7 framing). */
 export const GMAIL_PREVIEW_FIELD_LABEL = 'Gmail Preview' as const;
+
+/**
+ * Short scope name for the Gmail access DeclutrMail requests, derived from
+ * D245's registry so a scope amendment cannot leave stale copy behind.
+ * `GMAIL_OAUTH_ACCESS[0]` is the mail scope; `openid email` follows it.
+ */
+const GMAIL_MAIL_SCOPE_NAME = GMAIL_OAUTH_ACCESS[0].scope.split('/').at(-1);
+
+/**
+ * Pre-consent disclosure rendered beside every CTA that starts Google OAuth.
+ *
+ * Public CTAs link straight to Google's consent screen, so this is the last
+ * DeclutrMail-authored sentence a user reads before granting access — it
+ * carries the scope being requested and the D228 boundary headline together.
+ */
+export const OAUTH_SCOPE_DISCLOSURE =
+  `Asks for the ${GMAIL_MAIL_SCOPE_NAME} scope. ${PRIVACY_BADGE_HEADLINE}.` as const;
