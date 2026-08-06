@@ -134,7 +134,11 @@ class FakeGmailClient implements GmailMetadataClient {
       page: GmailHistoryPage | null;
     }>,
     private readonly metadata: Map<string, GmailMessageMetadata>,
+    /** Ids the adapter skipped as unreadable (400 FAILED_PRECONDITION). */
+    private readonly unreadableIds: ReadonlySet<string> = new Set(),
   ) {}
+
+  unreadableMessageCount = 0;
 
   // Initial-sync surface — never invoked by IncrementalSyncWorker but
   // required by the port.
@@ -143,6 +147,10 @@ class FakeGmailClient implements GmailMetadataClient {
   }
 
   async getMessageMetadata(messageId: string): Promise<GmailMessageMetadata | null> {
+    if (this.unreadableIds.has(messageId)) {
+      this.unreadableMessageCount += 1;
+      return null;
+    }
     return this.metadata.get(messageId) ?? null;
   }
 
@@ -265,6 +273,71 @@ describe('IncrementalSyncWorker', () => {
     // (the Sync-now completion watch compares this against its
     // pre-click baseline).
     expect(state!.lastSyncedAt).not.toBeNull();
+  });
+
+  /**
+   * `getMessageMetadata` resolves `null` for BOTH "deleted between the
+   * history record and the get" and "Gmail refused to render it". Only the
+   * first is benign on this path: a successful run advances
+   * `last_history_id`, so anything skipped is never revisited.
+   *
+   * Codex review of PR #471 caught this: without the guard, a systemic
+   * refusal would permanently drop live mail AND report a clean run.
+   */
+  it('does not advance the history cursor when most new messages are unreadable', async () => {
+    const records: GmailHistoryRecord[] = ['m-001', 'm-002', 'm-003'].map((id) => ({
+      kind: 'added' as const,
+      messageId: id,
+      threadId: `thread-${id}`,
+      labelIds: ['INBOX'],
+    }));
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map(),
+      new Set(['m-001', 'm-002', 'm-003']),
+    );
+
+    await expect(
+      new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+        { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+        CTX,
+      ),
+    ).rejects.toThrow(/not advancing the history cursor/);
+
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state!.lastHistoryId).toBe(1000n);
+  });
+
+  it('still advances past a single unreadable message among readable ones', async () => {
+    const meta = makeMetadata(
+      'm-002',
+      'thread-002',
+      'newsletter@example.com',
+      ['INBOX'],
+      Date.UTC(2026, 5, 1),
+    );
+    const records: GmailHistoryRecord[] = ['m-001', 'm-002'].map((id) => ({
+      kind: 'added' as const,
+      messageId: id,
+      threadId: `thread-${id}`,
+      labelIds: ['INBOX'],
+    }));
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map([['m-002', meta]]),
+      new Set(['m-001']),
+    );
+
+    const result = await new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    expect(result.added).toBe(1);
+    expect(result.advancedToHistoryId).toBe('1500');
   });
 
   it('a run with NO new history still stamps last_synced_at (no-op sync must confirm completion)', async () => {

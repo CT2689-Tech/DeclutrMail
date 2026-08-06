@@ -80,7 +80,7 @@ const FAILED: SyncStatus = {
   current_stage: 'failed',
   progress_pct: 32,
   is_ready_for_triage: false,
-  error_code: 'GMAIL_QUOTA_EXCEEDED',
+  error_code: 'RateLimitError',
 };
 
 /** Queued — scan enqueued, progress at 0. */

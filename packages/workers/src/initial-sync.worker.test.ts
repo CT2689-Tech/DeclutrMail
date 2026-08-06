@@ -125,11 +125,18 @@ class FakeGmailClient {
   listCalls = 0;
   getCalls = 0;
   profileCalls = 0;
+  /**
+   * Mirrors the real adapter: a message Gmail refuses to render as
+   * metadata (400 FAILED_PRECONDITION) resolves `null` and is counted,
+   * rather than throwing and killing the whole job.
+   */
+  unreadableMessageCount = 0;
   private readonly pageSize = 25;
 
   constructor(
     private readonly messages: GmailMessageMetadata[],
     private readonly historyId = '987654',
+    private readonly unreadableIds: ReadonlySet<string> = new Set(),
   ) {}
 
   async listMessageIds(pageToken?: string): Promise<GmailMessageListPage> {
@@ -142,6 +149,10 @@ class FakeGmailClient {
 
   async getMessageMetadata(messageId: string): Promise<GmailMessageMetadata | null> {
     this.getCalls += 1;
+    if (this.unreadableIds.has(messageId)) {
+      this.unreadableMessageCount += 1;
+      return null;
+    }
     return this.messages.find((m) => m.id === messageId) ?? null;
   }
 
@@ -325,6 +336,55 @@ describe('InitialSyncWorker', () => {
       .from(schema.providerSyncState)
       .where(eq(schema.providerSyncState.mailboxAccountId, mailboxAccountId));
     expect(state!.readinessStatus).toBe('ready');
+  });
+
+  /**
+   * Production 2026-08-06: Gmail answered 400 FAILED_PRECONDITION for ONE
+   * message of an 84,138-message mailbox. Because a 400 is (correctly)
+   * permanent, `Promise.all` escalated it to a terminal whole-job failure
+   * — 7,519 messages in, dead-lettered on attempt 1, onboarding gate stuck
+   * forever because "Try again" replayed the same message.
+   */
+  it('skips a message Gmail cannot render and still completes the sync', async () => {
+    const messages = makeMessages(30, 6);
+    const client = new FakeGmailClient(messages, '987654', new Set([messages[3]!.id]));
+
+    const result = await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+
+    expect(result.messagesSynced).toBe(29);
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state?.readinessStatus).toBe('ready');
+  });
+
+  /**
+   * The other half of that fix. Skipping the odd message keeps a big sync
+   * alive; skipping MOST of them means the cause is systemic, and a
+   * silently-empty index must never be presented as a finished mailbox.
+   * Without the share guard the skip turns a loud failure into a quiet
+   * wrong answer.
+   */
+  it('fails rather than marking an empty mailbox ready when every message is unreadable', async () => {
+    const messages = makeMessages(30, 6);
+    const client = new FakeGmailClient(messages, '987654', new Set(messages.map((m) => m.id)));
+
+    await expect(
+      new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+        { mailboxAccountId },
+        CTX,
+      ),
+    ).rejects.toThrow(/systemic/);
+
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state?.readinessStatus).not.toBe('ready');
   });
 
   it('resume — a second run re-fetches only the messages not already stored', async () => {

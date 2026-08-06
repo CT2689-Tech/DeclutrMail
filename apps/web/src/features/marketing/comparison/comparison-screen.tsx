@@ -1,3 +1,4 @@
+import { OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { JsonLd } from '../json-ld';
@@ -87,6 +88,7 @@ function FinalCta({ competitorName }: { competitorName?: string }) {
           See every tier
         </TrackedCta>
       </div>
+      <p className="dm-mkt-hero-note">{OAUTH_SCOPE_DISCLOSURE}</p>
     </section>
   );
 }

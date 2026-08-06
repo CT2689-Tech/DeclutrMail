@@ -7,10 +7,11 @@ import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
+import { MAX_UNREADABLE_SHARE } from './ports.js';
 import type { GmailAccess, GmailHistoryRecord, GmailMetadataClient } from './ports.js';
 import type { IncrementalSyncJobData } from './queue.js';
 import { deriveSenderKey, emailDomain, parseFromHeader } from './sender-key.js';
-import { ValidationError } from './worker-errors.js';
+import { TransientError, ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
@@ -304,9 +305,19 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     let added = 0;
     let deleted = 0;
     let labelChanges = 0;
+    // `getMessageMetadata` resolves `null` for BOTH "deleted between the
+    // history record and the get" and "Gmail refused to render it". Only
+    // the first is benign here: this path advances `lastHistoryId` on
+    // success, so a message skipped as unreadable is never revisited. A
+    // systemic refusal would therefore silently and permanently drop live
+    // mail while reporting a clean run — measured below, before the cursor
+    // moves.
+    const unreadableBefore = client.unreadableMessageCount ?? 0;
+    let addAttempts = 0;
     for (const ev of events) {
       switch (ev.kind) {
         case 'added': {
+          addAttempts += 1;
           if (await this.handleMessageAdded(mailboxAccountId, ev.messageId, client)) {
             added += 1;
           }
@@ -331,6 +342,30 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           break;
         }
       }
+    }
+
+    // Throw BEFORE the cursor advance below: leaving `lastHistoryId` where
+    // it is means the next run replays these same records, which is exactly
+    // what should happen when we could not read most of them. Transient so
+    // the job backs off and retries rather than dead-lettering on attempt 1
+    // — a provider-side refusal is usually not permanent.
+    const unreadable = (client.unreadableMessageCount ?? 0) - unreadableBefore;
+    if (addAttempts > 0 && unreadable > addAttempts * MAX_UNREADABLE_SHARE) {
+      throw new TransientError(
+        `Gmail refused metadata for ${unreadable} of ${addAttempts} new messages — not advancing the history cursor`,
+      );
+    }
+    if (unreadable > 0) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'incremental_sync.unreadable_skipped',
+          worker: this.workerName,
+          mailboxAccountId,
+          unreadable,
+          addAttempts,
+        }),
+      );
     }
 
     // After the message-level deltas land, re-run the reply-attribution

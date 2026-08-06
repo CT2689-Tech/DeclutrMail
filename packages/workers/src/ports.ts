@@ -124,9 +124,18 @@ export interface GmailMetadataClient {
   listMessageIds(pageToken?: string): Promise<GmailMessageListPage>;
   /**
    * Fetch one message's metadata — `format=metadata` only (D7). Resolves
-   * `null` when the message no longer exists (deleted between list+get).
+   * `null` when the message no longer exists (deleted between list+get),
+   * OR when Gmail refuses to render it as metadata (400
+   * FAILED_PRECONDITION) — a property of that one message, never a reason
+   * to fail the whole sync.
    */
   getMessageMetadata(messageId: string): Promise<GmailMessageMetadata | null>;
+  /**
+   * How many messages this client skipped as unreadable. Optional so test
+   * doubles need not implement it; a sync reports it so a partial index is
+   * never silently presented as a complete one.
+   */
+  readonly unreadableMessageCount?: number;
   /**
    * Fetch only the provider label ids needed for outcome verification.
    * Implementations must request a minimal/field-limited resource: no
@@ -156,6 +165,19 @@ export interface GmailMetadataClient {
    */
   listHistory(startHistoryId: string, pageToken?: string): Promise<GmailHistoryPage | null>;
 }
+
+/**
+ * Share of a run's metadata fetches that may be skipped as unreadable before
+ * a sync treats the pattern as systemic and fails instead of reporting a
+ * partial result as complete.
+ *
+ * A genuine per-message Gmail quirk is a rounding error; half a run is a
+ * different problem (bad scope, provider degradation, account-state change).
+ * Shared by both sync paths so the two cannot drift — and it matters MORE on
+ * the incremental path, where a silent skip ALSO advances the history cursor,
+ * so the message is never revisited.
+ */
+export const MAX_UNREADABLE_SHARE = 0.5;
 
 /**
  * Resolves a per-mailbox authenticated client. The implementation

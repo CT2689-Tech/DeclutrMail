@@ -89,7 +89,7 @@ describe('SyncController.getStatus', () => {
       current_stage: 'failed',
       progress_pct: 17,
       is_ready_for_triage: false,
-      error_code: 'GMAIL_QUOTA_EXCEEDED',
+      error_code: 'RateLimitError',
     };
     const getStatus = vi.fn().mockResolvedValue(failed);
     const controller = makeController({ getStatus });

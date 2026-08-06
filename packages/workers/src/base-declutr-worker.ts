@@ -4,7 +4,7 @@ import { type Job, UnrecoverableError } from 'bullmq';
 
 import type { DeadLetterEntry, DeadLetterRecorder } from './dead-letter.recorder.js';
 import type { WorkerContext } from './worker-context.js';
-import { isNonRetryable } from './worker-errors.js';
+import { isNonRetryable, providerErrorReason } from './worker-errors.js';
 import {
   NOOP_WORKER_OBSERVER,
   type WorkerFailureContext,
@@ -305,6 +305,7 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
    * event must not block the dead-letter path (silent-failure-hunter).
    */
   private captureFailure(error: Error, ctx: WorkerContext): void {
+    const errorReason = providerErrorReason(error);
     console.error(
       JSON.stringify({
         level: 'error',
@@ -314,6 +315,7 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
         ...(ctx.mailboxAccountId ? { mailboxRef: telemetryReference(ctx.mailboxAccountId) } : {}),
         attempt: ctx.attempt,
         error: safeWorkerErrorKind(error),
+        ...(errorReason ? { errorReason } : {}),
       }),
     );
     const observerCtx: WorkerFailureContext = {
@@ -324,6 +326,7 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
       ...(ctx.mailboxAccountId
         ? { mailboxAccountId: telemetryReference(ctx.mailboxAccountId) }
         : {}),
+      ...(errorReason ? { errorReason } : {}),
     };
     try {
       this.observer.captureFailure(safeTelemetryError(error, 'Worker job failed'), observerCtx);

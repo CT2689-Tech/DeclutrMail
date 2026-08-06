@@ -94,7 +94,7 @@ describe('useSyncStatus', () => {
         current_stage: 'failed',
         progress_pct: 12,
         is_ready_for_triage: false,
-        error_code: 'GMAIL_QUOTA_EXCEEDED',
+        error_code: 'RateLimitError',
       }),
     ).toBe(SYNC_FAILED_POLL_MS);
   });

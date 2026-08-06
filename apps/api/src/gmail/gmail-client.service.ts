@@ -210,6 +210,20 @@ export class GmailClientService
    */
   private readonly labelIdCache = new Map<string, string>();
 
+  /**
+   * Gmail message ids skipped because Gmail refused to render them as
+   * metadata (400 FAILED_PRECONDITION). Tracked so a sync can REPORT what
+   * it could not index instead of silently under-counting the mailbox —
+   * a skipped message is a real gap, and a surface that cannot name its
+   * gaps is the failure mode this codebase keeps relearning.
+   */
+  private readonly unreadableMessageIds = new Set<string>();
+
+  /** Ids skipped as unreadable during this client's lifetime. */
+  get unreadableMessageCount(): number {
+    return this.unreadableMessageIds.size;
+  }
+
   constructor(
     private readonly oauth: OAuth2Client,
     private readonly limiter: RateLimiter,
@@ -242,10 +256,29 @@ export class GmailClientService
     for (const header of GMAIL_METADATA_HEADERS) {
       params.append('metadataHeaders', header);
     }
-    const json = await this.get<GmailGetResponse>(
-      `/messages/${encodeURIComponent(messageId)}?${params.toString()}`,
-      true,
-    );
+    let json: GmailGetResponse | null;
+    try {
+      json = await this.get<GmailGetResponse>(
+        `/messages/${encodeURIComponent(messageId)}?${params.toString()}`,
+        true,
+      );
+    } catch (err) {
+      // Gmail cannot render EVERY message in the metadata projection and
+      // answers 400 FAILED_PRECONDITION for the ones it can't. That is a
+      // property of the single message, not of the request or the
+      // mailbox — so it skips exactly like the 404 above.
+      //
+      // Production incident 2026-08-06: without this, one such message at
+      // index 17 of a fetch chunk aborted `Promise.all`, escalating to a
+      // terminal whole-job PermanentError. A mailbox 7,519/84,138 through
+      // its first sync dead-lettered on attempt 1 and the onboarding gate
+      // stuck forever, because "Try again" replayed the same message.
+      if (err instanceof PermanentError && err.reason === 'failedPrecondition') {
+        this.unreadableMessageIds.add(messageId);
+        return null;
+      }
+      throw err;
+    }
     if (json === null) {
       return null;
     }
@@ -513,7 +546,12 @@ export class GmailClientService
       // where an id is required) is deterministic: the identical request
       // fails identically on every attempt. Permanent — the worker fails
       // the job on attempt 1 instead of retrying to the cap.
-      throw new PermanentError(`Gmail returned 400: ${await safeBody(res)}`);
+      //
+      // The reason is parsed from the FULL body (not the truncated
+      // message) so callers can tell a bad REQUEST from one unreadable
+      // RESOURCE — see `getMessageMetadata`.
+      const full = await fullBody(res);
+      throw new PermanentError(`Gmail returned 400: ${full.slice(0, 300)}`, gmailErrorReason(full));
     }
     // Other 4xx — surface the body; the base class treats it as transient.
     throw new TransientError(`Gmail returned ${res.status}: ${await safeBody(res)}`);
@@ -744,10 +782,30 @@ function retryAfterMs(res: Response): number | undefined {
 
 /** Read a response body without throwing — for error messages only. */
 async function safeBody(res: Response): Promise<string> {
+  return (await fullBody(res)).slice(0, 300);
+}
+
+/** The whole error body — `safeBody` truncates, reason-parsing must not. */
+async function fullBody(res: Response): Promise<string> {
   try {
-    return (await res.text()).slice(0, 300);
+    return await res.text();
   } catch {
     return '<unreadable>';
+  }
+}
+
+/**
+ * Gmail's machine-readable `error.errors[0].reason` when the body carries
+ * one. A closed Google enum (`invalidArgument`, `failedPrecondition`, …) —
+ * safe to branch on and safe to carry into telemetry, unlike the message.
+ */
+function gmailErrorReason(body: string): string | undefined {
+  try {
+    const parsed = JSON.parse(body) as { error?: { errors?: Array<{ reason?: unknown }> } };
+    const reason = parsed.error?.errors?.[0]?.reason;
+    return typeof reason === 'string' ? reason : undefined;
+  } catch {
+    return undefined;
   }
 }
 

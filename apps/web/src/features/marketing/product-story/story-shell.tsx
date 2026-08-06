@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { PrivacyBadge } from '@declutrmail/shared';
+import { OAUTH_SCOPE_DISCLOSURE, PrivacyBadge } from '@declutrmail/shared';
 
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
 import { oauthStartUrl } from '@/features/marketing/landing/urls';
@@ -45,6 +45,7 @@ export function ProductStoryShell({
                 Connect your Gmail
               </TrackedCta>
             </div>
+            <p className="dm-story-scope-note">{OAUTH_SCOPE_DISCLOSURE}</p>
           </div>
           {heroAside ?? (
             <div className="dm-story-badge-paper">
@@ -105,6 +106,7 @@ export function FinalStoryCta({ title, body }: { title: string; body: string }) 
           Compare plans
         </TrackedCta>
       </div>
+      <p className="dm-story-scope-note">{OAUTH_SCOPE_DISCLOSURE}</p>
     </section>
   );
 }

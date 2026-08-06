@@ -393,19 +393,22 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         if (raced.kind === 'ok') {
           reasoning = raced.value;
         } else {
-          timedOut = true;
-          // Structured log; matches the rest of the worker logging shape
-          // (JSON line on stdout, picked up by the same collector). Keep
-          // mailbox + sender keys here so the timeout can be correlated
-          // with a slow tenant without re-querying.
+          // Either way the sender falls back to its template explanation —
+          // an explanation is an enhancement, never a reason to fail the
+          // sweep. A provider ERROR is logged as itself rather than as a
+          // timeout: counting it in `llmTimeouts` would blame latency for
+          // an outage and send the next reader chasing the wrong thing.
+          timedOut = raced.kind === 'timeout';
           console.warn(
             JSON.stringify({
               level: 'warn',
-              kind: 'reasoning.timeout',
+              kind: raced.kind === 'timeout' ? 'reasoning.timeout' : 'reasoning.failed',
               worker: this.workerName,
               mailboxAccountId,
               senderKey,
-              timeoutMs: this.explainTimeoutMs,
+              ...(raced.kind === 'timeout'
+                ? { timeoutMs: this.explainTimeoutMs }
+                : { error: raced.error.name }),
             }),
           );
         }

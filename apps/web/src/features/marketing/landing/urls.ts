@@ -16,6 +16,9 @@ export function siteUrl(): string {
  * the primary CTA href — no client JS needed to start the flow.
  */
 export function oauthStartUrl(): string {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
+  // Trailing slash stripped for the same reason connect-mailbox-url.ts does
+  // it: a pasted `https://api.example.com/` would otherwise produce a doubled
+  // `//api/auth/google/start`, which Nest does not route.
+  const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
   return `${apiBase}/api/auth/google/start`;
 }

@@ -40,6 +40,11 @@ function makeJwtService(): JwtService {
   return jwt;
 }
 
+/** A request carrying no session cookie — the signed-out visitor. */
+function signedOutRequest(): Request {
+  return { cookies: {} } as unknown as Request;
+}
+
 function makeSessions(
   userId: string = RECONNECT_USER_ID,
   workspaceId: string = RECONNECT_WORKSPACE_ID,
@@ -166,8 +171,157 @@ describe('GoogleOAuthController — @RateLimit metadata (D156)', () => {
   });
 });
 
+/**
+ * Every public "Sign in" / "Get started" CTA links straight at this route.
+ * A signed-in visitor clicking one used to reach Google's account chooser,
+ * and picking a different account silently replaced their live session —
+ * the callback issues cookies unconditionally and resolves the user by
+ * Google email. The marketing shell renders without an AuthProvider by
+ * design, so only the server can make this call.
+ */
+describe('GoogleOAuthController.start — an existing session is not replaced', () => {
+  function controllerWith(sessions: SessionsService, jwt: JwtService): GoogleOAuthController {
+    return new GoogleOAuthController(
+      {
+        getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent'),
+      } as unknown as GoogleOAuthService,
+      {} as AuthSignupOrchestrator,
+      makeSecurityEvents().service,
+      makeMailboxAccounts() as unknown as MailboxAccountsService,
+      jwt,
+      sessions,
+    );
+  }
+
+  async function signedInRequest(
+    jwt: JwtService,
+    revoked: boolean,
+  ): Promise<{
+    req: Request;
+    sessions: SessionsService;
+  }> {
+    const { accessToken } = await jwt.issue({
+      userId: RECONNECT_USER_ID,
+      workspaceId: RECONNECT_WORKSPACE_ID,
+      sessionId: CONNECT_SESSION_ID,
+    });
+    return {
+      req: { cookies: { dm_access: accessToken } } as unknown as Request,
+      sessions: {
+        lookupByJti: vi.fn().mockResolvedValue(revoked ? null : { id: CONNECT_SESSION_ID }),
+      } as unknown as SessionsService,
+    };
+  }
+
+  it('bounces a live session to the app instead of starting a second OAuth grant', async () => {
+    process.env.WEB_URL = 'https://app.declutrmail.test';
+    const jwt = makeJwtService();
+    const { req, sessions } = await signedInRequest(jwt, false);
+    const res = { cookie: vi.fn(), redirect: vi.fn() };
+
+    await controllerWith(sessions, jwt).start(req, res as unknown as Response);
+
+    expect(res.redirect).toHaveBeenCalledWith(302, 'https://app.declutrmail.test/senders');
+    expect(res.cookie).not.toHaveBeenCalled();
+  });
+
+  it('honours a validated billing returnTo when bouncing', async () => {
+    process.env.WEB_URL = 'https://app.declutrmail.test';
+    const jwt = makeJwtService();
+    const { req, sessions } = await signedInRequest(jwt, false);
+    const res = { cookie: vi.fn(), redirect: vi.fn() };
+
+    await controllerWith(sessions, jwt).start(
+      req,
+      res as unknown as Response,
+      '/billing?plan=pro&cycle=annual',
+    );
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      'https://app.declutrmail.test/billing?plan=pro&cycle=annual',
+    );
+  });
+
+  it('still starts consent when the session was revoked — signing in must never be blocked', async () => {
+    const jwt = makeJwtService();
+    const { req, sessions } = await signedInRequest(jwt, true);
+    const res = { cookie: vi.fn(), redirect: vi.fn() };
+
+    await controllerWith(sessions, jwt).start(req, res as unknown as Response);
+
+    expect(res.cookie).toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(302, 'https://accounts.google.test/consent');
+  });
+
+  /**
+   * The access token lives 15 minutes, the refresh token 30 days. Checking
+   * only the access cookie would miss nearly every returning visitor — they
+   * would still reach the account chooser and could still replace their own
+   * session. Caught by Codex review of PR #471.
+   */
+  it('bounces on a valid refresh session when the access token has expired', async () => {
+    process.env.WEB_URL = 'https://app.declutrmail.test';
+    const jwt = makeJwtService();
+    const { refreshToken } = await jwt.issue({
+      userId: RECONNECT_USER_ID,
+      workspaceId: RECONNECT_WORKSPACE_ID,
+      sessionId: CONNECT_SESSION_ID,
+    });
+    const sessions = {
+      lookupByJti: vi.fn().mockResolvedValue(null),
+      lookupActiveById: vi.fn().mockResolvedValue({ id: CONNECT_SESSION_ID }),
+    } as unknown as SessionsService;
+    const res = { cookie: vi.fn(), redirect: vi.fn() };
+
+    await controllerWith(sessions, jwt).start(
+      { cookies: { dm_refresh: refreshToken } } as unknown as Request,
+      res as unknown as Response,
+    );
+
+    expect(res.redirect).toHaveBeenCalledWith(302, 'https://app.declutrmail.test/senders');
+    expect(res.cookie).not.toHaveBeenCalled();
+  });
+
+  it('starts consent when the refresh session is revoked', async () => {
+    const jwt = makeJwtService();
+    const { refreshToken } = await jwt.issue({
+      userId: RECONNECT_USER_ID,
+      workspaceId: RECONNECT_WORKSPACE_ID,
+      sessionId: CONNECT_SESSION_ID,
+    });
+    const sessions = {
+      lookupByJti: vi.fn().mockResolvedValue(null),
+      lookupActiveById: vi.fn().mockResolvedValue(null),
+    } as unknown as SessionsService;
+    const res = { cookie: vi.fn(), redirect: vi.fn() };
+
+    await controllerWith(sessions, jwt).start(
+      { cookies: { dm_refresh: refreshToken } } as unknown as Request,
+      res as unknown as Response,
+    );
+
+    expect(res.cookie).toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(302, 'https://accounts.google.test/consent');
+  });
+
+  it('still starts consent when the access cookie is garbage', async () => {
+    const jwt = makeJwtService();
+    const res = { cookie: vi.fn(), redirect: vi.fn() };
+    const sessions = { lookupByJti: vi.fn() } as unknown as SessionsService;
+
+    await controllerWith(sessions, jwt).start(
+      { cookies: { dm_access: 'not-a-jwt' } } as unknown as Request,
+      res as unknown as Response,
+    );
+
+    expect(res.cookie).toHaveBeenCalled();
+    expect(sessions.lookupByJti).not.toHaveBeenCalled();
+  });
+});
+
 describe('GoogleOAuthController.start — validated post-login billing intent', () => {
-  it('stores only the canonical local billing destination in OAuth state', () => {
+  it('stores only the canonical local billing destination in OAuth state', async () => {
     const oauth = { getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent') };
     const res = { cookie: vi.fn(), redirect: vi.fn() };
     const jwt = makeJwtService();
@@ -180,7 +334,8 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
       makeSessions().service,
     );
 
-    controller.start(
+    await controller.start(
+      signedOutRequest(),
       res as unknown as Response,
       '/billing?cycle=annual&promo=foundingPro&plan=pro',
     );
@@ -209,7 +364,7 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
     '/billing?plan=plus&cycle=annual&promo=foundingPro',
     '/billing?plan=pro&cycle=annual&next=/senders',
     '/billing?plan=pro&plan=plus&cycle=annual',
-  ])('drops an unsafe or impossible returnTo: %s', (returnTo) => {
+  ])('drops an unsafe or impossible returnTo: %s', async (returnTo) => {
     const oauth = { getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent') };
     const res = { cookie: vi.fn(), redirect: vi.fn() };
     const jwt = makeJwtService();
@@ -222,7 +377,7 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
       makeSessions().service,
     );
 
-    controller.start(res as unknown as Response, returnTo);
+    await controller.start(signedOutRequest(), res as unknown as Response, returnTo);
 
     const state = decodeSignedState(jwt, res.cookie.mock.calls[0]?.[1] as string);
     expect(state).not.toHaveProperty('returnTo');

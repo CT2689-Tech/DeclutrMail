@@ -32,7 +32,7 @@ import { BetaGateDeniedError } from './beta-gate.js';
 import { ConnectMailboxStartFilter } from './connect-mailbox-start.filter.js';
 import { GoogleOAuthService } from './google-oauth.service.js';
 import { JwtService } from './jwt.service.js';
-import { CurrentUser, JwtGuard } from './jwt.guard.js';
+import { ACCESS_COOKIE, CurrentUser, JwtGuard, REFRESH_COOKIE } from './jwt.guard.js';
 import { SessionsService, type SessionPrincipal } from './sessions.service.js';
 import { setSessionCookies } from './session-cookies.js';
 
@@ -158,15 +158,83 @@ export class GoogleOAuthController {
     private readonly sessions: SessionsService,
   ) {}
 
+  /**
+   * Login-mode start. Deliberately unauthenticated — but NOT indifferent to
+   * an existing session.
+   *
+   * Every public "Sign in" / "Get started" CTA links straight here, so a
+   * signed-in visitor who clicks one out of habit used to be walked through
+   * Google's account chooser; picking a different account then issued fresh
+   * cookies and silently REPLACED their live session (the callback calls
+   * `setSessionCookies` unconditionally and resolves the user by Google
+   * email, with no notion of who was already signed in).
+   *
+   * Bouncing a still-valid session to the app is the same thing every other
+   * product does with `/login`, and doing it HERE covers all fourteen CTAs
+   * at once — the public marketing shell renders without an AuthProvider by
+   * design (no auth round-trip before paint), so it cannot make this call
+   * for itself.
+   */
   @Get('start')
   @RateLimit('auth')
-  start(@Res() res: Response, @Query('returnTo') returnTo?: unknown): void {
+  async start(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Query('returnTo') returnTo?: unknown,
+  ): Promise<void> {
     const safeReturnTo = parseBillingReturnTo(returnTo);
+
+    if (await this.hasLiveSession(req)) {
+      const webBase = (process.env.WEB_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
+      res.redirect(302, `${webBase}${safeReturnTo ?? '/senders'}`);
+      return;
+    }
+
     this.beginConsent(res, {
       nonce: randomBytes(32).toString('base64url'),
       mode: 'login',
       ...(safeReturnTo ? { returnTo: safeReturnTo } : {}),
     });
+  }
+
+  /**
+   * Non-throwing mirror of `JwtGuard`: same signature + revocation checks,
+   * but an absent/expired/revoked session is a plain `false` rather than a
+   * 401 — this route must still serve signed-out visitors, which is its
+   * whole job. Any verification failure falls through to a normal consent
+   * start, so a broken token can never lock someone out of signing in.
+   */
+  private async hasLiveSession(req: Request): Promise<boolean> {
+    const cookies = req.cookies as Record<string, unknown> | undefined;
+
+    const access = cookies?.[ACCESS_COOKIE];
+    if (typeof access === 'string' && access.length > 0) {
+      try {
+        const claims = await this.jwt.verify(access, 'access');
+        if ((await this.sessions.lookupByJti(claims.jti)) !== null) {
+          return true;
+        }
+      } catch {
+        // Fall through to the refresh cookie below.
+      }
+    }
+
+    // The access token lives 15 minutes and the refresh token 30 days, so
+    // checking only the former would miss almost every returning visitor —
+    // they would still be walked through the account chooser and could
+    // still replace their own session. `lookupActiveById` follows
+    // `active_sessions.id`, which survives refresh rotation (the jti does
+    // not) and never matches a revoked row.
+    const refresh = cookies?.[REFRESH_COOKIE];
+    if (typeof refresh !== 'string' || refresh.length === 0) {
+      return false;
+    }
+    try {
+      const claims = await this.jwt.verify(refresh, 'refresh');
+      return (await this.sessions.lookupActiveById(claims.sid)) !== null;
+    } catch {
+      return false;
+    }
   }
 
   /**

@@ -295,8 +295,13 @@ export interface EventPayloads {
   landing_cta_clicked: {
     /** Which CTA — `connect_gmail` starts OAuth; `open_app` is the authed shortcut. */
     cta: 'connect_gmail' | 'open_app' | 'see_pricing' | 'try_demo';
-    /** Positional section on the current public page; page_viewed carries the route family. */
-    placement: 'nav' | 'hero' | 'pricing_teaser' | 'final' | 'demo';
+    /**
+     * Positional section on the current public page; page_viewed carries the
+     * route family. `nav_sign_in` is the header's secondary returning-user
+     * affordance — kept distinct from `nav` so the primary "Get started" CTA
+     * keeps a comparable series after both started emitting (2026-08-05).
+     */
+    placement: 'nav' | 'nav_sign_in' | 'hero' | 'pricing_teaser' | 'final' | 'demo';
   };
   demo_preview_opened: {
     verb: Exclude<Verb, 'delete'>;

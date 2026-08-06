@@ -669,6 +669,22 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
             }),
           );
         }
+        // `runWithTimeout` now REPORTS a rejection instead of rethrowing it,
+        // so a failing port no longer reaches the catch below. Without this
+        // branch the fallback would be silent and `brief.llm_error` — the
+        // signal that says the port breached its "no throws" contract —
+        // would simply stop being emitted.
+        if (raced.kind === 'failed') {
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'brief.llm_error',
+              worker: this.workerName,
+              mailboxAccountId: input.mailboxAccountId,
+              error: raced.error.name,
+            }),
+          );
+        }
       } catch (err) {
         // Defense-in-depth — the port's contract is "no throws", but if a
         // future impl regresses we still fall back to the template + log

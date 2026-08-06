@@ -34,6 +34,18 @@ export interface WorkerFailureContext {
   attempt: number;
   /** The policy that classified the failure (informs alerting tier). */
   policy: string;
+  /**
+   * The upstream provider's machine-readable reason, when it gave one
+   * (Gmail's `error.errors[0].reason`, e.g. `failedPrecondition`).
+   *
+   * `Error.message` is deliberately never shipped to Sentry — it could
+   * carry Gmail content (D7). That left a terminal failure arriving as a
+   * bare error class with `<unknown>` frames and no way to tell WHICH
+   * failure it was; the 2026-08-06 sync incident took a prod database
+   * query to diagnose. This is a closed provider enum, never free text,
+   * so it restores the diagnosis without widening what can leak.
+   */
+  errorReason?: string;
 }
 
 /** Context for failures OUTSIDE the worker job loop (boot, reconciler, scheduler). */

@@ -53,10 +53,35 @@ export class ValidationError extends Error {
  */
 export class PermanentError extends Error {
   override readonly name = 'PermanentError';
+  /**
+   * The provider's machine-readable reason, when it supplied one (Gmail's
+   * `error.errors[0].reason`, e.g. `invalidArgument`, `failedPrecondition`).
+   *
+   * A closed provider enum, never free text, so a caller can branch on WHY
+   * without parsing `message` — some 400s describe the REQUEST (fail the
+   * job) and some describe ONE resource (skip it and carry on).
+   */
+  readonly reason: string | undefined;
+
+  constructor(message: string, reason?: string) {
+    super(message);
+    this.reason = reason;
+  }
 }
 
 /** Errors a retry can never fix — the base class dead-letters immediately. */
 export type NonRetryableError = InvalidGrantError | ValidationError | PermanentError;
+
+/**
+ * The provider's machine-readable reason, when the error carries one.
+ *
+ * A closed provider enum (`failedPrecondition`, `invalidArgument`, …) — safe
+ * for logs and Sentry tags in a codebase that deliberately never ships
+ * `Error.message` off-box.
+ */
+export function providerErrorReason(err: unknown): string | undefined {
+  return err instanceof PermanentError ? err.reason : undefined;
+}
 
 /** True when retrying the job is pointless (D203 error classification). */
 export function isNonRetryable(err: unknown): err is NonRetryableError {

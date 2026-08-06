@@ -74,9 +74,14 @@ export function PublicHeader() {
           </nav>
 
           <div className="dm-public-actions">
-            <Link className="dm-public-sign-in" href="/sign-in">
+            <TrackedCta
+              className="dm-public-sign-in"
+              href={oauthStartUrl()}
+              cta="connect_gmail"
+              placement="nav_sign_in"
+            >
               Sign in
-            </Link>
+            </TrackedCta>
             <TrackedCta
               className="dm-public-start"
               href={oauthStartUrl()}

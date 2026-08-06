@@ -36,7 +36,7 @@ const VALID_FAILED: SyncStatus = {
   current_stage: 'failed',
   progress_pct: 17,
   is_ready_for_triage: false,
-  error_code: 'GMAIL_QUOTA_EXCEEDED',
+  error_code: 'RateLimitError',
 };
 
 describe('SyncStatusSchema', () => {

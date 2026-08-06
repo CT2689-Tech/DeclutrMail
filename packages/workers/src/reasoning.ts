@@ -163,13 +163,25 @@ export const MAX_REASONING_CONCURRENCY = 16;
 export async function runWithTimeout<T>(
   task: () => Promise<T>,
   ms: number,
-): Promise<{ kind: 'ok'; value: T } | { kind: 'timeout' }> {
+): Promise<{ kind: 'ok'; value: T } | { kind: 'timeout' } | { kind: 'failed'; error: Error }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<{ kind: 'timeout' }>((resolve) => {
     timer = setTimeout(() => resolve({ kind: 'timeout' }), ms);
   });
   try {
-    const taskPromise = task().then((value) => ({ kind: 'ok' as const, value }));
+    // A REJECTION is reported, never rethrown. The union above is the whole
+    // point of this helper ("branch without try/catch"), and it used to be a
+    // promise the function did not keep: a throwing task propagated straight
+    // through `Promise.race`. In a `Promise.all` fan-out that turned ONE
+    // item's provider error into a whole-job failure — the same escalation
+    // that killed an 84k-message sync in production 2026-08-06.
+    const taskPromise = task().then(
+      (value) => ({ kind: 'ok' as const, value }),
+      (err: unknown) => ({
+        kind: 'failed' as const,
+        error: err instanceof Error ? err : new Error(String(err)),
+      }),
+    );
     return await Promise.race([taskPromise, timeoutPromise]);
   } finally {
     if (timer) clearTimeout(timer);
