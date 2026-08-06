@@ -285,7 +285,8 @@ describe('IncrementalSyncWorker', () => {
    * refusal would permanently drop live mail AND report a clean run.
    */
   it('does not advance the history cursor when most new messages are unreadable', async () => {
-    const records: GmailHistoryRecord[] = ['m-001', 'm-002', 'm-003'].map((id) => ({
+    const ids = Array.from({ length: 12 }, (_, i) => `m-${String(i).padStart(3, '0')}`);
+    const records: GmailHistoryRecord[] = ids.map((id) => ({
       kind: 'added' as const,
       messageId: id,
       threadId: `thread-${id}`,
@@ -294,7 +295,7 @@ describe('IncrementalSyncWorker', () => {
     const client = new FakeGmailClient(
       [{ forCursor: '1000', page: { records, historyId: '1500' } }],
       new Map(),
-      new Set(['m-001', 'm-002', 'm-003']),
+      new Set(ids),
     );
 
     await expect(
@@ -309,6 +310,40 @@ describe('IncrementalSyncWorker', () => {
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
     expect(state!.lastHistoryId).toBe(1000n);
+  });
+
+  /**
+   * The common webhook shape is ONE new message. A share-only guard makes
+   * `1 of 1` a 100% failure rate, so it threw, retried, failed identically,
+   * dead-lettered — and left the cursor stuck, so that mailbox's live sync
+   * never advanced again. Worse than the bug the guard exists to prevent.
+   * Caught by Codex stop-gate review.
+   */
+  it('advances past a lone unreadable message instead of wedging the mailbox', async () => {
+    const records: GmailHistoryRecord[] = [
+      { kind: 'added', messageId: 'm-001', threadId: 'thread-001', labelIds: ['INBOX'] },
+    ];
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map(),
+      new Set(['m-001']),
+    );
+
+    const result = await new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    expect(result.added).toBe(0);
+    expect(result.advancedToHistoryId).toBe('1500');
+    // The delta admits it is partial rather than reporting a clean run.
+    expect(result.unreadableSkipped).toBe(1);
+
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state!.lastHistoryId).toBe(1500n);
   });
 
   it('still advances past a single unreadable message among readable ones', async () => {

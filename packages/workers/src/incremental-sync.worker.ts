@@ -7,7 +7,7 @@ import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
-import { MAX_UNREADABLE_SHARE } from './ports.js';
+import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
 import type { GmailAccess, GmailHistoryRecord, GmailMetadataClient } from './ports.js';
 import type { IncrementalSyncJobData } from './queue.js';
 import { deriveSenderKey, emailDomain, parseFromHeader } from './sender-key.js';
@@ -118,6 +118,15 @@ export interface IncrementalSyncResult {
    * or freshness write occurred.
    */
   mailboxInactive?: true;
+  /**
+   * New messages Gmail refused to render as metadata (400
+   * FAILED_PRECONDITION) and the run skipped. Present only when non-zero.
+   *
+   * Below the systemic floor the cursor still advances, so these messages
+   * never come back on this path — the count is how a partial delta admits
+   * to being partial.
+   */
+  unreadableSkipped?: number;
 }
 
 /**
@@ -350,7 +359,10 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // the job backs off and retries rather than dead-lettering on attempt 1
     // — a provider-side refusal is usually not permanent.
     const unreadable = (client.unreadableMessageCount ?? 0) - unreadableBefore;
-    if (addAttempts > 0 && unreadable > addAttempts * MAX_UNREADABLE_SHARE) {
+    if (
+      unreadable >= MIN_UNREADABLE_FOR_SYSTEMIC &&
+      unreadable > addAttempts * MAX_UNREADABLE_SHARE
+    ) {
       throw new TransientError(
         `Gmail refused metadata for ${unreadable} of ${addAttempts} new messages — not advancing the history cursor`,
       );
@@ -462,6 +474,10 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       labelChanges,
       cursorTooOld: false,
       advancedToHistoryId: lastPageHistoryId,
+      // Only when non-zero: a skip below the systemic floor still advances
+      // the cursor, so the message is gone from the index for good. The run
+      // says so rather than reporting a clean delta it did not achieve.
+      ...(unreadable > 0 ? { unreadableSkipped: unreadable } : {}),
     };
   }
 

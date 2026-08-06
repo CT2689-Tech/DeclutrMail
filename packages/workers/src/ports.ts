@@ -180,6 +180,24 @@ export interface GmailMetadataClient {
 export const MAX_UNREADABLE_SHARE = 0.5;
 
 /**
+ * Minimum unreadable messages before the share test above is consulted at
+ * all.
+ *
+ * A share is meaningless over a tiny sample. A webhook usually delivers one
+ * or two messages, so `1 of 1` is 100% and trips a share-only guard every
+ * single time — turning one unreadable message into a throw, a retry that
+ * fails identically, a dead-letter, and a mailbox whose incremental sync
+ * never advances again. That is a worse version of the bug the guard exists
+ * to prevent, and it is why "most of them failed" needs a real sample
+ * behind it.
+ *
+ * Below this floor a skip is counted, logged and reported, and the run
+ * continues: losing the occasional message from the index is recoverable by
+ * a re-sync, whereas wedging the cursor is total and permanent.
+ */
+export const MIN_UNREADABLE_FOR_SYSTEMIC = 10;
+
+/**
  * Resolves a per-mailbox authenticated client. The implementation
  * (`apps/api`) loads the mailbox row, decrypts the OAuth refresh token
  * (D14 `TokenCryptoService`), and returns a token-bound client.
