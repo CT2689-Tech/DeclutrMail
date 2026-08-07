@@ -22,7 +22,7 @@
 // enqueue, previews it as-is, and executes the frozen ids — it is
 // internally consistent and expresses direct message-level intent.
 
-import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 
 import { mailMessages } from './schema/mail-messages';
 
@@ -76,11 +76,7 @@ export function senderActionWhere(scope: SenderActionScope): SQL {
       ? eq(mailMessages.senderKey, senderKeys[0]!)
       : inArray(mailMessages.senderKey, [...senderKeys]),
     eq(mailMessages.isOutbound, false),
-    reach === 'inbox_only'
-      ? sql`'INBOX' = ANY(${mailMessages.labelIds})`
-      : // Overlap operator against the exclusion list; `label_ids` is
-        // NOT NULL (default '{}') so the NOT can never trip on NULL.
-        sql`NOT (${mailMessages.labelIds} && ${sql.raw(allMailExcludedArrayLiteral())})`,
+    reachWhere(reach),
   ];
   if (olderThanDays !== null && olderThanDays !== undefined) {
     predicates.push(
@@ -89,6 +85,44 @@ export function senderActionWhere(scope: SenderActionScope): SQL {
   }
   // Non-empty predicate list, so `and()` can never return undefined.
   return and(...predicates)!;
+}
+
+/**
+ * The reach half of the predicate, factored out so the correlated
+ * `senderHasActionableMail` below cannot drift from `senderActionWhere`.
+ */
+function reachWhere(reach: SenderActionReach): SQL {
+  return reach === 'inbox_only'
+    ? sql`'INBOX' = ANY(${mailMessages.labelIds})`
+    : // Overlap operator against the exclusion list; `label_ids` is
+      // NOT NULL (default '{}') so the NOT can never trip on NULL.
+      sql`NOT (${mailMessages.labelIds} && ${sql.raw(allMailExcludedArrayLiteral())})`;
+}
+
+/**
+ * Correlated `EXISTS` — "this sender has mail an action could move".
+ *
+ * Same message set as {@link senderActionWhere}, but keyed to an OUTER
+ * query's sender-key column instead of a value list, so a sender listing
+ * can drop rows whose action would move nothing BEFORE its LIMIT.
+ *
+ * That ordering matters. A pool that ranks by indexed volume and then
+ * hands its rows to a consumer filtering on inbox volume can fill every
+ * slot with rows the consumer discards — no error, just an empty result.
+ * Onboarding's Step 5 rendered blank on a 98k mailbox for exactly that
+ * reason.
+ */
+export function senderHasActionableMail(
+  mailboxAccountId: string,
+  senderKeyColumn: AnyColumn,
+  reach: SenderActionReach = 'inbox_only',
+): SQL {
+  return sql`EXISTS (SELECT 1 FROM ${mailMessages} WHERE ${and(
+    eq(mailMessages.mailboxAccountId, mailboxAccountId),
+    eq(mailMessages.isOutbound, false),
+    reachWhere(reach),
+    sql`${mailMessages.senderKey} = ${senderKeyColumn}`,
+  )})`;
 }
 
 /** WHERE clause for the inbox-only sender-action message set. */

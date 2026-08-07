@@ -5,6 +5,7 @@ import {
   activityLog,
   mailMessages,
   mailboxAccounts,
+  senderHasActionableMail,
   senderInboxActionWhere,
   senderPolicies,
   senders,
@@ -207,6 +208,22 @@ export class TriageReadService {
     mailboxAccountId: string;
     limit: number;
     ordering?: TriageQueueOrdering;
+    /**
+     * Drop senders whose action would move nothing, BEFORE the limit.
+     *
+     * Onboarding's Step 5 filters on inbox mail, but this pool ranks by
+     * indexed volume (`senders.total_received`), which counts archived
+     * mail too. A sender with 2,000 filed messages and an empty inbox
+     * therefore leads the pool and is then discarded — and with enough of
+     * them all `limit` slots go to rows the caller cannot use. Step 5
+     * rendered blank on a 98k mailbox for that reason, silently: a pool
+     * that disagrees with its consumer's filter starves it with no error.
+     *
+     * Off by default. The main Triage queue deliberately shows senders
+     * with nothing in the inbox — Keep and Later still mean something
+     * there.
+     */
+    requireActionableMail?: boolean;
   }): Promise<TriageQueueRow[]> {
     // The CASE ordering encodes the verdict priority. `confidence` is
     // a numeric text on the wire — cast to numeric so DESC sorts as a
@@ -292,7 +309,15 @@ export class TriageReadService {
           eq(senderPolicies.senderKey, triageDecisions.senderKey),
         ),
       )
-      .where(and(eq(triageDecisions.mailboxAccountId, input.mailboxAccountId), notDecidedRecently))
+      .where(
+        and(
+          eq(triageDecisions.mailboxAccountId, input.mailboxAccountId),
+          notDecidedRecently,
+          ...(input.requireActionableMail
+            ? [senderHasActionableMail(input.mailboxAccountId, senders.senderKey)]
+            : []),
+        ),
+      )
       .orderBy(...queueOrder)
       .limit(input.limit);
 

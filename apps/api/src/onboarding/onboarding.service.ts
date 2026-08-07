@@ -170,10 +170,15 @@ export class OnboardingService {
     const user = await this.findUser(userId);
     const prefs = (user.preferences ?? {}) as Record<string, unknown>;
 
+    const goal = readGoal(prefs);
     const queue = await this.triageReads.listQueue({
       mailboxAccountId,
       limit: FIRST_TRIAGE_POOL_LIMIT,
-      ordering: firstTriageQueueOrdering(readGoal(prefs)),
+      ordering: firstTriageQueueOrdering(goal),
+      // Cleanup goals discard rows that move nothing, so the pool must
+      // not spend its 50 slots on them. `protect_important` moves no mail
+      // by design and keeps the unfiltered pool.
+      requireActionableMail: goal !== 'protect_important',
     });
 
     let pinnedKeys = readStringArray(prefs[PREF_FIRST_TRIAGE_KEYS]);
