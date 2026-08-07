@@ -114,7 +114,6 @@ const FAKE_CTX: WorkerContext = {
   attempt: 1,
   maxAttempts: 5,
   startedAt: new Date(),
-  enqueuedAt: new Date(),
   policy: 'perMailboxPolicy',
 };
 

@@ -249,9 +249,6 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
       attempt: job.attemptsMade + 1,
       maxAttempts: config.maxAttempts,
       startedAt: new Date(),
-      // `job.timestamp` is set by BullMQ at enqueue and survives retries.
-      // Falls back to now only for hand-built jobs in tests/harnesses.
-      enqueuedAt: new Date(job.timestamp ?? Date.now()),
       policy: this.policy,
       ...(job.data && typeof job.data === 'object' && 'mailboxAccountId' in job.data
         ? { mailboxAccountId: String((job.data as Record<string, unknown>).mailboxAccountId) }

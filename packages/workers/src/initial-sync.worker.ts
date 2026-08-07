@@ -21,7 +21,7 @@ import {
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-import { BaseDeclutrWorker, telemetryReference } from './base-declutr-worker.js';
+import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
@@ -68,138 +68,6 @@ const UPSERT_BATCH = 500;
  */
 const SCAN_PAGE = 1000;
 
-/**
- * Server-side sync analytics seam (D159).
- *
- * `sync_started` / `sync_completed` were emitted ONLY from the browser
- * (`useSyncGateFunnel`), which can report just its own waiting: `sync_id`
- * was always `null`, `messages_indexed` always `-1`, `duration_ms` was how
- * long a tab watched rather than how long the sync took, and a user who
- * closed the tab produced no events at all — the common case for a sync
- * measured in tens of thousands of messages. The 2026-08-06 incident
- * needed a prod database query to answer "how did that sync go?" for
- * exactly this reason.
- *
- * The worker is the only place that knows the real numbers, so it emits
- * them. Kept as an injected seam for the same reason `WorkerObserver` is:
- * `packages/workers` must not take a PostHog dependency — the composition
- * root (`apps/api/src/worker.ts`) owns adapter wiring.
- *
- * **Completion only — the server deliberately does not emit
- * `sync_started`.** A run spans several BullMQ attempts and the worker
- * holds no state between them, so "the run began" cannot be emitted
- * exactly once. Emitting per attempt leaves attempts 1..n-1 as starts with
- * no completion; emitting only on attempt 1 leaves a completion with no
- * start whenever attempt 1 throws before reaching the emit (the
- * eligibility read and the readiness query are both database calls that
- * can). Both were tried, and both are the same defect facing opposite
- * directions. An event that cannot be emitted once per run should not
- * claim to be.
- *
- * Nothing is lost. `sync_completed` alone carries outcome, real duration
- * and real counts, which is every question the dashboards ask. Runs that
- * begin and never finish are detected by `scripts/check-sync-stuck.sh`
- * against `provider_sync_state` — stateful and authoritative, where a
- * fire-and-forget event never could be. The browser still emits
- * `sync_started` for the perceived-wait view. If the `sync_runs` table
- * lands (open D-candidate, FOUNDER-FOLLOWUPS 2026-05-22) the ROW insert
- * gives a start a once-per-run anchor — the row would be exactly-once
- * even though emitting from it still would not be, which is the whole
- * reason a durable row beats an event here.
- *
- * **Best-effort delivery. No guarantee at all — not exactly-once, and
- * not even at-least-once.** An event can be emitted twice, once, or never,
- * and every loss is silent. Do NOT read this event as a record of whether
- * a sync happened; `provider_sync_state` is the authority for that and
- * this is a sample of it.
- *
- *   - DUPLICATE. BullMQ re-delivers a job whose lock lapsed. On a long
- *     sync a second worker can get past the `alreadyReady` guard before
- *     the first marks ready, and both emit. Same job, same `job.timestamp`
- *     ⇒ same `syncId`, so `COUNT(DISTINCT sync_id)` collapses it. This is
- *     the one deviation the design actually neutralises.
- *   - DUPLICATE, DISAGREEING. `processJob` emits `success`, then base-class
- *     code after it throws on the final attempt, so `onTerminalFailure`
- *     emits `failed` for the same run. Essentially unreachable — that code
- *     is a result projection and a log line — but not impossible. Resolve
- *     pessimistically (`failed` > `partial` > `success`) so a duplicate
- *     can never hide a failure.
- *   - LOST. `captureServerEvent` is fail-open and swallows everything; a
- *     missing `POSTHOG_API_KEY` drops the event; `capture()` is
- *     fire-and-forget so a failed POST is invisible; a SIGKILL or OOM
- *     loses whatever is still buffered (the SIGTERM flush does not run);
- *     and a kill mid-attempt never reaches either emit.
- *
- * **The loss mode correlates with what is being measured, so the derived
- * success rate is biased optimistic exactly during an incident.** An OOM
- * or a revision swap both CAUSES sync failures and SUPPRESSES the events
- * that would report them. Treat the dashboards as a trend indicator, never
- * as evidence that failures did not occur — that question is answered by
- * `provider_sync_state` and `scripts/check-sync-stuck.sh`.
- *
- * Closing the gap needs durable per-run state — the `sync_runs` row — not
- * a better emitter. A Redis SETNX would only add another dependency whose
- * outage silences telemetry, which is the failure this seam already had to
- * fix once for the database.
- *
- * **Privacy (D7, D228, D147): the payload carries NO user-linked
- * identifier at all — not a distinct id, not a mailbox id, not an id
- * derived from one.** Analytics consent lives in browser localStorage
- * (`dm-cookie-consent`), decline is the default, and the FE re-reads it on
- * every `track()`. A worker cannot see it, so anything this emits is
- * emitted for consenting and declining users alike. The only way that is
- * legitimate is if what it emits is not personal data.
- *
- * Dropping the `users.id` distinct id was not enough on its own: a
- * `mailbox_id` property — or a `sync_id` of `mailboxId:epochMs` — is a
- * stable per-user key, and PostHog holding per-mailbox behaviour for
- * someone who declined is the thing the consent gate exists to prevent.
- * Pseudonymous is not anonymous.
- *
- * So the run is identified by `syncRef`, an HMAC via `telemetryReference`
- * (the same primitive that keeps raw mailbox ids out of `worker.succeeded`
- * logs). It is stable for one run, so duplicates still collapse, and it is
- * unique per run, so runs cannot be grouped back into a mailbox. Per-
- * mailbox questions belong to `provider_sync_state` and the structured
- * logs, which is where this seam already points for anything
- * authoritative.
- *
- * Implementations must NEVER throw; a telemetry outage must not fail a
- * sync that otherwise succeeded.
- */
-export interface SyncTelemetry {
-  syncCompleted(event: {
-    /**
-     * Opaque HMAC of the run key — never the mailbox id, and not derived
-     * from it in any reversible way. The raw id is deliberately absent
-     * from this type so the seam cannot leak it even by accident.
-     */
-    syncRef: string;
-    /** Messages actually indexed. Excludes unreadable skips. */
-    messagesIndexed: number;
-    /** Real server-side wall-clock for the attempt. */
-    durationMs: number;
-    /**
-     * Which BullMQ attempt finished the run. `> 1` means it was retried —
-     * the signal the removed `sync_started` was reaching for, carried on
-     * the event that survives a retry instead of being orphaned by one.
-     */
-    attempt: number;
-    /**
-     * `partial` means the sync finished but the index has a known gap —
-     * Gmail refused metadata for some messages. Reporting those runs as
-     * `success` would be the surface asserting a completeness it does not
-     * have.
-     */
-    outcome: 'success' | 'partial' | 'failed';
-  }): void;
-}
-
-/** No-op default — analytics is opt-in via `POSTHOG_API_KEY` (D159). */
-export const NOOP_SYNC_TELEMETRY: SyncTelemetry = {
-  syncCompleted() {},
-};
-
 /** Dependencies the worker needs — injected by the composition root. */
 export interface InitialSyncDeps {
   db: WorkerDb;
@@ -227,12 +95,6 @@ export interface InitialSyncDeps {
    * gap. The integration PR passes `outbox: new OutboxPublisher()`.
    */
   outbox?: OutboxPublisher;
-  /**
-   * Server-side `sync_started` / `sync_completed` emitter (D159). Absent
-   * in tests and wherever `POSTHOG_API_KEY` is unset; the sync runs
-   * identically either way.
-   */
-  syncTelemetry?: SyncTelemetry;
 }
 
 /**
@@ -254,8 +116,9 @@ export interface InitialSyncResult {
   /**
    * Messages Gmail refused to render as metadata this run, which the
    * client skipped (400 FAILED_PRECONDITION). Non-zero means the index has
-   * a known gap, which is what makes the run `partial` rather than
-   * `success` — see `SyncTelemetry`.
+   * a known gap, so `messagesSynced` is NOT the size of the mailbox — the
+   * pair has to be read together, which is why both ride the
+   * `worker.succeeded` line.
    */
   unreadable: number;
   sendersIndexed: number;
@@ -399,83 +262,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     return payload.mailboxAccountId;
   }
 
-  /**
-   * An OPAQUE stable reference for ONE sync RUN — every BullMQ attempt of
-   * the same job produces the same value, so a run that fails twice and
-   * then succeeds is one run in analysis, not three.
-   *
-   * The run KEY is `jobId : enqueuedAt`. `enqueuedAt` rather than
-   * `startedAt` because `startedAt` is per-attempt, so a key built on it
-   * would name an attempt while claiming to name a run; `jobId` alone
-   * cannot carry it either, since for `perMailboxPolicy` it IS the mailbox
-   * id and repeats for every sync that mailbox ever runs.
-   *
-   * The key is then HMACed, because `jobId` being the mailbox id means the
-   * raw key is a per-user identifier — and this event ships to PostHog for
-   * users who declined analytics, who must not be identifiable there.
-   * `telemetryReference` is the same primitive that keeps raw ids out of
-   * `worker.succeeded`; the HMAC preserves both properties analysis needs
-   * (equal for one run, distinct across runs) while destroying the one it
-   * must not have (groupable back to a mailbox).
-   *
-   * That stability is also the one reliability property this event has: a
-   * re-delivered job produces the same ref, so a duplicate collapses under
-   * `COUNT(DISTINCT sync_id)` rather than double-counting the run. It does
-   * nothing for losses — see `SyncTelemetry` for the full contract.
-   */
-  private syncRef(ctx: WorkerContext): string {
-    return telemetryReference(`${ctx.jobId}:${ctx.enqueuedAt.getTime()}`);
-  }
-
-  /**
-   * Emit one server-side sync event (D159). Never throws — a telemetry
-   * outage must not fail a sync that otherwise succeeded.
-   *
-   * Reads nothing. An earlier cut resolved the mailbox owner here so the
-   * event could be attributed to `users.id`, which was wrong twice over: a
-   * database outage then silenced the very failure event the dashboard
-   * exists for, and analytics consent (D147) lives in browser localStorage
-   * where a worker cannot see it, so attributing a server event to a
-   * person would profile users who declined. Dropping the lookup removes
-   * both by construction rather than by careful handling — the emit path
-   * now has no dependency that can be down.
-   *
-   * `mailboxAccountId` is taken for the failure LOG line only. It is never
-   * handed to the telemetry sink; see `SyncTelemetry` for why.
-   */
-  private emitSyncCompleted(
-    mailboxAccountId: string,
-    ctx: WorkerContext,
-    completion: { messagesIndexed: number; outcome: 'success' | 'partial' | 'failed' },
-  ): void {
-    const telemetry = this.deps.syncTelemetry;
-    if (!telemetry) {
-      return;
-    }
-    try {
-      telemetry.syncCompleted({
-        syncRef: this.syncRef(ctx),
-        messagesIndexed: completion.messagesIndexed,
-        durationMs: Date.now() - ctx.startedAt.getTime(),
-        attempt: ctx.attempt,
-        outcome: completion.outcome,
-      });
-    } catch (err) {
-      console.warn(
-        JSON.stringify({
-          level: 'warn',
-          kind: 'sync.telemetry_failed',
-          worker: this.workerName,
-          mailboxAccountId,
-          error: err instanceof Error ? err.name : 'unknown',
-        }),
-      );
-    }
-  }
-
   override async processJob(
     payload: InitialSyncJobData,
-    ctx: WorkerContext,
+    _ctx: WorkerContext,
   ): Promise<InitialSyncResult> {
     const mailboxAccountId = payload?.mailboxAccountId;
     if (!mailboxAccountId) {
@@ -618,15 +407,6 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // incremental sync can `history.list?startHistoryId=...` from here.
     await this.markReady(mailboxAccountId, snapshotHistoryId, messagesSynced);
 
-    // `partial` when Gmail refused metadata for anything: the sync
-    // finished, but the index has a named gap. Reporting those runs as
-    // `success` would make the dashboard assert a completeness the data
-    // does not have — and would have hidden the 2026-08-06 incident.
-    this.emitSyncCompleted(mailboxAccountId, ctx, {
-      messagesIndexed: messagesSynced,
-      outcome: unreadable > 0 ? 'partial' : 'success',
-    });
-
     return {
       messagesSynced,
       unreadable,
@@ -646,27 +426,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   protected override async onTerminalFailure(
     payload: InitialSyncJobData,
     error: Error,
-    ctx: WorkerContext,
   ): Promise<void> {
     const mailboxAccountId = payload?.mailboxAccountId;
     if (!mailboxAccountId) {
       return;
     }
-    try {
-      await this.recordTerminalFailure(mailboxAccountId, error);
-    } finally {
-      // `finally`, so a failed run still lands in the success rate even
-      // if recording it threw — a sync-failure dashboard that under-counts
-      // precisely when the database is unhappy is worse than none.
-      //
-      // `messagesIndexed: -1` is the taxonomy's documented unknown: rows
-      // fetched before the failure are still in `mail_messages`, and
-      // counting them here would mean a full scan on the failure path.
-      this.emitSyncCompleted(mailboxAccountId, ctx, {
-        messagesIndexed: -1,
-        outcome: 'failed',
-      });
-    }
+    await this.recordTerminalFailure(mailboxAccountId, error);
   }
 
   private async recordTerminalFailure(mailboxAccountId: string, error: Error): Promise<void> {

@@ -88,7 +88,6 @@ const CTX: WorkerContext = {
   attempt: 1,
   maxAttempts: 3,
   startedAt: NOW,
-  enqueuedAt: NOW,
   policy: 'cronPolicy',
 };
 

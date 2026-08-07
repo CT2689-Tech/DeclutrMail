@@ -23,17 +23,6 @@ export interface WorkerContext {
   maxAttempts: number;
   /** When this attempt started. */
   startedAt: Date;
-  /**
-   * When the JOB was enqueued (BullMQ `job.timestamp`) — identical across
-   * every attempt, unlike `startedAt`.
-   *
-   * `jobId` alone cannot identify a run: for `perMailboxPolicy` it IS the
-   * mailbox id, so it repeats for every sync that mailbox ever runs. Pairing
-   * `jobId` with `startedAt` gives the opposite problem — a fresh value per
-   * attempt, which splits one retried run into several. This is the only
-   * field that is stable across retries and unique per enqueue.
-   */
-  enqueuedAt: Date;
   /** The policy this worker declared. */
   policy: WorkerPolicy;
 }

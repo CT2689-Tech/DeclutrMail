@@ -115,8 +115,8 @@ export type { ParsedSender } from './sender-key.js';
 export { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 export { RateLimiter } from './rate-limiter.js';
 export type { RateLimiterClock } from './rate-limiter.js';
-export { InitialSyncWorker, NOOP_SYNC_TELEMETRY } from './initial-sync.worker.js';
-export type { InitialSyncDeps, InitialSyncResult, SyncTelemetry } from './initial-sync.worker.js';
+export { InitialSyncWorker } from './initial-sync.worker.js';
+export type { InitialSyncDeps, InitialSyncResult } from './initial-sync.worker.js';
 export { IncrementalSyncWorker } from './incremental-sync.worker.js';
 export type { IncrementalSyncDeps, IncrementalSyncResult } from './incremental-sync.worker.js';
 export {

@@ -20,10 +20,10 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
-## 2026-08-06 — Kept promising reliability a fire-and-forget event could not have
+## 2026-08-06 — Wrote my own privacy contract instead of reading the one we publish
 
 **PR:** [#473](https://github.com/CT2689-Tech/DeclutrMail/pull/473)
-**Caught by:** Codex stop-time review, six consecutive rounds — after CI green and after a passing dev smoke each time
+**Caught by:** Codex stop-time review, seven consecutive rounds — after CI green and after a passing dev smoke each time
 
 **What happened:** New server-side sync telemetry. Round one: the failure
 emit sat in a `finally` whose commit message read *"a failure dashboard
@@ -84,11 +84,24 @@ PostHog still held per-mailbox behaviour for people who refused it.
 Pseudonymous is not anonymous, and identity is a property of the whole
 payload, not of the distinct-id field. Round six.
 
-The event now carries no user-linked field at all: `sync_id` is
-`telemetryReference(runKey)`, the HMAC primitive already used to keep raw
-ids out of `worker.succeeded`. Dropping the owner lookup also deleted the
-only database read in the emit path — which is what caused round one's
-bug — so that fix removed a failure mode rather than handling one.
+I stripped every user-linked field — `sync_id` became
+`telemetryReference(runKey)` — and argued that an anonymous payload is not
+personal data, so consent does not apply. Round seven: that was me
+authoring a contract instead of reading ours. Our published pages say
+"Optional analytics (PostHog) is initialized only after you accept it",
+"withdrawal takes effect immediately", and "Choosing Essential only stops
+analytics immediately". The promise is that PostHog does not RUN, not that
+it runs without names. Anonymising cannot satisfy a promise about whether
+a third party receives anything at all.
+
+Twice in a row I reasoned about what counts as personal data when the
+answer was written in our own `/privacy` and `/cookies` pages, sitting in
+this repo. The whole server-side emitter came out. What shipped is the
+part with no consent surface: `unreadable` on the result and in the
+`worker.succeeded` allowlist, plus the taxonomy corrections the work
+surfaced. The metrics belong in a first-party `sync_runs` table — the
+founder's own 2026-05-22 D-candidate — where the optional-analytics gate
+does not apply and which fixes the delivery and bias problems too.
 
 **Correct approach:** delete the event rather than patch its placement a
 third time. `sync_completed` alone carries outcome, real duration, real
@@ -121,10 +134,13 @@ promise. **Before trusting any derived reliability metric, ask whether its
 loss mode correlates with the thing it measures** — if the same incident
 that causes failures also drops the events reporting them, the metric is
 biased precisely when it matters, and only stateful storage can answer.
-**And a consent gate protects a PAYLOAD, not a field**: when data leaves
-on a path that cannot check consent, the test is whether anything in the
-whole payload — including derived and composite ids — links back to a
-person, not whether the distinct-id field is empty.
+**A consent gate protects a PAYLOAD, not a field** — anything derived or
+composite counts, not just the distinct-id. **And when a change touches
+consent, privacy, or retention, the controlling document is what the
+product PUBLISHES, not what the code implies or what the law would
+tolerate**: read `/privacy` and `/cookies` in the repo first, quote the
+sentence the change has to satisfy, and if the answer is arguable it is
+the founder's (CLAUDE.md §9), not yours to reason to.
 
 **Enforcement update:** structural test asserts `SyncTelemetry` exposes
 `syncCompleted` only, so re-adding a start reopens the class loudly rather

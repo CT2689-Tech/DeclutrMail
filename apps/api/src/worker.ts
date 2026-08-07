@@ -143,7 +143,6 @@ import { BillingReconciliationService } from './billing/billing-reconciliation.s
 import { BillingWebhookService } from './billing/billing-webhook.service.js';
 import { PaddleAdapter } from './billing/paddle.adapter.js';
 import { RazorpayAdapter } from './billing/razorpay.adapter.js';
-import { captureServerEvent, shutdownAnalytics } from './observability/product-analytics.js';
 import { initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
 import { SecurityEventsService } from './security-events/security-events.service.js';
@@ -616,33 +615,6 @@ async function bootstrap(): Promise<void> {
     // router below. Without this dep the worker WARNs
     // `sync.sync_ready_publish_skipped` on every ready flip.
     outbox: new OutboxPublisher(),
-    // D159: the worker is the only place that knows a sync's real counts
-    // and wall-clock. The browser funnel it supplements can only report
-    // its own waiting, and emits nothing at all when the tab is closed —
-    // the normal case for a large mailbox.
-    //
-    // Completion only, by design — see `SyncTelemetry`. A run spans
-    // several BullMQ attempts with no state between them, so a server-side
-    // `sync_started` cannot be emitted exactly once per run.
-    syncTelemetry: {
-      syncCompleted: ({ syncRef, messagesIndexed, durationMs, attempt, outcome }) => {
-        // Nothing here identifies a user. No distinct id (so
-        // `captureServerEvent` uses `'server'`), no `mailbox_id`, and
-        // `sync_id` is an HMAC rather than the `mailboxId:epochMs` key it
-        // is computed from. Analytics consent (D147) is per-browser
-        // localStorage that a worker cannot read, so this ships for
-        // declining users too — which is only defensible while the payload
-        // is not personal data. Aggregate sync health needs none of it;
-        // per-mailbox questions belong to `provider_sync_state`.
-        captureServerEvent('sync_completed', {
-          sync_id: syncRef,
-          messages_indexed: messagesIndexed,
-          duration_ms: durationMs,
-          attempt,
-          outcome,
-        });
-      },
-    },
     onSenderIndexBuilt: async (mailboxAccountId) => {
       const producedAtMs = Date.now();
       await scoreProducerQueue.add(
@@ -2253,9 +2225,6 @@ async function bootstrap(): Promise<void> {
       await followupCheckSchedulerQueue.close();
       await reconcilerQueue.close();
       await incrementalReconcilerQueue.close();
-      // Flush buffered product events before the process exits, so the
-      // last sync of a revision is not the one that goes missing.
-      await shutdownAnalytics();
       await connection.quit();
       await lockPg.end();
       await pg.end();
