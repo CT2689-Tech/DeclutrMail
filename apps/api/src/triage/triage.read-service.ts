@@ -5,6 +5,7 @@ import {
   activityLog,
   mailMessages,
   mailboxAccounts,
+  senderInboxActionWhere,
   senderPolicies,
   senders,
   triageDecisions,
@@ -304,7 +305,6 @@ export class TriageReadService {
         unread: sql<number>`SUM(CASE WHEN ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
         last90Total: sql<number>`SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END)`,
         last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz AND NOT ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
-        inboxCount: sql<number>`SUM(CASE WHEN NOT ${mailMessages.isOutbound} AND 'INBOX' = ANY(${mailMessages.labelIds}) THEN 1 ELSE 0 END)`,
         lastInternalDate: sql<Date | null>`MAX(${mailMessages.internalDate})`,
       })
       .from(mailMessages)
@@ -321,6 +321,22 @@ export class TriageReadService {
       )
       .groupBy(mailMessages.senderKey);
 
+    // `inboxCount` is what an action would MOVE, so it must resolve the
+    // same message set the preview, the enqueue count and the worker
+    // resolve — which is why `senderInboxActionWhere` exists and why this
+    // does not hand-roll the equivalent SQL. A sixth private copy of that
+    // predicate is exactly the drift the 2026-07-26 action-surface finding
+    // was about: one caller filtered `is_outbound`, four did not, and mail
+    // absent from the preview moved at execution anyway. Separate query
+    // because the aggregate above deliberately spans ALL stored mail
+    // (totals, 90-day window) rather than the inbox-only action set.
+    const inboxRows = await this.db
+      .select({ senderKey: mailMessages.senderKey, inboxCount: count() })
+      .from(mailMessages)
+      .where(senderInboxActionWhere({ mailboxAccountId: input.mailboxAccountId, senderKeys }))
+      .groupBy(mailMessages.senderKey);
+    const inboxBySender = new Map(inboxRows.map((r) => [r.senderKey, Number(r.inboxCount)]));
+
     const aggBySender = new Map<string, (typeof aggRows)[number]>();
     for (const a of aggRows) aggBySender.set(a.senderKey, a);
 
@@ -333,7 +349,7 @@ export class TriageReadService {
       // Mirrors senders.read-service `computeReadRate`: no denominator
       // means unknown, not zero.
       const readRate = last90Total > 0 ? last90Read / last90Total : null;
-      const inboxCount = Number(agg?.inboxCount ?? 0);
+      const inboxCount = inboxBySender.get(r.senderKey) ?? 0;
       const monthlyVolume = Math.round(last90Total / 3);
       const lastInternal = agg?.lastInternalDate ?? r.lastSeenAt;
       const lastDays =
