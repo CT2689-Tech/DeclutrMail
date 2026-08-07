@@ -170,36 +170,45 @@ precisely why a durable row beats an event for this signal.
 **When fired.** Two emitters, discriminated by `sync_id` (non-null =
 server).
 
-**Server-side (`InitialSyncWorker`, authoritative).** Once per run in the
-normal case: on the ready transition, or on terminal failure from
-`onTerminalFailure`. The failure emit sits inside a `finally` so a failed
-run still lands in the success rate even when recording it threw — a
-dashboard that under-counts failures precisely when the database is
-unhappy is worse than no dashboard. For the same reason the emit does not
-depend on the database itself; see **Distinct id** below.
+**Server-side (`InitialSyncWorker`).** Once per run in the normal case: on
+the ready transition, or on terminal failure from `onTerminalFailure`. The
+failure emit sits inside a `finally` so a failed run still lands in the
+success rate even when recording it threw — a dashboard that under-counts
+failures precisely when the database is unhappy is worse than no
+dashboard. For the same reason the emit path reads nothing at all.
+
+**It is not authoritative.** `provider_sync_state` is; this event is a
+best-effort sample of it. (An earlier revision of this document called the
+server emitter authoritative two paragraphs after saying only stateful
+storage could be — both sentences were mine.)
 
 Designed no-ops emit nothing — inactive mailbox, deletion-paused,
 duplicate enqueue of an already-`ready` mailbox. Each returns in
 milliseconds without touching Gmail, so counting them as runs would
 deflate the duration percentiles.
 
-> **Delivery is at-least-once-ish, not exactly-once. Every query MUST
-> `COUNT(DISTINCT sync_id)`, never `COUNT(*)`.**
+> **Best-effort delivery. No guarantee — not exactly-once, and not even
+> at-least-once.** An event may arrive twice, once, or never, and every
+> loss is silent. Every query MUST `COUNT(DISTINCT sync_id)`, never
+> `COUNT(*)`.
 >
-> This is fire-and-forget telemetry from a process that can be killed, so
-> an exactly-once claim would be the same overclaim this event exists to
-> remove. Three deviations, none fixable from inside a worker:
+> | Deviation              | Cause                                                                                                                                                                                                                                         | Effect on analysis                                                                                 |
+> | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+> | Duplicate              | BullMQ re-delivers a job whose lock lapsed; on a long sync a second worker gets past the `alreadyReady` guard before the first marks ready. Same `sync_id`.                                                                                   | Collapses under `COUNT(DISTINCT sync_id)` — the one deviation the design neutralises               |
+> | Duplicate, disagreeing | `processJob` emits `success`, then base-class code after it throws on the final attempt and `onTerminalFailure` emits `failed`. Essentially unreachable, not impossible.                                                                      | Resolve pessimistically: `failed` > `partial` > `success`, so a duplicate can never hide a failure |
+> | Lost                   | `captureServerEvent` is fail-open and swallows everything; a missing `POSTHOG_API_KEY` drops it; `capture()` is fire-and-forget so a failed POST is invisible; SIGKILL or OOM loses the buffer; a kill mid-attempt never reaches either emit. | **Silent.** Nothing in the event stream reveals it                                                 |
 >
-> | Deviation              | Cause                                                                                                                                                                    | Effect on analysis                                                                                              |
-> | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-> | Duplicate              | BullMQ re-delivers a job whose lock lapsed; on a long sync a second worker gets past the `alreadyReady` guard before the first marks ready. Same `sync_id`.              | Collapses under `COUNT(DISTINCT sync_id)`                                                                       |
-> | Duplicate, disagreeing | `processJob` emits `success`, then base-class code after it throws on the final attempt and `onTerminalFailure` emits `failed`. Essentially unreachable, not impossible. | Resolve pessimistically: `failed` > `partial` > `success`, so a duplicate can never hide a failure              |
-> | Zero                   | Hard kill (SIGKILL, revision swap) mid-attempt — neither path returns.                                                                                                   | Invisible here; `scripts/check-sync-stuck.sh` is what notices, by reading state instead of waiting for an event |
+> **The loss mode correlates with what is being measured, so the derived
+> success rate is biased optimistic exactly during an incident.** An OOM or
+> a revision swap both CAUSES sync failures and SUPPRESSES the events that
+> would report them. Read these dashboards as a trend indicator, never as
+> evidence that failures did not occur — that question is answered by
+> `provider_sync_state` and `scripts/check-sync-stuck.sh`.
 >
-> Making it truly exactly-once needs durable per-run dedup — a Redis
-> SETNX or the `sync_runs` row. Both put telemetry behind an
-> infrastructure dependency whose outage would silence it, which is the
-> failure this event already had to fix once for the database.
+> Closing the gap needs durable per-run state — the `sync_runs` row — not
+> a better emitter. A Redis SETNX would only add another dependency whose
+> outage silences telemetry, which is the failure this event already had to
+> fix once for the database.
 
 **Client-side (supplementary).** On an observed transition into `ready`
 (`success`) or `failed` — only AFTER an observed start (never an unpaired
@@ -246,16 +255,23 @@ the same `job.timestamp`, so a duplicate collapses instead of
 double-counting. A `sync_runs` history table remains an open D-candidate
 (FOUNDER-FOLLOWUPS, 2026-05-22); if it lands, `sync_id` becomes its PK.
 
-**Distinct id.** Server fires use the mailbox owner's internal user UUID —
-the same value the browser sends via `identifyUser()` — so FE and BE
-events resolve to one person rather than to `'server'`.
+**Distinct id.** Server fires carry NO user identity — they land on the
+default `'server'` distinct id, so they aggregate but do not join to a
+person.
 
-Attribution is best-effort; the event is not. When the owner lookup fails
-— a database incident, or a mailbox disconnected mid-sync — the event
-still fires and falls back to the `'server'` distinct id. Dropping it
-would go silent during exactly the incident the failure dashboard exists
-to show, and an unattributed run still counts correctly in success rate
-and duration. Only the person-level join is lost.
+That is a consent constraint, not an oversight. Analytics consent (D147)
+is stored per-browser in `localStorage` (`dm-cookie-consent`), decline is
+the default, and the FE re-reads it on every `track()` call. A worker
+cannot see it. Attributing a server event to `users.id` would therefore
+build a PostHog person profile for a user who declined — which is exactly
+what the consent gate exists to prevent, reached by a path that bypasses
+it. Aggregate sync health needs no identity, so the server path carries
+none.
+
+Per-user server-side analytics stays blocked until consent is readable
+server-side (a `users` column written when the banner is answered). That
+is a founder decision, not an implementation detail — recorded in
+FINDINGS.md.
 
 **Retention / aggregation.** 90 days raw. Powers sync-success-rate and
 sync-duration-p50/p95 dashboards — filter to non-null `sync_id` for real

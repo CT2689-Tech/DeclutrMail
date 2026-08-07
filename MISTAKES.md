@@ -20,10 +20,10 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
-## 2026-08-06 — Patched an event into existence twice, then made the same overclaim about its replacement
+## 2026-08-06 — Kept promising reliability a fire-and-forget event could not have
 
 **PR:** [#473](https://github.com/CT2689-Tech/DeclutrMail/pull/473)
-**Caught by:** Codex stop-time review, four consecutive rounds — after CI green and after a passing dev smoke each time
+**Caught by:** Codex stop-time review, five consecutive rounds — after CI green and after a passing dev smoke each time
 
 **What happened:** New server-side sync telemetry. Round one: the failure
 emit sat in a `finally` whose commit message read *"a failure dashboard
@@ -51,16 +51,35 @@ would invent a failure that never happened"* — one screen above the code
 committing it. I tested the case I had argued about and none of the cases
 that same argument covered.
 
-Round four is the one worth keeping. Having deleted `sync_started` for
-being unable to fire exactly once, I wrote that `sync_completed` fires
-"exactly once per run" — in the taxonomy, in the interface docblock, and
-in the PR body. It does not. BullMQ re-delivers a job whose lock lapsed,
-and on a long sync a second worker gets past the `alreadyReady` guard
-before the first marks ready, so both emit; a hard kill mid-attempt emits
-nothing. I had just spent three rounds learning that a worker cannot
-promise once-per-run, and then promised it about the surviving event in
-the same breath — the delivery semantics of fire-and-forget telemetry from
-a killable process were never once-per-run for either event.
+Rounds four and five are the ones worth keeping, because the correction
+itself needed correcting. Having deleted `sync_started` for being unable
+to fire exactly once, I wrote that `sync_completed` fires "exactly once
+per run" — in the taxonomy, in the interface docblock and in the PR body.
+Told that was wrong, I changed it to "at-least-once-ish" — which is also
+wrong, in a way my own text refuted two lines below it: at-least-once
+means never zero, and I had just documented a zero case in the same
+table. The event has NO delivery guarantee. It can arrive twice, once or
+never, and every loss is silent (`captureServerEvent` is fail-open,
+`capture()` is fire-and-forget, SIGKILL loses the buffer). The same
+document called the server emitter "authoritative" two paragraphs after
+saying only stateful storage could be. Both sentences were mine.
+
+The substantive part is not the vocabulary. **The loss mode correlates
+with what is being measured**: an OOM or a revision swap both CAUSES sync
+failures and SUPPRESSES the events that would report them, so a success
+rate derived from this event is biased optimistic exactly during an
+incident — the same "surface asserting what it does not know" defect as
+everything else in this PR, one layer up, in the dashboard rather than the
+emitter.
+
+Checking the consent path while fixing it turned up a second live defect:
+the event was attributed to `users.id`, but analytics consent (D147) lives
+in browser localStorage with decline as the default and is unreadable from
+a worker. That attribution would have built a PostHog person profile for
+users who declined, via a path that never consults the gate. Dropping it
+also deleted the only database read in the emit path — which is what
+caused round one's bug — so the fix removed a failure mode instead of
+handling one.
 
 **Correct approach:** delete the event rather than patch its placement a
 third time. `sync_completed` alone carries outcome, real duration, real
@@ -70,10 +89,13 @@ already belong to `scripts/check-sync-stuck.sh`, which reads
 anchored to `job.timestamp` (`WorkerContext.enqueuedAt`) so the id names a
 run rather than an attempt, and the owner lookup is best-effort
 (`userId: string | null`) so a database incident costs the person-level
-join and not the event. For round four: state the delivery contract
-honestly (at-least-once-ish), require `COUNT(DISTINCT sync_id)`, and
-resolve disagreeing duplicates pessimistically so one can never hide a
-failure. The `enqueuedAt` anchor is what makes that dedup sound.
+join and not the event. For rounds four and five: state that there is NO
+delivery guarantee, enumerate the loss paths, say which deviation the
+design actually neutralises (duplicates, via `COUNT(DISTINCT sync_id)` on
+the `enqueuedAt` anchor) and which it does not (losses, silently), name
+the correlated-loss bias so nobody reads the dashboard as proof, and stop
+calling the event authoritative when a table already is. Drop the user
+attribution entirely rather than gate it on consent we cannot read.
 
 **Rule:** when a comment or commit message claims a guarantee ("always
 counted", "never blocks", "exactly once", "survives X"), the very next
@@ -81,11 +103,16 @@ move is a test that starves the mechanism the guarantee rests on — a
 guarantee with no test for its own failure mode is a wish. When the second
 placement of a signal fails the way the first did with the sign flipped,
 stop moving it: that is a signal the layer cannot produce, and the fix is
-to delete it and name the surface that can. And a delivery guarantee is
-never a property of the emitting code alone — it is a property of the
-emitter, its transport, and how the process can die; fire-and-forget from
-a killable worker is at-least-once at best, so publish the dedup key and
-the aggregation rule alongside the event instead of a promise.
+to delete it and name the surface that can. A delivery guarantee is never
+a property of the emitting code alone — it is a property of the emitter,
+its transport, and how the process can die; fire-and-forget from a
+killable worker has NO guarantee, so publish the dedup key, the
+aggregation rule and the loss paths alongside the event instead of a
+promise. **And before trusting any derived reliability metric, ask whether
+its loss mode correlates with the thing it measures** — if the same
+incident that causes failures also drops the events reporting them, the
+metric is biased precisely when it matters, and only stateful storage can
+answer.
 
 **Enforcement update:** structural test asserts `SyncTelemetry` exposes
 `syncCompleted` only, so re-adding a start reopens the class loudly rather

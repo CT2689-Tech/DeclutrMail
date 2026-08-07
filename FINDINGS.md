@@ -115,8 +115,10 @@ the naive version would have lied:
   failure paths without shared state. A `sync_runs` table stays
   an open D-candidate (FOUNDER-FOLLOWUPS 2026-05-22); if it lands, `sync_id`
   becomes its PK.
-- **`distinctId` is the owner's internal user UUID**, matching the browser's
-  `identifyUser()`, so FE and BE events resolve to one person.
+- **No user identity on the payload.** Consent is unreadable server-side, so
+  events land on the default `'server'` distinct id — see [F004](#f004--analytics-consent-is-unreadable-server-side-so-server-events-can-never-join-to-a-person).
+  Dropping the lookup also removed the only database read in the emit path,
+  which is what caused the first review round's bug.
 
 **Left out deliberately:** `IncrementalSyncWorker`. Emitting per Pub/Sub
 delta would be thousands of tiny events for a question nobody asked; its
@@ -148,17 +150,22 @@ to `scripts/check-sync-stuck.sh`, which reads `provider_sync_state` and is
 stateful enough to know. The browser still emits `sync_started` for the
 perceived-wait view.
 
-**Then the same overclaim turned up in the surviving event.** I had written
-that `sync_completed` fires "exactly once per run". It does not: BullMQ
-re-delivers a job whose lock lapsed and both workers can emit; a hard kill
-mid-attempt emits nothing. Delivery is documented as at-least-once-ish, every
-query must `COUNT(DISTINCT sync_id)`, and duplicates resolve pessimistically
-(`failed` > `partial` > `success`) so one can never hide a failure. The
-`enqueuedAt` anchor is what makes that dedup work — a re-delivered job carries
-the same id. True exactly-once needs durable per-run dedup (Redis SETNX or the
-`sync_runs` row), which would put telemetry behind an infrastructure
-dependency whose outage silences it — the failure already fixed here once for
-the database.
+**Then the same overclaim turned up in the surviving event, twice.** I wrote
+that `sync_completed` fires "exactly once per run" — it does not. Corrected to
+"at-least-once-ish", which was still wrong: at-least-once means never zero,
+and I had documented a zero case in the same table. The event has **no
+delivery guarantee at all** — it can arrive twice, once, or never, and every
+loss is silent (`captureServerEvent` is fail-open, `capture()` is
+fire-and-forget, SIGKILL loses the buffer). The taxonomy also called the
+server emitter "authoritative" two paragraphs after saying only stateful
+storage could be.
+
+The consequence worth carrying: **the loss mode correlates with what is being
+measured.** An OOM or revision swap both causes sync failures and suppresses
+the events reporting them, so the derived success rate is biased optimistic
+exactly during an incident. `provider_sync_state` is the authority; this event
+is a sample. Duplicates are the one deviation the design neutralises, via the
+`enqueuedAt` anchor and `COUNT(DISTINCT sync_id)`.
 
 **Priority:** P1
 **Status:** In progress (#473)
@@ -166,6 +173,38 @@ the database.
 ---
 
 ## P2 — backlog
+
+### F004 — Analytics consent is unreadable server-side, so server events can never join to a person
+
+**Found:** 2026-08-06 · building F002's server-side sync telemetry
+**Observed:** The first cut attributed `sync_completed` to `users.id` so server
+and browser events would resolve to one person. Checking the consent path
+before shipping showed that is not safe today.
+
+**Verdict.** Analytics consent (D147) lives in browser `localStorage` under
+`dm-cookie-consent` ([cookie-consent.ts:37](apps/web/src/lib/cookie-consent.ts:37)),
+decline is the default, and the FE re-reads it on **every** `track()` call
+([posthog.ts:59](apps/web/src/lib/posthog.ts:59)). Nothing writes it to the
+database, so a worker cannot see it.
+
+Attributing a server event to `users.id` would therefore create a PostHog
+person profile for a user who declined analytics — the exact outcome the
+consent gate exists to prevent, reached by a path that never consults it.
+Before this change the only server-side PostHog calls were Resend's
+`email.delivered` / `email.bounced`, which use the default `'server'` distinct
+id and so never had the problem.
+
+Shipped without attribution: aggregate sync health (success rate, duration
+percentiles, `partial` share) needs no identity, which is all F002 was asked
+for. Only the person-level join is out of reach.
+
+**The founder decision, if per-user server analytics is ever wanted:** persist
+the consent choice to a `users` column when the banner is answered, and gate
+`captureServerEvent` on it. That is a privacy-behaviour change (CLAUDE.md §9),
+not an implementation detail, so it is not being assumed here.
+
+**Priority:** P2 — nothing is blocked; the aggregate view is complete without it.
+**Status:** Open
 
 ### F003 — `apps/api` sourcemaps are not uploaded; worker stack frames read `<unknown>`
 

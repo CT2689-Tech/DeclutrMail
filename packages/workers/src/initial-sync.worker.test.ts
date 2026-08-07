@@ -1591,14 +1591,6 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     };
   }
 
-  async function ownerId(): Promise<string> {
-    const [row] = await db
-      .select({ userId: mailboxAccounts.userId })
-      .from(mailboxAccounts)
-      .where(eq(mailboxAccounts.id, mailboxAccountId));
-    return row!.userId;
-  }
-
   it('emits real counts and a real duration — the numbers the FE funnel could never know', async () => {
     const syncTelemetry = recorder();
     const worker = new InitialSyncWorker({
@@ -1621,10 +1613,18 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     expect(done.mailboxAccountId).toBe(mailboxAccountId);
     expect(done.durationMs).toBeGreaterThanOrEqual(0);
     expect(done.attempt).toBe(1);
-    // Server and browser events must resolve to ONE person: the FE calls
-    // `identifyUser(internalUserUuid)`, so the distinct id is that uuid —
-    // never the mailbox id, never an email address.
-    expect(done.userId).toBe(await ownerId());
+    // No user identity on the payload, by design: analytics consent (D147)
+    // is per-browser localStorage and unreadable from a worker, so
+    // attributing a server event to a person would profile a user who
+    // declined. The aggregate needs none of it.
+    expect(Object.keys(done).sort()).toEqual([
+      'attempt',
+      'durationMs',
+      'mailboxAccountId',
+      'messagesIndexed',
+      'outcome',
+      'syncId',
+    ]);
   });
 
   it('reports `partial` when Gmail refused metadata — never `success` over a known gap', async () => {
@@ -1693,8 +1693,7 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     // `mail_messages`, and counting them would mean a scan on the failure
     // path. `-1` is the taxonomy's documented unknown, not a guess.
     expect(done.messagesIndexed).toBe(-1);
-    expect(done.userId).toBe(await ownerId());
-    // Same CTX ⇒ same sync id, so a failed run joins to its own start.
+    // Same CTX ⇒ same sync id, so the failed run is identifiable as one run.
     expect(done.syncId).toContain(CTX.jobId);
   });
 
@@ -1795,12 +1794,9 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
 
     expect(syncTelemetry.completed).toHaveLength(1);
     expect(syncTelemetry.completed[0]!.outcome).toBe('failed');
-    // Unattributed, not dropped — it still counts in success rate and
-    // duration; only the person-level join is lost.
-    expect(syncTelemetry.completed[0]!.userId).toBeNull();
   });
 
-  it('attributes to nobody rather than dropping the event when the mailbox vanished mid-sync', async () => {
+  it('still emits when the mailbox vanished mid-sync — the emit reads nothing', async () => {
     const syncTelemetry = recorder();
     const worker = new InitialSyncWorker({
       db,
@@ -1825,7 +1821,6 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     ).onTerminalFailure({ mailboxAccountId }, new Error('boom'), CTX);
 
     expect(syncTelemetry.completed).toHaveLength(1);
-    expect(syncTelemetry.completed[0]!.userId).toBeNull();
     expect(syncTelemetry.completed[0]!.outcome).toBe('failed');
   });
 

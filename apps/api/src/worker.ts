@@ -628,28 +628,26 @@ async function bootstrap(): Promise<void> {
       syncCompleted: ({
         syncId,
         mailboxAccountId,
-        userId,
         messagesIndexed,
         durationMs,
         attempt,
         outcome,
       }) => {
-        captureServerEvent(
-          'sync_completed',
-          {
-            sync_id: syncId,
-            mailbox_id: mailboxAccountId,
-            messages_indexed: messagesIndexed,
-            duration_ms: durationMs,
-            attempt,
-            outcome,
-          },
-          // `undefined` lets `captureServerEvent` fall back to its
-          // `'server'` distinct id. An unattributed run still counts in
-          // success rate and duration; dropping it instead would go silent
-          // during exactly the database incident worth measuring.
-          userId ?? undefined,
-        );
+        // No distinct id — `captureServerEvent` defaults to `'server'`.
+        // Analytics consent (D147) is per-browser localStorage and cannot
+        // be read from a worker, so attributing this to `users.id` would
+        // build a PostHog person for someone who declined. The aggregate
+        // (success rate, duration percentiles) is unaffected; only the
+        // person-level join is out of reach, and it is the part that needs
+        // consent.
+        captureServerEvent('sync_completed', {
+          sync_id: syncId,
+          mailbox_id: mailboxAccountId,
+          messages_indexed: messagesIndexed,
+          duration_ms: durationMs,
+          attempt,
+          outcome,
+        });
       },
     },
     onSenderIndexBuilt: async (mailboxAccountId) => {
