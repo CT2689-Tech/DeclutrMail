@@ -143,25 +143,38 @@ export interface EventPayloads {
     decided: number;
     outcome: 'completed' | 'stopped' | 'empty';
   };
+  /**
+   * Both sync events are emitted ONLY by the FE sync gate
+   * (`useSyncGateFunnel`). There is no server-side emitter and one is not
+   * permitted: analytics consent (D147) is per-browser localStorage that a
+   * worker cannot read, and we publish that PostHog runs only after the
+   * user accepts. Anonymising a server payload does not change that — the
+   * promise is that PostHog does not run. See the privacy contract in
+   * `docs/observability/event-taxonomy.md` and F004 in FINDINGS.md.
+   *
+   * Real sync numbers therefore live in the `worker.succeeded` log line
+   * (`messagesSynced`, `unreadable`, `gmailApiCalls`, `durationMs`,
+   * `stageTimings`) and in `provider_sync_state`, not here.
+   */
   sync_started: {
     /**
-     * `syncs.id` UUID when emitted server-side; `null` when emitted by
-     * the FE sync gate — the D224 status poll carries no sync id, so
-     * analysis discriminates FE vs BE fires on this field.
+     * Always `null`. The D224 status poll carries no sync id, and no
+     * `syncs` table exists for one to reference.
      */
-    sync_id: string | null;
+    sync_id: null;
     mailbox_id: string;
     trigger: 'initial' | 'manual' | 'pubsub' | 'cron';
   };
   sync_completed: {
-    /** See `sync_started.sync_id` — `null` for FE gate fires. */
-    sync_id: string | null;
+    /** Always `null` — see `sync_started.sync_id`. */
+    sync_id: null;
     mailbox_id: string;
-    /** Final indexed count; -1 when unknown (the D224 status poll carries no counts). */
+    /** Always -1: the D224 status poll carries no counts. */
     messages_indexed: number;
     /**
-     * Wall-clock ms. FE gate fires measure the OBSERVED wait (first
-     * in-progress poll → terminal), not the server-side sync duration.
+     * Wall-clock ms of the OBSERVED wait (first in-progress poll →
+     * terminal). NOT the server-side sync duration, which this emitter
+     * cannot see.
      */
     duration_ms: number;
     outcome: 'success' | 'partial' | 'failed';

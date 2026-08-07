@@ -16,17 +16,38 @@ Every event payload below is checked against the no-body / no-PII rules:
   defense) and again inside PostHog's `sanitize_properties` hook (second
   defense). Any new field added below MUST be verifiable as scalar +
   privacy-safe before it ships.
+- **Server-side code emits to PostHog NOT AT ALL — a hard block, not a
+  payload rule.** Analytics consent (D147) lives in browser
+  `localStorage` with decline as the default and is deliberately not
+  synced to the user record ("a synced 'all' must never auto-enable
+  tracking on a browser that was not asked"), so a worker or webhook
+  cannot check it. Our published pages promise PostHog "is initialized
+  only after you accept it", that withdrawal "takes effect immediately",
+  and that Essential-only "stops analytics immediately". Anonymising the
+  payload does NOT unblock this: the promise is that PostHog does not
+  RUN, not that it runs without names. An anonymised server-side sync
+  event was written and removed for exactly this reason.
+
+  **Two calls violate this rule today** — Resend's `email.delivered` and
+  `email.bounced`. They are an open violation, NOT an exception the rule
+  carves out: they predate this reading, removing them changes live
+  behaviour on a published-policy question, and that decision is the
+  founder's (F004 in FINDINGS.md). `captureServerEvent` accepts only
+  `UnremediatedServerEvent`, a frozen list of exactly those two, so the
+  debt is bounded and a third cannot be added without a type error and a
+  failing test. **Expect that list to shrink to empty; a change that grows
+  it is adding a violation.**
 
 ## Identifier conventions
 
-| Identifier   | Format           | Origin                  |
-| ------------ | ---------------- | ----------------------- |
-| `user_id`    | internal UUID v7 | `users.id`              |
-| `mailbox_id` | internal UUID v7 | `mailboxes.id`          |
-| `sender_id`  | internal UUID v7 | `senders.id`            |
-| `sync_id`    | internal UUID v7 | `syncs.id`              |
-| `rule_id`    | internal UUID v7 | `rules.id`              |
-| `action_id`  | internal UUID v7 | `actions.id` (for undo) |
+| Identifier   | Format           | Origin                                                 |
+| ------------ | ---------------- | ------------------------------------------------------ |
+| `user_id`    | internal UUID v7 | `users.id`                                             |
+| `mailbox_id` | internal UUID v7 | `mailboxes.id`                                         |
+| `sender_id`  | internal UUID v7 | `senders.id`                                           |
+| `sync_id`    | —                | Always `null` today; see the note under `sync_started` |
+| `rule_id`    | internal UUID v7 | `rules.id`                                             |
+| `action_id`  | internal UUID v7 | `actions.id` (for undo)                                |
 
 Gmail `messageId`, `threadId`, raw email addresses, and message body
 content are NEVER sent.
@@ -131,17 +152,29 @@ contain a rule condition blob, sender identity, or email-derived text.
 fires it on its FIRST in-progress observation (`queued`/`syncing`) of
 the D224 status poll — once per gate view, ref-guarded against the 3s
 poll re-fires; a mailbox already `ready` on mount fires nothing. A
-future server-side emitter (`POST /api/sync/start` accept, Pub/Sub
-delta-sync) will carry a non-null `sync_id` — analysis discriminates FE
-vs BE fires on that field.
+server-side emitter is NOT planned and is currently not permitted — see
+the privacy contract above. `sync_id` is therefore `null` on every fire.
+
+**`sync_id` is `null` on every event emitted today, and it is not a
+`syncs.id` UUID.** No `syncs` table exists: `provider_sync_state` is
+unique per mailbox and holds current state only, so there is no per-run
+row to reference.
+
+Do not read that as a to-do. The blocker on server-side sync metrics is
+the consent rule at the top of this document, not the missing identity,
+and it is not something an id design can solve. If the founder decides
+those metrics are wanted, the answer is the first-party `sync_runs` table
+(D-candidate, FOUNDER-FOLLOWUPS 2026-05-22) — operational data in our own
+database, outside the optional-analytics gate entirely — not a PostHog
+event with a cleverer key.
 
 **Payload.**
 
-| Field        | Type                                          | Notes                                                     |
-| ------------ | --------------------------------------------- | --------------------------------------------------------- |
-| `sync_id`    | `string \| null`                              | UUID; `null` for FE gate fires (no id on the status poll) |
-| `mailbox_id` | `string`                                      | UUID                                                      |
-| `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | What kicked it off; FE gate fires are always `initial`    |
+| Field        | Type                                          | Notes                                                       |
+| ------------ | --------------------------------------------- | ----------------------------------------------------------- |
+| `sync_id`    | `null`                                        | Always — only the FE emits, and the D224 poll carries no id |
+| `mailbox_id` | `string`                                      | UUID                                                        |
+| `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | What kicked it off; FE gate fires are always `initial`      |
 
 **Retention / aggregation.** 90 days for raw, rolled up into the
 "syncs per mailbox per day" cohort weekly.
@@ -154,18 +187,20 @@ an observed start (never an unpaired completion), once per transition
 (ref-guarded). A transient `failed` that recovers to `ready` emits a
 second completion with `outcome: 'success'` — analysis takes the
 mailbox's last outcome. Per D224 the readiness is real worker state —
-not a fake-progress trigger. A future server-side emitter adds
-`partial` + real counts.
+not a fake-progress trigger. `partial` and real counts would require a
+server-side emitter, which is not permitted (privacy contract above); the
+metrics live in the `worker.succeeded` log line and, if the `sync_runs`
+D-candidate lands, in that table.
 
 **Payload.**
 
-| Field              | Type                                 | Notes                                                                           |
-| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------- |
-| `sync_id`          | `string \| null`                     | UUID; `null` for FE gate fires                                                  |
-| `mailbox_id`       | `string`                             | UUID                                                                            |
-| `messages_indexed` | `number`                             | Final count; `-1` when unknown (FE — no counts on the poll)                     |
-| `duration_ms`      | `number`                             | FE: observed wait (first in-progress poll → terminal); BE: full sync wall-clock |
-| `outcome`          | `'success' \| 'partial' \| 'failed'` | Terminal state; FE fires never emit `partial`                                   |
+| Field              | Type                                 | Notes                                                                                |
+| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------ |
+| `sync_id`          | `null`                               | Always — only the FE emits (see `sync_started`)                                      |
+| `mailbox_id`       | `string`                             | UUID                                                                                 |
+| `messages_indexed` | `number`                             | Always `-1` — the D224 poll carries no counts. Real counts are in `worker.succeeded` |
+| `duration_ms`      | `number`                             | Observed wait (first in-progress poll → terminal). NOT the server-side sync duration |
+| `outcome`          | `'success' \| 'partial' \| 'failed'` | Terminal state; FE fires never emit `partial`                                        |
 
 **Retention / aggregation.** 90 days raw. Powers sync-success-rate and
 sync-duration-p50/p95 dashboards.

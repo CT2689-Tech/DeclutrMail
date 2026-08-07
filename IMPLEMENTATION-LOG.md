@@ -60,7 +60,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D2 | Color palette: **Cool/Vercel-style everywhere | 🔵 | #12, #264 |  |  |
 | D3 | Screen scope at V2 launch: **Bundle-loyal (ship everything) | ⬜ |  |  |  |
 | D4 | OAuth verification: **Already approved (from V1) | ⬜ |  |  |  |
-| D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | 🔵 | #22 | workers/rate-limiter.test.ts (all green) + ADR 0005 | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | 🔵 | #22, #471, #472 | workers/rate-limiter.test.ts (all green) + ADR 0005 | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🟡 | #21, #28, #204, #315 | initial-sync.worker.test.ts: D6 sync gate stage-sequence + monotonic progress + terminal-ready | Truth sweep 2026-07-02: gate, sync-complete email + 24h reminder (apps/api/src/notifications/sync-ready-email.trigger.ts, worker.ts:593,1841) and push delivery (users.watch via gmail-watch.service.ts:87 + WatchRenewalWorker worker.ts:1239) ALL built — 2026-06-11 note stale. Remaining leg: onboarding funnel events audit |
 | D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🔵 | #26, #373, #455 | ADR 0004 + shared/copy/privacy.ts frame=Gmail Preview | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D8 | Inbound Pub/Sub idempotency (no user input needed) | 🟢 | #31, #370 | apps/api/src/webhooks/__tests__/gmail-webhook.service.spec.ts |  |
@@ -189,7 +189,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D131 | Top nav: **6-item flat | ⬜ |  |  |  |
 | D132 | 28-page launch IA (scaled with Claude SEO agent maintenance) | 🔵 | #283, #307, #325 |  |  |
 | D133 | Inbox Simulator: **Claude Code React build with real engine | ⬜ |  |  |  |
-| D134 | Landing page 10-section structure | 🔵 | #202, #196, #307 |  |  |
+| D134 | Landing page 10-section structure | 🔵 | #202, #196, #307, #471 |  |  |
 | D135 | Hero animated preview card | ⬜ |  |  |  |
 | D136 | Social proof strategy: beta quotes post-launch (no testimonials at launch) | ⬜ |  |  |  |
 | D137 | FAQ content (10 questions) | 🔵 | #290 |  |  |
@@ -214,7 +214,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🟢 | #35, #48, #113, #188, #211, #337, #378, #380, #382, #383, #384, #456 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425 |  |  |
-| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
+| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
 | D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |
@@ -279,7 +279,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D221 | Decision Queue framing copy (locks Codex §8 framing) | ⬜ |  |  |  |
 | D222 | Auto-Protect via category prediction REJECTED at all versions (extends D22) | ⬜ |  |  |  |
 | D223 | Landing page primary headline (locks tentative) | 🔵 | #202 |  |  |
-| D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38, #122, #279, #287, #314, #370, #418, #427, #428 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
+| D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38, #122, #279, #287, #314, #370, #418, #427, #428, #471 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | 🔵 | #194, #208, #209 |  | Truth sweep 2026-07-02 (🟡→🔵): every leg now on disk — policies + cron idempotency (worker-policies.ts:54-101), cron_runs + dead_letter_jobs tables (migration 0030, #194), DeadLetterWorker (worker.ts:1603), WatchRenewalWorker (worker.ts:1239) — 2026-06-11 missing-legs note stale. Pending verify-d |
 | D226 | Action lifecycle ordering (resolves SC-1) | 🔵 | #44, #180, #130, #149, #225, #272, #345, #376, #388, #394, #398, #400, #403, #407, #409, #440 | apps/web/src/features/triage/action-sheet.test.tsx — sheet → preview → confirm lifecycle | Evidence updated 2026-06-11: lifecycle wired to real K/A/U/L mutations + undo tray in #180. Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🟢 | #12, #280, #410 | packages/workers/src/reasoning.test.ts — K/A/U/L verdict labels |  |

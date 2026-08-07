@@ -20,6 +20,207 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-08-06 — `git add -A <dir>` committed another session's uncommitted work
+
+**PR:** [#473](https://github.com/CT2689-Tech/DeclutrMail/pull/473)
+**Caught by:** Codex stop-time review ("commit 39e336d7 accidentally bundles unrelated onboarding/triage behavior")
+
+**What happened:** I staged with `git add -A apps/api docs/... FINDINGS.md
+MISTAKES.md`, intending "my files under apps/api". `-A` on a DIRECTORY
+takes everything modified under it, and this checkout had ~30 files of
+someone else's in-flight triage/onboarding work sitting uncommitted. Three
+of them — `onboarding.service.ts`, its spec, and `triage.read-service.ts`,
+180 lines — went into my commit and were pushed to the PR. Green CI said
+nothing, because their work compiles and passes.
+
+Two things made it invisible. Their changes were plausible neighbours of
+mine (same app, same layer), and I never read the commit's file list —
+`git show --stat` after committing would have shown three files I had
+never opened. I also had a signal and ignored its implication: earlier in
+the session the working copy was checked out to `main` by something I did
+not run, which I noted as a curiosity rather than as proof that another
+actor was using this checkout.
+
+The damage was worse than a noisy diff. Committing someone's uncommitted
+work also REMOVES it from their working tree — from their side it silently
+becomes "already committed, on a branch I don't own."
+
+**Correct approach:** stage explicit paths, never a directory, whenever
+the tree may hold work that is not yours: `git add path/a path/b`. Then
+read `git show --stat` before pushing and confirm every file is one you
+touched. Recovery here: back the hunks up to the scratchpad first
+(`git show <sha> -- <paths> > patch`), `git reset --soft HEAD~1`,
+`git restore --staged` the foreign paths, recommit, force-push the feature
+branch with `--force-with-lease`, then verify the restored working-tree
+diff matches the backup exactly.
+
+**Rule:** `git add -A` / `git add .` / `git add <dir>` are for a checkout
+you know is exclusively yours. In a shared or agent-driven checkout, stage
+FILES you named, and make `git show --stat` the last thing you read before
+`git push` — the file list is the only place this class of error is
+visible, since every test still passes.
+
+**Enforcement update:** none mechanisable here. The standing habit is the
+fix: explicit paths, then read the stat. Related: `[[gh-pr-close-switches-checkout]]`
+— same root, a checkout doing something you did not ask for.
+
+## 2026-08-06 — Wrote my own privacy contract instead of reading the one we publish
+
+**PR:** [#473](https://github.com/CT2689-Tech/DeclutrMail/pull/473)
+**Caught by:** Codex stop-time review, ten consecutive rounds — after CI green and after a passing dev smoke each time
+
+**What happened:** New server-side sync telemetry. Round one: the failure
+emit sat in a `finally` whose commit message read *"a failure dashboard
+that under-counts precisely when the database is unhappy is worse than no
+dashboard"* — and then resolved the owner's `userId` with a database read
+**inside the same try that guarded the emit**. A database failure meant no
+event. The `finally` guaranteed nothing; the sentence describing it was
+false about the code beneath it.
+
+Rounds two and three were one defect seen from both sides.
+`sync_started` fired on every attempt, but a retryable failure never
+reaches `onTerminalFailure` (`BaseDeclutrWorker` emits `worker.retried`
+and rethrows), so attempts 1..n-1 left starts with no completion — at
+`maxAttempts: 5`, five starts against one completion, a 20% success rate
+for a sync that worked. I gated it to attempt 1 and shipped the exact
+mirror image: attempt 1 can throw before reaching the emit (the
+eligibility read and the readiness query are both database calls), so the
+completion arrived with no start. Two placements, two orphan directions,
+same root: a run spans several BullMQ attempts and the worker holds no
+state between them, so once-per-run is not expressible there at all.
+
+The tell was present from round one and I read past it twice. The no-op
+guard's own comment named the defect — *"a `started` with no `completed`
+would invent a failure that never happened"* — one screen above the code
+committing it. I tested the case I had argued about and none of the cases
+that same argument covered.
+
+Rounds four and five are the ones worth keeping, because the correction
+itself needed correcting. Having deleted `sync_started` for being unable
+to fire exactly once, I wrote that `sync_completed` fires "exactly once
+per run" — in the taxonomy, in the interface docblock and in the PR body.
+Told that was wrong, I changed it to "at-least-once-ish" — which is also
+wrong, in a way my own text refuted two lines below it: at-least-once
+means never zero, and I had just documented a zero case in the same
+table. The event has NO delivery guarantee. It can arrive twice, once or
+never, and every loss is silent (`captureServerEvent` is fail-open,
+`capture()` is fire-and-forget, SIGKILL loses the buffer). The same
+document called the server emitter "authoritative" two paragraphs after
+saying only stateful storage could be. Both sentences were mine.
+
+The substantive part is not the vocabulary. **The loss mode correlates
+with what is being measured**: an OOM or a revision swap both CAUSES sync
+failures and SUPPRESSES the events that would report them, so a success
+rate derived from this event is biased optimistic exactly during an
+incident — the same "surface asserting what it does not know" defect as
+everything else in this PR, one layer up, in the dashboard rather than the
+emitter.
+
+Checking the consent path while fixing it turned up a second live defect,
+and I then fixed only half of THAT too. The event was attributed to
+`users.id`, but analytics consent (D147) lives in browser localStorage
+with decline as the default and is unreadable from a worker, so the
+attribution would have built a PostHog person profile for users who
+declined via a path that never consults the gate. I removed the distinct
+id and called it done — leaving `mailbox_id` on the payload and a
+`sync_id` of `mailboxId:epochMs`. Either is a stable per-user key, so
+PostHog still held per-mailbox behaviour for people who refused it.
+Pseudonymous is not anonymous, and identity is a property of the whole
+payload, not of the distinct-id field. Round six.
+
+I stripped every user-linked field — `sync_id` became
+`telemetryReference(runKey)` — and argued that an anonymous payload is not
+personal data, so consent does not apply. Round seven: that was me
+authoring a contract instead of reading ours. Our published pages say
+"Optional analytics (PostHog) is initialized only after you accept it",
+"withdrawal takes effect immediately", and "Choosing Essential only stops
+analytics immediately". The promise is that PostHog does not RUN, not that
+it runs without names. Anonymising cannot satisfy a promise about whether
+a third party receives anything at all.
+
+Twice in a row I reasoned about what counts as personal data when the
+answer was written in our own `/privacy` and `/cookies` pages, sitting in
+this repo. The whole server-side emitter came out. What shipped is the
+part with no consent surface: `unreadable` on the result and in the
+`worker.succeeded` allowlist, plus the taxonomy corrections the work
+surfaced. The metrics belong in a first-party `sync_runs` table — the
+founder's own 2026-05-22 D-candidate — where the optional-analytics gate
+does not apply and which fixes the delivery and bias problems too.
+
+**Correct approach:** delete the event rather than patch its placement a
+third time. `sync_completed` alone carries outcome, real duration, real
+counts and the finishing `attempt`; runs that begin and never finish
+already belong to `scripts/check-sync-stuck.sh`, which reads
+`provider_sync_state` and is stateful enough to answer. `sync_id` is
+anchored to `job.timestamp` (`WorkerContext.enqueuedAt`) so the id names a
+run rather than an attempt, and the owner lookup is best-effort
+(`userId: string | null`) so a database incident costs the person-level
+join and not the event. For rounds four and five: state that there is NO
+delivery guarantee, enumerate the loss paths, say which deviation the
+design actually neutralises (duplicates, via `COUNT(DISTINCT sync_id)` on
+the `enqueuedAt` anchor) and which it does not (losses, silently), name
+the correlated-loss bias so nobody reads the dashboard as proof, and stop
+calling the event authoritative when a table already is. Drop the user
+attribution entirely rather than gate it on consent we cannot read.
+
+Round nine closed the loop on the rule itself. Having removed the
+emitter, I narrowed `sync_id` to `null` in `events.ts` and wrote that a
+future server emitter "cannot quietly supply an id without hitting a
+compile error". It could: `captureServerEvent` takes `event: string,
+properties: Record<string, unknown>` and never consults the event map, so
+the narrowing constrains only the FE `track()` path. I claimed a
+compile-time guarantee without compiling the thing it was supposed to
+stop — the exact rule this entry already states, broken while writing it
+down. The fix is a real gate at the call site (`ServerEmittableEvent`,
+the two names that ship), verified by an actual probe file: `Argument of
+type '"sync_completed"' is not assignable to parameter of type
+'"email.delivered" | "email.bounced"'`.
+
+Round ten caught the last of it. Having written "no server-side code may
+emit to PostHog at all — a hard block", I shipped a type permitting two
+names and described it as "not an approval list". A list of what may pass
+IS an approval list; calling it something else does not change what it
+does, and it contradicted the contract one file over. The two Resend
+calls are an open VIOLATION of the rule, not an exception to it — so the
+type is now `UnremediatedServerEvent`, a frozen debt list documented as
+expected to shrink to empty, and both the taxonomy and F004 say plainly
+that a change growing it is adding a violation.
+
+**Rule:** when a comment or commit message claims a guarantee ("always
+counted", "never blocks", "exactly once", "the type prevents it"), the
+very next move is a test that starves the mechanism the guarantee rests
+on — for a compile-time claim that means writing the offending code and
+watching `tsc` reject it, not reasoning that it would — a
+guarantee with no test for its own failure mode is a wish. When the second
+placement of a signal fails the way the first did with the sign flipped,
+stop moving it: that is a signal the layer cannot produce, and the fix is
+to delete it and name the surface that can. A delivery guarantee is never
+a property of the emitting code alone — it is a property of the emitter,
+its transport, and how the process can die; fire-and-forget from a
+killable worker has NO guarantee, so publish the dedup key, the
+aggregation rule and the loss paths alongside the event instead of a
+promise. **Before trusting any derived reliability metric, ask whether its
+loss mode correlates with the thing it measures** — if the same incident
+that causes failures also drops the events reporting them, the metric is
+biased precisely when it matters, and only stateful storage can answer.
+**A consent gate protects a PAYLOAD, not a field** — anything derived or
+composite counts, not just the distinct-id. **And when a change touches
+consent, privacy, or retention, the controlling document is what the
+product PUBLISHES, not what the code implies or what the law would
+tolerate**: read `/privacy` and `/cookies` in the repo first, quote the
+sentence the change has to satisfy, and if the answer is arguable it is
+the founder's (CLAUDE.md §9), not yours to reason to. **And when an
+absolute rule meets code that breaks it, name the code a violation and
+bound it — never soften the rule into an allowlist that admits the
+exception**, because the allowlist is what the next author reads.
+
+**Enforcement update:** structural test asserts `SyncTelemetry` exposes
+`syncCompleted` only, so re-adding a start reopens the class loudly rather
+than quietly. Recorded as the second instance of the UI-truth class
+landing in *telemetry* rather than UI (see `[[ui-truth-bug-class]]`); a
+third promotes it to a CLAUDE.md §2 candidate covering "surfaces that
+assert what they do not know" beyond the frontend.
+
 ## 2026-07-31 — Four rounds of enumerating variants instead of recognising the thing
 **PR:** [#454](https://github.com/CT2689-Tech/DeclutrMail/pull/454)
 **Caught by:** Codex stop-review, four consecutive times on ONE change

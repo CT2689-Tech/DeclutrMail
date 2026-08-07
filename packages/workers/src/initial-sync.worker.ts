@@ -113,6 +113,14 @@ export interface InitialSyncDeps {
 export interface InitialSyncResult {
   /** Total messages in the mailbox now mirrored into `mail_messages`. */
   messagesSynced: number;
+  /**
+   * Messages Gmail refused to render as metadata this run, which the
+   * client skipped (400 FAILED_PRECONDITION). Non-zero means the index has
+   * a known gap, so `messagesSynced` is NOT the size of the mailbox — the
+   * pair has to be read together, which is why both ride the
+   * `worker.succeeded` line.
+   */
+  unreadable: number;
   sendersIndexed: number;
   /** Gmail API calls THIS run — `messages.list` pages + `messages.get`. */
   gmailApiCalls: number;
@@ -281,6 +289,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       initialSyncLog('skipped_inactive_mailbox', mailboxAccountId);
       return {
         messagesSynced: 0,
+        unreadable: 0,
         sendersIndexed: 0,
         gmailApiCalls: 0,
         durationMs: Date.now() - startedAt,
@@ -292,6 +301,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       initialSyncLog('skipped_deletion_pending', mailboxAccountId);
       return {
         messagesSynced: 0,
+        unreadable: 0,
         sendersIndexed: 0,
         gmailApiCalls: 0,
         durationMs: Date.now() - startedAt,
@@ -317,6 +327,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       initialSyncLog('skipped_already_ready', mailboxAccountId);
       return {
         messagesSynced: 0,
+        unreadable: 0,
         sendersIndexed: 0,
         gmailApiCalls: 0,
         durationMs: Date.now() - startedAt,
@@ -349,10 +360,11 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     );
 
     initialSyncLog('fetchAndStoreMetadata_begin', mailboxAccountId);
-    const { messagesSynced, gmailApiCalls: fetchCalls } = await this.fetchAndStoreMetadata(
-      mailboxAccountId,
-      client,
-    );
+    const {
+      messagesSynced,
+      gmailApiCalls: fetchCalls,
+      unreadable,
+    } = await this.fetchAndStoreMetadata(mailboxAccountId, client);
     initialSyncLog('fetchAndStoreMetadata_done', mailboxAccountId, {
       messagesSynced,
       gmailApiCalls: fetchCalls,
@@ -397,6 +409,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
 
     return {
       messagesSynced,
+      unreadable,
       sendersIndexed,
       gmailApiCalls,
       durationMs: Date.now() - startedAt,
@@ -418,6 +431,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     if (!mailboxAccountId) {
       return;
     }
+    await this.recordTerminalFailure(mailboxAccountId, error);
+  }
+
+  private async recordTerminalFailure(mailboxAccountId: string, error: Error): Promise<void> {
     const failedUpsert = (tx: OutboxTx) =>
       tx
         .insert(providerSyncState)
@@ -507,7 +524,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   private async fetchAndStoreMetadata(
     mailboxAccountId: string,
     client: GmailMetadataClient,
-  ): Promise<{ messagesSynced: number; gmailApiCalls: number }> {
+  ): Promise<{ messagesSynced: number; gmailApiCalls: number; unreadable: number }> {
     let gmailApiCalls = 0;
 
     // 1. List every Gmail id. Keep both an ordered array (for the
@@ -703,7 +720,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       );
     }
 
-    return { messagesSynced: total - unreadable, gmailApiCalls };
+    return { messagesSynced: total - unreadable, gmailApiCalls, unreadable };
   }
 
   /**

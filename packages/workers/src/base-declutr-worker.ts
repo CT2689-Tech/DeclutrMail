@@ -483,6 +483,11 @@ const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'stageTimings',
   'templateExplanations',
   'totalSenders',
+  // A plain count of messages Gmail refused to render. Without it the
+  // succeeded line reports `messagesSynced` as if it were the whole
+  // mailbox, which is the same omission that made the 2026-08-06 sync
+  // incident invisible until someone queried production.
+  'unreadable',
   'unsubscribeExecutionsEnqueued',
   'unsubscribeIntentsRecorded',
   'watched',
