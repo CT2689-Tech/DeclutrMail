@@ -136,6 +136,13 @@ emit nothing: a no-op returns in milliseconds, so counting it as a run
 would deflate the duration percentiles, and a `started` with no
 `completed` would invent a failure that never happened.
 
+**On the FIRST attempt only.** A retryable failure never reaches the
+terminal path — the base class emits `worker.retried` and rethrows — so
+an emit per attempt would leave attempts 1..n-1 permanently unpaired.
+With `perMailboxPolicy`'s `maxAttempts: 5`, a run that failed four times
+and then succeeded would publish five starts against one completion and
+read as a 20% success rate. One run, one start.
+
 **Client-side (`useSyncGateFunnel`, supplementary).** Fires on its FIRST
 in-progress observation (`queued`/`syncing`) of the D224 status poll —
 once per gate view, ref-guarded against the 3s poll re-fires; a mailbox
@@ -151,19 +158,33 @@ produces no client events at all, the common case for a large mailbox.
 | `mailbox_id` | `string`                                      | UUID                                                                                                                                                                                                        |
 | `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | Always `initial` on both emitters today — `InitialSyncWorker` only ever runs full backfills (connect, user retry, reconciler re-enqueue). The other three arrive if `IncrementalSyncWorker` starts emitting |
 
-**`sync_id` is a composite, not a UUID** — `mailbox : attempt : startedAt`
-(epoch ms). This taxonomy previously called it a `syncs.id` UUID, but no
-`syncs` table exists: `provider_sync_state` is unique per mailbox and
-holds current state only, so there is no per-run row to reference.
-Minting a UUID would name a record that does not exist. The composite is
-derivable identically from the success and failure paths without shared
-state (the worker runs jobs concurrently), and reads usefully in
-analysis. A `sync_runs` history table remains an open D-candidate
+**`sync_id` is a composite, not a UUID** — `mailbox : enqueuedAt` (epoch
+ms, BullMQ's `job.timestamp`). This taxonomy previously called it a
+`syncs.id` UUID, but no `syncs` table exists: `provider_sync_state` is
+unique per mailbox and holds current state only, so there is no per-run
+row to reference. Minting a UUID would name a record that does not exist.
+
+It identifies a RUN, not an attempt. `enqueuedAt` is the only field that
+is both stable across BullMQ retries and unique per enqueue — the mailbox
+id alone repeats for every sync that mailbox ever runs, and the attempt's
+`startedAt` moves on each retry, which would split one retried run into
+several and orphan its start. It is also derivable identically from the
+success and failure paths without shared state, which matters because the
+worker runs jobs concurrently.
+
+A `sync_runs` history table remains an open D-candidate
 (FOUNDER-FOLLOWUPS, 2026-05-22); if it lands, `sync_id` becomes its PK.
 
 **Distinct id.** Server fires use the mailbox owner's internal user UUID —
 the same value the browser sends via `identifyUser()` — so FE and BE
 events resolve to one person rather than to `'server'`.
+
+Attribution is best-effort; the event is not. When the owner lookup fails
+— a database incident, or a mailbox disconnected mid-sync — the event
+still fires and falls back to the `'server'` distinct id. Dropping it
+would go silent during exactly the incident the failure dashboard exists
+to show, and an unattributed run still counts correctly in success rate
+and duration. Only the person-level join is lost.
 
 **Retention / aggregation.** 90 days for raw, rolled up into the
 "syncs per mailbox per day" cohort weekly.

@@ -88,17 +88,23 @@ const SCAN_PAGE = 1000;
  * Privacy (D7, D228): counts, outcomes and durations only. `userId` is the
  * internal UUID — the same identifier `identifyUser()` sends from the
  * browser, so server and client events resolve to one person — and never
- * an email address.
+ * an email address. It is nullable because attribution is best-effort
+ * while the event itself is not; see `emitSyncTelemetry`.
  *
  * Implementations must NEVER throw; a telemetry outage must not fail a
  * sync that otherwise succeeded.
  */
 export interface SyncTelemetry {
-  syncStarted(event: { syncId: string; mailboxAccountId: string; userId: string }): void;
+  syncStarted(event: { syncId: string; mailboxAccountId: string; userId: string | null }): void;
   syncCompleted(event: {
     syncId: string;
     mailboxAccountId: string;
-    userId: string;
+    /**
+     * `null` when the owner could not be resolved — a database failure or
+     * a mailbox disconnected mid-sync. The run still counts toward success
+     * rate and duration; only the person-level join is lost.
+     */
+    userId: string | null;
     /** Messages actually indexed. Excludes unreadable skips. */
     messagesIndexed: number;
     /** Real server-side wall-clock for the attempt. */
@@ -319,30 +325,38 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   }
 
   /**
-   * A stable id for ONE sync attempt, derived so the success path and
-   * `onTerminalFailure` produce the same value without sharing state — the
-   * worker processes jobs concurrently, so `this` cannot hold per-run
-   * values.
+   * A stable id for ONE sync RUN — every BullMQ attempt of the same job
+   * shares it, so a run that fails twice and then succeeds is one run in
+   * analysis, not three.
+   *
+   * `enqueuedAt` rather than `startedAt` is the whole point: `startedAt`
+   * is per-attempt, which would split a retried run apart and make the
+   * `started` from attempts 1..n-1 look like syncs that never finished.
+   * `jobId` alone cannot carry it either — for `perMailboxPolicy` it IS
+   * the mailbox id, repeated for every sync that mailbox ever runs.
    *
    * Deliberately not a UUID. The taxonomy described `sync_id` as
    * `syncs.id`, but no `syncs` table exists: `provider_sync_state` is
    * unique per mailbox and holds current state only, so there is no
    * per-run row to reference. Minting a UUID would name a record that does
-   * not exist. The composite is honest and reads usefully in analysis —
-   * mailbox : attempt : start.
+   * not exist.
    */
   private syncId(ctx: WorkerContext): string {
-    return `${ctx.jobId}:${ctx.attempt}:${ctx.startedAt.getTime()}`;
+    return `${ctx.jobId}:${ctx.enqueuedAt.getTime()}`;
   }
 
   /**
-   * Emit one server-side sync event (D159). Fully guarded: telemetry is
-   * optional, the owner lookup can lose a race with a disconnect, and a
-   * PostHog outage must never fail a sync that otherwise succeeded.
+   * Emit one server-side sync event (D159). Never throws — a telemetry
+   * outage must not fail a sync that otherwise succeeded.
    *
-   * `userId` is the mailbox owner's internal UUID — the same identifier
-   * the browser sends via `identifyUser()`, so server and client sync
-   * events resolve to one person rather than to `'server'`.
+   * Attribution is best-effort; the EVENT is not. `userId` is the mailbox
+   * owner's internal UUID (the identifier the browser sends via
+   * `identifyUser()`, so server and client events resolve to one person),
+   * but a failed lookup degrades it to `null` instead of dropping the
+   * event. Dropping it would go silent exactly during a database incident
+   * or a mid-sync disconnect — the moments a sync-failure dashboard has to
+   * work — and an unattributed run still counts correctly in success rate
+   * and duration, which is what the aggregate is for.
    */
   private async emitSyncTelemetry(
     mailboxAccountId: string,
@@ -353,24 +367,28 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     if (!telemetry) {
       return;
     }
+    let userId: string | null = null;
     try {
       const [row] = await this.deps.db
         .select({ userId: mailboxAccounts.userId })
         .from(mailboxAccounts)
         .where(eq(mailboxAccounts.id, mailboxAccountId))
         .limit(1);
-      if (!row) {
-        return; // mailbox disconnected mid-sync — attribute to nobody.
-      }
+      userId = row?.userId ?? null;
+    } catch {
+      // Deliberately swallowed: see the attribution note above. The emit
+      // below still runs with `userId: null`.
+    }
+    try {
       const syncId = this.syncId(ctx);
       if (!completion) {
-        telemetry.syncStarted({ syncId, mailboxAccountId, userId: row.userId });
+        telemetry.syncStarted({ syncId, mailboxAccountId, userId });
         return;
       }
       telemetry.syncCompleted({
         syncId,
         mailboxAccountId,
-        userId: row.userId,
+        userId,
         messagesIndexed: completion.messagesIndexed,
         durationMs: Date.now() - ctx.startedAt.getTime(),
         outcome: completion.outcome,
@@ -466,7 +484,16 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // the one that belongs in the success rate. Emitting before the guards
     // would count disconnects and duplicate enqueues as syncs that never
     // completed.
-    await this.emitSyncTelemetry(mailboxAccountId, ctx);
+    //
+    // First attempt only. A retryable failure never reaches
+    // `onTerminalFailure` (the base class emits `worker.retried` and
+    // rethrows), so an emit on every attempt would leave attempts 1..n-1
+    // as `started` with no completion — five starts and one completion for
+    // a run that failed four times and then succeeded, reading as a 20%
+    // success rate. One run, one start.
+    if (ctx.attempt === 1) {
+      await this.emitSyncTelemetry(mailboxAccountId, ctx);
+    }
 
     // Stage 1 — fetching_metadata (resumable).
     // 2026-06-08 session: structured progress logs added so a stalled

@@ -1639,3 +1639,50 @@ precision, the window has no correct width.
 `.claude/hooks/check-microcopy.sh`, replaced with a comment recording why
 and pointing at the review brief. D194's forbidden framings remain binding
 on copy; they are checked by review.
+
+## 2026-08-06 — A guarantee written in a comment, defeated by its own implementation
+
+**PR:** [#473](https://github.com/CT2689-Tech/DeclutrMail/pull/473)
+**Caught by:** Codex stop-time review (after CI green, after a passing dev smoke)
+**What happened:** New server-side sync telemetry shipped to PR with two
+holes, both in paths I had reasoned about and neither one tested.
+
+First, `sync_started` was emitted on every attempt. A retryable failure
+never reaches `onTerminalFailure` — `BaseDeclutrWorker` emits
+`worker.retried` and rethrows — so attempts 1..n-1 left starts with no
+completion. At `perMailboxPolicy`'s `maxAttempts: 5`, a run that failed
+four times and then succeeded would publish five starts against one
+completion: a 20% success rate for a sync that worked.
+
+Second, the failure emit sat in a `finally` whose commit message read "a
+failure dashboard that under-counts precisely when the database is
+unhappy is worse than no dashboard" — and then resolved the owner's
+`userId` with a database read *inside* the same try that guarded the
+emit. A database failure meant no event. The `finally` guaranteed
+nothing; the sentence describing it was false about the code beneath it.
+
+The tell is that I had already written the correct argument for a
+neighbouring case. The no-op guard's comment says an unpaired `started`
+"would invent a failure that never happened" — the exact defect, named
+precisely, one screen above the code that committed it. I tested the case
+I had argued about and none of the cases the same argument covered.
+
+**Correct approach:** `sync_id` anchored to `job.timestamp` (added to
+`WorkerContext` as `enqueuedAt`) so one run keeps one id across retries;
+`sync_started` gated to `ctx.attempt === 1`; the owner lookup demoted to
+best-effort with `userId: string | null`, so a database incident costs
+the person-level join and not the event. Three mutation tests pin all
+three.
+
+**Rule:** when a comment or commit message claims a guarantee ("always
+counted", "never blocks", "survives X"), the very next move is a test
+that starves the mechanism the guarantee rests on. A guarantee with no
+test for its own failure mode is a wish. Corollary: after reasoning your
+way to why case A is wrong, enumerate every other case that argument
+covers before moving on — the second instance is where it actually ships.
+
+**Enforcement update:** none mechanisable — this is a review posture, not
+a pattern a hook can match. Recorded as the second instance of the
+UI-truth class landing in *telemetry* rather than UI (see
+`[[ui-truth-bug-class]]`); a third promotes it to a CLAUDE.md §2 candidate
+covering "surfaces that assert what they do not know" beyond the frontend.

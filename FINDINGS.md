@@ -112,8 +112,8 @@ the naive version would have lied:
   under-counts precisely when the database is unhappy is worse than none.
 - **`sync_id` is a composite, not a UUID.** There is no `syncs` table to
   reference — `provider_sync_state` is unique per mailbox and current-state
-  only. `mailbox : attempt : startedAt` is derivable identically from the
-  success and failure paths without shared state. A `sync_runs` table stays
+  only. `mailbox : enqueuedAt` is derivable identically from the success and
+  failure paths without shared state. A `sync_runs` table stays
   an open D-candidate (FOUNDER-FOLLOWUPS 2026-05-22); if it lands, `sync_id`
   becomes its PK.
 - **`distinctId` is the owner's internal user UUID**, matching the browser's
@@ -124,6 +124,20 @@ delta would be thousands of tiny events for a question nobody asked; its
 health already has `last_incremental_error_at` / `_code` plus the
 `incremental_sync.unreadable_skipped` log line. Separate call, not a silent
 omission.
+
+**Corrected after review.** The first cut had two holes Codex caught, both
+in paths the write-up already claimed were handled — recorded in MISTAKES.md
+2026-08-06:
+
+- `sync_started` fired on every attempt, but a retryable failure never
+  reaches the terminal path, so attempts 1..n-1 were orphans. At
+  `maxAttempts: 5` a run that failed four times then succeeded read as a 20%
+  success rate. Now gated to attempt 1, with `sync_id` anchored to
+  `job.timestamp` so one run keeps one id across retries.
+- The failure emit resolved `userId` from the database _inside_ the guard,
+  so a database outage produced no event — defeating the `finally` added for
+  exactly that case. Attribution is now best-effort (`userId: string | null`);
+  the event always fires.
 
 **Priority:** P1
 **Status:** In progress (#473)

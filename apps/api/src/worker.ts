@@ -625,7 +625,11 @@ async function bootstrap(): Promise<void> {
         captureServerEvent(
           'sync_started',
           { sync_id: syncId, mailbox_id: mailboxAccountId, trigger: 'initial' },
-          userId,
+          // `undefined` lets `captureServerEvent` fall back to its
+          // `'server'` distinct id. An unattributed run still counts in
+          // success rate and duration; dropping it instead would go silent
+          // during exactly the database incident worth measuring.
+          userId ?? undefined,
         );
       },
       syncCompleted: ({
@@ -645,7 +649,7 @@ async function bootstrap(): Promise<void> {
             duration_ms: durationMs,
             outcome,
           },
-          userId,
+          userId ?? undefined,
         );
       },
     },

@@ -198,6 +198,7 @@ function ctx(attempt: number): WorkerContext {
     attempt,
     maxAttempts: UNSUB_MAX_ATTEMPTS,
     startedAt: new Date(),
+    enqueuedAt: new Date(),
     policy: 'perMailboxPolicy',
   };
 }

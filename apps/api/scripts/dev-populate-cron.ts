@@ -55,6 +55,7 @@ function ctx(
     attempt: 1,
     maxAttempts: 1,
     startedAt: new Date(),
+    enqueuedAt: new Date(),
     policy,
   };
   return mailboxAccountId === undefined ? base : { ...base, mailboxAccountId };

@@ -84,6 +84,7 @@ const FAKE_CTX: WorkerContext = {
   attempt: 1,
   maxAttempts: 1,
   startedAt: new Date(),
+  enqueuedAt: new Date(),
   policy: 'adminPolicy',
 };
 

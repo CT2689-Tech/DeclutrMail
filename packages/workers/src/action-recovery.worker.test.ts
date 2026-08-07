@@ -199,6 +199,7 @@ const CTX: WorkerContext = {
   attempt: 1,
   maxAttempts: 5,
   startedAt: NOW,
+  enqueuedAt: NOW,
   policy: 'perMailboxPolicy',
 };
 

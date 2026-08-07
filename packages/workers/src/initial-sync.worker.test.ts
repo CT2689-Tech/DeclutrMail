@@ -181,6 +181,7 @@ const CTX: WorkerContext = {
   attempt: 1,
   maxAttempts: 5,
   startedAt: new Date(),
+  enqueuedAt: new Date(),
   policy: 'perMailboxPolicy',
 };
 
@@ -1703,6 +1704,119 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     expect(done.userId).toBe(await ownerId());
     // Same CTX ⇒ same sync id, so a failed run joins to its own start.
     expect(done.syncId).toContain(CTX.jobId);
+  });
+
+  it('one run, one start: a retry attempt does not open a second sync', async () => {
+    // A retryable failure never reaches `onTerminalFailure` — the base
+    // class emits `worker.retried` and rethrows — so a `started` on every
+    // attempt would leave attempts 1..n-1 permanently unpaired. With
+    // maxAttempts=5 a run that failed four times and then succeeded would
+    // publish five starts against one completion and read as a 20%
+    // success rate.
+    const syncTelemetry = recorder();
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+      syncTelemetry,
+    });
+
+    await worker.processJob({ mailboxAccountId }, { ...CTX, attempt: 2 });
+
+    expect(syncTelemetry.started).toHaveLength(0);
+    expect(syncTelemetry.completed).toHaveLength(1);
+  });
+
+  it('pairs the completion with the start across attempts — the id is anchored to the enqueue', async () => {
+    const syncTelemetry = recorder();
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+      syncTelemetry,
+    });
+
+    // Same job, later attempt: `attempt` and `startedAt` both move, and
+    // only `enqueuedAt` holds still. Anchoring on `startedAt` would mint a
+    // fresh id here and orphan the attempt-1 start.
+    await worker.processJob({ mailboxAccountId }, { ...CTX, attempt: 1 });
+    await resetToQueued(db, mailboxAccountId);
+    await worker.processJob(
+      { mailboxAccountId },
+      { ...CTX, attempt: 3, startedAt: new Date(CTX.startedAt.getTime() + 60_000) },
+    );
+
+    expect(syncTelemetry.started).toHaveLength(1);
+    expect(syncTelemetry.completed).toHaveLength(2);
+    expect(syncTelemetry.completed[1]!.syncId).toBe(syncTelemetry.started[0]!.syncId);
+  });
+
+  it('emits the failed run even when the database is down — attribution is optional, the event is not', async () => {
+    // The `finally` around the failure emit is worthless if the emit
+    // itself needs the database: it would go silent during exactly the
+    // incident the failure dashboard exists to show. The owner lookup is
+    // allowed to fail; the event is not.
+    const syncTelemetry = recorder();
+    const downDb = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'select' || prop === 'insert' || prop === 'transaction') {
+          return () => {
+            throw new Error('connection terminated');
+          };
+        }
+        return Reflect.get(target, prop, receiver) as unknown;
+      },
+    }) as InitialSyncDeps['db'];
+    const worker = new InitialSyncWorker({
+      db: downDb,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(2, 1))),
+      syncTelemetry,
+    });
+
+    await expect(
+      (
+        worker as unknown as {
+          onTerminalFailure(
+            p: { mailboxAccountId: string },
+            e: Error,
+            c: WorkerContext,
+          ): Promise<void>;
+        }
+      ).onTerminalFailure({ mailboxAccountId }, new Error('boom'), CTX),
+    ).rejects.toThrow('connection terminated');
+
+    expect(syncTelemetry.completed).toHaveLength(1);
+    expect(syncTelemetry.completed[0]!.outcome).toBe('failed');
+    // Unattributed, not dropped — it still counts in success rate and
+    // duration; only the person-level join is lost.
+    expect(syncTelemetry.completed[0]!.userId).toBeNull();
+  });
+
+  it('attributes to nobody rather than dropping the event when the mailbox vanished mid-sync', async () => {
+    const syncTelemetry = recorder();
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(2, 1))),
+      // With the outbox wired, `recordTerminalFailure` reaches its
+      // designed "mailbox deleted mid-flight — record nothing, email no
+      // one" guard and returns cleanly. The telemetry must NOT go quiet
+      // with it: the run still failed and still belongs in the rate.
+      outbox: new OutboxPublisher(),
+      syncTelemetry,
+    });
+    await db.delete(mailboxAccounts).where(eq(mailboxAccounts.id, mailboxAccountId));
+
+    await (
+      worker as unknown as {
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, new Error('boom'), CTX);
+
+    expect(syncTelemetry.completed).toHaveLength(1);
+    expect(syncTelemetry.completed[0]!.userId).toBeNull();
+    expect(syncTelemetry.completed[0]!.outcome).toBe('failed');
   });
 
   it('still records the failed state when telemetry throws — the sink is never load-bearing', async () => {
