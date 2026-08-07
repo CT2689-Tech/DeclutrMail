@@ -1609,22 +1609,43 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     expect(done.messagesIndexed).toBe(result.messagesSynced);
     expect(done.messagesIndexed).toBe(6);
     expect(done.outcome).toBe('success');
-    expect(done.syncId).toBeTruthy();
-    expect(done.mailboxAccountId).toBe(mailboxAccountId);
+    expect(done.syncRef).toBeTruthy();
     expect(done.durationMs).toBeGreaterThanOrEqual(0);
     expect(done.attempt).toBe(1);
-    // No user identity on the payload, by design: analytics consent (D147)
-    // is per-browser localStorage and unreadable from a worker, so
-    // attributing a server event to a person would profile a user who
-    // declined. The aggregate needs none of it.
+  });
+
+  it('carries nothing that identifies a user — this ships for people who declined analytics', async () => {
+    // Consent (D147) is per-browser localStorage that a worker cannot
+    // read, so this event goes to PostHog for consenting and declining
+    // users alike. That is only defensible while the payload is not
+    // personal data. Dropping the `users.id` distinct id was NOT enough on
+    // its own: a `mailbox_id`, or a `sync_id` of `mailboxId:epochMs`, is
+    // just as much a per-user key. Pseudonymous is not anonymous.
+    const syncTelemetry = recorder();
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+      syncTelemetry,
+    });
+
+    await worker.processJob({ mailboxAccountId }, CTX);
+
+    const done = syncTelemetry.completed[0]!;
     expect(Object.keys(done).sort()).toEqual([
       'attempt',
       'durationMs',
-      'mailboxAccountId',
       'messagesIndexed',
       'outcome',
-      'syncId',
+      'syncRef',
     ]);
+    // The raw run key is `jobId:enqueuedAt` and `jobId` IS the mailbox id
+    // under `perMailboxPolicy`, so the ref must not be it, contain it, or
+    // contain anything else the payload could be joined on.
+    const serialized = JSON.stringify(done);
+    expect(serialized).not.toContain(mailboxAccountId);
+    expect(serialized).not.toContain(CTX.jobId);
+    expect(serialized).not.toContain(String(CTX.enqueuedAt.getTime()));
+    expect(done.syncRef).toMatch(/^ref_[0-9a-f]{24}$/);
   });
 
   it('reports `partial` when Gmail refused metadata — never `success` over a known gap', async () => {
@@ -1693,8 +1714,9 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     // `mail_messages`, and counting them would mean a scan on the failure
     // path. `-1` is the taxonomy's documented unknown, not a guess.
     expect(done.messagesIndexed).toBe(-1);
-    // Same CTX ⇒ same sync id, so the failed run is identifiable as one run.
-    expect(done.syncId).toContain(CTX.jobId);
+    // Opaque, and identical to what the success path would have produced
+    // for this ctx — the failed run is still one identifiable run.
+    expect(done.syncRef).toMatch(/^ref_[0-9a-f]{24}$/);
   });
 
   it('the seam exposes completion only — a server-side start cannot be emitted once per run', async () => {
@@ -1754,8 +1776,8 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     );
 
     expect(syncTelemetry.completed).toHaveLength(2);
-    expect(syncTelemetry.completed[1]!.syncId).toBe(syncTelemetry.completed[0]!.syncId);
-    expect(new Set(syncTelemetry.completed.map((c) => c.syncId)).size).toBe(1);
+    expect(syncTelemetry.completed[1]!.syncRef).toBe(syncTelemetry.completed[0]!.syncRef);
+    expect(new Set(syncTelemetry.completed.map((c) => c.syncRef)).size).toBe(1);
   });
 
   it('emits the failed run even when the database is down — attribution is optional, the event is not', async () => {

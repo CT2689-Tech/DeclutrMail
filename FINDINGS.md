@@ -115,10 +115,13 @@ the naive version would have lied:
   failure paths without shared state. A `sync_runs` table stays
   an open D-candidate (FOUNDER-FOLLOWUPS 2026-05-22); if it lands, `sync_id`
   becomes its PK.
-- **No user identity on the payload.** Consent is unreadable server-side, so
-  events land on the default `'server'` distinct id — see [F004](#f004--analytics-consent-is-unreadable-server-side-so-server-events-can-never-join-to-a-person).
-  Dropping the lookup also removed the only database read in the emit path,
-  which is what caused the first review round's bug.
+- **Nothing on the payload identifies a user** — no distinct id, no
+  `mailbox_id`, and `sync_id` is an HMAC rather than the `mailboxId:epochMs`
+  key it hashes. Consent is unreadable server-side, so this ships for people
+  who declined; that is only legitimate if it is not personal data. See
+  [F004](#f004--analytics-consent-is-unreadable-server-side-so-server-events-can-never-join-to-a-person).
+  Dropping the owner lookup also removed the only database read in the emit
+  path, which is what caused the first review round's bug.
 
 **Left out deliberately:** `IncrementalSyncWorker`. Emitting per Pub/Sub
 delta would be thousands of tiny events for a question nobody asked; its
@@ -194,9 +197,24 @@ Before this change the only server-side PostHog calls were Resend's
 `email.delivered` / `email.bounced`, which use the default `'server'` distinct
 id and so never had the problem.
 
-Shipped without attribution: aggregate sync health (success rate, duration
-percentiles, `partial` share) needs no identity, which is all F002 was asked
-for. Only the person-level join is out of reach.
+**Removing the distinct id alone was not enough**, and shipping that
+half-measure was a second round of the same mistake. The payload still
+carried `mailbox_id`, and `sync_id` was `mailboxId:epochMs` — either one is a
+stable per-user key, so PostHog still held per-mailbox behaviour for people
+who declined. Pseudonymous is not anonymous. The event now carries no
+user-linked field at all: `sync_id` is `telemetryReference(runKey)`, the
+HMAC primitive that already keeps raw ids out of `worker.succeeded` logs.
+
+Shipped that way: aggregate sync health (success rate, duration percentiles,
+`partial` share) needs no identity, which is all F002 was asked for. Only
+per-mailbox grouping is out of reach, and that belongs to
+`provider_sync_state` anyway.
+
+**Swept the class:** the only other server-side emitters are Resend's
+`email.delivered` and `email.bounced`, both `'server'`-attributed carrying
+only `{emailType}` / `{reason}`. Already compliant; nothing else to fix. The
+rule is now written into the taxonomy's privacy contract so the next
+server-side event inherits it.
 
 **The founder decision, if per-user server analytics is ever wanted:** persist
 the consent choice to a `users` column when the banner is answered, and gate

@@ -625,24 +625,17 @@ async function bootstrap(): Promise<void> {
     // several BullMQ attempts with no state between them, so a server-side
     // `sync_started` cannot be emitted exactly once per run.
     syncTelemetry: {
-      syncCompleted: ({
-        syncId,
-        mailboxAccountId,
-        messagesIndexed,
-        durationMs,
-        attempt,
-        outcome,
-      }) => {
-        // No distinct id — `captureServerEvent` defaults to `'server'`.
-        // Analytics consent (D147) is per-browser localStorage and cannot
-        // be read from a worker, so attributing this to `users.id` would
-        // build a PostHog person for someone who declined. The aggregate
-        // (success rate, duration percentiles) is unaffected; only the
-        // person-level join is out of reach, and it is the part that needs
-        // consent.
+      syncCompleted: ({ syncRef, messagesIndexed, durationMs, attempt, outcome }) => {
+        // Nothing here identifies a user. No distinct id (so
+        // `captureServerEvent` uses `'server'`), no `mailbox_id`, and
+        // `sync_id` is an HMAC rather than the `mailboxId:epochMs` key it
+        // is computed from. Analytics consent (D147) is per-browser
+        // localStorage that a worker cannot read, so this ships for
+        // declining users too — which is only defensible while the payload
+        // is not personal data. Aggregate sync health needs none of it;
+        // per-mailbox questions belong to `provider_sync_state`.
         captureServerEvent('sync_completed', {
-          sync_id: syncId,
-          mailbox_id: mailboxAccountId,
+          sync_id: syncRef,
           messages_indexed: messagesIndexed,
           duration_ms: durationMs,
           attempt,

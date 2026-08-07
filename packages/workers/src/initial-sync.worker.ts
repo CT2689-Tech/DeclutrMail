@@ -21,7 +21,7 @@ import {
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { BaseDeclutrWorker, telemetryReference } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
@@ -142,20 +142,39 @@ const SCAN_PAGE = 1000;
  * outage silences telemetry, which is the failure this seam already had to
  * fix once for the database.
  *
- * Privacy (D7, D228): counts, outcomes and durations only — no user or
- * mailbox owner identity. Events are attributed to the default `'server'`
- * distinct id, NOT to `users.id`, because analytics consent (D147) lives
- * in browser localStorage and is unreadable from a worker: attributing a
- * server event to a person would build a PostHog profile for a user who
- * declined. `mailbox_id` is an internal UUID and never an address.
+ * **Privacy (D7, D228, D147): the payload carries NO user-linked
+ * identifier at all — not a distinct id, not a mailbox id, not an id
+ * derived from one.** Analytics consent lives in browser localStorage
+ * (`dm-cookie-consent`), decline is the default, and the FE re-reads it on
+ * every `track()`. A worker cannot see it, so anything this emits is
+ * emitted for consenting and declining users alike. The only way that is
+ * legitimate is if what it emits is not personal data.
+ *
+ * Dropping the `users.id` distinct id was not enough on its own: a
+ * `mailbox_id` property — or a `sync_id` of `mailboxId:epochMs` — is a
+ * stable per-user key, and PostHog holding per-mailbox behaviour for
+ * someone who declined is the thing the consent gate exists to prevent.
+ * Pseudonymous is not anonymous.
+ *
+ * So the run is identified by `syncRef`, an HMAC via `telemetryReference`
+ * (the same primitive that keeps raw mailbox ids out of `worker.succeeded`
+ * logs). It is stable for one run, so duplicates still collapse, and it is
+ * unique per run, so runs cannot be grouped back into a mailbox. Per-
+ * mailbox questions belong to `provider_sync_state` and the structured
+ * logs, which is where this seam already points for anything
+ * authoritative.
  *
  * Implementations must NEVER throw; a telemetry outage must not fail a
  * sync that otherwise succeeded.
  */
 export interface SyncTelemetry {
   syncCompleted(event: {
-    syncId: string;
-    mailboxAccountId: string;
+    /**
+     * Opaque HMAC of the run key — never the mailbox id, and not derived
+     * from it in any reversible way. The raw id is deliberately absent
+     * from this type so the seam cannot leak it even by accident.
+     */
+    syncRef: string;
     /** Messages actually indexed. Excludes unreadable skips. */
     messagesIndexed: number;
     /** Real server-side wall-clock for the attempt. */
@@ -381,32 +400,31 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   }
 
   /**
-   * A stable id for ONE sync RUN — every BullMQ attempt of the same job
-   * shares it, so a run that fails twice and then succeeds is one run in
-   * analysis, not three.
+   * An OPAQUE stable reference for ONE sync RUN — every BullMQ attempt of
+   * the same job produces the same value, so a run that fails twice and
+   * then succeeds is one run in analysis, not three.
    *
-   * `enqueuedAt` rather than `startedAt` is the whole point: `startedAt`
-   * is per-attempt, so an id built on it names an attempt while claiming
-   * to name a run — the completion from a retried run would not join to
-   * anything else about that run. `jobId` alone cannot carry it either:
-   * for `perMailboxPolicy` it IS the mailbox id, repeated for every sync
-   * that mailbox ever runs. The pair is the only combination that is both
-   * stable across retries and unique per enqueue.
+   * The run KEY is `jobId : enqueuedAt`. `enqueuedAt` rather than
+   * `startedAt` because `startedAt` is per-attempt, so a key built on it
+   * would name an attempt while claiming to name a run; `jobId` alone
+   * cannot carry it either, since for `perMailboxPolicy` it IS the mailbox
+   * id and repeats for every sync that mailbox ever runs.
    *
-   * That stability is also the one reliability property this event does
-   * have: a re-delivered job carries the same `jobId` AND the same
-   * `job.timestamp`, so a duplicate emission collapses under
+   * The key is then HMACed, because `jobId` being the mailbox id means the
+   * raw key is a per-user identifier — and this event ships to PostHog for
+   * users who declined analytics, who must not be identifiable there.
+   * `telemetryReference` is the same primitive that keeps raw ids out of
+   * `worker.succeeded`; the HMAC preserves both properties analysis needs
+   * (equal for one run, distinct across runs) while destroying the one it
+   * must not have (groupable back to a mailbox).
+   *
+   * That stability is also the one reliability property this event has: a
+   * re-delivered job produces the same ref, so a duplicate collapses under
    * `COUNT(DISTINCT sync_id)` rather than double-counting the run. It does
    * nothing for losses — see `SyncTelemetry` for the full contract.
-   *
-   * Deliberately not a UUID. The taxonomy described `sync_id` as
-   * `syncs.id`, but no `syncs` table exists: `provider_sync_state` is
-   * unique per mailbox and holds current state only, so there is no
-   * per-run row to reference. Minting a UUID would name a record that does
-   * not exist.
    */
-  private syncId(ctx: WorkerContext): string {
-    return `${ctx.jobId}:${ctx.enqueuedAt.getTime()}`;
+  private syncRef(ctx: WorkerContext): string {
+    return telemetryReference(`${ctx.jobId}:${ctx.enqueuedAt.getTime()}`);
   }
 
   /**
@@ -421,6 +439,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * person would profile users who declined. Dropping the lookup removes
    * both by construction rather than by careful handling — the emit path
    * now has no dependency that can be down.
+   *
+   * `mailboxAccountId` is taken for the failure LOG line only. It is never
+   * handed to the telemetry sink; see `SyncTelemetry` for why.
    */
   private emitSyncCompleted(
     mailboxAccountId: string,
@@ -433,8 +454,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
     try {
       telemetry.syncCompleted({
-        syncId: this.syncId(ctx),
-        mailboxAccountId,
+        syncRef: this.syncRef(ctx),
         messagesIndexed: completion.messagesIndexed,
         durationMs: Date.now() - ctx.startedAt.getTime(),
         attempt: ctx.attempt,

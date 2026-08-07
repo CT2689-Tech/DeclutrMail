@@ -16,17 +16,26 @@ Every event payload below is checked against the no-body / no-PII rules:
   defense) and again inside PostHog's `sanitize_properties` hook (second
   defense). Any new field added below MUST be verifiable as scalar +
   privacy-safe before it ships.
+- **Server-emitted events carry NO user-linked identifier — not a distinct
+  id, not a `mailbox_id`, not an id derived from either.** Analytics
+  consent (D147) lives in browser `localStorage` with decline as the
+  default, so anything emitted outside the browser reaches PostHog for
+  users who refused it. Client events may carry internal UUIDs precisely
+  because they are behind that gate; server events may not, and must use
+  `telemetryReference` where a correlation key is genuinely needed. Note
+  the trap: removing only the distinct id is not enough, since a
+  `mailbox_id` property is just as identifying.
 
 ## Identifier conventions
 
-| Identifier   | Format              | Origin                                                      |
-| ------------ | ------------------- | ----------------------------------------------------------- |
-| `user_id`    | internal UUID v7    | `users.id`                                                  |
-| `mailbox_id` | internal UUID v7    | `mailboxes.id`                                              |
-| `sender_id`  | internal UUID v7    | `senders.id`                                                |
-| `sync_id`    | `mailbox : epochMs` | Composite; there is no `syncs` table — see `sync_completed` |
-| `rule_id`    | internal UUID v7    | `rules.id`                                                  |
-| `action_id`  | internal UUID v7    | `actions.id` (for undo)                                     |
+| Identifier   | Format             | Origin                                                         |
+| ------------ | ------------------ | -------------------------------------------------------------- |
+| `user_id`    | internal UUID v7   | `users.id`                                                     |
+| `mailbox_id` | internal UUID v7   | `mailboxes.id`                                                 |
+| `sender_id`  | internal UUID v7   | `senders.id`                                                   |
+| `sync_id`    | opaque `ref_<hex>` | HMAC of the run key; carries no mailbox — see `sync_completed` |
+| `rule_id`    | internal UUID v7   | `rules.id`                                                     |
+| `action_id`  | internal UUID v7   | `actions.id` (for undo)                                        |
 
 Gmail `messageId`, `threadId`, raw email addresses, and message body
 content are NEVER sent.
@@ -221,8 +230,8 @@ worker state, not a fake-progress trigger.
 
 | Field              | Type                                 | Notes                                                                                                       |
 | ------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `sync_id`          | `string \| null`                     | Composite, see below; `null` for FE gate fires                                                              |
-| `mailbox_id`       | `string`                             | UUID                                                                                                        |
+| `sync_id`          | `string \| null`                     | BE: opaque `ref_<hex>`, see below. FE: always `null`                                                        |
+| `mailbox_id`       | `string`                             | **FE fires only** — the FE is behind the consent gate. BE omits it entirely (see Consent below)             |
 | `messages_indexed` | `number`                             | Real count on BE `success`/`partial`; `-1` when genuinely unknown — every FE fire, and BE `failed`          |
 | `duration_ms`      | `number`                             | BE: real server wall-clock for the attempt. FE: the observed human wait (first in-progress poll → terminal) |
 | `attempt`          | `number`                             | BE only. Which BullMQ attempt finished the run; `> 1` means it was retried                                  |
@@ -239,38 +248,54 @@ incident without a production database query.
 fetched before the failure are still in `mail_messages`; counting them
 would mean a full scan on the failure path.
 
-**`sync_id` is a composite, not a UUID** — `mailbox : enqueuedAt` (epoch
-ms, BullMQ's `job.timestamp`). This taxonomy previously called it a
-`syncs.id` UUID, but no `syncs` table exists: `provider_sync_state` is
-unique per mailbox and holds current state only, so there is no per-run
-row to reference. Minting a UUID would name a record that does not exist.
+**`sync_id` is an opaque HMAC, not a UUID and not the key it hashes.** The
+underlying run key is `mailbox : enqueuedAt` (epoch ms, BullMQ's
+`job.timestamp`); the shipped value is `telemetryReference(runKey)`, the
+same primitive that keeps raw ids out of `worker.succeeded` logs. This
+taxonomy previously called `sync_id` a `syncs.id` UUID, but no `syncs`
+table exists — `provider_sync_state` is unique per mailbox and holds
+current state only — so a UUID would have named a record that does not
+exist.
 
-It identifies a RUN, not an attempt. `enqueuedAt` is the only field both
-stable across BullMQ retries and unique per enqueue — the mailbox id
+The key identifies a RUN, not an attempt. `enqueuedAt` is the only field
+both stable across BullMQ retries and unique per enqueue — the mailbox id
 alone repeats for every sync that mailbox ever runs, and the attempt's
 `startedAt` moves on each retry, which would name an attempt while
-claiming to name a run. That stability is also what makes the delivery
-contract above workable — a re-delivered job carries the same `jobId` and
-the same `job.timestamp`, so a duplicate collapses instead of
-double-counting. A `sync_runs` history table remains an open D-candidate
-(FOUNDER-FOLLOWUPS, 2026-05-22); if it lands, `sync_id` becomes its PK.
+claiming to name a run. Hashing preserves both properties analysis needs
+(equal within a run, so a re-delivered job's duplicate collapses; distinct
+across runs, so runs are countable) and destroys the one the payload must
+not have: the raw key contains the mailbox id, and this event ships to
+users who declined analytics.
 
-**Distinct id.** Server fires carry NO user identity — they land on the
-default `'server'` distinct id, so they aggregate but do not join to a
-person.
+A `sync_runs` history table remains an open D-candidate
+(FOUNDER-FOLLOWUPS, 2026-05-22); if it lands, its PK is the natural run
+key and `sync_id` stays the hash of it.
 
-That is a consent constraint, not an oversight. Analytics consent (D147)
-is stored per-browser in `localStorage` (`dm-cookie-consent`), decline is
-the default, and the FE re-reads it on every `track()` call. A worker
-cannot see it. Attributing a server event to `users.id` would therefore
-build a PostHog person profile for a user who declined — which is exactly
-what the consent gate exists to prevent, reached by a path that bypasses
-it. Aggregate sync health needs no identity, so the server path carries
-none.
+**Consent (D147) and identity.** Analytics consent is stored per-browser
+in `localStorage` (`dm-cookie-consent`), decline is the default, and the
+FE re-reads it on every `track()` call. A worker cannot see it, so **this
+event ships for consenting and declining users alike.** That is only
+legitimate because the server payload is not personal data:
+
+- no distinct id — server fires land on the default `'server'`;
+- no `mailbox_id`;
+- `sync_id` is an HMAC (`telemetryReference`), not the
+  `mailboxId : epochMs` key it is computed from.
+
+Dropping the distinct id alone was NOT sufficient, and an earlier revision
+of this PR shipped exactly that half-measure. A `mailbox_id` property — or
+a `sync_id` that embeds one — is a stable per-user key, and PostHog
+holding per-mailbox behaviour for someone who declined is precisely what
+the consent gate exists to prevent. Pseudonymous is not anonymous.
+
+The HMAC keeps both properties analysis needs (equal within a run,
+distinct across runs) and destroys the one it must not have (groupable
+back to a mailbox). Per-mailbox questions belong to
+`provider_sync_state` and the structured logs.
 
 Per-user server-side analytics stays blocked until consent is readable
 server-side (a `users` column written when the banner is answered). That
-is a founder decision, not an implementation detail — recorded in
+is a founder decision, not an implementation detail — recorded as F004 in
 FINDINGS.md.
 
 **Retention / aggregation.** 90 days raw. Powers sync-success-rate and

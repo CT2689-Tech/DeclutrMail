@@ -23,7 +23,7 @@ later, or an approach turns out wrong.
 ## 2026-08-06 — Kept promising reliability a fire-and-forget event could not have
 
 **PR:** [#473](https://github.com/CT2689-Tech/DeclutrMail/pull/473)
-**Caught by:** Codex stop-time review, five consecutive rounds — after CI green and after a passing dev smoke each time
+**Caught by:** Codex stop-time review, six consecutive rounds — after CI green and after a passing dev smoke each time
 
 **What happened:** New server-side sync telemetry. Round one: the failure
 emit sat in a `finally` whose commit message read *"a failure dashboard
@@ -72,14 +72,23 @@ incident — the same "surface asserting what it does not know" defect as
 everything else in this PR, one layer up, in the dashboard rather than the
 emitter.
 
-Checking the consent path while fixing it turned up a second live defect:
-the event was attributed to `users.id`, but analytics consent (D147) lives
-in browser localStorage with decline as the default and is unreadable from
-a worker. That attribution would have built a PostHog person profile for
-users who declined, via a path that never consults the gate. Dropping it
-also deleted the only database read in the emit path — which is what
-caused round one's bug — so the fix removed a failure mode instead of
-handling one.
+Checking the consent path while fixing it turned up a second live defect,
+and I then fixed only half of THAT too. The event was attributed to
+`users.id`, but analytics consent (D147) lives in browser localStorage
+with decline as the default and is unreadable from a worker, so the
+attribution would have built a PostHog person profile for users who
+declined via a path that never consults the gate. I removed the distinct
+id and called it done — leaving `mailbox_id` on the payload and a
+`sync_id` of `mailboxId:epochMs`. Either is a stable per-user key, so
+PostHog still held per-mailbox behaviour for people who refused it.
+Pseudonymous is not anonymous, and identity is a property of the whole
+payload, not of the distinct-id field. Round six.
+
+The event now carries no user-linked field at all: `sync_id` is
+`telemetryReference(runKey)`, the HMAC primitive already used to keep raw
+ids out of `worker.succeeded`. Dropping the owner lookup also deleted the
+only database read in the emit path — which is what caused round one's
+bug — so that fix removed a failure mode rather than handling one.
 
 **Correct approach:** delete the event rather than patch its placement a
 third time. `sync_completed` alone carries outcome, real duration, real
@@ -108,11 +117,14 @@ a property of the emitting code alone — it is a property of the emitter,
 its transport, and how the process can die; fire-and-forget from a
 killable worker has NO guarantee, so publish the dedup key, the
 aggregation rule and the loss paths alongside the event instead of a
-promise. **And before trusting any derived reliability metric, ask whether
-its loss mode correlates with the thing it measures** — if the same
-incident that causes failures also drops the events reporting them, the
-metric is biased precisely when it matters, and only stateful storage can
-answer.
+promise. **Before trusting any derived reliability metric, ask whether its
+loss mode correlates with the thing it measures** — if the same incident
+that causes failures also drops the events reporting them, the metric is
+biased precisely when it matters, and only stateful storage can answer.
+**And a consent gate protects a PAYLOAD, not a field**: when data leaves
+on a path that cannot check consent, the test is whether anything in the
+whole payload — including derived and composite ids — links back to a
+person, not whether the distinct-id field is empty.
 
 **Enforcement update:** structural test asserts `SyncTelemetry` exposes
 `syncCompleted` only, so re-adding a start reopens the class loudly rather
