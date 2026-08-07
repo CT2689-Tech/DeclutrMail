@@ -20,6 +20,63 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+
+## 2026-08-07 — Built a history table that lied about scale, then let it wedge a mailbox
+
+**PR:** [#474](https://github.com/CT2689-Tech/DeclutrMail/pull/474)
+**Caught by:** Codex stop-time review ("retried syncs persist final-attempt metrics as whole-run history"), then by re-smoking the fix
+
+**What happened — two defects, both mine, in a table built to stop exactly
+this.** F002 shipped `sync_runs` so we could answer "how did that sync go?"
+without a prod query.
+
+_One._ `InitialSyncWorker` returns a result whose fields sit on two different
+scales, because the sync is resumable: `messagesSynced` / `sendersIndexed`
+count the whole mailbox and accumulate across attempts, while `durationMs`,
+`gmailApiCalls` and `stageTimings` are accumulated inside the attempt that
+happens to finish. I persisted all of them flat, and named one column
+`duration_ms` with the comment "wall-clock ms for the whole backfill". The
+codebase already documented the split — `InitialSyncResult` says "on a RESUMED
+run `gmailApiCalls` is much smaller than `messagesSynced` … which is itself the
+resume signal" — and I read that docstring while writing the insert.
+
+It is worse than vague, it inverts. Each retry resumes closer to done, so a
+mailbox that burns four attempts records a shorter duration and fewer API calls
+than one that succeeded first try. The one question the table exists to answer
+— "is sync getting slower for this account?" — returns _faster_ as the account
+degrades. Real numbers from the smoke: `messages_synced 1176` beside
+`gmail_api_calls 4`.
+
+_Two._ Fixing it exposed the second. I had put the failure path's `sync_runs`
+insert inside the same transaction as the `provider_sync_state` failed upsert.
+When a worker still running pre-rename code wrote to renamed columns, the
+insert threw, the rollback took the `failed` upsert with it, and a real dev
+mailbox wedged at `syncing/finalizing/97%` — neither `ready` nor `failed`, no
+error anywhere the user could see. That is precisely the dead gate the failed
+upsert exists to prevent, and the comment three lines above my change already
+said so: "the state write is the load-bearing half."
+
+**Correct approach:** Before persisting a computed value, ask what it is a
+measurement OF — per attempt, per run, or per mailbox — and put that answer in
+the column name, not the docstring. And decide whether a telemetry write is the
+same fact as the outcome it describes: on success the `sync_runs` row and the
+completed sync are one fact and belong in one transaction; on failure the
+outcome is already durable in three places and telemetry must not be able to
+veto it.
+
+**Rule:** A column name must state the scale of what it measures, and telemetry
+never shares a transaction with the state a user waits on.
+
+**Enforcement update:** Two tests in `initial-sync.worker.test.ts`. One runs a
+resume and asserts cumulative counts hold while per-attempt API calls collapse
+— it fails if the scales are ever flattened again. One drops `sync_runs` and
+asserts `provider_sync_state` still reaches `failed`; it was mutation-checked
+by restoring the insert into the transaction, which fails it on the exact
+wedge. The `final_attempt_` prefix and the reader script's footer carry the
+distinction to anyone querying by hand.
+
+---
+
 ## 2026-08-06 — `git add -A <dir>` committed another session's uncommitted work
 
 **PR:** [#473](https://github.com/CT2689-Tech/DeclutrMail/pull/473)
