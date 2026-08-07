@@ -430,7 +430,7 @@ export function SettingsScreen() {
         <SectionLabel id="senders">Senders</SectionLabel>
         <LinkCard
           title="Protected senders"
-          description="See everyone you've told us to leave alone. Turn protection on or off from a sender's detail page."
+          description="Senders that automatic rules and bulk actions skip — whether you protected them or DeclutrMail did. Turn protection on or off from a sender's detail page."
           href="/settings/senders"
           cta="Open protected senders"
         />

@@ -323,8 +323,9 @@ export function PrivacyDataView({
               <div>
                 <div style={exitTitleStyle}>CASA Tier 2 verification</div>
                 <div style={exitDetailStyle}>
-                  DeclutrMail's Gmail access goes through Google's CASA security assessment. The
-                  assessment letter will be linked here once the current cycle's letter is issued.
+                  DeclutrMail&apos;s Gmail access goes through Google&apos;s CASA security
+                  assessment. Google approved our OAuth verification on 21 April 2026 for the single
+                  restricted scope we request, gmail.modify. It is recertified annually.
                 </div>
               </div>
             </li>

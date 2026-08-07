@@ -96,9 +96,15 @@ export function SendersPoliciesScreen() {
           Protected senders
         </h1>
         <p style={{ fontSize: 13.5, color: color.fgSoft, marginTop: 6, maxWidth: 640 }}>
-          Senders you&apos;ve told us to leave alone. Automatic rules and bulk actions skip them, so
-          their mail stays in your inbox. Turn protection on or off from a sender&apos;s detail
-          page.
+          {/* Never "senders you've told us to leave alone": three of the
+              four protection_reason values are automatic (replied,
+              starred, gmail_important), and this list shows those rows
+              too — without saying which is which. Describe what
+              protection DOES, and name both ways in. */}
+          Automatic rules and bulk actions skip these senders, so their mail always reaches your
+          inbox. You can protect a sender yourself, and DeclutrMail also protects one when you reply
+          to them repeatedly, star their mail, or Gmail keeps marking it important. Turn protection
+          on or off from a sender&apos;s detail page.
         </p>
       </div>
 

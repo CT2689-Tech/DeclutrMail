@@ -62,6 +62,18 @@ the point.
   three states in play — shipped (no floor), uncommitted (arbitrary floor),
   proposed (outcome ranking). Triage all three together.
 
+- **2026-08-07** · `/settings/senders` — **the protected-senders list never says
+  WHY a sender is protected.** Three of the four `protection_reason` values are
+  automatic (`replied`, `starred`, `gmail_important`); only `user_defined` is
+  the user's own doing. The list renders avatar, name, email and a Manage
+  button — no reason. CLAUDE.md §2.6 requires the opposite: "Show the exact
+  reason and preserve a manual Unprotect as a sticky override." Found while
+  fixing copy on that page that wrongly called every row "senders you've told
+  us to leave alone"; the copy is fixed, the missing reason is not. The data is
+  already there (`sender_policies.protection_reason` + `protection_set_at`) and
+  `screener/data.ts:93` already renders reason strings, so this is a display
+  gap, not a modelling one.
+
 - **2026-08-07** · Triage — **"four daily verbs" is spec vocabulary, shipped.**
   Founder hit this string in production: _"Looking for Delete? Triage keeps to
   the four daily verbs — deleting a sender's mail lives on Senders and Sender
