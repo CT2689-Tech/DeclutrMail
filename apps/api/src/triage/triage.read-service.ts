@@ -49,9 +49,25 @@ export interface TriageQueueRow {
    * quiet within the window.
    */
   last90dMessages: number;
-  readRate: number;
+  /**
+   * `null` when the sender sent nothing in the window — NOT 0.
+   *
+   * A fabricated 0 is indistinguishable from "sends constantly, never
+   * opened", which is the best possible score under any low-read-rate
+   * ranking. On a real 98k mailbox that put silent one-off senders at
+   * the front of onboarding's first review. `senders.types.ts` already
+   * types this `number | null`; Triage was the outlier.
+   */
+  readRate: number | null;
   lastDays: number;
   totalAllTime: number;
+  /**
+   * Messages from this sender sitting in INBOX right now — what an
+   * Archive / Later / Delete would actually move. `totalAllTime` counts
+   * everything indexed including already-archived mail, so it does NOT
+   * measure the payoff of an action.
+   */
+  inboxCount: number;
 }
 
 /** Optional presentation ordering applied before the queue limit. */
@@ -189,9 +205,24 @@ export class TriageReadService {
         WHEN 'later'       THEN 2
         WHEN 'keep'        THEN 3
       END`;
-    const goalPriority = queueGoalPriority(input.ordering ?? 'actionable');
+    const ordering = input.ordering ?? 'actionable';
+    const goalPriority = queueGoalPriority(ordering);
+    // Onboarding applies richer payoff ordering after this read, but the
+    // SQL limit happens first. Put the maintained sender count ahead of
+    // confidence for cleanup goals so a high-volume sender cannot be
+    // crowded out of the candidate pool by dozens of one-off rows.
+    const payoffPriority =
+      ordering === 'newsletter-first' || ordering === 'promotions-first'
+        ? desc(senders.totalReceived)
+        : null;
     const queueOrder = goalPriority
-      ? [goalPriority, verdictPriority, desc(triageDecisions.confidence), triageDecisions.senderKey]
+      ? [
+          goalPriority,
+          ...(payoffPriority ? [payoffPriority] : []),
+          verdictPriority,
+          desc(triageDecisions.confidence),
+          triageDecisions.senderKey,
+        ]
       : [verdictPriority, desc(triageDecisions.confidence)];
 
     // Exclude senders the user has already decided on within the D30
@@ -273,6 +304,7 @@ export class TriageReadService {
         unread: sql<number>`SUM(CASE WHEN ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
         last90Total: sql<number>`SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END)`,
         last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz AND NOT ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
+        inboxCount: sql<number>`SUM(CASE WHEN NOT ${mailMessages.isOutbound} AND 'INBOX' = ANY(${mailMessages.labelIds}) THEN 1 ELSE 0 END)`,
         lastInternalDate: sql<Date | null>`MAX(${mailMessages.internalDate})`,
       })
       .from(mailMessages)
@@ -298,7 +330,10 @@ export class TriageReadService {
       const total = Number(agg?.total ?? 0);
       const last90Total = Number(agg?.last90Total ?? 0);
       const last90Read = Number(agg?.last90Read ?? 0);
-      const readRate = last90Total > 0 ? last90Read / last90Total : 0;
+      // Mirrors senders.read-service `computeReadRate`: no denominator
+      // means unknown, not zero.
+      const readRate = last90Total > 0 ? last90Read / last90Total : null;
+      const inboxCount = Number(agg?.inboxCount ?? 0);
       const monthlyVolume = Math.round(last90Total / 3);
       const lastInternal = agg?.lastInternalDate ?? r.lastSeenAt;
       const lastDays =
@@ -312,7 +347,7 @@ export class TriageReadService {
       // (or the engine's protect rules did) to keep this sender, so
       // the RECOMMENDATION must be Keep. Display-layer only: the
       // engine's verdict stays in `triage_decisions` untouched, every
-      // K/A/U/L action remains available on the row, and the override
+      // K/A/U/L/D action remains available on the row, and the override
       // is annotated in the reasoning so the user sees why.
       const protectionReason = mapProtectionReason(r.isProtected, r.protectionReason);
       const isProtected = protectionReason !== null;
@@ -352,6 +387,7 @@ export class TriageReadService {
         readRate,
         lastDays,
         totalAllTime: total,
+        inboxCount,
       };
     });
   }
@@ -401,7 +437,7 @@ export class TriageReadService {
     let laterToday = 0;
     for (const row of todayCounts) {
       const n = Number(row.n);
-      // Skip non-K/A/U/L bookkeeping actions like followup-dismiss.
+      // Skip non-K/A/U/L/D bookkeeping actions like followup-dismiss.
       if (row.action === 'archive') {
         archivedToday = n;
         decidedToday += n;
@@ -412,6 +448,8 @@ export class TriageReadService {
         laterToday = n;
         decidedToday += n;
       } else if (row.action === 'keep') {
+        decidedToday += n;
+      } else if (row.action === 'delete') {
         decidedToday += n;
       }
     }
@@ -527,12 +565,14 @@ export class TriageReadService {
  * shown in the row footer, formatted for the row's expanded view.
  */
 function buildSignals(input: {
-  readRate: number;
+  readRate: number | null;
   monthlyVolume: number;
   unsubscribeMethod: 'one_click' | 'mailto' | 'none';
 }): string[] {
   const signals: string[] = [
-    `Read rate: ${Math.round(input.readRate * 100)}% over the last 90 days`,
+    input.readRate === null
+      ? 'Read rate: no mail in the last 90 days, so there is nothing to measure'
+      : `Read rate: ${Math.round(input.readRate * 100)}% over the last 90 days`,
     `Volume: ${input.monthlyVolume} messages/month (90-day average)`,
   ];
   if (input.unsubscribeMethod === 'one_click') {

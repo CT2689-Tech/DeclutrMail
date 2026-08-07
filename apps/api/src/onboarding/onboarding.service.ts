@@ -37,10 +37,16 @@ import { ONBOARDING_PRESET_CATALOG } from './onboarding.types.js';
 const PREF_PRESET_PICKS = 'onboardingPresetPicks';
 const PREF_GOAL = 'onboardingGoal';
 const PREF_FIRST_TRIAGE_KEYS = 'onboardingFirstTriageKeys';
+const PREF_FIRST_TRIAGE_VERSION = 'onboardingFirstTriageVersion';
 const PREF_SKIPPED = 'onboardingSkipped';
 
 /** D112/D246 — the finite first-relief run covers at most 5 senders. */
 const FIRST_TRIAGE_PINNED_COUNT = 5;
+
+/** Version 3 ranks by mail an action actually moves. Bumping re-pins
+ * accounts onboarded under an earlier ranking — without it a fix helps
+ * nobody who already signed up, because the picks are stored per user. */
+const FIRST_TRIAGE_PIN_VERSION = 3;
 
 /**
  * D112 — candidate pool size. Wide enough that the non-Keep +
@@ -171,9 +177,13 @@ export class OnboardingService {
     });
 
     let pinnedKeys = readStringArray(prefs[PREF_FIRST_TRIAGE_KEYS]);
-    if (pinnedKeys === null) {
+    const pinVersion = prefs[PREF_FIRST_TRIAGE_VERSION];
+    if (pinnedKeys === null || pinVersion !== FIRST_TRIAGE_PIN_VERSION) {
       pinnedKeys = pickFirstTriageCandidates(queue, readGoal(prefs)).map((r) => r.senderKey);
-      await this.patchPreferences(userId, { [PREF_FIRST_TRIAGE_KEYS]: pinnedKeys });
+      await this.patchPreferences(userId, {
+        [PREF_FIRST_TRIAGE_KEYS]: pinnedKeys,
+        [PREF_FIRST_TRIAGE_VERSION]: FIRST_TRIAGE_PIN_VERSION,
+      });
     }
 
     const queueBySender = new Map(queue.map((row) => [row.senderKey, row]));
@@ -288,12 +298,16 @@ export function pickFirstTriageCandidates(
   goal: OnboardingGoal | null = null,
 ): TriageQueueRow[] {
   const eligible = queue.filter((r) => r.verdict !== 'keep' && r.protectionReason === null);
+
   if (goal === 'protect_important') {
+    // Not a cleanup goal — nothing moves, so the payoff gate does not
+    // apply. Rank by evidence of a real relationship.
     return [...queue]
       .sort(
         compareBy(
           (row) => (row.verdict === 'keep' || row.protectionReason !== null ? 0 : 1),
-          (row) => -row.readRate,
+          mostReadFirst,
+          (row) => row.lastDays,
           (row) => -row.confidence,
           (row) => row.senderKey,
         ),
@@ -301,15 +315,17 @@ export function pickFirstTriageCandidates(
       .slice(0, FIRST_TRIAGE_PINNED_COUNT);
   }
 
-  if (eligible.length === 0) return [];
+  const candidates = eligible.filter(worthOneDecision);
 
   if (goal === 'reduce_newsletters') {
-    return [...eligible]
+    return [...candidates]
       .sort(
         compareBy(
+          (row) => (row.unsubscribeMethod !== 'none' ? 0 : 1),
           (row) => (row.verdict === 'unsubscribe' ? 0 : 1),
-          (row) => (row.gmailCategory === 'promotions' ? 0 : 1),
-          (row) => row.readRate,
+          (row) => -row.last90dMessages,
+          leastReadFirst,
+          (row) => -row.inboxCount,
           (row) => -row.confidence,
           (row) => row.senderKey,
         ),
@@ -318,17 +334,12 @@ export function pickFirstTriageCandidates(
   }
 
   if (goal === 'clear_old_promotions') {
-    return [...eligible]
+    return [...candidates]
       .sort(
         compareBy(
-          (row) => {
-            const promotion = row.gmailCategory === 'promotions';
-            const cleanup = row.verdict === 'archive' || row.verdict === 'later';
-            if (promotion && cleanup) return 0;
-            if (promotion) return 1;
-            if (cleanup) return 2;
-            return 3;
-          },
+          (row) => (row.gmailCategory === 'promotions' ? 0 : 1),
+          (row) => -row.inboxCount,
+          leastReadFirst,
           (row) => -row.confidence,
           (row) => row.senderKey,
         ),
@@ -336,51 +347,58 @@ export function pickFirstTriageCandidates(
       .slice(0, FIRST_TRIAGE_PINNED_COUNT);
   }
 
-  const uniformlyLow = eligible.every((r) => r.confidence < FIRST_TRIAGE_LOW_CONFIDENCE_BAR);
-  if (uniformlyLow) {
-    return [...eligible]
-      .sort(
-        compareBy(
-          (row) => row.readRate,
-          (row) => row.senderKey,
-        ),
-      )
-      .slice(0, FIRST_TRIAGE_PINNED_COUNT);
-  }
-
-  const byConfidence = (rows: TriageQueueRow[]): TriageQueueRow[] =>
-    [...rows].sort(
+  // No goal recorded (the step was skipped). Lead with the biggest
+  // reclaim available, since nothing narrower is known about intent.
+  return [...candidates]
+    .sort(
       compareBy(
+        (row) => -row.inboxCount,
+        leastReadFirst,
         (row) => -row.confidence,
         (row) => row.senderKey,
       ),
-    );
-  const picked: TriageQueueRow[] = [];
-  const taken = new Set<string>();
-  const take = (row: TriageQueueRow | undefined): void => {
-    if (row && !taken.has(row.senderKey)) {
-      taken.add(row.senderKey);
-      picked.push(row);
-    }
-  };
+    )
+    .slice(0, FIRST_TRIAGE_PINNED_COUNT);
+}
 
-  take(byConfidence(eligible.filter((r) => r.verdict === 'unsubscribe'))[0]);
-  const keeps = queue.filter((r) => r.verdict === 'keep' || r.protectionReason !== null);
-  take(
-    [...keeps].sort(
-      compareBy(
-        (row) => -row.readRate,
-        (row) => row.senderKey,
-      ),
-    )[0],
-  );
-  take(byConfidence(eligible.filter((r) => r.verdict === 'archive' || r.verdict === 'later'))[0]);
+/**
+ * The only gate, and it is definitional rather than tuned.
+ *
+ * 1. The action must move mail that is in the inbox NOW. A row whose
+ *    Archive would move nothing is not a decision, it is a no-op with a
+ *    button. `totalAllTime` cannot serve here: it counts indexed mail
+ *    including everything already archived, so a sender with ten filed
+ *    messages and an empty inbox passes a `>= 10` test and still moves
+ *    zero.
+ * 2. `later` is excluded. Its rule id is `insufficient_signal` and its
+ *    user string is "not enough signal yet" — the engine saying it has
+ *    no opinion. Leading a first run with five of those is how the
+ *    screen came to show five one-message senders: `later` carries a
+ *    flat 0.70 confidence, real scoring produces roughly 0.5 + 0.35 x
+ *    strength, and `clear_old_promotions` ranked both in one bucket by
+ *    confidence, so thin data won.
+ *
+ * Nothing else filters. Cadence and volume are RANKING terms; gating on
+ * them is how the previous `>= 10 received or >= 3 recent` cutoffs got
+ * invented, and neither number was derived from anything.
+ */
+function worthOneDecision(row: TriageQueueRow): boolean {
+  return row.inboxCount > 0 && row.verdict !== 'later';
+}
 
-  for (const row of byConfidence(eligible)) {
-    if (picked.length >= FIRST_TRIAGE_PINNED_COUNT) break;
-    take(row);
-  }
-  return picked.slice(0, FIRST_TRIAGE_PINNED_COUNT);
+/**
+ * Ascending "least-read first". Unknown sorts LAST: a sender with no
+ * mail in the window has no read rate, and treating that absence as
+ * 0.00 makes silence indistinguishable from "sends constantly, never
+ * opened" — the best possible score under this ordering.
+ */
+function leastReadFirst(row: TriageQueueRow): number {
+  return row.readRate ?? 2;
+}
+
+/** Ascending "most-read first". Unknown sorts LAST, same reasoning. */
+function mostReadFirst(row: TriageQueueRow): number {
+  return row.readRate === null ? 2 : -row.readRate;
 }
 
 type SortValue = number | string;

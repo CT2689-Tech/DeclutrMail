@@ -30,17 +30,17 @@ const GOALS: ReadonlyArray<{
   {
     id: 'reduce_newsletters',
     title: 'Reduce newsletters',
-    description: 'Start with recurring senders that are easiest to review.',
+    description: 'Prioritize recurring senders you can unsubscribe from or remove.',
   },
   {
     id: 'protect_important',
     title: 'Protect important senders',
-    description: 'Start with people and senders you are most likely to keep.',
+    description: 'Review important senders first so you can confirm what stays.',
   },
   {
     id: 'clear_old_promotions',
     title: 'Clear old promotions',
-    description: 'Start with promotional senders and archive decisions.',
+    description: 'Prioritize promotional senders with enough mail to make cleanup worthwhile.',
   },
 ];
 
@@ -116,9 +116,9 @@ export function StepPresetPick({
           toast(
             result.rulesSeeded
               ? result.presetKeys.length > 0
-                ? 'Rules saved — they start in Observe mode.'
+                ? 'Suggestions saved — nothing changes until you approve it.'
                 : 'Saved — you can add rules any time in Autopilot.'
-              : 'Choices saved — they apply automatically once your rules finish setting up.',
+              : 'Choices saved — your suggestions will appear when setup finishes.',
             'success',
           );
           onSubmitted();
@@ -133,9 +133,9 @@ export function StepPresetPick({
 
   return (
     <StepShell
-      eyebrow="Step 4 of 5 · Starting rules"
-      title="Pick your starting rules."
-      sub="Every rule starts in Observe mode — it only suggests, you approve. Nothing is archived or unsubscribed without you. Change any of this later in Autopilot."
+      eyebrow="Step 4 of 5 · Optional suggestions"
+      title="Choose what DeclutrMail should suggest."
+      sub="These are suggestions only. Nothing changes until you approve it. You can turn on automation later in Autopilot."
       maxWidth={560}
       corner={corner}
     >
@@ -225,8 +225,8 @@ export function StepPresetPick({
           in preferences and the seeder applies them; see docblock). */}
       {!rules.isLoading && !rulesSeeded && (
         <p style={{ color: color.fgMuted, fontSize: 12, margin: '0 0 14px', maxWidth: 460 }}>
-          Your rules are still being prepared in the background — picks made now apply automatically
-          the moment they're ready.
+          Your suggestions are still being prepared. Choices made now will appear when they are
+          ready.
         </p>
       )}
 
@@ -289,8 +289,8 @@ export function StepFirstSenderReview({
   return (
     <StepShell
       eyebrow="Step 4 of 5 · First review"
-      title="Your first sender review is ready."
-      sub="We'll start with no automated rules so you can see exactly how DeclutrMail organizes your inbox. Next, review a real sender and choose what should happen."
+      title="Choose your starting point."
+      sub="Your answer helps us pick the first senders worth reviewing. Nothing changes until you approve it."
       maxWidth={560}
       corner={corner}
     >
