@@ -143,6 +143,7 @@ import { BillingReconciliationService } from './billing/billing-reconciliation.s
 import { BillingWebhookService } from './billing/billing-webhook.service.js';
 import { PaddleAdapter } from './billing/paddle.adapter.js';
 import { RazorpayAdapter } from './billing/razorpay.adapter.js';
+import { captureServerEvent, shutdownAnalytics } from './observability/product-analytics.js';
 import { initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
 import { SecurityEventsService } from './security-events/security-events.service.js';
@@ -615,6 +616,39 @@ async function bootstrap(): Promise<void> {
     // router below. Without this dep the worker WARNs
     // `sync.sync_ready_publish_skipped` on every ready flip.
     outbox: new OutboxPublisher(),
+    // D159: the worker is the only place that knows a sync's real counts
+    // and wall-clock. The browser funnel it supplements can only report
+    // its own waiting, and emits nothing at all when the tab is closed —
+    // the normal case for a large mailbox.
+    syncTelemetry: {
+      syncStarted: ({ syncId, mailboxAccountId, userId }) => {
+        captureServerEvent(
+          'sync_started',
+          { sync_id: syncId, mailbox_id: mailboxAccountId, trigger: 'initial' },
+          userId,
+        );
+      },
+      syncCompleted: ({
+        syncId,
+        mailboxAccountId,
+        userId,
+        messagesIndexed,
+        durationMs,
+        outcome,
+      }) => {
+        captureServerEvent(
+          'sync_completed',
+          {
+            sync_id: syncId,
+            mailbox_id: mailboxAccountId,
+            messages_indexed: messagesIndexed,
+            duration_ms: durationMs,
+            outcome,
+          },
+          userId,
+        );
+      },
+    },
     onSenderIndexBuilt: async (mailboxAccountId) => {
       const producedAtMs = Date.now();
       await scoreProducerQueue.add(
@@ -2225,6 +2259,9 @@ async function bootstrap(): Promise<void> {
       await followupCheckSchedulerQueue.close();
       await reconcilerQueue.close();
       await incrementalReconcilerQueue.close();
+      // Flush buffered product events before the process exits, so the
+      // last sync of a revision is not the one that goes missing.
+      await shutdownAnalytics();
       await connection.quit();
       await lockPg.end();
       await pg.end();

@@ -68,6 +68,57 @@ const UPSERT_BATCH = 500;
  */
 const SCAN_PAGE = 1000;
 
+/**
+ * Server-side sync analytics seam (D159).
+ *
+ * `sync_started` / `sync_completed` were emitted ONLY from the browser
+ * (`useSyncGateFunnel`), which can report just its own waiting: `sync_id`
+ * was always `null`, `messages_indexed` always `-1`, `duration_ms` was how
+ * long a tab watched rather than how long the sync took, and a user who
+ * closed the tab produced no events at all — the common case for a sync
+ * measured in tens of thousands of messages. The 2026-08-06 incident
+ * needed a prod database query to answer "how did that sync go?" for
+ * exactly this reason.
+ *
+ * The worker is the only place that knows the real numbers, so it emits
+ * them. Kept as an injected seam for the same reason `WorkerObserver` is:
+ * `packages/workers` must not take a PostHog dependency — the composition
+ * root (`apps/api/src/worker.ts`) owns adapter wiring.
+ *
+ * Privacy (D7, D228): counts, outcomes and durations only. `userId` is the
+ * internal UUID — the same identifier `identifyUser()` sends from the
+ * browser, so server and client events resolve to one person — and never
+ * an email address.
+ *
+ * Implementations must NEVER throw; a telemetry outage must not fail a
+ * sync that otherwise succeeded.
+ */
+export interface SyncTelemetry {
+  syncStarted(event: { syncId: string; mailboxAccountId: string; userId: string }): void;
+  syncCompleted(event: {
+    syncId: string;
+    mailboxAccountId: string;
+    userId: string;
+    /** Messages actually indexed. Excludes unreadable skips. */
+    messagesIndexed: number;
+    /** Real server-side wall-clock for the attempt. */
+    durationMs: number;
+    /**
+     * `partial` means the sync finished but the index has a known gap —
+     * Gmail refused metadata for some messages. Reporting those runs as
+     * `success` would be the surface asserting a completeness it does not
+     * have.
+     */
+    outcome: 'success' | 'partial' | 'failed';
+  }): void;
+}
+
+/** No-op default — analytics is opt-in via `POSTHOG_API_KEY` (D159). */
+export const NOOP_SYNC_TELEMETRY: SyncTelemetry = {
+  syncStarted() {},
+  syncCompleted() {},
+};
+
 /** Dependencies the worker needs — injected by the composition root. */
 export interface InitialSyncDeps {
   db: WorkerDb;
@@ -95,6 +146,12 @@ export interface InitialSyncDeps {
    * gap. The integration PR passes `outbox: new OutboxPublisher()`.
    */
   outbox?: OutboxPublisher;
+  /**
+   * Server-side `sync_started` / `sync_completed` emitter (D159). Absent
+   * in tests and wherever `POSTHOG_API_KEY` is unset; the sync runs
+   * identically either way.
+   */
+  syncTelemetry?: SyncTelemetry;
 }
 
 /**
@@ -113,6 +170,13 @@ export interface InitialSyncDeps {
 export interface InitialSyncResult {
   /** Total messages in the mailbox now mirrored into `mail_messages`. */
   messagesSynced: number;
+  /**
+   * Messages Gmail refused to render as metadata this run, which the
+   * client skipped (400 FAILED_PRECONDITION). Non-zero means the index has
+   * a known gap, which is what makes the run `partial` rather than
+   * `success` — see `SyncTelemetry`.
+   */
+  unreadable: number;
   sendersIndexed: number;
   /** Gmail API calls THIS run — `messages.list` pages + `messages.get`. */
   gmailApiCalls: number;
@@ -254,9 +318,79 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     return payload.mailboxAccountId;
   }
 
+  /**
+   * A stable id for ONE sync attempt, derived so the success path and
+   * `onTerminalFailure` produce the same value without sharing state — the
+   * worker processes jobs concurrently, so `this` cannot hold per-run
+   * values.
+   *
+   * Deliberately not a UUID. The taxonomy described `sync_id` as
+   * `syncs.id`, but no `syncs` table exists: `provider_sync_state` is
+   * unique per mailbox and holds current state only, so there is no
+   * per-run row to reference. Minting a UUID would name a record that does
+   * not exist. The composite is honest and reads usefully in analysis —
+   * mailbox : attempt : start.
+   */
+  private syncId(ctx: WorkerContext): string {
+    return `${ctx.jobId}:${ctx.attempt}:${ctx.startedAt.getTime()}`;
+  }
+
+  /**
+   * Emit one server-side sync event (D159). Fully guarded: telemetry is
+   * optional, the owner lookup can lose a race with a disconnect, and a
+   * PostHog outage must never fail a sync that otherwise succeeded.
+   *
+   * `userId` is the mailbox owner's internal UUID — the same identifier
+   * the browser sends via `identifyUser()`, so server and client sync
+   * events resolve to one person rather than to `'server'`.
+   */
+  private async emitSyncTelemetry(
+    mailboxAccountId: string,
+    ctx: WorkerContext,
+    completion?: { messagesIndexed: number; outcome: 'success' | 'partial' | 'failed' },
+  ): Promise<void> {
+    const telemetry = this.deps.syncTelemetry;
+    if (!telemetry) {
+      return;
+    }
+    try {
+      const [row] = await this.deps.db
+        .select({ userId: mailboxAccounts.userId })
+        .from(mailboxAccounts)
+        .where(eq(mailboxAccounts.id, mailboxAccountId))
+        .limit(1);
+      if (!row) {
+        return; // mailbox disconnected mid-sync — attribute to nobody.
+      }
+      const syncId = this.syncId(ctx);
+      if (!completion) {
+        telemetry.syncStarted({ syncId, mailboxAccountId, userId: row.userId });
+        return;
+      }
+      telemetry.syncCompleted({
+        syncId,
+        mailboxAccountId,
+        userId: row.userId,
+        messagesIndexed: completion.messagesIndexed,
+        durationMs: Date.now() - ctx.startedAt.getTime(),
+        outcome: completion.outcome,
+      });
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'sync.telemetry_failed',
+          worker: this.workerName,
+          mailboxAccountId,
+          error: err instanceof Error ? err.name : 'unknown',
+        }),
+      );
+    }
+  }
+
   override async processJob(
     payload: InitialSyncJobData,
-    _ctx: WorkerContext,
+    ctx: WorkerContext,
   ): Promise<InitialSyncResult> {
     const mailboxAccountId = payload?.mailboxAccountId;
     if (!mailboxAccountId) {
@@ -281,6 +415,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       initialSyncLog('skipped_inactive_mailbox', mailboxAccountId);
       return {
         messagesSynced: 0,
+        unreadable: 0,
         sendersIndexed: 0,
         gmailApiCalls: 0,
         durationMs: Date.now() - startedAt,
@@ -292,6 +427,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       initialSyncLog('skipped_deletion_pending', mailboxAccountId);
       return {
         messagesSynced: 0,
+        unreadable: 0,
         sendersIndexed: 0,
         gmailApiCalls: 0,
         durationMs: Date.now() - startedAt,
@@ -317,6 +453,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       initialSyncLog('skipped_already_ready', mailboxAccountId);
       return {
         messagesSynced: 0,
+        unreadable: 0,
         sendersIndexed: 0,
         gmailApiCalls: 0,
         durationMs: Date.now() - startedAt,
@@ -324,6 +461,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         alreadyReady: true,
       };
     }
+
+    // Past every designed no-op — this attempt is a real sync, so it is
+    // the one that belongs in the success rate. Emitting before the guards
+    // would count disconnects and duplicate enqueues as syncs that never
+    // completed.
+    await this.emitSyncTelemetry(mailboxAccountId, ctx);
 
     // Stage 1 — fetching_metadata (resumable).
     // 2026-06-08 session: structured progress logs added so a stalled
@@ -349,10 +492,11 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     );
 
     initialSyncLog('fetchAndStoreMetadata_begin', mailboxAccountId);
-    const { messagesSynced, gmailApiCalls: fetchCalls } = await this.fetchAndStoreMetadata(
-      mailboxAccountId,
-      client,
-    );
+    const {
+      messagesSynced,
+      gmailApiCalls: fetchCalls,
+      unreadable,
+    } = await this.fetchAndStoreMetadata(mailboxAccountId, client);
     initialSyncLog('fetchAndStoreMetadata_done', mailboxAccountId, {
       messagesSynced,
       gmailApiCalls: fetchCalls,
@@ -395,8 +539,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // incremental sync can `history.list?startHistoryId=...` from here.
     await this.markReady(mailboxAccountId, snapshotHistoryId, messagesSynced);
 
+    // `partial` when Gmail refused metadata for anything: the sync
+    // finished, but the index has a named gap. Reporting those runs as
+    // `success` would make the dashboard assert a completeness the data
+    // does not have — and would have hidden the 2026-08-06 incident.
+    await this.emitSyncTelemetry(mailboxAccountId, ctx, {
+      messagesIndexed: messagesSynced,
+      outcome: unreadable > 0 ? 'partial' : 'success',
+    });
+
     return {
       messagesSynced,
+      unreadable,
       sendersIndexed,
       gmailApiCalls,
       durationMs: Date.now() - startedAt,
@@ -413,11 +567,30 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   protected override async onTerminalFailure(
     payload: InitialSyncJobData,
     error: Error,
+    ctx: WorkerContext,
   ): Promise<void> {
     const mailboxAccountId = payload?.mailboxAccountId;
     if (!mailboxAccountId) {
       return;
     }
+    try {
+      await this.recordTerminalFailure(mailboxAccountId, error);
+    } finally {
+      // `finally`, so a failed run still lands in the success rate even
+      // if recording it threw — a sync-failure dashboard that under-counts
+      // precisely when the database is unhappy is worse than none.
+      //
+      // `messagesIndexed: -1` is the taxonomy's documented unknown: rows
+      // fetched before the failure are still in `mail_messages`, and
+      // counting them here would mean a full scan on the failure path.
+      await this.emitSyncTelemetry(mailboxAccountId, ctx, {
+        messagesIndexed: -1,
+        outcome: 'failed',
+      });
+    }
+  }
+
+  private async recordTerminalFailure(mailboxAccountId: string, error: Error): Promise<void> {
     const failedUpsert = (tx: OutboxTx) =>
       tx
         .insert(providerSyncState)
@@ -507,7 +680,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   private async fetchAndStoreMetadata(
     mailboxAccountId: string,
     client: GmailMetadataClient,
-  ): Promise<{ messagesSynced: number; gmailApiCalls: number }> {
+  ): Promise<{ messagesSynced: number; gmailApiCalls: number; unreadable: number }> {
     let gmailApiCalls = 0;
 
     // 1. List every Gmail id. Keep both an ordered array (for the
@@ -703,7 +876,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       );
     }
 
-    return { messagesSynced: total - unreadable, gmailApiCalls };
+    return { messagesSynced: total - unreadable, gmailApiCalls, unreadable };
   }
 
   /**

@@ -127,48 +127,88 @@ contain a rule condition blob, sender identity, or email-derived text.
 
 ### `sync_started`
 
-**When fired.** Client-side today: the FE sync gate (`useSyncGateFunnel`)
-fires it on its FIRST in-progress observation (`queued`/`syncing`) of
-the D224 status poll — once per gate view, ref-guarded against the 3s
-poll re-fires; a mailbox already `ready` on mount fires nothing. A
-future server-side emitter (`POST /api/sync/start` accept, Pub/Sub
-delta-sync) will carry a non-null `sync_id` — analysis discriminates FE
-vs BE fires on that field.
+**When fired.** Two emitters, discriminated by `sync_id`.
+
+**Server-side (`InitialSyncWorker`, authoritative).** Fires once the job
+is past every designed no-op — inactive mailbox, deletion-paused,
+duplicate enqueue of an already-`ready` mailbox. Those skips deliberately
+emit nothing: a no-op returns in milliseconds, so counting it as a run
+would deflate the duration percentiles, and a `started` with no
+`completed` would invent a failure that never happened.
+
+**Client-side (`useSyncGateFunnel`, supplementary).** Fires on its FIRST
+in-progress observation (`queued`/`syncing`) of the D224 status poll —
+once per gate view, ref-guarded against the 3s poll re-fires; a mailbox
+already `ready` on mount fires nothing. It measures the human wait, which
+the worker cannot see. It is NOT a substitute: a user who closes the tab
+produces no client events at all, the common case for a large mailbox.
 
 **Payload.**
 
-| Field        | Type                                          | Notes                                                     |
-| ------------ | --------------------------------------------- | --------------------------------------------------------- |
-| `sync_id`    | `string \| null`                              | UUID; `null` for FE gate fires (no id on the status poll) |
-| `mailbox_id` | `string`                                      | UUID                                                      |
-| `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | What kicked it off; FE gate fires are always `initial`    |
+| Field        | Type                                          | Notes                                                                                                                                                                                                       |
+| ------------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sync_id`    | `string \| null`                              | See below. `null` for FE gate fires (no id on the status poll)                                                                                                                                              |
+| `mailbox_id` | `string`                                      | UUID                                                                                                                                                                                                        |
+| `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | Always `initial` on both emitters today — `InitialSyncWorker` only ever runs full backfills (connect, user retry, reconciler re-enqueue). The other three arrive if `IncrementalSyncWorker` starts emitting |
+
+**`sync_id` is a composite, not a UUID** — `mailbox : attempt : startedAt`
+(epoch ms). This taxonomy previously called it a `syncs.id` UUID, but no
+`syncs` table exists: `provider_sync_state` is unique per mailbox and
+holds current state only, so there is no per-run row to reference.
+Minting a UUID would name a record that does not exist. The composite is
+derivable identically from the success and failure paths without shared
+state (the worker runs jobs concurrently), and reads usefully in
+analysis. A `sync_runs` history table remains an open D-candidate
+(FOUNDER-FOLLOWUPS, 2026-05-22); if it lands, `sync_id` becomes its PK.
+
+**Distinct id.** Server fires use the mailbox owner's internal user UUID —
+the same value the browser sends via `identifyUser()` — so FE and BE
+events resolve to one person rather than to `'server'`.
 
 **Retention / aggregation.** 90 days for raw, rolled up into the
 "syncs per mailbox per day" cohort weekly.
 
 ### `sync_completed`
 
-**When fired.** Client-side today: the FE sync gate fires it on an
-observed transition into `ready` (`success`) or `failed` — only AFTER
-an observed start (never an unpaired completion), once per transition
-(ref-guarded). A transient `failed` that recovers to `ready` emits a
-second completion with `outcome: 'success'` — analysis takes the
-mailbox's last outcome. Per D224 the readiness is real worker state —
-not a fake-progress trigger. A future server-side emitter adds
-`partial` + real counts.
+**When fired.** Two emitters, as for `sync_started`.
+
+**Server-side (authoritative).** On the ready transition, and on terminal
+failure from `onTerminalFailure` — the latter inside a `finally`, so a
+failed run still lands in the success rate even when recording it threw.
+A dashboard that under-counts failures precisely when the database is
+unhappy is worse than no dashboard.
+
+**Client-side (supplementary).** On an observed transition into `ready`
+(`success`) or `failed` — only AFTER an observed start (never an unpaired
+completion), once per transition (ref-guarded). A transient `failed` that
+recovers to `ready` emits a second completion with `outcome: 'success'` —
+analysis takes the mailbox's last outcome. Per D224 the readiness is real
+worker state, not a fake-progress trigger.
 
 **Payload.**
 
-| Field              | Type                                 | Notes                                                                           |
-| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------- |
-| `sync_id`          | `string \| null`                     | UUID; `null` for FE gate fires                                                  |
-| `mailbox_id`       | `string`                             | UUID                                                                            |
-| `messages_indexed` | `number`                             | Final count; `-1` when unknown (FE — no counts on the poll)                     |
-| `duration_ms`      | `number`                             | FE: observed wait (first in-progress poll → terminal); BE: full sync wall-clock |
-| `outcome`          | `'success' \| 'partial' \| 'failed'` | Terminal state; FE fires never emit `partial`                                   |
+| Field              | Type                                 | Notes                                                                                                       |
+| ------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `sync_id`          | `string \| null`                     | Composite (see `sync_started`); `null` for FE gate fires                                                    |
+| `mailbox_id`       | `string`                             | UUID                                                                                                        |
+| `messages_indexed` | `number`                             | Real count on BE `success`/`partial`; `-1` when genuinely unknown — every FE fire, and BE `failed`          |
+| `duration_ms`      | `number`                             | BE: real server wall-clock for the attempt. FE: the observed human wait (first in-progress poll → terminal) |
+| `outcome`          | `'success' \| 'partial' \| 'failed'` | Terminal state; FE fires never emit `partial`                                                               |
+
+**`partial` means the sync finished with a known gap** — Gmail refused
+metadata for some messages (400 `FAILED_PRECONDITION`) and the client
+skipped them, so the index is short by a named amount. Reporting those
+runs as `success` would make the dashboard assert a completeness the data
+does not have; it is also what would have surfaced the 2026-08-06 sync
+incident without a production database query.
+
+**`-1` on BE `failed` is the documented unknown, not a guess.** Rows
+fetched before the failure are still in `mail_messages`; counting them
+would mean a full scan on the failure path.
 
 **Retention / aggregation.** 90 days raw. Powers sync-success-rate and
-sync-duration-p50/p95 dashboards.
+sync-duration-p50/p95 dashboards — filter to non-null `sync_id` for real
+sync numbers, and to null `sync_id` for the perceived-wait view.
 
 ### `triage_action_taken`
 

@@ -24,7 +24,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { InitialSyncWorker } from './initial-sync.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
-import type { InitialSyncDeps } from './initial-sync.worker.js';
+import type { InitialSyncDeps, SyncTelemetry } from './initial-sync.worker.js';
 import type { GmailAccess, GmailMessageListPage, GmailMessageMetadata } from './ports.js';
 import { deriveSenderKey } from './sender-key.js';
 import type { WorkerContext } from './worker-context.js';
@@ -1565,6 +1565,191 @@ describe('InitialSyncWorker — mailbox.sync_ready outbox publish (U14)', () => 
     await worker.processJob({ mailboxAccountId }, CTX);
 
     expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    const [state] = await db.select().from(providerSyncState);
+    expect(state?.readinessStatus).toBe('ready');
+  });
+});
+
+describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
+  let db: InitialSyncDeps['db'];
+  let mailboxAccountId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxAccountId = await seedMailbox(db);
+  });
+
+  type Started = Parameters<SyncTelemetry['syncStarted']>[0];
+  type Completed = Parameters<SyncTelemetry['syncCompleted']>[0];
+
+  /** Records every emit so a test can assert on payload, not on a spy call count. */
+  function recorder(): SyncTelemetry & { started: Started[]; completed: Completed[] } {
+    const started: Started[] = [];
+    const completed: Completed[] = [];
+    return {
+      started,
+      completed,
+      syncStarted: (e) => started.push(e),
+      syncCompleted: (e) => completed.push(e),
+    };
+  }
+
+  async function ownerId(): Promise<string> {
+    const [row] = await db
+      .select({ userId: mailboxAccounts.userId })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+    return row!.userId;
+  }
+
+  it('emits real counts and a real duration — the numbers the FE funnel could never know', async () => {
+    const syncTelemetry = recorder();
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+      syncTelemetry,
+    });
+
+    const result = await worker.processJob({ mailboxAccountId }, CTX);
+
+    expect(syncTelemetry.started).toHaveLength(1);
+    expect(syncTelemetry.completed).toHaveLength(1);
+    const done = syncTelemetry.completed[0]!;
+    // The whole point of moving the emitter server-side: the FE fires
+    // `messages_indexed: -1` and a `null` sync id because the D224 poll
+    // carries neither.
+    expect(done.messagesIndexed).toBe(result.messagesSynced);
+    expect(done.messagesIndexed).toBe(6);
+    expect(done.outcome).toBe('success');
+    expect(done.syncId).toBeTruthy();
+    expect(done.durationMs).toBeGreaterThanOrEqual(0);
+    // Server and browser events must resolve to ONE person: the FE calls
+    // `identifyUser(internalUserUuid)`, so the distinct id is that uuid —
+    // never the mailbox id, never an email address.
+    expect(done.userId).toBe(await ownerId());
+    // start and completion pair on the same attempt.
+    expect(syncTelemetry.started[0]!.syncId).toBe(done.syncId);
+    expect(syncTelemetry.started[0]!.mailboxAccountId).toBe(mailboxAccountId);
+  });
+
+  it('reports `partial` when Gmail refused metadata — never `success` over a known gap', async () => {
+    const syncTelemetry = recorder();
+    const messages = makeMessages(6, 2);
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(messages, '987654', new Set(['msg-3']))),
+      syncTelemetry,
+    });
+
+    const result = await worker.processJob({ mailboxAccountId }, CTX);
+
+    // One unreadable message is under MIN_UNREADABLE_FOR_SYSTEMIC, so the
+    // sync correctly finishes — but the index is 5 of 6, and calling that
+    // `success` is the surface asserting a completeness it does not have.
+    expect(result.unreadable).toBe(1);
+    expect(result.messagesSynced).toBe(5);
+    expect(syncTelemetry.completed[0]!.outcome).toBe('partial');
+    expect(syncTelemetry.completed[0]!.messagesIndexed).toBe(5);
+  });
+
+  it('emits NOTHING for a duplicate enqueue — a designed no-op is not a sync', async () => {
+    // A no-op counted as a run would deflate duration percentiles (it
+    // returns in ms) and, if it emitted `started` without `completed`,
+    // would invent a failure that never happened.
+    const syncTelemetry = recorder();
+    const deps = {
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+      syncTelemetry,
+    };
+    const worker = new InitialSyncWorker(deps);
+
+    await worker.processJob({ mailboxAccountId }, CTX);
+    const second = await worker.processJob({ mailboxAccountId }, CTX);
+
+    expect(second.alreadyReady).toBe(true);
+    expect(syncTelemetry.started).toHaveLength(1);
+    expect(syncTelemetry.completed).toHaveLength(1);
+  });
+
+  it('emits `failed` on terminal failure, pairing with the attempt that started it', async () => {
+    const syncTelemetry = recorder();
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(2, 1))),
+      outbox: new OutboxPublisher(),
+      syncTelemetry,
+    });
+    const boom = new Error('quota exceeded');
+    boom.name = 'GmailQuotaError';
+
+    await (
+      worker as unknown as {
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, boom, CTX);
+
+    expect(syncTelemetry.completed).toHaveLength(1);
+    const done = syncTelemetry.completed[0]!;
+    expect(done.outcome).toBe('failed');
+    // Genuinely unknown: rows fetched before the failure are still in
+    // `mail_messages`, and counting them would mean a scan on the failure
+    // path. `-1` is the taxonomy's documented unknown, not a guess.
+    expect(done.messagesIndexed).toBe(-1);
+    expect(done.userId).toBe(await ownerId());
+    // Same CTX ⇒ same sync id, so a failed run joins to its own start.
+    expect(done.syncId).toContain(CTX.jobId);
+  });
+
+  it('still records the failed state when telemetry throws — the sink is never load-bearing', async () => {
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(2, 1))),
+      syncTelemetry: {
+        syncStarted: () => {
+          throw new Error('posthog down');
+        },
+        syncCompleted: () => {
+          throw new Error('posthog down');
+        },
+      },
+    });
+
+    await (
+      worker as unknown as {
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, new Error('x'), CTX);
+
+    const [state] = await db.select().from(providerSyncState);
+    expect(state?.readinessStatus).toBe('failed');
+  });
+
+  it('a throwing telemetry sink does not fail an otherwise-successful sync', async () => {
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+      syncTelemetry: {
+        syncStarted: () => {
+          throw new Error('posthog down');
+        },
+        syncCompleted: () => {
+          throw new Error('posthog down');
+        },
+      },
+    });
+
+    const result = await worker.processJob({ mailboxAccountId }, CTX);
+
+    expect(result.messagesSynced).toBe(6);
     const [state] = await db.select().from(providerSyncState);
     expect(state?.readinessStatus).toBe('ready');
   });
