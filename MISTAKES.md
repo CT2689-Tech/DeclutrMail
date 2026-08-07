@@ -20,6 +20,50 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
+## 2026-08-06 — `git add -A <dir>` committed another session's uncommitted work
+
+**PR:** [#473](https://github.com/CT2689-Tech/DeclutrMail/pull/473)
+**Caught by:** Codex stop-time review ("commit 39e336d7 accidentally bundles unrelated onboarding/triage behavior")
+
+**What happened:** I staged with `git add -A apps/api docs/... FINDINGS.md
+MISTAKES.md`, intending "my files under apps/api". `-A` on a DIRECTORY
+takes everything modified under it, and this checkout had ~30 files of
+someone else's in-flight triage/onboarding work sitting uncommitted. Three
+of them — `onboarding.service.ts`, its spec, and `triage.read-service.ts`,
+180 lines — went into my commit and were pushed to the PR. Green CI said
+nothing, because their work compiles and passes.
+
+Two things made it invisible. Their changes were plausible neighbours of
+mine (same app, same layer), and I never read the commit's file list —
+`git show --stat` after committing would have shown three files I had
+never opened. I also had a signal and ignored its implication: earlier in
+the session the working copy was checked out to `main` by something I did
+not run, which I noted as a curiosity rather than as proof that another
+actor was using this checkout.
+
+The damage was worse than a noisy diff. Committing someone's uncommitted
+work also REMOVES it from their working tree — from their side it silently
+becomes "already committed, on a branch I don't own."
+
+**Correct approach:** stage explicit paths, never a directory, whenever
+the tree may hold work that is not yours: `git add path/a path/b`. Then
+read `git show --stat` before pushing and confirm every file is one you
+touched. Recovery here: back the hunks up to the scratchpad first
+(`git show <sha> -- <paths> > patch`), `git reset --soft HEAD~1`,
+`git restore --staged` the foreign paths, recommit, force-push the feature
+branch with `--force-with-lease`, then verify the restored working-tree
+diff matches the backup exactly.
+
+**Rule:** `git add -A` / `git add .` / `git add <dir>` are for a checkout
+you know is exclusively yours. In a shared or agent-driven checkout, stage
+FILES you named, and make `git show --stat` the last thing you read before
+`git push` — the file list is the only place this class of error is
+visible, since every test still passes.
+
+**Enforcement update:** none mechanisable here. The standing habit is the
+fix: explicit paths, then read the stat. Related: `[[gh-pr-close-switches-checkout]]`
+— same root, a checkout doing something you did not ask for.
+
 ## 2026-08-06 — Wrote my own privacy contract instead of reading the one we publish
 
 **PR:** [#473](https://github.com/CT2689-Tech/DeclutrMail/pull/473)
