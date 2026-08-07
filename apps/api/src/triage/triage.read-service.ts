@@ -134,17 +134,29 @@ function queueGoalPriority(ordering: TriageQueueOrdering) {
           OR ${senderPolicies.protectionReason} IS NOT NULL
           OR ${triageDecisions.verdict} = 'keep'
         THEN 0 ELSE 1 END`;
+    // Both cleanup orderings push `later` to the BACK, and that is
+    // load-bearing rather than tidy. This ORDER BY feeds a 50-row pool
+    // that onboarding then filters, and `later` is `insufficient_signal`
+    // which onboarding always drops. Ranking it first — as
+    // `promotions-first` did, bucketing `promotions AND (archive OR
+    // later)` together — filled all 50 slots with rows the caller was
+    // guaranteed to discard, so Step 5 rendered EMPTY on a mailbox with
+    // 1,443 emails of promotions cleanup available. A pool ordering that
+    // disagrees with its consumer's filter starves it silently; there is
+    // no error, just nothing.
     case 'newsletter-first':
       return sql`CASE
+        WHEN ${triageDecisions.verdict} = 'later' THEN 9
         WHEN ${triageDecisions.verdict} = 'unsubscribe' THEN 0
         WHEN ${senders.gmailCategory} = 'promotions' THEN 1
         ELSE 2 END`;
     case 'promotions-first':
       return sql`CASE
+        WHEN ${triageDecisions.verdict} = 'later' THEN 9
         WHEN ${senders.gmailCategory} = 'promotions'
-          AND ${triageDecisions.verdict} IN ('archive', 'later') THEN 0
+          AND ${triageDecisions.verdict} IN ('archive', 'unsubscribe') THEN 0
         WHEN ${senders.gmailCategory} = 'promotions' THEN 1
-        WHEN ${triageDecisions.verdict} IN ('archive', 'later') THEN 2
+        WHEN ${triageDecisions.verdict} IN ('archive', 'unsubscribe') THEN 2
         ELSE 3 END`;
     case 'actionable':
       return null;
