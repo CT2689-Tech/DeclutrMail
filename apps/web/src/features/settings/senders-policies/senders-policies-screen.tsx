@@ -96,15 +96,20 @@ export function SendersPoliciesScreen() {
           Protected senders
         </h1>
         <p style={{ fontSize: 13.5, color: color.fgSoft, marginTop: 6, maxWidth: 640 }}>
-          {/* Never "senders you've told us to leave alone": three of the
-              four protection_reason values are automatic (replied,
-              starred, gmail_important), and this list shows those rows
-              too — without saying which is which. Describe what
-              protection DOES, and name both ways in. */}
-          Automatic rules and bulk actions skip these senders, so their mail always reaches your
-          inbox. You can protect a sender yourself, and DeclutrMail also protects one when you reply
-          to them repeatedly, star their mail, or Gmail keeps marking it important. Turn protection
-          on or off from a sender&apos;s detail page.
+          {/* Two things this must NOT say. Not "senders you've told us to
+              leave alone" — three of the four protection_reason values are
+              automatic (replied, starred, gmail_important) and this list
+              shows those rows too. And not "their mail always reaches your
+              inbox" — protection is a guard on OUR bulk and automatic
+              actions (actions.service.ts:748), not a delivery guarantee:
+              Gmail's own filters, spam and categories are outside our
+              reach, and a single action the user takes still applies.
+              Describe the guard, not an outcome we do not control. */}
+          DeclutrMail&apos;s bulk and automatic actions skip these senders — it won&apos;t archive,
+          delete, or unsubscribe them on its own. An action you take on one sender yourself still
+          applies. You can protect a sender, and DeclutrMail also protects one when you reply
+          repeatedly, star their mail, or Gmail keeps marking it important. Turn protection on or
+          off from a sender&apos;s detail page.
         </p>
       </div>
 
@@ -144,7 +149,7 @@ export function SendersPoliciesScreen() {
                 margin: '4px 0 0',
               }}
             >
-              Auto-rules skip these senders. Mail always lands in your inbox.
+              Bulk and automatic actions skip these senders.
             </p>
           </div>
           <span
