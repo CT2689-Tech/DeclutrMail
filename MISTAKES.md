@@ -20,10 +20,10 @@ later, or an approach turns out wrong.
 ---
 
 <!-- Entries go below. Newest at the top. -->
-## 2026-08-06 — Patched an event into existence twice before admitting it could not be emitted
+## 2026-08-06 — Patched an event into existence twice, then made the same overclaim about its replacement
 
 **PR:** [#473](https://github.com/CT2689-Tech/DeclutrMail/pull/473)
-**Caught by:** Codex stop-time review, three consecutive rounds — after CI green and after a passing dev smoke each time
+**Caught by:** Codex stop-time review, four consecutive rounds — after CI green and after a passing dev smoke each time
 
 **What happened:** New server-side sync telemetry. Round one: the failure
 emit sat in a `finally` whose commit message read *"a failure dashboard
@@ -51,6 +51,17 @@ would invent a failure that never happened"* — one screen above the code
 committing it. I tested the case I had argued about and none of the cases
 that same argument covered.
 
+Round four is the one worth keeping. Having deleted `sync_started` for
+being unable to fire exactly once, I wrote that `sync_completed` fires
+"exactly once per run" — in the taxonomy, in the interface docblock, and
+in the PR body. It does not. BullMQ re-delivers a job whose lock lapsed,
+and on a long sync a second worker gets past the `alreadyReady` guard
+before the first marks ready, so both emit; a hard kill mid-attempt emits
+nothing. I had just spent three rounds learning that a worker cannot
+promise once-per-run, and then promised it about the surviving event in
+the same breath — the delivery semantics of fire-and-forget telemetry from
+a killable process were never once-per-run for either event.
+
 **Correct approach:** delete the event rather than patch its placement a
 third time. `sync_completed` alone carries outcome, real duration, real
 counts and the finishing `attempt`; runs that begin and never finish
@@ -59,15 +70,22 @@ already belong to `scripts/check-sync-stuck.sh`, which reads
 anchored to `job.timestamp` (`WorkerContext.enqueuedAt`) so the id names a
 run rather than an attempt, and the owner lookup is best-effort
 (`userId: string | null`) so a database incident costs the person-level
-join and not the event.
+join and not the event. For round four: state the delivery contract
+honestly (at-least-once-ish), require `COUNT(DISTINCT sync_id)`, and
+resolve disagreeing duplicates pessimistically so one can never hide a
+failure. The `enqueuedAt` anchor is what makes that dedup sound.
 
 **Rule:** when a comment or commit message claims a guarantee ("always
-counted", "never blocks", "survives X"), the very next move is a test that
-starves the mechanism the guarantee rests on — a guarantee with no test
-for its own failure mode is a wish. And when the second placement of a
-signal fails the way the first did with the sign flipped, stop moving it:
-that is the shape of a signal the layer cannot produce, and the fix is to
-delete it and name the surface that can.
+counted", "never blocks", "exactly once", "survives X"), the very next
+move is a test that starves the mechanism the guarantee rests on — a
+guarantee with no test for its own failure mode is a wish. When the second
+placement of a signal fails the way the first did with the sign flipped,
+stop moving it: that is a signal the layer cannot produce, and the fix is
+to delete it and name the surface that can. And a delivery guarantee is
+never a property of the emitting code alone — it is a property of the
+emitter, its transport, and how the process can die; fire-and-forget from
+a killable worker is at-least-once at best, so publish the dedup key and
+the aggregation rule alongside the event instead of a promise.
 
 **Enforcement update:** structural test asserts `SyncTelemetry` exposes
 `syncCompleted` only, so re-adding a start reopens the class loudly rather

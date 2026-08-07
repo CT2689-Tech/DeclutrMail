@@ -1731,7 +1731,13 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     expect(syncTelemetry.completed[0]!.outcome).toBe('success');
   });
 
-  it('sync id names the RUN, not the attempt — it does not move when the attempt does', async () => {
+  it('a duplicate emission for one run reuses its sync id, so COUNT(DISTINCT) collapses it', async () => {
+    // Delivery is at-least-once, not exactly-once: BullMQ re-delivers a
+    // job whose lock lapsed, and on a long sync a second worker can get
+    // past the `alreadyReady` guard before the first marks ready. Both
+    // emit. That is tolerable ONLY because the id is anchored to
+    // `enqueuedAt` — an id built on the per-attempt `startedAt` would make
+    // the duplicate look like a second run and double-count it.
     const syncTelemetry = recorder();
     const worker = new InitialSyncWorker({
       db,
@@ -1739,10 +1745,8 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
       syncTelemetry,
     });
 
-    // Same job, later attempt: `attempt` and `startedAt` both move and
-    // only `enqueuedAt` holds still. An id built on `startedAt` would name
-    // an attempt while claiming to name a run, so the same run's rows
-    // would not join to each other.
+    // Two passes over the same job — `attempt` and `startedAt` both move,
+    // only `enqueuedAt` holds still.
     await worker.processJob({ mailboxAccountId }, { ...CTX, attempt: 1 });
     await resetToQueued(db, mailboxAccountId);
     await worker.processJob(
@@ -1752,6 +1756,7 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
 
     expect(syncTelemetry.completed).toHaveLength(2);
     expect(syncTelemetry.completed[1]!.syncId).toBe(syncTelemetry.completed[0]!.syncId);
+    expect(new Set(syncTelemetry.completed.map((c) => c.syncId)).size).toBe(1);
   });
 
   it('emits the failed run even when the database is down — attribution is optional, the event is not', async () => {

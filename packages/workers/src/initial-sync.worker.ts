@@ -102,8 +102,35 @@ const SCAN_PAGE = 1000;
  * against `provider_sync_state` — stateful and authoritative, where a
  * fire-and-forget event never could be. The browser still emits
  * `sync_started` for the perceived-wait view. If the `sync_runs` table
- * lands (open D-candidate, FOUNDER-FOLLOWUPS 2026-05-22) a start becomes
- * emittable exactly once, on the row insert.
+ * lands (open D-candidate, FOUNDER-FOLLOWUPS 2026-05-22) the ROW insert
+ * gives a start a once-per-run anchor — the row would be exactly-once
+ * even though emitting from it still would not be, which is the whole
+ * reason a durable row beats an event here.
+ *
+ * **Delivery is at-least-once-ish, NOT exactly-once — analysis must
+ * `COUNT(DISTINCT sync_id)`.** This is fire-and-forget telemetry emitted
+ * from a process that can be killed, so claiming exactly-once would be the
+ * same overclaim this whole seam exists to remove. Three deviations, none
+ * of them fixable from inside a worker:
+ *
+ *   - DUPLICATE. BullMQ re-delivers a job whose lock lapsed. On a long
+ *     sync a second worker can get past the `alreadyReady` guard before
+ *     the first marks ready, and both emit. Same job, same `job.timestamp`
+ *     ⇒ same `syncId`, which is exactly why the id is anchored there.
+ *   - DUPLICATE, DISAGREEING. `processJob` emits `success`, then base-class
+ *     code after it throws on the final attempt, so `onTerminalFailure`
+ *     emits `failed` for the same run. Essentially unreachable — that code
+ *     is a result projection and a log line — but it is not impossible.
+ *     Resolve duplicates pessimistically (`failed` > `partial` >
+ *     `success`) so a duplicate can never hide a failure.
+ *   - ZERO. A hard kill (SIGKILL, revision swap) mid-attempt returns from
+ *     neither path. `scripts/check-sync-stuck.sh` is what notices those,
+ *     by reading state rather than waiting for an event.
+ *
+ * Making it truly exactly-once needs durable per-run dedup — a Redis
+ * SETNX or the `sync_runs` row. Both put telemetry behind an
+ * infrastructure dependency whose outage would silence it, which is the
+ * failure this seam already had to fix once for the database.
  *
  * Privacy (D7, D228): counts, outcomes and durations only. `userId` is the
  * internal UUID — the same identifier `identifyUser()` sends from the
@@ -131,7 +158,7 @@ export interface SyncTelemetry {
     /**
      * Which BullMQ attempt finished the run. `> 1` means it was retried —
      * the signal the removed `sync_started` was reaching for, carried on
-     * the one event that can be emitted exactly once.
+     * the event that survives a retry instead of being orphaned by one.
      */
     attempt: number;
     /**
@@ -360,6 +387,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * for `perMailboxPolicy` it IS the mailbox id, repeated for every sync
    * that mailbox ever runs. The pair is the only combination that is both
    * stable across retries and unique per enqueue.
+   *
+   * That stability is also what makes the event's at-least-once delivery
+   * safe to aggregate: a re-delivered job carries the same `jobId` AND the
+   * same `job.timestamp`, so a duplicate emission collapses under
+   * `COUNT(DISTINCT sync_id)` rather than double-counting the run. See
+   * `SyncTelemetry` for the full delivery contract.
    *
    * Deliberately not a UUID. The taxonomy described `sync_id` as
    * `syncs.id`, but no `syncs` table exists: `provider_sync_state` is

@@ -148,6 +148,18 @@ to `scripts/check-sync-stuck.sh`, which reads `provider_sync_state` and is
 stateful enough to know. The browser still emits `sync_started` for the
 perceived-wait view.
 
+**Then the same overclaim turned up in the surviving event.** I had written
+that `sync_completed` fires "exactly once per run". It does not: BullMQ
+re-delivers a job whose lock lapsed and both workers can emit; a hard kill
+mid-attempt emits nothing. Delivery is documented as at-least-once-ish, every
+query must `COUNT(DISTINCT sync_id)`, and duplicates resolve pessimistically
+(`failed` > `partial` > `success`) so one can never hide a failure. The
+`enqueuedAt` anchor is what makes that dedup work — a re-delivered job carries
+the same id. True exactly-once needs durable per-run dedup (Redis SETNX or the
+`sync_runs` row), which would put telemetry behind an infrastructure
+dependency whose outage silences it — the failure already fixed here once for
+the database.
+
 **Priority:** P1
 **Status:** In progress (#473)
 

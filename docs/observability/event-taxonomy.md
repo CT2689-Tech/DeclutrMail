@@ -150,7 +150,9 @@ dashboards ask. Runs that begin and never finish are detected by
 `scripts/check-sync-stuck.sh` against `provider_sync_state` — stateful
 and authoritative, where a fire-and-forget event never could be. If the
 `sync_runs` table lands (open D-candidate, FOUNDER-FOLLOWUPS 2026-05-22)
-a start becomes emittable exactly once, on the row insert.
+the ROW insert gives a start a once-per-run anchor — the row would be
+exactly-once even though emitting from it still would not be, which is
+precisely why a durable row beats an event for this signal.
 
 **Payload.**
 
@@ -168,8 +170,8 @@ a start becomes emittable exactly once, on the row insert.
 **When fired.** Two emitters, discriminated by `sync_id` (non-null =
 server).
 
-**Server-side (`InitialSyncWorker`, authoritative).** Exactly once per
-run: on the ready transition, or on terminal failure from
+**Server-side (`InitialSyncWorker`, authoritative).** Once per run in the
+normal case: on the ready transition, or on terminal failure from
 `onTerminalFailure`. The failure emit sits inside a `finally` so a failed
 run still lands in the success rate even when recording it threw — a
 dashboard that under-counts failures precisely when the database is
@@ -180,6 +182,24 @@ Designed no-ops emit nothing — inactive mailbox, deletion-paused,
 duplicate enqueue of an already-`ready` mailbox. Each returns in
 milliseconds without touching Gmail, so counting them as runs would
 deflate the duration percentiles.
+
+> **Delivery is at-least-once-ish, not exactly-once. Every query MUST
+> `COUNT(DISTINCT sync_id)`, never `COUNT(*)`.**
+>
+> This is fire-and-forget telemetry from a process that can be killed, so
+> an exactly-once claim would be the same overclaim this event exists to
+> remove. Three deviations, none fixable from inside a worker:
+>
+> | Deviation              | Cause                                                                                                                                                                    | Effect on analysis                                                                                              |
+> | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+> | Duplicate              | BullMQ re-delivers a job whose lock lapsed; on a long sync a second worker gets past the `alreadyReady` guard before the first marks ready. Same `sync_id`.              | Collapses under `COUNT(DISTINCT sync_id)`                                                                       |
+> | Duplicate, disagreeing | `processJob` emits `success`, then base-class code after it throws on the final attempt and `onTerminalFailure` emits `failed`. Essentially unreachable, not impossible. | Resolve pessimistically: `failed` > `partial` > `success`, so a duplicate can never hide a failure              |
+> | Zero                   | Hard kill (SIGKILL, revision swap) mid-attempt — neither path returns.                                                                                                   | Invisible here; `scripts/check-sync-stuck.sh` is what notices, by reading state instead of waiting for an event |
+>
+> Making it truly exactly-once needs durable per-run dedup — a Redis
+> SETNX or the `sync_runs` row. Both put telemetry behind an
+> infrastructure dependency whose outage would silence it, which is the
+> failure this event already had to fix once for the database.
 
 **Client-side (supplementary).** On an observed transition into `ready`
 (`success`) or `failed` — only AFTER an observed start (never an unpaired
@@ -220,9 +240,11 @@ It identifies a RUN, not an attempt. `enqueuedAt` is the only field both
 stable across BullMQ retries and unique per enqueue — the mailbox id
 alone repeats for every sync that mailbox ever runs, and the attempt's
 `startedAt` moves on each retry, which would name an attempt while
-claiming to name a run. A `sync_runs` history table remains an open
-D-candidate (FOUNDER-FOLLOWUPS, 2026-05-22); if it lands, `sync_id`
-becomes its PK.
+claiming to name a run. That stability is also what makes the delivery
+contract above workable — a re-delivered job carries the same `jobId` and
+the same `job.timestamp`, so a duplicate collapses instead of
+double-counting. A `sync_runs` history table remains an open D-candidate
+(FOUNDER-FOLLOWUPS, 2026-05-22); if it lands, `sync_id` becomes its PK.
 
 **Distinct id.** Server fires use the mailbox owner's internal user UUID —
 the same value the browser sends via `identifyUser()` — so FE and BE
@@ -237,7 +259,9 @@ and duration. Only the person-level join is lost.
 
 **Retention / aggregation.** 90 days raw. Powers sync-success-rate and
 sync-duration-p50/p95 dashboards — filter to non-null `sync_id` for real
-sync numbers, and to null `sync_id` for the perceived-wait view.
+sync numbers, and to null `sync_id` for the perceived-wait view. Server
+rows are deduplicated on `sync_id` first, per the delivery contract above;
+a `COUNT(*)` over them is wrong, not merely imprecise.
 
 ### `triage_action_taken`
 
