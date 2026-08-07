@@ -141,6 +141,8 @@ export {
   subscriptions,
 } from './schema/subscriptions';
 export type { NewSubscription, Subscription } from './schema/subscriptions';
+export { syncRunStatus, syncRuns } from './schema/sync-runs';
+export type { NewSyncRun, SyncRun } from './schema/sync-runs';
 export { triageDecisions, triageReasoningSource, triageVerdict } from './schema/triage-decisions';
 export type {
   NewTriageDecision,

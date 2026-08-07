@@ -7,18 +7,20 @@ import {
   actionJobs,
   automationRules,
   mailboxAccounts,
+  mailboxDataDeletionRequests,
   mailMessages,
   outboxEvents,
   providerSyncState,
   ruleMatchLog,
   schema,
   senders,
+  syncRuns,
   users,
   workspaces,
 } from '@declutrmail/db';
 import { TOPICS } from '@declutrmail/events';
 import { drizzle } from 'drizzle-orm/pglite';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyAutomaticProtection } from './automatic-protection.js';
@@ -1431,9 +1433,13 @@ describe('InitialSyncWorker — mailbox.sync_failed outbox publish (D162/D224)',
     boom.name = 'GmailQuotaError';
     await (
       worker as unknown as {
-        onTerminalFailure(p: { mailboxAccountId: string }, e: Error): Promise<void>;
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
       }
-    ).onTerminalFailure({ mailboxAccountId }, boom);
+    ).onTerminalFailure({ mailboxAccountId }, boom, CTX);
 
     const [state] = await db.select().from(providerSyncState);
     expect(state?.readinessStatus).toBe('failed');
@@ -1461,9 +1467,13 @@ describe('InitialSyncWorker — mailbox.sync_failed outbox publish (D162/D224)',
     });
     await (
       worker as unknown as {
-        onTerminalFailure(p: { mailboxAccountId: string }, e: Error): Promise<void>;
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
       }
-    ).onTerminalFailure({ mailboxAccountId }, new Error('x'));
+    ).onTerminalFailure({ mailboxAccountId }, new Error('x'), CTX);
     const [state] = await db.select().from(providerSyncState);
     expect(state?.readinessStatus).toBe('failed');
     expect(await db.select().from(outboxEvents)).toHaveLength(0);
@@ -1567,5 +1577,226 @@ describe('InitialSyncWorker — mailbox.sync_ready outbox publish (U14)', () => 
     expect(await db.select().from(outboxEvents)).toHaveLength(0);
     const [state] = await db.select().from(providerSyncState);
     expect(state?.readinessStatus).toBe('ready');
+  });
+});
+
+/**
+ * `sync_runs` per-run history (F002).
+ *
+ * `provider_sync_state` is overwritten by every run, so none of these
+ * facts survive it. The 2026-08-06 incident needed a prod DB query
+ * precisely because the history did not exist.
+ */
+describe('InitialSyncWorker — sync_runs history (F002)', () => {
+  let db: InitialSyncDeps['db'];
+  let mailboxAccountId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxAccountId = await seedMailbox(db);
+  });
+
+  it('a successful run writes ONE row carrying the same numbers the result does', async () => {
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+      outbox: new OutboxPublisher(),
+    });
+    const result = await worker.processJob({ mailboxAccountId }, CTX);
+
+    const runs = await db.select().from(syncRuns);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      mailboxAccountId,
+      status: 'succeeded',
+      attempts: CTX.attempt,
+      messagesSynced: result.messagesSynced,
+      unreadable: result.unreadable,
+      sendersIndexed: result.sendersIndexed,
+      finalAttemptGmailApiCalls: result.gmailApiCalls,
+      errorCode: null,
+    });
+    // One run, one duration. The row is written before the ready commit
+    // and the result is returned after it, so timing them separately
+    // would leave two different answers to "how long did that sync take".
+    expect(runs[0]!.finalAttemptDurationMs).toBe(result.durationMs);
+    expect(runs[0]!.finalAttemptStageTimings).toEqual(result.stageTimings);
+  });
+
+  it('a failed run leaves every metric NULL — 0 would claim it synced nothing', async () => {
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(2, 1))),
+      outbox: new OutboxPublisher(),
+    });
+    const boom = new Error('quota exceeded');
+    boom.name = 'GmailQuotaError';
+    await (
+      worker as unknown as {
+        onTerminalFailure(
+          p: { mailboxAccountId: string },
+          e: Error,
+          c: WorkerContext,
+        ): Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId }, boom, { ...CTX, attempt: 5 });
+
+    const runs = await db.select().from(syncRuns);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      status: 'failed',
+      errorCode: 'GmailQuotaError',
+      attempts: 5,
+    });
+    // The distinction the whole nullable-column choice exists for: a run
+    // that threw reports UNKNOWN counts, not zero ones. A partially
+    // synced mailbox that failed at 60k messages must never read as a
+    // mailbox that synced none.
+    expect(runs[0]!.messagesSynced).toBeNull();
+    expect(runs[0]!.unreadable).toBeNull();
+    expect(runs[0]!.sendersIndexed).toBeNull();
+    expect(runs[0]!.finalAttemptGmailApiCalls).toBeNull();
+    expect(runs[0]!.finalAttemptDurationMs).toBeNull();
+    expect(runs[0]!.finalAttemptStageTimings).toBeNull();
+  });
+
+  it('a duplicate enqueue after ready is recorded, not silent — "I retried and nothing happened"', async () => {
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+      outbox: new OutboxPublisher(),
+    });
+    await worker.processJob({ mailboxAccountId }, CTX); // run A → ready
+    await worker.processJob({ mailboxAccountId }, CTX); // run B → no-op
+
+    const runs = await db.select().from(syncRuns).orderBy(syncRuns.finishedAt);
+    expect(runs.map((r) => r.status)).toEqual(['succeeded', 'skipped_already_ready']);
+    // The no-op measured nothing but the guard check itself.
+    expect(runs[1]!.messagesSynced).toBeNull();
+    expect(runs[1]!.finalAttemptDurationMs).not.toBeNull();
+  });
+
+  it('a deletion-paused run is recorded with its own status (D232)', async () => {
+    await db.insert(mailboxDataDeletionRequests).values({ mailboxAccountId, status: 'pending' });
+    const getClient = vi.fn(async () => {
+      throw new Error('deletion-paused sync must not request a Gmail client');
+    });
+
+    const result = await new InitialSyncWorker({ db, gmailAccess: { getClient } }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+
+    expect(result.deletionPaused).toBe(true);
+    const runs = await db.select().from(syncRuns);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.status).toBe('skipped_deletion_pending');
+  });
+
+  it('a disconnected mailbox writes NO row — "the mailbox is gone" is not a fact about a sync', async () => {
+    await db
+      .update(mailboxAccounts)
+      .set({ status: 'disconnected' })
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+
+    const result = await new InitialSyncWorker({
+      db,
+      gmailAccess: {
+        getClient: vi.fn(async () => {
+          throw new Error('disconnected sync must not request a Gmail client');
+        }),
+      },
+    }).processJob({ mailboxAccountId }, CTX);
+
+    expect(result.mailboxInactive).toBe(true);
+    expect(await db.select().from(syncRuns)).toHaveLength(0);
+  });
+
+  it('separates the two scales: counts are cumulative, timing and API calls are the final attempt only', async () => {
+    // The defect this naming exists to prevent (Codex stop-review
+    // 2026-08-06). The sync is resumable, so a later attempt skips every
+    // message already stored: its own `gmailApiCalls` collapses while
+    // `messagesSynced` still describes the whole mailbox. Recorded under
+    // a bare `duration_ms` / `gmail_api_calls` the row would INVERT —
+    // the more attempts a struggling mailbox burns, the cheaper and
+    // faster its last one looks, so "is sync getting slower for this
+    // account" answers *faster* as the account degrades.
+    const worker = () =>
+      new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+        outbox: new OutboxPublisher(),
+      });
+    await worker().processJob({ mailboxAccountId }, CTX);
+    await resetToQueued(db, mailboxAccountId);
+    await worker().processJob({ mailboxAccountId }, CTX);
+
+    const [first, second] = await db.select().from(syncRuns).orderBy(syncRuns.finishedAt);
+
+    // Cumulative — the mailbox is the same size both times.
+    expect(second!.messagesSynced).toBe(first!.messagesSynced);
+    expect(second!.sendersIndexed).toBe(first!.sendersIndexed);
+
+    // Per-attempt — the resume re-fetched nothing, so its call count
+    // collapses. Nothing named for the whole run may move like this.
+    expect(second!.finalAttemptGmailApiCalls!).toBeLessThan(first!.finalAttemptGmailApiCalls!);
+    expect(second!.finalAttemptGmailApiCalls!).toBeLessThan(second!.messagesSynced!);
+  });
+
+  it('a broken history write must NOT block the failed state — the user would sit on a spinner', async () => {
+    // Found by this feature's own smoke: a worker running pre-rename code
+    // wrote to renamed columns, the insert threw INSIDE the failed-state
+    // transaction, and the rollback took the `failed` upsert with it. The
+    // mailbox wedged at syncing/finalizing/97% — neither ready nor
+    // failed, no error anywhere the user could see. `sync_runs` is
+    // telemetry; `provider_sync_state` is what the onboarding gate
+    // renders. Telemetry never blocks it.
+    await db.execute(sql`DROP TABLE sync_runs`);
+    const captured: string[] = [];
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(2, 1))),
+      outbox: new OutboxPublisher(),
+    });
+    worker.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (_err, ctx) => captured.push(ctx.kind),
+    });
+
+    const boom = new Error('quota exceeded');
+    boom.name = 'GmailQuotaError';
+    await expect(
+      (
+        worker as unknown as {
+          onTerminalFailure(
+            p: { mailboxAccountId: string },
+            e: Error,
+            c: WorkerContext,
+          ): Promise<void>;
+        }
+      ).onTerminalFailure({ mailboxAccountId }, boom, CTX),
+    ).resolves.toBeUndefined();
+
+    const [state] = await db.select().from(providerSyncState);
+    expect(state?.readinessStatus).toBe('failed');
+    expect(state?.errorCode).toBe('GmailQuotaError');
+    // Lost, but never silently: it reaches the observer (Sentry in prod).
+    expect(captured).toEqual(['sync.sync_run_record_failed']);
+  });
+
+  it('a run that needed retries is ONE row carrying the attempt count, not one row per attempt', async () => {
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(4, 2))),
+      outbox: new OutboxPublisher(),
+    });
+    // Attempts 1 and 2 threw before reaching a terminal disposition, so
+    // they wrote nothing; BullMQ re-delivered and attempt 3 succeeded.
+    await worker.processJob({ mailboxAccountId }, { ...CTX, attempt: 3 });
+
+    const runs = await db.select().from(syncRuns);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.attempts).toBe(3);
+    expect(runs[0]!.status).toBe('succeeded');
   });
 });

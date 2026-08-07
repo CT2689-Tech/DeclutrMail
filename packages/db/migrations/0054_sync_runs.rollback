@@ -1,0 +1,12 @@
+-- Rollback for 0054_sync_runs.sql
+--
+-- A pure additive create: no existing table, column or enum is touched,
+-- so dropping both restores the prior schema exactly. The rows are lost
+-- with it — `sync_runs` is an operational history, not a source of
+-- truth for any product surface, and nothing reads it except an ops
+-- query. No user-visible state and no mail-moving side effect depends
+-- on a row here, which is what makes an unconditional DROP safe (unlike
+-- 0053, where restoring rows would have re-armed real actions).
+DROP TABLE IF EXISTS "sync_runs";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "sync_run_status";

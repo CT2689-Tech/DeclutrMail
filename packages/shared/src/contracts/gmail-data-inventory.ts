@@ -380,10 +380,10 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     category: 'derived',
     label: 'Mailbox processing, delivery, retry, and webhook deduplication records',
     fetchedFrom: ['message-identifiers', 'sender-identity', 'gmail-sync-state'],
-    storageRefs: ['outbox_events.*', 'dead_letter_jobs.*', 'webhook_dedup.*'],
+    storageRefs: ['outbox_events.*', 'dead_letter_jobs.*', 'webhook_dedup.*', 'sync_runs.*'],
     derived: true,
     purpose:
-      'Deliver background work once, recover failed jobs, and avoid processing the same Gmail notification twice.',
+      'Deliver background work once, recover failed jobs, avoid processing the same Gmail notification twice, and keep counts and timings for each mailbox sync so slow or failed syncs can be investigated.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
