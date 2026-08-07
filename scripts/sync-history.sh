@@ -63,13 +63,13 @@ SELECT
   mailbox_account_id,
   status,
   attempts,
-  COALESCE(duration_ms::text, 'n/a')      AS duration_ms,
-  COALESCE(messages_synced::text, 'n/a')  AS messages_synced,
-  COALESCE(unreadable::text, 'n/a')       AS unreadable,
-  COALESCE(senders_indexed::text, 'n/a')  AS senders_indexed,
-  COALESCE(gmail_api_calls::text, 'n/a')  AS gmail_api_calls,
-  COALESCE(stage_timings::text, 'n/a')    AS stage_timings,
-  COALESCE(error_code, '')                AS error_code
+  COALESCE(messages_synced::text, 'n/a')               AS messages_synced,
+  COALESCE(senders_indexed::text, 'n/a')               AS senders_indexed,
+  COALESCE(unreadable::text, 'n/a')                    AS unreadable,
+  COALESCE(final_attempt_duration_ms::text, 'n/a')     AS last_try_ms,
+  COALESCE(final_attempt_gmail_api_calls::text, 'n/a') AS last_try_api_calls,
+  COALESCE(final_attempt_stage_timings::text, 'n/a')   AS last_try_stages,
+  COALESCE(error_code, '')                             AS error_code
 FROM sync_runs
 ${FILTER}
 ORDER BY finished_at DESC
@@ -108,4 +108,8 @@ rm -f "$PSQL_ERR"
 printf "%s\n" "$OUT"
 echo ""
 echo "n/a = not measured (a failed run returns no counts), not zero."
+echo "messages_synced / senders_indexed are CUMULATIVE — the mailbox when the run ended."
+echo "last_try_* cover the final attempt ONLY. A resume re-fetches nothing, so on any"
+echo "row with attempts > 1 they are cheaper and faster than the run really was."
+echo "For whether an account is struggling, read attempts — not the timings."
 echo "In-flight and stuck syncs are NOT here — use ./scripts/check-sync-stuck.sh."

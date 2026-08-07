@@ -441,7 +441,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   /**
    * Record a run that ended without syncing anything (F002) — the two
    * designed no-ops. Metrics stay NULL because nothing was measured;
-   * only the duration of reaching the guard is real.
+   * only the time taken to reach the guard is real, and it belongs in
+   * the final-attempt column like every other timing here.
    *
    * Deliberately NOT best-effort. A failing insert here fails the job,
    * which retries and no-ops again — noisy, but a swallowed write would
@@ -458,7 +459,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       mailboxAccountId,
       status,
       attempts,
-      durationMs,
+      finalAttemptDurationMs: durationMs,
     });
   }
 
@@ -485,21 +486,6 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     error: Error,
     attempts: number,
   ): Promise<void> {
-    /**
-     * The `sync_runs` failure row (F002). Every metric stays NULL: the
-     * worker threw, so it returned no counts, and the only timing in
-     * scope here is the last ATTEMPT's — not the run's. Writing 0
-     * messages would assert this mailbox synced nothing, and writing an
-     * attempt's duration as the run's would be the same lie in a
-     * different column. NULL is the true value: not measured.
-     */
-    const runInsert = (tx: OutboxTx) =>
-      tx.insert(syncRuns).values({
-        mailboxAccountId,
-        status: 'failed',
-        attempts,
-        errorCode: error.name,
-      });
     const failedUpsert = (tx: OutboxTx) =>
       tx
         .insert(providerSyncState)
@@ -528,7 +514,6 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const outbox = this.deps.outbox;
     if (!outbox) {
       await failedUpsert(this.deps.db);
-      await runInsert(this.deps.db);
       console.warn(
         JSON.stringify({
           level: 'warn',
@@ -538,6 +523,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           reason: 'InitialSyncDeps.outbox not wired',
         }),
       );
+      await this.recordFailedRun(mailboxAccountId, error, attempts);
       return;
     }
 
@@ -553,7 +539,6 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
 
     await this.deps.db.transaction(async (tx) => {
       await failedUpsert(tx);
-      await runInsert(tx);
       await outbox.publish(tx, {
         topic: TOPICS.MAILBOX_SYNC_FAILED,
         aggregateId: mailboxAccountId,
@@ -566,6 +551,61 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         schema: MailboxSyncFailedPayloadSchema,
       });
     });
+    await this.recordFailedRun(mailboxAccountId, error, attempts);
+  }
+
+  /**
+   * The `sync_runs` failure row (F002) — written AFTER the failed-state
+   * transaction commits, and never allowed to throw.
+   *
+   * On success the row rides `markReady`'s transaction, because there the
+   * row and the outcome are the same fact: a completed run. Here they are
+   * not. The failure is already durable in `provider_sync_state`, in
+   * `dead_letter_jobs` and in Sentry, and the comment above this method
+   * states the rule the transactional version broke — the state write is
+   * the load-bearing half, and nothing may block it. It really can block
+   * it: a `sync_runs` insert that fails inside the transaction rolls back
+   * the `failed` upsert too, so the mailbox lands in NEITHER `ready` nor
+   * `failed` and the user sits on a spinner with no error. That is not
+   * theoretical — it happened during this feature's own smoke, when a
+   * worker running pre-rename code wrote to renamed columns and wedged a
+   * mailbox at `syncing/finalizing/97%`.
+   *
+   * Losing a history row is the strictly smaller harm, and it is not
+   * silent: the failure is logged and reported to the observer.
+   *
+   * Every metric stays NULL. The worker threw, so it returned no counts
+   * at all — writing 0 would assert this mailbox synced nothing, which is
+   * usually false.
+   */
+  private async recordFailedRun(
+    mailboxAccountId: string,
+    error: Error,
+    attempts: number,
+  ): Promise<void> {
+    try {
+      await this.deps.db.insert(syncRuns).values({
+        mailboxAccountId,
+        status: 'failed',
+        attempts,
+        errorCode: error.name,
+      });
+    } catch (err) {
+      const recordError = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'sync.sync_run_record_failed',
+          worker: this.workerName,
+          mailboxAccountId,
+          message: recordError.message,
+        }),
+      );
+      this.observer.captureBackgroundFailure(recordError, {
+        kind: 'sync.sync_run_record_failed',
+        tags: { worker: this.workerName },
+      });
+    }
   }
 
   /**
@@ -1490,12 +1530,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         mailboxAccountId,
         status: 'succeeded',
         attempts,
-        durationMs: run.durationMs,
+        // `messagesSynced` / `sendersIndexed` count the whole mailbox —
+        // a resume skips what is already stored, so they accumulate
+        // across attempts. Duration, API calls and stage timings are
+        // measured inside THIS attempt only, and the column names say so:
+        // recorded as whole-run numbers they would invert, since each
+        // retry resumes closer to done.
         messagesSynced: run.messagesSynced,
-        unreadable: run.unreadable,
         sendersIndexed: run.sendersIndexed,
-        gmailApiCalls: run.gmailApiCalls,
-        stageTimings: run.stageTimings,
+        unreadable: run.unreadable,
+        finalAttemptDurationMs: run.durationMs,
+        finalAttemptGmailApiCalls: run.gmailApiCalls,
+        finalAttemptStageTimings: run.stageTimings,
       });
     const readyUpsert = (tx: OutboxTx) =>
       tx

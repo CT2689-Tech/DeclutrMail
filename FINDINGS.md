@@ -240,9 +240,10 @@ exactly when a sync failed.
 What shipped:
 
 - `sync_runs` (migration 0054) — one row per FINISHED `InitialSyncWorker` run:
-  status, attempts, duration, messages synced, unreadable, senders indexed,
-  Gmail API calls, per-stage timings, error class. RLS on, FK cascade, and
-  wired into the mailbox purge registry so a data-deletion request erases it.
+  status, attempts, messages synced, senders indexed, unreadable, and the
+  final attempt's duration / Gmail API calls / per-stage timings, plus the
+  error class. RLS on, FK cascade, and wired into the mailbox purge registry so
+  a data-deletion request erases it.
 - **No `running` status, by design.** A start-then-update row needs a run
   identity that survives BullMQ retries, and every candidate (attempt number,
   enqueue timestamp, "the open row for this mailbox") either mis-keys a retry
@@ -253,12 +254,32 @@ What shipped:
 - **Metrics are nullable.** NULL = not measured; 0 = measured zero. A failed
   run writes NULL because the worker returns no partial counts — writing 0
   would claim a mailbox that died at 60k messages synced none.
+- **Two scales, and the column names say which** (Codex stop-review caught the
+  first cut storing final-attempt numbers as whole-run history). The sync is
+  resumable, so a retry skips everything already stored: `messages_synced` /
+  `senders_indexed` are cumulative across attempts, while duration, API calls
+  and stage timings only ever cover the attempt that finished — hence
+  `final_attempt_*`. Under a bare `duration_ms` the number would have
+  **inverted**: each retry resumes closer to done, so a mailbox needing four
+  attempts records a shorter duration than one that succeeded first try, and
+  "is sync getting slower for this account" answers _faster_ as it degrades.
+  For whether an account is struggling, read `attempts`. Real numbers from the
+  smoke make the split obvious: `messages_synced 1176` against
+  `final_attempt_gmail_api_calls 4`.
+- **A broken history write cannot block the failed state.** The success row
+  rides `markReady`'s transaction because there the row and the outcome are the
+  same fact. The failure row does not: it is written after the failed-state
+  transaction commits, and never throws. This feature's own smoke proved why —
+  a worker running pre-rename code wrote to renamed columns, the insert threw
+  inside the transaction, and the rollback took the `failed` upsert with it,
+  wedging a mailbox at `syncing/finalizing/97%` with no error the user could
+  see. Losing a telemetry row is the smaller harm, and it still reaches Sentry.
 - The two designed no-ops are recorded (`skipped_deletion_pending`,
   `skipped_already_ready`) because "I retried that account and nothing
   happened" is a real support question and those are its two answers.
 - [scripts/sync-history.sh](scripts/sync-history.sh) — the reader.
   `./scripts/sync-history.sh 20 [mailbox-uuid]`, printing `n/a` for unmeasured
-  rather than 0.
+  rather than 0, and labelling which columns are per-attempt.
 - Earlier, in PR #473: `unreadable` on `InitialSyncResult` + the
   `worker.succeeded` allowlist, and the taxonomy corrections this work
   surfaced (`sync_id` was never a `syncs.id` UUID; both sync events are

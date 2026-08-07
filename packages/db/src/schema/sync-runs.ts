@@ -53,9 +53,24 @@ import { mailboxAccounts } from './mailbox-accounts';
  * NULL MEANS NOT MEASURED, 0 MEANS MEASURED ZERO. A failed run carries
  * NULL metrics because the worker returns no partial counts when it
  * throws — writing 0 would assert a mailbox synced nothing, which is
- * usually false. `duration_ms` is NULL on failure for the same reason:
- * the only timing available at that point is the last ATTEMPT's, not
- * the run's, and labelling one as the other is the same lie.
+ * usually false.
+ *
+ * TWO SCALES, AND THE COLUMN NAMES SAY WHICH. The sync is resumable
+ * (D5): a retry skips every message already stored. So `messagesSynced`
+ * / `sendersIndexed` describe the MAILBOX at the end of the run —
+ * cumulative across attempts — while timing and API calls are only ever
+ * accumulated inside the attempt that finished.
+ *
+ * Storing the latter under a bare `durationMs` would not merely be
+ * vague, it would INVERT. Each retry resumes closer to done, so a
+ * mailbox that needed four attempts records a shorter duration than one
+ * that succeeded first try, and the question this table exists to answer
+ * — "is sync getting slower for this account?" — would answer *faster*
+ * as the account degrades. Hence the `finalAttempt` prefix.
+ *
+ * For whether an account is struggling, read `attempts`. A true
+ * enqueue-to-finish duration would need BullMQ's `job.timestamp` on
+ * `WorkerContext`, which no worker carries today.
  *
  * The two `skipped_*` statuses are designed no-ops, not failures — a
  * mailbox paused for account deletion (D232) and a duplicate enqueue
@@ -90,20 +105,26 @@ export const syncRuns = pgTable(
     finishedAt: timestamp('finished_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
-    /** Wall-clock ms, stage 1 start → ready. NULL on failure (unknown). */
-    durationMs: integer('duration_ms'),
-    /** Messages mirrored into `mail_messages`. NULL unless succeeded. */
+    /** CUMULATIVE — messages in `mail_messages` when the run ended, across
+     * every attempt. NULL unless succeeded. */
     messagesSynced: integer('messages_synced'),
-    /** Messages Gmail refused to render as metadata, so the index has a
-     * known gap. Read WITH `messages_synced` — a total without its gap
+    /** CUMULATIVE — senders in the index when the run ended. */
+    sendersIndexed: integer('senders_indexed'),
+    /** Messages Gmail still refused to render as metadata on the final
+     * attempt. Because a refused message is never stored it is
+     * re-attempted every run, so this is also the standing gap in the
+     * index. Read WITH `messages_synced` — a total without its gap
      * reports a partial mailbox as a whole one. */
     unreadable: integer('unreadable'),
-    sendersIndexed: integer('senders_indexed'),
-    /** Gmail API calls THIS run. Far below `messages_synced` on a resume. */
-    gmailApiCalls: integer('gmail_api_calls'),
-    /** Per-stage wall-clock ms keyed by D224 stage name — the "which
-     * stage was slow" answer that no other store holds. */
-    stageTimings: jsonb('stage_timings'),
+    /** FINAL ATTEMPT ONLY — wall-clock ms, its stage 1 start → ready.
+     * Comparable across runs only where `attempts = 1`. NULL on failure. */
+    finalAttemptDurationMs: integer('final_attempt_duration_ms'),
+    /** FINAL ATTEMPT ONLY — Gmail API calls it made. Far below
+     * `messages_synced` on a resume; that gap IS the resume signal. */
+    finalAttemptGmailApiCalls: integer('final_attempt_gmail_api_calls'),
+    /** FINAL ATTEMPT ONLY — per-stage wall-clock ms keyed by D224 stage
+     * name. The "which stage was slow" answer no other store holds. */
+    finalAttemptStageTimings: jsonb('final_attempt_stage_timings'),
     /** Worker error class name (e.g. 'GmailAuthError'). Metadata only. */
     errorCode: text('error_code'),
   },

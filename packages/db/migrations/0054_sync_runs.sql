@@ -25,6 +25,18 @@
 -- failure would assert a mailbox synced nothing, which is usually
 -- false.
 --
+-- TWO SCALES, NAMED. The sync is resumable: a retry skips every message
+-- already stored. So `messages_synced` / `senders_indexed` describe the
+-- MAILBOX at the end of the run (cumulative across attempts), while
+-- timing and API calls are only ever accumulated within the attempt
+-- that finished. Storing the latter under a bare `duration_ms` would
+-- not merely be vague, it would invert: each retry resumes closer to
+-- done, so a mailbox that needed four attempts records a SHORTER
+-- duration than one that succeeded first try, and "is sync getting
+-- slower for this account" answers "faster" as it degrades. The
+-- `final_attempt_` prefix makes the scale unreadable-past. For whether
+-- an account is struggling, read `attempts`.
+--
 -- Privacy (D7): counts, timings and a worker error class name only.
 CREATE TYPE "sync_run_status" AS ENUM (
   'succeeded',
@@ -39,12 +51,14 @@ CREATE TABLE "sync_runs" (
   "status" "sync_run_status" NOT NULL,
   "attempts" smallint DEFAULT 1 NOT NULL,
   "finished_at" timestamptz DEFAULT now() NOT NULL,
-  "duration_ms" integer,
+  -- Cumulative: the mailbox as it stands when the run ended.
   "messages_synced" integer,
-  "unreadable" integer,
   "senders_indexed" integer,
-  "gmail_api_calls" integer,
-  "stage_timings" jsonb,
+  "unreadable" integer,
+  -- Final attempt only. See the two-scales note above.
+  "final_attempt_duration_ms" integer,
+  "final_attempt_gmail_api_calls" integer,
+  "final_attempt_stage_timings" jsonb,
   "error_code" text
 );
 --> statement-breakpoint
