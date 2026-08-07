@@ -16,19 +16,27 @@ Every event payload below is checked against the no-body / no-PII rules:
   defense) and again inside PostHog's `sanitize_properties` hook (second
   defense). Any new field added below MUST be verifiable as scalar +
   privacy-safe before it ships.
-- **No server-side code may emit to PostHog at all right now — this is a
-  hard block, not a payload rule.** Analytics consent (D147) lives in
-  browser `localStorage` with decline as the default and is deliberately
-  not synced to the user record ("a synced 'all' must never auto-enable
+- **Server-side code emits to PostHog NOT AT ALL — a hard block, not a
+  payload rule.** Analytics consent (D147) lives in browser
+  `localStorage` with decline as the default and is deliberately not
+  synced to the user record ("a synced 'all' must never auto-enable
   tracking on a browser that was not asked"), so a worker or webhook
   cannot check it. Our published pages promise PostHog "is initialized
   only after you accept it", that withdrawal "takes effect immediately",
   and that Essential-only "stops analytics immediately". Anonymising the
   payload does NOT unblock this: the promise is that PostHog does not
-  RUN, not that it runs without names. An attempt to ship an anonymised
-  server-side sync event was removed for exactly this reason — see F004
-  in FINDINGS.md, which also flags the pre-existing Resend
-  `captureServerEvent` calls as sitting in the same position.
+  RUN, not that it runs without names. An anonymised server-side sync
+  event was written and removed for exactly this reason.
+
+  **Two calls violate this rule today** — Resend's `email.delivered` and
+  `email.bounced`. They are an open violation, NOT an exception the rule
+  carves out: they predate this reading, removing them changes live
+  behaviour on a published-policy question, and that decision is the
+  founder's (F004 in FINDINGS.md). `captureServerEvent` accepts only
+  `UnremediatedServerEvent`, a frozen list of exactly those two, so the
+  debt is bounded and a third cannot be added without a type error and a
+  failing test. **Expect that list to shrink to empty; a change that grows
+  it is adding a violation.**
 
 ## Identifier conventions
 

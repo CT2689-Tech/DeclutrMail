@@ -166,41 +166,58 @@ excluded from PR #471/#472 rather than stubbed.
 
 ---
 
-### F004 — No server-side code can emit to PostHog under the current consent promise
+### F004 — Two shipped Resend events violate our own PostHog consent promise
 
 **Found:** 2026-08-06 · building F002's server-side sync telemetry
 **Observed:** Consent is per-browser and unreadable from a worker, so anything
-a worker sends reaches PostHog for people who declined.
+server-side sends reaches PostHog for people who declined. That rule turns out
+to already be broken by two live calls.
 
-**Verdict — this is a general constraint, not a sync problem.** Consent (D147)
-lives in browser `localStorage` under `dm-cookie-consent`
+**Verdict — a general constraint, and an existing breach of it.** Consent
+(D147) lives in browser `localStorage` under `dm-cookie-consent`
 ([cookie-consent.ts:37](apps/web/src/lib/cookie-consent.ts:37)), decline is the
 default, the FE re-reads it on every `track()`
-([posthog.ts:59](apps/web/src/lib/posthog.ts:59)), and it is deliberately not
+([posthog.ts:59](apps/web/src/lib/posthog.ts:59)), and it is deliberately never
 synced to the user record. Our published pages promise PostHog "is initialized
 only after you accept" and that Essential-only "stops analytics immediately".
-A worker cannot honour that, and anonymising the payload does not help: the
-promise is that PostHog does not run, not that it runs without names.
+No server process can honour that, and anonymising does not help — the promise
+is that PostHog does not run, not that it runs without names.
 
-So the rule is now in the taxonomy's privacy contract, and it is a hard one:
-**server-emitted PostHog events are not currently possible.** The existing
-`captureServerEvent` calls — Resend's `email.delivered` / `email.bounced` —
-predate this reading and are worth a second look; they carry only
-`{emailType}` / `{reason}` with no user link, but by the "PostHog runs only
-with consent" wording they are in the same position as the sync event I
-removed. Flagging rather than fixing, because changing existing behaviour on
-a published-policy question is the founder's call.
+The sync emitter built for F002 was removed on this basis. But the same
+reasoning convicts two calls that already ship:
 
-**To unblock server-side analytics generally:** persist the consent choice to
-a `users` column when the banner is answered and gate `captureServerEvent` on
-it. That cuts against D147's deliberate per-device design (a synced "all" must
-not enable tracking on a browser that was never asked), so it needs a real
-decision rather than an implementation. For sync specifically there is a
-better answer that sidesteps consent entirely — see F002's `sync_runs`
-recommendation.
+- `captureServerEvent('email.delivered', { emailType })`
+- `captureServerEvent('email.bounced', { reason })`
+  ([resend-webhook.controller.ts:184](apps/api/src/webhooks/resend/resend-webhook.controller.ts:184))
 
-**Priority:** P2 — nothing is blocked today; it bounds what future work can do.
-**Status:** Open
+Both fire from a Resend webhook, on the `'server'` distinct id, carrying no
+user-linked field. A reasonable person could call them operational
+delivery telemetry rather than product analytics — but that is exactly the
+"is this really analytics?" reasoning I used twice to talk myself past the
+consent gate, and it was wrong both times. It is not mine to decide again.
+
+**Bounded in the meantime.** `captureServerEvent` now accepts only
+`UnremediatedServerEvent`, a frozen list of exactly those two, pinned by a
+spec. A third server-side event cannot be added without a type error and a
+failing test. The list is named for debt, not permission, and is expected to
+shrink to empty.
+
+**The decision — three options, in order of preference:**
+
+1. **Drop both calls.** Delivery/bounce data already lives in Resend's own
+   dashboard and in our `email_send` worker logs, so the loss is small and the
+   promise is kept literally.
+2. **Keep them and narrow the published copy** so it describes what we
+   actually do — e.g. optional _product_ analytics runs only with consent,
+   while transactional delivery diagnostics do not use it. Copy change, needs
+   care; the current wording is unqualified.
+3. **Persist consent to a `users` column** and gate `captureServerEvent` on
+   it. Most work, cuts against D147's deliberate per-device design, and does
+   not fit a webhook that has no browser context anyway.
+
+**Priority:** P2 — no user harm is evident, and the payloads carry no identity;
+it is a promise-vs-behaviour mismatch on a published page.
+**Status:** Open — founder decision
 
 ---
 

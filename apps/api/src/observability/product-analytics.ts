@@ -37,32 +37,35 @@ export function __setClientForTest(next: PostHog | null): void {
 }
 
 /**
- * The ONLY event names any server-side code may send to PostHog.
+ * The server-side PostHog calls that ALREADY EXIST, frozen so no more can
+ * be added. **This is a debt list, not an allowlist.**
  *
- * This is a consent gate expressed in the type system, not an approval
- * list. Analytics consent (D147) is per-browser `localStorage` with
- * decline as the default and is deliberately never synced to the user
- * record, so no server process can read it — and we publish that PostHog
- * "is initialized only after you accept it" and that Essential-only
- * "stops analytics immediately". Anything emitted from here therefore
- * reaches PostHog for people who refused it, and anonymising the payload
- * does not help: the promise is that PostHog does not RUN.
+ * The rule is that server-side code emits to PostHog NOT AT ALL. Analytics
+ * consent (D147) is per-browser `localStorage` with decline as the default
+ * and is deliberately never synced to the user record, so no server
+ * process can read it — and we publish that PostHog "is initialized only
+ * after you accept it" and that Essential-only "stops analytics
+ * immediately". Anything sent from here reaches PostHog for people who
+ * refused it, and anonymising the payload does not help: the promise is
+ * that PostHog does not RUN.
  *
- * So ADDING A NAME HERE IS A PRIVACY DECISION, not a typing chore. A
- * server-side sync event was written and removed for exactly this reason.
- * F004 in FINDINGS.md carries the open question of whether even the two
- * below should remain — they are listed because they ship today, not
- * because they have been cleared.
+ * The two names below are therefore an OPEN VIOLATION of that rule, not an
+ * exception carved out of it. They predate this reading and they still
+ * ship; removing them changes live behaviour on a published-policy
+ * question, which is the founder's call, so F004 in FINDINGS.md tracks
+ * them. Anyone reading this type should expect the list to shrink to
+ * empty, never to grow.
  *
- * The union is what makes that reviewable: without it this parameter is a
- * bare `string`, and a new server-side emitter is one call away with
- * nothing to stop or even flag it.
+ * Freezing it is what makes the debt bounded. Without the union this
+ * parameter is a bare `string` and a third violation is one call away with
+ * nothing to stop or even flag it — which is exactly how a server-side
+ * sync event got written here before being removed.
  */
-export const SERVER_EMITTABLE_EVENTS = ['email.delivered', 'email.bounced'] as const;
-export type ServerEmittableEvent = (typeof SERVER_EMITTABLE_EVENTS)[number];
+export const UNREMEDIATED_SERVER_EVENTS = ['email.delivered', 'email.bounced'] as const;
+export type UnremediatedServerEvent = (typeof UNREMEDIATED_SERVER_EVENTS)[number];
 
 export function captureServerEvent(
-  event: ServerEmittableEvent,
+  event: UnremediatedServerEvent,
   properties: Record<string, unknown>,
   distinctId = 'server',
 ): void {

@@ -23,7 +23,7 @@ later, or an approach turns out wrong.
 ## 2026-08-06 — Wrote my own privacy contract instead of reading the one we publish
 
 **PR:** [#473](https://github.com/CT2689-Tech/DeclutrMail/pull/473)
-**Caught by:** Codex stop-time review, nine consecutive rounds — after CI green and after a passing dev smoke each time
+**Caught by:** Codex stop-time review, ten consecutive rounds — after CI green and after a passing dev smoke each time
 
 **What happened:** New server-side sync telemetry. Round one: the failure
 emit sat in a `finally` whose commit message read *"a failure dashboard
@@ -132,6 +132,16 @@ the two names that ship), verified by an actual probe file: `Argument of
 type '"sync_completed"' is not assignable to parameter of type
 '"email.delivered" | "email.bounced"'`.
 
+Round ten caught the last of it. Having written "no server-side code may
+emit to PostHog at all — a hard block", I shipped a type permitting two
+names and described it as "not an approval list". A list of what may pass
+IS an approval list; calling it something else does not change what it
+does, and it contradicted the contract one file over. The two Resend
+calls are an open VIOLATION of the rule, not an exception to it — so the
+type is now `UnremediatedServerEvent`, a frozen debt list documented as
+expected to shrink to empty, and both the taxonomy and F004 say plainly
+that a change growing it is adding a violation.
+
 **Rule:** when a comment or commit message claims a guarantee ("always
 counted", "never blocks", "exactly once", "the type prevents it"), the
 very next move is a test that starves the mechanism the guarantee rests
@@ -155,7 +165,10 @@ consent, privacy, or retention, the controlling document is what the
 product PUBLISHES, not what the code implies or what the law would
 tolerate**: read `/privacy` and `/cookies` in the repo first, quote the
 sentence the change has to satisfy, and if the answer is arguable it is
-the founder's (CLAUDE.md §9), not yours to reason to.
+the founder's (CLAUDE.md §9), not yours to reason to. **And when an
+absolute rule meets code that breaks it, name the code a violation and
+bound it — never soften the rule into an allowlist that admits the
+exception**, because the allowlist is what the next author reads.
 
 **Enforcement update:** structural test asserts `SyncTelemetry` exposes
 `syncCompleted` only, so re-adding a start reopens the class loudly rather
