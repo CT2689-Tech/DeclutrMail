@@ -47,6 +47,34 @@ the point.
 
 ## Inbox (untriaged)
 
+- **2026-08-07** · `/onboarding` step 5 — **confirmed live, on a real first-run.**
+  Founder onboarded `rucha.varma27@gmail.com` end to end and step 5 pinned five
+  senders that ALL have single-digit lifetime email counts, after the user had
+  picked "reduce newsletters" on step 4. Founder's words: _"very diminishing
+  value as a first time user."_ This is the same defect the Codex item below
+  describes, now observed rather than reasoned about — and it lands on the one
+  screen where the product has to prove itself. Note what production actually
+  runs: `origin/main` has NO payoff floor at all, so any eligible sender can be
+  pinned including one-message senders. A fix exists but is UNCOMMITTED in this
+  checkout (another session added `FIRST_TRIAGE_MIN_RECEIVED = 10` /
+  `FIRST_TRIAGE_MIN_RECENT = 3` plus a pin-version bump so existing users
+  re-pin), and the Codex item below is a critique of THAT fix. So there are
+  three states in play — shipped (no floor), uncommitted (arbitrary floor),
+  proposed (outcome ranking). Triage all three together.
+
+- **2026-08-07** · Triage — **"four daily verbs" is spec vocabulary, shipped.**
+  Founder hit this string in production: _"Looking for Delete? Triage keeps to
+  the four daily verbs — deleting a sender's mail lives on Senders and Sender
+  Detail."_ Two separate problems. (1) Nobody says "four daily verbs" — it is
+  our ADR-0019 language leaking into product UI. (2) The founder's expectation
+  was that Delete works everywhere, and as of the 2026-08-06 founder amendment
+  to ADR-0019 it does: Triage now renders the full K/A/U/L/D set directly. So
+  this copy is describing a constraint that no longer exists. Both are already
+  addressed by uncommitted work in this checkout — `why-no-delete.tsx` and its
+  story are deleted — but nothing is merged, so production still shows it.
+  Founder's broader ask: run a public-facing copy audit to find every sibling
+  of this, not just this one string.
+
 - **2026-08-06** · `/onboarding` step 5 (first triage) — the pinned-row
   thresholds are unexplained cutoffs. `10 received` was an emergency proxy for
   "enough cleanup to notice", picked to eliminate the 1–2-message rows; worse,

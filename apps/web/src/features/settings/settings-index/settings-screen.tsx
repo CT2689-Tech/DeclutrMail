@@ -366,7 +366,7 @@ export function SettingsScreen() {
               Your account-wide preferences — mailboxes, action behavior, email notifications,
               privacy, and plan. Per-sender rules live under{' '}
               <Link href="/settings/senders" style={{ color: color.primary }}>
-                standing policies
+                protected senders
               </Link>
               .
             </>
@@ -429,10 +429,10 @@ export function SettingsScreen() {
 
         <SectionLabel id="senders">Senders</SectionLabel>
         <LinkCard
-          title="Standing policies"
-          description="Review Protected senders and manage their standing safety rule from each sender's detail page."
+          title="Protected senders"
+          description="See everyone you've told us to leave alone. Turn protection on or off from a sender's detail page."
           href="/settings/senders"
-          cta="Open sender policies"
+          cta="Open protected senders"
         />
 
         <SectionLabel id="privacy">Privacy &amp; data</SectionLabel>

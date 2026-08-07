@@ -147,12 +147,12 @@ export function PrivacyDataView({
             items={GMAIL_DERIVED_DATA_INVENTORY.map(inventoryDisplayItem)}
           />
           <InventoryGroup
-            title="Operational audit data retained under policy"
+            title="Records we keep to investigate problems"
             items={GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY.map(inventoryDisplayItem)}
           />
           <p style={{ ...mutedTextStyle, marginTop: 12 }}>
-            Anthropic receives only the inventory items marked for generated Brief narratives or
-            optional sender explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
+            Anthropic only ever sees the items marked above for Brief summaries or optional sender
+            explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
           </p>
         </div>
       </Card>

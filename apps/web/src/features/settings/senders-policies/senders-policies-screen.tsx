@@ -83,7 +83,7 @@ export function SendersPoliciesScreen() {
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <Eyebrow>Settings · standing policies</Eyebrow>
+        <Eyebrow>Settings · protected senders</Eyebrow>
         <h1
           style={{
             fontFamily: font.display,
@@ -93,12 +93,12 @@ export function SendersPoliciesScreen() {
             margin: '4px 0 0',
           }}
         >
-          Standing policies
+          Protected senders
         </h1>
         <p style={{ fontSize: 13.5, color: color.fgSoft, marginTop: 6, maxWidth: 640 }}>
-          Senders you&apos;ve protected with a standing safety rule. Protected senders skip
-          auto-rules and bulk actions so their mail stays in your inbox. Manage protection from each
-          sender&apos;s detail page.
+          Senders you&apos;ve told us to leave alone. Automatic rules and bulk actions skip them, so
+          their mail stays in your inbox. Turn protection on or off from a sender&apos;s detail
+          page.
         </p>
       </div>
 
@@ -278,7 +278,7 @@ function LoadingState() {
           }}
         />
       ))}
-      <span style={{ position: 'absolute', left: -9999 }}>Loading standing policies</span>
+      <span style={{ position: 'absolute', left: -9999 }}>Loading protected senders</span>
     </div>
   );
 }
@@ -296,7 +296,7 @@ function PoliciesErrorState({ onRetry }: { onRetry: () => void }) {
       }}
     >
       <RecoverableErrorState
-        title="We couldn't load standing policies"
+        title="We couldn't load protected senders"
         description="Your existing policies remain active. Try again in a moment."
         onRetry={onRetry}
       />

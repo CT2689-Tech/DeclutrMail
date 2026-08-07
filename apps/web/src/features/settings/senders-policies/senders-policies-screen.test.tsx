@@ -77,7 +77,11 @@ describe('SendersPoliciesScreen', () => {
     ]);
     renderScreen();
     await waitFor(() => expect(screen.getByText(/No protected senders yet/i)).toBeInTheDocument());
-    expect(screen.getByRole('heading', { name: /standing policies/i })).toBeInTheDocument();
+    // Level 1 specifically — the empty state's "No protected senders yet"
+    // heading also matches on name alone.
+    expect(
+      screen.getByRole('heading', { level: 1, name: /protected senders/i }),
+    ).toBeInTheDocument();
   });
 
   it('routes out of the empty state instead of dead-ending', async () => {
@@ -306,7 +310,7 @@ describe('SendersPoliciesScreen', () => {
 
     const alert = await screen.findByRole('alert');
     expect(
-      within(alert).getByRole('heading', { name: /couldn[’']t load standing policies/i }),
+      within(alert).getByRole('heading', { name: /couldn[’']t load protected senders/i }),
     ).toBeInTheDocument();
     expect(within(alert).getByText(/existing policies remain active/i)).toBeInTheDocument();
 
