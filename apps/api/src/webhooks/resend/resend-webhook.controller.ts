@@ -16,7 +16,6 @@ import type { Request } from 'express';
 import { z } from 'zod';
 
 import { RateLimit } from '../../common/rate-limit/index.js';
-import { captureServerEvent } from '../../observability/product-analytics.js';
 import { SecurityEventsService } from '../../security-events/security-events.service.js';
 import {
   EmailSuppressionService,
@@ -177,16 +176,17 @@ export class ResendWebhookController {
     const reason = SUPPRESSING_EVENTS[event.type];
     if (!reason) {
       // Deliveries we don't act on (email.sent, email.delivered, …)
-      // ACK so Resend doesn't retry. Delivered is still worth counting —
-      // D126 Part 1 wants delivery visibility. No open beacon: opens are
-      // deliberately NOT tracked (founder decision 2026-07-27).
-      if (event.type === 'email.delivered') {
-        captureServerEvent('email.delivered', { emailType: event.type });
-      }
+      // ACK so Resend doesn't retry. These used to also fire a PostHog
+      // event for D126 Part 1 delivery visibility; that was removed
+      // (F004) because analytics consent is per-browser and no server
+      // process can read it, so anything sent from here reached PostHog
+      // for people who declined it. The delivery data was duplicate
+      // anyway — Resend's own dashboard and the `email_send` worker logs
+      // both carry it. No open beacon either: opens are deliberately NOT
+      // tracked (founder decision 2026-07-27).
       this.logger.log(`resend.webhook.ignored type=${event.type}`);
       return { status: 'ignored' };
     }
-    captureServerEvent('email.bounced', { reason });
 
     const recipients =
       typeof event.data?.to === 'string' ? [event.data.to] : (event.data?.to ?? []);

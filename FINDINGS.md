@@ -127,62 +127,6 @@ excluded from PR #471/#472 rather than stubbed.
 
 ---
 
-### F004 — Two shipped Resend events violate our own PostHog consent promise
-
-**Found:** 2026-08-06 · building F002's server-side sync telemetry
-**Observed:** Consent is per-browser and unreadable from a worker, so anything
-server-side sends reaches PostHog for people who declined. That rule turns out
-to already be broken by two live calls.
-
-**Verdict — a general constraint, and an existing breach of it.** Consent
-(D147) lives in browser `localStorage` under `dm-cookie-consent`
-([cookie-consent.ts:37](apps/web/src/lib/cookie-consent.ts:37)), decline is the
-default, the FE re-reads it on every `track()`
-([posthog.ts:59](apps/web/src/lib/posthog.ts:59)), and it is deliberately never
-synced to the user record. Our published pages promise PostHog "is initialized
-only after you accept" and that Essential-only "stops analytics immediately".
-No server process can honour that, and anonymising does not help — the promise
-is that PostHog does not run, not that it runs without names.
-
-The sync emitter built for F002 was removed on this basis, and F002 shipped as
-a first-party table instead. But the same reasoning convicts two calls that
-already ship:
-
-- `captureServerEvent('email.delivered', { emailType })`
-- `captureServerEvent('email.bounced', { reason })`
-  ([resend-webhook.controller.ts:184](apps/api/src/webhooks/resend/resend-webhook.controller.ts:184))
-
-Both fire from a Resend webhook, on the `'server'` distinct id, carrying no
-user-linked field. A reasonable person could call them operational
-delivery telemetry rather than product analytics — but that is exactly the
-"is this really analytics?" reasoning I used twice to talk myself past the
-consent gate, and it was wrong both times. It is not mine to decide again.
-
-**Bounded in the meantime.** `captureServerEvent` now accepts only
-`UnremediatedServerEvent`, a frozen list of exactly those two, pinned by a
-spec. A third server-side event cannot be added without a type error and a
-failing test. The list is named for debt, not permission, and is expected to
-shrink to empty.
-
-**The decision — three options, in order of preference:**
-
-1. **Drop both calls.** Delivery/bounce data already lives in Resend's own
-   dashboard and in our `email_send` worker logs, so the loss is small and the
-   promise is kept literally.
-2. **Keep them and narrow the published copy** so it describes what we
-   actually do — e.g. optional _product_ analytics runs only with consent,
-   while transactional delivery diagnostics do not use it. Copy change, needs
-   care; the current wording is unqualified.
-3. **Persist consent to a `users` column** and gate `captureServerEvent` on
-   it. Most work, cuts against D147's deliberate per-device design, and does
-   not fit a webhook that has no browser context anyway.
-
-**Priority:** P2 — no user harm is evident, and the payloads carry no identity;
-it is a promise-vs-behaviour mismatch on a published page.
-**Status:** Open — founder decision
-
----
-
 ## P3 — ideas (need evidence)
 
 ### F001 — Onboarding step 4 goal picker is single-select; should it be multi?
@@ -322,9 +266,78 @@ What shipped:
 
 **What did NOT ship: a dashboard.** The data is queryable, not visualised. An
 admin UI is a separate surface with its own auth and route decisions, and
-building one was not part of this. F004 covers the leftover consent question.
+building one was not part of this. The consent question this work surfaced is
+F004, resolved the same day.
 
 **Priority:** P1
+**Status:** Done 2026-08-06
+
+---
+
+### F004 — Two shipped Resend events violate our own PostHog consent promise
+
+**Found:** 2026-08-06 · building F002's server-side sync telemetry
+**Observed:** Consent is per-browser and unreadable from a worker, so anything
+server-side sends reaches PostHog for people who declined. That rule turns out
+to already be broken by two live calls.
+
+**Verdict — a general constraint, and an existing breach of it.** Consent
+(D147) lives in browser `localStorage` under `dm-cookie-consent`
+([cookie-consent.ts:37](apps/web/src/lib/cookie-consent.ts:37)), decline is the
+default, the FE re-reads it on every `track()`
+([posthog.ts:59](apps/web/src/lib/posthog.ts:59)), and it is deliberately never
+synced to the user record. Our published pages promise PostHog "is initialized
+only after you accept" and that Essential-only "stops analytics immediately".
+No server process can honour that, and anonymising does not help — the promise
+is that PostHog does not run, not that it runs without names.
+
+The sync emitter built for F002 was removed on this basis, and F002 shipped as
+a first-party table instead. But the same reasoning convicts two calls that
+already ship:
+
+- `captureServerEvent('email.delivered', { emailType })`
+- `captureServerEvent('email.bounced', { reason })`
+  ([resend-webhook.controller.ts:184](apps/api/src/webhooks/resend/resend-webhook.controller.ts:184))
+
+Both fire from a Resend webhook, on the `'server'` distinct id, carrying no
+user-linked field. A reasonable person could call them operational
+delivery telemetry rather than product analytics — but that is exactly the
+"is this really analytics?" reasoning I used twice to talk myself past the
+consent gate, and it was wrong both times. It is not mine to decide again.
+
+**Resolution — drop both calls, founder decision 2026-08-06.** Chosen over
+narrowing the published copy and over persisting consent to a `users` column.
+It was the cheapest of the three and the only one that leaves the published
+sentence literally true with no qualification bolted on.
+
+The loss is close to zero: Resend's own dashboard and the `email_send` worker
+logs already carry delivery and bounce data, so this was duplicate telemetry
+with a policy cost attached.
+
+Removing the two callers left the whole server-side PostHog client dead, so it
+went too:
+
+- both `captureServerEvent` calls in
+  [resend-webhook.controller.ts](apps/api/src/webhooks/resend/resend-webhook.controller.ts)
+- `apps/api/src/observability/product-analytics.ts` and its spec — deleted
+- the `posthog-node` dependency — dropped from `apps/api`
+- the `UNREMEDIATED_SERVER_EVENTS` frozen list, which existed only to bound
+  the debt and had nothing left to bound
+
+That is a stronger guarantee than the frozen list was. `apps/api` no longer has
+a PostHog client at all, so adding a server-side event now means re-adding a
+dependency and a module — visible in review in a way one more line in an
+allowlist never was.
+
+`POSTHOG_API_KEY` still appears in `.github/workflows/vendor-limits-watchdog.yml`.
+That is the opposite direction and stays: the watchdog READS our PostHog usage
+for the billing guardrail. It sends nothing.
+
+The 2026-07-27 email-foundation plan's "Task 10: Delivery telemetry" is
+annotated SUPERSEDED in place rather than deleted — a future agent following
+that plan would otherwise rebuild exactly this.
+
+**Priority:** P2
 **Status:** Done 2026-08-06
 
 ---

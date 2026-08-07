@@ -116,9 +116,6 @@ importers:
       postgres:
         specifier: ^3.4.5
         version: 3.4.9
-      posthog-node:
-        specifier: ^5.46.1
-        version: 5.47.3(rxjs@7.8.2)
       react:
         specifier: ^19.2.7
         version: 19.2.8
@@ -4209,15 +4206,6 @@ packages:
 
   posthog-js@1.409.5:
     resolution: {integrity: sha512-s1iJz+vq0YAluUD4OwLjUFIJt/9pqiiB6MITvHWIS16a7pqTJqbSLXsd5/8kJcIgfrOSZHe+mdYAXLYcJCS4LQ==}
-
-  posthog-node@5.47.3:
-    resolution: {integrity: sha512-mhKaZOGLgD5aKKTj6xNRE2K9vRJnRIj4FNZeguDNnCR0k8RKJh71KO78+UqVdOONBsMzoqb01AD/B+TtsK7YSw==}
-    engines: {node: ^20.20.0 || >=22.22.0}
-    peerDependencies:
-      rxjs: ^7.0.0
-    peerDependenciesMeta:
-      rxjs:
-        optional: true
 
   preact@10.29.8:
     resolution: {integrity: sha512-ej2aVZ+vZ8WO7tvlQWRM9N63A0KzF9q4mWJfDUHgYaIofWY9hu74QdnQrjoPMmZi2/nZ5gN0bJCQF49xQqx09Q==}
@@ -8335,12 +8323,6 @@ snapshots:
       web-vitals: 5.3.0
     transitivePeerDependencies:
       - preact-render-to-string
-
-  posthog-node@5.47.3(rxjs@7.8.2):
-    dependencies:
-      '@posthog/core': 1.46.7
-    optionalDependencies:
-      rxjs: 7.8.2
 
   preact@10.29.8: {}
 

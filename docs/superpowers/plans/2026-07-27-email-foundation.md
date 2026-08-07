@@ -1197,6 +1197,16 @@ git commit -m "feat(notifications): set List-Unsubscribe on opt-outs (D165)"
 
 ### Task 10: Delivery telemetry
 
+> **SUPERSEDED 2026-08-06 — do not implement this task.** It shipped, then was
+> removed in full (F004 in `FINDINGS.md`): analytics consent (D147) is
+> per-browser `localStorage` that no server process can read, and we publish
+> that PostHog "is initialized only after you accept it", so anything sent from
+> a webhook reached PostHog for people who declined. Anonymising the payload
+> does not help — the promise is that PostHog does not RUN. `product-analytics.ts`,
+> its spec, and the `posthog-node` dependency are all gone; `apps/api` has no
+> PostHog client again. Delivery and bounce data already live in Resend's own
+> dashboard and the `email_send` worker logs. The rest of this plan stands.
+
 **Files:**
 
 - Create: `apps/api/src/observability/product-analytics.ts`

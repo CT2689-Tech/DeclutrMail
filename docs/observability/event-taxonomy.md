@@ -28,15 +28,23 @@ Every event payload below is checked against the no-body / no-PII rules:
   RUN, not that it runs without names. An anonymised server-side sync
   event was written and removed for exactly this reason.
 
-  **Two calls violate this rule today** — Resend's `email.delivered` and
-  `email.bounced`. They are an open violation, NOT an exception the rule
-  carves out: they predate this reading, removing them changes live
-  behaviour on a published-policy question, and that decision is the
-  founder's (F004 in FINDINGS.md). `captureServerEvent` accepts only
-  `UnremediatedServerEvent`, a frozen list of exactly those two, so the
-  debt is bounded and a third cannot be added without a type error and a
-  failing test. **Expect that list to shrink to empty; a change that grows
-  it is adding a violation.**
+  **There is now no way to break this rule by accident: the server-side
+  emitter does not exist.** Two calls did violate it — Resend's
+  `email.delivered` and `email.bounced` — and the founder's answer
+  (2026-08-06, F004) was to drop them rather than qualify the published
+  copy. With them gone the whole `product-analytics.ts` module and the
+  `posthog-node` dependency were dead, so both were removed and
+  `apps/api` no longer has a PostHog client to call. Adding a server-side
+  event now means re-adding a dependency and a module in a diff, which is
+  visible in review in a way one more line in an allowlist never was.
+
+  Per-run sync metrics that a server emitter would have carried live in
+  the first-party `sync_runs` table instead (F002) — outside the
+  optional-analytics gate, and exactly-once besides.
+
+  `POSTHOG_API_KEY` still appears in `.github/workflows/vendor-limits-watchdog.yml`.
+  That is the opposite direction: the watchdog READS our PostHog usage
+  for the billing guardrail. It sends nothing.
 
 ## Identifier conventions
 
