@@ -324,7 +324,15 @@ export class TriageReadService {
           ...(input.requireCleanupCandidate
             ? [
                 ne(triageDecisions.verdict, 'keep'),
-                isNull(senderPolicies.protectionReason),
+                // `is_protected` ALONE, mirroring `mapProtectionReason`,
+                // which returns null the moment that flag is false. An
+                // `IS NULL protection_reason` clause here also excluded
+                // DEMOTED senders — ones the user explicitly unprotected,
+                // which keep their reason as the record of what they were
+                // (D245: "preserve a manual Unprotect as a sticky
+                // override"). Unprotecting is the user asking for cleanup
+                // to reach a sender, so hiding it from Step 5 inverts the
+                // very intent.
                 or(isNull(senderPolicies.isProtected), eq(senderPolicies.isProtected, false))!,
                 senderHasActionableMail(input.mailboxAccountId, senders.senderKey),
               ]
