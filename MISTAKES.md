@@ -23,7 +23,7 @@ later, or an approach turns out wrong.
 ## 2026-08-06 — Wrote my own privacy contract instead of reading the one we publish
 
 **PR:** [#473](https://github.com/CT2689-Tech/DeclutrMail/pull/473)
-**Caught by:** Codex stop-time review, seven consecutive rounds — after CI green and after a passing dev smoke each time
+**Caught by:** Codex stop-time review, nine consecutive rounds — after CI green and after a passing dev smoke each time
 
 **What happened:** New server-side sync telemetry. Round one: the failure
 emit sat in a `finally` whose commit message read *"a failure dashboard
@@ -119,9 +119,24 @@ the correlated-loss bias so nobody reads the dashboard as proof, and stop
 calling the event authoritative when a table already is. Drop the user
 attribution entirely rather than gate it on consent we cannot read.
 
+Round nine closed the loop on the rule itself. Having removed the
+emitter, I narrowed `sync_id` to `null` in `events.ts` and wrote that a
+future server emitter "cannot quietly supply an id without hitting a
+compile error". It could: `captureServerEvent` takes `event: string,
+properties: Record<string, unknown>` and never consults the event map, so
+the narrowing constrains only the FE `track()` path. I claimed a
+compile-time guarantee without compiling the thing it was supposed to
+stop — the exact rule this entry already states, broken while writing it
+down. The fix is a real gate at the call site (`ServerEmittableEvent`,
+the two names that ship), verified by an actual probe file: `Argument of
+type '"sync_completed"' is not assignable to parameter of type
+'"email.delivered" | "email.bounced"'`.
+
 **Rule:** when a comment or commit message claims a guarantee ("always
-counted", "never blocks", "exactly once", "survives X"), the very next
-move is a test that starves the mechanism the guarantee rests on — a
+counted", "never blocks", "exactly once", "the type prevents it"), the
+very next move is a test that starves the mechanism the guarantee rests
+on — for a compile-time claim that means writing the offending code and
+watching `tsc` reject it, not reasoning that it would — a
 guarantee with no test for its own failure mode is a wish. When the second
 placement of a signal fails the way the first did with the sign flipped,
 stop moving it: that is a signal the layer cannot produce, and the fix is
