@@ -22,7 +22,7 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyAutomaticProtection } from './automatic-protection.js';
-import { InitialSyncWorker } from './initial-sync.worker.js';
+import { InitialSyncWorker, NOOP_SYNC_TELEMETRY } from './initial-sync.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import type { InitialSyncDeps, SyncTelemetry } from './initial-sync.worker.js';
 import type { GmailAccess, GmailMessageListPage, GmailMessageMetadata } from './ports.js';
@@ -1580,17 +1580,13 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     mailboxAccountId = await seedMailbox(db);
   });
 
-  type Started = Parameters<SyncTelemetry['syncStarted']>[0];
   type Completed = Parameters<SyncTelemetry['syncCompleted']>[0];
 
   /** Records every emit so a test can assert on payload, not on a spy call count. */
-  function recorder(): SyncTelemetry & { started: Started[]; completed: Completed[] } {
-    const started: Started[] = [];
+  function recorder(): SyncTelemetry & { completed: Completed[] } {
     const completed: Completed[] = [];
     return {
-      started,
       completed,
-      syncStarted: (e) => started.push(e),
       syncCompleted: (e) => completed.push(e),
     };
   }
@@ -1613,7 +1609,6 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
 
     const result = await worker.processJob({ mailboxAccountId }, CTX);
 
-    expect(syncTelemetry.started).toHaveLength(1);
     expect(syncTelemetry.completed).toHaveLength(1);
     const done = syncTelemetry.completed[0]!;
     // The whole point of moving the emitter server-side: the FE fires
@@ -1623,14 +1618,13 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     expect(done.messagesIndexed).toBe(6);
     expect(done.outcome).toBe('success');
     expect(done.syncId).toBeTruthy();
+    expect(done.mailboxAccountId).toBe(mailboxAccountId);
     expect(done.durationMs).toBeGreaterThanOrEqual(0);
+    expect(done.attempt).toBe(1);
     // Server and browser events must resolve to ONE person: the FE calls
     // `identifyUser(internalUserUuid)`, so the distinct id is that uuid —
     // never the mailbox id, never an email address.
     expect(done.userId).toBe(await ownerId());
-    // start and completion pair on the same attempt.
-    expect(syncTelemetry.started[0]!.syncId).toBe(done.syncId);
-    expect(syncTelemetry.started[0]!.mailboxAccountId).toBe(mailboxAccountId);
   });
 
   it('reports `partial` when Gmail refused metadata — never `success` over a known gap', async () => {
@@ -1654,9 +1648,8 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
   });
 
   it('emits NOTHING for a duplicate enqueue — a designed no-op is not a sync', async () => {
-    // A no-op counted as a run would deflate duration percentiles (it
-    // returns in ms) and, if it emitted `started` without `completed`,
-    // would invent a failure that never happened.
+    // A no-op counted as a run would deflate the duration percentiles: it
+    // returns in milliseconds without touching Gmail.
     const syncTelemetry = recorder();
     const deps = {
       db,
@@ -1669,7 +1662,6 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     const second = await worker.processJob({ mailboxAccountId }, CTX);
 
     expect(second.alreadyReady).toBe(true);
-    expect(syncTelemetry.started).toHaveLength(1);
     expect(syncTelemetry.completed).toHaveLength(1);
   });
 
@@ -1706,27 +1698,25 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
     expect(done.syncId).toContain(CTX.jobId);
   });
 
-  it('one run, one start: a retry attempt does not open a second sync', async () => {
-    // A retryable failure never reaches `onTerminalFailure` — the base
-    // class emits `worker.retried` and rethrows — so a `started` on every
-    // attempt would leave attempts 1..n-1 permanently unpaired. With
-    // maxAttempts=5 a run that failed four times and then succeeded would
-    // publish five starts against one completion and read as a 20%
-    // success rate.
-    const syncTelemetry = recorder();
-    const worker = new InitialSyncWorker({
-      db,
-      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
-      syncTelemetry,
-    });
-
-    await worker.processJob({ mailboxAccountId }, { ...CTX, attempt: 2 });
-
-    expect(syncTelemetry.started).toHaveLength(0);
-    expect(syncTelemetry.completed).toHaveLength(1);
+  it('the seam exposes completion only — a server-side start cannot be emitted once per run', async () => {
+    // Structural, deliberately. Two shipped attempts at a server-side
+    // `sync_started` both failed on the same invariant, in opposite
+    // directions: per-attempt left orphan starts, attempt-1-only left an
+    // orphan completion whenever attempt 1 died before reaching the emit
+    // (the eligibility read and readiness query are both database calls).
+    // The worker holds no state between attempts, so once-per-run is not
+    // expressible here. Re-adding the method reopens that; runs that begin
+    // and never finish belong to `scripts/check-sync-stuck.sh`, which
+    // reads `provider_sync_state` and is stateful enough to know.
+    expect(Object.keys(NOOP_SYNC_TELEMETRY)).toEqual(['syncCompleted']);
   });
 
-  it('pairs the completion with the start across attempts — the id is anchored to the enqueue', async () => {
+  it('a run that succeeds on a retry emits exactly one completion, carrying the attempt', async () => {
+    // One event per run is the whole invariant. There is no server-side
+    // `sync_started` to pair with — the worker holds no state across
+    // attempts, so it could only ever emit one per attempt (orphan starts)
+    // or one on attempt 1 (an orphan completion whenever attempt 1 dies
+    // before the emit). `attempt` carries the retried-ness instead.
     const syncTelemetry = recorder();
     const worker = new InitialSyncWorker({
       db,
@@ -1734,9 +1724,25 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
       syncTelemetry,
     });
 
-    // Same job, later attempt: `attempt` and `startedAt` both move, and
-    // only `enqueuedAt` holds still. Anchoring on `startedAt` would mint a
-    // fresh id here and orphan the attempt-1 start.
+    await worker.processJob({ mailboxAccountId }, { ...CTX, attempt: 3 });
+
+    expect(syncTelemetry.completed).toHaveLength(1);
+    expect(syncTelemetry.completed[0]!.attempt).toBe(3);
+    expect(syncTelemetry.completed[0]!.outcome).toBe('success');
+  });
+
+  it('sync id names the RUN, not the attempt — it does not move when the attempt does', async () => {
+    const syncTelemetry = recorder();
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+      syncTelemetry,
+    });
+
+    // Same job, later attempt: `attempt` and `startedAt` both move and
+    // only `enqueuedAt` holds still. An id built on `startedAt` would name
+    // an attempt while claiming to name a run, so the same run's rows
+    // would not join to each other.
     await worker.processJob({ mailboxAccountId }, { ...CTX, attempt: 1 });
     await resetToQueued(db, mailboxAccountId);
     await worker.processJob(
@@ -1744,9 +1750,8 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
       { ...CTX, attempt: 3, startedAt: new Date(CTX.startedAt.getTime() + 60_000) },
     );
 
-    expect(syncTelemetry.started).toHaveLength(1);
     expect(syncTelemetry.completed).toHaveLength(2);
-    expect(syncTelemetry.completed[1]!.syncId).toBe(syncTelemetry.started[0]!.syncId);
+    expect(syncTelemetry.completed[1]!.syncId).toBe(syncTelemetry.completed[0]!.syncId);
   });
 
   it('emits the failed run even when the database is down — attribution is optional, the event is not', async () => {
@@ -1824,9 +1829,6 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
       db,
       gmailAccess: accessFor(new FakeGmailClient(makeMessages(2, 1))),
       syncTelemetry: {
-        syncStarted: () => {
-          throw new Error('posthog down');
-        },
         syncCompleted: () => {
           throw new Error('posthog down');
         },
@@ -1852,9 +1854,6 @@ describe('InitialSyncWorker — server-side sync telemetry (D159)', () => {
       db,
       gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
       syncTelemetry: {
-        syncStarted: () => {
-          throw new Error('posthog down');
-        },
         syncCompleted: () => {
           throw new Error('posthog down');
         },

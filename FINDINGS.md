@@ -96,15 +96,14 @@ Real sync data today lives in `provider_sync_state` (`current_stage`,
 took a prod DB query to diagnose precisely because this is missing — the
 next one will too.
 
-**Built.** `InitialSyncWorker` now emits both events with real numbers via an
-injected `SyncTelemetry` seam (same shape as `WorkerObserver` — the workers
+**Built.** `InitialSyncWorker` now emits `sync_completed` with real numbers via
+an injected `SyncTelemetry` seam (same shape as `WorkerObserver` — the workers
 package must not take a PostHog dependency). Notable calls, each one a place
 the naive version would have lied:
 
 - **Skips emit nothing.** Inactive / deletion-paused / duplicate-enqueue are
-  designed no-ops that return in milliseconds; counting them would deflate
-  the duration percentiles, and a `started` with no `completed` invents a
-  failure that never happened.
+  designed no-ops that return in milliseconds without touching Gmail;
+  counting them would deflate the duration percentiles.
 - **`partial` when `unreadable > 0`.** The sync finished but the index is
   short by a named amount. This is the outcome that would have surfaced the
   2026-08-06 incident without a prod query.
@@ -125,19 +124,29 @@ health already has `last_incremental_error_at` / `_code` plus the
 `incremental_sync.unreadable_skipped` log line. Separate call, not a silent
 omission.
 
-**Corrected after review.** The first cut had two holes Codex caught, both
-in paths the write-up already claimed were handled — recorded in MISTAKES.md
-2026-08-06:
+**Corrected after review** — three rounds, recorded in MISTAKES.md 2026-08-06.
 
-- `sync_started` fired on every attempt, but a retryable failure never
-  reaches the terminal path, so attempts 1..n-1 were orphans. At
-  `maxAttempts: 5` a run that failed four times then succeeded read as a 20%
-  success rate. Now gated to attempt 1, with `sync_id` anchored to
-  `job.timestamp` so one run keeps one id across retries.
-- The failure emit resolved `userId` from the database _inside_ the guard,
-  so a database outage produced no event — defeating the `finally` added for
-  exactly that case. Attribution is now best-effort (`userId: string | null`);
-  the event always fires.
+The failure emit resolved `userId` from the database _inside_ the guard, so a
+database outage produced no event at all, defeating the `finally` added for
+exactly that case. Attribution is now best-effort (`userId: string | null`)
+and the event always fires.
+
+The other two rounds were the same defect facing opposite directions.
+`sync_started` fired on every attempt, leaving attempts 1..n-1 as orphan
+starts — at `maxAttempts: 5`, a run that failed four times then succeeded
+read as a 20% success rate. Gating it to attempt 1 then produced the mirror
+image: attempt 1 can throw before reaching the emit (the eligibility read and
+readiness query are both database calls), leaving a completion with no start.
+
+**The server-side `sync_started` was removed rather than patched a third
+time.** A run spans up to five BullMQ attempts and the worker holds no state
+between them, so once-per-run is not expressible there; an event that cannot
+be emitted once per run should not claim to be. `sync_completed` carries
+outcome, real duration, real counts and the finishing `attempt` — every
+question the dashboards ask. Runs that begin and never finish already belong
+to `scripts/check-sync-stuck.sh`, which reads `provider_sync_state` and is
+stateful enough to know. The browser still emits `sync_started` for the
+perceived-wait view.
 
 **Priority:** P1
 **Status:** In progress (#473)

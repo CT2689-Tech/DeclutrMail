@@ -85,17 +85,36 @@ const SCAN_PAGE = 1000;
  * `packages/workers` must not take a PostHog dependency — the composition
  * root (`apps/api/src/worker.ts`) owns adapter wiring.
  *
+ * **Completion only — the server deliberately does not emit
+ * `sync_started`.** A run spans several BullMQ attempts and the worker
+ * holds no state between them, so "the run began" cannot be emitted
+ * exactly once. Emitting per attempt leaves attempts 1..n-1 as starts with
+ * no completion; emitting only on attempt 1 leaves a completion with no
+ * start whenever attempt 1 throws before reaching the emit (the
+ * eligibility read and the readiness query are both database calls that
+ * can). Both were tried, and both are the same defect facing opposite
+ * directions. An event that cannot be emitted once per run should not
+ * claim to be.
+ *
+ * Nothing is lost. `sync_completed` alone carries outcome, real duration
+ * and real counts, which is every question the dashboards ask. Runs that
+ * begin and never finish are detected by `scripts/check-sync-stuck.sh`
+ * against `provider_sync_state` — stateful and authoritative, where a
+ * fire-and-forget event never could be. The browser still emits
+ * `sync_started` for the perceived-wait view. If the `sync_runs` table
+ * lands (open D-candidate, FOUNDER-FOLLOWUPS 2026-05-22) a start becomes
+ * emittable exactly once, on the row insert.
+ *
  * Privacy (D7, D228): counts, outcomes and durations only. `userId` is the
  * internal UUID — the same identifier `identifyUser()` sends from the
  * browser, so server and client events resolve to one person — and never
  * an email address. It is nullable because attribution is best-effort
- * while the event itself is not; see `emitSyncTelemetry`.
+ * while the event itself is not; see `emitSyncCompleted`.
  *
  * Implementations must NEVER throw; a telemetry outage must not fail a
  * sync that otherwise succeeded.
  */
 export interface SyncTelemetry {
-  syncStarted(event: { syncId: string; mailboxAccountId: string; userId: string | null }): void;
   syncCompleted(event: {
     syncId: string;
     mailboxAccountId: string;
@@ -110,6 +129,12 @@ export interface SyncTelemetry {
     /** Real server-side wall-clock for the attempt. */
     durationMs: number;
     /**
+     * Which BullMQ attempt finished the run. `> 1` means it was retried —
+     * the signal the removed `sync_started` was reaching for, carried on
+     * the one event that can be emitted exactly once.
+     */
+    attempt: number;
+    /**
      * `partial` means the sync finished but the index has a known gap —
      * Gmail refused metadata for some messages. Reporting those runs as
      * `success` would be the surface asserting a completeness it does not
@@ -121,7 +146,6 @@ export interface SyncTelemetry {
 
 /** No-op default — analytics is opt-in via `POSTHOG_API_KEY` (D159). */
 export const NOOP_SYNC_TELEMETRY: SyncTelemetry = {
-  syncStarted() {},
   syncCompleted() {},
 };
 
@@ -330,10 +354,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * analysis, not three.
    *
    * `enqueuedAt` rather than `startedAt` is the whole point: `startedAt`
-   * is per-attempt, which would split a retried run apart and make the
-   * `started` from attempts 1..n-1 look like syncs that never finished.
-   * `jobId` alone cannot carry it either — for `perMailboxPolicy` it IS
-   * the mailbox id, repeated for every sync that mailbox ever runs.
+   * is per-attempt, so an id built on it names an attempt while claiming
+   * to name a run — the completion from a retried run would not join to
+   * anything else about that run. `jobId` alone cannot carry it either:
+   * for `perMailboxPolicy` it IS the mailbox id, repeated for every sync
+   * that mailbox ever runs. The pair is the only combination that is both
+   * stable across retries and unique per enqueue.
    *
    * Deliberately not a UUID. The taxonomy described `sync_id` as
    * `syncs.id`, but no `syncs` table exists: `provider_sync_state` is
@@ -358,10 +384,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * work — and an unattributed run still counts correctly in success rate
    * and duration, which is what the aggregate is for.
    */
-  private async emitSyncTelemetry(
+  private async emitSyncCompleted(
     mailboxAccountId: string,
     ctx: WorkerContext,
-    completion?: { messagesIndexed: number; outcome: 'success' | 'partial' | 'failed' },
+    completion: { messagesIndexed: number; outcome: 'success' | 'partial' | 'failed' },
   ): Promise<void> {
     const telemetry = this.deps.syncTelemetry;
     if (!telemetry) {
@@ -380,17 +406,13 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // below still runs with `userId: null`.
     }
     try {
-      const syncId = this.syncId(ctx);
-      if (!completion) {
-        telemetry.syncStarted({ syncId, mailboxAccountId, userId });
-        return;
-      }
       telemetry.syncCompleted({
-        syncId,
+        syncId: this.syncId(ctx),
         mailboxAccountId,
         userId,
         messagesIndexed: completion.messagesIndexed,
         durationMs: Date.now() - ctx.startedAt.getTime(),
+        attempt: ctx.attempt,
         outcome: completion.outcome,
       });
     } catch (err) {
@@ -480,21 +502,6 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       };
     }
 
-    // Past every designed no-op — this attempt is a real sync, so it is
-    // the one that belongs in the success rate. Emitting before the guards
-    // would count disconnects and duplicate enqueues as syncs that never
-    // completed.
-    //
-    // First attempt only. A retryable failure never reaches
-    // `onTerminalFailure` (the base class emits `worker.retried` and
-    // rethrows), so an emit on every attempt would leave attempts 1..n-1
-    // as `started` with no completion — five starts and one completion for
-    // a run that failed four times and then succeeded, reading as a 20%
-    // success rate. One run, one start.
-    if (ctx.attempt === 1) {
-      await this.emitSyncTelemetry(mailboxAccountId, ctx);
-    }
-
     // Stage 1 — fetching_metadata (resumable).
     // 2026-06-08 session: structured progress logs added so a stalled
     // sync surfaces immediately. Previously zero log output between
@@ -570,7 +577,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // finished, but the index has a named gap. Reporting those runs as
     // `success` would make the dashboard assert a completeness the data
     // does not have — and would have hidden the 2026-08-06 incident.
-    await this.emitSyncTelemetry(mailboxAccountId, ctx, {
+    await this.emitSyncCompleted(mailboxAccountId, ctx, {
       messagesIndexed: messagesSynced,
       outcome: unreadable > 0 ? 'partial' : 'success',
     });
@@ -610,7 +617,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // `messagesIndexed: -1` is the taxonomy's documented unknown: rows
       // fetched before the failure are still in `mail_messages`, and
       // counting them here would mean a full scan on the failure path.
-      await this.emitSyncTelemetry(mailboxAccountId, ctx, {
+      await this.emitSyncCompleted(mailboxAccountId, ctx, {
         messagesIndexed: -1,
         outcome: 'failed',
       });

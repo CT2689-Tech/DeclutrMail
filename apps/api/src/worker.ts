@@ -620,24 +620,18 @@ async function bootstrap(): Promise<void> {
     // and wall-clock. The browser funnel it supplements can only report
     // its own waiting, and emits nothing at all when the tab is closed —
     // the normal case for a large mailbox.
+    //
+    // Completion only, by design — see `SyncTelemetry`. A run spans
+    // several BullMQ attempts with no state between them, so a server-side
+    // `sync_started` cannot be emitted exactly once per run.
     syncTelemetry: {
-      syncStarted: ({ syncId, mailboxAccountId, userId }) => {
-        captureServerEvent(
-          'sync_started',
-          { sync_id: syncId, mailbox_id: mailboxAccountId, trigger: 'initial' },
-          // `undefined` lets `captureServerEvent` fall back to its
-          // `'server'` distinct id. An unattributed run still counts in
-          // success rate and duration; dropping it instead would go silent
-          // during exactly the database incident worth measuring.
-          userId ?? undefined,
-        );
-      },
       syncCompleted: ({
         syncId,
         mailboxAccountId,
         userId,
         messagesIndexed,
         durationMs,
+        attempt,
         outcome,
       }) => {
         captureServerEvent(
@@ -647,8 +641,13 @@ async function bootstrap(): Promise<void> {
             mailbox_id: mailboxAccountId,
             messages_indexed: messagesIndexed,
             duration_ms: durationMs,
+            attempt,
             outcome,
           },
+          // `undefined` lets `captureServerEvent` fall back to its
+          // `'server'` distinct id. An unattributed run still counts in
+          // success rate and duration; dropping it instead would go silent
+          // during exactly the database incident worth measuring.
           userId ?? undefined,
         );
       },
