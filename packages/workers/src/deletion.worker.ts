@@ -24,6 +24,7 @@ import {
   senderPolicies,
   senderTimeseries,
   senders,
+  syncRuns,
   triageDecisions,
   undoJournal,
   users,
@@ -147,6 +148,7 @@ export const MAILBOX_PURGE_DIRECT_CHILD_TABLES = [
   'sender_policies',
   'sender_timeseries',
   'senders',
+  'sync_runs',
   'triage_decisions',
   'undo_journal',
   'webhook_dedup',
@@ -545,6 +547,11 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
         await tx
           .delete(providerSyncState)
           .where(eq(providerSyncState.mailboxAccountId, request.mailboxAccountId));
+        // `sync_runs` has a cascading FK, but this purge deliberately
+        // KEEPS the `mailbox_accounts` row (tokens nulled above), so the
+        // cascade never fires — the rows must be deleted by hand like
+        // every other mailbox-scoped table here.
+        await tx.delete(syncRuns).where(eq(syncRuns.mailboxAccountId, request.mailboxAccountId));
 
         // These operational stores intentionally have no mailbox FK, so
         // cascade cannot clean them. Every typed payload carries the id.

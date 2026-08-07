@@ -25,6 +25,7 @@ export * from './senders';
 export * from './subscription-events';
 export * from './pending-checkouts';
 export * from './subscriptions';
+export * from './sync-runs';
 export * from './triage-decisions';
 export * from './undo-journal';
 export * from './users';

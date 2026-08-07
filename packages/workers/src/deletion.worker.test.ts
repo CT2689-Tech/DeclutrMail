@@ -26,6 +26,7 @@ import {
   senderPolicies,
   senderTimeseries,
   senders,
+  syncRuns,
   triageDecisions,
   undoJournal,
   users,
@@ -393,6 +394,12 @@ async function seedMailboxGraph(
     currentStage: 'ready',
     progressPct: 100,
     lastHistoryId: 9n,
+  });
+  await db.insert(syncRuns).values({
+    mailboxAccountId: mailboxId,
+    status: 'succeeded',
+    durationMs: 1_234,
+    messagesSynced: 42,
   });
   await db.insert(webhookDedup).values({
     messageId: `pubsub-${tag}`,
