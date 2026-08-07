@@ -8,9 +8,9 @@ import { VERB_ORDER, VERB_SHORTCUT, verdictToVerb, type ActionVerb } from './typ
 const { color, font, radius } = tokens;
 
 /**
- * Pure key→verb resolver — exported so tests assert the K/A/U/L
+ * Pure key→verb resolver — exported so tests assert the K/A/U/L/D
  * bindings without rendering. Returns the verb to dispatch, or `null`
- * for any key that isn't a K/A/U/L shortcut.
+ * for any key that isn't a registered shortcut.
  *
  * Modifier keys (Cmd/Ctrl/Alt/Meta) suppress the binding so the
  * shortcuts never collide with browser/system chords.
@@ -30,20 +30,20 @@ export function resolveShortcut(event: {
 }
 
 /**
- * Triage action toolbar (D29 — K/A/U/L per D227 patch).
+ * Triage action toolbar (D29 — K/A/U/L/D per amended D227).
  *
- * The toolbar always renders exactly the four canonical verbs. A
- * verb is `disabled` when the row's capability gate (canArchive /
- * canUnsubscribe / canLater) returns false — the protected-Keep
- * rows render Archive / Unsubscribe / Later as visibly inert so the
- * shape of the toolbar is constant across the queue (D29 spec).
+ * The toolbar always renders the five canonical verbs. A verb is
+ * `disabled` only when the row's capability gate fails (currently a
+ * missing unsubscribe channel) or while an action is in flight.
+ * Protected rows still allow explicit actions; protection controls
+ * their recommendation and automatic/bulk eligibility.
  *
  * D31 — the engine's verdict is highlighted ONLY when `confidence`
  * is strictly greater than 0.85. Below that threshold the toolbar
  * renders flat — the founder explicitly does not want a "soft"
  * recommendation to pull the eye.
  *
- * Keyboard: K/A/U/L bind globally while a row is focused. The
+ * Keyboard: K/A/U/L/D bind globally while a row is focused. The
  * effect cleans up on unmount so navigating away from the screen
  * does not leak listeners.
  */
@@ -62,7 +62,7 @@ export function ActionToolbar({
    */
   keyboardEnabled?: boolean;
   /**
-   * True disables ALL four verbs regardless of the per-verb
+   * True disables all five verbs regardless of the per-verb
    * capability gates — used while the row's decision is confirming
    * server-side (D226 busy state).
    */
@@ -76,10 +76,9 @@ export function ActionToolbar({
     row.confidence > 0.85 ? verdictToVerb(row.verdict) : null;
 
   // No-channel reason, surfaced as visible text below the verbs (W2).
-  // Protected rows are excluded — the row header's Protected badge
-  // already explains why their destructive verbs are inert.
-  const unsubNoChannelReason =
-    row.protectionReason === null ? verbDisabledReason('Unsubscribe', row) : null;
+  // Protection affects recommendations and automatic/bulk cleanup, not
+  // the explicit row actions, so it must not hide this capability fact.
+  const unsubNoChannelReason = verbDisabledReason('Unsubscribe', row);
 
   useEffect(() => {
     if (!keyboardEnabled || disabled) return;
@@ -131,7 +130,9 @@ export function ActionToolbar({
             : verb === 'Keep'
               ? 'primary'
               : 'dark'
-          : 'default';
+          : verb === 'Delete'
+            ? 'danger'
+            : 'default';
         return (
           <Button
             key={verb}
@@ -201,6 +202,7 @@ export function ActionToolbar({
 /** Capability gate per verb — Keep is always enabled. */
 function verbDisabled(verb: ActionVerb, row: TriageDecisionRow): boolean {
   if (verb === 'Keep') return false;
+  if (verb === 'Delete') return false;
   if (verb === 'Archive') return !canArchive(row);
   if (verb === 'Unsubscribe') return !canUnsubscribe(row);
   return !canLater(row); // Later
@@ -216,10 +218,11 @@ function verbDisabled(verb: ActionVerb, row: TriageDecisionRow): boolean {
  */
 export function verbDisabledReason(verb: ActionVerb, row: TriageDecisionRow): string | null {
   if (verb === 'Keep') return null;
+  if (verb === 'Delete') return null;
   // Protection no longer disables a verb here. D245 excludes Protected
   // senders from BULK and AUTOMATIC actions, not from an explicit click
   // on one row, and this feature's own server contract says every
-  // K/A/U/L action stays available on a protected row. The protection is
+  // K/A/U/L/D action stays available on a protected row. The protection is
   // surfaced by the row badge and acknowledged in the D226 confirm,
   // which is where the "act anyway" decision belongs.
   if (verb === 'Unsubscribe' && row.unsubscribeMethod === 'none') {

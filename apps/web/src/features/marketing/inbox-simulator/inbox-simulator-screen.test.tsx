@@ -93,7 +93,7 @@ describe('InboxSimulatorScreen', () => {
     ['an array entry', '[[]]'],
     ['an incomplete object', '[{}]'],
     ['an unexpected field', JSON.stringify([{ ...validDecision, injected: true }])],
-    ['an unknown verb', JSON.stringify([{ ...validDecision, verb: 'Delete' }])],
+    ['an unknown verb', JSON.stringify([{ ...validDecision, verb: 'Forward' }])],
     ['an unknown row id', JSON.stringify([{ ...validDecision, rowId: 'not-a-demo-row' }])],
     ['a forged sender name', JSON.stringify([{ ...validDecision, senderName: 'Injected' }])],
     ['a non-finite affected count', `[${nonFiniteCount}]`],

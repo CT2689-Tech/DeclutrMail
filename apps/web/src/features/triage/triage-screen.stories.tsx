@@ -61,7 +61,7 @@ const meta: StoryMeta<typeof TriageScreen> = {
     docs: {
       description: {
         component:
-          'Triage screen — the V2 daily ritual. Per D29 + D227 the toolbar renders K/A/U/L exactly. Per D226 every destructive action shows a preview before mutation — either via the action sheet (D34 default) or inline (D34 remember-preference path). Per D36 each row is collapse/expand. Per D32 no bulk operations.',
+          'Triage screen — one decision per sender. The toolbar renders K/A/U/L/D; Delete is always explicit and always uses the full preview sheet. Other mail-moving actions show the same mandatory preview either in the sheet or inline. Each row expands for details, and protected senders stay out of bulk actions.',
       },
     },
   },

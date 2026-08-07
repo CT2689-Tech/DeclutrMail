@@ -10,7 +10,7 @@
 // pressed, so the story targets the presentational `…Panel` half
 // directly — the same split the senders `KeyboardCheatsheet` story
 // uses to show the open state without simulating a keystroke. Every
-// documented shortcut maps to a REAL binding (K/A/U/L per D227; nothing
+// documented shortcut maps to a REAL binding (K/A/U/L/D per amended D227; nothing
 // aspirational).
 
 import { tokens } from '@declutrmail/shared';
@@ -39,7 +39,7 @@ const meta: StoryMeta<typeof TriageKeyboardHelpPanel> = {
     docs: {
       description: {
         component:
-          'Keyboard-hint overlay revealed with `?` (Escape / close button / backdrop dismiss). Shortcuts stay invisible inline and appear only on demand — same pattern as the senders cheatsheet. Every row documents a REAL binding: K/A/U/L (D29 + D227), Enter/Space expand, Z undo, ⌘⏎ confirm, Esc cancel, ? toggle.',
+          'Keyboard-hint overlay revealed with `?` (Escape / close button / backdrop dismiss). Shortcuts stay invisible inline and appear only on demand — same pattern as the senders cheatsheet. Every row documents a real binding: K/A/U/L/D, Enter/Space expand, Z undo, ⌘⏎ confirm, Esc cancel, and ? toggle.',
       },
     },
   },

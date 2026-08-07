@@ -59,7 +59,7 @@ export function ActionPreviewPresentation({
   accountContext,
 }: ActionPreviewPresentationProps) {
   const subject = row.senderName;
-  const actionVerb = verb.toLowerCase() as 'keep' | 'archive' | 'unsubscribe' | 'later';
+  const actionVerb = verb.toLowerCase() as 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
   const liveCount = typeof inboxCount === 'number' ? inboxCount : null;
   const presentation = buildActionPresentation({
     verb: actionVerb,
@@ -72,7 +72,7 @@ export function ActionPreviewPresentation({
   });
 
   // Copy per verb — literal, and TRUE to the pipeline each verb rides:
-  // Archive/Later move the sender's current inbox mail via the worker;
+  // Archive/Later/Delete move the sender's current inbox mail via the worker;
   // Unsubscribe sends the real one-click request (D9 Wave 2) or opens
   // the manual Gmail-compose path (mailto stays manual per D230);
   // Keep moves nothing.
@@ -83,15 +83,20 @@ export function ActionPreviewPresentation({
         ? `Move ${subject} to Later`
         : verb === 'Unsubscribe'
           ? `Unsubscribe from ${subject}`
-          : `Keep ${subject}`;
+          : verb === 'Delete'
+            ? `Move inbox mail from ${subject} to Gmail Trash`
+            : `Keep ${subject}`;
 
   const lead = presentation.previewCopy;
 
-  // What actually moves: Archive + Later act on the sender's current
+  // What actually moves: Archive + Later + Delete act on the sender's current
   // inbox mail; Unsubscribe only when the historic toggle is on;
   // Keep never.
   const counts: boolean =
-    verb === 'Archive' || verb === 'Later' || (verb === 'Unsubscribe' && archiveHistoric);
+    verb === 'Archive' ||
+    verb === 'Later' ||
+    verb === 'Delete' ||
+    (verb === 'Unsubscribe' && archiveHistoric);
 
   const containerStyle: CSSProperties =
     mode === 'inline'

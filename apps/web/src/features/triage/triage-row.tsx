@@ -28,7 +28,7 @@ const VERDICT_TONE: Record<TriageVerdict, PillTone> = {
  * the last 90d reads as "2 in last 90d", not "0/mo" — the lie pattern
  * founder caught 2026-06-06 (same class as Sender Detail Bug 3).
  *
- * Quiet senders (no mail in 90d but real lifetime presence) get an
+ * Quiet senders (no mail in 90d but real indexed history) get an
  * explicit "Quiet 90d" copy instead of a fabricated "0/mo".
  */
 function whyLine(row: TriageDecisionRow): string {
@@ -38,9 +38,9 @@ function whyLine(row: TriageDecisionRow): string {
   if (row.protectionReason === 'starred') return 'Protected · you starred a message';
   if (row.protectionReason === 'gmail-important') return 'Protected · Gmail importance';
   if (row.last90dMessages === 0) {
-    // Quiet within the rolling window — say so plainly. Lifetime total
+    // Quiet within the rolling window — say so plainly. Received total
     // carries the "they DID mail you" context without faking cadence.
-    return `Quiet 90d · ${row.totalAllTime.toLocaleString()} lifetime`;
+    return `Quiet 90d · ${row.totalAllTime.toLocaleString()} received`;
   }
   if (row.readRate === 0 && row.last90dMessages >= 8) {
     return `Never opened · ${row.last90dMessages} in last 90d`;
@@ -57,7 +57,7 @@ function whyLine(row: TriageDecisionRow): string {
  * recommended-verb hint. Click the row (or hit space/enter when
  * focused) to expand.
  *
- * Expanded: the toolbar (K/A/U/L per D29 / D227) becomes visible,
+ * Expanded: the toolbar (K/A/U/L/D per amended D227) becomes visible,
  * the row body extends with the stats grid + reasoning + signals
  * (via `<TriageRowExpanded>`), and if a pending action is open in
  * inline-preview mode the pure preview strip mounts beneath
@@ -89,7 +89,7 @@ export function TriageRow({
   /**
    * True while this row's decision is confirming server-side (D226 —
    * no optimistic removal). The row dims, the toolbar disables, and
-   * the K/A/U/L shortcuts release until the server confirms.
+   * the K/A/U/L/D shortcuts release until the server confirms.
    */
   busy?: boolean;
   /**
@@ -122,6 +122,7 @@ export function TriageRow({
     inlinePreview != null &&
     (inlinePreview.verb === 'Archive' ||
       inlinePreview.verb === 'Later' ||
+      inlinePreview.verb === 'Delete' ||
       (inlinePreview.verb === 'Unsubscribe' && inlinePreview.archiveHistoric)) &&
     typeof inlinePreview.inboxCount !== 'number';
   const actionsDisabled = busy || inlineConfirmBlocked;
@@ -224,7 +225,7 @@ export function TriageRow({
             </span>
             {row.protectionReason !== null && (
               <span
-                title="Protected — destructive verbs are disabled for this sender"
+                title="Protected — automatic and bulk actions stay off unless you choose otherwise"
                 style={{
                   padding: '1px 7px',
                   borderRadius: 4,
@@ -274,7 +275,7 @@ export function TriageRow({
           </span>
           {/* D26 — hero card only: the engine's reasoning inline,
               clamped to 2 lines. Hidden while expanded (the expanded
-              body renders the same copy in its Reasoning block). */}
+              body renders the same explanation). */}
           {hero && !expanded && (
             <span
               data-dm-hero-reasoning
@@ -477,7 +478,7 @@ export function TriageRow({
                 mandatory preview had produced a number — the one thing the
                 preview exists to prevent. */}
             <Button
-              tone="primary"
+              tone={inlinePreview.verb === 'Delete' ? 'danger' : 'primary'}
               size="sm"
               disabled={actionsDisabled}
               onClick={() => onAction(inlinePreview.verb)}

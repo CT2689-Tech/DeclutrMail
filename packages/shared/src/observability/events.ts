@@ -317,11 +317,11 @@ export interface EventPayloads {
     placement: 'nav' | 'nav_sign_in' | 'hero' | 'pricing_teaser' | 'final' | 'demo';
   };
   demo_preview_opened: {
-    verb: Exclude<Verb, 'delete'>;
+    verb: Verb;
     decision_index: number;
   };
   demo_decision_confirmed: {
-    verb: Exclude<Verb, 'delete'>;
+    verb: Verb;
     decision_index: number;
     affected_messages: number;
   };

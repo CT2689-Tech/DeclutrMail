@@ -32,18 +32,18 @@ import type {
 
 import { apiGet, apiPatch } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
-import { useTriageStore, type SheetableVerb } from '@/features/triage/store';
+import { useTriageStore, type RememberableVerb } from '@/features/triage/store';
 
 export const ME_SETTINGS_QUERY_KEY = ['me-settings'] as const;
 
 /** Wire key (contract) ↔ UI verb (triage store) mapping. */
-const WIRE_TO_VERB: Record<keyof ActionSheetPrefs, SheetableVerb> = {
+const WIRE_TO_VERB: Record<keyof ActionSheetPrefs, RememberableVerb> = {
   archive: 'Archive',
   unsubscribe: 'Unsubscribe',
   later: 'Later',
 };
 
-export const VERB_TO_WIRE: Record<SheetableVerb, keyof ActionSheetPrefs> = {
+export const VERB_TO_WIRE: Record<RememberableVerb, keyof ActionSheetPrefs> = {
   Archive: 'archive',
   Unsubscribe: 'unsubscribe',
   Later: 'later',

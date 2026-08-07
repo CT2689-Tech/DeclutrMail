@@ -37,6 +37,8 @@ describe('resolveShortcut — D29 / D227 key bindings (K/A/U/L)', () => {
     ['U', 'Unsubscribe'],
     ['l', 'Later'],
     ['L', 'Later'],
+    ['d', 'Delete'],
+    ['D', 'Delete'],
   ])('maps "%s" to %s', (key, expected) => {
     expect(resolveShortcut({ key })).toBe(expected);
   });
@@ -64,7 +66,7 @@ describe('resolveShortcut — D29 / D227 key bindings (K/A/U/L)', () => {
 });
 
 describe('ActionToolbar — render (D29, D31)', () => {
-  it('renders all four canonical verbs in K/A/U/L order', () => {
+  it('renders all five canonical verbs in K/A/U/L/D order', () => {
     const row = rowById('t-groupon');
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
 
@@ -72,11 +74,13 @@ describe('ActionToolbar — render (D29, D31)', () => {
     const aIdx = html.indexOf('>Archive<');
     const uIdx = html.indexOf('>Unsubscribe<');
     const lIdx = html.indexOf('>Later<');
+    const dIdx = html.indexOf('>Delete<');
 
     expect(kIdx).toBeGreaterThan(-1);
     expect(aIdx).toBeGreaterThan(kIdx);
     expect(uIdx).toBeGreaterThan(aIdx);
     expect(lIdx).toBeGreaterThan(uIdx);
+    expect(dIdx).toBeGreaterThan(lIdx);
   });
 
   it('exposes each shortcut chip — K, A, U, L', () => {
@@ -118,7 +122,6 @@ describe('ActionToolbar — render (D29, D31)', () => {
 
 describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', () => {
   const NO_CHANNEL_COPY = 'No unsubscribe channel found — Archive handles senders like this.';
-  const PROTECTED_COPY = 'Protected — destructive verbs are disabled for this sender';
 
   it('verbDisabledReason truth-table — reason exactly when a gate is off', () => {
     const noChannel = rowById('t-shipping'); // unsubscribeMethod 'none', unprotected
@@ -171,15 +174,15 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
     }
   });
 
-  it('protected rows carry no disabled-verb copy — nothing is disabled', () => {
+  it('protected rows still explain a missing unsubscribe channel', () => {
     const html = renderToStaticMarkup(
       <ActionToolbar row={rowById('t-sarah')} onAction={() => {}} />,
     );
-    // The row header's Protected badge still explains the row. The
-    // toolbar no longer mirrors a "destructive verbs are disabled" line,
-    // because that statement is no longer true.
-    expect(html).not.toContain(PROTECTED_COPY);
-    expect(html).not.toContain('role="note"');
+    // Protection keeps the sender out of automatic/bulk cleanup, but
+    // explicit row actions stay available. The missing channel remains
+    // the only reason Unsubscribe is disabled and must stay visible.
+    expect(html).toContain(NO_CHANNEL_COPY);
+    expect(html).toContain('role="note"');
   });
 });
 
@@ -192,7 +195,9 @@ describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
     // The recommended-verb highlight wraps the Kbd in white text on a
     // translucent overlay — the inline `color:var(--dm-fg-inverse)` is the
     // load-bearing signal.
-    expect(html).toContain('color:var(--dm-fg-inverse)');
+    expect(html).toContain(
+      'background:var(--dm-line-inverse);color:var(--dm-fg-inverse);border-top:none',
+    );
   });
 
   it('does NOT highlight when confidence is far below threshold (0.66)', () => {
@@ -201,7 +206,9 @@ describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
     const row = rowById('t-nextdoor');
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
     // No white-text overlay means no highlighted verb chip.
-    expect(html).not.toContain('color:var(--dm-fg-inverse)');
+    expect(html).not.toContain(
+      'background:var(--dm-line-inverse);color:var(--dm-fg-inverse);border-top:none',
+    );
   });
 
   // D31 says "highlight only when confidence > 0.85". The boundary
@@ -218,21 +225,27 @@ describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
       const html = renderToStaticMarkup(
         <ActionToolbar row={withConfidence(0.84)} onAction={() => {}} />,
       );
-      expect(html).not.toContain('color:var(--dm-fg-inverse)');
+      expect(html).not.toContain(
+        'background:var(--dm-line-inverse);color:var(--dm-fg-inverse);border-top:none',
+      );
     });
 
     it('confidence = 0.85 → recommended verb is NOT emphasised (strict >)', () => {
       const html = renderToStaticMarkup(
         <ActionToolbar row={withConfidence(0.85)} onAction={() => {}} />,
       );
-      expect(html).not.toContain('color:var(--dm-fg-inverse)');
+      expect(html).not.toContain(
+        'background:var(--dm-line-inverse);color:var(--dm-fg-inverse);border-top:none',
+      );
     });
 
     it('confidence = 0.86 → recommended verb IS emphasised', () => {
       const html = renderToStaticMarkup(
         <ActionToolbar row={withConfidence(0.86)} onAction={() => {}} />,
       );
-      expect(html).toContain('color:var(--dm-fg-inverse)');
+      expect(html).toContain(
+        'background:var(--dm-line-inverse);color:var(--dm-fg-inverse);border-top:none',
+      );
     });
   });
 });

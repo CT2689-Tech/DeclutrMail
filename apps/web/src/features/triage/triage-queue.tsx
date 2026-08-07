@@ -9,7 +9,6 @@ import { DomainBatchCard, type BatchVerb } from './domain-batch-card';
 import { TriageRow } from './triage-row';
 import { useTriageStore } from './store';
 import type { ActionVerb } from './types';
-import { WhyNoDelete } from './why-no-delete';
 
 const { color, font } = tokens;
 
@@ -44,7 +43,7 @@ export function TriageQueue({
   batchBusyDomain = null,
 }: {
   rows: readonly TriageDecisionRow[];
-  /** Dispatched when a row's toolbar fires K/A/U/L. */
+  /** Dispatched when a row's toolbar fires K/A/U/L/D. */
   onAction: (verb: ActionVerb, row: TriageDecisionRow) => void;
   /**
    * Row whose decision is confirming server-side (D226 — the row
@@ -104,7 +103,7 @@ export function TriageQueue({
             fontFamily: font.mono,
           }}
         >
-          K · A · U · L
+          K · A · U · L · D
         </span>
       </div>
       <div
@@ -164,11 +163,6 @@ export function TriageQueue({
             </div>
           );
         })}
-      </div>
-      {/* Founder-ratified: Delete is not a Triage verb — say where it
-          lives so the four-verb toolbar never reads as a gap. */}
-      <div style={{ marginTop: 10 }}>
-        <WhyNoDelete />
       </div>
     </div>
   );

@@ -43,8 +43,11 @@ import { create } from 'zustand';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionVerb } from './types';
 
-/** Verbs that surface the action sheet by default (D34). */
-export type SheetableVerb = Extract<ActionVerb, 'Archive' | 'Unsubscribe' | 'Later'>;
+/** Destructive verbs that use the mandatory preview sheet. */
+export type SheetableVerb = Extract<ActionVerb, 'Archive' | 'Unsubscribe' | 'Later' | 'Delete'>;
+
+/** Verbs whose preview may move inline after the user opts in. */
+export type RememberableVerb = Exclude<SheetableVerb, 'Delete'>;
 
 export interface PendingAction {
   verb: ActionVerb;
@@ -66,7 +69,7 @@ export interface TriageState {
    * the inline preview instead (the user has hit "remember this
    * choice" for that verb). Default `false` — sheet shows.
    */
-  rememberPreference: Record<SheetableVerb, boolean>;
+  rememberPreference: Record<RememberableVerb, boolean>;
   /** Currently expanded row id, or `null` if none. */
   expandedRowId: string | null;
   /** In-flight action awaiting preview-confirm. */
@@ -80,7 +83,7 @@ export interface TriageState {
    */
   sessionDecidedCount: number;
   /**
-   * Worker-confirmed messages moved by this session's Archive/Later
+   * Worker-confirmed messages moved by this session's Archive/Later/Delete
    * actions. Unlike the former D33 monthly-volume estimate, this does
    * not claim that a one-time action prevented future mail.
    */
@@ -95,7 +98,7 @@ export interface TriageState {
 
 export interface TriageActions {
   /** Toggle the remember-preference flag for one verb. */
-  setRememberPreference: (verb: SheetableVerb, value: boolean) => void;
+  setRememberPreference: (verb: RememberableVerb, value: boolean) => void;
   /** Expand `id` (collapsing any other) or pass `null` to close. */
   setExpandedRow: (id: string | null) => void;
   /** Toggle: pass the currently-expanded id to collapse it. */
@@ -113,7 +116,7 @@ export interface TriageActions {
 }
 
 /** Default — sheet shows for every verb (D34). */
-const DEFAULT_PREFS: Record<SheetableVerb, boolean> = {
+const DEFAULT_PREFS: Record<RememberableVerb, boolean> = {
   Archive: false,
   Unsubscribe: false,
   Later: false,

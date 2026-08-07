@@ -80,13 +80,14 @@ export default function HowItWorksPage() {
       <StorySection
         id="gmail-actions"
         number="03"
-        title="The verbs, in Gmail terms."
+        title="The actions, in Gmail terms."
         intro={
           <p>
-            Daily Triage uses four choices: Keep, Archive, Unsubscribe, and Later. Every plan can
-            use the same cleanup verbs from Senders; Delete remains available from Senders and
-            Sender Detail. Keep is not Protect: Keep records a decision; Protect is a separate
-            shield against destructive and bulk actions.
+            Daily Triage offers five choices: Keep, Archive, Unsubscribe, Later, and Delete. The
+            same five are available from Senders and Sender Detail on every plan. Delete is never
+            recommended for you — you choose it, and it always shows a full preview first. Keep is
+            not Protect: Keep records a decision; Protect is a separate shield against destructive
+            and bulk actions.
           </p>
         }
       >

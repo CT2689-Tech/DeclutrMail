@@ -26,7 +26,13 @@ describe('/how-it-works', () => {
     expect(copy).toContain('chosen sender-level return time');
     expect(copy).toContain('DeclutrMail/Later');
     expect(copy).toContain('cannot be recalled');
-    expect(copy).toContain('Delete is available from Senders and Sender Detail');
+    // Was "Delete is available from Senders and Sender Detail" — true
+    // until the 2026-08-06 amendment to ADR-0019 put Delete on the Triage
+    // toolbar too. The guard is unchanged in intent: this page must state
+    // the two properties that make a destructive verb safe to show, so
+    // assert those rather than where the button happens to live.
+    expect(copy).toContain('Delete is never recommended for you');
+    expect(copy).toContain('always shows a full preview first');
     expect(copy).toContain('does not quietly decide what happens to future mail');
     expect(copy).toContain('starts in Observe');
     expect(copy).toContain('switch it to Active');
