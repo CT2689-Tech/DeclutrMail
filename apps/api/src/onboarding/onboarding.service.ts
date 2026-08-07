@@ -175,10 +175,10 @@ export class OnboardingService {
       mailboxAccountId,
       limit: FIRST_TRIAGE_POOL_LIMIT,
       ordering: firstTriageQueueOrdering(goal),
-      // Cleanup goals discard rows that move nothing, so the pool must
-      // not spend its 50 slots on them. `protect_important` moves no mail
-      // by design and keeps the unfiltered pool.
-      requireActionableMail: goal !== 'protect_important',
+      // Cleanup goals reject Keep, Protected and empty-inbox senders, so
+      // the pool must not spend its 50 slots on them. `protect_important`
+      // wants exactly those rows and keeps the unfiltered pool.
+      requireCleanupCandidate: goal !== 'protect_important',
     });
 
     let pinnedKeys = readStringArray(prefs[PREF_FIRST_TRIAGE_KEYS]);

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { and, count, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
 import {
   activityLog,
@@ -209,7 +209,7 @@ export class TriageReadService {
     limit: number;
     ordering?: TriageQueueOrdering;
     /**
-     * Drop senders whose action would move nothing, BEFORE the limit.
+     * Apply the CLEANUP consumer's own rejections before the limit.
      *
      * Onboarding's Step 5 filters on inbox mail, but this pool ranks by
      * indexed volume (`senders.total_received`), which counts archived
@@ -219,11 +219,19 @@ export class TriageReadService {
      * rendered blank on a 98k mailbox for that reason, silently: a pool
      * that disagrees with its consumer's filter starves it with no error.
      *
-     * Off by default. The main Triage queue deliberately shows senders
-     * with nothing in the inbox — Keep and Later still mean something
-     * there.
+     * It has to mirror every rejection onboarding makes, not just one.
+     * Filtering only on inbox mail still let `keep` and Protected rows
+     * take slots — and `promotions-first` ranks a Protected *promotions*
+     * sender ABOVE an actionable non-promotions one, so those are exactly
+     * the rows that crowd in first. `later` needs no clause: the ordering
+     * already sends it to the back, so it can only occupy slots nothing
+     * better wanted.
+     *
+     * Off by default. The main Triage queue deliberately shows Keep,
+     * Protected and empty-inbox senders — a decision about a sender is
+     * still meaningful there.
      */
-    requireActionableMail?: boolean;
+    requireCleanupCandidate?: boolean;
   }): Promise<TriageQueueRow[]> {
     // The CASE ordering encodes the verdict priority. `confidence` is
     // a numeric text on the wire — cast to numeric so DESC sorts as a
@@ -313,8 +321,13 @@ export class TriageReadService {
         and(
           eq(triageDecisions.mailboxAccountId, input.mailboxAccountId),
           notDecidedRecently,
-          ...(input.requireActionableMail
-            ? [senderHasActionableMail(input.mailboxAccountId, senders.senderKey)]
+          ...(input.requireCleanupCandidate
+            ? [
+                ne(triageDecisions.verdict, 'keep'),
+                isNull(senderPolicies.protectionReason),
+                or(isNull(senderPolicies.isProtected), eq(senderPolicies.isProtected, false))!,
+                senderHasActionableMail(input.mailboxAccountId, senders.senderKey),
+              ]
             : []),
         ),
       )
