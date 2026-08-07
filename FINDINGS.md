@@ -80,11 +80,10 @@ The worker never emits them. Consequences, all by construction:
 - Nothing at all about unreadable-skipped messages, Gmail API call counts,
   or per-stage timing
 
-The taxonomy already admits this — "A future server-side emitter adds
-`partial` + real counts"
-([event-taxonomy.md:157](docs/observability/event-taxonomy.md:157)) — and the
-only server-side PostHog calls in the repo are Resend's
-`email.delivered` / `email.bounced`
+The taxonomy used to call this a gap awaiting "a future server-side emitter";
+that line is now removed, because the emitter turned out to be impermissible
+rather than merely unbuilt (see below). The only server-side PostHog calls in
+the repo are Resend's `email.delivered` / `email.bounced`
 ([resend-webhook.controller.ts:184](apps/api/src/webhooks/resend/resend-webhook.controller.ts:184)).
 
 Real sync data today lives in `provider_sync_state` (`current_stage`,

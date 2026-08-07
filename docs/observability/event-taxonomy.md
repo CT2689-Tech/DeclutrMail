@@ -16,15 +16,19 @@ Every event payload below is checked against the no-body / no-PII rules:
   defense) and again inside PostHog's `sanitize_properties` hook (second
   defense). Any new field added below MUST be verifiable as scalar +
   privacy-safe before it ships.
-- **Server-emitted events carry NO user-linked identifier — not a distinct
-  id, not a `mailbox_id`, not an id derived from either.** Analytics
-  consent (D147) lives in browser `localStorage` with decline as the
-  default, so anything emitted outside the browser reaches PostHog for
-  users who refused it. Client events may carry internal UUIDs precisely
-  because they are behind that gate; server events may not, and must use
-  `telemetryReference` where a correlation key is genuinely needed. Note
-  the trap: removing only the distinct id is not enough, since a
-  `mailbox_id` property is just as identifying.
+- **No server-side code may emit to PostHog at all right now — this is a
+  hard block, not a payload rule.** Analytics consent (D147) lives in
+  browser `localStorage` with decline as the default and is deliberately
+  not synced to the user record ("a synced 'all' must never auto-enable
+  tracking on a browser that was not asked"), so a worker or webhook
+  cannot check it. Our published pages promise PostHog "is initialized
+  only after you accept it", that withdrawal "takes effect immediately",
+  and that Essential-only "stops analytics immediately". Anonymising the
+  payload does NOT unblock this: the promise is that PostHog does not
+  RUN, not that it runs without names. An attempt to ship an anonymised
+  server-side sync event was removed for exactly this reason — see F004
+  in FINDINGS.md, which also flags the pre-existing Resend
+  `captureServerEvent` calls as sitting in the same position.
 
 ## Identifier conventions
 
@@ -140,26 +144,29 @@ contain a rule condition blob, sender identity, or email-derived text.
 fires it on its FIRST in-progress observation (`queued`/`syncing`) of
 the D224 status poll — once per gate view, ref-guarded against the 3s
 poll re-fires; a mailbox already `ready` on mount fires nothing. A
-future server-side emitter (`POST /api/sync/start` accept, Pub/Sub
-delta-sync) will carry a non-null `sync_id` — analysis discriminates FE
-vs BE fires on that field.
+server-side emitter is NOT planned and is currently not permitted — see
+the privacy contract above. `sync_id` is therefore `null` on every fire.
 
 **`sync_id` is `null` on every event emitted today, and it is not a
 `syncs.id` UUID.** No `syncs` table exists: `provider_sync_state` is
 unique per mailbox and holds current state only, so there is no per-run
-row to reference. A server-side emitter needs a per-run identity first —
-see the `sync_runs` D-candidate (FOUNDER-FOLLOWUPS, 2026-05-22) — and it
-must satisfy the server-event privacy rule at the top of this document,
-which is why the obvious `mailboxId:timestamp` key cannot be shipped
-as-is.
+row to reference.
+
+Do not read that as a to-do. The blocker on server-side sync metrics is
+the consent rule at the top of this document, not the missing identity,
+and it is not something an id design can solve. If the founder decides
+those metrics are wanted, the answer is the first-party `sync_runs` table
+(D-candidate, FOUNDER-FOLLOWUPS 2026-05-22) — operational data in our own
+database, outside the optional-analytics gate entirely — not a PostHog
+event with a cleverer key.
 
 **Payload.**
 
-| Field        | Type                                          | Notes                                                     |
-| ------------ | --------------------------------------------- | --------------------------------------------------------- |
-| `sync_id`    | `string \| null`                              | UUID; `null` for FE gate fires (no id on the status poll) |
-| `mailbox_id` | `string`                                      | UUID                                                      |
-| `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | What kicked it off; FE gate fires are always `initial`    |
+| Field        | Type                                          | Notes                                                       |
+| ------------ | --------------------------------------------- | ----------------------------------------------------------- |
+| `sync_id`    | `null`                                        | Always — only the FE emits, and the D224 poll carries no id |
+| `mailbox_id` | `string`                                      | UUID                                                        |
+| `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | What kicked it off; FE gate fires are always `initial`      |
 
 **Retention / aggregation.** 90 days for raw, rolled up into the
 "syncs per mailbox per day" cohort weekly.
@@ -172,18 +179,20 @@ an observed start (never an unpaired completion), once per transition
 (ref-guarded). A transient `failed` that recovers to `ready` emits a
 second completion with `outcome: 'success'` — analysis takes the
 mailbox's last outcome. Per D224 the readiness is real worker state —
-not a fake-progress trigger. A future server-side emitter adds
-`partial` + real counts.
+not a fake-progress trigger. `partial` and real counts would require a
+server-side emitter, which is not permitted (privacy contract above); the
+metrics live in the `worker.succeeded` log line and, if the `sync_runs`
+D-candidate lands, in that table.
 
 **Payload.**
 
-| Field              | Type                                 | Notes                                                                           |
-| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------- |
-| `sync_id`          | `string \| null`                     | UUID; `null` for FE gate fires                                                  |
-| `mailbox_id`       | `string`                             | UUID                                                                            |
-| `messages_indexed` | `number`                             | Final count; `-1` when unknown (FE — no counts on the poll)                     |
-| `duration_ms`      | `number`                             | FE: observed wait (first in-progress poll → terminal); BE: full sync wall-clock |
-| `outcome`          | `'success' \| 'partial' \| 'failed'` | Terminal state; FE fires never emit `partial`                                   |
+| Field              | Type                                 | Notes                                                                                |
+| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------ |
+| `sync_id`          | `null`                               | Always — only the FE emits (see `sync_started`)                                      |
+| `mailbox_id`       | `string`                             | UUID                                                                                 |
+| `messages_indexed` | `number`                             | Always `-1` — the D224 poll carries no counts. Real counts are in `worker.succeeded` |
+| `duration_ms`      | `number`                             | Observed wait (first in-progress poll → terminal). NOT the server-side sync duration |
+| `outcome`          | `'success' \| 'partial' \| 'failed'` | Terminal state; FE fires never emit `partial`                                        |
 
 **Retention / aggregation.** 90 days raw. Powers sync-success-rate and
 sync-duration-p50/p95 dashboards.
