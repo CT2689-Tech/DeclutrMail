@@ -230,6 +230,29 @@ describe('BaseDeclutrWorker', () => {
       const success = lifecycleLines().find((line) => line.kind === 'worker.succeeded');
       expect(success?.result).toEqual({ affectedCount: 3, alreadyDone: false });
     });
+
+    it('keeps `unreadable` alongside `messagesSynced` — a total without its gap is a wrong answer', async () => {
+      // The allowlist is a denylist by omission: a metric absent from it
+      // vanishes from the ops line with no error anywhere. Reporting
+      // `messagesSynced` as if it were the whole mailbox is precisely
+      // what made the 2026-08-06 sync incident invisible until someone
+      // queried production, so the pair must travel together.
+      class SyncShapedWorker extends BaseDeclutrWorker<
+        { mailboxAccountId: string },
+        { messagesSynced: number; unreadable: number }
+      > {
+        override readonly workerName = 'SyncShapedWorker';
+        override readonly policy = 'perMailboxPolicy' as const;
+        override async processJob() {
+          return { messagesSynced: 1176, unreadable: 4 };
+        }
+      }
+
+      await new SyncShapedWorker().run(fakeJob({ data: { mailboxAccountId: 'mb-1' } }));
+
+      const success = lifecycleLines().find((line) => line.kind === 'worker.succeeded');
+      expect(success?.result).toEqual({ messagesSynced: 1176, unreadable: 4 });
+    });
   });
 
   describe('retryable error path', () => {
