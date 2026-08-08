@@ -21,6 +21,51 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-08 — A third spelling of one enum, and the display fell through to a tautology
+
+**PR:** `feat/d245-protection-review`
+**Caught by:** Codex stop-time review (round four on this branch)
+
+**What happened.** `sender_policies.protection_reason` stores
+`user_defined`. Sender Detail's adapter renders it as `user-marked`.
+And `TriageReadService.mapProtectionReason` maps it to a THIRD value,
+`manual`, on the Triage wire — while the Triage feature's own union
+declared `user-marked`. So in production every user-protected Triage row
+carried a value outside its own type, and nothing caught it because the
+fixtures used the type's spelling instead of the wire's.
+
+Consolidating the four hand-written reason strings into one shared
+helper turned that latent mismatch into a visible one: the normalizer
+covered `user_defined` and `user-marked` but not `manual`, so a
+user-protected sender rendered **"Protected · it is Protected"** — a
+tautology in the one place CLAUDE.md §2.6 and D245 require the exact
+reason.
+
+The same sweep found three more unsupported claims on this branch: the
+standing list asserted "most shielded unread mail first" even when the
+optional wire field was absent and the sort had silently collapsed to
+name order; its empty state still said protection is something you set
+by hand, when three of the four reasons are automatic; and the
+onboarding review claimed an ordering by shielded mail for a pinned set
+where every row shields zero.
+
+**Correct approach.** A shared vocabulary helper has to be built from
+the spellings that are actually ON THE WIRE, not from the types that
+claim to describe them — the wire is the thing users see. And any
+sentence naming an ordering must be conditional on the data that
+ordering used actually being present.
+
+**Rule:** When consolidating duplicated copy, enumerate every PRODUCER's
+real output first; a fallback branch that fires on an unlisted value
+will render as a tautology rather than an error, so it fails silently
+and looks fine.
+
+**Enforcement update:** `normalizeProtectionReason` accepts all three
+live dialects; the Triage FE union now matches its own wire (`manual`),
+with fixtures updated; a red-first row test asserts every reason renders
+its evidence and that the tautology never appears; ordering claims on
+both surfaces are now conditional, each with a two-sided test.
+
 ## 2026-08-08 — Three rounds of the same defect, because I kept sweeping only where I was caught
 
 **PR:** `feat/d245-protection-review` (protection review build)

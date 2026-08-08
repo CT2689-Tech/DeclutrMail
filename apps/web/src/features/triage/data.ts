@@ -38,8 +38,19 @@ import type { GmailCategory } from '@declutrmail/shared/contracts';
  */
 export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 
-/** Why a sender's verdict is locked to Keep — surfaces in the row. */
-export type ProtectionReason = 'user-marked' | 'replied' | 'starred' | 'gmail-important';
+/**
+ * Why a sender's verdict is locked to Keep — surfaces in the row.
+ *
+ * These are the TRIAGE WIRE spellings, which is the point: this union
+ * used to say `user-marked` while `TriageReadService.mapProtectionReason`
+ * has always sent `manual`, so every user-protected row in production
+ * carried a value outside its own type. Nothing caught it because the
+ * fixtures used the type's spelling rather than the wire's.
+ *
+ * Display goes through `normalizeProtectionReason` in
+ * `@declutrmail/shared/copy`, which resolves all three live dialects.
+ */
+export type ProtectionReason = 'manual' | 'replied' | 'starred' | 'gmail-important';
 
 /**
  * One row in the triage queue — sender identity + engine verdict +
@@ -355,7 +366,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
       'Read rate: 100% over the last 90 days',
       'Volume: 17 messages/month',
     ],
-    protectionReason: 'user-marked',
+    protectionReason: 'manual',
     monthlyVolume: 17,
     last90dMessages: 51,
     readRate: 1,

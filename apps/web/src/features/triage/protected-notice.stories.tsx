@@ -108,7 +108,7 @@ export const OnUnsubscribe: Story<typeof ProtectedActionNotice> = {
  * notice states the standing consequence alone.
  */
 export const WithoutAVerb: Story<typeof ProtectedActionNotice> = {
-  args: { row: protectedRow('user-marked'), verb: null },
+  args: { row: protectedRow('manual'), verb: null },
   render: (args) => frame(<ProtectedActionNotice {...args} />),
 };
 

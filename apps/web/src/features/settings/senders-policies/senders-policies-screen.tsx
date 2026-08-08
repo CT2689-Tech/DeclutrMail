@@ -79,6 +79,12 @@ export function SendersPoliciesScreen() {
       );
   }, [data]);
 
+  // Whether the ordering claim below is actually true. `unreadInboxCount`
+  // is optional on the wire, so against an API that omits it every row
+  // sorts equal and the list falls back to name order — at which point
+  // "most shielded unread mail first" describes nothing that happened.
+  const ordered = protectedSenders.some((s) => s.unreadInboxCount != null);
+
   // The BE-honest count of protected senders, query-wide rather than
   // cursor-scoped (ADR-0014). `protectedSenders.length` is only what this
   // page happens to have loaded, so it would render the `limit=50` cap as
@@ -171,15 +177,20 @@ export function SendersPoliciesScreen() {
                 margin: '4px 0 0',
               }}
             >
-              {/* Name the ordering, and scope it honestly. The sort key
-                  is computed per row, so it can only order what has
-                  been loaded — claiming a whole-mailbox ranking while
-                  page 2 is unfetched is the kind of quiet overclaim
-                  this surface exists to correct. */}
+              {/* Name the ordering only when it actually happened, and
+                  scope it honestly when it did. Two ways this sentence
+                  could lie: the sort key is computed per row so it can
+                  only order what has been LOADED (claiming a
+                  whole-mailbox ranking with page 2 unfetched), and the
+                  field is optional on the wire — against an API that
+                  does not send it the sort silently collapses to name
+                  order while this line still claims otherwise. */}
               Bulk and automatic actions skip these senders.{' '}
-              {hasNextPage
-                ? `Most shielded unread mail first, across the ${protectedSenders.length.toLocaleString()} loaded so far.`
-                : 'Most shielded unread mail first.'}
+              {!ordered
+                ? ''
+                : hasNextPage
+                  ? `Most shielded unread mail first, across the ${protectedSenders.length.toLocaleString()} loaded so far.`
+                  : 'Most shielded unread mail first.'}
             </p>
           </div>
           <span
@@ -205,7 +216,12 @@ export function SendersPoliciesScreen() {
           <div style={{ padding: `${space[5]}px ${space[5]}px` }}>
             <EmptyState
               title="No protected senders yet"
-              description="When you mark a sender as Protected from their detail page, it will appear here. Protected senders are skipped by auto-rules and bulk actions."
+              /* Must not say protection is something you set by hand:
+                 three of the four reasons are AUTOMATIC, and this is the
+                 same claim the page's intro paragraph was already fixed
+                 for. Naming the automatic triggers also stops an empty
+                 result reading as a broken scan. */
+              description="Nothing here is protected yet. DeclutrMail protects a sender on its own once you've replied at least three times, starred one of their messages, or Gmail keeps marking them important — and you can protect one yourself from its detail page. Protected senders are skipped by bulk and automatic actions."
               action={
                 <Link href="/senders" style={{ textDecoration: 'none' }}>
                   <Button size="sm">Browse senders</Button>

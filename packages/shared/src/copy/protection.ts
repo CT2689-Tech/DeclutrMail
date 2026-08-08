@@ -54,8 +54,14 @@ export function normalizeProtectionReason(
   reason: string | null | undefined,
 ): ProtectionReasonId | null {
   switch (reason) {
+    // Three spellings for one fact. `sender_policies.protection_reason`
+    // says `user_defined`; Sender Detail's adapter invented
+    // `user-marked`; and `TriageReadService` maps the same value to
+    // `manual` on the Triage wire. All three are live, so all three
+    // resolve here rather than at three different boundaries.
     case 'user_defined':
     case 'user-marked':
+    case 'manual':
       return 'user_defined';
     case 'replied':
       return 'replied';

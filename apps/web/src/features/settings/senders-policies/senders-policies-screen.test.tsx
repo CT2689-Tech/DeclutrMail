@@ -395,6 +395,36 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     expect(screen.getByText(/shielding 145 unread/)).toBeInTheDocument();
   });
 
+  it('claims an ordering only when it actually ordered by one', async () => {
+    // `unreadInboxCount` is optional on the wire. Against an API that
+    // omits it every row sorts equal and the list falls back to name
+    // order — while the header would still have claimed "most shielded
+    // unread mail first", describing something that never happened.
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Zeta' },
+      { ...BASE_ROW, id: 'b', displayName: 'Alpha' },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Alpha');
+    expect(screen.queryByText(/most shielded unread mail first/i)).toBeNull();
+    // The rest of the header still stands — it is a fact about the list.
+    expect(screen.getByText(/Bulk and automatic actions skip these senders/)).toBeInTheDocument();
+  });
+
+  it('claims the ordering when the data supports it', async () => {
+    // Two-sided: suppressing the claim when unknown must not suppress
+    // it when true.
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Zeta', unreadInboxCount: 9 },
+      { ...BASE_ROW, id: 'b', displayName: 'Alpha', unreadInboxCount: 1 },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Zeta');
+    expect(screen.getByText(/most shielded unread mail first/i)).toBeInTheDocument();
+  });
+
   it('never prints a fabricated "shielding 0" when nothing is shielded', async () => {
     // Absent (an API predating the field) and zero are different facts,
     // and neither is a measurement worth rendering.

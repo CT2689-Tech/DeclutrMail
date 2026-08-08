@@ -197,7 +197,11 @@ export function StepProtectionReview({
             {reviewHeadline(split)}
           </h1>
           <p style={{ margin: 0, fontSize: 13, color: color.fgMuted, maxWidth: 620 }}>
-            {reviewBody(split, rows.length)}
+            {reviewBody(
+              split,
+              rows.length,
+              rows.some((r) => r.unreadInboxCount > 0),
+            )}
           </p>
         </div>
         <div
@@ -243,9 +247,21 @@ function reviewHeadline(split: OnboardingProtectionSplit | null): string {
   return `${senders(split.weak)} ${split.weak === 1 ? 'is' : 'are'} protected by a single signal.`;
 }
 
-function reviewBody(split: OnboardingProtectionSplit | null, shown: number): string {
-  const ordering =
-    shown === 1
+function reviewBody(
+  split: OnboardingProtectionSplit | null,
+  shown: number,
+  anyShielded: boolean,
+): string {
+  // Claim the ordering only when something is actually being shielded.
+  // A protection over a fully-read inbox is still worth reviewing — the
+  // read deliberately keeps those, ranked last — but "the N shielding
+  // the most unread mail" implies they are holding something back, and
+  // for a set that is uniformly zero that is a description of nothing.
+  const ordering = !anyShielded
+    ? shown === 1
+      ? 'Here is the one to look at.'
+      : `Here are ${shown} to look at.`
+    : shown === 1
       ? 'Here is the one shielding the most unread mail.'
       : `Here are the ${shown} shielding the most unread mail.`;
   if (split === null) {
@@ -298,8 +314,8 @@ function donePanel(
   const stillWeak =
     split !== null && split.weak > 0
       ? `${senders(split.weak)} ${split.weak === 1 ? 'is' : 'are'} still protected by one star ` +
-        `or a Gmail importance flag — Settings → Protected senders lists every one with its ` +
-        `reason.`
+        `or a Gmail importance flag. Settings → Protected senders shows every protected sender ` +
+        `with its reason, so you can find them there whenever you want.`
       : '';
 
   if (split === null) {

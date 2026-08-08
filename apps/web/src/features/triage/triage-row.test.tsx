@@ -171,6 +171,35 @@ describe('TriageRow expanded — quiet-90d rows never read "LAST SEEN today" (W3
   });
 });
 
+describe('TriageRow — every protection reason names its evidence', () => {
+  // CLAUDE.md §2.6 / D245: "show the exact reason". A user-set Protect
+  // arrives on the Triage wire as `manual`, while this feature's union
+  // declared `user-marked` — so the value matched nothing and the row
+  // rendered the tautology "Protected · it is Protected". Fixtures used
+  // the type's spelling instead of the wire's, so nothing caught it.
+  it.each([
+    ['manual', /you marked it Protected/],
+    ['replied', /you replied at least 3 times/],
+    ['starred', /you starred a message/],
+    ['gmail-important', /Gmail marks it important/],
+  ] as const)('renders the exact evidence for %s', (reason, expected) => {
+    const row: TriageDecisionRow = { ...rowById('t-sarah'), protectionReason: reason };
+    renderRow(row);
+    expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  it('never renders the tautology', () => {
+    for (const reason of ['manual', 'replied', 'starred', 'gmail-important'] as const) {
+      const { unmount, container } = renderRow({
+        ...rowById('t-sarah'),
+        protectionReason: reason,
+      });
+      expect(container.textContent).not.toContain('Protected · it is Protected');
+      unmount();
+    }
+  });
+});
+
 describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
   // The BE has always sent `null` when the sender mailed nothing in the
   // 90-day window; the FE typed it `number` and every consumer did
@@ -249,7 +278,7 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
     // the preview always renders. The override notice therefore has to
     // exist on BOTH paths — otherwise skipping the sheet silently skips
     // the acknowledgement while `override: true` still goes on the wire.
-    renderInline(rowById('t-sarah')); // protectionReason: 'user-marked'
+    renderInline(rowById('t-sarah')); // protectionReason: 'manual' (the wire's user-set spelling)
     expect(screen.getByRole('button', { name: /Confirm Archive anyway/i })).toBeInTheDocument();
   });
 

@@ -113,6 +113,33 @@ describe('StepProtectionReview — the review', () => {
     expect(rows).toHaveAttribute('data-offer-unprotect', 'true');
   });
 
+  it('claims the shielded ordering only when something is shielded', () => {
+    // A protection over a fully-read inbox is still worth reviewing —
+    // the read deliberately keeps those, ranked last — but "the 2
+    // shielding the most unread mail" describes nothing when every one
+    // of them shields zero.
+    onboarding.firstTriage.data = {
+      rows: PENDING_ROWS.map((r) => ({ ...r, unreadInboxCount: 0 })),
+      meta: { pinned: 2, decided: 0, protection: { strong: 3, weak: 2 } },
+    };
+
+    renderReview();
+
+    expect(screen.queryByText(/shielding the most unread mail/)).toBeNull();
+    expect(screen.getByText(/Here are 2 to look at\./)).toBeInTheDocument();
+  });
+
+  it('claims it when the data supports it', () => {
+    onboarding.firstTriage.data = {
+      rows: PENDING_ROWS.map((r, i) => ({ ...r, unreadInboxCount: i === 0 ? 145 : 0 })),
+      meta: { pinned: 2, decided: 0, protection: { strong: 3, weak: 2 } },
+    };
+
+    renderReview();
+
+    expect(screen.getByText(/shielding the most unread mail/)).toBeInTheDocument();
+  });
+
   it('never reads as failure when nothing was protected by a reply', () => {
     // The second connected account: 0 strong / 2 weak. "We protected 0
     // senders you write back to" would be both true and useless, so the

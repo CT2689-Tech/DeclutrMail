@@ -10,6 +10,16 @@ import {
 } from './protection';
 
 describe('normalizeProtectionReason', () => {
+  it('accepts the Triage wire spelling for a user-set Protect', () => {
+    // THREE dialects, not two. `TriageReadService` maps `user_defined`
+    // to `'manual'` on the wire while the FE union declares
+    // `'user-marked'` — so a user-protected row carried a value in
+    // neither, and rendering it produced "Protected · it is Protected":
+    // a tautology exactly where the exact reason is required
+    // (CLAUDE.md §2.6 / D245).
+    expect(normalizeProtectionReason('manual')).toBe('user_defined');
+  });
+
   it('accepts both dialects the codebase grew', () => {
     // `sender_policies.protection_reason` is snake_case; Triage and
     // Sender Detail invented kebab aliases and each adapted at their own
