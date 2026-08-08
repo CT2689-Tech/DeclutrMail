@@ -279,6 +279,11 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
           onComplete={() => finish({ skipped: false })}
           completing={complete.isPending}
           goal={state.data?.goal ?? 'reduce_newsletters'}
+          // Step 5 needs the skip corner MORE than the steps above it,
+          // not less: it is the last step, and its error and loading
+          // panels have no other control. Dropping it stranded anyone
+          // whose first-triage read kept failing (D106).
+          corner={skipCorner}
         />
       );
   }
