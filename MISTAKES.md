@@ -21,6 +21,79 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-08 — A guard failed the PRs that satisfied it
+
+**PR:** [#478](https://github.com/CT2689-Tech/DeclutrMail/pull/478)
+**Caught by:** CI, on [#477](https://github.com/CT2689-Tech/DeclutrMail/pull/477) — which passed the same check one run earlier
+
+**What happened.** The `Closes D###` gate was
+`printf '%s' "$PR_BODY" | grep -qE ...` under `set -euo pipefail`.
+`grep -q` exits the instant it matches; `printf` is then still writing the
+rest of the body, takes SIGPIPE, and `pipefail` promotes that to a failed
+pipeline. **The check failed because it matched.** #477 carried
+`Closes D112` on line 1 of a 3.5 KB body and passed one run, then failed the
+next with `printf: write error: Broken pipe`.
+
+Being timing-dependent is what made it dangerous: it reads as flaky infra,
+so the reflex is to hit re-run rather than look. An earlier session had
+already logged "#477 has no real CI" and moved on.
+
+**Correct approach.** Match in-process — `[[ "$PR_BODY" =~ ... ]]`. No second
+process, nothing to signal. `[[:blank:]]` not `[[:space:]]`, since `grep`
+matched per LINE and `[[:space:]]` includes newline, which would have
+silently loosened the gate. Old and new compared on 12 inputs: 0 differences.
+
+**Rule:** never pipe into an early-exiting consumer (`grep -q`, `head -n`)
+under `pipefail` — the consumer's success kills the producer and pipefail
+reports that as the verdict. Match in-process, or drop `pipefail` for that
+line deliberately.
+
+**Enforcement update:** fixed in `branch-name.yml` with the reasoning inline
+so it is not "simplified" back. The two `$HEAD_REF` greps are left alone —
+a branch name is one short write that always completes. Same construct
+survives in `.husky/pre-push` and several `scripts/*.sh`, all small payloads.
+
+---
+
+## 2026-08-08 — GitHub said MERGED; the code was on no branch anyone ships
+
+**PR:** [#475](https://github.com/CT2689-Tech/DeclutrMail/pull/475), re-landed as [#479](https://github.com/CT2689-Tech/DeclutrMail/pull/479)
+**Caught by:** manual check at merge time — nothing automated looks for this
+
+**What happened.** PRs #474→#475→#476→#477 were stacked, each based on the
+one below. #474 was **squash-merged** to `main` on Aug 7, which deleted
+nothing and left `feat/d159-sync-run-history` alive but orphaned. #475 was
+then merged into that branch on Aug 8 — a day after its base had already
+been consumed. GitHub reported #475 as `MERGED` and closed it. All 23 files
+were on a dead branch and `main` had none of them:
+
+```
+$ git merge-base --is-ancestor fac30fa9 origin/main
+NO — NOT on main
+```
+
+The founder reasonably read "MERGED" as shipped. Four user-facing false
+claims stayed in production for a day, including one this session had
+already been told to fix.
+
+**Why the usual signal was absent.** GH Actions fire on
+`pull_request: branches: [main]`, so a PR targeting a *stacked* branch runs
+no typecheck, lint, or tests — only Vercel. #475 and #477 both sat green on
+two Vercel checks with zero real coverage. Retargeting #477 to `main` and
+running it for real surfaced a lint error and a stale impl-log immediately.
+
+**Correct approach.** Retarget each stacked PR to `main` as the one below
+lands, and merge it only then. `--squash` on the base makes the child's base
+a branch that will never reach `main` again.
+
+**Rule:** a stacked PR's base must be `main` before merge, and "merged" is
+never evidence — verify with
+`git merge-base --is-ancestor <mergeCommit> origin/main`.
+
+**Enforcement update:** none yet. Two candidates: fail a PR whose base is
+not `main`, or extend the `pull_request` trigger to all branches so stacked
+PRs get real CI. Recorded in FOUNDER-FOLLOWUPS.
+
 ## 2026-08-07 — Built a history table that lied about scale, then let it wedge a mailbox
 
 **PR:** [#474](https://github.com/CT2689-Tech/DeclutrMail/pull/474)
