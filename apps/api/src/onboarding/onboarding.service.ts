@@ -63,13 +63,6 @@ const FIRST_TRIAGE_PIN_VERSION = 3;
  */
 const FIRST_TRIAGE_POOL_LIMIT = 200;
 
-/**
- * D112 — "engine confidence is uniformly low" fallback bar. When NO
- * candidate clears this confidence, ranking flips to lowest read rate
- * (the small-mailbox edge case in the plan).
- */
-const FIRST_TRIAGE_LOW_CONFIDENCE_BAR = 0.5;
-
 export interface FirstTriageRead {
   rows: TriageQueueRow[];
   meta: OnboardingFirstTriageMeta;
