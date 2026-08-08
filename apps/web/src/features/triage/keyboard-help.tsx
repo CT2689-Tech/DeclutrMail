@@ -21,7 +21,7 @@ const { color, font } = tokens;
  * Every row documents a REAL binding wired in this feature — nothing
  * aspirational:
  *
- *   - K/A/U/L      → `resolveShortcut` in `action-toolbar.tsx` (bound
+ *   - K/A/U/L/D    → `resolveShortcut` in `action-toolbar.tsx` (bound
  *                     while a row is expanded; D29 + D227)
  *   - Enter/Space  → row header expand/collapse (`triage-row.tsx`)
  *   - Z            → undo last decision (`triage-undo-tray.tsx`, D35)
@@ -62,6 +62,7 @@ const VERB_HELP: Record<(typeof VERB_ORDER)[number], string> = {
   Archive: 'Archive the expanded sender',
   Unsubscribe: 'Unsubscribe from the expanded sender',
   Later: 'Move the expanded sender to Later',
+  Delete: 'Move the expanded sender’s inbox mail to Gmail Trash',
 };
 
 /**

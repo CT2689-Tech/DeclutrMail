@@ -51,7 +51,7 @@ import type { BatchVerb } from './domain-batch-card';
 import { TriageEmptyState } from './empty-state';
 import { TriageKeyboardHelp } from './keyboard-help';
 import { SessionProgress } from './session-progress';
-import { useTriageStore, type SheetableVerb } from './store';
+import { useTriageStore, type RememberableVerb, type SheetableVerb } from './store';
 import { TodayStrip } from './today-strip';
 import { TriageQueue } from './triage-queue';
 import type { ActionVerb } from './types';
@@ -74,8 +74,8 @@ export const DEFAULT_TRIAGE_STATE: TriageScreenState = {
  * Triage screen — the V2 daily ritual (D29, D33, D36, D207).
  *
  * D207 — this is the Decide pillar of Discover→Decide→Automate→Audit
- * →Undo. Each row is one decision; K/A/U/L are the four verbs
- * (D29 / D227); D226's mandatory preview is always rendered (either
+ * →Undo. Each row is one decision; K/A/U/L/D are the five actions
+ * (D29 / amended D227); D226's mandatory preview is always rendered (either
  * via the sheet or inline via D34's remember-preference); the receipt
  * + undo flow lives in `<TriageUndoTray>` (D35).
  *
@@ -95,6 +95,8 @@ export const DEFAULT_TRIAGE_STATE: TriageScreenState = {
  *                   confirms.
  *   - Later       → same pipeline, primary `later` (moves the sender's
  *                   inbox mail into DeclutrMail/Later).
+ *   - Delete      → same pipeline, primary `delete` (moves matching
+ *                   inbox mail to Gmail Trash; always uses the sheet).
  *   - Unsubscribe → `POST /api/actions/unsubscribe-intent` (Wave-2
  *                   executes the real RFC8058/mailto pipeline); the
  *                   sheet's "also archive the backlog" toggle rides
@@ -162,7 +164,7 @@ export function TriageScreen({
     actionId: string;
     rowId: string;
     senderName: string;
-    verb: 'Archive' | 'Later';
+    verb: 'Archive' | 'Later' | 'Delete';
     /**
      * True when this job is the optional backlog-archive that rides an
      * Unsubscribe decision (D9). The unsub already counted toward the
@@ -357,12 +359,14 @@ export function TriageScreen({
     trackedPreviews.current.add(key);
     void track('action_preview_viewed', {
       journey,
-      verb: pendingAction.verb.toLowerCase() as 'archive' | 'unsubscribe' | 'later',
+      verb: pendingAction.verb.toLowerCase() as 'archive' | 'unsubscribe' | 'later' | 'delete',
     });
   }, [journey, pendingAction, previewInboxCount]);
   const inlinePreviewBlocked =
     pendingAction?.surface === 'inline' &&
-    (pendingAction.verb === 'Archive' || pendingAction.verb === 'Later') &&
+    (pendingAction.verb === 'Archive' ||
+      pendingAction.verb === 'Later' ||
+      pendingAction.verb === 'Delete') &&
     typeof previewInboxCount !== 'number';
 
   // Drive the async-action lifecycle off the polled status. On `done`
@@ -610,10 +614,10 @@ export function TriageScreen({
         return;
       }
 
-      // Archive / Later — the async destructive pipeline (ADR-0020
+      // Archive / Later / Delete — the async destructive pipeline (ADR-0020
       // composite enqueue + status poll). The row stays in the queue,
       // rendered busy, until the worker confirms.
-      const primaryType = verb === 'Archive' ? 'archive' : 'later';
+      const primaryType = verb === 'Archive' ? 'archive' : verb === 'Later' ? 'later' : 'delete';
       enqueueComposite.mutate(
         {
           senderId: row.senderId,
@@ -707,8 +711,9 @@ export function TriageScreen({
    * For Keep: no preview needed (Keep is non-destructive — the
    * sender stays exactly where it is). Dispatch immediately.
    *
-   * For Archive / Unsubscribe / Later: open the action surface.
-   * The remember-preference flag picks the surface (sheet vs inline).
+   * For Archive / Unsubscribe / Later / Delete: open the action surface.
+   * The remember-preference flag picks the surface (sheet vs inline),
+   * except Delete, which always uses the full sheet.
    */
   const onRowAction = useCallback(
     (verb: ActionVerb, row: TriageDecisionRow) => {
@@ -720,7 +725,10 @@ export function TriageScreen({
         return;
       }
       const sheetableVerb = verb as SheetableVerb;
-      const surface: 'sheet' | 'inline' = rememberPreference[sheetableVerb] ? 'inline' : 'sheet';
+      // Delete always keeps the full confirmation window. The inline
+      // preference is intentionally limited to lower-consequence verbs.
+      const surface: 'sheet' | 'inline' =
+        sheetableVerb !== 'Delete' && rememberPreference[sheetableVerb] ? 'inline' : 'sheet';
       openPending(sheetableVerb, row.id, surface);
       // When inline preview is the surface, expand the row so the
       // preview is visible — and the user's eye is already there.
@@ -735,8 +743,8 @@ export function TriageScreen({
   const onSheetConfirm = useCallback(
     (details: ConfirmDetails) => {
       if (pendingAction == null || pendingRow == null) return;
-      if (pendingAction.verb !== 'Keep') {
-        const verb = pendingAction.verb as SheetableVerb;
+      if (pendingAction.verb !== 'Keep' && pendingAction.verb !== 'Delete') {
+        const verb = pendingAction.verb as RememberableVerb;
         setRememberPreference(verb, details.rememberPreference);
         // D34 persistence — the sheet only renders when the stored pref
         // is `false`, so a checked toggle is the only change worth a
@@ -967,7 +975,7 @@ export function TriageScreen({
         <ScreenIntro
           id="triage"
           title="How Triage works"
-          body="One row, one decision. K keeps, A archives, U unsubscribes, L moves to Later. Every destructive action shows a preview before anything changes."
+          body="Choose what happens for each sender: Keep, Archive, Unsubscribe, Later, or Delete. You’ll see the affected mail before anything changes."
           tip="We never read message bodies. Triage reasons from sender, subject, Gmail's preview snippet, dates, and aggregate read/volume stats — that's it."
         />
       )}

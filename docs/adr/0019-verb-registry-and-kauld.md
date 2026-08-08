@@ -151,7 +151,7 @@ export function deriveDefaultPrimary(sender: {
 }): VerbId;
 ```
 
-### Action display rule (all surfaces inherit)
+### Action display rule
 
 Per ADR-0016 §A5 + Decision 9 in spec v1.2:
 
@@ -162,7 +162,7 @@ Primary derivation (every row, every surface):
   last_seen > 180d     → 'archive'     (dark outline)
   else                 → 'keep'        (neutral outline)
 
-Overflow ⋯ (every row, every surface):
+Overflow ⋯ (Senders list/detail rows):
   Render VERB_REGISTRY entries filtered by sender capability
   Delete renders w/ tone='danger' + separator above
 
@@ -170,12 +170,20 @@ Bulk SelectionBar:
   Equal-weight K/A/U/L/D (bulk = move workflow; no primary CTA)
 ```
 
+**Founder amendment, 2026-08-06 — Triage.** Triage renders the full
+K/A/U/L/D set directly because it has no per-row overflow menu. Delete
+remains user-chosen only (never an engine verdict or highlighted
+recommendation), uses the danger tone, and always opens the full mandatory
+preview sheet before the existing Gmail Trash + recovery pipeline runs.
+
 ### Forbidden patterns
 
 - Single-letter button labels in production UI (`[K]` `[A]` alone). Full-word + `kbd` chip ALWAYS.
 - Per-surface verb-to-button hand-rolling. EVERY surface reads `VERB_REGISTRY`.
 - Adding a new verb without a Verb Registry entry. Registry is the only source of truth.
-- Delete rendered as a fact-derived primary CTA. Always overflow.
+- Delete rendered as a fact-derived primary CTA. It is never recommended;
+  Senders keeps it in overflow and Triage renders it as an explicit danger
+  action.
 
 ### Accent color additions
 

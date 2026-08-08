@@ -56,8 +56,8 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
   });
 
   it('renders the full canonical verb set K/A/U/L/D, Delete included', () => {
-    // Delete was missing here until 2026-07-26 while `why-no-delete.tsx`
-    // told every triage user it lived on Sender Detail. Nothing pinned a
+    // Delete was missing here until 2026-07-26 while a note in Triage
+    // told every user it lived on Sender Detail. Nothing pinned a
     // verb count on any surface, which is why the gap survived every gate
     // — this assertion is that missing tripwire.
     render(<ActionToolbar sender={sender()} onAction={() => {}} />);

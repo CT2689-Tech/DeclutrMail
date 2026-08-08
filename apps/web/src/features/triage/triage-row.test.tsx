@@ -128,7 +128,7 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
 describe('lastSeenLabel — the W3 consistency guard', () => {
   it('renders "90d+" when the 90d window is empty but lastDays disagrees', () => {
     // The live bug shape: quiet 90d with a collapsed lastDays of 0
-    // ("LAST SEEN today" beside "Quiet 90d · 555 lifetime").
+    // ("LAST SEEN today" beside "Quiet 90d · 555 received").
     expect(lastSeenLabel({ last90dMessages: 0, lastDays: 0 })).toBe('90d+');
     expect(lastSeenLabel({ last90dMessages: 0, lastDays: 45 })).toBe('90d+');
     expect(lastSeenLabel({ last90dMessages: 0, lastDays: 89 })).toBe('90d+');
@@ -148,9 +148,9 @@ describe('lastSeenLabel — the W3 consistency guard', () => {
 
 describe('TriageRow expanded — quiet-90d rows never read "LAST SEEN today" (W3)', () => {
   it('shows "90d+" beside the "Quiet 90d" why-line for the audit-shape row', () => {
-    const row = rowById('t-shipping'); // last90dMessages 0, lastDays 0, 555 lifetime
+    const row = rowById('t-shipping'); // last90dMessages 0, lastDays 0, 555 received
     renderRow(row, { expanded: true });
-    expect(screen.getByText('Quiet 90d · 555 lifetime')).toBeInTheDocument();
+    expect(screen.getByText('Quiet 90d · 555 received')).toBeInTheDocument();
     expect(screen.getByText('90d+')).toBeInTheDocument();
     expect(screen.queryByText('today')).not.toBeInTheDocument();
   });

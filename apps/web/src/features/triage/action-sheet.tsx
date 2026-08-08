@@ -21,7 +21,8 @@ export interface ConfirmDetails {
  * Triage action sheet (D34) — modal preview before a destructive
  * mutation runs.
  *
- * D34: the sheet shows by default on Archive / Unsubscribe / Later.
+ * D34: the sheet shows by default on Archive / Unsubscribe / Later and
+ * always for Delete.
  * A "remember my choice" toggle lets the user opt into the
  * preview-inline path; that preference lives in the triage Zustand
  * store (see `store.ts`).
@@ -75,12 +76,15 @@ export function ActionSheet({
   const effectiveArchiveHistoric =
     actionKey !== null && initializedActionKey !== actionKey ? false : archiveHistoric;
 
-  // Archive/Later always move inbox mail. Unsubscribe only does when the
+  // Archive/Later/Delete always move inbox mail. Unsubscribe only does when the
   // user keeps the backlog option on. Any such action requires the live
   // count to have resolved; loading/failure must fail closed for click and
   // keyboard submission alike.
   const requiresLivePreview =
-    verb === 'Archive' || verb === 'Later' || (verb === 'Unsubscribe' && effectiveArchiveHistoric);
+    verb === 'Archive' ||
+    verb === 'Later' ||
+    verb === 'Delete' ||
+    (verb === 'Unsubscribe' && effectiveArchiveHistoric);
   const previewUnavailable = inboxCount === 'unavailable';
   const previewPending = inboxCount === 'loading';
   const wakeAtInvalid =
@@ -141,7 +145,7 @@ export function ActionSheet({
 
   if (!open || !row) return null;
 
-  const danger = verb === 'Unsubscribe';
+  const danger = verb === 'Delete';
   // Unsubscribe only: Archive/Later already move every inbox message
   // from the sender, so the backlog toggle exists only where the
   // primary verb does NOT touch past mail.
@@ -181,7 +185,9 @@ export function ActionSheet({
         }}
       >
         <div style={{ padding: '20px 24px 8px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow tone={danger ? 'amber' : 'primary'}>Preview · {verb}</Eyebrow>
+          <Eyebrow tone={verb === 'Unsubscribe' || danger ? 'amber' : 'primary'}>
+            Preview · {verb}
+          </Eyebrow>
           <h2
             id="dm-triage-sheet-title"
             style={{
@@ -287,31 +293,33 @@ export function ActionSheet({
            * lives in the Zustand store). The sheet still renders for
            * THIS action — the preference applies to the NEXT one.
            */}
-          <button
-            onClick={() => setRememberPreference((v) => !v)}
-            type="button"
-            aria-label="Show this preview in the row next time"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '10px 12px',
-              background: 'transparent',
-              border: `1px solid ${color.lineSoft}`,
-              borderRadius: 9,
-              cursor: 'pointer',
-              textAlign: 'left',
-              fontFamily: font.sans,
-            }}
-          >
-            <CheckSquare on={rememberPreference} muted />
-            <span style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
-              <strong style={{ color: color.fg, fontWeight: 600 }}>
-                Show this in the row next time
-              </strong>{' '}
-              — the same preview will appear below the sender. You can change this in Settings.
-            </span>
-          </button>
+          {verb !== 'Delete' && (
+            <button
+              onClick={() => setRememberPreference((v) => !v)}
+              type="button"
+              aria-label="Show this preview in the row next time"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 12px',
+                background: 'transparent',
+                border: `1px solid ${color.lineSoft}`,
+                borderRadius: 9,
+                cursor: 'pointer',
+                textAlign: 'left',
+                fontFamily: font.sans,
+              }}
+            >
+              <CheckSquare on={rememberPreference} muted />
+              <span style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
+                <strong style={{ color: color.fg, fontWeight: 600 }}>
+                  Show this in the row next time
+                </strong>{' '}
+                — the same preview will appear below the sender. You can change this in Settings.
+              </span>
+            </button>
+          )}
         </div>
 
         {isProtectedRow && (
@@ -358,7 +366,9 @@ export function ActionSheet({
                 ? effectiveArchiveHistoric
                   ? "The unsubscribe itself can't be undone — the archived backlog uses your plan's Activity undo window."
                   : "The unsubscribe request can't be undone. Existing inbox mail stays put."
-                : "Reversible for your plan's undo window from Activity."}
+                : verb === 'Delete'
+                  ? "Moves matching inbox mail to Gmail Trash. Activity Undo uses your plan's window; Gmail normally keeps Trash for up to 30 days."
+                  : "Reversible for your plan's undo window from Activity."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {previewUnavailable && onRetryPreview && (
@@ -370,7 +380,7 @@ export function ActionSheet({
               Cancel
             </Button>
             <Button
-              tone={danger ? 'warn' : 'primary'}
+              tone={danger ? 'danger' : verb === 'Unsubscribe' ? 'warn' : 'primary'}
               disabled={confirmDisabled}
               onClick={() =>
                 onConfirm({

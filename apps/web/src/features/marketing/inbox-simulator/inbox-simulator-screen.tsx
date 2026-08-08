@@ -22,7 +22,7 @@ import { track } from '@/lib/posthog';
 
 // The FULL fixture queue on purpose (was slice(0,7)): the last two
 // rows are the demo's most instructive states — a reply-protected
-// sender (destructive verbs hidden, D245 signal shown) and an
+// sender (automatic/bulk protection explained, D245 signal shown) and an
 // Unsubscribe recommendation with NO unsubscribe channel (disabled verb
 // with an honest explanation). Trust is the product; show the honest
 // edges, not just the happy path.
@@ -98,7 +98,9 @@ function parseStoredDecisions(stored: string): DemoDecision[] {
       return [];
     }
     const expectedCount =
-      record.verb === 'Archive' || record.verb === 'Later' ? syntheticInboxCount(row) : 0;
+      record.verb === 'Archive' || record.verb === 'Later' || record.verb === 'Delete'
+        ? syntheticInboxCount(row)
+        : 0;
     if (record.affectedCount !== expectedCount) return [];
 
     if (
@@ -133,11 +135,13 @@ function decisionSummary(decision: DemoDecision): string {
       return `${decision.affectedCount} sample messages moved to DeclutrMail/Later.`;
     case 'Unsubscribe':
       return 'Sample unsubscribe request recorded. A delivered request cannot be recalled.';
+    case 'Delete':
+      return `${decision.affectedCount} sample messages moved to Gmail Trash.`;
   }
 }
 
 function isActivityUndoable(decision: DemoDecision): boolean {
-  return decision.verb === 'Archive' || decision.verb === 'Later';
+  return decision.verb === 'Archive' || decision.verb === 'Later' || decision.verb === 'Delete';
 }
 
 export function InboxSimulatorScreen() {
@@ -174,7 +178,9 @@ export function InboxSimulatorScreen() {
   const confirm = () => {
     if (!pending) return;
     const affectedCount =
-      pending.verb === 'Archive' || pending.verb === 'Later' ? syntheticInboxCount(pending.row) : 0;
+      pending.verb === 'Archive' || pending.verb === 'Later' || pending.verb === 'Delete'
+        ? syntheticInboxCount(pending.row)
+        : 0;
     const at = Math.max(
       Date.now(),
       decisions.reduce((next, decision) => Math.max(next, decision.at + 1), 0),
@@ -313,7 +319,7 @@ export function InboxSimulatorScreen() {
 
           {decisions.length === 0 ? (
             <p className="dm-simulator-activity-empty">
-              Choose a verb, inspect the preview, then confirm. Outcomes appear here only after
+              Choose an action, inspect the preview, then confirm. Outcomes appear here only after
               confirmation.
             </p>
           ) : (
@@ -340,7 +346,7 @@ export function InboxSimulatorScreen() {
           )}
 
           <div className="dm-simulator-delete-note">
-            <Eyebrow tone="amber">Delete lives in Senders</Eyebrow>
+            <Eyebrow tone="amber">Delete is always yours to choose</Eyebrow>
             <p>{ACTION_REGISTRY.delete.copy.description}</p>
           </div>
         </aside>
@@ -414,7 +420,9 @@ function DemoPreviewDialog({
         className="dm-simulator-dialog"
       >
         <div className="dm-simulator-dialog-head">
-          <Eyebrow tone={pending.verb === 'Unsubscribe' ? 'amber' : 'primary'}>
+          <Eyebrow
+            tone={pending.verb === 'Unsubscribe' || pending.verb === 'Delete' ? 'amber' : 'primary'}
+          >
             Preview · synthetic inbox
           </Eyebrow>
           <h2 id="dm-simulator-dialog-title">Approve the sample action</h2>
@@ -435,7 +443,16 @@ function DemoPreviewDialog({
           <Button tone="default" onClick={onCancel}>
             Cancel
           </Button>
-          <Button tone={pending.verb === 'Unsubscribe' ? 'warn' : 'primary'} onClick={onConfirm}>
+          <Button
+            tone={
+              pending.verb === 'Delete'
+                ? 'danger'
+                : pending.verb === 'Unsubscribe'
+                  ? 'warn'
+                  : 'primary'
+            }
+            onClick={onConfirm}
+          >
             Confirm sample {pending.verb}
           </Button>
         </div>

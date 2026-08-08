@@ -74,13 +74,14 @@ export interface TriageDecisionRow {
   confidence: number;
   /** D24 reasoning copy — LLM (Haiku) or template fallback. */
   reasoning: string;
-  /** Supporting signals — bullet list in the expanded row. */
+  /** Evidence shown as a bullet list in the expanded row. */
   signals: string[];
 
   /**
    * Why the verdict is locked to Keep. Non-null means the engine's
-   * Phase A protection ran (manual or an exact strong-signal reason) —
-   * destructive verbs are disabled for these rows.
+   * Phase A protection ran (manual or an exact strong-signal reason).
+   * Protected rows stay out of automatic and bulk cleanup, while the
+   * user's explicit row actions remain available with confirmation.
    */
   protectionReason: ProtectionReason | null;
 
@@ -98,7 +99,7 @@ export interface TriageDecisionRow {
   readRate: number;
   /** Days since the sender's most recent message. */
   lastDays: number;
-  /** Approximate lifetime received count from this sender. */
+  /** Inbound messages currently present in DeclutrMail's mailbox index. */
   totalAllTime: number;
 }
 
@@ -322,7 +323,8 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     unsubscribeMethod: 'none',
     verdict: 'keep',
     confidence: 0.95,
-    reasoning: 'Protected — every message from Sarah stays in the inbox.',
+    reasoning:
+      'You marked Sarah as Protected, so DeclutrMail keeps this sender out of automatic and bulk cleanup.',
     signals: [
       'Protected since 2024-02-11 (you marked them)',
       'Read rate: 100% over the last 90 days',
@@ -352,7 +354,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     signals: [
       'Read rate: 95% over the last 90 days',
       'Volume: 6 messages/month',
-      'Protected — you replied at least 3 times; destructive verbs hidden',
+      'Protected — automatic and bulk cleanup stays off because you replied at least 3 times',
     ],
     protectionReason: 'replied',
     monthlyVolume: 6,
@@ -368,7 +370,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
   // with no List-Unsubscribe header, so the U pill is disabled — the
   // toolbar must explain why. Also quiet-90d (`last90dMessages: 0`)
   // with a stale `lastDays: 0`, the exact pair behind the
-  // "Quiet 90d · 555 lifetime" vs "LAST SEEN today" contradiction.
+  // "Quiet 90d · 555 received" vs "LAST SEEN today" contradiction.
   // Appended last so index-pinned tests (TRIAGE_QUEUE[0]/[1]) hold.
   {
     id: 't-shipping',
@@ -487,7 +489,7 @@ export function canUnsubscribe(row: TriageDecisionRow): boolean {
 /**
  * Display value for the "last seen" stat — derived so it can never
  * contradict the quiet-90d copy that `last90dMessages` drives (the
- * 2026-07-02 audit's W3: a row read "Quiet 90d · 555 lifetime" while
+ * 2026-07-02 audit's W3: a row read "Quiet 90d · 555 received" while
  * the stat card said "LAST SEEN today").
  *
  * When the sender has ZERO messages inside the rolling 90-day window,

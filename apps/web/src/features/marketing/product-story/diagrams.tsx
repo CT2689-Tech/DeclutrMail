@@ -8,11 +8,16 @@ import {
 import { ACTION_REGISTRY, VERB_REGISTRY, type VerbId } from '@declutrmail/shared/actions';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
+// All five render in Triage as of the 2026-08-06 founder amendment to
+// ADR-0019. Delete is never an engine recommendation — it is user-chosen,
+// danger-toned, and always previewed — but it IS on the toolbar, so this
+// figure must show it or the page draws a Triage that no longer exists.
 const TRIAGE_VERBS = [
   'keep',
   'archive',
   'unsubscribe',
   'later',
+  'delete',
 ] as const satisfies readonly VerbId[];
 
 const ACTION_CLARIFIERS: Readonly<Record<VerbId, string>> = {
@@ -24,7 +29,7 @@ const ACTION_CLARIFIERS: Readonly<Record<VerbId, string>> = {
   later:
     'Later moves the current messages in the preview into DeclutrMail/Later until the chosen sender-level return time. It does not silently create a future rule.',
   delete:
-    'Delete is available from Senders and Sender Detail, not the daily Triage toolbar. It moves the previewed mail to Gmail Trash.',
+    'Delete is never recommended for you — you pick it yourself, and it always shows a full preview first. It moves the previewed mail to Gmail Trash, where Gmail normally keeps it for 30 days.',
 };
 
 /** All content remains visible; motion only moves the focus ring between steps. */
@@ -71,7 +76,19 @@ export function ActionSemanticsGrid() {
         const action = ACTION_REGISTRY[id];
         if (!presentation) return null;
         return (
-          <article key={id} className="dm-story-action-card">
+          <article
+            key={id}
+            // Delete keeps its danger styling, but as a modifier on the
+            // ONE card the map produces. It used to be a second hardcoded
+            // card appended below, because `TRIAGE_VERBS` deliberately
+            // excluded delete — adding delete to that array without
+            // removing the card rendered Delete twice on /how-it-works.
+            className={
+              id === 'delete'
+                ? 'dm-story-action-card dm-story-action-card-delete'
+                : 'dm-story-action-card'
+            }
+          >
             <div className="dm-story-action-title">
               <kbd>{presentation.shortcut}</kbd>
               <h3>{action.copy.primary}</h3>
@@ -81,14 +98,6 @@ export function ActionSemanticsGrid() {
           </article>
         );
       })}
-      <article className="dm-story-action-card dm-story-action-card-delete">
-        <div className="dm-story-action-title">
-          <kbd>{VERB_REGISTRY.find((verb) => verb.id === 'delete')?.shortcut ?? 'D'}</kbd>
-          <h3>{ACTION_REGISTRY.delete.copy.primary}</h3>
-        </div>
-        <p>{ACTION_REGISTRY.delete.copy.description}</p>
-        <p className="dm-story-action-clarifier">{ACTION_CLARIFIERS.delete}</p>
-      </article>
     </div>
   );
 }

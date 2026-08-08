@@ -18,7 +18,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ActionSheet } from './action-sheet';
 import { TRIAGE_QUEUE } from './data';
-import { resetTriageStore, useTriageStore, type SheetableVerb } from './store';
+import { resetTriageStore, useTriageStore, type RememberableVerb } from './store';
 
 beforeEach(() => {
   resetTriageStore();
@@ -148,6 +148,25 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
     // the D226 guarantee the toggle can't silently break.
     expect(html.toLowerCase()).toContain('same preview will appear below the sender');
   });
+
+  it('keeps Delete in the full confirmation sheet and states both recovery paths', () => {
+    const html = renderToStaticMarkup(
+      <ActionSheet
+        open={true}
+        verb="Delete"
+        row={row}
+        inboxCount={2}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+
+    expect(html).toContain(`aria-label="Preview · Delete ${row.senderName}"`);
+    expect(html).toContain('Gmail Trash');
+    expect(html).toContain('Activity Undo');
+    expect(html).toContain('up to 30 days');
+    expect(html).not.toContain('Show this in the row next time');
+  });
 });
 
 describe('ActionSheet — live-preview confirm gate', () => {
@@ -265,7 +284,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
 });
 
 describe('Store — remember-preference persists per verb (round-trip)', () => {
-  it.each<SheetableVerb>(['Archive', 'Unsubscribe', 'Later'])(
+  it.each<RememberableVerb>(['Archive', 'Unsubscribe', 'Later'])(
     'toggling %s in the store round-trips to true and back',
     (verb) => {
       expect(useTriageStore.getState().rememberPreference[verb]).toBe(false);

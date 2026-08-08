@@ -7,7 +7,7 @@
 //
 // The two D31 variants below are the load-bearing comparison:
 //   • Highlighted   — confidence > 0.85, recommended verb glows
-//   • Flat          — confidence ≤ 0.85, all four verbs equal weight
+//   • Flat          — confidence ≤ 0.85, no recommendation highlighted
 // The 0.85 / 0.86 boundary tests in action-toolbar.test.tsx pin the
 // strict-greater-than semantics. These stories are the visual proof.
 
@@ -38,7 +38,7 @@ const meta: StoryMeta<typeof ActionToolbar> = {
     docs: {
       description: {
         component:
-          'Triage row action toolbar — K/A/U/L per D29 + D227. Per D31 the engine’s verdict is emphasised ONLY when confidence is strictly greater than 0.85; below that threshold every verb renders flat.',
+          'Triage row action toolbar — K/A/U/L/D per amended D227. The engine’s verdict is emphasised only when confidence is strictly greater than 0.85; Delete is never recommended and always remains an explicit danger action.',
       },
     },
   },
@@ -72,7 +72,7 @@ function frame(children: React.ReactNode) {
 
 /**
  * D31 — recommended-verb emphasis: confidence ABOVE the 0.85 threshold.
- * Archive renders with a darker tone and a white-on-translucent K/A/U/L
+ * Archive renders with a darker tone and a white-on-translucent K/A/U/L/D
  * shortcut chip, drawing the eye without locking focus.
  */
 export const HighlightedRecommendation: Story<typeof ActionToolbar> = {

@@ -16,7 +16,7 @@
 //   - `openPending` / `clearPending` set and clear cleanly.
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { resetTriageStore, useTriageStore, type SheetableVerb } from './store';
+import { resetTriageStore, useTriageStore, type RememberableVerb } from './store';
 
 beforeEach(() => {
   resetTriageStore();
@@ -36,7 +36,7 @@ describe('useTriageStore — default state', () => {
 });
 
 describe('useTriageStore — remember-preference per verb (D34)', () => {
-  const VERBS: SheetableVerb[] = ['Archive', 'Unsubscribe', 'Later'];
+  const VERBS: RememberableVerb[] = ['Archive', 'Unsubscribe', 'Later'];
 
   for (const verb of VERBS) {
     it(`round-trips ${verb} without leaking into the other verbs`, () => {

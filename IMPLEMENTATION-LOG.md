@@ -202,7 +202,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D144 | Honest "Choose competitor if..." callouts | ⬜ |  |  |  |
 | D145 | `/compare` index page | ⬜ |  |  |  |
 | D146 | Privacy + Terms generation: **Claude-drafted from CASA/methodology + lawyer review at user-threshold | 🔵 | #199 |  |  |
-| D147 | Cookie consent banner: **Minimal (essential always-on + optional analytics) | 🔵 | #282, #289, #320 |  |  |
+| D147 | Cookie consent banner: **Minimal (essential always-on + optional analytics) | 🔵 | #282, #289, #320, #474 |  |  |
 | D148 | Localization: **English only + DPDP Act compliance clause | 🔵 | #291 |  |  |
 | D149 | Launch strategy: **Strategy A (full V2 as designed) at 25-35 hrs/week + heavy Phase 4 Claude OS investment | ⬜ |  |  |  |
 | D150 | Indexing strategy: **12 indexes at launch (9 composite + 1 trigram + 2 partial) | 🟢 | #13, #194 | packages/db/tests/migration-roundtrip.test.ts (3/3) |  |
@@ -214,7 +214,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🟢 | #35, #48, #113, #188, #211, #337, #378, #380, #382, #383, #384, #456 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425 |  |  |
-| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
+| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473, #474 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
 | D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |

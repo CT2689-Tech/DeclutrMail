@@ -67,10 +67,10 @@ describe('TriageScreen — populated queue', () => {
     expect(html).toContain(`${TRIAGE_QUEUE.length} decisions, one at a time.`);
   });
 
-  it('renders K, A, U, L shortcut chips somewhere in the toolbar (per row)', () => {
+  it('renders K, A, U, L, D shortcut chips somewhere in the toolbar (per row)', () => {
     // When the screen renders with rows the toolbars only mount under
     // expanded rows — and the row is collapsed by default. So the
-    // shortcut chips appear in the queue legend (K · A · U · L)
+    // shortcut chips appear in the queue legend (K · A · U · L · D)
     // even when no row is expanded. That legend is the screen's
     // global cue.
     const html = renderState({
@@ -78,7 +78,7 @@ describe('TriageScreen — populated queue', () => {
       rows: [...TRIAGE_QUEUE],
       stats: TRIAGE_SESSION_STATS,
     });
-    expect(html).toContain('K · A · U · L');
+    expect(html).toContain('K · A · U · L · D');
   });
 });
 

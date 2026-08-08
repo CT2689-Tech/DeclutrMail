@@ -10,7 +10,7 @@ const { color, font } = tokens;
  *
  * The collapsed row shows the critical info — sender identity,
  * verdict pill, a one-line "why". This expanded panel adds the full
- * stats grid (volume, read, last-seen, lifetime), the engine's full
+ * stats grid (volume, read, last-seen, indexed received count), the engine's full
  * reasoning copy, and the bullet list of supporting signals.
  *
  * Privacy (D7 / D228): every field here is metadata. No body, no
@@ -52,7 +52,7 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
         {/* Derived via `lastSeenLabel` so this card can never
             contradict the collapsed row's quiet-90d copy (audit W3). */}
         <Stat label="last seen" value={lastSeenLabel(row)} />
-        <Stat label="all-time" value={fmtCompact(row.totalAllTime)} />
+        <Stat label="received" value={fmtCompact(row.totalAllTime)} />
       </div>
 
       {/* Full reasoning copy (D24) — the same string the engine writes
@@ -76,7 +76,7 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
             marginBottom: 4,
           }}
         >
-          Reasoning
+          Why this is suggested
         </div>
         <p style={{ fontSize: 12.5, color: color.fg, margin: 0, lineHeight: 1.55 }}>
           {row.reasoning}
@@ -96,7 +96,7 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
             marginBottom: 6,
           }}
         >
-          Supporting signals
+          What we noticed
         </div>
         <ul
           style={{

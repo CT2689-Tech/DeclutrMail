@@ -109,7 +109,10 @@ function expandRow(senderName: string) {
   fireEvent.click(screen.getByRole('button', { name: `${senderName} — expand triage detail` }));
 }
 
-async function confirmOpenSheet(verb: 'Archive' | 'Unsubscribe' | 'Later', waitForPreview = true) {
+async function confirmOpenSheet(
+  verb: 'Archive' | 'Unsubscribe' | 'Later' | 'Delete',
+  waitForPreview = true,
+) {
   const dialog = await screen.findByRole('dialog');
   if (waitForPreview) {
     await waitFor(() => expect(screen.getByText('47')).toBeDefined());
@@ -273,6 +276,59 @@ describe('TriageScreen — D226 mutation wiring', () => {
     );
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'stats'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: undoKeys.all });
+  });
+
+  it('Delete is available in Triage and dispatches through the existing previewed Trash pipeline', async () => {
+    const enqueues: unknown[] = [];
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          enqueues.push(await req.json());
+          return jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 47,
+              secondaryCount: null,
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              status: 'done',
+              requestedCount: 47,
+              affectedCount: 47,
+              undoToken: '55555555-5555-4555-8555-555555555555',
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'd' });
+
+    expect(
+      await screen.findByRole('region', { name: `Preview · Delete ${GROUPON.senderName}` }),
+    ).toBeDefined();
+    await confirmOpenSheet('Delete');
+
+    await waitFor(() => expect(enqueues).toHaveLength(1));
+    expect(enqueues[0]).toMatchObject({
+      selector: { type: 'sender', senderId: GROUPON.senderId },
+      primary: { type: 'delete', olderThanDays: null },
+    });
   });
 
   it('keeps the acted-on row busy (aria-busy) while the worker has not confirmed', async () => {

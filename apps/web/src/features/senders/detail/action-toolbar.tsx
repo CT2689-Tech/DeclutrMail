@@ -22,9 +22,10 @@ const { color, font, radius } = tokens;
  * enumerated this toolbar as K/A/U/L, but ADR-0019 postdates it and adds
  * Delete as canonical, and CLAUDE.md §3 ranks §2 above D-decisions —
  * ruled stale by the founder. The gap was user-visible in the worst way:
- * `triage/why-no-delete.tsx` renders under every triage queue telling
- * users "deleting a sender's mail lives on Senders and Sender Detail",
- * and it did not live here. Because this toolbar is the only producer of
+ * a note under every triage queue told users "deleting a sender's mail
+ * lives on Senders and Sender Detail", and it did not live here. (That
+ * note is gone: the 2026-08-06 amendment to ADR-0019 put Delete in
+ * Triage too, so it described a constraint that no longer exists.) Because this toolbar is the only producer of
  * an ActionRequest on the page, the entire Delete branch below it was
  * unreachable.
  *
