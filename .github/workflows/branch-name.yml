@@ -97,7 +97,22 @@ jobs:
             exit 0
           fi
           # Non-bootstrap/distill: must have at least one `Closes D###`.
-          if printf '%s' "$PR_BODY" | grep -qE 'Closes\s+D[0-9]{1,3}'; then
+          #
+          # Matched in-process, NOT via `printf "$PR_BODY" | grep -q`.
+          # `grep -q` exits the moment it matches; printf is then still
+          # writing the rest of the body, takes SIGPIPE, and `pipefail`
+          # promotes that to a pipeline failure — so a body that DOES
+          # carry the reference gets reported as missing one. PR #477
+          # hit exactly that: `Closes D112` on line 1 of a 3.5 KB body,
+          # passing on one run and failing the next with
+          # `printf: write error: Broken pipe`. The race is only
+          # reachable when the match is early AND the payload is large,
+          # which is why the two `$HEAD_REF` greps above are left alone
+          # — a branch name is one short write that always completes.
+          # `[[:blank:]]` (space/tab), not `[[:space:]]`: grep matched per
+          # LINE, so `Closes` and `D112` on separate lines never counted.
+          # `[[:space:]]` includes newline and would silently loosen that.
+          if [[ "$PR_BODY" =~ Closes[[:blank:]]+D[0-9]{1,3} ]]; then
             echo "✓ PR body contains Closes D### reference."
             exit 0
           fi
