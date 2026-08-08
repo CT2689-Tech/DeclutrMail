@@ -690,6 +690,22 @@ describe('pickFirstTriageCandidates', () => {
     expect(picked.map((r) => r.senderKey)).toEqual(['net', 'com']);
   });
 
+  it('never thins important senders by brand — colleagues share a mail provider', () => {
+    // 260 keep/protected senders sit on `gmail.com` in one real mailbox.
+    // Brand thinning would surface one and hide 259 — and this is the
+    // screen for CORRECTING wrong protection, so a hidden row is a
+    // mistake the user can never reach.
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'a', verdict: 'keep', senderDomain: 'gmail.com', readRate: 0.9 }),
+        row({ senderKey: 'b', verdict: 'keep', senderDomain: 'gmail.com', readRate: 0.8 }),
+        row({ senderKey: 'c', verdict: 'keep', senderDomain: 'gmail.com', readRate: 0.7 }),
+      ],
+      'protect_important',
+    );
+    expect(picked.map((r) => r.senderKey)).toEqual(['a', 'b', 'c']);
+  });
+
   it('orders important-sender review by Keep/protected, then high read rate', () => {
     const picked = pickFirstTriageCandidates(
       [

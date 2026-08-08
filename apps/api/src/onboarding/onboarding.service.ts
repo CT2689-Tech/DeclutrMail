@@ -389,7 +389,16 @@ export function pickFirstTriageCandidates(
         (row) => row.senderKey,
       ),
     );
-    return pickTopDistinctBrands(ranked);
+    // NO brand thinning here. That rule assumes a row is an
+    // organisation's mail stream, which is true for cleanup — twelve
+    // `zerodha.net` addresses really are one sender to a user. It is
+    // false for this goal, where a row is a PERSON: correspondents live
+    // on shared consumer domains, so the registrable domain is the mail
+    // provider, not the identity. One real mailbox has 260 keep/protected
+    // senders on `gmail.com` alone; thinning would show one of them and
+    // hide 259. On a screen whose purpose is reviewing and CORRECTING
+    // protection, a hidden row is a mistake the user can never reach.
+    return ranked.slice(0, FIRST_TRIAGE_PINNED_COUNT);
   }
 
   const candidates = eligible.filter(worthOneDecision);
