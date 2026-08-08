@@ -47,6 +47,46 @@ the point.
 
 ## Inbox (untriaged)
 
+- **2026-08-08** · **BUILD BRIEF — `protect_important` becomes a protection
+  review.** Founder-decided 2026-08-08. Today the goal protects nothing: the
+  verb registry is `keep/archive/unsubscribe/later/delete` with no Protect,
+  and Keep is explicitly not Protect. Meanwhile auto-protection already
+  shielded **515 senders** on the founder's mailbox before Step 5 runs.
+
+  **Shape.** Split protected senders by whether the user ever replied —
+  definitional, not a tuned threshold. A reply is a two-way relationship; a
+  star or a Gmail flag is one-way. Measured: 463 strong / 52 weak on the 98k
+  mailbox, 0 / 2 on the 23k.
+
+  Headline is the reassurance ("We protected 463 senders you write back
+  to"); the rows are the 52 worth a look, ordered by how much UNREAD mail the
+  protection is shielding (`volume x unread%`), so the costliest mistake
+  leads. Real examples: God of Prompt (166 emails, 13% read, starred once),
+  GetYourGuide (34, 3%). Both currently excluded from all bulk and automatic
+  cleanup because of a single star.
+
+  **Actions: all five verbs, not just Unprotect.** ADR-0019 forbids
+  per-surface verb hand-rolling, CLAUDE.md §2.6 scopes protection to bulk and
+  automatic actions only, and PR #476 already made protected rows actionable
+  in Triage. A row offering only Unprotect would be the special case.
+
+  **The trap to close.** A single action on a protected sender currently
+  succeeds and LEAVES the protection intact (`actions.service.ts:747` gates
+  only the bulk path; `:656` flags but does not block). So unsubscribing
+  GetYourGuide here would feel finished while every future bulk and Autopilot
+  run silently keeps skipping it. The mandatory preview must therefore
+  declare both effects — "Unsubscribe, archive 34 emails, and remove
+  protection" — making it a stated consequence rather than a side effect.
+
+  **Edges.** Zero weak protections → show only the reassurance line, which is
+  itself the win. nayana's mailbox is 0 strong / 2 weak, so the copy must not
+  read as failure when the strong count is 0. Unprotect moves no mail and is
+  instantly reversible, so no undo window to explain.
+
+  **Blocked on:** `/settings/senders` shows protected senders with no reason
+  at all (CLAUDE.md §2.6 requires the exact reason), so the "Show all 52"
+  link has nowhere good to land until that is fixed.
+
 - **2026-08-06** · `/onboarding` step 5 (first triage) — the pinned-row
   thresholds are unexplained cutoffs. `10 received` was an emergency proxy for
   "enough cleanup to notice", picked to eliminate the 1–2-message rows; worse,
