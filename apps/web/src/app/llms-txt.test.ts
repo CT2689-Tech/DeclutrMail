@@ -30,8 +30,14 @@ describe('llms.txt — marketing surface reconciliation', () => {
     expect(LLMS_TXT).toContain(needle);
   });
 
-  it('states the in-progress CASA posture without claiming completed verification', () => {
-    expect(LLMS_TXT).toContain('CASA Tier 2 assessment cycle in progress');
-    expect(LLMS_TXT).not.toContain('CASA Tier 2 verification');
+  it('states the dated OAuth approval without claiming evidence we do not hold', () => {
+    // Was "assessment cycle in progress" — deliberately understated while
+    // only the 15 Apr submission was on file. Google approved the request
+    // on 21 Apr 2026 (FOUNDER-FOLLOWUPS 2026-07-26), so understating it is
+    // now its own inaccuracy. The guard stays pointed the same way: name
+    // the dated approval, never imply a certificate or letter, because the
+    // artifact is an approval email and nothing else.
+    expect(LLMS_TXT).toContain('OAuth verification approved 21 April 2026');
+    expect(LLMS_TXT).not.toMatch(/CASA Tier 2 (verification|certificate|letter)/i);
   });
 });

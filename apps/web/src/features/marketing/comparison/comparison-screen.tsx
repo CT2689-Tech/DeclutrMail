@@ -13,6 +13,18 @@ import {
   type EvidenceState,
 } from './comparison-data';
 
+/**
+ * Spelled from `COMPARISONS`, never hand-written. Three places said
+ * "Five" while the array held six — under a badge reading "Official
+ * primary sources only", which is the worst possible page to be
+ * countably wrong on. Deriving it means adding a comparison cannot
+ * leave the prose behind.
+ */
+const COMPARISON_COUNT_WORD =
+  ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][
+    COMPARISONS.length
+  ] ?? String(COMPARISONS.length);
+
 const STATE_LABEL: Readonly<Record<EvidenceState, string>> = {
   supported: 'Published',
   limited: 'Scope differs',
@@ -127,7 +139,10 @@ export function ComparisonIndexScreen() {
           </div>
           <div className="dm-compare-index-note">
             <VerificationStamp />
-            <strong>Five direct comparisons</strong>
+            <strong>
+              {COMPARISON_COUNT_WORD.charAt(0).toUpperCase() + COMPARISON_COUNT_WORD.slice(1)}{' '}
+              direct comparisons
+            </strong>
             <p>
               Every page links to the exact official sources used. Unknowns stay unknown instead of
               becoming convenient checkmarks.
@@ -141,7 +156,9 @@ export function ComparisonIndexScreen() {
         >
           <p className="dm-mkt-eyebrow">Pick the closest alternative</p>
           <h2 id="compare-list-title" className="dm-mkt-h2">
-            Same inbox. Five different philosophies.
+            Same inbox.{' '}
+            {COMPARISON_COUNT_WORD.charAt(0).toUpperCase() + COMPARISON_COUNT_WORD.slice(1)}{' '}
+            different philosophies.
           </h2>
           <div className="dm-compare-card-grid">
             {COMPARISONS.map((comparison, index) => (
@@ -193,8 +210,8 @@ export function ComparisonIndexScreen() {
           >
             <table className="dm-compare-quick-table">
               <caption className="dm-compare-sr-only">
-                Primary job, provider scope, and public entry point for five DeclutrMail
-                alternatives
+                Primary job, provider scope, and public entry point for {COMPARISON_COUNT_WORD}{' '}
+                DeclutrMail alternatives
               </caption>
               <thead>
                 <tr>

@@ -85,7 +85,7 @@ export function MailboxesCard({
               const reconnectBlockedReason = deletionInFlight
                 ? indexedDataState === 'deletion_delayed'
                   ? 'Indexed-data deletion is delayed and will retry. Reconnect becomes available after deletion completes.'
-                  : 'Reconnect becomes available after indexed-data deletion completes.'
+                  : "You can reconnect once we've finished erasing what we stored."
                 : undefined;
               const reconnectBlockedReasonId = `mailbox-${m.id}-reconnect-blocked`;
               const reconnectBlocked = deletionInFlight || (atLimit && !needsReconnect);
@@ -217,7 +217,7 @@ export function MailboxesCard({
                           }
                           email={m.email}
                           label={
-                            indexedDataState === 'deleted' ? 'Reconnect · new index' : 'Reconnect'
+                            indexedDataState === 'deleted' ? 'Reconnect · start fresh' : 'Reconnect'
                           }
                           onClick={() => (needsReconnect ? onConnect(m.id) : onReactivate(m.id))}
                         />
