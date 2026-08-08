@@ -197,7 +197,7 @@ export function SenderCard({
           {protectedNow && (
             <span
               aria-label="Protected sender"
-              title="Protected — never auto-recommended for Unsubscribe"
+              title="Protected — automatic and bulk actions stay off unless you choose otherwise"
               style={{
                 position: 'absolute',
                 bottom: -2,

@@ -147,12 +147,12 @@ export function PrivacyDataView({
             items={GMAIL_DERIVED_DATA_INVENTORY.map(inventoryDisplayItem)}
           />
           <InventoryGroup
-            title="Operational audit data retained under policy"
+            title="Records we keep to investigate problems"
             items={GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY.map(inventoryDisplayItem)}
           />
           <p style={{ ...mutedTextStyle, marginTop: 12 }}>
-            Anthropic receives only the inventory items marked for generated Brief narratives or
-            optional sender explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
+            Anthropic only ever sees the items marked above for Brief summaries or optional sender
+            explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
           </p>
         </div>
       </Card>
@@ -323,8 +323,9 @@ export function PrivacyDataView({
               <div>
                 <div style={exitTitleStyle}>CASA Tier 2 verification</div>
                 <div style={exitDetailStyle}>
-                  DeclutrMail's Gmail access goes through Google's CASA security assessment. The
-                  assessment letter will be linked here once the current cycle's letter is issued.
+                  DeclutrMail&apos;s Gmail access goes through Google&apos;s CASA security
+                  assessment. Google approved our OAuth verification on 21 April 2026 for the single
+                  restricted scope we request, gmail.modify. It is recertified annually.
                 </div>
               </div>
             </li>

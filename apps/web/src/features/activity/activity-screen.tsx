@@ -312,7 +312,7 @@ export function ActivityScreen() {
       <ScreenIntro
         id="activity"
         title="Activity"
-        body="Every decision taken on your mail — by you, by Autopilot, by your rules. Filter by source, verb, sender, or date. Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery for Delete is separate and normally lasts up to 30 days."
+        body="Every change made to your mail — by you, by Autopilot, by your rules. Filter by what happened, who sent it, or when. Archive, Later, and Delete can be undone for as long as your plan allows. Delete also sits in Gmail's Trash, which normally keeps it for 30 days."
         tip="An empty list within a short window is fine — it means nothing changed. Widen the window to see history."
       />
 
@@ -1010,7 +1010,7 @@ function FilterBands({
       {/* Band 1 — SOURCE │ VERB */}
       <div
         role="group"
-        aria-label="Filter by source and verb"
+        aria-label="Filter by what happened"
         style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}
       >
         {SOURCE_CHIPS.map((chip) => (
@@ -1932,7 +1932,7 @@ function groupBySender(rows: readonly ActivityRowWire[]): SenderGroup[] {
     if (!group) {
       group = {
         key,
-        displayName: row.sender?.displayName ?? 'Account-scoped action',
+        displayName: row.sender?.displayName ?? 'Your whole account',
         email: row.sender?.email ?? '',
         domain: row.sender?.domain ?? '',
         rows: [],
@@ -2166,7 +2166,7 @@ function ActivityRow({
   /** Active mailbox target for reconnect. Null in isolated stories. */
   mailboxId: string | null;
 }) {
-  const senderName = row.sender?.displayName ?? 'Account-scoped action';
+  const senderName = row.sender?.displayName ?? 'Your whole account';
   const senderEmail = row.sender?.email ?? '';
   const senderDomain = row.sender?.domain ?? '';
   const verbLabel = activityRowActionLabel(row);

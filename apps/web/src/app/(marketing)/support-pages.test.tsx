@@ -205,12 +205,19 @@ describe('/security content — verified claims only', () => {
     expect(container.textContent).toMatch(/TLS/);
   });
 
-  it('states the honest in-progress CASA Tier 2 assessment posture', () => {
+  it('states the dated OAuth approval and still claims no document we do not hold', () => {
+    // The page said "assessment cycle is in progress" until 2026-08-07 —
+    // correct while only the 15 Apr submission was on file, wrong once
+    // Google approved on 21 Apr 2026 (FOUNDER-FOLLOWUPS 2026-07-26). The
+    // guard is unchanged in spirit: state the dated approval and the
+    // scope it covers, and never imply a verification letter or
+    // certificate, because the artifact is an approval email.
     const { container } = render(<SecurityPage />);
     expect(container.textContent).toMatch(/CASA/);
-    expect(container.textContent).toMatch(/Tier 2/);
-    expect(container.textContent).toMatch(/in progress/i);
-    expect(container.textContent).not.toMatch(/has passed|renewed annually/i);
+    expect(container.textContent).toMatch(/21 April 2026/);
+    expect(container.textContent).toMatch(/gmail\.modify/);
+    expect(container.textContent).toMatch(/recertified annually/i);
+    expect(container.textContent).not.toMatch(/verification letter|certificate|has passed/i);
   });
 
   it('states the D222 no-ML-category-prediction posture', () => {

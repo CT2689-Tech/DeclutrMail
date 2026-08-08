@@ -640,7 +640,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
             ? 'Observe and Active are set per rule. Observe records matches as suggestions and changes no mail until you approve one. Active applies future matches automatically; every result is recorded in Activity. Pause all stops every rule across every inbox at once.'
             : `Rules run in Observe: they record matches as suggestions and change no mail until you approve a batch. Letting a rule act on future matches without asking each time is part of ${ACT_PLAN_NAME}. Pause all stops every rule across every inbox at once.`
         }
-        tip="Custom rule creation is not available on your account. Only the launch preset rules can be enabled."
+        tip="These are the rules we've built so far. Writing your own is coming."
       />
 
       <ContextualHelp

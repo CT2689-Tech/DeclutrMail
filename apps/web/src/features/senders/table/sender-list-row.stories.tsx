@@ -195,7 +195,7 @@ export const VolumeSpike: Story<typeof SenderListRow> = {
   render: (args: RowArgs) => frame(args),
 };
 
-/** Protected — bulk actions can't touch this sender; chip + disabled CTA. */
+/** Protected — automatic and bulk actions stay off; chip + disabled CTA. */
 export const Protected: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,
