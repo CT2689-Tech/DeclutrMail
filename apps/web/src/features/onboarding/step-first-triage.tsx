@@ -182,8 +182,14 @@ export function StepFirstTriage({
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Ends onboarding for good — `finish` writes `onboarded_at`
+              and there is no way back into this step. It was briefly
+              labelled "Continue to Senders", which is what the
+              COMPLETION panel's primary button says: mid-review, with
+              senders still queued, that reads as navigation rather than
+              as finishing. Say that it ends the review. */}
           <Button tone="ghost" onClick={() => finish('stopped')} disabled={completing}>
-            Continue to Senders
+            Finish for today
           </Button>
           {corner}
         </div>

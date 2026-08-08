@@ -259,6 +259,48 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     expect(screen.getByText('Step 3 of 5 · One-time scan')).toBeInTheDocument();
   });
 
+  // The skip affordance was briefly dropped from step 5 only. It is the
+  // last step and its own error/loading panels carry no other control,
+  // so without it a failing first-triage read strands the user inside
+  // onboarding (D106). Asserted at the page, because the component kept
+  // rendering the slot correctly — the caller stopped filling it.
+  it('offers the skip affordance on step 5, not just on the steps before it', async () => {
+    installFetchStub([
+      meAuthed('ready'),
+      onboardingState({ goal: 'reduce_newsletters', presetPicks: [] }),
+      syncStatus(true),
+      {
+        method: 'GET',
+        path: '/api/onboarding/first-triage',
+        // `meta` rides the ENVELOPE, not `data` — `data` is the row array.
+        respond: () => json({ data: [], meta: { pinned: 0, decided: 0 } }),
+      },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText('Step 5 of 5 · Review senders')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Skip setup for now/i })).toBeInTheDocument();
+  });
+
+  // The case that made the dropped corner a trap rather than a nuisance:
+  // when the read fails, the panel's only other control is "Try again".
+  it('keeps a way out of step 5 when the first-triage read fails', async () => {
+    installFetchStub([
+      meAuthed('ready'),
+      onboardingState({ goal: 'reduce_newsletters', presetPicks: [] }),
+      syncStatus(true),
+      {
+        method: 'GET',
+        path: '/api/onboarding/first-triage',
+        respond: () => json({ error: { code: 'INTERNAL', message: 'boom' } }, 500),
+      },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText(/Couldn't load your first review/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Skip setup for now/i })).toBeInTheDocument();
+  });
+
   it('onboarded user is redirected out to /senders', async () => {
     installFetchStub([
       meAuthed('ready'),

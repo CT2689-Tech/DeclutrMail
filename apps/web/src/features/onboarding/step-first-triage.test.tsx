@@ -39,6 +39,9 @@ vi.mock('@/features/triage/triage-undo-tray', () => ({
 vi.mock('@/lib/posthog', () => ({ track: analytics.track }));
 
 beforeEach(() => {
+  // `isError` was not reset here, so the first test to set it would have
+  // leaked into every test after it.
+  onboarding.firstTriage.isError = false;
   onboarding.firstTriage.isLoading = false;
   onboarding.firstTriage.data = {
     rows: [] as typeof TRIAGE_QUEUE,
@@ -122,7 +125,7 @@ describe('StepFirstTriage', () => {
     };
 
     render(<StepFirstTriage onComplete={onComplete} completing={false} goal="protect_important" />);
-    fireEvent.click(screen.getByRole('button', { name: /Continue to Senders/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Finish for today/i }));
 
     expect(analytics.track).toHaveBeenCalledWith('first_relief_session_completed', {
       goal: 'protect_important',
@@ -131,5 +134,41 @@ describe('StepFirstTriage', () => {
       outcome: 'stopped',
     });
     expect(onComplete).toHaveBeenCalledOnce();
+  });
+
+  // The mid-review exit ends onboarding for good. It was briefly given
+  // the COMPLETION panel's label ("Continue to Senders"), which reads as
+  // navigation while senders are still queued. The two controls must not
+  // share a name.
+  it('does not label the mid-review exit as navigation', () => {
+    onboarding.firstTriage.data = {
+      rows: TRIAGE_QUEUE.slice(0, 3),
+      meta: { pinned: 5, decided: 2 },
+    };
+
+    render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
+
+    expect(screen.getByRole('button', { name: /Finish for today/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Continue to Senders/i })).not.toBeInTheDocument();
+  });
+
+  // Step 5 renders `corner` in every state — mid-review, loading, error
+  // and completion. The error panel's only other control is "Try again",
+  // so a caller that drops `corner` strands anyone whose read keeps
+  // failing on the last step of onboarding (D106).
+  it('renders the caller corner in the error state, where it is the only way out', () => {
+    onboarding.firstTriage.isError = true;
+
+    render(
+      <StepFirstTriage
+        onComplete={() => {}}
+        completing={false}
+        goal="reduce_newsletters"
+        corner={<button type="button">Skip for now</button>}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /Skip for now/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Try again/i })).toBeInTheDocument();
   });
 });
