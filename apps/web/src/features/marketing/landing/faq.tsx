@@ -27,7 +27,15 @@ import { siteUrl } from './urls';
 const FAQS: ReadonlyArray<{ q: string; a: string; link?: { href: string; label: string } }> = [
   {
     q: 'What does DeclutrMail actually see in my Gmail?',
-    a: `The published Gmail message-field disclosure lists ${PRIVACY_STORAGE_ITEMS.slice(0, 3).join(', ')}, dates, labels, and read/unread state. The headline is literal — ${PRIVACY_BADGE_HEADLINE}. The privacy policy separately covers operational records. Full message bodies, attachments, and raw MIME are never fetched.`,
+    // The FULL generated list, never a slice. A `slice(0, 3)` plus a
+    // hand-written tail shipped here for a while: it published 6 of 11
+    // fields under the words "the published disclosure", silently dropped
+    // the Gmail Preview snippet — the field our own /answers pages call
+    // the honesty test — and desynced from the registry the moment its
+    // order changed. This answer is also emitted as FAQPage JSON-LD, so
+    // answer engines quote it detached from the /privacy link. Same
+    // pattern as help/page.tsx:53.
+    a: `The published Gmail message-field disclosure lists: ${PRIVACY_STORAGE_ITEMS.join('; ')}. The headline is literal — ${PRIVACY_BADGE_HEADLINE}. The privacy policy separately covers operational records. Full message bodies, attachments, and raw MIME are never fetched.`,
     link: { href: '/privacy', label: 'Privacy policy →' },
   },
   {

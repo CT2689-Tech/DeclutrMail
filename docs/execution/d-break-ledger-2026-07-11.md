@@ -21,6 +21,17 @@ Revert any merged slice with:
 
 ## Proposed PR slices
 
+> **Superseded on one point, 2026-08-07.** The "How it works + methodology"
+> row below says public trust copy states the CASA cycle is "in progress"
+> rather than claiming a pass. That was correct when written — only the
+> 15 Apr 2026 submission was on file. Google approved the OAuth verification
+> on **21 Apr 2026** (FOUNDER-FOLLOWUPS 2026-07-26), so `/security`,
+> `/privacy`, `llms.txt` and the in-app privacy page now state the dated
+> approval instead. Still true, and still the rule: there is no redacted
+> letter or certificate — the approval email is the only artifact — so no
+> surface may imply one. Do not restore the "in progress" wording from this
+> row.
+
 | PR      | Slice                                      | D / ADR relation                                             | Deviation and rationale                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Revert             |
 | ------- | ------------------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
 | planned | Public truth + shared chrome               | Implements D131, D134, D146, D209, D228; amends D138         | Replaces false blanket undo/future-policy claims, adds Anthropic to the public processor disclosure, removes the anonymous auth probe, and gives every public route one header/footer. D228 wording wins over older D138 copy.                                                                                                                                                                                                                                                     | `revert-pr.sh <N>` |

@@ -83,7 +83,7 @@ export function SendersPoliciesScreen() {
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <Eyebrow>Settings · standing policies</Eyebrow>
+        <Eyebrow>Settings · protected senders</Eyebrow>
         <h1
           style={{
             fontFamily: font.display,
@@ -93,12 +93,23 @@ export function SendersPoliciesScreen() {
             margin: '4px 0 0',
           }}
         >
-          Standing policies
+          Protected senders
         </h1>
         <p style={{ fontSize: 13.5, color: color.fgSoft, marginTop: 6, maxWidth: 640 }}>
-          Senders you&apos;ve protected with a standing safety rule. Protected senders skip
-          auto-rules and bulk actions so their mail stays in your inbox. Manage protection from each
-          sender&apos;s detail page.
+          {/* Two things this must NOT say. Not "senders you've told us to
+              leave alone" — three of the four protection_reason values are
+              automatic (replied, starred, gmail_important) and this list
+              shows those rows too. And not "their mail always reaches your
+              inbox" — protection is a guard on OUR bulk and automatic
+              actions (actions.service.ts:748), not a delivery guarantee:
+              Gmail's own filters, spam and categories are outside our
+              reach, and a single action the user takes still applies.
+              Describe the guard, not an outcome we do not control. */}
+          DeclutrMail&apos;s bulk and automatic actions skip these senders — it won&apos;t archive,
+          delete, or unsubscribe them on its own. An action you take on one sender yourself still
+          applies. You can protect a sender, and DeclutrMail also protects one when you reply
+          repeatedly, star their mail, or Gmail keeps marking it important. Turn protection on or
+          off from a sender&apos;s detail page.
         </p>
       </div>
 
@@ -138,7 +149,7 @@ export function SendersPoliciesScreen() {
                 margin: '4px 0 0',
               }}
             >
-              Auto-rules skip these senders. Mail always lands in your inbox.
+              Bulk and automatic actions skip these senders.
             </p>
           </div>
           <span
@@ -278,7 +289,7 @@ function LoadingState() {
           }}
         />
       ))}
-      <span style={{ position: 'absolute', left: -9999 }}>Loading standing policies</span>
+      <span style={{ position: 'absolute', left: -9999 }}>Loading protected senders</span>
     </div>
   );
 }
@@ -296,7 +307,7 @@ function PoliciesErrorState({ onRetry }: { onRetry: () => void }) {
       }}
     >
       <RecoverableErrorState
-        title="We couldn't load standing policies"
+        title="We couldn't load protected senders"
         description="Your existing policies remain active. Try again in a moment."
         onRetry={onRetry}
       />

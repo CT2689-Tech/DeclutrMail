@@ -192,7 +192,7 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('heading', { name: 'Email notifications' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Autopilot rules' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Quiet hours' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Standing policies' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Protected senders' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Privacy & Data' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Product glossary' })).toBeInTheDocument();
     // D147 cookie change/withdrawal card, with the effective default
@@ -331,7 +331,7 @@ describe('SettingsScreen', () => {
     expect(reconnect).toBeDisabled();
     // The reason must be readable on the page, not hidden in a `title`
     // tooltip that touch + keyboard + screen readers never reach.
-    const reason = screen.getByText(/reconnect becomes available after indexed-data deletion/i);
+    const reason = screen.getByText(/you can reconnect once we've finished erasing/i);
     expect(reason).toBeInTheDocument();
     expect(reconnect).toHaveAttribute('aria-describedby', reason.id);
   });
@@ -396,7 +396,7 @@ describe('SettingsScreen', () => {
     ).toBeEnabled();
     expect(
       screen.getByRole('button', { name: 'Reconnect chintan.a.thakkar.crypt@gmail.com' }),
-    ).toHaveTextContent(/reconnect · new index/i);
+    ).toHaveTextContent(/reconnect · start fresh/i);
   });
 
   it('keeps a disconnected reconnect limit-gated when all active slots are occupied', async () => {

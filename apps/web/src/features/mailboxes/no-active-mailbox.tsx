@@ -124,7 +124,7 @@ export function NoActiveMailboxView({
             ) : reconnectableMailboxes.length > 0 ? (
               'Choose the Gmail account you want to reconnect. Your sender history is preserved.'
             ) : deletingMailboxes.length > 0 ? (
-              'Indexed data deletion is in progress. Gmail access stays disconnected; reconnect becomes available after deletion completes.'
+              "We're still erasing everything we stored about this account. You can reconnect once that finishes."
             ) : (
               'Connect a Gmail account to start your first Gmail cleanup.'
             )

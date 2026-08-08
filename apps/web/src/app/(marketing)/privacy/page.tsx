@@ -32,7 +32,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/privacy',
 });
 
-const LAST_UPDATED = '2026-07-14';
+const LAST_UPDATED = '2026-08-07';
 
 const TOC = [
   { id: 'who-we-are', label: 'Who we are' },
@@ -127,8 +127,9 @@ export default function PrivacyPolicyPage() {
           </li>
           <li>
             Apps using restricted Gmail scopes are subject to Google&rsquo;s independent CASA (Cloud
-            Application Security Assessment) process. DeclutrMail&rsquo;s current Tier 2 assessment
-            cycle is in progress; current evidence will be published after it is issued.
+            Application Security Assessment) process. Google approved DeclutrMail&rsquo;s OAuth
+            verification on 21 April 2026 for the single restricted scope we request, gmail.modify.
+            Verification is recertified annually.
           </li>
         </ul>
         <p>

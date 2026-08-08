@@ -182,7 +182,7 @@ export function SenderListRow({
             </span>
             {isStandingProtected(s) && (
               <span
-                title="Protected — bulk actions can't touch this sender"
+                title="Protected — automatic and bulk actions stay off unless you choose otherwise"
                 style={{
                   padding: '1px 7px',
                   borderRadius: 4,

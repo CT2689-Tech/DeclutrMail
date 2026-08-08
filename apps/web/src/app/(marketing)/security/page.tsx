@@ -10,9 +10,11 @@
 // userinfo.email — the only scopes requested). Encryption claims match
 // apps/api/src/auth/token-crypto.service.ts (D14 envelope encryption).
 // Metadata-only fetching matches apps/api/src/gmail/gmail-client.service.ts
-// (`format=metadata`, never `full`/`raw`). The current CASA evidence is
-// still an operations dependency; do not claim a passed/current cycle
-// until the issued assessment letter is available.
+// (`format=metadata`, never `full`/`raw`). CASA: Google approved the
+// OAuth verification on 21 Apr 2026 (FOUNDER-FOLLOWUPS 2026-07-26), and
+// the approval email is the only artifact — there is no issued letter or
+// certificate, so do not imply one. Recertification is annual; treat
+// 21 Apr 2027 as the operative deadline.
 
 import type { Metadata } from 'next';
 import {
@@ -29,11 +31,11 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Security — DeclutrMail',
   description:
-    'How DeclutrMail protects your Gmail: metadata-only storage (full bodies fetched: 0), one narrowly used OAuth scope, envelope-encrypted tokens, and independent-assessment readiness.',
+    'How DeclutrMail protects your Gmail: metadata-only storage (full bodies fetched: 0), one narrowly used OAuth scope, envelope-encrypted tokens, and Google OAuth verification approved in April 2026.',
   path: '/security',
 });
 
-const LAST_UPDATED = '2026-07-14';
+const LAST_UPDATED = '2026-08-07';
 
 const TOC = [
   { id: 'the-boundary', label: 'The boundary: what we store, what we never store' },
@@ -111,10 +113,10 @@ export default function SecurityPage() {
       <LegalSection id="verification" title="Independent assessment (CASA Tier 2)">
         <p>
           Apps using restricted Gmail scopes are subject to Google&rsquo;s independent CASA (Cloud
-          Application Security Assessment) process. DeclutrMail&rsquo;s current{' '}
-          <strong>Tier 2</strong> assessment cycle is in progress. We will publish the issued
-          evidence here after it is available; this page does not claim a current verification
-          letter before then.
+          Application Security Assessment) process. Google{' '}
+          <strong>approved DeclutrMail&rsquo;s OAuth verification on 21 April 2026</strong> for the
+          single restricted scope we request, <code>gmail.modify</code>. Verification is recertified
+          annually, and any new scope or change to our consent screen requires a fresh review.
         </p>
       </LegalSection>
 

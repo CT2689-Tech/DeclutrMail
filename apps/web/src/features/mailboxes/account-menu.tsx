@@ -359,7 +359,7 @@ export function AccountMenu() {
                         }
                         title={
                           reconnectBlocked
-                            ? 'Reconnect becomes available after indexed-data deletion completes.'
+                            ? "You can reconnect once we've finished erasing what we stored."
                             : undefined
                         }
                         onClick={() => startMailboxReactivation(m.id)}
