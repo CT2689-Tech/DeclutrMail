@@ -70,13 +70,31 @@ the point.
   automatic actions only, and PR #476 already made protected rows actionable
   in Triage. A row offering only Unprotect would be the special case.
 
-  **The trap to close.** A single action on a protected sender currently
-  succeeds and LEAVES the protection intact (`actions.service.ts:747` gates
-  only the bulk path; `:656` flags but does not block). So unsubscribing
-  GetYourGuide here would feel finished while every future bulk and Autopilot
-  run silently keeps skipping it. The mandatory preview must therefore
-  declare both effects — "Unsubscribe, archive 34 emails, and remove
-  protection" — making it a stated consequence rather than a side effect.
+  **The trap, and how NOT to close it.** A single action on a protected
+  sender succeeds and LEAVES the protection intact
+  (`actions.service.ts:747` gates only the bulk path; `:656` flags but does
+  not block). So unsubscribing GetYourGuide here feels finished while every
+  future bulk and Autopilot run silently keeps skipping it.
+
+  An earlier draft of this brief closed that by bundling protection removal
+  into the mail action, declared in the preview. That is wrong three times
+  over. It is AMBIGUOUS — Keep on a protected sender plainly should not
+  unprotect, and Later is arguable. It is UNSAFE — `undo_action_kind` is
+  `archive | unsubscribe | later | apply-rule | delete` with no protection
+  kind, so an undo restores the mail and structurally CANNOT restore the
+  shield; the user would undo, watch their mail come back, and never learn
+  the protection did not. And it CORRUPTS the semantics — D245 makes a
+  manual Unprotect a sticky override that stops auto-protection
+  re-protecting, so a bundled removal records a user decision the user
+  never made.
+
+  **Do not bundle.** Keep the two acts separate: the five verbs act on
+  mail, a distinct Unprotect control changes the safety state. Close the
+  trap by SAYING it — when a cleanup verb is chosen on a protected sender,
+  the preview states "Archive 34 emails. This sender stays protected, so
+  bulk and automatic cleanup will keep skipping it," with Unprotect offered
+  alongside. Surfacing the consequence is the fix; acting on the user's
+  behalf is how the fix became more dangerous than the bug.
 
   **Edges.** Zero weak protections → show only the reassurance line, which is
   itself the win. nayana's mailbox is 0 strong / 2 weak, so the copy must not
