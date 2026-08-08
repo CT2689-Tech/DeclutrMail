@@ -18,6 +18,15 @@ export {
 export { BUSINESS_POSTAL_ADDRESS, postalAddressLine, hasPostalAddress } from './postal-address';
 
 export {
+  WEAK_PROTECTION_REASON_IDS,
+  isWeakProtectionReason,
+  normalizeProtectionReason,
+  protectionReasonClause,
+  protectionReasonLabel,
+  type ProtectionReasonId,
+} from './protection';
+
+export {
   ACTION_SAFETY_SUMMARY,
   ACTION_PREVIEW_CLAIM,
   DELETE_RECOVERY_CLAIM,

@@ -95,8 +95,16 @@ export interface TriageDecisionRow {
    * "0/mo" because the only mail from those senders was older than 90d).
    */
   last90dMessages: number;
-  /** Read rate in `[0, 1]`. */
-  readRate: number;
+  /**
+   * Read rate in `[0, 1]`, or `null` when the sender sent nothing in
+   * the 90-day window — NOT 0.
+   *
+   * The BE has always typed this nullable; the FE typed it `number` and
+   * every consumer did `Math.round(readRate * 100)`, which renders a
+   * missing measurement as a confident "0% read". The expanded row card
+   * showed exactly that. Unknown is a state, not a zero.
+   */
+  readRate: number | null;
   /** Days since the sender's most recent message. */
   lastDays: number;
   /** Inbound messages currently present in DeclutrMail's mailbox index. */
@@ -412,7 +420,8 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     protectionReason: null,
     monthlyVolume: 0,
     last90dMessages: 0,
-    readRate: 0,
+    // Quiet within the window — the BE sends null, not 0.
+    readRate: null,
     lastDays: 0,
     totalAllTime: 555,
     unreadInboxCount: 210,

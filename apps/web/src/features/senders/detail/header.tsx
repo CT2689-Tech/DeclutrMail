@@ -1,6 +1,7 @@
 'use client';
 
 import { Avatar, Eyebrow, NumericDisplay, tokens } from '@declutrmail/shared';
+import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
 import type { Sender, SenderLastReview } from '../data';
 import type { ProtectionReason } from './types';
 
@@ -67,16 +68,14 @@ export function SenderDetailHeader({
   protectionReason: ProtectionReason | null;
   onToggleProtect: () => void;
 }) {
-  const protectTooltip =
-    protectionReason === 'replied'
-      ? 'Automatically protected because you replied at least three times. Select to remove protection.'
-      : protectionReason === 'starred'
-        ? 'Automatically protected because you starred a message this year. Select to remove protection.'
-        : protectionReason === 'gmail-important'
-          ? 'Automatically protected because Gmail marked at least three messages from this Primary-inbox sender important this year. Select to remove protection.'
-          : isProtected
-            ? 'Protected by you. Select to remove protection.'
-            : 'Protect this sender from bulk and automatic mail-changing actions.';
+  // The reason comes from the ONE shared source (D245 / CLAUDE.md §2.6)
+  // so this tooltip cannot drift from the Triage row, the Screener
+  // preview and the Settings policies list — which is what four
+  // hand-written copies of these four facts had already done.
+  const reasonId = normalizeProtectionReason(protectionReason);
+  const protectTooltip = !isProtected
+    ? 'Protect this sender from bulk and automatic mail-changing actions.'
+    : `Protected — ${protectionReasonClause(reasonId)}. Select to remove protection.`;
 
   return (
     <header

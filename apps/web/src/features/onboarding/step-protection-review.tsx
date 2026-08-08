@@ -289,11 +289,17 @@ function donePanel(
   split: OnboardingProtectionSplit | null,
   pinned: number,
 ): { headline: string; body: string } {
+  // The brief flagged this destination as blocked: Settings → Protected
+  // senders listed rows with no reason at all, so pointing at it would
+  // have answered "which ones?" with a page that could not say why any
+  // of them were protected. It now shows the exact reason, what each
+  // protection is shielding, and Unprotect in place — so the review
+  // hands the remaining N somewhere real instead of dropping them.
   const stillWeak =
     split !== null && split.weak > 0
       ? `${senders(split.weak)} ${split.weak === 1 ? 'is' : 'are'} still protected by one star ` +
-        `or a Gmail importance flag — open any of them from Senders to see the reason and ` +
-        `change it.`
+        `or a Gmail importance flag — Settings → Protected senders lists every one with its ` +
+        `reason.`
       : '';
 
   if (split === null) {

@@ -283,12 +283,24 @@ export class OnboardingService {
       review.senderKeys.filter((key) => showable.has(key)).slice(0, FIRST_TRIAGE_PINNED_COUNT),
     );
 
-    // Walk the PINNED order, not the queue's — the pin holds the
-    // shielded-mail ranking the review is sorted by.
-    const remaining = pinnedKeys.flatMap((senderKey) => {
-      const row = showable.get(senderKey);
-      return row ? [row] : [];
-    });
+    // The pinned SET is frozen (D112 — the practice set never shifts
+    // under the user), but the ORDER is recomputed from live shielded
+    // mail. The pin was ranked once, and the screen says "the N
+    // shielding the most unread mail" every time it renders; mail keeps
+    // arriving, so a frozen order turns that sentence false without
+    // anything visibly changing. Re-sorting the same five senders
+    // changes no decision — it only keeps the claim true.
+    const remaining = pinnedKeys
+      .flatMap((senderKey) => {
+        const row = showable.get(senderKey);
+        return row ? [row] : [];
+      })
+      .sort(
+        (a, b) =>
+          b.unreadInboxCount - a.unreadInboxCount ||
+          b.inboxCount - a.inboxCount ||
+          a.senderKey.localeCompare(b.senderKey),
+      );
 
     return {
       rows: remaining,

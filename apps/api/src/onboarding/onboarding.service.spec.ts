@@ -932,6 +932,51 @@ describe('OnboardingService', () => {
       expect(later.rows.map((r) => r.senderKey)).toEqual(['busy']);
     });
 
+    it('keeps the pinned SET frozen but re-orders it by live shielded mail', async () => {
+      // The pin is ranked once; the header claims "the N shielding the
+      // most unread mail" on every render. Mail keeps arriving, so a
+      // frozen ORDER makes that sentence quietly false. Freeze the set,
+      // not the sort.
+      await seedDecision(db, mailboxId, {
+        senderKey: 'was-first',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+        inboxMessages: 10,
+      });
+      await seedDecision(db, mailboxId, {
+        senderKey: 'was-second',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+        inboxMessages: 4,
+      });
+      await chooseProtectionGoal();
+      const first = await service.getFirstTriage(userId, mailboxId);
+      expect(first.rows.map((r) => r.senderKey)).toEqual(['was-first', 'was-second']);
+
+      // A burst arrives for the runner-up.
+      await db.insert(mailMessages).values(
+        Array.from({ length: 40 }, (_, i) => ({
+          mailboxAccountId: mailboxId,
+          providerMessageId: `burst-${i}`,
+          providerThreadId: `burst-t-${i}`,
+          senderKey: 'was-second',
+          internalDate: new Date(),
+          isUnread: true,
+          isOutbound: false,
+          labelIds: ['INBOX'],
+        })),
+      );
+
+      const second = await service.getFirstTriage(userId, mailboxId);
+      // Same two senders — the set never shifts.
+      expect(second.meta.pinned).toBe(2);
+      expect([...second.rows.map((r) => r.senderKey)].sort()).toEqual(['was-first', 'was-second']);
+      // But the costliest one now leads, so the header stays true.
+      expect(second.rows[0]?.senderKey).toBe('was-second');
+    });
+
     it('pins at most five and holds them as later protections appear', async () => {
       for (let index = 0; index < 7; index += 1) {
         await seedDecision(db, mailboxId, {

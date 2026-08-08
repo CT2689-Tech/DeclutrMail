@@ -171,6 +171,33 @@ describe('TriageRow expanded — quiet-90d rows never read "LAST SEEN today" (W3
   });
 });
 
+describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
+  // The BE has always sent `null` when the sender mailed nothing in the
+  // 90-day window; the FE typed it `number` and every consumer did
+  // `Math.round(readRate * 100)`. That printed a confident "0% read" for
+  // a sender we measured nothing about — and 0% is the STRONGEST signal
+  // under every low-engagement ranking on this screen.
+  it('shows an em dash on the expanded stat card, not a fabricated zero', () => {
+    const row = rowById('t-shipping'); // quiet 90d — readRate null
+    expect(row.readRate).toBeNull();
+    renderRow(row, { expanded: true });
+
+    const stats = screen.getByText('read rate').parentElement!;
+    expect(stats.textContent).toContain('—');
+    expect(stats.textContent).not.toContain('0%');
+  });
+
+  it('still renders a real measured zero for a sender that IS never opened', () => {
+    // Two-sided: suppressing unknown must not suppress a true 0%.
+    const row = rowById('t-groupon'); // readRate 0 over 156 messages
+    expect(row.readRate).toBe(0);
+    renderRow(row, { expanded: true });
+
+    const stats = screen.getByText('read rate').parentElement!;
+    expect(stats.textContent).toContain('0%');
+  });
+});
+
 describe('TriageRow — inline preview composition', () => {
   it('renders the app-owned account context inside the pure preview surface', () => {
     const row = rowById('t-groupon');

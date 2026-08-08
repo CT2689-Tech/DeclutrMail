@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { and, count, desc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
 import {
@@ -14,6 +14,10 @@ import {
   type TriageVerdict,
 } from '@declutrmail/db';
 import { cleanupActionsPerMonthFor } from '@declutrmail/shared/entitlements';
+// The weak/strong split is product vocabulary, not a query detail —
+// shared so the API, the review copy and every surface that names a
+// protection reason cannot drift apart (D245 / CLAUDE.md §2.6).
+import { WEAK_PROTECTION_REASON_IDS } from '@declutrmail/shared/copy';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -81,17 +85,6 @@ export interface TriageQueueRow {
    */
   unreadInboxCount: number;
 }
-
-/**
- * The two automatic protection reasons that rest on a ONE-WAY signal
- * (D245). A reply is two-way and needs no review; a star or a Gmail
- * importance flag marks a message, not a correspondent.
- *
- * `user_defined` is deliberately absent from both this list and the
- * strong count: it is the user's own explicit Protect, so there is
- * nothing for us to reassure them about and nothing to second-guess.
- */
-const WEAK_PROTECTION_REASONS = ['starred', 'gmail_important'] as const;
 
 /** Result of {@link TriageReadService.readProtectionReview}. */
 export interface ProtectionReviewRead {
@@ -210,6 +203,7 @@ function queueGoalPriority(ordering: TriageQueueOrdering) {
  */
 @Injectable()
 export class TriageReadService {
+  private readonly logger = new Logger(TriageReadService.name);
   private readonly entitlements: EntitlementsService;
 
   constructor(
@@ -577,7 +571,7 @@ export class TriageReadService {
         and(
           eq(senderPolicies.mailboxAccountId, input.mailboxAccountId),
           eq(senderPolicies.isProtected, true),
-          inArray(senderPolicies.protectionReason, [...WEAK_PROTECTION_REASONS]),
+          inArray(senderPolicies.protectionReason, [...WEAK_PROTECTION_REASON_IDS]),
         ),
       );
     const weakKeys = weakRows.map((r) => r.senderKey);
@@ -610,6 +604,18 @@ export class TriageReadService {
       const right = byKey.get(b) ?? { unread: 0, inbox: 0 };
       return right.unread - left.unread || right.inbox - left.inbox || a.localeCompare(b);
     });
+
+    // No silent caps. Truncating the ranked pool is legitimate — the
+    // review shows five rows — but a caller that never hears about the
+    // truncation cannot tell "50 candidates, showed the top 5" from "5
+    // candidates, showed all of them", and the second reads as full
+    // coverage. Say what was dropped.
+    if (ranked.length > input.limit) {
+      this.logger.log(
+        `protection_review.pool_capped mailbox=${input.mailboxAccountId} ` +
+          `ranked=${ranked.length} kept=${input.limit} dropped=${ranked.length - input.limit}`,
+      );
+    }
 
     return { strong, weak, senderKeys: ranked.slice(0, input.limit) };
   }

@@ -111,6 +111,14 @@ export interface SenderListRow {
    */
   inboxCount?: number | null;
   /**
+   * The UNREAD subset of `inboxCount` — for a Protected sender, what
+   * the protection is shielding from bulk and automatic cleanup (D245).
+   * Optional for the same deploy-skew reason as `inboxCount`: absent ⇒
+   * show nothing rather than a fabricated 0, which would read as
+   * "shielding nothing" and is the opposite of the truth.
+   */
+  unreadInboxCount?: number | null;
+  /**
    * "You replied N×" count (Senders V2 spec v1.3 + mig 0022) — distinct
    * outbound messages whose thread contains ≥1 inbound from this sender.
    * Auto-protect threshold is ≥3. Engine default `0` (never null).

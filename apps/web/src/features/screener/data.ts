@@ -11,6 +11,8 @@
  * never appears in any rendered copy.
  */
 
+import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
+
 /** Engine verdict union — mirrors the `triage_verdict` pg enum (D227). */
 export type ScreenerRecommendationVerdict = 'keep' | 'archive' | 'unsubscribe' | 'later';
 
@@ -86,15 +88,15 @@ export type ScreenerScreenState =
 
 /**
  * Why this sender is Protected, in the user's own terms (D245 — "show
- * the exact reason"). Mirrors the Triage row's wording so the same fact
- * reads the same on every surface.
+ * the exact reason").
+ *
+ * Delegates to `@declutrmail/shared/copy` so Screener, Triage, Sender
+ * Detail and the Settings policies list cannot drift apart again. Kept
+ * as a local re-export because this feature's call sites pass the
+ * screener's own wire spelling.
  */
 export function protectionReasonLabel(reason: ScreenerProtectionReason | null): string {
-  if (reason === 'user_defined') return 'you marked it Protected';
-  if (reason === 'replied') return 'you replied at least 3 times';
-  if (reason === 'starred') return 'you starred a message';
-  if (reason === 'gmail_important') return 'Gmail marks it important';
-  return 'it is Protected';
+  return protectionReasonClause(normalizeProtectionReason(reason));
 }
 
 /**

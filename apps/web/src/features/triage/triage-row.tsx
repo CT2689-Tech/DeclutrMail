@@ -1,6 +1,7 @@
 'use client';
 
 import { Avatar, Button, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
+import { normalizeProtectionReason, protectionReasonLabel } from '@declutrmail/shared/copy';
 import type { PillTone } from '@declutrmail/shared';
 import type { ReactNode } from 'react';
 
@@ -24,22 +25,14 @@ const VERDICT_TONE: Record<TriageVerdict, PillTone> = {
 
 /**
  * The EXACT reason a sender is Protected (CLAUDE.md §2.6 / D245), in
- * the user's own terms. Mirrors `protectionReasonLabel` in the Screener
- * so the same fact reads the same on every surface.
+ * the user's own terms. One shared source across Screener, Triage,
+ * Sender Detail and the Settings policies list — this used to be four
+ * hand-written copies that had already drifted.
  */
 export function protectionEvidence(
   reason: NonNullable<TriageDecisionRow['protectionReason']>,
 ): string {
-  switch (reason) {
-    case 'user-marked':
-      return 'Protected — you marked it Protected';
-    case 'replied':
-      return 'Protected · you replied at least 3 times';
-    case 'starred':
-      return 'Protected · you starred a message';
-    case 'gmail-important':
-      return 'Protected · Gmail marks it important';
-  }
+  return protectionReasonLabel(normalizeProtectionReason(reason));
 }
 
 /**
@@ -53,7 +46,6 @@ export function protectionEvidence(
  * explicit "Quiet 90d" copy instead of a fabricated "0/mo".
  */
 function whyLine(row: TriageDecisionRow): string {
-  const pct = Math.round(row.readRate * 100);
   if (row.protectionReason !== null) {
     const evidence = protectionEvidence(row.protectionReason);
     // What the protection is holding back. On the D245 review this is
@@ -70,6 +62,13 @@ function whyLine(row: TriageDecisionRow): string {
     // carries the "they DID mail you" context without faking cadence.
     return `Quiet 90d · ${row.totalAllTime.toLocaleString()} received`;
   }
+  if (row.readRate === null) {
+    // No denominator, so no rate. Reachable independently of the quiet
+    // branch above (the BE derives them from different windows), and a
+    // fabricated "0% read" here would read as "never opened".
+    return `${row.last90dMessages} in last 90d`;
+  }
+  const pct = Math.round(row.readRate * 100);
   if (row.readRate === 0 && row.last90dMessages >= 8) {
     return `Never opened · ${row.last90dMessages} in last 90d`;
   }

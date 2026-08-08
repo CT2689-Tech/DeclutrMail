@@ -173,6 +173,7 @@ function buildRollingWindowSubqueries(): {
   last30dReadCount: SQL<number | string>;
   baselineMsgs: SQL<number | string>;
   inboxCount: SQL<number | string>;
+  unreadInboxCount: SQL<number | string>;
 } {
   const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
   const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
@@ -226,6 +227,21 @@ function buildRollingWindowSubqueries(): {
       WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
         AND ${mailMessages.senderKey} = ${outerSenderKey}
         AND ${mailMessages.isOutbound} = false
+        AND 'INBOX' = ANY(${mailMessages.labelIds})
+    )`,
+    // The UNREAD subset of the same set. For a Protected sender this is
+    // exactly what the protection is shielding from bulk and automatic
+    // cleanup, which is what makes a wrong protection expensive — and
+    // it is the ranking key the D245 protection review sorts on. Served
+    // by the partial index `mail_messages_account_sender_unread_idx`,
+    // which exists for precisely this predicate.
+    unreadInboxCount: sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.isOutbound} = false
+        AND ${mailMessages.isUnread} = true
         AND 'INBOX' = ANY(${mailMessages.labelIds})
     )`,
   };
@@ -415,6 +431,7 @@ export class SendersReadService {
       last30dReadCount: last30dReadCountSql,
       baselineMsgs: baselineMsgsSql,
       inboxCount: inboxCountSql,
+      unreadInboxCount: unreadInboxCountSql,
     } = buildRollingWindowSubqueries();
 
     // CORRELATION QUOTE-TRAP (MISTAKES.md 2026-05-23). Outer-scope
@@ -585,6 +602,7 @@ export class SendersReadService {
         last30dReadCount: last30dReadCountSql,
         baselineMsgs: baselineMsgsSql,
         inboxCount: inboxCountSql,
+        unreadInboxCount: unreadInboxCountSql,
         sparkline: sparklineSql,
         lastDecisionAt: lastDecisionAtSql,
         lastDecisionVerdict: lastDecisionVerdictSql,
@@ -659,6 +677,9 @@ export class SendersReadService {
         // Messages currently in INBOX — what Archive/Later/inbox-Delete
         // can actually reach (see the subquery note above).
         inboxCount: ensureSafeIntegerNumber(row.inboxCount, 'senders.inboxCount'),
+        // The unread subset of the same set — what a Protected sender's
+        // protection is shielding from bulk and automatic cleanup.
+        unreadInboxCount: ensureSafeIntegerNumber(row.unreadInboxCount, 'senders.unreadInboxCount'),
         readRate: computeReadRate(last30dMsgs, last30dReadCount),
         sparkline: row.sparkline ?? null,
         volumeTrend: computeRollingTrendBucket({
@@ -1223,6 +1244,7 @@ export class SendersReadService {
       last30dReadCount: last30dReadCountSql,
       baselineMsgs: baselineMsgsSql,
       inboxCount: inboxCountSql,
+      unreadInboxCount: unreadInboxCountSql,
     } = buildRollingWindowSubqueries();
     // ADR-0008 §3 ratification: direct triage_decisions read in the
     // senders read service (one of several sites — grep this marker to
@@ -1294,6 +1316,7 @@ export class SendersReadService {
         last30dReadCount: last30dReadCountSql,
         baselineMsgs: baselineMsgsSql,
         inboxCount: inboxCountSql,
+        unreadInboxCount: unreadInboxCountSql,
         lastDecisionAt: lastDecisionAtSql,
         lastDecisionVerdict: lastDecisionVerdictSql,
         lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
@@ -1356,6 +1379,7 @@ export class SendersReadService {
       // sender reports the same volume / read rate / trend on both.
       monthlyVolume: last30dMsgs,
       inboxCount: ensureSafeIntegerNumber(row.inboxCount, 'senders.inboxCount'),
+      unreadInboxCount: ensureSafeIntegerNumber(row.unreadInboxCount, 'senders.unreadInboxCount'),
       readRate: computeReadRate(last30dMsgs, last30dReadCount),
       // Sparkline not yet wired on this path. Null so the contract holds.
       sparkline: null,

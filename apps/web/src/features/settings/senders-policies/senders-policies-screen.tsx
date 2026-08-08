@@ -1,14 +1,18 @@
 'use client';
 // apps/web/src/features/settings/senders-policies/senders-policies-screen.tsx
 //
-// Phase X3 of the sender-bucketing re-design — lets the user see all
-// senders that have standing policies in one place + jump to the
-// detail page to toggle them off.
+// Phase X3 of the sender-bucketing re-design, now the STANDING
+// protection review (D245).
 //
-// The standing-policy section is server-filtered via `?protected=true`.
-// User clicks
-//     "Manage" -> jumps to /senders/[id], toggles Protect off via the
-//     existing detail-page chip (D42/D43).
+// Onboarding's step 5 reviews at most five weak protections once and is
+// then gone forever; a real mailbox carries dozens. This is where the
+// rest stay reachable — every protected sender, the exact reason each
+// one is protected (CLAUDE.md §2.6), what that protection is shielding,
+// and Unprotect in place.
+//
+// The section is server-filtered via `?protected=true`. "Manage" still
+// jumps to /senders/[id] for the full picture; removing protection no
+// longer requires the trip.
 //
 // Lazy-promoted per ADR-0007: lives in apps/web/src/features/settings/
 // because settings is the only consumer. Move to packages/shared/ if
@@ -23,9 +27,13 @@ import {
   EmptyState,
   ErrorState as RecoverableErrorState,
   Eyebrow,
+  toast,
   tokens,
 } from '@declutrmail/shared';
+import { normalizeProtectionReason, protectionReasonLabel } from '@declutrmail/shared/copy';
 import { useSenders } from '@/features/senders/api/use-senders';
+import { useSetSenderPolicy } from '@/features/senders/api/use-sender-policy';
+import { captureFeatureException } from '@/lib/sentry';
 
 import { enrichSenderRow, type Sender } from '@/features/senders/data';
 
@@ -48,14 +56,27 @@ export function SendersPoliciesScreen() {
   const { fetchNextPage, hasNextPage, isFetchingNextPage, data } = sendersQuery;
 
   // Every row the server returns is already a Protected sender — we
-  // just adapt + sort for stable display order. No client-side filter
-  // (the previous `.filter(s => s.protected === true)` is gone with
-  // the server-side `protected=true` filter).
+  // just adapt + sort for display. No client-side filter (the previous
+  // `.filter(s => s.protected === true)` is gone with the server-side
+  // `protected=true` filter).
+  //
+  // Ordered by the UNREAD inbox mail each protection is shielding, so
+  // the costliest wrong protection leads — the same ordering the
+  // onboarding review uses, because it is the same question. It sorts
+  // what is LOADED, not the whole query: the list is keyset-paginated
+  // and the sort key is a correlated subquery, so a server-side sort
+  // would need a new cursor encoding. The header says which it is
+  // rather than implying a global ranking.
   const protectedSenders = useMemo<Sender[]>(() => {
     const pages = data?.pages ?? [];
     return pages
       .flatMap((p) => p.data.map((row) => enrichSenderRow(row)))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort(
+        (a, b) =>
+          (b.unreadInboxCount ?? 0) - (a.unreadInboxCount ?? 0) ||
+          (b.inboxCount ?? 0) - (a.inboxCount ?? 0) ||
+          a.name.localeCompare(b.name),
+      );
   }, [data]);
 
   // The BE-honest count of protected senders, query-wide rather than
@@ -108,8 +129,9 @@ export function SendersPoliciesScreen() {
           DeclutrMail&apos;s bulk and automatic actions skip these senders — it won&apos;t archive,
           delete, or unsubscribe them on its own. An action you take on one sender yourself still
           applies. You can protect a sender, and DeclutrMail also protects one when you reply
-          repeatedly, star their mail, or Gmail keeps marking it important. Turn protection on or
-          off from a sender&apos;s detail page.
+          repeatedly, star their mail, or Gmail keeps marking it important. Each row shows which of
+          those applies, and Unprotect removes it — automatic protection won&apos;t re-apply
+          afterwards.
         </p>
       </div>
 
@@ -149,7 +171,15 @@ export function SendersPoliciesScreen() {
                 margin: '4px 0 0',
               }}
             >
-              Bulk and automatic actions skip these senders.
+              {/* Name the ordering, and scope it honestly. The sort key
+                  is computed per row, so it can only order what has
+                  been loaded — claiming a whole-mailbox ranking while
+                  page 2 is unfetched is the kind of quiet overclaim
+                  this surface exists to correct. */}
+              Bulk and automatic actions skip these senders.{' '}
+              {hasNextPage
+                ? `Most shielded unread mail first, across the ${protectedSenders.length.toLocaleString()} loaded so far.`
+                : 'Most shielded unread mail first.'}
             </p>
           </div>
           <span
@@ -203,7 +233,7 @@ export function SendersPoliciesScreen() {
               size="sm"
               onClick={() => void fetchNextPage()}
               disabled={isFetchingNextPage}
-              aria-label="Show more protected senders"
+              ariaLabel="Show more protected senders"
             >
               {isFetchingNextPage ? 'Loading…' : 'Show more'}
             </Button>
@@ -215,6 +245,10 @@ export function SendersPoliciesScreen() {
 }
 
 function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
+  const setPolicy = useSetSenderPolicy();
+  const reason = normalizeProtectionReason(sender.protectionFlags.protectionReason);
+  const shielded = sender.unreadInboxCount;
+
   return (
     <li
       style={{
@@ -240,6 +274,21 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
         >
           {sender.name}
         </div>
+        {/* THE REASON (CLAUDE.md §2.6 / D245 — "show the exact reason").
+            This list rendered avatar, name and a Manage button and never
+            said WHY, while three of the four reasons are automatic — so
+            every row looked like something the user had chosen. The
+            data was on the wire the whole time; this was a display gap.
+            Wording comes from the one shared source, so it reads the
+            same here, in Triage, in the Screener and on Sender Detail. */}
+        <div style={{ fontSize: 12, color: color.fgSoft, marginTop: 2 }}>
+          {protectionReasonLabel(reason)}
+          {/* What the protection is holding back — omitted when we do
+              not know (an API predating the field) or when there is
+              nothing in the inbox, rather than printed as a confident
+              "shielding 0". */}
+          {shielded != null && shielded > 0 && <> · shielding {shielded.toLocaleString()} unread</>}
+        </div>
         <div
           style={{
             fontFamily: font.mono,
@@ -251,13 +300,42 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
           {sender.domain} · {sender.monthlyVolume ?? 0}/mo
         </div>
       </div>
-      <Link
-        href={`/senders/${sender.id}`}
-        style={{ textDecoration: 'none' }}
-        aria-label={`Manage ${sender.name}`}
-      >
-        <Button size="sm">Manage</Button>
-      </Link>
+      <div style={{ display: 'flex', alignItems: 'center', gap: space[2], flexWrap: 'wrap' }}>
+        {/* Unprotect IN PLACE. Sending the user to the detail page to
+            toggle a chip made correcting a wrong protection a
+            per-sender errand — on a mailbox with 55 of them that is 55
+            round trips, which is why nobody ever did it. Nothing moves
+            and there is no undo window, but D245 makes it a STICKY
+            override: automatic protection will not re-apply. */}
+        <Button
+          size="sm"
+          disabled={setPolicy.isPending}
+          ariaLabel={`Unprotect ${sender.name}`}
+          onClick={() =>
+            setPolicy.mutate(
+              { senderId: sender.id, patch: { isProtected: false } },
+              {
+                onSuccess: () => toast(`${sender.name} is no longer Protected.`, 'success'),
+                onError: (err) => {
+                  captureFeatureException(err, { surface: 'senders', reason: 'unprotect' });
+                  toast("Couldn't remove protection — try again.", 'warn');
+                },
+              },
+            )
+          }
+        >
+          {setPolicy.isPending ? 'Removing…' : 'Unprotect'}
+        </Button>
+        <Link
+          href={`/senders/${sender.id}`}
+          style={{ textDecoration: 'none' }}
+          aria-label={`Manage ${sender.name}`}
+        >
+          <Button size="sm" tone="ghost">
+            Manage
+          </Button>
+        </Link>
+      </div>
     </li>
   );
 }
