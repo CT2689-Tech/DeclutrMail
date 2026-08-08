@@ -1,10 +1,12 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { and, count, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
 import {
   activityLog,
   mailMessages,
   mailboxAccounts,
+  senderHasActionableMail,
+  senderInboxActionWhere,
   senderPolicies,
   senders,
   triageDecisions,
@@ -49,9 +51,25 @@ export interface TriageQueueRow {
    * quiet within the window.
    */
   last90dMessages: number;
-  readRate: number;
+  /**
+   * `null` when the sender sent nothing in the window — NOT 0.
+   *
+   * A fabricated 0 is indistinguishable from "sends constantly, never
+   * opened", which is the best possible score under any low-read-rate
+   * ranking. On a real 98k mailbox that put silent one-off senders at
+   * the front of onboarding's first review. `senders.types.ts` already
+   * types this `number | null`; Triage was the outlier.
+   */
+  readRate: number | null;
   lastDays: number;
   totalAllTime: number;
+  /**
+   * Messages from this sender sitting in INBOX right now — what an
+   * Archive / Later / Delete would actually move. `totalAllTime` counts
+   * everything indexed including already-archived mail, so it does NOT
+   * measure the payoff of an action.
+   */
+  inboxCount: number;
 }
 
 /** Optional presentation ordering applied before the queue limit. */
@@ -117,17 +135,29 @@ function queueGoalPriority(ordering: TriageQueueOrdering) {
           OR ${senderPolicies.protectionReason} IS NOT NULL
           OR ${triageDecisions.verdict} = 'keep'
         THEN 0 ELSE 1 END`;
+    // Both cleanup orderings push `later` to the BACK, and that is
+    // load-bearing rather than tidy. This ORDER BY feeds a 50-row pool
+    // that onboarding then filters, and `later` is `insufficient_signal`
+    // which onboarding always drops. Ranking it first — as
+    // `promotions-first` did, bucketing `promotions AND (archive OR
+    // later)` together — filled all 50 slots with rows the caller was
+    // guaranteed to discard, so Step 5 rendered EMPTY on a mailbox with
+    // 1,443 emails of promotions cleanup available. A pool ordering that
+    // disagrees with its consumer's filter starves it silently; there is
+    // no error, just nothing.
     case 'newsletter-first':
       return sql`CASE
+        WHEN ${triageDecisions.verdict} = 'later' THEN 9
         WHEN ${triageDecisions.verdict} = 'unsubscribe' THEN 0
         WHEN ${senders.gmailCategory} = 'promotions' THEN 1
         ELSE 2 END`;
     case 'promotions-first':
       return sql`CASE
+        WHEN ${triageDecisions.verdict} = 'later' THEN 9
         WHEN ${senders.gmailCategory} = 'promotions'
-          AND ${triageDecisions.verdict} IN ('archive', 'later') THEN 0
+          AND ${triageDecisions.verdict} IN ('archive', 'unsubscribe') THEN 0
         WHEN ${senders.gmailCategory} = 'promotions' THEN 1
-        WHEN ${triageDecisions.verdict} IN ('archive', 'later') THEN 2
+        WHEN ${triageDecisions.verdict} IN ('archive', 'unsubscribe') THEN 2
         ELSE 3 END`;
     case 'actionable':
       return null;
@@ -178,6 +208,30 @@ export class TriageReadService {
     mailboxAccountId: string;
     limit: number;
     ordering?: TriageQueueOrdering;
+    /**
+     * Apply the CLEANUP consumer's own rejections before the limit.
+     *
+     * Onboarding's Step 5 filters on inbox mail, but this pool ranks by
+     * indexed volume (`senders.total_received`), which counts archived
+     * mail too. A sender with 2,000 filed messages and an empty inbox
+     * therefore leads the pool and is then discarded — and with enough of
+     * them all `limit` slots go to rows the caller cannot use. Step 5
+     * rendered blank on a 98k mailbox for that reason, silently: a pool
+     * that disagrees with its consumer's filter starves it with no error.
+     *
+     * It has to mirror every rejection onboarding makes, not just one.
+     * Filtering only on inbox mail still let `keep` and Protected rows
+     * take slots — and `promotions-first` ranks a Protected *promotions*
+     * sender ABOVE an actionable non-promotions one, so those are exactly
+     * the rows that crowd in first. `later` needs no clause: the ordering
+     * already sends it to the back, so it can only occupy slots nothing
+     * better wanted.
+     *
+     * Off by default. The main Triage queue deliberately shows Keep,
+     * Protected and empty-inbox senders — a decision about a sender is
+     * still meaningful there.
+     */
+    requireCleanupCandidate?: boolean;
   }): Promise<TriageQueueRow[]> {
     // The CASE ordering encodes the verdict priority. `confidence` is
     // a numeric text on the wire — cast to numeric so DESC sorts as a
@@ -189,9 +243,24 @@ export class TriageReadService {
         WHEN 'later'       THEN 2
         WHEN 'keep'        THEN 3
       END`;
-    const goalPriority = queueGoalPriority(input.ordering ?? 'actionable');
+    const ordering = input.ordering ?? 'actionable';
+    const goalPriority = queueGoalPriority(ordering);
+    // Onboarding applies richer payoff ordering after this read, but the
+    // SQL limit happens first. Put the maintained sender count ahead of
+    // confidence for cleanup goals so a high-volume sender cannot be
+    // crowded out of the candidate pool by dozens of one-off rows.
+    const payoffPriority =
+      ordering === 'newsletter-first' || ordering === 'promotions-first'
+        ? desc(senders.totalReceived)
+        : null;
     const queueOrder = goalPriority
-      ? [goalPriority, verdictPriority, desc(triageDecisions.confidence), triageDecisions.senderKey]
+      ? [
+          goalPriority,
+          ...(payoffPriority ? [payoffPriority] : []),
+          verdictPriority,
+          desc(triageDecisions.confidence),
+          triageDecisions.senderKey,
+        ]
       : [verdictPriority, desc(triageDecisions.confidence)];
 
     // Exclude senders the user has already decided on within the D30
@@ -248,7 +317,28 @@ export class TriageReadService {
           eq(senderPolicies.senderKey, triageDecisions.senderKey),
         ),
       )
-      .where(and(eq(triageDecisions.mailboxAccountId, input.mailboxAccountId), notDecidedRecently))
+      .where(
+        and(
+          eq(triageDecisions.mailboxAccountId, input.mailboxAccountId),
+          notDecidedRecently,
+          ...(input.requireCleanupCandidate
+            ? [
+                ne(triageDecisions.verdict, 'keep'),
+                // `is_protected` ALONE, mirroring `mapProtectionReason`,
+                // which returns null the moment that flag is false. An
+                // `IS NULL protection_reason` clause here also excluded
+                // DEMOTED senders — ones the user explicitly unprotected,
+                // which keep their reason as the record of what they were
+                // (D245: "preserve a manual Unprotect as a sticky
+                // override"). Unprotecting is the user asking for cleanup
+                // to reach a sender, so hiding it from Step 5 inverts the
+                // very intent.
+                or(isNull(senderPolicies.isProtected), eq(senderPolicies.isProtected, false))!,
+                senderHasActionableMail(input.mailboxAccountId, senders.senderKey),
+              ]
+            : []),
+        ),
+      )
       .orderBy(...queueOrder)
       .limit(input.limit);
 
@@ -289,6 +379,22 @@ export class TriageReadService {
       )
       .groupBy(mailMessages.senderKey);
 
+    // `inboxCount` is what an action would MOVE, so it must resolve the
+    // same message set the preview, the enqueue count and the worker
+    // resolve — which is why `senderInboxActionWhere` exists and why this
+    // does not hand-roll the equivalent SQL. A sixth private copy of that
+    // predicate is exactly the drift the 2026-07-26 action-surface finding
+    // was about: one caller filtered `is_outbound`, four did not, and mail
+    // absent from the preview moved at execution anyway. Separate query
+    // because the aggregate above deliberately spans ALL stored mail
+    // (totals, 90-day window) rather than the inbox-only action set.
+    const inboxRows = await this.db
+      .select({ senderKey: mailMessages.senderKey, inboxCount: count() })
+      .from(mailMessages)
+      .where(senderInboxActionWhere({ mailboxAccountId: input.mailboxAccountId, senderKeys }))
+      .groupBy(mailMessages.senderKey);
+    const inboxBySender = new Map(inboxRows.map((r) => [r.senderKey, Number(r.inboxCount)]));
+
     const aggBySender = new Map<string, (typeof aggRows)[number]>();
     for (const a of aggRows) aggBySender.set(a.senderKey, a);
 
@@ -298,7 +404,10 @@ export class TriageReadService {
       const total = Number(agg?.total ?? 0);
       const last90Total = Number(agg?.last90Total ?? 0);
       const last90Read = Number(agg?.last90Read ?? 0);
-      const readRate = last90Total > 0 ? last90Read / last90Total : 0;
+      // Mirrors senders.read-service `computeReadRate`: no denominator
+      // means unknown, not zero.
+      const readRate = last90Total > 0 ? last90Read / last90Total : null;
+      const inboxCount = inboxBySender.get(r.senderKey) ?? 0;
       const monthlyVolume = Math.round(last90Total / 3);
       const lastInternal = agg?.lastInternalDate ?? r.lastSeenAt;
       const lastDays =
@@ -312,7 +421,7 @@ export class TriageReadService {
       // (or the engine's protect rules did) to keep this sender, so
       // the RECOMMENDATION must be Keep. Display-layer only: the
       // engine's verdict stays in `triage_decisions` untouched, every
-      // K/A/U/L action remains available on the row, and the override
+      // K/A/U/L/D action remains available on the row, and the override
       // is annotated in the reasoning so the user sees why.
       const protectionReason = mapProtectionReason(r.isProtected, r.protectionReason);
       const isProtected = protectionReason !== null;
@@ -352,6 +461,7 @@ export class TriageReadService {
         readRate,
         lastDays,
         totalAllTime: total,
+        inboxCount,
       };
     });
   }
@@ -401,7 +511,7 @@ export class TriageReadService {
     let laterToday = 0;
     for (const row of todayCounts) {
       const n = Number(row.n);
-      // Skip non-K/A/U/L bookkeeping actions like followup-dismiss.
+      // Skip non-K/A/U/L/D bookkeeping actions like followup-dismiss.
       if (row.action === 'archive') {
         archivedToday = n;
         decidedToday += n;
@@ -412,6 +522,8 @@ export class TriageReadService {
         laterToday = n;
         decidedToday += n;
       } else if (row.action === 'keep') {
+        decidedToday += n;
+      } else if (row.action === 'delete') {
         decidedToday += n;
       }
     }
@@ -527,12 +639,14 @@ export class TriageReadService {
  * shown in the row footer, formatted for the row's expanded view.
  */
 function buildSignals(input: {
-  readRate: number;
+  readRate: number | null;
   monthlyVolume: number;
   unsubscribeMethod: 'one_click' | 'mailto' | 'none';
 }): string[] {
   const signals: string[] = [
-    `Read rate: ${Math.round(input.readRate * 100)}% over the last 90 days`,
+    input.readRate === null
+      ? 'Read rate: no mail in the last 90 days, so there is nothing to measure'
+      : `Read rate: ${Math.round(input.readRate * 100)}% over the last 90 days`,
     `Volume: ${input.monthlyVolume} messages/month (90-day average)`,
   ];
   if (input.unsubscribeMethod === 'one_click') {

@@ -189,7 +189,9 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
       // D251 — Plus now has `autopilot`, so it reaches the preset
       // picker too. Before D251 this step was Pro-only and Plus fell through
       // to the sender-review step below.
-      expect(await screen.findByText('Pick your starting rules.')).toBeInTheDocument();
+      expect(
+        await screen.findByText('Choose what DeclutrMail should suggest.'),
+      ).toBeInTheDocument();
       expect(screen.getByText('Auto-archive low-engagement')).toBeInTheDocument();
     },
   );
@@ -198,7 +200,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     installFetchStub([meAuthed('ready'), onboardingState(), syncStatus(true), emptyRules]);
     renderPage();
 
-    expect(await screen.findByText('Pick your starting rules.')).toBeInTheDocument();
+    expect(await screen.findByText('Choose what DeclutrMail should suggest.')).toBeInTheDocument();
     expect(screen.getByText('Auto-archive low-engagement')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Choose a goal to continue' })).toBeDisabled();
     expect(screen.getByRole('radio', { name: /Reduce newsletters/i })).toBeInTheDocument();
@@ -235,8 +237,8 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
       ]);
       renderPage();
 
-      expect(await screen.findByText('Your first sender review is ready.')).toBeInTheDocument();
-      expect(screen.queryByText('Pick your starting rules.')).not.toBeInTheDocument();
+      expect(await screen.findByText('Choose your starting point.')).toBeInTheDocument();
+      expect(screen.queryByText('Choose what DeclutrMail should suggest.')).not.toBeInTheDocument();
       expect(autopilotReads).toBe(0);
 
       await userEvent.click(screen.getByRole('radio', { name: /Reduce newsletters/i }));

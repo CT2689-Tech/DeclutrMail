@@ -73,7 +73,12 @@ export type {
 } from './schema/followup-tracker';
 export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
-export { ALL_MAIL_EXCLUDED_LABELS, senderActionWhere, senderInboxActionWhere } from './predicates';
+export {
+  ALL_MAIL_EXCLUDED_LABELS,
+  senderActionWhere,
+  senderHasActionableMail,
+  senderInboxActionWhere,
+} from './predicates';
 export type { SenderActionReach, SenderActionScope, SenderInboxActionScope } from './predicates';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
 export type { MailboxAccount, NewMailboxAccount } from './schema/mailbox-accounts';

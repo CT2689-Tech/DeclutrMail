@@ -47,6 +47,76 @@ the point.
 
 ## Inbox (untriaged)
 
+- **2026-08-08** · **BUILD BRIEF — `protect_important` becomes a protection
+  review.** Founder-decided 2026-08-08. Today the goal protects nothing: the
+  verb registry is `keep/archive/unsubscribe/later/delete` with no Protect,
+  and Keep is explicitly not Protect. Meanwhile auto-protection already
+  shielded **515 senders** on the founder's mailbox before Step 5 runs.
+
+  **Shape.** Split protected senders by whether the user ever replied —
+  definitional, not a tuned threshold. A reply is a two-way relationship; a
+  star or a Gmail flag is one-way. Measured: 463 strong / 52 weak on the 98k
+  mailbox, 0 / 2 on the 23k.
+
+  Headline is the reassurance ("We protected 463 senders you write back
+  to"); the rows are the 52 worth a look, ordered by how much UNREAD mail the
+  protection is shielding (`volume x unread%`), so the costliest mistake
+  leads. Real examples: God of Prompt (166 emails, 13% read, starred once),
+  GetYourGuide (34, 3%). Both currently excluded from all bulk and automatic
+  cleanup because of a single star.
+
+  **Actions: all five verbs, not just Unprotect.** ADR-0019 forbids
+  per-surface verb hand-rolling, CLAUDE.md §2.6 scopes protection to bulk and
+  automatic actions only, and PR #476 already made protected rows actionable
+  in Triage. A row offering only Unprotect would be the special case.
+
+  **The trap, and how NOT to close it.** A single action on a protected
+  sender succeeds and LEAVES the protection intact
+  (`actions.service.ts:747` gates only the bulk path; `:656` flags but does
+  not block). So unsubscribing GetYourGuide here feels finished while every
+  future bulk and Autopilot run silently keeps skipping it.
+
+  An earlier draft of this brief closed that by bundling protection removal
+  into the mail action, declared in the preview. That is wrong three times
+  over. It is AMBIGUOUS — Keep on a protected sender plainly should not
+  unprotect, and Later is arguable. It is UNSAFE — `undo_action_kind` is
+  `archive | unsubscribe | later | apply-rule | delete` with no protection
+  kind, so an undo restores the mail and structurally CANNOT restore the
+  shield; the user would undo, watch their mail come back, and never learn
+  the protection did not. And it CORRUPTS the semantics — D245 makes a
+  manual Unprotect a sticky override that stops auto-protection
+  re-protecting, so a bundled removal records a user decision the user
+  never made.
+
+  **Do not bundle.** Keep the two acts separate: the verbs decide what
+  happens to mail, a distinct Unprotect control changes the safety state.
+  Close the trap by SAYING it rather than acting — on the four verbs that
+  bulk and automatic runs would skip (Archive, Later, Delete, Unsubscribe),
+  the preview states "Archive 34 emails. This sender stays protected, so
+  bulk and automatic cleanup will keep skipping it," with Unprotect offered
+  alongside. Surfacing the consequence is the fix; acting on the user's
+  behalf is how the fix became more dangerous than the bug.
+
+  Note it is FOUR verbs, not five. `SheetableVerb` is
+  `Archive | Unsubscribe | Later | Delete` — Keep has no preview sheet
+  because it moves no mail, it records a decision. Keep also needs no
+  notice: keeping a protected sender is coherent, so warning about
+  protection there would be noise. (Unsubscribe is the partial case — it
+  stops future mail while existing inbox mail stays put unless a backlog
+  action is chosen separately, so its notice should speak to future mail.)
+
+  **Edges.** Zero weak protections → show only the reassurance line, which is
+  itself the win. nayana's mailbox is 0 strong / 2 weak, so the copy must not
+  read as failure when the strong count is 0. Unprotect moves no mail, so there is no undo
+  window to explain — but it is not freely reversible either: D245 makes a
+  manual Unprotect a STICKY override, so automatic protection will not
+  re-apply afterwards. The user can protect again by hand; the automatic
+  signal that put it there originally is spent. Say that on the control.
+
+  **Blocked on:** `/settings/senders` shows protected senders with no reason
+  at all (CLAUDE.md §2.6 requires the exact reason), so the "Show all 52"
+  link has nowhere good to land until that is fixed.
+
 - **2026-08-06** · `/onboarding` step 5 (first triage) — the pinned-row
   thresholds are unexplained cutoffs. `10 received` was an emergency proxy for
   "enough cleanup to notice", picked to eliminate the 1–2-message rows; worse,

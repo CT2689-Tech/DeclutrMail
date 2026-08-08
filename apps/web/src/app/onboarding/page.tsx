@@ -279,7 +279,6 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
           onComplete={() => finish({ skipped: false })}
           completing={complete.isPending}
           goal={state.data?.goal ?? 'reduce_newsletters'}
-          corner={skipCorner}
         />
       );
   }

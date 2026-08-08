@@ -7,6 +7,7 @@ import {
   AUTOPILOT_PRESET_KEYS,
   activityLog,
   automationRules,
+  mailMessages,
   mailboxAccounts,
   schema,
   senders,
@@ -116,6 +117,13 @@ async function seedDecision(
     senderKey: string;
     verdict: 'keep' | 'archive' | 'unsubscribe' | 'later';
     confidence: number;
+    /**
+     * Messages from this sender sitting in INBOX. Defaults to 3 because
+     * the payoff gate drops any sender whose action would move nothing —
+     * a seed with no inbox mail is a seed Step 5 correctly refuses to
+     * pin. Pass 0 to exercise that.
+     */
+    inboxMessages?: number;
   },
 ): Promise<void> {
   const now = new Date();
@@ -123,8 +131,10 @@ async function seedDecision(
     mailboxAccountId,
     senderKey: opts.senderKey,
     displayName: `Sender ${opts.senderKey}`,
-    email: `${opts.senderKey}@example.com`,
-    domain: 'example.com',
+    email: `${opts.senderKey}@${opts.senderKey}.example`,
+    // Distinct per sender: the lineup keeps one row per registrable
+    // domain, so a shared domain would collapse the whole seed to one pin.
+    domain: `${opts.senderKey}.example`,
     gmailCategory: 'promotions',
     firstSeenAt: now,
     lastSeenAt: now,
@@ -138,6 +148,21 @@ async function seedDecision(
     generatedBy: 'template',
     expiresAt: new Date(Date.now() + 86_400_000),
   });
+  const inboxMessages = opts.inboxMessages ?? 3;
+  if (inboxMessages > 0) {
+    await db.insert(mailMessages).values(
+      Array.from({ length: inboxMessages }, (_, index) => ({
+        mailboxAccountId,
+        providerMessageId: `${opts.senderKey}-msg-${index}`,
+        providerThreadId: `${opts.senderKey}-thread-${index}`,
+        senderKey: opts.senderKey,
+        internalDate: now,
+        isUnread: true,
+        isOutbound: false,
+        labelIds: ['INBOX'],
+      })),
+    );
+  }
 }
 
 async function enabledByKey(db: Db, mailboxId: string): Promise<Record<string, boolean>> {
@@ -286,23 +311,40 @@ describe('OnboardingService', () => {
   });
 
   describe('getFirstTriage', () => {
-    it('pins a five-sender contrast lineup (2026-07-10 D112 amendment)', async () => {
+    it('pins only rows that would move mail, biggest first', async () => {
+      // Supersedes the "five-sender contrast lineup" this test asserted
+      // until 2026-08-07. That lineup was a teaching device — one
+      // unsubscribe, one keep for trust, one judgment call, then backfill
+      // by confidence — and it produced a first run that changed almost
+      // nothing. `keep` never moves mail and `later` means the engine has
+      // no opinion, so neither belongs in a step whose whole job is
+      // proving the product does something.
       await seedDecision(db, mailboxId, { senderKey: 'k1', verdict: 'keep', confidence: 0.99 });
-      await seedDecision(db, mailboxId, { senderKey: 'a1', verdict: 'archive', confidence: 0.9 });
-      await seedDecision(db, mailboxId, { senderKey: 'a2', verdict: 'archive', confidence: 0.8 });
+      await seedDecision(db, mailboxId, {
+        senderKey: 'a1',
+        verdict: 'archive',
+        confidence: 0.9,
+        inboxMessages: 4,
+      });
+      await seedDecision(db, mailboxId, {
+        senderKey: 'a2',
+        verdict: 'archive',
+        confidence: 0.8,
+        inboxMessages: 9,
+      });
       await seedDecision(db, mailboxId, {
         senderKey: 'u1',
         verdict: 'unsubscribe',
         confidence: 0.7,
+        inboxMessages: 2,
       });
       await seedDecision(db, mailboxId, { senderKey: 'l1', verdict: 'later', confidence: 0.6 });
 
       const read = await service.getFirstTriage(userId, mailboxId);
-      expect(read.meta).toEqual({ pinned: 5, decided: 0 });
-      // Slot 1: the unsubscribe payoff; slot 2: the keep (trust); slot 3:
-      // the highest-confidence judgment call. Remaining slots backfill by
-      // confidence to keep the finite first-relief session useful.
-      expect(read.rows.map((r) => r.senderKey)).toEqual(['u1', 'k1', 'a1', 'a2', 'l1']);
+      // k1 (keep) and l1 (later) are gone; the rest rank by mail moved,
+      // NOT by confidence — a2 leads on 9 despite the lowest score here.
+      expect(read.meta).toEqual({ pinned: 3, decided: 0 });
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['a2', 'a1', 'u1']);
     });
 
     it('uses the persisted onboarding goal when creating the first pin', async () => {
@@ -338,6 +380,46 @@ describe('OnboardingService', () => {
       expect(read.rows).toHaveLength(5);
     });
 
+    it('brings high-payoff promotion cleanup into the candidate pool before the SQL limit', async () => {
+      await service.submitPresetPicks(userId, mailboxId, 'clear_old_promotions', []);
+      for (let index = 0; index < 51; index += 1) {
+        await seedDecision(db, mailboxId, {
+          senderKey: `low-${index.toString().padStart(2, '0')}`,
+          verdict: 'archive',
+          confidence: 0.99,
+        });
+      }
+      await seedDecision(db, mailboxId, {
+        senderKey: 'zz-useful-backlog',
+        verdict: 'archive',
+        confidence: 0.5,
+      });
+      await db
+        .update(senders)
+        .set({ totalReceived: 12 })
+        .where(eq(senders.senderKey, 'zz-useful-backlog'));
+      await db.insert(mailMessages).values(
+        Array.from({ length: 12 }, (_, index) => ({
+          mailboxAccountId: mailboxId,
+          providerMessageId: `high-payoff-${index}`,
+          providerThreadId: `high-payoff-thread-${index}`,
+          senderKey: 'zz-useful-backlog',
+          internalDate: new Date(),
+          isUnread: true,
+          isOutbound: false,
+          labelIds: ['INBOX'],
+        })),
+      );
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+
+      // The SQL limit runs before any JS ranking, so a high-payoff sender
+      // has to survive the candidate-pool ordering first. It leads —
+      // the low-volume rows may still follow, they simply cannot crowd
+      // it out (which a confidence-only pool ordering allowed).
+      expect(read.rows[0]?.senderKey).toBe('zz-useful-backlog');
+    });
+
     it('the pinned set survives a new higher-confidence decision appearing', async () => {
       await seedDecision(db, mailboxId, { senderKey: 'a1', verdict: 'archive', confidence: 0.8 });
       await seedDecision(db, mailboxId, { senderKey: 'a2', verdict: 'archive', confidence: 0.7 });
@@ -349,6 +431,60 @@ describe('OnboardingService', () => {
       const second = await service.getFirstTriage(userId, mailboxId);
       expect(second.meta.pinned).toBe(2);
       expect(second.rows.map((r) => r.senderKey).sort()).toEqual(['a1', 'a2']);
+    });
+
+    it('replaces pre-payoff pins so users already at Step 5 receive the improved lineup', async () => {
+      await seedDecision(db, mailboxId, {
+        senderKey: 'one-off',
+        verdict: 'archive',
+        confidence: 0.99,
+      });
+      await seedDecision(db, mailboxId, {
+        senderKey: 'useful-backlog',
+        verdict: 'archive',
+        confidence: 0.8,
+      });
+      await db.insert(mailMessages).values([
+        {
+          mailboxAccountId: mailboxId,
+          providerMessageId: 'one-off-0',
+          providerThreadId: 'one-off-thread',
+          senderKey: 'one-off',
+          internalDate: new Date(),
+          isUnread: true,
+          isOutbound: false,
+          labelIds: ['INBOX'],
+        },
+        ...Array.from({ length: 12 }, (_, index) => ({
+          mailboxAccountId: mailboxId,
+          providerMessageId: `useful-${index}`,
+          providerThreadId: `useful-thread-${index}`,
+          senderKey: 'useful-backlog',
+          internalDate: new Date(),
+          isUnread: true,
+          isOutbound: false,
+          labelIds: ['INBOX'],
+        })),
+      ]);
+      await db
+        .update(users)
+        .set({
+          preferences: {
+            onboardingGoal: 'clear_old_promotions',
+            onboardingFirstTriageKeys: ['one-off'],
+          },
+        })
+        .where(eq(users.id, userId));
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+
+      // The stored pin was ['one-off'] from an earlier ranking. The
+      // version stamp forces a re-pick, and the re-pick orders by mail
+      // actually moved — so the big backlog leads despite the lower
+      // confidence. Without this bump a ranking fix reaches only accounts
+      // that had not onboarded yet, because the picks live on the user.
+      expect(read.meta).toEqual({ pinned: 2, decided: 0 });
+      expect(read.rows.map((row) => row.senderKey)).toEqual(['useful-backlog', 'one-off']);
     });
 
     it('a durable decision drops the row and bumps decided (D226 server confirmation)', async () => {
@@ -384,7 +520,11 @@ describe('pickFirstTriageCandidates', () => {
     senderKey: 'sk',
     senderName: 'n',
     senderEmail: 'e@example.com',
-    senderDomain: 'example.com',
+    // Derived from the key so every synthetic row is a DISTINCT brand by
+    // default — the lineup keeps one row per registrable domain, and a
+    // shared 'example.com' would collapse an entire fixture to one pin.
+    // Tests about brand thinning set this explicitly.
+    senderDomain: `${over.senderKey ?? 'sk'}.example`,
     gmailCategory: 'promotions',
     unsubscribeMethod: 'none',
     verdict: 'archive',
@@ -396,157 +536,187 @@ describe('pickFirstTriageCandidates', () => {
     last90dMessages: 0,
     readRate: 0,
     lastDays: 0,
-    totalAllTime: 0,
+    totalAllTime: 10,
+    // Positive by default so a row is pickable unless a test says
+    // otherwise — the payoff gate requires mail actually in the inbox.
+    inboxCount: 5,
     ...over,
   });
 
-  it('fills the trust slot with a keep/protected sender instead of excluding them', () => {
-    const picked = pickFirstTriageCandidates([
-      row({ senderKey: 'keep', verdict: 'keep', confidence: 0.99, readRate: 0.9 }),
-      row({ senderKey: 'prot', protectionReason: 'replied', confidence: 0.98, readRate: 0.4 }),
-      row({ senderKey: 'ok', confidence: 0.6 }),
-    ]);
-    // Highest read-rate keep wins the trust slot; keeps/protected never
-    // fill the other slots (eligible pool still excludes them).
-    expect(picked.map((r) => r.senderKey)).toEqual(['keep', 'ok']);
-  });
-
-  it('picks one row per teaching slot: unsubscribe payoff, keep trust, judgment call', () => {
-    const picked = pickFirstTriageCandidates([
-      row({ senderKey: 'u-low', verdict: 'unsubscribe', confidence: 0.7 }),
-      row({ senderKey: 'u-high', verdict: 'unsubscribe', confidence: 0.95 }),
-      row({ senderKey: 'k1', verdict: 'keep', confidence: 0.9, readRate: 0.9 }),
-      row({
-        senderKey: 'prot',
-        protectionReason: 'replied',
-        confidence: 0.8,
-        readRate: 0.95,
-      }),
-      row({ senderKey: 'a1', verdict: 'archive', confidence: 0.9 }),
-      row({ senderKey: 'l1', verdict: 'later', confidence: 0.85 }),
-    ]);
-    // The first three preserve the contrast lineup; the finite session
-    // then backfills the two strongest remaining eligible rows.
-    expect(picked.map((r) => r.senderKey)).toEqual(['u-high', 'prot', 'a1', 'l1', 'u-low']);
-  });
-
-  it('backfills empty slots from the eligible pool by confidence', () => {
-    const picked = pickFirstTriageCandidates([
-      row({ senderKey: 'u1', verdict: 'unsubscribe', confidence: 0.9 }),
-      row({ senderKey: 'u2', verdict: 'unsubscribe', confidence: 0.8 }),
-      row({ senderKey: 'u3', verdict: 'unsubscribe', confidence: 0.7 }),
-    ]);
-    // No keep, no archive/later — still returns every available row.
-    expect(picked.map((r) => r.senderKey)).toEqual(['u1', 'u2', 'u3']);
-  });
-
-  it('ranks by confidence DESC normally', () => {
-    const picked = pickFirstTriageCandidates([
-      row({ senderKey: 'low', confidence: 0.6 }),
-      row({ senderKey: 'high', confidence: 0.9 }),
-      row({ senderKey: 'mid', confidence: 0.7 }),
-      row({ senderKey: 'lowest', confidence: 0.55 }),
-    ]);
-    expect(picked.map((r) => r.senderKey)).toEqual(['high', 'mid', 'low', 'lowest']);
-  });
-
-  it('falls back to read-rate ASC when confidence is uniformly low (D112)', () => {
-    const picked = pickFirstTriageCandidates([
-      row({ senderKey: 'r3', confidence: 0.3, readRate: 0.3 }),
-      row({ senderKey: 'r1', confidence: 0.4, readRate: 0.1 }),
-      row({ senderKey: 'r2', confidence: 0.2, readRate: 0.2 }),
-    ]);
-    expect(picked.map((r) => r.senderKey)).toEqual(['r1', 'r2', 'r3']);
-  });
-
-  it('caps the first-relief pin at five candidates', () => {
-    const picked = pickFirstTriageCandidates(
-      Array.from({ length: 6 }, (_, index) =>
-        row({ senderKey: `sender-${index}`, confidence: 0.9 - index / 100 }),
-      ),
-    );
-    expect(picked).toHaveLength(5);
-    expect(picked.map((r) => r.senderKey)).toEqual([
-      'sender-0',
-      'sender-1',
-      'sender-2',
-      'sender-3',
-      'sender-4',
-    ]);
-  });
-
-  it('orders newsletter relief by Unsubscribe, Promotions, then low read rate', () => {
+  it('drops rows whose action would move nothing — the only gate, and it is definitional', () => {
     const picked = pickFirstTriageCandidates(
       [
-        row({
-          senderKey: 'unsubscribe-primary',
-          verdict: 'unsubscribe',
-          gmailCategory: 'primary',
-          readRate: 0.05,
-        }),
-        row({
-          senderKey: 'unsubscribe-promo-read',
-          verdict: 'unsubscribe',
-          gmailCategory: 'promotions',
-          readRate: 0.8,
-        }),
-        row({
-          senderKey: 'unsubscribe-promo-unread',
-          verdict: 'unsubscribe',
-          gmailCategory: 'promotions',
-          readRate: 0.1,
-        }),
-        row({ senderKey: 'archive-promo', gmailCategory: 'promotions', readRate: 0 }),
-      ],
-      'reduce_newsletters',
-    );
-    expect(picked.map((r) => r.senderKey)).toEqual([
-      'unsubscribe-promo-unread',
-      'unsubscribe-promo-read',
-      'unsubscribe-primary',
-      'archive-promo',
-    ]);
-  });
-
-  it('orders promotion cleanup by Promotions with Archive/Later first', () => {
-    const picked = pickFirstTriageCandidates(
-      [
-        row({ senderKey: 'other-unsubscribe', verdict: 'unsubscribe', gmailCategory: 'social' }),
-        row({ senderKey: 'other-archive', verdict: 'archive', gmailCategory: 'primary' }),
-        row({
-          senderKey: 'promo-unsubscribe',
-          verdict: 'unsubscribe',
-          gmailCategory: 'promotions',
-        }),
-        row({ senderKey: 'promo-later', verdict: 'later', gmailCategory: 'promotions' }),
-        row({ senderKey: 'promo-archive', verdict: 'archive', gmailCategory: 'promotions' }),
+        row({ senderKey: 'empty', inboxCount: 0, totalAllTime: 400, confidence: 0.99 }),
+        row({ senderKey: 'real', inboxCount: 3, totalAllTime: 3, confidence: 0.6 }),
       ],
       'clear_old_promotions',
     );
-    expect(picked.map((r) => r.senderKey)).toEqual([
-      'promo-archive',
-      'promo-later',
-      'promo-unsubscribe',
-      'other-archive',
-      'other-unsubscribe',
-    ]);
+    // `empty` has 400 indexed messages and would have sailed through a
+    // `totalAllTime >= 10` threshold — but every one is already filed, so
+    // Archive moves zero mail. A row that changes nothing is not a decision.
+    expect(picked.map((r) => r.senderKey)).toEqual(['real']);
+  });
+
+  it('never leads goal-led cleanup with `later` — that verdict means "no signal"', () => {
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'dunno', verdict: 'later', confidence: 0.7, inboxCount: 900 }),
+        row({ senderKey: 'sure', verdict: 'archive', confidence: 0.55, inboxCount: 12 }),
+      ],
+      'clear_old_promotions',
+    );
+    // `later` is `insufficient_signal` carrying a flat 0.70, which beats
+    // most real scores (roughly 0.5 + 0.35 x strength). Ranking the two in
+    // one bucket by confidence is exactly how the shipped screen came to
+    // show five one-message senders. Volume does not rescue it: even at
+    // 900 inbox messages, "we have no opinion" is not a first decision.
+    expect(picked.map((r) => r.senderKey)).toEqual(['sure']);
+  });
+
+  it('shows fewer than five rather than padding with rows that move nothing', () => {
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'a', inboxCount: 40 }),
+        row({ senderKey: 'b', inboxCount: 12 }),
+        row({ senderKey: 'c', inboxCount: 0 }),
+        row({ senderKey: 'd', inboxCount: 0 }),
+        row({ senderKey: 'e', inboxCount: 0 }),
+      ],
+      'clear_old_promotions',
+    );
+    expect(picked.map((r) => r.senderKey)).toEqual(['a', 'b']);
+  });
+
+  it('pins nothing at all when no row would move mail (the gate starved)', () => {
+    // The blind case. If every candidate is a no-op the honest answer is
+    // an empty step, not five buttons that do nothing. Step 5 renders its
+    // "nothing worth reviewing" branch off this.
+    expect(
+      pickFirstTriageCandidates(
+        [row({ senderKey: 'a', inboxCount: 0 }), row({ senderKey: 'b', inboxCount: 0 })],
+        'clear_old_promotions',
+      ),
+    ).toEqual([]);
+  });
+
+  it('caps the pin at five candidates', () => {
+    const picked = pickFirstTriageCandidates(
+      Array.from({ length: 9 }, (_, i) =>
+        row({ senderKey: `s${i}`, inboxCount: 100 - i, confidence: 0.9 }),
+      ),
+      'clear_old_promotions',
+    );
+    expect(picked).toHaveLength(5);
+  });
+
+  it('ranks promotion cleanup by Promotions first, then by mail actually moved', () => {
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'promo-small', gmailCategory: 'promotions', inboxCount: 20 }),
+        row({ senderKey: 'promo-big', gmailCategory: 'promotions', inboxCount: 300 }),
+        row({ senderKey: 'other-huge', gmailCategory: 'updates', inboxCount: 900 }),
+      ],
+      'clear_old_promotions',
+    );
+    expect(picked.map((r) => r.senderKey)).toEqual(['promo-big', 'promo-small', 'other-huge']);
+  });
+
+  it('ranks newsletter relief by a usable unsubscribe channel before anything else', () => {
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'no-channel', unsubscribeMethod: 'none', inboxCount: 800 }),
+        row({
+          senderKey: 'one-click',
+          unsubscribeMethod: 'one_click',
+          verdict: 'unsubscribe',
+          inboxCount: 30,
+          last90dMessages: 12,
+        }),
+      ],
+      'reduce_newsletters',
+    );
+    // The goal is to stop future mail. A sender with no unsubscribe path
+    // cannot serve it however big its backlog is.
+    expect(picked.map((r) => r.senderKey)).toEqual(['one-click', 'no-channel']);
+  });
+
+  it('sorts an unknown read rate LAST, never as if it were 0% engagement', () => {
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'silent', readRate: null, inboxCount: 10, gmailCategory: 'promotions' }),
+        row({ senderKey: 'ignored', readRate: 0, inboxCount: 10, gmailCategory: 'promotions' }),
+      ],
+      'clear_old_promotions',
+    );
+    // Both have 10 inbox messages, so the read-rate term decides. `silent`
+    // sent nothing in the window and has no rate to report; `ignored` has a
+    // measured 0%. Ranking unknown as 0.00 made silence the strongest
+    // possible cleanup signal, which is how quiet one-off senders reached
+    // the front of a real 98k mailbox.
+    expect(picked.map((r) => r.senderKey)).toEqual(['ignored', 'silent']);
+  });
+
+  it('shows one row per brand, keeping each brand\u2019s biggest', () => {
+    // A real 23k mailbox carries 16 `icicibank.com` sender rows and 12
+    // `zerodha.net`. Ranking by payoff alone hands the user the same logo
+    // three times and calls it five decisions.
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'z1', senderDomain: 'reportsmailer.zerodha.net', inboxCount: 500 }),
+        row({ senderKey: 'z2', senderDomain: 'alertsmailer.zerodha.net', inboxCount: 221 }),
+        row({ senderKey: 'z3', senderDomain: 'mailer.zerodha.net', inboxCount: 42 }),
+        row({ senderKey: 'other', senderDomain: 'mailer.tatacliq.com', inboxCount: 30 }),
+      ],
+      'clear_old_promotions',
+    );
+    // Thinning is display-only: the surviving row still acts on its own
+    // sender address, never the brand. Those Zerodha streams include
+    // `auth@` login codes, so a row that archived "Zerodha" would sweep
+    // them in with statements.
+    expect(picked.map((r) => r.senderKey)).toEqual(['z1', 'other']);
+  });
+
+  it('keeps a brand split across sibling TLDs as separate rows', () => {
+    // `zerodha.net` and `zerodha.com` are separate registrable domains —
+    // the real Public Suffix List splits them too. Pinned so a future
+    // reader knows it is a decision, not an oversight.
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'net', senderDomain: 'mailer.zerodha.net', inboxCount: 221 }),
+        row({ senderKey: 'com', senderDomain: 'mailer.zerodha.com', inboxCount: 19 }),
+      ],
+      'clear_old_promotions',
+    );
+    expect(picked.map((r) => r.senderKey)).toEqual(['net', 'com']);
+  });
+
+  it('never thins important senders by brand — colleagues share a mail provider', () => {
+    // 260 keep/protected senders sit on `gmail.com` in one real mailbox.
+    // Brand thinning would surface one and hide 259 — and this is the
+    // screen for CORRECTING wrong protection, so a hidden row is a
+    // mistake the user can never reach.
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'a', verdict: 'keep', senderDomain: 'gmail.com', readRate: 0.9 }),
+        row({ senderKey: 'b', verdict: 'keep', senderDomain: 'gmail.com', readRate: 0.8 }),
+        row({ senderKey: 'c', verdict: 'keep', senderDomain: 'gmail.com', readRate: 0.7 }),
+      ],
+      'protect_important',
+    );
+    expect(picked.map((r) => r.senderKey)).toEqual(['a', 'b', 'c']);
   });
 
   it('orders important-sender review by Keep/protected, then high read rate', () => {
     const picked = pickFirstTriageCandidates(
       [
-        row({ senderKey: 'archive-high', readRate: 0.99 }),
-        row({ senderKey: 'protected', protectionReason: 'replied', readRate: 0.7 }),
-        row({ senderKey: 'keep', verdict: 'keep', readRate: 0.9 }),
-        row({ senderKey: 'archive-low', readRate: 0.1 }),
+        row({ senderKey: 'eligible', verdict: 'archive', readRate: 0.9 }),
+        row({ senderKey: 'quiet-keep', verdict: 'keep', readRate: null }),
+        row({ senderKey: 'read-keep', verdict: 'keep', readRate: 0.8 }),
       ],
       'protect_important',
     );
-    expect(picked.map((r) => r.senderKey)).toEqual([
-      'keep',
-      'protected',
-      'archive-high',
-      'archive-low',
-    ]);
+    // Protection is not a cleanup action — nothing moves — so the payoff
+    // gate does not apply here. Unknown read rate still sorts last.
+    expect(picked.map((r) => r.senderKey)).toEqual(['read-keep', 'quiet-keep', 'eligible']);
   });
 });

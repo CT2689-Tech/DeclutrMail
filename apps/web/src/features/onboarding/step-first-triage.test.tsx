@@ -57,15 +57,28 @@ describe('StepFirstTriage', () => {
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
-    expect(screen.getByText(/First relief/i)).toBeInTheDocument();
-    expect(screen.getByText(/up to five real sender decisions/i)).toBeInTheDocument();
+    expect(screen.getByText(/Review senders/i)).toBeInTheDocument();
+    expect(screen.getByText(/up to five senders/i)).toBeInTheDocument();
     expect(screen.getByText(/recurring newsletters/i)).toBeInTheDocument();
-    expect(screen.getByText(/decision 1 of 3/i)).toBeInTheDocument();
+    expect(screen.getByText(/Review 1 of 3/i)).toBeInTheDocument();
     expect(screen.getByTestId('triage-screen')).toHaveAttribute('data-journey', 'first_relief');
     expect(analytics.track).toHaveBeenCalledWith('first_relief_session_started', {
       goal: 'reduce_newsletters',
       target: 3,
     });
+  });
+
+  it('explains the first review in user outcomes, not internal workflow language', () => {
+    onboarding.firstTriage.data = {
+      rows: TRIAGE_QUEUE.slice(0, 3),
+      meta: { pinned: 3, decided: 0 },
+    };
+
+    render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
+
+    expect(screen.getByText(/where one choice can make a noticeable difference/i)).toBeVisible();
+    expect(screen.queryByText(/real sender decisions/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/practice run|first-triage candidates/i)).not.toBeInTheDocument();
   });
 
   it('hands Free users to Senders (Triage itself is Free per A3)', () => {
@@ -109,7 +122,7 @@ describe('StepFirstTriage', () => {
     };
 
     render(<StepFirstTriage onComplete={onComplete} completing={false} goal="protect_important" />);
-    fireEvent.click(screen.getByRole('button', { name: /Stop for today/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Continue to Senders/i }));
 
     expect(analytics.track).toHaveBeenCalledWith('first_relief_session_completed', {
       goal: 'protect_important',

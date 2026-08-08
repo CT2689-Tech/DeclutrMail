@@ -37,23 +37,31 @@ import { ONBOARDING_PRESET_CATALOG } from './onboarding.types.js';
 const PREF_PRESET_PICKS = 'onboardingPresetPicks';
 const PREF_GOAL = 'onboardingGoal';
 const PREF_FIRST_TRIAGE_KEYS = 'onboardingFirstTriageKeys';
+const PREF_FIRST_TRIAGE_VERSION = 'onboardingFirstTriageVersion';
 const PREF_SKIPPED = 'onboardingSkipped';
 
 /** D112/D246 — the finite first-relief run covers at most 5 senders. */
 const FIRST_TRIAGE_PINNED_COUNT = 5;
 
-/**
- * D112 — candidate pool size. Wide enough that the non-Keep +
- * unprotected filter still has material to pick 5 from.
- */
-const FIRST_TRIAGE_POOL_LIMIT = 50;
+/** Version 3 ranks by mail an action actually moves. Bumping re-pins
+ * accounts onboarded under an earlier ranking — without it a fix helps
+ * nobody who already signed up, because the picks are stored per user. */
+const FIRST_TRIAGE_PIN_VERSION = 3;
 
 /**
- * D112 — "engine confidence is uniformly low" fallback bar. When NO
- * candidate clears this confidence, ranking flips to lowest read rate
- * (the small-mailbox edge case in the plan).
+ * D112 — candidate pool size.
+ *
+ * The SQL now mirrors every rejection this file makes, so the pool no
+ * longer has to absorb those. What it must absorb is brand thinning:
+ * `pickTopDistinctBrands` keeps one row per registrable domain, and a
+ * real 23k mailbox carries 16 `icicibank.com` rows, 12 `zerodha.net` and
+ * 10 `nse.co.in`. A pool whose top rows are one brand yields one pin, so
+ * the limit has to leave room for the collapse.
+ *
+ * 200 covers the worst fragmentation observed (16 rows for a single
+ * brand) many times over while staying a bounded, indexed read.
  */
-const FIRST_TRIAGE_LOW_CONFIDENCE_BAR = 0.5;
+const FIRST_TRIAGE_POOL_LIMIT = 200;
 
 export interface FirstTriageRead {
   rows: TriageQueueRow[];
@@ -164,16 +172,25 @@ export class OnboardingService {
     const user = await this.findUser(userId);
     const prefs = (user.preferences ?? {}) as Record<string, unknown>;
 
+    const goal = readGoal(prefs);
     const queue = await this.triageReads.listQueue({
       mailboxAccountId,
       limit: FIRST_TRIAGE_POOL_LIMIT,
-      ordering: firstTriageQueueOrdering(readGoal(prefs)),
+      ordering: firstTriageQueueOrdering(goal),
+      // Cleanup goals reject Keep, Protected and empty-inbox senders, so
+      // the pool must not spend its 50 slots on them. `protect_important`
+      // wants exactly those rows and keeps the unfiltered pool.
+      requireCleanupCandidate: goal !== 'protect_important',
     });
 
     let pinnedKeys = readStringArray(prefs[PREF_FIRST_TRIAGE_KEYS]);
-    if (pinnedKeys === null) {
+    const pinVersion = prefs[PREF_FIRST_TRIAGE_VERSION];
+    if (pinnedKeys === null || pinVersion !== FIRST_TRIAGE_PIN_VERSION) {
       pinnedKeys = pickFirstTriageCandidates(queue, readGoal(prefs)).map((r) => r.senderKey);
-      await this.patchPreferences(userId, { [PREF_FIRST_TRIAGE_KEYS]: pinnedKeys });
+      await this.patchPreferences(userId, {
+        [PREF_FIRST_TRIAGE_KEYS]: pinnedKeys,
+        [PREF_FIRST_TRIAGE_VERSION]: FIRST_TRIAGE_PIN_VERSION,
+      });
     }
 
     const queueBySender = new Map(queue.map((row) => [row.senderKey, row]));
@@ -283,104 +300,181 @@ function firstTriageQueueOrdering(goal: OnboardingGoal | null): TriageQueueOrder
  * important-sender review prioritizes Keep/protected rows and high read
  * rate. Sender key is the final tie-breaker so equal signals stay stable.
  */
+/**
+ * Public suffixes whose second-to-last label is part of the suffix, so
+ * the registrable name sits one label further left (`cdslindia.co.in`,
+ * not `co.in`). Not the full Public Suffix List — a dependency that size
+ * is not worth carrying for a five-row lineup, and the failure mode is
+ * benign: see `registrableDomain`.
+ */
+const TWO_PART_PUBLIC_SUFFIX_SLDS = new Set(['co', 'com', 'net', 'org', 'gov', 'ac', 'edu']);
+
+/**
+ * Best-effort registrable domain — `reportsmailer.zerodha.net` and
+ * `alertsmailer.zerodha.net` both collapse to `zerodha.net`.
+ *
+ * Deliberately a heuristic rather than the Public Suffix List. It is used
+ * ONLY to thin the first-run lineup, never to widen an action, so a
+ * wrong answer costs one duplicate row or one merged row — not mail moved
+ * from a sender the user did not choose.
+ *
+ * Two known edges, both accepted:
+ *   - Shared-sender domains (`*.myshopify.com`, ESP relays) OVER-merge,
+ *     hiding a distinct business behind another.
+ *   - A brand on sibling TLDs UNDER-merges: `zerodha.net` and
+ *     `zerodha.com` are separate registrable domains and stay separate
+ *     rows. The real Public Suffix List would split them too — only
+ *     brand-name matching would not, and that is fuzzier than the
+ *     problem warrants here.
+ */
+function registrableDomain(domain: string): string {
+  const parts = domain.toLowerCase().split('.').filter(Boolean);
+  if (parts.length <= 2) return parts.join('.');
+  const tld = parts[parts.length - 1]!;
+  const sld = parts[parts.length - 2]!;
+  const twoPartSuffix = tld.length === 2 && TWO_PART_PUBLIC_SUFFIX_SLDS.has(sld);
+  return parts.slice(twoPartSuffix ? -3 : -2).join('.');
+}
+
+/**
+ * Take the top rows, at most one per brand.
+ *
+ * A real 23k mailbox carries 16 `icicibank.com` sender rows, 12
+ * `zerodha.net`, 10 `nse.co.in` — so ranking by payoff alone hands the
+ * user the same logo three times and calls it five decisions.
+ *
+ * Thinning happens AFTER the ranking and affects only which rows are
+ * shown. The action still targets the single sender address on the row,
+ * and that restraint is the point: those 12 Zerodha rows are different
+ * streams — contract notes (500), margin statements (500), alerts
+ * (221) — and one of them is `auth@mailer.zerodha.net`. A row that
+ * archived "Zerodha" would sweep login codes in with statements.
+ * Merging what we DISPLAY is safe; merging what we ACT ON is not.
+ */
+function pickTopDistinctBrands(ranked: TriageQueueRow[]): TriageQueueRow[] {
+  const seen = new Set<string>();
+  const picked: TriageQueueRow[] = [];
+  for (const row of ranked) {
+    if (picked.length >= FIRST_TRIAGE_PINNED_COUNT) break;
+    const brand = registrableDomain(row.senderDomain);
+    if (seen.has(brand)) continue;
+    seen.add(brand);
+    picked.push(row);
+  }
+  return picked;
+}
+
 export function pickFirstTriageCandidates(
   queue: TriageQueueRow[],
   goal: OnboardingGoal | null = null,
 ): TriageQueueRow[] {
   const eligible = queue.filter((r) => r.verdict !== 'keep' && r.protectionReason === null);
+
   if (goal === 'protect_important') {
-    return [...queue]
-      .sort(
-        compareBy(
-          (row) => (row.verdict === 'keep' || row.protectionReason !== null ? 0 : 1),
-          (row) => -row.readRate,
-          (row) => -row.confidence,
-          (row) => row.senderKey,
-        ),
-      )
-      .slice(0, FIRST_TRIAGE_PINNED_COUNT);
-  }
-
-  if (eligible.length === 0) return [];
-
-  if (goal === 'reduce_newsletters') {
-    return [...eligible]
-      .sort(
-        compareBy(
-          (row) => (row.verdict === 'unsubscribe' ? 0 : 1),
-          (row) => (row.gmailCategory === 'promotions' ? 0 : 1),
-          (row) => row.readRate,
-          (row) => -row.confidence,
-          (row) => row.senderKey,
-        ),
-      )
-      .slice(0, FIRST_TRIAGE_PINNED_COUNT);
-  }
-
-  if (goal === 'clear_old_promotions') {
-    return [...eligible]
-      .sort(
-        compareBy(
-          (row) => {
-            const promotion = row.gmailCategory === 'promotions';
-            const cleanup = row.verdict === 'archive' || row.verdict === 'later';
-            if (promotion && cleanup) return 0;
-            if (promotion) return 1;
-            if (cleanup) return 2;
-            return 3;
-          },
-          (row) => -row.confidence,
-          (row) => row.senderKey,
-        ),
-      )
-      .slice(0, FIRST_TRIAGE_PINNED_COUNT);
-  }
-
-  const uniformlyLow = eligible.every((r) => r.confidence < FIRST_TRIAGE_LOW_CONFIDENCE_BAR);
-  if (uniformlyLow) {
-    return [...eligible]
-      .sort(
-        compareBy(
-          (row) => row.readRate,
-          (row) => row.senderKey,
-        ),
-      )
-      .slice(0, FIRST_TRIAGE_PINNED_COUNT);
-  }
-
-  const byConfidence = (rows: TriageQueueRow[]): TriageQueueRow[] =>
-    [...rows].sort(
+    // Not a cleanup goal — nothing moves, so the payoff gate does not
+    // apply. Rank by evidence of a real relationship.
+    const ranked = [...queue].sort(
       compareBy(
+        (row) => (row.verdict === 'keep' || row.protectionReason !== null ? 0 : 1),
+        mostReadFirst,
+        (row) => row.lastDays,
         (row) => -row.confidence,
         (row) => row.senderKey,
       ),
     );
-  const picked: TriageQueueRow[] = [];
-  const taken = new Set<string>();
-  const take = (row: TriageQueueRow | undefined): void => {
-    if (row && !taken.has(row.senderKey)) {
-      taken.add(row.senderKey);
-      picked.push(row);
-    }
-  };
+    // NO brand thinning here. That rule assumes a row is an
+    // organisation's mail stream, which is true for cleanup — twelve
+    // `zerodha.net` addresses really are one sender to a user. It is
+    // false for this goal, where a row is a PERSON: correspondents live
+    // on shared consumer domains, so the registrable domain is the mail
+    // provider, not the identity. One real mailbox has 260 keep/protected
+    // senders on `gmail.com` alone; thinning would show one of them and
+    // hide 259. On a screen whose purpose is reviewing and CORRECTING
+    // protection, a hidden row is a mistake the user can never reach.
+    return ranked.slice(0, FIRST_TRIAGE_PINNED_COUNT);
+  }
 
-  take(byConfidence(eligible.filter((r) => r.verdict === 'unsubscribe'))[0]);
-  const keeps = queue.filter((r) => r.verdict === 'keep' || r.protectionReason !== null);
-  take(
-    [...keeps].sort(
+  const candidates = eligible.filter(worthOneDecision);
+
+  if (goal === 'reduce_newsletters') {
+    const ranked = [...candidates].sort(
       compareBy(
-        (row) => -row.readRate,
+        (row) => (row.unsubscribeMethod !== 'none' ? 0 : 1),
+        (row) => (row.verdict === 'unsubscribe' ? 0 : 1),
+        (row) => -row.last90dMessages,
+        leastReadFirst,
+        (row) => -row.inboxCount,
+        (row) => -row.confidence,
         (row) => row.senderKey,
       ),
-    )[0],
-  );
-  take(byConfidence(eligible.filter((r) => r.verdict === 'archive' || r.verdict === 'later'))[0]);
-
-  for (const row of byConfidence(eligible)) {
-    if (picked.length >= FIRST_TRIAGE_PINNED_COUNT) break;
-    take(row);
+    );
+    return pickTopDistinctBrands(ranked);
   }
-  return picked.slice(0, FIRST_TRIAGE_PINNED_COUNT);
+
+  if (goal === 'clear_old_promotions') {
+    const ranked = [...candidates].sort(
+      compareBy(
+        (row) => (row.gmailCategory === 'promotions' ? 0 : 1),
+        (row) => -row.inboxCount,
+        leastReadFirst,
+        (row) => -row.confidence,
+        (row) => row.senderKey,
+      ),
+    );
+    return pickTopDistinctBrands(ranked);
+  }
+
+  // No goal recorded (the step was skipped). Lead with the biggest
+  // reclaim available, since nothing narrower is known about intent.
+  const ranked = [...candidates].sort(
+    compareBy(
+      (row) => -row.inboxCount,
+      leastReadFirst,
+      (row) => -row.confidence,
+      (row) => row.senderKey,
+    ),
+  );
+  return pickTopDistinctBrands(ranked);
+}
+
+/**
+ * The only gate, and it is definitional rather than tuned.
+ *
+ * 1. The action must move mail that is in the inbox NOW. A row whose
+ *    Archive would move nothing is not a decision, it is a no-op with a
+ *    button. `totalAllTime` cannot serve here: it counts indexed mail
+ *    including everything already archived, so a sender with ten filed
+ *    messages and an empty inbox passes a `>= 10` test and still moves
+ *    zero.
+ * 2. `later` is excluded. Its rule id is `insufficient_signal` and its
+ *    user string is "not enough signal yet" — the engine saying it has
+ *    no opinion. Leading a first run with five of those is how the
+ *    screen came to show five one-message senders: `later` carries a
+ *    flat 0.70 confidence, real scoring produces roughly 0.5 + 0.35 x
+ *    strength, and `clear_old_promotions` ranked both in one bucket by
+ *    confidence, so thin data won.
+ *
+ * Nothing else filters. Cadence and volume are RANKING terms; gating on
+ * them is how the previous `>= 10 received or >= 3 recent` cutoffs got
+ * invented, and neither number was derived from anything.
+ */
+function worthOneDecision(row: TriageQueueRow): boolean {
+  return row.inboxCount > 0 && row.verdict !== 'later';
+}
+
+/**
+ * Ascending "least-read first". Unknown sorts LAST: a sender with no
+ * mail in the window has no read rate, and treating that absence as
+ * 0.00 makes silence indistinguishable from "sends constantly, never
+ * opened" — the best possible score under this ordering.
+ */
+function leastReadFirst(row: TriageQueueRow): number {
+  return row.readRate ?? 2;
+}
+
+/** Ascending "most-read first". Unknown sorts LAST, same reasoning. */
+function mostReadFirst(row: TriageQueueRow): number {
+  return row.readRate === null ? 2 : -row.readRate;
 }
 
 type SortValue = number | string;

@@ -20,7 +20,7 @@ const { color, font } = tokens;
  *
  * A finite first-relief session (up to five when fewer candidates exist)
  * that embeds the REAL
- * `<TriageScreen/>` — same row component, same K/A/U/L toolbar, same
+ * `<TriageScreen/>` — same row component, same K/A/U/L/D toolbar, same
  * D226 lifecycle (sheet → mandatory preview → mutation → undo), same
  * undo tray. Nothing here is a sandbox: every decision creates a real
  * action with a real undo token.
@@ -77,11 +77,11 @@ export function StepFirstTriage({
     return (
       <PanelShell corner={corner}>
         <EmptyState
-          title="Couldn't load your practice run"
+          title="Couldn't load your first review"
           description={
             err instanceof ApiError
               ? "We couldn't load your first senders to review. Try again in a moment."
-              : "We couldn't load your first-triage candidates right now. Try again in a moment."
+              : "We couldn't load the senders for your first review. Try again in a moment."
           }
           action={
             <Button tone="primary" onClick={() => void firstTriage.refetch()}>
@@ -97,7 +97,7 @@ export function StepFirstTriage({
     return (
       <PanelShell corner={corner}>
         <p role="status" style={{ color: color.fgMuted, fontSize: 14 }}>
-          Finding a useful first sender decision…
+          Finding senders worth reviewing…
         </p>
       </PanelShell>
     );
@@ -109,7 +109,7 @@ export function StepFirstTriage({
   if (done) {
     return (
       <PanelShell corner={corner}>
-        <Eyebrow>Step 5 of 5 · First relief</Eyebrow>
+        <Eyebrow>Step 5 of 5 · Review senders</Eyebrow>
         <h1
           style={{
             fontFamily: font.display,
@@ -119,12 +119,12 @@ export function StepFirstTriage({
             margin: '6px 0 4px',
           }}
         >
-          {meta.pinned === 0 ? 'Nothing needs your attention.' : 'You’re done for today.'}
+          {meta.pinned === 0 ? 'Nothing to clean up here.' : 'You’re done for today.'}
         </h1>
         <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
           {meta.pinned === 0
-            ? "We didn't find a useful first decision right now — open Senders to review the inbox DeclutrMail indexed."
-            : `You made ${meta.decided} sender ${meta.decided === 1 ? 'decision' : 'decisions'}. Manual Archive and Later affected matching inbox mail when they ran; they did not create future-mail rules. A delivered unsubscribe request is one-way. Reversible moves remain available in Activity while their undo window is open. Welcome aboard.`}
+            ? "We didn't find enough repeated mail to make this step worthwhile. Continue to Senders to explore everything DeclutrMail found."
+            : `You reviewed ${meta.decided} ${meta.decided === 1 ? 'sender' : 'senders'}. Archive, Later, and Delete affected matching inbox mail only after you confirmed. Unsubscribe requests affect future delivery and cannot be recalled. Eligible moves can still be undone from Activity. Welcome aboard.`}
         </p>
         <p style={{ color: color.fgMuted, fontSize: 13, margin: '-12px 0 24px', maxWidth: 500 }}>
           {/* Tier-aware: the Free caveat is untrue for Plus/Pro. Unknown
@@ -154,7 +154,7 @@ export function StepFirstTriage({
     stats.isError || stats.isLoading || !stats.data
       ? // Stats only feed the queue-empty celebration screen, which
         // this wrapper replaces with its own completion panel — keep
-        // the practice run usable even if /triage/stats hiccups.
+        // the first review usable even if /triage/stats hiccups.
         { kind: 'ready', rows, stats: EMPTY_STATS }
       : { kind: 'ready', rows, stats: stats.data };
 
@@ -173,17 +173,17 @@ export function StepFirstTriage({
         }}
       >
         <div>
-          <Eyebrow>Step 5 of 5 · First relief</Eyebrow>
+          <Eyebrow>Step 5 of 5 · Review senders</Eyebrow>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: color.fgMuted, maxWidth: 560 }}>
-            {GOAL_FRAMING[goal]} We&rsquo;ll guide you through up to five real sender decisions.
-            Start with {meta.pinned === 1 ? 'this sender' : `these ${meta.pinned} senders`} —
-            decision {Math.min(meta.decided + 1, meta.pinned)} of {meta.pinned}. These are real
-            actions with a preview of the affected mail and any available recovery.
+            {GOAL_FRAMING[goal]} We&rsquo;ll start with up to five senders where one choice can make
+            a noticeable difference. Review {Math.min(meta.decided + 1, meta.pinned)} of{' '}
+            {meta.pinned}. Before you confirm, you&rsquo;ll see which messages are affected and what
+            can be undone.
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Button tone="ghost" onClick={() => finish('stopped')} disabled={completing}>
-            Stop for today
+            Continue to Senders
           </Button>
           {corner}
         </div>
