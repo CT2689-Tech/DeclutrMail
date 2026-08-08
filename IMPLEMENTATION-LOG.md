@@ -167,7 +167,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D109 | Step 3: Sync (strict gate, no time promise, no live counters) | 🔵 | #122 |  |  |
 | D110 | Step 4: Style preset selection | 🔵 | #212 |  |  |
 | D111 | devPreference layer (new concept) | ⬜ |  |  |  |
-| D112 | Step 5: First Triage with real senders | 🔵 | #212, #316 |  |  |
+| D112 | Step 5: First Triage with real senders | 🔵 | #212, #316, #477 |  |  |
 | D113 | Onboarding completion side effects | 🔵 | #194, #212 |  |  |
 | D114 | Settings structure: **9 sections, left-nav (Linear/Notion-style) | 🔵 | #297 |  |  |
 | D115 | Inboxes management: **Settings → Inboxes section + top-bar Account Switcher | 🔵 | #126 |  |  |
