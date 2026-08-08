@@ -412,6 +412,74 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     expect(screen.getByText(/Bulk and automatic actions skip these senders/)).toBeInTheDocument();
   });
 
+  it('makes no ordering claim when every row shields zero', async () => {
+    // Present-and-zero is not the same as ordered-by. If nothing is
+    // shielded, the sort fell through to the tiebreakers and "most
+    // shielded unread mail first" describes nothing that happened —
+    // the same rule the onboarding review already applies.
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Zeta', unreadInboxCount: 0 },
+      { ...BASE_ROW, id: 'b', displayName: 'Alpha', unreadInboxCount: 0 },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Alpha');
+    expect(screen.queryByText(/most shielded unread mail first/i)).toBeNull();
+  });
+
+  it('makes no ordering claim when only SOME rows carry the measure', async () => {
+    // Partial data cannot produce the claimed ordering: the rows
+    // missing the field are not "shielding zero", they are unmeasured,
+    // and ranking them as zero buries a possibly-costly protection at
+    // the bottom while the header asserts the opposite.
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Measured', unreadInboxCount: 40 },
+      { ...BASE_ROW, id: 'b', displayName: 'Unmeasured' },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Measured');
+    expect(screen.queryByText(/most shielded unread mail first/i)).toBeNull();
+  });
+
+  it('sorts an unmeasured row after a known zero, never as if it were zero', async () => {
+    // The unmeasured row is named FIRST alphabetically on purpose: with
+    // `?? 0` it ties the known zero and the name tiebreaker floats it
+    // up, so this ordering is the only thing that distinguishes
+    // "unknown sorts last" from "unknown is zero".
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Aardvark (unmeasured)' },
+      { ...BASE_ROW, id: 'b', displayName: 'KnownZero', unreadInboxCount: 0 },
+      { ...BASE_ROW, id: 'c', displayName: 'Costly', unreadInboxCount: 12 },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Costly');
+    const order = screen
+      .getAllByRole('button', { name: /^Unprotect / })
+      .map((b) => b.getAttribute('aria-label'));
+    expect(order).toEqual([
+      'Unprotect Costly',
+      'Unprotect KnownZero',
+      'Unprotect Aardvark (unmeasured)',
+    ]);
+  });
+
+  it('never renders an unknown cadence as "0/mo"', async () => {
+    // On this screen a confident "0/mo" reads as "this sender stopped
+    // mailing you" — an argument for unprotecting that the data never
+    // made. `null` means no timeseries row, not zero.
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Unknown cadence', monthlyVolume: null },
+      { ...BASE_ROW, id: 'b', displayName: 'Real zero', monthlyVolume: 0 },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Unknown cadence');
+    // Exactly one row may say 0/mo — the one that measured zero.
+    expect(screen.getAllByText(/0\/mo/)).toHaveLength(1);
+  });
+
   it('claims the ordering when the data supports it', async () => {
     // Two-sided: suppressing the claim when unknown must not suppress
     // it when true.

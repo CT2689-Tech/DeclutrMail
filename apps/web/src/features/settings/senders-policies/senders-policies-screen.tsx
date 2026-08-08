@@ -69,21 +69,23 @@ export function SendersPoliciesScreen() {
   // rather than implying a global ranking.
   const protectedSenders = useMemo<Sender[]>(() => {
     const pages = data?.pages ?? [];
-    return pages
-      .flatMap((p) => p.data.map((row) => enrichSenderRow(row)))
-      .sort(
-        (a, b) =>
-          (b.unreadInboxCount ?? 0) - (a.unreadInboxCount ?? 0) ||
-          (b.inboxCount ?? 0) - (a.inboxCount ?? 0) ||
-          a.name.localeCompare(b.name),
-      );
+    return pages.flatMap((p) => p.data.map((row) => enrichSenderRow(row))).sort(byShieldedMail);
   }, [data]);
 
-  // Whether the ordering claim below is actually true. `unreadInboxCount`
-  // is optional on the wire, so against an API that omits it every row
-  // sorts equal and the list falls back to name order — at which point
-  // "most shielded unread mail first" describes nothing that happened.
-  const ordered = protectedSenders.some((s) => s.unreadInboxCount != null);
+  // Whether the ordering claim below is actually TRUE of this list.
+  //
+  // Three ways it would not be, and `some(x != null)` caught none of
+  // them. The measure is optional on the wire, so a PARTIAL response
+  // cannot produce the claimed ranking at all — the unmeasured rows are
+  // not "shielding zero", they are unknown, and no arrangement of them
+  // is "most shielded first". And when every row is a known zero the
+  // sort fell through to its tiebreakers, so the sentence describes
+  // nothing that happened. Require: rows exist, every one carries the
+  // measure, and at least one is non-zero.
+  const ordered =
+    protectedSenders.length > 0 &&
+    protectedSenders.every((s) => s.unreadInboxCount != null) &&
+    protectedSenders.some((s) => (s.unreadInboxCount ?? 0) > 0);
 
   // The BE-honest count of protected senders, query-wide rather than
   // cursor-scoped (ADR-0014). `protectedSenders.length` is only what this
@@ -260,6 +262,34 @@ export function SendersPoliciesScreen() {
   );
 }
 
+/**
+ * Order by the unread inbox mail each protection is shielding, so the
+ * costliest wrong protection leads.
+ *
+ * UNKNOWN IS NOT ZERO. Both counts are optional on the wire, and
+ * coercing an absent one to 0 ranks a sender we have no measurement for
+ * as though we had measured nothing — which buries a possibly-costly
+ * protection at the bottom of the very screen built to surface it. The
+ * same null→0 fabrication the read rate carried. Unknown sorts LAST,
+ * after a known zero, matching the convention the onboarding ranking
+ * already uses for an unknown read rate.
+ */
+function byShieldedMail(a: Sender, b: Sender): number {
+  return (
+    compareKnownDesc(a.unreadInboxCount, b.unreadInboxCount) ||
+    compareKnownDesc(a.inboxCount, b.inboxCount) ||
+    a.name.localeCompare(b.name)
+  );
+}
+
+/** Descending by value; a missing measurement sorts after every known one. */
+function compareKnownDesc(left: number | null | undefined, right: number | null | undefined) {
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+  return right - left;
+}
+
 function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
   const setPolicy = useSetSenderPolicy();
   const reason = normalizeProtectionReason(sender.protectionFlags.protectionReason);
@@ -313,7 +343,13 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
             marginTop: 2,
           }}
         >
-          {sender.domain} · {sender.monthlyVolume ?? 0}/mo
+          {/* `null` means no timeseries row, not "0 per month". Rendering
+              the unknown as 0/mo is the same null→0 fabrication the read
+              rate carried, and on this screen it reads as "this sender
+              stopped mailing you" — an argument for unprotecting that
+              the data never made. */}
+          {sender.domain}
+          {sender.monthlyVolume != null && ` · ${sender.monthlyVolume}/mo`}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: space[2], flexWrap: 'wrap' }}>
