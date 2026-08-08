@@ -131,8 +131,10 @@ async function seedDecision(
     mailboxAccountId,
     senderKey: opts.senderKey,
     displayName: `Sender ${opts.senderKey}`,
-    email: `${opts.senderKey}@example.com`,
-    domain: 'example.com',
+    email: `${opts.senderKey}@${opts.senderKey}.example`,
+    // Distinct per sender: the lineup keeps one row per registrable
+    // domain, so a shared domain would collapse the whole seed to one pin.
+    domain: `${opts.senderKey}.example`,
     gmailCategory: 'promotions',
     firstSeenAt: now,
     lastSeenAt: now,
@@ -518,7 +520,11 @@ describe('pickFirstTriageCandidates', () => {
     senderKey: 'sk',
     senderName: 'n',
     senderEmail: 'e@example.com',
-    senderDomain: 'example.com',
+    // Derived from the key so every synthetic row is a DISTINCT brand by
+    // default — the lineup keeps one row per registrable domain, and a
+    // shared 'example.com' would collapse an entire fixture to one pin.
+    // Tests about brand thinning set this explicitly.
+    senderDomain: `${over.senderKey ?? 'sk'}.example`,
     gmailCategory: 'promotions',
     unsubscribeMethod: 'none',
     verdict: 'archive',
@@ -648,6 +654,40 @@ describe('pickFirstTriageCandidates', () => {
     // possible cleanup signal, which is how quiet one-off senders reached
     // the front of a real 98k mailbox.
     expect(picked.map((r) => r.senderKey)).toEqual(['ignored', 'silent']);
+  });
+
+  it('shows one row per brand, keeping each brand\u2019s biggest', () => {
+    // A real 23k mailbox carries 16 `icicibank.com` sender rows and 12
+    // `zerodha.net`. Ranking by payoff alone hands the user the same logo
+    // three times and calls it five decisions.
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'z1', senderDomain: 'reportsmailer.zerodha.net', inboxCount: 500 }),
+        row({ senderKey: 'z2', senderDomain: 'alertsmailer.zerodha.net', inboxCount: 221 }),
+        row({ senderKey: 'z3', senderDomain: 'mailer.zerodha.net', inboxCount: 42 }),
+        row({ senderKey: 'other', senderDomain: 'mailer.tatacliq.com', inboxCount: 30 }),
+      ],
+      'clear_old_promotions',
+    );
+    // Thinning is display-only: the surviving row still acts on its own
+    // sender address, never the brand. Those Zerodha streams include
+    // `auth@` login codes, so a row that archived "Zerodha" would sweep
+    // them in with statements.
+    expect(picked.map((r) => r.senderKey)).toEqual(['z1', 'other']);
+  });
+
+  it('keeps a brand split across sibling TLDs as separate rows', () => {
+    // `zerodha.net` and `zerodha.com` are separate registrable domains —
+    // the real Public Suffix List splits them too. Pinned so a future
+    // reader knows it is a decision, not an oversight.
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'net', senderDomain: 'mailer.zerodha.net', inboxCount: 221 }),
+        row({ senderKey: 'com', senderDomain: 'mailer.zerodha.com', inboxCount: 19 }),
+      ],
+      'clear_old_promotions',
+    );
+    expect(picked.map((r) => r.senderKey)).toEqual(['net', 'com']);
   });
 
   it('orders important-sender review by Keep/protected, then high read rate', () => {
