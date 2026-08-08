@@ -26,6 +26,51 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-08 — Stacked PRs get no real CI, and a stranded merge looks identical to a shipped one
+**Source:** session 2026-08-08; [#475](https://github.com/CT2689-Tech/DeclutrMail/pull/475) merged into an already-consumed base and reached nobody (see MISTAKES.md)
+**Why:** two gaps, one cause. (1) Every Actions workflow triggers on
+`pull_request: branches: [main]`, so a PR based on another PR's branch runs
+zero typecheck/lint/tests — #475 and #477 both sat "green" on two Vercel
+checks with no real coverage; retargeting #477 to `main` immediately surfaced
+a lint error and a stale impl-log. (2) Squash-merging a base leaves the child
+pointing at a branch that will never reach `main` again, and GitHub still
+reports the child as `MERGED` — indistinguishable from shipped.
+**How:** pick one, both are small.
+- Add a required check that fails when `github.base_ref != 'main'`, forcing a
+  retarget before merge (loudest, no CI cost).
+- Or widen the `pull_request` trigger in `ci.yml` beyond `branches: [main]` so
+  stacked PRs get real CI. Costs runner minutes — but the repo is public, so
+  Actions bill $0 at any volume.
+
+Related, cheap, independent: `ci.yml` has no `types:` filter, so it defaults
+to `opened/synchronize/reopened` and does **not** fire on `edited`. A base
+retarget is an `edited` event — so retargeting a PR to `main` does not start
+CI, and the PR sits with stale or absent results until someone pushes. Adding
+`types: [opened, synchronize, reopened, edited, ready_for_review]` fixes it.
+**Verifies by:** open a throwaway PR based on a non-`main` branch — it is
+blocked or runs the full suite. Then retarget it and confirm CI starts
+without a push.
+**Status:** Open
+
+### 2026-08-08 — The implementation-log check serializes every open PR
+**Source:** session 2026-08-08; hit on [#478](https://github.com/CT2689-Tech/DeclutrMail/pull/478), [#479](https://github.com/CT2689-Tech/DeclutrMail/pull/479) and [#480](https://github.com/CT2689-Tech/DeclutrMail/pull/480), three times in a row
+**Why:** `IMPLEMENTATION-LOG.md` is derived from the list of MERGED PRs, and
+`pnpm generate-impl-log --check` compares the committed file against a fresh
+derivation. So **merging any PR makes the file stale on every open branch**,
+and each one has to regenerate and re-run CI before it can merge. With two
+PRs open the second always fails; the queue is forced fully serial. It cost
+three extra CI cycles in this session alone, and the failure text
+("run `pnpm generate-impl-log` and commit") reads like author error rather
+than an ordering artifact.
+**How:** the file is fully derived, so committing it is what creates the
+conflict. Either (a) regenerate it on `main` post-merge in CI and drop the
+PR-time check, or (b) keep the check but scope it to rows the PR's own diff
+touches. (a) matches how the log is already described — "auto-maintained by
+GitHub Actions" (CLAUDE.md §8).
+**Verifies by:** open two trivial PRs at once, merge the first, and confirm
+the second still passes without a regeneration commit.
+**Status:** Open
+
 ### 2026-08-05 — `/blog` metadata title runs 66 chars; no ratified title budget exists
 **Source:** SEO pass during PR #470; Codex stop-time review
 **Why:** `apps/web/src/app/(marketing)/blog/page.tsx:6` carries the D250-prescribed
