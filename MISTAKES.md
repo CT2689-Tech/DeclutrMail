@@ -21,6 +21,45 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-08 — A rewrite dropped a prop, and no component test could see it
+
+**PR:** [#481](https://github.com/CT2689-Tech/DeclutrMail/pull/481) fixing [#477](https://github.com/CT2689-Tech/DeclutrMail/pull/477)
+**Caught by:** Codex stop-time review — after full CI green, 1712 tests, and a founder merge
+
+**What happened — two user-visible regressions in a Step 5 rewrite.**
+
+1. `page.tsx` stopped passing `corner={skipCorner}` to `StepFirstTriage`.
+   Steps 3 and 4 kept it; step 5 lost the skip affordance. The component
+   still rendered the slot in all four states, so the loss was worst in the
+   **error** panel, whose only other control is "Try again" — a failing
+   first-triage read stranded the user on the last step of onboarding (D106).
+2. The mid-review exit was relabelled "Stop for today" → "Continue to
+   Senders", which is what the COMPLETION panel's primary button says. Both
+   call `finish` and write `onboarded_at`. Mid-review, with senders queued,
+   the label reads as navigation rather than as ending onboarding — while its
+   own test was still named "lets the user stop".
+
+**Why the suite was blind.** Every test for this screen rendered
+`StepFirstTriage` directly and passed `corner` (or omitted it) itself. The
+component was never wrong — **the caller stopped filling the slot**, and no
+component-level test can observe its caller. The regression lived in one
+deleted line of JSX in `page.tsx`, which had no test asserting what it
+passes down.
+
+**Correct approach.** When a prop exists to be supplied by a caller, assert it
+at the caller. #481 pins it in `page.test.tsx` by driving the real page to
+step 5 — including the error case, since that is what turns a missing control
+from a nuisance into a trap.
+
+**Rule:** a regression in wiring must be tested at the wiring. If a fix's test
+passes when you revert the fix, it is testing the wrong layer — revert each
+fix in isolation and watch the test fail before believing it.
+
+**Enforcement update:** none mechanical. Note that `flow-completeness-auditor`
+(CLAUDE.md §7) is the gate meant to catch exactly this — an escape hatch
+missing from one state of a lifecycle — and it is advisory, so it did not run.
+Worth considering for the gate tier on `apps/web/src/app/**` route files.
+
 ## 2026-08-08 — A guard failed the PRs that satisfied it
 
 **PR:** [#478](https://github.com/CT2689-Tech/DeclutrMail/pull/478)
