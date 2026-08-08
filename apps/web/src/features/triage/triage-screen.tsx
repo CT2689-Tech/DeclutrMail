@@ -123,9 +123,17 @@ function openPricing(): void {
 export function TriageScreen({
   state = DEFAULT_TRIAGE_STATE,
   journey = 'daily',
+  offerUnprotect = false,
 }: {
   state?: TriageScreenState;
   journey?: 'daily' | 'first_relief';
+  /**
+   * Show a direct Unprotect control on Protected rows (D245). Set by
+   * the onboarding protection review, whose subject IS the protection —
+   * everywhere else the control lives inside the action preview, beside
+   * the consequence it explains.
+   */
+  offerUnprotect?: boolean;
 }) {
   const qc = useQueryClient();
   const auth = useOptionalAuth();
@@ -1037,6 +1045,7 @@ export function TriageScreen({
           busyRowId={busyRowId}
           previewInboxCount={previewInboxCount}
           allowBatching={journey === 'daily'}
+          offerUnprotect={offerUnprotect}
           onBatchVerb={onBatchVerb}
           batchBusyDomain={batchAction?.domain ?? null}
         />

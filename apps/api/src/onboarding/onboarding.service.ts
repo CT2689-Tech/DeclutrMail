@@ -4,6 +4,7 @@ import { users } from '@declutrmail/db';
 import { eq, sql } from 'drizzle-orm';
 import { OnboardingGoalSchema, OnboardingPresetKeySchema } from '@declutrmail/shared/contracts';
 import type {
+  OnboardingCleanupGoal,
   OnboardingFirstTriageMeta,
   OnboardingGoal,
   OnboardingPresetKey,
@@ -38,15 +39,18 @@ const PREF_PRESET_PICKS = 'onboardingPresetPicks';
 const PREF_GOAL = 'onboardingGoal';
 const PREF_FIRST_TRIAGE_KEYS = 'onboardingFirstTriageKeys';
 const PREF_FIRST_TRIAGE_VERSION = 'onboardingFirstTriageVersion';
+/** Which mailbox the pinned keys belong to — see `readOrCreatePin`. */
+const PREF_FIRST_TRIAGE_MAILBOX = 'onboardingFirstTriageMailboxId';
 const PREF_SKIPPED = 'onboardingSkipped';
 
 /** D112/D246 — the finite first-relief run covers at most 5 senders. */
 const FIRST_TRIAGE_PINNED_COUNT = 5;
 
-/** Version 3 ranks by mail an action actually moves. Bumping re-pins
+/** Version 4 makes `protect_important` a protection review rather than
+ * a cleanup run, so its pinned set changes entirely. Bumping re-pins
  * accounts onboarded under an earlier ranking — without it a fix helps
  * nobody who already signed up, because the picks are stored per user. */
-const FIRST_TRIAGE_PIN_VERSION = 3;
+const FIRST_TRIAGE_PIN_VERSION = 4;
 
 /**
  * D112 — candidate pool size.
@@ -62,6 +66,22 @@ const FIRST_TRIAGE_PIN_VERSION = 3;
  * brand) many times over while staying a bounded, indexed read.
  */
 const FIRST_TRIAGE_POOL_LIMIT = 200;
+
+/**
+ * Candidate pool for the D245 protection review.
+ *
+ * Larger than the 5 shown because candidates are ranked from
+ * `sender_policies` and then have to survive the queue read — an
+ * unscored sender, or one decided inside the D30 window, drops out. The
+ * pool has to leave room to backfill, or the screen shows fewer rows
+ * than the mailbox has to review.
+ *
+ * If more than 50 of the top-ranked protections are unshowable the
+ * review simply shows fewer rows. That is the deliberate D246 stance —
+ * show fewer rather than pad — not a silent truncation of the count,
+ * which is read from protection state and stays exact either way.
+ */
+const PROTECTION_REVIEW_POOL_LIMIT = 50;
 
 export interface FirstTriageRead {
   rows: TriageQueueRow[];
@@ -173,25 +193,22 @@ export class OnboardingService {
     const prefs = (user.preferences ?? {}) as Record<string, unknown>;
 
     const goal = readGoal(prefs);
+    if (goal === 'protect_important') {
+      return this.getProtectionReview(userId, mailboxAccountId, prefs);
+    }
+
     const queue = await this.triageReads.listQueue({
       mailboxAccountId,
       limit: FIRST_TRIAGE_POOL_LIMIT,
       ordering: firstTriageQueueOrdering(goal),
       // Cleanup goals reject Keep, Protected and empty-inbox senders, so
-      // the pool must not spend its 50 slots on them. `protect_important`
-      // wants exactly those rows and keeps the unfiltered pool.
-      requireCleanupCandidate: goal !== 'protect_important',
+      // the pool must not spend its slots on them.
+      requireCleanupCandidate: true,
     });
 
-    let pinnedKeys = readStringArray(prefs[PREF_FIRST_TRIAGE_KEYS]);
-    const pinVersion = prefs[PREF_FIRST_TRIAGE_VERSION];
-    if (pinnedKeys === null || pinVersion !== FIRST_TRIAGE_PIN_VERSION) {
-      pinnedKeys = pickFirstTriageCandidates(queue, readGoal(prefs)).map((r) => r.senderKey);
-      await this.patchPreferences(userId, {
-        [PREF_FIRST_TRIAGE_KEYS]: pinnedKeys,
-        [PREF_FIRST_TRIAGE_VERSION]: FIRST_TRIAGE_PIN_VERSION,
-      });
-    }
+    const pinnedKeys = await this.readOrCreatePin(userId, mailboxAccountId, prefs, () =>
+      pickFirstTriageCandidates(queue, goal).map((r) => r.senderKey),
+    );
 
     const queueBySender = new Map(queue.map((row) => [row.senderKey, row]));
     const remaining = pinnedKeys.flatMap((senderKey) => {
@@ -203,6 +220,82 @@ export class OnboardingService {
       meta: {
         pinned: pinnedKeys.length,
         decided: pinnedKeys.length - remaining.length,
+      },
+    };
+  }
+
+  /**
+   * Step 5 for the `protect_important` goal — a review of what
+   * automatic protection (D245) already did, not a cleanup run.
+   *
+   * The goal picks no mail to remove, so the cleanup pool and its
+   * payoff ranking do not apply. Candidates are the WEAKLY protected
+   * senders (a star, or repeated Gmail importance — one-way signals),
+   * ranked by the unread inbox mail their protection is shielding, so
+   * the costliest wrong protection leads.
+   *
+   * A pinned sender stops awaiting review when it is no longer weakly
+   * protected. That covers both resolutions with one rule: acting on
+   * the sender drops it from the queue read, and Unprotecting it keeps
+   * the row but clears the reason. Deriving `decided` from a single
+   * "still weakly protected" test is what keeps completion reachable
+   * whichever way the user resolves a row.
+   *
+   * The pin is taken from RESOLVED rows, never from the candidate
+   * keys. The candidates come from `sender_policies`; the rows come
+   * from `triage_decisions` minus the D30 decided window — so a weakly
+   * protected sender that was never scored, or that the user decided on
+   * yesterday, survives the candidate read and vanishes at the row
+   * read. Pinning it anyway makes `pinned - remaining` count it DECIDED
+   * on the very first load: a review of a sender nobody was shown.
+   * This is the same pool-disagrees-with-consumer failure `listQueue`
+   * documents twice, and it is silent by construction — there is no
+   * error, just a number that went up.
+   */
+  private async getProtectionReview(
+    userId: string,
+    mailboxAccountId: string,
+    prefs: Record<string, unknown>,
+  ): Promise<FirstTriageRead> {
+    const review = await this.triageReads.readProtectionReview({
+      mailboxAccountId,
+      limit: PROTECTION_REVIEW_POOL_LIMIT,
+    });
+
+    // Resolve candidates AND any existing pin in one read. The stored
+    // pin is included so a pinned sender that has since dropped out of
+    // the ranked pool is still resolved rather than counted as decided.
+    const stored = readStringArray(prefs[PREF_FIRST_TRIAGE_KEYS]) ?? [];
+    const lookupKeys = [...new Set([...review.senderKeys, ...stored])];
+    const pool = await this.triageReads.listQueue({
+      mailboxAccountId,
+      limit: lookupKeys.length,
+      senderKeys: lookupKeys,
+    });
+    // "Showable" is the only honest basis for both the pin and the
+    // render: still weakly protected, and the queue will actually
+    // return it.
+    const showable = new Map(
+      pool.filter(isWeaklyProtected).map((row) => [row.senderKey, row] as const),
+    );
+
+    const pinnedKeys = await this.readOrCreatePin(userId, mailboxAccountId, prefs, () =>
+      review.senderKeys.filter((key) => showable.has(key)).slice(0, FIRST_TRIAGE_PINNED_COUNT),
+    );
+
+    // Walk the PINNED order, not the queue's — the pin holds the
+    // shielded-mail ranking the review is sorted by.
+    const remaining = pinnedKeys.flatMap((senderKey) => {
+      const row = showable.get(senderKey);
+      return row ? [row] : [];
+    });
+
+    return {
+      rows: remaining,
+      meta: {
+        pinned: pinnedKeys.length,
+        decided: pinnedKeys.length - remaining.length,
+        protection: { strong: review.strong, weak: review.weak },
       },
     };
   }
@@ -229,6 +322,54 @@ export class OnboardingService {
       await this.patchPreferences(userId, { [PREF_SKIPPED]: true });
     }
     return this.getState(userId);
+  }
+
+  /**
+   * The D112 pin — locked on first read so the practice set never
+   * shifts under the user, re-created when it no longer describes what
+   * the user is looking at.
+   *
+   * Three things invalidate it, and the MAILBOX is the one that was
+   * missing. The pin lives on `users`, but the senders it names live in
+   * one mailbox: pointing the same pin at a second mailbox resolves
+   * every key to nothing, and `pinned - remaining` then reports the
+   * step fully DECIDED. Smoke 2026-08-08 hit exactly that — a mailbox
+   * with two weak protections rendered "Protection reviewed", claiming
+   * five reviews the user never made and hiding both real rows. A
+   * completion the user did not earn is the fake-completion rule
+   * (CLAUDE.md §10), not a cosmetic drift.
+   *
+   * An EMPTY pick is never persisted. "Nothing to pin" is a statement
+   * about this moment, not a decision: the candidates may all have been
+   * decided inside the D30 window, or not yet scored, and both pass. A
+   * stored `[]` is indistinguishable from a real pin, so it would
+   * freeze the step at zero rows for good — a user who stepped away and
+   * came back would never be offered the review that is now available.
+   * Re-picking costs one query on a screen that had nothing to show.
+   */
+  private async readOrCreatePin(
+    userId: string,
+    mailboxAccountId: string,
+    prefs: Record<string, unknown>,
+    pick: () => string[],
+  ): Promise<string[]> {
+    const stored = readStringArray(prefs[PREF_FIRST_TRIAGE_KEYS]);
+    const staleVersion = prefs[PREF_FIRST_TRIAGE_VERSION] !== FIRST_TRIAGE_PIN_VERSION;
+    const otherMailbox = prefs[PREF_FIRST_TRIAGE_MAILBOX] !== mailboxAccountId;
+    if (stored !== null && stored.length > 0 && !staleVersion && !otherMailbox) {
+      return stored;
+    }
+
+    const pinnedKeys = pick();
+    if (pinnedKeys.length === 0) {
+      return pinnedKeys;
+    }
+    await this.patchPreferences(userId, {
+      [PREF_FIRST_TRIAGE_KEYS]: pinnedKeys,
+      [PREF_FIRST_TRIAGE_VERSION]: FIRST_TRIAGE_PIN_VERSION,
+      [PREF_FIRST_TRIAGE_MAILBOX]: mailboxAccountId,
+    });
+    return pinnedKeys;
   }
 
   private async findUser(userId: string) {
@@ -260,10 +401,13 @@ export class OnboardingService {
   }
 }
 
-function firstTriageQueueOrdering(goal: OnboardingGoal | null): TriageQueueOrdering {
+/** True while this pinned sender still awaits the protection review. */
+function isWeaklyProtected(row: TriageQueueRow): boolean {
+  return row.protectionReason === 'starred' || row.protectionReason === 'gmail-important';
+}
+
+function firstTriageQueueOrdering(goal: OnboardingCleanupGoal | null): TriageQueueOrdering {
   switch (goal) {
-    case 'protect_important':
-      return 'important-first';
     case 'reduce_newsletters':
       return 'newsletter-first';
     case 'clear_old_promotions':
@@ -366,34 +510,9 @@ function pickTopDistinctBrands(ranked: TriageQueueRow[]): TriageQueueRow[] {
 
 export function pickFirstTriageCandidates(
   queue: TriageQueueRow[],
-  goal: OnboardingGoal | null = null,
+  goal: OnboardingCleanupGoal | null = null,
 ): TriageQueueRow[] {
   const eligible = queue.filter((r) => r.verdict !== 'keep' && r.protectionReason === null);
-
-  if (goal === 'protect_important') {
-    // Not a cleanup goal — nothing moves, so the payoff gate does not
-    // apply. Rank by evidence of a real relationship.
-    const ranked = [...queue].sort(
-      compareBy(
-        (row) => (row.verdict === 'keep' || row.protectionReason !== null ? 0 : 1),
-        mostReadFirst,
-        (row) => row.lastDays,
-        (row) => -row.confidence,
-        (row) => row.senderKey,
-      ),
-    );
-    // NO brand thinning here. That rule assumes a row is an
-    // organisation's mail stream, which is true for cleanup — twelve
-    // `zerodha.net` addresses really are one sender to a user. It is
-    // false for this goal, where a row is a PERSON: correspondents live
-    // on shared consumer domains, so the registrable domain is the mail
-    // provider, not the identity. One real mailbox has 260 keep/protected
-    // senders on `gmail.com` alone; thinning would show one of them and
-    // hide 259. On a screen whose purpose is reviewing and CORRECTING
-    // protection, a hidden row is a mistake the user can never reach.
-    return ranked.slice(0, FIRST_TRIAGE_PINNED_COUNT);
-  }
-
   const candidates = eligible.filter(worthOneDecision);
 
   if (goal === 'reduce_newsletters') {
@@ -470,11 +589,6 @@ function worthOneDecision(row: TriageQueueRow): boolean {
  */
 function leastReadFirst(row: TriageQueueRow): number {
   return row.readRate ?? 2;
-}
-
-/** Ascending "most-read first". Unknown sorts LAST, same reasoning. */
-function mostReadFirst(row: TriageQueueRow): number {
-  return row.readRate === null ? 2 : -row.readRate;
 }
 
 type SortValue = number | string;

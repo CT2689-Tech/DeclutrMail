@@ -124,11 +124,13 @@ describe('StepFirstTriage', () => {
       meta: { pinned: 5, decided: 2 },
     };
 
-    render(<StepFirstTriage onComplete={onComplete} completing={false} goal="protect_important" />);
+    render(
+      <StepFirstTriage onComplete={onComplete} completing={false} goal="clear_old_promotions" />,
+    );
     fireEvent.click(screen.getByRole('button', { name: /Finish for today/i }));
 
     expect(analytics.track).toHaveBeenCalledWith('first_relief_session_completed', {
-      goal: 'protect_important',
+      goal: 'clear_old_promotions',
       target: 5,
       decided: 2,
       outcome: 'stopped',

@@ -101,6 +101,17 @@ export interface TriageDecisionRow {
   lastDays: number;
   /** Inbound messages currently present in DeclutrMail's mailbox index. */
   totalAllTime: number;
+  /**
+   * Unread inbound messages sitting in the INBOX right now — the subset
+   * of what an Archive / Later / Delete would move that the user has
+   * never opened.
+   *
+   * For a Protected sender this is what the protection is SHIELDING
+   * from bulk and automatic cleanup, which is what makes a wrong
+   * protection expensive. Resolved server-side from the same message
+   * set the action preview counts, so the two can never disagree.
+   */
+  unreadInboxCount: number;
 }
 
 /** Snapshot stats for the empty state copy — "today you Kept N senders, etc." */
@@ -178,6 +189,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0,
     lastDays: 0,
     totalAllTime: 1745,
+    unreadInboxCount: 288,
   },
 
   // ── Unsubscribe · one-click (D9 happy path) ──────────────────────
@@ -206,6 +218,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0,
     lastDays: 0,
     totalAllTime: 2432,
+    unreadInboxCount: 372,
   },
 
   // ── Archive · medium confidence (0.88) ───────────────────────────
@@ -232,6 +245,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0,
     lastDays: 0,
     totalAllTime: 1056,
+    unreadInboxCount: 118,
   },
 
   // ── Unsubscribe · mailto only (D230 deferred path) ───────────────
@@ -260,6 +274,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0.04,
     lastDays: 0,
     totalAllTime: 4692,
+    unreadInboxCount: 640,
   },
 
   // ── Archive · low confidence (0.66) — recommendation NOT highlighted
@@ -282,6 +297,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0.3,
     lastDays: 4,
     totalAllTime: 264,
+    unreadInboxCount: 31,
   },
 
   // ── Later — moderate engagement, low cadence ─────────────────────
@@ -309,6 +325,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0.85,
     lastDays: 3,
     totalAllTime: 96,
+    unreadInboxCount: 1,
   },
 
   // ── Keep · user-protected ────────────────────────────────────────
@@ -336,6 +353,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 1,
     lastDays: 0,
     totalAllTime: 306,
+    unreadInboxCount: 44,
   },
 
   // ── Keep · auto-protected (3+ replies, D245) ─────────────────────
@@ -362,6 +380,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0.95,
     lastDays: 2,
     totalAllTime: 84,
+    unreadInboxCount: 6,
   },
 
   // ── Unsubscribe · NO channel (`unsubscribeMethod: 'none'`) ────────
@@ -396,6 +415,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0,
     lastDays: 0,
     totalAllTime: 555,
+    unreadInboxCount: 210,
   },
 ];
 

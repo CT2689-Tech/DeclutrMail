@@ -20,6 +20,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { lastSeenLabel, TRIAGE_QUEUE, type TriageDecisionRow } from './data';
 import { TriageRow } from './triage-row';
 
@@ -200,14 +201,19 @@ describe('TriageRow — inline preview composition', () => {
 
 describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', () => {
   function renderInline(row: ReturnType<typeof rowById>) {
+    // The notice carries the Unprotect control, which is a real
+    // mutation — so the row now needs a query client here, the same way
+    // it has one in the app (mounted at the root layout).
     return render(
-      <TriageRow
-        row={row}
-        expanded={true}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
-      />,
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageRow
+          row={row}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
+        />
+      </QueryWrapper>,
     );
   }
 
@@ -220,10 +226,24 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
     expect(screen.getByRole('button', { name: /Confirm Archive anyway/i })).toBeInTheDocument();
   });
 
+  it('states that the protection SURVIVES the action, and offers Unprotect', () => {
+    // Acting on a Protected sender leaves the shield intact, so every
+    // future bulk and Autopilot run keeps skipping them while this
+    // action feels finished. The inline preview must say so, and offer
+    // the separate control — bundling removal into the verb has no undo
+    // kind and would forge a D245 sticky override.
+    renderInline(rowById('t-sarah'));
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /stays Protected, so bulk and automatic cleanup will keep skipping it/i,
+    );
+    expect(screen.getByRole('button', { name: /^Unprotect$/i })).toBeInTheDocument();
+  });
+
   it('says nothing about protection on an unprotected row', () => {
     const { container } = renderInline(rowById('t-groupon'));
-    expect(container.textContent).not.toMatch(/is Protected/);
+    expect(container.textContent).not.toMatch(/stays Protected/);
     expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Unprotect$/i })).toBeNull();
   });
 });
 
@@ -237,13 +257,15 @@ describe('TriageRow — the D226 inline preview survives collapse (mobile bypass
     // action survived and the buttons stayed tappable. D226 makes the
     // preview mandatory; a preview a tap can hide is an optional preview.
     render(
-      <TriageRow
-        row={rowById('t-sarah')}
-        expanded={false}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
-      />,
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageRow
+          row={rowById('t-sarah')}
+          expanded={false}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
+        />
+      </QueryWrapper>,
     );
     expect(
       screen.getByRole('region', { name: `Preview · Archive ${rowById('t-sarah').senderName}` }),

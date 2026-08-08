@@ -16,6 +16,7 @@ import {
 import { deriveAuthedStep, type AuthedOnboardingStep } from '@/features/onboarding/derive-step';
 import { StepConnect } from '@/features/onboarding/step-connect';
 import { StepFirstTriage } from '@/features/onboarding/step-first-triage';
+import { StepProtectionReview } from '@/features/onboarding/step-protection-review';
 import { StepFirstSenderReview, StepPresetPick } from '@/features/onboarding/step-preset-pick';
 import { StepPromise } from '@/features/onboarding/step-promise';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
@@ -273,19 +274,32 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
           corner={skipCorner}
         />
       );
-    case 'first-triage':
-      return (
+    case 'first-triage': {
+      // `protect_important` is not a cleanup goal — nothing it asks for
+      // moves mail — so its step 5 is the D245 protection review rather
+      // than a first triage run. Same endpoint, same pin, same
+      // completion rule; a different screen because it answers a
+      // different question.
+      const goal = state.data?.goal ?? 'reduce_newsletters';
+      // Step 5 needs the skip corner MORE than the steps above it, not
+      // less: it is the last step, and its error and loading panels
+      // have no other control. Dropping it stranded anyone whose
+      // step-5 read kept failing (D106).
+      return goal === 'protect_important' ? (
+        <StepProtectionReview
+          onComplete={() => finish({ skipped: false })}
+          completing={complete.isPending}
+          corner={skipCorner}
+        />
+      ) : (
         <StepFirstTriage
           onComplete={() => finish({ skipped: false })}
           completing={complete.isPending}
-          goal={state.data?.goal ?? 'reduce_newsletters'}
-          // Step 5 needs the skip corner MORE than the steps above it,
-          // not less: it is the last step, and its error and loading
-          // panels have no other control. Dropping it stranded anyone
-          // whose first-triage read kept failing (D106).
+          goal={goal}
           corner={skipCorner}
         />
       );
+    }
   }
 }
 

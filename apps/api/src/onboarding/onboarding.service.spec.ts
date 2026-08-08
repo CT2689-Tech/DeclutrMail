@@ -10,6 +10,7 @@ import {
   mailMessages,
   mailboxAccounts,
   schema,
+  senderPolicies,
   senders,
   triageDecisions,
   users,
@@ -124,6 +125,14 @@ async function seedDecision(
      * pin. Pass 0 to exercise that.
      */
     inboxMessages?: number;
+    /**
+     * How many of `inboxMessages` are UNREAD. Defaults to all of them,
+     * matching the pre-existing seeds. The protection review ranks on
+     * exactly this number, so its tests set it explicitly.
+     */
+    unreadMessages?: number;
+    /** Protect the sender with this reason (D245 automatic protection). */
+    protection?: 'replied' | 'starred' | 'gmail_important' | 'user_defined';
   },
 ): Promise<void> {
   const now = new Date();
@@ -149,6 +158,7 @@ async function seedDecision(
     expiresAt: new Date(Date.now() + 86_400_000),
   });
   const inboxMessages = opts.inboxMessages ?? 3;
+  const unreadMessages = opts.unreadMessages ?? inboxMessages;
   if (inboxMessages > 0) {
     await db.insert(mailMessages).values(
       Array.from({ length: inboxMessages }, (_, index) => ({
@@ -157,11 +167,20 @@ async function seedDecision(
         providerThreadId: `${opts.senderKey}-thread-${index}`,
         senderKey: opts.senderKey,
         internalDate: now,
-        isUnread: true,
+        isUnread: index < unreadMessages,
         isOutbound: false,
         labelIds: ['INBOX'],
       })),
     );
+  }
+  if (opts.protection) {
+    await db.insert(senderPolicies).values({
+      mailboxAccountId,
+      senderKey: opts.senderKey,
+      isProtected: true,
+      protectionReason: opts.protection,
+      protectionSetAt: now,
+    });
   }
 }
 
@@ -348,36 +367,19 @@ describe('OnboardingService', () => {
     });
 
     it('uses the persisted onboarding goal when creating the first pin', async () => {
-      await service.submitPresetPicks(userId, mailboxId, 'protect_important', []);
+      await service.submitPresetPicks(userId, mailboxId, 'reduce_newsletters', []);
       await seedDecision(db, mailboxId, {
         senderKey: 'u1',
         verdict: 'unsubscribe',
-        confidence: 0.99,
-      });
-      await seedDecision(db, mailboxId, { senderKey: 'k1', verdict: 'keep', confidence: 0.6 });
-
-      const read = await service.getFirstTriage(userId, mailboxId);
-      expect(read.rows.map((r) => r.senderKey)).toEqual(['k1', 'u1']);
-    });
-
-    it('finds important senders beyond the default destructive-first queue window', async () => {
-      await service.submitPresetPicks(userId, mailboxId, 'protect_important', []);
-      for (let index = 0; index < 51; index += 1) {
-        await seedDecision(db, mailboxId, {
-          senderKey: `archive-${index.toString().padStart(2, '0')}`,
-          verdict: 'archive',
-          confidence: 0.99,
-        });
-      }
-      await seedDecision(db, mailboxId, {
-        senderKey: 'important-keep',
-        verdict: 'keep',
         confidence: 0.4,
       });
+      await seedDecision(db, mailboxId, { senderKey: 'a1', verdict: 'archive', confidence: 0.99 });
 
       const read = await service.getFirstTriage(userId, mailboxId);
-      expect(read.rows[0]?.senderKey).toBe('important-keep');
-      expect(read.rows).toHaveLength(5);
+      // Newsletter relief leads with the Unsubscribe despite the lower
+      // confidence — proof the pin read the stored goal rather than
+      // falling back to the no-goal reclaim ordering.
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['u1', 'a1']);
     });
 
     it('brings high-payoff promotion cleanup into the candidate pool before the SQL limit', async () => {
@@ -510,6 +512,462 @@ describe('OnboardingService', () => {
       expect(read.meta).toEqual({ pinned: 0, decided: 0 });
       expect(read.rows).toEqual([]);
     });
+
+    it('re-pins for a different mailbox instead of reporting it complete', async () => {
+      // The pin lives on `users` but names senders in ONE mailbox.
+      // Pointing it at another resolves every key to nothing, and
+      // `pinned - remaining` then reads as fully decided — a completion
+      // the user never earned, with the real rows hidden behind it
+      // (smoke 2026-08-08).
+      await seedDecision(db, mailboxId, { senderKey: 'a1', verdict: 'archive', confidence: 0.9 });
+      const first = await service.getFirstTriage(userId, mailboxId);
+      expect(first.meta).toEqual({ pinned: 1, decided: 0 });
+
+      const [otherMailbox] = await db
+        .insert(mailboxAccounts)
+        .values({
+          workspaceId: (
+            await db.select({ id: users.workspaceId }).from(users).where(eq(users.id, userId))
+          )[0]!.id,
+          userId,
+          provider: 'gmail',
+          providerAccountId: 'second@example.com',
+        })
+        .returning({ id: mailboxAccounts.id });
+      const otherMailboxId = otherMailbox!.id;
+      await seedDecision(db, otherMailboxId, {
+        senderKey: 'b1',
+        verdict: 'archive',
+        confidence: 0.9,
+      });
+
+      const second = await service.getFirstTriage(userId, otherMailboxId);
+      expect(second.meta).toEqual({ pinned: 1, decided: 0 });
+      expect(second.rows.map((r) => r.senderKey)).toEqual(['b1']);
+    });
+  });
+
+  /**
+   * The `protect_important` goal's step 5 — a review of what automatic
+   * protection already did (D245), not a cleanup run.
+   */
+  describe('getFirstTriage — protection review (protect_important)', () => {
+    /** Records the goal without needing seeded preset rules. */
+    async function chooseProtectionGoal(): Promise<void> {
+      await service.submitPresetPicks(userId, mailboxId, 'protect_important', []);
+    }
+
+    it('splits protection by reply evidence and reviews only the weak half', async () => {
+      await seedDecision(db, mailboxId, {
+        senderKey: 'colleague',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'replied',
+      });
+      await seedDecision(db, mailboxId, {
+        senderKey: 'starred-once',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+      });
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+
+      // A reply is a two-way relationship, so it needs no review — it is
+      // the reassurance. A star marks a message, not a correspondent.
+      expect(read.meta.protection).toEqual({ strong: 1, weak: 1 });
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['starred-once']);
+    });
+
+    it('leads with the protection shielding the most unread inbox mail', async () => {
+      // The real shape this ordering was derived from: God of Prompt
+      // (166 messages, 13% read) vs GetYourGuide (34, 3%). "volume x
+      // unread%" reduces to the unread count, so that is what it ranks by.
+      await seedDecision(db, mailboxId, {
+        senderKey: 'god-of-prompt',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+        inboxMessages: 166,
+        unreadMessages: 145,
+      });
+      await seedDecision(db, mailboxId, {
+        senderKey: 'getyourguide',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+        inboxMessages: 34,
+        unreadMessages: 33,
+      });
+      // Bigger inbox, but the user reads it — the protection costs little.
+      await seedDecision(db, mailboxId, {
+        senderKey: 'read-diligently',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'gmail_important',
+        inboxMessages: 200,
+        unreadMessages: 2,
+      });
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+
+      expect(read.rows.map((r) => r.senderKey)).toEqual([
+        'god-of-prompt',
+        'getyourguide',
+        'read-diligently',
+      ]);
+      expect(read.rows.map((r) => r.unreadInboxCount)).toEqual([145, 33, 2]);
+    });
+
+    it('keeps a protection shielding nothing reachable, ranked last', async () => {
+      // A stray star years ago on a sender whose mail is all filed still
+      // excludes them from every future bulk and automatic run. Dropping
+      // the row would make that impossible for the user to ever correct.
+      await seedDecision(db, mailboxId, {
+        senderKey: 'stale-star',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+        inboxMessages: 0,
+      });
+      await seedDecision(db, mailboxId, {
+        senderKey: 'noisy',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+        inboxMessages: 4,
+      });
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['noisy', 'stale-star']);
+    });
+
+    it('never reviews the user’s own explicit Protect', async () => {
+      await seedDecision(db, mailboxId, {
+        senderKey: 'user-picked',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'user_defined',
+      });
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      // Neither reassurance nor review: the user already decided this
+      // one, so second-guessing it is not our place — and counting it as
+      // "you write back to them" would be a claim we cannot support.
+      expect(read.meta.protection).toEqual({ strong: 0, weak: 0 });
+      expect(read.rows).toEqual([]);
+    });
+
+    it('reports the reassurance with nothing to review (weak = 0 edge)', async () => {
+      await seedDecision(db, mailboxId, {
+        senderKey: 'colleague',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'replied',
+      });
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      expect(read.meta).toEqual({ pinned: 0, decided: 0, protection: { strong: 1, weak: 0 } });
+      expect(read.rows).toEqual([]);
+    });
+
+    it('reports zero strong without treating it as an empty review', async () => {
+      // nayana's mailbox: 0 strong / 2 weak. The strong count being zero
+      // is not a failure and must not read as one — there are still two
+      // protections to look at.
+      await seedDecision(db, mailboxId, {
+        senderKey: 's1',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+      });
+      await seedDecision(db, mailboxId, {
+        senderKey: 's2',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+      });
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      expect(read.meta.protection).toEqual({ strong: 0, weak: 2 });
+      expect(read.rows).toHaveLength(2);
+    });
+
+    it('counts protection state, not queue state — a decided sender still counts', async () => {
+      await seedDecision(db, mailboxId, {
+        senderKey: 'acted-on',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+      });
+      await chooseProtectionGoal();
+      await service.getFirstTriage(userId, mailboxId);
+
+      await db.insert(activityLog).values({
+        mailboxAccountId: mailboxId,
+        senderKey: 'acted-on',
+        source: 'triage',
+        action: 'archive',
+      });
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      // Archiving their mail did not unprotect them, so "1 sender is
+      // protected by a star" stays true. The ROW is resolved; the FACT
+      // is not. Conflating the two is how a headline starts lying.
+      expect(read.meta).toEqual({ pinned: 1, decided: 1, protection: { strong: 0, weak: 1 } });
+      expect(read.rows).toEqual([]);
+    });
+
+    it('an Unprotect resolves the row even though the sender stays in the queue', async () => {
+      await seedDecision(db, mailboxId, {
+        senderKey: 'wrongly-shielded',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+      });
+      await chooseProtectionGoal();
+      expect((await service.getFirstTriage(userId, mailboxId)).meta.decided).toBe(0);
+
+      // D245 sticky Unprotect: the flag drops, the reason is KEPT as the
+      // record of what it was. A `decided` rule keyed on the reason being
+      // null would never fire here and the step could never complete.
+      await db
+        .update(senderPolicies)
+        .set({ isProtected: false })
+        .where(eq(senderPolicies.senderKey, 'wrongly-shielded'));
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      expect(read.meta).toEqual({ pinned: 1, decided: 1, protection: { strong: 0, weak: 0 } });
+      expect(read.rows).toEqual([]);
+    });
+
+    it('finds a weak protection buried under a mailbox full of louder rows', async () => {
+      // The predecessor of this screen ranked a 200-row queue pool and
+      // hoped the protected rows surfaced; on a 98k mailbox they did not.
+      // Selecting by protection STATE cannot be crowded out.
+      for (let index = 0; index < 60; index += 1) {
+        await seedDecision(db, mailboxId, {
+          senderKey: `archive-${index.toString().padStart(2, '0')}`,
+          verdict: 'archive',
+          confidence: 0.99,
+          inboxMessages: 40,
+        });
+      }
+      await seedDecision(db, mailboxId, {
+        senderKey: 'quiet-weak-protection',
+        verdict: 'keep',
+        confidence: 0.4,
+        protection: 'starred',
+        inboxMessages: 1,
+      });
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['quiet-weak-protection']);
+    });
+
+    it('re-pins for a different mailbox instead of reporting it complete', async () => {
+      // Same trap as the cleanup branch, and the one the 2026-08-08
+      // smoke actually hit: a mailbox with 0 strong / 2 weak rendered
+      // "Protection reviewed" — five reviews the user never made, both
+      // real rows hidden — because the pin came from the other mailbox.
+      await seedDecision(db, mailboxId, {
+        senderKey: 'weak-a',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+      });
+      await chooseProtectionGoal();
+      expect((await service.getFirstTriage(userId, mailboxId)).meta.decided).toBe(0);
+
+      const [otherMailbox] = await db
+        .insert(mailboxAccounts)
+        .values({
+          workspaceId: (
+            await db.select({ id: users.workspaceId }).from(users).where(eq(users.id, userId))
+          )[0]!.id,
+          userId,
+          provider: 'gmail',
+          providerAccountId: 'second-protection@example.com',
+        })
+        .returning({ id: mailboxAccounts.id });
+      await seedDecision(db, otherMailbox!.id, {
+        senderKey: 'weak-b',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+      });
+
+      const read = await service.getFirstTriage(userId, otherMailbox!.id);
+      expect(read.meta).toEqual({ pinned: 1, decided: 0, protection: { strong: 0, weak: 1 } });
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['weak-b']);
+    });
+
+    it('never pins a sender the queue cannot show — that reads as reviewed', async () => {
+      // The pool comes from `sender_policies`; the rows come from
+      // `triage_decisions`. A weakly-protected sender with no scored
+      // decision survives the pool and vanishes at the row read, and
+      // `pinned - remaining` then counts it DECIDED on the very first
+      // load — a review of a sender the user was never shown.
+      await seedDecision(db, mailboxId, {
+        senderKey: 'showable',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+        inboxMessages: 4,
+      });
+      // Protected, ranked FIRST by shielded mail, but never scored.
+      await db.insert(senders).values({
+        mailboxAccountId: mailboxId,
+        senderKey: 'unscored',
+        displayName: 'Unscored',
+        email: 'unscored@unscored.example',
+        domain: 'unscored.example',
+        gmailCategory: 'promotions',
+        firstSeenAt: new Date(),
+        lastSeenAt: new Date(),
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: 'unscored',
+        isProtected: true,
+        protectionReason: 'starred',
+        protectionSetAt: new Date(),
+      });
+      await db.insert(mailMessages).values(
+        Array.from({ length: 40 }, (_, i) => ({
+          mailboxAccountId: mailboxId,
+          providerMessageId: `unscored-${i}`,
+          providerThreadId: `unscored-t-${i}`,
+          senderKey: 'unscored',
+          internalDate: new Date(),
+          isUnread: true,
+          isOutbound: false,
+          labelIds: ['INBOX'],
+        })),
+      );
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+
+      // Pin only what can actually be shown, so `decided` starts at 0.
+      expect(read.meta.decided).toBe(0);
+      expect(read.meta.pinned).toBe(1);
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['showable']);
+      // The COUNT still tells the truth: both are protected on a weak
+      // signal, whether or not we can put a row on the screen.
+      expect(read.meta.protection).toEqual({ strong: 0, weak: 2 });
+    });
+
+    it('never pins a sender already decided inside the queue window', async () => {
+      // Same trap, and the reachable one: a returning user who Kept a
+      // starred sender yesterday is still weakly protected, so the pool
+      // offers them — but `notDecidedRecently` withholds the row, and
+      // the subtraction calls it reviewed.
+      await seedDecision(db, mailboxId, {
+        senderKey: 'kept-yesterday',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+        inboxMessages: 50,
+      });
+      await seedDecision(db, mailboxId, {
+        senderKey: 'still-open',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+        inboxMessages: 3,
+      });
+      await db.insert(activityLog).values({
+        mailboxAccountId: mailboxId,
+        senderKey: 'kept-yesterday',
+        source: 'triage',
+        action: 'keep',
+      });
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+
+      expect(read.meta.decided).toBe(0);
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['still-open']);
+    });
+
+    it('does not freeze at zero rows when nothing was showable yet', async () => {
+      // Every weak protection was decided inside the D30 window, so
+      // there is nothing to pin RIGHT NOW — which is a statement about
+      // this moment, not a decision. Persisting `[]` would be
+      // indistinguishable from a real pin and would deny the review for
+      // good, including to a user who came back a week later.
+      await seedDecision(db, mailboxId, {
+        senderKey: 'busy',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+      });
+      const [decision] = await db
+        .insert(activityLog)
+        .values({
+          mailboxAccountId: mailboxId,
+          senderKey: 'busy',
+          source: 'triage',
+          action: 'keep',
+        })
+        .returning({ id: activityLog.id });
+      await chooseProtectionGoal();
+
+      const blocked = await service.getFirstTriage(userId, mailboxId);
+      expect(blocked.meta).toEqual({ pinned: 0, decided: 0, protection: { strong: 0, weak: 1 } });
+
+      // The decision ages out of the window; the sender is reviewable again.
+      await db.delete(activityLog).where(eq(activityLog.id, decision!.id));
+
+      const later = await service.getFirstTriage(userId, mailboxId);
+      expect(later.meta.pinned).toBe(1);
+      expect(later.rows.map((r) => r.senderKey)).toEqual(['busy']);
+    });
+
+    it('pins at most five and holds them as later protections appear', async () => {
+      for (let index = 0; index < 7; index += 1) {
+        await seedDecision(db, mailboxId, {
+          senderKey: `weak-${index}`,
+          verdict: 'keep',
+          confidence: 0.9,
+          protection: 'starred',
+          inboxMessages: 10 - index,
+        });
+      }
+      await chooseProtectionGoal();
+
+      const first = await service.getFirstTriage(userId, mailboxId);
+      expect(first.meta.pinned).toBe(5);
+      expect(first.rows.map((r) => r.senderKey)).toEqual([
+        'weak-0',
+        'weak-1',
+        'weak-2',
+        'weak-3',
+        'weak-4',
+      ]);
+
+      // A later sync protects a noisier sender. The practice set must not
+      // shift under the user mid-step (D112).
+      await seedDecision(db, mailboxId, {
+        senderKey: 'weak-late',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+        inboxMessages: 500,
+      });
+      const second = await service.getFirstTriage(userId, mailboxId);
+      expect(second.rows.map((r) => r.senderKey)).toEqual(first.rows.map((r) => r.senderKey));
+      // The COUNT is live, though — it is a fact about the mailbox now.
+      expect(second.meta.protection).toEqual({ strong: 0, weak: 8 });
+    });
   });
 });
 
@@ -540,6 +998,7 @@ describe('pickFirstTriageCandidates', () => {
     // Positive by default so a row is pickable unless a test says
     // otherwise — the payoff gate requires mail actually in the inbox.
     inboxCount: 5,
+    unreadInboxCount: 0,
     ...over,
   });
 
@@ -690,33 +1149,10 @@ describe('pickFirstTriageCandidates', () => {
     expect(picked.map((r) => r.senderKey)).toEqual(['net', 'com']);
   });
 
-  it('never thins important senders by brand — colleagues share a mail provider', () => {
-    // 260 keep/protected senders sit on `gmail.com` in one real mailbox.
-    // Brand thinning would surface one and hide 259 — and this is the
-    // screen for CORRECTING wrong protection, so a hidden row is a
-    // mistake the user can never reach.
-    const picked = pickFirstTriageCandidates(
-      [
-        row({ senderKey: 'a', verdict: 'keep', senderDomain: 'gmail.com', readRate: 0.9 }),
-        row({ senderKey: 'b', verdict: 'keep', senderDomain: 'gmail.com', readRate: 0.8 }),
-        row({ senderKey: 'c', verdict: 'keep', senderDomain: 'gmail.com', readRate: 0.7 }),
-      ],
-      'protect_important',
-    );
-    expect(picked.map((r) => r.senderKey)).toEqual(['a', 'b', 'c']);
-  });
-
-  it('orders important-sender review by Keep/protected, then high read rate', () => {
-    const picked = pickFirstTriageCandidates(
-      [
-        row({ senderKey: 'eligible', verdict: 'archive', readRate: 0.9 }),
-        row({ senderKey: 'quiet-keep', verdict: 'keep', readRate: null }),
-        row({ senderKey: 'read-keep', verdict: 'keep', readRate: 0.8 }),
-      ],
-      'protect_important',
-    );
-    // Protection is not a cleanup action — nothing moves — so the payoff
-    // gate does not apply here. Unknown read rate still sorts last.
-    expect(picked.map((r) => r.senderKey)).toEqual(['read-keep', 'quiet-keep', 'eligible']);
-  });
+  // `protect_important` no longer reaches this function at all — its
+  // step 5 is the protection review (`getProtectionReview`), whose
+  // candidates are weakly-protected senders ranked by shielded unread
+  // mail. The type signature enforces the split, so there is no
+  // "cleanup ranking silently applied to the protection goal" case
+  // left to test here; the review's own coverage lives above.
 });

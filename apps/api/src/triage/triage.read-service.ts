@@ -70,11 +70,46 @@ export interface TriageQueueRow {
    * measure the payoff of an action.
    */
   inboxCount: number;
+  /**
+   * The UNREAD subset of `inboxCount` — for a Protected sender, exactly
+   * the mail the protection is shielding from bulk and automatic
+   * cleanup, which is what makes a wrong protection expensive.
+   *
+   * Always ≤ `inboxCount`, and resolved from the SAME message set an
+   * action would move (`senderInboxActionWhere`), so "shielding 33
+   * unread" and "Archive moves 34 emails" can never disagree.
+   */
+  unreadInboxCount: number;
+}
+
+/**
+ * The two automatic protection reasons that rest on a ONE-WAY signal
+ * (D245). A reply is two-way and needs no review; a star or a Gmail
+ * importance flag marks a message, not a correspondent.
+ *
+ * `user_defined` is deliberately absent from both this list and the
+ * strong count: it is the user's own explicit Protect, so there is
+ * nothing for us to reassure them about and nothing to second-guess.
+ */
+const WEAK_PROTECTION_REASONS = ['starred', 'gmail_important'] as const;
+
+/** Result of {@link TriageReadService.readProtectionReview}. */
+export interface ProtectionReviewRead {
+  /** Senders protected because the user replied ≥3 times. */
+  strong: number;
+  /** Senders protected by one star or repeated Gmail importance. */
+  weak: number;
+  /**
+   * Up to `limit` weakly-protected sender keys, most shielded UNREAD
+   * inbox mail first. Senders shielding nothing are still returned (a
+   * wrong protection with an empty inbox is still wrong) — they simply
+   * rank last.
+   */
+  senderKeys: string[];
 }
 
 /** Optional presentation ordering applied before the queue limit. */
-export type TriageQueueOrdering =
-  'actionable' | 'important-first' | 'newsletter-first' | 'promotions-first';
+export type TriageQueueOrdering = 'actionable' | 'newsletter-first' | 'promotions-first';
 
 /**
  * D214 — the "Today" strip atop Triage. Situational awareness for the
@@ -129,12 +164,6 @@ export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
  */
 function queueGoalPriority(ordering: TriageQueueOrdering) {
   switch (ordering) {
-    case 'important-first':
-      return sql`CASE
-        WHEN ${senderPolicies.isProtected} = true
-          OR ${senderPolicies.protectionReason} IS NOT NULL
-          OR ${triageDecisions.verdict} = 'keep'
-        THEN 0 ELSE 1 END`;
     // Both cleanup orderings push `later` to the BACK, and that is
     // load-bearing rather than tidy. This ORDER BY feeds a 50-row pool
     // that onboarding then filters, and `later` is `insufficient_signal`
@@ -232,7 +261,21 @@ export class TriageReadService {
      * still meaningful there.
      */
     requireCleanupCandidate?: boolean;
+    /**
+     * Restrict the read to these sender keys. For callers that already
+     * chose their senders by some other ranking (the D245 protection
+     * review picks by shielded unread mail) and want this projection —
+     * not this ordering — for them.
+     *
+     * An EMPTY array means "no senders", and short-circuits to `[]`. It
+     * must never fall through to the unrestricted read: that is how a
+     * narrowed query silently returns the whole mailbox.
+     */
+    senderKeys?: readonly string[];
   }): Promise<TriageQueueRow[]> {
+    if (input.senderKeys?.length === 0) {
+      return [];
+    }
     // The CASE ordering encodes the verdict priority. `confidence` is
     // a numeric text on the wire — cast to numeric so DESC sorts as a
     // number, not lex.
@@ -321,6 +364,7 @@ export class TriageReadService {
         and(
           eq(triageDecisions.mailboxAccountId, input.mailboxAccountId),
           notDecidedRecently,
+          ...(input.senderKeys ? [inArray(triageDecisions.senderKey, [...input.senderKeys])] : []),
           ...(input.requireCleanupCandidate
             ? [
                 ne(triageDecisions.verdict, 'keep'),
@@ -389,11 +433,23 @@ export class TriageReadService {
     // because the aggregate above deliberately spans ALL stored mail
     // (totals, 90-day window) rather than the inbox-only action set.
     const inboxRows = await this.db
-      .select({ senderKey: mailMessages.senderKey, inboxCount: count() })
+      .select({
+        senderKey: mailMessages.senderKey,
+        inboxCount: count(),
+        // Same rows, unread subset — so the shielded figure a Protected
+        // row shows is a strict subset of the figure its Archive preview
+        // shows, by construction rather than by two matching queries.
+        unreadInboxCount: sql<number>`SUM(CASE WHEN ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
+      })
       .from(mailMessages)
       .where(senderInboxActionWhere({ mailboxAccountId: input.mailboxAccountId, senderKeys }))
       .groupBy(mailMessages.senderKey);
-    const inboxBySender = new Map(inboxRows.map((r) => [r.senderKey, Number(r.inboxCount)]));
+    const inboxBySender = new Map(
+      inboxRows.map((r) => [
+        r.senderKey,
+        { inbox: Number(r.inboxCount), unread: Number(r.unreadInboxCount) },
+      ]),
+    );
 
     const aggBySender = new Map<string, (typeof aggRows)[number]>();
     for (const a of aggRows) aggBySender.set(a.senderKey, a);
@@ -407,7 +463,8 @@ export class TriageReadService {
       // Mirrors senders.read-service `computeReadRate`: no denominator
       // means unknown, not zero.
       const readRate = last90Total > 0 ? last90Read / last90Total : null;
-      const inboxCount = inboxBySender.get(r.senderKey) ?? 0;
+      const inbox = inboxBySender.get(r.senderKey) ?? { inbox: 0, unread: 0 };
+      const inboxCount = inbox.inbox;
       const monthlyVolume = Math.round(last90Total / 3);
       const lastInternal = agg?.lastInternalDate ?? r.lastSeenAt;
       const lastDays =
@@ -462,8 +519,99 @@ export class TriageReadService {
         lastDays,
         totalAllTime: total,
         inboxCount,
+        unreadInboxCount: inbox.unread,
       };
     });
+  }
+
+  /**
+   * The D245 protection review (onboarding step 5 for the
+   * `protect_important` goal).
+   *
+   * Automatic protection is silent — it shields senders from bulk and
+   * automatic cleanup before the user has seen a single screen (515 on
+   * the founder's mailbox). This read answers the two questions that
+   * makes reviewable: how much of it rests on a REPLY (nothing to
+   * check), and which of the rest is shielding the most mail (the
+   * costliest place to be wrong).
+   *
+   * Ordering is literal, not a composite score: "volume × unread%"
+   * reduces to the unread count, so that is what it ranks by and what
+   * the row says. The mail set is `senderInboxActionWhere` — what a
+   * cleanup verb would actually move — so a sender whose whole history
+   * is already archived correctly ranks as shielding nothing.
+   *
+   * Counts and rows come from different scopes on purpose. The counts
+   * are protection STATE (every protected sender, decided or not),
+   * because "we protected 460 senders you write back to" is a claim
+   * about protection. The keys feed a queue read, which applies the
+   * queue's own exclusions.
+   */
+  async readProtectionReview(input: {
+    mailboxAccountId: string;
+    limit: number;
+  }): Promise<ProtectionReviewRead> {
+    const [counts] = await this.db
+      .select({
+        strong: sql<number>`COUNT(*) FILTER (WHERE ${senderPolicies.protectionReason} = 'replied')::int`,
+        weak: sql<number>`COUNT(*) FILTER (WHERE ${senderPolicies.protectionReason} IN ('starred', 'gmail_important'))::int`,
+      })
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, input.mailboxAccountId),
+          eq(senderPolicies.isProtected, true),
+        ),
+      );
+    const strong = Number(counts?.strong ?? 0);
+    const weak = Number(counts?.weak ?? 0);
+
+    if (weak === 0) {
+      return { strong, weak, senderKeys: [] };
+    }
+
+    const weakRows = await this.db
+      .select({ senderKey: senderPolicies.senderKey })
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, input.mailboxAccountId),
+          eq(senderPolicies.isProtected, true),
+          inArray(senderPolicies.protectionReason, [...WEAK_PROTECTION_REASONS]),
+        ),
+      );
+    const weakKeys = weakRows.map((r) => r.senderKey);
+
+    // Ranked by shielded unread mail. LEFT-side aggregation only covers
+    // senders that HAVE inbox mail, so the ranked list is padded from
+    // the remaining weak keys below rather than silently shortened —
+    // a review that hides the protections shielding nothing would never
+    // let the user reach the ones set on a stray star years ago.
+    const shielded = await this.db
+      .select({
+        senderKey: mailMessages.senderKey,
+        unread: sql<number>`SUM(CASE WHEN ${mailMessages.isUnread} THEN 1 ELSE 0 END)::int`,
+        inbox: count(),
+      })
+      .from(mailMessages)
+      .where(
+        senderInboxActionWhere({
+          mailboxAccountId: input.mailboxAccountId,
+          senderKeys: weakKeys,
+        }),
+      )
+      .groupBy(mailMessages.senderKey);
+
+    const byKey = new Map(
+      shielded.map((r) => [r.senderKey, { unread: Number(r.unread), inbox: Number(r.inbox) }]),
+    );
+    const ranked = [...weakKeys].sort((a, b) => {
+      const left = byKey.get(a) ?? { unread: 0, inbox: 0 };
+      const right = byKey.get(b) ?? { unread: 0, inbox: 0 };
+      return right.unread - left.unread || right.inbox - left.inbox || a.localeCompare(b);
+    });
+
+    return { strong, weak, senderKeys: ranked.slice(0, input.limit) };
   }
 
   /**
