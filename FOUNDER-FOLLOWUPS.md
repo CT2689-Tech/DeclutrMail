@@ -52,6 +52,25 @@ blocked or runs the full suite. Then retarget it and confirm CI starts
 without a push.
 **Status:** Open
 
+### 2026-08-08 — The implementation-log check serializes every open PR
+**Source:** session 2026-08-08; hit on [#478](https://github.com/CT2689-Tech/DeclutrMail/pull/478), [#479](https://github.com/CT2689-Tech/DeclutrMail/pull/479) and [#480](https://github.com/CT2689-Tech/DeclutrMail/pull/480), three times in a row
+**Why:** `IMPLEMENTATION-LOG.md` is derived from the list of MERGED PRs, and
+`pnpm generate-impl-log --check` compares the committed file against a fresh
+derivation. So **merging any PR makes the file stale on every open branch**,
+and each one has to regenerate and re-run CI before it can merge. With two
+PRs open the second always fails; the queue is forced fully serial. It cost
+three extra CI cycles in this session alone, and the failure text
+("run `pnpm generate-impl-log` and commit") reads like author error rather
+than an ordering artifact.
+**How:** the file is fully derived, so committing it is what creates the
+conflict. Either (a) regenerate it on `main` post-merge in CI and drop the
+PR-time check, or (b) keep the check but scope it to rows the PR's own diff
+touches. (a) matches how the log is already described — "auto-maintained by
+GitHub Actions" (CLAUDE.md §8).
+**Verifies by:** open two trivial PRs at once, merge the first, and confirm
+the second still passes without a regeneration commit.
+**Status:** Open
+
 ### 2026-08-05 — `/blog` metadata title runs 66 chars; no ratified title budget exists
 **Source:** SEO pass during PR #470; Codex stop-time review
 **Why:** `apps/web/src/app/(marketing)/blog/page.tsx:6` carries the D250-prescribed
