@@ -88,18 +88,30 @@ the point.
   re-protecting, so a bundled removal records a user decision the user
   never made.
 
-  **Do not bundle.** Keep the two acts separate: the five verbs act on
-  mail, a distinct Unprotect control changes the safety state. Close the
-  trap by SAYING it — when a cleanup verb is chosen on a protected sender,
+  **Do not bundle.** Keep the two acts separate: the verbs decide what
+  happens to mail, a distinct Unprotect control changes the safety state.
+  Close the trap by SAYING it rather than acting — on the four verbs that
+  bulk and automatic runs would skip (Archive, Later, Delete, Unsubscribe),
   the preview states "Archive 34 emails. This sender stays protected, so
   bulk and automatic cleanup will keep skipping it," with Unprotect offered
   alongside. Surfacing the consequence is the fix; acting on the user's
   behalf is how the fix became more dangerous than the bug.
 
+  Note it is FOUR verbs, not five. `SheetableVerb` is
+  `Archive | Unsubscribe | Later | Delete` — Keep has no preview sheet
+  because it moves no mail, it records a decision. Keep also needs no
+  notice: keeping a protected sender is coherent, so warning about
+  protection there would be noise. (Unsubscribe is the partial case — it
+  stops future mail while existing inbox mail stays put unless a backlog
+  action is chosen separately, so its notice should speak to future mail.)
+
   **Edges.** Zero weak protections → show only the reassurance line, which is
   itself the win. nayana's mailbox is 0 strong / 2 weak, so the copy must not
-  read as failure when the strong count is 0. Unprotect moves no mail and is
-  instantly reversible, so no undo window to explain.
+  read as failure when the strong count is 0. Unprotect moves no mail, so there is no undo
+  window to explain — but it is not freely reversible either: D245 makes a
+  manual Unprotect a STICKY override, so automatic protection will not
+  re-apply afterwards. The user can protect again by hand; the automatic
+  signal that put it there originally is spent. Say that on the control.
 
   **Blocked on:** `/settings/senders` shows protected senders with no reason
   at all (CLAUDE.md §2.6 requires the exact reason), so the "Show all 52"
