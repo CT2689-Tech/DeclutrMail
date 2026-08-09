@@ -131,7 +131,8 @@ function story(rows: TriageDecisionRow[], readMeta: OnboardingFirstTriageMeta) {
  * look, costliest first.
  */
 export const ReassuranceLeads: Story<typeof StepProtectionReview> = {
-  render: () => story(ROWS, { pinned: 2, decided: 0, protection: { strong: 460, weak: 55 } }),
+  render: () =>
+    story(ROWS, { pinned: 2, decided: 0, protection: { strong: 460, weak: 55, manual: 0 } }),
 };
 
 /**
@@ -140,12 +141,14 @@ export const ReassuranceLeads: Story<typeof StepProtectionReview> = {
  * that exists instead. Zero strong is not an empty review.
  */
 export const NoRepliesProtected: Story<typeof StepProtectionReview> = {
-  render: () => story(ROWS, { pinned: 2, decided: 0, protection: { strong: 0, weak: 2 } }),
+  render: () =>
+    story(ROWS, { pinned: 2, decided: 0, protection: { strong: 0, weak: 2, manual: 0 } }),
 };
 
 /** Nothing weak to review — the reassurance IS the win. */
 export const NothingToReview: Story<typeof StepProtectionReview> = {
-  render: () => story([], { pinned: 0, decided: 0, protection: { strong: 12, weak: 0 } }),
+  render: () =>
+    story([], { pinned: 0, decided: 0, protection: { strong: 12, weak: 0, manual: 0 } }),
 };
 
 /**
@@ -153,7 +156,7 @@ export const NothingToReview: Story<typeof StepProtectionReview> = {
  * result does not read as a broken scan.
  */
 export const NothingProtectedYet: Story<typeof StepProtectionReview> = {
-  render: () => story([], { pinned: 0, decided: 0, protection: { strong: 0, weak: 0 } }),
+  render: () => story([], { pinned: 0, decided: 0, protection: { strong: 0, weak: 0, manual: 0 } }),
 };
 
 /**
@@ -163,12 +166,14 @@ export const NothingProtectedYet: Story<typeof StepProtectionReview> = {
  * signal" before the end panel learned to branch on the weak count.
  */
 export const PlentyToReviewButNoneShowable: Story<typeof StepProtectionReview> = {
-  render: () => story([], { pinned: 0, decided: 0, protection: { strong: 460, weak: 55 } }),
+  render: () =>
+    story([], { pinned: 0, decided: 0, protection: { strong: 460, weak: 55, manual: 0 } }),
 };
 
 /** Every pinned row resolved — acted on or unprotected. */
 export const Reviewed: Story<typeof StepProtectionReview> = {
-  render: () => story([], { pinned: 5, decided: 5, protection: { strong: 460, weak: 50 } }),
+  render: () =>
+    story([], { pinned: 5, decided: 5, protection: { strong: 460, weak: 50, manual: 0 } }),
 };
 
 /**

@@ -168,6 +168,17 @@ export const OnboardingProtectionSplitSchema = z
     strong: z.number().int().min(0),
     /** Protected by one star, or by repeated Gmail importance. */
     weak: z.number().int().min(0),
+    /**
+     * Protected by the user's own explicit Protect.
+     *
+     * Outside the review by design — the user already decided, so there
+     * is nothing to reassure them about and nothing to second-guess.
+     * Counted anyway because absent-from-the-review is not
+     * absent-from-the-mailbox: without it, a mailbox whose only
+     * protections are manual reads `strong: 0, weak: 0`, and the screen
+     * concluded "nothing is protected" about senders that were.
+     */
+    manual: z.number().int().min(0),
   })
   .strict();
 export type OnboardingProtectionSplit = z.infer<typeof OnboardingProtectionSplitSchema>;
