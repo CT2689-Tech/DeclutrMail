@@ -389,6 +389,16 @@ describe('SenderDetailRoute', () => {
       fireEvent.click(protectButton);
       await waitFor(() => expect(bodies).toEqual([{ isProtected: true }]));
       expect(screen.getByRole('button', { name: '◆ Protect' })).toBeInTheDocument();
+      // CLAUDE.md §2.6 / D245 — the exact reason, on the surface that
+      // owns this sender. The toggle said only "Protect", so a user
+      // looking at an automatically-protected sender had no way to
+      // learn why (three of the four reasons are automatic).
+      expect(screen.getByRole('button', { name: '◆ Protect' })).toHaveAttribute(
+        'title',
+        expect.stringMatching(
+          /^Protected — .+\. Select to remove protection\.$/,
+        ) as unknown as string,
+      );
 
       // Second toggle (unprotect) fails → rollback to the set chip.
       fail = true;
