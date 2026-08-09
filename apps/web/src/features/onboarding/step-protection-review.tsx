@@ -359,6 +359,21 @@ function donePanel(
     };
   }
 
+  // Manual protections are outside the REVIEW, never outside the
+  // MAILBOX. Reading both automatic buckets as "nothing is protected"
+  // told a user who had protected senders by hand that none existed and
+  // that nothing was being held back from cleanup — while those senders
+  // were protected and were being held back.
+  if (split.manual > 0) {
+    return {
+      headline: `You’ve protected ${senders(split.manual)} yourself.`,
+      body:
+        `They stay out of bulk and automatic cleanup, and they are yours to change whenever ` +
+        `you like. Nothing has been protected automatically yet — that takes three replies, a ` +
+        `starred message, or repeated Gmail importance — so there is nothing here to review.`,
+    };
+  }
+
   return {
     headline: 'Nothing is protected yet.',
     body:

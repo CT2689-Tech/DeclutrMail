@@ -30,7 +30,7 @@ const onboarding = vi.hoisted(() => ({
       meta: {
         pinned: 0,
         decided: 0,
-        protection: undefined as { strong: number; weak: number } | undefined,
+        protection: undefined as { strong: number; weak: number; manual: number } | undefined,
       },
     },
     refetch: vi.fn(),
@@ -85,7 +85,7 @@ describe('StepProtectionReview — the review', () => {
   it('leads with the reassurance and names the weak half as the thing to look at', () => {
     onboarding.firstTriage.data = {
       rows: PENDING_ROWS,
-      meta: { pinned: 2, decided: 0, protection: { strong: 460, weak: 55 } },
+      meta: { pinned: 2, decided: 0, protection: { strong: 460, weak: 55, manual: 0 } },
     };
 
     renderReview();
@@ -100,7 +100,7 @@ describe('StepProtectionReview — the review', () => {
   it('renders the real triage rows with all five verbs and a direct Unprotect', () => {
     onboarding.firstTriage.data = {
       rows: PENDING_ROWS,
-      meta: { pinned: 2, decided: 0, protection: { strong: 3, weak: 2 } },
+      meta: { pinned: 2, decided: 0, protection: { strong: 3, weak: 2, manual: 0 } },
     };
 
     renderReview();
@@ -120,7 +120,7 @@ describe('StepProtectionReview — the review', () => {
     // of them shields zero.
     onboarding.firstTriage.data = {
       rows: PENDING_ROWS.map((r) => ({ ...r, unreadInboxCount: 0 })),
-      meta: { pinned: 2, decided: 0, protection: { strong: 3, weak: 2 } },
+      meta: { pinned: 2, decided: 0, protection: { strong: 3, weak: 2, manual: 0 } },
     };
 
     renderReview();
@@ -132,7 +132,7 @@ describe('StepProtectionReview — the review', () => {
   it('claims it when the data supports it', () => {
     onboarding.firstTriage.data = {
       rows: PENDING_ROWS.map((r, i) => ({ ...r, unreadInboxCount: i === 0 ? 145 : 0 })),
-      meta: { pinned: 2, decided: 0, protection: { strong: 3, weak: 2 } },
+      meta: { pinned: 2, decided: 0, protection: { strong: 3, weak: 2, manual: 0 } },
     };
 
     renderReview();
@@ -146,7 +146,7 @@ describe('StepProtectionReview — the review', () => {
     // headline states the fact that exists instead.
     onboarding.firstTriage.data = {
       rows: PENDING_ROWS,
-      meta: { pinned: 2, decided: 0, protection: { strong: 0, weak: 2 } },
+      meta: { pinned: 2, decided: 0, protection: { strong: 0, weak: 2, manual: 0 } },
     };
 
     renderReview();
@@ -160,7 +160,7 @@ describe('StepProtectionReview — the review', () => {
   it('opens the funnel session against the protection goal', () => {
     onboarding.firstTriage.data = {
       rows: PENDING_ROWS,
-      meta: { pinned: 2, decided: 0, protection: { strong: 1, weak: 2 } },
+      meta: { pinned: 2, decided: 0, protection: { strong: 1, weak: 2, manual: 0 } },
     };
 
     renderReview();
@@ -180,7 +180,7 @@ describe('StepProtectionReview — the review', () => {
     const onComplete = vi.fn();
     onboarding.firstTriage.data = {
       rows: [] as typeof TRIAGE_QUEUE,
-      meta: { pinned: 0, decided: 0, protection: { strong: 12, weak: 0 } },
+      meta: { pinned: 0, decided: 0, protection: { strong: 12, weak: 0, manual: 0 } },
     };
 
     render(<StepProtectionReview onComplete={onComplete} completing={false} />);
@@ -201,7 +201,7 @@ describe('StepProtectionReview — the review', () => {
     const onComplete = vi.fn();
     onboarding.firstTriage.data = {
       rows: PENDING_ROWS,
-      meta: { pinned: 5, decided: 2, protection: { strong: 460, weak: 55 } },
+      meta: { pinned: 5, decided: 2, protection: { strong: 460, weak: 55, manual: 0 } },
     };
 
     render(<StepProtectionReview onComplete={onComplete} completing={false} />);
@@ -221,7 +221,7 @@ describe('StepProtectionReview — the edges', () => {
   it('treats "nothing weak to review" as the win, not an empty state', () => {
     onboarding.firstTriage.data = {
       rows: [] as typeof TRIAGE_QUEUE,
-      meta: { pinned: 0, decided: 0, protection: { strong: 12, weak: 0 } },
+      meta: { pinned: 0, decided: 0, protection: { strong: 12, weak: 0, manual: 0 } },
     };
 
     renderReview();
@@ -240,7 +240,7 @@ describe('StepProtectionReview — the edges', () => {
     // surface asserting what it does not know.
     onboarding.firstTriage.data = {
       rows: [] as typeof TRIAGE_QUEUE,
-      meta: { pinned: 0, decided: 0, protection: { strong: 460, weak: 55 } },
+      meta: { pinned: 0, decided: 0, protection: { strong: 460, weak: 55, manual: 0 } },
     };
 
     renderReview();
@@ -254,7 +254,7 @@ describe('StepProtectionReview — the edges', () => {
     // is protected yet" on a mailbox with 3 weak protections.
     onboarding.firstTriage.data = {
       rows: [] as typeof TRIAGE_QUEUE,
-      meta: { pinned: 0, decided: 0, protection: { strong: 0, weak: 3 } },
+      meta: { pinned: 0, decided: 0, protection: { strong: 0, weak: 3, manual: 0 } },
     };
 
     renderReview();
@@ -263,10 +263,30 @@ describe('StepProtectionReview — the edges', () => {
     expect(screen.getByText(/3 senders are protected by a single signal\./)).toBeInTheDocument();
   });
 
+  it('never calls a mailbox unprotected when the user protected senders themselves', () => {
+    // `user_defined` is excluded from the review on purpose — the user
+    // already decided, so there is nothing to reassure them about and
+    // nothing to second-guess. But absent-from-the-review is not
+    // absent-from-the-mailbox: with both AUTOMATIC buckets at zero the
+    // screen claimed "Nothing is protected yet … nothing is being held
+    // back from cleanup" while those senders were protected and were
+    // being held back.
+    onboarding.firstTriage.data = {
+      rows: [] as typeof TRIAGE_QUEUE,
+      meta: { pinned: 0, decided: 0, protection: { strong: 0, weak: 0, manual: 7 } },
+    };
+
+    renderReview();
+
+    expect(screen.queryByText(/Nothing is protected yet/)).toBeNull();
+    expect(screen.queryByText(/nothing is being held back from cleanup/)).toBeNull();
+    expect(screen.getByText(/You['’]ve protected 7 senders yourself\./)).toBeInTheDocument();
+  });
+
   it('says plainly when nothing is protected at all', () => {
     onboarding.firstTriage.data = {
       rows: [] as typeof TRIAGE_QUEUE,
-      meta: { pinned: 0, decided: 0, protection: { strong: 0, weak: 0 } },
+      meta: { pinned: 0, decided: 0, protection: { strong: 0, weak: 0, manual: 0 } },
     };
 
     renderReview();
@@ -280,7 +300,7 @@ describe('StepProtectionReview — the edges', () => {
   it('reports what is still protected after the reviewed set is done', () => {
     onboarding.firstTriage.data = {
       rows: [] as typeof TRIAGE_QUEUE,
-      meta: { pinned: 5, decided: 5, protection: { strong: 460, weak: 50 } },
+      meta: { pinned: 5, decided: 5, protection: { strong: 460, weak: 50, manual: 0 } },
     };
 
     renderReview();

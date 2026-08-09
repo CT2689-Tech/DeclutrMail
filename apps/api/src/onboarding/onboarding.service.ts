@@ -308,7 +308,7 @@ export class OnboardingService {
       meta: {
         pinned: pinnedKeys.length,
         decided: pinnedKeys.length - remaining.length,
-        protection: { strong: review.strong, weak: review.weak },
+        protection: { strong: review.strong, weak: review.weak, manual: review.manual },
       },
     };
   }

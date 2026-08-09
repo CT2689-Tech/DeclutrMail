@@ -93,6 +93,12 @@ export interface ProtectionReviewRead {
   /** Senders protected by one star or repeated Gmail importance. */
   weak: number;
   /**
+   * Senders the user protected themselves. Never reviewed — but counted,
+   * so a caller cannot mistake "no automatic protection" for "nothing
+   * is protected".
+   */
+  manual: number;
+  /**
    * Up to `limit` weakly-protected sender keys, most shielded UNREAD
    * inbox mail first. Senders shielding nothing are still returned (a
    * wrong protection with an empty inbox is still wrong) — they simply
@@ -549,6 +555,7 @@ export class TriageReadService {
       .select({
         strong: sql<number>`COUNT(*) FILTER (WHERE ${senderPolicies.protectionReason} = 'replied')::int`,
         weak: sql<number>`COUNT(*) FILTER (WHERE ${senderPolicies.protectionReason} IN ('starred', 'gmail_important'))::int`,
+        manual: sql<number>`COUNT(*) FILTER (WHERE ${senderPolicies.protectionReason} = 'user_defined')::int`,
       })
       .from(senderPolicies)
       .where(
@@ -559,9 +566,10 @@ export class TriageReadService {
       );
     const strong = Number(counts?.strong ?? 0);
     const weak = Number(counts?.weak ?? 0);
+    const manual = Number(counts?.manual ?? 0);
 
     if (weak === 0) {
-      return { strong, weak, senderKeys: [] };
+      return { strong, weak, manual, senderKeys: [] };
     }
 
     const weakRows = await this.db
@@ -617,7 +625,7 @@ export class TriageReadService {
       );
     }
 
-    return { strong, weak, senderKeys: ranked.slice(0, input.limit) };
+    return { strong, weak, manual, senderKeys: ranked.slice(0, input.limit) };
   }
 
   /**

@@ -576,7 +576,7 @@ describe('OnboardingService', () => {
 
       // A reply is a two-way relationship, so it needs no review — it is
       // the reassurance. A star marks a message, not a correspondent.
-      expect(read.meta.protection).toEqual({ strong: 1, weak: 1 });
+      expect(read.meta.protection).toEqual({ strong: 1, weak: 1, manual: 0 });
       expect(read.rows.map((r) => r.senderKey)).toEqual(['starred-once']);
     });
 
@@ -645,6 +645,31 @@ describe('OnboardingService', () => {
       expect(read.rows.map((r) => r.senderKey)).toEqual(['noisy', 'stale-star']);
     });
 
+    it('counts the user’s own Protects even though it never reviews them', async () => {
+      // Excluded from the REVIEW by design, but absent-from-the-review
+      // is not absent-from-the-mailbox: without this count the screen
+      // read `strong: 0, weak: 0` and concluded "nothing is protected"
+      // about senders that were protected and were being skipped by
+      // every bulk and automatic run.
+      await seedDecision(db, mailboxId, {
+        senderKey: 'user-picked-1',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'user_defined',
+      });
+      await seedDecision(db, mailboxId, {
+        senderKey: 'user-picked-2',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'user_defined',
+      });
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      expect(read.meta.protection).toEqual({ strong: 0, weak: 0, manual: 2 });
+      expect(read.rows).toEqual([]);
+    });
+
     it('never reviews the user’s own explicit Protect', async () => {
       await seedDecision(db, mailboxId, {
         senderKey: 'user-picked',
@@ -657,8 +682,10 @@ describe('OnboardingService', () => {
       const read = await service.getFirstTriage(userId, mailboxId);
       // Neither reassurance nor review: the user already decided this
       // one, so second-guessing it is not our place — and counting it as
-      // "you write back to them" would be a claim we cannot support.
-      expect(read.meta.protection).toEqual({ strong: 0, weak: 0 });
+      // "you write back to them" would be a claim we cannot support. It
+      // IS counted as manual, so the screen cannot go on to call the
+      // mailbox unprotected.
+      expect(read.meta.protection).toEqual({ strong: 0, weak: 0, manual: 1 });
       expect(read.rows).toEqual([]);
     });
 
@@ -672,7 +699,11 @@ describe('OnboardingService', () => {
       await chooseProtectionGoal();
 
       const read = await service.getFirstTriage(userId, mailboxId);
-      expect(read.meta).toEqual({ pinned: 0, decided: 0, protection: { strong: 1, weak: 0 } });
+      expect(read.meta).toEqual({
+        pinned: 0,
+        decided: 0,
+        protection: { strong: 1, weak: 0, manual: 0 },
+      });
       expect(read.rows).toEqual([]);
     });
 
@@ -695,7 +726,7 @@ describe('OnboardingService', () => {
       await chooseProtectionGoal();
 
       const read = await service.getFirstTriage(userId, mailboxId);
-      expect(read.meta.protection).toEqual({ strong: 0, weak: 2 });
+      expect(read.meta.protection).toEqual({ strong: 0, weak: 2, manual: 0 });
       expect(read.rows).toHaveLength(2);
     });
 
@@ -720,7 +751,11 @@ describe('OnboardingService', () => {
       // Archiving their mail did not unprotect them, so "1 sender is
       // protected by a star" stays true. The ROW is resolved; the FACT
       // is not. Conflating the two is how a headline starts lying.
-      expect(read.meta).toEqual({ pinned: 1, decided: 1, protection: { strong: 0, weak: 1 } });
+      expect(read.meta).toEqual({
+        pinned: 1,
+        decided: 1,
+        protection: { strong: 0, weak: 1, manual: 0 },
+      });
       expect(read.rows).toEqual([]);
     });
 
@@ -743,7 +778,11 @@ describe('OnboardingService', () => {
         .where(eq(senderPolicies.senderKey, 'wrongly-shielded'));
 
       const read = await service.getFirstTriage(userId, mailboxId);
-      expect(read.meta).toEqual({ pinned: 1, decided: 1, protection: { strong: 0, weak: 0 } });
+      expect(read.meta).toEqual({
+        pinned: 1,
+        decided: 1,
+        protection: { strong: 0, weak: 0, manual: 0 },
+      });
       expect(read.rows).toEqual([]);
     });
 
@@ -805,7 +844,11 @@ describe('OnboardingService', () => {
       });
 
       const read = await service.getFirstTriage(userId, otherMailbox!.id);
-      expect(read.meta).toEqual({ pinned: 1, decided: 0, protection: { strong: 0, weak: 1 } });
+      expect(read.meta).toEqual({
+        pinned: 1,
+        decided: 0,
+        protection: { strong: 0, weak: 1, manual: 0 },
+      });
       expect(read.rows.map((r) => r.senderKey)).toEqual(['weak-b']);
     });
 
@@ -862,7 +905,7 @@ describe('OnboardingService', () => {
       expect(read.rows.map((r) => r.senderKey)).toEqual(['showable']);
       // The COUNT still tells the truth: both are protected on a weak
       // signal, whether or not we can put a row on the screen.
-      expect(read.meta.protection).toEqual({ strong: 0, weak: 2 });
+      expect(read.meta.protection).toEqual({ strong: 0, weak: 2, manual: 0 });
     });
 
     it('never pins a sender already decided inside the queue window', async () => {
@@ -922,7 +965,11 @@ describe('OnboardingService', () => {
       await chooseProtectionGoal();
 
       const blocked = await service.getFirstTriage(userId, mailboxId);
-      expect(blocked.meta).toEqual({ pinned: 0, decided: 0, protection: { strong: 0, weak: 1 } });
+      expect(blocked.meta).toEqual({
+        pinned: 0,
+        decided: 0,
+        protection: { strong: 0, weak: 1, manual: 0 },
+      });
 
       // The decision ages out of the window; the sender is reviewable again.
       await db.delete(activityLog).where(eq(activityLog.id, decision!.id));
@@ -1011,7 +1058,7 @@ describe('OnboardingService', () => {
       const second = await service.getFirstTriage(userId, mailboxId);
       expect(second.rows.map((r) => r.senderKey)).toEqual(first.rows.map((r) => r.senderKey));
       // The COUNT is live, though — it is a fact about the mailbox now.
-      expect(second.meta.protection).toEqual({ strong: 0, weak: 8 });
+      expect(second.meta.protection).toEqual({ strong: 0, weak: 8, manual: 0 });
     });
   });
 });
