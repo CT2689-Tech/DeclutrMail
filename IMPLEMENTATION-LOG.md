@@ -168,7 +168,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D110 | Step 4: Style preset selection | 🔵 | #212 |  |  |
 | D111 | devPreference layer (new concept) | ⬜ |  |  |  |
 | D112 | Step 5: First Triage with real senders | 🔵 | #212, #316, #477, #481, #483 |  |  |
-| D113 | Onboarding completion side effects | 🔵 | #194, #212 |  |  |
+| D113 | Onboarding completion side effects | 🔵 | #194, #212, #484 |  |  |
 | D114 | Settings structure: **9 sections, left-nav (Linear/Notion-style) | 🔵 | #297 |  |  |
 | D115 | Inboxes management: **Settings → Inboxes section + top-bar Account Switcher | 🔵 | #126 |  |  |
 | D116 | Privacy & Data section: **Rich with 3 deletion actions + data export + CASA evidence | 🔵 | #224, #308 |  |  |
