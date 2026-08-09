@@ -167,7 +167,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D109 | Step 3: Sync (strict gate, no time promise, no live counters) | 🔵 | #122 |  |  |
 | D110 | Step 4: Style preset selection | 🔵 | #212 |  |  |
 | D111 | devPreference layer (new concept) | ⬜ |  |  |  |
-| D112 | Step 5: First Triage with real senders | 🔵 | #212, #316, #477, #481 |  |  |
+| D112 | Step 5: First Triage with real senders | 🔵 | #212, #316, #477, #481, #483 |  |  |
 | D113 | Onboarding completion side effects | 🔵 | #194, #212 |  |  |
 | D114 | Settings structure: **9 sections, left-nav (Linear/Notion-style) | 🔵 | #297 |  |  |
 | D115 | Inboxes management: **Settings → Inboxes section + top-bar Account Switcher | 🔵 | #126 |  |  |
@@ -291,7 +291,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D233 | Offline destructive actions are draft intents, never auto-replay | ⬜ |  |  |  |
 | D234 | Custom-rule production API gated at `is_preset=false` | 🟢 | #107, #109 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule null for is_preset=false → 404 |  |
 | D235 | Partitioning deferred behind measured thresholds | ⬜ |  |  |  |
-| D245 | Unified product clarity and control contract | 🔵 | #332, #333, #335, #336, #368, #393, #394, #400, #403, #409, #438 |  |  |
+| D245 | Unified product clarity and control contract | 🔵 | #332, #333, #335, #336, #368, #393, #394, #400, #403, #409, #438, #483 |  |  |
 | D246 | Finite first relief and evidence-based automation authority | 🔵 | #334 |  |  |
 | D248 | Bulk unsubscribe: one-click subset only, per-channel receipt | ⬜ |  |  | Decided 2026-07-28. Batch executes `senders.unsubscribe_method='one_click'` server-side only. The column is nullable, so four states are reported separately: `mailto` (per-sender, D230), `none` (no channel exists), and `NULL` (not yet indexed — unknown, never folded into `none`). No undo — unsubscribe declares no inverse, so the mandatory modal preview is the reversal point. Receipt aggregates the THREE outcomes the worker writes (`unsubscribe_endpoint_accepted` / `unsubscribe_unconfirmed` / `unsubscribe_failed`) and says "request accepted", not "unsubscribed". Extends D9/D32 |
 | D249 | Billing reconciles against provider truth, not customer memory | 🔵 | #436, #441, #466 |  |  |
