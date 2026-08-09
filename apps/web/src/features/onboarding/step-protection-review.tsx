@@ -1,14 +1,13 @@
 'use client';
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Button, EmptyState, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, ErrorState, Eyebrow, tokens } from '@declutrmail/shared';
 import type { OnboardingProtectionSplit } from '@declutrmail/shared/contracts';
 
 import { useTriageStats } from '@/features/triage/api/use-triage-queue';
 import { TriageScreen } from '@/features/triage/triage-screen';
 import { TriageUndoTray } from '@/features/triage/triage-undo-tray';
 import type { TriageScreenState, TriageSessionStats } from '@/features/triage/data';
-import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
 import { useFirstTriage } from './api/use-onboarding';
@@ -85,18 +84,15 @@ export function StepProtectionReview({
   if (firstTriage.isError) {
     return (
       <PanelShell corner={corner}>
-        <EmptyState
+        {/* ErrorState, not EmptyState: D211/D212 require a failure to be
+            distinguishable from "nothing here", and on THIS screen the
+            difference is load-bearing — an empty-looking failure reads as
+            "nothing is protected", which is the one claim this surface
+            must never make without knowing. */}
+        <ErrorState
           title="Couldn't load your protection summary"
-          description={
-            firstTriage.error instanceof ApiError
-              ? "We couldn't read which senders are protected. Try again in a moment."
-              : "We couldn't read which senders are protected. Try again in a moment."
-          }
-          action={
-            <Button tone="primary" onClick={() => void firstTriage.refetch()}>
-              Try again
-            </Button>
-          }
+          description="We couldn't read which senders are protected. Try again in a moment."
+          onRetry={() => void firstTriage.refetch()}
         />
       </PanelShell>
     );

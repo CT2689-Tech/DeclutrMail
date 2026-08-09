@@ -58,10 +58,31 @@ const { color } = tokens;
 export function ProtectedActionNotice({
   row,
   verb,
+  showUnprotect = true,
+  onUnprotected,
 }: {
   row: TriageDecisionRow;
   /** The verb being previewed; `null` on surfaces with no pending verb. */
   verb: SheetableVerb | null;
+  /**
+   * Render the Unprotect control alongside the notice.
+   *
+   * Off where the surface ALREADY offers one — the D245 review's row
+   * strip does, and with D34's remember-preference set the inline
+   * preview would otherwise stack a second identical button, with two
+   * overlapping sentences, on the same card.
+   */
+  showUnprotect?: boolean;
+  /**
+   * Fired after the server confirms the Unprotect.
+   *
+   * Load-bearing on the sheet: the mutation invalidates the triage
+   * queue, the refetch drops this now-unprotected sender from the
+   * review, and the sheet's row resolves to `null` — which unmounts the
+   * modal mid-flow while the pending action survives in the store. The
+   * caller uses this to close the pending action deliberately instead.
+   */
+  onUnprotected?: (() => void) | undefined;
 }) {
   if (row.protectionReason === null) return null;
 
@@ -86,7 +107,7 @@ export function ProtectedActionNotice({
         This sender stays <strong>Protected</strong>, so bulk and automatic cleanup will keep
         skipping {verb === 'Unsubscribe' ? 'whatever still arrives' : 'it'}.
       </span>
-      <UnprotectButton row={row} />
+      {showUnprotect && <UnprotectButton row={row} onUnprotected={onUnprotected} />}
     </div>
   );
 }

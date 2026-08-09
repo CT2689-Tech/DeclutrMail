@@ -80,3 +80,6 @@ docs/eval/sender-classification-eval-set.csv
 
 # Scheduled-task runner lock — machine-local state, regenerates on run.
 .claude/scheduled_tasks.lock
+
+# Storybook static build output (apps/web/storybook-static)
+storybook-static/

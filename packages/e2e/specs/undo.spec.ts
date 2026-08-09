@@ -115,16 +115,28 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   // The modal's sender-context strip names the domain (the title is
   // count-based: "Archive all mail from 1 sender").
   await expect(modal).toContainText(senderDomain);
-  const confirm = modal.getByRole('button', { name: /Archive \d/ });
+  // The confirm button is the verb alone ("📥 Archive"); the D226 real
+  // count lives in the preview BODY. Asserting the count on the button
+  // pinned copy that no longer exists, so this checks it where the user
+  // actually reads it.
+  // The confirm CTA is the only button carrying the ⌘⏎ chip, and that
+  // chip is part of its accessible name — matching on the verb alone
+  // finds nothing, and matching a count finds nothing either.
+  const confirm = modal.getByRole('button', { name: /Archive.*⌘⏎/ });
   await expect(confirm).toBeEnabled();
-  await expect(confirm).toContainText(`Archive ${inboxCount.toLocaleString()}`);
+  await expect(modal).toContainText(`${inboxCount.toLocaleString()}`);
+  await expect(modal).toContainText(/emails? currently match/);
   await confirm.click();
 
   // ---- Receipt strip appears ONLY on worker confirmation (no
   // optimistic receipt) and carries the real undo token.
-  const receipt = page.getByRole('status').filter({ hasText: 'Archived 1 sender' });
+  // The strip reads "Archived · N emails · 1 sender" + an undo deadline;
+  // this pinned "Archived 1 sender" and "reversible", neither of which
+  // the component has ever rendered as one string.
+  const receipt = page.getByRole('status').filter({ hasText: 'Archived' });
   await expect(receipt).toBeVisible({ timeout: 90_000 });
-  await expect(receipt).toContainText('reversible');
+  await expect(receipt).toContainText('1 sender');
+  await expect(receipt).toContainText('Activity Undo until');
 
   // Capture the token for the tray leg + the teardown safety net.
   const tokenRows = await sql<{ undo_token: string }[]>`

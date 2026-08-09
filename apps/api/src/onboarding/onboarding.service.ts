@@ -3,6 +3,7 @@ import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common
 import { users } from '@declutrmail/db';
 import { eq, sql } from 'drizzle-orm';
 import { OnboardingGoalSchema, OnboardingPresetKeySchema } from '@declutrmail/shared/contracts';
+import { isWeakProtectionReason, normalizeProtectionReason } from '@declutrmail/shared/copy';
 import type {
   OnboardingCleanupGoal,
   OnboardingFirstTriageMeta,
@@ -413,9 +414,15 @@ export class OnboardingService {
   }
 }
 
-/** True while this pinned sender still awaits the protection review. */
+/**
+ * True while this pinned sender still awaits the protection review.
+ *
+ * Goes through the shared normalizer rather than comparing the Triage
+ * wire's kebab spellings inline — that hand-rolled comparison is how a
+ * third dialect (`manual`) went unnoticed on the display side.
+ */
 function isWeaklyProtected(row: TriageQueueRow): boolean {
-  return row.protectionReason === 'starred' || row.protectionReason === 'gmail-important';
+  return isWeakProtectionReason(normalizeProtectionReason(row.protectionReason));
 }
 
 function firstTriageQueueOrdering(goal: OnboardingCleanupGoal | null): TriageQueueOrdering {

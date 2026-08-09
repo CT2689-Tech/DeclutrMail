@@ -325,7 +325,14 @@ export function ActionSheet({
 
         {isProtectedRow && (
           <div style={{ margin: '0 24px 12px' }}>
-            <ProtectedActionNotice row={row} verb={verb} />
+            {/* Closing on success is load-bearing, not tidiness: the
+                Unprotect invalidates the triage queue, the refetch drops
+                this sender from the D245 review, and `pendingRow`
+                resolves to null — which would unmount the modal
+                mid-flow while the pending action survived in the store.
+                Cancelling deliberately leaves the user somewhere they
+                chose. */}
+            <ProtectedActionNotice row={row} verb={verb} onUnprotected={onCancel} />
           </div>
         )}
 

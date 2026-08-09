@@ -516,6 +516,11 @@ export function TriageRow({
               <ProtectedActionNotice
                 row={row}
                 verb={inlinePreview.verb === 'Keep' ? null : inlinePreview.verb}
+                // The D245 review's row strip already renders one; without
+                // this, a protected row with D34's remember-preference set
+                // stacks two identical Unprotect buttons and two
+                // overlapping sentences on the same card.
+                showUnprotect={!offerUnprotect}
               />
             </div>
           )}
