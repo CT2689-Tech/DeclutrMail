@@ -117,6 +117,31 @@ describe('StepFirstTriage', () => {
     expect(screen.queryByText(/Triage keeps a queue ready/i)).not.toBeInTheDocument();
   });
 
+  it('stays retryable when the completion POST fails', () => {
+    // Same trap as the protection review: `finished` latched before the
+    // completion write, so a transient failure stranded the user on a
+    // terminal screen whose toast says "try again" next to a dead
+    // button. Onboarding has no way back.
+    const onComplete = vi.fn();
+    onboarding.firstTriage.data = {
+      rows: [] as typeof TRIAGE_QUEUE,
+      meta: { pinned: 3, decided: 3 },
+    };
+
+    render(
+      <StepFirstTriage onComplete={onComplete} completing={false} goal="reduce_newsletters" />,
+    );
+    const exit = screen.getByRole('button', { name: /Continue to Senders/i });
+
+    fireEvent.click(exit);
+    fireEvent.click(exit);
+
+    expect(onComplete).toHaveBeenCalledTimes(2);
+    expect(
+      analytics.track.mock.calls.filter(([n]) => n === 'first_relief_session_completed'),
+    ).toHaveLength(1);
+  });
+
   it('lets the user stop without manufacturing completion', () => {
     const onComplete = vi.fn();
     onboarding.firstTriage.data = {

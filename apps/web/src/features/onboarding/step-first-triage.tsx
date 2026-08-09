@@ -61,14 +61,20 @@ export function StepFirstTriage({
   }, [firstTriage.data?.meta.pinned, goal]);
 
   const finish = (outcome: 'completed' | 'stopped' | 'empty') => {
-    if (finished.current || !firstTriage.data) return;
-    finished.current = true;
-    void track('first_relief_session_completed', {
-      goal,
-      target: firstTriage.data.meta.pinned,
-      decided: firstTriage.data.meta.decided,
-      outcome,
-    });
+    if (!firstTriage.data) return;
+    // The ref dedupes the FUNNEL EVENT, never the exit itself — see the
+    // matching note in `step-protection-review.tsx`. Latching before the
+    // completion write turned a transient failure into a permanent trap
+    // on the one screen with no way back.
+    if (!finished.current) {
+      finished.current = true;
+      void track('first_relief_session_completed', {
+        goal,
+        target: firstTriage.data.meta.pinned,
+        decided: firstTriage.data.meta.decided,
+        outcome,
+      });
+    }
     onComplete();
   };
 

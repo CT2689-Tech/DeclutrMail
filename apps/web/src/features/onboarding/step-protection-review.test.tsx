@@ -171,6 +171,32 @@ describe('StepProtectionReview — the review', () => {
     });
   });
 
+  it('stays retryable when the completion POST fails', () => {
+    // The trap: `finished` latched BEFORE the completion mutation ran,
+    // so a transient failure left the user on a terminal screen being
+    // told "Couldn't finish onboarding — try again" by a button that
+    // could never do anything again. Onboarding is the one flow with no
+    // way back, so a dead exit is a permanent trap.
+    const onComplete = vi.fn();
+    onboarding.firstTriage.data = {
+      rows: [] as typeof TRIAGE_QUEUE,
+      meta: { pinned: 0, decided: 0, protection: { strong: 12, weak: 0 } },
+    };
+
+    render(<StepProtectionReview onComplete={onComplete} completing={false} />);
+    const exit = screen.getByRole('button', { name: /Continue to Senders/i });
+
+    fireEvent.click(exit); // first attempt — the server 500s
+    fireEvent.click(exit); // the user takes the toast's advice
+
+    expect(onComplete).toHaveBeenCalledTimes(2);
+    // The funnel event is still counted ONCE — one session, one
+    // completion, however many times the write had to be retried.
+    expect(
+      analytics.track.mock.calls.filter(([n]) => n === 'first_relief_session_completed'),
+    ).toHaveLength(1);
+  });
+
   it('lets the user stop without manufacturing completion', () => {
     const onComplete = vi.fn();
     onboarding.firstTriage.data = {
