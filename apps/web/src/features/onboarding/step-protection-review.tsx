@@ -70,14 +70,23 @@ export function StepProtectionReview({
   }, [firstTriage.data?.meta.pinned]);
 
   const finish = (outcome: 'completed' | 'stopped' | 'empty') => {
-    if (finished.current || !firstTriage.data) return;
-    finished.current = true;
-    void track('first_relief_session_completed', {
-      goal: 'protect_important',
-      target: firstTriage.data.meta.pinned,
-      decided: firstTriage.data.meta.decided,
-      outcome,
-    });
+    if (!firstTriage.data) return;
+    // The ref dedupes the FUNNEL EVENT, never the exit itself. It used
+    // to latch before the completion write, so a transient failure left
+    // the user on a terminal screen whose own toast says "try again"
+    // beside a button that could never do anything again — and
+    // onboarding has no way back, so that is a permanent trap rather
+    // than a lost click. Double-submits are already prevented by the
+    // button's `disabled={completing}`.
+    if (!finished.current) {
+      finished.current = true;
+      void track('first_relief_session_completed', {
+        goal: 'protect_important',
+        target: firstTriage.data.meta.pinned,
+        decided: firstTriage.data.meta.decided,
+        outcome,
+      });
+    }
     onComplete();
   };
 
