@@ -39,6 +39,7 @@ export function TriageQueue({
   busyRowId = null,
   previewInboxCount = 'loading',
   allowBatching = true,
+  offerUnprotect = false,
   onBatchVerb,
   batchBusyDomain = null,
 }: {
@@ -55,6 +56,8 @@ export function TriageQueue({
   previewInboxCount?: PreviewCount;
   /** Disable multi-sender shortcuts for finite guided sessions. */
   allowBatching?: boolean;
+  /** Show a direct Unprotect control on Protected rows (D245 review). */
+  offerUnprotect?: boolean;
   /** A domain-batch card asked for `verb` — the screen opens the batch sheet. */
   onBatchVerb?: (verb: BatchVerb, batch: DomainBatch) => void;
   /** Domain whose batch decision is confirming server-side. */
@@ -153,6 +156,7 @@ export function TriageQueue({
                 expanded={expanded}
                 busy={busyRowId === row.id}
                 hero={heroRowId === row.id}
+                offerUnprotect={offerUnprotect}
                 onToggleExpand={() => toggleExpandedRow(row.id)}
                 onAction={(verb) => onAction(verb, row)}
                 inlinePreview={inlinePreview}

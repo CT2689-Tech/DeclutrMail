@@ -38,8 +38,19 @@ import type { GmailCategory } from '@declutrmail/shared/contracts';
  */
 export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 
-/** Why a sender's verdict is locked to Keep — surfaces in the row. */
-export type ProtectionReason = 'user-marked' | 'replied' | 'starred' | 'gmail-important';
+/**
+ * Why a sender's verdict is locked to Keep — surfaces in the row.
+ *
+ * These are the TRIAGE WIRE spellings, which is the point: this union
+ * used to say `user-marked` while `TriageReadService.mapProtectionReason`
+ * has always sent `manual`, so every user-protected row in production
+ * carried a value outside its own type. Nothing caught it because the
+ * fixtures used the type's spelling rather than the wire's.
+ *
+ * Display goes through `normalizeProtectionReason` in
+ * `@declutrmail/shared/copy`, which resolves all three live dialects.
+ */
+export type ProtectionReason = 'manual' | 'replied' | 'starred' | 'gmail-important';
 
 /**
  * One row in the triage queue — sender identity + engine verdict +
@@ -95,12 +106,31 @@ export interface TriageDecisionRow {
    * "0/mo" because the only mail from those senders was older than 90d).
    */
   last90dMessages: number;
-  /** Read rate in `[0, 1]`. */
-  readRate: number;
+  /**
+   * Read rate in `[0, 1]`, or `null` when the sender sent nothing in
+   * the 90-day window — NOT 0.
+   *
+   * The BE has always typed this nullable; the FE typed it `number` and
+   * every consumer did `Math.round(readRate * 100)`, which renders a
+   * missing measurement as a confident "0% read". The expanded row card
+   * showed exactly that. Unknown is a state, not a zero.
+   */
+  readRate: number | null;
   /** Days since the sender's most recent message. */
   lastDays: number;
   /** Inbound messages currently present in DeclutrMail's mailbox index. */
   totalAllTime: number;
+  /**
+   * Unread inbound messages sitting in the INBOX right now — the subset
+   * of what an Archive / Later / Delete would move that the user has
+   * never opened.
+   *
+   * For a Protected sender this is what the protection is SHIELDING
+   * from bulk and automatic cleanup, which is what makes a wrong
+   * protection expensive. Resolved server-side from the same message
+   * set the action preview counts, so the two can never disagree.
+   */
+  unreadInboxCount: number;
 }
 
 /** Snapshot stats for the empty state copy — "today you Kept N senders, etc." */
@@ -178,6 +208,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0,
     lastDays: 0,
     totalAllTime: 1745,
+    unreadInboxCount: 288,
   },
 
   // ── Unsubscribe · one-click (D9 happy path) ──────────────────────
@@ -206,6 +237,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0,
     lastDays: 0,
     totalAllTime: 2432,
+    unreadInboxCount: 372,
   },
 
   // ── Archive · medium confidence (0.88) ───────────────────────────
@@ -232,6 +264,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0,
     lastDays: 0,
     totalAllTime: 1056,
+    unreadInboxCount: 118,
   },
 
   // ── Unsubscribe · mailto only (D230 deferred path) ───────────────
@@ -260,6 +293,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0.04,
     lastDays: 0,
     totalAllTime: 4692,
+    unreadInboxCount: 640,
   },
 
   // ── Archive · low confidence (0.66) — recommendation NOT highlighted
@@ -282,6 +316,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0.3,
     lastDays: 4,
     totalAllTime: 264,
+    unreadInboxCount: 31,
   },
 
   // ── Later — moderate engagement, low cadence ─────────────────────
@@ -309,6 +344,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0.85,
     lastDays: 3,
     totalAllTime: 96,
+    unreadInboxCount: 1,
   },
 
   // ── Keep · user-protected ────────────────────────────────────────
@@ -330,12 +366,13 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
       'Read rate: 100% over the last 90 days',
       'Volume: 17 messages/month',
     ],
-    protectionReason: 'user-marked',
+    protectionReason: 'manual',
     monthlyVolume: 17,
     last90dMessages: 51,
     readRate: 1,
     lastDays: 0,
     totalAllTime: 306,
+    unreadInboxCount: 44,
   },
 
   // ── Keep · auto-protected (3+ replies, D245) ─────────────────────
@@ -362,6 +399,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     readRate: 0.95,
     lastDays: 2,
     totalAllTime: 84,
+    unreadInboxCount: 6,
   },
 
   // ── Unsubscribe · NO channel (`unsubscribeMethod: 'none'`) ────────
@@ -393,9 +431,11 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     protectionReason: null,
     monthlyVolume: 0,
     last90dMessages: 0,
-    readRate: 0,
+    // Quiet within the window — the BE sends null, not 0.
+    readRate: null,
     lastDays: 0,
     totalAllTime: 555,
+    unreadInboxCount: 210,
   },
 ];
 

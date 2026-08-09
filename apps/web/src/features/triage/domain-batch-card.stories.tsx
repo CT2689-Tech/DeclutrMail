@@ -111,7 +111,7 @@ export const Default: Story<typeof DomainBatchCard> = {
 export const WithProtected: Story<typeof DomainBatchCard> = {
   args: {
     batch: mkBatch('substack.com', [
-      { name: 'The Pragmatic Engineer', protection: 'user-marked' },
+      { name: 'The Pragmatic Engineer', protection: 'manual' },
       { name: 'Lenny’s Newsletter' },
       { name: 'Money Stuff' },
       { name: 'Stratechery' },

@@ -35,6 +35,7 @@ import {
   type SenderPolicyResultDto,
 } from '@/lib/api/senders';
 import { activityKeys } from '@/features/activity/api/query-keys';
+import { TRIAGE_QUEUE_KEY } from '@/features/triage/api/use-triage-queue';
 import { sendersKeys } from './query-keys';
 
 export function useSetSenderPolicy() {
@@ -47,6 +48,13 @@ export function useSetSenderPolicy() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: sendersKeys.all });
       void qc.invalidateQueries({ queryKey: activityKeys.all });
+      // Triage rows carry `protectionReason`, and onboarding's step-5
+      // read extends this same prefix. Without this, a row keeps
+      // rendering "Protected" after the shield is gone — a surface
+      // asserting a fact the server already contradicted, which is the
+      // defect class this codebase keeps relearning. Cheap: the key is
+      // only mounted on Triage and onboarding step 5.
+      void qc.invalidateQueries({ queryKey: TRIAGE_QUEUE_KEY });
     },
   });
 }

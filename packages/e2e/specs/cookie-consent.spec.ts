@@ -8,6 +8,7 @@ import { gunzipSync } from 'node:zlib';
 import { expect, test, type Page } from '@playwright/test';
 
 import { E2E_ENV } from '../helpers/env';
+import { ANALYTICS_PRIVACY_CLAIM } from '@declutrmail/shared/copy';
 
 /**
  * D147 cookie-consent flow — the privacy-policy promise under test:
@@ -129,7 +130,10 @@ test('decline is the default: "Essential only" persists and PostHog stays fully 
   const banner = page.getByTestId('cookie-consent-banner');
   await expect(banner).toBeVisible();
   await expect(banner).toContainText('We use essential cookies for sign-in and billing.');
-  await expect(banner).toContainText('We never see your inbox content.');
+  // Imported, not hand-copied: this assertion drifted once already
+  // (it pinned "We never see your inbox content.", a sentence that no
+  // longer exists anywhere in the product).
+  await expect(banner).toContainText(ANALYTICS_PRIVACY_CLAIM);
 
   await page.getByRole('button', { name: 'Essential only' }).click();
   await expect(banner).toBeHidden();

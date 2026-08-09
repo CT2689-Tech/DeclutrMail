@@ -20,6 +20,7 @@ import { RecommendationBanner } from './recommendation-banner';
 import { ActionToolbar } from './action-toolbar';
 import { RecentMessages } from './recent-messages';
 import type { DecisionHistoryRow, SenderDetail, SenderDetailState } from './types';
+import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
 import { useSenderDetail } from '../api/use-sender-detail';
 import { useSenderMessages } from '../api/use-sender-messages';
 import { useSenderTimeseries } from '../api/use-sender-timeseries';
@@ -993,12 +994,27 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                 <ExternalLinkIcon />
               </a>
             )}
+            {/* The EXACT reason, on the surface that owns this sender
+                (CLAUDE.md §2.6 / D245). This toggle said only "Protect"
+                — three of the four reasons are AUTOMATIC, so a user
+                looking at a protected sender here had no way to learn
+                why, and the identical gap on the Settings list was the
+                2026-08-07 finding. Wording comes from the one shared
+                source, so Detail, Triage, the Screener and Settings
+                cannot drift apart. */}
             <Button
               tone={detail.isProtected ? 'primary' : 'default'}
               size="sm"
               onClick={toggleProtect}
               ariaPressed={detail.isProtected}
               disabled={setPolicy.isPending}
+              title={
+                detail.isProtected
+                  ? `Protected — ${protectionReasonClause(
+                      normalizeProtectionReason(detail.protectionReason),
+                    )}. Select to remove protection.`
+                  : 'Protect this sender from bulk and automatic mail-changing actions.'
+              }
             >
               {detail.isProtected ? '◆ Protect' : 'Protect'}
             </Button>

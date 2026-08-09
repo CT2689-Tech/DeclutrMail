@@ -81,9 +81,11 @@ export {
   OnboardingPresetKeySchema,
   OnboardingPresetPicksRequestSchema,
   OnboardingPresetPicksResultSchema,
+  OnboardingProtectionSplitSchema,
   OnboardingStateSchema,
 } from './onboarding';
 export type {
+  OnboardingCleanupGoal,
   OnboardingCompleteRequest,
   OnboardingFirstTriageMeta,
   OnboardingGoal,
@@ -91,6 +93,7 @@ export type {
   OnboardingPresetKey,
   OnboardingPresetPicksRequest,
   OnboardingPresetPicksResult,
+  OnboardingProtectionSplit,
   OnboardingState,
 } from './onboarding';
 

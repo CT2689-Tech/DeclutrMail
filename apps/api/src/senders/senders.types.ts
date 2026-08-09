@@ -141,6 +141,16 @@ export interface SenderListRow {
    */
   inboxCount: number;
   /**
+   * The UNREAD subset of `inboxCount`.
+   *
+   * For a Protected sender this is exactly what the protection is
+   * shielding from bulk and automatic cleanup (D245) — the measure of
+   * what a wrong protection costs, and the ordering key the standing
+   * protection review sorts on. Always ≤ `inboxCount`, resolved from
+   * the same message set, so the two can never disagree.
+   */
+  unreadInboxCount: number;
+  /**
    * Per-sender "you replied N×" count (Senders V2 spec v1.3 + mig 0022).
    * Distinct outbound messages whose thread contains ≥1 inbound from
    * this sender; reconciles arithmetically with

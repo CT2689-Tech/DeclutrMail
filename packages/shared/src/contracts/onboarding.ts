@@ -45,6 +45,19 @@ export const OnboardingGoalSchema = z.enum(ONBOARDING_GOALS);
 export type OnboardingGoal = z.infer<typeof OnboardingGoalSchema>;
 
 /**
+ * The goals whose step 5 is a CLEANUP run — a finite set of senders to
+ * decide on, ranked by the mail an action would move.
+ *
+ * `protect_important` is excluded at the TYPE level, not by
+ * convention. It asks for nothing to be removed, so it shares neither
+ * the candidate pool nor the payoff ranking: its step 5 is the D245
+ * protection review. A silent fall-through to cleanup ordering is how
+ * that goal spent its whole life pinning rows it had no reason to
+ * pick, and it looked like it was working.
+ */
+export type OnboardingCleanupGoal = Exclude<OnboardingGoal, 'protect_important'>;
+
+/**
  * One entry of the step-4 preset catalog (D110). Display copy is
  * server-owned so the FE renders a single source — names here are the
  * ONBOARDING-facing labels and MUST respect §2.2 (K/A/U/L/D verbs
@@ -136,6 +149,30 @@ export const OnboardingCompleteRequestSchema = z
 export type OnboardingCompleteRequest = z.infer<typeof OnboardingCompleteRequestSchema>;
 
 /**
+ * How the mailbox's automatic protection (D245) splits by evidence
+ * strength — the numbers the `protect_important` review is about.
+ *
+ * The split is definitional, not a tuned threshold: a REPLY is a
+ * two-way relationship, so protection from it needs no review. A star
+ * or a Gmail importance flag is one-way — the user marked a message,
+ * not a correspondent — so those protections are the ones worth
+ * looking at.
+ *
+ * Both counts are protection state, NOT queue state: they count every
+ * protected sender in the mailbox, including ones already decided on.
+ * `weak` is therefore ≥ the number of rows the review shows.
+ */
+export const OnboardingProtectionSplitSchema = z
+  .object({
+    /** Protected because the user replied at least 3 times. */
+    strong: z.number().int().min(0),
+    /** Protected by one star, or by repeated Gmail importance. */
+    weak: z.number().int().min(0),
+  })
+  .strict();
+export type OnboardingProtectionSplit = z.infer<typeof OnboardingProtectionSplitSchema>;
+
+/**
  * GET /api/onboarding/first-triage `meta` block (D112).
  *
  * `data` is the pinned candidate rows still awaiting a decision (the
@@ -143,11 +180,19 @@ export type OnboardingCompleteRequest = z.infer<typeof OnboardingCompleteRequest
  * were locked in for the practice run (≤5; can be 0 for a tiny
  * mailbox); `decided` counts pinned senders that no longer await a
  * decision. Step 5 completes when `decided === pinned`.
+ *
+ * `protection` is present ONLY for the `protect_important` goal, whose
+ * step 5 is a protection review rather than a cleanup run — the rows
+ * are the weakly-protected senders and the counts are the headline.
+ * Optional rather than zero-filled: absent means "this goal does not
+ * ask the question", which is not the same fact as "nothing is
+ * protected".
  */
 export const OnboardingFirstTriageMetaSchema = z
   .object({
     pinned: z.number().int().min(0).max(5),
     decided: z.number().int().min(0).max(5),
+    protection: OnboardingProtectionSplitSchema.optional(),
   })
   .strict();
 export type OnboardingFirstTriageMeta = z.infer<typeof OnboardingFirstTriageMetaSchema>;

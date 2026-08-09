@@ -5,6 +5,7 @@ import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared'
 import { ContextualHelp } from '@/features/help/contextual-help';
 import { ActionPreview, type PreviewCount } from './action-preview';
 import type { TriageDecisionRow } from './data';
+import { ProtectedActionNotice } from './protected-notice';
 import type { SheetableVerb } from './store';
 
 const { color, font } = tokens;
@@ -323,21 +324,15 @@ export function ActionSheet({
         </div>
 
         {isProtectedRow && (
-          <div
-            role="status"
-            style={{
-              margin: '0 24px 12px',
-              padding: '8px 12px',
-              borderRadius: 8,
-              background: 'rgba(196,46,46,0.06)',
-              border: '1px solid rgba(196,46,46,0.30)',
-              fontSize: 12,
-              lineHeight: 1.45,
-              color: color.danger,
-            }}
-          >
-            This sender is <strong>Protected</strong> — it is normally kept out of bulk and
-            automatic actions. This applies to this sender only.
+          <div style={{ margin: '0 24px 12px' }}>
+            {/* Closing on success is load-bearing, not tidiness: the
+                Unprotect invalidates the triage queue, the refetch drops
+                this sender from the D245 review, and `pendingRow`
+                resolves to null — which would unmount the modal
+                mid-flow while the pending action survived in the store.
+                Cancelling deliberately leaves the user somewhere they
+                chose. */}
+            <ProtectedActionNotice row={row} verb={verb} onUnprotected={onCancel} />
           </div>
         )}
 

@@ -1,14 +1,18 @@
 'use client';
 // apps/web/src/features/settings/senders-policies/senders-policies-screen.tsx
 //
-// Phase X3 of the sender-bucketing re-design — lets the user see all
-// senders that have standing policies in one place + jump to the
-// detail page to toggle them off.
+// Phase X3 of the sender-bucketing re-design, now the STANDING
+// protection review (D245).
 //
-// The standing-policy section is server-filtered via `?protected=true`.
-// User clicks
-//     "Manage" -> jumps to /senders/[id], toggles Protect off via the
-//     existing detail-page chip (D42/D43).
+// Onboarding's step 5 reviews at most five weak protections once and is
+// then gone forever; a real mailbox carries dozens. This is where the
+// rest stay reachable — every protected sender, the exact reason each
+// one is protected (CLAUDE.md §2.6), what that protection is shielding,
+// and Unprotect in place.
+//
+// The section is server-filtered via `?protected=true`. "Manage" still
+// jumps to /senders/[id] for the full picture; removing protection no
+// longer requires the trip.
 //
 // Lazy-promoted per ADR-0007: lives in apps/web/src/features/settings/
 // because settings is the only consumer. Move to packages/shared/ if
@@ -23,9 +27,13 @@ import {
   EmptyState,
   ErrorState as RecoverableErrorState,
   Eyebrow,
+  toast,
   tokens,
 } from '@declutrmail/shared';
+import { normalizeProtectionReason, protectionReasonLabel } from '@declutrmail/shared/copy';
 import { useSenders } from '@/features/senders/api/use-senders';
+import { useSetSenderPolicy } from '@/features/senders/api/use-sender-policy';
+import { captureFeatureException } from '@/lib/sentry';
 
 import { enrichSenderRow, type Sender } from '@/features/senders/data';
 
@@ -48,15 +56,36 @@ export function SendersPoliciesScreen() {
   const { fetchNextPage, hasNextPage, isFetchingNextPage, data } = sendersQuery;
 
   // Every row the server returns is already a Protected sender — we
-  // just adapt + sort for stable display order. No client-side filter
-  // (the previous `.filter(s => s.protected === true)` is gone with
-  // the server-side `protected=true` filter).
+  // just adapt + sort for display. No client-side filter (the previous
+  // `.filter(s => s.protected === true)` is gone with the server-side
+  // `protected=true` filter).
+  //
+  // Ordered by the UNREAD inbox mail each protection is shielding, so
+  // the costliest wrong protection leads — the same ordering the
+  // onboarding review uses, because it is the same question. It sorts
+  // what is LOADED, not the whole query: the list is keyset-paginated
+  // and the sort key is a correlated subquery, so a server-side sort
+  // would need a new cursor encoding. The header says which it is
+  // rather than implying a global ranking.
   const protectedSenders = useMemo<Sender[]>(() => {
     const pages = data?.pages ?? [];
-    return pages
-      .flatMap((p) => p.data.map((row) => enrichSenderRow(row)))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return pages.flatMap((p) => p.data.map((row) => enrichSenderRow(row))).sort(byShieldedMail);
   }, [data]);
+
+  // Whether the ordering claim below is actually TRUE of this list.
+  //
+  // Three ways it would not be, and `some(x != null)` caught none of
+  // them. The measure is optional on the wire, so a PARTIAL response
+  // cannot produce the claimed ranking at all — the unmeasured rows are
+  // not "shielding zero", they are unknown, and no arrangement of them
+  // is "most shielded first". And when every row is a known zero the
+  // sort fell through to its tiebreakers, so the sentence describes
+  // nothing that happened. Require: rows exist, every one carries the
+  // measure, and at least one is non-zero.
+  const ordered =
+    protectedSenders.length > 0 &&
+    protectedSenders.every((s) => s.unreadInboxCount != null) &&
+    protectedSenders.some((s) => (s.unreadInboxCount ?? 0) > 0);
 
   // The BE-honest count of protected senders, query-wide rather than
   // cursor-scoped (ADR-0014). `protectedSenders.length` is only what this
@@ -108,8 +137,9 @@ export function SendersPoliciesScreen() {
           DeclutrMail&apos;s bulk and automatic actions skip these senders — it won&apos;t archive,
           delete, or unsubscribe them on its own. An action you take on one sender yourself still
           applies. You can protect a sender, and DeclutrMail also protects one when you reply
-          repeatedly, star their mail, or Gmail keeps marking it important. Turn protection on or
-          off from a sender&apos;s detail page.
+          repeatedly, star their mail, or Gmail keeps marking it important. Each row shows which of
+          those applies, and Unprotect removes it — automatic protection won&apos;t re-apply
+          afterwards.
         </p>
       </div>
 
@@ -149,7 +179,20 @@ export function SendersPoliciesScreen() {
                 margin: '4px 0 0',
               }}
             >
-              Bulk and automatic actions skip these senders.
+              {/* Name the ordering only when it actually happened, and
+                  scope it honestly when it did. Two ways this sentence
+                  could lie: the sort key is computed per row so it can
+                  only order what has been LOADED (claiming a
+                  whole-mailbox ranking with page 2 unfetched), and the
+                  field is optional on the wire — against an API that
+                  does not send it the sort silently collapses to name
+                  order while this line still claims otherwise. */}
+              Bulk and automatic actions skip these senders.{' '}
+              {!ordered
+                ? ''
+                : hasNextPage
+                  ? `Most shielded unread mail first, across the ${protectedSenders.length.toLocaleString()} loaded so far.`
+                  : 'Most shielded unread mail first.'}
             </p>
           </div>
           <span
@@ -175,7 +218,12 @@ export function SendersPoliciesScreen() {
           <div style={{ padding: `${space[5]}px ${space[5]}px` }}>
             <EmptyState
               title="No protected senders yet"
-              description="When you mark a sender as Protected from their detail page, it will appear here. Protected senders are skipped by auto-rules and bulk actions."
+              /* Must not say protection is something you set by hand:
+                 three of the four reasons are AUTOMATIC, and this is the
+                 same claim the page's intro paragraph was already fixed
+                 for. Naming the automatic triggers also stops an empty
+                 result reading as a broken scan. */
+              description="Nothing here is protected yet. DeclutrMail protects a sender on its own once you've replied at least three times, starred one of their messages, or Gmail keeps marking them important — and you can protect one yourself from its detail page. Protected senders are skipped by bulk and automatic actions."
               action={
                 <Link href="/senders" style={{ textDecoration: 'none' }}>
                   <Button size="sm">Browse senders</Button>
@@ -203,7 +251,7 @@ export function SendersPoliciesScreen() {
               size="sm"
               onClick={() => void fetchNextPage()}
               disabled={isFetchingNextPage}
-              aria-label="Show more protected senders"
+              ariaLabel="Show more protected senders"
             >
               {isFetchingNextPage ? 'Loading…' : 'Show more'}
             </Button>
@@ -214,7 +262,39 @@ export function SendersPoliciesScreen() {
   );
 }
 
+/**
+ * Order by the unread inbox mail each protection is shielding, so the
+ * costliest wrong protection leads.
+ *
+ * UNKNOWN IS NOT ZERO. Both counts are optional on the wire, and
+ * coercing an absent one to 0 ranks a sender we have no measurement for
+ * as though we had measured nothing — which buries a possibly-costly
+ * protection at the bottom of the very screen built to surface it. The
+ * same null→0 fabrication the read rate carried. Unknown sorts LAST,
+ * after a known zero, matching the convention the onboarding ranking
+ * already uses for an unknown read rate.
+ */
+function byShieldedMail(a: Sender, b: Sender): number {
+  return (
+    compareKnownDesc(a.unreadInboxCount, b.unreadInboxCount) ||
+    compareKnownDesc(a.inboxCount, b.inboxCount) ||
+    a.name.localeCompare(b.name)
+  );
+}
+
+/** Descending by value; a missing measurement sorts after every known one. */
+function compareKnownDesc(left: number | null | undefined, right: number | null | undefined) {
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+  return right - left;
+}
+
 function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
+  const setPolicy = useSetSenderPolicy();
+  const reason = normalizeProtectionReason(sender.protectionFlags.protectionReason);
+  const shielded = sender.unreadInboxCount;
+
   return (
     <li
       style={{
@@ -240,6 +320,21 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
         >
           {sender.name}
         </div>
+        {/* THE REASON (CLAUDE.md §2.6 / D245 — "show the exact reason").
+            This list rendered avatar, name and a Manage button and never
+            said WHY, while three of the four reasons are automatic — so
+            every row looked like something the user had chosen. The
+            data was on the wire the whole time; this was a display gap.
+            Wording comes from the one shared source, so it reads the
+            same here, in Triage, in the Screener and on Sender Detail. */}
+        <div style={{ fontSize: 12, color: color.fgSoft, marginTop: 2 }}>
+          {protectionReasonLabel(reason)}
+          {/* What the protection is holding back — omitted when we do
+              not know (an API predating the field) or when there is
+              nothing in the inbox, rather than printed as a confident
+              "shielding 0". */}
+          {shielded != null && shielded > 0 && <> · shielding {shielded.toLocaleString()} unread</>}
+        </div>
         <div
           style={{
             fontFamily: font.mono,
@@ -248,16 +343,51 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
             marginTop: 2,
           }}
         >
-          {sender.domain} · {sender.monthlyVolume ?? 0}/mo
+          {/* `null` means no timeseries row, not "0 per month". Rendering
+              the unknown as 0/mo is the same null→0 fabrication the read
+              rate carried, and on this screen it reads as "this sender
+              stopped mailing you" — an argument for unprotecting that
+              the data never made. */}
+          {sender.domain}
+          {sender.monthlyVolume != null && ` · ${sender.monthlyVolume}/mo`}
         </div>
       </div>
-      <Link
-        href={`/senders/${sender.id}`}
-        style={{ textDecoration: 'none' }}
-        aria-label={`Manage ${sender.name}`}
-      >
-        <Button size="sm">Manage</Button>
-      </Link>
+      <div style={{ display: 'flex', alignItems: 'center', gap: space[2], flexWrap: 'wrap' }}>
+        {/* Unprotect IN PLACE. Sending the user to the detail page to
+            toggle a chip made correcting a wrong protection a
+            per-sender errand — on a mailbox with 55 of them that is 55
+            round trips, which is why nobody ever did it. Nothing moves
+            and there is no undo window, but D245 makes it a STICKY
+            override: automatic protection will not re-apply. */}
+        <Button
+          size="sm"
+          disabled={setPolicy.isPending}
+          ariaLabel={`Unprotect ${sender.name}`}
+          onClick={() =>
+            setPolicy.mutate(
+              { senderId: sender.id, patch: { isProtected: false } },
+              {
+                onSuccess: () => toast(`${sender.name} is no longer Protected.`, 'success'),
+                onError: (err) => {
+                  captureFeatureException(err, { surface: 'senders', reason: 'unprotect' });
+                  toast("Couldn't remove protection — try again.", 'warn');
+                },
+              },
+            )
+          }
+        >
+          {setPolicy.isPending ? 'Removing…' : 'Unprotect'}
+        </Button>
+        <Link
+          href={`/senders/${sender.id}`}
+          style={{ textDecoration: 'none' }}
+          aria-label={`Manage ${sender.name}`}
+        >
+          <Button size="sm" tone="ghost">
+            Manage
+          </Button>
+        </Link>
+      </div>
     </li>
   );
 }

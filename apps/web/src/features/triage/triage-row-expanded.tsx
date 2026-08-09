@@ -20,7 +20,12 @@ const { color, font } = tokens;
  * unsubscribe-method capability).
  */
 export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
-  const readPct = Math.round(row.readRate * 100);
+  // `null` means the sender sent nothing in the 90-day window, so there
+  // is no denominator and no rate. This card used to print
+  // `Math.round(null * 100)` — a confident "0% read" for a sender we
+  // have measured nothing about, which is the strongest possible signal
+  // under every low-engagement ranking we show.
+  const readPct = row.readRate === null ? null : Math.round(row.readRate * 100);
   return (
     <div
       style={{
@@ -44,9 +49,15 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
         <Stat label="per month" value={row.monthlyVolume.toLocaleString()} />
         <Stat
           label="read rate"
-          value={`${readPct}%`}
+          value={readPct === null ? '—' : `${readPct}%`}
           valueColor={
-            row.readRate >= 0.5 ? color.primary : row.readRate >= 0.2 ? color.fg : color.amber
+            row.readRate === null
+              ? color.fgMuted
+              : row.readRate >= 0.5
+                ? color.primary
+                : row.readRate >= 0.2
+                  ? color.fg
+                  : color.amber
           }
         />
         {/* Derived via `lastSeenLabel` so this card can never

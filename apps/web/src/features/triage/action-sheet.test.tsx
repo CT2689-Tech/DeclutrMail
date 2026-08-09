@@ -16,6 +16,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { ActionSheet } from './action-sheet';
 import { TRIAGE_QUEUE } from './data';
 import { resetTriageStore, useTriageStore, type RememberableVerb } from './store';
@@ -301,15 +302,20 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
   const plainRow = TRIAGE_QUEUE.find((r) => r.protectionReason === null)!;
 
   function renderSheet(row: (typeof TRIAGE_QUEUE)[number]) {
+    // The notice carries the Unprotect control, which is a real
+    // mutation — so the sheet now needs a query client, the same way it
+    // has one in the app (mounted at the root layout).
     return render(
-      <ActionSheet
-        open
-        verb="Archive"
-        row={row}
-        inboxCount={12}
-        onCancel={() => {}}
-        onConfirm={() => {}}
-      />,
+      <QueryWrapper client={createTestQueryClient()}>
+        <ActionSheet
+          open
+          verb="Archive"
+          row={row}
+          inboxCount={12}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+        />
+      </QueryWrapper>,
     );
   }
 
@@ -322,10 +328,55 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     expect(screen.getByRole('button', { name: /Archive anyway/i })).toBeInTheDocument();
   });
 
+  it('states that the protection SURVIVES the action, and offers Unprotect', () => {
+    // The trap: acting on a Protected sender leaves the shield intact,
+    // so every future bulk and Autopilot run keeps skipping them while
+    // this action feels finished. The preview has to say so — and offer
+    // the separate control, because bundling removal into the verb has
+    // no undo kind and would forge a D245 sticky override.
+    renderSheet(protectedRow);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /stays Protected, so bulk and automatic cleanup will keep skipping it/i,
+    );
+    expect(screen.getByRole('button', { name: /^Unprotect$/i })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/Automatic protection won’t re-apply/i);
+  });
+
+  it('does not restate what the verb reaches — the preview owns that', () => {
+    // An earlier draft opened the notice with "Archive moves matching
+    // inbox mail now.", a second hand-rolled reach description inches
+    // below the canonical one. It had already drifted: Delete's real
+    // copy names Gmail Trash and the notice's did not. The preview
+    // states reach; the notice states the consequence.
+    renderSheet(protectedRow);
+    const notice = screen.getByRole('status').textContent ?? '';
+    expect(notice).not.toMatch(/moves matching inbox mail/i);
+    expect(notice).not.toMatch(/Archive/);
+  });
+
+  it('speaks to future mail for Unsubscribe — the partial case', () => {
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ActionSheet
+          open
+          verb="Unsubscribe"
+          row={protectedRow}
+          inboxCount={12}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+        />
+      </QueryWrapper>,
+    );
+    // Unsubscribe stops future delivery rather than moving the backlog,
+    // so what the protection keeps shielding is whatever still arrives.
+    expect(screen.getByRole('status')).toHaveTextContent(/keep skipping whatever still arrives/i);
+  });
+
   it('says nothing about protection for an unprotected row', () => {
     // Two-sided: a notice only ever observed present is not a verified notice.
     const { container } = renderSheet(plainRow);
-    expect(container.textContent).not.toMatch(/is Protected/);
+    expect(container.textContent).not.toMatch(/stays Protected/);
     expect(screen.queryByRole('button', { name: /anyway/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Unprotect$/i })).toBeNull();
   });
 });

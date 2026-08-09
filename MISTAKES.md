@@ -21,6 +21,217 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-08 — A third spelling of one enum, and the display fell through to a tautology
+
+**PR:** `feat/d245-protection-review`
+**Caught by:** Codex stop-time review (round four on this branch)
+
+**What happened.** `sender_policies.protection_reason` stores
+`user_defined`. Sender Detail's adapter renders it as `user-marked`.
+And `TriageReadService.mapProtectionReason` maps it to a THIRD value,
+`manual`, on the Triage wire — while the Triage feature's own union
+declared `user-marked`. So in production every user-protected Triage row
+carried a value outside its own type, and nothing caught it because the
+fixtures used the type's spelling instead of the wire's.
+
+Consolidating the four hand-written reason strings into one shared
+helper turned that latent mismatch into a visible one: the normalizer
+covered `user_defined` and `user-marked` but not `manual`, so a
+user-protected sender rendered **"Protected · it is Protected"** — a
+tautology in the one place CLAUDE.md §2.6 and D245 require the exact
+reason.
+
+The same sweep found three more unsupported claims on this branch: the
+standing list asserted "most shielded unread mail first" even when the
+optional wire field was absent and the sort had silently collapsed to
+name order; its empty state still said protection is something you set
+by hand, when three of the four reasons are automatic; and the
+onboarding review claimed an ordering by shielded mail for a pinned set
+where every row shields zero.
+
+**Correct approach.** A shared vocabulary helper has to be built from
+the spellings that are actually ON THE WIRE, not from the types that
+claim to describe them — the wire is the thing users see. And any
+sentence naming an ordering must be conditional on the data that
+ordering used actually being present.
+
+**Rule:** When consolidating duplicated copy, enumerate every PRODUCER's
+real output first; a fallback branch that fires on an unlisted value
+will render as a tautology rather than an error, so it fails silently
+and looks fine.
+
+**Enforcement update:** `normalizeProtectionReason` accepts all three
+live dialects; the Triage FE union now matches its own wire (`manual`),
+with fixtures updated; a red-first row test asserts every reason renders
+its evidence and that the tautology never appears; ordering claims on
+both surfaces are now conditional, each with a two-sided test.
+
+## 2026-08-08 — Three rounds of the same defect, because I kept sweeping only where I was caught
+
+**PR:** `feat/d245-protection-review` (protection review build)
+**Caught by:** Codex stop-time review, three consecutive times
+
+**What happened.** One defect class — **a signal standing for two facts,
+so a surface asserts something it cannot know** — surfaced three times
+in one change, and each time I fixed exactly the instance I was shown.
+
+1. Smoke caught it in the BE: a per-user pin pointed at a second mailbox
+   made `decided = pinned - remaining` report the step complete.
+2. Codex caught its sibling two lines away: candidates from
+   `sender_policies` vs rows from `triage_decisions`, so an unscored or
+   recently-decided sender was pinned and instantly counted reviewed.
+3. Codex caught it again on the FE: with the pool now correctly empty,
+   `pinned === 0` still meant BOTH "nothing to review" and "55 to review,
+   none showable" — so a mailbox with 55 weak protections rendered
+   "Nothing else is protected on a weaker signal", or with no strong
+   protections, "Nothing is protected yet".
+
+Round 3 had a second cause worth naming: `doneHeadline` and `doneBody`
+branched **independently** on the same `(split, pinned)` pair, so they
+could and did disagree — the headline read the strong count while the
+body assumed `pinned === 0` meant nothing weak existed.
+
+Sweeping properly after round 3 then found a fourth on my own: an empty
+pick was PERSISTED as the pin, and a stored `[]` is indistinguishable
+from a real pin, so the step would have frozen at zero rows forever.
+
+**Correct approach.** When a defect is identified, name the CLASS in one
+sentence and grep the whole change for that shape — every derived count,
+every emptiness claim, every place two states share one signal — before
+fixing anything. I instead fixed, verified, wrote up, and stopped, three
+times. The write-up is where "done" feels earned, which is exactly why
+it must come after the sweep and not before it.
+
+**Rule:** Never let one variable carry two meanings a user-facing
+sentence depends on — and when two functions branch on the same inputs
+to produce one message, make it one function.
+
+**Enforcement update:** red-first regression tests for all four
+instances; `doneHeadline`/`doneBody` merged into a single `donePanel`.
+The standing "fix the class, not the instance" order in memory now has
+three recorded violations in a single session — the failure is not
+knowing the rule, it is deciding I had already applied it.
+
+## 2026-08-08 — I fixed one instance of a defect class and shipped its sibling in the same file
+
+**PR:** `feat/d245-protection-review` (protection review build)
+**Caught by:** Codex stop-time review — after I had already found, fixed,
+tested and written up the FIRST instance of the same bug
+
+**What happened.** Two false-completion bugs, same shape, same function.
+
+Smoke caught one: a per-user pin pointed at a second mailbox resolved
+every key to nothing, so `decided = pinned - remaining` reported the
+step complete. I fixed it, wrote a red-first regression test, and logged
+it below as a lesson about subtraction-derived completion — then stopped
+looking.
+
+The sibling was two lines away. The protection review's candidates come
+from `sender_policies`; its rows come from `triage_decisions` minus the
+D30 decided window. A weakly protected sender that was never scored, or
+that the user Kept yesterday, survives the candidate read and vanishes
+at the row read — so it got PINNED and then counted DECIDED on the very
+first load. Verified on the real mailbox: marking the top-ranked sender
+decided-in-window produced `pinned: 5, decided: 1` with four rows, a
+review the user was never offered. `listQueue` documents this exact
+pool-disagrees-with-consumer failure twice in its own comments, about
+this exact caller.
+
+Codex also caught the second issue: the protection notice opened with a
+hand-rolled per-verb reach sentence ("Archive moves matching inbox mail
+now.") sitting inches below the canonical reach copy in
+`ActionPreviewPresentation` — already drifted, since Delete's real copy
+names Gmail Trash and mine did not.
+
+**Correct approach.** Pin only from RESOLVED rows, never from candidate
+keys, so `pinned` is by construction what the user was shown. And when a
+defect is found, sweep the same function for the same shape BEFORE
+writing it up — the write-up is the point at which I felt done, and that
+feeling arrived while the sibling was still on screen.
+
+**Rule:** Finding a bug is the start of the sweep, not the end of it —
+re-read the whole function for the same shape before claiming the fix,
+and never let a component restate a fact another component owns.
+
+**Enforcement update:** two red-first regression tests
+(`onboarding.service.spec.ts` — unscored sender, and decided-in-window
+sender) plus a copy test asserting the notice does NOT mention verb
+reach. Standing order in memory already says "fix the class, not the
+instance"; this is the first recorded case of violating it while
+actively citing it.
+
+## 2026-08-08 — A per-user pin pointed at a second mailbox and reported the step COMPLETE
+
+**PR:** `feat/d245-protection-review` (protection review build)
+**Caught by:** manual smoke — not by 39 passing service tests, not by any gate
+
+**What happened.** Onboarding's step-5 pin (`onboardingFirstTriageKeys`)
+lives on `users`, but the sender keys it holds belong to ONE mailbox.
+Switching the active mailbox resolved every pinned key to nothing, and
+`decided = pinned - remaining` therefore computed `decided === pinned` —
+so the screen rendered its COMPLETION panel, claiming five reviews the
+user never made, while both of that mailbox's real rows stayed hidden
+behind it. The counts beside the false claim were correct and live,
+which made it read as trustworthy.
+
+The bug predates this work (the pin was always mailbox-blind), but every
+test passed and every structural gate was green, because the arithmetic
+is locally correct — only the SCOPE was wrong. It surfaced the moment a
+real second mailbox was pointed at it.
+
+**Correct approach.** Any durable pin that names scoped rows must record
+the scope alongside them and re-pin when the scope changes — the same
+invariant as CLAUDE.md §8's "scope change ⇒ reset scoped cache", applied
+to persisted state instead of client cache. Added
+`onboardingFirstTriageMailboxId` and made a mismatch invalidate the pin
+exactly like a version bump, with a red-first regression test on both
+step-5 branches.
+
+**Rule:** Deriving "done" by SUBTRACTION (`pinned - remaining`) silently
+converts "I could not resolve these" into "the user finished these" —
+whenever a completion count is a subtraction, test the case where the
+lookup legitimately returns nothing.
+
+**Enforcement update:** regression tests in `onboarding.service.spec.ts`
+(both the cleanup and protection branches), each verified to fail with
+the fix removed. No hook — this is a reasoning trap, not a pattern a
+grep can find.
+
+## 2026-08-08 — A blanket UPDATE "restoring" dev state destroyed more than it restored
+
+**PR:** `feat/d245-protection-review` (during smoke, not shipped code)
+**Caught by:** my own post-restore verification query
+
+**What happened.** Forcing an edge state during smoke, I unprotected
+every `sender_policies` row on a mailbox, then "restored" with
+`UPDATE … SET is_protected = true, protection_reason = 'starred' WHERE
+mailbox_account_id = …`. The mailbox had 9 policy rows but only 2 had
+ever been protected, so the restore invented 7 new protections AND
+overwrote their `protection_reason`. Since an unprotected row carrying a
+reason is D245's manual-unprotect memory pin, that would have silently
+told the auto-protection sweep to never re-protect those senders.
+
+Recovered exactly, not by guessing: `activity_log` had zero
+`marked_protected` / `unmarked_protected` rows for that mailbox (so no
+memory pins had ever existed), and `protection_set_at` — which the bad
+UPDATE never touched — identified the exact 2 rows that had ever been
+protected.
+
+**Correct approach.** Capture the rows BEFORE forcing (`CREATE TEMP
+TABLE … AS SELECT`, or a JSON dump to the scratchpad, which is what I
+did for `users` and which worked perfectly), and restore by primary key.
+Never reconstruct state from a remembered aggregate — "it had 2 starred"
+does not tell you WHICH 2, or what the other rows held.
+
+**Rule:** A forcing UPDATE and its restore must have the same WHERE
+clause and the same row count; if the restore's predicate is broader
+than the forcing one, it is not a restore.
+
+**Enforcement update:** none in code — this is smoke-procedure
+discipline. Recorded because CLAUDE.md §8's reversible-forcing mandate
+says to restore, and this is the way that instruction gets followed
+incorrectly.
+
 ## 2026-08-08 — A rewrite dropped a prop, and no component test could see it
 
 **PR:** [#481](https://github.com/CT2689-Tech/DeclutrMail/pull/481) fixing [#477](https://github.com/CT2689-Tech/DeclutrMail/pull/477)

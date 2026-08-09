@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Button, EmptyState, Eyebrow, tokens } from '@declutrmail/shared';
-import type { OnboardingGoal } from '@declutrmail/shared/contracts';
+import type { OnboardingCleanupGoal } from '@declutrmail/shared/contracts';
 
 import { useTriageStats } from '@/features/triage/api/use-triage-queue';
 import { TriageScreen } from '@/features/triage/triage-screen';
@@ -45,7 +45,7 @@ export function StepFirstTriage({
   onComplete: () => void;
   /** True while the completion POST is in flight. */
   completing: boolean;
-  goal: OnboardingGoal;
+  goal: OnboardingCleanupGoal;
   corner?: ReactNode;
 }) {
   const firstTriage = useFirstTriage();
@@ -238,8 +238,13 @@ const EMPTY_STATS: TriageSessionStats = {
   tier: 'free',
 };
 
-const GOAL_FRAMING: Record<OnboardingGoal, string> = {
+/**
+ * `protect_important` is absent by design — that goal's step 5 is the
+ * D245 protection review (`step-protection-review.tsx`), not a cleanup
+ * run, and the type excludes it so a future goal cannot quietly land
+ * here without framing copy.
+ */
+const GOAL_FRAMING: Record<OnboardingCleanupGoal, string> = {
   reduce_newsletters: 'Let’s start with recurring newsletters that are easiest to reduce.',
-  protect_important: 'Let’s confirm important senders before clearing lower-priority mail.',
   clear_old_promotions: 'Let’s start with promotional mail that has been lingering.',
 };

@@ -80,7 +80,13 @@ test('Mark resolved dismisses the row, audits it, and survives reload', async ({
   await expect(page.getByText(RECIPIENT_NAME)).toBeVisible({ timeout: 30_000 });
 
   // ---- Dismiss via the D88 trash affordance.
-  await page.getByRole('button', { name: `Mark resolved — ${RECIPIENT_NAME}` }).click();
+  // The label deliberately spells out what this does NOT assert (D88 /
+  // D245) — a dismissal in DeclutrMail is not an observed reply.
+  await page
+    .getByRole('button', {
+      name: `Mark resolved in DeclutrMail — ${RECIPIENT_NAME}; does not mark a recipient reply`,
+    })
+    .click();
   await expect(page.getByText(RECIPIENT_NAME)).toBeHidden({ timeout: 15_000 });
 
   // ---- Durable write: tracker row flipped + activity audit row.
@@ -107,7 +113,12 @@ test('Mark resolved dismisses the row, audits it, and survives reload', async ({
   // ---- D86: dismissed rows stay gone after a full reload.
   await page.reload();
   await expect(
-    page.getByText(/threads? awaiting reply|No follow-ups waiting\./).first(),
+    // Either the summary line or the D91 empty state, in their CURRENT
+    // wording — both drifted from what this spec pinned ("threads
+    // awaiting reply" / "No follow-ups waiting."), and the page
+    // deliberately says "observed" everywhere to avoid implying live
+    // Gmail state (D90/D245).
+    page.getByText(/threads? with no later reply observed|No follow-ups observed\./).first(),
   ).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(RECIPIENT_NAME)).toBeHidden();
 });

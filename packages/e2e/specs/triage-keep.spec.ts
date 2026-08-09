@@ -106,7 +106,7 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   await page.keyboard.press('a');
   const sheet = page.getByRole('dialog');
   await expect(sheet).toBeVisible();
-  await expect(sheet).toContainText('Action sheet · Archive');
+  await expect(sheet).toContainText('Preview · Archive');
   await expect(sheet).toContainText(`Archive all inbox mail from ${senderName}`);
   await page.keyboard.press('Escape');
   await expect(sheet).toBeHidden();

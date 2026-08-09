@@ -290,7 +290,19 @@ describe('ActionRecoveryWorker', () => {
   it('resolves and freezes the current local INBOX/window for an unresolved sender action', async () => {
     await seedLocalMessage(db, mailboxId, 'old-inbox', ['INBOX']);
     await seedLocalMessage(db, mailboxId, 'old-archived', []);
-    await seedLocalMessage(db, mailboxId, 'new-inbox', ['INBOX'], new Date('2026-07-10T00:00:00Z'));
+    // Relative to NOW, not a hardcoded date: seeded as 2026-07-10, this
+    // sat OUTSIDE the 30-day window until 2026-08-09, when it became
+    // exactly 30 days old and started matching — the test then failed on
+    // every run, on every branch, for a reason nothing in the diff
+    // explained. A fixture whose meaning depends on the wall clock has
+    // to be expressed against the wall clock.
+    await seedLocalMessage(
+      db,
+      mailboxId,
+      'new-inbox',
+      ['INBOX'],
+      new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+    );
     const seeded = await seedAction(db, {
       mailboxId,
       senderId,

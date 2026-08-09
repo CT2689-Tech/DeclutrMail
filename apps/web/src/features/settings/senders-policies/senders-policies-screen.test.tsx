@@ -273,7 +273,10 @@ describe('SendersPoliciesScreen', () => {
     // After page 1 lands, exactly one request fired — NO auto-pagination.
     expect(page).toBe(1);
     // The Show more affordance is visible because the server reported hasNextPage.
-    const showMore = screen.getByRole('button', { name: /^show more$/i });
+    // Named 'Show more protected senders' — the button's \`ariaLabel\` was
+    // previously spelled \`aria-label\`, which \`Button\` ignores, so the
+    // accessible name silently fell back to the visible text.
+    const showMore = screen.getByRole('button', { name: /show more protected senders/i });
 
     await userEvent.click(showMore);
 
@@ -319,5 +322,232 @@ describe('SendersPoliciesScreen', () => {
     await waitFor(() => expect(screen.getByText('Stripe')).toBeInTheDocument());
     expect(protectedAttempts).toBe(2);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+describe('SendersPoliciesScreen — the standing protection review (D245)', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  /** One protected page of rows, using the real handler contract. */
+  function stubProtectedPage(rows: Array<Record<string, unknown>>) {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) =>
+          jsonOk({
+            data: url.searchParams.get('protected') === 'true' ? rows : [],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: { totalMatching: rows.length },
+            },
+          }),
+      },
+    ]);
+  }
+
+  it('says WHY each sender is protected', async () => {
+    // The 2026-08-07 finding: this list rendered avatar, name and a
+    // Manage button and never said why — while three of the four
+    // reasons are automatic, so every row looked like the user's own
+    // choice. CLAUDE.md §2.6 requires the exact reason.
+    stubProtectedPage([
+      {
+        ...BASE_ROW,
+        id: 'a',
+        displayName: 'Colleague',
+        protectionFlags: { ...PROTECTION_FLAGS_ON, protectionReason: 'replied' },
+      },
+      {
+        ...BASE_ROW,
+        id: 'b',
+        displayName: 'God of Prompt',
+        protectionFlags: { ...PROTECTION_FLAGS_ON, protectionReason: 'starred' },
+      },
+      {
+        ...BASE_ROW,
+        id: 'c',
+        displayName: 'Vercel',
+        protectionFlags: { ...PROTECTION_FLAGS_ON, protectionReason: 'gmail_important' },
+      },
+    ]);
+    renderScreen();
+
+    expect(await screen.findByText(/you replied at least 3 times/)).toBeInTheDocument();
+    expect(screen.getByText(/you starred a message/)).toBeInTheDocument();
+    expect(screen.getByText(/Gmail marks it important/)).toBeInTheDocument();
+  });
+
+  it('leads with the protection shielding the most unread mail', async () => {
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Quiet', unreadInboxCount: 2, inboxCount: 3 },
+      { ...BASE_ROW, id: 'b', displayName: 'Costly', unreadInboxCount: 145, inboxCount: 166 },
+      { ...BASE_ROW, id: 'c', displayName: 'Middling', unreadInboxCount: 33, inboxCount: 34 },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Costly');
+    const order = screen
+      .getAllByRole('button', { name: /^Unprotect / })
+      .map((b) => b.getAttribute('aria-label'));
+    expect(order).toEqual(['Unprotect Costly', 'Unprotect Middling', 'Unprotect Quiet']);
+    expect(screen.getByText(/shielding 145 unread/)).toBeInTheDocument();
+  });
+
+  it('claims an ordering only when it actually ordered by one', async () => {
+    // `unreadInboxCount` is optional on the wire. Against an API that
+    // omits it every row sorts equal and the list falls back to name
+    // order — while the header would still have claimed "most shielded
+    // unread mail first", describing something that never happened.
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Zeta' },
+      { ...BASE_ROW, id: 'b', displayName: 'Alpha' },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Alpha');
+    expect(screen.queryByText(/most shielded unread mail first/i)).toBeNull();
+    // The rest of the header still stands — it is a fact about the list.
+    expect(screen.getByText(/Bulk and automatic actions skip these senders/)).toBeInTheDocument();
+  });
+
+  it('makes no ordering claim when every row shields zero', async () => {
+    // Present-and-zero is not the same as ordered-by. If nothing is
+    // shielded, the sort fell through to the tiebreakers and "most
+    // shielded unread mail first" describes nothing that happened —
+    // the same rule the onboarding review already applies.
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Zeta', unreadInboxCount: 0 },
+      { ...BASE_ROW, id: 'b', displayName: 'Alpha', unreadInboxCount: 0 },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Alpha');
+    expect(screen.queryByText(/most shielded unread mail first/i)).toBeNull();
+  });
+
+  it('makes no ordering claim when only SOME rows carry the measure', async () => {
+    // Partial data cannot produce the claimed ordering: the rows
+    // missing the field are not "shielding zero", they are unmeasured,
+    // and ranking them as zero buries a possibly-costly protection at
+    // the bottom while the header asserts the opposite.
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Measured', unreadInboxCount: 40 },
+      { ...BASE_ROW, id: 'b', displayName: 'Unmeasured' },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Measured');
+    expect(screen.queryByText(/most shielded unread mail first/i)).toBeNull();
+  });
+
+  it('sorts an unmeasured row after a known zero, never as if it were zero', async () => {
+    // The unmeasured row is named FIRST alphabetically on purpose: with
+    // `?? 0` it ties the known zero and the name tiebreaker floats it
+    // up, so this ordering is the only thing that distinguishes
+    // "unknown sorts last" from "unknown is zero".
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Aardvark (unmeasured)' },
+      { ...BASE_ROW, id: 'b', displayName: 'KnownZero', unreadInboxCount: 0 },
+      { ...BASE_ROW, id: 'c', displayName: 'Costly', unreadInboxCount: 12 },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Costly');
+    const order = screen
+      .getAllByRole('button', { name: /^Unprotect / })
+      .map((b) => b.getAttribute('aria-label'));
+    expect(order).toEqual([
+      'Unprotect Costly',
+      'Unprotect KnownZero',
+      'Unprotect Aardvark (unmeasured)',
+    ]);
+  });
+
+  it('never renders an unknown cadence as "0/mo"', async () => {
+    // On this screen a confident "0/mo" reads as "this sender stopped
+    // mailing you" — an argument for unprotecting that the data never
+    // made. `null` means no timeseries row, not zero.
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Unknown cadence', monthlyVolume: null },
+      { ...BASE_ROW, id: 'b', displayName: 'Real zero', monthlyVolume: 0 },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Unknown cadence');
+    // Exactly one row may say 0/mo — the one that measured zero.
+    expect(screen.getAllByText(/0\/mo/)).toHaveLength(1);
+  });
+
+  it('claims the ordering when the data supports it', async () => {
+    // Two-sided: suppressing the claim when unknown must not suppress
+    // it when true.
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Zeta', unreadInboxCount: 9 },
+      { ...BASE_ROW, id: 'b', displayName: 'Alpha', unreadInboxCount: 1 },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Zeta');
+    expect(screen.getByText(/most shielded unread mail first/i)).toBeInTheDocument();
+  });
+
+  it('never prints a fabricated "shielding 0" when nothing is shielded', async () => {
+    // Absent (an API predating the field) and zero are different facts,
+    // and neither is a measurement worth rendering.
+    stubProtectedPage([
+      { ...BASE_ROW, id: 'a', displayName: 'Empty inbox', unreadInboxCount: 0, inboxCount: 0 },
+      { ...BASE_ROW, id: 'b', displayName: 'Unknown' },
+    ]);
+    renderScreen();
+
+    await screen.findByText('Empty inbox');
+    expect(screen.queryByText(/shielding 0 unread/)).toBeNull();
+    expect(screen.queryByText(/shielding NaN/)).toBeNull();
+    // Both rows still say why they are protected — an unknown shielded
+    // count must not suppress the reason.
+    expect(screen.getAllByText(/you marked it Protected/)).toHaveLength(2);
+  });
+
+  it('removes protection in place, without a trip to the detail page', async () => {
+    // 55 wrong protections used to mean 55 round trips through
+    // /senders/[id], which is why nobody ever corrected them.
+    let patchedBody: unknown = null;
+    let patchedPath: string | null = null;
+    installFetchStub([
+      {
+        method: 'PATCH',
+        path: /\/api\/senders\/.+\/policy$/,
+        respond: (req, url) => {
+          patchedPath = url.pathname;
+          return req.text().then((body) => {
+            patchedBody = JSON.parse(body || '{}');
+            return jsonOk({
+              data: { isProtected: false, protectionReason: 'starred', protectionSetAt: null },
+            });
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) =>
+          jsonOk({
+            data:
+              url.searchParams.get('protected') === 'true'
+                ? [{ ...BASE_ROW, id: 'sid-1', displayName: 'GetYourGuide' }]
+                : [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Unprotect GetYourGuide' }));
+
+    await waitFor(() => expect(patchedBody).not.toBeNull());
+    expect(patchedPath).toBe('/api/senders/sid-1/policy');
+    expect(patchedBody).toEqual({ isProtected: false });
   });
 });

@@ -1,12 +1,14 @@
 'use client';
 
 import { Avatar, Button, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
+import { normalizeProtectionReason, protectionReasonLabel } from '@declutrmail/shared/copy';
 import type { PillTone } from '@declutrmail/shared';
 import type { ReactNode } from 'react';
 
 import { ActionPreviewPresentation, type PreviewCount } from './action-preview-presentation';
 import { ActionToolbar } from './action-toolbar';
 import { canArchive, canLater, type TriageDecisionRow } from './data';
+import { ProtectedActionNotice, UnprotectButton } from './protected-notice';
 import { VERB_SHORTCUT, verdictToVerb, type ActionVerb, type TriageVerdict } from './types';
 import { TriageRowExpanded } from './triage-row-expanded';
 import { useSwipeVerb, type SwipeVerb } from './use-swipe-verb';
@@ -22,6 +24,18 @@ const VERDICT_TONE: Record<TriageVerdict, PillTone> = {
 };
 
 /**
+ * The EXACT reason a sender is Protected (CLAUDE.md §2.6 / D245), in
+ * the user's own terms. One shared source across Screener, Triage,
+ * Sender Detail and the Settings policies list — this used to be four
+ * hand-written copies that had already drifted.
+ */
+export function protectionEvidence(
+  reason: NonNullable<TriageDecisionRow['protectionReason']>,
+): string {
+  return protectionReasonLabel(normalizeProtectionReason(reason));
+}
+
+/**
  * Tight one-line "why" for the collapsed row (D36 — critical info
  * default). Uses `last90dMessages` instead of the derived
  * `monthlyVolume = round(last90 / 3)` so a sender that mailed twice in
@@ -32,16 +46,29 @@ const VERDICT_TONE: Record<TriageVerdict, PillTone> = {
  * explicit "Quiet 90d" copy instead of a fabricated "0/mo".
  */
 function whyLine(row: TriageDecisionRow): string {
-  const pct = Math.round(row.readRate * 100);
-  if (row.protectionReason === 'user-marked') return 'Protected — always kept';
-  if (row.protectionReason === 'replied') return 'Protected · you replied at least 3 times';
-  if (row.protectionReason === 'starred') return 'Protected · you starred a message';
-  if (row.protectionReason === 'gmail-important') return 'Protected · Gmail importance';
+  if (row.protectionReason !== null) {
+    const evidence = protectionEvidence(row.protectionReason);
+    // What the protection is holding back. On the D245 review this is
+    // the ranking key, so it has to be visible on the collapsed row —
+    // otherwise the order looks arbitrary. Omitted at zero rather than
+    // printed as "shielding 0 unread": there is nothing in the inbox to
+    // shield, and a measurement of nothing reads as a measurement.
+    return row.unreadInboxCount > 0
+      ? `${evidence} · shielding ${row.unreadInboxCount.toLocaleString()} unread`
+      : evidence;
+  }
   if (row.last90dMessages === 0) {
     // Quiet within the rolling window — say so plainly. Received total
     // carries the "they DID mail you" context without faking cadence.
     return `Quiet 90d · ${row.totalAllTime.toLocaleString()} received`;
   }
+  if (row.readRate === null) {
+    // No denominator, so no rate. Reachable independently of the quiet
+    // branch above (the BE derives them from different windows), and a
+    // fabricated "0% read" here would read as "never opened".
+    return `${row.last90dMessages} in last 90d`;
+  }
+  const pct = Math.round(row.readRate * 100);
   if (row.readRate === 0 && row.last90dMessages >= 8) {
     return `Never opened · ${row.last90dMessages} in last 90d`;
   }
@@ -79,6 +106,7 @@ export function TriageRow({
   expanded,
   busy = false,
   hero = false,
+  offerUnprotect = false,
   onToggleExpand,
   onAction,
   inlinePreview,
@@ -100,6 +128,16 @@ export function TriageRow({
    * `Why?` popover on Sender Detail).
    */
   hero?: boolean;
+  /**
+   * Render a direct Unprotect control on a Protected row (D245).
+   *
+   * Off by default. The protection review turns it on because that
+   * screen is ABOUT protection, so correcting a wrong one must not
+   * require opening a mail verb's action sheet first. Everywhere else
+   * the control lives inside the preview, next to the consequence it
+   * belongs to.
+   */
+  offerUnprotect?: boolean;
   onToggleExpand: () => void;
   onAction: (verb: ActionVerb) => void;
   /**
@@ -363,6 +401,37 @@ export function TriageRow({
         </span>
       </div>
 
+      {/* The D245 safety state, changeable in place. Deliberately its
+          OWN strip rather than a sixth button in the verb toolbar: the
+          verbs decide what happens to this sender's mail, Unprotect
+          decides whether cleanup may reach them at all, and putting the
+          two in one row is what made an earlier draft bundle them. Only
+          the protection review asks for it — daily Triage keeps the
+          notice inside the preview, where the user is already acting. */}
+      {offerUnprotect && row.protectionReason !== null && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+            padding: '10px 14px',
+            borderTop: `1px solid ${color.line}`,
+            background: color.mutedBg,
+          }}
+        >
+          {/* NOT the reason — the why-line above already carries that,
+              and repeating it made every row say "you starred a
+              message" twice. What is missing there is the CONSEQUENCE,
+              which is the whole reason this control exists. */}
+          <span style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
+            Bulk and automatic cleanup skip this sender.
+          </span>
+          <UnprotectButton row={row} />
+        </div>
+      )}
+
       {/* D37 mobile card — the four verb buttons render full-width at
           the bottom of the card, collapsed AND expanded (the desktop
           toolbar only mounts on expand). Keyboard is EXPANDED-ROW ONLY:
@@ -439,21 +508,20 @@ export function TriageRow({
                   paths or skipping the sheet silently skips the notice.
                   `triage-screen.tsx` sends `override: true` for this row. */}
           {row.protectionReason != null && (
-            <div
-              role="status"
-              style={{
-                marginTop: 10,
-                padding: '8px 12px',
-                borderRadius: 8,
-                background: 'rgba(196,46,46,0.06)',
-                border: '1px solid rgba(196,46,46,0.30)',
-                fontSize: 12,
-                lineHeight: 1.45,
-                color: color.danger,
-              }}
-            >
-              This sender is <strong>Protected</strong> — it is normally kept out of bulk and
-              automatic actions. This applies to this sender only.
+            <div style={{ marginTop: 10 }}>
+              {/* Keep moves no mail, so it has no reach sentence — the
+                  notice still states that protection persists. In
+                  practice Keep never opens a preview; narrowing rather
+                  than casting keeps that a fact the type carries. */}
+              <ProtectedActionNotice
+                row={row}
+                verb={inlinePreview.verb === 'Keep' ? null : inlinePreview.verb}
+                // The D245 review's row strip already renders one; without
+                // this, a protected row with D34's remember-preference set
+                // stacks two identical Unprotect buttons and two
+                // overlapping sentences on the same card.
+                showUnprotect={!offerUnprotect}
+              />
             </div>
           )}
           {/* Explicit confirm affordance (2026-07-16 audit): before
