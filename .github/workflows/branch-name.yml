@@ -1,8 +1,10 @@
 name: Branch name + PR title
 
 on:
+  # No `branches:` filter — see the note in ci.yml. A stacked PR (base is
+  # another feature branch) skipped this gate entirely, so a §6-violating
+  # branch name only surfaced once the stack was retargeted onto main.
   pull_request:
-    branches: [main]
     types: [opened, edited, reopened, synchronize, ready_for_review]
 
 permissions:
