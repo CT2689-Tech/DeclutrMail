@@ -1,4 +1,4 @@
-// /brief — Daily Brief surface (D61, D63, D67, D69, D70).
+// /brief — Daily Brief surface (D61, D63, D65, D67, D69, D70).
 //
 // Backend snapshot worker (#102) generates the 3-section frozen
 // snapshot per D69. This page renders that payload via the FE feature
@@ -6,11 +6,11 @@
 //
 // D68 Pro gate: Free/Plus workspaces see the placeholder + upgrade CTA
 // instead of the Brief (the TierGate also stops the under-tier brief
-// fetch from ever firing). Placeholder copy mirrors D68's card EXCEPT
-// the Noise line: D68's card reads "NOISE — one-click archive", which
-// is D65 (⬜ not started — the section is a read-only per-sender count
-// list with a Gmail deep-link today). The gate describes what ships
-// now; restore D68's wording when D65 lands.
+// fetch from ever firing). Placeholder copy mirrors D68's card verbatim,
+// including the Noise line: D65 has shipped, so "one-click archive"
+// names a real affordance — the Noise section carries per-sender
+// checkboxes (default-all checked) over one confirmed bulk Archive. PR
+// #495 had temporarily reworded this line while D65 was unbuilt.
 
 import { TierGate } from '@/features/billing/tier-gate';
 import { BriefScreen } from '@/features/brief/brief-screen';
@@ -28,7 +28,7 @@ export default function BriefPage() {
       bullets={[
         'REPLY — what actually needs you',
         'FYI — facts to know',
-        'NOISE — noisy senders, with message counts and a Gmail link',
+        'NOISE — one-click archive',
       ]}
     >
       <BriefScreen />

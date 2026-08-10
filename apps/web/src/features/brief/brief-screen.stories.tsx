@@ -86,6 +86,11 @@ const BASE: BriefWire = {
   openedAt: '2026-05-25T08:30:00Z',
   emailSentAt: null,
   feedbackRating: 'useful',
+  // D65 — both Noise senders resolve to an actionable target.
+  noiseSenders: [
+    { senderKey: 'sk-news', senderId: 'aaaaaaaa-0000-4000-8000-000000000001', isProtected: false },
+    { senderKey: 'sk-shop', senderId: 'aaaaaaaa-0000-4000-8000-000000000002', isProtected: false },
+  ],
 };
 
 function makeClient(brief: BriefWire | undefined): QueryClient {
@@ -168,7 +173,11 @@ export const TemplateFallback: Story<typeof BriefScreen> = {
     ),
 };
 
-/** Reply-only — no FYI, no Noise. Verifies sections suppress cleanly. */
+/**
+ * Reply-only — no FYI, no Noise. This is also the EMPTY-NOISE state
+ * (D70): with nothing to archive the section, its checkboxes and its
+ * archive control all disappear rather than rendering an empty shell.
+ */
 export const ReplyOnly: Story<typeof BriefScreen> = {
   render: (_args: ComponentProps<typeof BriefScreen>) =>
     frame(
@@ -179,6 +188,33 @@ export const ReplyOnly: Story<typeof BriefScreen> = {
           fyi: [],
           noise: [],
         },
+        noiseSenders: [],
       }),
     ),
+};
+
+/**
+ * D245 — every Noise sender is Protected. Each row states why it is out,
+ * nothing is checked, and the archive button is disabled: a Protected
+ * sender is excluded from bulk actions, visibly rather than silently.
+ */
+export const NoiseAllProtected: Story<typeof BriefScreen> = {
+  render: (_args: ComponentProps<typeof BriefScreen>) =>
+    frame(
+      makeClient({
+        ...BASE,
+        noiseSenders: BASE.noiseSenders.map((s) => ({ ...s, isProtected: true })),
+      }),
+    ),
+};
+
+/**
+ * No archive target resolved — the sender rows survive (the Brief still
+ * counted them yesterday) but cannot be acted on. Reachable when a
+ * sender was removed since the snapshot, or against an API deployed
+ * before D65 shipped.
+ */
+export const NoiseNotActionable: Story<typeof BriefScreen> = {
+  render: (_args: ComponentProps<typeof BriefScreen>) =>
+    frame(makeClient({ ...BASE, noiseSenders: [] })),
 };

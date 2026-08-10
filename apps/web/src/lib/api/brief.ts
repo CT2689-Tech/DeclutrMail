@@ -45,17 +45,34 @@ export interface BriefItemWire {
 }
 
 /**
- * One Noise sender bucket (D63). The D65 bulk-archive flow uses this
- * shape — that mutation surface is intentionally deferred for the first
- * render PR; here the field is read-only display data.
+ * One Noise sender bucket (D63), exactly as the 8am snapshot froze it.
+ * Every field here is a statement about YESTERDAY and never changes
+ * during the day (D69) — the live archive target for the same sender
+ * arrives separately on `BriefWire.noiseSenders`.
  */
 export interface BriefSenderGroupWire {
   senderKey: string;
   senderName: string;
   /** Yesterday's message count from this sender. */
   messageCount: number;
-  /** Yesterday-only Gmail message ids — D65 archive target (deferred). */
+  /** Yesterday-only Gmail message ids — D41 deep-link target. */
   messageIds: string[];
+}
+
+/**
+ * D65 — live archive-target resolution for one Noise sender, joined to
+ * `BriefSenderGroupWire` on `senderKey`.
+ *
+ * Kept out of the frozen payload on purpose: `isProtected` is today's
+ * D245 state, not the state at 8am, and folding it into a snapshot the
+ * product promises is frozen would make the payload lie.
+ */
+export interface BriefNoiseSenderWire {
+  senderKey: string;
+  /** `senders.id` — what the archive selector addresses. Null = unactionable. */
+  senderId: string | null;
+  /** D245 — Protected senders are excluded from bulk mail-changing actions. */
+  isProtected: boolean;
 }
 
 /**
@@ -91,6 +108,14 @@ export interface BriefWire {
   emailSentAt: string | null;
   /** Current user's bounded rating for this frozen Brief. */
   feedbackRating: 'useful' | 'not_useful' | 'wrong_reason' | null;
+  /**
+   * D65 — one entry per `briefPayload.noise` group. Empty when there is
+   * no Noise section, and also empty against an API deployed before this
+   * field existed (apps/web and apps/api ship independently), in which
+   * case the Noise rows render read-only rather than offering an archive
+   * whose target the client cannot address.
+   */
+  noiseSenders: BriefNoiseSenderWire[];
 }
 
 /** Outcome of `POST /briefs/:id/mark-opened` — D61 first-view tracker. */
@@ -109,8 +134,35 @@ export interface BriefMarkOpenedResultWire {
  * same authority snapshot generation uses. Browser state cannot select
  * a different Brief day.
  */
-export function fetchBriefToday(signal?: AbortSignal): Promise<Envelope<BriefWire, unknown>> {
-  return apiGet<BriefWire>('/api/briefs/today', { signal });
+export async function fetchBriefToday(signal?: AbortSignal): Promise<Envelope<BriefWire, unknown>> {
+  const envelope = await apiGet<BriefWire>('/api/briefs/today', { signal });
+  return { ...envelope, data: { ...envelope.data, noiseSenders: toNoiseSenders(envelope.data) } };
+}
+
+/**
+ * Absorb `noiseSenders` at the one boundary it enters through. An API
+ * built before D65 omits the field entirely; the archive controls read
+ * this array to decide what is actionable, so an absent field must land
+ * as "nothing is actionable", never as `undefined` the UI then indexes.
+ */
+function toNoiseSenders(data: BriefWire): BriefNoiseSenderWire[] {
+  const raw: unknown = (data as { noiseSenders?: unknown }).noiseSenders;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((row): BriefNoiseSenderWire[] => {
+    if (row === null || typeof row !== 'object') return [];
+    const { senderKey, senderId, isProtected } = row as Record<string, unknown>;
+    if (typeof senderKey !== 'string') return [];
+    return [
+      {
+        senderKey,
+        senderId: typeof senderId === 'string' ? senderId : null,
+        // Fail SAFE on a malformed flag: an unreadable protection state
+        // must not read as "not protected" and let a Protected sender
+        // into a bulk action (D245).
+        isProtected: isProtected !== false,
+      },
+    ];
+  });
 }
 
 /**

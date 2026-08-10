@@ -12,12 +12,12 @@
 // cannot leak what isn't there.
 
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 
-import { briefRuns, productFeedback } from '@declutrmail/db';
+import { briefRuns, productFeedback, senderPolicies, senders } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import type { Brief, BriefMarkOpenedResult } from './brief.types.js';
+import type { Brief, BriefMarkOpenedResult, BriefNoiseSender } from './brief.types.js';
 
 /** YYYY-MM-DD validator — same shape `brief_runs.run_date_local` stores. */
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -65,7 +65,10 @@ export class BriefReadService {
         ),
       )
       .limit(1);
-    return row ? projectBrief(row.brief, row.feedbackRating) : null;
+    if (!row) return null;
+    const brief = projectBrief(row.brief, row.feedbackRating);
+    await this.attachNoiseSenders(mailboxAccountId, [brief]);
+    return brief;
   }
 
   /**
@@ -112,7 +115,54 @@ export class BriefReadService {
       )
       .orderBy(desc(briefRuns.runDateLocal), desc(briefRuns.id))
       .limit(PAGE_SIZE);
-    return rows.map((row) => projectBrief(row.brief, row.feedbackRating));
+    const briefs = rows.map((row) => projectBrief(row.brief, row.feedbackRating));
+    await this.attachNoiseSenders(mailboxAccountId, briefs);
+    return briefs;
+  }
+
+  /**
+   * D65 — resolve every Noise sender in `briefs` to its archive target.
+   *
+   * Two mailbox-scoped lookups for the whole page, not one per group:
+   * `senders` supplies the uuid the action selector takes, and
+   * `sender_policies` supplies today's D245 protection state. A sender
+   * key with no `senders` row resolves to `senderId: null`, which the FE
+   * renders as unactionable rather than guessing a target.
+   *
+   * D69 is preserved: this decorates the response, never `brief_payload`.
+   * The frozen counts and sender list keep saying what they said at 8am.
+   */
+  private async attachNoiseSenders(mailboxAccountId: string, briefs: Brief[]): Promise<void> {
+    const keys = [...new Set(briefs.flatMap((b) => b.briefPayload.noise.map((g) => g.senderKey)))];
+    if (keys.length === 0) return;
+
+    const [senderRows, policyRows] = await Promise.all([
+      this.db
+        .select({ id: senders.id, senderKey: senders.senderKey })
+        .from(senders)
+        .where(
+          and(eq(senders.mailboxAccountId, mailboxAccountId), inArray(senders.senderKey, keys)),
+        ),
+      this.db
+        .select({ senderKey: senderPolicies.senderKey, isProtected: senderPolicies.isProtected })
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            inArray(senderPolicies.senderKey, keys),
+          ),
+        ),
+    ]);
+
+    const idByKey = new Map(senderRows.map((r) => [r.senderKey, r.id] as const));
+    const protectedKeys = new Set(policyRows.filter((r) => r.isProtected).map((r) => r.senderKey));
+    for (const brief of briefs) {
+      brief.noiseSenders = brief.briefPayload.noise.map((group): BriefNoiseSender => ({
+        senderKey: group.senderKey,
+        senderId: idByKey.get(group.senderKey) ?? null,
+        isProtected: protectedKeys.has(group.senderKey),
+      }));
+    }
   }
 
   /**
@@ -187,5 +237,8 @@ function projectBrief(
       feedbackRating === 'wrong_reason'
         ? feedbackRating
         : null,
+    // Filled by `attachNoiseSenders` — a Brief with no Noise section
+    // keeps the empty array.
+    noiseSenders: [],
   };
 }

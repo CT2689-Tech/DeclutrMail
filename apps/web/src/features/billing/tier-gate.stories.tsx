@@ -63,7 +63,7 @@ function frame(tier: Me['tier']) {
             bullets={[
               'REPLY — what actually needs you',
               'FYI — facts to know',
-              'NOISE — noisy senders, with message counts and a Gmail link',
+              'NOISE — one-click archive',
             ]}
           >
             <div
