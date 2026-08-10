@@ -65,9 +65,9 @@ export class TriageController {
   @Get('queue-size')
   async queueSize(
     @CurrentMailbox() mailbox: { id: string },
-  ): Promise<{ data: { targetSize: number } }> {
+  ): Promise<Envelope<{ targetSize: number }>> {
     const targetSize = await this.triage.getQueueSize(mailbox.id);
-    return { data: { targetSize } };
+    return ok({ targetSize });
   }
 
   /**

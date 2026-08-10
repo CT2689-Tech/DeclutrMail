@@ -19,7 +19,8 @@
  * `queryFn`.
  */
 
-import type { ActivityRuleRef, Envelope, PaginationMeta } from '@declutrmail/shared/contracts';
+import { ActivityListMetaSchema } from '@declutrmail/shared/contracts';
+import type { ActivityListMeta, ActivityRuleRef, Envelope } from '@declutrmail/shared/contracts';
 
 import { apiGet, apiPost } from './client';
 
@@ -132,42 +133,21 @@ export interface ActivityWeeklyReviewWire {
   protected: number;
 }
 
-export interface ActivityStatsWire {
-  archived: number;
-  unsubscribed: number;
-  kept: number;
-  later: number;
-  /** D227 K/A/U/L/D — Delete verb count (ADR-0019). Always present on
-   *  the wire; `0` when no delete activity in the window. */
-  deleted: number;
-  followupsDismissed: number;
-  /** D59 — failed-action surface; 0 until the action_jobs join lands. */
-  needsAttention: number;
-  /**
-   * Historic monthly volume for senders represented by actions in the
-   * selected window. This is not proof that future mail was prevented.
-   */
-  noisePreventedPerMonth: number | null;
-}
+/**
+ * Envelope meta for `GET /api/activity`, DERIVED from the runtime
+ * schema rather than hand-mirrored.
+ *
+ * The schema lives in `@declutrmail/shared/contracts` because zod is a
+ * shared dependency, not a web one. Aliasing the inferred type here
+ * instead of restating the shape means the parser and the compiler can
+ * never disagree — a field the schema would strip cannot be one the FE
+ * believes it has. Field-level notes (pagination cursor placement, the
+ * `deleted` and `needsAttention` counts, the not-a-prevention-claim
+ * caveat on `noisePreventedPerMonth`) live beside the schema.
+ */
+export type ActivityStatsWire = ActivityListMeta['stats'];
 
-export interface ActivityListMetaWire {
-  pagination: PaginationMeta;
-  // Pagination cursor lives on `pagination.nextCursor` (D202). Removed
-  // the duplicate top-level `nextCursor?` per architecture-guardian.
-  stats: ActivityStatsWire;
-  /** All-time stats across the entire mailbox history (ignores filters). */
-  allTimeStats: ActivityStatsWire;
-  window: ActivityWindowWire;
-  source: ActivitySourceFilterWire;
-  /** Echo of the resolved verb filter (empty = no filter). */
-  verbs: ActivityVerbFilterWire[];
-  /** Echo of the resolved sender search term ('' = no filter). */
-  senderQuery: string;
-  /** Echo of the resolved custom date range (ISO); null when unset. */
-  dateFrom: string | null;
-  dateTo: string | null;
-  outcomes: ActivityReviewOutcomeWire[];
-}
+export type ActivityListMetaWire = ActivityListMeta;
 
 /**
  * Combined filter state for `GET /api/activity`.
@@ -193,13 +173,13 @@ export interface ActivityFilters {
  * GET /api/activity — paginated feed for the current mailbox.
  * Defaults: window=30d, source=all, limit=25.
  */
-export function fetchActivity(
+export async function fetchActivity(
   args: ActivityFilters & {
     cursor?: string | undefined;
     signal?: AbortSignal;
   },
 ): Promise<Envelope<ActivityRowWire[], ActivityListMetaWire>> {
-  return apiGet<ActivityRowWire[]>('/api/activity', {
+  const envelope = await apiGet<ActivityRowWire[]>('/api/activity', {
     ...(args.signal ? { signal: args.signal } : {}),
     query: {
       ...(args.window ? { window: args.window } : {}),
@@ -213,7 +193,13 @@ export function fetchActivity(
       ...(args.outcomes && args.outcomes.length > 0 ? { outcome: args.outcomes.join(',') } : {}),
       ...(args.cursor ? { cursor: args.cursor } : {}),
     },
-  }) as Promise<Envelope<ActivityRowWire[], ActivityListMetaWire>>;
+  });
+  // Parse, don't cast. The meta drives every number on /activity — the
+  // stat tiles, the all-time totals, the filter echoes the URL reads
+  // back. A cast let a dropped or renamed BE field compile clean and
+  // render a confident wrong number; a throw here surfaces it as a
+  // query error the screen already has a state for.
+  return { data: envelope.data, meta: ActivityListMetaSchema.parse(envelope.meta) };
 }
 
 export function fetchActivityWeeklyReview(

@@ -701,8 +701,10 @@ async function bootstrap(): Promise<void> {
   // re-enqueues a forced InitialSyncWorker run to fetch the full mailbox
   // from a fresh historyId snapshot (`force: true` reaps any stale
   // pending initial-sync job so the new attempt isn't blocked).
-  // Best-effort — a failed re-enqueue is WARN-logged; the nightly
-  // reconciler is the backup recovery surface.
+  // Best-effort — a failed re-enqueue is WARN-logged AND routed to the
+  // D159 Sentry seam (a sustained Redis hiccup here leaves the mailbox
+  // stuck with nobody watching); the nightly reconciler is the backup
+  // recovery surface.
   incrementalBullWorker.on('completed', (job, result: IncrementalSyncResult) => {
     if (!result?.cursorTooOld) {
       return;
@@ -740,15 +742,23 @@ async function bootstrap(): Promise<void> {
           }),
         );
       } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
         console.warn(
           JSON.stringify({
             level: 'warn',
             kind: 'sync.cursor_recovery_failed',
             mailboxAccountId,
             jobId: job.id,
-            error: err instanceof Error ? err.message : String(err),
+            error: error.message,
           }),
         );
+        // D159 — same seam every other background failure uses. Without
+        // it this path is console-only, so a recovery that never gets
+        // scheduled is invisible outside a log search.
+        observer.captureBackgroundFailure(error, {
+          kind: 'sync.cursor_recovery_failed',
+          tags: { mailbox_account_id: mailboxAccountId },
+        });
       }
     })();
   });
