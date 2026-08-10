@@ -1059,3 +1059,22 @@ mirror's tx ordering.
 **Finding:** it proved nothing. posthog-js had switched that batch to gzip, so the log held compressed bytes and the pattern could not have matched whether or not the address was there. Worse, the echo server was accumulating the body with `body += chunk`, which utf-8-mangles binary and destroys the gzip irrecoverably — so even decompressing afterwards failed, and a "0 matches" still printed. Fixing the server to collect Buffers and `gunzipSync`, then asserting `decoded > 0` BEFORE trusting the search, turned the same check into real evidence (4/4 payloads decoded, genuinely clean).
 **Rule (provisional):** any assertion of absence must first prove its input was readable. Print the count of successfully parsed records next to the verdict, and treat `parsed == 0` as INVALID, never as PASS.
 **Distillation trigger:** this is the BLIND-GUARD class again (a check that appears to verify and does not) — fourth occurrence. A CLAUDE.md §8 line is now overdue.
+
+## 2026-08-10 — Injecting an error into a story requires retryOnMount: false
+
+**Context:** Storybook stories for error states drive the REAL query hooks
+by prefetching a rejection onto the exact cache key (the snoozed-screen
+pattern). A new story injected `{ code: 'NO_ACTIVE_MAILBOX' }` to render
+the designed 409 state — and rendered the generic error instead.
+**Finding:** an ERRORED query is refetched on mount by default
+(`retryOnMount: true`, unaffected by `refetchOnMount: false`). The mounted
+hook's own queryFn then runs against Storybook's absent API, fails with a
+404/network error, and the component renders THAT error — the injected
+value never survives to the branch under test. Every existing error story
+only looked correct because any error reaches its single generic error UI.
+**Rule (provisional):** a story client that injects errors pins
+`retryOnMount: false` alongside `retry: false`; and an error story for a
+surface with MORE than one error branch must assert the branch-specific
+copy, not just "an error rendered".
+**Distillation trigger:** promote to a shared `storyClient()` helper if a
+third story file hand-rolls the same defaults block.
