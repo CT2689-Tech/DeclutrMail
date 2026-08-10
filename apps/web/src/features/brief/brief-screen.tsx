@@ -513,12 +513,10 @@ function NoiseArchiveBar({
           </>
         )}
       </span>
-      <Button
-        tone="primary"
-        disabled={selectedCount === 0 || busy}
-        onClick={onArchive}
-        aria-label={`Archive ${selectedCount} senders`}
-      >
+      {/* No aria-label: the visible label already names the count, and a
+          second wording would give screen readers a different sentence
+          than the one on screen. */}
+      <Button tone="primary" disabled={selectedCount === 0 || busy} onClick={onArchive}>
         {busy ? 'Archiving…' : `Archive ${selectedCount} sender${selectedCount === 1 ? '' : 's'}`}
       </Button>
     </div>

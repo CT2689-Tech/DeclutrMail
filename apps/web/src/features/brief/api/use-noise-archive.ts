@@ -145,15 +145,14 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     [targets],
   );
 
-  // D65 — "default-all checked". Re-derived whenever the selectable set
-  // changes identity so a fresh Brief opens fully checked.
-  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set(selectableKeys));
+  // D65 — "default-all checked". Keyed on the joined signature, not the
+  // array identity: a refetch that returns an EQUAL sender list must not
+  // silently re-check boxes the user just cleared. Sender keys are
+  // sha256 hex, so the separator cannot appear inside one.
   const selectableSignature = selectableKeys.join('|');
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set(selectableKeys));
   useEffect(() => {
-    setSelected(new Set(selectableKeys));
-    // `selectableKeys` is rebuilt on every render of a new array
-    // identity; the joined signature is the value that actually changed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setSelected(new Set(selectableSignature === '' ? [] : selectableSignature.split('|')));
   }, [selectableSignature]);
 
   // Senders whose archive the server confirmed — D69's "Done ✓" marks.
