@@ -61,8 +61,17 @@ const livePreviewWithAllMail: CompositeActionPreviewResult = {
   },
 };
 
+/**
+ * D248 — Unsubscribe is offered only for a sender with a channel
+ * DeclutrMail can send. The default fixture's `unsubscribeMethod` is
+ * `null`, which means "the index has not checked this sender yet" and is
+ * deliberately NOT actionable, so the Unsubscribe cases seed a real
+ * one-click channel.
+ */
+const oneClickSender = makeSender({ unsubscribeMethod: 'one_click' });
+
 function request(verb: ActionRequest['verb']): ActionRequest {
-  return { verb, senders: [sender] };
+  return { verb, senders: [verb === 'Unsubscribe' ? oneClickSender : sender] };
 }
 
 describe('ConfirmActionModal — live-preview confirm gate', () => {
@@ -1163,6 +1172,106 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     expect(screen.getByRole('radio', { name: /Inbox only/ })).toHaveAttribute(
       'aria-checked',
       'true',
+    );
+  });
+});
+
+// ─────────────── D248 — per-channel unsubscribe preview ────────────────
+describe('ConfirmActionModal — unsubscribe capability breakdown (D248)', () => {
+  function unsubRequest(methods: Array<'one_click' | 'mailto' | 'none' | null>): ActionRequest {
+    return {
+      verb: 'Unsubscribe',
+      senders: methods.map((unsubscribeMethod, i) =>
+        makeSender({ id: `s-${i}`, displayName: `Sender ${i}`, unsubscribeMethod }),
+      ),
+    };
+  }
+
+  function breakdown(): string {
+    return screen.getByLabelText('Unsubscribe breakdown').textContent ?? '';
+  }
+
+  it('breaks a mixed selection down per state instead of one aggregate', () => {
+    render(
+      <ConfirmActionModal
+        request={unsubRequest(['one_click', 'one_click', 'mailto', 'mailto', 'none', null])}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+
+    const text = breakdown();
+    expect(text).toContain('2 senders we can unsubscribe for you');
+    expect(text).toContain('2 senders need an email you send yourself');
+    expect(text).toContain('1 sender offers no unsubscribe');
+    expect(text).toContain("1 sender we haven't checked yet");
+    // No single figure may span the four groups.
+    expect(text).not.toContain('6 senders');
+  });
+
+  // The regression this decision exists to prevent: an un-indexed
+  // sender must never be described as offering no unsubscribe.
+  it('reads an un-indexed sender as not-yet-checked, never as no-channel', () => {
+    render(
+      <ConfirmActionModal
+        request={unsubRequest(['one_click', null, null])}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+
+    const text = breakdown();
+    expect(text).toContain("2 senders we haven't checked yet");
+    expect(text).not.toContain('offer no unsubscribe');
+  });
+
+  it('does not offer the action when the selection has no one-click sender', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={unsubRequest(['mailto', 'none', null])}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    const confirm = screen.getByRole('button', { name: /Unsubscribe/ });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/None of these senders has an unsubscribe DeclutrMail can send/),
+    ).toBeInTheDocument();
+  });
+
+  it('offers the action as soon as one sender is one-click', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={unsubRequest(['one_click', 'mailto', null])}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    const confirm = screen.getByRole('button', { name: /Unsubscribe/ });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('describes the one-click request the batch will actually send', () => {
+    render(
+      <ConfirmActionModal
+        request={unsubRequest(['one_click', 'none'])}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+
+    expect(document.getElementById('dm-confirm-lead')?.textContent).toContain(
+      'DeclutrMail sends a supported one-click unsubscribe request',
     );
   });
 });

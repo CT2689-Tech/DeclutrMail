@@ -44,6 +44,7 @@ import {
   normalizeUnsubscribeLifecycleStatus,
   type UnsubscribeManualTransition,
 } from '@declutrmail/shared/contracts';
+import { unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
 
 import {
   EntitlementsService,
@@ -59,11 +60,13 @@ import type {
   BulkActionEnqueueResult,
   BulkActionPreviewResult,
   BulkPreviewBuckets,
+  BulkSkipReason,
   CompositeActionEnqueueResult,
   CompositeActionPreviewResult,
-  CompositePrimaryVerb,
   CompositeSecondaryVerb,
+  LabelCompositePrimaryVerb,
   KeepIntentResult,
+  UnsubscribeBatchOutcomes,
   UnsubscribeIntentResult,
   UnsubscribeManualStatusResult,
 } from './actions.types.js';
@@ -380,7 +383,7 @@ export class ActionsService {
     mailboxAccountId: string;
     selector: ArchiveSelector;
     primary: {
-      type: CompositePrimaryVerb;
+      type: LabelCompositePrimaryVerb;
       olderThanDays?: number | null | undefined;
       wakeAt?: Date | null | undefined;
       /** ADR-0028 — absent = `inbox_only` (the pre-reach wire). */
@@ -696,7 +699,7 @@ export class ActionsService {
     mailboxAccountId: string;
     senderIds: string[];
     primary: {
-      type: CompositePrimaryVerb;
+      type: LabelCompositePrimaryVerb;
       olderThanDays?: number | null | undefined;
       wakeAt?: Date | null | undefined;
     };
@@ -877,6 +880,222 @@ export class ActionsService {
   }
 
   /**
+   * Multi-sender unsubscribe (D248) — server-side fan-out over the SAME
+   * batch machinery the label verbs use: one `action_jobs` row per
+   * sender, all but the anchor carrying `composite_id = anchor.id`, so
+   * `GET /api/actions/batch/:id` aggregates the whole run in one poll.
+   *
+   * ONLY `one_click` senders execute. The other three capability states
+   * are skipped and reported SEPARATELY, because they are three
+   * different facts:
+   *   - `mailto`   — D230 keeps mailto opt-outs user-sent. A batch never
+   *                  sends mail on the user's behalf.
+   *   - `none`     — we looked; the sender publishes no unsubscribe.
+   *   - `unknown`  — the sender index has not derived a method yet.
+   *                  Folding this into `none` would assert we looked.
+   *
+   * No undo (D58): a delivered request cannot be recalled, so these rows
+   * never carry an undo token. The mandatory modal preview is the
+   * reversal point (D226).
+   *
+   * Idempotency: ONE client key per bulk click; per-row keys derive as
+   * `unsubexec-<key>-<senderId>` over SORTED ids, so a network-retried
+   * POST maps onto the same anchor and the same BullMQ job ids.
+   */
+  async enqueueBulkUnsubscribe(input: {
+    mailboxAccountId: string;
+    senderIds: string[];
+    idempotencyKey: string;
+  }): Promise<BulkActionEnqueueResult> {
+    const { mailboxAccountId, idempotencyKey } = input;
+    await this.entitlements.assertActionSelectorTier(
+      mailboxAccountId,
+      'unsubscribe',
+      'multi-sender',
+    );
+    // Fail BEFORE any write, exactly like the single-sender intent: a
+    // committed 'requested' status with no job behind it is the stuck
+    // state CLAUDE.md §10 bans.
+    if (!this.unsubQueue) {
+      throw new ServiceUnavailableException({
+        code: 'QUEUE_UNAVAILABLE',
+        message: 'Unsubscribe queue unavailable — REDIS_URL is not set.',
+      });
+    }
+
+    const uniqueIds = [...new Set(input.senderIds)].sort();
+    const rows = await this.db
+      .select({
+        id: senders.id,
+        senderKey: senders.senderKey,
+        unsubscribeMethod: senders.unsubscribeMethod,
+        unsubscribeUrl: senders.unsubscribeUrl,
+      })
+      .from(senders)
+      .where(and(eq(senders.mailboxAccountId, mailboxAccountId), inArray(senders.id, uniqueIds)));
+    const byId = new Map(rows.map((r) => [r.id, r] as const));
+    const protectedKeys = await this.protectedSenderKeys(
+      mailboxAccountId,
+      rows.map((r) => r.senderKey),
+    );
+
+    const skipped: BulkActionEnqueueResult['skipped'] = [];
+    const actionable: Array<{ id: string; senderKey: string }> = [];
+    for (const id of uniqueIds) {
+      const row = byId.get(id);
+      if (!row) {
+        skipped.push({ senderId: id, reason: 'not_found' });
+        continue;
+      }
+      if (protectedKeys.has(row.senderKey)) {
+        skipped.push({ senderId: id, reason: 'protected' });
+        continue;
+      }
+      const capability = unsubscribeCapabilityOf(row.unsubscribeMethod);
+      // ADR-0006 invariant `(method, url)` agree; the URL check mirrors
+      // the single-sender narrowing so a one_click row missing its URL
+      // is reported as "no channel" instead of enqueueing a job that
+      // could only fail.
+      if (capability === 'one_click' && row.unsubscribeUrl) {
+        actionable.push({ id: row.id, senderKey: row.senderKey });
+        continue;
+      }
+      if (capability === 'mailto' && row.unsubscribeUrl) {
+        // D230 — hand the address back so the client can offer a
+        // prefilled compose the USER sends. Nothing is recorded and
+        // nothing is sent for these senders here.
+        skipped.push({ senderId: id, reason: 'mailto', mailtoUrl: row.unsubscribeUrl });
+        continue;
+      }
+      const reason: BulkSkipReason = capability === 'unknown' ? 'unknown' : 'no_channel';
+      skipped.push({ senderId: id, reason });
+    }
+    if (actionable.length === 0) {
+      throw new ConflictException({
+        code: 'NO_ACTIONABLE_SENDERS',
+        message: 'No selected sender has a one-click unsubscribe DeclutrMail can send.',
+      });
+    }
+
+    const safeKey = idempotencyKey.replace(/:/g, '-');
+    const rowKey = (senderId: string): string => `unsubexec-${safeKey}-${senderId}`;
+    const anchorKey = rowKey(actionable[0]!.id);
+
+    const persisted = await this.db.transaction(async (tx) => {
+      const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
+      if (!(await this.hasJobWithKey(anchorKey, tx))) {
+        await this.entitlements.assertCleanupCapacityForWorkspace(workspace, actionable.length, tx);
+      }
+
+      let anchorId: string | null = null;
+      let status: ActionJobStatus = 'queued';
+      const fresh: Array<{ actionId: string; senderKey: string; idempotencyKey: string }> = [];
+
+      for (const sender of actionable) {
+        const key = rowKey(sender.id);
+        const jobRow = await this.insertJob(
+          {
+            mailboxAccountId,
+            verb: 'unsubscribe',
+            direction: 'forward',
+            selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
+            resolvedMessageIds: [],
+            // One request per sender — the unsub pipeline's unit is the
+            // sender, not a message count (mirrors the single-sender row).
+            requestedCount: 1,
+            idempotencyKey: key,
+            compositeId: anchorId, // null only for the anchor itself
+          },
+          tx,
+        );
+        if (anchorId === null) {
+          anchorId = jobRow.row.id;
+          status = jobRow.row.status;
+        }
+        if (jobRow.existing) continue;
+        fresh.push({ actionId: jobRow.row.id, senderKey: sender.senderKey, idempotencyKey: key });
+
+        // Same durable trio the single-sender intent writes, so a bulk
+        // decision is not invisible until the worker lands: the standing
+        // policy (whose row the worker later UPDATEs with the outcome —
+        // without it the sender chip would never move), the Activity
+        // decision row, and the cross-feature event whose senders-owned
+        // consumer projects the policy (D204; the direct upsert above it
+        // is the same transitional dual-write as `recordUnsubscribeIntent`).
+        await tx
+          .insert(senderPolicies)
+          .values({
+            mailboxAccountId,
+            senderKey: sender.senderKey,
+            policyType: 'unsubscribe',
+            unsubStatus: 'requested',
+          })
+          .onConflictDoUpdate({
+            target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
+            set: {
+              policyType: 'unsubscribe',
+              unsubStatus: 'requested',
+              updatedAt: sql`now()`,
+            },
+          });
+
+        const [inserted] = await tx
+          .insert(activityLog)
+          .values({
+            mailboxAccountId,
+            senderKey: sender.senderKey,
+            source: 'manual',
+            action: 'unsubscribe',
+            affectedCount: 0,
+            // D58 — a delivered unsubscribe cannot be recalled.
+            undoToken: null,
+          })
+          .returning({ id: activityLog.id, occurredAt: activityLog.occurredAt });
+        if (!inserted) {
+          throw new Error('activity_log insert returned no row');
+        }
+
+        await this.outbox.publish(tx, {
+          topic: TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED,
+          aggregateId: inserted.id,
+          payload: {
+            mailboxAccountId,
+            senderKey: sender.senderKey,
+            activityLogId: inserted.id,
+            recordedAt: inserted.occurredAt.toISOString(),
+            method: 'one_click',
+          },
+          schema: ActionsUnsubscribeIntentRecordedPayloadSchema,
+        });
+      }
+
+      return { anchorId: anchorId!, status, fresh };
+    });
+
+    // Queue outside the transaction so a worker never observes an
+    // uncommitted row. `enqueueUnsubExecution` records the honest
+    // terminal state for the row it could not enqueue before rethrowing.
+    for (const row of persisted.fresh) {
+      await this.enqueueUnsubExecution(
+        row.actionId,
+        mailboxAccountId,
+        row.senderKey,
+        row.idempotencyKey,
+      );
+    }
+
+    return {
+      batchId: persisted.anchorId,
+      status: persisted.status,
+      senderCount: actionable.length,
+      requestedTotal: actionable.length,
+      // Unsubscribe never schedules — the field belongs to Later.
+      wakeAt: null,
+      skipped,
+    };
+  }
+
+  /**
    * Aggregate a batch's forward siblings into one pollable status (D52).
    * Siblings = the anchor row (`id = batchId`) plus every row whose
    * `composite_id = batchId` — the same group `enqueueCompositeRevert`
@@ -921,6 +1140,7 @@ export class ActionsService {
       requestedCount: rows.reduce((sum, r) => sum + r.requestedCount, 0),
       affectedCount: rows.reduce((sum, r) => sum + r.affectedCount, 0),
       undoToken,
+      unsubscribeOutcomes: summarizeUnsubscribeOutcomes(rows),
     };
   }
 
@@ -1053,6 +1273,20 @@ export class ActionsService {
       });
     }
     const senderKey = senderRow.senderKey;
+    // D248 — a NULL `unsubscribe_method` means the sender index has not
+    // derived one yet. That is UNKNOWN, not `none`: reporting "no
+    // unsubscribe channel available" for a sender we never looked at
+    // asserts a fact we do not have. There is no honest intent to record
+    // for it (no lifecycle status describes "not checked", and writing
+    // `unavailable` is the exact lie), so the request is refused and the
+    // caller renders the not-checked-yet state. The index writes 'none'
+    // explicitly once it HAS looked, which is the branch below.
+    if (unsubscribeCapabilityOf(senderRow.unsubscribeMethod) === 'unknown') {
+      throw new ConflictException({
+        code: 'UNSUBSCRIBE_CHANNEL_UNKNOWN',
+        message: "This sender hasn't been checked for an unsubscribe option yet.",
+      });
+    }
     // ADR-0006 invariant: `(method, url)` always agree. Defensive
     // narrowing anyway — a one_click row missing its URL degrades to
     // 'none' rather than enqueueing a job that can only fail.
@@ -2169,11 +2403,12 @@ export class ActionsService {
       requestedCount: number;
       idempotencyKey: string;
       /**
-       * Label-modify verb (action_verb pg_enum). Defaults to `archive` to
-       * keep `enqueueArchive` source-compatible; composite + delete paths
-       * pass the verb explicitly.
+       * `action_verb` pg_enum value. Defaults to `archive` to keep
+       * `enqueueArchive` source-compatible; composite + delete paths pass
+       * the verb explicitly. `unsubscribe` rows (D248 bulk fan-out) are
+       * consumed by `UnsubExecutionWorker`, not the label worker.
        */
-      verb?: 'archive' | 'later' | 'delete';
+      verb?: 'archive' | 'later' | 'delete' | 'unsubscribe';
       undoToken?: string;
       /** ADR-0020 time-window filter (1..3650 days; null = un-windowed). */
       olderThanDays?: number | null;
@@ -2238,7 +2473,7 @@ export class ActionsService {
   }
 
   /** Enforce the D245 action contract at every service entry point. */
-  private assertValidWakeAt(verb: CompositePrimaryVerb, wakeAt: Date | null): void {
+  private assertValidWakeAt(verb: LabelCompositePrimaryVerb, wakeAt: Date | null): void {
     if (verb === 'later') {
       if (wakeAt === null || Number.isNaN(wakeAt.getTime())) {
         throw new BadRequestException({
@@ -2306,6 +2541,39 @@ export class ActionsService {
       });
     }
   }
+}
+
+/**
+ * `UnsubExecutionWorker` records an ambiguous redirect as job status
+ * `failed` + THIS error code, and its own idempotent-replay branch reads
+ * the pair back to reconstruct the outcome. The batch receipt reads it
+ * the same way so `unconfirmed` never renders as a failure (D248).
+ */
+const UNSUB_AMBIGUOUS_ERROR_CODE = 'UNSUB_AMBIGUOUS_REDIRECT';
+
+/**
+ * Aggregate the three terminal one-click outcomes across a batch's
+ * unsubscribe rows (D248). Returns `null` for a batch with no
+ * unsubscribe row so a label batch cannot render an unsubscribe receipt.
+ */
+function summarizeUnsubscribeOutcomes(
+  rows: ReadonlyArray<typeof actionJobs.$inferSelect>,
+): UnsubscribeBatchOutcomes | null {
+  const unsubRows = rows.filter((row) => row.verb === 'unsubscribe');
+  if (unsubRows.length === 0) return null;
+  const outcomes: UnsubscribeBatchOutcomes = {
+    endpointAccepted: 0,
+    unconfirmed: 0,
+    failed: 0,
+    pending: 0,
+  };
+  for (const row of unsubRows) {
+    if (row.status === 'done') outcomes.endpointAccepted += 1;
+    else if (row.status !== 'failed') outcomes.pending += 1;
+    else if (row.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) outcomes.unconfirmed += 1;
+    else outcomes.failed += 1;
+  }
+  return outcomes;
 }
 
 /** Drizzle `count()` is a number on PG, a string on some drivers — normalize. */

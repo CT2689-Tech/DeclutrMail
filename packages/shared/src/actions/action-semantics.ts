@@ -1,5 +1,6 @@
 import type { ActionJobStatus } from '../contracts/action-job-status';
 import type { ActionVerb } from '../contracts/verb-constants';
+import type { UnsubscribeCapability } from './unsubscribe-capability';
 
 export type CurrentMailScope = 'none' | 'matching-current-inbox' | 'matching-archived';
 export type CurrentMailDestination =
@@ -263,8 +264,13 @@ export function defaultLaterWakeAtIso(now = new Date()): string {
   return new Date(now.getTime() + DEFAULT_LATER_WAKE_DAYS * 24 * 60 * 60 * 1000).toISOString();
 }
 
-/** The three unsubscribe capabilities stored on a sender. */
-export type UnsubscribeChannel = 'one_click' | 'mailto' | 'none';
+/**
+ * The unsubscribe capabilities a sender can be in — including `unknown`
+ * for a sender the index has not derived a method for yet (D248). Alias
+ * of `UnsubscribeCapability` so presentation and partition share ONE
+ * vocabulary and cannot drift.
+ */
+export type UnsubscribeChannel = UnsubscribeCapability;
 
 export interface SecondaryActionPresentationInput {
   readonly verb: ActionVerb;
@@ -303,7 +309,7 @@ export type ActionPresentationActivityUndo =
 export type ActionPresentationUnsubscribeChannel =
   | { readonly kind: 'not-applicable' }
   | {
-      readonly kind: UnsubscribeChannel | 'unknown';
+      readonly kind: UnsubscribeChannel;
       readonly summary: string;
     };
 
@@ -506,25 +512,27 @@ function presentationUnsubscribeChannel(
   if (verb !== 'unsubscribe') {
     return { kind: 'not-applicable' };
   }
-  if (channel === 'one_click') {
-    return {
-      kind: channel,
-      summary: 'DeclutrMail sends a supported one-click unsubscribe request.',
-    };
+  // D248: a caller with no channel fact is in the SAME state as a sender
+  // the index has not derived one for — unknown. It is never `none`.
+  switch (channel ?? 'unknown') {
+    case 'one_click':
+      return {
+        kind: 'one_click',
+        summary: 'DeclutrMail sends a supported one-click unsubscribe request.',
+      };
+    case 'mailto':
+      return {
+        kind: 'mailto',
+        summary: 'DeclutrMail opens a prefilled Gmail draft; you send it.',
+      };
+    case 'none':
+      return { kind: 'none', summary: 'No supported unsubscribe channel is available.' };
+    case 'unknown':
+      return {
+        kind: 'unknown',
+        summary: 'This sender has not been checked for an unsubscribe option yet.',
+      };
   }
-  if (channel === 'mailto') {
-    return {
-      kind: channel,
-      summary: 'DeclutrMail opens a prefilled Gmail draft; you send it.',
-    };
-  }
-  if (channel === 'none') {
-    return { kind: channel, summary: 'No supported unsubscribe channel is available.' };
-  }
-  return {
-    kind: 'unknown',
-    summary: ACTION_SEMANTICS.unsubscribe.futureMail.summary,
-  };
 }
 
 /** Verbs that produce `action_jobs` status handles today. */

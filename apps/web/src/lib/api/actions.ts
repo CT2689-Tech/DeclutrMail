@@ -379,7 +379,12 @@ export interface UnsubscribeIntentResult {
    *     `executionActionId` via `getActionStatus` for the outcome.
    *   - `mailto`    → manual path (D230) — open the Gmail compose
    *     deep link built from `mailtoUrl`; the USER sends it.
-   *   - `none`      → no unsubscribe channel; archive is the fallback.
+   *   - `none`      → we looked; the sender publishes no unsubscribe.
+   *
+   * A sender the index has NOT derived a method for (`unknown`, D248) is
+   * never recorded: the route answers 409 `UNSUBSCRIBE_CHANNEL_UNKNOWN`
+   * instead, because writing "no unsubscribe channel available" for a
+   * sender we never checked would state a fact we do not have.
    */
   method: 'one_click' | 'mailto' | 'none';
   /**
@@ -568,8 +573,26 @@ export interface BulkActionEnqueueResult {
   senderCount: number;
   requestedTotal: number;
   wakeAt: string | null;
-  skipped: Array<{ senderId: string; reason: 'protected' | 'not_found' }>;
+  skipped: Array<{
+    senderId: string;
+    reason: BulkSkipReason;
+    /**
+     * The sender's `mailto:` opt-out address, present only on a `mailto`
+     * skip (D230): the batch never sends it, the user does, from a
+     * prefilled compose link.
+     */
+    mailtoUrl?: string;
+  }>;
 }
+
+/**
+ * Why a selected sender did not enter the batch. The label verbs
+ * produce `protected` / `not_found`; an Unsubscribe batch (D248) adds
+ * the three non-executable capability states, reported separately
+ * because "send it yourself", "there is nothing to send" and "we have
+ * not looked yet" are three different facts.
+ */
+export type BulkSkipReason = 'protected' | 'not_found' | 'mailto' | 'no_channel' | 'unknown';
 
 /**
  * Returned by `GET /api/actions/batch/:id` — aggregate batch state.
@@ -587,6 +610,29 @@ export interface BatchStatusResult {
   requestedCount: number;
   affectedCount: number;
   undoToken: string | null;
+  /**
+   * D248 — the three terminal outcomes the unsubscribe worker records,
+   * counted across the batch. `null` for a label batch. Read THIS for
+   * an unsubscribe receipt, never `done`/`failed`: an `unconfirmed` row
+   * carries job status `failed`, and calling that a failure would round
+   * "we could not establish what happened" into a fact.
+   *
+   * Optional on the wire so a web bundle newer than the API still
+   * renders (apps/web and apps/api deploy independently).
+   */
+  unsubscribeOutcomes?: UnsubscribeBatchOutcomes | null;
+}
+
+/** Terminal one-click unsubscribe outcomes, counted across a batch. */
+export interface UnsubscribeBatchOutcomes {
+  /** The sender's endpoint accepted the request (2xx). Not "unsubscribed". */
+  endpointAccepted: number;
+  /** Sent; the outcome could not be established. Never rounded away. */
+  unconfirmed: number;
+  /** The request did not go through. */
+  failed: number;
+  /** Still queued or executing — no outcome yet. */
+  pending: number;
 }
 
 /**

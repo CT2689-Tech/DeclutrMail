@@ -30,6 +30,24 @@ export {
 } from './action-semantics';
 export { describeInboxScope, inboxScopeNoticeCopy, tiedWindowNoticeCopy } from './inbox-scope';
 export type { InboxScopeInput, InboxScopeNotice } from './inbox-scope';
+export {
+  UNSUBSCRIBE_ACCEPTED_CAVEAT,
+  UNSUBSCRIBE_CAPABILITIES,
+  UNSUBSCRIBE_REQUEST_OUTCOMES,
+  countUnsubscribeCapabilities,
+  isExecutableUnsubscribe,
+  unsubscribeCapabilityBreakdown,
+  unsubscribeCapabilityOf,
+  unsubscribeOutcomeBreakdown,
+  unsubscribeUnavailableReason,
+} from './unsubscribe-capability';
+export type {
+  StoredUnsubscribeMethod,
+  UnsubscribeCapability,
+  UnsubscribeCapabilityCounts,
+  UnsubscribeOutcomeCounts,
+  UnsubscribeRequestOutcome,
+} from './unsubscribe-capability';
 export type {
   ActionDirection,
   ActionFinality,

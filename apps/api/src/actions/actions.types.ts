@@ -277,15 +277,24 @@ export const compositePrimaryVerbSchema = z.enum(
 export type CompositePrimaryVerb = (typeof COMPOSITE_PRIMARY_VERBS)[number];
 
 /**
+ * The composite primaries that route through the label-modify pipeline.
+ * `unsubscribe` (D248) is excluded at the TYPE level so its rows can
+ * never be handed to the label executor by a future refactor — its
+ * batch has its own enqueue method and its own worker.
+ */
+export type LabelCompositePrimaryVerb = Exclude<CompositePrimaryVerb, 'unsubscribe'>;
+
+/**
  * Secondary historic-action verbs (ADR-0020). Optional. Applies only
  * when primary ∈ { 'unsubscribe', 'later' } per spec v1.2 Decision 15
  * ("Also act on past emails" toggle). Acts on the sender's historic
  * mail in the inbox via the same label-modify pipeline as the primary.
  *
- * Today's primary set above does NOT include 'unsubscribe' because
- * the unsubscribe pipeline is its own kind (manifest-entries.ts:
- * unsubscribe.execution.kind === 'unsubscribe'); the composite secondary
- * column is reserved for when that pipeline lands.
+ * The `unsubscribe` primary carries NO secondary of its own: its rows
+ * go to `UnsubExecutionWorker`, not the label pipeline, so a backlog
+ * Archive/Delete is enqueued as its own bulk request (what the senders
+ * screen has always done). The schema below rejects the pairing rather
+ * than silently ignoring it.
  */
 import { COMPOSITE_SECONDARY_VERBS } from '@declutrmail/shared/contracts';
 export const compositeSecondaryVerbSchema = z.enum(
@@ -390,6 +399,33 @@ export const compositeActionRequestSchema = z
         message: 'wakeAt is only valid for Later.',
       });
     }
+    // D248 — Unsubscribe is a multi-sender-only composite primary. A
+    // single sender keeps its own intent route (which owns the mailto
+    // compose hand-off), and the unsubscribe pipeline has no historic
+    // window and no label secondary to compose with.
+    if (body.primary.type === 'unsubscribe') {
+      if (body.selector.type !== 'senders') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['primary', 'type'],
+          message: 'Unsubscribe one sender at a time through the unsubscribe-intent route.',
+        });
+      }
+      if (body.secondary !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['secondary'],
+          message: 'Unsubscribe carries no secondary action; enqueue the backlog separately.',
+        });
+      }
+      if (body.primary.olderThanDays !== undefined && body.primary.olderThanDays !== null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['primary', 'olderThanDays'],
+          message: 'Unsubscribe acts on future email; it takes no time window.',
+        });
+      }
+    }
     if (body.primary.reach === 'all_mail') {
       if (body.primary.type !== 'delete') {
         ctx.addIssue({
@@ -448,8 +484,29 @@ export interface BulkActionEnqueueResult {
   requestedTotal: number;
   /** Shared Later wake time for every sender in this batch. */
   wakeAt: string | null;
-  skipped: Array<{ senderId: string; reason: 'protected' | 'not_found' }>;
+  skipped: Array<{
+    senderId: string;
+    reason: BulkSkipReason;
+    /**
+     * D230 manual path — the sender's `mailto:` opt-out address, present
+     * ONLY on a `mailto` skip. The batch deliberately does not send it;
+     * the client renders a prefilled compose link the USER sends, which
+     * is what "stays in the per-sender flow" means for these senders.
+     */
+    mailtoUrl?: string;
+  }>;
 }
+
+/**
+ * Why a selected sender did not enter the batch.
+ *
+ * The label verbs produce only `protected` / `not_found`. Unsubscribe
+ * (D248) adds the three non-executable capability states, kept SEPARATE
+ * on purpose: "send it yourself" (`mailto`), "there is nothing to send"
+ * (`no_channel`) and "we have not looked yet" (`unknown`) are three
+ * different facts, and only the first is actionable by the user.
+ */
+export type BulkSkipReason = 'protected' | 'not_found' | 'mailto' | 'no_channel' | 'unknown';
 
 /**
  * Bulk preview request — `POST /api/actions/preview/bulk` (ADR-0020
@@ -513,6 +570,31 @@ export interface BatchStatusResult {
   requestedCount: number;
   affectedCount: number;
   undoToken: string | null;
+  /**
+   * D248 — the three terminal outcomes `UnsubExecutionWorker` records,
+   * aggregated over the batch's unsubscribe rows. `null` when the batch
+   * holds no unsubscribe row, so a label batch never renders an
+   * unsubscribe receipt.
+   *
+   * `unconfirmed` is reported separately and is NOT folded into either
+   * neighbour: the request went out and we could not establish what
+   * happened. The `done`/`failed` counts above stay job-status counts —
+   * an unconfirmed row is job-status `failed`, which is why an
+   * unsubscribe receipt must read THIS field rather than those.
+   */
+  unsubscribeOutcomes: UnsubscribeBatchOutcomes | null;
+}
+
+/** Terminal one-click request outcomes, counted across a batch (D248). */
+export interface UnsubscribeBatchOutcomes {
+  /** 2xx from the sender's endpoint — the request was accepted. */
+  endpointAccepted: number;
+  /** Sent, outcome unknowable (ambiguous redirect). Never rounded. */
+  unconfirmed: number;
+  /** The request did not go through. */
+  failed: number;
+  /** Rows still queued or executing — no outcome yet. */
+  pending: number;
 }
 
 /**

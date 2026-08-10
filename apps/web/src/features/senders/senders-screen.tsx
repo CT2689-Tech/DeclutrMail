@@ -10,7 +10,11 @@ import {
   tokens,
   toast,
 } from '@declutrmail/shared';
-import { buildActionReceiptResult } from '@declutrmail/shared/actions';
+import {
+  buildActionReceiptResult,
+  countUnsubscribeCapabilities,
+  type UnsubscribeCapabilityCounts,
+} from '@declutrmail/shared/actions';
 import {
   canBulkArchive,
   canBulkDelete,
@@ -52,6 +56,7 @@ import { sendersKeys } from './api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
+import { UnsubBatchReceipt, type UnsubBatchReceiptData } from './unsub-batch-receipt';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
@@ -474,8 +479,19 @@ function SendersScreenContent({
   const [bulkMailtoFollowups, setBulkMailtoFollowups] = useState<
     Array<{ senderName: string; mailtoUrl: string }>
   >([]);
+  // D248 — the in-flight multi-sender unsubscribe batch. Separate from
+  // `activeBatch` because its receipt is a different shape: three
+  // terminal outcomes, no undo (D58), plus the capability split of the
+  // selection so the senders it could NOT send for stay named.
+  const [activeUnsubBatch, setActiveUnsubBatch] = useState<{
+    batchId: string;
+    senderCount: number;
+    capabilities: UnsubscribeCapabilityCounts;
+  } | null>(null);
+  const [unsubBatchReceipt, setUnsubBatchReceipt] = useState<UnsubBatchReceiptData | null>(null);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
   const batchStatus = useBatchStatus(activeBatch?.batchId ?? null);
+  const unsubBatchStatus = useBatchStatus(activeUnsubBatch?.batchId ?? null);
   const revertStatus = useActionStatus(revertActionId);
   const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null);
 
@@ -797,7 +813,14 @@ function SendersScreenContent({
         setPendingAction(null);
         setSelected(new Set());
         setBulkMailtoFollowups([]);
-        const senderRefs = senders.map((s) => ({ id: s.id, name: s.name, domain: s.domain }));
+        const senderRefs = senders.map((s) => ({
+          id: s.id,
+          name: s.name,
+          domain: s.domain,
+          // D248 — carried so the receipt can state the four-state split
+          // of what the user selected, not just what the batch sent.
+          unsubscribeMethod: s.unsubscribeMethod,
+        }));
         const isBulk = senderRefs.length > 1;
 
         // The "Also act on past emails" chip from the D226 preview
@@ -891,108 +914,108 @@ function SendersScreenContent({
           return;
         }
 
-        // Bulk fan-out — each sender is its own intent (+execution for
-        // one_click senders). No per-execution polling at this scale:
-        // each row's chip carries its sender's state on refetch.
-        //
-        // `mutateAsync` + Promise.allSettled, NOT a mutate()-callback
-        // loop: TanStack v5 fires mutate-level callbacks only for the
-        // LATEST call when one mutation hook is invoked consecutively,
-        // so the prior per-sender onSuccess counters undercounted —
-        // the completion toast never fired and the secondary batch
-        // below never enqueued (caught in the 2026-06-11 live smoke).
-        // Each mutateAsync promise settles independently.
-        void Promise.allSettled(
-          senderRefs.map((sref) => recordUnsubIntent.mutateAsync({ senderId: sref.id })),
-        ).then((results) => {
-          const fulfilled = results.flatMap((result, index) =>
-            result.status === 'fulfilled'
-              ? [{ sender: senderRefs[index]!, result: result.value }]
-              : [],
-          );
-          const succeededIds = fulfilled.map(({ sender }) => sender.id);
-          const failedCount = senderRefs.length - succeededIds.length;
-          const oneClickCount = fulfilled.filter(
-            ({ result }) => result.method === 'one_click',
-          ).length;
-          const mailtoFollowups = fulfilled.flatMap(({ sender, result }) =>
-            result.method === 'mailto' && result.mailtoUrl
-              ? [{ senderName: sender.name, mailtoUrl: result.mailtoUrl }]
-              : [],
-          );
-          const noChannelCount = fulfilled.filter(({ result }) => result.method === 'none').length;
-          setBulkMailtoFollowups(mailtoFollowups);
-          for (const r of results) {
-            if (r.status === 'rejected') {
-              captureFeatureException(r.reason, { surface: 'senders', reason: 'record_unsub' });
-            }
-          }
-          void qc.invalidateQueries({ queryKey: sendersKeys.all });
-          void qc.invalidateQueries({ queryKey: activityKeys.all });
-          if (succeededIds.length === 0) {
-            toast(
-              `${failedCount} of ${senderRefs.length} unsubscribe requests failed — try again.`,
-              'warn',
-            );
-            return;
-          }
-          const outcomes = [
-            oneClickCount > 0
-              ? `${oneClickCount} one-click request${oneClickCount === 1 ? '' : 's'} queued`
-              : null,
-            mailtoFollowups.length > 0
-              ? `${mailtoFollowups.length} email draft${mailtoFollowups.length === 1 ? '' : 's'} need sending below`
-              : null,
-            noChannelCount > 0
-              ? `${noChannelCount} sender${noChannelCount === 1 ? '' : 's'} had no unsubscribe channel`
-              : null,
-            failedCount > 0 ? `${failedCount} failed` : null,
-          ].filter((part): part is string => part !== null);
-          toast(
-            `Unsubscribe decisions recorded — ${outcomes.join(' · ')}.`,
-            failedCount > 0 || noChannelCount > 0
-              ? 'warn'
-              : mailtoFollowups.length > 0
-                ? 'info'
-                : 'success',
-          );
-          // The preview's secondary chip (D226 — counts already shown):
-          // fan the backlog out as ONE bulk batch (D52 pipeline) over
-          // the senders whose intents recorded — the batch poll below
-          // surfaces the real receipt + undo token.
-          if (!secondary) return;
-          enqueueBulk.mutate(
-            {
-              senderIds: succeededIds,
-              primary: { type: secondary.type, olderThanDays: secondary.olderThanDays ?? null },
+        // D248 — ONE POST fans the selection out SERVER-side through the
+        // shared batch pipeline (the old client loop issued a request per
+        // sender, so a 1,000-sender selection meant 1,000 parallel POSTs).
+        // Only one-click senders execute; the response names every sender
+        // it did not send for and why — mailto stays user-sent (D230) and
+        // comes back with its compose address, `none` has nothing to
+        // send, `unknown` has not been checked yet.
+        enqueueBulk.mutate(
+          {
+            senderIds: senderRefs.map((sref) => sref.id),
+            primary: { type: 'unsubscribe' },
+          },
+          {
+            onSuccess: (res) => {
+              const nameById = new Map(senderRefs.map((sref) => [sref.id, sref.name] as const));
+              setBulkMailtoFollowups(
+                res.skipped.flatMap((skip) =>
+                  skip.reason === 'mailto' && skip.mailtoUrl
+                    ? [
+                        {
+                          senderName: nameById.get(skip.senderId) ?? 'This sender',
+                          mailtoUrl: skip.mailtoUrl,
+                        },
+                      ]
+                    : [],
+                ),
+              );
+              const capabilities = countUnsubscribeCapabilities(
+                senderRefs.map((sref) => sref.unsubscribeMethod),
+              );
+              setActiveUnsubBatch({
+                batchId: res.batchId,
+                senderCount: res.senderCount,
+                capabilities,
+              });
+              // In-flight receipt: it names how many requests are going
+              // out and claims NO outcome. The polled effect below fills
+              // in the three terminal outcomes when the worker reports.
+              setUnsubBatchReceipt({
+                senderCount: res.senderCount,
+                capabilities,
+                outcomes: null,
+                pending: res.senderCount,
+              });
+              void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              void qc.invalidateQueries({ queryKey: activityKeys.all });
+              // The preview's secondary chip (D226 — counts already
+              // shown): the backlog is its own bulk batch over the SAME
+              // selection, because "also archive the past" is a decision
+              // about the mail, not about the unsubscribe channel.
+              if (!secondary) return;
+              enqueueBulk.mutate(
+                {
+                  senderIds: senderRefs.map((sref) => sref.id),
+                  primary: { type: secondary.type, olderThanDays: secondary.olderThanDays ?? null },
+                },
+                {
+                  onSuccess: (bres) =>
+                    setActiveBatch({
+                      batchId: bres.batchId,
+                      verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                      senderCount: bres.senderCount,
+                      selectedCount: senderRefs.length,
+                      skippedCount: bres.skipped.length,
+                      wakeAt: null,
+                    }),
+                  onError: (err) => {
+                    // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
+                    if (err instanceof ApiError && err.status === 402) return;
+                    if (!(err instanceof ApiError && err.status === 409)) {
+                      captureFeatureException(err, {
+                        surface: 'senders',
+                        reason: `enqueue_bulk_${secondary.type}_after_unsub`,
+                      });
+                    }
+                    toast(
+                      `Unsubscribes queued, but couldn't ${secondary.type} the backlog — see Activity`,
+                      'warn',
+                    );
+                  },
+                },
+              );
             },
-            {
-              onSuccess: (res) =>
-                setActiveBatch({
-                  batchId: res.batchId,
-                  verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
-                  senderCount: res.senderCount,
-                  selectedCount: succeededIds.length,
-                  skippedCount: res.skipped.length,
-                  wakeAt: null,
-                }),
-              onError: (err) => {
-                // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
-                if (err instanceof ApiError && err.status === 402) return;
-                if (!(err instanceof ApiError && err.status === 409)) {
-                  captureFeatureException(err, {
-                    surface: 'senders',
-                    reason: `enqueue_bulk_${secondary.type}_after_unsub`,
-                  });
-                }
-                toast(
-                  `Unsubscribes queued, but couldn't ${secondary.type} the backlog — see Activity`,
-                  'warn',
-                );
-              },
+            onError: (err) => {
+              // 402 FREE_CAP_REACHED — the upgrade prompt is the surface.
+              if (err instanceof ApiError && err.status === 402) return;
+              // 409 NO_ACTIONABLE_SENDERS is a designed state: the
+              // selection moved between the preview and the confirm.
+              const conflict = err instanceof ApiError && err.status === 409;
+              if (!conflict) {
+                captureFeatureException(err, { surface: 'senders', reason: 'bulk_unsub' });
+              }
+              void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              toast(
+                conflict
+                  ? 'None of these senders has an unsubscribe we can send — Archive moves their mail instead.'
+                  : "Couldn't send the unsubscribe requests — try again.",
+                'warn',
+              );
             },
-          );
-        });
+          },
+        );
         return;
       }
 
@@ -1247,6 +1270,50 @@ function SendersScreenContent({
     void qc.invalidateQueries({ queryKey: activityKeys.all });
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);
+
+  // D248 — drive the multi-sender unsubscribe batch off the same
+  // aggregate poll the label batches use. The receipt reads
+  // `unsubscribeOutcomes`, NOT the done/failed tally: the worker records
+  // an unconfirmed request as job-status `failed`, so counting statuses
+  // would report "we could not establish what happened" as a failure.
+  // No undo is ever offered — a delivered request cannot be recalled.
+  useEffect(() => {
+    if (!activeUnsubBatch) return;
+    if (unsubBatchStatus.isError) {
+      const err = unsubBatchStatus.error;
+      captureFeatureException(err, { surface: 'senders', reason: 'unsub_batch_status_poll' });
+      toast("Couldn't confirm the unsubscribe requests — see Activity", 'warn');
+      setActiveUnsubBatch(null);
+      setUnsubBatchReceipt(null);
+      return;
+    }
+    const data = unsubBatchStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    const outcomes = data.unsubscribeOutcomes ?? null;
+    setUnsubBatchReceipt({
+      senderCount: activeUnsubBatch.senderCount,
+      capabilities: activeUnsubBatch.capabilities,
+      // An API that predates the field leaves the receipt honestly
+      // outcome-less rather than inventing a success/failure split.
+      outcomes: outcomes
+        ? {
+            endpointAccepted: outcomes.endpointAccepted,
+            unconfirmed: outcomes.unconfirmed,
+            failed: outcomes.failed,
+          }
+        : null,
+      pending: outcomes?.pending ?? 0,
+    });
+    void qc.invalidateQueries({ queryKey: sendersKeys.all });
+    void qc.invalidateQueries({ queryKey: activityKeys.all });
+    setActiveUnsubBatch(null);
+  }, [
+    unsubBatchStatus.data,
+    unsubBatchStatus.isError,
+    unsubBatchStatus.error,
+    activeUnsubBatch,
+    qc,
+  ]);
 
   // D52 — drive the bulk-batch lifecycle off the aggregate poll. On
   // terminal: real receipt (real undo token covering the batch via the
@@ -1701,6 +1768,10 @@ function SendersScreenContent({
       />
 
       <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
+
+      {/* D248 — multi-sender unsubscribe result. Its own surface: three
+          terminal outcomes, no Undo (a delivered request is one-way). */}
+      <UnsubBatchReceipt receipt={unsubBatchReceipt} onDismiss={() => setUnsubBatchReceipt(null)} />
 
       {/* D230 manual path — the post-confirm "finish in Gmail" step for
           a mailto sender. The user sends the opt-out; never auto-sent. */}

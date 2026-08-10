@@ -107,6 +107,30 @@ export class ActionsController {
       });
     }
     const req = parsed.data;
+    // D248 — the unsubscribe primary rides the same batch machinery but a
+    // different executor: its rows are consumed by `UnsubExecutionWorker`,
+    // only one-click senders execute, and the other three capability
+    // states come back named in `skipped`. Routing it away here is also
+    // what narrows the two label paths below to label verbs, so an
+    // unsubscribe row can never reach the label worker.
+    if (req.primary.type === 'unsubscribe') {
+      if (req.selector.type !== 'senders') {
+        // Mirrors the schema rule (a single sender keeps its own intent
+        // route); repeated here so the routing invariant is enforced at
+        // the boundary rather than assumed from validation order.
+        throw new BadRequestException({
+          code: 'INVALID_REQUEST',
+          message: 'Unsubscribe one sender at a time through the unsubscribe-intent route.',
+        });
+      }
+      return ok(
+        await this.actions.enqueueBulkUnsubscribe({
+          mailboxAccountId: mailbox.id,
+          senderIds: req.selector.senderIds,
+          idempotencyKey: idempotencyKey.trim(),
+        }),
+      );
+    }
     // D52 multi-sender bulk — same endpoint per ADR-0020 ("Bulk variant").
     // Fans out server-side; the response is the batch handle the FE polls
     // at GET /api/actions/batch/:batchId. The bulk surface has no

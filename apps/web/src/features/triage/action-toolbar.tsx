@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Button, Kbd, Tooltip, tokens } from '@declutrmail/shared';
+import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { lessonForVerb } from '@/features/tour/verb-lessons';
 import { canArchive, canLater, canUnsubscribe, type TriageDecisionRow } from './data';
 import { VERB_ORDER, VERB_SHORTCUT, verdictToVerb, type ActionVerb } from './types';
@@ -247,8 +248,12 @@ export function verbDisabledReason(verb: ActionVerb, row: TriageDecisionRow): st
   // K/A/U/L/D action stays available on a protected row. The protection is
   // surfaced by the row badge and acknowledged in the D226 confirm,
   // which is where the "act anyway" decision belongs.
-  if (verb === 'Unsubscribe' && row.unsubscribeMethod === 'none') {
-    return 'No unsubscribe channel found — Archive handles senders like this.';
+  // D248 — the reason states which of the four capability states the
+  // sender is in. A sender the index has not derived a method for reads
+  // as not-yet-checked; saying "no unsubscribe channel found" for it
+  // would claim we looked.
+  if (verb === 'Unsubscribe') {
+    return unsubscribeUnavailableReason(row.unsubscribeMethod);
   }
   return null;
 }

@@ -4,10 +4,13 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import {
   buildActionPresentation,
+  countUnsubscribeCapabilities,
   defaultLaterWakeAtIso,
   describeInboxScope,
   inboxScopeNoticeCopy,
   tiedWindowNoticeCopy,
+  unsubscribeCapabilityBreakdown,
+  UNSUBSCRIBE_CAPABILITIES,
   type PresentedAction,
   type UnsubscribeChannel,
 } from '@declutrmail/shared/actions';
@@ -301,6 +304,30 @@ export function ConfirmActionModal({
       : false;
   const needsProtectedOverride = protectedSingle && verb !== 'Keep';
 
+  // D248 — a selection's unsubscribe capability is a PARTITION over four
+  // states, never one aggregate. Only `one_click` senders are ones
+  // DeclutrMail can unsubscribe; `mailto` stays user-sent (D230),
+  // `none` has nothing to send, and `unknown` has not been checked yet.
+  // Reported separately because they are different facts, and only one
+  // of them is something the user can act on.
+  const unsubCapabilities = isUnsubVerb
+    ? countUnsubscribeCapabilities((request?.senders ?? []).map((s) => s.unsubscribeMethod))
+    : null;
+  const unsubBreakdown = unsubCapabilities ? unsubscribeCapabilityBreakdown(unsubCapabilities) : [];
+  // "If a selection contains zero one_click senders, the batch control
+  // does not offer itself" — there is no request to send.
+  const unsubNothingToSend = unsubCapabilities !== null && unsubCapabilities.one_click === 0;
+  // The lead describes the action that WILL run, i.e. the one-click
+  // subset; the breakdown beneath it names everyone it will not touch.
+  // With no one-click sender the lead falls back to the sole remaining
+  // state (null when several are present — the breakdown speaks then).
+  const unsubscribeChannel: UnsubscribeChannel | null = (() => {
+    if (unsubCapabilities === null) return null;
+    if (unsubCapabilities.one_click > 0) return 'one_click';
+    const present = UNSUBSCRIBE_CAPABILITIES.filter((state) => unsubCapabilities[state] > 0);
+    return present.length === 1 ? (present[0] ?? null) : null;
+  })();
+
   // Fail closed on every path that moves current mail. A count from the
   // composite/bulk endpoint is the preview contract for the active time
   // window; all-labels received sender totals and a legacy all-inbox count
@@ -467,7 +494,11 @@ export function ConfirmActionModal({
   // already been trimmed to fit, so blocking it here would restore the
   // dead end the cap exists to remove.
   const confirmDisabled =
-    livePreviewBlocksConfirm || nothingToActOn || wakeAtInvalid || (quotaShort && !quotaCappedFrom);
+    livePreviewBlocksConfirm ||
+    nothingToActOn ||
+    wakeAtInvalid ||
+    unsubNothingToSend ||
+    (quotaShort && !quotaCappedFrom);
 
   // Swap confirm for a truthful upgrade action when the quota cannot
   // cover this click — routed through the same upgrade-gate store the
@@ -571,13 +602,6 @@ export function ConfirmActionModal({
       : isLaterVerb
         ? 'later'
         : 'unsubscribe';
-  const unsubscribeChannel: UnsubscribeChannel | null = (() => {
-    if (!isUnsubVerb) return null;
-    const channels = new Set(
-      senders.map((sender) => sender.unsubscribeMethod).filter((value) => value != null),
-    );
-    return channels.size === 1 ? ([...channels][0] ?? null) : null;
-  })();
   const presentation = buildActionPresentation({
     verb: primaryVerb,
     liveCount: isUnsubVerb ? 0 : (compositeCount ?? null),
@@ -806,6 +830,41 @@ export function ConfirmActionModal({
           >
             {lead}
           </p>
+          {/* D248 — the per-state split, never one aggregate number. It
+              is the last reversible moment: a delivered unsubscribe
+              cannot be recalled (D58), so what will and will not be
+              sent has to be legible here. */}
+          {unsubBreakdown.length > 0 && (
+            <div
+              aria-label="Unsubscribe breakdown"
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '4px 8px',
+                margin: '10px 0 0',
+                fontFamily: font.mono,
+                fontSize: 11,
+                color: color.fgMuted,
+                letterSpacing: '0.02em',
+              }}
+            >
+              {unsubBreakdown.map((line, index) => (
+                <span key={line} style={{ display: 'inline-flex', gap: '4px 8px' }}>
+                  {index > 0 && <span aria-hidden="true">·</span>}
+                  <span style={index === 0 ? { color: color.fgSoft } : undefined}>{line}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          {unsubNothingToSend && (
+            <p
+              role="note"
+              style={{ fontSize: 12, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.5 }}
+            >
+              None of these senders has an unsubscribe DeclutrMail can send. Archive moves their
+              mail out of your inbox instead.
+            </p>
+          )}
           {skippedNote && (
             <p
               style={{
