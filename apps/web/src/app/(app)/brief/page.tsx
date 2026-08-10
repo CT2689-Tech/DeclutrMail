@@ -6,7 +6,11 @@
 //
 // D68 Pro gate: Free/Plus workspaces see the placeholder + upgrade CTA
 // instead of the Brief (the TierGate also stops the under-tier brief
-// fetch from ever firing). Placeholder copy mirrors D68's card.
+// fetch from ever firing). Placeholder copy mirrors D68's card EXCEPT
+// the Noise line: D68's card reads "NOISE — one-click archive", which
+// is D65 (⬜ not started — the section is a read-only per-sender count
+// list with a Gmail deep-link today). The gate describes what ships
+// now; restore D68's wording when D65 lands.
 
 import { TierGate } from '@/features/billing/tier-gate';
 import { BriefScreen } from '@/features/brief/brief-screen';
@@ -24,7 +28,7 @@ export default function BriefPage() {
       bullets={[
         'REPLY — what actually needs you',
         'FYI — facts to know',
-        'NOISE — one-click archive',
+        'NOISE — noisy senders, with message counts and a Gmail link',
       ]}
     >
       <BriefScreen />
