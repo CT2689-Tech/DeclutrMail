@@ -215,7 +215,14 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
             />
           )}
           {noise.length > 0 && (
+            // Keyed on the Brief id so a mailbox SWITCH remounts the
+            // section and drops its selection, its Done marks and its
+            // receipt. Sender keys are a hash of the email address and
+            // are therefore identical across mailboxes — without this,
+            // archiving Old Navy in one mailbox would draw "Archived ✓"
+            // on Old Navy in the other one's Brief (§8 scope-change rule).
             <NoiseSection
+              key={brief.id}
               groups={noise}
               noiseSenders={brief.noiseSenders}
               isMobile={isMobile}

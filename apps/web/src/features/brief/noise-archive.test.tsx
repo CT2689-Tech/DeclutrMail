@@ -231,6 +231,34 @@ describe('Brief Noise bulk archive (D65)', () => {
     expect(within(dialog).getByText(/currently match in Inbox/i)).toBeInTheDocument();
   });
 
+  it('blocks confirm when nothing from those senders is in the inbox', async () => {
+    // The Brief counted 7 messages yesterday; the inbox holds none of
+    // them now (already archived, or acted on elsewhere). Confirming
+    // would enqueue a job that moves nothing and still spend a cleanup
+    // unit, so the zero has to disarm the button it sits above.
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(() =>
+        jsonOk({
+          data: {
+            ...BULK_PREVIEW,
+            senders: BULK_PREVIEW.senders.map((s) => ({ ...s, counts: { ...s.counts, all: 0 } })),
+            totals: { ...BULK_PREVIEW.totals, all: 0 },
+          },
+        }),
+      ),
+      enqueueHandler(),
+    ]);
+    renderScreen();
+
+    const dialog = await openPreview();
+    await within(dialog).findByText(/nothing to archive/i);
+    // The headline and every per-sender row all read 0.
+    expect(within(dialog).getAllByText('0').length).toBeGreaterThan(0);
+    expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
+    expect(enqueued).toHaveLength(0);
+  });
+
   it('sends one bulk archive for the checked senders only, after confirm (D226)', async () => {
     installFetchStub([briefHandler(), bulkPreviewHandler(), enqueueHandler()]);
     renderScreen();
@@ -320,6 +348,49 @@ describe('Brief Noise bulk archive (D65)', () => {
       selector: { type: 'sender', senderId: ID_NEWS },
       primary: { type: 'archive', olderThanDays: null },
     });
+  });
+
+  it('marks the acted rows Done and reports the real affected count (D69)', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/batch\//,
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-1',
+              status: 'done',
+              total: 2,
+              done: 2,
+              failed: 0,
+              requestedCount: 351,
+              affectedCount: 348,
+              undoToken: 'undo-token-1',
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const dialog = await openPreview();
+    const confirm = await within(dialog).findByRole('button', { name: /^Archive/ });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+
+    // The receipt states the WORKER's number (348), never the preview's
+    // ask (351) and never yesterday's frozen count (7).
+    await screen.findByText(/Archived 348 emails from 2 senders/i, undefined, { timeout: 5000 });
+    expect(screen.getByText(/Undo it from Recent actions/i)).toBeInTheDocument();
+
+    // D69 — the acted rows are marked Done, and their frozen counts are
+    // still yesterday's.
+    expect(screen.getByText(/4 messages yesterday · Archived ✓/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 messages yesterday · Archived ✓/i)).toBeInTheDocument();
+    // The Protected row was never in the batch, so it is not marked Done.
+    expect(screen.getByText(/2 messages yesterday · Protected/i)).toBeInTheDocument();
   });
 
   it('renders no archive control when nothing is actionable', async () => {

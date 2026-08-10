@@ -113,6 +113,25 @@ export const Ready: Story<typeof NoiseArchiveSheet> = {
 };
 
 /**
+ * Resolved to zero — the Brief counted these senders yesterday but none
+ * of their mail is in the inbox now. Confirm is disarmed: enqueueing a
+ * job that moves nothing would still spend a cleanup action.
+ */
+export const NothingToArchive: Story<typeof NoiseArchiveSheet> = {
+  render: () =>
+    frame({
+      preview: {
+        totalMessages: 0,
+        countBySenderId: new Map([
+          ['aaaaaaaa-0000-4000-8000-000000000001', 0],
+          ['aaaaaaaa-0000-4000-8000-000000000002', 0],
+          ['aaaaaaaa-0000-4000-8000-000000000003', 0],
+        ]),
+      },
+    }),
+};
+
+/**
  * One sender left checked — the preview comes from the single-sender
  * endpoint instead of the bulk one, and the copy stays singular.
  */

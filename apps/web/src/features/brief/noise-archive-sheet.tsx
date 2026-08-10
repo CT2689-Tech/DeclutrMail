@@ -43,7 +43,13 @@ export function NoiseArchiveSheet({
   onRetryPreview: () => void;
 }) {
   const ready = typeof preview === 'object';
-  const confirmDisabled = !ready || targets.length === 0;
+  // Archive's ENTIRE effect is moving inbox mail, so a zero live count
+  // makes confirm a pure no-op that would still enqueue a job, write an
+  // Activity row and spend a cleanup unit. Gated on the SAME number the
+  // headline renders, so "0 emails currently match" can never sit above
+  // an enabled confirm.
+  const nothingToActOn = ready && preview.totalMessages === 0;
+  const confirmDisabled = !ready || nothingToActOn || targets.length === 0;
 
   useEffect(() => {
     if (!open) return;
@@ -225,7 +231,9 @@ export function NoiseArchiveSheet({
             {confirmDisabled
               ? preview === 'unavailable'
                 ? 'Preview unavailable — retry before confirming.'
-                : 'Counting inbox mail — confirm unlocks after the live preview loads.'
+                : nothingToActOn
+                  ? 'Nothing from these senders is in your inbox — there is nothing to archive.'
+                  : 'Counting inbox mail — confirm unlocks after the live preview loads.'
               : "One undo reverses the whole batch during your plan's Activity window."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
