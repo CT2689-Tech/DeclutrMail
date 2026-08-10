@@ -36,6 +36,11 @@ vi.mock('@/features/triage/triage-screen', () => ({
 vi.mock('@/features/triage/triage-undo-tray', () => ({
   TriageUndoTray: () => <div data-testid="undo-tray" />,
 }));
+// The D38 tour reads onboarding state and owns a mutation; its own
+// behaviour is covered in `src/features/tour/verb-tour.test.tsx`.
+vi.mock('@/features/tour/verb-tour', () => ({
+  OnboardingVerbTour: () => <div data-testid="verb-tour" />,
+}));
 vi.mock('@/lib/posthog', () => ({ track: analytics.track }));
 
 beforeEach(() => {

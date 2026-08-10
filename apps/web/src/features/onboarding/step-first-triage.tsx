@@ -5,6 +5,7 @@ import { Button, EmptyState, Eyebrow, tokens } from '@declutrmail/shared';
 import type { OnboardingCleanupGoal } from '@declutrmail/shared/contracts';
 
 import { useTriageStats } from '@/features/triage/api/use-triage-queue';
+import { OnboardingVerbTour } from '@/features/tour/verb-tour';
 import { TriageScreen } from '@/features/triage/triage-screen';
 import { TriageUndoTray } from '@/features/triage/triage-undo-tray';
 import type { TriageScreenState, TriageSessionStats } from '@/features/triage/data';
@@ -200,6 +201,13 @@ export function StepFirstTriage({
           {corner}
         </div>
       </header>
+
+      {/* D38 — the one place the five verbs get explained. Sits above
+          the real toolbar it describes, and never renders again once
+          finished or skipped. */}
+      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '16px 24px 0' }}>
+        <OnboardingVerbTour />
+      </div>
 
       <TriageScreen state={state} journey="first_relief" />
       <TriageUndoTray />

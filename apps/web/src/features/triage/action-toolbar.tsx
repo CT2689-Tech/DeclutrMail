@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Button, Kbd, tokens } from '@declutrmail/shared';
+import { Button, Kbd, Tooltip, tokens } from '@declutrmail/shared';
+import { lessonForVerb } from '@/features/tour/verb-lessons';
 import { canArchive, canLater, canUnsubscribe, type TriageDecisionRow } from './data';
 import { VERB_ORDER, VERB_SHORTCUT, verdictToVerb, type ActionVerb } from './types';
 
@@ -133,14 +134,19 @@ export function ActionToolbar({
           : verb === 'Delete'
             ? 'danger'
             : 'default';
-        return (
+        // D38 — what this verb does to the sender's mail, on hover AND
+        // on focus. The button's aria-label already carries the verb and
+        // its shortcut; the tooltip is the DESCRIPTION, wired through
+        // `aria-describedby` so it is announced rather than seen only.
+        const lesson = lessonForVerb(verb);
+        const button = (describedBy?: string) => (
           <Button
-            key={verb}
             tone={tone}
             size="md"
             disabled={verbIsDisabled}
             onClick={() => onAction(verb)}
             {...(reason != null ? { title: reason } : {})}
+            {...(describedBy != null ? { ariaDescribedBy: describedBy } : {})}
             iconRight={
               isHighlighted ? (
                 <Kbd
@@ -164,6 +170,22 @@ export function ActionToolbar({
           >
             {verb}
           </Button>
+        );
+        if (lesson === undefined) return <span key={verb}>{button()}</span>;
+        return (
+          <Tooltip
+            key={verb}
+            content={
+              <>
+                <span style={{ fontWeight: 600 }}>{lesson.label}</span>
+                <span style={{ fontFamily: font.mono }}> · {lesson.shortcut}</span>
+                <br />
+                {lesson.effect}
+              </>
+            }
+          >
+            {({ describedBy }) => button(describedBy)}
+          </Tooltip>
         );
       })}
       <span style={{ flex: 1 }} />

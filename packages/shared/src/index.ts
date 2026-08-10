@@ -38,6 +38,7 @@ export { useExpandableRow, nextExpandedRowId } from './hooks/use-expandable-row'
 export type { UseExpandableRowResult } from './hooks/use-expandable-row';
 
 export { Kbd } from './components/kbd';
+export { Tooltip } from './components/tooltip';
 export { Eyebrow } from './components/eyebrow';
 export type { EyebrowTone } from './components/eyebrow';
 export { Pill } from './components/pill';

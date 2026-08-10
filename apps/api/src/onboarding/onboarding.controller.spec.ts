@@ -76,3 +76,25 @@ describe('OnboardingController preset capability gate', () => {
     expect(submitPresetPicks).toHaveBeenCalled();
   });
 });
+
+describe('OnboardingController verb tour (D38)', () => {
+  it('marks the tour seen for the calling user and returns the fresh state', async () => {
+    const markVerbTourCompleted = vi.fn().mockResolvedValue({
+      onboardedAt: null,
+      skipped: false,
+      goal: null,
+      presetPicks: null,
+      presets: [],
+      verbTourCompletedAt: '2026-08-10T10:00:00.000Z',
+    });
+    const controller = new OnboardingController(
+      { markVerbTourCompleted } as unknown as OnboardingService,
+      {} as unknown as EntitlementsService,
+    );
+
+    const result = await controller.markVerbTourSeen(principal);
+
+    expect(markVerbTourCompleted).toHaveBeenCalledWith('user-1');
+    expect(result.data.verbTourCompletedAt).toBe('2026-08-10T10:00:00.000Z');
+  });
+});
