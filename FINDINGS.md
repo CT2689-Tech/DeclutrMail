@@ -97,6 +97,15 @@ the point.
   **Resolved 2026-08-08:** Delete on the Triage toolbar shipped in #476;
   `why-no-delete.tsx` is gone. The copy sweep is this PR. The broader audit
   — every sibling string, not just this one — is still open.
+  **Audit run 2026-08-10:** swept every string literal under
+  `apps/web/src/features` + `packages/shared/src/{copy,components}` for
+  spec vocabulary (verb-registry phrasing, D-numbers, ADR references,
+  lifecycle/enum/composite/registry jargon) with rendered-context
+  filters. Zero true siblings — "four daily verbs" was the lone leak.
+  Every D-number/jargon hit is a comment, a telemetry `reason:` value,
+  or an aria id. Nearest borderline: the landing page's "One verdict per
+  sender covers everything they sent." — plain-English meaning,
+  founder-reviewed through the D250 rounds; left as-is.
 
 - **2026-08-06** · `/onboarding` step 5 (first triage) — the pinned-row
   thresholds are unexplained cutoffs. `10 received` was an emergency proxy for
