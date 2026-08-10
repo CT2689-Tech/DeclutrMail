@@ -213,6 +213,24 @@ D-candidate lands, in that table.
 **Retention / aggregation.** 90 days raw. Powers sync-success-rate and
 sync-duration-p50/p95 dashboards.
 
+### `sender_unprotected`
+
+**When fired.** When a manual Unprotect (the sticky D245 override)
+succeeds — emitted centrally from `useSetSenderPolicy` when the caller
+supplies the unprotect context, so all four surfaces report through one
+path. Protect-ON and Keep-policy writes emit nothing.
+
+**Payload.**
+
+| Field     | Type                                                                               | Notes                                                        |
+| --------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `surface` | `'onboarding-review' \| 'triage-preview' \| 'settings-senders' \| 'sender-detail'` | Where the control was used                                   |
+| `reason`  | `'user_defined' \| 'replied' \| 'starred' \| 'gmail_important' \| null`            | The evidence being overridden (ADR-0031); no sender identity |
+
+**Retention / aggregation.** PostHog default. This is the ONLY feedback
+loop on the D245 auto-protection thresholds: a weak reason with a high
+unprotect rate is the argument for revisiting the signal list.
+
 ### `triage_action_taken`
 
 **When fired.** When the server accepts a preview-confirmed decision:

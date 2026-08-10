@@ -1,7 +1,8 @@
 // Storybook CSF3 stories for the Protected-action notice (D245, D226).
 //
-// Same lightweight local CSF shims as the sibling triage stories so this
-// typechecks without `@storybook/react` installed (D210 seeding).
+// Real `Meta` / `StoryObj` types — the local `Partial<…>` shim erased
+// required-prop checking, which is how the (required) `surface` prop
+// could be missing from every story without a squeak from tsc.
 //
 // What these variants exist to show is a CLAIM, not a layout: acting on
 // a Protected sender leaves the protection intact, so every future bulk
@@ -17,6 +18,7 @@
 // `ActionPreviewPresentation` owns that, and a second description of
 // the same fact is how Delete's copy came to omit Gmail Trash.
 
+import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from './data';
@@ -24,20 +26,7 @@ import { ProtectedActionNotice, UnprotectButton } from './protected-notice';
 
 const { color } = tokens;
 
-type StoryMeta<C extends (...args: never) => unknown> = {
-  title: string;
-  component: C;
-  parameters?: Record<string, unknown>;
-  tags?: readonly string[];
-};
-
-type Story<C extends (props: never) => unknown> = {
-  args?: Partial<Parameters<C>[0]>;
-  parameters?: Record<string, unknown>;
-  render?: (args: Parameters<C>[0]) => ReturnType<C>;
-};
-
-const meta: StoryMeta<typeof ProtectedActionNotice> = {
+const meta: Meta<typeof ProtectedActionNotice> = {
   title: 'Triage/ProtectedActionNotice',
   component: ProtectedActionNotice,
   parameters: {
@@ -53,6 +42,7 @@ const meta: StoryMeta<typeof ProtectedActionNotice> = {
 };
 
 export default meta;
+type Story = StoryObj<typeof ProtectedActionNotice>;
 
 /** The Unprotect control issues a real mutation, so it needs a client. */
 function frame(children: React.ReactNode) {
@@ -77,8 +67,8 @@ function protectedRow(reason: NonNullable<TriageDecisionRow['protectionReason']>
  * allowed (D245 scopes protection to BULK and AUTOMATIC actions), the
  * shield survives it, and the user is told.
  */
-export const OnArchive: Story<typeof ProtectedActionNotice> = {
-  args: { row: protectedRow('starred'), verb: 'Archive' },
+export const OnArchive: Story = {
+  args: { row: protectedRow('starred'), verb: 'Archive', surface: 'triage-preview' },
   render: (args) => frame(<ProtectedActionNotice {...args} />),
 };
 
@@ -88,8 +78,8 @@ export const OnArchive: Story<typeof ProtectedActionNotice> = {
  * mail now", which omitted Gmail Trash while the canonical preview
  * above it named it.
  */
-export const OnDelete: Story<typeof ProtectedActionNotice> = {
-  args: { row: protectedRow('gmail-important'), verb: 'Delete' },
+export const OnDelete: Story = {
+  args: { row: protectedRow('gmail-important'), verb: 'Delete', surface: 'triage-preview' },
   render: (args) => frame(<ProtectedActionNotice {...args} />),
 };
 
@@ -98,8 +88,8 @@ export const OnDelete: Story<typeof ProtectedActionNotice> = {
  * moving the existing backlog, so the protection keeps shielding
  * *whatever still arrives*.
  */
-export const OnUnsubscribe: Story<typeof ProtectedActionNotice> = {
-  args: { row: protectedRow('replied'), verb: 'Unsubscribe' },
+export const OnUnsubscribe: Story = {
+  args: { row: protectedRow('replied'), verb: 'Unsubscribe', surface: 'triage-preview' },
   render: (args) => frame(<ProtectedActionNotice {...args} />),
 };
 
@@ -107,8 +97,8 @@ export const OnUnsubscribe: Story<typeof ProtectedActionNotice> = {
  * No pending verb — the surface has nothing to contrast against, so the
  * notice states the standing consequence alone.
  */
-export const WithoutAVerb: Story<typeof ProtectedActionNotice> = {
-  args: { row: protectedRow('manual'), verb: null },
+export const WithoutAVerb: Story = {
+  args: { row: protectedRow('manual'), verb: null, surface: 'triage-preview' },
   render: (args) => frame(<ProtectedActionNotice {...args} />),
 };
 
@@ -116,10 +106,11 @@ export const WithoutAVerb: Story<typeof ProtectedActionNotice> = {
  * The DISABLED / two-sided case: an unprotected row renders nothing at
  * all. A notice only ever seen present is not a verified notice.
  */
-export const UnprotectedRowRendersNothing: Story<typeof ProtectedActionNotice> = {
+export const UnprotectedRowRendersNothing: Story = {
   args: {
     row: TRIAGE_QUEUE.find((r) => r.protectionReason === null)!,
     verb: 'Archive',
+    surface: 'triage-preview',
   },
   render: (args) =>
     frame(
@@ -138,7 +129,7 @@ export const UnprotectedRowRendersNothing: Story<typeof ProtectedActionNotice> =
  * freely reversible either: a manual Unprotect is a STICKY override, so
  * automatic protection will not put the shield back.
  */
-export const UnprotectControlAlone: Story<typeof UnprotectButton> = {
-  args: { row: protectedRow('starred') },
+export const UnprotectControlAlone: StoryObj<typeof UnprotectButton> = {
+  args: { row: protectedRow('starred'), surface: 'onboarding-review' },
   render: (args) => frame(<UnprotectButton {...args} />),
 };

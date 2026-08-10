@@ -118,8 +118,23 @@ describe('adaptProtectionReason — explainable automatic protection', () => {
     expect(adaptProtectionReason(true, wire)).toBe(expected);
   });
 
-  it('falls back to user-marked when protected but the wire omits the reason', () => {
-    expect(adaptProtectionReason(true, null)).toBe('user-marked');
+  it('returns null when protected but the wire omits the reason — never a guess', () => {
+    // The old fallback here was `'user-marked'`, which turned an
+    // unrecognized enum value into a false statement about the user's
+    // own actions ("you marked it Protected") — the exact defect the
+    // shared protection copy module was built to end, alive one adapter
+    // upstream of it. Consumers render "Protected" with no evidence
+    // clause for this shape.
+    expect(adaptProtectionReason(true, null)).toBeNull();
+  });
+
+  it('returns null for an enum value this build does not know', () => {
+    expect(
+      adaptProtectionReason(
+        true,
+        'some_future_reason' as unknown as Parameters<typeof adaptProtectionReason>[1],
+      ),
+    ).toBeNull();
   });
 
   it('hides the retained memory-pin reason after manual Unprotect', () => {

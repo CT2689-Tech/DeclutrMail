@@ -13,10 +13,12 @@
 //     (independent of the sheet's local state) — that's the
 //     contract the screen relies on when persisting the toggle.
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
+import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
 import { ActionSheet } from './action-sheet';
 import { TRIAGE_QUEUE } from './data';
 import { resetTriageStore, useTriageStore, type RememberableVerb } from './store';
@@ -340,6 +342,53 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     );
     expect(screen.getByRole('button', { name: /^Unprotect$/i })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent(/Automatic protection won’t re-apply/i);
+  });
+
+  it('closes the pending action when the in-sheet Unprotect succeeds', async () => {
+    // `onUnprotected={onCancel}` is load-bearing, not tidiness: the
+    // mutation invalidates the triage queue, the refetch drops this
+    // now-unprotected sender, and the sheet's `row` resolves to null —
+    // which unmounts the modal mid-flow while the pending action
+    // SURVIVES in the store. Closing deliberately leaves the user
+    // somewhere they chose. This pins the wiring so a refactor that
+    // drops the prop fails here instead of in production.
+    installFetchStub([
+      {
+        method: 'PATCH',
+        path: /\/api\/senders\/[^/]+\/policy/,
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              data: {
+                senderId: protectedRow.senderId,
+                policyType: null,
+                isProtected: false,
+                protectionReason: null,
+              },
+              meta: {},
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    const onCancel = vi.fn();
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ActionSheet
+          open
+          verb="Archive"
+          row={protectedRow}
+          inboxCount={12}
+          onCancel={onCancel}
+          onConfirm={() => {}}
+        />
+      </QueryWrapper>,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /^Unprotect$/i }));
+
+    await waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
+    resetFetchStub();
   });
 
   it('does not restate what the verb reaches — the preview owns that', () => {

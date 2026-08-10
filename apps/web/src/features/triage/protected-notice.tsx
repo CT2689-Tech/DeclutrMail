@@ -1,8 +1,12 @@
 'use client';
 
 import { Button, tokens, toast } from '@declutrmail/shared';
+import { normalizeProtectionReason } from '@declutrmail/shared/copy';
 
-import { useSetSenderPolicy } from '@/features/senders/api/use-sender-policy';
+import {
+  useSetSenderPolicy,
+  type UnprotectTelemetry,
+} from '@/features/senders/api/use-sender-policy';
 import { captureFeatureException } from '@/lib/sentry';
 import type { TriageDecisionRow } from './data';
 import type { SheetableVerb } from './store';
@@ -58,12 +62,15 @@ const { color } = tokens;
 export function ProtectedActionNotice({
   row,
   verb,
+  surface,
   showUnprotect = true,
   onUnprotected,
 }: {
   row: TriageDecisionRow;
   /** The verb being previewed; `null` on surfaces with no pending verb. */
   verb: SheetableVerb | null;
+  /** Where an Unprotect from here would be coming from (D159 telemetry). */
+  surface: UnprotectTelemetry['surface'];
   /**
    * Render the Unprotect control alongside the notice.
    *
@@ -92,8 +99,11 @@ export function ProtectedActionNotice({
       style={{
         padding: '10px 12px',
         borderRadius: 8,
-        background: 'rgba(196,46,46,0.06)',
-        border: '1px solid rgba(196,46,46,0.30)',
+        // The canonical danger family (tokens.css) — an earlier draft
+        // hand-rolled rgba(196,46,46,…), a red that exists nowhere in
+        // the token system.
+        background: color.dangerBg,
+        border: `1px solid ${color.dangerBorder}`,
         fontSize: 12,
         lineHeight: 1.5,
         color: color.danger,
@@ -107,7 +117,9 @@ export function ProtectedActionNotice({
         This sender stays <strong>Protected</strong>, so bulk and automatic cleanup will keep
         skipping {verb === 'Unsubscribe' ? 'whatever still arrives' : 'it'}.
       </span>
-      {showUnprotect && <UnprotectButton row={row} onUnprotected={onUnprotected} />}
+      {showUnprotect && (
+        <UnprotectButton row={row} surface={surface} onUnprotected={onUnprotected} />
+      )}
     </div>
   );
 }
@@ -125,9 +137,12 @@ export function ProtectedActionNotice({
  */
 export function UnprotectButton({
   row,
+  surface,
   onUnprotected,
 }: {
   row: TriageDecisionRow;
+  /** Where this Unprotect happens (D159 — the threshold feedback loop). */
+  surface: UnprotectTelemetry['surface'];
   /** Fired after the server confirms — the caller may advance its own state. */
   onUnprotected?: (() => void) | undefined;
 }) {
@@ -141,7 +156,11 @@ export function UnprotectButton({
         disabled={setPolicy.isPending}
         onClick={() =>
           setPolicy.mutate(
-            { senderId: row.senderId, patch: { isProtected: false } },
+            {
+              senderId: row.senderId,
+              patch: { isProtected: false },
+              unprotect: { surface, reason: normalizeProtectionReason(row.protectionReason) },
+            },
             {
               onSuccess: () => {
                 toast(`${row.senderName} is no longer Protected.`, 'success');

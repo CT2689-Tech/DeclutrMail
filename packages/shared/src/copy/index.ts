@@ -18,6 +18,7 @@ export {
 export { BUSINESS_POSTAL_ADDRESS, postalAddressLine, hasPostalAddress } from './postal-address';
 
 export {
+  PROTECTION_REASON_IDS,
   WEAK_PROTECTION_REASON_IDS,
   isWeakProtectionReason,
   normalizeProtectionReason,

@@ -303,6 +303,62 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
   });
 });
 
+describe('TriageRow — the D245 review row strip (offerUnprotect)', () => {
+  // The strip is the PRIMARY control of the protection review, and
+  // until 2026-08-10 nothing rendered it in a test — the only assertion
+  // was that the screen passes `offerUnprotect` to a mocked
+  // TriageScreen, which verifies a prop, not a control.
+  function renderStrip(
+    row: ReturnType<typeof rowById>,
+    opts: { offerUnprotect?: boolean; inline?: boolean } = {},
+  ) {
+    return render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageRow
+          row={row}
+          expanded={false}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          offerUnprotect={opts.offerUnprotect ?? true}
+          inlinePreview={
+            opts.inline ? { verb: 'Archive', archiveHistoric: false, inboxCount: 2 } : null
+          }
+        />
+      </QueryWrapper>,
+    );
+  }
+
+  it('renders the consequence and the Unprotect control on a protected row', () => {
+    renderStrip(rowById('t-sarah'));
+    expect(screen.getByText(/Bulk and automatic cleanup skip this sender/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Unprotect$/i })).toBeInTheDocument();
+  });
+
+  it('renders no strip for an unprotected row, even on the review', () => {
+    renderStrip(rowById('t-groupon'));
+    expect(screen.queryByText(/Bulk and automatic cleanup skip this sender/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Unprotect$/i })).toBeNull();
+  });
+
+  it('renders no strip outside the review (offerUnprotect unset)', () => {
+    renderStrip(rowById('t-sarah'), { offerUnprotect: false });
+    expect(screen.queryByText(/Bulk and automatic cleanup skip this sender/i)).toBeNull();
+  });
+
+  it('never stacks two Unprotect buttons when the strip and an inline preview are both live', () => {
+    // `showUnprotect={!offerUnprotect}` on the inline notice exists for
+    // exactly this: with D34's remember-preference set, a protected row
+    // on the review renders BOTH the strip and the inline preview. Two
+    // identical buttons with two overlapping sentences on one card was
+    // the bug; this pins the suppression in both directions.
+    renderStrip(rowById('t-sarah'), { inline: true });
+    expect(screen.getAllByRole('button', { name: /^Unprotect$/i })).toHaveLength(1);
+    // The notice itself still renders — only its duplicate control is
+    // suppressed.
+    expect(screen.getByRole('status')).toHaveTextContent(/stays Protected/i);
+  });
+});
+
 describe('TriageRow — the D226 inline preview survives collapse (mobile bypass)', () => {
   it('renders the preview and Protected acknowledgement on a COLLAPSED row', () => {
     // The bypass this guards: `inlinePreview` is derived from

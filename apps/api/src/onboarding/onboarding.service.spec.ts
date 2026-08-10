@@ -852,6 +852,48 @@ describe('OnboardingService', () => {
       expect(read.rows.map((r) => r.senderKey)).toEqual(['weak-b']);
     });
 
+    it('re-pins when the GOAL changes instead of reporting the old pin complete', async () => {
+      // The goal selects the step-5 branch, and the two branches have
+      // DISJOINT candidate sets — cleanup pins are non-protected by
+      // construction, review pins only weakly-protected rows. Before
+      // the pin carried its goal, a cleanup pin surviving a goal switch
+      // resolved every key to nothing, so decided === pinned on the
+      // very first protection read: "Protection reviewed" claiming a
+      // review of senders the branch can never show. Same
+      // fake-completion shape as the mailbox axis above. Reachable via
+      // a direct POST /api/onboarding/preset-picks (deriveAuthedStep
+      // never routes back to step 4, but the API does not know that).
+      await seedDecision(db, mailboxId, {
+        senderKey: 'cleanup-a',
+        verdict: 'archive',
+        confidence: 0.9,
+        inboxMessages: 6,
+      });
+      await seedDecision(db, mailboxId, {
+        senderKey: 'weak-only',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+        inboxMessages: 3,
+      });
+      await service.submitPresetPicks(userId, mailboxId, 'reduce_newsletters', []);
+      // Pin under the cleanup goal.
+      const cleanupRead = await service.getFirstTriage(userId, mailboxId);
+      expect(cleanupRead.rows.map((r) => r.senderKey)).toContain('cleanup-a');
+
+      await chooseProtectionGoal();
+      const read = await service.getFirstTriage(userId, mailboxId);
+
+      // A fresh pin from the review's own candidates — never the stale
+      // cleanup pin resolved to nothing.
+      expect(read.meta).toEqual({
+        pinned: 1,
+        decided: 0,
+        protection: { strong: 0, weak: 1, manual: 0 },
+      });
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['weak-only']);
+    });
+
     it('never pins a sender the queue cannot show — that reads as reviewed', async () => {
       // The pool comes from `sender_policies`; the rows come from
       // `triage_decisions`. A weakly-protected sender with no scored

@@ -286,6 +286,41 @@ describe('SendersPoliciesScreen', () => {
     expect(screen.queryByRole('button', { name: /^show more$/i })).not.toBeInTheDocument();
   });
 
+  it('keeps the loaded rows when "Show more" fails — the footer owns that failure', async () => {
+    // TanStack v5 flips the query-wide `isError` on ANY failed fetch
+    // while data is retained, so the old whole-screen gate replaced 50
+    // loaded rows with "We couldn't load protected senders" after a
+    // failed page-2 — false about what happened, and it discarded the
+    // rows. The gate is now `isError && data == null`; this pins the
+    // retained-data path (same class `activity-screen.tsx` documents).
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) =>
+          url.searchParams.get('cursor') === 'page-2'
+            ? jsonServerError()
+            : jsonOk({
+                data: [{ ...BASE_ROW, id: 'p1', displayName: 'Page 1 Sender' }],
+                meta: { pagination: { nextCursor: 'page-2', hasMore: true, limit: 50 } },
+              }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Page 1 Sender')).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: /show more protected senders/i }));
+
+    // The next-page failure surfaces IN the footer…
+    await waitFor(() => expect(screen.getByText(/Couldn.t load more\./i)).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /show more protected senders/i })).toHaveTextContent(
+      /Try again/i,
+    );
+    // …while the loaded rows and the whole-screen surface stay intact.
+    expect(screen.getByText('Page 1 Sender')).toBeInTheDocument();
+    expect(screen.queryByText(/couldn.t load protected senders/i)).toBeNull();
+  });
+
   it('renders an alert on a cold 500 and recovers policies when Retry succeeds', async () => {
     let protectedAttempts = 0;
     installFetchStub([

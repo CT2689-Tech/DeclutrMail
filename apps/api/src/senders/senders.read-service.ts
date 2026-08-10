@@ -49,6 +49,7 @@ import {
 } from '@declutrmail/db';
 import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
 import { normalizeUnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
+import { normalizeProtectionReason } from '@declutrmail/shared/copy';
 import {
   CONFIDENCE,
   FREE_MAIL_DOMAINS,
@@ -235,6 +236,14 @@ function buildRollingWindowSubqueries(): {
     // it is the ranking key the D245 protection review sorts on. Served
     // by the partial index `mail_messages_account_sender_unread_idx`,
     // which exists for precisely this predicate.
+    //
+    // MUST stay row-for-row equal to `senderInboxActionWhere`
+    // (`is_outbound = false AND 'INBOX' = ANY(label_ids)`, scoped by
+    // mailbox + sender). The correlated form can't call the value-list
+    // helper, so this is a deliberate transcription of that predicate,
+    // not a private opinion about "inbox" — the 2026-07-26 action-
+    // surface finding is what happens when the two drift (mail absent
+    // from a preview moved at execution). Change one, change both.
     unreadInboxCount: sql<number | string>`(
       SELECT COUNT(*)::int
       FROM ${mailMessages}
@@ -1920,16 +1929,7 @@ function ensureSafeIntegerNumber(value: string | number, label: string): number 
   return n;
 }
 
-function normalizeProtectionReason(
-  reason: string | null | undefined,
-): ProtectionFlags['protectionReason'] {
-  if (
-    reason === 'user_defined' ||
-    reason === 'replied' ||
-    reason === 'starred' ||
-    reason === 'gmail_important'
-  ) {
-    return reason;
-  }
-  return null;
-}
+// `normalizeProtectionReason` now comes from `@declutrmail/shared/copy`
+// — this file kept a private copy with narrower semantics (snake_case
+// only), which is exactly the same-name-different-behavior drift the
+// shared module was created to end.

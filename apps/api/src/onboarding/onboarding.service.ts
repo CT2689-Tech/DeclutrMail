@@ -42,6 +42,20 @@ const PREF_FIRST_TRIAGE_KEYS = 'onboardingFirstTriageKeys';
 const PREF_FIRST_TRIAGE_VERSION = 'onboardingFirstTriageVersion';
 /** Which mailbox the pinned keys belong to — see `readOrCreatePin`. */
 const PREF_FIRST_TRIAGE_MAILBOX = 'onboardingFirstTriageMailboxId';
+/**
+ * Which GOAL the pinned keys were picked for. The goal selects the
+ * step-5 branch, and the two branches have DISJOINT candidate sets:
+ * cleanup pins are non-protected by construction
+ * (`requireCleanupCandidate`), the review pins only weakly-protected
+ * rows. A pin carried across a goal change therefore resolves every
+ * key to nothing → `decided === pinned` → a completion the user never
+ * earned — the same fake-completion shape the mailbox axis had before
+ * `PREF_FIRST_TRIAGE_MAILBOX` (#485-adjacent). Not user-reachable
+ * today (`deriveAuthedStep` never routes back to step 4), but a direct
+ * `POST /api/onboarding/preset-picks` is, so the invariant is guarded
+ * where it lives rather than where today's UI happens not to go.
+ */
+const PREF_FIRST_TRIAGE_GOAL = 'onboardingFirstTriageGoal';
 const PREF_SKIPPED = 'onboardingSkipped';
 
 /** D112/D246 — the finite first-relief run covers at most 5 senders. */
@@ -207,7 +221,7 @@ export class OnboardingService {
       requireCleanupCandidate: true,
     });
 
-    const pinnedKeys = await this.readOrCreatePin(userId, mailboxAccountId, prefs, () =>
+    const pinnedKeys = await this.readOrCreatePin(userId, mailboxAccountId, goal, prefs, () =>
       pickFirstTriageCandidates(queue, goal).map((r) => r.senderKey),
     );
 
@@ -280,8 +294,13 @@ export class OnboardingService {
       pool.filter(isWeaklyProtected).map((row) => [row.senderKey, row] as const),
     );
 
-    const pinnedKeys = await this.readOrCreatePin(userId, mailboxAccountId, prefs, () =>
-      review.senderKeys.filter((key) => showable.has(key)).slice(0, FIRST_TRIAGE_PINNED_COUNT),
+    const pinnedKeys = await this.readOrCreatePin(
+      userId,
+      mailboxAccountId,
+      'protect_important',
+      prefs,
+      () =>
+        review.senderKeys.filter((key) => showable.has(key)).slice(0, FIRST_TRIAGE_PINNED_COUNT),
     );
 
     // The pinned SET is frozen (D112 — the practice set never shifts
@@ -363,13 +382,18 @@ export class OnboardingService {
   private async readOrCreatePin(
     userId: string,
     mailboxAccountId: string,
+    goal: OnboardingGoal | null,
     prefs: Record<string, unknown>,
     pick: () => string[],
   ): Promise<string[]> {
     const stored = readStringArray(prefs[PREF_FIRST_TRIAGE_KEYS]);
     const staleVersion = prefs[PREF_FIRST_TRIAGE_VERSION] !== FIRST_TRIAGE_PIN_VERSION;
     const otherMailbox = prefs[PREF_FIRST_TRIAGE_MAILBOX] !== mailboxAccountId;
-    if (stored !== null && stored.length > 0 && !staleVersion && !otherMailbox) {
+    // `?? null` so a pin written before this key existed reads as
+    // null — which mismatches any current goal and re-pins ONCE, the
+    // correct migration for pre-goal pins.
+    const otherGoal = (prefs[PREF_FIRST_TRIAGE_GOAL] ?? null) !== goal;
+    if (stored !== null && stored.length > 0 && !staleVersion && !otherMailbox && !otherGoal) {
       return stored;
     }
 
@@ -381,6 +405,7 @@ export class OnboardingService {
       [PREF_FIRST_TRIAGE_KEYS]: pinnedKeys,
       [PREF_FIRST_TRIAGE_VERSION]: FIRST_TRIAGE_PIN_VERSION,
       [PREF_FIRST_TRIAGE_MAILBOX]: mailboxAccountId,
+      [PREF_FIRST_TRIAGE_GOAL]: goal,
     });
     return pinnedKeys;
   }

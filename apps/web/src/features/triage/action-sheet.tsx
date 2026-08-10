@@ -332,7 +332,12 @@ export function ActionSheet({
                 mid-flow while the pending action survived in the store.
                 Cancelling deliberately leaves the user somewhere they
                 chose. */}
-            <ProtectedActionNotice row={row} verb={verb} onUnprotected={onCancel} />
+            <ProtectedActionNotice
+              row={row}
+              verb={verb}
+              surface="triage-preview"
+              onUnprotected={onCancel}
+            />
           </div>
         )}
 

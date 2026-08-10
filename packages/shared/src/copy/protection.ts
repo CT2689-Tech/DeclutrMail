@@ -22,11 +22,24 @@
 // identity, no message content. Safe in the client bundle.
 
 /**
- * Why automatic or manual protection is set, in the DB's own spelling
- * (`sender_policies.protection_reason`). This is the canonical union;
- * feature-local kebab variants are legacy aliases, not new facts.
+ * Every protection reason, in the DB's own spelling
+ * (`sender_policies.protection_reason`). The type below derives from
+ * this list so a fifth reason added here reaches every test that
+ * iterates "all reasons" without anyone re-mirroring the union by hand.
  */
-export type ProtectionReasonId = 'user_defined' | 'replied' | 'starred' | 'gmail_important';
+export const PROTECTION_REASON_IDS = [
+  'user_defined',
+  'replied',
+  'starred',
+  'gmail_important',
+] as const;
+
+/**
+ * Why automatic or manual protection is set. This is the canonical
+ * union; feature-local kebab variants are legacy aliases, not new
+ * facts.
+ */
+export type ProtectionReasonId = (typeof PROTECTION_REASON_IDS)[number];
 
 /**
  * The two reasons that rest on a ONE-WAY signal (D245). A reply is a
@@ -94,8 +107,12 @@ export function protectionReasonClause(reason: ProtectionReasonId | null): strin
       return 'you starred a message';
     case 'gmail_important':
       return 'Gmail marks it important';
-    // Protected with no recorded reason is a real row shape (the CHECK
-    // only binds reason when `is_protected`), so say the honest minimum
+    // In the DB this shape cannot exist — migration 0023's CHECK is
+    // `NOT is_protected OR protection_reason IS NOT NULL`, i.e.
+    // protected ⇒ reason recorded. It reaches here anyway because the
+    // WIRE admits it: adapters type `reason | null` alongside
+    // `isProtected`, and `normalizeProtectionReason` maps any enum
+    // value this build doesn't know to null. Say the honest minimum
     // rather than inventing evidence.
     case null:
       return 'it is Protected';

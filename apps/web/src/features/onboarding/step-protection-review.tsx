@@ -1,9 +1,14 @@
 'use client';
 
 import { useEffect, useRef, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorState, Eyebrow, tokens } from '@declutrmail/shared';
 import type { OnboardingProtectionSplit } from '@declutrmail/shared/contracts';
 
+import {
+  isMailboxScopeConflict,
+  resetMailboxScopedCache,
+} from '@/features/mailboxes/api/reset-mailbox-cache';
 import { useTriageStats } from '@/features/triage/api/use-triage-queue';
 import { TriageScreen } from '@/features/triage/triage-screen';
 import { TriageUndoTray } from '@/features/triage/triage-undo-tray';
@@ -59,6 +64,7 @@ export function StepProtectionReview({
 }) {
   const firstTriage = useFirstTriage();
   const stats = useTriageStats();
+  const queryClient = useQueryClient();
   const started = useRef(false);
   const finished = useRef(false);
 
@@ -91,6 +97,29 @@ export function StepProtectionReview({
   };
 
   if (firstTriage.isError) {
+    // A CurrentMailboxGuard 409 (SELECT_MAILBOX / NO_ACTIVE_MAILBOX) is
+    // a DESIGNED state, never a retry (CLAUDE.md §8): the generic retry
+    // below can only 409 again, so it was a dead end whose one exit
+    // wrote the durable `skipped: true` flag. Reachable only through a
+    // stale `me` (deriveAuthedStep gates on activeMailboxId), which is
+    // exactly why no manual pass ever hits it. The reset invalidates
+    // `me` + every mailbox-scoped key; the onboarding machine then
+    // re-derives the right step (the connect step, if the mailbox is
+    // truly gone).
+    if (isMailboxScopeConflict(firstTriage.error)) {
+      return (
+        <PanelShell corner={corner}>
+          <ErrorState
+            title="Your mailbox connection changed"
+            description="This step needs an active Gmail connection. Refresh your connection state to continue."
+            retryLabel="Refresh connection"
+            onRetry={() => {
+              void resetMailboxScopedCache(queryClient);
+            }}
+          />
+        </PanelShell>
+      );
+    }
     return (
       <PanelShell corner={corner}>
         {/* ErrorState, not EmptyState: D211/D212 require a failure to be
@@ -205,7 +234,14 @@ export function StepProtectionReview({
             {reviewBody(
               split,
               rows.length,
-              rows.some((r) => r.unreadInboxCount > 0),
+              // Same precondition as the Settings list's ordering claim:
+              // every row measured AND at least one non-zero. `some(> 0)`
+              // alone let a partial response (the field is optional on
+              // the wire) claim a ranking the unmeasured rows can't be
+              // part of — unknown is not zero.
+              rows.length > 0 &&
+                rows.every((r) => r.unreadInboxCount != null) &&
+                rows.some((r) => (r.unreadInboxCount ?? 0) > 0),
             )}
           </p>
         </div>

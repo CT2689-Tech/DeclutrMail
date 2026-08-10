@@ -789,7 +789,18 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       protectionReason: next ? (d.protectionReason ?? 'user-marked') : null,
     }));
     setPolicy.mutate(
-      { senderId: sender.id, patch: { isProtected: next } },
+      {
+        senderId: sender.id,
+        patch: { isProtected: next },
+        ...(next
+          ? {}
+          : {
+              unprotect: {
+                surface: 'sender-detail' as const,
+                reason: normalizeProtectionReason(detail.protectionReason),
+              },
+            }),
+      },
       {
         onSuccess: (res) => {
           // Reconcile from the server result.
@@ -1010,9 +1021,17 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               disabled={setPolicy.isPending}
               title={
                 detail.isProtected
-                  ? `Protected — ${protectionReasonClause(
-                      normalizeProtectionReason(detail.protectionReason),
-                    )}. Select to remove protection.`
+                  ? // Composed, not concatenated blindly: with no recorded
+                    // reason the shared clause is "it is Protected", and
+                    // "Protected — it is Protected" is a tautology exactly
+                    // where the exact reason is promised. Drop the clause
+                    // segment instead of inventing one.
+                    (() => {
+                      const reason = normalizeProtectionReason(detail.protectionReason);
+                      return reason === null
+                        ? 'Protected. Select to remove protection.'
+                        : `Protected — ${protectionReasonClause(reason)}. Select to remove protection.`;
+                    })()
                   : 'Protect this sender from bulk and automatic mail-changing actions.'
               }
             >

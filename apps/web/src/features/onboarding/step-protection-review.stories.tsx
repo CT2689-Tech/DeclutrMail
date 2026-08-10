@@ -1,9 +1,12 @@
 // Storybook CSF3 stories for onboarding step 5 under the
 // `protect_important` goal — the D245 protection review.
 //
-// Same lightweight local CSF shims as the sibling triage/onboarding
-// stories so this typechecks without `@storybook/react` installed
-// (D210 seeding).
+// Real `Meta` / `StoryObj` types from the installed framework package —
+// the local `Partial<…>` shim this file shipped with erased
+// required-prop checking (a story omitting `row` compiled and crashed
+// at render), and the Storybook runtime has been on disk since the
+// #483 seed. Sibling stories still on shims convert as they're
+// touched (§1.3).
 //
 // This screen FETCHES rather than taking a `state` prop, so — unlike
 // `ScreenerScreen` — it cannot be driven by args. Each story seeds the
@@ -25,6 +28,7 @@
 //   • counts absent — the server never computed them, so nothing is
 //                 claimed
 
+import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
 import type { OnboardingFirstTriageMeta } from '@declutrmail/shared/contracts';
@@ -35,20 +39,7 @@ import { StepProtectionReview } from './step-protection-review';
 
 const { color } = tokens;
 
-type StoryMeta<C extends (...args: never) => unknown> = {
-  title: string;
-  component: C;
-  parameters?: Record<string, unknown>;
-  tags?: readonly string[];
-};
-
-type Story<C extends (props: never) => unknown> = {
-  args?: Partial<Parameters<C>[0]>;
-  parameters?: Record<string, unknown>;
-  render?: (args: Parameters<C>[0]) => ReturnType<C>;
-};
-
-const meta: StoryMeta<typeof StepProtectionReview> = {
+const meta: Meta<typeof StepProtectionReview> = {
   title: 'Onboarding/StepProtectionReview',
   component: StepProtectionReview,
   parameters: {
@@ -64,6 +55,7 @@ const meta: StoryMeta<typeof StepProtectionReview> = {
 };
 
 export default meta;
+type Story = StoryObj<typeof StepProtectionReview>;
 
 /** Two weakly-protected rows, ranked by the mail they shield. */
 const ROWS: TriageDecisionRow[] = [
@@ -130,7 +122,7 @@ function story(rows: TriageDecisionRow[], readMeta: OnboardingFirstTriageMeta) {
  * one-way signal. The reassurance leads; the rows are the ones worth a
  * look, costliest first.
  */
-export const ReassuranceLeads: Story<typeof StepProtectionReview> = {
+export const ReassuranceLeads: Story = {
   render: () =>
     story(ROWS, { pinned: 2, decided: 0, protection: { strong: 460, weak: 55, manual: 0 } }),
 };
@@ -140,13 +132,13 @@ export const ReassuranceLeads: Story<typeof StepProtectionReview> = {
  * headline would be true and useless, so the headline states the fact
  * that exists instead. Zero strong is not an empty review.
  */
-export const NoRepliesProtected: Story<typeof StepProtectionReview> = {
+export const NoRepliesProtected: Story = {
   render: () =>
     story(ROWS, { pinned: 2, decided: 0, protection: { strong: 0, weak: 2, manual: 0 } }),
 };
 
 /** Nothing weak to review — the reassurance IS the win. */
-export const NothingToReview: Story<typeof StepProtectionReview> = {
+export const NothingToReview: Story = {
   render: () =>
     story([], { pinned: 0, decided: 0, protection: { strong: 12, weak: 0, manual: 0 } }),
 };
@@ -155,7 +147,7 @@ export const NothingToReview: Story<typeof StepProtectionReview> = {
  * Nothing protected at all. Says WHY protection is absent, so an empty
  * result does not read as a broken scan.
  */
-export const NothingProtectedYet: Story<typeof StepProtectionReview> = {
+export const NothingProtectedYet: Story = {
   render: () => story([], { pinned: 0, decided: 0, protection: { strong: 0, weak: 0, manual: 0 } }),
 };
 
@@ -165,13 +157,13 @@ export const NothingProtectedYet: Story<typeof StepProtectionReview> = {
  * yet scored). This rendered "Nothing else is protected on a weaker
  * signal" before the end panel learned to branch on the weak count.
  */
-export const PlentyToReviewButNoneShowable: Story<typeof StepProtectionReview> = {
+export const PlentyToReviewButNoneShowable: Story = {
   render: () =>
     story([], { pinned: 0, decided: 0, protection: { strong: 460, weak: 55, manual: 0 } }),
 };
 
 /** Every pinned row resolved — acted on or unprotected. */
-export const Reviewed: Story<typeof StepProtectionReview> = {
+export const Reviewed: Story = {
   render: () =>
     story([], { pinned: 5, decided: 5, protection: { strong: 460, weak: 50, manual: 0 } }),
 };
@@ -180,6 +172,98 @@ export const Reviewed: Story<typeof StepProtectionReview> = {
  * The server took the cleanup branch, so no counts exist. Rows still
  * render; the headline claims nothing it cannot support.
  */
-export const CountsNotComputed: Story<typeof StepProtectionReview> = {
+export const CountsNotComputed: Story = {
   render: () => story(ROWS, { pinned: 2, decided: 0 }),
 };
+
+/**
+ * Every protection is the user's own Protect (#485). The panel names
+ * them — the earlier branch read `strong: 0, weak: 0` as "Nothing is
+ * protected yet … nothing is being held back from cleanup", which was
+ * false precisely for the user who engaged with protection most
+ * deliberately.
+ */
+export const OnlyManualProtections: Story = {
+  render: () => story([], { pinned: 0, decided: 0, protection: { strong: 0, weak: 0, manual: 7 } }),
+};
+
+/** The read still in flight — nothing claimed while nothing is known. */
+export const Loading: Story = {
+  render: () => (
+    <Pending>
+      <StepProtectionReview onComplete={() => {}} completing={false} />
+    </Pending>
+  ),
+};
+
+/** The read failed — an error, visibly NOT "nothing is protected". */
+export const LoadFailed: Story = {
+  render: () => (
+    <Failing error={new Error('boom')}>
+      <StepProtectionReview onComplete={() => {}} completing={false} />
+    </Failing>
+  ),
+};
+
+/**
+ * The read 409'd (`NO_ACTIVE_MAILBOX`) — a designed state, never a
+ * retry (CLAUDE.md §8). The exit refreshes connection state instead of
+ * re-asking a question that can only 409 again.
+ */
+export const MailboxConnectionChanged: Story = {
+  render: () => (
+    <Failing error={{ code: 'NO_ACTIVE_MAILBOX' }}>
+      <StepProtectionReview onComplete={() => {}} completing={false} />
+    </Failing>
+  ),
+};
+
+/**
+ * Sibling pattern (`snoozed-screen.stories.tsx`): a prefetch pins the
+ * query's state and the mounted hook DEDUPES onto it — its own inline
+ * `queryFn` never runs. `setQueryDefaults` cannot do this: the hook
+ * passes its own `queryFn`, so per-key defaults are ignored.
+ */
+function pinnedClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: Infinity,
+        gcTime: Infinity,
+        refetchOnMount: false,
+        refetchOnWindowFocus: false,
+      },
+    },
+  });
+}
+
+/** A client whose first-triage read never settles. */
+function Pending({ children }: { children: React.ReactNode }) {
+  const client = pinnedClient();
+  void client.prefetchQuery({
+    queryKey: FIRST_TRIAGE_KEY,
+    queryFn: () => new Promise<never>(() => {}),
+  });
+  return (
+    <QueryClientProvider client={client}>
+      <div style={{ background: color.bg, minHeight: 640 }}>{children}</div>
+    </QueryClientProvider>
+  );
+}
+
+/** A client whose first-triage read rejected with the given error. */
+function Failing({ error, children }: { error: unknown; children: React.ReactNode }) {
+  const client = pinnedClient();
+  void client
+    .prefetchQuery({
+      queryKey: FIRST_TRIAGE_KEY,
+      queryFn: () => Promise.reject(error),
+    })
+    .catch(() => {});
+  return (
+    <QueryClientProvider client={client}>
+      <div style={{ background: color.bg, minHeight: 640 }}>{children}</div>
+    </QueryClientProvider>
+  );
+}

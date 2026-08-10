@@ -162,25 +162,29 @@ export type OnboardingCompleteRequest = z.infer<typeof OnboardingCompleteRequest
  * protected sender in the mailbox, including ones already decided on.
  * `weak` is therefore ≥ the number of rows the review shows.
  */
-export const OnboardingProtectionSplitSchema = z
-  .object({
-    /** Protected because the user replied at least 3 times. */
-    strong: z.number().int().min(0),
-    /** Protected by one star, or by repeated Gmail importance. */
-    weak: z.number().int().min(0),
-    /**
-     * Protected by the user's own explicit Protect.
-     *
-     * Outside the review by design — the user already decided, so there
-     * is nothing to reassure them about and nothing to second-guess.
-     * Counted anyway because absent-from-the-review is not
-     * absent-from-the-mailbox: without it, a mailbox whose only
-     * protections are manual reads `strong: 0, weak: 0`, and the screen
-     * concluded "nothing is protected" about senders that were.
-     */
-    manual: z.number().int().min(0),
-  })
-  .strict();
+// NOT `.strict()`, deliberately — this schema PARSES A RESPONSE.
+// Web (Vercel) and API (Cloud Run) deploy independently, so an older
+// bundle can receive a key it has never heard of; strict mode turns
+// that skew into a ZodError → terminal ErrorState whose retry can
+// never succeed. Unknown keys are stripped instead. Request schemas
+// keep `.strict()` — rejecting unknown INPUT is the server's job.
+export const OnboardingProtectionSplitSchema = z.object({
+  /** Protected because the user replied at least 3 times. */
+  strong: z.number().int().min(0),
+  /** Protected by one star, or by repeated Gmail importance. */
+  weak: z.number().int().min(0),
+  /**
+   * Protected by the user's own explicit Protect.
+   *
+   * Outside the review by design — the user already decided, so there
+   * is nothing to reassure them about and nothing to second-guess.
+   * Counted anyway because absent-from-the-review is not
+   * absent-from-the-mailbox: without it, a mailbox whose only
+   * protections are manual reads `strong: 0, weak: 0`, and the screen
+   * concluded "nothing is protected" about senders that were.
+   */
+  manual: z.number().int().min(0),
+});
 export type OnboardingProtectionSplit = z.infer<typeof OnboardingProtectionSplitSchema>;
 
 /**
@@ -199,11 +203,13 @@ export type OnboardingProtectionSplit = z.infer<typeof OnboardingProtectionSplit
  * ask the question", which is not the same fact as "nothing is
  * protected".
  */
-export const OnboardingFirstTriageMetaSchema = z
-  .object({
-    pinned: z.number().int().min(0).max(5),
-    decided: z.number().int().min(0).max(5),
-    protection: OnboardingProtectionSplitSchema.optional(),
-  })
-  .strict();
+// Response schema — tolerant of unknown keys for the same deploy-skew
+// reason as the split above. #483 itself added `protection` to this
+// meta; under `.strict()` that addition would have hard-failed every
+// not-yet-redeployed web bundle.
+export const OnboardingFirstTriageMetaSchema = z.object({
+  pinned: z.number().int().min(0).max(5),
+  decided: z.number().int().min(0).max(5),
+  protection: OnboardingProtectionSplitSchema.optional(),
+});
 export type OnboardingFirstTriageMeta = z.infer<typeof OnboardingFirstTriageMetaSchema>;

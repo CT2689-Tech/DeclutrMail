@@ -29,23 +29,40 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
+import type { EventProps } from '@declutrmail/shared/observability';
+
 import {
   patchSenderPolicy,
   type SenderPolicyPatch,
   type SenderPolicyResultDto,
 } from '@/lib/api/senders';
 import { activityKeys } from '@/features/activity/api/query-keys';
+import { SCREENER_QUEUE_KEY } from '@/features/screener/api/use-screener';
 import { TRIAGE_QUEUE_KEY } from '@/features/triage/api/use-triage-queue';
+import { track } from '@/lib/posthog';
 import { sendersKeys } from './query-keys';
+
+/**
+ * Passed by callers that REMOVE protection so the one D159 feedback
+ * loop on the D245 auto-protect thresholds — which reason gets
+ * unprotected, from which surface — actually fires. Optional because
+ * the same mutation also writes Keep policies and Protect-ON, which
+ * emit nothing.
+ */
+export type UnprotectTelemetry = EventProps<'sender_unprotected'>;
 
 export function useSetSenderPolicy() {
   const qc = useQueryClient();
-  return useMutation<SenderPolicyResultDto, Error, { senderId: string; patch: SenderPolicyPatch }>({
+  return useMutation<
+    SenderPolicyResultDto,
+    Error,
+    { senderId: string; patch: SenderPolicyPatch; unprotect?: UnprotectTelemetry }
+  >({
     mutationFn: async ({ senderId, patch }) => {
       const env = await patchSenderPolicy(senderId, patch);
       return env.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       void qc.invalidateQueries({ queryKey: sendersKeys.all });
       void qc.invalidateQueries({ queryKey: activityKeys.all });
       // Triage rows carry `protectionReason`, and onboarding's step-5
@@ -55,6 +72,16 @@ export function useSetSenderPolicy() {
       // defect class this codebase keeps relearning. Cheap: the key is
       // only mounted on Triage and onboarding step 5.
       void qc.invalidateQueries({ queryKey: TRIAGE_QUEUE_KEY });
+      // The Screener decide-preview renders "safe because
+      // {protection reason}" from its own queue rows. #483 added two
+      // Unprotect entry points (Triage preview, Settings list), so the
+      // window where Screener asserts a protection the server already
+      // dropped is reachable from the main flow — same defect class as
+      // the Triage key above, found by flow audit 2026-08-10.
+      void qc.invalidateQueries({ queryKey: SCREENER_QUEUE_KEY });
+      if (variables.patch.isProtected === false && variables.unprotect) {
+        void track('sender_unprotected', variables.unprotect);
+      }
     },
   });
 }

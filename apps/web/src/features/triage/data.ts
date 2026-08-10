@@ -129,8 +129,15 @@ export interface TriageDecisionRow {
    * from bulk and automatic cleanup, which is what makes a wrong
    * protection expensive. Resolved server-side from the same message
    * set the action preview counts, so the two can never disagree.
+   *
+   * Optional — the wire read is an unvalidated cast, web and API
+   * deploy independently, and an older API omits the field. Required
+   * here typed away a real runtime state; consumers were safe only by
+   * accident of statement order. Absent ⇒ show nothing, never a
+   * fabricated 0 (the senders wire types the same field the same way,
+   * for the same reason).
    */
-  unreadInboxCount: number;
+  unreadInboxCount?: number;
 }
 
 /** Snapshot stats for the empty state copy — "today you Kept N senders, etc." */
