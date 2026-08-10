@@ -2220,3 +2220,30 @@ precision, the window has no correct width.
 `.claude/hooks/check-microcopy.sh`, replaced with a comment recording why
 and pointing at the review brief. D194's forbidden framings remain binding
 on copy; they are checked by review.
+
+## 2026-08-10 — A monitor that had never once succeeded: Infra snapshot red 8/8 since birth
+
+**PR:** none — fixed by bootstrapping the `infra-snapshots` data branch (no code change)
+**Caught by:** manual Actions review during post-merge verification of #485
+**What happened:** The daily `Infra snapshot` workflow (GCP/Supabase/GitHub
+drift detector, D38) failed every run since 2026-08-03 — its "Check out the
+snapshot branch" step targets `ref: infra-snapshots`, and that branch was
+never created. The workflow's own inline comment even records the state
+("it had never once reached the push before") — the breakage was known and
+documented in place rather than fixed. Eight days of zero drift detection
+while the Actions tab showed a "monitor" that existed. Compounding it:
+post-merge session reports (including 2026-08-09's) said "CI green" after
+checking only the workflow literally named CI on the merge SHA.
+**Correct approach:** a scheduled guard ships WITH its first observed green
+run — bootstrapping the branch was part of the workflow's definition of
+done. Fixed 2026-08-10: empty orphan `infra-snapshots` pushed, dispatch run
+31366859802 green, and the workflow itself committed the first snapshot
+(`docs/infra-snapshots/2026-08-10.json`) to the branch.
+**Rule:** never ship a scheduled workflow without dispatching it once and
+watching it succeed; and a "CI is green" claim must enumerate every
+workflow on the SHA, not the one named CI. Ops sibling of the blind-guard
+class: a never-ran monitor and a red-forever monitor are both zero
+detection dressed as coverage.
+**Enforcement update:** none automated (a watchdog for the watchdog
+recurses); the post-merge verification habit gains
+`gh run list --branch main` across ALL workflows.

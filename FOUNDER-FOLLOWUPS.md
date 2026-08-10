@@ -26,6 +26,22 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-10 — Ratify the protection-evidence taxonomy (strong vs weak) as an ADR
+
+**Source:** architecture-guardian post-merge review of [#483](https://github.com/CT2689-Tech/DeclutrMail/pull/483)
+**Why:** #483 ships a second-order rule — `replied` protections need no
+review, `starred`/`gmail_important` do — exported from `packages/shared`
+(`copy/protection.ts`) and now load-bearing in the API split, the
+onboarding contract, and two FE surfaces. No D-number or ADR records the
+rule; per the 2026-07-28 D-vs-ADR split it is an ADR (it constrains how
+every future protection surface gets written, and has no build status of
+its own).
+**How:** review the draft ADR added by the review-followups PR; ratify,
+amend, or reject it in that PR's review.
+**Verifies by:** the ADR merged with founder ratification recorded in its
+Status line.
+**Status:** Open
+
 ### 2026-08-08 — Stacked PRs get no real CI, and a stranded merge looks identical to a shipped one
 **Source:** session 2026-08-08; [#475](https://github.com/CT2689-Tech/DeclutrMail/pull/475) merged into an already-consumed base and reached nobody (see MISTAKES.md)
 **Why:** two gaps, one cause. (1) Every Actions workflow triggers on
