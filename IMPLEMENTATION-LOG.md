@@ -265,7 +265,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | 🟢 | #113, #226, #388 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
 | D208 | "What happens next" preview mandatory before every automation or destructive action | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — preview mandatory before mutation | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D209 | Trust-first microcopy hard rule (extends D194) | 🔵 | #410, #419 |  |  |
-| D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12 |  |  |
+| D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12, #494 |  |  |
 | D211 | Edge-state screen inventory at launch (extends D166-D171) | 🔵 | #195, #51, #119, #258, #276 | packages/shared/src/edge-states/inventory.test.ts (9 contract tests incl. route-dir parity guard) | Drift fix 2026-06-11: prior 🟢 covered only 6 screens; #195 refreshed to all 17 surfaces + parity guard — pending verify-d |
 | D212 | Empty states as first-class | 🔵 | #51, #119, #258 |  |  |
 | D213 | Motion design discipline | ⬜ |  |  |  |
