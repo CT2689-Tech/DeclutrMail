@@ -233,6 +233,12 @@ function pinnedClient(): QueryClient {
         gcTime: Infinity,
         refetchOnMount: false,
         refetchOnWindowFocus: false,
+        // Without this, an ERRORED prefetch is refetched on mount anyway
+        // (retryOnMount defaults true), the refetch dies on Storybook's
+        // absent API, and the component renders whatever THAT error is —
+        // the injected 409 never reached the designed-state branch
+        // (probe-verified 2026-08-10).
+        retryOnMount: false,
       },
     },
   });
