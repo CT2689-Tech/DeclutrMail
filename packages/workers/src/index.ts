@@ -334,14 +334,30 @@ export {
   EMAIL_SEND_QUEUE,
   emailSendJobOptions,
   enqueueEmailSend,
+  lapseReengagementEmailJobId,
   SYNC_REMINDER_DELAY_MS,
   syncCompleteEmailJobId,
   syncFailedEmailJobId,
   syncReminderEmailJobId,
 } from './email-send.queue.js';
-export { WeeklyValueReceiptWorker } from './weekly-value-receipt.worker.js';
+export { LapseReengagementWorker } from './lapse-reengagement.worker.js';
+export type {
+  LapseReengagementJobData,
+  LapseReengagementResult,
+  LapseReengagementWorkerDeps,
+  PreparedLapseEmail,
+} from './lapse-reengagement.worker.js';
+export {
+  enqueueLapseReengagementTick,
+  LAPSE_REENGAGEMENT_INTERVAL_MS,
+  LAPSE_REENGAGEMENT_JOB,
+  LAPSE_REENGAGEMENT_QUEUE,
+  lapseReengagementJobOptions,
+} from './lapse-reengagement.queue.js';
+export { isEmptyWeek, WeeklyValueReceiptWorker } from './weekly-value-receipt.worker.js';
 export type {
   PreparedWeeklyValueReceipt,
+  WeeklyValueReceiptFacts,
   WeeklyValueReceiptJobData,
   WeeklyValueReceiptResult,
   WeeklyValueReceiptWorkerDeps,
