@@ -2247,3 +2247,37 @@ detection dressed as coverage.
 **Enforcement update:** none automated (a watchdog for the watchdog
 recurses); the post-merge verification habit gains
 `gh run list --branch main` across ALL workflows.
+
+## 2026-08-10 — The undo spec's safety net armed itself after the step that failed
+
+**PR:** the spec fix; the hole shipped with the original undo.spec.ts
+**Caught by:** manual diagnosis of the spec's standing failure — a red run
+left two real Jockey emails archived, which the teardown was built to
+prevent
+**What happened:** two independent defects. (1) The receipt locator
+(`getByRole('status').filter({ hasText: 'Archived' })`) also matched the
+3.6s success toast; a Playwright strict-mode violation is TERMINAL, not
+retried, so every run died ~2s after confirm — at the exact moment the
+receipt appeared next to the still-alive toast — while the error's
+"timeout 90000ms" framing read as ninety patient seconds of a strip that
+never rendered. Two sessions diagnosed it as a likely product bug on that
+framing. (2) `undoToken` for the afterAll revert was captured only AFTER
+that assertion, so the failure the net existed for was precisely the one
+that skipped it — the real archive stayed standing. A third staleness
+rode along: the tray leg navigated to /triage, but the tray now BASELINES
+per screen (D35 scoping — tokens alive before you entered are history),
+so a /senders-born archive can never appear there.
+**Correct approach:** arm teardown state from the DB immediately after
+the mutating step, before any visual assertion; filter shared-role
+locators on surface-exclusive copy ("Activity Undo until"), never on a
+word a toast can also say; and read a Playwright failure's actual error
+line (strict-mode violation at t≈2s) before trusting its timeout box.
+Fixed 2026-08-10: token polled from `activity_log` pre-assertion,
+locator disambiguated, tray leg stays on /senders — spec green in 4.5s,
+mailbox verified restored, zero unreverted tokens.
+**Rule:** a test's cleanup must be armed by the earliest irreversible
+step, not by a later assertion's success; and "the element never
+appeared" claims require reading which of the locator's MATCHES the
+error lists — two matches and zero matches produce the same red.
+**Enforcement update:** none automated; the spec now documents the
+baseline semantics at the tray leg.
