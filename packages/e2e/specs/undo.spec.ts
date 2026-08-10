@@ -128,44 +128,64 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   await expect(modal).toContainText(/emails? currently match/);
   await confirm.click();
 
+  // ---- Arm the teardown safety net FIRST, from the DB, not the UI.
+  // The old order captured the token only after the receipt assertion —
+  // so a failure inside that assertion died with `undoToken` still
+  // null, the afterAll skipped the revert, and the run left the
+  // founder's mail archived (exactly what the 2026-08-10 diagnosis
+  // found: two Jockey emails stranded by a red run). The worker writes
+  // the activity row within ~a second of the mutation; poll for it
+  // before asserting anything visual.
+  await expect
+    .poll(
+      async () => {
+        const tokenRows = await sql<{ undo_token: string }[]>`
+          SELECT undo_token FROM activity_log
+          WHERE mailbox_account_id = ${mailboxId}
+            AND sender_key = ${senderKey}
+            AND action = 'archive'
+            AND occurred_at >= ${testStart.toISOString()}
+            AND undo_token IS NOT NULL
+          ORDER BY occurred_at DESC
+        `;
+        undoToken = tokenRows[0]?.undo_token ?? null;
+        return tokenRows.length;
+      },
+      { timeout: 90_000, message: 'worker wrote the archive activity row + undo token' },
+    )
+    .toBe(1);
+
   // ---- Receipt strip appears ONLY on worker confirmation (no
   // optimistic receipt) and carries the real undo token.
-  // The strip reads "Archived · N emails · 1 sender" + an undo deadline;
-  // this pinned "Archived 1 sender" and "reversible", neither of which
-  // the component has ever rendered as one string.
-  const receipt = page.getByRole('status').filter({ hasText: 'Archived' });
+  // Filtered on the deadline copy, which ONLY the receipt renders. The
+  // old filter ({ hasText: 'Archived' }) also matched the 3.6s success
+  // TOAST ("Archived 2 emails from Jockey", also role=status) — and a
+  // strict-mode violation is TERMINAL, not retried, so every run died
+  // ~2s after confirm, at the exact moment the receipt appeared next to
+  // the still-alive toast. The 90s timeout in the error made it read as
+  // "the strip never appeared"; the trace shows it failing at +2s with
+  // the receipt PRESENT as element 1 of 2.
+  const receipt = page.getByRole('status').filter({ hasText: 'Activity Undo until' });
   await expect(receipt).toBeVisible({ timeout: 90_000 });
+  await expect(receipt).toContainText('Archived');
   await expect(receipt).toContainText('1 sender');
-  await expect(receipt).toContainText('Activity Undo until');
 
-  // Capture the token for the tray leg + the teardown safety net.
-  const tokenRows = await sql<{ undo_token: string }[]>`
-    SELECT undo_token FROM activity_log
-    WHERE mailbox_account_id = ${mailboxId}
-      AND sender_key = ${senderKey}
-      AND action = 'archive'
-      AND occurred_at >= ${testStart.toISOString()}
-      AND undo_token IS NOT NULL
-    ORDER BY occurred_at DESC
-  `;
-  expect(tokenRows.length).toBe(1);
-  undoToken = tokenRows[0]!.undo_token;
-
-  // ---- Tray leg (D35): the persistent tray on /triage lists the
-  // token; Z undoes the NEWEST entry, a row click undoes a specific
-  // one. Use Z when ours is newest (the common case), otherwise the
-  // matching row's Undo button — both are real tray affordances.
-  await page.goto('/triage');
+  // ---- Tray leg (D35): the app-shell tray on THIS screen lists the
+  // token. The old leg navigated to /triage first — but the tray now
+  // BASELINES: tokens already live when a screen is entered are
+  // history, not feedback, and stay hidden there (the scoping change
+  // in `triage-undo-tray.tsx` — "the tray shows the decisions YOU took
+  // on the screen you are on"). A /senders-born archive is therefore
+  // visible in the tray on /senders and never on a freshly-entered
+  // /triage; the 2026-08-10 diagnosis watched the leg time out on
+  // exactly that. Z stays a Triage-only affordance
+  // (`enableShortcut={active === 'triage'}`), so undo here rides the
+  // row's real Undo button.
   const tray = page.getByRole('region', { name: 'Recent actions — undo available' });
   await expect(tray).toBeVisible({ timeout: 30_000 });
   const entries = await api.get<{ token: string }[]>('/api/undo');
-  const ourIndex = entries.findIndex((e) => e.token === undoToken);
-  expect(ourIndex).toBeGreaterThanOrEqual(0);
-  if (ourIndex === 0) {
-    await page.keyboard.press('z');
-  } else {
-    await tray.getByRole('button', { name: 'Undo Archive' }).nth(ourIndex).click();
-  }
+  expect(entries.some((e) => e.token === undoToken)).toBe(true);
+  await tray.getByRole('button', { name: 'Undo Archive' }).first().click();
 
   // ---- Server-confirmed restore: completion toast, token consumed,
   // and the sender's live inbox count is back (the worker reversed
