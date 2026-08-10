@@ -199,3 +199,19 @@ describe('StepFirstTriage', () => {
     expect(screen.getByRole('button', { name: /Try again/i })).toBeInTheDocument();
   });
 });
+
+describe('StepFirstTriage — completion in flight', () => {
+  it('disables the exit while the completion POST is pending', () => {
+    // #484's other half: the exit stays clickable after a FAILURE, and
+    // must not be double-submittable DURING the write. Same pin as the
+    // protection-review sibling.
+    onboarding.firstTriage.data = {
+      rows: [],
+      meta: { pinned: 3, decided: 3 },
+    };
+
+    render(<StepFirstTriage onComplete={() => {}} completing={true} goal="reduce_newsletters" />);
+
+    expect(screen.getByRole('button', { name: /Finishing…/i })).toBeDisabled();
+  });
+});

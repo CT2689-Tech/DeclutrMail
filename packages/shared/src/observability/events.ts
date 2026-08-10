@@ -23,6 +23,8 @@ export type EventName =
   | 'sync_started'
   | 'sync_completed'
   | 'sync_now_clicked'
+  // — Protection (D245) —
+  | 'sender_unprotected'
   // — Triage + action lifecycle —
   | 'triage_action_taken'
   | 'undo_clicked'
@@ -142,6 +144,17 @@ export interface EventPayloads {
     target: number;
     decided: number;
     outcome: 'completed' | 'stopped' | 'empty';
+  };
+  /**
+   * A manual Unprotect — the sticky D245 override. This is the only
+   * feedback loop on the automatic-protection thresholds (≥3 replies /
+   * a star in a year / ≥3 Gmail-important in a year): which REASON gets
+   * unprotected, and from which surface, is how a mistuned signal
+   * shows up. Reason id + surface enum only — no sender identity.
+   */
+  sender_unprotected: {
+    surface: 'onboarding-review' | 'triage-preview' | 'settings-senders' | 'sender-detail';
+    reason: 'user_defined' | 'replied' | 'starred' | 'gmail_important' | null;
   };
   /**
    * Both sync events are emitted ONLY by the FE sync gate

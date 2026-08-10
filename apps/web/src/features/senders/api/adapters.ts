@@ -53,8 +53,15 @@ const CATEGORY_TO_LABEL: Record<GmailCategory, string> = {
  *   replied         → replied
  *   starred         → starred
  *   gmail_important → gmail-important
- * If `isProtected` is true but the wire omits the reason, fall back to
- * `user-marked` so the chip renders something rather than nothing.
+ *
+ * A protected sender whose wire reason is null or unrecognized maps to
+ * `null`, NOT to `user-marked`. The old fallback invented a statement
+ * about the user's own actions ("you marked it Protected") for any
+ * enum value this build didn't know — the exact failure
+ * `@declutrmail/shared/copy/protection` exists to end, still alive one
+ * adapter upstream of it. Consumers already render the honest minimum
+ * for `isProtected && reason === null` ("Protected", no evidence
+ * clause).
  *
  * Shared by `adaptSenderDetail` (query path) and the Sender Detail
  * Protect toggle `onSuccess` reconcile (mutation path) so both
@@ -65,9 +72,10 @@ export function adaptProtectionReason(
   wireReason: ProtectionReasonWire | null,
 ): ProtectionReason | null {
   if (!isProtected) return null;
+  if (wireReason === 'user_defined') return 'user-marked';
   if (wireReason === 'replied' || wireReason === 'starred') return wireReason;
   if (wireReason === 'gmail_important') return 'gmail-important';
-  return 'user-marked';
+  return null;
 }
 
 export function adaptSenderDetail(args: {

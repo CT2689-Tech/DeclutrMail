@@ -429,3 +429,100 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
     expect(summary.noiseReductionPct).toBe(50);
   });
 });
+
+describe('TriageReadService.listQueue — the senderKeys narrowing filter', () => {
+  let db: Db;
+  let mailboxId: string;
+  let svc: TriageReadService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db, 'keys');
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'a@shop.example');
+    await seedSenderWithDecision(db, mailboxId, SENDER_B, 'b@news.example');
+    svc = new TriageReadService(db as never);
+  });
+
+  it('returns only the named senders', async () => {
+    const rows = await svc.listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 12,
+      senderKeys: [SENDER_A],
+    });
+    expect(rows.map((r) => r.senderKey)).toEqual([SENDER_A]);
+  });
+
+  it('returns NOTHING for an empty key list — never the whole mailbox', async () => {
+    // The blind case, starved on purpose: a read asked for zero senders
+    // must answer with zero, not with the whole mailbox (the "narrowed
+    // query silently returns everything" trap). Verified 2026-08-10
+    // that this stays green even with the service's early return
+    // deleted — drizzle's `inArray(col, [])` emits `WHERE false` on its
+    // own — so this pins the CONTRACT across both defenses; the
+    // explicit guard remains as the driver-independent one.
+    const rows = await svc.listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 12,
+      senderKeys: [],
+    });
+    expect(rows).toEqual([]);
+  });
+});
+
+describe('TriageReadService.readProtectionReview — the counts share one taxonomy', () => {
+  let db: Db;
+  let mailboxId: string;
+  let svc: TriageReadService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db, 'buckets');
+    svc = new TriageReadService(db as never);
+  });
+
+  async function protect(
+    senderKey: string,
+    email: string,
+    reason: 'user_defined' | 'replied' | 'starred' | 'gmail_important',
+  ) {
+    await seedSenderWithDecision(db, mailboxId, senderKey, email);
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey,
+      isProtected: true,
+      protectionReason: reason,
+      protectionSetAt: new Date(),
+    });
+  }
+
+  it('buckets every protected sender and the buckets sum to the protected total', async () => {
+    // The counts used to be three SQL FILTER literals — a second copy of
+    // the taxonomy `@declutrmail/shared/copy` owns. They now bucket
+    // through the shared normalize/isWeak, so a reason can land in
+    // exactly one bucket and strong+weak+manual must equal COUNT(*)
+    // WHERE is_protected. A fifth enum value would break this sum (it
+    // is logged and excluded, never guessed into a bucket) — which is
+    // the loud failure #485's silent one argues for.
+    await protect('sk_replied', 'r@x.example', 'replied');
+    await protect('sk_star', 's@x.example', 'starred');
+    await protect('sk_imp', 'i@x.example', 'gmail_important');
+    await protect('sk_manual', 'm@x.example', 'user_defined');
+    // A demoted row must count in NO bucket.
+    await seedSenderWithDecision(db, mailboxId, 'sk_demoted', 'd@x.example');
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'sk_demoted',
+      isProtected: false,
+      protectionReason: 'replied',
+    });
+
+    const review = await svc.readProtectionReview({ mailboxAccountId: mailboxId, limit: 50 });
+
+    expect(review.strong).toBe(1);
+    expect(review.weak).toBe(2);
+    expect(review.manual).toBe(1);
+    expect(review.strong + review.weak + review.manual).toBe(4);
+    // The rows are exactly the weak keys.
+    expect([...review.senderKeys].sort()).toEqual(['sk_imp', 'sk_star']);
+  });
+});

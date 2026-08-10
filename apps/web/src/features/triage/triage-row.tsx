@@ -29,9 +29,7 @@ const VERDICT_TONE: Record<TriageVerdict, PillTone> = {
  * Sender Detail and the Settings policies list — this used to be four
  * hand-written copies that had already drifted.
  */
-export function protectionEvidence(
-  reason: NonNullable<TriageDecisionRow['protectionReason']>,
-): string {
+function protectionEvidence(reason: NonNullable<TriageDecisionRow['protectionReason']>): string {
   return protectionReasonLabel(normalizeProtectionReason(reason));
 }
 
@@ -53,8 +51,13 @@ function whyLine(row: TriageDecisionRow): string {
     // otherwise the order looks arbitrary. Omitted at zero rather than
     // printed as "shielding 0 unread": there is nothing in the inbox to
     // shield, and a measurement of nothing reads as a measurement.
-    return row.unreadInboxCount > 0
-      ? `${evidence} · shielding ${row.unreadInboxCount.toLocaleString()} unread`
+    // Narrowed through a local so the "shielding N" clause is
+    // structurally unreachable when the wire omitted the measure —
+    // absent is unknown, not zero, and both render as just the
+    // evidence.
+    const shielded = row.unreadInboxCount;
+    return shielded != null && shielded > 0
+      ? `${evidence} · shielding ${shielded.toLocaleString()} unread`
       : evidence;
   }
   if (row.last90dMessages === 0) {
@@ -428,7 +431,9 @@ export function TriageRow({
           <span style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
             Bulk and automatic cleanup skip this sender.
           </span>
-          <UnprotectButton row={row} />
+          {/* The strip only renders on the D245 review (`offerUnprotect`),
+              so this surface is the review, not daily Triage. */}
+          <UnprotectButton row={row} surface="onboarding-review" />
         </div>
       )}
 
@@ -516,6 +521,7 @@ export function TriageRow({
               <ProtectedActionNotice
                 row={row}
                 verb={inlinePreview.verb === 'Keep' ? null : inlinePreview.verb}
+                surface="triage-preview"
                 // The D245 review's row strip already renders one; without
                 // this, a protected row with D34's remember-preference set
                 // stacks two identical Unprotect buttons and two

@@ -17,6 +17,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { TRIAGE_QUEUE } from '@/features/triage/data';
 import { StepProtectionReview } from './step-protection-review';
 
@@ -68,6 +69,7 @@ const PENDING_ROWS = TRIAGE_QUEUE.slice(0, 2);
 
 beforeEach(() => {
   onboarding.firstTriage.isError = false;
+  onboarding.firstTriage.error = null;
   onboarding.firstTriage.isLoading = false;
   onboarding.firstTriage.data = {
     rows: [] as typeof TRIAGE_QUEUE,
@@ -77,8 +79,18 @@ beforeEach(() => {
   analytics.track.mockReset();
 });
 
-function renderReview() {
-  return render(<StepProtectionReview onComplete={() => {}} completing={false} />);
+function renderReview(over: { onComplete?: () => void; completing?: boolean } = {}) {
+  // The component calls `useQueryClient()` (the 409 designed state
+  // resets the mailbox-scoped cache), so it needs a provider — the same
+  // one it has in the app.
+  return render(
+    <QueryWrapper client={createTestQueryClient()}>
+      <StepProtectionReview
+        onComplete={over.onComplete ?? (() => {})}
+        completing={over.completing ?? false}
+      />
+    </QueryWrapper>,
+  );
 }
 
 describe('StepProtectionReview — the review', () => {
@@ -183,7 +195,7 @@ describe('StepProtectionReview — the review', () => {
       meta: { pinned: 0, decided: 0, protection: { strong: 12, weak: 0, manual: 0 } },
     };
 
-    render(<StepProtectionReview onComplete={onComplete} completing={false} />);
+    renderReview({ onComplete });
     const exit = screen.getByRole('button', { name: /Continue to Senders/i });
 
     fireEvent.click(exit); // first attempt — the server 500s
@@ -204,7 +216,7 @@ describe('StepProtectionReview — the review', () => {
       meta: { pinned: 5, decided: 2, protection: { strong: 460, weak: 55, manual: 0 } },
     };
 
-    render(<StepProtectionReview onComplete={onComplete} completing={false} />);
+    renderReview({ onComplete });
     fireEvent.click(screen.getByRole('button', { name: /Finish for today/i }));
 
     expect(analytics.track).toHaveBeenCalledWith('first_relief_session_completed', {
@@ -336,5 +348,66 @@ describe('StepProtectionReview — the edges', () => {
     // Never a "nothing is protected" claim on a failed read — that is
     // the surface asserting what it does not know.
     expect(screen.queryByText(/Nothing is protected yet/)).toBeNull();
+  });
+});
+
+describe('StepProtectionReview — states the flow audit found unpinned (2026-08-10)', () => {
+  it('renders the DESIGNED state for a mailbox-scope 409, not a dead retry', () => {
+    // A CurrentMailboxGuard 409 is a designed state, never a retry
+    // (CLAUDE.md §8): the generic Try-again can only 409 again, and the
+    // only other exit wrote the durable `skipped: true` flag. The
+    // designed state offers a connection refresh instead.
+    onboarding.firstTriage.isError = true;
+    onboarding.firstTriage.error = { code: 'NO_ACTIVE_MAILBOX' };
+
+    renderReview();
+
+    expect(screen.getByText(/Your mailbox connection changed/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Refresh connection/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't load your protection summary/)).toBeNull();
+  });
+
+  it('disables both exits while the completion POST is in flight', () => {
+    // #484 established the exit must stay clickable AFTER a failure;
+    // this is the neighbouring half — it must not be double-submittable
+    // DURING the write.
+    onboarding.firstTriage.data = {
+      rows: [],
+      meta: { pinned: 2, decided: 2, protection: { strong: 4, weak: 2, manual: 0 } },
+    };
+
+    renderReview({ completing: true });
+
+    expect(screen.getByRole('button', { name: /Finishing…/i })).toBeDisabled();
+  });
+
+  it('disables "Finish for today" mid-completion on the review layout too', () => {
+    onboarding.firstTriage.data = {
+      rows: PENDING_ROWS,
+      meta: { pinned: 2, decided: 0, protection: { strong: 4, weak: 2, manual: 0 } },
+    };
+
+    renderReview({ completing: true });
+
+    expect(screen.getByRole('button', { name: /Finish for today/i })).toBeDisabled();
+  });
+
+  it('does not claim the shielded ordering when any loaded row is unmeasured', () => {
+    // Same precondition as the Settings list: every row measured AND at
+    // least one non-zero. `unreadInboxCount` is optional on the wire
+    // (deploy skew) — an unmeasured row is unknown, not zero, and no
+    // arrangement of unknowns is "most shielded first".
+    const measured = { ...PENDING_ROWS[0]!, unreadInboxCount: 12 };
+    const unmeasured = { ...PENDING_ROWS[1]! };
+    delete (unmeasured as { unreadInboxCount?: number }).unreadInboxCount;
+    onboarding.firstTriage.data = {
+      rows: [measured, unmeasured],
+      meta: { pinned: 2, decided: 0, protection: { strong: 4, weak: 2, manual: 0 } },
+    };
+
+    renderReview();
+
+    expect(screen.queryByText(/shielding the most unread mail/)).toBeNull();
+    expect(screen.getByText(/Here are 2 to look at\./)).toBeInTheDocument();
   });
 });

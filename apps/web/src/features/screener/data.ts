@@ -88,14 +88,17 @@ export type ScreenerScreenState =
 
 /**
  * Why this sender is Protected, in the user's own terms (D245 — "show
- * the exact reason").
+ * the exact reason"), as a BARE CLAUSE for mid-sentence use ("safe
+ * because you starred a message").
  *
  * Delegates to `@declutrmail/shared/copy` so Screener, Triage, Sender
- * Detail and the Settings policies list cannot drift apart again. Kept
- * as a local re-export because this feature's call sites pass the
- * screener's own wire spelling.
+ * Detail and the Settings policies list cannot drift apart again.
+ * Renamed from `protectionReasonLabel`: the shared function of that
+ * name returns "Protected · <clause>", and two same-named same-signature
+ * functions with different output is exactly the auto-import drift the
+ * shared module was created to end.
  */
-export function protectionReasonLabel(reason: ScreenerProtectionReason | null): string {
+export function screenerProtectionClause(reason: ScreenerProtectionReason | null): string {
   return protectionReasonClause(normalizeProtectionReason(reason));
 }
 

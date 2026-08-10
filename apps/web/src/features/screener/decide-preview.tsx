@@ -11,7 +11,7 @@ import type { ActionReach } from '@/lib/api/actions';
 
 import {
   needsProtectedOverride,
-  protectionReasonLabel,
+  screenerProtectionClause,
   type ScreenerDecideVerb,
   type ScreenerQueueRow,
 } from './data';
@@ -282,8 +282,8 @@ export function DecidePreview({
           }}
         >
           <strong style={{ fontWeight: 600 }}>This sender is Protected</strong> — {name} is kept
-          safe because {protectionReasonLabel(row.protectionReason)}. Confirming acts on it anyway;
-          it stays Protected afterwards.
+          safe because {screenerProtectionClause(row.protectionReason)}. Confirming acts on it
+          anyway; it stays Protected afterwards.
         </div>
       )}
 

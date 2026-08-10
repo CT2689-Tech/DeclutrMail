@@ -17,7 +17,11 @@ import { cleanupActionsPerMonthFor } from '@declutrmail/shared/entitlements';
 // The weak/strong split is product vocabulary, not a query detail —
 // shared so the API, the review copy and every surface that names a
 // protection reason cannot drift apart (D245 / CLAUDE.md §2.6).
-import { WEAK_PROTECTION_REASON_IDS } from '@declutrmail/shared/copy';
+import {
+  WEAK_PROTECTION_REASON_IDS,
+  isWeakProtectionReason,
+  normalizeProtectionReason,
+} from '@declutrmail/shared/copy';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -353,6 +357,9 @@ export class TriageReadService {
           eq(senders.senderKey, triageDecisions.senderKey),
         ),
       )
+      // ADR-0008 §3 exception: triage reads senders-owned
+      // `sender_policies` (protection flag + reason ride every queue
+      // row). Read-only; ratified in the ADR's exception table.
       .leftJoin(
         senderPolicies,
         and(
@@ -439,7 +446,10 @@ export class TriageReadService {
         // Same rows, unread subset — so the shielded figure a Protected
         // row shows is a strict subset of the figure its Archive preview
         // shows, by construction rather than by two matching queries.
-        unreadInboxCount: sql<number>`SUM(CASE WHEN ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
+        // `::int` because postgres.js returns an uncast SUM as a string
+        // (bigint) — the declared `number` would otherwise be a lie the
+        // `Number()` at the consumer papers over.
+        unreadInboxCount: sql<number>`SUM(CASE WHEN ${mailMessages.isUnread} THEN 1 ELSE 0 END)::int`,
       })
       .from(mailMessages)
       .where(senderInboxActionWhere({ mailboxAccountId: input.mailboxAccountId, senderKeys }))
@@ -551,27 +561,49 @@ export class TriageReadService {
     mailboxAccountId: string;
     limit: number;
   }): Promise<ProtectionReviewRead> {
-    const [counts] = await this.db
-      .select({
-        strong: sql<number>`COUNT(*) FILTER (WHERE ${senderPolicies.protectionReason} = 'replied')::int`,
-        weak: sql<number>`COUNT(*) FILTER (WHERE ${senderPolicies.protectionReason} IN ('starred', 'gmail_important'))::int`,
-        manual: sql<number>`COUNT(*) FILTER (WHERE ${senderPolicies.protectionReason} = 'user_defined')::int`,
-      })
+    // ADR-0008 §3 exception: triage reads senders-owned
+    // `sender_policies` directly (here and in the weak-keys query
+    // below). Read-only; ratified in the ADR's exception table.
+    //
+    // GROUP BY + TS bucketing rather than three SQL FILTER literals:
+    // the literals were a second copy of the reason taxonomy the shared
+    // module owns, and a fifth enum value would have changed which rows
+    // the review shows without changing these counts. Bucketing through
+    // `normalizeProtectionReason` / `isWeakProtectionReason` keeps one
+    // source, and an unrecognized reason is LOGGED and excluded rather
+    // than silently absorbed — never guessed into a bucket.
+    const reasonRows = await this.db
+      .select({ reason: senderPolicies.protectionReason, n: count() })
       .from(senderPolicies)
       .where(
         and(
           eq(senderPolicies.mailboxAccountId, input.mailboxAccountId),
           eq(senderPolicies.isProtected, true),
         ),
-      );
-    const strong = Number(counts?.strong ?? 0);
-    const weak = Number(counts?.weak ?? 0);
-    const manual = Number(counts?.manual ?? 0);
+      )
+      .groupBy(senderPolicies.protectionReason);
+    let strong = 0;
+    let weak = 0;
+    let manual = 0;
+    for (const row of reasonRows) {
+      const id = normalizeProtectionReason(row.reason);
+      const n = Number(row.n);
+      if (id === 'replied') strong += n;
+      else if (id !== null && isWeakProtectionReason(id)) weak += n;
+      else if (id === 'user_defined') manual += n;
+      else {
+        this.logger.warn(
+          `protection_review.unbucketed_reason mailbox=${input.mailboxAccountId} ` +
+            `reason=${row.reason ?? 'null'} n=${n}`,
+        );
+      }
+    }
 
     if (weak === 0) {
       return { strong, weak, manual, senderKeys: [] };
     }
 
+    // ADR-0008 §3 exception: see the marker above.
     const weakRows = await this.db
       .select({ senderKey: senderPolicies.senderKey })
       .from(senderPolicies)

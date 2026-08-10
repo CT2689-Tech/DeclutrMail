@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  PROTECTION_REASON_IDS,
   WEAK_PROTECTION_REASON_IDS,
   isWeakProtectionReason,
   normalizeProtectionReason,
   protectionReasonClause,
   protectionReasonLabel,
-  type ProtectionReasonId,
 } from './protection';
 
 describe('normalizeProtectionReason', () => {
@@ -44,7 +44,9 @@ describe('normalizeProtectionReason', () => {
 });
 
 describe('protectionReasonClause', () => {
-  const ALL: ProtectionReasonId[] = ['user_defined', 'replied', 'starred', 'gmail_important'];
+  // Derived, not hand-mirrored: a fifth reason added to the source list
+  // reaches the distinctness + embeddability assertions automatically.
+  const ALL = [...PROTECTION_REASON_IDS];
 
   it('names the exact evidence for every reason (D245 / CLAUDE.md §2.6)', () => {
     expect(protectionReasonClause('user_defined')).toBe('you marked it Protected');
@@ -54,8 +56,10 @@ describe('protectionReasonClause', () => {
   });
 
   it('says the honest minimum when protection has no recorded reason', () => {
-    // A real row shape: the CHECK only binds a reason while
-    // `is_protected`, so a demoted row can carry null.
+    // Unreachable from the DB (migration 0023's CHECK is protected ⇒
+    // reason recorded) but real on the WIRE: adapters admit
+    // `isProtected: true, reason: null`, and the normalizer maps any
+    // enum value this build doesn't know to null.
     expect(protectionReasonClause(null)).toBe('it is Protected');
   });
 

@@ -53,7 +53,8 @@ const { color, font, space, radius } = tokens;
  */
 export function SendersPoliciesScreen() {
   const sendersQuery = useSenders({ isProtected: true, limit: 50 });
-  const { fetchNextPage, hasNextPage, isFetchingNextPage, data } = sendersQuery;
+  const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError, data } =
+    sendersQuery;
 
   // Every row the server returns is already a Protected sender — we
   // just adapt + sort for display. No client-side filter (the previous
@@ -95,8 +96,15 @@ export function SendersPoliciesScreen() {
   const totalMatching = queryMeta?.totalMatching;
 
   if (sendersQuery.isLoading) return <LoadingState />;
-  if (sendersQuery.isError) {
-    return <PoliciesErrorState onRetry={() => sendersQuery.refetch()} />;
+  // Gated on `data == null`, not bare `isError`. In TanStack v5 the
+  // query-wide `isError` also flips on a failed BACKGROUND refetch (a
+  // window-focus refetch, or a failed "Show more") while data is
+  // retained — so the bare gate replaced a fully-loaded list with
+  // "couldn't load protected senders", a false statement that also
+  // discards the rows. Same fix `activity-screen.tsx` documents; the
+  // footer below owns the next-page failure instead.
+  if (sendersQuery.isError && data == null) {
+    return <PoliciesErrorState onRetry={() => void sendersQuery.refetch()} />;
   }
 
   return (
@@ -243,17 +251,31 @@ export function SendersPoliciesScreen() {
             style={{
               display: 'flex',
               justifyContent: 'center',
+              alignItems: 'center',
+              gap: space[3],
               padding: `${space[3]}px ${space[5]}px`,
               borderTop: `1px solid ${color.lineSoft}`,
             }}
           >
+            {/* Next-page-scoped failure signal (`isFetchNextPageError`),
+                same as `activity-screen.tsx`: the query-wide `isError`
+                also flips on a failed background refetch while data is
+                retained, which is precisely why the whole-screen error
+                above no longer owns this case. */}
+            {isFetchNextPageError && (
+              <span role="status" style={{ fontSize: 12.5, color: color.amber }}>
+                Couldn&rsquo;t load more.
+              </span>
+            )}
             <Button
               size="sm"
-              onClick={() => void fetchNextPage()}
+              onClick={() => {
+                if (!isFetchingNextPage) void fetchNextPage();
+              }}
               disabled={isFetchingNextPage}
               ariaLabel="Show more protected senders"
             >
-              {isFetchingNextPage ? 'Loading…' : 'Show more'}
+              {isFetchingNextPage ? 'Loading…' : isFetchNextPageError ? 'Try again' : 'Show more'}
             </Button>
           </footer>
         )}
@@ -365,7 +387,14 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
           ariaLabel={`Unprotect ${sender.name}`}
           onClick={() =>
             setPolicy.mutate(
-              { senderId: sender.id, patch: { isProtected: false } },
+              {
+                senderId: sender.id,
+                patch: { isProtected: false },
+                unprotect: {
+                  surface: 'settings-senders',
+                  reason: normalizeProtectionReason(sender.protectionFlags.protectionReason),
+                },
+              },
               {
                 onSuccess: () => toast(`${sender.name} is no longer Protected.`, 'success'),
                 onError: (err) => {
