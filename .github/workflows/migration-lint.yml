@@ -1,8 +1,12 @@
 name: Migration lint (Atlas)
 
 on:
+  # No `branches:` filter, and `edited` in the types — see the note in
+  # ci.yml. This was the sharpest instance of that gap: a stacked PR
+  # adding a migration got NO migration lint, and retargeting it onto
+  # main did not run one either.
   pull_request:
-    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
     paths:
       - 'packages/db/migrations/**'
       - 'packages/db/src/schema/**'

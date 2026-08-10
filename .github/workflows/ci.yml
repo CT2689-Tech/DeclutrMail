@@ -1,8 +1,21 @@
 name: CI
 
 on:
+  # No `branches:` filter BY DESIGN. Restricting to `[main]` meant a
+  # stacked PR — one whose base is another feature branch — ran ZERO
+  # substantive CI, and its checks tab was empty rather than red. An
+  # untested stack then looked exactly like a tested one at merge time
+  # (2026-08-08; #475 merged into an already-squashed base and reached
+  # no branch at all).
+  #
+  # `edited` is in the types list for the second half of that bug:
+  # retargeting a stacked PR onto main after its base merges fires
+  # `edited` and NOTHING else, so with the default types the PR kept
+  # whatever stale checks it had. Title/body edits re-run CI too — that
+  # is redundant but free (public repo) and self-cancelling via the
+  # concurrency group below.
   pull_request:
-    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   push:
     branches: [main]
 
