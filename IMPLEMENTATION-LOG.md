@@ -123,7 +123,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D65 | Noise bulk archive: **Per-sender checkboxes always visible, default-all checked | ⬜ |  |  |  |
 | D66 | Brief schedule: **Default Mon-Fri only; weekends opt-in | ⬜ |  |  |  |
 | D67 | **SUPERSEDED by D245: Brief priority uses observed facts | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D67 — VIP elevation to Reply |  |
-| D68 | Free/Plus tier preview: **Placeholder + upgrade CTA | 🔵 | #219, #317 |  |  |
+| D68 | Free/Plus tier preview: **Placeholder + upgrade CTA | 🔵 | #219, #317, #495 |  |  |
 | D69 | Brief snapshot behavior: **Static 8am snapshot, no recomputation | 🟢 | #74, #102, #103, #279 | apps/api/src/briefs/brief.read-service.spec.ts |  |
 | D70 | Brief empty state: **Calm message when no email yesterday | 🟢 | #102, #116 | packages/workers/src/brief-snapshot.worker.test.ts D70 — empty-day no-LLM + calm template |  |
 | D71 | Classification: **Drop bundle's category labels; show only engine recommendation | ⬜ |  |  |  |
