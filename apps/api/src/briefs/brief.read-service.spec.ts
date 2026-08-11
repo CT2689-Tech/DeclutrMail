@@ -9,6 +9,8 @@ import {
   mailboxAccounts,
   productFeedback,
   schema,
+  senderPolicies,
+  senders,
   users,
   workspaces,
 } from '@declutrmail/db';
@@ -115,6 +117,53 @@ async function seedBrief(
     })
     .returning({ id: briefRuns.id });
   return row!.id;
+}
+
+/** A Noise-only payload whose senders the D65 resolution has to find. */
+function noisePayload(groups: Array<{ senderKey: string; senderName: string }>): BriefPayload {
+  return {
+    reply: [],
+    fyi: [],
+    noise: groups.map((g) => ({
+      senderKey: g.senderKey,
+      senderName: g.senderName,
+      messageCount: 3,
+      messageIds: ['gmail-x', 'gmail-y', 'gmail-z'],
+    })),
+    narrative: 'Three newsletters.',
+  };
+}
+
+async function seedSender(
+  db: Db,
+  mailboxAccountId: string,
+  senderKey: string,
+  email: string,
+): Promise<string> {
+  const [row] = await db
+    .insert(senders)
+    .values({
+      mailboxAccountId,
+      senderKey,
+      displayName: email,
+      email,
+      domain: email.split('@')[1]!,
+      gmailCategory: 'promotions',
+      firstSeenAt: new Date('2026-01-01T00:00:00Z'),
+      lastSeenAt: new Date('2026-05-24T00:00:00Z'),
+    })
+    .returning({ id: senders.id });
+  return row!.id;
+}
+
+async function protectSender(db: Db, mailboxAccountId: string, senderKey: string): Promise<void> {
+  await db.insert(senderPolicies).values({
+    mailboxAccountId,
+    senderKey,
+    isProtected: true,
+    protectionReason: 'replied',
+    protectionSetAt: new Date('2026-05-01T00:00:00Z'),
+  });
 }
 
 describe('BriefReadService', () => {
@@ -279,6 +328,121 @@ describe('BriefReadService', () => {
         '00000000-0000-0000-0000-000000000000',
       );
       expect(result).toBeNull();
+    });
+  });
+
+  /**
+   * D65 — the archive targets behind the Noise section. Every case here
+   * is a way the join could hand a bulk action the wrong sender, or hide
+   * a sender the Brief promised.
+   */
+  describe('noiseSenders (D65)', () => {
+    const KEY_NEWS = 'n'.repeat(64);
+    const KEY_SHOP = 's'.repeat(64);
+    const KEY_GONE = 'g'.repeat(64);
+
+    it('resolves each Noise group to its sender id', async () => {
+      const newsId = await seedSender(db, mailboxA.mailboxAccountId, KEY_NEWS, 'hi@news.example');
+      const shopId = await seedSender(db, mailboxA.mailboxAccountId, KEY_SHOP, 'hi@shop.example');
+      await seedBrief(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, '2026-05-25', {
+        payload: noisePayload([
+          { senderKey: KEY_NEWS, senderName: 'News' },
+          { senderKey: KEY_SHOP, senderName: 'Shop' },
+        ]),
+      });
+
+      const brief = await service.getForDate(mailboxA.mailboxAccountId, '2026-05-25');
+      expect(brief!.noiseSenders).toEqual([
+        { senderKey: KEY_NEWS, senderId: newsId, isProtected: false },
+        { senderKey: KEY_SHOP, senderId: shopId, isProtected: false },
+      ]);
+    });
+
+    it('reports a Protected sender so bulk actions can exclude it (D245)', async () => {
+      await seedSender(db, mailboxA.mailboxAccountId, KEY_NEWS, 'hi@news.example');
+      await protectSender(db, mailboxA.mailboxAccountId, KEY_NEWS);
+      await seedBrief(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, '2026-05-25', {
+        payload: noisePayload([{ senderKey: KEY_NEWS, senderName: 'News' }]),
+      });
+
+      const brief = await service.getForDate(mailboxA.mailboxAccountId, '2026-05-25');
+      expect(brief!.noiseSenders[0]!.isProtected).toBe(true);
+    });
+
+    it('does not treat a merely unprotected policy row as protected', async () => {
+      // The memory-pin state (migration 0023): `is_protected = false`
+      // with a reason still recorded. That is NOT protection.
+      await seedSender(db, mailboxA.mailboxAccountId, KEY_NEWS, 'hi@news.example');
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderKey: KEY_NEWS,
+        isProtected: false,
+        protectionReason: 'replied',
+      });
+      await seedBrief(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, '2026-05-25', {
+        payload: noisePayload([{ senderKey: KEY_NEWS, senderName: 'News' }]),
+      });
+
+      const brief = await service.getForDate(mailboxA.mailboxAccountId, '2026-05-25');
+      expect(brief!.noiseSenders[0]!.isProtected).toBe(false);
+    });
+
+    it('returns a null id for a sender that no longer exists', async () => {
+      await seedBrief(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, '2026-05-25', {
+        payload: noisePayload([{ senderKey: KEY_GONE, senderName: 'Deleted Co' }]),
+      });
+
+      const brief = await service.getForDate(mailboxA.mailboxAccountId, '2026-05-25');
+      expect(brief!.noiseSenders).toEqual([
+        { senderKey: KEY_GONE, senderId: null, isProtected: false },
+      ]);
+      // The frozen group survives — the snapshot is not rewritten.
+      expect(brief!.briefPayload.noise).toHaveLength(1);
+    });
+
+    it('never resolves a sender id from another mailbox', async () => {
+      // Same sender_key in mailbox B. Resolving it would point mailbox
+      // A's archive at a row it does not own.
+      await seedSender(db, mailboxB.mailboxAccountId, KEY_NEWS, 'hi@news.example');
+      await protectSender(db, mailboxB.mailboxAccountId, KEY_NEWS);
+      await seedBrief(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, '2026-05-25', {
+        payload: noisePayload([{ senderKey: KEY_NEWS, senderName: 'News' }]),
+      });
+
+      const brief = await service.getForDate(mailboxA.mailboxAccountId, '2026-05-25');
+      expect(brief!.noiseSenders).toEqual([
+        { senderKey: KEY_NEWS, senderId: null, isProtected: false },
+      ]);
+    });
+
+    it('leaves the array empty when the Brief has no Noise section', async () => {
+      await seedBrief(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, '2026-05-25');
+      const brief = await service.getForDate(mailboxA.mailboxAccountId, '2026-05-25');
+      expect(brief!.noiseSenders).toEqual([]);
+    });
+
+    it('resolves per-brief across a listed range', async () => {
+      const newsId = await seedSender(db, mailboxA.mailboxAccountId, KEY_NEWS, 'hi@news.example');
+      const shopId = await seedSender(db, mailboxA.mailboxAccountId, KEY_SHOP, 'hi@shop.example');
+      await seedBrief(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, '2026-05-24', {
+        payload: noisePayload([{ senderKey: KEY_NEWS, senderName: 'News' }]),
+      });
+      await seedBrief(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, '2026-05-25', {
+        payload: noisePayload([{ senderKey: KEY_SHOP, senderName: 'Shop' }]),
+      });
+
+      const briefs = await service.listByRange(
+        mailboxA.mailboxAccountId,
+        '2026-05-01',
+        '2026-05-31',
+      );
+      // Newest first — each Brief gets its OWN senders, not the page's.
+      expect(briefs[0]!.noiseSenders).toEqual([
+        { senderKey: KEY_SHOP, senderId: shopId, isProtected: false },
+      ]);
+      expect(briefs[1]!.noiseSenders).toEqual([
+        { senderKey: KEY_NEWS, senderId: newsId, isProtected: false },
+      ]);
     });
   });
 });

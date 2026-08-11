@@ -32,9 +32,9 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-- ⬜ Not started: 79
+- ⬜ Not started: 77
 - 🟡 In progress: 1
-- 🔵 Shipped: 104
+- 🔵 Shipped: 106
 - 🟢 Verified: 55
 - 🚫 Retired: 2
 - 🔴 Blocked: 0
@@ -181,7 +181,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D123 | Tier-specific Triage empty-state copy | 🔵 | #219 |  |  |
 | D124 | **PARTIALLY SUPERSEDED by D245; preset #5 replacement retained | ⬜ |  |  |  |
 | D125 | Snoozed + Followups stay at V2 launch with usage-tracking exit clause | ⬜ |  |  |  |
-| D126 | Retention investment package (5-part) | ⬜ |  |  |  |
+| D126 | Retention investment package (5-part) | 🔵 | #497 |  |  |
 | D127 | Brand name: **DeclutrMail** (locked from V1) | ⬜ |  |  |  |
 | D128 | Primary domain: **DeclutrMail.com | 🔵 | #369 |  |  |
 | D129 | Hero tagline: *"Clean Gmail by controlling senders, not individual emails."* | ⬜ |  |  |  |
@@ -244,7 +244,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D186 | CLAUDE.md content: **DEFERRED pending community references | ⬜ |  |  |  |
 | D187 | Anti-redesign / scope-freeze rule (addresses Codex meta-gap) | ⬜ |  |  |  |
 | D188 | Launch feature flags for advanced surfaces | ⬜ |  |  |  |
-| D189 | Weekly Value Receipt (retention Part 6, adds to D126) | ⬜ |  |  |  |
+| D189 | Weekly Value Receipt (retention Part 6, adds to D126) | 🔵 | #497 |  |  |
 | D190 | Quiet Mode Preview Mode (updates D92, D93) | ⬜ |  |  |  |
 | D191 | Sync gate kill metric (updates D6) | ⬜ |  |  |  |
 | D192 | Custom Autopilot rule builder deferred to V2.1 (updates D99, D103) | ⬜ |  |  |  |

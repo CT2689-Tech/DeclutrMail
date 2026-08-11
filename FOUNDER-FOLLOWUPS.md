@@ -26,6 +26,30 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-10 — D68's "one-click archive" is impossible under D226; patch the plan
+
+**Source:** design-system-agent review of [#498](https://github.com/CT2689-Tech/DeclutrMail/pull/498) (D65)
+**Why:** D68's Free/Plus gate card lists `NOISE — one-click archive`. D65
+has now shipped, and the real flow is: review the pre-checked senders →
+Archive → **mandatory** preview → confirm. D226 makes that preview
+non-skippable for every mutation, so "one-click" is not a gap D65 left
+open — it is a claim the architecture forbids any version of this feature
+from ever satisfying. Shipping the plan's literal words would put a false
+promise on the paid-conversion surface, which is exactly the defect
+[#495](https://github.com/CT2689-Tech/DeclutrMail/pull/495) was opened to
+stop. #498 therefore diverges from D68 at both gate sites
+(`apps/web/src/app/(app)/brief/page.tsx` and
+`apps/web/src/features/billing/tier-gate.stories.tsx`), shipping
+`NOISE — archive the whole pile in one confirmed action`.
+**How:** decide which text is canonical and patch the plan so the code and
+D68 agree. Either (a) add an inline `[PATCH on D68]` in
+`docs/execution/Implementation-Plan.md` replacing the Noise bullet with
+the shipped wording, or (b) reject the shipped wording and tell the next
+session what to use instead. Agents do not edit the plan.
+**Verifies by:** D68's card in the plan and the two gate sites read the
+same sentence, and no later session "restores" the retired wording.
+**Status:** Open
+
 ### 2026-08-11 — Required checks make a tooling-only PR unmergeable by construction
 
 **Source:** session (PR #504, `chore/bootstrap-gate-network-workflow`)

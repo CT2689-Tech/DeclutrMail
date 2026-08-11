@@ -34,6 +34,8 @@ vi.mock('@/features/auth/auth-provider', () => ({
   getActiveMailboxEmail: () => 'active+mailbox@example.com',
 }));
 
+const SENDER_ID_NEWS = 'aaaaaaaa-0000-4000-8000-000000000001';
+
 const BASE_BRIEF: BriefWire = {
   id: '11111111-1111-1111-1111-111111111111',
   runDateLocal: '2026-05-24',
@@ -78,6 +80,7 @@ const BASE_BRIEF: BriefWire = {
   openedAt: '2026-05-25T08:30:00Z',
   emailSentAt: null,
   feedbackRating: null,
+  noiseSenders: [{ senderKey: 'sk-news', senderId: SENDER_ID_NEWS, isProtected: false }],
 };
 
 function renderScreen() {
