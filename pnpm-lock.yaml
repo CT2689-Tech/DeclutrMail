@@ -352,6 +352,9 @@ importers:
       '@types/node':
         specifier: ^22.10.5
         version: 22.20.1
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -7660,6 +7663,7 @@ snapshots:
   '@types/node@26.2.0':
     dependencies:
       undici-types: 8.3.0
+    optional: true
 
   '@types/qs@6.15.1': {}
 
@@ -9053,7 +9057,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 26.2.0
+      '@types/node': 22.20.1
       merge-stream: 2.0.0
       supports-color: 8.1.1
 

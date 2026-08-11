@@ -219,6 +219,27 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.workers == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The outbox dispatcher's SKIP LOCKED proof needs MULTIPLE real
+    # connections — PGlite is single-connection in-process and cannot
+    # model two ticks racing for the same rows. Without this service the
+    # `describe.skipIf(!OUTBOX_TEST_PG_URL)` block never ran anywhere,
+    # and the only thing standing between a lost `FOR UPDATE SKIP
+    # LOCKED` and duplicate email delivery was a sibling test that
+    # asserts the SQL *string*.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: declutrmail_outbox_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -228,6 +249,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @declutrmail/workers test
+        env:
+          # A DEDICATED, EMPTY database — the test applies every
+          # migration to it. Schema-level isolation is not an option:
+          # the migrations write `CREATE TYPE "public"."<enum>"` and
+          # then reference the type unqualified, so a redirected
+          # search_path breaks the first migration.
+          OUTBOX_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/declutrmail_outbox_test
 
   test-db:
     name: Tests — Database
