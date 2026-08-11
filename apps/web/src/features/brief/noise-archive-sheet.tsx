@@ -47,9 +47,12 @@ export function NoiseArchiveSheet({
   // makes confirm a pure no-op that would still enqueue a job, write an
   // Activity row and spend a cleanup unit. Gated on the SAME number the
   // headline renders, so "0 emails currently match" can never sit above
-  // an enabled confirm.
+  // an enabled confirm. `confirm()` re-checks this itself — this is the
+  // affordance, not the rule.
   const nothingToActOn = ready && preview.totalMessages === 0;
   const confirmDisabled = !ready || nothingToActOn || targets.length === 0;
+  // A scope 409 is not a failed read to retry — retrying 409s forever.
+  const scopeConflict = preview === 'scope-conflict';
 
   useEffect(() => {
     if (!open) return;
@@ -141,6 +144,11 @@ export function NoiseArchiveSheet({
               <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                 Counting the inbox… Confirm unlocks when it is ready.
               </span>
+            ) : scopeConflict ? (
+              <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                Your active mailbox changed while this was open, so these counts no longer apply.
+                Close this and pick a mailbox to start again. Nothing was archived.
+              </span>
             ) : preview === 'unavailable' ? (
               <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                 Couldn&rsquo;t load a live preview. Retry — no inbox mail can move without one.
@@ -177,6 +185,12 @@ export function NoiseArchiveSheet({
             {targets.map((target) => {
               const live =
                 ready && target.senderId ? preview.countBySenderId.get(target.senderId) : undefined;
+              // The server can report a sender Protected that was not
+              // Protected when the Brief was read. Its mail is excluded
+              // from the headline, so labelling the row is what keeps the
+              // visible rows summing to the total above them.
+              const skipped =
+                ready && target.senderId ? preview.protectedSenderIds.has(target.senderId) : false;
               return (
                 <div
                   key={target.senderKey}
@@ -209,11 +223,23 @@ export function NoiseArchiveSheet({
                       flexShrink: 0,
                     }}
                   >
-                    {live === undefined ? '—' : live.toLocaleString()}
+                    {skipped
+                      ? 'protected — skipped'
+                      : live === undefined
+                        ? '—'
+                        : live.toLocaleString()}
                   </span>
                 </div>
               );
             })}
+            {ready && preview.protectedSenderIds.size > 0 && (
+              <span style={{ fontSize: 11.5, color: color.fgMuted, marginTop: 2 }}>
+                {preview.protectedSenderIds.size} sender
+                {preview.protectedSenderIds.size === 1 ? '' : 's'} became Protected since this Brief
+                was written and {preview.protectedSenderIds.size === 1 ? 'is' : 'are'} excluded from
+                the total above.
+              </span>
+            )}
           </div>
         </div>
 
@@ -229,11 +255,13 @@ export function NoiseArchiveSheet({
         >
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
             {confirmDisabled
-              ? preview === 'unavailable'
-                ? 'Preview unavailable — retry before confirming.'
-                : nothingToActOn
-                  ? 'Nothing from these senders is in your inbox — there is nothing to archive.'
-                  : 'Counting inbox mail — confirm unlocks after the live preview loads.'
+              ? scopeConflict
+                ? 'Mailbox changed — close this and start again.'
+                : preview === 'unavailable'
+                  ? 'Preview unavailable — retry before confirming.'
+                  : nothingToActOn
+                    ? 'Nothing from these senders is in your inbox — there is nothing to archive.'
+                    : 'Counting inbox mail — confirm unlocks after the live preview loads.'
               : "One undo reverses the whole batch during your plan's Activity window."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>

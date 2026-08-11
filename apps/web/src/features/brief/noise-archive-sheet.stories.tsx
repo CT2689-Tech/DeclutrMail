@@ -108,6 +108,7 @@ export const Ready: Story<typeof NoiseArchiveSheet> = {
           ['aaaaaaaa-0000-4000-8000-000000000002', 141],
           ['aaaaaaaa-0000-4000-8000-000000000003', 61],
         ]),
+        protectedSenderIds: new Set<string>(),
       },
     }),
 };
@@ -127,6 +128,7 @@ export const NothingToArchive: Story<typeof NoiseArchiveSheet> = {
           ['aaaaaaaa-0000-4000-8000-000000000002', 0],
           ['aaaaaaaa-0000-4000-8000-000000000003', 0],
         ]),
+        protectedSenderIds: new Set<string>(),
       },
     }),
 };
@@ -142,6 +144,7 @@ export const SingleSender: Story<typeof NoiseArchiveSheet> = {
       preview: {
         totalMessages: 1,
         countBySenderId: new Map([['aaaaaaaa-0000-4000-8000-000000000001', 1]]),
+        protectedSenderIds: new Set<string>(),
       },
     }),
 };

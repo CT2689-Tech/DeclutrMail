@@ -31,6 +31,7 @@ import {
   blockedReason,
   buildNoiseTargets,
   useNoiseArchive,
+  type NoiseArchiveOutcome,
   type NoiseTarget,
 } from './api/use-noise-archive';
 import { NoiseArchiveSheet } from './noise-archive-sheet';
@@ -408,7 +409,10 @@ function NoiseSection({
 
   return (
     <section
-      aria-label={`Noise (${groups.length} senders, ${totalMessages} messages)`}
+      // Carries the same "yesterday" anchor the visible subline does — a
+      // screen reader must not get the un-anchored number this whole
+      // surface is careful to avoid.
+      aria-label={`Noise (${groups.length} senders, ${totalMessages} messages yesterday)`}
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
       <SectionHeading
@@ -446,7 +450,7 @@ function NoiseSection({
         selectedCount={selectedCount}
         excludedCount={excludedCount}
         busy={archive.busy}
-        receipt={archive.receipt}
+        outcome={archive.outcome}
         onArchive={archive.openSheet}
       />
 
@@ -476,13 +480,13 @@ function NoiseArchiveBar({
   selectedCount,
   excludedCount,
   busy,
-  receipt,
+  outcome,
   onArchive,
 }: {
   selectedCount: number;
   excludedCount: number;
   busy: boolean;
-  receipt: { senderCount: number; affectedCount: number } | null;
+  outcome: NoiseArchiveOutcome | null;
   onArchive: () => void;
 }) {
   return (
@@ -499,13 +503,24 @@ function NoiseArchiveBar({
         background: color.paper,
       }}
     >
-      <span style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>
-        {receipt ? (
+      {/* Every terminal state gets a PERSISTENT line here. A toast is
+          gone in 3.6s, and a bar that reverts to its neutral invite
+          re-arms senders that already archived. */}
+      <span
+        role={outcome ? 'status' : undefined}
+        style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}
+      >
+        {outcome ? (
+          <NoiseOutcomeLine outcome={outcome} />
+        ) : selectedCount === 0 ? (
           <>
-            Archived {receipt.affectedCount.toLocaleString()} email
-            {receipt.affectedCount === 1 ? '' : 's'} from {receipt.senderCount} sender
-            {receipt.senderCount === 1 ? '' : 's'}. Undo it from Recent actions at the bottom of the
-            screen.
+            Check a sender to archive it.
+            {excludedCount > 0 && (
+              <>
+                {' '}
+                {excludedCount} sender{excludedCount === 1 ? '' : 's'} below cannot be included.
+              </>
+            )}
           </>
         ) : (
           <>
@@ -528,6 +543,51 @@ function NoiseArchiveBar({
       </Button>
     </div>
   );
+}
+
+/**
+ * The persistent outcome line. Each branch states only what the server
+ * confirmed: what moved, what did not, and where to look. The undo
+ * sentence appears only while undo is genuinely available — D211 lists
+ * "Undo expired" as its own state, and a receipt that promises undo
+ * forever is a claim the Activity window has already retired.
+ */
+function NoiseOutcomeLine({ outcome }: { outcome: NoiseArchiveOutcome }) {
+  switch (outcome.kind) {
+    case 'archived': {
+      const { affectedCount, senderCount, undo } = outcome;
+      return (
+        <>
+          Archived {affectedCount.toLocaleString()} email{affectedCount === 1 ? '' : 's'} from{' '}
+          {senderCount} sender{senderCount === 1 ? '' : 's'}.
+          {undo === 'available' && ' Undo it from Recent actions at the bottom of the screen.'}
+          {undo === 'expired' && ' The undo window for this archive has passed.'}
+        </>
+      );
+    }
+    case 'reverted':
+      return (
+        <>
+          That archive was undone — mail from {outcome.senderCount} sender
+          {outcome.senderCount === 1 ? '' : 's'} is back in your inbox.
+        </>
+      );
+    case 'partial':
+      return (
+        <>
+          {outcome.doneCount} of {outcome.total} senders were archived; {outcome.failedCount} did
+          not complete. Check Activity to see which moved, then re-check any that didn&rsquo;t.
+        </>
+      );
+    case 'failed':
+      return <>Nothing was archived. The senders are still checked, so you can try again.</>;
+    case 'unconfirmed':
+      return (
+        <>
+          We couldn&rsquo;t confirm what that archive did. Check Activity before running it again.
+        </>
+      );
+  }
 }
 
 type SectionTone = 'accent' | 'muted' | 'soft';
