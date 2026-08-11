@@ -26,6 +26,85 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-11 — Required checks make a tooling-only PR unmergeable by construction
+
+**Source:** session (PR #504, `chore/bootstrap-gate-network-workflow`)
+**Why:** #504 has every check that ran green, and still cannot merge:
+`405: 7 of 11 required status checks have not succeeded: 3 expected`. It touches
+no application paths (`.claude/`, `.github/`, `.husky/`, `commitlint.config.cjs`,
+two markdown files), so `Detect changed paths` correctly skipped all five
+`Tests — *` shards and `Authenticated accessibility smoke` — and GitHub counts a
+**skipped** required context as not-succeeded. Three further required contexts
+never reported at all. This is not specific to #504: ANY docs-only or
+tooling-only PR is unmergeable without an override. #502 escaped it only because
+it happened to touch `apps/web` and `apps/api`, so its shards actually ran.
+`ci.yml` already solves this — the aggregate `Test` job classifies each shard as
+ran/skipped and fails only on a genuinely bad one, and it is **green** on #504.
+Requiring the individual shards *and* the aggregate defeats the aggregate's whole
+purpose.
+**How:** GitHub → Settings → Branches → the `main` protection rule → Require
+status checks to pass. Remove the six path-gated contexts — `Tests — API`,
+`Tests — Web`, `Tests — Workers`, `Tests — Database`, `Tests — Shared units`,
+`Authenticated accessibility smoke` — and keep the aggregate `Test`, which
+already fails when any shard genuinely fails. Then identify the 3 contexts stuck
+at "expected" (required contexts whose workflow has a `paths:` filter that did
+not match) and either drop them or give them a path-independent no-op job.
+Merging #504 needs an admin override until this is done.
+**Verifies by:** a PR touching only `*.md` merges without an override, while a PR
+that breaks an API test still shows `Test` red and stays blocked.
+**Status:** Open
+
+### 2026-08-11 — `commit-msg` did not fire on a fresh container's first commit
+
+**Source:** session (gate-network workflow)
+**Why:** `commit-msg` enforcement was inconsistent within one session: the session's
+FIRST commit produced no husky output at all and was accepted despite a missing
+`(D###)` trailer, while `pre-push` blocked normally minutes later; the SECOND commit
+ran lint-staged + commitlint and was correctly rejected. Something between the two —
+plausibly an `npx` invocation triggering the `prepare` lifecycle — installed the hook
+late. A commit-msg gate that is absent for the first commit in a fresh container is a
+hole worth closing: that is exactly when an agent writes its first commit message.
+**How:** Confirm the ordering above in a fresh web container, then make husky install
+eagerly at session start (or fail loudly when its hooks are not wired) rather than
+relying on a lifecycle script that may not have run yet.
+**Verifies by:** in a brand-new container, the FIRST
+`git commit -m "chore: no d trailer"` on a non-exempt branch exits non-zero.
+**Status:** Open
+
+### 2026-08-11 — D-less agent work lands from `chore/bootstrap-*`, not a third exemption
+
+**Source:** session (gate-network workflow, PR #503 → #504)
+**Why:** Sanctioning `claude/*` in the branch-name allowlist fixed one of three
+enforcement layers. Two more still rejected the same D-less PR: commitlint's
+`d-number-reference` and the `Closes D###` PR-body check. Carving a `claude/*`
+exemption in each would have removed the D-tie requirement from every future
+`claude/*` PR, including ones that genuinely close D-decisions — a permanent,
+broad traceability loss to buy one green check.
+**How:** Founder chose the path the PR-body check itself prescribes: land D-less
+agent work from `chore/bootstrap-<topic>`, which is already exempt at all three
+layers. The interim `claude/*` exemption in `commitlint.config.cjs` was reverted
+in the same change. `claude/*` stays in the branch-name allowlist (that decision
+stands on its own — it lets web sessions push at all), so `claude/*` branches now
+carry only D-tied work and can supply real trailers.
+**Verifies by:** #504 green on "PR body references D-decisions or is
+bootstrap-exempt"; `feat/d999-*` without a trailer still exits 1 locally.
+**Status:** Done 2026-08-11 — ships in #504
+
+### 2026-08-11 — Sanction `claude/*` branches in the §6 allowlist
+
+**Source:** session (gate-network workflow, branch `claude/dynamic-workflow-repo-apply-oklsja`)
+**Why:** Claude Code on the web assigns its own `claude/<slug>` branch name and the
+session is forbidden from renaming it — the identical position `codex/` was in when
+it was sanctioned 2026-07-15. Without the exemption, `pre-push` blocks the push
+outright and `branch-name.yml` fails every web-session PR on the branch name alone.
+**How:** Founder chose "sanction `claude/*` like `codex/*`" (2026-08-11). Added
+`(codex|claude)/[a-z0-9][a-z0-9-]*$` to the regex in BOTH `.husky/pre-push` and
+`.github/workflows/branch-name.yml`, keeping the two layers identical.
+**Verifies by:** hook smoked directly — `claude/dynamic-workflow-repo-apply-oklsja`
+exits 0, `bogus/not-a-convention` and `claude/UPPER-case` still exit 1; the CI regex
+returns the same three verdicts plus the pre-existing codex/feat/bootstrap cases.
+**Status:** Done 2026-08-11 — ships in this PR
+
 ### 2026-08-10 — Ratify the protection-evidence taxonomy (strong vs weak) as an ADR
 
 **Source:** architecture-guardian post-merge review of [#483](https://github.com/CT2689-Tech/DeclutrMail/pull/483)

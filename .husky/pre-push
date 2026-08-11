@@ -15,8 +15,14 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 #                                  2026-07-15 (FOUNDER-FOLLOWUPS); commits
 #                                  still carry (D###) trailers and the PR
 #                                  body still needs Closes D###
+#   claude/<kebab>                 Claude Code on the web branches — sanctioned
+#                                  2026-08-11 (founder call), same reasoning as
+#                                  codex/: the harness assigns the branch name,
+#                                  the session cannot rename it. D-traceability
+#                                  still rides on the (D###) trailer and the
+#                                  PR-body Closes D###.
 #   main
-if ! echo "$branch" | grep -qE '^(main|dependabot/|chore/(bootstrap|distill)-|codex/[a-z0-9][a-z0-9-]*$|(feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-)'; then
+if ! echo "$branch" | grep -qE '^(main|dependabot/|chore/(bootstrap|distill)-|(codex|claude)/[a-z0-9][a-z0-9-]*$|(feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-)'; then
   echo "✗ pre-push: branch '$branch' does not match CLAUDE.md §6 naming convention." >&2
   echo "  Expected: <type>/d<NNN>-<kebab>, chore/bootstrap-<topic>, or chore/distill-<topic>" >&2
   echo "  Allowed types: feat, fix, chore, docs, refactor, test, perf, security" >&2
