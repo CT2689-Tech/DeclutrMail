@@ -26,6 +26,27 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-11 — Decide whether `claude/*` branches join the §6 allowlist
+
+**Source:** session (gate-network workflow, branch `claude/dynamic-workflow-repo-apply-oklsja`)
+**Why:** Claude Code on the web assigns its own `claude/<slug>` branch names, the
+same way Codex does. `codex/<kebab>` was sanctioned 2026-07-15 and added to both
+`.husky/pre-push` and `.github/workflows/branch-name.yml`; `claude/` never was. So
+every web-session PR fails two authoritative checks on branch name alone —
+`branch-name.yml`, plus commitlint's `d-number-reference` (exempt only for
+`chore/bootstrap-*` and `chore/distill-*`). Not fixable from inside the session:
+renaming the branch is forbidden by the harness, and editing the allowlist to
+admit my own branch is an enforcement-layer change, which is the founder's call.
+**How:** Either (a) mirror the codex decision — add `claude/[a-z0-9][a-z0-9-]*$`
+to the regex in `.husky/pre-push` and `.github/workflows/branch-name.yml`, and
+decide whether such commits still carry `(D###)` trailers (codex does); or
+(b) rule that web sessions must land through a renamed `<type>/d<NNN>-*` branch,
+and note that agents should open PRs by cherry-picking rather than pushing the
+assigned branch.
+**Verifies by:** a PR from a `claude/*` branch shows "Branch follows CLAUDE.md §6
+convention" green instead of red.
+**Status:** Open
+
 ### 2026-08-10 — Ratify the protection-evidence taxonomy (strong vs weak) as an ADR
 
 **Source:** architecture-guardian post-merge review of [#483](https://github.com/CT2689-Tech/DeclutrMail/pull/483)
