@@ -47,6 +47,7 @@ import {
   type CompositePreviewMessage,
   type CompositePrimaryVerb,
   type CompositeSecondaryVerb,
+  type LabelCompositePrimaryVerb,
   type UndoRevertResult,
   type UnsubscribeIntentResult,
   type UnsubscribeManualStatusResult,
@@ -123,7 +124,9 @@ export function useEnqueueComposite() {
     {
       senderId: string;
       primary: {
-        type: CompositePrimaryVerb;
+        // D248 — single-sender composite is label verbs only; the
+        // unsubscribe primary is multi-sender only and 400s here.
+        type: LabelCompositePrimaryVerb;
         olderThanDays?: number | null;
         wakeAt?: string;
         /** ADR-0028 — omit for `inbox_only` (Delete-only field). */

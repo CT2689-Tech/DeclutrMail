@@ -42,6 +42,7 @@ import {
 import {
   initialUnsubscribeLifecycleStatus,
   normalizeUnsubscribeLifecycleStatus,
+  UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
   type UnsubscribeManualTransition,
 } from '@declutrmail/shared/contracts';
 import { unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
@@ -924,6 +925,10 @@ export class ActionsService {
     }
 
     const uniqueIds = [...new Set(input.senderIds)].sort();
+    // ADR-0008 §3 exception: actions → senders. Read-only resolve of the
+    // sender's key + unsubscribe capability; the capability decides
+    // which senders the batch may act on, so it must be read at enqueue
+    // (the worker re-reads it again before it POSTs).
     const rows = await this.db
       .select({
         id: senders.id,
@@ -1022,6 +1027,12 @@ export class ActionsService {
         // decision row, and the cross-feature event whose senders-owned
         // consumer projects the policy (D204; the direct upsert above it
         // is the same transitional dual-write as `recordUnsubscribeIntent`).
+        //
+        // ADR-0008 §3 exception: actions → senders. A WRITE, and the
+        // narrower of the two: the outbox event beside it is the
+        // permanent channel; this upsert is the same transitional
+        // backstop `recordUnsubscribeIntent` carries, and it retires
+        // with that one.
         await tx
           .insert(senderPolicies)
           .values({
@@ -1073,15 +1084,30 @@ export class ActionsService {
     });
 
     // Queue outside the transaction so a worker never observes an
-    // uncommitted row. `enqueueUnsubExecution` records the honest
-    // terminal state for the row it could not enqueue before rethrowing.
-    for (const row of persisted.fresh) {
-      await this.enqueueUnsubExecution(
-        row.actionId,
-        mailboxAccountId,
-        row.senderKey,
-        row.idempotencyKey,
-      );
+    // uncommitted row; allSettled — NOT a sequential await — so an early
+    // enqueue failure cannot strand a committed fresh row without an
+    // enqueue attempt. A `for await` that threw on row 3 of 50 left rows
+    // 4-50 committed as `queued` with `unsub_status='requested'`, an
+    // Activity row and consumed quota, and NO BullMQ job behind any of
+    // them: the permanently-'requested' chip this method's own contract
+    // rules out. Every row gets its attempt (and, on failure, its honest
+    // `failed` terminal state from `enqueueUnsubExecution`) before the
+    // first rejection propagates. Mirrors `enqueueBulkComposite`.
+    const enqueueResults = await Promise.allSettled(
+      persisted.fresh.map((row) =>
+        this.enqueueUnsubExecution(
+          row.actionId,
+          mailboxAccountId,
+          row.senderKey,
+          row.idempotencyKey,
+        ),
+      ),
+    );
+    const enqueueFailure = enqueueResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (enqueueFailure) {
+      throw enqueueFailure.reason;
     }
 
     return {
@@ -1257,6 +1283,9 @@ export class ActionsService {
     includesBacklogAction?: boolean;
   }): Promise<UnsubscribeIntentResult> {
     const { mailboxAccountId, senderId, idempotencyKey, includesBacklogAction = false } = input;
+    // ADR-0008 §3 exception: actions → senders. The single-sender twin of
+    // the bulk resolve above — read-only capability lookup that decides
+    // which unsubscribe path this intent takes.
     const [senderRow] = await this.db
       .select({
         senderKey: senders.senderKey,
@@ -1645,6 +1674,10 @@ export class ActionsService {
       // permanent contract.
       // D245 lifecycle: every method gets an explicit honest state.
       // one_click=requested; mailto=action_required; none=unavailable.
+      //
+      // ADR-0008 §3 exception: actions → senders (write). Marked so the
+      // architecture-guardian grep finds every crossing in this file,
+      // not just the ones with prose.
       await tx
         .insert(senderPolicies)
         .values({
@@ -2544,14 +2577,6 @@ export class ActionsService {
 }
 
 /**
- * `UnsubExecutionWorker` records an ambiguous redirect as job status
- * `failed` + THIS error code, and its own idempotent-replay branch reads
- * the pair back to reconstruct the outcome. The batch receipt reads it
- * the same way so `unconfirmed` never renders as a failure (D248).
- */
-const UNSUB_AMBIGUOUS_ERROR_CODE = 'UNSUB_AMBIGUOUS_REDIRECT';
-
-/**
  * Aggregate the three terminal one-click outcomes across a batch's
  * unsubscribe rows (D248). Returns `null` for a batch with no
  * unsubscribe row so a label batch cannot render an unsubscribe receipt.
@@ -2570,7 +2595,12 @@ function summarizeUnsubscribeOutcomes(
   for (const row of unsubRows) {
     if (row.status === 'done') outcomes.endpointAccepted += 1;
     else if (row.status !== 'failed') outcomes.pending += 1;
-    else if (row.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) outcomes.unconfirmed += 1;
+    // `UnsubExecutionWorker` records an ambiguous redirect as job status
+    // `failed` + this shared error code, and its own idempotent-replay
+    // branch reads the pair back the same way. Sharing the constant is
+    // what keeps a worker-side rename from silently reclassifying every
+    // `unconfirmed` row as `failed` (D248).
+    else if (row.errorCode === UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE) outcomes.unconfirmed += 1;
     else outcomes.failed += 1;
   }
   return outcomes;

@@ -46,7 +46,11 @@ export const MixedSelection: Story<typeof UnsubBatchReceipt> = {
   args: {
     receipt: {
       senderCount: 8,
-      capabilities: { one_click: 8, mailto: 4, none: 2, unknown: 1 },
+      skipped: [
+        ...Array.from({ length: 4 }, () => ({ reason: 'mailto' as const })),
+        ...Array.from({ length: 2 }, () => ({ reason: 'no_channel' as const })),
+        { reason: 'unknown' as const },
+      ],
       outcomes: { endpointAccepted: 6, unconfirmed: 1, failed: 1 },
       pending: 0,
     },
@@ -59,7 +63,7 @@ export const StillSending: Story<typeof UnsubBatchReceipt> = {
   args: {
     receipt: {
       senderCount: 5,
-      capabilities: { one_click: 5, mailto: 0, none: 0, unknown: 0 },
+      skipped: [],
       outcomes: null,
       pending: 5,
     },
@@ -76,7 +80,7 @@ export const OutcomesUnreported: Story<typeof UnsubBatchReceipt> = {
   args: {
     receipt: {
       senderCount: 4,
-      capabilities: { one_click: 4, mailto: 0, none: 0, unknown: 0 },
+      skipped: [],
       outcomes: null,
       pending: 0,
     },
@@ -89,7 +93,7 @@ export const AllAccepted: Story<typeof UnsubBatchReceipt> = {
   args: {
     receipt: {
       senderCount: 3,
-      capabilities: { one_click: 3, mailto: 0, none: 0, unknown: 0 },
+      skipped: [],
       outcomes: { endpointAccepted: 3, unconfirmed: 0, failed: 0 },
       pending: 0,
     },
@@ -102,7 +106,7 @@ export const AllUnconfirmed: Story<typeof UnsubBatchReceipt> = {
   args: {
     receipt: {
       senderCount: 2,
-      capabilities: { one_click: 2, mailto: 0, none: 0, unknown: 1 },
+      skipped: [{ reason: 'unknown' as const }],
       outcomes: { endpointAccepted: 0, unconfirmed: 2, failed: 0 },
       pending: 0,
     },
@@ -115,7 +119,7 @@ export const AllFailed: Story<typeof UnsubBatchReceipt> = {
   args: {
     receipt: {
       senderCount: 4,
-      capabilities: { one_click: 4, mailto: 1, none: 0, unknown: 0 },
+      skipped: [{ reason: 'protected' as const }],
       outcomes: { endpointAccepted: 0, unconfirmed: 0, failed: 4 },
       pending: 0,
     },

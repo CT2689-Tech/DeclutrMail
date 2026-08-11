@@ -135,8 +135,14 @@ export interface ScreenerQueueRow {
   inboxCount: number;
   /** Latest message's subject — the D71 sample subject. Empty when none. */
   sampleSubject: string;
-  /** Sender-level unsubscribe channel (drives the U affordance copy). */
-  unsubscribeMethod: 'one_click' | 'mailto' | 'none';
+  /**
+   * Sender-level unsubscribe channel (drives the U affordance copy).
+   * NULLABLE — null means the sender index has not derived a method
+   * yet, which is NOT the same fact as "this sender publishes no
+   * unsubscribe" (D248). Collapsing it here made the row say
+   * "No unsubscribe channel found" about a sender nobody looked at.
+   */
+  unsubscribeMethod: 'one_click' | 'mailto' | 'none' | null;
   /**
    * Standing protection (D42/D245). A queued sender CAN be protected —
    * the automatic sweep runs over every sender in the mailbox with no

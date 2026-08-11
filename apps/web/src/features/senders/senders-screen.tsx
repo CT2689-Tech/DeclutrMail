@@ -13,7 +13,7 @@ import {
 import {
   buildActionReceiptResult,
   countUnsubscribeCapabilities,
-  type UnsubscribeCapabilityCounts,
+  unsubscribeCapabilityBreakdown,
 } from '@declutrmail/shared/actions';
 import {
   canBulkArchive,
@@ -486,7 +486,7 @@ function SendersScreenContent({
   const [activeUnsubBatch, setActiveUnsubBatch] = useState<{
     batchId: string;
     senderCount: number;
-    capabilities: UnsubscribeCapabilityCounts;
+    skipped: UnsubBatchReceiptData['skipped'];
   } | null>(null);
   const [unsubBatchReceipt, setUnsubBatchReceipt] = useState<UnsubBatchReceiptData | null>(null);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
@@ -941,20 +941,22 @@ function SendersScreenContent({
                     : [],
                 ),
               );
-              const capabilities = countUnsubscribeCapabilities(
-                senderRefs.map((sref) => sref.unsubscribeMethod),
-              );
+              // The SERVER's skip list, verbatim — the partition the
+              // batch actually used. Deriving it from the local rows
+              // would drop server-side `protected` / `not_found` skips
+              // and let a stale list narrate a split that never happened.
+              const skipped = res.skipped.map((skip) => ({ reason: skip.reason }));
               setActiveUnsubBatch({
                 batchId: res.batchId,
                 senderCount: res.senderCount,
-                capabilities,
+                skipped,
               });
               // In-flight receipt: it names how many requests are going
               // out and claims NO outcome. The polled effect below fills
               // in the three terminal outcomes when the worker reports.
               setUnsubBatchReceipt({
                 senderCount: res.senderCount,
-                capabilities,
+                skipped,
                 outcomes: null,
                 pending: res.senderCount,
               });
@@ -1292,7 +1294,7 @@ function SendersScreenContent({
     const outcomes = data.unsubscribeOutcomes ?? null;
     setUnsubBatchReceipt({
       senderCount: activeUnsubBatch.senderCount,
-      capabilities: activeUnsubBatch.capabilities,
+      skipped: activeUnsubBatch.skipped,
       // An API that predates the field leaves the receipt honestly
       // outcome-less rather than inventing a success/failure split.
       outcomes: outcomes
@@ -1531,6 +1533,25 @@ function SendersScreenContent({
           'warn',
         );
         return;
+      }
+      // D248 — a batch can only send one-click requests: mailto stays
+      // user-sent (D230), so a multi-sender selection with no one-click
+      // sender has nothing to fan out. Refuse HERE rather than opening a
+      // preview whose confirm is dead — a modal is a promise that
+      // something can happen. Single-sender selections fall through
+      // deliberately: that flow DOES handle mailto, via the compose
+      // hand-off the intent route returns.
+      if (verb === 'Unsubscribe' && eligible.length > 1) {
+        const capabilities = countUnsubscribeCapabilities(eligible.map((s) => s.unsubscribeMethod));
+        if (capabilities.one_click === 0) {
+          toast(
+            `No selected sender has an unsubscribe DeclutrMail can send — ${unsubscribeCapabilityBreakdown(
+              capabilities,
+            ).join(' · ')}. Open each one to send it yourself.`,
+            'warn',
+          );
+          return;
+        }
       }
       const skippedTotal = selectedSenders.length - eligible.length;
       if (skippedTotal === 0) {

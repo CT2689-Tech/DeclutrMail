@@ -39,6 +39,13 @@ import type { GmailCategory } from '@declutrmail/shared/contracts';
 export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 
 /**
+ * The wire value, which is NULLABLE (D248): null means the sender index
+ * has not derived a method yet. That is "not checked", not "no channel"
+ * — the row must never claim we looked when we did not.
+ */
+export type StoredUnsubscribeMethod = UnsubscribeMethod | null;
+
+/**
  * Why a sender's verdict is locked to Keep — surfaces in the row.
  *
  * These are the TRIAGE WIRE spellings, which is the point: this union
@@ -76,8 +83,9 @@ export interface TriageDecisionRow {
   senderEmail: string;
   senderDomain: string;
   gmailCategory: GmailCategory;
-  /** Best unsubscribe method seen across the sender's messages. */
-  unsubscribeMethod: UnsubscribeMethod;
+  /** Best unsubscribe method seen across the sender's messages, or
+   *  null when the sender index has not derived one yet (D248). */
+  unsubscribeMethod: StoredUnsubscribeMethod;
 
   /** Engine verdict — D21 cascade output. */
   verdict: TriageVerdict;
@@ -530,7 +538,11 @@ export function canLater(_row: TriageDecisionRow): boolean {
  * with a "manual follow-up" hint per D230 — never auto-fired.
  */
 export function canUnsubscribe(row: TriageDecisionRow): boolean {
-  return row.unsubscribeMethod !== 'none';
+  // Requires a REAL channel, matching the Senders and Screener
+  // predicates. `!== 'none'` was equivalent while the wire could not be
+  // null; now that it can (D248), an un-indexed sender would have read
+  // as unsubscribable and 409'd on the intent route.
+  return row.unsubscribeMethod === 'one_click' || row.unsubscribeMethod === 'mailto';
 }
 
 /**

@@ -1225,6 +1225,34 @@ describe('ConfirmActionModal — unsubscribe capability breakdown (D248)', () =>
     expect(text).not.toContain('offer no unsubscribe');
   });
 
+  // The zero-one-click gate is a BATCH rule. At n=1 this modal is also
+  // the mandatory preview for the single-sender flow — the only path
+  // that produces D230's compose hand-off — so gating it there would
+  // disable confirm for a mailto sender whose row control correctly
+  // invited the user in, and claim no channel exists when one does.
+  it('still confirms a single mailto sender — the compose hand-off lives there', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={unsubRequest(['mailto'])}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    const confirm = screen.getByRole('button', { name: /Unsubscribe/ });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByText(/None of these senders has an unsubscribe DeclutrMail can send/),
+    ).toBeNull();
+    // It still says what will happen: the user sends this one.
+    expect(document.getElementById('dm-confirm-lead')?.textContent).toContain(
+      'DeclutrMail opens a prefilled Gmail draft; you send it.',
+    );
+  });
+
   it('does not offer the action when the selection has no one-click sender', () => {
     const onConfirm = vi.fn();
     render(

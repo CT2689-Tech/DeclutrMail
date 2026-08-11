@@ -2786,6 +2786,48 @@ describe('ActionsService', () => {
         expect(await activityActions()).toEqual(['unsubscribe', 'unsubscribe']);
       });
 
+      // A sequential `for await` that threw on row 2 of 3 left row 3
+      // committed as `queued` with `unsub_status='requested'`, an
+      // Activity row and consumed quota — and NO job behind it. Every
+      // committed row must get its enqueue attempt, and its honest
+      // terminal state when that attempt fails.
+      it('attempts every committed row even when one enqueue fails', async () => {
+        const sender3Id = await seedExtraSender('d');
+        await setMethod(senderId, 'one_click', 'https://a.example/oc');
+        await setMethod(sender2Id, 'one_click', 'https://b.example/oc');
+        await setMethod(sender3Id, 'one_click', 'https://c.example/oc');
+        // Fail exactly one add — whichever row lands second.
+        const attempted: string[] = [];
+        const realAdd = unsubQueue.add;
+        unsubQueue.add = async (job: unknown, data: unknown, opts: { jobId?: string }) => {
+          attempted.push(opts.jobId!);
+          if (attempted.length === 2) throw new Error('redis down');
+          return realAdd(job, data, opts);
+        };
+
+        await expect(
+          service.enqueueBulkUnsubscribe({
+            mailboxAccountId: mailboxId,
+            senderIds: [senderId, sender2Id, sender3Id],
+            idempotencyKey: 'bulk-unsub-partial-redis',
+          }),
+        ).rejects.toMatchObject({ response: { code: 'ENQUEUE_FAILED' } });
+
+        // All three got an attempt — none was stranded behind the throw.
+        expect(attempted).toHaveLength(3);
+        const jobs = await db
+          .select()
+          .from(actionJobs)
+          .where(eq(actionJobs.mailboxAccountId, mailboxId));
+        expect(jobs).toHaveLength(3);
+        // The one that could not be enqueued carries an honest terminal
+        // state rather than a permanently-'requested' chip.
+        const failed = jobs.filter((j) => j.status === 'failed');
+        expect(failed).toHaveLength(1);
+        expect(failed[0]!.errorCode).toBe('ENQUEUE_FAILED');
+        expect(jobs.filter((j) => j.status === 'queued')).toHaveLength(2);
+      });
+
       it('fails before any write when the unsubscribe queue is unavailable', async () => {
         await setMethod(senderId, 'one_click', 'https://a.example/oc');
         await setMethod(sender2Id, 'one_click', 'https://b.example/oc');

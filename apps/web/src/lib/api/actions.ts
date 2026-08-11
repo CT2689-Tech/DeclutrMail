@@ -22,6 +22,7 @@ import type {
   UnsubscribeLifecycleStatus,
   UnsubscribeManualTransition,
 } from '@declutrmail/shared/contracts';
+import { UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE } from '@declutrmail/shared/contracts';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionStatusSnapshot } from '@declutrmail/shared/actions';
 
@@ -193,8 +194,12 @@ export async function revertUndo(
 /** Primary verb accepted by `POST /api/actions`. Spec v1.2 Decision 15. */
 // Derived from the shared const so FE/BE cannot drift (type-design-
 // analyzer 2026-06-05).
-import type { CompositePrimaryVerb, CompositeSecondaryVerb } from '@declutrmail/shared/contracts';
-export type { CompositePrimaryVerb, CompositeSecondaryVerb };
+import type {
+  CompositePrimaryVerb,
+  CompositeSecondaryVerb,
+  LabelCompositePrimaryVerb,
+} from '@declutrmail/shared/contracts';
+export type { CompositePrimaryVerb, CompositeSecondaryVerb, LabelCompositePrimaryVerb };
 /** Secondary historic verb — applies on Unsubscribe / Later primaries. */
 // CompositeSecondaryVerb re-exported above.
 
@@ -326,7 +331,12 @@ export async function enqueueCompositeAction(
   input: {
     senderId: string;
     primary: {
-      type: CompositePrimaryVerb;
+      // D248 — the SINGLE-sender composite is label verbs only.
+      // `unsubscribe` is multi-sender only (a single sender keeps its
+      // own intent route, which owns the mailto compose hand-off), so
+      // the server 400s it. The narrowed type refuses it at compile
+      // time instead, matching the BE's own signature.
+      type: LabelCompositePrimaryVerb;
       olderThanDays?: number | null;
       wakeAt?: string;
       /** ADR-0028 — omit for `inbox_only` (Delete-only field). */
@@ -410,7 +420,7 @@ export interface UnsubscribeManualStatusResult {
 }
 
 /** `action_jobs.error_code` marking a 3xx (unconfirmed) unsub outcome. */
-export const UNSUB_AMBIGUOUS_ERROR_CODE = 'UNSUB_AMBIGUOUS_REDIRECT';
+export const UNSUB_AMBIGUOUS_ERROR_CODE = UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE;
 
 /**
  * Record an unsubscribe intent for a sender. Replaces the prior
@@ -661,6 +671,8 @@ export async function getBulkActionPreview(
 export async function enqueueBulkAction(
   input: {
     senderIds: string[];
+    // Stays WIDE: the multi-sender selector is the one shape that
+    // accepts the `unsubscribe` primary (D248).
     primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
     secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
     idempotencyKey: string;

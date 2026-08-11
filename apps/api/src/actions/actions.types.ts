@@ -280,9 +280,10 @@ export type CompositePrimaryVerb = (typeof COMPOSITE_PRIMARY_VERBS)[number];
  * The composite primaries that route through the label-modify pipeline.
  * `unsubscribe` (D248) is excluded at the TYPE level so its rows can
  * never be handed to the label executor by a future refactor — its
- * batch has its own enqueue method and its own worker.
+ * batch has its own enqueue method and its own worker. Re-exported from
+ * the shared contract so the FE mirrors carry the identical guard.
  */
-export type LabelCompositePrimaryVerb = Exclude<CompositePrimaryVerb, 'unsubscribe'>;
+export type { LabelCompositePrimaryVerb } from '@declutrmail/shared/contracts';
 
 /**
  * Secondary historic-action verbs (ADR-0020). Optional. Applies only

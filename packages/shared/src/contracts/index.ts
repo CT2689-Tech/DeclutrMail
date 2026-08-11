@@ -117,6 +117,7 @@ export type {
   CanonicalShortcut,
   CanonicalVerb,
   CompositePrimaryVerb,
+  LabelCompositePrimaryVerb,
   CompositeSecondaryVerb,
   ExecutionKind,
   PreviewMode,
@@ -139,6 +140,7 @@ export type { ActionReach } from './action-reach';
 export {
   initialUnsubscribeLifecycleStatus,
   normalizeUnsubscribeLifecycleStatus,
+  UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
   UNSUBSCRIBE_LIFECYCLE_STATUSES,
   UNSUBSCRIBE_MANUAL_TRANSITIONS,
   UnsubscribeLifecycleStatusSchema,

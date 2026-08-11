@@ -314,9 +314,18 @@ export function ConfirmActionModal({
     ? countUnsubscribeCapabilities((request?.senders ?? []).map((s) => s.unsubscribeMethod))
     : null;
   const unsubBreakdown = unsubCapabilities ? unsubscribeCapabilityBreakdown(unsubCapabilities) : [];
-  // "If a selection contains zero one_click senders, the batch control
-  // does not offer itself" — there is no request to send.
-  const unsubNothingToSend = unsubCapabilities !== null && unsubCapabilities.one_click === 0;
+  // "If a selection contains zero one_click senders, the BATCH control
+  // does not offer itself" — there is no request the fan-out can send.
+  //
+  // Scoped to bulk on purpose. At n=1 this modal is also the mandatory
+  // preview for the single-sender flow, and that flow is the ONLY path
+  // that produces D230's compose hand-off: the intent route answers
+  // `mailto` with an address and the screen opens `UnsubMailtoCallout`.
+  // Gating n=1 on "one-click or nothing" would disable confirm for a
+  // mailto sender whose row control correctly invited the user in, and
+  // tell them no channel exists when one does.
+  const unsubNothingToSend =
+    isBulk && unsubCapabilities !== null && unsubCapabilities.one_click === 0;
   // The lead describes the action that WILL run, i.e. the one-click
   // subset; the breakdown beneath it names everyone it will not touch.
   // With no one-click sender the lead falls back to the sole remaining

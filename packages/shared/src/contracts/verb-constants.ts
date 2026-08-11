@@ -67,6 +67,16 @@ export const COMPOSITE_PRIMARY_VERBS = ['archive', 'later', 'delete', 'unsubscri
 export type CompositePrimaryVerb = (typeof COMPOSITE_PRIMARY_VERBS)[number];
 
 /**
+ * The composite primaries that route through the label-modify pipeline.
+ *
+ * Shared rather than API-local so the FE mirrors inherit the same
+ * compile-time guard: `unsubscribe` is multi-sender only, so a
+ * single-sender composite call carrying it is a 400 the type system can
+ * refuse instead of the server.
+ */
+export type LabelCompositePrimaryVerb = Exclude<CompositePrimaryVerb, 'unsubscribe'>;
+
+/**
  * Composite-action secondary verb subset (ADR-0020). Applies on
  * Unsubscribe / Later primaries: a historic Archive or Delete window
  * that batches with the primary. Derived from the same const so a

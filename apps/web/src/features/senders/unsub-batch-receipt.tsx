@@ -5,17 +5,24 @@ import {
   UNSUBSCRIBE_ACCEPTED_CAVEAT,
   unsubscribeCapabilityBreakdown,
   unsubscribeOutcomeBreakdown,
-  type UnsubscribeCapabilityCounts,
   type UnsubscribeOutcomeCounts,
 } from '@declutrmail/shared/actions';
+import type { BulkSkipReason } from '@/lib/api/actions';
 
 const { color, font } = tokens;
 
 export interface UnsubBatchReceiptData {
   /** Senders the batch actually sent a one-click request for. */
   senderCount: number;
-  /** How the whole selection split across the four capability states. */
-  capabilities: UnsubscribeCapabilityCounts;
+  /**
+   * The server's own skip list, verbatim — the partition the batch
+   * ACTUALLY used, not the client's cached view of the selection.
+   * Deriving this from local rows dropped server-side `protected` and
+   * `not_found` skips entirely and let a stale list report a split the
+   * server never used: the list/detail-drift shape of the very defect
+   * class this decision exists to close.
+   */
+  skipped: ReadonlyArray<{ reason: BulkSkipReason }>;
   /**
    * Terminal outcomes observed for this batch, or `null` while the
    * requests are still in flight. Never derived from a job-status
@@ -24,6 +31,30 @@ export interface UnsubBatchReceiptData {
   outcomes: UnsubscribeOutcomeCounts | null;
   /** Requests still queued or executing. */
   pending: number;
+}
+
+/**
+ * "Not sent" lines, one per reason the SERVER reported. The three
+ * capability reasons reuse the shared breakdown copy so the receipt and
+ * the preview cannot word the same fact differently.
+ */
+function skippedLines(skipped: UnsubBatchReceiptData['skipped']): string[] {
+  const count = (reason: BulkSkipReason): number =>
+    skipped.filter((entry) => entry.reason === reason).length;
+  const capability = unsubscribeCapabilityBreakdown({
+    one_click: 0,
+    mailto: count('mailto'),
+    none: count('no_channel'),
+    unknown: count('unknown'),
+  });
+  const senders = (n: number): string => `${n} sender${n === 1 ? '' : 's'}`;
+  const protectedCount = count('protected');
+  const missingCount = count('not_found');
+  return [
+    ...capability,
+    ...(protectedCount > 0 ? [`${senders(protectedCount)} protected`] : []),
+    ...(missingCount > 0 ? [`${senders(missingCount)} no longer in your list`] : []),
+  ];
 }
 
 /**
@@ -53,16 +84,38 @@ export function UnsubBatchReceipt({
   const inFlight = receipt.outcomes === null && receipt.pending > 0;
   const unreported = receipt.outcomes === null && receipt.pending === 0;
   const outcomeLines = receipt.outcomes ? unsubscribeOutcomeBreakdown(receipt.outcomes) : [];
-  // Everything the batch could not send, named per state.
-  const excluded = unsubscribeCapabilityBreakdown({
-    ...receipt.capabilities,
-    one_click: 0,
-  });
+  // Everything the batch could not send, named per reason the server gave.
+  const excluded = skippedLines(receipt.skipped);
   const allFailed =
     receipt.outcomes !== null &&
     receipt.outcomes.endpointAccepted === 0 &&
     receipt.outcomes.unconfirmed === 0 &&
     receipt.outcomes.failed > 0;
+  // Nothing accepted and nothing failed — every request is unconfirmed.
+  // Success chrome (green tick, emerald) would round that toward
+  // "accepted" in exactly the way the copy refuses to, so the surface
+  // stays neutral: D248 puts `unconfirmed` on equal footing with its
+  // neighbours, and the frame is part of the claim.
+  const allUnconfirmed =
+    receipt.outcomes !== null &&
+    receipt.outcomes.endpointAccepted === 0 &&
+    receipt.outcomes.failed === 0 &&
+    receipt.outcomes.unconfirmed > 0;
+  const tone: 'failed' | 'neutral' | 'positive' = allFailed
+    ? 'failed'
+    : allUnconfirmed || inFlight || unreported
+      ? 'neutral'
+      : 'positive';
+  const frame = {
+    failed: { bg: color.redBg, border: color.redBorder, badge: color.red, glyph: '!' },
+    neutral: { bg: color.card, border: color.line, badge: color.fgMuted, glyph: '·' },
+    positive: {
+      bg: color.emeraldBg,
+      border: 'rgba(5,150,105,0.25)',
+      badge: color.emerald,
+      glyph: '✓',
+    },
+  }[tone];
 
   return (
     <div
@@ -72,8 +125,8 @@ export function UnsubBatchReceipt({
         alignItems: 'flex-start',
         gap: 12,
         padding: '10px 12px 10px 14px',
-        background: allFailed ? color.redBg : color.emeraldBg,
-        border: `1px solid ${allFailed ? color.redBorder : 'rgba(5,150,105,0.25)'}`,
+        background: frame.bg,
+        border: `1px solid ${frame.border}`,
         borderRadius: 10,
       }}
     >
@@ -83,7 +136,7 @@ export function UnsubBatchReceipt({
           width: 22,
           height: 22,
           borderRadius: 9999,
-          background: allFailed ? color.red : color.emerald,
+          background: frame.badge,
           color: color.fgInverse,
           display: 'inline-flex',
           alignItems: 'center',
@@ -92,7 +145,7 @@ export function UnsubBatchReceipt({
           fontWeight: 700,
         }}
       >
-        {allFailed ? '!' : '✓'}
+        {frame.glyph}
       </span>
 
       <span style={{ flex: 1, fontSize: 13, color: color.fg, lineHeight: 1.45 }}>
