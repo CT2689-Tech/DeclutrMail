@@ -211,10 +211,10 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D153 | API style: **REST + Zod schemas + Swagger/OpenAPI auto-gen | ⬜ |  |  |  |
 | D154 | API versioning: **URL prefix (`/api/v1/`) | ⬜ |  |  |  |
 | D155 | Auth: **HttpOnly cookies + CSRF + rotating refresh + active_sessions table | 🔵 | #121, #467 |  |  |
-| D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🟢 | #35, #48, #113, #188, #211, #337, #378, #380, #382, #383, #384, #456 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
+| D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🟢 | #35, #48, #113, #188, #211, #337, #378, #380, #382, #383, #384, #456, #502 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425, #496 |  |  |
-| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473, #474 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
+| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473, #474, #502 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
 | D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |
@@ -257,7 +257,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D199 | Lazy promotion + spec override (component/utility placement rule) | 🔵 | #29 |  |  |
 | D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🟢 | #29, #45, #50 | apps/web/src/features/triage/store.test.ts — Zustand client state |  |
 | D201 | API + Worker architecture: Standard NestJS modules + Adapter pattern at external boundaries | 🟢 | #37 | apps/web/src/lib/api/client.test.ts |  |
-| D202 | API response envelope + cursor pagination | 🟢 | #37, #113 | apps/api/src/senders/senders.controller.spec.ts — D202 envelope |  |
+| D202 | API response envelope + cursor pagination | 🟢 | #37, #113, #502 | apps/api/src/senders/senders.controller.spec.ts — D202 envelope |  |
 | D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | 🟢 | #49 | packages/workers/src/base-declutr-worker.test.ts |  |
 | D204 | Read-only services per feature + events for cross-feature writes (refines D201) | 🟢 | #37, #78, #113 | apps/api/src/triage/triage.service.spec.ts — D204 read-only |  |
 | D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | 🔵 | #121, #123, #218, #372 |  |  |
