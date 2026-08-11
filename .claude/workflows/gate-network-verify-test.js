@@ -130,10 +130,11 @@ const VERDICT = {
 const DRIFT = {
   type: 'object',
   additionalProperties: false,
-  required: ['identical', 'detail'],
+  required: ['identical', 'sameModelTier', 'detail'],
   properties: {
-    identical: { type: 'boolean' },
-    detail: { type: 'string', description: 'If not identical, what differs' },
+    identical: { type: 'boolean', description: 'Refuter PROMPT instructions match' },
+    sameModelTier: { type: 'boolean', description: 'Refuter MODEL tier matches in both files' },
+    detail: { type: 'string', description: 'If either is false, what differs' },
   },
 }
 
@@ -148,15 +149,22 @@ const drift = await agent(
     `while B always has a line — same rendered text when a line is present.\n\n` +
     `Set identical=false if any INSTRUCTION differs: the refute criteria, the\n` +
     `"do NOT refute merely because it is hard to verify" clause, or the\n` +
-    `"only when you can name the specific thing" clause. Quote what differs.`,
+    `"only when you can name the specific thing" clause. Quote what differs.\n\n` +
+    `Separately, compare the MODEL TIER of the refuter agent() calls in each file —\n` +
+    `in A the two calls labelled refute/refute2 in the Verify phase, in B the two\n` +
+    `labelled r1/r2 in the Refute phase. Set sameModelTier=false if they differ.\n` +
+    `A baseline measured on a different tier than the code under test measures\n` +
+    `nothing, so this matters as much as the prompt text. Ignore the drift agent's\n` +
+    `own model and the scout/gate models — only the refuters are being compared.`,
   // sonnet, not haiku: "pick the cheaper tier and escalate on failure" assumes
   // failure is visible. A wrong verdict here is silent — it green-lights a test
   // measuring a prompt nobody runs — so this one does not get the cheap tier.
   { label: 'drift:refute-prompt', phase: 'Drift', model: 'sonnet', effort: 'low', schema: DRIFT },
 )
 
-if (drift && !drift.identical) {
-  log(`⚠ PROMPT DRIFT — the test is exercising a prompt gate-network no longer uses: ${drift.detail}`)
+const drifted = drift ? !drift.identical || !drift.sameModelTier : null
+if (drifted) {
+  log(`⚠ DRIFT — this test no longer measures what gate-network actually runs: ${drift.detail}`)
 } else if (!drift) {
   log('⚠ drift check returned nothing — treat the result below as UNVALIDATED')
 }
@@ -195,14 +203,19 @@ log(
 // scoring 4/4 on a 5-finding suite.
 const incomplete = scored.length !== FINDINGS.length || scored.some((r) => r.votes.length !== 2)
 
+// A drifted or unvalidated run cannot report a pass, however well the refuters
+// scored: it measured a prompt or tier gate-network does not use, and "5/5 on
+// the wrong thing" is the blind-guard failure this repo keeps relearning.
 return {
   verdict: incomplete
     ? 'INCOMPLETE'
-    : fabricationsSurvived.length === 0 && realFindingsKilled.length === 0
-      ? 'STAGE_DISCRIMINATES'
-      : 'STAGE_UNRELIABLE',
+    : drifted !== false
+      ? 'INVALID_DRIFTED'
+      : fabricationsSurvived.length === 0 && realFindingsKilled.length === 0
+        ? 'STAGE_DISCRIMINATES'
+        : 'STAGE_UNRELIABLE',
   correct: `${correct.length}/${FINDINGS.length}`,
-  promptDrift: drift?.identical === false ? drift.detail : drift ? 'none' : 'UNKNOWN',
+  drift: drift ? (drifted ? drift.detail : 'none') : 'UNKNOWN — drift agent returned nothing',
   fabricationsSurvived: fabricationsSurvived.map((r) => r.id),
   realFindingsKilled: realFindingsKilled.map((r) => r.id),
   detail: scored,
