@@ -26,33 +26,47 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-08-11 — Required checks make a tooling-only PR unmergeable by construction
+### 2026-08-11 — `Analyze (javascript-typescript)` is a required check that never runs
 
 **Source:** session (PR #504, `chore/bootstrap-gate-network-workflow`)
-**Why:** #504 has every check that ran green, and still cannot merge:
-`405: 7 of 11 required status checks have not succeeded: 3 expected`. It touches
-no application paths (`.claude/`, `.github/`, `.husky/`, `commitlint.config.cjs`,
-two markdown files), so `Detect changed paths` correctly skipped all five
-`Tests — *` shards and `Authenticated accessibility smoke` — and GitHub counts a
-**skipped** required context as not-succeeded. Three further required contexts
-never reported at all. This is not specific to #504: ANY docs-only or
-tooling-only PR is unmergeable without an override. #502 escaped it only because
-it happened to touch `apps/web` and `apps/api`, so its shards actually ran.
-`ci.yml` already solves this — the aggregate `Test` job classifies each shard as
-ran/skipped and fails only on a genuinely bad one, and it is **green** on #504.
-Requiring the individual shards *and* the aggregate defeats the aggregate's whole
-purpose.
-**How:** GitHub → Settings → Branches → the `main` protection rule → Require
-status checks to pass. Remove the six path-gated contexts — `Tests — API`,
-`Tests — Web`, `Tests — Workers`, `Tests — Database`, `Tests — Shared units`,
-`Authenticated accessibility smoke` — and keep the aggregate `Test`, which
-already fails when any shard genuinely fails. Then identify the 3 contexts stuck
-at "expected" (required contexts whose workflow has a `paths:` filter that did
-not match) and either drop them or give them a path-independent no-op job.
-Merging #504 needs an admin override until this is done.
-**Verifies by:** a PR touching only `*.md` merges without an override, while a PR
-that breaks an API test still shows `Test` red and stays blocked.
+**Why:** `Analyze (javascript-typescript)` (CodeQL) is one of the 11 required
+status checks on `main`, and across 24 workflow runs on that branch it never
+executed once — only `CI`, `Branch name + PR title` and `Subagent gate` ran. So
+either CodeQL is not scanning feature branches at all, which is a security-coverage
+gap on every PR, or it reports under a ref the branch view does not show. Worth
+resolving either way: a required check that never reports is not protecting
+anything, and if CodeQL genuinely is not running on PRs, nothing is scanning the
+diff before it reaches main.
+**How:** Open `.github/workflows/` and check the CodeQL workflow's `on:` triggers
+and any `paths:` filter. Confirm against the Security → Code scanning tab whether
+alerts exist for recent feature branches. Then either fix the trigger so it runs
+on `pull_request`, or drop it from the required list so it stops implying a
+guarantee it does not provide.
+**Verifies by:** a PR shows an `Analyze (javascript-typescript)` check that
+actually ran, with a result — or the context no longer appears in the required
+list.
 **Status:** Open
+
+<!--
+CORRECTION 2026-08-11 — this entry originally claimed that required checks made
+any tooling-only PR "unmergeable by construction", and instructed removing six
+path-gated contexts from branch protection. That was wrong and the instruction
+should NOT be followed. #504 merged with no settings change whatsoever.
+
+The `405: 7 of 11 required status checks have not succeeded: 3 expected` came
+from attempting the merge while Lint, Typecheck, Format check and the impl-log
+job were still in progress — in-flight required checks read as not-succeeded —
+compounded by a CI run cancelled mid-flight by a rapid follow-up push, whose
+aggregate `Test` correctly failed on `IMPL_LOG_RESULT: cancelled`. Once the
+checks completed, the merge went through unaided.
+
+Two premises were also false: the five `Tests — *` shards are not in the
+required list at all (only `Authenticated accessibility smoke` is), and a
+skipped required context does not block a merge. The mistake was diagnosing a
+structural cause from a single failed attempt without re-checking after the
+checks settled.
+-->
+
 
 ### 2026-08-11 — `commit-msg` did not fire on a fresh container's first commit
 

@@ -2281,3 +2281,31 @@ appeared" claims require reading which of the locator's MATCHES the
 error lists — two matches and zero matches produce the same red.
 **Enforcement update:** none automated; the spec now documents the
 baseline semantics at the tray leg.
+
+## 2026-08-11 — Diagnosed a structural CI blocker from one failed merge attempt
+
+**PR:** #504 (https://github.com/CT2689-Tech/DeclutrMail/pull/504)
+**Caught by:** the merge succeeding, unaided, on the second attempt
+**What happened:** a merge returned `405: 7 of 11 required status checks
+have not succeeded: 3 expected`. I read that as structural and concluded
+required checks made any docs-only or tooling-only PR unmergeable without
+an override. I wrote that into FOUNDER-FOLLOWUPS as fact, told the founder
+to remove six contexts from branch protection, and listed the settings
+change as step 1 of their instructions. Two of my premises were simply
+false: five of the six contexts I named are not in the required list at
+all, and a skipped required context does not block a merge. The real cause
+was timing — Lint, Typecheck, Format check and the impl-log job were still
+in progress at merge time, and in-flight required checks read as
+not-succeeded. A run cancelled by my own rapid follow-up push added a
+failed aggregate on top. Re-attempting after the checks settled merged with
+no settings change.
+**Correct approach:** re-check after the in-flight checks complete before
+attributing a merge block to configuration; and read the actual required
+list (Settings → Branches) before naming contexts to remove, rather than
+inferring it from which jobs happened to skip.
+**Rule:** a merge-blocked error taken mid-run describes a moment, not a
+configuration — never write it up as structural until the checks have
+settled and the required list has been read directly.
+**Enforcement update:** none automated. FOUNDER-FOLLOWUPS entry rewritten
+with an inline CORRECTION block; the surviving finding there is the narrow,
+verified one (CodeQL is required but never ran on the branch).
