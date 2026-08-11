@@ -319,7 +319,11 @@ test('Archive one Noise sender from the Brief, then undo it from the tray', asyn
   // yesterday held.
   const archivedRow = noiseSection.getByRole('listitem').filter({ hasText: senderName });
   await expect(archivedRow).toContainText('Archived ✓');
-  await expect(archivedRow).toContainText('messages yesterday');
+  // `messages?` — the row pluralises, and the candidate search deliberately
+  // prefers the SMALLEST sender, which is routinely a one-message row
+  // ("1 message yesterday"). A hard plural fails on exactly the senders
+  // this spec is most likely to pick.
+  await expect(archivedRow).toContainText(/messages? yesterday/);
 
   // ---- Undo through the global tray.
   const tray = page.getByRole('region', { name: 'Recent actions — undo available' });
