@@ -21,6 +21,45 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-11 — I fixed three blind guards and shipped a fourth in the same PR
+
+**PR:** [#506](https://github.com/CT2689-Tech/DeclutrMail/pull/506), corrected by
+[#508](https://github.com/CT2689-Tech/DeclutrMail/pull/508)
+**Caught by:** Codex stop-time review
+
+**What happened:** #506 closed three guards that reported green without checking
+anything — the impl-log treadmill, the money-path e2e's `test.skip`
+preconditions, and the outbox `SKIP LOCKED` proof that had never run anywhere.
+The outbox proof I *enabled* had the same hole. It drove concurrency with
+`Promise.all([a.tick(), b.tick()])`, which only usually interleaves: both ticks
+run in one Node process, so if A's transaction commits before B's `SELECT`
+reaches the server, B finds the remaining rows pending and every assertion passes
+having exercised no row locking at all.
+
+I did run a negative control — I removed `SKIP LOCKED` from the worker and
+watched the test fail — and I reported that as verification. It was not. It
+proved the overlap occurred on *those* runs, not that it was guaranteed. The
+vacuous path and the real path are both green, so no number of repetitions
+distinguishes them.
+
+**Correct approach:** force the interleaving instead of hoping for it. The
+consumer runs inside the claim transaction, so pausing there parks A holding row
+locks, uncommitted; B then provably runs against locked rows. Race B against a
+deadline and treat the timeout as the negative result — without `SKIP LOCKED` the
+claim blocks and B never returns, which must fail loudly rather than hang.
+
+**Rule:** a negative control proves the guard can fail *on the run you observed*.
+If the guard's setup is timing-dependent, that is not the same as proving it can
+fail — force the condition the guard is supposed to detect, or the green tells
+you nothing. Ask specifically: **is there an ordering of events where this passes
+without testing anything?**
+
+**Enforcement update:** none mechanical — this is a reasoning error, not a
+missing check. It is the seventh member of the blind-guard family and belongs in
+the CLAUDE.md §8 distillation the logs have been requesting since 2026-07-31
+(drafted as proposal P1 in `docs/execution/audit-2026-08-11/audit-distillation.md`,
+founder's call per §11).
+
 ## 2026-08-10 — A new e2e spec was permanently skipped, and the suite went green
 
 **PR:** [#498](https://github.com/CT2689-Tech/DeclutrMail/pull/498) (D65)
