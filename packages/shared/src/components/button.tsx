@@ -40,6 +40,7 @@ export function Button({
   title,
   ariaLabel,
   ariaPressed,
+  ariaDescribedBy,
   style,
 }: {
   children?: ReactNode;
@@ -54,6 +55,8 @@ export function Button({
   ariaLabel?: string;
   /** Toggle state; forwarded as aria-pressed (AT + selector contract). */
   ariaPressed?: boolean;
+  /** Id of a describing element — e.g. a `Tooltip`'s bubble (D38). */
+  ariaDescribedBy?: string;
   style?: CSSProperties;
 }) {
   const t = TONES[tone];
@@ -66,6 +69,7 @@ export function Button({
       title={title}
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}
+      aria-describedby={ariaDescribedBy}
       onMouseEnter={(e) => {
         if (!disabled) e.currentTarget.style.background = t.hover;
       }}

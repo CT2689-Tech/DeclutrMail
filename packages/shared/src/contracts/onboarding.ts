@@ -88,6 +88,15 @@ export type OnboardingPresetCatalogItem = z.infer<typeof OnboardingPresetCatalog
  *   null vs empty is load-bearing.
  * - `skipped` ⇒ the user used the D106 skip affordance; production
  *   may gate certain features for skip-onboarded users.
+ * - `verbTourCompletedAt` ⇒ D38's first-time education flag. Non-null
+ *   means the K/A/U/L/D tour has been finished OR dismissed and must
+ *   not re-fire (D38: "Day 2+: no re-education"). Replaying from
+ *   Settings re-opens the same panel on demand and does NOT clear the
+ *   flag — the user HAS seen the tour, and that stays true. D38 named
+ *   a `users.triage_tour_completed_at` COLUMN for this; it lives in
+ *   the `users.preferences` bag instead, which is where every other
+ *   per-user UI preference already lives (`actionSheetPrefs`,
+ *   `briefPrefs`, `onboardingGoal`) and which needs no migration.
  */
 export const OnboardingStateSchema = z
   .object({
@@ -96,6 +105,7 @@ export const OnboardingStateSchema = z
     goal: OnboardingGoalSchema.nullable(),
     presetPicks: z.array(OnboardingPresetKeySchema).nullable(),
     presets: z.array(OnboardingPresetCatalogItemSchema),
+    verbTourCompletedAt: z.string().datetime({ offset: true }).nullable(),
   })
   .strict();
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;

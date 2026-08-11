@@ -17,7 +17,9 @@
 // same handler the `keydown` listener calls in production.
 
 import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { VERB_LESSONS } from '@/features/tour/verb-lessons';
 import { ActionToolbar, resolveShortcut, verbDisabledReason } from './action-toolbar';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from './data';
 
@@ -285,5 +287,67 @@ describe('ActionToolbar — onAction callback wiring (the test the task asks for
       return false; // all other verbs are gated off for protection per data.ts
     });
     expect(allowed).toEqual(['Keep']);
+  });
+});
+
+/**
+ * D38 — the verb tooltips. These run against a real DOM (happy-dom),
+ * which is what makes the focus path testable; the shared package's own
+ * tooltip test is SSR-only and can only assert structure.
+ */
+describe('verb tooltips (D38)', () => {
+  const row = rowById('t-linkedin');
+
+  it('describes every verb button with what it does to the mail', () => {
+    render(<ActionToolbar row={row} onAction={() => {}} />);
+
+    for (const lesson of VERB_LESSONS) {
+      const button = screen.getByRole('button', {
+        name: new RegExp(`^${lesson.label} \\(${lesson.shortcut}\\)`),
+      });
+      const describedBy = button.getAttribute('aria-describedby');
+      expect(describedBy, `${lesson.label} has no description`).toBeTruthy();
+
+      // The association resolves to a real node carrying the sentence —
+      // the part a screen reader actually reads out.
+      const bubble = document.getElementById(describedBy!);
+      expect(bubble).not.toBeNull();
+      expect(bubble).toHaveAttribute('role', 'tooltip');
+      expect(bubble!.textContent).toContain(lesson.effect);
+      expect(bubble!.textContent).toContain(lesson.label);
+      expect(bubble!.textContent).toContain(lesson.shortcut);
+    }
+  });
+
+  it('opens on keyboard focus, not hover alone', () => {
+    render(<ActionToolbar row={row} onAction={() => {}} />);
+    const button = screen.getByRole('button', { name: /^Archive \(A\)/ });
+    const bubble = document.getElementById(button.getAttribute('aria-describedby')!)!;
+
+    // Closed: clipped out of the visual layer but still in the a11y tree.
+    expect(bubble.getAttribute('style')).toContain('inset(50%)');
+
+    fireEvent.focus(button);
+    expect(bubble.getAttribute('style')).not.toContain('inset(50%)');
+
+    fireEvent.blur(button);
+    expect(bubble.getAttribute('style')).toContain('inset(50%)');
+  });
+
+  it('closes on Escape while hovered (WCAG 1.4.13 dismissible)', () => {
+    render(<ActionToolbar row={row} onAction={() => {}} />);
+    const button = screen.getByRole('button', { name: /^Delete \(D\)/ });
+    const bubble = document.getElementById(button.getAttribute('aria-describedby')!)!;
+
+    fireEvent.mouseEnter(button.parentElement!);
+    expect(bubble.getAttribute('style')).not.toContain('inset(50%)');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(bubble.getAttribute('style')).toContain('inset(50%)');
+  });
+
+  it('never renders the internal Screener verdict word (D227)', () => {
+    const { container } = render(<ActionToolbar row={row} onAction={() => {}} />);
+    expect(container.textContent).not.toMatch(/\bScreen\b/);
   });
 });

@@ -57,6 +57,14 @@ const PREF_FIRST_TRIAGE_MAILBOX = 'onboardingFirstTriageMailboxId';
  */
 const PREF_FIRST_TRIAGE_GOAL = 'onboardingFirstTriageGoal';
 const PREF_SKIPPED = 'onboardingSkipped';
+/**
+ * D38 first-time education flag — ISO timestamp of the moment the
+ * K/A/U/L/D tour was finished or dismissed, absent while it has never
+ * run. D38 specified a `users.triage_tour_completed_at` column; the
+ * preferences bag carries it instead so no migration is needed (same
+ * call the `actionSheetPrefs` / `briefPrefs` preferences made).
+ */
+const PREF_VERB_TOUR_COMPLETED_AT = 'onboardingVerbTourCompletedAt';
 
 /** D112/D246 — the finite first-relief run covers at most 5 senders. */
 const FIRST_TRIAGE_PINNED_COUNT = 5;
@@ -134,7 +142,26 @@ export class OnboardingService {
       goal: readGoal(prefs),
       presetPicks: readPresetPicks(prefs),
       presets: ONBOARDING_PRESET_CATALOG,
+      verbTourCompletedAt: readVerbTourCompletedAt(prefs),
     };
+  }
+
+  /**
+   * POST /api/onboarding/verb-tour (D38) — mark the verb tour seen.
+   *
+   * Finishing and dismissing both land here: D38 promises the tour
+   * never comes back, so the escape hatch has to be as durable as
+   * completion. Idempotent — a re-stamp is harmless, and the Settings
+   * replay re-stamps on its way out.
+   *
+   * Returns the updated state so the FE writes through without a
+   * refetch race (same shape as `complete`).
+   */
+  async markVerbTourCompleted(userId: string): Promise<OnboardingState> {
+    await this.patchPreferences(userId, {
+      [PREF_VERB_TOUR_COMPLETED_AT]: new Date().toISOString(),
+    });
+    return this.getState(userId);
   }
 
   /**
@@ -675,4 +702,17 @@ function readGoal(prefs: Record<string, unknown>): OnboardingGoal | null {
 function readStringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   return value.filter((v): v is string => typeof v === 'string');
+}
+
+/**
+ * D38 tour flag. A malformed value degrades to null — "never seen" —
+ * which shows the tour again. That is the safe direction: the failure
+ * mode is one extra explanation, not a user permanently locked out of
+ * the only place the verbs are taught.
+ */
+function readVerbTourCompletedAt(prefs: Record<string, unknown>): string | null {
+  const raw = prefs[PREF_VERB_TOUR_COMPLETED_AT];
+  if (typeof raw !== 'string') return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }

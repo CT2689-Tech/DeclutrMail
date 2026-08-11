@@ -125,4 +125,24 @@ export class OnboardingController {
       }),
     );
   }
+
+  /**
+   * POST /api/onboarding/verb-tour — D38 first-time education flag.
+   *
+   * Bodyless: the only transition is "seen", written by both finishing
+   * and dismissing the tour. Replaying from Settings re-opens the panel
+   * client-side and never un-sets this.
+   *
+   * USER-scoped (no `CurrentMailboxGuard`): Settings hosts the replay
+   * control and must work with zero connected mailboxes, exactly like
+   * the other preference writes.
+   */
+  @Post('verb-tour')
+  @UseGuards(JwtGuard, CsrfGuard)
+  @RateLimit('default')
+  async markVerbTourSeen(
+    @CurrentUser() principal: SessionPrincipal,
+  ): Promise<Envelope<OnboardingState>> {
+    return ok(await this.onboarding.markVerbTourCompleted(principal.userId));
+  }
 }

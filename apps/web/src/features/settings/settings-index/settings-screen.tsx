@@ -26,9 +26,11 @@ import {
   useUpdateEmailPrefs,
 } from '../api/use-me-settings';
 import { useMailboxesHealth } from '../api/use-mailbox-health';
+import { VerbTourDialog } from '@/features/tour/verb-tour';
 import { ActionSheetPrefsCard, type ActionSheetPrefsCardState } from './action-sheet-prefs-card';
 import { EmailPrefsCard, type EmailPrefsCardState } from './email-prefs-card';
 import { MailboxesCard } from './mailboxes-card';
+import { VerbTourCard } from './verb-tour-card';
 
 const { color, font } = tokens;
 
@@ -260,6 +262,10 @@ export function SettingsScreen() {
     void track('page_viewed', { page: 'settings', mailbox_id: null });
   }, []);
 
+  // D38 replay — the tour has no onboarding step to return to once
+  // onboarding is done, so Settings re-opens it in place.
+  const [tourOpen, setTourOpen] = useState(false);
+
   const [pendingWire, setPendingWire] = useState<keyof ActionSheetPrefs | null>(null);
   const sheetPrefsState: ActionSheetPrefsCardState = settings.isPending
     ? { kind: 'loading' }
@@ -396,6 +402,8 @@ export function SettingsScreen() {
             updateSheetPrefs.mutate({ [wire]: next }, { onSettled: () => setPendingWire(null) });
           }}
         />
+        <VerbTourCard onReplay={() => setTourOpen(true)} />
+        {tourOpen && <VerbTourDialog onClose={() => setTourOpen(false)} />}
 
         <SectionLabel id="notifications">Notifications</SectionLabel>
         <EmailPrefsCard

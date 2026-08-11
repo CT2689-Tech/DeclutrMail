@@ -235,6 +235,41 @@ describe('OnboardingService', () => {
     });
   });
 
+  describe('verb tour flag (D38)', () => {
+    it('a fresh user has never seen the tour', async () => {
+      expect((await service.getState(userId)).verbTourCompletedAt).toBeNull();
+    });
+
+    it('marking it seen persists across reads, so it cannot re-fire', async () => {
+      const written = await service.markVerbTourCompleted(userId);
+      expect(written.verbTourCompletedAt).not.toBeNull();
+
+      // A separate read is the "reload" — the flag lives in the row,
+      // not in the response of the write that set it.
+      const reread = await service.getState(userId);
+      expect(reread.verbTourCompletedAt).toBe(written.verbTourCompletedAt);
+    });
+
+    it('leaves the other preference keys alone (jsonb merge, not replace)', async () => {
+      await service.submitPresetPicks(userId, mailboxId, 'reduce_newsletters', []);
+      await service.markVerbTourCompleted(userId);
+
+      const state = await service.getState(userId);
+      expect(state.goal).toBe('reduce_newsletters');
+      expect(state.presetPicks).toEqual([]);
+      expect(state.verbTourCompletedAt).not.toBeNull();
+    });
+
+    it('degrades a malformed flag to "never seen" rather than locking the tour out', async () => {
+      await db
+        .update(users)
+        .set({ preferences: { onboardingVerbTourCompletedAt: 'not-a-date' } })
+        .where(eq(users.id, userId));
+
+      expect((await service.getState(userId)).verbTourCompletedAt).toBeNull();
+    });
+  });
+
   describe('submitPresetPicks', () => {
     it('persists picks and reconciles seeded rules (enable picked, leave rest off)', async () => {
       await seedPresets(db, mailboxId);
