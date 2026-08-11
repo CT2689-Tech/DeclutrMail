@@ -26,46 +26,36 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-08-11 — `Analyze (javascript-typescript)` is a required check that never runs
+### 2026-08-11 — RETRACTED: the CI-blocker entry was wrong twice; no action needed
 
-**Source:** session (PR #504, `chore/bootstrap-gate-network-workflow`)
-**Why:** `Analyze (javascript-typescript)` (CodeQL) is one of the 11 required
-status checks on `main`, and across 24 workflow runs on that branch it never
-executed once — only `CI`, `Branch name + PR title` and `Subagent gate` ran. So
-either CodeQL is not scanning feature branches at all, which is a security-coverage
-gap on every PR, or it reports under a ref the branch view does not show. Worth
-resolving either way: a required check that never reports is not protecting
-anything, and if CodeQL genuinely is not running on PRs, nothing is scanning the
-diff before it reaches main.
-**How:** Open `.github/workflows/` and check the CodeQL workflow's `on:` triggers
-and any `paths:` filter. Confirm against the Security → Code scanning tab whether
-alerts exist for recent feature branches. Then either fix the trigger so it runs
-on `pull_request`, or drop it from the required list so it stops implying a
-guarantee it does not provide.
-**Verifies by:** a PR shows an `Analyze (javascript-typescript)` check that
-actually ran, with a result — or the context no longer appears in the required
-list.
-**Status:** Open
+**Source:** session (PR #504 → #505)
+**Why:** kept only as a trail. This slot briefly held two claims, both false, both
+written from a single observation without re-checking. Nothing here needs doing —
+CI and branch protection are working as configured.
 
-<!--
-CORRECTION 2026-08-11 — this entry originally claimed that required checks made
-any tooling-only PR "unmergeable by construction", and instructed removing six
-path-gated contexts from branch protection. That was wrong and the instruction
-should NOT be followed. #504 merged with no settings change whatsoever.
+Claim 1, retracted: *"required status checks make any tooling-only PR unmergeable
+by construction"*, with an instruction to remove six path-gated contexts from the
+`main` protection rule. **Do not do that.** #504 merged with no settings change.
+The `405: 7 of 11 required status checks have not succeeded: 3 expected` came from
+attempting the merge while `Lint`, `Typecheck`, `Format check` and the impl-log job
+were still in progress — in-flight required checks read as not-succeeded — plus a
+CI run cancelled by a rapid follow-up push, whose aggregate `Test` correctly failed
+on `IMPL_LOG_RESULT: cancelled`. Once the checks settled the merge went through
+unaided. Two supporting premises were also false: the five `Tests — *` shards are
+not in the required list at all (only `Authenticated accessibility smoke` is), and
+a skipped required context does not block a merge.
 
-The `405: 7 of 11 required status checks have not succeeded: 3 expected` came
-from attempting the merge while Lint, Typecheck, Format check and the impl-log
-job were still in progress — in-flight required checks read as not-succeeded —
-compounded by a CI run cancelled mid-flight by a rapid follow-up push, whose
-aggregate `Test` correctly failed on `IMPL_LOG_RESULT: cancelled`. Once the
-checks completed, the merge went through unaided.
+Claim 2, retracted: *"`Analyze (javascript-typescript)` is a required check that
+never runs"*, evidenced by 24 workflow runs on the branch containing zero CodeQL
+executions. That query could not have shown CodeQL: it filtered by branch, and
+CodeQL runs against the PR merge ref. `Analyze` ran and passed on #505 (run
+31522587870) and on #504's first commit. Code scanning is fine.
 
-Two premises were also false: the five `Tests — *` shards are not in the
-required list at all (only `Authenticated accessibility smoke` is), and a
-skipped required context does not block a merge. The mistake was diagnosing a
-structural cause from a single failed attempt without re-checking after the
-checks settled.
--->
+**How:** nothing. Do not change branch protection; do not touch the CodeQL
+workflow.
+**Verifies by:** already verified — #504 merged at `983a85c` with the protection
+rule untouched, and `Analyze (javascript-typescript)` reports green on #505.
+**Status:** Skipped 2026-08-11 — retracted, no action
 
 
 ### 2026-08-11 — `commit-msg` did not fire on a fresh container's first commit
