@@ -687,12 +687,44 @@ describe.skipIf(!process.env.OUTBOX_TEST_PG_URL)(
         }
 
         // Two dispatchers, each claims up to 10, against the same DB.
+        //
+        // The overlap is FORCED, not hoped for. `Promise.all([a.tick(),
+        // b.tick()])` only *usually* interleaves: if A's transaction
+        // happens to commit before B's SELECT reaches the server, B
+        // simply finds the remaining 10 rows pending and every
+        // assertion below passes having exercised nothing. That is a
+        // vacuous pass — the same shape as the guards this test was
+        // wired up to replace — and no amount of re-running detects it,
+        // because the vacuous path and the real path are both green.
+        //
+        // Instead: A's consumer runs INSIDE A's claim transaction (see
+        // `runOneTick` — the SELECT ... FOR UPDATE and the per-row
+        // UPDATEs share one transaction), so pausing there parks A
+        // holding row locks on its 10 rows, uncommitted. B then runs
+        // against a table where 10 rows are provably locked. There is
+        // no interleaving left to chance.
         const claimedA: string[] = [];
         const claimedB: string[] = [];
+
+        let signalAClaimed!: () => void;
+        const aHasClaimed = new Promise<void>((resolve) => {
+          signalAClaimed = resolve;
+        });
+        let releaseA!: () => void;
+        const aMayCommit = new Promise<void>((resolve) => {
+          releaseA = resolve;
+        });
+
         const dispatchA = new OutboxDispatcherWorker({
           db: realDb,
           consumer: async (e) => {
             claimedA.push(e.id);
+            // First row only: the claim SELECT has already run, so every
+            // row A will take is locked as of now.
+            if (claimedA.length === 1) {
+              signalAClaimed();
+              await aMayCommit;
+            }
           },
           claimBatchSize: 10,
           pollIntervalMs: 60_000,
@@ -706,7 +738,33 @@ describe.skipIf(!process.env.OUTBOX_TEST_PG_URL)(
           pollIntervalMs: 60_000,
         });
 
-        await Promise.all([dispatchA.tick(), dispatchB.tick()]);
+        const aTick = dispatchA.tick();
+        await aHasClaimed;
+
+        // B must finish WHILE A holds the locks. With SKIP LOCKED it
+        // steps over A's rows and takes the other 10. Without it, `FOR
+        // UPDATE` blocks on A's locks and B never returns — so the
+        // timeout is not flake protection, it IS the negative result,
+        // and it must fail loudly rather than hang the suite.
+        await Promise.race([
+          dispatchB.tick(),
+          new Promise((_, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    'dispatcher B did not finish while A held its claim — the claim query blocked ' +
+                      'instead of skipping locked rows (FOR UPDATE without SKIP LOCKED behaves ' +
+                      'exactly this way)',
+                  ),
+                ),
+              10_000,
+            ),
+          ),
+        ]);
+
+        releaseA();
+        await aTick;
 
         // Disjoint claims + together cover the seed.
         const setA = new Set(claimedA);
