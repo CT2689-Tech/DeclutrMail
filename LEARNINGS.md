@@ -1078,3 +1078,34 @@ surface with MORE than one error branch must assert the branch-specific
 copy, not just "an error rendered".
 **Distillation trigger:** promote to a shared `storyClient()` helper if a
 third story file hand-rolls the same defaults block.
+
+## 2026-08-11 — Two more blind guards, both from checking a tool the wrong way
+
+**Context:** building the gate-network workflow. Two verification steps in one
+session appeared to pass and had verified nothing — the same class LEARNINGS
+already logs at four occurrences.
+
+**Finding:** (1) `node --check .claude/workflows/gate-network.js` reported
+`SyntaxError: Illegal return statement`. The script is fine; the Workflow runtime
+wraps the body in an async function, where top-level `return` is legal, and a bare
+ESM parse is simply not that environment. Wrapping the body before checking gave
+the true answer. A harness that differs from the runtime produces confident,
+inverted results — here a false alarm, but the same mismatch just as easily hides
+a real error. (2) `pnpm generate-impl-log >/dev/null 2>&1; git diff` showed no
+diff, which I first read as "the log is current, the CI failure is not mine". The
+generator had actually exited 3 — `gh` is absent in the web container, and it
+refuses to compute rather than silently demote every derived row. Its loud,
+well-designed failure was invisible because I had redirected it and then read
+`$?` from `tail` in a pipeline instead of from the command.
+
+**Rule (provisional):** two halves of one rule. Check a script with the harness
+that will actually run it, not the nearest available parser. And never infer
+success from a side effect that absence-of-output can mimic — read the command's
+own exit status and message, not a pipeline's, and treat "no output, no diff" as
+*unknown* until the tool has said something.
+
+**Distillation trigger:** this is the BLIND-GUARD class for the fifth and sixth
+time, and the 2026-07-31 entry already called a CLAUDE.md §8 line overdue at four.
+Promote now — a §8 sentence along the lines of: *a check that cannot show what it
+inspected has not run; print the evidence next to the verdict and treat an
+unproven input as INVALID, never as PASS.*

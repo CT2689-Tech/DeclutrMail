@@ -32,9 +32,9 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-- ⬜ Not started: 80
+- ⬜ Not started: 79
 - 🟡 In progress: 1
-- 🔵 Shipped: 103
+- 🔵 Shipped: 104
 - 🟢 Verified: 55
 - 🚫 Retired: 2
 - 🔴 Blocked: 0
@@ -293,7 +293,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D235 | Partitioning deferred behind measured thresholds | ⬜ |  |  |  |
 | D245 | Unified product clarity and control contract | 🔵 | #332, #333, #335, #336, #368, #393, #394, #400, #403, #409, #438, #483, #485, #491, #492 |  |  |
 | D246 | Finite first relief and evidence-based automation authority | 🔵 | #334 |  |  |
-| D248 | Bulk unsubscribe: one-click subset only, per-channel receipt | ⬜ |  |  | Decided 2026-07-28. Batch executes `senders.unsubscribe_method='one_click'` server-side only. The column is nullable, so four states are reported separately: `mailto` (per-sender, D230), `none` (no channel exists), and `NULL` (not yet indexed — unknown, never folded into `none`). No undo — unsubscribe declares no inverse, so the mandatory modal preview is the reversal point. Receipt aggregates the THREE outcomes the worker writes (`unsubscribe_endpoint_accepted` / `unsubscribe_unconfirmed` / `unsubscribe_failed`) and says "request accepted", not "unsubscribed". Extends D9/D32 |
+| D248 | Bulk unsubscribe: one-click subset only, per-channel receipt | 🔵 | #500 |  | Decided 2026-07-28. Batch executes `senders.unsubscribe_method='one_click'` server-side only. The column is nullable, so four states are reported separately: `mailto` (per-sender, D230), `none` (no channel exists), and `NULL` (not yet indexed — unknown, never folded into `none`). No undo — unsubscribe declares no inverse, so the mandatory modal preview is the reversal point. Receipt aggregates the THREE outcomes the worker writes (`unsubscribe_endpoint_accepted` / `unsubscribe_unconfirmed` / `unsubscribe_failed`) and says "request accepted", not "unsubscribed". Extends D9/D32 |
 | D249 | Billing reconciles against provider truth, not customer memory | 🔵 | #436, #441, #466 |  |  |
 | D250 | Landing page primary headline (reverses D223) | 🔵 | #468, #470 |  |  |
 | D251 | Autopilot splits on behaviour, not access | 🔵 | #465 |  |  |
