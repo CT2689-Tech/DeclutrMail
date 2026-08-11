@@ -18,15 +18,15 @@ describe('lapse-reengagement', () => {
   it('renders D126 Part 3 as compliant plain text', () => {
     const email = render(4);
 
-    expect(email.subject).toBe('4 senders are waiting in Triage');
+    expect(email.subject).toBe('4 senders are waiting on a decision');
     // D126 Part 3: "Plain text only; no marketing chrome."
     expect(email.html).toBeUndefined();
     expect(email.text.split('\n').slice(0, 6)).toEqual([
-      '4 senders are waiting in Triage',
+      '4 senders are waiting on a decision',
       '',
-      'You have not opened DeclutrMail for five days. The queue held its',
-      'place — every sender there is still waiting on your decision, not',
-      'on us.',
+      'You have not opened DeclutrMail for five days. That is the count',
+      'across your mailboxes of senders the engine has sized up and has',
+      'not heard back on — Triage shows them a mailbox at a time.',
       '',
     ]);
     expect(email.text).toContain('Open Triage: https://app.declutrmail.com/triage');
@@ -58,7 +58,19 @@ describe('lapse-reengagement', () => {
     expect(text).not.toMatch(/30 seconds|takes only|in seconds/i);
   });
 
+  /**
+   * The count is account-wide; the Triage read is per-mailbox and also
+   * shows Keep and protected rows. The copy must therefore never assert
+   * the two are the same number.
+   */
+  it('does not claim the count equals what the Triage screen shows', () => {
+    const text = render(4).text;
+    expect(text).toContain('across your mailboxes');
+    expect(text).toContain('Triage shows them a mailbox at a time');
+    expect(text).not.toMatch(/waiting in Triage/);
+  });
+
   it('singularises a one-sender queue', () => {
-    expect(render(1).subject).toBe('1 sender is waiting in Triage');
+    expect(render(1).subject).toBe('1 sender is waiting on a decision');
   });
 });

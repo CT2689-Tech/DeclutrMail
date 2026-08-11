@@ -4,9 +4,13 @@ import { formatCount, type RenderedEmail } from './shell.js';
 
 export interface LapseReengagementEmailInput {
   /**
-   * Senders currently awaiting a first decision in Triage, across the
-   * user's active mailboxes. Computed with the Triage queue's OWN
-   * exclusion rule, so this is the number the queue shows on arrival.
+   * Senders awaiting a first decision across ALL of the user's active
+   * mailboxes — an account-wide total.
+   *
+   * Deliberately NOT "the number on the Triage screen": that read is
+   * scoped to one mailbox and does show Keep and protected rows, which
+   * this count drops. The copy below says "across your mailboxes" and
+   * never claims the two are equal.
    */
   pendingCount: number;
   /** Web app origin. */
@@ -25,8 +29,11 @@ export interface LapseReengagementEmailInput {
  * given one.
  *
  * The copy asserts exactly two things, both recorded facts: how many
- * senders are waiting, and that the user has not been seen for five
- * days (the producer's band guarantees at least that). It deliberately
+ * senders await a first decision ACROSS the account's mailboxes, and
+ * that the user has not been seen for five days (the producer's band
+ * guarantees at least that). It does not say the number equals what
+ * Triage shows — that read is per-mailbox and includes rows this count
+ * drops. It deliberately
  * does NOT claim the inbox was untouched while they were away —
  * Autopilot in active mode acts without them, so that reassurance would
  * be false for exactly the users who most need it to be true. It also
@@ -40,14 +47,14 @@ export function lapseReengagementEmail(input: LapseReengagementEmailInput): Rend
   const appUrl = input.appUrl.replace(/\/$/, '');
   const triageUrl = `${appUrl}/triage`;
   const preferencesUrl = `${appUrl}/settings#notifications`;
-  const subject = `${formatCount(input.pendingCount, 'sender is', 'senders are')} waiting in Triage`;
+  const subject = `${formatCount(input.pendingCount, 'sender is', 'senders are')} waiting on a decision`;
 
   const text = [
     subject,
     '',
-    'You have not opened DeclutrMail for five days. The queue held its',
-    'place — every sender there is still waiting on your decision, not',
-    'on us.',
+    'You have not opened DeclutrMail for five days. That is the count',
+    'across your mailboxes of senders the engine has sized up and has',
+    'not heard back on — Triage shows them a mailbox at a time.',
     '',
     'One keystroke each: K to keep, A to archive, U to unsubscribe,',
     'L for later, D to delete.',

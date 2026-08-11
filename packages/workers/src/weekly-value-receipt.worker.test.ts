@@ -6,6 +6,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import { drizzle } from 'drizzle-orm/pglite';
 import {
+  accountDeletionRequests,
   activityLog,
   briefRuns,
   mailboxAccounts,
@@ -327,6 +328,83 @@ describe('WeeklyValueReceiptWorker facts', () => {
     });
   });
 
+  it('counts DISTINCT senders, never rows, and ignores sender-less bulk actions', async () => {
+    const db = await freshDb();
+    const facts = await factsFor(
+      db,
+      async (mailboxId) => {
+        await db.insert(activityLog).values([
+          // SAME sender decided twice in the week. COUNT(*) would render
+          // this as "2 senders you decided on yourself".
+          {
+            mailboxAccountId: mailboxId,
+            senderKey: 'same',
+            source: 'triage',
+            action: 'later',
+            affectedCount: 1,
+            occurredAt: new Date(NOW.getTime() - 3 * DAY_MS),
+          },
+          {
+            mailboxAccountId: mailboxId,
+            senderKey: 'same',
+            source: 'triage',
+            action: 'archive',
+            affectedCount: 4,
+            occurredAt: new Date(NOW.getTime() - 1 * DAY_MS),
+          },
+          // A different sender — the real second one.
+          {
+            mailboxAccountId: mailboxId,
+            senderKey: 'other',
+            source: 'manual',
+            action: 'keep',
+            affectedCount: 0,
+            occurredAt: new Date(NOW.getTime() - 1 * DAY_MS),
+          },
+          // sender_key NULL: a bulk action over a message selection, not
+          // a sender decision. COUNT(*) would have read this as a sender.
+          {
+            mailboxAccountId: mailboxId,
+            senderKey: null,
+            source: 'manual',
+            action: 'archive',
+            affectedCount: 12,
+            occurredAt: new Date(NOW.getTime() - 1 * DAY_MS),
+          },
+        ]);
+      },
+      1,
+    );
+
+    expect(facts?.ownDecisions).toBe(2);
+  });
+
+  it('counts only ACTIVE mailboxes in the "right now" Screener backlog', async () => {
+    const db = await freshDb();
+    const facts = await factsFor(
+      db,
+      async (mailboxId) => {
+        await db
+          .update(mailboxAccounts)
+          .set({ status: 'disconnected' })
+          .where(eq(mailboxAccounts.id, mailboxId));
+        await db.insert(activityLog).values({
+          mailboxAccountId: mailboxId,
+          senderKey: 'a',
+          source: 'triage',
+          action: 'archive',
+          affectedCount: 1,
+          occurredAt: new Date(NOW.getTime() - 1 * DAY_MS),
+        });
+      },
+      5,
+    );
+
+    // The copy says "waiting in Screener right now" — a disconnected
+    // mailbox's queue is not something the user can act on.
+    expect(facts?.pendingScreener).toBe(0);
+  });
+
   /**
    * The unknown-vs-zero line. A week with no Brief run is not a week
    * where the Brief surfaced nobody — the template omits the line rather
@@ -408,5 +486,57 @@ describe('WeeklyValueReceiptWorker facts', () => {
     const facts = await factsFor(await freshDb(), async () => {}, 0);
     // prepareEmail never ran, so nothing was rendered or queued.
     expect(facts).toBeNull();
+  });
+
+  /** D232 — the receipt is commercial too; never mail someone mid-erasure. */
+  it('never mails a user with an in-flight deletion request', async () => {
+    const db = await freshDb();
+    const [workspace] = await db
+      .insert(workspaces)
+      .values({ name: 'deleting', tier: 'pro' })
+      .returning({ id: workspaces.id });
+    const [user] = await db
+      .insert(users)
+      .values({
+        workspaceId: workspace!.id,
+        email: 'deleting@example.com',
+        timezone: 'Asia/Kolkata',
+        preferences: { emailPrefs: { weeklyReceipt: true } },
+      })
+      .returning({ id: users.id });
+    const [mailbox] = await db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId: workspace!.id,
+        userId: user!.id,
+        provider: 'gmail',
+        providerAccountId: 'deleting@example.com',
+      })
+      .returning({ id: mailboxAccounts.id });
+    await db
+      .insert(screenerQuarantine)
+      .values({ mailboxAccountId: mailbox!.id, senderKey: 'waiting' });
+    await db.insert(accountDeletionRequests).values({
+      userId: user!.id,
+      effectiveAt: new Date(NOW.getTime() + 7 * DAY_MS),
+      basis: 'flat-grace',
+      status: 'pending',
+    });
+
+    let rendered = 0;
+    const worker = new WeeklyValueReceiptWorker({
+      db: db as never,
+      now: () => NOW,
+      prepareEmail: async (): Promise<PreparedWeeklyValueReceipt> => {
+        rendered += 1;
+        return { subject: 's', text: 't', headers: {} };
+      },
+      enqueueEmail: async () => 'added',
+    });
+
+    const result = await worker.processJob({ scheduledAtMinute: '2026-08-02T12:30' }, CTX);
+
+    expect(result).toMatchObject({ deletionSkips: 1, receiptsQueued: 0 });
+    expect(rendered).toBe(0);
   });
 });

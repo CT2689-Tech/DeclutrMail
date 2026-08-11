@@ -1,4 +1,4 @@
-import { and, count, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
@@ -9,8 +9,10 @@ import {
   triageDecisions,
   users,
 } from '@declutrmail/db';
+import { parseEmailPrefs } from '@declutrmail/shared/contracts';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { hasInFlightDeletion } from './deletion-pause.js';
 import { lapseReengagementEmailJobId } from './email-send.queue.js';
 import type { EmailSendJobData } from './email-send.worker.js';
 import type { WorkerContext } from './worker-context.js';
@@ -47,12 +49,33 @@ export const DORMANT_DAYS = 5;
 export const SEND_BAND_DAYS = 1;
 
 /**
- * The Triage queue's own "already decided" exclusion, copied verbatim
- * from `TriageReadService` (apps/api/src/triage/triage.read-service.ts,
- * `notDecidedRecently`) so the count this email states is the count the
- * user finds when they arrive. A sender is out of the queue when a
- * K/A/U/L/D `activity_log` row landed inside the window and was not
- * reverted.
+ * Users examined per tick.
+ *
+ * The scan is bounded and ORDERED because `cronPolicy`'s 60s timeout is
+ * a bare `Promise.race` — it does not abort this loop. An unbounded,
+ * unordered scan past 60s "fails" the job, a retry starts a SECOND
+ * concurrent copy from the top, and candidates late in an arbitrary
+ * order are systematically never reached. Ordering by `created_at, id`
+ * makes each tick deterministic, and the hourly cadence against a 24h
+ * band leaves ~24 passes to cover a backlog.
+ */
+export const CANDIDATE_BATCH_SIZE = 500;
+
+/**
+ * The Triage queue's "already decided" exclusion, copied verbatim from
+ * `TriageReadService` (apps/api/src/triage/triage.read-service.ts,
+ * `notDecidedRecently`). A sender is out of the queue when a K/A/U/L/D
+ * `activity_log` row landed inside the window and was not reverted.
+ *
+ * This predicate is the ONLY part shared with the queue read, and the
+ * copy must not imply otherwise. The count here is deliberately a
+ * different quantity: it spans every ACTIVE mailbox on the account
+ * (the queue read is scoped to ONE — `triage.read-service.ts:372`), and
+ * it further drops Keep verdicts and protected senders, which the queue
+ * does show. So it is "senders awaiting a first decision across the
+ * account", not "the number on the Triage screen". The founder's own
+ * workspace has two connected accounts, so an equality claim would
+ * diverge on the first real smoke.
  *
  * Raw column text, no Drizzle column interpolation: a correlated `sql`
  * template emits BARE column names that mis-bind across the three
@@ -83,6 +106,8 @@ export interface LapseReengagementResult {
   candidatesChecked: number;
   emailsQueued: number;
   bandSkips: number;
+  preferenceSkips: number;
+  deletionSkips: number;
   emptyQueueSkips: number;
   dedupSkips: number;
   usersFailed: number;
@@ -134,10 +159,11 @@ function toDate(value: unknown): Date | null {
  *
  * "Last seen" is `max(latest session activity, account creation)`.
  * `active_sessions.last_used_at` is bumped on every authenticated
- * request; falling back to `users.created_at` covers the user whose
- * session rows are gone, and is itself a recorded fact rather than an
- * assumption — an account with no session ever was last in contact when
- * it was created.
+ * request. The `users.created_at` floor exists so a null `max()` can
+ * never read as "seen just now" — it is a null guard, NOT a path to a
+ * send: creation-as-last-contact requires an account 5-6 days old,
+ * which the 7-day age floor already excludes. The signed-up-and-never-
+ * returned user is D126's Day-3 step, which this does not build.
  */
 export class LapseReengagementWorker extends BaseDeclutrWorker<
   LapseReengagementJobData,
@@ -165,12 +191,15 @@ export class LapseReengagementWorker extends BaseDeclutrWorker<
       .select({
         id: users.id,
         createdAt: users.createdAt,
+        preferences: users.preferences,
         lastSessionAt: sql<unknown>`max(${activeSessions.lastUsedAt})`,
       })
       .from(users)
       .leftJoin(activeSessions, eq(activeSessions.userId, users.id))
       .where(lte(users.createdAt, new Date(now.getTime() - ACCOUNT_AGE_DAYS * DAY_MS)))
-      .groupBy(users.id, users.createdAt);
+      .groupBy(users.id, users.createdAt, users.preferences)
+      .orderBy(asc(users.createdAt), asc(users.id))
+      .limit(CANDIDATE_BATCH_SIZE);
 
     // Dormant for at least DORMANT_DAYS but less than one band-width
     // more. Expressed as an instant range on "last seen" so the two
@@ -180,6 +209,8 @@ export class LapseReengagementWorker extends BaseDeclutrWorker<
 
     let emailsQueued = 0;
     let bandSkips = 0;
+    let preferenceSkips = 0;
+    let deletionSkips = 0;
     let emptyQueueSkips = 0;
     let dedupSkips = 0;
     let usersFailed = 0;
@@ -192,8 +223,29 @@ export class LapseReengagementWorker extends BaseDeclutrWorker<
         bandSkips += 1;
         continue;
       }
+      // Cheap opt-out check first. `EmailSendWorker` re-reads this at
+      // execution time and remains the authority, but short-circuiting
+      // here avoids signing a fresh JWT and rendering a body every
+      // hourly tick for someone who turned reminders off.
+      if (!parseEmailPrefs(candidate.preferences).reminders) {
+        preferenceSkips += 1;
+        continue;
+      }
 
       try {
+        // D232 — never advertise to someone mid-erasure. A deletion
+        // request keeps `status='pending'` for
+        // `max(now+7d, latest_undo_expires_at)`, and a user who asked to
+        // be deleted stops using the app BY DEFINITION, so they land in
+        // this exact dormancy band inside their own grace window. This
+        // kind is commercial; win-back mail to an account being erased
+        // is not a tradeoff. `hasInFlightDeletion` is the same
+        // chokepoint every sync entry path already uses.
+        if (await hasInFlightDeletion(this.deps.db, candidate.id)) {
+          deletionSkips += 1;
+          continue;
+        }
+
         const pendingCount = await this.countPendingTriageSenders(candidate.id);
         if (pendingCount === 0) {
           // Nothing is waiting, so there is nothing true to say. D189's
@@ -218,15 +270,29 @@ export class LapseReengagementWorker extends BaseDeclutrWorker<
         });
         if (enqueueOutcome === 'added') emailsQueued += 1;
         else dedupSkips += 1;
-      } catch (error) {
+      } catch (err) {
         usersFailed += 1;
+        const error = err instanceof Error ? err : new Error(String(err));
+        // A per-user failure must reach Sentry, not just stdout. The
+        // job still RETURNS SUCCESS, and `sanitizeWorkerResult`'s
+        // allowlist decides what survives into `worker.succeeded` — so
+        // without this call a total outage looks exactly like a quiet
+        // hour. `signUnsubscribeToken` throwing on an unset or short
+        // `UNSUBSCRIBE_TOKEN_SECRET` hits this catch for EVERY
+        // candidate: zero mail sends, the cron reports success, and
+        // nobody is paged. Same reasoning `EmailSendWorker` gives for
+        // riding both channels on a not-delivered send.
+        this.observer.captureBackgroundFailure(error, {
+          kind: 'lapse_reengagement.user_failed',
+          tags: { worker: this.workerName },
+        });
         console.error(
           JSON.stringify({
             level: 'error',
             kind: 'lapse_reengagement.user_failed',
             worker: this.workerName,
             userId: candidate.id,
-            error: error instanceof Error ? error.message : String(error),
+            error: error.message,
           }),
         );
       }
@@ -236,6 +302,8 @@ export class LapseReengagementWorker extends BaseDeclutrWorker<
       candidatesChecked: candidates.length,
       emailsQueued,
       bandSkips,
+      preferenceSkips,
+      deletionSkips,
       emptyQueueSkips,
       dedupSkips,
       usersFailed,
@@ -244,13 +312,16 @@ export class LapseReengagementWorker extends BaseDeclutrWorker<
   }
 
   /**
-   * Senders sitting in Triage awaiting a first decision, across the
-   * user's ACTIVE mailboxes.
+   * Senders awaiting a first decision across the user's ACTIVE
+   * mailboxes — an ACCOUNT-WIDE total, not one mailbox's queue length.
    *
-   * Non-Keep verdicts only — D126's copy says "noisy senders", and a
+   * Non-Keep verdicts only: D126's copy says "noisy senders", and a
    * Keep row asks nothing of the user. Protected senders are excluded
-   * because the Triage screen renders their verdict AS Keep (D245), so
-   * counting them here would state a number the screen contradicts.
+   * because Triage renders their verdict AS Keep (D245), so counting
+   * them would inflate a number that asks for no decision.
+   *
+   * Both narrowings, plus the account-wide scope, are why the email
+   * says "across your mailboxes" and never claims to equal the queue.
    */
   private async countPendingTriageSenders(userId: string): Promise<number> {
     const [row] = await this.deps.db

@@ -14,6 +14,7 @@ import { parseEmailPrefs } from '@declutrmail/shared/contracts';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { validTimeZoneOrUtc } from './brief-timezone.js';
+import { hasInFlightDeletion } from './deletion-pause.js';
 import type { EmailSendJobData } from './email-send.worker.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -29,6 +30,7 @@ export interface WeeklyValueReceiptResult {
   receiptsQueued: number;
   scheduleSkips: number;
   preferenceSkips: number;
+  deletionSkips: number;
   emptyQueueSkips: number;
   dedupSkips: number;
   usersFailed: number;
@@ -183,6 +185,7 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
     let receiptsQueued = 0;
     let scheduleSkips = 0;
     let preferenceSkips = 0;
+    let deletionSkips = 0;
     let emptyQueueSkips = 0;
     let dedupSkips = 0;
     let usersFailed = 0;
@@ -199,6 +202,14 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
       }
 
       try {
+        // D232 — never advertise to someone mid-erasure. Same reasoning
+        // as the lapse producer: a user who requested deletion stops
+        // using the app, and this kind is in COMMERCIAL_KINDS.
+        if (await hasInFlightDeletion(this.deps.db, user.id)) {
+          deletionSkips += 1;
+          continue;
+        }
+
         const facts = await this.collectFacts(user.id, now);
         if (isEmptyWeek(facts)) {
           emptyQueueSkips += 1;
@@ -216,15 +227,24 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
         });
         if (enqueueOutcome === 'added') receiptsQueued += 1;
         else dedupSkips += 1;
-      } catch (error) {
+      } catch (err) {
         usersFailed += 1;
+        const error = err instanceof Error ? err : new Error(String(err));
+        // Reaches Sentry, not just stdout — the job returns SUCCESS, so
+        // a systematic failure (e.g. `signUnsubscribeToken` throwing on
+        // an unset UNSUBSCRIBE_TOKEN_SECRET, which hits every user)
+        // would otherwise be indistinguishable from a quiet week.
+        this.observer.captureBackgroundFailure(error, {
+          kind: 'weekly_value_receipt.user_failed',
+          tags: { worker: this.workerName },
+        });
         console.error(
           JSON.stringify({
             level: 'error',
             kind: 'weekly_value_receipt.user_failed',
             worker: this.workerName,
             userId: user.id,
-            error: error instanceof Error ? error.message : String(error),
+            error: error.message,
           }),
         );
       }
@@ -235,6 +255,7 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
       receiptsQueued,
       scheduleSkips,
       preferenceSkips,
+      deletionSkips,
       emptyQueueSkips,
       dedupSkips,
       usersFailed,
@@ -261,7 +282,14 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
             AND activity_log.action IN (${sql.raw(sqlList(MAIL_MOVING_ACTIONS))})
             AND activity_log.reverted_at IS NULL
         ), 0)::int`,
-        ownDecisions: sql<number>`COUNT(*) FILTER (
+        // DISTINCT sender_key, because the copy says "senders". COUNT(*)
+        // renders one sender decided twice in a week as "2 senders", and
+        // `activity_log.sender_key` is NULLABLE (the label-action worker
+        // writes null for non-sender selectors), so a sender-less bulk
+        // action would read as "1 sender". COUNT(DISTINCT col) already
+        // skips NULLs, which is exactly right here: a bulk action over
+        // messages is not a sender decision.
+        ownDecisions: sql<number>`COUNT(DISTINCT activity_log.sender_key) FILTER (
           WHERE activity_log.source IN ('triage', 'manual')
             AND activity_log.action IN (${sql.raw(sqlList(CANONICAL_DECISIONS))})
             AND activity_log.reverted_at IS NULL
@@ -288,11 +316,20 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
       }
     }
 
+    // ACTIVE mailboxes only. The copy says "right now", and a
+    // disconnected mailbox's stale queue is not something the user can
+    // act on — counting it would overstate the backlog.
     const [screener] = await this.deps.db
       .select({ pending: count() })
       .from(screenerQuarantine)
       .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, screenerQuarantine.mailboxAccountId))
-      .where(and(eq(mailboxAccounts.userId, userId), isNull(screenerQuarantine.decidedAt)));
+      .where(
+        and(
+          eq(mailboxAccounts.userId, userId),
+          eq(mailboxAccounts.status, 'active'),
+          isNull(screenerQuarantine.decidedAt),
+        ),
+      );
 
     return {
       automatedMessages: Number(ledger?.automatedMessages ?? 0),

@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import { drizzle } from 'drizzle-orm/pglite';
 import {
+  accountDeletionRequests,
   activeSessions,
   activityLog,
   mailboxAccounts,
@@ -50,6 +51,10 @@ interface SeedInput {
   protectPending?: boolean;
   /** Write a K/A/U/L/D activity row for each pending sender ("already decided"). */
   decidePending?: boolean;
+  /** D232 in-flight account deletion. */
+  deletionStatus?: 'pending' | 'executing' | 'cancelled' | 'completed';
+  /** Turn OFF the shared `reminders` opt-out. */
+  remindersOff?: boolean;
 }
 
 interface Seeded {
@@ -68,8 +73,18 @@ async function seedUser(db: Db, input: SeedInput): Promise<Seeded> {
       workspaceId: workspace!.id,
       email: input.email,
       createdAt: new Date(NOW.getTime() - input.ageDays * DAY_MS),
+      ...(input.remindersOff ? { preferences: { emailPrefs: { reminders: false } } } : {}),
     })
     .returning({ id: users.id });
+
+  if (input.deletionStatus) {
+    await db.insert(accountDeletionRequests).values({
+      userId: user!.id,
+      effectiveAt: new Date(NOW.getTime() + 7 * DAY_MS),
+      basis: 'flat-grace',
+      status: input.deletionStatus,
+    });
+  }
   const [mailbox] = await db
     .insert(mailboxAccounts)
     .values({
@@ -298,6 +313,117 @@ describe('LapseReengagementWorker', () => {
 
     expect(result).toMatchObject({ emailsQueued: 0, emptyQueueSkips: 2 });
     expect(enqueued).toHaveLength(0);
+  });
+
+  /**
+   * D232. A user who requests deletion stops using the app BY
+   * DEFINITION, so they land in this exact dormancy band inside their
+   * own grace window — and this kind is commercial. Win-back mail to
+   * someone mid-erasure is the case this gate exists for.
+   */
+  it('never mails a user with an in-flight deletion request', async () => {
+    const db = await freshDb();
+    await seedUser(db, {
+      email: 'deleting@example.com',
+      ageDays: 30,
+      lastSeenDaysAgo: 5.5,
+      pending: 4,
+      deletionStatus: 'pending',
+    });
+    await seedUser(db, {
+      email: 'purging@example.com',
+      ageDays: 30,
+      lastSeenDaysAgo: 5.5,
+      pending: 4,
+      deletionStatus: 'executing',
+    });
+
+    const { worker, enqueued, prepared } = buildWorker(db);
+    const result = await worker.processJob({ scheduledAtMinute: '2026-08-10T12:00' }, CTX);
+
+    expect(result).toMatchObject({ deletionSkips: 2, emailsQueued: 0 });
+    // Nothing was even RENDERED for them — no token signed, no body built.
+    expect(prepared).toHaveLength(0);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  /**
+   * The other side of the gate: a CANCELLED or already-EXECUTED request
+   * is not in flight. Without this the gate could silently widen into
+   * "anyone who ever asked", which is a different (and wrong) rule.
+   */
+  it('still mails a user whose deletion request was cancelled', async () => {
+    const db = await freshDb();
+    await seedUser(db, {
+      email: 'changed-mind@example.com',
+      ageDays: 30,
+      lastSeenDaysAgo: 5.5,
+      pending: 4,
+      deletionStatus: 'cancelled',
+    });
+
+    const { worker, enqueued } = buildWorker(db);
+    const result = await worker.processJob({ scheduledAtMinute: '2026-08-10T12:00' }, CTX);
+
+    expect(result).toMatchObject({ deletionSkips: 0, emailsQueued: 1 });
+    expect(enqueued).toHaveLength(1);
+  });
+
+  it('short-circuits the shared reminders opt-out before rendering anything', async () => {
+    const db = await freshDb();
+    await seedUser(db, {
+      email: 'no-reminders@example.com',
+      ageDays: 30,
+      lastSeenDaysAgo: 5.5,
+      pending: 4,
+      remindersOff: true,
+    });
+
+    const { worker, enqueued, prepared } = buildWorker(db);
+    const result = await worker.processJob({ scheduledAtMinute: '2026-08-10T12:00' }, CTX);
+
+    expect(result).toMatchObject({ preferenceSkips: 1, emailsQueued: 0 });
+    // The point of short-circuiting: no JWT re-signed, no body rendered,
+    // every hour, forever, for someone who said no.
+    expect(prepared).toHaveLength(0);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  /**
+   * A per-user failure must reach Sentry. The job returns SUCCESS
+   * regardless, so without the observer call a total outage (e.g.
+   * `signUnsubscribeToken` throwing on an unset secret, which hits
+   * EVERY candidate) is indistinguishable from a quiet hour.
+   */
+  it('reports a per-user failure to the observer, not just stdout', async () => {
+    const db = await freshDb();
+    await seedUser(db, {
+      email: 'boom@example.com',
+      ageDays: 30,
+      lastSeenDaysAgo: 5.5,
+      pending: 2,
+    });
+
+    const captured: string[] = [];
+    const worker = new LapseReengagementWorker({
+      db: db as never,
+      now: () => NOW,
+      prepareEmail: async () => {
+        throw new Error('UNSUBSCRIBE_TOKEN_SECRET must be at least 32 characters');
+      },
+      enqueueEmail: async () => 'added',
+    });
+    worker.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (_error: Error, context: { kind: string }) => {
+        captured.push(context.kind);
+      },
+    });
+
+    const result = await worker.processJob({ scheduledAtMinute: '2026-08-10T12:00' }, CTX);
+
+    expect(result).toMatchObject({ usersFailed: 1, emailsQueued: 0 });
+    expect(captured).toContain('lapse_reengagement.user_failed');
   });
 
   it('reports a dedup no-op instead of counting it as a send', async () => {
