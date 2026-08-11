@@ -33,6 +33,27 @@ export interface BriefPayload {
  * DB rows and these types.
  */
 
+/**
+ * D65 — live archive-target resolution for one Noise sender.
+ *
+ * Deliberately NOT folded into `BriefPayload.noise`: that payload is the
+ * frozen 8am snapshot (D69) and must keep saying exactly what it said at
+ * 8am. Protection is today's D245 state and can flip after the snapshot
+ * was taken, so it is resolved on every read and returned alongside.
+ */
+export interface BriefNoiseSender {
+  /** Joins to `BriefSenderGroup.senderKey` in the frozen payload. */
+  senderKey: string;
+  /**
+   * `senders.id` — the address the archive selector takes. NULL when the
+   * sender row no longer exists for this mailbox, which makes the row
+   * unactionable rather than silently mis-targeted.
+   */
+  senderId: string | null;
+  /** D245 — Protected senders are excluded from bulk mail-changing actions. */
+  isProtected: boolean;
+}
+
 /** One Brief row as the read service returns it. */
 export interface Brief {
   id: string;
@@ -50,6 +71,11 @@ export interface Brief {
   emailSentAt: string | null;
   /** D246 — the current user's closed-vocabulary rating, if submitted. */
   feedbackRating: 'useful' | 'not_useful' | 'wrong_reason' | null;
+  /**
+   * D65 — one entry per `briefPayload.noise` group, resolved at read
+   * time. Empty when the Brief has no Noise section.
+   */
+  noiseSenders: BriefNoiseSender[];
 }
 
 /** Outcome of `POST /briefs/:id/mark-opened` — D61 first-view tracker. */

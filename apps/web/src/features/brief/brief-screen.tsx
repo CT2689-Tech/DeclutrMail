@@ -15,13 +15,26 @@ import {
 } from '@declutrmail/shared';
 
 import { ApiError } from '@/lib/api/client';
-import type { BriefItemWire, BriefSenderGroupWire, BriefWire } from '@/lib/api/brief';
+import type {
+  BriefItemWire,
+  BriefNoiseSenderWire,
+  BriefSenderGroupWire,
+  BriefWire,
+} from '@/lib/api/brief';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
 import { useBriefToday } from './api/use-brief-today';
 import { useMarkBriefOpened } from './api/use-mark-brief-opened';
+import {
+  blockedReason,
+  buildNoiseTargets,
+  useNoiseArchive,
+  type NoiseArchiveOutcome,
+  type NoiseTarget,
+} from './api/use-noise-archive';
+import { NoiseArchiveSheet } from './noise-archive-sheet';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 
@@ -35,15 +48,18 @@ const { color, font } = tokens;
  *   2. Narrative — the D62 "sharp executive assistant" pre-amble.
  *   3. Reply section (max 6 per D63).
  *   4. FYI section (max 4 per D63).
- *   5. Noise section (uncapped) — D65 bulk-archive flow lands in its
- *      own PR; here Noise renders as a count-per-sender list with a
- *      Gmail deep-link affordance.
+ *   5. Noise section (uncapped) — per-sender checkboxes, default-all
+ *      checked, over one bulk Archive (D65). See
+ *      `api/use-noise-archive.ts` for the lifecycle and the exact scope
+ *      of the mutation.
  *
  * D69 (frozen snapshot): the BE returns one row keyed
  * `(mailbox, run_date_local)` and never recomputes within the day.
  * The FE refetches on focus but `staleTime` is generous; user actions
  * during the day do not change the displayed payload (they show up
- * in Activity, per D69's contract).
+ * in Activity, per D69's contract). An archived Noise sender is marked
+ * Done in client state — the frozen counts beside it keep describing
+ * yesterday, because that is all the snapshot ever claimed.
  *
  * D70 (empty state): when reply + fyi + noise are all empty we render
  * the "quiet inbox" message instead of three empty sections.
@@ -200,7 +216,19 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
             />
           )}
           {noise.length > 0 && (
-            <NoiseSection groups={noise} isMobile={isMobile} mailboxEmail={mailboxEmail} />
+            // Keyed on the Brief id so a mailbox SWITCH remounts the
+            // section and drops its selection, its Done marks and its
+            // receipt. Sender keys are a hash of the email address and
+            // are therefore identical across mailboxes — without this,
+            // archiving Old Navy in one mailbox would draw "Archived ✓"
+            // on Old Navy in the other one's Brief (§8 scope-change rule).
+            <NoiseSection
+              key={brief.id}
+              groups={noise}
+              noiseSenders={brief.noiseSenders}
+              isMobile={isMobile}
+              mailboxEmail={mailboxEmail}
+            />
           )}
         </>
       )}
@@ -348,25 +376,49 @@ function ReplyFyiSection({
   );
 }
 
+/**
+ * Noise section (D63) with the D65 bulk-archive control.
+ *
+ * Every sender is a checkbox row, checked by default. Protected senders
+ * (D245) and senders we can no longer address render as rows the user
+ * can read but not select, each stating why — the exclusion is visible,
+ * never a silent omission from the count.
+ *
+ * The archive itself is the standard lifecycle: the footer button opens
+ * the mandatory preview (D226), which is the only thing that can arm the
+ * mutation. Undo lives where every other action's undo lives — the
+ * global Recent actions tray.
+ */
 function NoiseSection({
   groups,
+  noiseSenders,
   isMobile,
   mailboxEmail,
 }: {
   groups: BriefSenderGroupWire[];
+  noiseSenders: BriefNoiseSenderWire[];
   isMobile: boolean;
   mailboxEmail: string | null;
 }) {
   const totalMessages = useMemo(() => groups.reduce((sum, g) => sum + g.messageCount, 0), [groups]);
+  const targets = useMemo(() => buildNoiseTargets(groups, noiseSenders), [groups, noiseSenders]);
+  const archive = useNoiseArchive(targets);
+
+  const excludedCount = targets.filter((t) => blockedReason(t) !== null).length;
+  const selectedCount = archive.selectedTargets.length;
+
   return (
     <section
-      aria-label={`Noise (${groups.length} senders, ${totalMessages} messages)`}
+      // Carries the same "yesterday" anchor the visible subline does — a
+      // screen reader must not get the un-anchored number this whole
+      // surface is careful to avoid.
+      aria-label={`Noise (${groups.length} senders, ${totalMessages} messages yesterday)`}
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
       <SectionHeading
         label="Noise"
         count={groups.length}
-        subline={`${totalMessages} messages`}
+        subline={`${totalMessages} messages yesterday`}
         tone="soft"
       />
       <ul
@@ -379,17 +431,163 @@ function NoiseSection({
           gap: 6,
         }}
       >
-        {groups.map((group) => (
+        {targets.map((target) => (
           <NoiseRow
-            key={group.senderKey}
-            group={group}
+            key={target.senderKey}
+            target={target}
+            checked={archive.selected.has(target.senderKey)}
+            archived={archive.archivedKeys.has(target.senderKey)}
+            busy={archive.busy}
+            onToggle={archive.toggle}
             isMobile={isMobile}
             mailboxEmail={mailboxEmail}
+            messageIds={groups.find((g) => g.senderKey === target.senderKey)?.messageIds ?? []}
           />
         ))}
       </ul>
+
+      <NoiseArchiveBar
+        selectedCount={selectedCount}
+        excludedCount={excludedCount}
+        busy={archive.busy}
+        outcome={archive.outcome}
+        onArchive={archive.openSheet}
+      />
+
+      <NoiseArchiveSheet
+        open={archive.sheetOpen}
+        targets={archive.pendingTargets}
+        preview={archive.preview}
+        {...(mailboxEmail ? { mailboxEmail } : {})}
+        onCancel={archive.closeSheet}
+        onConfirm={archive.confirm}
+        onRetryPreview={archive.retryPreview}
+      />
     </section>
   );
+}
+
+/**
+ * D65's bottom CTA. The button names the SENDER count, which the client
+ * knows exactly; the message count is deliberately absent here because
+ * the only truthful one — how much is in the inbox right now — comes
+ * from the server, and it arrives in the preview one click later. The
+ * frozen "N messages yesterday" in the heading above is a different
+ * number, and putting it on an archive button would promise a scope the
+ * action does not have.
+ */
+export function NoiseArchiveBar({
+  selectedCount,
+  excludedCount,
+  busy,
+  outcome,
+  onArchive,
+}: {
+  selectedCount: number;
+  excludedCount: number;
+  busy: boolean;
+  outcome: NoiseArchiveOutcome | null;
+  onArchive: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        flexWrap: 'wrap',
+        padding: '10px 12px',
+        border: `1px solid ${color.lineSoft}`,
+        borderRadius: 9,
+        background: color.paper,
+      }}
+    >
+      {/* Every terminal state gets a PERSISTENT line here. A toast is
+          gone in 3.6s, and a bar that reverts to its neutral invite
+          re-arms senders that already archived. */}
+      <span
+        role={outcome ? 'status' : undefined}
+        style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}
+      >
+        {outcome ? (
+          <NoiseOutcomeLine outcome={outcome} />
+        ) : selectedCount === 0 ? (
+          <>
+            Check a sender to archive it.
+            {excludedCount > 0 && (
+              <>
+                {' '}
+                {excludedCount} sender{excludedCount === 1 ? '' : 's'} below cannot be included.
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            Archives everything from the checked senders that is in your inbox now — you see the
+            exact count before anything moves.
+            {excludedCount > 0 && (
+              <>
+                {' '}
+                {excludedCount} sender{excludedCount === 1 ? '' : 's'} below cannot be included.
+              </>
+            )}
+          </>
+        )}
+      </span>
+      {/* No aria-label: the visible label already names the count, and a
+          second wording would give screen readers a different sentence
+          than the one on screen. */}
+      <Button tone="primary" disabled={selectedCount === 0 || busy} onClick={onArchive}>
+        {busy ? 'Archiving…' : `Archive ${selectedCount} sender${selectedCount === 1 ? '' : 's'}`}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * The persistent outcome line. Each branch states only what the server
+ * confirmed: what moved, what did not, and where to look. The undo
+ * sentence appears only while undo is genuinely available — D211 lists
+ * "Undo expired" as its own state, and a receipt that promises undo
+ * forever is a claim the Activity window has already retired.
+ */
+function NoiseOutcomeLine({ outcome }: { outcome: NoiseArchiveOutcome }) {
+  switch (outcome.kind) {
+    case 'archived': {
+      const { affectedCount, senderCount, undo } = outcome;
+      return (
+        <>
+          Archived {affectedCount.toLocaleString()} email{affectedCount === 1 ? '' : 's'} from{' '}
+          {senderCount} sender{senderCount === 1 ? '' : 's'}.
+          {undo === 'available' && ' Undo it from Recent actions at the bottom of the screen.'}
+          {undo === 'expired' && ' The undo window for this archive has passed.'}
+        </>
+      );
+    }
+    case 'reverted':
+      return (
+        <>
+          That archive was undone — mail from {outcome.senderCount} sender
+          {outcome.senderCount === 1 ? '' : 's'} is back in your inbox.
+        </>
+      );
+    case 'partial':
+      return (
+        <>
+          {outcome.doneCount} of {outcome.total} senders were archived; {outcome.failedCount} did
+          not complete. Check Activity to see which moved, then re-check any that didn&rsquo;t.
+        </>
+      );
+    case 'failed':
+      return <>Nothing was archived. The senders are still checked, so you can try again.</>;
+    case 'unconfirmed':
+      return (
+        <>
+          We couldn&rsquo;t confirm what that archive did. Check Activity before running it again.
+        </>
+      );
+  }
 }
 
 type SectionTone = 'accent' | 'muted' | 'soft';
@@ -566,40 +764,83 @@ function ReplyFyiRow({
   );
 }
 
+/** Why a Noise row cannot join the bulk archive, in the user's words. */
+const BLOCKED_COPY = {
+  protected: 'Protected — kept out of bulk actions',
+  unresolved: "We can't act on this sender right now",
+} as const;
+
 /**
- * One Noise sender row. Avatar → sender name → "N messages" → Gmail
- * deep-link. D65 bulk-archive checkboxes land in their own PR; for
- * now the row is read-only and surfaces the Gmail click-through so
- * the user can act manually.
+ * One Noise sender row: checkbox → avatar → sender name → yesterday's
+ * count → Gmail deep-link (D65).
+ *
+ * The checkbox is checked by default (D65) and disabled for a Protected
+ * sender or one we cannot address — those rows say why, in place of the
+ * checkbox, so a user counting the senders they selected can see exactly
+ * which ones the archive will leave alone (D245).
+ *
+ * An archived row is struck through and marked Done (D69). Its count is
+ * NOT recomputed: it still reads as yesterday's, because that is what
+ * the frozen snapshot measured.
  */
 function NoiseRow({
-  group,
+  target,
+  checked,
+  archived,
+  busy,
+  onToggle,
+  messageIds,
   isMobile,
   mailboxEmail,
 }: {
-  group: BriefSenderGroupWire;
+  target: NoiseTarget;
+  checked: boolean;
+  archived: boolean;
+  busy: boolean;
+  onToggle: (senderKey: string) => void;
+  messageIds: string[];
   isMobile: boolean;
   mailboxEmail: string | null;
 }) {
-  const count = group.messageCount;
-  const countLabel = `${count} message${count === 1 ? '' : 's'}`;
-  const href = gmailHref(mailboxEmail, group.messageIds[0]);
+  const count = target.messageCount;
+  const countLabel = `${count} message${count === 1 ? '' : 's'} yesterday`;
+  const href = gmailHref(mailboxEmail, messageIds[0]);
+  const blocked = blockedReason(target);
+  const selectable = blocked === null && !archived;
   return (
     <li
       style={{
         display: 'grid',
-        // Mobile (D60): avatar + sender on row 1, count + Gmail link
-        // restack full-width below.
-        gridTemplateColumns: isMobile ? 'auto 1fr' : 'auto minmax(180px, 2fr) auto auto',
+        // Mobile (D60): checkbox + avatar + sender on row 1, count +
+        // Gmail link restack full-width below.
+        gridTemplateColumns: isMobile ? 'auto auto 1fr' : 'auto auto minmax(180px, 2fr) auto auto',
         alignItems: 'center',
         gap: isMobile ? '8px 12px' : 14,
         padding: '12px 14px',
         background: color.card,
         border: `1px solid ${color.lineSoft}`,
         borderRadius: 10,
+        opacity: archived ? 0.6 : 1,
       }}
     >
-      <Avatar size={32} name={group.senderName || '·'} />
+      {selectable ? (
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={busy}
+          onChange={() => onToggle(target.senderKey)}
+          aria-label={`Include ${target.senderName} in the archive`}
+          style={{ width: 16, height: 16, accentColor: color.primary, cursor: 'pointer' }}
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          style={{ width: 16, height: 16, display: 'inline-block', textAlign: 'center' }}
+        >
+          {archived ? '✓' : '—'}
+        </span>
+      )}
+      <Avatar size={32} name={target.senderName || '·'} />
       <div
         style={{
           fontSize: 13.5,
@@ -608,9 +849,10 @@ function NoiseRow({
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
+          textDecoration: archived ? 'line-through' : 'none',
         }}
       >
-        {group.senderName}
+        {target.senderName}
       </div>
       <div
         style={{
@@ -621,7 +863,11 @@ function NoiseRow({
           ...(isMobile ? { gridColumn: '1 / -1' } : null),
         }}
       >
+        {/* The frozen count stays put in every state (D69) — it says
+            what yesterday held, which an archive taken today does not
+            change. The status that follows it is about now. */}
         {countLabel}
+        {archived ? ' · Archived ✓' : blocked ? ` · ${BLOCKED_COPY[blocked]}` : ''}
       </div>
       <div
         style={{
@@ -632,7 +878,7 @@ function NoiseRow({
           ...(isMobile ? { gridColumn: '1 / -1', justifySelf: 'start' } : null),
         }}
       >
-        <SenderReviewLink query={group.senderName} label={group.senderName} />
+        <SenderReviewLink query={target.senderName} label={target.senderName} />
         {href && (
           <a
             href={href}

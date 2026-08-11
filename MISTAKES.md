@@ -21,6 +21,51 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-10 — A new e2e spec was permanently skipped, and the suite went green
+
+**PR:** [#498](https://github.com/CT2689-Tech/DeclutrMail/pull/498) (D65)
+**Caught by:** founder, running the spec against the real stack
+
+**What happened.** `packages/e2e/specs/brief-noise-archive.spec.ts` picked
+its target with `preview.counts.all >= 1 && <= 5`, then
+`test.skip(target === null, …)`. Against the real mailbox the fourteen
+actionable Noise senders ranged **24 to 497** — the smallest possible
+match was 24, so no candidate could ever satisfy the window. The run
+reported `1 skipped`, the suite was green, and the PR body claimed e2e
+coverage of archive → receipt → undo → mark-is-gone. Nothing had executed.
+
+And it was not a quirk of one mailbox: a sender lands in Noise *because*
+it sends a lot, so "a Noise sender with 1–5 messages in the inbox" is
+close to a contradiction. The spec would have skipped forever, in CI too.
+
+This is the **blind-guard** class already on record — a guard whose input
+is starved reports success having verified nothing — inverted into a
+permanently-*skipped* test rather than a permanently-red one, which is
+strictly harder to notice because green is the expected colour.
+
+The second half of the bug was the `test.skip` itself: it conflated
+"this environment genuinely cannot run the test" with "my assumption
+about the fixture is wrong". Only the first deserves a skip.
+
+**Correct approach.** Choose the window from measured data, not a guess,
+and sort candidates ascending so the smallest qualifying one is picked
+(minimal blast radius by construction, rather than "first in range").
+Reserve `test.skip` for degenerate environments — not Pro, no snapshot,
+every sender Protected — and **throw** when the environment has valid
+candidates but none fits, with the observed values in the message so the
+next reader can see immediately what the range should be. Also assert the
+mutation was non-zero, so a zero-op archive cannot satisfy the test.
+
+**Rule:** Before shipping any spec with a `test.skip` or a candidate
+filter, prove the selection can actually match — print the real
+distribution first. A skip on the path the spec exists to cover is a
+failure, not a pass.
+
+**Enforcement update:** none yet. If a third permanently-skipped or
+never-firing guard appears, this is a CLAUDE.md §8 candidate ("a new
+guard's blind case must be tested FIRST — starve its input and require
+a failure"), which currently lives only in session memory.
+
 ## 2026-08-08 — A third spelling of one enum, and the display fell through to a tautology
 
 **PR:** `feat/d245-protection-review`
