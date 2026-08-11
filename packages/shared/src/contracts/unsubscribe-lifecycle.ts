@@ -61,6 +61,19 @@ export function initialUnsubscribeLifecycleStatus(
   }
 }
 
+/**
+ * `action_jobs.error_code` that marks a one-click request as SENT with
+ * an outcome we could not establish (a 3xx from the endpoint).
+ *
+ * Shared because three places must agree on the exact string: the worker
+ * that writes it, the batch aggregation that classifies it, and the FE
+ * that renders it. Triplicated literals meant a rename in the worker
+ * would silently reclassify every `unconfirmed` row as `failed` with
+ * nothing failing to compile — and `unconfirmed` is precisely the
+ * outcome D248 refuses to round toward a neighbour.
+ */
+export const UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE = 'UNSUB_AMBIGUOUS_REDIRECT';
+
 /** Manual mailto transitions the client may explicitly report. */
 export const UNSUBSCRIBE_MANUAL_TRANSITIONS = ['draft_opened', 'user_marked_sent'] as const;
 export const UnsubscribeManualTransitionSchema = z.enum(UNSUBSCRIBE_MANUAL_TRANSITIONS);

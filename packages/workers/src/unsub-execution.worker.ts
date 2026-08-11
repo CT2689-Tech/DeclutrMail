@@ -11,6 +11,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { actionJobs, activityLog, senderPolicies, senders } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 import { ActionsUnsubscribeExecutedPayloadSchema, TOPICS } from '@declutrmail/events';
+import { UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE } from '@declutrmail/shared/contracts';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
@@ -322,7 +323,7 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
         outcome:
           job.status === 'done'
             ? 'endpoint_accepted'
-            : job.errorCode === 'UNSUB_AMBIGUOUS_REDIRECT'
+            : job.errorCode === UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE
               ? 'unconfirmed'
               : 'failed',
         httpStatus: null,
@@ -414,7 +415,7 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
           ? {
               outcome: 'unconfirmed',
               httpStatus: response.status,
-              errorCode: 'UNSUB_AMBIGUOUS_REDIRECT',
+              errorCode: UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
             }
           : {
               outcome: 'failed',

@@ -2570,4 +2570,392 @@ describe('ActionsService', () => {
       ).rejects.toMatchObject({ response: { code: 'SENDER_NOT_FOUND' } });
     });
   });
+
+  // ───────────────────── D248 — unsubscribe is four states ─────────────────
+  describe('unsubscribe capability is four states, not three (D248)', () => {
+    let unsubQueue: ReturnType<typeof fakeQueue>;
+    let service: ActionsService;
+    let sender2Id: string;
+
+    beforeEach(async () => {
+      // The multi-sender selector is a Plus capability; seed the real
+      // entitlement rather than weakening the production gate.
+      await db.update(workspaces).set({ tier: 'plus' });
+      unsubQueue = fakeQueue();
+      service = new ActionsService(db as never, queue as never, undefined, unsubQueue as never);
+      sender2Id = await seedSecondSender(db, mailboxId);
+    });
+
+    /** Another sender in this mailbox, keyed by a distinct hex char. */
+    async function seedExtraSender(keyChar: string): Promise<string> {
+      const [row] = await db
+        .insert(senders)
+        .values({
+          mailboxAccountId: mailboxId,
+          senderKey: keyChar.repeat(64),
+          email: `list-${keyChar}@extra.example`,
+          domain: 'extra.example',
+          gmailCategory: 'promotions',
+          firstSeenAt: new Date('2026-01-01'),
+          lastSeenAt: new Date('2026-05-01'),
+        })
+        .returning({ id: senders.id });
+      return row!.id;
+    }
+
+    async function setMethod(
+      id: string,
+      method: 'one_click' | 'mailto' | 'none' | null,
+      url: string | null,
+    ): Promise<void> {
+      await db
+        .update(senders)
+        .set({ unsubscribeMethod: method, unsubscribeUrl: url })
+        .where(eq(senders.id, id));
+    }
+
+    /** Every activity_log action written for this mailbox. */
+    async function activityActions(): Promise<string[]> {
+      const rows = await db
+        .select()
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxId));
+      return rows.map((r) => r.action);
+    }
+
+    describe('single-sender intent', () => {
+      // THE regression. A sender the index has not derived a method for
+      // used to resolve as `none`, which writes the
+      // `unsubscribe_unavailable` outcome — "No unsubscribe channel
+      // available" — for a sender nobody ever looked at.
+      it('refuses an un-indexed sender instead of recording "no channel"', async () => {
+        await setMethod(senderId, null, null);
+
+        await expect(
+          service.recordUnsubscribeIntent({
+            mailboxAccountId: mailboxId,
+            senderId,
+            idempotencyKey: 'unknown-method-1',
+          }),
+        ).rejects.toMatchObject({ response: { code: 'UNSUBSCRIBE_CHANNEL_UNKNOWN' } });
+
+        // Nothing claimed, nothing written.
+        expect(await activityActions()).toEqual([]);
+        expect(await db.select().from(senderPolicies)).toHaveLength(0);
+        expect(await db.select().from(actionJobs)).toHaveLength(0);
+      });
+
+      it('still records "no channel" for a sender the index DID check', async () => {
+        await setMethod(senderId, 'none', null);
+
+        const result = await service.recordUnsubscribeIntent({
+          mailboxAccountId: mailboxId,
+          senderId,
+          idempotencyKey: 'checked-no-channel',
+        });
+
+        expect(result.method).toBe('none');
+        expect(await activityActions()).toEqual(['unsubscribe', 'unsubscribe_unavailable']);
+      });
+    });
+
+    describe('enqueueBulkUnsubscribe', () => {
+      it('executes one-click senders and names every other state separately', async () => {
+        const sender3Id = await seedExtraSender('d');
+        const sender4Id = await seedExtraSender('e');
+        await setMethod(senderId, 'one_click', 'https://unsub.shop.example/oc?u=1');
+        await setMethod(sender2Id, 'mailto', 'mailto:stop@brand.example');
+        await setMethod(sender3Id, 'none', null);
+        await setMethod(sender4Id, null, null);
+
+        const res = await service.enqueueBulkUnsubscribe({
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId, sender2Id, sender3Id, sender4Id],
+          idempotencyKey: 'bulk-unsub-mixed',
+        });
+
+        expect(res.senderCount).toBe(1);
+        expect(res.wakeAt).toBeNull();
+        // Three different facts, three different reasons — an un-indexed
+        // sender is NEVER reported as having no channel.
+        const reasons = new Map(res.skipped.map((s) => [s.senderId, s.reason] as const));
+        expect(reasons.get(sender2Id)).toBe('mailto');
+        expect(reasons.get(sender3Id)).toBe('no_channel');
+        expect(reasons.get(sender4Id)).toBe('unknown');
+        // D230 — the address comes back so the USER can send it; the
+        // batch never sends mail on their behalf.
+        expect(res.skipped.find((s) => s.senderId === sender2Id)?.mailtoUrl).toBe(
+          'mailto:stop@brand.example',
+        );
+
+        // Exactly ONE execution row + one job: the one-click sender.
+        const jobs = await db.select().from(actionJobs);
+        expect(jobs).toHaveLength(1);
+        expect(jobs[0]!.verb).toBe('unsubscribe');
+        expect(jobs[0]!.selector).toMatchObject({ senderId });
+        expect(unsubQueue.count).toBe(1);
+        expect(unsubQueue.jobIds).toEqual([`unsubexec-bulk-unsub-mixed-${senderId}`]);
+      });
+
+      it('records the standing decision only for the senders it sends for', async () => {
+        await setMethod(senderId, 'one_click', 'https://unsub.shop.example/oc?u=1');
+        await setMethod(sender2Id, null, null);
+
+        await service.enqueueBulkUnsubscribe({
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId, sender2Id],
+          idempotencyKey: 'bulk-unsub-decision',
+        });
+
+        const policies = await db.select().from(senderPolicies);
+        expect(policies).toHaveLength(1);
+        expect(policies[0]!.senderKey).toBe(SENDER_KEY);
+        // The worker UPDATEs this row with the outcome, so it must exist.
+        expect(policies[0]!.unsubStatus).toBe('requested');
+        expect(await activityActions()).toEqual(['unsubscribe']);
+      });
+
+      it('links every row into one batch the aggregate poll can walk', async () => {
+        await setMethod(senderId, 'one_click', 'https://a.example/oc');
+        await setMethod(sender2Id, 'one_click', 'https://b.example/oc');
+
+        const res = await service.enqueueBulkUnsubscribe({
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId, sender2Id],
+          idempotencyKey: 'bulk-unsub-linked',
+        });
+
+        expect(res.senderCount).toBe(2);
+        const status = await service.getBatchStatus(res.batchId, mailboxId);
+        expect(status.total).toBe(2);
+        expect(status.status).toBe('queued');
+      });
+
+      it('refuses a selection with no one-click sender rather than enqueueing nothing', async () => {
+        await setMethod(senderId, 'mailto', 'mailto:stop@shop.example');
+        await setMethod(sender2Id, null, null);
+
+        await expect(
+          service.enqueueBulkUnsubscribe({
+            mailboxAccountId: mailboxId,
+            senderIds: [senderId, sender2Id],
+            idempotencyKey: 'bulk-unsub-empty',
+          }),
+        ).rejects.toMatchObject({ response: { code: 'NO_ACTIONABLE_SENDERS' } });
+        expect(await db.select().from(actionJobs)).toHaveLength(0);
+        expect(unsubQueue.count).toBe(0);
+      });
+
+      it('skips a Protected sender and never sends for it', async () => {
+        await setMethod(senderId, 'one_click', 'https://a.example/oc');
+        await setMethod(sender2Id, 'one_click', 'https://b.example/oc');
+        await db.insert(senderPolicies).values({
+          mailboxAccountId: mailboxId,
+          senderKey: SENDER_KEY_2,
+          isProtected: true,
+          protectionReason: 'user_defined',
+        });
+
+        const res = await service.enqueueBulkUnsubscribe({
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId, sender2Id],
+          idempotencyKey: 'bulk-unsub-protected',
+        });
+
+        expect(res.senderCount).toBe(1);
+        expect(res.skipped).toEqual([{ senderId: sender2Id, reason: 'protected' }]);
+        expect(unsubQueue.count).toBe(1);
+      });
+
+      it('replays a retried POST onto the same rows and the same jobs', async () => {
+        await setMethod(senderId, 'one_click', 'https://a.example/oc');
+        await setMethod(sender2Id, 'one_click', 'https://b.example/oc');
+        const args = {
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId, sender2Id],
+          idempotencyKey: 'bulk-unsub-replay',
+        };
+
+        const first = await service.enqueueBulkUnsubscribe(args);
+        const second = await service.enqueueBulkUnsubscribe(args);
+
+        expect(second.batchId).toBe(first.batchId);
+        expect(await db.select().from(actionJobs)).toHaveLength(2);
+        expect(unsubQueue.count).toBe(2);
+        // One decision row per sender, not one per POST.
+        expect(await activityActions()).toEqual(['unsubscribe', 'unsubscribe']);
+      });
+
+      // A sequential `for await` that threw on row 2 of 3 left row 3
+      // committed as `queued` with `unsub_status='requested'`, an
+      // Activity row and consumed quota — and NO job behind it. Every
+      // committed row must get its enqueue attempt, and its honest
+      // terminal state when that attempt fails.
+      it('attempts every committed row even when one enqueue fails', async () => {
+        const sender3Id = await seedExtraSender('d');
+        await setMethod(senderId, 'one_click', 'https://a.example/oc');
+        await setMethod(sender2Id, 'one_click', 'https://b.example/oc');
+        await setMethod(sender3Id, 'one_click', 'https://c.example/oc');
+        // Fail exactly one add — whichever row lands second.
+        const attempted: string[] = [];
+        const realAdd = unsubQueue.add;
+        unsubQueue.add = async (job: unknown, data: unknown, opts: { jobId?: string }) => {
+          attempted.push(opts.jobId!);
+          if (attempted.length === 2) throw new Error('redis down');
+          return realAdd(job, data, opts);
+        };
+
+        await expect(
+          service.enqueueBulkUnsubscribe({
+            mailboxAccountId: mailboxId,
+            senderIds: [senderId, sender2Id, sender3Id],
+            idempotencyKey: 'bulk-unsub-partial-redis',
+          }),
+        ).rejects.toMatchObject({ response: { code: 'ENQUEUE_FAILED' } });
+
+        // All three got an attempt — none was stranded behind the throw.
+        expect(attempted).toHaveLength(3);
+        const jobs = await db
+          .select()
+          .from(actionJobs)
+          .where(eq(actionJobs.mailboxAccountId, mailboxId));
+        expect(jobs).toHaveLength(3);
+        // The one that could not be enqueued carries an honest terminal
+        // state rather than a permanently-'requested' chip.
+        const failed = jobs.filter((j) => j.status === 'failed');
+        expect(failed).toHaveLength(1);
+        expect(failed[0]!.errorCode).toBe('ENQUEUE_FAILED');
+        expect(jobs.filter((j) => j.status === 'queued')).toHaveLength(2);
+      });
+
+      it('fails before any write when the unsubscribe queue is unavailable', async () => {
+        await setMethod(senderId, 'one_click', 'https://a.example/oc');
+        await setMethod(sender2Id, 'one_click', 'https://b.example/oc');
+        const noQueue = new ActionsService(db as never, queue as never);
+
+        await expect(
+          noQueue.enqueueBulkUnsubscribe({
+            mailboxAccountId: mailboxId,
+            senderIds: [senderId, sender2Id],
+            idempotencyKey: 'bulk-unsub-no-redis',
+          }),
+        ).rejects.toMatchObject({ response: { code: 'QUEUE_UNAVAILABLE' } });
+        expect(await db.select().from(actionJobs)).toHaveLength(0);
+        expect(await db.select().from(senderPolicies)).toHaveLength(0);
+      });
+    });
+
+    describe('getBatchStatus — three terminal outcomes', () => {
+      async function seedUnsubBatch(): Promise<{ batchId: string; rowIds: string[] }> {
+        const sender3Id = await seedExtraSender('d');
+        await setMethod(senderId, 'one_click', 'https://a.example/oc');
+        await setMethod(sender2Id, 'one_click', 'https://b.example/oc');
+        await setMethod(sender3Id, 'one_click', 'https://c.example/oc');
+        const res = await service.enqueueBulkUnsubscribe({
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId, sender2Id, sender3Id],
+          idempotencyKey: 'bulk-unsub-outcomes',
+        });
+        const rows = await db
+          .select()
+          .from(actionJobs)
+          .where(eq(actionJobs.mailboxAccountId, mailboxId));
+        return { batchId: res.batchId, rowIds: rows.map((r) => r.id) };
+      }
+
+      it('counts accepted / unconfirmed / failed separately', async () => {
+        const { batchId, rowIds } = await seedUnsubBatch();
+        // Exactly what UnsubExecutionWorker.recordOutcome writes.
+        await db.update(actionJobs).set({ status: 'done' }).where(eq(actionJobs.id, rowIds[0]!));
+        await db
+          .update(actionJobs)
+          .set({ status: 'failed', errorCode: 'UNSUB_AMBIGUOUS_REDIRECT' })
+          .where(eq(actionJobs.id, rowIds[1]!));
+        await db
+          .update(actionJobs)
+          .set({ status: 'failed', errorCode: 'UNSUB_TARGET_REJECTED' })
+          .where(eq(actionJobs.id, rowIds[2]!));
+
+        const status = await service.getBatchStatus(batchId, mailboxId);
+
+        expect(status.unsubscribeOutcomes).toEqual({
+          endpointAccepted: 1,
+          unconfirmed: 1,
+          failed: 1,
+          pending: 0,
+        });
+        // The job-status tally cannot express this: an unconfirmed
+        // request IS job-status `failed`, which is exactly why the
+        // receipt must not be derived from done/failed.
+        expect(status.failed).toBe(2);
+      });
+
+      it('reports rows with no outcome yet as pending, never as failed', async () => {
+        const { batchId, rowIds } = await seedUnsubBatch();
+        await db
+          .update(actionJobs)
+          .set({ status: 'executing' })
+          .where(eq(actionJobs.id, rowIds[0]!));
+
+        const status = await service.getBatchStatus(batchId, mailboxId);
+
+        expect(status.unsubscribeOutcomes).toEqual({
+          endpointAccepted: 0,
+          unconfirmed: 0,
+          failed: 0,
+          pending: 3,
+        });
+      });
+
+      it('carries no unsubscribe outcomes for a label batch', async () => {
+        await seedMessage(db, mailboxId, 's1-a', ['INBOX'], daysAgo(5));
+        await seedMessage(db, mailboxId, 's2-a', ['INBOX'], daysAgo(5), SENDER_KEY_2);
+        const res = await svc.enqueueBulkComposite({
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId, sender2Id],
+          primary: { type: 'archive' },
+          idempotencyKey: 'bulk-archive-no-unsub',
+        });
+
+        const status = await svc.getBatchStatus(res.batchId, mailboxId);
+
+        expect(status.unsubscribeOutcomes).toBeNull();
+      });
+    });
+
+    describe('request schema', () => {
+      const ids = ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002'];
+
+      it('accepts an unsubscribe primary only on the multi-sender selector', () => {
+        expect(
+          compositeActionRequestSchema.safeParse({
+            selector: { type: 'senders', senderIds: ids },
+            primary: { type: 'unsubscribe' },
+          }).success,
+        ).toBe(true);
+        expect(
+          compositeActionRequestSchema.safeParse({
+            selector: { type: 'sender', senderId: ids[0] },
+            primary: { type: 'unsubscribe' },
+          }).success,
+        ).toBe(false);
+      });
+
+      it('rejects a secondary or a time window on an unsubscribe primary', () => {
+        expect(
+          compositeActionRequestSchema.safeParse({
+            selector: { type: 'senders', senderIds: ids },
+            primary: { type: 'unsubscribe' },
+            secondary: { type: 'archive' },
+          }).success,
+        ).toBe(false);
+        expect(
+          compositeActionRequestSchema.safeParse({
+            selector: { type: 'senders', senderIds: ids },
+            primary: { type: 'unsubscribe', olderThanDays: 180 },
+          }).success,
+        ).toBe(false);
+      });
+    });
+  });
 });

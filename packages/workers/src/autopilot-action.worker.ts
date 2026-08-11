@@ -25,7 +25,7 @@ import {
   AutopilotActionIntentEmittedPayloadSchema,
   TOPICS,
 } from '@declutrmail/events';
-import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import { defaultLaterWakeAtIso, unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
 import { hasCapability } from '@declutrmail/shared/entitlements';
 
 import { AUTOPILOT_PRESETS } from './autopilot-presets.js';
@@ -1121,7 +1121,12 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     now: Date,
   ): Promise<{ executionEnqueued: boolean } | 'stale'> {
     const { db } = this.deps;
-    const method: 'one_click' | 'mailto' | 'none' = match.unsubscribeMethod ?? 'none';
+    // D248 — the join is a leftJoin and the column is nullable, so a
+    // missing method means "the sender index has not derived one", not
+    // "this sender publishes no unsubscribe". Collapsing it into 'none'
+    // wrote `unsubscribe_unavailable` — "No unsubscribe channel
+    // available" — into Activity for a sender nobody ever checked.
+    const method = unsubscribeCapabilityOf(match.unsubscribeMethod);
     const executionKey = `autopilot-unsubexec-${match.matchId}`;
 
     // Unsubscribe records its decision, its execution row and the match
@@ -1151,7 +1156,10 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
         throw new Error('activity_log insert returned no row');
       }
 
-      if (method !== 'one_click') {
+      // An outcome row is only written when the capability is KNOWN.
+      // `unknown` gets the decision row above and nothing else: there is
+      // no outcome to report about a sender we have not checked (D248).
+      if (method === 'mailto' || method === 'none') {
         await tx.insert(activityLog).values({
           mailboxAccountId,
           senderKey: match.senderKey,
@@ -1173,7 +1181,12 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           senderKey: match.senderKey,
           activityLogId: audit.id,
           recordedAt: audit.occurredAt.toISOString(),
-          method,
+          // `method` is optional on the schema, and the consumer maps a
+          // missing one to a NULL lifecycle that leaves the existing
+          // status untouched. That is exactly right for `unknown`:
+          // sending 'none' would project `unsub_status='unavailable'`
+          // and re-tell the lie one layer down (D248).
+          ...(method === 'unknown' ? {} : { method }),
         },
         schema: ActionsUnsubscribeIntentRecordedPayloadSchema,
       });

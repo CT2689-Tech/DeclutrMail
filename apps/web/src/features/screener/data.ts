@@ -45,7 +45,14 @@ export interface ScreenerQueueRow {
   inboxCount: number;
   /** Latest message's subject — D71 sample subject. Empty when none. */
   sampleSubject: string;
-  unsubscribeMethod: 'one_click' | 'mailto' | 'none';
+  /**
+   * D248 — nullable: null means the sender index has not derived a
+   * method yet ("not checked"), which is a different fact from `none`
+   * ("checked; no channel"). `canScreenerUnsubscribe` already requires
+   * a real channel, so null correctly reads as not-actionable — with
+   * the not-yet-checked reason, not the no-channel one.
+   */
+  unsubscribeMethod: 'one_click' | 'mailto' | 'none' | null;
   /**
    * Standing protection (D42/D245). A queued sender CAN be protected —
    * the automatic sweep covers every sender with no Screener exclusion,
