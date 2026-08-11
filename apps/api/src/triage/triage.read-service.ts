@@ -45,7 +45,12 @@ export interface TriageQueueRow {
   senderEmail: string;
   senderDomain: string;
   gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
-  unsubscribeMethod: 'one_click' | 'mailto' | 'none';
+  /**
+   * Sender unsubscribe capability. NULLABLE — null means the sender
+   * index has not derived a method yet, which is NOT the same fact as
+   * 'this sender publishes no unsubscribe' (D248).
+   */
+  unsubscribeMethod: 'one_click' | 'mailto' | 'none' | null;
   verdict: TriageVerdict;
   confidence: number;
   reasoning: string;
@@ -501,7 +506,7 @@ export class TriageReadService {
         senderEmail: r.senderEmail,
         senderDomain: r.senderDomain,
         gmailCategory: r.gmailCategory,
-        unsubscribeMethod: r.unsubscribeMethod ?? 'none',
+        unsubscribeMethod: r.unsubscribeMethod,
         verdict: isProtected ? 'keep' : r.verdict,
         confidence: Number(r.confidence),
         reasoning:
@@ -511,7 +516,7 @@ export class TriageReadService {
         signals: buildSignals({
           readRate,
           monthlyVolume,
-          unsubscribeMethod: r.unsubscribeMethod ?? 'none',
+          unsubscribeMethod: r.unsubscribeMethod,
         }),
         protectionReason,
         monthlyVolume,
@@ -835,7 +840,7 @@ export class TriageReadService {
 function buildSignals(input: {
   readRate: number | null;
   monthlyVolume: number;
-  unsubscribeMethod: 'one_click' | 'mailto' | 'none';
+  unsubscribeMethod: 'one_click' | 'mailto' | 'none' | null;
 }): string[] {
   const signals: string[] = [
     input.readRate === null

@@ -21,7 +21,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { VERB_LESSONS } from '@/features/tour/verb-lessons';
 import { ActionToolbar, resolveShortcut, verbDisabledReason } from './action-toolbar';
-import { TRIAGE_QUEUE, type TriageDecisionRow } from './data';
+import { canUnsubscribe, TRIAGE_QUEUE, type TriageDecisionRow } from './data';
 
 function rowById(id: string): TriageDecisionRow {
   const r = TRIAGE_QUEUE.find((row) => row.id === id);
@@ -136,6 +136,17 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
     expect(verbDisabledReason('Keep', noChannel)).toBeNull();
 
     expect(verbDisabledReason('Unsubscribe', oneClick)).toBeNull();
+
+    // D248 — a sender the index has not derived a method for is
+    // NOT-CHECKED, never no-channel. The wire can carry null now, so
+    // this row is reachable and must not claim we looked.
+    const notChecked: TriageDecisionRow = { ...oneClick, unsubscribeMethod: null };
+    const reason = verbDisabledReason('Unsubscribe', notChecked);
+    expect(reason).toBe(
+      "We haven't checked this sender for an unsubscribe option yet — Archive works in the meantime.",
+    );
+    expect(reason).not.toBe(NO_CHANNEL_COPY);
+    expect(canUnsubscribe(notChecked)).toBe(false);
 
     // Protection no longer disables anything, so it states no reason —
     // the row badge names the protection and the mandatory D226 confirm

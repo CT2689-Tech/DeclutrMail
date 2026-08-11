@@ -1587,33 +1587,54 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
   ] as const)(
     'uses the bulk live preview before Unsubscribe can add the %s backlog action',
     async (choice, primaryType, displayVerb) => {
-      let bulkBody: unknown = null;
+      // D248 — the unsubscribe itself now fans out SERVER-side through
+      // the same batch endpoint, so this flow makes exactly two POSTs:
+      // the unsubscribe batch, then the backlog batch.
+      const bulkBodies: Array<{ primary: { type: string } }> = [];
       installFetchStub([
-        TWO_SENDER_LIST,
-        BULK_PREVIEW_OK,
         {
-          method: 'POST',
-          path: '/api/actions/unsubscribe-intent',
-          respond: async (req) => {
-            const body = (await req.json()) as { senderId: string };
-            const mailto = body.senderId === 'b';
-            return jsonOk({
-              data: {
-                senderId: body.senderId,
-                recordedAt: '2026-07-12T12:00:00.000Z',
-                activityLogId: `activity-${body.senderId}`,
-                method: mailto ? 'mailto' : 'one_click',
-                executionActionId: null,
-                mailtoUrl: mailto ? 'mailto:leave@b.example?subject=Remove%20me' : null,
+          method: 'GET',
+          path: '/api/senders',
+          respond: () =>
+            jsonOk({
+              data: [ROW, { ...ROW_B, unsubscribeMethod: 'mailto' as const }],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 25 },
+                query: {
+                  totalMatching: 2,
+                  globalMaxTotal: 120,
+                  asOf: '2026-05-29T12:00:00.000Z',
+                },
               },
-            });
-          },
+            }),
         },
+        BULK_PREVIEW_OK,
         {
           method: 'POST',
           path: '/api/actions',
           respond: async (req) => {
-            bulkBody = await req.json();
+            const body = (await req.json()) as { primary: { type: string } };
+            bulkBodies.push(body);
+            if (body.primary.type === 'unsubscribe') {
+              return jsonOk({
+                data: {
+                  batchId: 'batch-unsub',
+                  status: 'queued',
+                  senderCount: 1,
+                  requestedTotal: 1,
+                  wakeAt: null,
+                  // The mailto sender is excluded from execution and
+                  // handed back with its address for the user to send.
+                  skipped: [
+                    {
+                      senderId: 'b',
+                      reason: 'mailto',
+                      mailtoUrl: 'mailto:leave@b.example?subject=Remove%20me',
+                    },
+                  ],
+                },
+              });
+            }
             return jsonOk({
               data: {
                 batchId: 'batch-unsub-backlog',
@@ -1624,6 +1645,29 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
               },
             });
           },
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/batch/batch-unsub',
+          respond: () =>
+            jsonOk({
+              data: {
+                batchId: 'batch-unsub',
+                status: 'done',
+                total: 1,
+                done: 1,
+                failed: 0,
+                requestedCount: 1,
+                affectedCount: 1,
+                undoToken: null,
+                unsubscribeOutcomes: {
+                  endpointAccepted: 1,
+                  unconfirmed: 0,
+                  failed: 0,
+                  pending: 0,
+                },
+              },
+            }),
         },
         {
           method: 'GET',
@@ -1659,16 +1703,81 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       expect(within(dialog).getByText(/emails currently match the backlog/i)).toBeInTheDocument();
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
-      await waitFor(() => expect(bulkBody).not.toBeNull());
-      expect(screen.getByRole('region', { name: 'Email unsubscribe drafts' })).toHaveTextContent(
-        '1 email unsubscribe draft still needs you',
-      );
-      expect(bulkBody).toMatchObject({
+      await waitFor(() => expect(bulkBodies).toHaveLength(2));
+      expect(
+        await screen.findByRole('region', { name: 'Email unsubscribe drafts' }),
+      ).toHaveTextContent('1 email unsubscribe draft still needs you');
+      // ONE unsubscribe POST for the whole selection, then the backlog.
+      expect(bulkBodies[0]).toMatchObject({
+        selector: { type: 'senders', senderIds: ['a', 'b'] },
+        primary: { type: 'unsubscribe' },
+      });
+      expect(bulkBodies[1]).toMatchObject({
         selector: { type: 'senders', senderIds: ['a', 'b'] },
         primary: { type: primaryType, olderThanDays: null },
       });
     },
   );
+
+  // ─────────────────── D248 — bulk unsubscribe receipt ───────────────────
+  it('reports the three terminal outcomes and never claims "unsubscribed"', async () => {
+    installFetchStub([
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-unsub-only',
+              status: 'queued',
+              senderCount: 2,
+              requestedTotal: 2,
+              wakeAt: null,
+              skipped: [],
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/batch/batch-unsub-only',
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-unsub-only',
+              status: 'done',
+              total: 2,
+              done: 1,
+              // The unconfirmed row IS job-status failed — the receipt
+              // must not read that as a failure.
+              failed: 1,
+              requestedCount: 2,
+              affectedCount: 1,
+              undoToken: null,
+              unsubscribeOutcomes: {
+                endpointAccepted: 1,
+                unconfirmed: 1,
+                failed: 0,
+                pending: 0,
+              },
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    await selectBothAndPress('u');
+    await screen.findByText(/unsubscribe from 2 senders/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    const receipt = await screen.findByRole('status');
+    await waitFor(() => expect(receipt).toHaveTextContent(/1 request accepted/i));
+    expect(receipt).toHaveTextContent(/1 request sent, result unconfirmed/i);
+    expect(receipt.textContent?.toLowerCase()).not.toContain('unsubscribed');
+    // A delivered request cannot be recalled — no undo is offered.
+    expect(within(receipt).queryByRole('button', { name: /^undo$/i })).toBeNull();
+  });
 
   it('keeps the selection when the bulk enqueue fails (no optimistic clear)', async () => {
     let enqueueAttempted = false;
