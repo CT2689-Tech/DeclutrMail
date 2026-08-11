@@ -34,7 +34,13 @@ module.exports = {
           } catch {
             return [true];
           }
-          if (/^chore\/(bootstrap|distill)-/.test(branch)) return [true];
+          // `claude/*` sanctioned 2026-08-11 alongside the branch-name
+          // allowlist. Unlike `codex/d246-…`, the web harness assigns an
+          // opaque slug with no D-tie, and agent-tooling commits often have
+          // no D-decision to cite — inventing one is the D38 umbrella
+          // mis-tag mistake. Without this the branch is pushable but not
+          // committable. Open in FOUNDER-FOLLOWUPS 2026-08-11.
+          if (/^(chore\/(bootstrap|distill)-|claude\/)/.test(branch)) return [true];
           const header = parsed.header || '';
           const ok = /\(D\d{1,3}(,\s*D\d{1,3})*\)\s*$/.test(header);
           return [
