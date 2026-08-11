@@ -122,13 +122,16 @@ jobs:
 
   impl-log:
     name: Implementation log is derived and current
-    # PR-only BY DESIGN. A merged PR's own `Closes` trailer adds itself to
-    # the derived table, so main is legitimately one regeneration behind
-    # between a Closes-bearing merge and the next PR — each PR absorbs the
-    # pending drift to pass this gate, and main converges on every merge.
-    # Running this on push-to-main would leave main red in that window,
-    # which is the permanently-red-guardrail class this repo keeps
-    # relearning (a red nobody acts on trains everyone to ignore CI).
+    # PR-only BY DESIGN, and now honestly so. The generator used to derive
+    # from merged PRs alone, which left main stale by exactly the rows of
+    # whichever PR had just merged — and the NEXT PR, innocent of the
+    # change, inherited the red and absorbed it by hand. Five PRs in
+    # flight on 2026-08-11 meant five rounds of laundering each other's
+    # drift. The generator now also counts the open PR it is running for,
+    # so a `Closes`-bearing PR carries its own flip and main is never
+    # behind. Running this on push-to-main as well would add nothing but
+    # a window of red nobody can act on — the permanently-red-guardrail
+    # class this repo keeps relearning.
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -463,11 +466,23 @@ jobs:
           exit 1
       - name: Run the authenticated accessibility gate
         run: pnpm e2e:a11y
+        env:
+          E2E_JSON_REPORT: ${{ github.workspace }}/e2e-a11y-report.json
       - name: Run the billing money-path spec
         # Was runnable-but-never-run: PR #401 changed the Free tier and
         # this spec rotted invisibly (flow audit 2026-07-28). In CI it
         # guards the paywall → signed webhook → entitlement flip chain.
         run: pnpm --filter @declutrmail/e2e run e2e:billing
+        env:
+          E2E_JSON_REPORT: ${{ github.workspace }}/e2e-billing-report.json
+      # Playwright exits 0 when every test skips, so the two steps above
+      # can pass having asserted nothing. This is the required check that
+      # would go green over it, so coverage is asserted, not assumed.
+      - name: Assert both e2e lanes actually ran
+        if: always()
+        run: |
+          node scripts/assert-e2e-ran.mjs e2e-a11y-report.json "accessibility gate"
+          node scripts/assert-e2e-ran.mjs e2e-billing-report.json "billing money path"
       - name: Upload accessibility diagnostics
         if: failure()
         uses: actions/upload-artifact@v6

@@ -13,6 +13,7 @@ import {
 } from '../helpers/billing';
 import { dbConnect } from '../helpers/db';
 import { E2E_ENV } from '../helpers/env';
+import { requirePrecondition } from '../helpers/preconditions';
 import {
   applyBillingSeed,
   BILLING_SEED,
@@ -136,7 +137,7 @@ test.beforeAll(async () => {
 
   // Synthetic-user session — honest runtime probes, requireLiveStack-style.
   const loginProblem = await loginBillingUser(BILLING_SEED.email);
-  test.skip(loginProblem !== null, loginProblem ?? undefined);
+  requirePrecondition(loginProblem !== null, loginProblem ?? 'dev login failed');
 
   const me = await api.get<BillingMe>('/api/auth/me');
   expect(me.activeMailboxId, 'seed must make the synthetic mailbox active').toBe(
@@ -145,13 +146,13 @@ test.beforeAll(async () => {
 
   // Billing must be live on the api under test (503 = booted dark).
   const sub = await api.getRaw('/api/billing/subscription');
-  test.skip(
+  requirePrecondition(
     sub.status === 503,
     'api booted without BILLING_ENABLED=true (+ PADDLE_WEBHOOK_SECRET/BILLING_CATALOG_JSON) — see spec header',
   );
   expect(sub.status, 'billing subscription read must succeed for the seeded workspace').toBe(200);
 
-  test.skip(
+  requirePrecondition(
     BILLING_E2E_ENV.webhookSecret === '',
     'E2E_PADDLE_WEBHOOK_SECRET not set — must equal the PADDLE_WEBHOOK_SECRET the api was booted with',
   );

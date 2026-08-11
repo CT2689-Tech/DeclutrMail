@@ -9,7 +9,9 @@
  * replaces maintenance with derivation:
  *
  *   ⬜ / 🔵  are DERIVED — recomputed from the plan (which D-numbers exist)
- *            and from merged PRs' `Closes D###` trailers (which are built).
+ *            and from `Closes D###` trailers on merged PRs PLUS the open
+ *            PR this run is for, if any (see `readOpenPr` for why the
+ *            open one counts).
  *   🟢 🚫 🟡 🔴 ⏸️  are RECORDED — human/scripted events this generator
  *            preserves from the existing file (the "overlay") and audits.
  *
@@ -163,6 +165,55 @@ function readMergedPrs(): MergedPr[] {
     process.exit(3);
   }
   return prs;
+}
+
+/**
+ * The OPEN pull request this run is for, if there is one.
+ *
+ * Deriving from merged PRs alone made every open branch pay for every
+ * other branch's merge. A PR cannot cite its own `Closes D###` while it
+ * is unmerged, so it had to commit a log WITHOUT its own rows; the
+ * moment it merged, `main` was stale by exactly those rows, and the
+ * next PR opened — innocent of the change — inherited a red must-pass
+ * check it had to absorb by hand. Five PRs in flight on 2026-08-11 meant
+ * five rounds of laundering each other's drift.
+ *
+ * Counting the open PR closes the loop: the PR that cites the D carries
+ * the flip, so `main` is never behind and nobody else absorbs anything.
+ * The cost is one regeneration AFTER opening the PR rather than before
+ * — `--check` says so when it fires.
+ *
+ * Read order matters: `readMergedPrs` runs first and already proves `gh`
+ * works, so a failure HERE means "this branch has no PR yet", not "gh is
+ * broken". That is why this one returns null instead of exiting 3.
+ */
+function readOpenPr(): MergedPr | null {
+  const args = ['pr', 'view', '--json', 'number,body,files,state'];
+  // In Actions the checkout is detached at the merge ref, so `gh pr view`
+  // cannot infer the PR from the branch — take it from the event payload.
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (eventPath && existsSync(eventPath)) {
+    const event = JSON.parse(readFileSync(eventPath, 'utf8')) as {
+      pull_request?: { number?: number };
+    };
+    const number = event.pull_request?.number;
+    if (typeof number !== 'number') return null;
+    args.splice(2, 0, String(number));
+  }
+  let raw: string;
+  try {
+    raw = execFileSync('gh', args, {
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+      // "no pull requests found for branch X" is the ordinary pre-PR
+      // case, not a warning worth printing on every local run.
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    return null;
+  }
+  const pr = JSON.parse(raw) as MergedPr & { state?: string };
+  return pr.state === 'OPEN' ? pr : null;
 }
 
 // A trailer is a LINE that closes a D — optionally list-marked — not any
@@ -344,7 +395,9 @@ function main(): void {
   }
   const overlay = parseOverlay(current.slice(blockStart, blockEnd));
 
-  const implementedBy = deriveImplementedBy(readMergedPrs());
+  const merged = readMergedPrs();
+  const open = readOpenPr();
+  const implementedBy = deriveImplementedBy(open ? [...merged, open] : merged);
 
   const demotions: string[] = [];
   const rows = decisions.map((d) =>
@@ -365,6 +418,12 @@ function main(): void {
       return;
     }
     console.error('✗ IMPLEMENTATION-LOG.md is stale. Run `pnpm generate-impl-log` and commit.');
+    if (open !== null) {
+      console.error(
+        `  (This run counted open PR #${open.number}'s own \`Closes\` trailers, so`,
+        'regenerate AFTER opening the PR — generating before it exists misses them.)',
+      );
+    }
     const currentRows = new Map(
       [...parseOverlay(current.slice(blockStart, blockEnd)).entries()].map(([k, v]) => [
         k,
