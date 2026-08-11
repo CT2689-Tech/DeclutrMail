@@ -26,6 +26,33 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-11 — Main carries a stale implementation log; every open PR pays for it
+
+**Source:** session (twice in one day, PRs #504 and #505)
+**Why:** the `Implementation log is derived and current` job is a must-pass on
+pull requests and is **skipped on push-to-main by design**. So a PR that merges
+with `Closes D###` and does not regenerate the log leaves main stale, nothing
+fails on main, and every subsequently opened PR inherits a red must-pass check it
+did not cause. Observed twice today, from two different PRs, hours apart:
+
+- #500 merged with `Closes D248`; caught on #504 (`D248: ⬜ → 🔵 #500`)
+- #497 merged with `Closes D126, D189`; caught on #505 (`D126`, `D189` → `🔵 #497`)
+
+Both had to be hand-corrected in an unrelated PR, which is how the drift keeps
+getting laundered into whatever change happens to be open next. The rows are not
+the problem — the asymmetry is: the check that would catch it is the one place it
+is turned off.
+**How:** pick one. (a) Run the impl-log check on push-to-main too, so the drift
+fails loudly where it is introduced rather than on the next innocent PR;
+(b) have the merge automation run `pnpm generate-impl-log` and commit the result
+on merge, so a `Closes D###` PR updates the log by construction; or (c) make it
+part of merging a PR that cites any D. (b) is closest to what
+IMPLEMENTATION-LOG.md's own header already promises ("kept current
+automatically").
+**Verifies by:** merge a PR citing a `Closes D###` and open a throwaway PR right
+after — the impl-log check is green without anyone editing the log by hand.
+**Status:** Open
+
 ### 2026-08-11 — RETRACTED: the CI-blocker entry was wrong twice; no action needed
 
 **Source:** session (PR #504 → #505)
