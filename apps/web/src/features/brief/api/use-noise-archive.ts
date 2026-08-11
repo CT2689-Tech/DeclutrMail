@@ -32,9 +32,13 @@
  * the server actually enqueued.
  *
  * D69: the Brief is a frozen snapshot. A completed archive marks the
- * acted rows Done here in client state; it never recomputes the payload
- * or the counts, because the server will keep returning the same 8am row
- * all day and pretending otherwise would be a fabricated number.
+ * acted rows Done without recomputing the payload or the counts — the
+ * server keeps returning the same 8am row all day, and pretending
+ * otherwise would be a fabricated number.
+ *
+ * Those Done marks and the receipt are DERIVED from a server read, never
+ * stored: see `undoState` below for why an undo taken in the global tray
+ * has to be able to reach them.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

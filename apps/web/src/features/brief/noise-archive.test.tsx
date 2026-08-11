@@ -13,9 +13,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
-import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
+import { ToastHost } from '@declutrmail/shared';
+
+import {
+  installFetchStub,
+  jsonOk,
+  jsonServerError,
+  resetFetchStub,
+  type FetchStubHandler,
+} from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import type { BriefWire } from '@/lib/api/brief';
@@ -84,6 +92,14 @@ const BULK_PREVIEW = {
 /** Bodies of every `POST /api/actions` the screen sent, in order. */
 let enqueued: Array<Record<string, unknown>>;
 
+/** A guard 409 — the shape `CurrentMailboxGuard` answers with. */
+function jsonConflict(code: string): Response {
+  return new Response(JSON.stringify({ error: { code } }), {
+    status: 409,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 function briefHandler() {
   return {
     method: 'GET' as const,
@@ -97,6 +113,59 @@ function bulkPreviewHandler(respond?: () => Response) {
     method: 'POST' as const,
     path: '/api/actions/preview/bulk',
     respond: respond ?? (() => jsonOk({ data: BULK_PREVIEW })),
+  };
+}
+
+/**
+ * `GET /api/actions/:id` — the undo-truth read the section derives its
+ * Done marks and receipt from. `reverted` flips `undoRevertedAt`, which is
+ * exactly what an undo taken in the global tray produces.
+ */
+function batchStatusHandler(
+  opts: { done?: number; failed?: number; status?: string } = {},
+): FetchStubHandler {
+  return {
+    method: 'GET',
+    path: /^\/api\/actions\/batch\//,
+    respond: () =>
+      jsonOk({
+        data: {
+          batchId: 'batch-1',
+          status: opts.status ?? 'done',
+          total: 2,
+          done: opts.done ?? 2,
+          failed: opts.failed ?? 0,
+          requestedCount: 351,
+          affectedCount: 348,
+          undoToken: 'undo-token-1',
+        },
+      }),
+  };
+}
+
+function undoStateHandler(opts: { reverted?: boolean; expired?: boolean } = {}) {
+  return {
+    method: 'GET' as const,
+    path: /^\/api\/actions\/[^/]+$/,
+    respond: () =>
+      jsonOk({
+        data: {
+          actionId: 'batch-1',
+          verb: 'archive',
+          direction: 'forward',
+          status: 'done',
+          requestedCount: 351,
+          affectedCount: 348,
+          wakeAt: null,
+          undoToken: 'undo-token-1',
+          undoExpiresAt: opts.expired
+            ? new Date(Date.now() - 1_000).toISOString()
+            : new Date(Date.now() + 86_400_000).toISOString(),
+          undoExecutedAt: null,
+          undoRevertedAt: opts.reverted ? new Date().toISOString() : null,
+          errorCode: null,
+        },
+      }),
   };
 }
 
@@ -124,6 +193,8 @@ function renderScreen() {
   return render(
     <QueryWrapper client={createTestQueryClient()}>
       <BriefScreen />
+      {/* Skip warnings are toasts; without the host they never render. */}
+      <ToastHost />
     </QueryWrapper>,
   );
 }
@@ -355,23 +426,8 @@ describe('Brief Noise bulk archive (D65)', () => {
       briefHandler(),
       bulkPreviewHandler(),
       enqueueHandler(),
-      {
-        method: 'GET',
-        path: /^\/api\/actions\/batch\//,
-        respond: () =>
-          jsonOk({
-            data: {
-              batchId: 'batch-1',
-              status: 'done',
-              total: 2,
-              done: 2,
-              failed: 0,
-              requestedCount: 351,
-              affectedCount: 348,
-              undoToken: 'undo-token-1',
-            },
-          }),
-      },
+      batchStatusHandler(),
+      undoStateHandler(),
     ]);
     renderScreen();
 
@@ -383,7 +439,9 @@ describe('Brief Noise bulk archive (D65)', () => {
     // The receipt states the WORKER's number (348), never the preview's
     // ask (351) and never yesterday's frozen count (7).
     await screen.findByText(/Archived 348 emails from 2 senders/i, undefined, { timeout: 5000 });
-    expect(screen.getByText(/Undo it from Recent actions/i)).toBeInTheDocument();
+    // The undo sentence appears only once the undo-state read resolves —
+    // until then the receipt deliberately says nothing about undo.
+    await screen.findByText(/Undo it from Recent actions/i);
 
     // D69 — the acted rows are marked Done, and their frozen counts are
     // still yesterday's.
@@ -391,6 +449,149 @@ describe('Brief Noise bulk archive (D65)', () => {
     expect(screen.getByText(/3 messages yesterday · Archived ✓/i)).toBeInTheDocument();
     // The Protected row was never in the batch, so it is not marked Done.
     expect(screen.getByText(/2 messages yesterday · Protected/i)).toBeInTheDocument();
+  });
+
+  /**
+   * The worst blocker the gates found: `Archived ✓` and the receipt were
+   * plain component state, which no invalidation can reach, so a tray
+   * undo left the Brief asserting an archive whose mail was already back
+   * in the inbox. Both are now derived from a server read whose key sits
+   * under `undoKeys`, so this test drives the exact invalidation the
+   * global tray performs and requires the claim to disappear.
+   */
+  it('clears the Done marks and the receipt when the archive is undone', async () => {
+    let reverted = false;
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler(),
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () => undoStateHandler({ reverted }).respond(),
+      },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <BriefScreen />
+      </QueryWrapper>,
+    );
+
+    const dialog = await openPreview();
+    const confirm = await within(dialog).findByRole('button', { name: /^Archive/ });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+
+    await screen.findByText(/Archived 348 emails from 2 senders/i);
+    expect(screen.getByText(/4 messages yesterday · Archived ✓/i)).toBeInTheDocument();
+
+    // The undo lands, then the tray fires exactly this invalidation.
+    reverted = true;
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['undo'] });
+    });
+
+    await waitFor(() => expect(screen.queryByText(/Archived 348 emails/i)).not.toBeInTheDocument());
+    expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
+    await screen.findByText(/That archive was undone/i);
+    // The senders are selectable again, so a fresh archive is possible.
+    expect(
+      screen.getByRole('checkbox', { name: /include newsletter daily in the archive/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('stops promising undo once the window has expired (D211)', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler(),
+      undoStateHandler({ expired: true }),
+    ]);
+    renderScreen();
+
+    const dialog = await openPreview();
+    const confirm = await within(dialog).findByRole('button', { name: /^Archive/ });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+
+    await screen.findByText(/The undo window for this archive has passed/i);
+    expect(screen.queryByText(/Undo it from Recent actions/i)).not.toBeInTheDocument();
+  });
+
+  it('leaves a persistent line on partial failure and disarms the succeeded senders', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler({ done: 1, failed: 1 }),
+      undoStateHandler(),
+    ]);
+    renderScreen();
+
+    const dialog = await openPreview();
+    const confirm = await within(dialog).findByRole('button', { name: /^Archive/ });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+
+    // A toast vanishes in 3.6s; the bar must still say what happened.
+    await screen.findByText(/1 of 2 senders were archived; 1 did not complete/i);
+    // And must not re-arm the sender that already archived.
+    await waitFor(() => expect(archiveButton()).toBeDisabled());
+    expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
+  });
+
+  it('surfaces a not_found skip instead of dropping the sender silently', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req: Request) => {
+          enqueued.push((await req.json()) as Record<string, unknown>);
+          return jsonOk({
+            data: {
+              batchId: 'batch-1',
+              status: 'queued',
+              senderCount: 1,
+              requestedTotal: 210,
+              wakeAt: null,
+              skipped: [{ senderId: ID_SHOP, reason: 'not_found' }],
+            },
+          });
+        },
+      },
+      batchStatusHandler({ done: 1 }),
+      undoStateHandler(),
+    ]);
+    renderScreen();
+
+    const dialog = await openPreview();
+    const confirm = await within(dialog).findByRole('button', { name: /^Archive/ });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+
+    await screen.findByText(/1 no longer in this mailbox — left out of this archive/i);
+  });
+
+  it('renders the scope-conflict state instead of a Retry that would 409 forever', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(() => jsonConflict('SELECT_MAILBOX')),
+      enqueueHandler(),
+    ]);
+    renderScreen();
+
+    const dialog = await openPreview();
+    await within(dialog).findByText(/Your active mailbox changed while this was open/i);
+    expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
+    expect(
+      within(dialog).queryByRole('button', { name: /retry preview/i }),
+    ).not.toBeInTheDocument();
+    expect(enqueued).toHaveLength(0);
   });
 
   it('renders no archive control when nothing is actionable', async () => {
