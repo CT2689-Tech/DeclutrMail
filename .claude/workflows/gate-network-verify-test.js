@@ -15,10 +15,20 @@
 // Run this whenever the refuter prompt or its model changes:
 //   Workflow({ scriptPath: '.claude/workflows/gate-network-verify-test.js' })
 //
-// Baseline 2026-08-11: 5/5, STAGE_DISCRIMINATES. Each fabrication was refuted
-// with a specific reason (wrong line contents, absent code, non-existent switch
-// case), not a vague doubt — and both real findings were sustained with traced
-// evidence. Anything below 5/5 means the stage stopped earning its cost.
+// The refuters here MUST stay on the same tier as the refuters in
+// gate-network.js — a baseline measured on a different model tests nothing.
+// Both are `opus`: adversarial verification is the one stage where a cheaper
+// tier buys nothing, since its whole job is to be harder to fool than the
+// finder that produced the claim.
+//
+// Baseline 2026-08-11, sonnet refuters: 5/5, STAGE_DISCRIMINATES. Each
+// fabrication drew a specific reason — wrong line contents, absent code, a
+// switch case that does exist — not a vague doubt, and both real findings were
+// sustained with traced evidence. That baseline is SUPERSEDED: the refuters
+// moved to opus, so it describes a configuration no longer in use. See the
+// commit that made the change for the re-measured opus number.
+//
+// Anything below 5/5 means the stage stopped earning its cost.
 
 export const meta = {
   name: 'gate-network-verify-test',
@@ -139,6 +149,9 @@ const drift = await agent(
     `Set identical=false if any INSTRUCTION differs: the refute criteria, the\n` +
     `"do NOT refute merely because it is hard to verify" clause, or the\n` +
     `"only when you can name the specific thing" clause. Quote what differs.`,
+  // sonnet, not haiku: "pick the cheaper tier and escalate on failure" assumes
+  // failure is visible. A wrong verdict here is silent — it green-lights a test
+  // measuring a prompt nobody runs — so this one does not get the cheap tier.
   { label: 'drift:refute-prompt', phase: 'Drift', model: 'sonnet', effort: 'low', schema: DRIFT },
 )
 
@@ -152,8 +165,8 @@ phase('Refute')
 const results = await parallel(
   FINDINGS.map((f) => () =>
     parallel([
-      () => agent(refutePrompt(f), { label: `r1:${f.id}`, phase: 'Refute', model: 'sonnet', schema: VERDICT }),
-      () => agent(refutePrompt(f), { label: `r2:${f.id}`, phase: 'Refute', model: 'sonnet', schema: VERDICT }),
+      () => agent(refutePrompt(f), { label: `r1:${f.id}`, phase: 'Refute', model: 'opus', schema: VERDICT }),
+      () => agent(refutePrompt(f), { label: `r2:${f.id}`, phase: 'Refute', model: 'opus', schema: VERDICT }),
     ]).then((votes) => {
       const cast = votes.filter(Boolean)
       // gate-network's own rule: demote only on UNANIMOUS refutation.

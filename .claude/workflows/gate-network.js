@@ -1,9 +1,15 @@
 // gate-network — fan out the CLAUDE.md §7 gate agents across a diff.
 //
 // Replaces the sequential "run each applicable gate by hand" step before a
-// merge recommendation. Routing mirrors the §7 table exactly; each gate keeps
-// its own charter and its own model (declared in .claude/agents/<name>.md), so
-// this script never overrides them.
+// merge recommendation. Routing mirrors the §7 table exactly and each gate
+// keeps its own charter.
+//
+// Every agent() call sets `model` explicitly — never omitted. The gates are
+// pinned to `opus` to match what their own .claude/agents/<name>.md frontmatter
+// declares; if a gate definition changes tier, change it here in the same edit
+// or the two silently disagree. The refuters are `opus` because adversarial
+// verification is the one stage where a cheaper tier buys nothing: its whole
+// job is to be harder to fool than the finder that produced the claim.
 //
 // Gates report; they never fix. This workflow inherits that: it returns
 // findings, writes nothing, and posts nothing to GitHub.
@@ -162,7 +168,7 @@ const refutePrompt = (g, f) =>
 phase('Gates')
 const reviews = await pipeline(
   applicable,
-  (g) => agent(chargeFor(g), { agentType: g.type, label: g.type, phase: 'Gates', schema: FINDINGS_SCHEMA }),
+  (g) => agent(chargeFor(g), { agentType: g.type, label: g.type, phase: 'Gates', model: 'opus', schema: FINDINGS_SCHEMA }),
   (review, g) => {
     const found = (review?.findings ?? []).map((f) => ({ ...f, gate: g.type, tier: g.tier }))
     const blocking = found.filter((f) => f.severity === 'BLOCKING')
@@ -181,8 +187,8 @@ const reviews = await pipeline(
     return parallel(
       toVerify.map((f) => () =>
         parallel([
-          () => agent(refutePrompt(g, f), { label: `refute:${f.file}`, phase: 'Verify', model: 'sonnet' , schema: VERDICT_SCHEMA }),
-          () => agent(refutePrompt(g, f), { label: `refute2:${f.file}`, phase: 'Verify', model: 'sonnet', schema: VERDICT_SCHEMA }),
+          () => agent(refutePrompt(g, f), { label: `refute:${f.file}`, phase: 'Verify', model: 'opus', schema: VERDICT_SCHEMA }),
+          () => agent(refutePrompt(g, f), { label: `refute2:${f.file}`, phase: 'Verify', model: 'opus', schema: VERDICT_SCHEMA }),
         ]).then((votes) => {
           const cast = votes.filter(Boolean)
           // Conservative: demote only on unanimous refutation by both refuters.
