@@ -27,8 +27,16 @@ import { dbConnect, senderKeyById } from '../helpers/db';
  * captured from the DB BEFORE any visual assertion, for exactly that
  * reason (the pattern undo.spec.ts arrived at the hard way).
  *
- * Blast radius: exactly ONE Noise sender, chosen for having 1–5 messages
- * in the inbox right now. Every other sender is unchecked first.
+ * Blast radius: exactly ONE Noise sender — the one with the SMALLEST live
+ * inbox count that still fits the window. Every other sender is unchecked
+ * before the archive runs.
+ *
+ * On skipping: only three states skip, and each is a genuinely degenerate
+ * environment (not Pro, no snapshot, every Noise sender Protected).
+ * "A Brief with actionable Noise senders, none of which fits the window"
+ * FAILS, loudly, with the observed counts — a spec that can silently skip
+ * on the path it exists to cover is the blind-guard failure: green
+ * forever, verifying nothing.
  */
 
 interface BriefNoiseSenderWire {
@@ -93,37 +101,84 @@ test('Archive one Noise sender from the Brief, then undo it from the tray', asyn
   expect(briefRes.status).toBe(200);
   const brief = (briefRes.body as { data: BriefWire }).data;
 
-  // ---- Pick exactly one target: actionable (resolved + unprotected)
-  // with 1–5 messages in the inbox right now.
-  const actionable = brief.noiseSenders.filter((s) => s.senderId !== null && !s.isProtected);
-  test.skip(actionable.length === 0, 'no actionable Noise senders in today’s Brief');
+  // ---- The remaining degenerate environments — and only these — skip.
+  const noiseGroups = brief.briefPayload.noise;
+  test.skip(noiseGroups.length === 0, "today's Brief has no Noise section — nothing to archive");
 
-  let target: { senderId: string; senderName: string; inboxCount: number } | null = null;
-  let probes = 0;
-  for (const candidate of actionable) {
-    if (probes >= 15) break;
-    probes += 1;
+  // A Brief WITH Noise whose senders all failed to resolve is the D65
+  // read-time join breaking, which is precisely what this spec exists to
+  // catch. Skipping there would hide the regression behind a green run.
+  const unresolved = brief.noiseSenders.filter((s) => s.senderId === null);
+  if (brief.noiseSenders.length === 0 || unresolved.length === brief.noiseSenders.length) {
+    throw new Error(
+      `GET /api/briefs/today returned ${noiseGroups.length} Noise groups but resolved ` +
+        `${brief.noiseSenders.length - unresolved.length} sender ids. The D65 read-time ` +
+        `resolution is not joining senders for this mailbox — this is a product defect, ` +
+        `not an empty environment.`,
+    );
+  }
+
+  const actionable = brief.noiseSenders.filter((s) => s.senderId !== null && !s.isProtected);
+  test.skip(
+    actionable.length === 0,
+    'every Noise sender in today’s Brief is Protected — no bulk archive is possible (D245)',
+  );
+
+  // ---- Probe the live inbox count for each actionable sender, then take
+  // the SMALLEST that fits the window. Smallest-first (rather than
+  // first-in-range) keeps the blast radius minimal by construction.
+  //
+  // The ceiling is 60, not a handful: a sender lands in Noise BECAUSE it
+  // sends a lot, so "a Noise sender with 1-5 messages in the inbox" is
+  // close to a contradiction. A window that no candidate can satisfy is a
+  // permanently-skipped spec — green forever, verifying nothing — which is
+  // the blind-guard failure this repo has a standing rule about. Measured
+  // 2026-08-10 against the founder's mailbox: the fourteen actionable
+  // Noise senders ranged 24..497, so a ceiling of 5 could never match.
+  const MAX_INBOX_COUNT = 60;
+  const PROBE_LIMIT = 30;
+
+  const probed: { senderId: string; senderName: string; inboxCount: number }[] = [];
+  const rejected: string[] = [];
+  for (const candidate of actionable.slice(0, PROBE_LIMIT)) {
     const preview = await api.get<CompositePreview>(
       `/api/actions/preview?senderId=${candidate.senderId}`,
     );
-    if (preview.protected) continue;
-    if (preview.counts.all >= 1 && preview.counts.all <= 5) {
-      const group = brief.briefPayload.noise.find((g) => g.senderKey === candidate.senderKey);
-      // A duplicate display name would make the row locators ambiguous.
-      if (!group) continue;
-      if (brief.briefPayload.noise.filter((g) => g.senderName === group.senderName).length !== 1) {
-        continue;
-      }
-      target = {
-        senderId: candidate.senderId!,
-        senderName: group.senderName,
-        inboxCount: preview.counts.all,
-      };
-      break;
+    const group = noiseGroups.find((g) => g.senderKey === candidate.senderKey);
+    if (!group) continue;
+    if (preview.protected) {
+      rejected.push(`${group.senderName}=protected`);
+      continue;
     }
+    // A duplicate display name would make the row locators ambiguous.
+    if (noiseGroups.filter((g) => g.senderName === group.senderName).length !== 1) {
+      rejected.push(`${group.senderName}=duplicate-name`);
+      continue;
+    }
+    probed.push({
+      senderId: candidate.senderId!,
+      senderName: group.senderName,
+      inboxCount: preview.counts.all,
+    });
   }
-  test.skip(target === null, 'no Noise sender with 1–5 inbox messages');
-  const { senderId, senderName, inboxCount } = target!;
+
+  probed.sort((a, b) => a.inboxCount - b.inboxCount);
+  const target = probed.find((c) => c.inboxCount >= 1 && c.inboxCount <= MAX_INBOX_COUNT) ?? null;
+
+  // NOT a skip. The environment HAS actionable Noise senders; if none fits
+  // the window then the window is wrong, and that must be visible.
+  if (target === null) {
+    const observed = probed.map((c) => `${c.senderName}=${c.inboxCount}`).join(', ') || '(none)';
+    throw new Error(
+      `No actionable Noise sender has between 1 and ${MAX_INBOX_COUNT} messages in the inbox, ` +
+        `so the archive could not be exercised. Observed live counts: ${observed}. ` +
+        `${rejected.length > 0 ? `Rejected candidates: ${rejected.join(', ')}. ` : ''}` +
+        `This is a broken fixture assumption, not an empty environment — raise ` +
+        `MAX_INBOX_COUNT (weighing the blast radius, since the archive is real) or ` +
+        `investigate why every sender's inbox count is 0.`,
+    );
+  }
+  const { senderId, senderName, inboxCount } = target;
   const senderKey = await senderKeyById(sql, mailboxId, senderId);
 
   await page.goto('/brief');
@@ -158,8 +213,12 @@ test('Archive one Noise sender from the Brief, then undo it from the tray', asyn
   await expect(modal).toContainText('is in your inbox now');
   const confirm = modal.getByRole('button', { name: /Archive.*⌘⏎/ });
   await expect(confirm).toBeEnabled();
-  await expect(modal).toContainText(`${inboxCount.toLocaleString()}`);
-  await expect(modal).toContainText(/emails? currently match in Inbox/);
+  // A NON-ZERO count, not the exact probed one: a genuinely new email
+  // arriving between the probe above and this render would move the
+  // figure and fail the run for no defect. Zero is the case worth
+  // catching — it would mean the preview and the enqueue disagree, and
+  // the sheet's own guard should already have disarmed confirm.
+  await expect(modal).toContainText(/[1-9][\d,]* emails? currently match in Inbox/);
   await confirm.click();
 
   // ---- Arm the teardown safety net FIRST, from the DB. A failure in
@@ -189,7 +248,10 @@ test('Archive one Noise sender from the Brief, then undo it from the tray', asyn
   // failure mode undo.spec.ts documents).
   const noiseSection = page.getByRole('region', { name: /^Noise \(/ });
   const receipt = noiseSection.getByRole('status');
-  await expect(receipt).toContainText('Archived', { timeout: 90_000 });
+  // A NON-ZERO archived count. Without this a zero-op archive — enqueued,
+  // completed, moved nothing — satisfies every other assertion here, and
+  // the undo leg would then be reversing nothing.
+  await expect(receipt).toContainText(/Archived [1-9][\d,]* emails? from/, { timeout: 90_000 });
   await expect(receipt).toContainText('1 sender');
 
   // ---- D69: the acted row is marked Done, and its frozen yesterday
