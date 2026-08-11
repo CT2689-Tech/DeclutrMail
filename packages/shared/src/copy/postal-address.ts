@@ -2,9 +2,14 @@
 // physical postal address.
 //
 // US CAN-SPAM and Canadian CASL both require a valid physical postal
-// address in COMMERCIAL email. DeclutrMail's opt-out-able kinds
-// (sync-complete, sync-reminder-24h) are commercial by that test;
-// required account notices (deletion-scheduled, deletion-receipt) are
+// address in COMMERCIAL email. Which kinds those are is decided by
+// PRIMARY PURPOSE, not by whether a kind happens to carry an opt-out
+// toggle — `COMMERCIAL_KINDS` in `packages/workers/src/email-send.worker.ts`
+// is the single source of truth, and it currently holds
+// sync-reminder-24h, lapse-reengagement and weekly-value-receipt.
+// `sync-complete` is transactional despite being opt-out-able (it
+// delivers the result of a sync the recipient asked for), and required
+// account notices (deletion-scheduled, deletion-receipt) are
 // transactional and exempt.
 //
 // ## Filling this in

@@ -169,7 +169,82 @@ describe('EmailSendWorker', () => {
   // set would disarm the postal gate everywhere while every other test
   // stayed green — the blind-guard shape.
   it('classifies exactly the promotional kinds as commercial', () => {
-    expect([...COMMERCIAL_KINDS]).toEqual(['sync-reminder-24h', 'weekly-value-receipt']);
+    expect([...COMMERCIAL_KINDS]).toEqual([
+      'sync-reminder-24h',
+      'lapse-reengagement',
+      'weekly-value-receipt',
+    ]);
+  });
+
+  // D126 Part 3. The lapse email is win-back mail with no transactional
+  // payload at all, so it must land on the same side of the gate as the
+  // 24h reminder. Asserted as its own test rather than folded into the
+  // set above, because the set only proves membership — this proves the
+  // gate actually FIRES for the kind, which is the behaviour that keeps
+  // a non-compliant message off the wire.
+  it('gates the lapse re-engagement email on a postal address', async () => {
+    vi.mocked(hasPostalAddress).mockReturnValue(false);
+    const db = await freshDb();
+    const userId = await seedUser(db, 'lapse-gate@b.com');
+    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_lapse' });
+
+    const result = await new EmailSendWorker({ db: db as never, delivery }).processJob(
+      jobData(userId, {
+        kind: 'lapse-reengagement',
+        idempotencyKey: 'email__lapse-reengagement__u__2026-08-01',
+      }),
+      CTX,
+    );
+
+    // A designed skip, so the enqueue dedup can retry once an address
+    // exists. A throw here would dead-letter the job, and a dead-letter
+    // is indistinguishable from a delivered send whose confirmation was
+    // lost — which would bury this user's lapse mail permanently.
+    expect(result.outcome).toBe('skipped_no_postal_address');
+    expect(delivery.deliver).not.toHaveBeenCalled();
+  });
+
+  it('honors the D165 reminders opt-out for the lapse email too', async () => {
+    const db = await freshDb();
+    const userId = await seedUser(db, 'lapse-optout@b.com');
+    await db
+      .update(users)
+      .set({ preferences: { emailPrefs: { reminders: false } } })
+      .where(eq(users.id, userId));
+    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_lapse2' });
+
+    const result = await new EmailSendWorker({ db: db as never, delivery }).processJob(
+      jobData(userId, { kind: 'lapse-reengagement', idempotencyKey: 'lapse-k1' }),
+      CTX,
+    );
+
+    expect(result.outcome).toBe('skipped_opted_out');
+    expect(delivery.deliver).not.toHaveBeenCalled();
+  });
+
+  it('skips the lapse email when the user came back after the producer queued it', async () => {
+    const db = await freshDb();
+    const userId = await seedUser(db, 'lapse-returned@b.com');
+    const lastSeen = new Date('2026-08-01T00:00:00.000Z');
+    await db.insert(activeSessions).values({
+      userId,
+      jti: '5f0f8f4e-0f4a-4a3a-9b3a-1c2d3e4f5a6b',
+      refreshTokenHash: 'hash',
+      lastUsedAt: new Date(lastSeen.getTime() + 60_000),
+    });
+    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_lapse3' });
+
+    const result = await new EmailSendWorker({ db: db as never, delivery }).processJob(
+      jobData(userId, {
+        kind: 'lapse-reengagement',
+        idempotencyKey: 'lapse-k2',
+        skipIfUserActiveSince: lastSeen.toISOString(),
+      }),
+      CTX,
+    );
+
+    expect(result.outcome).toBe('skipped_user_returned');
+    expect(delivery.deliver).not.toHaveBeenCalled();
   });
 
   it('still sends TRANSACTIONAL kinds without a postal address (deletion notices)', async () => {

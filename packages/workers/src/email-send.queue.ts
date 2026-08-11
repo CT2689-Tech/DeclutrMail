@@ -63,6 +63,34 @@ export function syncFailedEmailJobId(mailboxAccountId: string, failedAtIso: stri
   return `email__sync-failed__${mailboxAccountId}__${failedAtIso.slice(0, 10)}`;
 }
 
+/**
+ * Lapse re-engagement (D126 Part 3) — keyed per user per DORMANCY
+ * EPISODE, where the episode is identified by the UTC date of the
+ * user's last known contact.
+ *
+ * Why that and not `email__lapse__${userId}`: a user-only key looks
+ * like "one lapse email ever", but it is not. Completed jobs age out of
+ * `removeOnComplete` after 7 days, after which the same key re-adds
+ * freely — so a permanently dormant user would receive the mail again
+ * every time the retention window turned over, with nothing in the key
+ * to notice.
+ *
+ * `lastSeenDate` fixes that from the DATA side. It is derived from a
+ * stored timestamp, not from the clock, so every tick inside one
+ * dormancy episode computes the identical key and dedups; and it can
+ * only change by the user actually coming back, which is exactly when a
+ * later email becomes a legitimately new event rather than a repeat.
+ *
+ * The producer's send band (see `LapseReengagementWorker`) is the second
+ * half of the guarantee: it matches for roughly 24 hours, which closes
+ * long before the 7-day retention window can expire underneath a key.
+ * Neither mechanism is load-bearing alone — the key stops duplicates
+ * inside the band, the band stops the key from outliving its retention.
+ */
+export function lapseReengagementEmailJobId(userId: string, lastSeenDate: string): string {
+  return `email__lapse-reengagement__${userId}__${lastSeenDate}`;
+}
+
 /** Job options for any email send. `delayMs` schedules the reminder. */
 export function emailSendJobOptions(jobId: string, delayMs = 0): JobsOptions {
   const policy = WORKER_POLICIES.batchPolicy;
