@@ -32,9 +32,9 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-- ⬜ Not started: 81
+- ⬜ Not started: 80
 - 🟡 In progress: 1
-- 🔵 Shipped: 102
+- 🔵 Shipped: 103
 - 🟢 Verified: 55
 - 🚫 Retired: 2
 - 🔴 Blocked: 0
@@ -93,7 +93,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D35 | Undo via persistent action tray (Doc 05 §11) | 🟢 | #33, #180, #182, #435, #444 | apps/api/src/undo/undo.service.spec.ts | Evidence updated 2026-06-11: tray wired to triage in #180; tray requires injected dataSource in #182 |
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🔵 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | 🔵 | #293 |  |  |
-| D38 | First-time education: **Onboarding-only tour + tooltips on hover | ⬜ |  |  | Reclaimed 2026-07-28 (D158): the tour has never been built. Prior D38 trailers were umbrella mis-tags, now rewritten in the source PR bodies; the senders wire-model work lives at ADR-0029 |
+| D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #501 |  | Reclaimed 2026-07-28 (D158): the tour has never been built. Prior D38 trailers were umbrella mis-tags, now rewritten in the source PR bodies; the senders wire-model work lives at ADR-0029 |
 | D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30, #43, #47, #52, #63, #71, #129 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
 | D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🟢 | #30, #47, #181, #342, #394 | apps/api/src/senders/senders.read-service.spec.ts |  |
 | D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | 🔵 | #30 |  |  |
