@@ -26,34 +26,41 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-08-11 — `claude/*` commits have no honest D-number, and commit-msg let one through
+### 2026-08-11 — `commit-msg` did not fire on a fresh container's first commit
 
-**Source:** session (gate-network workflow, branch `claude/dynamic-workflow-repo-apply-oklsja`)
-**Why:** Two residues of the `claude/*` allowlist decision below. (1) commitlint's
-`d-number-reference` is exempt only for `chore/(bootstrap|distill)-*`, so a
-`claude/*` commit still owes a `(D###)` trailer. Codex satisfies that because its
-branches carry a real D (`codex/d246-…`); the web harness assigns a random slug,
-and agent tooling like this workflow has no D-decision to cite. Inventing one is
-worse than omitting it — that is the D38 umbrella mis-tag mistake. Net effect: a
-`claude/*` branch is now pushable but not committable. (2) `commit-msg` enforcement
-was inconsistent within one session: the session's FIRST commit produced no husky
-output at all and was accepted despite a missing trailer, while `pre-push` blocked
-normally minutes later; the SECOND commit ran lint-staged + commitlint and was
-correctly rejected. Something between the two — plausibly an `npx` invocation
-triggering the `prepare` lifecycle — installed the hook late. A commit-msg gate
-that is absent for the first commit in a fresh container is a hole worth closing.
-**How:** For (1) I took the reversible option so the branch decision is actually
-operative — `claude/` joins the exemption in `commitlint.config.cjs`. **Confirm or
-revert this**; it was not part of the branch-name call, and the alternative (agent
-tooling must claim a D) is a legitimate choice I did not want to make for you.
-Smoked both directions: `claude/*` without a trailer exits 0, `feat/d999-*` without
-one still exits 1, `feat/d999-*` with `(D11)` exits 0 — the exemption is narrow.
-For (2), confirm the ordering above in a fresh web container and make husky install
-eagerly (or fail loudly) at session start.
-**Verifies by:** (1) founder confirms the exemption or reverts it, with the D-trailer
-rule still firing on every non-`claude/` branch; (2) in a brand-new container, the
-FIRST `git commit -m "chore: no d trailer"` on a non-exempt branch exits non-zero.
+**Source:** session (gate-network workflow)
+**Why:** `commit-msg` enforcement was inconsistent within one session: the session's
+FIRST commit produced no husky output at all and was accepted despite a missing
+`(D###)` trailer, while `pre-push` blocked normally minutes later; the SECOND commit
+ran lint-staged + commitlint and was correctly rejected. Something between the two —
+plausibly an `npx` invocation triggering the `prepare` lifecycle — installed the hook
+late. A commit-msg gate that is absent for the first commit in a fresh container is a
+hole worth closing: that is exactly when an agent writes its first commit message.
+**How:** Confirm the ordering above in a fresh web container, then make husky install
+eagerly at session start (or fail loudly when its hooks are not wired) rather than
+relying on a lifecycle script that may not have run yet.
+**Verifies by:** in a brand-new container, the FIRST
+`git commit -m "chore: no d trailer"` on a non-exempt branch exits non-zero.
 **Status:** Open
+
+### 2026-08-11 — D-less agent work lands from `chore/bootstrap-*`, not a third exemption
+
+**Source:** session (gate-network workflow, PR #503 → #504)
+**Why:** Sanctioning `claude/*` in the branch-name allowlist fixed one of three
+enforcement layers. Two more still rejected the same D-less PR: commitlint's
+`d-number-reference` and the `Closes D###` PR-body check. Carving a `claude/*`
+exemption in each would have removed the D-tie requirement from every future
+`claude/*` PR, including ones that genuinely close D-decisions — a permanent,
+broad traceability loss to buy one green check.
+**How:** Founder chose the path the PR-body check itself prescribes: land D-less
+agent work from `chore/bootstrap-<topic>`, which is already exempt at all three
+layers. The interim `claude/*` exemption in `commitlint.config.cjs` was reverted
+in the same change. `claude/*` stays in the branch-name allowlist (that decision
+stands on its own — it lets web sessions push at all), so `claude/*` branches now
+carry only D-tied work and can supply real trailers.
+**Verifies by:** #504 green on "PR body references D-decisions or is
+bootstrap-exempt"; `feat/d999-*` without a trailer still exits 1 locally.
+**Status:** Done 2026-08-11 — ships in #504
 
 ### 2026-08-11 — Sanction `claude/*` branches in the §6 allowlist
 
