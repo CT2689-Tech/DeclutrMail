@@ -272,7 +272,13 @@ test('Archive one Noise sender from the Brief, then undo it from the tray', asyn
   // figure and fail the run for no defect. Zero is the case worth
   // catching — it would mean the preview and the enqueue disagree, and
   // the sheet's own guard should already have disarmed confirm.
-  await expect(modal).toContainText(/[1-9][\d,]* emails? currently match in Inbox/);
+  //
+  // `\s*` because the count is a `NumericDisplay`, so the number and the
+  // words are separate elements and `toContainText` concatenates them
+  // with no separator ("14emails currently match in Inbox"). A literal
+  // space here matches the DOM the sheet had BEFORE it adopted the
+  // shared numeric primitive, not the one it renders now.
+  await expect(modal).toContainText(/[1-9][\d,]*\s*emails? currently match in Inbox/);
   await confirm.click();
 
   // ---- Arm the teardown safety net FIRST, from the DB. A failure in
