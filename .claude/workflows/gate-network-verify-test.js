@@ -21,12 +21,16 @@
 // tier buys nothing, since its whole job is to be harder to fool than the
 // finder that produced the claim.
 //
-// Baseline 2026-08-11, sonnet refuters: 5/5, STAGE_DISCRIMINATES. Each
-// fabrication drew a specific reason — wrong line contents, absent code, a
-// switch case that does exist — not a vague doubt, and both real findings were
-// sustained with traced evidence. That baseline is SUPERSEDED: the refuters
-// moved to opus, so it describes a configuration no longer in use. See the
-// commit that made the change for the re-measured opus number.
+// Baseline 2026-08-11, opus refuters: 5/5, STAGE_DISCRIMINATES, drift none.
+// Every fabrication drew a specific reason rather than a vague doubt — the
+// cited line holds different code, the service injects no Gmail client at all,
+// the switch case the finding calls missing is right there — and both real
+// findings were sustained with traced evidence. One refuter went further and
+// found that screener-screen.test.tsx already asserts the D227 rule F2 claims
+// is violated, so that violation would have been failing CI.
+//
+// (An earlier sonnet-refuter run also scored 5/5. Kept only as a note: it
+// measured a tier this file no longer uses, so it is not the baseline.)
 //
 // Anything below 5/5 means the stage stopped earning its cost.
 
