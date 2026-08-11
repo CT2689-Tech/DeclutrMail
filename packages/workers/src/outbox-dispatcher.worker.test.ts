@@ -641,15 +641,26 @@ describe.skipIf(!process.env.OUTBOX_TEST_PG_URL)(
       )) as { drizzle: (client: any, opts?: any) => any };
 
       const pgUrl = process.env.OUTBOX_TEST_PG_URL!;
+      // `OUTBOX_TEST_PG_URL` must point at a DISPOSABLE, EMPTY database
+      // — CI hands this job its own throwaway Postgres service, and
+      // locally it is one `createdb`. The migrations are applied to it
+      // whole and nothing is torn down.
+      //
+      // This used to create an isolated schema and `SET search_path` to
+      // it, which cannot work and was never once executed to find out.
+      // The first run, on 2026-08-11, failed with `type
+      // "mailbox_provider" does not exist`: every migration writes
+      // `CREATE TYPE "public"."<enum>"` — schema-qualified to public —
+      // while the tables that use it reference the type UNQUALIFIED
+      // (`packages/db/migrations/0000_…sql:2,9`). Under a redirected
+      // search_path the type is created in `public` and then looked up
+      // in the isolated schema, so table creation fails on the very
+      // first migration. Schema isolation is not compatible with these
+      // migrations; a separate database is.
       const client = postgres(pgUrl, { max: 4 });
       const realDb = drizzlePg(client, { schema }) as PostgresJsDatabase<typeof schema>;
 
       try {
-        // Apply migrations into an isolated schema so the test does
-        // not collide with anything else in the target DB.
-        const isolated = `outbox_test_${Date.now()}`;
-        await client.unsafe(`CREATE SCHEMA "${isolated}"`);
-        await client.unsafe(`SET search_path TO "${isolated}"`);
         const files = readdirSync(MIGRATIONS_DIR)
           .filter((f) => f.endsWith('.sql'))
           .sort();
@@ -704,8 +715,6 @@ describe.skipIf(!process.env.OUTBOX_TEST_PG_URL)(
           expect(setB.has(id)).toBe(false);
         }
         expect(setA.size + setB.size).toBe(seededIds.length);
-
-        await client.unsafe(`DROP SCHEMA "${isolated}" CASCADE`);
       } finally {
         await client.end({ timeout: 5 });
       }

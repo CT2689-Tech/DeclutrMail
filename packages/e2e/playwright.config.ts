@@ -91,7 +91,14 @@ export default defineConfig({
   retries: 0,
   timeout: 120_000,
   expect: { timeout: 15_000 },
-  reporter: [['list']],
+  /* CI additionally emits a machine-readable report so the lane can
+   * assert what actually RAN — Playwright exits 0 on an all-skipped run,
+   * and a required check cannot be allowed to go green on that. See
+   * scripts/assert-e2e-ran.mjs. Each CI step points E2E_JSON_REPORT at
+   * its own absolute path so two runs in one job do not overwrite. */
+  reporter: process.env.E2E_JSON_REPORT
+    ? [['list'], ['json', { outputFile: process.env.E2E_JSON_REPORT }]]
+    : [['list']],
   globalSetup: './global-setup.ts',
   projects: [
     {
