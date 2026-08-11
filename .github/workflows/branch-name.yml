@@ -43,7 +43,11 @@ jobs:
           # (#333 merged, #334). D-traceability is preserved by the still-
           # enforced commit `(D###)` trailers and the pr-body `Closes D###`
           # check below — same reasoning as the dependabot exemption.
-          if ! echo "$HEAD_REF" | grep -qE '^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|codex/[a-z0-9][a-z0-9-]*$)'; then
+          # `claude/` sanctioned 2026-08-11 (founder call, FOUNDER-FOLLOWUPS):
+          # Claude Code on the web assigns `claude/<slug>` and the session is
+          # forbidden from renaming it — identical position to codex/, so it
+          # gets the identical exemption and the identical obligations.
+          if ! echo "$HEAD_REF" | grep -qE '^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|(codex|claude)/[a-z0-9][a-z0-9-]*$)'; then
             echo "::error::Branch '${HEAD_REF}' does not match the CLAUDE.md §6 naming convention."
             echo "Expected: <type>/d<NNN>-<kebab>  OR  chore/bootstrap-<topic>  OR  chore/distill-<topic>"
             echo "Allowed types: feat, fix, chore, docs, refactor, test, perf, security"
