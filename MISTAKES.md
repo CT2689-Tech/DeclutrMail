@@ -2326,3 +2326,44 @@ appeared" claims require reading which of the locator's MATCHES the
 error lists — two matches and zero matches produce the same red.
 **Enforcement update:** none automated; the spec now documents the
 baseline semantics at the tray leg.
+
+## 2026-08-11 — Two false CI diagnoses in a row, each from one unrepeated look
+
+**PR:** #504 → #505 (https://github.com/CT2689-Tech/DeclutrMail/pull/505)
+**Caught by:** reality, twice — the merge succeeding unaided on the second
+attempt, then the "never runs" check running green on the very PR written
+to report it
+**What happened:** two claims, both written up as fact and both wrong.
+
+(1) A merge returned `405: 7 of 11 required status checks have not
+succeeded: 3 expected`. I read it as structural, concluded required checks
+made any tooling-only PR unmergeable without an override, wrote that into
+FOUNDER-FOLLOWUPS, and made "change your branch protection" step 1 of the
+founder's instructions. The real cause was timing: Lint, Typecheck, Format
+check and the impl-log job were still in progress, and in-flight required
+checks read as not-succeeded — plus a run my own rapid follow-up push had
+cancelled. Two supporting premises were false too: five of the six contexts
+I named are not in the required list, and a skipped context does not block.
+Re-attempting after the checks settled merged with no settings change.
+
+(2) Correcting (1), I kept one "surviving, verified" finding — that
+`Analyze (javascript-typescript)` was required but never ran, evidenced by
+24 branch workflow runs with zero CodeQL executions. That query filtered by
+branch; CodeQL runs against the PR merge ref, so it could not have appeared
+regardless. `Analyze` then ran and passed on the very PR carrying the
+claim. I had written the rule against this exact error into LEARNINGS hours
+earlier — assert absence only after proving the input could show presence —
+and still shipped it, while labelling it "verified".
+
+**Correct approach:** for (1), re-check after in-flight checks settle and
+read the required list directly before naming contexts. For (2), before
+writing "X never happens", name the query's blind spots and run a second
+query that would show X if it existed.
+**Rule:** a single observation is a moment, not a mechanism. Any claim of
+the form "this never runs / is always blocked / cannot work" needs a second,
+differently-shaped look before it is written down — and calling something
+"verified" obliges naming what was actually checked.
+**Enforcement update:** none automated. Both claims retracted in
+FOUNDER-FOLLOWUPS with the trail intact; entry closed as Skipped, no action.
+This is the BLIND-GUARD class for the seventh time — the CLAUDE.md §8 line
+LEARNINGS has now requested repeatedly is overdue.
