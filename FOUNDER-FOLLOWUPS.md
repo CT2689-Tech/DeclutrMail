@@ -26,6 +26,7 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-11 — Main carries a stale implementation log; every open PR pays for it
 ### 2026-08-10 — D68's "one-click archive" is impossible under D226; patch the plan
 
 **Source:** design-system-agent review of [#498](https://github.com/CT2689-Tech/DeclutrMail/pull/498) (D65)
@@ -52,31 +53,62 @@ same sentence, and no later session "restores" the retired wording.
 
 ### 2026-08-11 — Required checks make a tooling-only PR unmergeable by construction
 
-**Source:** session (PR #504, `chore/bootstrap-gate-network-workflow`)
-**Why:** #504 has every check that ran green, and still cannot merge:
-`405: 7 of 11 required status checks have not succeeded: 3 expected`. It touches
-no application paths (`.claude/`, `.github/`, `.husky/`, `commitlint.config.cjs`,
-two markdown files), so `Detect changed paths` correctly skipped all five
-`Tests — *` shards and `Authenticated accessibility smoke` — and GitHub counts a
-**skipped** required context as not-succeeded. Three further required contexts
-never reported at all. This is not specific to #504: ANY docs-only or
-tooling-only PR is unmergeable without an override. #502 escaped it only because
-it happened to touch `apps/web` and `apps/api`, so its shards actually ran.
-`ci.yml` already solves this — the aggregate `Test` job classifies each shard as
-ran/skipped and fails only on a genuinely bad one, and it is **green** on #504.
-Requiring the individual shards *and* the aggregate defeats the aggregate's whole
-purpose.
-**How:** GitHub → Settings → Branches → the `main` protection rule → Require
-status checks to pass. Remove the six path-gated contexts — `Tests — API`,
-`Tests — Web`, `Tests — Workers`, `Tests — Database`, `Tests — Shared units`,
-`Authenticated accessibility smoke` — and keep the aggregate `Test`, which
-already fails when any shard genuinely fails. Then identify the 3 contexts stuck
-at "expected" (required contexts whose workflow has a `paths:` filter that did
-not match) and either drop them or give them a path-independent no-op job.
-Merging #504 needs an admin override until this is done.
-**Verifies by:** a PR touching only `*.md` merges without an override, while a PR
-that breaks an API test still shows `Test` red and stays blocked.
+**Source:** session (twice in one day, PRs #504 and #505)
+**Why:** the `Implementation log is derived and current` job is a must-pass on
+pull requests and is **skipped on push-to-main by design**. So a PR that merges
+with `Closes D###` and does not regenerate the log leaves main stale, nothing
+fails on main, and every subsequently opened PR inherits a red must-pass check it
+did not cause. Observed twice today, from two different PRs, hours apart:
+
+- #500 merged with `Closes D248`; caught on #504 (`D248: ⬜ → 🔵 #500`)
+- #497 merged with `Closes D126, D189`; caught on #505 (`D126`, `D189` → `🔵 #497`)
+
+Both had to be hand-corrected in an unrelated PR, which is how the drift keeps
+getting laundered into whatever change happens to be open next. The rows are not
+the problem — the asymmetry is: the check that would catch it is the one place it
+is turned off.
+**How:** pick one. (a) Run the impl-log check on push-to-main too, so the drift
+fails loudly where it is introduced rather than on the next innocent PR;
+(b) have the merge automation run `pnpm generate-impl-log` and commit the result
+on merge, so a `Closes D###` PR updates the log by construction; or (c) make it
+part of merging a PR that cites any D. (b) is closest to what
+IMPLEMENTATION-LOG.md's own header already promises ("kept current
+automatically").
+**Verifies by:** merge a PR citing a `Closes D###` and open a throwaway PR right
+after — the impl-log check is green without anyone editing the log by hand.
 **Status:** Open
+
+### 2026-08-11 — RETRACTED: the CI-blocker entry was wrong twice; no action needed
+
+**Source:** session (PR #504 → #505)
+**Why:** kept only as a trail. This slot briefly held two claims, both false, both
+written from a single observation without re-checking. Nothing here needs doing —
+CI and branch protection are working as configured.
+
+Claim 1, retracted: *"required status checks make any tooling-only PR unmergeable
+by construction"*, with an instruction to remove six path-gated contexts from the
+`main` protection rule. **Do not do that.** #504 merged with no settings change.
+The `405: 7 of 11 required status checks have not succeeded: 3 expected` came from
+attempting the merge while `Lint`, `Typecheck`, `Format check` and the impl-log job
+were still in progress — in-flight required checks read as not-succeeded — plus a
+CI run cancelled by a rapid follow-up push, whose aggregate `Test` correctly failed
+on `IMPL_LOG_RESULT: cancelled`. Once the checks settled the merge went through
+unaided. Two supporting premises were also false: the five `Tests — *` shards are
+not in the required list at all (only `Authenticated accessibility smoke` is), and
+a skipped required context does not block a merge.
+
+Claim 2, retracted: *"`Analyze (javascript-typescript)` is a required check that
+never runs"*, evidenced by 24 workflow runs on the branch containing zero CodeQL
+executions. That query could not have shown CodeQL: it filtered by branch, and
+CodeQL runs against the PR merge ref. `Analyze` ran and passed on #505 (run
+31522587870) and on #504's first commit. Code scanning is fine.
+
+**How:** nothing. Do not change branch protection; do not touch the CodeQL
+workflow.
+**Verifies by:** already verified — #504 merged at `983a85c` with the protection
+rule untouched, and `Analyze (javascript-typescript)` reports green on #505.
+**Status:** Skipped 2026-08-11 — retracted, no action
+
 
 ### 2026-08-11 — `commit-msg` did not fire on a fresh container's first commit
 
