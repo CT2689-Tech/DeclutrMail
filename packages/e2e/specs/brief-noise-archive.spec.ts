@@ -1,8 +1,9 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type postgres from 'postgres';
 
 import { ApiClient, requireLiveStack, type CompositePreview } from '../helpers/api';
 import { dbConnect, senderKeyById } from '../helpers/db';
+import { E2E_ENV } from '../helpers/env';
 
 /**
  * Brief Noise bulk archive — D65 / D226 / D69 / D35.
@@ -58,6 +59,48 @@ let sql: postgres.Sql;
 let mailboxId: string;
 let undoToken: string | null = null;
 let undone = false;
+
+/**
+ * Answer the D147 cookie banner BEFORE the first navigation, choosing
+ * **essential only** — declining non-essential is the privacy-preserving
+ * default, and a test must never manufacture analytics consent.
+ *
+ * Needed because this is the only spec whose primary control sits at the
+ * BOTTOM of the page. The banner is `position: fixed; bottom; right;
+ * zIndex: 150` while `NoiseArchiveBar` is in normal document flow, so
+ * Playwright's scroll-into-view centres the Archive CTA directly beneath
+ * it and every click is intercepted.
+ *
+ * Seeded, not clicked. Clicking through chrome to reach the control under
+ * test makes the spec break again the next time the chrome moves — and it
+ * would mean the archive assertions ride on the banner's markup.
+ *
+ * Mirrors `storeConsent` in `apps/web/src/lib/cookie-consent.ts`: it
+ * writes BOTH stores, and `readStoredConsent` reads either (restrictive
+ * value wins when they disagree). The cookie alone would suffice; both
+ * are written so the browser state matches production exactly.
+ *
+ * Local to this spec on purpose — move it to `helpers/` when a second
+ * spec needs it.
+ */
+async function declineNonEssentialCookies(page: Page): Promise<void> {
+  await page.context().addCookies([
+    {
+      name: 'dm_cookie_consent',
+      value: 'essential',
+      url: E2E_ENV.webUrl,
+      sameSite: 'Lax',
+    },
+  ]);
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem('dm-cookie-consent', 'essential');
+    } catch {
+      // Storage disabled — the mirror cookie above already carries the
+      // choice, exactly as `storeConsent` tolerates.
+    }
+  });
+}
 
 test.beforeAll(async () => {
   const live = await requireLiveStack(api);
@@ -181,6 +224,8 @@ test('Archive one Noise sender from the Brief, then undo it from the tray', asyn
   const { senderId, senderName, inboxCount } = target;
   const senderKey = await senderKeyById(sql, mailboxId, senderId);
 
+  // MUST precede the first navigation — see the helper for why.
+  await declineNonEssentialCookies(page);
   await page.goto('/brief');
 
   // ---- D65: every actionable sender arrives CHECKED. Uncheck all but
@@ -190,6 +235,15 @@ test('Archive one Noise sender from the Brief, then undo it from the tray', asyn
   });
   await expect(targetBox).toBeVisible({ timeout: 30_000 });
   await expect(targetBox).toBeChecked();
+
+  // Only NOW is a zero-count meaningful. The banner renders nothing
+  // until its post-mount effect reads storage, so asserting this right
+  // after `goto` would pass vacuously against an unhydrated page —
+  // the same starved-input failure that made the first version of this
+  // spec skip forever. The visible checkbox above proves the client has
+  // hydrated and the Brief has loaded, so an unanswered banner would be
+  // on screen by here.
+  await expect(page.getByTestId('cookie-consent-banner')).toHaveCount(0);
 
   const allBoxes = page.getByRole('checkbox', { name: /in the archive$/ });
   const boxCount = await allBoxes.count();
