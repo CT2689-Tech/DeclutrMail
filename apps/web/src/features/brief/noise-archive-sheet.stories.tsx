@@ -97,6 +97,35 @@ export const PreviewUnavailable: Story<typeof NoiseArchiveSheet> = {
   render: () => frame({ preview: 'unavailable' }),
 };
 
+/**
+ * The mailbox scope moved while the sheet was open (`CurrentMailboxGuard`
+ * 409). Deliberately NOT the `unavailable` state: retrying would 409
+ * forever, so no Retry is offered and the copy names the way out.
+ */
+export const ScopeConflict: Story<typeof NoiseArchiveSheet> = {
+  render: () => frame({ preview: 'scope-conflict' }),
+};
+
+/**
+ * A sender became Protected between the Brief read and this preview. Its
+ * row is labelled and its mail is out of the headline — without the
+ * label the visible rows would not sum to the total above them.
+ */
+export const ProtectionFlipped: Story<typeof NoiseArchiveSheet> = {
+  render: () =>
+    frame({
+      preview: {
+        totalMessages: 351,
+        countBySenderId: new Map([
+          ['aaaaaaaa-0000-4000-8000-000000000001', 210],
+          ['aaaaaaaa-0000-4000-8000-000000000002', 141],
+          ['aaaaaaaa-0000-4000-8000-000000000003', 61],
+        ]),
+        protectedSenderIds: new Set<string>(['aaaaaaaa-0000-4000-8000-000000000003']),
+      },
+    }),
+};
+
 /** Resolved — real per-sender counts, and the only state that can confirm. */
 export const Ready: Story<typeof NoiseArchiveSheet> = {
   render: () =>

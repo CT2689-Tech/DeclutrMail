@@ -476,7 +476,7 @@ function NoiseSection({
  * number, and putting it on an archive button would promise a scope the
  * action does not have.
  */
-function NoiseArchiveBar({
+export function NoiseArchiveBar({
   selectedCount,
   excludedCount,
   busy,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { Button, Eyebrow, Kbd, NumericDisplay, tokens, useFocusTrap } from '@declutrmail/shared';
 
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 
@@ -155,18 +155,7 @@ export function NoiseArchiveSheet({
               </span>
             ) : (
               <>
-                <strong
-                  style={{
-                    fontFamily: font.display,
-                    fontSize: 22,
-                    fontWeight: 600,
-                    letterSpacing: '-0.02em',
-                    color: color.fg,
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {total!.toLocaleString()}
-                </strong>
+                <NumericDisplay variant="stat" value={total!.toLocaleString()} />
                 <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                   email{total === 1 ? '' : 's'} currently match in Inbox. Gmail is checked again at
                   execution, so the final moved count can change.
@@ -216,19 +205,20 @@ export function NoiseArchiveSheet({
                   >
                     {target.senderName}
                   </span>
-                  <span
-                    style={{
-                      fontFamily: font.mono,
-                      fontVariantNumeric: 'tabular-nums',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {skipped
-                      ? 'protected — skipped'
-                      : live === undefined
-                        ? '—'
-                        : live.toLocaleString()}
-                  </span>
+                  {skipped ? (
+                    <span style={{ fontFamily: font.mono, flexShrink: 0 }}>
+                      protected — skipped
+                    </span>
+                  ) : (
+                    // `NumericDisplay` already renders an em-dash for an
+                    // absent value and carries the tabular figures.
+                    <NumericDisplay
+                      variant="data"
+                      tone="muted"
+                      value={live === undefined ? undefined : live.toLocaleString()}
+                      style={{ flexShrink: 0 }}
+                    />
+                  )}
                 </div>
               );
             })}
