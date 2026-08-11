@@ -26,6 +26,34 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-11 — Required checks make a tooling-only PR unmergeable by construction
+
+**Source:** session (PR #504, `chore/bootstrap-gate-network-workflow`)
+**Why:** #504 has every check that ran green, and still cannot merge:
+`405: 7 of 11 required status checks have not succeeded: 3 expected`. It touches
+no application paths (`.claude/`, `.github/`, `.husky/`, `commitlint.config.cjs`,
+two markdown files), so `Detect changed paths` correctly skipped all five
+`Tests — *` shards and `Authenticated accessibility smoke` — and GitHub counts a
+**skipped** required context as not-succeeded. Three further required contexts
+never reported at all. This is not specific to #504: ANY docs-only or
+tooling-only PR is unmergeable without an override. #502 escaped it only because
+it happened to touch `apps/web` and `apps/api`, so its shards actually ran.
+`ci.yml` already solves this — the aggregate `Test` job classifies each shard as
+ran/skipped and fails only on a genuinely bad one, and it is **green** on #504.
+Requiring the individual shards *and* the aggregate defeats the aggregate's whole
+purpose.
+**How:** GitHub → Settings → Branches → the `main` protection rule → Require
+status checks to pass. Remove the six path-gated contexts — `Tests — API`,
+`Tests — Web`, `Tests — Workers`, `Tests — Database`, `Tests — Shared units`,
+`Authenticated accessibility smoke` — and keep the aggregate `Test`, which
+already fails when any shard genuinely fails. Then identify the 3 contexts stuck
+at "expected" (required contexts whose workflow has a `paths:` filter that did
+not match) and either drop them or give them a path-independent no-op job.
+Merging #504 needs an admin override until this is done.
+**Verifies by:** a PR touching only `*.md` merges without an override, while a PR
+that breaks an API test still shows `Test` red and stays blocked.
+**Status:** Open
+
 ### 2026-08-11 — `commit-msg` did not fire on a fresh container's first commit
 
 **Source:** session (gate-network workflow)
