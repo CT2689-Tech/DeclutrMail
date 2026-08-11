@@ -64,6 +64,28 @@ const STATS_BASE: ActivityStatsWire = {
   noisePreventedPerMonth: null,
 };
 
+/**
+ * The full `GET /api/activity` envelope meta, as the BE actually sends
+ * it (`activity.controller.ts:243-254` always populates all ten keys).
+ *
+ * Every stub spreads this instead of hand-listing a subset. Partial
+ * metas used to pass because `fetchActivity` cast the meta; it now
+ * Zod-parses at the boundary, so a fixture that omits `allTimeStats`
+ * is a fixture asserting a wire shape that never existed.
+ */
+const META_BASE = {
+  pagination: { nextCursor: null, hasMore: false, limit: 25 },
+  stats: STATS_BASE,
+  allTimeStats: STATS_BASE,
+  window: '30d',
+  source: 'all',
+  verbs: [],
+  senderQuery: '',
+  dateFrom: null,
+  dateTo: null,
+  outcomes: [],
+};
+
 function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
   return {
     id: partial.id ?? 'a-1',
@@ -156,12 +178,7 @@ describe('ActivityScreen — edge states', () => {
             ? jsonServerError()
             : jsonOk({
                 data: [],
-                meta: {
-                  pagination: { nextCursor: null, hasMore: false, limit: 25 },
-                  stats: STATS_BASE,
-                  window: '30d',
-                  source: 'all',
-                },
+                meta: META_BASE,
               });
         },
       },
@@ -239,13 +256,7 @@ describe('ActivityScreen — edge states', () => {
           requestedUrls.push(url);
           return jsonOk({
             data: [row({})],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              allTimeStats: STATS_BASE,
-              window: '30d',
-              source: 'manual',
-            },
+            meta: { ...META_BASE, source: 'manual' },
           });
         },
       },
@@ -294,7 +305,7 @@ describe('ActivityScreen — edge states', () => {
         path: '/api/activity',
         respond: () => {
           requests += 1;
-          return jsonOk({ data: [], meta: {} });
+          return jsonOk({ data: [], meta: META_BASE });
         },
       },
     ]);
@@ -316,7 +327,7 @@ describe('ActivityScreen — edge states', () => {
         path: '/api/activity',
         respond: () => {
           requests += 1;
-          return jsonOk({ data: [], meta: {} });
+          return jsonOk({ data: [], meta: META_BASE });
         },
       },
     ]);
@@ -342,13 +353,7 @@ describe('ActivityScreen — edge states', () => {
           requests += 1;
           return jsonOk({
             data: [row({})],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              allTimeStats: STATS_BASE,
-              window: '30d',
-              source: 'manual',
-            },
+            meta: { ...META_BASE, source: 'manual' },
           });
         },
       },
@@ -411,12 +416,7 @@ describe('ActivityScreen — edge states', () => {
         respond: () =>
           jsonOk({
             data: [],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              window: '30d',
-              source: 'all',
-            },
+            meta: META_BASE,
           }),
       },
     ]);
@@ -671,12 +671,7 @@ describe('ActivityScreen — populated', () => {
         respond: () =>
           jsonOk({
             data: [row({})],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              window: '30d',
-              source: 'all',
-            },
+            meta: META_BASE,
           }),
       },
     ]);
@@ -707,12 +702,7 @@ describe('ActivityScreen — populated', () => {
           observedUrl = url.search;
           return jsonOk({
             data: [],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              window: '30d',
-              source: 'all',
-            },
+            meta: META_BASE,
           });
         },
       },
@@ -729,12 +719,7 @@ describe('ActivityScreen — populated', () => {
         respond: () =>
           jsonOk({
             data: [],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              window: '30d',
-              source: 'all',
-            },
+            meta: META_BASE,
           }),
       },
     ]);
@@ -763,12 +748,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
                 },
               }),
             ],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              window: '30d',
-              source: 'all',
-            },
+            meta: META_BASE,
           }),
       },
     ]);
@@ -790,12 +770,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
                 undoState: { kind: 'executed', executedAt: new Date(NOW).toISOString() },
               }),
             ],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              window: '30d',
-              source: 'all',
-            },
+            meta: META_BASE,
           }),
       },
     ]);
@@ -811,12 +786,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
         respond: () =>
           jsonOk({
             data: [row({ id: 'a-confirmed', action: 'unsubscribe_confirmed', affectedCount: 0 })],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              window: '30d',
-              source: 'all',
-            },
+            meta: META_BASE,
           }),
       },
     ]);
@@ -844,12 +814,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
         respond: () =>
           jsonOk({
             data: [row({ id: 'a-intent', action: 'unsubscribe', affectedCount: 0 })],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              window: '30d',
-              source: 'all',
-            },
+            meta: META_BASE,
           }),
       },
     ]);
@@ -871,12 +836,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
                 undoState: { kind: 'expired', expiredAt: new Date(NOW).toISOString() },
               }),
             ],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              window: '30d',
-              source: 'all',
-            },
+            meta: META_BASE,
           }),
       },
     ]);
@@ -892,12 +852,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
         respond: () =>
           jsonOk({
             data: [row({ undoState: { kind: 'unavailable' } })],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              window: '30d',
-              source: 'all',
-            },
+            meta: META_BASE,
           }),
       },
     ]);
@@ -920,18 +875,6 @@ describe('ActivityScreen — pure helpers', () => {
 });
 
 // ── B-track Activity power-options ───────────────────────────────────
-
-const META_BASE = {
-  pagination: { nextCursor: null, hasMore: false, limit: 25 },
-  stats: STATS_BASE,
-  allTimeStats: STATS_BASE,
-  window: '30d',
-  source: 'all',
-  verbs: [],
-  senderQuery: '',
-  dateFrom: null,
-  dateTo: null,
-};
 
 describe('ActivityScreen — outcome-aware recovery', () => {
   it('uses progress and failed labels instead of completed-outcome copy', async () => {

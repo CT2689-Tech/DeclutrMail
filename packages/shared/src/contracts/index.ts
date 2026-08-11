@@ -279,6 +279,10 @@ export { BETA_DENIED_PATH, BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from '
 // `GET /api/activity` rows, resolved from `activity_log.rule_id`.
 export { ActivityRuleRefSchema } from './activity';
 export type { ActivityRuleRef } from './activity';
+// `GET /api/activity` envelope meta — parsed at the FE wire boundary
+// rather than cast, so a BE field rename fails loudly (D55-D60).
+export { ActivityListMetaSchema } from './activity';
+export type { ActivityListMeta } from './activity';
 
 // D78–D80 Snoozed/Later review surface — list row + snooze/wake wire
 // shapes shared between the snoozed controller and the FE screen.
