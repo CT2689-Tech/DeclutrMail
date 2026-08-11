@@ -143,7 +143,7 @@ export class ScreenerReadService {
       messageCount: r.totalReceived,
       inboxCount: Number(r.inboxCount),
       sampleSubject: subjectBySender.get(r.senderKey) ?? '',
-      unsubscribeMethod: r.unsubscribeMethod ?? 'none',
+      unsubscribeMethod: r.unsubscribeMethod,
       // No policy row ⇒ never protected. Keep reason and flag in
       // agreement so the FE never renders "Protected" with no reason.
       isProtected: r.isProtected ?? false,

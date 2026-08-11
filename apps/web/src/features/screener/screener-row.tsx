@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Avatar, Pill, tokens } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
+import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 
 import type { ActionReach } from '@/lib/api/actions';
 
@@ -214,7 +215,15 @@ export function ScreenerRow({
           >
             {VERB_ORDER.map((verb) => {
               const active = pendingVerb === verb;
-              const noUnsubscribeChannel = verb === 'unsubscribe' && !canScreenerUnsubscribe(row);
+              // D248 — the tooltip names WHICH capability state the
+              // sender is in. "No unsubscribe channel found" is only
+              // true once the index has looked; a sender it has not
+              // derived a method for reads as not-yet-checked.
+              const unsubscribeBlockedReason =
+                verb === 'unsubscribe' && !canScreenerUnsubscribe(row)
+                  ? unsubscribeUnavailableReason(row.unsubscribeMethod)
+                  : null;
+              const noUnsubscribeChannel = unsubscribeBlockedReason !== null;
               return (
                 <button
                   key={verb}
@@ -222,11 +231,7 @@ export function ScreenerRow({
                   disabled={busy || noUnsubscribeChannel}
                   onClick={() => onVerbClick(verb)}
                   aria-pressed={active}
-                  title={
-                    noUnsubscribeChannel
-                      ? 'No unsubscribe channel found — Archive handles senders like this.'
-                      : undefined
-                  }
+                  title={unsubscribeBlockedReason ?? undefined}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',

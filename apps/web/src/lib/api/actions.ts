@@ -22,6 +22,7 @@ import type {
   UnsubscribeLifecycleStatus,
   UnsubscribeManualTransition,
 } from '@declutrmail/shared/contracts';
+import { UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE } from '@declutrmail/shared/contracts';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionStatusSnapshot } from '@declutrmail/shared/actions';
 
@@ -193,8 +194,12 @@ export async function revertUndo(
 /** Primary verb accepted by `POST /api/actions`. Spec v1.2 Decision 15. */
 // Derived from the shared const so FE/BE cannot drift (type-design-
 // analyzer 2026-06-05).
-import type { CompositePrimaryVerb, CompositeSecondaryVerb } from '@declutrmail/shared/contracts';
-export type { CompositePrimaryVerb, CompositeSecondaryVerb };
+import type {
+  CompositePrimaryVerb,
+  CompositeSecondaryVerb,
+  LabelCompositePrimaryVerb,
+} from '@declutrmail/shared/contracts';
+export type { CompositePrimaryVerb, CompositeSecondaryVerb, LabelCompositePrimaryVerb };
 /** Secondary historic verb — applies on Unsubscribe / Later primaries. */
 // CompositeSecondaryVerb re-exported above.
 
@@ -326,7 +331,12 @@ export async function enqueueCompositeAction(
   input: {
     senderId: string;
     primary: {
-      type: CompositePrimaryVerb;
+      // D248 — the SINGLE-sender composite is label verbs only.
+      // `unsubscribe` is multi-sender only (a single sender keeps its
+      // own intent route, which owns the mailto compose hand-off), so
+      // the server 400s it. The narrowed type refuses it at compile
+      // time instead, matching the BE's own signature.
+      type: LabelCompositePrimaryVerb;
       olderThanDays?: number | null;
       wakeAt?: string;
       /** ADR-0028 — omit for `inbox_only` (Delete-only field). */
@@ -379,7 +389,12 @@ export interface UnsubscribeIntentResult {
    *     `executionActionId` via `getActionStatus` for the outcome.
    *   - `mailto`    → manual path (D230) — open the Gmail compose
    *     deep link built from `mailtoUrl`; the USER sends it.
-   *   - `none`      → no unsubscribe channel; archive is the fallback.
+   *   - `none`      → we looked; the sender publishes no unsubscribe.
+   *
+   * A sender the index has NOT derived a method for (`unknown`, D248) is
+   * never recorded: the route answers 409 `UNSUBSCRIBE_CHANNEL_UNKNOWN`
+   * instead, because writing "no unsubscribe channel available" for a
+   * sender we never checked would state a fact we do not have.
    */
   method: 'one_click' | 'mailto' | 'none';
   /**
@@ -405,7 +420,7 @@ export interface UnsubscribeManualStatusResult {
 }
 
 /** `action_jobs.error_code` marking a 3xx (unconfirmed) unsub outcome. */
-export const UNSUB_AMBIGUOUS_ERROR_CODE = 'UNSUB_AMBIGUOUS_REDIRECT';
+export const UNSUB_AMBIGUOUS_ERROR_CODE = UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE;
 
 /**
  * Record an unsubscribe intent for a sender. Replaces the prior
@@ -568,8 +583,26 @@ export interface BulkActionEnqueueResult {
   senderCount: number;
   requestedTotal: number;
   wakeAt: string | null;
-  skipped: Array<{ senderId: string; reason: 'protected' | 'not_found' }>;
+  skipped: Array<{
+    senderId: string;
+    reason: BulkSkipReason;
+    /**
+     * The sender's `mailto:` opt-out address, present only on a `mailto`
+     * skip (D230): the batch never sends it, the user does, from a
+     * prefilled compose link.
+     */
+    mailtoUrl?: string;
+  }>;
 }
+
+/**
+ * Why a selected sender did not enter the batch. The label verbs
+ * produce `protected` / `not_found`; an Unsubscribe batch (D248) adds
+ * the three non-executable capability states, reported separately
+ * because "send it yourself", "there is nothing to send" and "we have
+ * not looked yet" are three different facts.
+ */
+export type BulkSkipReason = 'protected' | 'not_found' | 'mailto' | 'no_channel' | 'unknown';
 
 /**
  * Returned by `GET /api/actions/batch/:id` — aggregate batch state.
@@ -587,6 +620,29 @@ export interface BatchStatusResult {
   requestedCount: number;
   affectedCount: number;
   undoToken: string | null;
+  /**
+   * D248 — the three terminal outcomes the unsubscribe worker records,
+   * counted across the batch. `null` for a label batch. Read THIS for
+   * an unsubscribe receipt, never `done`/`failed`: an `unconfirmed` row
+   * carries job status `failed`, and calling that a failure would round
+   * "we could not establish what happened" into a fact.
+   *
+   * Optional on the wire so a web bundle newer than the API still
+   * renders (apps/web and apps/api deploy independently).
+   */
+  unsubscribeOutcomes?: UnsubscribeBatchOutcomes | null;
+}
+
+/** Terminal one-click unsubscribe outcomes, counted across a batch. */
+export interface UnsubscribeBatchOutcomes {
+  /** The sender's endpoint accepted the request (2xx). Not "unsubscribed". */
+  endpointAccepted: number;
+  /** Sent; the outcome could not be established. Never rounded away. */
+  unconfirmed: number;
+  /** The request did not go through. */
+  failed: number;
+  /** Still queued or executing — no outcome yet. */
+  pending: number;
 }
 
 /**
@@ -615,6 +671,8 @@ export async function getBulkActionPreview(
 export async function enqueueBulkAction(
   input: {
     senderIds: string[];
+    // Stays WIDE: the multi-sender selector is the one shape that
+    // accepts the `unsubscribe` primary (D248).
     primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
     secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
     idempotencyKey: string;

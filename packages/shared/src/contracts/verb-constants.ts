@@ -52,15 +52,29 @@ export type ActionVerb = (typeof ACTION_VERBS)[number];
 
 /**
  * Composite-action primary verb subset (ADR-0020 + spec v1.2 Decision
- * 15). The primary `archive | later | delete` set is the ONLY allowed
- * primary today; `unsubscribe` is locked to its own intent endpoint
- * (D38 2026-06-05) until the RFC8058 / mailto / manual pipeline (D230)
- * lands. Derived as a const so the FE and BE cannot drift —
+ * 15). Derived as a const so the FE and BE cannot drift —
  * type-design-analyzer 2026-06-05 caught the prior parallel-literal-
  * union drift bomb.
+ *
+ * `unsubscribe` joined the set for D248 and is MULTI-SENDER ONLY: the
+ * bulk selector fans one-click senders out through the shared batch
+ * pipeline, while a single sender still routes to its own intent
+ * endpoint (`POST /api/actions/unsubscribe-intent`), which owns the
+ * mailto compose hand-off and the per-sender lifecycle. The request
+ * schema rejects the single-sender selector for this verb.
  */
-export const COMPOSITE_PRIMARY_VERBS = ['archive', 'later', 'delete'] as const;
+export const COMPOSITE_PRIMARY_VERBS = ['archive', 'later', 'delete', 'unsubscribe'] as const;
 export type CompositePrimaryVerb = (typeof COMPOSITE_PRIMARY_VERBS)[number];
+
+/**
+ * The composite primaries that route through the label-modify pipeline.
+ *
+ * Shared rather than API-local so the FE mirrors inherit the same
+ * compile-time guard: `unsubscribe` is multi-sender only, so a
+ * single-sender composite call carrying it is a 400 the type system can
+ * refuse instead of the server.
+ */
+export type LabelCompositePrimaryVerb = Exclude<CompositePrimaryVerb, 'unsubscribe'>;
 
 /**
  * Composite-action secondary verb subset (ADR-0020). Applies on
