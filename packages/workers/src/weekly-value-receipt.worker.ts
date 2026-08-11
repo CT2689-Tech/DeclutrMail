@@ -1,7 +1,9 @@
-import { and, count, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
+  activityLog,
+  briefRuns,
   mailboxAccounts,
   type schema,
   screenerQuarantine,
@@ -12,6 +14,7 @@ import { parseEmailPrefs } from '@declutrmail/shared/contracts';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { validTimeZoneOrUtc } from './brief-timezone.js';
+import { hasInFlightDeletion } from './deletion-pause.js';
 import type { EmailSendJobData } from './email-send.worker.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -27,6 +30,7 @@ export interface WeeklyValueReceiptResult {
   receiptsQueued: number;
   scheduleSkips: number;
   preferenceSkips: number;
+  deletionSkips: number;
   emptyQueueSkips: number;
   dedupSkips: number;
   usersFailed: number;
@@ -39,13 +43,51 @@ export interface PreparedWeeklyValueReceipt {
   headers: Record<string, string>;
 }
 
+/**
+ * What the receipt is allowed to say — every field an aggregate over
+ * RECORDED OUTCOMES in the trailing week, never a projection.
+ *
+ * D189's five example lines do not all survive contact with the shipped
+ * schema, and the honest response to that is to drop a line rather than
+ * to invent a number for it:
+ *
+ *   - "messages held during Quiet Hours" has no source. Quiet Hours
+ *     defers DECLUTRMAIL'S OWN autopilot sweeps (`AutopilotActionWorker`
+ *     re-enqueues past the window); it never holds the user's incoming
+ *     mail, and `mailbox_accounts.quiet_state` records current state
+ *     only, with no per-message counter. There is no event to count, so
+ *     the line is gone — not rendered as 0, which would assert that a
+ *     thing which cannot happen did not happen this week.
+ *
+ *   - "~N minutes saved" is D189's `(decisions × 30s) + (actions × 5s)`.
+ *     Those coefficients are estimates nobody measured, so the product
+ *     is an estimate too. Dropped rather than dressed up; the counts it
+ *     was derived FROM are already on the receipt, and they are true.
+ *
+ * `briefSurfaced` is `null` — not 0 — when the Brief produced no run in
+ * the window. "The Brief did not run" and "the Brief ran and surfaced
+ * nobody" are different facts, and only the second is a zero.
+ */
+export interface WeeklyValueReceiptFacts {
+  /** Messages moved out of the inbox by automation, net of reversals. */
+  automatedMessages: number;
+  /** Decisions the user made by hand, in Triage or on a sender. */
+  ownDecisions: number;
+  /** Distinct senders the Brief surfaced; null when the Brief never ran. */
+  briefSurfaced: number | null;
+  /** Senders awaiting a Screener decision RIGHT NOW (current state). */
+  pendingScreener: number;
+  /** Actions the user reversed inside the window. */
+  undone: number;
+}
+
 export interface WeeklyValueReceiptWorkerDeps {
   db: WorkerDb;
   now?: () => Date;
   /** API-owned renderer/token signer injected at the composition root. */
   prepareEmail(input: {
     userId: string;
-    pendingCount: number;
+    facts: WeeklyValueReceiptFacts;
   }): Promise<PreparedWeeklyValueReceipt>;
   /** Existing outcome-aware email queue seam. */
   enqueueEmail(data: EmailSendJobData): Promise<'added' | 'noop'>;
@@ -83,16 +125,31 @@ export function weeklyValueReceiptEmailJobId(userId: string, weekStarting: strin
   return `email__weekly-value-receipt__${userId}__${weekStarting}`;
 }
 
+/** Trailing window the receipt reports on (D189 — "from past 7 days"). */
+const RECEIPT_WINDOW_DAYS = 7;
+
+/** Verbs that actually move mail. `keep` moves nothing; outcome rows are not decisions. */
+const MAIL_MOVING_ACTIONS = ['archive', 'later', 'delete'] as const;
+/** The K/A/U/L/D decisions a person makes (D227). Excludes bookkeeping + outcome rows. */
+const CANONICAL_DECISIONS = ['keep', 'archive', 'unsubscribe', 'later', 'delete'] as const;
+
+function sqlList(values: readonly string[]): string {
+  return values.map((value) => `'${value}'`).join(', ');
+}
+
 /**
  * D189 amended by D251 — hourly cron producer for the opt-in Plus/Pro
- * weekly Screener value cue.
+ * weekly value receipt.
  *
- * The producer filters tier, local schedule, preference, and `N > 0`,
- * then hands the final send to `EmailSendWorker`. That worker re-reads
- * the preference and enforces the commercial postal-address gate at
- * execution time. Dedup remains the existing outcome-aware
- * `enqueueEmailSend` contract: a recorded `sent` suppresses forever for
- * this logical week; known-unsent outcomes may be retried.
+ * The producer filters tier, local schedule, and preference, then
+ * computes the week's facts and suppresses the send when nothing
+ * happened (D189's empty state: "Sending 'you did nothing this week' is
+ * worse than silence"). `EmailSendWorker` re-reads the preference and
+ * enforces the commercial postal-address gate at execution time.
+ *
+ * Dedup remains the existing outcome-aware `enqueueEmailSend` contract:
+ * a recorded `sent` suppresses forever for this logical week; known-
+ * unsent outcomes may be retried.
  */
 export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
   WeeklyValueReceiptJobData,
@@ -128,6 +185,7 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
     let receiptsQueued = 0;
     let scheduleSkips = 0;
     let preferenceSkips = 0;
+    let deletionSkips = 0;
     let emptyQueueSkips = 0;
     let dedupSkips = 0;
     let usersFailed = 0;
@@ -144,18 +202,21 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
       }
 
       try {
-        const [row] = await this.deps.db
-          .select({ pending: count() })
-          .from(screenerQuarantine)
-          .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, screenerQuarantine.mailboxAccountId))
-          .where(and(eq(mailboxAccounts.userId, user.id), isNull(screenerQuarantine.decidedAt)));
-        const pendingCount = Number(row?.pending ?? 0);
-        if (pendingCount === 0) {
+        // D232 — never advertise to someone mid-erasure. Same reasoning
+        // as the lapse producer: a user who requested deletion stops
+        // using the app, and this kind is in COMMERCIAL_KINDS.
+        if (await hasInFlightDeletion(this.deps.db, user.id)) {
+          deletionSkips += 1;
+          continue;
+        }
+
+        const facts = await this.collectFacts(user.id, now);
+        if (isEmptyWeek(facts)) {
           emptyQueueSkips += 1;
           continue;
         }
 
-        const prepared = await this.deps.prepareEmail({ userId: user.id, pendingCount });
+        const prepared = await this.deps.prepareEmail({ userId: user.id, facts });
         const enqueueOutcome = await this.deps.enqueueEmail({
           kind: 'weekly-value-receipt',
           userId: user.id,
@@ -166,15 +227,24 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
         });
         if (enqueueOutcome === 'added') receiptsQueued += 1;
         else dedupSkips += 1;
-      } catch (error) {
+      } catch (err) {
         usersFailed += 1;
+        const error = err instanceof Error ? err : new Error(String(err));
+        // Reaches Sentry, not just stdout — the job returns SUCCESS, so
+        // a systematic failure (e.g. `signUnsubscribeToken` throwing on
+        // an unset UNSUBSCRIBE_TOKEN_SECRET, which hits every user)
+        // would otherwise be indistinguishable from a quiet week.
+        this.observer.captureBackgroundFailure(error, {
+          kind: 'weekly_value_receipt.user_failed',
+          tags: { worker: this.workerName },
+        });
         console.error(
           JSON.stringify({
             level: 'error',
             kind: 'weekly_value_receipt.user_failed',
             worker: this.workerName,
             userId: user.id,
-            error: error instanceof Error ? error.message : String(error),
+            error: error.message,
           }),
         );
       }
@@ -185,10 +255,100 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
       receiptsQueued,
       scheduleSkips,
       preferenceSkips,
+      deletionSkips,
       emptyQueueSkips,
       dedupSkips,
       usersFailed,
       durationMs: Date.now() - startedAt,
     };
   }
+
+  /**
+   * The week's recorded outcomes, scoped to every mailbox the user
+   * owns. Three reads: the Activity ledger aggregate, the Brief runs,
+   * and the current Screener backlog.
+   */
+  private async collectFacts(userId: string, now: Date): Promise<WeeklyValueReceiptFacts> {
+    const windowStart = new Date(now.getTime() - RECEIPT_WINDOW_DAYS * 24 * 60 * 60 * 1_000);
+
+    // One aggregate pass over the ledger. Fully-qualified column names
+    // inside the FILTER clauses: a `sql` template emits BARE names that
+    // could bind to the joined table (LEARNINGS 2026-06 — Drizzle
+    // raw-sql pitfalls).
+    const [ledger] = await this.deps.db
+      .select({
+        automatedMessages: sql<number>`COALESCE(SUM(activity_log.affected_count) FILTER (
+          WHERE activity_log.source IN ('autopilot', 'screener')
+            AND activity_log.action IN (${sql.raw(sqlList(MAIL_MOVING_ACTIONS))})
+            AND activity_log.reverted_at IS NULL
+        ), 0)::int`,
+        // DISTINCT sender_key, because the copy says "senders". COUNT(*)
+        // renders one sender decided twice in a week as "2 senders", and
+        // `activity_log.sender_key` is NULLABLE (the label-action worker
+        // writes null for non-sender selectors), so a sender-less bulk
+        // action would read as "1 sender". COUNT(DISTINCT col) already
+        // skips NULLs, which is exactly right here: a bulk action over
+        // messages is not a sender decision.
+        ownDecisions: sql<number>`COUNT(DISTINCT activity_log.sender_key) FILTER (
+          WHERE activity_log.source IN ('triage', 'manual')
+            AND activity_log.action IN (${sql.raw(sqlList(CANONICAL_DECISIONS))})
+            AND activity_log.reverted_at IS NULL
+        )::int`,
+        undone: sql<number>`COUNT(*) FILTER (WHERE activity_log.reverted_at IS NOT NULL)::int`,
+      })
+      .from(activityLog)
+      .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, activityLog.mailboxAccountId))
+      .where(and(eq(mailboxAccounts.userId, userId), gte(activityLog.occurredAt, windowStart)));
+
+    // At most one Brief per mailbox per day, so this is a handful of
+    // rows. Counting distinct senders in JS beats a jsonb LATERAL that
+    // would have to be right on two drivers.
+    const runs = await this.deps.db
+      .select({ payload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, briefRuns.mailboxAccountId))
+      .where(and(eq(mailboxAccounts.userId, userId), gte(briefRuns.generatedAt, windowStart)));
+
+    const surfaced = new Set<string>();
+    for (const run of runs) {
+      for (const item of [...(run.payload?.reply ?? []), ...(run.payload?.fyi ?? [])]) {
+        surfaced.add(item.senderKey);
+      }
+    }
+
+    // ACTIVE mailboxes only. The copy says "right now", and a
+    // disconnected mailbox's stale queue is not something the user can
+    // act on — counting it would overstate the backlog.
+    const [screener] = await this.deps.db
+      .select({ pending: count() })
+      .from(screenerQuarantine)
+      .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, screenerQuarantine.mailboxAccountId))
+      .where(
+        and(
+          eq(mailboxAccounts.userId, userId),
+          eq(mailboxAccounts.status, 'active'),
+          isNull(screenerQuarantine.decidedAt),
+        ),
+      );
+
+    return {
+      automatedMessages: Number(ledger?.automatedMessages ?? 0),
+      ownDecisions: Number(ledger?.ownDecisions ?? 0),
+      // No run means the number is unknown, not zero.
+      briefSurfaced: runs.length === 0 ? null : surfaced.size,
+      pendingScreener: Number(screener?.pending ?? 0),
+      undone: Number(ledger?.undone ?? 0),
+    };
+  }
+}
+
+/** D189's empty state — nothing happened and nothing waits, so say nothing. */
+export function isEmptyWeek(facts: WeeklyValueReceiptFacts): boolean {
+  return (
+    facts.automatedMessages === 0 &&
+    facts.ownDecisions === 0 &&
+    (facts.briefSurfaced ?? 0) === 0 &&
+    facts.pendingScreener === 0 &&
+    facts.undone === 0
+  );
 }

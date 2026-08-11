@@ -14,7 +14,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { enqueueEmailSend, syncReminderEmailJobId } from './email-send.queue.js';
+import {
+  enqueueEmailSend,
+  lapseReengagementEmailJobId,
+  syncReminderEmailJobId,
+} from './email-send.queue.js';
 import type { EmailSendJobData, EmailSendResult } from './email-send.worker.js';
 
 type JobState =
@@ -87,6 +91,114 @@ async function enqueueAgainst(
   const outcome = await enqueueEmailSend(q as any, reminder());
   return { outcome, addCalls: q.addCalls, removeCalls: q.removeCalls };
 }
+
+/**
+ * D126 Part 3 — the lapse email's dedup, which is the one that decides
+ * whether a dormant user is nagged or ignored.
+ *
+ * Kept separate from the reminder cases above because the failure mode
+ * is different in kind: the reminder's key is per-MAILBOX and stable by
+ * construction, while this key has to encode a dormancy EPISODE. Both
+ * halves of that are pinned here — the key changes only when the user
+ * actually returns, and the postal refusal stays reapable.
+ */
+describe('lapse re-engagement dedup', () => {
+  const USER = 'user-lapse-1';
+
+  function lapse(lastSeenDate: string): EmailSendJobData {
+    return {
+      kind: 'lapse-reengagement',
+      userId: USER,
+      subject: '4 senders are waiting in Triage',
+      text: 'body',
+      idempotencyKey: lapseReengagementEmailJobId(USER, lastSeenDate),
+    };
+  }
+
+  async function enqueueLapse(
+    lastSeenDate: string,
+    state: JobState | null,
+    returnvalue: unknown = null,
+  ) {
+    const q = new FakeQueue();
+    const data = lapse(lastSeenDate);
+    q.setJob(state, data.idempotencyKey, returnvalue);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const outcome = await enqueueEmailSend(q as any, data);
+    return { outcome, addCalls: q.addCalls };
+  }
+
+  it('encodes the episode in the jobId, without colons', () => {
+    expect(lapseReengagementEmailJobId('u1', '2026-08-01')).toBe(
+      'email__lapse-reengagement__u1__2026-08-01',
+    );
+    expect(lapseReengagementEmailJobId('u1', '2026-08-01')).not.toContain(':');
+  });
+
+  // The producer ticks hourly and the send band is a day wide, so the
+  // same episode is offered ~24 times. Exactly one may go out.
+  it('suppresses a repeat tick inside the same dormancy episode', async () => {
+    expect(
+      await enqueueLapse('2026-08-01', 'completed', {
+        outcome: 'sent',
+        kind: 'lapse-reengagement',
+        providerId: 'rsnd_lapse',
+      }),
+    ).toMatchObject({ outcome: 'noop', addCalls: 0 });
+  });
+
+  // The other half: a user who returns and lapses AGAIN is a new event,
+  // not a duplicate. If the key ignored last-seen, this would be
+  // suppressed forever and the sequence would fire exactly once per
+  // account for its whole life.
+  it('allows a LATER episode after the user came back and lapsed again', async () => {
+    const q = new FakeQueue();
+    const first = lapse('2026-08-01');
+    q.setJob('completed', first.idempotencyKey, {
+      outcome: 'sent',
+      kind: 'lapse-reengagement',
+      providerId: 'rsnd_lapse',
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(await enqueueEmailSend(q as any, first)).toBe('noop');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(await enqueueEmailSend(q as any, lapse('2026-09-14'))).toBe('added');
+    expect(q.addCalls).toBe(1);
+  });
+
+  // THE DEAD-LETTER CASE. A postal refusal must complete with a
+  // recorded known-unsent outcome, never throw. If it threw, the job
+  // would be terminal-`failed`; a failed job cannot be told apart from
+  // one that delivered and lost its confirmation, so the dedup must
+  // suppress it — and setting BUSINESS_POSTAL_ADDRESS later would never
+  // restore this user's mail. Asserting BOTH branches is the point:
+  // `skipped_no_postal_address` reaps, `failed` does not.
+  it('keeps a postal-address refusal reapable, but never reaps a dead-lettered job', async () => {
+    expect(
+      await enqueueLapse('2026-08-01', 'completed', {
+        outcome: 'skipped_no_postal_address',
+        kind: 'lapse-reengagement',
+        providerId: null,
+      }),
+    ).toMatchObject({ outcome: 'added', addCalls: 1 });
+
+    expect(await enqueueLapse('2026-08-01', 'failed')).toMatchObject({
+      outcome: 'noop',
+      addCalls: 0,
+    });
+  });
+
+  // Turning the preference back on must not find the send buried.
+  it('re-enqueues past an opt-out skip', async () => {
+    expect(
+      await enqueueLapse('2026-08-01', 'completed', {
+        outcome: 'skipped_opted_out',
+        kind: 'lapse-reengagement',
+        providerId: null,
+      }),
+    ).toMatchObject({ outcome: 'added', addCalls: 1 });
+  });
+});
 
 describe('enqueueEmailSend', () => {
   it('adds when no job exists', async () => {

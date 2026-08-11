@@ -70,11 +70,12 @@ import type { WorkerContext } from './worker-context.js';
  * snippets. The result is metric-only.
  */
 
-/** The template kinds this pipeline delivers (D162; D6; D189/D251; D232). */
+/** The template kinds this pipeline delivers (D162; D6; D126; D189/D251; D232). */
 export type EmailKind =
   | 'sync-complete'
   | 'sync-reminder-24h'
   | 'sync-failed'
+  | 'lapse-reengagement'
   | 'weekly-value-receipt'
   | 'deletion-scheduled'
   | 'deletion-receipt';
@@ -84,9 +85,20 @@ export type EmailKind =
  * SYSTEM emails (sync-failed, deletion-scheduled, deletion-receipt) —
  * required
  * account notices with no preference key (CAN-SPAM/GDPR carve-out).
+ *
+ * `lapse-reengagement` shares `reminders` with the 24h nudge rather than
+ * taking a key of its own. They are the same category to the recipient —
+ * "DeclutrMail is telling me to come back" — and the key's contract is
+ * the CATEGORY, not the template. A second key would also ship a control
+ * with no switch: the settings surface renders one toggle per key, and
+ * that screen belongs to another track. D251 required a SEPARATE key for
+ * the weekly receipt because that is a different artifact with the
+ * opposite consent default (off); this one inherits `reminders`' default
+ * (on) precisely because it is the same promise.
  */
 const OPT_OUT_PREF_BY_KIND: Partial<Record<EmailKind, keyof EmailPrefs>> = {
   'sync-reminder-24h': 'reminders',
+  'lapse-reengagement': 'reminders',
   'sync-complete': 'syncComplete',
   'weekly-value-receipt': 'weeklyReceipt',
 };
@@ -127,9 +139,15 @@ const OPT_OUT_PREF_BY_KIND: Partial<Record<EmailKind, keyof EmailPrefs>> = {
  * The distinction to hold on to: a reminder is not transactional merely
  * because the thing it reminds you of was. What makes a message
  * transactional is the information IT carries.
+ *
+ * `lapse-reengagement` (D126 Part 3) is the clearest case on this list.
+ * It carries no status the recipient asked for; it exists only because
+ * they stopped coming back, which is win-back mail by definition. It
+ * ships gated, and stays unsent until a postal address exists.
  */
 export const COMMERCIAL_KINDS: ReadonlySet<EmailKind> = new Set<EmailKind>([
   'sync-reminder-24h',
+  'lapse-reengagement',
   'weekly-value-receipt',
 ]);
 
