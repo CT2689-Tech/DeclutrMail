@@ -184,36 +184,6 @@ This is sandbox configuration, but the same field exists in production and defau
 **Status:** Open
 
 
-### 2026-07-31 — Cancel is a one-way door: no in-app path back, and D118's pause offer was never built
-
-**Source:** billing-test-matrix groups C/E/F run end-to-end 2026-07-31 (founder: "smoke as much as possible")
-
-**Why:** two gaps found by walking Group E on the live sandbox subscription. Both cost revenue, and the second is plan drift.
-
-1. **A scheduled cancellation cannot be undone in the product.** Verified against the live sub, all three exits closed:
-
-   | call | result |
-   |---|---|
-   | `POST /api/billing/resume` | 409 `NO_ACTIVE_SUBSCRIPTION` — `billing.service.ts:836` selects `status = 'paused'` only, so it un-pauses and can never un-cancel |
-   | `POST /api/billing/checkout` | 409 `SUBSCRIPTION_EXISTS` |
-   | `POST /api/billing/change-plan` (even to the identical plan) | 409 `SUBSCRIPTION_CANCELING` |
-
-   So a user who cancels by mistake keeps paying nothing, keeps their access until the period ends — **up to a year on annual** — and has no way to restore billing without emailing support. `/billing` renders no affordance either. To continue the matrix run I had to `PATCH scheduled_change: null` at Paddle directly, which is exactly the point: the only recovery path is an operator with an API key. Matrix step **E3** assumes this works ("Resume before period end — two-step confirm"); it does not.
-
-   Paddle supports the reversal natively (`PATCH /subscriptions/:id {"scheduled_change": null}` returned `status: active, scheduled_change: null`, and the webhook projected it cleanly). The work is a `POST /api/billing/resume-cancellation` (or widening `resume`) plus the affordance on the scheduled-cancel notice.
-
-2. **D118's "Pause for 30 days" retention offer does not exist.** The D-body specs it inside the cancel modal ("Would you like to pause instead? — Keep your settings; resume anytime"). There is **no pause endpoint** — the billing controller has checkout, checkout/pending, subscription, reconcile, cancel, change-plan/preview, change-plan, resume, and nothing else — and no button anywhere in `apps/web/src/features/billing/`.
-
-   The paused *state* is fully built: adapter status mapping, `pause_until`, `entitlement_ends_at` semantics, the `SUBSCRIPTION_PAUSED` guard, `resume`, and two billing-screen stories. It is simply **unreachable from the product** — it can only arise if Paddle pauses the subscription externally. So the retention offer D118 designed to catch cancellations never runs, and the one lever that would soften finding (1) is the one that was skipped.
-
-   Minor, same area: `resume`'s error text reads "There is no active subscription **to cancel**." on the resume path — wrong verb.
-
-**How:** decide the scope, then it is ordinary work. Options, cheapest first: (a) ship the un-cancel only — smallest fix for the one-way door; (b) ship un-cancel **and** D118's pause offer, which is what the plan says; (c) declare the pause offer withdrawn and patch D118 so the plan stops claiming a feature that is not coming. (a) or (b) — (c) alone leaves the one-way door.
-
-**Verifies by:** cancel on the sandbox sub, then restore billing entirely from `/billing` with no Paddle dashboard and no SQL; `subscriptions.cancel_at_period_end` returns to `f` and the notice clears.
-
-**Status:** Done 2026-07-31 — option (b), both halves. `POST /api/billing/resume-cancellation` + a two-step confirm on the plan card (#447), and D118's pause offer built end to end: `POST /api/billing/pause`, the "Pause for 30 days" button in the cancel modal, Paddle pause with a 30-day `resume_at`. Verified on the live sandbox subscription — cancel → Keep my subscription → Paddle `scheduled_change: null` in 600ms; pause → `subscription.paused` → tier dropped to free → resume → back to pro in 900ms. Two follow-on defects fixed in #448 (the un-cancel's ordering marker was inert; pause wrote `pause_until` before the provider confirmed).
-
 ### 2026-07-30 — The derived impl-log gate: two drift classes, only one of them loud
 **Source:** session 2026-07-30 (D249 CI triage; corrected same day after observing #436's merge)
 **Why:** the generator has TWO inputs and they drift differently. The **row set** comes from the plan mirror (which D-numbers exist); the **status** (⬜/🔵) comes from `gh pr list --state merged` trailers. That yields two failure classes:
@@ -229,26 +199,6 @@ Separately: the rolled-up `Test` check reports red purely because it aggregates 
 **Why:** workspace `fab42715…` holds two paused subscriptions (paddle `sub_pz`, razorpay `sub_THdjxRKddrqsNK`). Whichever is not real should be cancelled at the provider; this also unblocks the strict index above. Which one is genuine is a billing fact only you have.
 **How:** check both in the Paddle and Razorpay dashboards, cancel the stale one there, let the webhook reconcile the row.
 **Verifies by:** `SELECT workspace_id, count(*) FROM subscriptions WHERE status IN ('active','past_due','paused') GROUP BY 1 HAVING count(*) > 1;` returns nothing.
-**Status:** Open
-
-### 2026-07-28 — DECIDED: seven founder calls from the followups triage (this entry is the brief for all of them)
-**Source:** session 2026-07-28 — full triage of all 141 Open entries; 29 closed as verifiably dead, the survivors bucketed, and every genuine decision put to the founder as an MCQ. Two further closures were made and then REVERSED the same day after the Codex stop-time review: the `read_count` RATIFY (its ratification was done, its plan-file edit never was) and the /billing post-purchase entry (#367 merged, but its own bar — one sandbox purchase flipping in place — was never observed). Both are back in Open above with the specific unmet condition named. The lesson generalises past this file: an entry whose Status reads *Open* while its body says *shipped* usually has a second half, and the second half is the reason it is still open.
-**Why:** the file had stopped being readable. 141 rows all said "Open" while ~22% were already fixed in code, so nothing in it could be trusted in either direction — the ops-layer form of the UI-truth bug class (a surface asserting a state it no longer knows). Triage alone doesn't fix that; the seven decisions below are what stop it recurring, and three of them close six followups each.
-
-**The calls, as made:**
-
-1. **Billing — one reconciliation PR, not six patches.** Six entries ([3] unique index, [4]/[23] pending-checkout, [24] arrival order, [26] refund/chargeback provenance, [27](1)+(2)) share one root cause: no server-side record of in-flight or provider-side billing truth. One migration (`pending_checkout` row, `cancel_source`, `entitlement_ends_at`, `arrival_seq bigint generated always as identity`) plus a periodic reconciler polling Paddle/Razorpay. The `pending_checkout` row is what makes the B7 unique index safe — it gives the constraint a subject, resolving the both-ways-unsafe paradox that blocked it on 2026-07-28.
-2. **Dunning window = 14 days** past `current_period_end`, plus a terminal-state mapping fix. Today `GRANTING_STATUSES = ['active','past_due']` (`billing-webhook.service.ts:65`) and Razorpay's *terminal* `halted` normalizes to `past_due` (`razorpay.adapter.ts:88`), so a halted Razorpay subscription grants Pro forever. Terminal provider states must drop immediately; only genuine retry states use the 14-day window.
-3. **IMPLEMENTATION-LOG becomes derived, not maintained.** `pr-merged.yml:98` ends in `git push origin main`, which branch protection rejects every time (`GH006: Protected branch update failed`). It has never once written a flip. Its green runs are the ones that exited early with nothing to do — green means it did nothing, red means it tried. Delete the push; `generate-impl-log` becomes a PR check that recomputes ⬜/🔵 from merged `Closes D###` trailers and fails when the committed file disagrees.
-4. **🟢 becomes evidence-gated.** `verify-d` runs nothing — it rewrites one character and records whatever `--source` text it is handed, defaulting to `"manual"` (`scripts/verify-d.ts:44`). The 67 rows at 🟢 therefore assert a verification that may never have happened, and [43]/[44]'s diagnosis ("the cadence stalled") was wrong: the verifier is a no-op. New rule — flip only on a command it executes (🟢 on exit 0) or a recorded smoke observation; bare `manual` rejected; row stores command, result and commit sha. Existing 🟢 rows get audited, and unbacked ones drop to 🔵.
-5. **Add a 🚫 Retired state** to the log legend, paired with a `[REVERSAL on D###]` marker in the plan mirror. A PR that closes a D by *deleting* the feature currently has nowhere to land, so retirement reads as delivery — which is how #346 deleting Weekly Hero left D47/D48 at 🟢 citing a spec that no longer exists. Then: D47/D48 → 🚫 (dead spec reference cleared), D38 → ⬜ (the tour is genuinely unbuilt; its Notes cell already admitted this while the state kept asserting otherwise), D51 → ⬜. **Resolved 2026-07-28:** the senders wire-model work did NOT get a D-number. Founder adopted the registry rule "a D-number is something you will ask 'is it built yet?' about; an ADR is a rule that constrains how code gets written" — the wire model is already shipped and its lasting value is the constraint, so it is recorded as **ADR-0029** and D38 returns to ⬜ for its own unbuilt scope. Two candidates, one number. The CLAUDE.md §11 amendment that closes the underlying gap is filed as its own entry above.
-6. **Bulk unsubscribe = one-click subset batch.** Preview splits by `senders.unsubscribe_method`, which is NULLABLE and so has FOUR states — "Unsubscribe 8 one-click senders now · 4 need an email you send · 2 offer no unsubscribe · 1 not yet indexed". Only `one_click` executes server-side via the existing `UnsubExecutionWorker`; `mailto` stays per-sender so D230 is untouched; `none` is named separately because "send it yourself" and "no unsubscribe exists" are different facts; and `NULL` is reported as unknown rather than folded into `none`, since not having looked is not the same as having found nothing. The receipt says **"request accepted"**, never "unsubscribed" — the worker writes `unsubscribe_endpoint_accepted` on a 2xx, and whether the mail actually stops is unobservable to us. It carries all THREE outcomes the worker writes, including `unsubscribe_unconfirmed` ("we could not establish what happened"), rather than collapsing unknown into success or failure. **No undo** — unsubscribe declares no inverse (its execution kind carries only the standing label, unlike the label-modify verbs), so the mandatory modal preview is the reversal point and the batch must not imply otherwise. Recorded as **D248** in the plan mirror 2026-07-28 (extends D9/D32, does not amend D230), with a ⬜ row in IMPLEMENTATION-LOG. Ready to build.
-7. **Four smalls, all approved:** a `mailbox.sync_failed` transactional email (exempt from the postal-address block, so it can ship now); sign-out + settings escape on the failed first-run gate; `ErrorState` onto the CLAUDE.md §4 D220 allowlist; `refetchIntervalInBackground: true` on the two action-status hooks.
-
-**Also surfaced, no decision needed:** Settings → Mailboxes still renders `Sync failed` with no retry (`mailboxes-card.tsx:173`). #418 gave the *onboarding gate* a working retry and left its sibling untouched — a miss against the standing "fix the class, not the instance" rule. The endpoint already exists; this is wiring, folded into the chore batch.
-
-**Supersedes:** PR #420 documented the blocked log-flip; decision 3 fixes it instead, so #420 closes when the replacement lands. PR #417 (resume double-charge guard) still merges — decision 1 makes it belt-and-braces rather than the only guard.
-**Verifies by:** each numbered call closes its own entries on delivery; this entry moves to Done when all seven have shipped or been individually re-filed.
 **Status:** Open
 
 ### 2026-07-28 — LAUNCH BLOCKER: transactional email carries no physical postal address (CAN-SPAM / CASL)
@@ -297,13 +247,6 @@ Deliberately deferred by founder decision 2026-07-28 (of the three options — v
 **Why:** PR #377 adds `/api/readyz`, but merging does not create monitoring resources. Until this runs, a dependency outage still pages nobody.
 **How:** After #377 deploys: `./scripts/setup-uptime-monitoring.sh` (idempotent — it skips what already exists and adds the readyz check + the "DeclutrMail API not ready" policy).
 **Verifies by:** `./scripts/launch-preflight.sh` monitoring group shows 4 PASS, including "API readyz uptime check exists" and "API not-ready alert policy exists".
-**Status:** Open
-
-### 2026-07-17 — Plan decision: 5 merged PRs carry wrong `Closes D###` trailers
-**Source:** session (senders/settings/autopilot fix wave — #339, #340, #341, #343, #346)
-**Why:** I sourced D-numbers from CLAUDE.md §4's topic table ("Senders & screener | D38–D43") instead of the plan's decision text, so the merge auto-flip will write false state into IMPLEMENTATION-LOG.md — the file that is supposed to be the source of truth for what is built. Specifically: **D38** is "First-time education: Onboarding-only tour + tooltips" (no such code exists; its row already documents earlier umbrella mis-tags — I repeated them) and now reads as shipped via #339/#343; **D51** is "Filter UI: Hybrid — 4 quick-filter chips + More filters drawer", not the rollup/parity work in #340/#341; **D47/D48** (Weekly Hero) were closed by #346, which **deleted** the feature, so a retirement reads as a delivery — and those rows sit at 🟢 citing `senders.controller.spec.ts — Weekly Hero contract`, a spec #346 removes, so the log now cites evidence that no longer exists. Not self-resolved: correcting D-rows and choosing retire semantics is a plan decision (CLAUDE.md §3). Full write-up in MISTAKES.md 2026-07-17.
-**How:** Decide per row: (1) **D38** — does the ADR-0012 patch mean the senders wire-model work legitimately belongs here, or does the senders work need its own D-number and D38 revert to ⬜ for the unbuilt tour? (2) **D51** — likely revert to its pre-#340 state; the filter drawer is a separate question. (3) **D47/D48** — add a reversal/retire marker (the plan already uses these) instead of 🔵/🟢, and clear the dead spec evidence. Then `pnpm generate-impl-log`.
-**Verifies by:** No IMPLEMENTATION-LOG row claims a feature that does not exist in code, and no row cites a spec file that has been deleted.
 **Status:** Open
 
 ### 2026-07-16 — Plan patch: D49 rationale is stale + dead Weekly-Hero stack
@@ -419,24 +362,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 **Verifies by:** each ships as its own verified PR; `pnpm verify-d` for the closed D-rows.
 **Status:** Open
 
-### 2026-07-07 — Autopilot real-time trigger rides the Pub/Sub push pipeline (subscription still deferred)
-**Source:** session — `fix/d100-autopilot-apply-on-sync-delta` (P0: known-sender mail never re-triggered enabled rules)
-**Why:** the new incremental-sync delta trigger makes enabled Autopilot rules re-fire on new mail — but its REAL-TIME path only runs in prod once Gmail webhooks flow. The Pub/Sub **topic** is provisioned and `GMAIL_PUBSUB_TOPIC` is set (local + GH secrets; `sync-infra-state.md` §at-a-glance), while the push **subscription** + Cloud Run deploy remain ⏳ Deferred — tracked in the Open 2026-05-21 "SETUP: provision Gmail sync infrastructure" entry (step 4 tail). Until those land, the trigger still works but at drift-sweep cadence (the 5-min `incremental_drift` sweep enqueues syncs for cursors stale >10 min), i.e. rules re-fire within ~5-15 min of new mail rather than within the 5-min debounce window of a webhook.
-**How:** no new steps — finish the 2026-05-21 entry (Cloud Run deploy → create the Pub/Sub push subscription pointing at `/api/webhooks/gmail` with the OIDC service account).
-**Verifies by:** prod log line `worker.succeeded` for `AutopilotApplyWorker` with a `-delta-` jobId within ~5 min of sending a mail from an already-known sender to a connected mailbox.
-### 2026-06-26 — Merge sequence + sign-offs for the reviewed PR stack
-**Source:** session — review + fix of the 7-PR Fable-5 stack (#199 #201 #206 #219 #220 #224 #226; #237 closed)
-**Why:** all code defects are fixed + test-backed, but merge order is load-bearing and several PRs need a founder-only sign-off no agent can give.
-**How:**
-1. **Merge order (respect the stack):** ① #226 (nav) + #224 (settings) + #201 (CSP) — independent, base `main`. ② #206 (tier enforcement) — keystone. ③ re-target #219 + #220 onto `main`, rebase, then merge. ④ #199 (legal) anytime after copy sign-off.
-2. **#206 PROD STEP before deploy:** `UPDATE workspaces SET tier='pro' WHERE id='<dogfood-ws>';` — enforcement otherwise locks your own workspace (lifetime free units already spent).
-3. **#201 (F6) approve the 2 CSP deviations:** `style-src 'unsafe-inline'` (design system uses inline style attrs) + img-src sender-logo origins. Both surfaced in-PR; script-src stays strict.
-4. **#199 (F2) legal copy sign-off:** 14-day pro-rata refund window + India/Mumbai governing law; confirm `privacy@`/`support@` mailboxes exist; bump last-updated stamp.
-5. **#219 (F3) billing provisioning:** Paddle/Razorpay catalog ids + `BILLING_ENABLED=true` for live checkout (billing-dark state merges fine without).
-6. **#226 onboarding backfill (optional):** `onboarded_at` is NULL for all existing users → the mounted gate routes them through onboarding once; backfill SQL is in the PR body to skip it.
-**Verifies by:** each PR CI-green after rebase; `pnpm verify-d` re-greens the cited D-rows post-merge; first prod login after #206 deploy not 402-locked.
-**Status:** Open
-
 ### 2026-06-26 — Inbox-limit concurrent-connect race needs a DB-level guard (migration)
 **Source:** session — #206 fix + adversarial review
 **Why:** `addMailbox` now asserts the inbox limit at the activation boundary (closes the sequential bypass), but two truly simultaneous OAuth callbacks can still both pass the read-then-insert check and overshoot the tier ceiling by one. A partial unique index or per-workspace advisory lock would make it atomic.
@@ -500,26 +425,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 2. PostHog → Organization → Billing → set a **billing limit** on each metered product (events, recordings).
 3. Sentry → Settings → Subscription → confirm **Spike Protection** is enabled for the projects (on by default for new orgs — verify, don't assume).
 **Verifies by:** each console shows the cap/limit setting populated and enabled (settings page visible).
-**Status:** Open
-
-### 2026-06-10 — D-CANDIDATE: disambiguate the two unsub `activity_log` rows on /activity
-**Source:** feat/d009-unsubscribe-execution review (implementer-flagged, confirmed by architecture review)
-**Why:** A single one-click unsubscribe writes TWO `action='unsubscribe'` activity rows that render identically on /activity: the intent decision row (`actions.service.ts` `recordUnsubscribeIntent`) and the worker's terminal outcome row (`unsub-execution.worker.ts` `recordOutcome`). Both are 0-affected, `source='manual'`, `undo_token=null` — the user sees the same line twice per unsub. Append-only is the correct schema contract; the duplicate is a display problem, not a data problem.
-**How:** Founder picks ONE:
-1. New `activity_action` enum value (e.g. `unsubscribe_confirmed`) so the outcome row is distinct on the wire and the FE renders "Unsubscribe requested" vs "Unsubscribe confirmed/failed" — needs a migration extending the enum + copy.
-2. Render-layer collapse: /activity groups same-sender `unsubscribe` rows within the execution window into one line with the outcome chip — no schema change, dedup logic lives in the FE read.
-**Verifies by:** one one-click unsub on a real sender produces ONE visible /activity line (with its outcome state), while `activity_log` keeps both audit rows.
-**Status:** Open
-
-### 2026-06-09 — FE sticky-banner surface for IncrementalSyncWorker terminal failure
-**Source:** /code-review ultra against feat/d038-prod-ready-pass — verified HIGH finding
-**Why:** The BE half of the fix landed this session (migration 0027 + `provider_sync_state.last_incremental_error_at` / `_code` + `IncrementalSyncWorker.onTerminalFailure` writes them + structured `worker.incremental.terminal_failed` log + Sentry capture via the BullMQ failed-event observer). What's missing is the FE surface: when a user's active mailbox has `last_incremental_error_at` within the recent window, the app shell should render a sticky banner with a Retry CTA (or at minimum a "Sync errored — we're retrying every 5 min" affordance), distinct from the `SyncFailed` UI that only renders on `/onboarding`. Without it, the user still has no in-app signal that incremental sync is stuck; they only notice because new mail stops appearing.
-**How:**
-1. Add a thin column projection on the existing `/api/v1/sync/status` endpoint (already exposes `readinessStatus` + `currentStage` + `progressPct`) — include `lastIncrementalErrorAt` (ISO string or null) + `lastIncrementalErrorCode` (text or null). Reuse the same Zod schema (`packages/shared/src/contracts/sync-status.ts`).
-2. Add a sticky banner component (matches `AccountMenu` styling per `apps/web/src/features/sync/sync-now-button.tsx` precedent). Renders when `lastIncrementalErrorAt` is non-null and within (now − 60min). Copy: "We're still trying to sync new mail — last attempt errored." with a "Sync now" CTA that calls `POST /api/v1/sync/incremental` (same path as `SyncNowButton`).
-3. Mount the banner in the `(app)` layout above the page content so it persists across feature routes (matches the stale `NoActiveMailbox` pattern at `apps/web/src/app/(app)/layout.tsx`).
-4. Storybook story: hidden / banner-visible / banner-with-success-recovery transitions (D210).
-**Verifies by:** Manually flip a mailbox's `last_incremental_error_at` to `now()` via SQL, hit `/senders` — banner appears. Restore to NULL — banner disappears. Smoke also: kill Redis mid-sync to force a real terminal failure; banner renders within 1 polling cycle of `useSyncStatus()`.
 **Status:** Open
 
 ### 2026-06-08 — Cloud Run worker `min_instances=1` cost note ($15-25/mo)
@@ -586,17 +491,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 3. Deploy a Cloud Function that subscribes to that topic + calls billing.projects.updateBillingInfo with `billingAccountName=""` when threshold == 100%
 4. Cap value: raise budget to $60 as you onboard real users
 **Verifies by:** Intentionally bump a Cloud Run service to high traffic in a staging fork + confirm billing auto-disables within 5 min of crossing $60.
-**Status:** Open
-
-### 2026-06-08 — Daily resource-state snapshot script (drift detector)
-**Source:** session 2026-06-08 — same conversation
-**Why:** Even with the destructive-ops alert + Bash hook, silent additive changes (a new IAM binding, a new Cloud Run env var with a sketchy default, an unexpectedly enabled API) can drift the project from its known-good state. A daily snapshot diff-able against yesterday catches drift.
-**How:**
-1. Create `scripts/infra-snapshot.sh` that runs `gcloud services list`, `gcloud iam service-accounts list`, `gcloud projects get-iam-policy`, `gcloud run services describe declutrmail-{api,worker} --format=yaml`, `gcloud secrets list`, `gh secret list`, etc.
-2. Output to `docs/infra-state/YYYY-MM-DD.yaml`
-3. GH Actions cron daily: run the script, commit result to a `chore/infra-snapshot-YYYY-MM-DD` branch, open a PR if diff is non-empty
-4. PR review surface = visible drift
-**Verifies by:** Day 1 baseline commits; day 2 either zero-diff (PR skipped) or visible diff PR.
 **Status:** Open
 
 ### 2026-06-08 — Stale BullMQ jobs from local-dev runs in Upstash (cleanup)
@@ -671,13 +565,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 **Verifies by:** spec test calls `recordUnsubscribeIntent` twice with the same key + asserts a SINGLE `activity_log` row.
 **Status:** Open
 
-### 2026-06-05 — Sender Detail "Unsub queued" pill + composite-preview pending row
-**Source:** flow-completeness-auditor 2026-06-05 [BLOCKING] → policyType wire + sender-card pill landed 2026-06-05
-**Why:** Sender Detail page still doesn't carry the pill; the senders-list row now shows it (via `unsubPending` from `policyType==='unsubscribe'`). Sender Detail header should mirror.
-**How:** Read `senderDetail.policyType` in the detail page header; render the pill alongside the Protected chip when `'unsubscribe'`. Add a story for `Protected + UnsubPending` overlap.
-**Verifies by:** Visual check on /senders/:id of a sender with an unsub-pending policy.
-**Status:** Open
-
 ### 2026-06-05 — Storybook coverage: ComposeStrip + ConfirmActionModal + Activity B-track
 **Source:** design-system-agent 2026-06-05 [BLOCKING]
 **Why:** D210 requires every new component to ship with a stories file. `compose-strip.tsx` (756 lines, NEW) and the heavily-rewritten `confirm-action-modal.tsx` have no stories. The Activity redesign added 9+ states (Loading/Error/WithSelection/BulkUndoError/Grouped/VerbFiltered/CustomDateRange/WindowAllTime/UndoTryAgain) the existing 3-story file does not cover.
@@ -686,13 +573,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 2. Add `confirm-action-modal.stories.tsx` — Archive / Delete / Unsub-with-secondary-archive / Unsub-with-secondary-delete / Later / loading-preview / preview-error / expanded-recent-subjects. ADR-0028 (2026-07-28) adds four more states: reach-unavailable (old API) / Delete-inbox-only / Delete-all-mail / empty-inbox-with-archived-escape-hatch; plus `sender-row-detail.stories.tsx` needs the In-inbox card (present / zero / absent-on-wire).
 3. Extend `activity-screen.stories.tsx` with the 9 new states above + update the stale meta description.
 **Verifies by:** Storybook lists every state; visual-regression CI catches future drift.
-**Status:** Open
-
-### 2026-06-05 — Tokens: `color.danger` family + retire #A12525 / #DC2626 / `color.red` drift
-**Source:** design-system-agent 2026-06-05 [SUGGESTION]
-**Why:** Three reds in flight — `#A12525` (compose-strip + confirm-action-modal), `#DC2626` (action-popover), `color.red = #B91C1C` (tokens). Verb registry header says `color.danger` is the planned token but never landed.
-**How:** Add `color.danger`, `color.dangerBg`, `color.dangerBorder` to tokens. Dereference from all three call sites.
-**Verifies by:** `grep '#A12525\|#DC2626'` returns 0 hits in `apps/web` + `packages/shared`.
 **Status:** Open
 
 ### 2026-06-05 — Inverse-surface tokens (fgInverse / fgInverseSoft / lineInverse)
@@ -744,13 +624,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 **Verifies by:** Online deploy with synthetic concurrent write does not break.
 **Status:** Open
 
-### 2026-06-05 — Migration 0022 — defensive UPSERT predicate for memory-pin idempotence
-**Source:** schema-migration-reviewer 2026-06-05 [WARNING]
-**Why:** The ON CONFLICT DO UPDATE WHERE clause `is_protected=false` does NOT match the worker's `AND reason <> 'engagement_based'` — re-running 0022 against a mailbox with a manual-demoted memory pin would re-protect.
-**How:** Mirror the worker's predicate in the migration's WHERE clause.
-**Verifies by:** Replay test seeds a memory-pin row + re-applies 0022 → row stays demoted.
-**Status:** Open
-
 ### 2026-06-05 — Migration 0020 — annotate CREATE INDEX with `atlas:nolint concurrent_index`
 **Source:** schema-migration-reviewer 2026-06-05 [WARNING]
 **Why:** `CREATE INDEX action_jobs_composite_id_idx` lacks the `concurrent_index` annotation that the sibling 0015 establishes as precedent. Pre-launch OK; invites future drift.
@@ -765,16 +638,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 **Verifies by:** Full `pnpm --filter @declutrmail/api test` runs green across 3 consecutive runs.
 **Status:** Open
 
-### 2026-06-05 — Cursor regression guard on `provider_sync_state` (IncrementalSyncWorker)
-**Source:** architecture-guardian critic pass 2026-06-05 [WARNING]
-**Why:** `IncrementalSyncWorker` ends with an unguarded `UPDATE provider_sync_state SET last_history_id = $1` (incremental-sync.worker.ts:214-219). With `concurrency: 20`, two webhooks for the same mailbox at different historyIds CAN run concurrently — the LATER job's `lastPageHistoryId` could be older than an already-committed advance from an EARLIER job. The webhook path's `advanceHistoryIdWithExecutor` has the SELECT FOR UPDATE + monotonic compare; the worker path does not. `InitialSyncWorker` has the same pattern (lines 947, 964, 986) so this isn't a regression introduced by D8, but it widens the surface.
-**How:**
-1. Add `WHERE last_history_id IS NULL OR last_history_id < $1` to the worker's UPDATE (cheapest fix; matches `advanceHistoryIdWithExecutor`'s `stale` short-circuit).
-2. Or push a `SyncRepository` port into `packages/workers` (matches `GmailAccess` pattern) — bigger lift, cleaner D204.
-3. Apply the same guard to InitialSyncWorker's three direct writes for consistency.
-**Verifies by:** Race test — kick 2 jobs at the same mailbox w/ historyIds 1500 and 1600 in shuffled order; assert final `last_history_id = 1600` regardless of which won the race.
-**Status:** Open
-
 ### 2026-06-05 — Discriminator clarity: `kind: 'enqueued'` returned when first-advance enqueue was skipped
 **Source:** architecture-guardian + webhook-security-auditor critic pass 2026-06-05 [INFO/WARNING]
 **Why:** When `previousHistoryId === null` (first webhook after initial-sync seeds the row), the service correctly SKIPS the enqueue + logs `webhook.skipped_first_enqueue`, but the returned outcome is `{ kind: 'enqueued', previousHistoryId: null, ... }`. Observability counts get false positives ("X webhooks enqueued" vs "X webhooks actually published a job"). A future test that asserts on `outcome.kind === 'enqueued'` can't catch a regression that breaks the skip logic.
@@ -782,65 +645,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 1. Add a `kind: 'first_advance_skipped_enqueue'` variant to `ProcessOutcome` (or pivot the existing `enqueued` to include an `enqueued: boolean`).
 2. Controller maps both to 200; observability counters split.
 **Verifies by:** New spec asserts skip path returns the new discriminator variant; existing enqueue spec stays on `kind: 'enqueued'`.
-**Status:** Open
-
-### 2026-06-05 — IncrementalSync queue: `worker.listening` + shutdown drain parity
-**Source:** architecture-guardian critic pass 2026-06-05 [WARNING]
-**Why:** Every other queue in `apps/api/src/worker.ts` emits a structured `kind: 'worker.listening'` line at boot AND calls `await <queue>.close()` in the shutdown drain. `INCREMENTAL_SYNC_QUEUE` (added 2026-06-05) does neither. Silent boot = a consumer outage is invisible until jobs back up; missing shutdown close = uneven drain on graceful exit.
-**How:**
-1. Add `console.log(JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INCREMENTAL_SYNC_QUEUE }))` next to the other listening lines (~line 798).
-2. Add `await incrementalBullWorker.close()` to the shutdown handler (lines 821-832).
-**Verifies by:** API boot logs show `worker.listening` for `incremental-sync`; SIGTERM drains the worker cleanly.
-**Status:** Open
-
-### 2026-06-05 — Reconnect after cursor-too-old (incremental-sync 404 recovery)
-**Source:** Session 2026-06-05 (Thread A — IncrementalSyncWorker)
-**Why:** `IncrementalSyncWorker` returns `{cursorTooOld: true}` when Gmail's `history.list` 404s on an aged `startHistoryId` (D5's 7-day retention boundary). The worker correctly LEAVES the cursor untouched, but no consumer of that signal re-schedules a full re-sync — the mailbox would stay stale until the next manual reconnect.
-**How:**
-1. Inspect worker.succeeded log lines for `cursorTooOld: true` (the run completes normally, signal lives in the result payload).
-2. Add an onSuccess hook in `apps/api/src/worker.ts` IncrementalSyncWorker registration: when `result.cursorTooOld === true`, call `ensureInitialSyncJob(initialQueue, mailboxId, { force: true })` to schedule a fresh full sync.
-3. Emit a `sync.cursor_recovery` PostHog event for visibility.
-**Verifies by:** Manual force-stale a cursor (`UPDATE provider_sync_state SET last_history_id = 1 WHERE mailbox_account_id=...`), fire any webhook, watch `cursorTooOld: true` → initial-sync re-enqueues automatically.
-**Status:** Open
-
-### 2026-06-05 — Senders-list row `repliedCount` column on the wire
-**Source:** Session 2026-06-05 — local smoke
-**Why:** `GET /api/senders` row shape lacks the new `senders.replied_count` column. Compose strip + previewComposite see honest counts via filterCounts + preview payload, but per-row UIs (Sender Detail context strip, future "you replied N×" badge on the card) need it on every row.
-**How:**
-1. Add `repliedCount: senders.repliedCount` to the SELECT in `senders.read-service.ts:488-515`
-2. Add the field to `SenderListRow` wire type
-3. Surface in Sender Detail context strip (`apps/web/src/app/senders/[id]/page.tsx` area)
-**Verifies by:** `curl /api/senders?limit=1` returns `repliedCount` on the row; Sender Detail shows "you replied N×" copy.
-**Status:** Open
-
-### 2026-06-04 — Magnitude under-bar on SenderCard uses hardcoded `/100` denominator
-**Source:** design-system-agent + typescript-reviewer critic pass 2026-06-04
-**Why:** ADR-0016 §B1 specifies bar width = `sender.total / globalMaxTotal`. SenderCard hardcodes `Math.min(1, sender.monthly / 100)` because `globalMaxTotal` isn't threaded through `SenderGrid` → `SenderCard` props. Comment says "mailbox max"; code caps at 100.
-**How:**
-1. Thread `globalMaxTotal: number` through `SenderGrid` props
-2. Pass to each `SenderCard`
-3. Replace `/ 100` w/ `sender.total != null && globalMaxTotal > 0 ? sender.total / globalMaxTotal : 0`
-**Verifies by:** Highest-volume sender shows full-width amber bar
-**Status:** Open
-
-### 2026-06-04 — Move useWeeklyHero observability to Brief surface
-**Source:** silent-failure-hunter critic pass 2026-06-04
-**Why:** Commit `48a50bb` removed the `console.warn` on `useWeeklyHero.error` w/ editorial-component retirement. Weekly Hero moves to Brief per spec v1.2 Decision 4; until Brief PR lands hero endpoint outages are invisible.
-**How:**
-1. Port `useEffect` observability block to Brief consumer (see senders-screen.tsx commit `48a50bb` history)
-2. Update event `kind` → `'brief.weekly_hero.fetch_failed'`
-3. Verify Sentry + PostHog pick up event in dev smoke
-**Verifies by:** Trigger Weekly Hero failure in dev; structured warn appears
-**Status:** Open
-
-### 2026-06-03 — Senders visual alignment follow-ups (ADR-0016)
-**Source:** session 2026-06-03 — design-system-agent / typescript-reviewer / silent-failure-hunter critic pass
-**Why:** Three items surfaced during the senders + sender-detail visual-language alignment that are out of the ADR's scope but need founder disposition before they can land
-**How:**
-1. **D220 allowlist amendment.** ADR-0016 introduced `NumericDisplay` as an 11th promoted shared component; D220's table currently lists 10. Either (a) amend D220 to add the `NumericDisplay` row (recommended — ADR satisfies the spec-override clause + 6 active consumers), (b) accept D220 as illustrative-not-exhaustive going forward, or (c) flag plan-drift per CLAUDE.md §3 conflict-resolution. No code blocked.
-2. **TOP SENDER hero bug** — `apps/web/src/features/senders/weekly-hero/weekly-hero-live.tsx:128` renders user's own monogram ("CT2689") in TOP SENDER stat instead of the slice's actual top sender. Independent hotfix PR — not blocked by visual alignment.
-3. **Hero copy rewrite** — `HIGH-CONFIDENCE CLEANUPS` + `Senders we're confident about` + `Long-quiet senders / before they wake up` are inference-driven labels (same trust-hit class as the `intentOf` chip labels the founder asked to retire). Replace w/ fact predicates (`Top unsub-ready · 30 days` + `Long quiet · 60+ days`). Separate PR — own ADR or fact-first-cut PR.
-**Verifies by:** D220 either amended in the plan OR a `LEARNINGS.md` entry locks the illustrative-not-exhaustive disposition; TOP SENDER hotfix lands; hero copy rewrite lands w/ updated Storybook stories
 **Status:** Open
 
 ### 2026-05-29 — Activity feed schema gaps (D55-D60 tracer-bullet follow-ups)
@@ -889,71 +693,6 @@ chips + D58 undo *state rendering* + D59 stats). What it does NOT ship:
 **Verifies by:** Each PR's smoke + a chip-by-chip walk of the Activity screen.
 **Status:** Open
 
-### 2026-05-29 — Brief D68 Pro-tier gate deferred until billing ships
-**Source:** Brief render PR (D61, D63, D67, D69, D70)
-**Why:** D68 specifies a "Your Morning Brief — Upgrade to Pro" placeholder for
-Free/Plus users visiting `/brief`. The tier signal is absent from BOTH layers
-today — `apps/api/src/auth/me` has no tier field and there is no
-`users.tier` / `workspaces.tier` column anywhere in `packages/db/src/schema/**`.
-Wiring a placeholder for a tier that does not exist is fake completion. The
-right pairing is with the billing slice (D17-D21, D77, D81) which has to land
-the tier column + Stripe sync first.
-**How:** When billing lands:
-  1. Surface the tier on `GET /api/auth/me` (extend `Me` in `apps/web/src/features/auth/api/use-me.ts:32`).
-  2. In `apps/web/src/features/brief/brief-screen.tsx:BriefScreen`, early-return
-     a `<UpgradeToProPlaceholder />` when `me.tier !== 'pro'` (similar shape to
-     the existing D33 tier-aware EmptyState pattern in `packages/shared/src/components/empty-state/empty-state.tsx`).
-  3. Mirror the gate in `apps/api/src/briefs/brief.controller.ts` — 403 (not
-     404) when tier !== 'pro', with `code: 'tier_gate'` per the
-     `packages/shared/src/contracts/error-codes.ts` registry.
-**Verifies by:** Free user hitting `/brief` sees upgrade card, not the screen;
-Pro user sees real Brief; integration test in `brief-screen.test.tsx` covers
-both branches.
-**Status:** Open
-
-### 2026-05-29 — Confirm the §9-sensitive D181 security-event emit points before wiring
-**Source:** PR for D181 (security events log) — branch `claude/pending-ds-backend-KIv38`
-**Why:** D181 names 7 emit categories. This PR shipped the table + service + the
-one clearly-safe producer (`rate_limit.breach`). The remaining producers edit
-§9 stop-condition paths (token-crypto, webhook auth) and need your explicit
-sign-off before I add log calls into those control-flow branches:
-- **login attempts** (success + failure) — auth/session path (not crypto, but
-  touches the login flow; cleanest chokepoint TBD: `sessions.service` issue vs.
-  the OAuth callback).
-- **failed OAuth refresh** — token-refresh path (§9 token-encryption-adjacent).
-- **webhook signature verification failures** — Pub/Sub OIDC path (§9 webhook
-  auth); only active when `PUBSUB_WEBHOOK_ENABLED=true`.
-- **KMS access errors** — `token-crypto` / KMS adapter (§9 token crypto).
-- **CSP violation reports** — needs CSP (D175, not built) + a `Report-To`/
-  reporting endpoint first; defer until D175.
-- **role/permission changes** — no roles model exists yet; defer.
-**How:** Reply on the PR (or here) confirming which of the above to wire now and
-that I may add additive (no behavior change) `securityEvents.record(...)` calls
-in those files. I will keep each emit fire-and-forget and metadata-only (D7).
-**Verifies by:** follow-up PR(s) wiring the approved emit points, each with a row
-appearing in `security_events` under the matching `event_type`.
-**Status:** Open
-
-### 2026-05-29 — PR #131 needs `atlas migrate hash` run for migration 0016 (I can't, no Atlas CLI here)
-**Source:** PR #131 (D181) — adding migration 0016; `atlas migrate lint` red
-**Why:** `atlas.sum`'s per-file hashes come from Atlas's SQL-canonicalizing hash,
-which is NOT reproducible from file bytes offline (confirmed: only 0000 happens to
-match a raw hash; 0003 etc. don't). The Atlas CLI can't be installed in this
-remote environment (network policy blocks the download), so I cannot generate a
-valid `atlas.sum` entry for 0016. I've restored the 0000–0015 lines to main's
-exact (atlas-valid) values and appended a best-effort 0016 line + recomputed
-total, so the only thing left is a real rehash of the new entry.
-**How (1 command, on a machine with Atlas):**
-```
-atlas migrate hash --dir 'file://packages/db/migrations'
-git add packages/db/migrations/atlas.sum && git commit -m "chore(db): atlas migrate hash for 0016 (D181)" && git push
-```
-Then PR #131's `atlas migrate lint` goes green. (Alternatively: merge past the red
-check as this repo already does for the red branch-name check, and rehash in a
-follow-up.) The migration SQL itself is validated by the PGlite roundtrip test.
-**Verifies by:** PR #131's `atlas migrate lint` check turns green after the rehash.
-**Status:** Open — needs founder/CI `atlas migrate hash`.
-
 ### 2026-05-27 — Rename `auto_screen_new_senders` preset default-name (D227)
 
 **Source:** PR for D104/D105 Autopilot UI — `packages/workers/src/autopilot-presets.ts:168` ships the preset with `defaultName: 'Auto-screen new senders'`, which embeds the banned product-UI verb "Screen" (D227 — only K/A/U/L are user-facing). The preset's `actionKind` is already `'later'`, so the canonical verb is Later.
@@ -966,40 +705,6 @@ follow-up.) The migration SQL itself is validated by the PGlite roundtrip test.
 **Verifies by:** `pnpm --filter @declutrmail/web test` is still green; running `./scripts/dev-up.sh` + listing rules via `GET /api/autopilot/rules` returns the renamed default; `check-microcopy.sh --rule=canonical-verbs` (the D227 hook, when it lands) passes.
 **Status:** Open
 
-### 2026-05-27 — IMPL-LOG-DRIFT: 10 merged PRs cite D-numbers in title but omit `Closes` trailers
-**Source:** impl-log-drift-oracle (scheduled task, 2026-05-27 sweep)
-**Why:** `pr-merged.yml` flips ⬜ → 🔵 ONLY for D-numbers explicitly listed via `Closes D###` in the PR body. PRs in the last 7 days have repeatedly cited multiple Ds in the title but a single `Closes` line in the body, so the un-cited Ds remain ⬜ even though the code shipped. This breaks the plan-integrity trace — `IMPLEMENTATION-LOG.md` is no longer an accurate map of what's merged. 14 distinct D-rows are stuck ⬜ across these merges (D12, D31, D32, D33, D34, D36, D62, D63, D67, D70, D85, D86, D101, D102, D104, D105, D196, D197, D208, D226, D234).
-**How:** Founder decision per PR — either (a) edit the merged PR body to add the missing `Closes` lines and rely on a future workflow re-run, or (b) open a manual `chore/distill-closes-trailers` PR that updates `IMPLEMENTATION-LOG.md` directly with PR-refs for the affected rows. Affected PRs (PR # — missing Ds that are still ⬜):
-
-  - #44 — D31, D32, D33, D34, D36, D208, D226
-  - #48 — D12
-  - #77 — D62
-  - #102 — D62, D63, D67, D70
-  - #105 — D85, D86
-  - #107 — D101, D196, D197, D234
-  - #108 — D101, D102, D104, D105
-  - #109 — D104, D105, D234
-
-  Trailer-only hygiene (Ds already flipped by sibling PRs, no row state to fix — fold into the same `chore/distill-closes-trailers` PR if convenient):
-
-  - #47 — D40 (flipped via #30)
-  - #50 — D200 (flipped via #29)
-  - #52 — D44 (flipped via #30)
-  - #103 — D69 (flipped via #74)
-  - #105 — D88 (flipped via #106)
-  - #102 — D69 (flipped via #74)
-
-  Per-PR body-edit form:
-  ```bash
-  gh pr edit <NN> --body "$(gh pr view <NN> --json body --jq .body)
-
-  Closes D###
-  Closes D###"
-  ```
-
-**Verifies by:** Each affected row in `IMPLEMENTATION-LOG.md` shows the originating PR # in the `PR` column and state 🔵 (or 🟢 after `pnpm verify-d`). `gh pr list --base main --state merged --search "merged:>2026-05-20"` re-checked → title-Ds ⊆ Closes-Ds for every PR.
-**Status:** Resolution in-flight via `chore/distill-closes-trailers` (this session) — 21 ⬜ rows flipped to 🔵 with originating PR refs in `IMPLEMENTATION-LOG.md`; 11 merged PR bodies (`#44, #47, #50, #52, #77, #102, #103, #105, #107, #108, #109`) edited via `gh pr edit` to add the missing `Closes D###` lines so future oracle sweeps stay clean. Will move to Done once the chore PR merges. Pending founder action: `pnpm verify-d D###` for each row to advance 🔵 → 🟢 when the implementation is actually verified (oracle does not run the verifier).
-
 ### 2026-05-27 — IMPL-LOG-DRIFT: process-break — 13 findings this week — pr-merged.yml or author trailer discipline is broken
 **Source:** impl-log-drift-oracle (scheduled task, 2026-05-27 sweep)
 **Why:** 13 PR-level drift findings in a single 7-day window (10 missing-trailer + 9 un-flipped commits, deduped to ~12 unique PRs) signals a systemic break, not author oversight. Either (a) `pr-merged.yml` should be extended to flip Ds it finds in the PR title in addition to `Closes` lines, OR (b) commitlint / a PR-open gate should reject PRs whose title cites D-numbers not present in the body's `Closes` list. Today's policy puts the burden on each author to keep title + body in lockstep, and the burden is being dropped consistently.
@@ -1007,79 +712,6 @@ follow-up.) The migration SQL itself is validated by the PGlite roundtrip test.
   - **Option A (loosen the flipper):** edit `.github/workflows/pr-merged.yml` to harvest D-numbers from `pull_request.title` parens AS WELL AS `Closes` lines, then flip the union. Lower friction for authors; risk = flipping a D the author casually mentioned but didn't actually ship.
   - **Option B (tighten the gate):** add a GH Action that runs on `pull_request.opened/edited` and fails if `set(D-refs in title) ⊄ set(D-refs in Closes lines)`. Forces authors to keep the two in sync; risk = friction on every multi-D PR.
 **Verifies by:** Next week's oracle sweep returns 0 missing-trailer + 0 un-flipped findings, OR a documented exception path exists for cases like PR #42 (chore/learnings citing a not-yet-shipped D).
-**Status:** Open
-
-### 2026-05-27 — Dependabot branches blocked by CLAUDE.md §6 + D-trailer gates
-
-**Source:** PR #97 / #94 / #93 / #92 / #89 — every open dependabot
-PR shows two non-required failures: `Branch follows CLAUDE.md §6
-convention` and `PR body references D-decisions or is bootstrap-
-exempt`. Dependabot branches are `dependabot/<package-ecosystem>/...`
-and dependabot PR bodies never contain a `Closes D###` trailer, so
-both gates are permanently red for this PR class.
-**Why:** Noise red ✗ next to every dependency PR makes "what
-actually failed" harder to scan. Long-term: enforces a pattern
-where the only PRs that satisfy the convention are ones written by
-humans + Claude.
-**How:** Either (a) extend the branch-name regex
-(`.github/workflows/branch-name.yml`) and the D-trailer check
-(`.github/workflows/require-pr-template.sh` or equivalent) with
-`if: github.actor != 'dependabot[bot]'`, or (b) allowlist
-`dependabot/**` in the regex itself + treat a `dependabot[bot]`
-author as bootstrap-exempt for the D-trailer rule. Mirror the
-existing `chore/bootstrap-*` exemption pattern.
-**Verifies by:** Open the next dependabot PR; both checks resolve
-to skipped or green; the only red ✗ left should be substantive
-(typecheck / test / etc.).
-**Status:** Open
-
-### 2026-05-27 — Vitest 4 upgrade requires Vite ≥ 6 + coverage-v8 lockstep + behavior audit
-
-**Source:** smoke test of dependabot PRs #93 (vitest 2 → 4) and
-#92 (`@vitest/coverage-v8` 2 → 4) on branch
-`chore/bootstrap-pr97-rebase`.
-**Why:** Vitest 4 cannot be merged piecemeal. Local install of #93
-alone produces `ERR_PACKAGE_PATH_NOT_EXPORTED: './module-runner'`
-because Vitest 4 needs Vite ≥ 6 and the repo is on Vite 5.
-`packages/workers/src/base-declutr-worker.test.ts` also fails
-typecheck because `ReturnType<typeof vi.spyOn>` no longer infers
-`.mock.calls` element types — the `(call) =>` map callback is now
-implicit `any`. Beyond compile errors, Vitest 3 + 4 ship several
-behavior changes worth a deliberate audit: `vi.spyOn` reuses
-existing mocks, error equality is stricter (`name` + `message` +
-`cause` + prototype), `mockReset` now restores the original
-implementation, `mock.invocationCallOrder` starts at 1, and the
-default exclude list narrowed to just `node_modules` + `.git`.
-**How:** Close #93 + #92 with a comment pointing to this entry.
-When ready to upgrade: open a dedicated branch
-`chore/distill-vitest-v4-upgrade` that bumps Vite to ≥ 6,
-vitest to 4, `@vitest/coverage-v8` to 4 in one PR; fix the spy
-typings (`vi.spyOn<Console, 'log'>` etc.); audit any test that
-relies on `mockReset` returning undefined or `invocationCallOrder`
-starting at 0; verify the default-exclude narrowing doesn't pull
-build artefacts into the test run.
-**Verifies by:** `pnpm typecheck && pnpm test` green across all
-workspaces on the new branch; CI green on the upgrade PR.
-**Status:** Open
-
-### 2026-05-26 — ARCH-DRIFT: 3 controllers missing `@RateLimit(...)` on touched routes (D156)
-**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check G
-**Why:** Three controller routes shipped this week without `@RateLimit(...)` despite D156 requiring per-route limits on all `/v1/**` mutation + polled endpoints. Auth, autopilot, briefs, followups, and senders controllers carry the decorator consistently — these three are the gap:
-
-  - `apps/api/src/triage/triage.controller.ts:27` — `POST /score-sender` (enqueues a BullMQ score job; a single client can flood the worker queue without a limit)
-  - `apps/api/src/undo/undo.controller.ts:47` — `GET /undo` (tray sits on the chrome of every authenticated page)
-  - `apps/api/src/undo/undo.controller.ts:93` — `POST /undo/:token` (destructive revert surface — no rate limit)
-  - `apps/api/src/sync/sync.controller.ts:48` — `GET /v1/sync/status` (polled every 3s by `useSyncStatus()`; trivially escalatable to 100s/sec)
-
-**How:** Add `@RateLimit({ ... })` per route. Suggested caps:
-  - score-sender: `{ tokens: 60, refillPerSec: 1 }` (one new sender/sec is enough for any human interaction)
-  - undo GET: `{ tokens: 30, refillPerSec: 5 }` (page-load + a few re-fetches per minute)
-  - undo POST: `{ tokens: 20, refillPerSec: 0.5 }` (slow refill — undo is rare)
-  - sync status: `{ tokens: 30, refillPerSec: 1 }` (one poll/3s = 0.33/sec; 30-token bucket absorbs the page-load burst)
-
-Founder decision is which limits to pick; the values above are anchored to expected client behavior, not contractual.
-
-**Verifies by:** `rg -n "@RateLimit" apps/api/src/{triage,undo,sync}` returns 4 hits; the next weekly oracle's Check G reports clean.
 **Status:** Open
 
 ### 2026-05-26 — ARCH-DRIFT: triage + undo controllers build envelope inline rather than via `ok()` helper (D202)
@@ -1226,32 +858,6 @@ PR `chore/bootstrap-eslint-dashboard-palette-scope`.
 a test fixture.
 **Status:** Open
 
-### 2026-05-24 — Plan-drift: `chore/distill-*` vs hook enforcement
-**Source:** session — surfaced while preparing the CLAUDE.md improver PR
-**Why:** CLAUDE.md §11 ("Distillation") says distill PRs use a
-`chore/distill-<topic>` branch, but BOTH the `.husky/pre-push` regex
-and `commitlint.config.cjs:d-number-reference` only recognize
-`chore/bootstrap-<topic>`. A future distill PR named per §11 will fail
-both hooks. Resolved in this session by renaming the branch to
-`chore/bootstrap-claude-md-dev-cmds`, which is a workaround rather
-than a fix.
-**How:** pick one of two reconciliations and ship a small PR:
-  (a) **Enforcement follows docs** — extend `.husky/pre-push` regex to
-      `(d[0-9]{3}-|bootstrap-|distill-)` AND update commitlint plugin
-      `d-number-reference` to also short-circuit on `^chore/distill-`.
-      Preserves §11's semantic split between bootstrap (groundwork) and
-      distill (log-driven CLAUDE.md updates).
-  (b) **Docs follow enforcement** — edit CLAUDE.md §11 line 504 + 581
-      to use `chore/bootstrap-distill-<topic>` instead of
-      `chore/distill-<topic>`. Collapses the two lifecycles under one
-      branch prefix.
-Recommended: (a). Distillation is a distinct enough lifecycle to keep
-the branch prefix separate, and the regex change is two characters.
-**Verifies by:** a follow-up branch named literally
-`chore/distill-test-rule` can `git push` and produce a green PR with
-a non-D-trailer commit subject.
-**Status:** Open
-
 ### 2026-05-23 — Outbox dispatcher SKIP LOCKED runtime proof (D13)
 
 **Source:** PR `feat/d013-outbox-dispatcher` — LEARNINGS 2026-05-23.
@@ -1295,41 +901,6 @@ process-memory baseline (or a `process.memoryUsage()` exposed metric)
 does not retain its limiter entry.
 **Status:** Open
 
-### 2026-05-22 — D-CANDIDATE: DB CHECK constraints for unsubscribe URL scheme invariant
-**Source:** schema-migration-reviewer gate on PR `feat/d009-sync-data-capture`
-**Why:** `mail_messages.unsubscribe_url` now means "HTTPS URL"
-(post-Codex iter 5 channel split) and `mail_messages.unsubscribe_mailto_url`
-means "mailto URL". The contract is enforced in the worker's parser
-only — a future writer that misses the docstring could insert a
-`mailto:` URL into the HTTPS column. Same risk on
-`senders.unsubscribe_url` (method-aligned scheme).
-**How:** When the next `mail_messages`/`senders` migration ships, add:
-```sql
-ALTER TABLE mail_messages ADD CONSTRAINT mail_messages_unsubscribe_url_https
-  CHECK (unsubscribe_url IS NULL OR unsubscribe_url LIKE 'https://%');
-ALTER TABLE mail_messages ADD CONSTRAINT mail_messages_unsubscribe_mailto_scheme
-  CHECK (unsubscribe_mailto_url IS NULL OR unsubscribe_mailto_url LIKE 'mailto:%');
-```
-And on senders: method-vs-url alignment via a multi-column CHECK.
-**Verifies by:** A direct `INSERT mail_messages(...unsubscribe_url='mailto:x')`
-SQL is rejected by the DB; `pnpm db:test` covers the constraint.
-**Status:** Open
-
-### 2026-05-22 — D-CANDIDATE: defense-in-depth — inbound `recipient_emails IS NULL` CHECK
-**Source:** privacy-auditor INFO on PR `feat/d009-sync-data-capture`
-**Why:** ADR-0004 commits to `mail_messages.recipient_emails IS NULL`
-when `is_outbound=false` (inbound recipients = the connected mailbox
-itself, no product value, stricter privacy posture). Today the
-invariant lives only in the worker's `toMessageRow()` ternary. A
-future writer that bypasses that path could violate it without
-detection.
-**How:** Next `mail_messages` migration adds
-`CHECK (recipient_emails IS NULL OR is_outbound = true)`. Combine with
-the unsubscribe CHECKs above into one constraints-tightening migration.
-**Verifies by:** `INSERT mail_messages(is_outbound=false,
-recipient_emails=ARRAY['x@y.com'])` is rejected by the DB.
-**Status:** Open
-
 ### 2026-05-22 — D-CANDIDATE: D150 index inventory audit before launch
 **Source:** schema-migration-reviewer gate on PR `feat/d009-sync-data-capture`
 **Why:** `mail_messages` now carries 5 indexes — `provider_message_uniq`,
@@ -1364,25 +935,6 @@ this index inventory imposes. Or shrink the index inventory FIRST
 **Verifies by:** Partitioning ADR §"alternatives considered"
 explicitly addresses the existing `(mailbox_account_id, …)` index
 family.
-**Status:** Open
-
-### 2026-05-22 — D-CANDIDATE: migrate `GoogleOAuthService.handleCallback` to D205 `AuthSignupOrchestrator`
-**Source:** architecture-guardian INFO on PR `feat/d009-sync-data-capture`
-**Why:** `handleCallback` now coordinates four feature concerns inside
-one transaction: token decryption, mailbox upsert, sync-intent write
-(`SyncService.markQueued`), best-effort BullMQ enqueue
-(`SyncService.schedule`). The shape is approaching D205's
-`AuthSignupOrchestrator` scope. Today documented as a deferral
-("Full Idempotency-Key handling is D205's AuthSignupOrchestrator
-scope") with the boundary clean (auth never touches
-`provider_sync_state` directly). When AuthSignupOrchestrator lands,
-this code should migrate.
-**How:** Include the connect-callback migration in the AuthSignupOrchestrator PR
-scope. Move to `apps/api/src/auth/orchestrators/` with an explicit
-`*OrchestratorOptions` type + UnitOfWork wrapper around the existing
-tx.
-**Verifies by:** `GoogleOAuthService.handleCallback` shrinks to ≤20
-lines; the orchestrator owns the four-step sequence.
 **Status:** Open
 
 ### 2026-05-22 — CHORE: extract `SyncService.findQueued()` for reconciler
@@ -1455,27 +1007,6 @@ app fast, but changes D6's strict full-block gate (D191 territory).
 Ratify as a D, or amend D224/D109.
 **Verifies by:** D-decision recorded; the onboarding sync UX reflects
 what the backend actually does (one long stage, not five equal ones).
-**Status:** Open
-
-### 2026-05-22 — D-CANDIDATE: `sync_runs` per-account sync-timing history table
-**Source:** session — founder ask (2026-05-22)
-**Why:** Sync duration is the product's load-bearing trust signal (D6
-onboarding gate). PR-C's timing follow-up (`feat/d006-sync-timing-logs`)
-emits per-stage timing on the `worker.succeeded` log line, but logs hold
-no queryable history. To answer "is sync getting slower for this
-account," compare accounts, or find the slow stage over time, a per-run
-history table is needed — `provider_sync_state` is current-state only
-(one row per mailbox) and cannot hold run history.
-**How:** Ratify a new D-decision for a `sync_runs` table — one row per
-sync run: `mailbox_account_id` (FK), `attempt`, `started_at`,
-`finished_at`, `status`, `stage_timings jsonb`, `messages_synced`,
-`senders_indexed`, `gmail_api_calls`, `error_code`. A follow-up PR then
-adds the migration and the worker persists `InitialSyncResult` (already
-shaped 1:1 to these columns). No privacy concern — timings + counts
-only, no Gmail content; D7 unaffected.
-**Verifies by:** the D is ratified + numbered; a follow-up PR ships the
-table + the worker writes a row per run; sync timing is queryable per
-account over time.
 **Status:** Open
 
 ### 2026-05-22 — RATIFY: D203 vs D225 `WORKER_POLICIES` name collision (plan-drift)
@@ -1573,6 +1104,485 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-07-31 — Cancel is a one-way door: no in-app path back, and D118's pause offer was never built
+
+**Source:** billing-test-matrix groups C/E/F run end-to-end 2026-07-31 (founder: "smoke as much as possible")
+
+**Why:** two gaps found by walking Group E on the live sandbox subscription. Both cost revenue, and the second is plan drift.
+
+1. **A scheduled cancellation cannot be undone in the product.** Verified against the live sub, all three exits closed:
+
+   | call | result |
+   |---|---|
+   | `POST /api/billing/resume` | 409 `NO_ACTIVE_SUBSCRIPTION` — `billing.service.ts:836` selects `status = 'paused'` only, so it un-pauses and can never un-cancel |
+   | `POST /api/billing/checkout` | 409 `SUBSCRIPTION_EXISTS` |
+   | `POST /api/billing/change-plan` (even to the identical plan) | 409 `SUBSCRIPTION_CANCELING` |
+
+   So a user who cancels by mistake keeps paying nothing, keeps their access until the period ends — **up to a year on annual** — and has no way to restore billing without emailing support. `/billing` renders no affordance either. To continue the matrix run I had to `PATCH scheduled_change: null` at Paddle directly, which is exactly the point: the only recovery path is an operator with an API key. Matrix step **E3** assumes this works ("Resume before period end — two-step confirm"); it does not.
+
+   Paddle supports the reversal natively (`PATCH /subscriptions/:id {"scheduled_change": null}` returned `status: active, scheduled_change: null`, and the webhook projected it cleanly). The work is a `POST /api/billing/resume-cancellation` (or widening `resume`) plus the affordance on the scheduled-cancel notice.
+
+2. **D118's "Pause for 30 days" retention offer does not exist.** The D-body specs it inside the cancel modal ("Would you like to pause instead? — Keep your settings; resume anytime"). There is **no pause endpoint** — the billing controller has checkout, checkout/pending, subscription, reconcile, cancel, change-plan/preview, change-plan, resume, and nothing else — and no button anywhere in `apps/web/src/features/billing/`.
+
+   The paused *state* is fully built: adapter status mapping, `pause_until`, `entitlement_ends_at` semantics, the `SUBSCRIPTION_PAUSED` guard, `resume`, and two billing-screen stories. It is simply **unreachable from the product** — it can only arise if Paddle pauses the subscription externally. So the retention offer D118 designed to catch cancellations never runs, and the one lever that would soften finding (1) is the one that was skipped.
+
+   Minor, same area: `resume`'s error text reads "There is no active subscription **to cancel**." on the resume path — wrong verb.
+
+**How:** decide the scope, then it is ordinary work. Options, cheapest first: (a) ship the un-cancel only — smallest fix for the one-way door; (b) ship un-cancel **and** D118's pause offer, which is what the plan says; (c) declare the pause offer withdrawn and patch D118 so the plan stops claiming a feature that is not coming. (a) or (b) — (c) alone leaves the one-way door.
+
+**Verifies by:** cancel on the sandbox sub, then restore billing entirely from `/billing` with no Paddle dashboard and no SQL; `subscriptions.cancel_at_period_end` returns to `f` and the notice clears.
+
+**Status:** Done 2026-07-31 — option (b), both halves. `POST /api/billing/resume-cancellation` + a two-step confirm on the plan card (#447), and D118's pause offer built end to end: `POST /api/billing/pause`, the "Pause for 30 days" button in the cancel modal, Paddle pause with a 30-day `resume_at`. Verified on the live sandbox subscription — cancel → Keep my subscription → Paddle `scheduled_change: null` in 600ms; pause → `subscription.paused` → tier dropped to free → resume → back to pro in 900ms. Two follow-on defects fixed in #448 (the un-cancel's ordering marker was inert; pause wrote `pause_until` before the provider confirmed). Moved to Done 2026-08-10 — the entry was already Done-stamped but had been left sitting in the Open section. Both endpoints verified present on main: `apps/api/src/billing/billing.controller.ts:178` (`POST resume-cancellation`) and `:194` (`POST pause`).
+
+### 2026-07-28 — DECIDED: seven founder calls from the followups triage (this entry is the brief for all of them)
+**Source:** session 2026-07-28 — full triage of all 141 Open entries; 29 closed as verifiably dead, the survivors bucketed, and every genuine decision put to the founder as an MCQ. Two further closures were made and then REVERSED the same day after the Codex stop-time review: the `read_count` RATIFY (its ratification was done, its plan-file edit never was) and the /billing post-purchase entry (#367 merged, but its own bar — one sandbox purchase flipping in place — was never observed). Both are back in Open above with the specific unmet condition named. The lesson generalises past this file: an entry whose Status reads *Open* while its body says *shipped* usually has a second half, and the second half is the reason it is still open.
+**Why:** the file had stopped being readable. 141 rows all said "Open" while ~22% were already fixed in code, so nothing in it could be trusted in either direction — the ops-layer form of the UI-truth bug class (a surface asserting a state it no longer knows). Triage alone doesn't fix that; the seven decisions below are what stop it recurring, and three of them close six followups each.
+
+**The calls, as made:**
+
+1. **Billing — one reconciliation PR, not six patches.** Six entries ([3] unique index, [4]/[23] pending-checkout, [24] arrival order, [26] refund/chargeback provenance, [27](1)+(2)) share one root cause: no server-side record of in-flight or provider-side billing truth. One migration (`pending_checkout` row, `cancel_source`, `entitlement_ends_at`, `arrival_seq bigint generated always as identity`) plus a periodic reconciler polling Paddle/Razorpay. The `pending_checkout` row is what makes the B7 unique index safe — it gives the constraint a subject, resolving the both-ways-unsafe paradox that blocked it on 2026-07-28.
+2. **Dunning window = 14 days** past `current_period_end`, plus a terminal-state mapping fix. Today `GRANTING_STATUSES = ['active','past_due']` (`billing-webhook.service.ts:65`) and Razorpay's *terminal* `halted` normalizes to `past_due` (`razorpay.adapter.ts:88`), so a halted Razorpay subscription grants Pro forever. Terminal provider states must drop immediately; only genuine retry states use the 14-day window.
+3. **IMPLEMENTATION-LOG becomes derived, not maintained.** `pr-merged.yml:98` ends in `git push origin main`, which branch protection rejects every time (`GH006: Protected branch update failed`). It has never once written a flip. Its green runs are the ones that exited early with nothing to do — green means it did nothing, red means it tried. Delete the push; `generate-impl-log` becomes a PR check that recomputes ⬜/🔵 from merged `Closes D###` trailers and fails when the committed file disagrees.
+4. **🟢 becomes evidence-gated.** `verify-d` runs nothing — it rewrites one character and records whatever `--source` text it is handed, defaulting to `"manual"` (`scripts/verify-d.ts:44`). The 67 rows at 🟢 therefore assert a verification that may never have happened, and [43]/[44]'s diagnosis ("the cadence stalled") was wrong: the verifier is a no-op. New rule — flip only on a command it executes (🟢 on exit 0) or a recorded smoke observation; bare `manual` rejected; row stores command, result and commit sha. Existing 🟢 rows get audited, and unbacked ones drop to 🔵.
+5. **Add a 🚫 Retired state** to the log legend, paired with a `[REVERSAL on D###]` marker in the plan mirror. A PR that closes a D by *deleting* the feature currently has nowhere to land, so retirement reads as delivery — which is how #346 deleting Weekly Hero left D47/D48 at 🟢 citing a spec that no longer exists. Then: D47/D48 → 🚫 (dead spec reference cleared), D38 → ⬜ (the tour is genuinely unbuilt; its Notes cell already admitted this while the state kept asserting otherwise), D51 → ⬜. **Resolved 2026-07-28:** the senders wire-model work did NOT get a D-number. Founder adopted the registry rule "a D-number is something you will ask 'is it built yet?' about; an ADR is a rule that constrains how code gets written" — the wire model is already shipped and its lasting value is the constraint, so it is recorded as **ADR-0029** and D38 returns to ⬜ for its own unbuilt scope. Two candidates, one number. The CLAUDE.md §11 amendment that closes the underlying gap is filed as its own entry above.
+6. **Bulk unsubscribe = one-click subset batch.** Preview splits by `senders.unsubscribe_method`, which is NULLABLE and so has FOUR states — "Unsubscribe 8 one-click senders now · 4 need an email you send · 2 offer no unsubscribe · 1 not yet indexed". Only `one_click` executes server-side via the existing `UnsubExecutionWorker`; `mailto` stays per-sender so D230 is untouched; `none` is named separately because "send it yourself" and "no unsubscribe exists" are different facts; and `NULL` is reported as unknown rather than folded into `none`, since not having looked is not the same as having found nothing. The receipt says **"request accepted"**, never "unsubscribed" — the worker writes `unsubscribe_endpoint_accepted` on a 2xx, and whether the mail actually stops is unobservable to us. It carries all THREE outcomes the worker writes, including `unsubscribe_unconfirmed` ("we could not establish what happened"), rather than collapsing unknown into success or failure. **No undo** — unsubscribe declares no inverse (its execution kind carries only the standing label, unlike the label-modify verbs), so the mandatory modal preview is the reversal point and the batch must not imply otherwise. Recorded as **D248** in the plan mirror 2026-07-28 (extends D9/D32, does not amend D230), with a ⬜ row in IMPLEMENTATION-LOG. Ready to build.
+7. **Four smalls, all approved:** a `mailbox.sync_failed` transactional email (exempt from the postal-address block, so it can ship now); sign-out + settings escape on the failed first-run gate; `ErrorState` onto the CLAUDE.md §4 D220 allowlist; `refetchIntervalInBackground: true` on the two action-status hooks.
+
+**Also surfaced, no decision needed:** Settings → Mailboxes still renders `Sync failed` with no retry (`mailboxes-card.tsx:173`). #418 gave the *onboarding gate* a working retry and left its sibling untouched — a miss against the standing "fix the class, not the instance" rule. The endpoint already exists; this is wiring, folded into the chore batch.
+
+**Supersedes:** PR #420 documented the blocked log-flip; decision 3 fixes it instead, so #420 closes when the replacement lands. PR #417 (resume double-charge guard) still merges — decision 1 makes it belt-and-braces rather than the only guard.
+**Verifies by:** each numbered call closes its own entries on delivery; this entry moves to Done when all seven have shipped or been individually re-filed.
+**Status:** Done 2026-08-10 — all seven calls shipped or individually re-filed, verified on main:
+1. Billing reconciliation — `IMPLEMENTATION-LOG.md:297` D249 🔵 #436, #441, #466.
+2. Dunning window + terminal mapping — `apps/api/src/billing/billing-webhook.service.ts:74` (`GRANTING_STATUSES`) + `:82` (`DUNNING_WINDOW_MS = 14 * 24 * 60 * 60 * 1000`); `apps/api/src/billing/razorpay.adapter.ts:130-131` maps `halted` to CANCELED as terminal.
+3. Derived impl-log — `.github/workflows/pr-merged.yml` is deleted; `.github/workflows/ci.yml:136` runs `pnpm generate-impl-log --check`.
+4. Evidence-gated 🟢 — `scripts/verify-d.ts:79` rejects bare flips (`--source is retired`); `:164`/`:166` record `cmd:`/`smoke:` evidence with a commit sha.
+5. 🚫 Retired state — `IMPLEMENTATION-LOG.md:24` legend row; D47/D48 at 🚫 (`:105`, `:106`), D38/D51 reclaimed to ⬜ (`:96`, `:109`); the senders wire model landed as `docs/adr/0029-senders-wire-model.md`.
+6. Bulk unsubscribe — recorded as D248 (`IMPLEMENTATION-LOG.md:296`, ⬜) and individually re-filed as the Open 2026-07-10 "D-candidate: bulk unsubscribe for one-click senders" entry.
+7. Four smalls — `sync-failed` kind in `packages/workers/src/email-send.worker.ts:77`; the first-run gate escape in `apps/web/src/features/onboarding/sync-gate-escape.test.tsx`; `ErrorState` on the D220 allowlist in CLAUDE.md §4; `refetchIntervalInBackground: true` at `apps/web/src/lib/api/use-action.ts:87` and `:248`. The also-surfaced Settings retry is live at `apps/web/src/features/settings/settings-index/mailboxes-card.tsx:183` (`<RetrySyncButton />`).
+
+### 2026-07-17 — Plan decision: 5 merged PRs carry wrong `Closes D###` trailers
+**Source:** session (senders/settings/autopilot fix wave — #339, #340, #341, #343, #346)
+**Why:** I sourced D-numbers from CLAUDE.md §4's topic table ("Senders & screener | D38–D43") instead of the plan's decision text, so the merge auto-flip will write false state into IMPLEMENTATION-LOG.md — the file that is supposed to be the source of truth for what is built. Specifically: **D38** is "First-time education: Onboarding-only tour + tooltips" (no such code exists; its row already documents earlier umbrella mis-tags — I repeated them) and now reads as shipped via #339/#343; **D51** is "Filter UI: Hybrid — 4 quick-filter chips + More filters drawer", not the rollup/parity work in #340/#341; **D47/D48** (Weekly Hero) were closed by #346, which **deleted** the feature, so a retirement reads as a delivery — and those rows sit at 🟢 citing `senders.controller.spec.ts — Weekly Hero contract`, a spec #346 removes, so the log now cites evidence that no longer exists. Not self-resolved: correcting D-rows and choosing retire semantics is a plan decision (CLAUDE.md §3). Full write-up in MISTAKES.md 2026-07-17.
+**How:** Decide per row: (1) **D38** — does the ADR-0012 patch mean the senders wire-model work legitimately belongs here, or does the senders work need its own D-number and D38 revert to ⬜ for the unbuilt tour? (2) **D51** — likely revert to its pre-#340 state; the filter drawer is a separate question. (3) **D47/D48** — add a reversal/retire marker (the plan already uses these) instead of 🔵/🟢, and clear the dead spec evidence. Then `pnpm generate-impl-log`.
+**Verifies by:** No IMPLEMENTATION-LOG row claims a feature that does not exist in code, and no row cites a spec file that has been deleted.
+**Status:** Done 2026-08-10 — every row this entry names was reclaimed and no row cites the deleted spec. `IMPLEMENTATION-LOG.md:96` D38 ⬜ ("Reclaimed 2026-07-28… the senders wire-model work lives at ADR-0029"); `:109` D51 ⬜; `:105` D47 🚫 and `:106` D48 🚫 under the new Retired state added at `:24`. The `senders.controller.spec.ts — Weekly Hero contract` evidence string is gone from the file.
+
+### 2026-05-27 — IMPL-LOG-DRIFT: 10 merged PRs cite D-numbers in title but omit `Closes` trailers
+**Source:** impl-log-drift-oracle (scheduled task, 2026-05-27 sweep)
+**Why:** `pr-merged.yml` flips ⬜ → 🔵 ONLY for D-numbers explicitly listed via `Closes D###` in the PR body. PRs in the last 7 days have repeatedly cited multiple Ds in the title but a single `Closes` line in the body, so the un-cited Ds remain ⬜ even though the code shipped. This breaks the plan-integrity trace — `IMPLEMENTATION-LOG.md` is no longer an accurate map of what's merged. 14 distinct D-rows are stuck ⬜ across these merges (D12, D31, D32, D33, D34, D36, D62, D63, D67, D70, D85, D86, D101, D102, D104, D105, D196, D197, D208, D226, D234).
+**How:** Founder decision per PR — either (a) edit the merged PR body to add the missing `Closes` lines and rely on a future workflow re-run, or (b) open a manual `chore/distill-closes-trailers` PR that updates `IMPLEMENTATION-LOG.md` directly with PR-refs for the affected rows. Affected PRs (PR # — missing Ds that are still ⬜):
+
+  - #44 — D31, D32, D33, D34, D36, D208, D226
+  - #48 — D12
+  - #77 — D62
+  - #102 — D62, D63, D67, D70
+  - #105 — D85, D86
+  - #107 — D101, D196, D197, D234
+  - #108 — D101, D102, D104, D105
+  - #109 — D104, D105, D234
+
+  Trailer-only hygiene (Ds already flipped by sibling PRs, no row state to fix — fold into the same `chore/distill-closes-trailers` PR if convenient):
+
+  - #47 — D40 (flipped via #30)
+  - #50 — D200 (flipped via #29)
+  - #52 — D44 (flipped via #30)
+  - #103 — D69 (flipped via #74)
+  - #105 — D88 (flipped via #106)
+  - #102 — D69 (flipped via #74)
+
+  Per-PR body-edit form:
+  ```bash
+  gh pr edit <NN> --body "$(gh pr view <NN> --json body --jq .body)
+
+  Closes D###
+  Closes D###"
+  ```
+
+**Verifies by:** Each affected row in `IMPLEMENTATION-LOG.md` shows the originating PR # in the `PR` column and state 🔵 (or 🟢 after `pnpm verify-d`). `gh pr list --base main --state merged --search "merged:>2026-05-20"` re-checked → title-Ds ⊆ Closes-Ds for every PR.
+**Status:** Done 2026-08-10 — the entry's own bar is met: every affected row now carries its originating PR in the PR column at 🔵 or 🟢. `IMPLEMENTATION-LOG.md` D12 #48 (`:70`), D31/D32/D33/D34/D36 #44 (`:89`-`:94`), D62 #77/#102 (`:120`), D63/D67/D70 #102 (`:121`, `:125`, `:128`), D85/D86 #105 (`:143`, `:144`), D101 #107/#108 (`:159`), D102/D104/D105 #108/#109 (`:160`, `:162`, `:163`), D196/D197 #107 (`:254`, `:255`), D208 #44 (`:266`), D226 #44 (`:284`), D234 #107/#109 (`:292`).
+
+### 2026-05-27 — Dependabot branches blocked by CLAUDE.md §6 + D-trailer gates
+
+**Source:** PR #97 / #94 / #93 / #92 / #89 — every open dependabot
+PR shows two non-required failures: `Branch follows CLAUDE.md §6
+convention` and `PR body references D-decisions or is bootstrap-
+exempt`. Dependabot branches are `dependabot/<package-ecosystem>/...`
+and dependabot PR bodies never contain a `Closes D###` trailer, so
+both gates are permanently red for this PR class.
+**Why:** Noise red ✗ next to every dependency PR makes "what
+actually failed" harder to scan. Long-term: enforces a pattern
+where the only PRs that satisfy the convention are ones written by
+humans + Claude.
+**How:** Either (a) extend the branch-name regex
+(`.github/workflows/branch-name.yml`) and the D-trailer check
+(`.github/workflows/require-pr-template.sh` or equivalent) with
+`if: github.actor != 'dependabot[bot]'`, or (b) allowlist
+`dependabot/**` in the regex itself + treat a `dependabot[bot]`
+author as bootstrap-exempt for the D-trailer rule. Mirror the
+existing `chore/bootstrap-*` exemption pattern.
+**Verifies by:** Open the next dependabot PR; both checks resolve
+to skipped or green; the only red ✗ left should be substantive
+(typecheck / test / etc.).
+**Status:** Done 2026-08-10 — option (a) shipped on both gates. `.github/workflows/branch-name.yml:24` and `:84` each carry `if: github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'dependabot/')`, so the branch-name and D-trailer jobs skip for this PR class. The local hook matches: `.husky/pre-push:19` allows `dependabot/` in its branch regex.
+
+### 2026-05-24 — Plan-drift: `chore/distill-*` vs hook enforcement
+**Source:** session — surfaced while preparing the CLAUDE.md improver PR
+**Why:** CLAUDE.md §11 ("Distillation") says distill PRs use a
+`chore/distill-<topic>` branch, but BOTH the `.husky/pre-push` regex
+and `commitlint.config.cjs:d-number-reference` only recognize
+`chore/bootstrap-<topic>`. A future distill PR named per §11 will fail
+both hooks. Resolved in this session by renaming the branch to
+`chore/bootstrap-claude-md-dev-cmds`, which is a workaround rather
+than a fix.
+**How:** pick one of two reconciliations and ship a small PR:
+  (a) **Enforcement follows docs** — extend `.husky/pre-push` regex to
+      `(d[0-9]{3}-|bootstrap-|distill-)` AND update commitlint plugin
+      `d-number-reference` to also short-circuit on `^chore/distill-`.
+      Preserves §11's semantic split between bootstrap (groundwork) and
+      distill (log-driven CLAUDE.md updates).
+  (b) **Docs follow enforcement** — edit CLAUDE.md §11 line 504 + 581
+      to use `chore/bootstrap-distill-<topic>` instead of
+      `chore/distill-<topic>`. Collapses the two lifecycles under one
+      branch prefix.
+Recommended: (a). Distillation is a distinct enough lifecycle to keep
+the branch prefix separate, and the regex change is two characters.
+**Verifies by:** a follow-up branch named literally
+`chore/distill-test-rule` can `git push` and produce a green PR with
+a non-D-trailer commit subject.
+**Status:** Done 2026-08-10 — reconciliation (a) shipped, enforcement follows the docs. `.husky/pre-push:19` accepts `chore/(bootstrap|distill)-` and `:21` names both in its error text; `commitlint.config.cjs:37` short-circuits the D-trailer rule with `if (/^chore\/(bootstrap|distill)-/.test(branch)) return [true];`.
+
+### 2026-05-27 — Vitest 4 upgrade requires Vite ≥ 6 + coverage-v8 lockstep + behavior audit
+
+**Source:** smoke test of dependabot PRs #93 (vitest 2 → 4) and
+#92 (`@vitest/coverage-v8` 2 → 4) on branch
+`chore/bootstrap-pr97-rebase`.
+**Why:** Vitest 4 cannot be merged piecemeal. Local install of #93
+alone produces `ERR_PACKAGE_PATH_NOT_EXPORTED: './module-runner'`
+because Vitest 4 needs Vite ≥ 6 and the repo is on Vite 5.
+`packages/workers/src/base-declutr-worker.test.ts` also fails
+typecheck because `ReturnType<typeof vi.spyOn>` no longer infers
+`.mock.calls` element types — the `(call) =>` map callback is now
+implicit `any`. Beyond compile errors, Vitest 3 + 4 ship several
+behavior changes worth a deliberate audit: `vi.spyOn` reuses
+existing mocks, error equality is stricter (`name` + `message` +
+`cause` + prototype), `mockReset` now restores the original
+implementation, `mock.invocationCallOrder` starts at 1, and the
+default exclude list narrowed to just `node_modules` + `.git`.
+**How:** Close #93 + #92 with a comment pointing to this entry.
+When ready to upgrade: open a dedicated branch
+`chore/distill-vitest-v4-upgrade` that bumps Vite to ≥ 6,
+vitest to 4, `@vitest/coverage-v8` to 4 in one PR; fix the spy
+typings (`vi.spyOn<Console, 'log'>` etc.); audit any test that
+relies on `mockReset` returning undefined or `invocationCallOrder`
+starting at 0; verify the default-exclude narrowing doesn't pull
+build artefacts into the test run.
+**Verifies by:** `pnpm typecheck && pnpm test` green across all
+workspaces on the new branch; CI green on the upgrade PR.
+**Status:** Done 2026-08-10 — the lockstep upgrade landed across every workspace. `vitest ^4.1.10` + `vite ^7.3.6` in `apps/api/package.json:59-60`, `apps/web/package.json:38-39`, `packages/{shared,db,events,workers}/package.json`, with `@vitest/coverage-v8 ^4.1.10` at `apps/web/package.json:35`. Vite is well past the ≥ 6 floor this entry required.
+
+### 2026-05-29 — PR #131 needs `atlas migrate hash` run for migration 0016 (I can't, no Atlas CLI here)
+**Source:** PR #131 (D181) — adding migration 0016; `atlas migrate lint` red
+**Why:** `atlas.sum`'s per-file hashes come from Atlas's SQL-canonicalizing hash,
+which is NOT reproducible from file bytes offline (confirmed: only 0000 happens to
+match a raw hash; 0003 etc. don't). The Atlas CLI can't be installed in this
+remote environment (network policy blocks the download), so I cannot generate a
+valid `atlas.sum` entry for 0016. I've restored the 0000–0015 lines to main's
+exact (atlas-valid) values and appended a best-effort 0016 line + recomputed
+total, so the only thing left is a real rehash of the new entry.
+**How (1 command, on a machine with Atlas):**
+```
+atlas migrate hash --dir 'file://packages/db/migrations'
+git add packages/db/migrations/atlas.sum && git commit -m "chore(db): atlas migrate hash for 0016 (D181)" && git push
+```
+Then PR #131's `atlas migrate lint` goes green. (Alternatively: merge past the red
+check as this repo already does for the red branch-name check, and rehash in a
+follow-up.) The migration SQL itself is validated by the PGlite roundtrip test.
+**Verifies by:** PR #131's `atlas migrate lint` check turns green after the rehash.
+**Status:** Done 2026-08-10 — PR #131 MERGED 2026-05-29T19:18:34Z and `packages/db/migrations/atlas.sum:18` carries `0016_security_events.sql h1:x1E2SgbGoqbV/MVDdT6X67kkm8Euoq0hVCcuwQ04J/M=`. The hash is proven valid rather than merely present: `atlas migrate lint` validates the whole `atlas.sum` and `.github/workflows/migration-lint.yml:73-82` runs it on every migrations PR — the three most recent runs (2026-08-07, `feat/d159-sync-run-history`, which adds migration 0054) all succeeded.
+
+### 2026-06-26 — Merge sequence + sign-offs for the reviewed PR stack
+**Source:** session — review + fix of the 7-PR Fable-5 stack (#199 #201 #206 #219 #220 #224 #226; #237 closed)
+**Why:** all code defects are fixed + test-backed, but merge order is load-bearing and several PRs need a founder-only sign-off no agent can give.
+**How:**
+1. **Merge order (respect the stack):** ① #226 (nav) + #224 (settings) + #201 (CSP) — independent, base `main`. ② #206 (tier enforcement) — keystone. ③ re-target #219 + #220 onto `main`, rebase, then merge. ④ #199 (legal) anytime after copy sign-off.
+2. **#206 PROD STEP before deploy:** `UPDATE workspaces SET tier='pro' WHERE id='<dogfood-ws>';` — enforcement otherwise locks your own workspace (lifetime free units already spent).
+3. **#201 (F6) approve the 2 CSP deviations:** `style-src 'unsafe-inline'` (design system uses inline style attrs) + img-src sender-logo origins. Both surfaced in-PR; script-src stays strict.
+4. **#199 (F2) legal copy sign-off:** 14-day pro-rata refund window + India/Mumbai governing law; confirm `privacy@`/`support@` mailboxes exist; bump last-updated stamp.
+5. **#219 (F3) billing provisioning:** Paddle/Razorpay catalog ids + `BILLING_ENABLED=true` for live checkout (billing-dark state merges fine without).
+6. **#226 onboarding backfill (optional):** `onboarded_at` is NULL for all existing users → the mounted gate routes them through onboarding once; backfill SQL is in the PR body to skip it.
+**Verifies by:** each PR CI-green after rebase; `pnpm verify-d` re-greens the cited D-rows post-merge; first prod login after #206 deploy not 402-locked.
+**Status:** Done 2026-08-10 — the whole stack merged in the prescribed order and no longer exists as an actionable queue: #226 MERGED 2026-06-28T08:25:18Z, #224 2026-06-28T08:25:00Z, #206 2026-07-01T22:46:53Z, #219 2026-07-01T23:01:33Z, #220 2026-07-01T23:18:37Z, #199 2026-07-02T07:35:05Z, #201 2026-07-02T07:46:53Z; #237 CLOSED as the entry anticipated. The #206 tier-enforcement concern is settled by five weeks of live founder use — prod has been serving since 2026-07-10 (see the Done 2026-05-21 "provision Gmail sync infrastructure" entry), which a 402-locked workspace would not have survived.
+
+### 2026-07-07 — Autopilot real-time trigger rides the Pub/Sub push pipeline (subscription still deferred)
+**Source:** session — `fix/d100-autopilot-apply-on-sync-delta` (P0: known-sender mail never re-triggered enabled rules)
+**Why:** the new incremental-sync delta trigger makes enabled Autopilot rules re-fire on new mail — but its REAL-TIME path only runs in prod once Gmail webhooks flow. The Pub/Sub **topic** is provisioned and `GMAIL_PUBSUB_TOPIC` is set (local + GH secrets; `sync-infra-state.md` §at-a-glance), while the push **subscription** + Cloud Run deploy remain ⏳ Deferred — tracked in the Open 2026-05-21 "SETUP: provision Gmail sync infrastructure" entry (step 4 tail). Until those land, the trigger still works but at drift-sweep cadence (the 5-min `incremental_drift` sweep enqueues syncs for cursors stale >10 min), i.e. rules re-fire within ~5-15 min of new mail rather than within the 5-min debounce window of a webhook.
+**How:** no new steps — finish the 2026-05-21 entry (Cloud Run deploy → create the Pub/Sub push subscription pointing at `/api/webhooks/gmail` with the OIDC service account).
+**Verifies by:** prod log line `worker.succeeded` for `AutopilotApplyWorker` with a `-delta-` jobId within ~5 min of sending a mail from an already-known sender to a connected mailbox.
+**Status:** Done 2026-08-10 — this entry had no Status line at all (added on close). Its "How" was "no new steps — finish the 2026-05-21 entry", and that entry is now in Done reading "production Gmail sync has been live since 2026-07-10: OAuth is CASA-approved, **Pub/Sub push is flowing**". The deferred push subscription is therefore provisioned and the real-time trigger no longer runs at drift-sweep cadence.
+
+### 2026-06-10 — D-CANDIDATE: disambiguate the two unsub `activity_log` rows on /activity
+**Source:** feat/d009-unsubscribe-execution review (implementer-flagged, confirmed by architecture review)
+**Why:** A single one-click unsubscribe writes TWO `action='unsubscribe'` activity rows that render identically on /activity: the intent decision row (`actions.service.ts` `recordUnsubscribeIntent`) and the worker's terminal outcome row (`unsub-execution.worker.ts` `recordOutcome`). Both are 0-affected, `source='manual'`, `undo_token=null` — the user sees the same line twice per unsub. Append-only is the correct schema contract; the duplicate is a display problem, not a data problem.
+**How:** Founder picks ONE:
+1. New `activity_action` enum value (e.g. `unsubscribe_confirmed`) so the outcome row is distinct on the wire and the FE renders "Unsubscribe requested" vs "Unsubscribe confirmed/failed" — needs a migration extending the enum + copy.
+2. Render-layer collapse: /activity groups same-sender `unsubscribe` rows within the execution window into one line with the outcome chip — no schema change, dedup logic lives in the FE read.
+**Verifies by:** one one-click unsub on a real sender produces ONE visible /activity line (with its outcome state), while `activity_log` keeps both audit rows.
+**Status:** Done 2026-08-10 — option 1 (new enum value) shipped. `packages/db/migrations/0031_activity_action_unsubscribe_confirmed.sql:34` adds `'unsubscribe_confirmed'` to the `activity_action` type; `packages/db/src/schema/activity-log.ts:75` carries it; `apps/api/src/activity/activity.read-service.ts:1209` emits it; `apps/web/src/features/activity/activity-screen.tsx:2125` renders it distinctly. The regression is locked by `apps/api/src/activity/activity.read-service.spec.ts:951` — "D56 — unsubscribe_confirmed is a distinct feed row that does NOT double-count the intent".
+
+### 2026-06-09 — FE sticky-banner surface for IncrementalSyncWorker terminal failure
+**Source:** /code-review ultra against feat/d038-prod-ready-pass — verified HIGH finding
+**Why:** The BE half of the fix landed this session (migration 0027 + `provider_sync_state.last_incremental_error_at` / `_code` + `IncrementalSyncWorker.onTerminalFailure` writes them + structured `worker.incremental.terminal_failed` log + Sentry capture via the BullMQ failed-event observer). What's missing is the FE surface: when a user's active mailbox has `last_incremental_error_at` within the recent window, the app shell should render a sticky banner with a Retry CTA (or at minimum a "Sync errored — we're retrying every 5 min" affordance), distinct from the `SyncFailed` UI that only renders on `/onboarding`. Without it, the user still has no in-app signal that incremental sync is stuck; they only notice because new mail stops appearing.
+**How:**
+1. Add a thin column projection on the existing `/api/v1/sync/status` endpoint (already exposes `readinessStatus` + `currentStage` + `progressPct`) — include `lastIncrementalErrorAt` (ISO string or null) + `lastIncrementalErrorCode` (text or null). Reuse the same Zod schema (`packages/shared/src/contracts/sync-status.ts`).
+2. Add a sticky banner component (matches `AccountMenu` styling per `apps/web/src/features/sync/sync-now-button.tsx` precedent). Renders when `lastIncrementalErrorAt` is non-null and within (now − 60min). Copy: "We're still trying to sync new mail — last attempt errored." with a "Sync now" CTA that calls `POST /api/v1/sync/incremental` (same path as `SyncNowButton`).
+3. Mount the banner in the `(app)` layout above the page content so it persists across feature routes (matches the stale `NoActiveMailbox` pattern at `apps/web/src/app/(app)/layout.tsx`).
+4. Storybook story: hidden / banner-visible / banner-with-success-recovery transitions (D210).
+**Verifies by:** Manually flip a mailbox's `last_incremental_error_at` to `now()` via SQL, hit `/senders` — banner appears. Restore to NULL — banner disappears. Smoke also: kill Redis mid-sync to force a real terminal failure; banner renders within 1 polling cycle of `useSyncStatus()`.
+**Status:** Done 2026-08-10 — both halves shipped. Wire: `apps/api/src/sync/sync.service.ts:277-299` projects `lastIncrementalErrorAt` / `lastIncrementalErrorCode` onto the sync-status payload. FE: `apps/web/src/features/sync/sync-error-banner.tsx`, mounted in `apps/web/src/app/(app)/layout.tsx` so it persists across feature routes, with `sync-error-banner.test.tsx` and the D210 story at `sync-error-banner.stories.tsx`.
+
+### 2026-06-08 — Daily resource-state snapshot script (drift detector)
+**Source:** session 2026-06-08 — same conversation
+**Why:** Even with the destructive-ops alert + Bash hook, silent additive changes (a new IAM binding, a new Cloud Run env var with a sketchy default, an unexpectedly enabled API) can drift the project from its known-good state. A daily snapshot diff-able against yesterday catches drift.
+**How:**
+1. Create `scripts/infra-snapshot.sh` that runs `gcloud services list`, `gcloud iam service-accounts list`, `gcloud projects get-iam-policy`, `gcloud run services describe declutrmail-{api,worker} --format=yaml`, `gcloud secrets list`, `gh secret list`, etc.
+2. Output to `docs/infra-state/YYYY-MM-DD.yaml`
+3. GH Actions cron daily: run the script, commit result to a `chore/infra-snapshot-YYYY-MM-DD` branch, open a PR if diff is non-empty
+4. PR review surface = visible drift
+**Verifies by:** Day 1 baseline commits; day 2 either zero-diff (PR skipped) or visible diff PR.
+**Status:** Done 2026-08-10 — `scripts/infra-snapshot.sh` + the daily cron at `.github/workflows/infra-snapshot.yml` (which pushes to the `infra-snapshots` branch, `:124`) + the captured output under `docs/infra-snapshots/`. The one section that still degrades is GitHub-secret drift, and that gap is separately tracked as the Open 2026-07-26 `INFRA_SNAPSHOT_TOKEN` entry.
+
+### 2026-06-05 — Sender Detail "Unsub queued" pill + composite-preview pending row
+**Source:** flow-completeness-auditor 2026-06-05 [BLOCKING] → policyType wire + sender-card pill landed 2026-06-05
+**Why:** Sender Detail page still doesn't carry the pill; the senders-list row now shows it (via `unsubPending` from `policyType==='unsubscribe'`). Sender Detail header should mirror.
+**How:** Read `senderDetail.policyType` in the detail page header; render the pill alongside the Protected chip when `'unsubscribe'`. Add a story for `Protected + UnsubPending` overlap.
+**Verifies by:** Visual check on /senders/:id of a sender with an unsub-pending policy.
+**Status:** Done 2026-08-10 — the detail header mirrors the list row. `apps/web/src/features/senders/detail/sender-detail-page.tsx:960` renders the pill on `detail.policyType === 'unsubscribe'`, and `:958` documents that it reads `policyType` + `unsubStatus` so terminal outcomes are honoured (`:1360` records that it superseded the earlier static pill).
+
+### 2026-06-05 — Tokens: `color.danger` family + retire #A12525 / #DC2626 / `color.red` drift
+**Source:** design-system-agent 2026-06-05 [SUGGESTION]
+**Why:** Three reds in flight — `#A12525` (compose-strip + confirm-action-modal), `#DC2626` (action-popover), `color.red = #B91C1C` (tokens). Verb registry header says `color.danger` is the planned token but never landed.
+**How:** Add `color.danger`, `color.dangerBg`, `color.dangerBorder` to tokens. Dereference from all three call sites.
+**Verifies by:** `grep '#A12525\|#DC2626'` returns 0 hits in `apps/web` + `packages/shared`.
+**Status:** Done 2026-08-10 — the family landed at `packages/shared/src/tokens/tokens.ts:73-76` (`danger`, `dangerBg`, `dangerBorder`, plus a `dangerDeep` the entry did not ask for), and all three call sites dereference it — `packages/shared/src/components/action-popover.tsx:48` records the swap explicitly. The entry's grep bar is met for live values: the only surviving `#A12525` / `#DC2626` occurrences in `apps/web` + `packages/shared` are the four documentation comments that name the retired literals (`tokens.ts:57`, `:58`, `:69`, `action-popover.tsx:48`); zero are colour values.
+
+### 2026-06-05 — Migration 0022 — defensive UPSERT predicate for memory-pin idempotence
+**Source:** schema-migration-reviewer 2026-06-05 [WARNING]
+**Why:** The ON CONFLICT DO UPDATE WHERE clause `is_protected=false` does NOT match the worker's `AND reason <> 'engagement_based'` — re-running 0022 against a mailbox with a manual-demoted memory pin would re-protect.
+**How:** Mirror the worker's predicate in the migration's WHERE clause.
+**Verifies by:** Replay test seeds a memory-pin row + re-applies 0022 → row stays demoted.
+**Status:** Done 2026-08-10 — resolved by supersession plus a stricter predicate, not by the exact patch proposed. D245 replaced the protection model: `engagement_based` no longer exists in the `protection_reason` enum (`packages/db/src/schema/sender-policies.ts:61-65` — `user_defined | replied | starred | gmail_important`) and appears nowhere in the repo, so the mismatch this entry describes cannot occur. The auto-protect backfill now lives in `packages/db/migrations/0022_senders_replied_count.sql`, whose `ON CONFLICT DO UPDATE` guard at `:126-127` reads `WHERE "sender_policies"."is_protected" = false AND "sender_policies"."protection_reason" IS NULL` — strictly safer than the requested `reason <> 'engagement_based'`, because it skips every row carrying provenance. That is exactly the user-agency-wins memory pin documented at `packages/db/src/schema/sender-policies.ts:117-134`, so a replayed migration leaves a manually demoted row demoted.
+
+### 2026-06-05 — Cursor regression guard on `provider_sync_state` (IncrementalSyncWorker)
+**Source:** architecture-guardian critic pass 2026-06-05 [WARNING]
+**Why:** `IncrementalSyncWorker` ends with an unguarded `UPDATE provider_sync_state SET last_history_id = $1` (incremental-sync.worker.ts:214-219). With `concurrency: 20`, two webhooks for the same mailbox at different historyIds CAN run concurrently — the LATER job's `lastPageHistoryId` could be older than an already-committed advance from an EARLIER job. The webhook path's `advanceHistoryIdWithExecutor` has the SELECT FOR UPDATE + monotonic compare; the worker path does not. `InitialSyncWorker` has the same pattern (lines 947, 964, 986) so this isn't a regression introduced by D8, but it widens the surface.
+**How:**
+1. Add `WHERE last_history_id IS NULL OR last_history_id < $1` to the worker's UPDATE (cheapest fix; matches `advanceHistoryIdWithExecutor`'s `stale` short-circuit).
+2. Or push a `SyncRepository` port into `packages/workers` (matches `GmailAccess` pattern) — bigger lift, cleaner D204.
+3. Apply the same guard to InitialSyncWorker's three direct writes for consistency.
+**Verifies by:** Race test — kick 2 jobs at the same mailbox w/ historyIds 1500 and 1600 in shuffled order; assert final `last_history_id = 1600` regardless of which won the race.
+**Status:** Done 2026-08-10 — fix (1) shipped. `packages/workers/src/incremental-sync.worker.ts:426` guards the cursor advance with `sql\`(${providerSyncState.lastHistoryId} IS NULL OR ${providerSyncState.lastHistoryId} < ${candidate})\``, and `:396` documents it as the monotonic-compare parity with `advanceHistoryIdWithExecutor`. A later job carrying an older `lastPageHistoryId` can no longer walk the cursor backwards.
+
+### 2026-06-05 — IncrementalSync queue: `worker.listening` + shutdown drain parity
+**Source:** architecture-guardian critic pass 2026-06-05 [WARNING]
+**Why:** Every other queue in `apps/api/src/worker.ts` emits a structured `kind: 'worker.listening'` line at boot AND calls `await <queue>.close()` in the shutdown drain. `INCREMENTAL_SYNC_QUEUE` (added 2026-06-05) does neither. Silent boot = a consumer outage is invisible until jobs back up; missing shutdown close = uneven drain on graceful exit.
+**How:**
+1. Add `console.log(JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INCREMENTAL_SYNC_QUEUE }))` next to the other listening lines (~line 798).
+2. Add `await incrementalBullWorker.close()` to the shutdown handler (lines 821-832).
+**Verifies by:** API boot logs show `worker.listening` for `incremental-sync`; SIGTERM drains the worker cleanly.
+**Status:** Done 2026-08-10 — both halves. `apps/api/src/worker.ts:2035` emits `{ kind: 'worker.listening', queue: INCREMENTAL_SYNC_QUEUE }` alongside every other queue's boot line, and `:2196` calls `await incrementalBullWorker.close()` in the shutdown drain.
+
+### 2026-06-05 — Reconnect after cursor-too-old (incremental-sync 404 recovery)
+**Source:** Session 2026-06-05 (Thread A — IncrementalSyncWorker)
+**Why:** `IncrementalSyncWorker` returns `{cursorTooOld: true}` when Gmail's `history.list` 404s on an aged `startHistoryId` (D5's 7-day retention boundary). The worker correctly LEAVES the cursor untouched, but no consumer of that signal re-schedules a full re-sync — the mailbox would stay stale until the next manual reconnect.
+**How:**
+1. Inspect worker.succeeded log lines for `cursorTooOld: true` (the run completes normally, signal lives in the result payload).
+2. Add an onSuccess hook in `apps/api/src/worker.ts` IncrementalSyncWorker registration: when `result.cursorTooOld === true`, call `ensureInitialSyncJob(initialQueue, mailboxId, { force: true })` to schedule a fresh full sync.
+3. Emit a `sync.cursor_recovery` PostHog event for visibility.
+**Verifies by:** Manual force-stale a cursor (`UPDATE provider_sync_state SET last_history_id = 1 WHERE mailbox_account_id=...`), fire any webhook, watch `cursorTooOld: true` → initial-sync re-enqueues automatically.
+**Status:** Done 2026-08-10 — the consumer exists. `apps/api/src/worker.ts:706-754` registers an `incrementalBullWorker.on('completed')` hook that short-circuits unless `result.cursorTooOld`, resets the durable readiness gate and the expired cursor, then calls `ensureInitialSyncJob(reconcilerQueue, mailboxAccountId, { force: true })` and logs `sync.cursor_recovery_scheduled` (`:736`). The failure branch logs `sync.cursor_recovery_failed` (`:746`); routing that branch to Sentry as well is the separate 2026-06-05 "Cursor recovery path" entry.
+
+### 2026-06-05 — Senders-list row `repliedCount` column on the wire
+**Source:** Session 2026-06-05 — local smoke
+**Why:** `GET /api/senders` row shape lacks the new `senders.replied_count` column. Compose strip + previewComposite see honest counts via filterCounts + preview payload, but per-row UIs (Sender Detail context strip, future "you replied N×" badge on the card) need it on every row.
+**How:**
+1. Add `repliedCount: senders.repliedCount` to the SELECT in `senders.read-service.ts:488-515`
+2. Add the field to `SenderListRow` wire type
+3. Surface in Sender Detail context strip (`apps/web/src/app/senders/[id]/page.tsx` area)
+**Verifies by:** `curl /api/senders?limit=1` returns `repliedCount` on the row; Sender Detail shows "you replied N×" copy.
+**Status:** Done 2026-08-10 — on the wire and on the screen. `apps/api/src/senders/senders.read-service.ts:608` selects `repliedCount: senders.repliedCount` into the list row (coerced at `:681`), the field is declared on the wire type at `apps/api/src/senders/senders.types.ts:165`, and the Sender Detail context strip renders "You replied N times" (`apps/web/src/mocks/sender-detail-builder.ts:169`).
+
+### 2026-06-04 — Magnitude under-bar on SenderCard uses hardcoded `/100` denominator
+**Source:** design-system-agent + typescript-reviewer critic pass 2026-06-04
+**Why:** ADR-0016 §B1 specifies bar width = `sender.total / globalMaxTotal`. SenderCard hardcodes `Math.min(1, sender.monthly / 100)` because `globalMaxTotal` isn't threaded through `SenderGrid` → `SenderCard` props. Comment says "mailbox max"; code caps at 100.
+**How:**
+1. Thread `globalMaxTotal: number` through `SenderGrid` props
+2. Pass to each `SenderCard`
+3. Replace `/ 100` w/ `sender.total != null && globalMaxTotal > 0 ? sender.total / globalMaxTotal : 0`
+**Verifies by:** Highest-volume sender shows full-width amber bar
+**Status:** Done 2026-08-10 — all three steps. `globalMaxTotal: number` is a declared `SenderCard` prop (`apps/web/src/features/senders/grid/sender-card.tsx:61`, threaded at `:125`, ADR-0016 §B1 cited at `:56`), and the bar width at `:421` reads `globalMaxTotal > 0 ? Math.min(1, sender.totalReceived / globalMaxTotal) : 0`. The `/100` literal is gone.
+
+### 2026-06-04 — Move useWeeklyHero observability to Brief surface
+**Source:** silent-failure-hunter critic pass 2026-06-04
+**Why:** Commit `48a50bb` removed the `console.warn` on `useWeeklyHero.error` w/ editorial-component retirement. Weekly Hero moves to Brief per spec v1.2 Decision 4; until Brief PR lands hero endpoint outages are invisible.
+**How:**
+1. Port `useEffect` observability block to Brief consumer (see senders-screen.tsx commit `48a50bb` history)
+2. Update event `kind` → `'brief.weekly_hero.fetch_failed'`
+3. Verify Sentry + PostHog pick up event in dev smoke
+**Verifies by:** Trigger Weekly Hero failure in dev; structured warn appears
+**Status:** Done 2026-08-10 — closed by retirement rather than by porting. Weekly Hero was removed wholesale by #346 (`apps/web/src/features/marketing/learn/changelog-content.ts:257`, `:268` — commit `a5700c53`), and the stack this entry wanted to observe no longer exists: `useWeeklyHero`, `fetchWeeklyHero`, the `WeeklyHero*Dto` wire types and the BE `weekly-hero` endpoint return zero hits across `apps/web/src`, `apps/api/src` and `packages/shared/src`. There is no hero endpoint left to have an outage. IMPLEMENTATION-LOG records the same disposition — D47/D48 at 🚫 (`:105`, `:106`).
+
+### 2026-06-03 — Senders visual alignment follow-ups (ADR-0016)
+**Source:** session 2026-06-03 — design-system-agent / typescript-reviewer / silent-failure-hunter critic pass
+**Why:** Three items surfaced during the senders + sender-detail visual-language alignment that are out of the ADR's scope but need founder disposition before they can land
+**How:**
+1. **D220 allowlist amendment.** ADR-0016 introduced `NumericDisplay` as an 11th promoted shared component; D220's table currently lists 10. Either (a) amend D220 to add the `NumericDisplay` row (recommended — ADR satisfies the spec-override clause + 6 active consumers), (b) accept D220 as illustrative-not-exhaustive going forward, or (c) flag plan-drift per CLAUDE.md §3 conflict-resolution. No code blocked.
+2. **TOP SENDER hero bug** — `apps/web/src/features/senders/weekly-hero/weekly-hero-live.tsx:128` renders user's own monogram ("CT2689") in TOP SENDER stat instead of the slice's actual top sender. Independent hotfix PR — not blocked by visual alignment.
+3. **Hero copy rewrite** — `HIGH-CONFIDENCE CLEANUPS` + `Senders we're confident about` + `Long-quiet senders / before they wake up` are inference-driven labels (same trust-hit class as the `intentOf` chip labels the founder asked to retire). Replace w/ fact predicates (`Top unsub-ready · 30 days` + `Long quiet · 60+ days`). Separate PR — own ADR or fact-first-cut PR.
+**Verifies by:** D220 either amended in the plan OR a `LEARNINGS.md` entry locks the illustrative-not-exhaustive disposition; TOP SENDER hotfix lands; hero copy rewrite lands w/ updated Storybook stories
+**Status:** Done 2026-08-10 — all three items disposed of. (1) D220 allowlist amended — CLAUDE.md §4 now lists `NumericDisplay` under "D220 launch allowlist amendments", citing ADR-0016. (2) The TOP SENDER monogram bug is gone with its file: `apps/web/src/features/senders/weekly-hero/` no longer exists (removed by #346). (3) The inference-driven hero copy is gone — `HIGH-CONFIDENCE CLEANUPS`, `Senders we're confident about` and `before they wake up` return zero hits across `apps/web/src` and `packages/shared/src`.
+
+### 2026-05-29 — Brief D68 Pro-tier gate deferred until billing ships
+**Source:** Brief render PR (D61, D63, D67, D69, D70)
+**Why:** D68 specifies a "Your Morning Brief — Upgrade to Pro" placeholder for
+Free/Plus users visiting `/brief`. The tier signal is absent from BOTH layers
+today — `apps/api/src/auth/me` has no tier field and there is no
+`users.tier` / `workspaces.tier` column anywhere in `packages/db/src/schema/**`.
+Wiring a placeholder for a tier that does not exist is fake completion. The
+right pairing is with the billing slice (D17-D21, D77, D81) which has to land
+the tier column + Stripe sync first.
+**How:** When billing lands:
+  1. Surface the tier on `GET /api/auth/me` (extend `Me` in `apps/web/src/features/auth/api/use-me.ts:32`).
+  2. In `apps/web/src/features/brief/brief-screen.tsx:BriefScreen`, early-return
+     a `<UpgradeToProPlaceholder />` when `me.tier !== 'pro'` (similar shape to
+     the existing D33 tier-aware EmptyState pattern in `packages/shared/src/components/empty-state/empty-state.tsx`).
+  3. Mirror the gate in `apps/api/src/briefs/brief.controller.ts` — 403 (not
+     404) when tier !== 'pro', with `code: 'tier_gate'` per the
+     `packages/shared/src/contracts/error-codes.ts` registry.
+**Verifies by:** Free user hitting `/brief` sees upgrade card, not the screen;
+Pro user sees real Brief; integration test in `brief-screen.test.tsx` covers
+both branches.
+**Status:** Done 2026-08-10 — billing landed and both halves of the gate are wired. Server: `apps/api/src/briefs/brief.controller.ts:36-38` applies `CapabilityGuard` + `@RequiresCapability('brief')`, 402-ing `PRO_FEATURE_REQUIRED` for under-tier workspaces (`:9-12`). Client: `apps/web/src/app/(app)/brief/page.tsx:11,20-31` wraps the screen in `TierGate`, so an under-tier user never fetches. NOTE for a follow-up pass: the stale comment at `apps/web/src/features/brief/brief-screen.tsx:56-60` still claims "NOT YET WIRED — see FOUNDER-FOLLOWUPS" and now points at nothing; left in place because `apps/web/src/features/brief/**` is owned by another track.
+
+### 2026-05-29 — Confirm the §9-sensitive D181 security-event emit points before wiring
+**Source:** PR for D181 (security events log) — branch `claude/pending-ds-backend-KIv38`
+**Why:** D181 names 7 emit categories. This PR shipped the table + service + the
+one clearly-safe producer (`rate_limit.breach`). The remaining producers edit
+§9 stop-condition paths (token-crypto, webhook auth) and need your explicit
+sign-off before I add log calls into those control-flow branches:
+- **login attempts** (success + failure) — auth/session path (not crypto, but
+  touches the login flow; cleanest chokepoint TBD: `sessions.service` issue vs.
+  the OAuth callback).
+- **failed OAuth refresh** — token-refresh path (§9 token-encryption-adjacent).
+- **webhook signature verification failures** — Pub/Sub OIDC path (§9 webhook
+  auth); only active when `PUBSUB_WEBHOOK_ENABLED=true`.
+- **KMS access errors** — `token-crypto` / KMS adapter (§9 token crypto).
+- **CSP violation reports** — needs CSP (D175, not built) + a `Report-To`/
+  reporting endpoint first; defer until D175.
+- **role/permission changes** — no roles model exists yet; defer.
+**How:** Reply on the PR (or here) confirming which of the above to wire now and
+that I may add additive (no behavior change) `securityEvents.record(...)` calls
+in those files. I will keep each emit fire-and-forget and metadata-only (D7).
+**Verifies by:** follow-up PR(s) wiring the approved emit points, each with a row
+appearing in `security_events` under the matching `event_type`.
+**Status:** Done 2026-08-10 — the sign-off was overtaken by delivery; all four categories that needed it are wired, and the two the entry itself deferred are still correctly absent. Login attempts: `login.success` / `login.failure` in `apps/api/src/auth/google-oauth.controller.ts` and the sessions path. Failed OAuth refresh: `oauth.refresh_failed` (`apps/api/src/worker.ts:520`). Webhook signature verification: `webhook.signature_failure` at `apps/api/src/webhooks/gmail-webhook.controller.ts:108` and `apps/api/src/webhooks/billing-paddle.controller.ts:72`. KMS access errors: `kms.access_error` (`apps/api/src/worker.ts:404`). CSP violation reports (needs D175) and role/permission changes (no roles model) remain unwired exactly as the entry specified.
+
+### 2026-05-26 — ARCH-DRIFT: 3 controllers missing `@RateLimit(...)` on touched routes (D156)
+**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check G
+**Why:** Three controller routes shipped this week without `@RateLimit(...)` despite D156 requiring per-route limits on all `/v1/**` mutation + polled endpoints. Auth, autopilot, briefs, followups, and senders controllers carry the decorator consistently — these three are the gap:
+
+  - `apps/api/src/triage/triage.controller.ts:27` — `POST /score-sender` (enqueues a BullMQ score job; a single client can flood the worker queue without a limit)
+  - `apps/api/src/undo/undo.controller.ts:47` — `GET /undo` (tray sits on the chrome of every authenticated page)
+  - `apps/api/src/undo/undo.controller.ts:93` — `POST /undo/:token` (destructive revert surface — no rate limit)
+  - `apps/api/src/sync/sync.controller.ts:48` — `GET /v1/sync/status` (polled every 3s by `useSyncStatus()`; trivially escalatable to 100s/sec)
+
+**How:** Add `@RateLimit({ ... })` per route. Suggested caps:
+  - score-sender: `{ tokens: 60, refillPerSec: 1 }` (one new sender/sec is enough for any human interaction)
+  - undo GET: `{ tokens: 30, refillPerSec: 5 }` (page-load + a few re-fetches per minute)
+  - undo POST: `{ tokens: 20, refillPerSec: 0.5 }` (slow refill — undo is rare)
+  - sync status: `{ tokens: 30, refillPerSec: 1 }` (one poll/3s = 0.33/sec; 30-token bucket absorbs the page-load burst)
+
+Founder decision is which limits to pick; the values above are anchored to expected client behavior, not contractual.
+
+**Verifies by:** `rg -n "@RateLimit" apps/api/src/{triage,undo,sync}` returns 4 hits; the next weekly oracle's Check G reports clean.
+**Status:** Done 2026-08-10 — all four named routes carry the decorator. `apps/api/src/triage/triage.controller.ts:48` `@RateLimit('gmail-action')` on `POST /score-sender`; `apps/api/src/undo/undo.controller.ts:64` `{ bucket: 'triage-load', limit: 300, windowSec: 60 }` on the tray GET and `:113` `{ bucket: 'gmail-action', limit: 30, windowSec: 60 }` on the destructive revert POST; `apps/api/src/sync/sync.controller.ts:64` `{ bucket: 'triage-load', limit: 120, windowSec: 60 }` on the polled `GET /v1/sync/status`. The founder's "which limits" decision is embodied in the shipped values.
+
+### 2026-05-22 — D-CANDIDATE: DB CHECK constraints for unsubscribe URL scheme invariant
+**Source:** schema-migration-reviewer gate on PR `feat/d009-sync-data-capture`
+**Why:** `mail_messages.unsubscribe_url` now means "HTTPS URL"
+(post-Codex iter 5 channel split) and `mail_messages.unsubscribe_mailto_url`
+means "mailto URL". The contract is enforced in the worker's parser
+only — a future writer that misses the docstring could insert a
+`mailto:` URL into the HTTPS column. Same risk on
+`senders.unsubscribe_url` (method-aligned scheme).
+**How:** When the next `mail_messages`/`senders` migration ships, add:
+```sql
+ALTER TABLE mail_messages ADD CONSTRAINT mail_messages_unsubscribe_url_https
+  CHECK (unsubscribe_url IS NULL OR unsubscribe_url LIKE 'https://%');
+ALTER TABLE mail_messages ADD CONSTRAINT mail_messages_unsubscribe_mailto_scheme
+  CHECK (unsubscribe_mailto_url IS NULL OR unsubscribe_mailto_url LIKE 'mailto:%');
+```
+And on senders: method-vs-url alignment via a multi-column CHECK.
+**Verifies by:** A direct `INSERT mail_messages(...unsubscribe_url='mailto:x')`
+SQL is rejected by the DB; `pnpm db:test` covers the constraint.
+**Status:** Done 2026-08-10 — shipped as `packages/db/migrations/0032_unsub_url_recipient_checks.sql`, which cites this entry at `:4`. `:87-88` adds `mail_messages_unsubscribe_url_https_chk CHECK ("unsubscribe_url" IS NULL OR "unsubscribe_url" LIKE 'https://%')`; `:92-93` adds `mail_messages_unsubscribe_mailto_scheme_chk` for the `mailto:` column; `:107-108` adds the senders method-vs-url alignment CHECK. Each constraint is preceded by a defensive heal (`:22`) and has a rollback (`0032_unsub_url_recipient_checks.rollback`).
+
+### 2026-05-22 — D-CANDIDATE: defense-in-depth — inbound `recipient_emails IS NULL` CHECK
+**Source:** privacy-auditor INFO on PR `feat/d009-sync-data-capture`
+**Why:** ADR-0004 commits to `mail_messages.recipient_emails IS NULL`
+when `is_outbound=false` (inbound recipients = the connected mailbox
+itself, no product value, stricter privacy posture). Today the
+invariant lives only in the worker's `toMessageRow()` ternary. A
+future writer that bypasses that path could violate it without
+detection.
+**How:** Next `mail_messages` migration adds
+`CHECK (recipient_emails IS NULL OR is_outbound = true)`. Combine with
+the unsubscribe CHECKs above into one constraints-tightening migration.
+**Verifies by:** `INSERT mail_messages(is_outbound=false,
+recipient_emails=ARRAY['x@y.com'])` is rejected by the DB.
+**Status:** Done 2026-08-10 — combined into the same constraints-tightening migration this entry proposed. `packages/db/migrations/0032_unsub_url_recipient_checks.sql:97-98` adds `mail_messages_recipient_emails_outbound_chk CHECK ("recipient_emails" IS NULL OR "is_outbound" = true)`, with the ADR-0004 rationale recorded at `:16`. The invariant no longer lives only in the worker's `toMessageRow()` ternary.
+
+### 2026-05-22 — D-CANDIDATE: migrate `GoogleOAuthService.handleCallback` to D205 `AuthSignupOrchestrator`
+**Source:** architecture-guardian INFO on PR `feat/d009-sync-data-capture`
+**Why:** `handleCallback` now coordinates four feature concerns inside
+one transaction: token decryption, mailbox upsert, sync-intent write
+(`SyncService.markQueued`), best-effort BullMQ enqueue
+(`SyncService.schedule`). The shape is approaching D205's
+`AuthSignupOrchestrator` scope. Today documented as a deferral
+("Full Idempotency-Key handling is D205's AuthSignupOrchestrator
+scope") with the boundary clean (auth never touches
+`provider_sync_state` directly). When AuthSignupOrchestrator lands,
+this code should migrate.
+**How:** Include the connect-callback migration in the AuthSignupOrchestrator PR
+scope. Move to `apps/api/src/auth/orchestrators/` with an explicit
+`*OrchestratorOptions` type + UnitOfWork wrapper around the existing
+tx.
+**Verifies by:** `GoogleOAuthService.handleCallback` shrinks to ≤20
+lines; the orchestrator owns the four-step sequence.
+**Status:** Done 2026-08-10 — the orchestrator landed and absorbed the callback. `apps/api/src/auth/auth-signup.orchestrator.ts` exists with its own spec (`auth-signup.orchestrator.spec.ts:29` — "AuthSignupOrchestrator.connect — identity resolution"), `apps/api/src/auth/google-oauth.service.ts:29` now names it as a collaborator, and `handleCallback` returns zero hits anywhere under `apps/api/src` — the four-step sequence is no longer inside it.
+
+### 2026-05-22 — D-CANDIDATE: `sync_runs` per-account sync-timing history table
+**Source:** session — founder ask (2026-05-22)
+**Why:** Sync duration is the product's load-bearing trust signal (D6
+onboarding gate). PR-C's timing follow-up (`feat/d006-sync-timing-logs`)
+emits per-stage timing on the `worker.succeeded` log line, but logs hold
+no queryable history. To answer "is sync getting slower for this
+account," compare accounts, or find the slow stage over time, a per-run
+history table is needed — `provider_sync_state` is current-state only
+(one row per mailbox) and cannot hold run history.
+**How:** Ratify a new D-decision for a `sync_runs` table — one row per
+sync run: `mailbox_account_id` (FK), `attempt`, `started_at`,
+`finished_at`, `status`, `stage_timings jsonb`, `messages_synced`,
+`senders_indexed`, `gmail_api_calls`, `error_code`. A follow-up PR then
+adds the migration and the worker persists `InitialSyncResult` (already
+shaped 1:1 to these columns). No privacy concern — timings + counts
+only, no Gmail content; D7 unaffected.
+**Verifies by:** the D is ratified + numbered; a follow-up PR ships the
+table + the worker writes a row per run; sync timing is queryable per
+account over time.
+**Status:** Done 2026-08-10 — ratified and built. Schema at `packages/db/src/schema/sync-runs.ts`, migration `packages/db/migrations/0054_sync_runs.sql` (with a `.rollback`), and the worker persists a row per run — `packages/workers/src/initial-sync.worker.ts:458`, `:587`, `:1529` insert into `syncRuns`, covered by `initial-sync.worker.test.ts:1607`, `:1644`, `:1672`. Deletion cascades correctly (`packages/workers/src/deletion.worker.ts:554`). Sync timing is now queryable per account over time.
+
 
 ### 2026-07-31 — Refund path: UI truth, partial refunds, and the cancel AT PADDLE
 
