@@ -6,11 +6,17 @@
 //
 // D68 Pro gate: Free/Plus workspaces see the placeholder + upgrade CTA
 // instead of the Brief (the TierGate also stops the under-tier brief
-// fetch from ever firing). Placeholder copy mirrors D68's card verbatim,
-// including the Noise line: D65 has shipped, so "one-click archive"
-// names a real affordance — the Noise section carries per-sender
-// checkboxes (default-all checked) over one confirmed bulk Archive. PR
-// #495 had temporarily reworded this line while D65 was unbuilt.
+// fetch from ever firing).
+//
+// The Noise line DIVERGES from D68's card, deliberately. D68 reads
+// "NOISE — one-click archive"; D65 has now shipped and the real flow is
+// review the checked senders → Archive → mandatory preview → confirm.
+// D226 makes that preview non-skippable, so "one-click" is not something
+// this feature can grow into — it is a claim the architecture forbids.
+// The bullet below sells the same capability in words the product keeps.
+// Recorded as plan drift in FOUNDER-FOLLOWUPS.md (2026-08-10); the plan
+// edit is the founder's. PR #495 had reworded this line differently while
+// D65 was still unbuilt.
 
 import { TierGate } from '@/features/billing/tier-gate';
 import { BriefScreen } from '@/features/brief/brief-screen';
@@ -28,7 +34,7 @@ export default function BriefPage() {
       bullets={[
         'REPLY — what actually needs you',
         'FYI — facts to know',
-        'NOISE — one-click archive',
+        'NOISE — archive the whole pile in one confirmed action',
       ]}
     >
       <BriefScreen />
