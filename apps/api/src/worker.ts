@@ -67,6 +67,10 @@ import {
   UNDO_EXPIRY_INTERVAL_MS,
   UNDO_EXPIRY_QUEUE,
   UndoExpiryWorker,
+  LAPSE_REENGAGEMENT_INTERVAL_MS,
+  LAPSE_REENGAGEMENT_QUEUE,
+  LapseReengagementWorker,
+  enqueueLapseReengagementTick,
   UNSUB_EXECUTION_JOB,
   UNSUB_EXECUTION_QUEUE,
   UnsubExecutionWorker,
@@ -108,6 +112,8 @@ import type {
   InitialSyncResult,
   LabelActionJobData,
   LabelActionResult,
+  LapseReengagementJobData,
+  LapseReengagementResult,
   MailboxActionLock,
   ScoreJobData,
   ScoreJobResult,
@@ -130,7 +136,11 @@ import { buildBriefLlmAdapter } from './adapters/brief-llm-anthropic.adapter.js'
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
-import { deletionReceiptEmail, weeklyValueReceiptEmail } from './notifications/templates/index.js';
+import {
+  deletionReceiptEmail,
+  lapseReengagementEmail,
+  weeklyValueReceiptEmail,
+} from './notifications/templates/index.js';
 import { EmailService } from './notifications/email.service.js';
 import { EmailSuppressionService } from './notifications/email-suppression.service.js';
 import { buildSyncReadyEmailHandler } from './notifications/sync-ready-email.trigger.js';
@@ -1565,14 +1575,14 @@ async function bootstrap(): Promise<void> {
   });
   const weeklyValueReceiptWorker = new WeeklyValueReceiptWorker({
     db,
-    prepareEmail: async ({ userId, pendingCount }) => {
+    prepareEmail: async ({ userId, facts }) => {
       const unsubscribe = await unsubscribeUrl({
         userId,
         scope: 'all',
         apiUrl: process.env.API_URL ?? 'http://localhost:4000',
       });
       const rendered = weeklyValueReceiptEmail({
-        pendingCount,
+        facts,
         appUrl: process.env.WEB_URL ?? 'http://localhost:3000',
         unsubscribeUrl: unsubscribe,
       });
@@ -1629,6 +1639,79 @@ async function bootstrap(): Promise<void> {
     void enqueueWeeklyReceiptTick();
   }, WEEKLY_VALUE_RECEIPT_INTERVAL_MS);
   weeklyValueReceiptSchedulerHandle.unref();
+
+  /**
+   * D126 Part 3 — hourly producer for the lapse re-engagement email.
+   * The cron worker resolves each user's dormancy band and enqueues
+   * only when senders are actually waiting; the EmailSendWorker remains
+   * the execution-time preference, "user returned" and postal gate.
+   */
+  const lapseReengagementQueue = new Queue<LapseReengagementJobData>(LAPSE_REENGAGEMENT_QUEUE, {
+    connection,
+  });
+  const lapseReengagementWorker = new LapseReengagementWorker({
+    db,
+    prepareEmail: async ({ userId, pendingCount }) => {
+      const unsubscribe = await unsubscribeUrl({
+        userId,
+        scope: 'all',
+        apiUrl: process.env.API_URL ?? 'http://localhost:4000',
+      });
+      const rendered = lapseReengagementEmail({
+        pendingCount,
+        appUrl: process.env.WEB_URL ?? 'http://localhost:3000',
+        unsubscribeUrl: unsubscribe,
+      });
+      return {
+        subject: rendered.subject,
+        text: rendered.text,
+        headers: unsubscribeHeadersFor(unsubscribe),
+      };
+    },
+    enqueueEmail: (data) => enqueueEmailSend(emailSendQueue, data),
+  });
+  lapseReengagementWorker.setObserver(observer);
+  lapseReengagementWorker.setDeadLetterRecorder(deadLetterRecorder);
+  const lapseReengagementBullWorker = new Worker<LapseReengagementJobData, LapseReengagementResult>(
+    LAPSE_REENGAGEMENT_QUEUE,
+    (job) => lapseReengagementWorker.run(job),
+    { connection, concurrency: 1, ...cronTuning },
+  );
+  lapseReengagementBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: LAPSE_REENGAGEMENT_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  async function enqueueLapseTick(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueLapseReengagementTick(lapseReengagementQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'lapse_reengagement.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, {
+        kind: 'lapse_reengagement.scheduler_failed',
+      });
+    }
+  }
+
+  await enqueueLapseTick();
+  const lapseReengagementSchedulerHandle = setInterval(() => {
+    void enqueueLapseTick();
+  }, LAPSE_REENGAGEMENT_INTERVAL_MS);
+  lapseReengagementSchedulerHandle.unref();
 
   /**
    * Autopilot execution chain (D99/D101/D104, D226 — perMailboxPolicy;
@@ -2190,6 +2273,7 @@ async function bootstrap(): Promise<void> {
     clearInterval(deletionSweepSchedulerHandle);
     clearInterval(followupCheckSchedulerHandle);
     clearInterval(weeklyValueReceiptSchedulerHandle);
+    clearInterval(lapseReengagementSchedulerHandle);
     void (async () => {
       if (inFlight) {
         await inFlight;
@@ -2220,6 +2304,8 @@ async function bootstrap(): Promise<void> {
       await emailSendQueue.close();
       await weeklyValueReceiptBullWorker.close();
       await weeklyValueReceiptQueue.close();
+      await lapseReengagementBullWorker.close();
+      await lapseReengagementQueue.close();
       await autopilotApplyBullWorker.close();
       await autopilotActionBullWorker.close();
       await autopilotApplyQueue.close();
