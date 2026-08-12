@@ -1452,10 +1452,13 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
           'info',
         ),
       );
-      await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+      // The PARKED row stays busy — its job is still running server-side,
+      // and re-dispatch would mint a second real Gmail job for the same
+      // sender. Only the latch releases, not the row.
+      expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
 
-      // The screen works again: the next decision DISPATCHES instead of
-      // deferring into the void.
+      // The screen works again: the next decision on ANOTHER row
+      // DISPATCHES instead of deferring into the void.
       expandRow(LINKEDIN.senderName);
       fireEvent.keyDown(window, { key: 'k' });
       await waitFor(() => expect(keeps).toHaveLength(1));

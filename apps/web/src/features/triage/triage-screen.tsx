@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
@@ -152,6 +152,13 @@ interface BatchHandle {
   batchId: string;
   domain: string;
   verb: BatchVerb;
+  /**
+   * Queue rows the fan-out covers. Needed once the batch can be PARKED:
+   * the members are still in the queue (the batch is not durable yet)
+   * and must render busy / refuse re-dispatch, or a member could get a
+   * second job while the parked fan-out still runs.
+   */
+  rowIds: string[];
 }
 
 export function TriageScreen({
@@ -212,6 +219,13 @@ export function TriageScreen({
   // displaced action's outcome stays visible in Activity.
   const [overdueAction, setOverdueAction] = useState<ActionHandle | null>(null);
   const overdueActionStatus = useActionStatus(overdueAction?.actionId ?? null);
+  // Mirror of the parking slot for the displacement check inside the
+  // overdue timer callback — the timer is armed ~2 minutes before it
+  // fires, so it must read the CURRENT occupant, not a render snapshot.
+  const overdueActionRef = useRef<ActionHandle | null>(null);
+  useEffect(() => {
+    overdueActionRef.current = overdueAction;
+  }, [overdueAction]);
 
   // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution. Watched
   // OUTSIDE the single-slot re-entry latch: the decision row already
@@ -246,6 +260,10 @@ export function TriageScreen({
   // Batch counterpart of `overdueAction` — same parking contract.
   const [overdueBatch, setOverdueBatch] = useState<BatchHandle | null>(null);
   const overdueBatchStatus = useBatchStatus(overdueBatch?.batchId ?? null);
+  const overdueBatchRef = useRef<BatchHandle | null>(null);
+  useEffect(() => {
+    overdueBatchRef.current = overdueBatch;
+  }, [overdueBatch]);
 
   // D226 — the batch sheet's REAL aggregated counts. A batch is only
   // constructed with ≥MIN_BATCH_RUN eligible rows (domain-batch.ts), so
@@ -473,11 +491,16 @@ export function TriageScreen({
         `${activeAction.verb} for ${activeAction.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
         'info',
       );
+      // Single parking slot: a second overdue action displaces the
+      // first, whose poll stops here. Refetch so the displaced row
+      // cannot sit permanently stale; its failure toast is deliberately
+      // dropped (single-slot trade-off — the outcome stays in Activity).
+      if (overdueActionRef.current != null) invalidateAfterDecision(qc);
       setOverdueAction(activeAction);
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
     return () => clearTimeout(timer);
-  }, [activeAction]);
+  }, [activeAction, qc]);
 
   useEffect(() => {
     if (!batchAction) return;
@@ -486,11 +509,13 @@ export function TriageScreen({
         `${batchAction.verb} for the ${batchAction.domain} batch is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
         'info',
       );
+      // Same single-slot displacement trade-off as the action slot above.
+      if (overdueBatchRef.current != null) invalidateAfterDecision(qc);
       setOverdueBatch(batchAction);
       setBatchAction(null);
     }, ACTION_OVERDUE_MS);
     return () => clearTimeout(timer);
-  }, [batchAction]);
+  }, [batchAction, qc]);
 
   // Terminal outcome for a PARKED action — same contract as the active
   // slot's effect above, except the expanded row is left alone (the
@@ -879,8 +904,20 @@ export function TriageScreen({
     ],
   );
 
-  // The row currently confirming — renders busy, refuses re-dispatch.
-  const busyRowId = activeAction?.rowId ?? intentRowId;
+  // Rows with an outstanding job — confirming, intent-settling, OR
+  // parked overdue — render busy and refuse re-dispatch. A set, not a
+  // single id: parking exists precisely so the NEXT action can start
+  // while the parked one still runs, so two rows are busy at once (and
+  // a parked batch keeps all its member rows busy). Re-dispatching any
+  // of them would mint a second real Gmail job for the same sender.
+  const busyRowIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (activeAction) ids.add(activeAction.rowId);
+    if (overdueAction) ids.add(overdueAction.rowId);
+    if (intentRowId != null) ids.add(intentRowId);
+    for (const id of overdueBatch?.rowIds ?? []) ids.add(id);
+    return ids;
+  }, [activeAction, overdueAction, intentRowId, overdueBatch]);
 
   /**
    * Row-level handler — bridges a button click / shortcut to the
@@ -895,7 +932,7 @@ export function TriageScreen({
    */
   const onRowAction = useCallback(
     (verb: ActionVerb, row: TriageDecisionRow) => {
-      if (row.id === busyRowId) return;
+      if (busyRowIds.has(row.id)) return;
       if (verb === 'Keep') {
         // Keep has no preview surface (D40 — non-destructive, applies
         // immediately); recorded as 'inline' (row-level dispatch).
@@ -914,7 +951,7 @@ export function TriageScreen({
         setExpandedRow(row.id);
       }
     },
-    [busyRowId, dispatchAction, openPending, rememberPreference, setExpandedRow],
+    [busyRowIds, dispatchAction, openPending, rememberPreference, setExpandedRow],
   );
 
   /** Sheet confirm — dispatches, then persists remember-preference. */
@@ -981,10 +1018,17 @@ export function TriageScreen({
    */
   const onBatchVerb = useCallback(
     (verb: BatchVerb, batch: DomainBatch) => {
+      // Parked handles count here, unlike in dispatchAction: a batch is
+      // many senders wide, so any overlap with a still-running parked
+      // job would double-touch its sender(s). Rows stay individually
+      // dispatchable (busyRowIds guards just the busy ones); batches
+      // wait for the parked work with the same honest deferral toast.
       if (
         activeAction != null ||
+        overdueAction != null ||
         intentRowId != null ||
         batchAction != null ||
+        overdueBatch != null ||
         enqueueBulk.isPending ||
         enqueueComposite.isPending ||
         keepIntent.isPending ||
@@ -1002,8 +1046,10 @@ export function TriageScreen({
     },
     [
       activeAction,
+      overdueAction,
       intentRowId,
       batchAction,
+      overdueBatch,
       enqueueBulk.isPending,
       enqueueComposite.isPending,
       keepIntent.isPending,
@@ -1047,6 +1093,7 @@ export function TriageScreen({
             batchId: res.batchId,
             domain: batch.domain,
             verb,
+            rowIds: eligible.map((r) => r.id),
           });
         },
         onError: (err) => {
@@ -1201,7 +1248,10 @@ export function TriageScreen({
             <VerdictBatchBanner
               batch={verdictBatch.batch}
               verdict={verdictBatch.verdict}
-              busy={batchAction?.domain === verdictBatch.batch.domain}
+              busy={
+                batchAction?.domain === verdictBatch.batch.domain ||
+                overdueBatch?.domain === verdictBatch.batch.domain
+              }
               onApply={() =>
                 onBatchVerb(
                   verdictBatch.verdict === 'archive' ? 'Archive' : 'Later',
@@ -1216,12 +1266,12 @@ export function TriageScreen({
         <TriageQueue
           rows={state.rows}
           onAction={onRowActionWithInlineConfirm}
-          busyRowId={busyRowId}
+          busyRowIds={busyRowIds}
           previewInboxCount={previewInboxCount}
           allowBatching={journey === 'daily'}
           offerUnprotect={offerUnprotect}
           onBatchVerb={onBatchVerb}
-          batchBusyDomain={batchAction?.domain ?? null}
+          batchBusyDomain={batchAction?.domain ?? overdueBatch?.domain ?? null}
         />
       )}
 
