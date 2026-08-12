@@ -12,6 +12,9 @@ import type { ActionVerb } from './types';
 
 const { color, font } = tokens;
 
+/** Stable empty default for `busyRowIds` — a fresh `new Set()` per render would defeat memoized rows. */
+const NO_BUSY_ROWS: ReadonlySet<string> = new Set();
+
 /**
  * The triage queue list (D29, D36).
  *
@@ -36,7 +39,7 @@ const { color, font } = tokens;
 export function TriageQueue({
   rows,
   onAction,
-  busyRowId = null,
+  busyRowIds = NO_BUSY_ROWS,
   previewInboxCount = 'loading',
   allowBatching = true,
   offerUnprotect = false,
@@ -47,11 +50,13 @@ export function TriageQueue({
   /** Dispatched when a row's toolbar fires K/A/U/L/D. */
   onAction: (verb: ActionVerb, row: TriageDecisionRow) => void;
   /**
-   * Row whose decision is confirming server-side (D226 — the row
-   * stays in the queue, rendered busy, until the server confirms and
-   * the refetch drops it). `null` when nothing is in flight.
+   * Rows whose decisions are confirming server-side or parked overdue
+   * (D226 — a row stays in the queue, rendered busy, until the server
+   * confirms and the refetch drops it). A set, not one id: the overdue
+   * parking slot lets a next decision start while a parked one still
+   * runs, so several rows can be busy at once.
    */
-  busyRowId?: string | null;
+  busyRowIds?: ReadonlySet<string>;
   /** Live inbox count for the inline preview's impact figure (D226). */
   previewInboxCount?: PreviewCount;
   /** Disable multi-sender shortcuts for finite guided sessions. */
@@ -123,7 +128,7 @@ export function TriageQueue({
                   batch={batch}
                   busy={batchBusyDomain === batch.domain}
                   disabled={
-                    busyRowId != null ||
+                    busyRowIds.size > 0 ||
                     (batchBusyDomain != null && batchBusyDomain !== batch.domain)
                   }
                   onVerb={(verb) => onBatchVerb?.(verb, batch)}
@@ -154,7 +159,7 @@ export function TriageQueue({
               <TriageRow
                 row={row}
                 expanded={expanded}
-                busy={busyRowId === row.id}
+                busy={busyRowIds.has(row.id)}
                 hero={heroRowId === row.id}
                 offerUnprotect={offerUnprotect}
                 onToggleExpand={() => toggleExpandedRow(row.id)}

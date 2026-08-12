@@ -21,7 +21,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { QueryClient } from '@tanstack/react-query';
 
 import {
@@ -35,7 +35,8 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { undoKeys } from '@/features/undo/query-keys';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore, useTriageStore } from './store';
-import { TriageScreen } from './triage-screen';
+import { ACTION_OVERDUE_MS, TriageScreen } from './triage-screen';
+import { ACTION_POLL_MS } from '@/lib/api/use-action';
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 
 // Toast is the ONLY user-visible failure surface in this flow (D35 —
@@ -475,7 +476,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
     // Backlog is a separate Gmail mutation, so opt in explicitly.
-    fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Also archive the/i }));
     await confirmOpenSheet('Unsubscribe');
 
     // Intent first, then the archive enqueue (the toggle's promise is
@@ -731,7 +732,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Also archive the/i }));
     await confirmOpenSheet('Unsubscribe');
 
     // The partial-failure copy is explicit: the unsubscribe DID queue,
@@ -1234,5 +1235,397 @@ describe('TriageScreen — Protected rows act with an explicit override (D245/D4
   it('does NOT send override for an unprotected row', async () => {
     // Two-sided: a flag only ever observed set is not a verified flag.
     expect(await archiveAndCaptureBody(GROUPON)).not.toMatchObject({ override: true });
+  });
+});
+
+/**
+ * 2026-08-12 incident — the dispatch latch must defer WITHOUT lying.
+ * A backend lock bug held one Delete for 8m39s; the occupied single
+ * slot then (a) dismissed later confirms as if accepted while nothing
+ * dispatched, (b) persisted a remember-preference for an action that
+ * never ran, and (c) held the latch forever. Guard-first ordering,
+ * dispatch-gated pref persistence, and the ACTION_OVERDUE_MS parking
+ * slot are pinned here.
+ */
+describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
+  const PREF_PATCH_OK = {
+    data: { actionSheetPrefs: { archive: true, unsubscribe: false, later: false } },
+  };
+
+  beforeEach(() => {
+    resetTriageStore();
+    h.toast.mockClear();
+    h.captureFeatureException.mockClear();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => jsonOk({ data: PREVIEW_BODY }),
+      },
+    ]);
+  });
+  afterEach(() => {
+    resetFetchStub();
+  });
+
+  const enqueueOkHandler = {
+    method: 'POST' as const,
+    path: '/api/actions',
+    respond: () =>
+      jsonOk({
+        data: {
+          actionId: ACTION_ID,
+          compositeId: ACTION_ID,
+          secondaryId: null,
+          status: 'queued',
+          primaryCount: 47,
+          secondaryCount: null,
+        },
+      }),
+  };
+
+  /** Open the sheet for `verb` on a row, check "remember", ⌘⏎ confirm. */
+  async function confirmWithRememberChecked(senderName: string) {
+    expandRow(senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(
+      within(dialog).getByRole('checkbox', { name: 'Show this in the row next time' }),
+    );
+    const confirm = within(dialog).getByRole('button', { name: /^Archive/i });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+  }
+
+  it('guard-trip keeps the pending sheet open and persists NO preference', async () => {
+    const prefPatches: unknown[] = [];
+    addFetchHandlers([
+      enqueueOkHandler,
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        // Never terminal — the first decision stays confirming.
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              status: 'executing',
+              requestedCount: 47,
+              affectedCount: 0,
+              undoToken: null,
+              errorCode: null,
+            },
+          }),
+      },
+      {
+        method: 'PATCH',
+        path: '/api/me/action-sheet-prefs',
+        respond: async (req) => {
+          prefPatches.push(await req.json());
+          return jsonOk(PREF_PATCH_OK);
+        },
+      },
+    ]);
+
+    const { container } = renderScreen(createTestQueryClient());
+
+    // First decision: Archive GROUPON — stays confirming forever.
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+    await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).not.toBeNull());
+
+    // Second decision on another row while the slot is occupied.
+    await confirmWithRememberChecked(LINKEDIN.senderName);
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        'Still confirming your last decision — give it a moment.',
+        'info',
+      ),
+    );
+    // The pending action SURVIVES the deferral — the sheet must stay
+    // open instead of dismissing as if the decision were accepted.
+    expect(screen.getByRole('dialog')).toBeDefined();
+    expect(useTriageStore.getState().pendingAction).toMatchObject({
+      verb: 'Archive',
+      rowId: LINKEDIN.id,
+      surface: 'sheet',
+    });
+    // And the never-dispatched confirm persisted nothing (store + wire).
+    expect(useTriageStore.getState().rememberPreference.Archive).toBe(false);
+    expect(prefPatches).toHaveLength(0);
+  });
+
+  it('a DISPATCHED confirm with remember checked fires the prefs PATCH', async () => {
+    const prefPatches: unknown[] = [];
+    addFetchHandlers([
+      enqueueOkHandler,
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              status: 'done',
+              requestedCount: 47,
+              affectedCount: 47,
+              undoToken: '55555555-5555-4555-8555-555555555555',
+              errorCode: null,
+            },
+          }),
+      },
+      {
+        method: 'PATCH',
+        path: '/api/me/action-sheet-prefs',
+        respond: async (req) => {
+          prefPatches.push(await req.json());
+          return jsonOk(PREF_PATCH_OK);
+        },
+      },
+    ]);
+
+    renderScreen(createTestQueryClient());
+    await confirmWithRememberChecked(GROUPON.senderName);
+
+    // The dispatch fired, so the D34 write-through follows it.
+    await waitFor(() => expect(prefPatches).toEqual([{ archive: true }]));
+    expect(useTriageStore.getState().rememberPreference.Archive).toBe(true);
+  });
+
+  it('overdue release: the latch parks at ACTION_OVERDUE_MS and the late done still lands', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let actionState: 'executing' | 'done' = 'executing';
+      const keeps: unknown[] = [];
+      addFetchHandlers([
+        enqueueOkHandler,
+        {
+          method: 'GET',
+          path: `/api/actions/${ACTION_ID}`,
+          respond: () =>
+            jsonOk({
+              data: {
+                actionId: ACTION_ID,
+                status: actionState,
+                requestedCount: 47,
+                affectedCount: actionState === 'done' ? 47 : 0,
+                undoToken: null,
+                errorCode: null,
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/keep-intent',
+          respond: async (req) => {
+            keeps.push(await req.json());
+            return jsonOk({
+              data: {
+                senderId: LINKEDIN.senderId,
+                recordedAt: new Date().toISOString(),
+                activityLogId: '66666666-6666-4666-8666-666666666666',
+              },
+            });
+          },
+        },
+      ]);
+
+      const client = createTestQueryClient();
+      const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+      const { container } = renderScreen(client);
+
+      expandRow(GROUPON.senderName);
+      fireEvent.keyDown(window, { key: 'a' });
+      await confirmOpenSheet('Archive');
+      await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).not.toBeNull());
+
+      // The worker never confirms — at ACTION_OVERDUE_MS the handle
+      // parks, the user is told once, and the latch releases.
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_OVERDUE_MS);
+      });
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          `Archive for ${GROUPON.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+          'info',
+        ),
+      );
+      // The PARKED row stays busy — its job is still running server-side,
+      // and re-dispatch would mint a second real Gmail job for the same
+      // sender. Only the latch releases, not the row.
+      expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+
+      // The screen works again: the next decision on ANOTHER row
+      // DISPATCHES instead of deferring into the void.
+      expandRow(LINKEDIN.senderName);
+      fireEvent.keyDown(window, { key: 'k' });
+      await waitFor(() => expect(keeps).toHaveLength(1));
+      await waitFor(() =>
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
+      );
+      expect(useTriageStore.getState().sessionDecidedCount).toBe(1);
+
+      // The parked poll kept watching: when the hung worker finally
+      // reports done, the invalidation + burn-down land late but land.
+      invalidateSpy.mockClear();
+      actionState = 'done';
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_POLL_MS * 2);
+      });
+      await waitFor(() =>
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
+      );
+      await waitFor(() => expect(useTriageStore.getState().sessionDecidedCount).toBe(2));
+      // Still no success toast (D35 — decisions never toast on success).
+      expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a sheet opened on a batch member before the batch parks cannot dispatch onto the parked member', async () => {
+    // The bypass shape: batch members are NOT busy while the batch is
+    // merely confirming (batchAction), so a sheet can open on one. When
+    // the batch then PARKS, the member becomes busy — but the already-
+    // open sheet's confirm path never re-consults the row surface. The
+    // dispatch choke point must refuse it, or the member gets a second
+    // real Gmail job while the parked fan-out still covers it.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const BATCH_ID = '77777777-7777-4777-8777-777777777777';
+      const archiveTrio = TRIAGE_QUEUE.filter((r) => r.verdict === 'archive').slice(0, 3);
+      expect(archiveTrio).toHaveLength(3);
+      const member = archiveTrio[0]!;
+
+      const bulkEnqueues: unknown[] = [];
+      const compositeEnqueues: unknown[] = [];
+      const buckets = {
+        all: 90,
+        olderThan30d: 60,
+        olderThan90d: 30,
+        olderThan180d: 9,
+        olderThan365d: 3,
+      };
+      addFetchHandlers([
+        {
+          method: 'POST',
+          path: '/api/actions/preview/bulk',
+          respond: () =>
+            jsonOk({
+              data: {
+                senders: archiveTrio.map((r) => ({
+                  senderId: r.senderId,
+                  name: r.senderName,
+                  counts: buckets,
+                  protected: false,
+                })),
+                totals: buckets,
+                protectedCount: 0,
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: async (req) => {
+            const body = (await req.json()) as { selector?: { type?: string } };
+            if (body.selector?.type === 'senders') {
+              bulkEnqueues.push(body);
+              return jsonOk({
+                data: {
+                  batchId: BATCH_ID,
+                  status: 'queued',
+                  senderCount: 3,
+                  requestedTotal: 90,
+                  wakeAt: null,
+                  skipped: [],
+                },
+              });
+            }
+            compositeEnqueues.push(body);
+            return jsonOk({
+              data: {
+                actionId: ACTION_ID,
+                compositeId: ACTION_ID,
+                secondaryId: null,
+                status: 'queued',
+                primaryCount: 47,
+                secondaryCount: null,
+              },
+            });
+          },
+        },
+        {
+          // The fan-out never settles — the batch will park.
+          method: 'GET',
+          path: `/api/actions/batch/${BATCH_ID}`,
+          respond: () =>
+            jsonOk({
+              data: {
+                batchId: BATCH_ID,
+                status: 'executing',
+                total: 3,
+                done: 0,
+                failed: 0,
+                requestedCount: 90,
+                affectedCount: 0,
+                undoToken: null,
+                unsubscribeOutcomes: null,
+              },
+            }),
+        },
+      ]);
+
+      render(
+        <QueryWrapper client={createTestQueryClient()}>
+          <TriageScreen state={{ kind: 'ready', rows: archiveTrio, stats: TRIAGE_SESSION_STATS }} />
+        </QueryWrapper>,
+      );
+
+      // Confirm the verdict batch through its D226 sheet.
+      fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
+      const batchSheet = await screen.findByRole('dialog');
+      const batchConfirm = within(batchSheet).getByRole('button', { name: /^Archive all/ });
+      await waitFor(() => expect(batchConfirm).not.toBeDisabled());
+      fireEvent.click(batchConfirm);
+      await waitFor(() => expect(bulkEnqueues).toHaveLength(1));
+
+      // Members are not busy while the batch is confirming — the sheet
+      // opens on one (the bypass window).
+      expandRow(member.senderName);
+      fireEvent.keyDown(window, { key: 'a' });
+      const memberSheet = await screen.findByRole('dialog');
+      await waitFor(() =>
+        expect(within(memberSheet).getByRole('button', { name: /^Archive/i })).not.toBeDisabled(),
+      );
+
+      // The batch parks; the member row is now busy, the sheet still open.
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_OVERDUE_MS);
+      });
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          'Archive for the Archive-recommended batch is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
+          'info',
+        ),
+      );
+      expect(screen.getByRole('dialog')).toBeDefined();
+
+      // Confirming now must be refused at the dispatch choke point —
+      // no composite POST, deferral toast, decision stays pending.
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          'Still confirming your last decision — give it a moment.',
+          'info',
+        ),
+      );
+      expect(compositeEnqueues).toHaveLength(0);
+      expect(screen.getByRole('dialog')).toBeDefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

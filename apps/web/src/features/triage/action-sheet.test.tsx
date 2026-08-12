@@ -240,7 +240,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
       wakeAt: null,
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Also archive the/i }));
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -283,6 +283,53 @@ describe('ActionSheet — live-preview confirm gate', () => {
     expect(screen.getByText(/emails currently match in Inbox/i)).toBeInTheDocument();
     expect(screen.getByText(/Gmail is checked again at execution/i)).toBeInTheDocument();
     expect(screen.queryByText(/will move out of the inbox/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
+  // Unsubscribe is the one verb that renders BOTH toggles.
+  function renderUnsubSheet() {
+    return render(
+      <ActionSheet
+        open={true}
+        verb="Unsubscribe"
+        row={row}
+        inboxCount={2}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+  }
+
+  it('exposes both toggles as checkboxes whose aria-checked tracks state', () => {
+    renderUnsubSheet();
+
+    const backlog = screen.getByRole('checkbox', { name: /Also archive the/i });
+    expect(backlog).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(backlog);
+    expect(backlog).toHaveAttribute('aria-checked', 'true');
+
+    const remember = screen.getByRole('checkbox', {
+      name: 'Show this in the row next time',
+    });
+    expect(remember).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(remember);
+    expect(remember).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('a checked remember toggle fills like the checked backlog toggle', () => {
+    // The remember toggle used to stay visually mute when checked while
+    // the backlog toggle above it filled — a checked choice that reads
+    // as unselected. Pin the parity on the checked treatment.
+    renderUnsubSheet();
+    const backlog = screen.getByRole('checkbox', { name: /Also archive the/i });
+    const remember = screen.getByRole('checkbox', {
+      name: 'Show this in the row next time',
+    });
+    fireEvent.click(backlog);
+    fireEvent.click(remember);
+    expect(remember.style.background).toBe(backlog.style.background);
+    expect(remember.style.border).toBe(backlog.style.border);
   });
 });
 
