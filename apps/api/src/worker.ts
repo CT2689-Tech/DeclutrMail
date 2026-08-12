@@ -135,6 +135,7 @@ import { AnthropicHaikuAdapter } from './adapters/anthropic-haiku.adapter.js';
 import { buildBriefLlmAdapter } from './adapters/brief-llm-anthropic.adapter.js';
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
+import { toSessionPoolUrl } from './db/session-pool-url.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
 import {
   deletionReceiptEmail,
@@ -391,8 +392,21 @@ async function bootstrap(): Promise<void> {
    * needing the N+1th). Separate pools = no hold-and-wait, regardless of
    * any concurrency number.
    */
-  // prepare:false — same Supabase tx-pooler reason as `pg` above.
-  const lockPg = postgres(requireEnv('DATABASE_URL'), {
+  // SESSION pooler, not the transaction pooler: `pg_advisory_lock` is
+  // session-scoped, and in transaction mode Supavisor acquires it on one
+  // backend and runs the unlock on another — the unlock returns false and
+  // the lock leaks on an idle pooled backend, blocking every subsequent
+  // destructive action + incremental sync for that mailbox until the
+  // connection dies (prod 2026-08-12: a Delete queued 8m39s; all three
+  // mailboxes held a leaked lock). Session mode pins one backend per
+  // client connection, which is the contract session locks require.
+  // prepare:false — same Supabase tx-pooler reason as `pg` above (kept
+  // for safety even though session mode would tolerate prepares).
+  const lockDatabaseUrl = toSessionPoolUrl(requireEnv('DATABASE_URL'));
+  bootStep('lock_pool_session_mode', {
+    rewritten: lockDatabaseUrl !== process.env.DATABASE_URL,
+  });
+  const lockPg = postgres(lockDatabaseUrl, {
     max: LABEL_ACTION_CONCURRENCY,
     prepare: false,
   });
@@ -568,13 +582,45 @@ async function bootstrap(): Promise<void> {
     async run(mailboxAccountId, fn) {
       const reserved = await lockPg.reserve();
       try {
+        // Bounded wait: a lock that cannot be acquired in 5 minutes is a
+        // stuck holder, not contention — fail the job into BullMQ's
+        // retry/dead-letter path instead of hanging forever (the
+        // 2026-08-12 leak sat invisible precisely because nothing timed
+        // out; `perMailboxPolicy.timeoutMs` is null by design for long
+        // syncs, so the bound lives on the lock wait itself).
+        await reserved`SET lock_timeout = '300s'`;
         await reserved`SELECT pg_advisory_lock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
         return await fn();
       } finally {
         try {
-          await reserved`SELECT pg_advisory_unlock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
-        } catch {
-          // Best-effort unlock; the session ending releases it regardless.
+          const [row] = await reserved<
+            { pg_advisory_unlock: boolean }[]
+          >`SELECT pg_advisory_unlock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
+          if (row?.pg_advisory_unlock !== true) {
+            // `false` means THIS session never held the lock — the
+            // acquire landed on a different backend (pooler regression)
+            // and the lock just leaked. This is the leak detector; it
+            // must be loud.
+            console.error(
+              JSON.stringify({
+                level: 'error',
+                kind: 'mailbox_lock.unlock_failed',
+                mailboxAccountId,
+                returned: row?.pg_advisory_unlock ?? null,
+              }),
+            );
+          }
+        } catch (err) {
+          // Best-effort unlock; the session ending releases it — but say
+          // so, because a silent catch here hid the 2026-08-12 leak.
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              kind: 'mailbox_lock.unlock_error',
+              mailboxAccountId,
+              message: err instanceof Error ? err.message : String(err),
+            }),
+          );
         }
         reserved.release();
       }
@@ -2201,8 +2247,13 @@ async function bootstrap(): Promise<void> {
    * is the dispatcher's guarantee; at-most-once is the consumer's
    * responsibility).
    */
+  // SESSION pooler (same rewrite as `lockPg`): `LISTEN` is session
+  // state, and over the transaction pooler the subscription lands on
+  // whichever backend served that one statement — NOTIFY never reaches
+  // this connection and the dispatcher silently degrades to its 5s
+  // polling fallback. Session mode makes the wake channel real.
   // prepare:false — same Supabase tx-pooler reason as `pg` above.
-  const outboxListenPg = postgres(process.env.DATABASE_URL ?? '', {
+  const outboxListenPg = postgres(toSessionPoolUrl(process.env.DATABASE_URL ?? ''), {
     max: 1,
     prepare: false,
   });
