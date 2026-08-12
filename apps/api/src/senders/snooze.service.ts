@@ -84,6 +84,13 @@ export class SnoozeService {
       // Share the destructive-action mailbox lock with the wake worker.
       // A reschedule waits for an in-flight Gmail restore, while a stale
       // sweep waits for this write and then rejects its captured version.
+      //
+      // Bounded: this is an HTTP request path, and during the 2026-08-12
+      // leaked-lock incident this wait would have hung the PATCH for
+      // minutes. SET LOCAL scopes the bound to this transaction; a
+      // timeout aborts the tx into an ordinary 5xx the client retries,
+      // instead of an unbounded request hang.
+      await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`,
       );

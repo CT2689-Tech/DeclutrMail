@@ -2406,3 +2406,69 @@ differently-shaped look before it is written down — and calling something
 FOUNDER-FOLLOWUPS with the trail intact; entry closed as Skipped, no action.
 This is the BLIND-GUARD class for the seventh time — the CLAUDE.md §8 line
 LEARNINGS has now requested repeatedly is overdue.
+
+## 2026-08-12 — Session advisory lock over the transaction pooler: an 8-minute Delete
+**PR:** #509
+**Caught by:** founder dogfood report (a beta user's Delete of 285
+messages sat `queued` 8m39s; the same user's Archive 20s earlier took 12s), then live
+`pg_locks` inspection mid-block
+**What happened:** the worker's per-mailbox destructive-action lock
+(`worker.ts` mailboxLock) took a SESSION-level `pg_advisory_lock` on a
+connection pooled through Supabase's TRANSACTION-mode pooler (`:6543`). In
+transaction mode Supavisor assigns a backend per transaction, so the acquire
+landed on backend A and the unlock ran on backend B: the unlock returned
+`false`, backend A kept the lock while idle in the pool, and every later
+destructive action + incremental sync for that mailbox blocked on acquire
+until the connection happened to die. Three compounding silences: (1) the
+unlock sat in `try { } catch {}` AND discarded `pg_advisory_unlock`'s boolean
+— `false` IS the leak signal; (2) `perMailboxPolicy.timeoutMs: null` meant
+the blocked job never failed, retried, or dead-lettered; (3) the row read
+`queued` throughout (status flips to `executing` only after the lock), which
+is indistinguishable from "never enqueued". All three prod mailboxes held a
+leaked lock at inspection time. The repo already knew HALF this class:
+`prepare:false` is set on every pool with a tx-pooler comment, and
+`sender-index-lock.ts` correctly uses transaction-scoped
+`pg_advisory_xact_lock` — but the session-scoped sibling was missed. Same
+class: the outbox `LISTEN` connection also rode the tx pooler, so its NOTIFY
+wake never fired and the dispatcher silently ran on the 5s polling fallback.
+**Correct approach:** any session-scoped Postgres state (session advisory
+locks, `LISTEN`, `SET`, temp tables, prepared statements) must ride a
+session-scoped connection — session pooler (`:5432`) or direct — never the
+transaction pooler. Read and act on `pg_advisory_unlock`'s return value.
+Bound every lock wait (`lock_timeout`) so a stuck holder becomes a failed,
+retryable job rather than an invisible hang.
+**Rule:** session-scoped Postgres state over a transaction pooler is a bug
+by construction — route it to the session pooler, and never discard the
+boolean a cleanup primitive returns.
+**Enforcement update:** `toSessionPoolUrl()` helper + unlock-false structured
+error (`mailbox_lock.unlock_failed`) in the fix PR; FE overdue-latch release
+in the sibling PRs so a future server-side hang degrades to an honest
+"still running" instead of a bricked screen.
+
+## 2026-08-12 — Triage cleared the pending action before the re-entry guard
+**PR:** #509's FE siblings (fix/d226-triage-dispatch-latch, fix/d226-action-latch-siblings)
+**Caught by:** same incident's PostHog trail — after the hung Delete, the
+user confirmed another Delete and an Unsubscribe; both silently no-oped, and
+the Unsubscribe's "remember this" preference PATCHed durably
+(`actionSheetPrefs.unsubscribe=true`) for an action that never dispatched
+**What happened:** `triage-screen.tsx dispatchAction` ran `clearPending()`
+BEFORE its single-slot re-entry guard, so a guard-trip dismissed the action
+sheet exactly as a successful confirm would, with only a transient toast
+differing. `onSheetConfirm` persisted the D34 remember-preference before
+calling dispatch at all, so the pref outlived a dispatch that never ran —
+and that pref silently reroutes future Unsubscribes to the inline path where
+the backlog-archive toggle doesn't exist. Meanwhile the status poll that
+holds the slot has no time cap, so one hung backend action latched the whole
+screen: the four other queue rows looked interactive and were not. The
+domain-batch path (`onBatchVerb`) and the screener had the guard order
+RIGHT; sender-detail dropped the pending intent inside its guard branch.
+**Correct approach:** guard first, clear after — a rejected dispatch must
+leave the user's confirm surface open. Persist preferences only after the
+action they rode on is accepted. Any UI latch held open by polling needs a
+time bound that releases into an honest "still running, check Activity"
+state.
+**Rule:** state cleanup belongs AFTER the guard that can reject the
+operation, and a side-write (preference, counter, funnel event) must not
+outlive the dispatch it described.
+**Enforcement update:** none automated; fixed across triage + senders detail
++ overdue release on every action-status latch in the sibling PRs.
