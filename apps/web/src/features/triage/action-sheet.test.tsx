@@ -310,7 +310,7 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
     expect(backlog).toHaveAttribute('aria-checked', 'true');
 
     const remember = screen.getByRole('checkbox', {
-      name: 'Show this preview in the row next time',
+      name: 'Show this in the row next time',
     });
     expect(remember).toHaveAttribute('aria-checked', 'false');
     fireEvent.click(remember);
@@ -324,7 +324,7 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
     renderUnsubSheet();
     const backlog = screen.getByRole('checkbox', { name: /Also archive the/i });
     const remember = screen.getByRole('checkbox', {
-      name: 'Show this preview in the row next time',
+      name: 'Show this in the row next time',
     });
     fireEvent.click(backlog);
     fireEvent.click(remember);

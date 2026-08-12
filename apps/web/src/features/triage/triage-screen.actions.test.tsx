@@ -1290,7 +1290,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     fireEvent.keyDown(window, { key: 'a' });
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(
-      within(dialog).getByRole('checkbox', { name: 'Show this preview in the row next time' }),
+      within(dialog).getByRole('checkbox', { name: 'Show this in the row next time' }),
     );
     const confirm = within(dialog).getByRole('button', { name: /^Archive/i });
     await waitFor(() => expect(confirm).not.toBeDisabled());
@@ -1480,6 +1480,150 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       await waitFor(() => expect(useTriageStore.getState().sessionDecidedCount).toBe(2));
       // Still no success toast (D35 — decisions never toast on success).
       expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a sheet opened on a batch member before the batch parks cannot dispatch onto the parked member', async () => {
+    // The bypass shape: batch members are NOT busy while the batch is
+    // merely confirming (batchAction), so a sheet can open on one. When
+    // the batch then PARKS, the member becomes busy — but the already-
+    // open sheet's confirm path never re-consults the row surface. The
+    // dispatch choke point must refuse it, or the member gets a second
+    // real Gmail job while the parked fan-out still covers it.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const BATCH_ID = '77777777-7777-4777-8777-777777777777';
+      const archiveTrio = TRIAGE_QUEUE.filter((r) => r.verdict === 'archive').slice(0, 3);
+      expect(archiveTrio).toHaveLength(3);
+      const member = archiveTrio[0]!;
+
+      const bulkEnqueues: unknown[] = [];
+      const compositeEnqueues: unknown[] = [];
+      const buckets = {
+        all: 90,
+        olderThan30d: 60,
+        olderThan90d: 30,
+        olderThan180d: 9,
+        olderThan365d: 3,
+      };
+      addFetchHandlers([
+        {
+          method: 'POST',
+          path: '/api/actions/preview/bulk',
+          respond: () =>
+            jsonOk({
+              data: {
+                senders: archiveTrio.map((r) => ({
+                  senderId: r.senderId,
+                  name: r.senderName,
+                  counts: buckets,
+                  protected: false,
+                })),
+                totals: buckets,
+                protectedCount: 0,
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: async (req) => {
+            const body = (await req.json()) as { selector?: { type?: string } };
+            if (body.selector?.type === 'senders') {
+              bulkEnqueues.push(body);
+              return jsonOk({
+                data: {
+                  batchId: BATCH_ID,
+                  status: 'queued',
+                  senderCount: 3,
+                  requestedTotal: 90,
+                  wakeAt: null,
+                  skipped: [],
+                },
+              });
+            }
+            compositeEnqueues.push(body);
+            return jsonOk({
+              data: {
+                actionId: ACTION_ID,
+                compositeId: ACTION_ID,
+                secondaryId: null,
+                status: 'queued',
+                primaryCount: 47,
+                secondaryCount: null,
+              },
+            });
+          },
+        },
+        {
+          // The fan-out never settles — the batch will park.
+          method: 'GET',
+          path: `/api/actions/batch/${BATCH_ID}`,
+          respond: () =>
+            jsonOk({
+              data: {
+                batchId: BATCH_ID,
+                status: 'executing',
+                total: 3,
+                done: 0,
+                failed: 0,
+                requestedCount: 90,
+                affectedCount: 0,
+                undoToken: null,
+                unsubscribeOutcomes: null,
+              },
+            }),
+        },
+      ]);
+
+      render(
+        <QueryWrapper client={createTestQueryClient()}>
+          <TriageScreen state={{ kind: 'ready', rows: archiveTrio, stats: TRIAGE_SESSION_STATS }} />
+        </QueryWrapper>,
+      );
+
+      // Confirm the verdict batch through its D226 sheet.
+      fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
+      const batchSheet = await screen.findByRole('dialog');
+      const batchConfirm = within(batchSheet).getByRole('button', { name: /^Archive all/ });
+      await waitFor(() => expect(batchConfirm).not.toBeDisabled());
+      fireEvent.click(batchConfirm);
+      await waitFor(() => expect(bulkEnqueues).toHaveLength(1));
+
+      // Members are not busy while the batch is confirming — the sheet
+      // opens on one (the bypass window).
+      expandRow(member.senderName);
+      fireEvent.keyDown(window, { key: 'a' });
+      const memberSheet = await screen.findByRole('dialog');
+      await waitFor(() =>
+        expect(within(memberSheet).getByRole('button', { name: /^Archive/i })).not.toBeDisabled(),
+      );
+
+      // The batch parks; the member row is now busy, the sheet still open.
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_OVERDUE_MS);
+      });
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          'Archive for the Archive-recommended batch is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
+          'info',
+        ),
+      );
+      expect(screen.getByRole('dialog')).toBeDefined();
+
+      // Confirming now must be refused at the dispatch choke point —
+      // no composite POST, deferral toast, decision stays pending.
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          'Still confirming your last decision — give it a moment.',
+          'info',
+        ),
+      );
+      expect(compositeEnqueues).toHaveLength(0);
+      expect(screen.getByRole('dialog')).toBeDefined();
     } finally {
       vi.useRealTimers();
     }

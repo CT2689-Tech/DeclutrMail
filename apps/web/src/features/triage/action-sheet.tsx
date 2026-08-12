@@ -302,7 +302,9 @@ export function ActionSheet({
               type="button"
               role="checkbox"
               aria-checked={rememberPreference}
-              aria-label="Show this preview in the row next time"
+              // Must equal the visible label (WCAG 2.5.3 label-in-name)
+              // so voice control can target the visible text.
+              aria-label="Show this in the row next time"
               style={{
                 display: 'flex',
                 alignItems: 'center',

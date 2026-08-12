@@ -215,17 +215,12 @@ export function TriageScreen({
   // 2026-08-12 — the overdue parking slot. An activeAction that outlives
   // ACTION_OVERDUE_MS moves here so the latch releases while this poll
   // (same query key, so it dedupes with the one above) keeps watching
-  // for the terminal outcome. Single slot; replaced on collision — the
-  // displaced action's outcome stays visible in Activity.
+  // for the terminal outcome. Single slot; when it is OCCUPIED the next
+  // overdue action stays latched and the timer re-arms when the slot
+  // frees (the effect keys on both) — displacing would stop the parked
+  // poll and silently re-arm a row whose job is still running.
   const [overdueAction, setOverdueAction] = useState<ActionHandle | null>(null);
   const overdueActionStatus = useActionStatus(overdueAction?.actionId ?? null);
-  // Mirror of the parking slot for the displacement check inside the
-  // overdue timer callback — the timer is armed ~2 minutes before it
-  // fires, so it must read the CURRENT occupant, not a render snapshot.
-  const overdueActionRef = useRef<ActionHandle | null>(null);
-  useEffect(() => {
-    overdueActionRef.current = overdueAction;
-  }, [overdueAction]);
 
   // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution. Watched
   // OUTSIDE the single-slot re-entry latch: the decision row already
@@ -260,10 +255,6 @@ export function TriageScreen({
   // Batch counterpart of `overdueAction` — same parking contract.
   const [overdueBatch, setOverdueBatch] = useState<BatchHandle | null>(null);
   const overdueBatchStatus = useBatchStatus(overdueBatch?.batchId ?? null);
-  const overdueBatchRef = useRef<BatchHandle | null>(null);
-  useEffect(() => {
-    overdueBatchRef.current = overdueBatch;
-  }, [overdueBatch]);
 
   // D226 — the batch sheet's REAL aggregated counts. A batch is only
   // constructed with ≥MIN_BATCH_RUN eligible rows (domain-batch.ts), so
@@ -485,37 +476,41 @@ export function TriageScreen({
   // the handle itself, so a fresh action arms a fresh deadline and a
   // terminal one disarms it via cleanup.
   useEffect(() => {
-    if (!activeAction) return;
+    // Park only into a FREE slot. Displacing the occupant would stop
+    // its poll while its job still runs, silently re-arming that row
+    // for a duplicate dispatch. While the slot is occupied the newer
+    // action simply stays latched; this effect re-runs (and re-arms a
+    // fresh deadline) when the slot frees.
+    if (!activeAction || overdueAction != null) return;
     const timer = setTimeout(() => {
       toast(
         `${activeAction.verb} for ${activeAction.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
         'info',
       );
-      // Single parking slot: a second overdue action displaces the
-      // first, whose poll stops here. Refetch so the displaced row
-      // cannot sit permanently stale; its failure toast is deliberately
-      // dropped (single-slot trade-off — the outcome stays in Activity).
-      if (overdueActionRef.current != null) invalidateAfterDecision(qc);
+      // Parking is the one moment the client KNOWS a backend hang
+      // happened (the 2026-08-12 incident was invisible until a human
+      // noticed) — measure recurrence.
+      void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
       setOverdueAction(activeAction);
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
     return () => clearTimeout(timer);
-  }, [activeAction, qc]);
+  }, [activeAction, overdueAction]);
 
   useEffect(() => {
-    if (!batchAction) return;
+    // Same free-slot rule as the single-action park above.
+    if (!batchAction || overdueBatch != null) return;
     const timer = setTimeout(() => {
       toast(
         `${batchAction.verb} for the ${batchAction.domain} batch is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
         'info',
       );
-      // Same single-slot displacement trade-off as the action slot above.
-      if (overdueBatchRef.current != null) invalidateAfterDecision(qc);
+      void track('action_overdue', { kind: 'batch', verb: batchAction.verb.toLowerCase() });
       setOverdueBatch(batchAction);
       setBatchAction(null);
     }, ACTION_OVERDUE_MS);
     return () => clearTimeout(timer);
-  }, [batchAction, qc]);
+  }, [batchAction, overdueBatch]);
 
   // Terminal outcome for a PARKED action — same contract as the active
   // slot's effect above, except the expanded row is left alone (the
@@ -614,6 +609,22 @@ export function TriageScreen({
     addSessionMessagesMoved,
   ]);
 
+  // Rows with an outstanding job — confirming, intent-settling, OR
+  // parked overdue — render busy and refuse re-dispatch. A set, not a
+  // single id: parking exists precisely so the NEXT action can start
+  // while the parked one still runs, so two rows are busy at once (and
+  // a parked batch keeps all its member rows busy). Re-dispatching any
+  // of them would mint a second real Gmail job for the same sender.
+  // Declared ABOVE dispatchAction: the dispatch choke point reads it.
+  const busyRowIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (activeAction) ids.add(activeAction.rowId);
+    if (overdueAction) ids.add(overdueAction.rowId);
+    if (intentRowId != null) ids.add(intentRowId);
+    for (const id of overdueBatch?.rowIds ?? []) ids.add(id);
+    return ids;
+  }, [activeAction, overdueAction, intentRowId, overdueBatch]);
+
   /**
    * Run the mutation for `verb` against `row` after the preview has
    * been seen (D226). The only place a mutation fires — both the
@@ -656,7 +667,14 @@ export function TriageScreen({
       // clearing first dismissed the sheet/inline preview as if the
       // decision were accepted while nothing dispatched (2026-08-12
       // incident) — a deferred decision must stay pending.
+      //
+      // `busyRowIds` is checked HERE, not only at the row surface: a
+      // sheet opened on a batch member BEFORE the batch parked is a
+      // live confirm path onto a row that became busy after it opened
+      // (row-level guards never see it). The dispatch choke point is
+      // the one gate every path funnels through.
       if (
+        busyRowIds.has(row.id) ||
         activeAction != null ||
         intentRowId != null ||
         batchAction != null ||
@@ -889,6 +907,7 @@ export function TriageScreen({
       return true;
     },
     [
+      busyRowIds,
       activeAction,
       intentRowId,
       batchAction,
@@ -903,21 +922,6 @@ export function TriageScreen({
       journey,
     ],
   );
-
-  // Rows with an outstanding job — confirming, intent-settling, OR
-  // parked overdue — render busy and refuse re-dispatch. A set, not a
-  // single id: parking exists precisely so the NEXT action can start
-  // while the parked one still runs, so two rows are busy at once (and
-  // a parked batch keeps all its member rows busy). Re-dispatching any
-  // of them would mint a second real Gmail job for the same sender.
-  const busyRowIds = useMemo(() => {
-    const ids = new Set<string>();
-    if (activeAction) ids.add(activeAction.rowId);
-    if (overdueAction) ids.add(overdueAction.rowId);
-    if (intentRowId != null) ids.add(intentRowId);
-    for (const id of overdueBatch?.rowIds ?? []) ids.add(id);
-    return ids;
-  }, [activeAction, overdueAction, intentRowId, overdueBatch]);
 
   /**
    * Row-level handler — bridges a button click / shortcut to the
