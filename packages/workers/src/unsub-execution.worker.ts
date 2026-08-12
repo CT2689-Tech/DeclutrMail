@@ -492,6 +492,9 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
               source: payload.source ?? 'manual',
               action: 'unsubscribe_failed',
               affectedCount: 0,
+              // Same correlation as the in-band path above — a crash
+              // outcome must be as traceable as a clean one.
+              actionJobId: payload.actionId,
               undoToken: null,
               ruleId: payload.ruleId ?? null,
             });
@@ -569,6 +572,11 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
               ? 'unsubscribe_unconfirmed'
               : 'unsubscribe_failed',
         affectedCount: 0,
+        // Ties this outcome back to the execution — and through it to
+        // the intent row, which carries the same id. Without it the two
+        // rows are only correlatable by (sender, rough timestamp),
+        // which silently merges two separate attempts minutes apart.
+        actionJobId: actionId,
         undoToken: null,
         ruleId,
       });

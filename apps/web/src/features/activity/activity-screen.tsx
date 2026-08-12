@@ -2173,6 +2173,7 @@ function ActivityRow({
   const sourceLabel = SOURCE_LABEL[row.source];
   const now = useNow();
   const relative = relativeTime(row.occurredAt, now);
+  const absolute = absoluteTime(row.occurredAt);
   const isSyntheticReviewEvidence =
     row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected';
   const dotColor =
@@ -2275,7 +2276,9 @@ function ActivityRow({
               )}
             </div>
           </div>
-          <div
+          <time
+            dateTime={row.occurredAt}
+            title={absolute}
             style={{
               fontSize: 11.5,
               color: color.fgMuted,
@@ -2287,7 +2290,7 @@ function ActivityRow({
             }}
           >
             {relative}
-          </div>
+          </time>
         </div>
         <div
           style={{
@@ -2487,7 +2490,9 @@ function ActivityRow({
         mailboxId={mailboxId}
         includeFeedback
       />
-      <div
+      <time
+        dateTime={row.occurredAt}
+        title={absolute}
         style={{
           fontSize: 11.5,
           color: color.fgMuted,
@@ -2497,7 +2502,7 @@ function ActivityRow({
         }}
       >
         {relative}
-      </div>
+      </time>
     </li>
   );
 }
@@ -3650,6 +3655,23 @@ function windowToLabel(
  * Coarse "N days/hours/min ago" formatter for the row meta. Bounded to
  * the buckets the screen displays — proper l10n is a follow-up.
  */
+/**
+ * The exact local timestamp behind a relative label, for the row's
+ * `title` tooltip. The coarse `Nh ago` bucket is right for scanning but
+ * useless the moment you are triaging a failure or lining a row up
+ * against Gmail — and three rows of one composite all read `1h ago`,
+ * which hides that they were one action. Seconds are included for
+ * exactly that case.
+ */
+export function absoluteTime(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '';
+  return d.toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  });
+}
+
 export function relativeTime(iso: string, nowMs: number = Date.now()): string {
   const then = new Date(iso).getTime();
   if (!Number.isFinite(then)) return '';

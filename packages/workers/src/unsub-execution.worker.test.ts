@@ -275,6 +275,10 @@ describe('UnsubExecutionWorker', () => {
     expect(state.activities[0]!.action).toBe('unsubscribe_endpoint_accepted');
     expect(state.activities[0]!.affectedCount).toBe(0); // no mail moved
     expect(state.activities[0]!.undoToken).toBeNull(); // D58
+    // The outcome names its execution, so Activity can join it back to
+    // the intent row instead of guessing from (sender, rough time) —
+    // which merges two separate attempts minutes apart.
+    expect(state.activities[0]!.actionJobId).toBe(actionId);
     expect(state.events).toHaveLength(1);
     expect(state.events[0]!.topic).toBe('actions.unsubscribe_executed');
     expect(state.events[0]!.payload).toMatchObject({

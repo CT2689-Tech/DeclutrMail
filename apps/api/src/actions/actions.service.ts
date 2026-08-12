@@ -1703,6 +1703,13 @@ export class ActionsService {
           source: 'manual',
           action: 'unsubscribe',
           affectedCount: 0,
+          // Correlate the intent with the execution it started, so
+          // Activity can tell that this row and the worker's terminal
+          // row are ONE user action rather than two coincidences at the
+          // same sender. NULL for mailto/none: no job runs, so there is
+          // nothing to point at (never the primary intent's own row —
+          // that would claim an execution that does not exist).
+          actionJobId: executionActionId,
           // No undo token — intent has no Gmail side-effect to reverse.
           // The Activity row's undoState resolves to `unavailable`
           // client-side. When the real unsub pipeline ships, the worker
