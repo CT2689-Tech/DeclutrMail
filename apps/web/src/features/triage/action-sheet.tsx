@@ -250,6 +250,8 @@ export function ActionSheet({
             <button
               onClick={() => setArchiveHistoric(!effectiveArchiveHistoric)}
               type="button"
+              role="checkbox"
+              aria-checked={effectiveArchiveHistoric}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -298,21 +300,26 @@ export function ActionSheet({
             <button
               onClick={() => setRememberPreference((v) => !v)}
               type="button"
+              role="checkbox"
+              aria-checked={rememberPreference}
               aria-label="Show this preview in the row next time"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 10,
                 padding: '10px 12px',
-                background: 'transparent',
-                border: `1px solid ${color.lineSoft}`,
+                // Checked state mirrors the backlog toggle above — one
+                // sheet, one checked language. A checked toggle that
+                // stayed visually mute read as unselected (2026-08-12).
+                background: rememberPreference ? color.primarySoft : 'transparent',
+                border: `1px solid ${rememberPreference ? color.primaryBorder : color.lineSoft}`,
                 borderRadius: 9,
                 cursor: 'pointer',
                 textAlign: 'left',
                 fontFamily: font.sans,
               }}
             >
-              <CheckSquare on={rememberPreference} muted />
+              <CheckSquare on={rememberPreference} muted={!rememberPreference} />
               <span style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
                 <strong style={{ color: color.fg, fontWeight: 600 }}>
                   Show this in the row next time
