@@ -157,14 +157,44 @@ export interface InitialSyncResult {
 type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 
 /**
+ * An unsubscribe URL tagged with the `internal_date` of the message it
+ * came off. The date is what makes "newest wins" expressible — see
+ * `newerUrl`.
+ */
+interface DatedUrl {
+  url: string;
+  at: Date;
+}
+
+/**
+ * Keep whichever URL came off the NEWER message. Ties keep the incumbent
+ * (an equal-dated duplicate carries no new information).
+ *
+ * Why newest and not first: an RFC 8058 one-click URL is minted PER SEND
+ * and routinely carries a token the sender expires. Holding the first
+ * one ever seen means a sender with years of history is unsubscribed at
+ * a years-old token — the endpoint rejects it and the user is told the
+ * unsubscribe "failed" when the only stale thing was our URL. The
+ * failure got MORE likely the longer a sender's history was, i.e. worst
+ * exactly for the senders people most want gone.
+ */
+function newerUrl(current: DatedUrl | null, url: string, at: Date): DatedUrl {
+  return current && current.at >= at ? current : { url, at };
+}
+
+/**
  * Per-sender aggregate folded from the persisted `mail_messages` rows.
  *
- * `httpsUrl` / `mailtoUrl` track the unsubscribe channels SEPARATELY so
- * the sender's `unsubscribe_method` + `unsubscribe_url` always agree on
- * scheme (Codex iter 5 fix, 2026-05-22). The prior single-`url` shape
- * collapsed them and let a plain-HTTPS message be persisted as
- * `method='mailto'` with an `https://` URL — Option B from the iter 5
- * fix prompt: never surface that mismatch.
+ * `oneClickUrl` / `httpsUrl` / `mailtoUrl` track the unsubscribe channels
+ * SEPARATELY so the sender's `unsubscribe_method` + `unsubscribe_url`
+ * always agree on scheme (Codex iter 5 fix, 2026-05-22). The prior
+ * single-`url` shape collapsed them and let a plain-HTTPS message be
+ * persisted as `method='mailto'` with an `https://` URL — Option B from
+ * the iter 5 fix prompt: never surface that mismatch.
+ *
+ * Each channel keeps the NEWEST URL rather than the first: the fold
+ * streams pages ordered by `mail_messages.id`, a random v4 UUID, so
+ * "first seen" was an arbitrary message, not the oldest or the newest.
  */
 interface SenderAggregate {
   firstSeen: Date;
@@ -172,12 +202,23 @@ interface SenderAggregate {
   categoryCounts: Map<GmailCategory, number>;
   /** year-month (`YYYY-MM-01`) → monthly volume + read count. */
   months: Map<string, { volume: number; readCount: number }>;
-  /** First HTTPS unsubscribe URL seen for this sender, or null. */
-  httpsUrl: string | null;
-  /** First mailto unsubscribe URL seen for this sender, or null. */
-  mailtoUrl: string | null;
-  /** True iff any message supports RFC 8058 one-click (needs HTTPS). */
-  hasOneClick: boolean;
+  /**
+   * NEWEST RFC 8058 one-click URL seen (the message also carried the
+   * `List-Unsubscribe-Post` flag), tagged with that message's date.
+   * Kept SEPARATE from `httpsUrl` — a plain-HTTPS link is not a
+   * one-click endpoint, and pairing one with `method='one_click'`
+   * POSTs at a URL that never advertised RFC 8058.
+   */
+  oneClickUrl: DatedUrl | null;
+  /**
+   * Newest plain-HTTPS unsubscribe URL seen (no one-click flag), or
+   * null. Captured but never surfaced as the sender's method — an
+   * HTTPS link without the post-flag is a click-through page, not
+   * something DeclutrMail can send on the user's behalf.
+   */
+  httpsUrl: DatedUrl | null;
+  /** Newest mailto unsubscribe URL seen for this sender, or null. */
+  mailtoUrl: DatedUrl | null;
   /**
    * Lifetime inbound count for this sender within retention — Path A of
    * ADR-0014. Incremented once per fold; the fold loop only sees rows
@@ -1264,9 +1305,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         lastSeen: row.internalDate,
         categoryCounts: new Map(),
         months: new Map(),
+        oneClickUrl: null,
         httpsUrl: null,
         mailtoUrl: null,
-        hasOneClick: false,
         totalReceived: 0,
       };
       aggregates.set(row.senderKey, agg);
@@ -1342,18 +1383,17 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // sender's final method/URL is derived in `deriveUnsubscribe` per
     // Option B: one_click > mailto > none. Channel data is captured
     // here independently so we never persist a `method='mailto'` with
-    // an `https://` URL.
+    // an `https://` URL — nor a `method='one_click'` paired with a
+    // plain-HTTPS link that never advertised RFC 8058.
     if (row.unsubscribeOneClick && row.unsubscribeUrl) {
-      agg.hasOneClick = true;
-      // First one-click HTTPS URL wins — don't churn on a later one.
-      agg.httpsUrl ??= row.unsubscribeUrl;
+      agg.oneClickUrl = newerUrl(agg.oneClickUrl, row.unsubscribeUrl, row.internalDate);
     } else if (row.unsubscribeUrl) {
       // Plain HTTPS (no one-click). Captured for the future executor
       // PR; does NOT contribute to sender-level method.
-      agg.httpsUrl ??= row.unsubscribeUrl;
+      agg.httpsUrl = newerUrl(agg.httpsUrl, row.unsubscribeUrl, row.internalDate);
     }
     if (row.unsubscribeMailtoUrl) {
-      agg.mailtoUrl ??= row.unsubscribeMailtoUrl;
+      agg.mailtoUrl = newerUrl(agg.mailtoUrl, row.unsubscribeMailtoUrl, row.internalDate);
     }
   }
 
@@ -1645,11 +1685,11 @@ function deriveUnsubscribe(agg: SenderAggregate): {
   method: UnsubscribeMethod;
   url: string | null;
 } {
-  if (agg.hasOneClick && agg.httpsUrl) {
-    return { method: 'one_click', url: agg.httpsUrl };
+  if (agg.oneClickUrl) {
+    return { method: 'one_click', url: agg.oneClickUrl.url };
   }
   if (agg.mailtoUrl) {
-    return { method: 'mailto', url: agg.mailtoUrl };
+    return { method: 'mailto', url: agg.mailtoUrl.url };
   }
   return { method: 'none', url: null };
 }

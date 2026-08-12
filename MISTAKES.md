@@ -21,6 +21,70 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-12 — Unsubscribe POSTed a token the sender had already expired
+
+**PR:** #TBD
+**Caught by:** production (founder tried to unsubscribe from Walgreens on a
+beta user's mailbox; the action reported failed)
+
+**What happened:** `senders.unsubscribe_url` held whichever one-click URL we
+happened to capture FIRST, and never refreshed after that. Two independent
+sites, same wrong idea:
+
+- `incremental-sync.worker.ts` gated the URL on a STRICT rank increase
+  (`one_click(2) > mailto(1) > none(0)`). The guard exists to stop a later
+  mailto-only message DOWNGRADING a one-click sender — correct for the method,
+  wrong for the URL: `one_click → one_click` is not an increase, so after the
+  first one-click message the URL was frozen for the life of the sender.
+- `initial-sync.worker.ts` folded with `agg.httpsUrl ??= row.unsubscribeUrl`
+  while streaming pages ordered by `mail_messages.id` — a random v4 UUID. So
+  the rebuild picked an ARBITRARY message's URL, not the oldest or the newest.
+
+RFC 8058 one-click URLs are minted per send and carry a token the sender
+expires, so we were POSTing a dead token. The endpoint refused it and the
+worker recorded — accurately — `UNSUB_TARGET_REJECTED`. The product looked
+broken at exactly the senders users most want gone: the longer a sender's
+history, the staler the stored token and the likelier the failure.
+
+The same `??=` also let the two HTTPS channels share one field, so a sender
+mixing plain "manage preferences" links with real one-click sends could store
+`method='one_click'` paired with a URL that never advertised RFC 8058 — a POST
+that can only be refused.
+
+**Correct approach:** rank governs the METHOD (never downgrade a channel); it
+must not govern the URL. Track each channel separately and keep the NEWEST URL
+per channel, gated on the message date so an out-of-order replay cannot drag it
+backward.
+
+**Rule:** A per-send credential is not a sender attribute. If a stored value is
+minted per message and expires, the row must track the newest one — "first wins"
+and "any wins" are both bugs, and `ORDER BY <random uuid>` is not an ordering.
+
+**Enforcement update:** regression tests at all three sites — the incremental
+UPSERT (deterministic: refresh forward, never backward), the rebuild fold
+(newest-wins + plain-HTTPS never becomes the one-click URL), and the production
+HTTP adapter (previously untested; now driven over a real socket). Verified by
+reverting each fix and confirming the new tests fail against the faithful old
+code. No hook/CLAUDE.md change: this is a data-freshness class, not a new
+guardrail.
+
+**Triage note for next time:** the HTTP status the endpoint returned is NOT on
+`action_jobs` (which carries only a coarse `error_code`), but it IS durable —
+`outbox_events` rows are kept after dispatch, so the
+`actions.unsubscribe_executed` payload answers "why did it fail?":
+
+```sql
+SELECT e.created_at,
+       e.payload->>'outcome'    AS outcome,
+       e.payload->>'httpStatus' AS http_status,
+       a.error_code
+FROM outbox_events e
+JOIN action_jobs a ON a.id = (e.payload->>'actionId')::uuid
+WHERE e.topic = 'actions.unsubscribe_executed'
+  AND e.payload->>'senderKey' = $1
+ORDER BY e.created_at DESC;
+```
+
 ## 2026-08-11 — I fixed three blind guards and shipped a fourth in the same PR
 
 **PR:** [#506](https://github.com/CT2689-Tech/DeclutrMail/pull/506), corrected by

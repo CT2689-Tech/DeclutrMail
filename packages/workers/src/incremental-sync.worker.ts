@@ -37,6 +37,13 @@ const CATEGORY_LABEL_MAP: Record<string, GmailCategory> = {
  * column names for correlated refs (drizzle-correlated-subquery
  * pitfall) — `senders.unsubscribe_method` must stay table-qualified to
  * unambiguously mean "the existing row" next to EXCLUDED.
+ *
+ * The rank governs the METHOD (never downgrade a channel). It must NOT
+ * also govern the URL: an equal-rank arrival is the same channel with a
+ * FRESHER URL, and one-click URLs are minted per send with tokens the
+ * sender expires. Gating the URL on a strict rank increase froze it at
+ * the first one-click message forever, so every later unsubscribe POSTed
+ * a stale token and came back rejected. See `UNSUB_URL_REFRESH`.
  */
 const UNSUB_RANK_EXCLUDED = sql.raw(
   "CASE EXCLUDED.unsubscribe_method WHEN 'one_click' THEN 2 WHEN 'mailto' THEN 1 ELSE 0 END",
@@ -44,6 +51,17 @@ const UNSUB_RANK_EXCLUDED = sql.raw(
 const UNSUB_RANK_CURRENT = sql.raw(
   "CASE senders.unsubscribe_method WHEN 'one_click' THEN 2 WHEN 'mailto' THEN 1 ELSE 0 END",
 );
+
+/**
+ * When an EQUAL-rank arrival may refresh `unsubscribe_url`: only when it
+ * is the newest message we have seen from this sender. `last_seen_at` is
+ * still the pre-UPDATE value here (Postgres evaluates the SET list
+ * against the existing row), so this compares the incoming message's
+ * date against the newest one already folded in. Guards against a
+ * backfill or an out-of-order history replay pulling the URL BACKWARD to
+ * an older token than the one already stored.
+ */
+const UNSUB_URL_REFRESH = sql.raw('EXCLUDED.last_seen_at >= senders.last_seen_at');
 
 /** Dependencies the worker needs — mirrors `InitialSyncDeps`. */
 export interface IncrementalSyncDeps {
@@ -614,6 +632,8 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
               END`,
               unsubscribeUrl: sql`CASE
                 WHEN ${UNSUB_RANK_EXCLUDED} > ${UNSUB_RANK_CURRENT} THEN EXCLUDED.unsubscribe_url
+                WHEN ${UNSUB_RANK_EXCLUDED} = ${UNSUB_RANK_CURRENT} AND ${UNSUB_URL_REFRESH}
+                  THEN EXCLUDED.unsubscribe_url
                 ELSE ${senders.unsubscribeUrl}
               END`,
               updatedAt: new Date(),

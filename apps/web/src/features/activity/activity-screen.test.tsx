@@ -24,7 +24,7 @@ import {
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
-import { ActivityScreen, relativeTime } from './activity-screen';
+import { absoluteTime, ActivityScreen, relativeTime } from './activity-screen';
 import type { ActivityRowWire, ActivityStatsWire } from '@/lib/api/activity';
 import type { ActionRecoveryPreviewResult } from '@/lib/api/actions';
 
@@ -871,6 +871,21 @@ describe('ActivityScreen — pure helpers', () => {
     expect(relativeTime(new Date(NOW - 2 * 60 * 60 * 1000).toISOString(), NOW)).toBe('2h ago');
     expect(relativeTime(new Date(NOW - 90 * 1000).toISOString(), NOW)).toBe('1m ago');
     expect(relativeTime(new Date(NOW).toISOString(), NOW)).toBe('just now');
+  });
+
+  it('absoluteTime keeps seconds — the bucket alone hides one composite burst', () => {
+    // Three rows of one composite all render "1h ago"; only the exact
+    // stamp shows they were seconds apart (founder, 2026-08-12).
+    const iso = new Date(NOW).toISOString();
+    const out = absoluteTime(iso);
+    expect(out).not.toBe('');
+    // Seconds must survive the format, whatever the runtime locale is.
+    const seconds = new Date(iso).toLocaleTimeString(undefined, { timeStyle: 'medium' });
+    expect(out).toContain(seconds);
+  });
+
+  it('absoluteTime returns empty for an unparseable stamp', () => {
+    expect(absoluteTime('not-a-date')).toBe('');
   });
 });
 
