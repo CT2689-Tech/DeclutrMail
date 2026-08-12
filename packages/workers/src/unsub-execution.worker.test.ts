@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { join } from 'node:path';
 
 import { PGlite } from '@electric-sql/pglite';
@@ -22,7 +23,9 @@ import { OutboxPublisher } from './outbox-publisher.js';
 import {
   buildPinnedLookup,
   classifyAddress,
+  FETCH_UNSUB_HTTP_PORT,
   UNSUB_MAX_ATTEMPTS,
+  UNSUB_USER_AGENT,
   UnsubExecutionWorker,
   unsubExecutionJobOptions,
 } from './unsub-execution.worker.js';
@@ -680,6 +683,57 @@ describe('buildPinnedLookup', () => {
       },
     );
     expect(seen).toEqual([{ err: null, address: '10.0.0.0', family: 4 }]);
+  });
+});
+
+describe('FETCH_UNSUB_HTTP_PORT', () => {
+  // Exercises the REAL production adapter against a loopback server —
+  // still no third-party request (the file's standing rule); the target
+  // is a socket this test owns.
+  it('sends the RFC 8058 one-click POST with an identifying User-Agent', async () => {
+    const seen: Array<{
+      method: string | undefined;
+      headers: Record<string, string | string[] | undefined>;
+      body: string;
+    }> = [];
+    const server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+      req.on('end', () => {
+        seen.push({ method: req.method, headers: req.headers, body });
+        res.writeHead(200).end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (address === null || typeof address === 'string') {
+      throw new Error('expected a TCP address');
+    }
+
+    try {
+      const response = await FETCH_UNSUB_HTTP_PORT.postOneClick(
+        `http://127.0.0.1:${address.port}/unsub?t=abc`,
+        { timeoutMs: 5_000, pinnedAddress: '127.0.0.1', family: 4 },
+      );
+      expect(response.status).toBe(200);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+
+    expect(seen).toHaveLength(1);
+    const [request] = seen;
+    expect(request!.method).toBe('POST');
+    expect(request!.body).toBe('List-Unsubscribe=One-Click');
+    expect(request!.headers['content-type']).toBe('application/x-www-form-urlencoded');
+    // A UA-less POST is a stock bot signature; WAFs in front of large
+    // senders' opt-out endpoints answer it 403, which the worker can
+    // only record as a flat `UNSUB_TARGET_REJECTED`.
+    expect(request!.headers['user-agent']).toBe(UNSUB_USER_AGENT);
+    // Still no credentials of any kind on the request (D7 posture).
+    expect(request!.headers.authorization).toBeUndefined();
+    expect(request!.headers.cookie).toBeUndefined();
   });
 });
 

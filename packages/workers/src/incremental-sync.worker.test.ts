@@ -973,6 +973,83 @@ describe('IncrementalSyncWorker', () => {
     expect(rowB!.unsubscribeUrl).toBe('https://b.example.com/unsub');
   });
 
+  it('refreshes the one-click URL on each newer message, never backward', async () => {
+    // THE INVARIANT THIS BROKE ON (live: Walgreens, 2026-08-12).
+    // The URL was gated on a STRICT rank increase, and one_click →
+    // one_click is not an increase — so the sender kept the URL from
+    // its FIRST one-click message forever. RFC 8058 URLs are minted per
+    // send and carry tokens the sender expires, so every unsubscribe
+    // after the first POSTed a dead token and came back rejected. The
+    // longer the sender's history, the staler the token.
+    const sender = 'promos@retailer.example.com';
+    const key = deriveSenderKey(sender);
+    const base = Date.UTC(2026, 7, 1);
+    const oneClick = { listUnsubscribePost: 'List-Unsubscribe=One-Click' };
+
+    const runFor = async (
+      cursor: string,
+      next: string,
+      messages: GmailMessageMetadata[],
+    ): Promise<void> => {
+      await new IncrementalSyncWorker({
+        db,
+        gmailAccess: accessFor(
+          new FakeGmailClient(
+            [
+              {
+                forCursor: cursor,
+                page: {
+                  records: messages.map((m) => ({
+                    kind: 'added' as const,
+                    messageId: m.id,
+                    threadId: m.threadId,
+                    labelIds: m.labelIds,
+                  })),
+                  historyId: next,
+                },
+              },
+            ],
+            new Map(messages.map((m) => [m.id, m])),
+          ),
+        ),
+      }).processJob({ mailboxAccountId, startHistoryId: cursor, endHistoryId: next }, CTX);
+    };
+
+    // Run 1 — first one-click message mints token `t=old`.
+    await runFor('1000', '1500', [
+      makeMetadata('r-1', 'thread-r1', sender, ['INBOX'], base, {
+        listUnsubscribe: '<https://retailer.example.com/unsub?t=old>',
+        ...oneClick,
+      }),
+    ]);
+    let [row] = await db.select().from(senders).where(eq(senders.senderKey, key));
+    expect(row!.unsubscribeUrl).toBe('https://retailer.example.com/unsub?t=old');
+
+    // Run 2 — a NEWER one-click message carries a fresh token. Equal
+    // rank, so the old gate kept `t=old`; the sender row must now track
+    // the token the sender itself would honour.
+    await runFor('1500', '2000', [
+      makeMetadata('r-2', 'thread-r2', sender, ['INBOX'], base + 86_400_000, {
+        listUnsubscribe: '<https://retailer.example.com/unsub?t=new>',
+        ...oneClick,
+      }),
+    ]);
+    [row] = await db.select().from(senders).where(eq(senders.senderKey, key));
+    expect(row!.unsubscribeMethod).toBe('one_click');
+    expect(row!.unsubscribeUrl).toBe('https://retailer.example.com/unsub?t=new');
+
+    // Run 3 — an OLDER message arriving late (backfill / out-of-order
+    // history replay) must NOT drag the URL back to a staler token.
+    await runFor('2000', '2500', [
+      makeMetadata('r-3', 'thread-r3', sender, ['INBOX'], base - 86_400_000, {
+        listUnsubscribe: '<https://retailer.example.com/unsub?t=ancient>',
+        ...oneClick,
+      }),
+    ]);
+    [row] = await db.select().from(senders).where(eq(senders.senderKey, key));
+    expect(row!.unsubscribeUrl).toBe('https://retailer.example.com/unsub?t=new');
+  });
+
   it('mailto-only message upgrades a NULL/none sender but a later header-less one keeps mailto', async () => {
     // Pre-seed a sender row with NO method (NULL — the post-initial-sync
     // legacy state this fix targets) and a second sender at 'none' so

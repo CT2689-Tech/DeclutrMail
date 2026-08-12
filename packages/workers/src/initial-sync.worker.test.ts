@@ -774,6 +774,55 @@ describe('InitialSyncWorker', () => {
     expect(msg!.unsubscribeMailtoUrl).toBe('mailto:unsub@example.com');
   });
 
+  it('unsubscribe — the sender keeps the NEWEST one-click URL, not an arbitrary one', async () => {
+    // THE INVARIANT THIS BROKE ON (live: Walgreens, 2026-08-12).
+    // RFC 8058 URLs are minted per send and carry tokens the sender
+    // expires, so the sender row has to hold the freshest one. The fold
+    // captured the FIRST url it saw while streaming pages ordered by
+    // `mail_messages.id` — a random v4 UUID — so the stored token was an
+    // arbitrary message's, usually long dead by the time anyone clicked
+    // Unsubscribe. `makeMessages` dates message i at day i, so msg-4 is
+    // unambiguously the newest.
+    const m = makeMessages(5, 1);
+    for (const [i, msg] of m.entries()) {
+      msg.listUnsubscribe = `<https://example.com/unsub?t=${i}>`;
+      msg.listUnsubscribePost = 'List-Unsubscribe=One-Click';
+    }
+    const client = new FakeGmailClient(m);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const [sender] = await db.select().from(senders);
+    expect(sender!.unsubscribeMethod).toBe('one_click');
+    expect(sender!.unsubscribeUrl).toBe('https://example.com/unsub?t=4');
+  });
+
+  it('unsubscribe — a plain-HTTPS link never becomes the one-click URL', async () => {
+    // The two HTTPS channels shared one aggregate field, so whichever
+    // message the random-UUID scan reached first won it. A sender that
+    // sends both shapes could end up `method='one_click'` paired with a
+    // click-through link that never advertised RFC 8058 — a POST that
+    // can only be refused. The one-click URL must come from a message
+    // that actually carried the post-flag, whatever the fold order and
+    // even when the plain link is NEWER.
+    const m = makeMessages(4, 1);
+    m[0]!.listUnsubscribe = '<https://example.com/one-click>';
+    m[0]!.listUnsubscribePost = 'List-Unsubscribe=One-Click';
+    for (const msg of m.slice(1)) {
+      msg.listUnsubscribe = '<https://example.com/manage-preferences>';
+      msg.listUnsubscribePost = null;
+    }
+    const client = new FakeGmailClient(m);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const [sender] = await db.select().from(senders);
+    expect(sender!.unsubscribeMethod).toBe('one_click');
+    expect(sender!.unsubscribeUrl).toBe('https://example.com/one-click');
+  });
+
   it('reconciliation — stored messages no longer in Gmail are deleted', async () => {
     // First sync stores 10 messages from 5 senders.
     const first = new FakeGmailClient(makeMessages(10, 5));

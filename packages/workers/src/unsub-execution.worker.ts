@@ -28,10 +28,14 @@ import type { WorkerContext } from './worker-context.js';
  *
  *   POST <https unsubscribe_url>
  *   Content-Type: application/x-www-form-urlencoded
+ *   User-Agent: DeclutrMail/1.0 (+https://declutrmail.com)
  *   List-Unsubscribe=One-Click
  *
- * No auth headers, no cookies, no redirects followed. The outcome is
- * recorded HONESTLY (D226 — no fake success):
+ * No auth headers, no cookies, no redirects followed. The `unsubscribe_url`
+ * is whatever the sync workers folded onto the sender row; they keep the
+ * NEWEST one-click URL precisely because these carry per-send tokens that
+ * expire (a stale token reads here as a plain `UNSUB_TARGET_REJECTED`).
+ * The outcome is recorded HONESTLY (D226 — no fake success):
  *
  *   - 2xx        → 'endpoint_accepted' (request accepted; future-mail
  *                                     suppression is not proven)
@@ -138,6 +142,16 @@ export interface UnsubHttpPort {
 /** RFC 8058 §3.2 one-click body — exactly 26 bytes. */
 const ONE_CLICK_BODY = 'List-Unsubscribe=One-Click';
 
+/**
+ * Identify the sender of the POST. `node:http(s)` sets no `User-Agent`
+ * at all, and a UA-less POST is a stock bot signature — the WAFs in
+ * front of large retailers' opt-out endpoints answer it 403, which the
+ * worker can only classify as `UNSUB_TARGET_REJECTED`. Naming ourselves
+ * (with a URL their abuse desk can look up) is also simply the honest
+ * thing to send: this is a real request on behalf of a real recipient.
+ */
+export const UNSUB_USER_AGENT = 'DeclutrMail/1.0 (+https://declutrmail.com)';
+
 /** The `dns.lookup`-compatible shape `node:http(s)` request options accept. */
 type PinnedLookup = (
   hostname: string,
@@ -206,6 +220,7 @@ export const FETCH_UNSUB_HTTP_PORT: UnsubHttpPort = {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'Content-Length': Buffer.byteLength(ONE_CLICK_BODY),
+            'User-Agent': UNSUB_USER_AGENT,
           },
           // The pin: dial ONLY the pre-validated address. No second
           // resolution occurs. Cast at this boundary — `PinnedLookup`'s
