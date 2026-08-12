@@ -92,6 +92,20 @@ export function SenderDetailPage({ state }: { state: SenderDetailState }) {
 const GENERIC_RETRY_MESSAGE = "We couldn't load this sender right now.";
 
 /**
+ * D226 overdue release — how long the polled action handle may stay
+ * non-terminal before it parks. 2026-08-12 incident: a destructive
+ * action hung >8 min server-side and the `activeAction != null`
+ * re-entry guard below bricked this page — the latch only released on
+ * a terminal status and the poll has no time cap. At this deadline the
+ * handle parks (still polled; terminal side effects still run). On
+ * this single-sender page the guard deliberately does NOT release at
+ * the deadline — the parked handle still owns the page's only subject
+ * — it frees when the parked handle reaches a terminal state, which
+ * the parked poll guarantees is no longer "never".
+ */
+export const ACTION_OVERDUE_MS = 120_000;
+
+/**
  * Reading-cost coefficient — average minutes per email scanned. Matches
  * the placeholder in senders-screen.tsx so the hero ROI sentence and
  * the KPI strip stay consistent. Per-user calibration tracked in
@@ -264,6 +278,37 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
   const revertStatus = useActionStatus(revertActionId);
   const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null);
+  // Overdue parking slot (ACTION_OVERDUE_MS, 2026-08-12 incident). A
+  // handle that stays non-terminal past the deadline moves here; the
+  // parked poll keeps running and its terminal side effects still land
+  // (minus the success toast). This page is single-sender, so the
+  // parked handle still owns the ONLY subject — the re-entry guard in
+  // `performAction` keeps blocking until the parked handle reaches a
+  // terminal state (never forever, unlike the pre-fix latch: the
+  // parked poll's done/failed/error branches all clear the slot). That
+  // single-subject guard also means a second overdue can never displace
+  // a parked handle here. `revertActionId` gets no parked slot (a pure
+  // background watcher); `activeUnsub` gets none either — it DOES gate
+  // a second Unsubscribe on this page (see the Unsubscribe branch), but
+  // its stall risk sits in the intent mutation, not this poll.
+  const [overdueAction, setOverdueAction] = useState<typeof activeAction>(null);
+  const overdueActionStatus = useActionStatus(overdueAction?.actionId ?? null);
+
+  // Overdue-release timer. Cleanup cancels the deadline whenever the
+  // handle clears normally, so only a genuinely stuck handle parks.
+  useEffect(() => {
+    if (!activeAction) return;
+    const t = setTimeout(() => {
+      void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
+      toast(
+        `${activeAction.verb} for ${activeAction.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        'info',
+      );
+      setOverdueAction(activeAction);
+      setActiveAction(null);
+    }, ACTION_OVERDUE_MS);
+    return () => clearTimeout(t);
+  }, [activeAction]);
 
   // Server-truth re-seed: `useState(initial)` ignores prop updates after
   // mount, so a refetch delivering DIVERGED data (policy changed in
@@ -400,10 +445,19 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
 
       // Re-entry guard for every destructive branch — see jsdoc above.
       // Composite + direct-enqueue share the same `activeAction` slot,
-      // so a single guard covers both.
-      if (activeAction != null || enqueueComposite.isPending) {
+      // so a single guard covers both. `overdueAction` counts too: this
+      // page is single-sender, so a parked (overdue) handle still owns
+      // THIS sender — re-dispatching would mint a fresh idempotency key
+      // and a SECOND real Gmail job (double cleanup unit, two undo
+      // tokens). The ACTION_OVERDUE_MS release frees other screens'
+      // subjects, never the hung sender itself. The pending confirm
+      // surface is deliberately NOT cleared here (2026-08-12 incident
+      // follow-up): clearing it dropped the user's confirmed intent —
+      // the toast explains the wait, the preview stays open, and the
+      // confirm can be retried once the latch truly frees (terminal
+      // status of the active OR parked handle).
+      if (activeAction != null || overdueAction != null || enqueueComposite.isPending) {
         toast('Still confirming your last action — give it a moment.', 'info');
-        setPendingAction(null);
         return;
       }
 
@@ -506,7 +560,12 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       // additional `recordUnsubIntent.isPending` check stops a
       // double-fire while the unsub mutation itself is in flight.
       if (verb === 'Unsubscribe') {
-        if (recordUnsubIntent.isPending || activeUnsub != null) return;
+        if (recordUnsubIntent.isPending || activeUnsub != null) {
+          // Visible deferral, never a silent swallow — same voice as the
+          // destructive-branch guard above.
+          toast('Still confirming your last action — give it a moment.', 'info');
+          return;
+        }
         setPendingAction(null);
         // The "Also act on past emails" chip from the D226 preview.
         // Captured before the async hop so the historic action fires
@@ -591,7 +650,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         return;
       }
     },
-    [enqueueComposite, recordUnsubIntent, setPolicy, qc, activeAction, activeUnsub],
+    [enqueueComposite, recordUnsubIntent, setPolicy, qc, activeAction, overdueAction, activeUnsub],
   );
 
   // Route every destructive verb through the modal (D226 — preview is
@@ -665,6 +724,53 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     }
     setActiveAction(null);
   }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
+
+  // Overdue mirror of the effect above (ACTION_OVERDUE_MS): the parked
+  // handle runs the SAME terminal side effects — receipt, invalidations,
+  // failure toasts — minus the success toast (D35; the overdue toast
+  // already said the result lands in Activity), then frees the slot.
+  useEffect(() => {
+    if (!overdueAction) return;
+    if (overdueActionStatus.isError) {
+      captureFeatureException(overdueActionStatus.error, {
+        surface: 'senders',
+        reason: 'action_status_poll',
+      });
+      toast(`Couldn't confirm ${overdueAction.senderName} — see Activity`, 'warn');
+      setOverdueAction(null);
+      return;
+    }
+    const data = overdueActionStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    // D226 — the parked mutation just changed what any kept-open (or
+    // next-opened) confirm surface describes: its preview must re-count
+    // before the freed guard lets it dispatch.
+    void qc.invalidateQueries({ queryKey: ['composite-preview'] });
+    void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
+    setReceipt({ ...buildActionReceiptResult(data), senderCount: 1 });
+    if (data.status === 'done') {
+      if (data.affectedCount === 0 || !data.undoToken) {
+        toast(
+          `No inbox mail from ${overdueAction.senderName} to ${overdueAction.verb.toLowerCase()}`,
+          'info',
+        );
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
+      } else {
+        // No success toast — the receipt above still carries the undo.
+        void qc.invalidateQueries({ queryKey: sendersKeys.all });
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
+      }
+    } else {
+      toast(`Couldn't ${overdueAction.verb.toLowerCase()} ${overdueAction.senderName}`, 'warn');
+    }
+    setOverdueAction(null);
+  }, [
+    overdueActionStatus.data,
+    overdueActionStatus.isError,
+    overdueActionStatus.error,
+    overdueAction,
+    qc,
+  ]);
 
   // D9 Wave 2 — unsubscribe execution outcome (mirrors senders-screen).
   // No receipt: a network unsub issues no undo token by design (D58).

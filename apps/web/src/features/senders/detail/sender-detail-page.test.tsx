@@ -9,8 +9,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { SenderDetailRoute } from './sender-detail-page';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { ACTION_OVERDUE_MS, SenderDetailRoute } from './sender-detail-page';
+import { sendersKeys } from '../api/query-keys';
+import { activityKeys } from '@/features/activity/api/query-keys';
 import {
   addFetchHandlers,
   installFetchStub,
@@ -20,6 +22,14 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+
+// Toast is the user-visible surface the overdue-release cases assert on.
+// Partial mock — every other export from the shared package stays real.
+const h = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock('@declutrmail/shared', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, toast: h.toast };
+});
 
 // `useSearchParams` is read by the mount-event effect (D38 session-3).
 // The test toggles `currentSearch` per-case to exercise the `?from=`
@@ -495,6 +505,229 @@ describe('SenderDetailRoute', () => {
       fireEvent.click(keepButton);
 
       await waitFor(() => expect(capturedBody).toEqual({ policyType: 'keep' }));
+    });
+  });
+
+  // D226 overdue release + re-entry guard (2026-08-12 incident).
+
+  describe('action latch — overdue release + guard trip', () => {
+    /** Live composite preview for the fixture sender — arms the D226 confirm. */
+    function detailPreviewHandler(opts: { count?: () => number; onFetch?: () => void } = {}) {
+      return {
+        method: 'GET' as const,
+        path: '/api/actions/preview',
+        respond: () => {
+          opts.onFetch?.();
+          return jsonOk({
+            data: {
+              sender: {
+                id: 'linkedin',
+                name: 'LinkedIn',
+                domain: 'linkedin.com',
+                lastSeenDays: 2,
+                repliedCount: 0,
+                monthly: 64,
+              },
+              counts: {
+                all: opts.count?.() ?? 12,
+                olderThan30d: 0,
+                olderThan90d: 0,
+                olderThan180d: 0,
+                olderThan365d: 0,
+              },
+              recentMessages: {
+                all: [],
+                olderThan30d: [],
+                olderThan90d: [],
+                olderThan180d: [],
+                olderThan365d: [],
+              },
+              unsubAvailable: true,
+              protected: false,
+            },
+          });
+        },
+      };
+    }
+
+    function actionStatusBody(id: string, done: boolean) {
+      return {
+        actionId: id,
+        verb: 'archive',
+        direction: 'forward',
+        status: done ? 'done' : 'executing',
+        requestedCount: 12,
+        affectedCount: done ? 12 : 0,
+        wakeAt: null,
+        undoToken: done ? 'tok-1' : null,
+        undoExpiresAt: done ? '2027-06-16T14:35:00.000Z' : null,
+        undoExecutedAt: null,
+        undoRevertedAt: null,
+        errorCode: null,
+      };
+    }
+
+    beforeEach(() => h.toast.mockClear());
+
+    it('parks a stuck action at ACTION_OVERDUE_MS, keeps THIS sender locked until it terminates, then frees the guard', async () => {
+      vi.useFakeTimers();
+      try {
+        let actionPosts = 0;
+        let firstActionDone = false;
+        let previewGets = 0;
+        let previewCount = 12;
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler({
+            count: () => previewCount,
+            onFetch: () => {
+              previewGets += 1;
+            },
+          }),
+          {
+            method: 'POST',
+            path: '/api/actions',
+            respond: () => {
+              actionPosts += 1;
+              return jsonOk({
+                data: { actionId: `act-${actionPosts}`, requestedCount: 12, status: 'queued' },
+              });
+            },
+          },
+          {
+            method: 'GET',
+            path: /^\/api\/actions\/[^/]+$/,
+            respond: (_req, url) => {
+              const id = url.pathname.split('/').pop() ?? 'act-1';
+              return jsonOk({ data: actionStatusBody(id, id === 'act-1' && firstActionDone) });
+            },
+          },
+        ]);
+        const tick = (ms: number) =>
+          act(async () => {
+            await vi.advanceTimersByTimeAsync(ms);
+          });
+
+        const client = createTestQueryClient();
+        const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+        render(
+          <QueryWrapper client={client}>
+            <SenderDetailRoute id="linkedin" />
+          </QueryWrapper>,
+        );
+        await tick(200);
+        fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
+        await tick(200);
+        screen.getByText(/currently match.*Archive/i);
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+        await tick(200);
+        expect(actionPosts).toBe(1);
+
+        // The worker never reports terminal. At the deadline the handle
+        // parks with the overdue toast — but this page is single-sender,
+        // so the parked handle still owns the ONLY subject.
+        await tick(ACTION_OVERDUE_MS);
+        expect(h.toast).toHaveBeenCalledWith(
+          'Archive for LinkedIn is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
+          'info',
+        );
+
+        // A second confirm on the SAME sender is refused (a re-dispatch
+        // would mint a second real Gmail job) and the confirmed preview
+        // stays open — the intent is not dropped.
+        fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
+        await tick(200);
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+        await tick(200);
+        expect(actionPosts).toBe(1);
+        expect(h.toast).toHaveBeenCalledWith(
+          'Still confirming your last action — give it a moment.',
+          'info',
+        );
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+        // The parked handle kept polling: done still invalidates both
+        // surfaces and surfaces the receipt — with NO success toast.
+        // The archive just moved mail, so the kept-open preview must be
+        // re-counted too (D226) — the pre-action count would otherwise
+        // re-arm the confirm with a number the mutation made stale.
+        invalidateSpy.mockClear();
+        const previewGetsBefore = previewGets;
+        previewCount = 5;
+        firstActionDone = true;
+        await tick(2_500);
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: sendersKeys.all });
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: activityKeys.all });
+        expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
+        const successToast = h.toast.mock.calls.find(([msg]) => /12 email/i.test(String(msg)));
+        expect(successToast).toBeUndefined();
+
+        // The kept-open preview REFETCHED and now shows the fresh
+        // post-archive count…
+        expect(previewGets).toBeGreaterThan(previewGetsBefore);
+        const rearmedDialog = screen.getByRole('dialog');
+        expect(within(rearmedDialog).getAllByText('5').length).toBeGreaterThan(0);
+
+        // …and with the parked handle terminal, the guard truly frees:
+        // the re-armed confirm dispatches against that fresh count.
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+        await tick(200);
+        expect(actionPosts).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps the confirmed preview open when the re-entry guard trips (intent is not dropped)', async () => {
+      let actionPosts = 0;
+      let statusGets = 0;
+      installHappyPath();
+      addFetchHandlers([
+        detailPreviewHandler(),
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            actionPosts += 1;
+            return jsonOk({
+              data: { actionId: 'act-stuck', requestedCount: 12, status: 'queued' },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/[^/]+$/,
+          respond: () => {
+            statusGets += 1;
+            return jsonOk({ data: actionStatusBody('act-stuck', false) });
+          },
+        },
+      ]);
+      renderDetail();
+
+      const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
+      fireEvent.click(archiveButton);
+      await screen.findByText(/currently match.*Archive/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(actionPosts).toBe(1));
+      // The latch is armed once its status poll starts.
+      await waitFor(() => expect(statusGets).toBeGreaterThan(0));
+
+      // Second confirmed action while the first is still confirming: the
+      // guard trips — but the pending confirm surface must stay open so
+      // the confirmed intent survives (pre-fix it was silently cleared).
+      fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
+      await screen.findByText(/currently match.*Archive/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          'Still confirming your last action — give it a moment.',
+          'info',
+        ),
+      );
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(actionPosts).toBe(1);
     });
   });
 });

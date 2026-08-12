@@ -27,7 +27,10 @@ import {
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import type { BriefWire } from '@/lib/api/brief';
+import { activityKeys } from '@/features/activity/api/query-keys';
+import { sendersKeys } from '@/features/senders/api/query-keys';
 
+import { ACTION_OVERDUE_MS } from './api/use-noise-archive';
 import { BriefScreen } from './brief-screen';
 
 vi.mock('@/features/auth/auth-provider', () => ({
@@ -613,5 +616,99 @@ describe('Brief Noise bulk archive (D65)', () => {
     await waitFor(() => expect(archiveButton()).toBeDisabled());
     expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('parks a stuck archive at ACTION_OVERDUE_MS: toast fires, busy stays, done still settles and frees (2026-08-12 incident)', async () => {
+    // The worker hangs >2 min. The handle parks with the info toast —
+    // but on THIS surface `busy` deliberately keeps covering the parked
+    // handle: the whole section is one bulk entry point over the very
+    // senders the parked archive may still be moving, so asserting idle
+    // mid-archive (or opening a preview whose confirm is always dead)
+    // would be worse than staying visibly busy. The park's value here
+    // is the honest toast + terminal effects that outlive the deadline:
+    // when the parked handle finally reports done, the SAME settle runs
+    // — Done ✓ marks, the real affected count, the moved-mail
+    // invalidations — and only THEN does busy free.
+    vi.useFakeTimers();
+    try {
+      let batchDone = false;
+      installFetchStub([
+        briefHandler(),
+        bulkPreviewHandler(),
+        enqueueHandler(),
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/batch\//,
+          respond: () =>
+            batchDone
+              ? batchStatusHandler().respond(
+                  new Request('http://localhost/api/actions/batch/batch-1'),
+                  new URL('http://localhost/api/actions/batch/batch-1'),
+                )
+              : jsonOk({
+                  data: {
+                    batchId: 'batch-1',
+                    status: 'executing',
+                    total: 2,
+                    done: 0,
+                    failed: 0,
+                    requestedCount: 351,
+                    affectedCount: 0,
+                    undoToken: null,
+                  },
+                }),
+        },
+        undoStateHandler(),
+      ]);
+      const tick = (ms: number) =>
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(ms);
+        });
+      const client = createTestQueryClient();
+      const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+      render(
+        <QueryWrapper client={client}>
+          <BriefScreen />
+          <ToastHost />
+        </QueryWrapper>,
+      );
+      await tick(200);
+
+      // Confirm the archive; the worker never reports terminal.
+      fireEvent.click(archiveButton());
+      await tick(200);
+      const dialog = screen.getByRole('dialog');
+      const confirm = within(dialog).getByRole('button', { name: /^Archive/ });
+      expect(confirm).toBeEnabled();
+      fireEvent.click(confirm);
+      await tick(200);
+      expect(enqueued).toHaveLength(1);
+      expect(screen.getByRole('button', { name: /Archiving…/ })).toBeDisabled();
+
+      // At the deadline the handle parks: overdue toast fires, and busy
+      // deliberately STAYS — the section must not assert idle while the
+      // parked archive may still be moving these very senders.
+      await tick(ACTION_OVERDUE_MS);
+      screen.getByText(
+        'The Noise archive is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
+      );
+      expect(screen.getByRole('button', { name: /Archiving…/ })).toBeDisabled();
+
+      // Parked terminal `done` still settles: Done ✓ marks, the real
+      // affected count, the moved-mail invalidations — and only now
+      // does busy free (both rows are Done, so the CTA disarms at 0).
+      invalidateSpy.mockClear();
+      batchDone = true;
+      await tick(2_500);
+      screen.getByText(/Archived 348 emails from 2 senders/i);
+      screen.getByText(/4 messages yesterday · Archived ✓/i);
+      screen.getByText(/3 messages yesterday · Archived ✓/i);
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: activityKeys.all });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: sendersKeys.all });
+      expect(screen.queryByRole('button', { name: /Archiving…/ })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Archive 0 senders' })).toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

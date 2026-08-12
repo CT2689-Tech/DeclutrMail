@@ -35,6 +35,17 @@ import { resolveScreenerShortcut, VERB_LABEL } from './verbs';
 
 const { color, font } = tokens;
 
+/**
+ * D226 overdue release — how long the polled decision handle may stay
+ * non-terminal before it stops being the busy latch. 2026-08-12
+ * incident: a destructive action hung >8 min server-side and
+ * `busyRowId` bricked the whole queue silently — the latch only
+ * released on a terminal status and the poll has no time cap. At this
+ * deadline the handle parks (still polled; terminal side effects still
+ * run) and the queue unblocks.
+ */
+export const ACTION_OVERDUE_MS = 120_000;
+
 /** Default state — fixtures, used by Storybook variants + tests. */
 export const DEFAULT_SCREENER_STATE: ScreenerScreenState = {
   kind: 'ready',
@@ -122,6 +133,14 @@ export function ScreenerScreen({
 
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
   const unsubExecStatus = useActionStatus(unsubWatch?.actionId ?? null);
+  // Overdue parking slot (ACTION_OVERDUE_MS, 2026-08-12 incident) —
+  // single slot, replaced on collision. A handle that stays
+  // non-terminal past the deadline moves here so `busyRowId` releases;
+  // the parked poll keeps running and the terminal invalidations +
+  // failure toasts still land. `unsubWatch` gets no parked slot — it is
+  // an explicit background watcher that never blocks the queue.
+  const [overdueAction, setOverdueAction] = useState<typeof activeAction>(null);
+  const overdueActionStatus = useActionStatus(overdueAction?.actionId ?? null);
 
   // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
   // its Storybook stories mount without an auth shim; PostHog
@@ -211,6 +230,62 @@ export function ScreenerScreen({
     setActiveAction(null);
   }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
 
+  // Overdue-release timer (ACTION_OVERDUE_MS). Cleanup cancels the
+  // deadline whenever the handle clears normally, so only a genuinely
+  // stuck handle parks — releasing `busyRowId` so the queue stays
+  // usable while the worker keeps running. Free-slot rule: while the
+  // parking slot is occupied the timer holds (a parked handle is never
+  // displaced mid-poll — its Gmail job may still be running) and keys
+  // on BOTH states so a fresh deadline arms when the slot frees.
+  useEffect(() => {
+    if (!activeAction || overdueAction != null) return;
+    const t = setTimeout(() => {
+      void track('action_overdue', { kind: 'single', verb: activeAction.verb });
+      toast(
+        `${VERB_LABEL[activeAction.verb]} for ${activeAction.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        'info',
+      );
+      setOverdueAction(activeAction);
+      setActiveAction(null);
+    }, ACTION_OVERDUE_MS);
+    return () => clearTimeout(t);
+  }, [activeAction, overdueAction]);
+
+  // Overdue mirror of the terminal effect above: same invalidations and
+  // failure toasts (the active path already has no success toast, D35),
+  // then the parked slot frees. Deliberately does NOT collapse
+  // `expandedRowId` — minutes later the user may be reading a different
+  // row; the decided row leaves the queue on the refetch regardless.
+  useEffect(() => {
+    if (!overdueAction) return;
+    if (overdueActionStatus.isError) {
+      captureFeatureException(overdueActionStatus.error, {
+        surface: 'screener',
+        reason: 'action_status_poll',
+      });
+      toast(`Couldn't confirm ${overdueAction.senderName} — see Activity`, 'warn');
+      invalidateAfterDecision(qc);
+      setOverdueAction(null);
+      return;
+    }
+    const data = overdueActionStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status !== 'done') {
+      toast(
+        `Couldn't ${VERB_LABEL[overdueAction.verb].toLowerCase()} ${overdueAction.senderName} — see Activity`,
+        'warn',
+      );
+    }
+    invalidateAfterDecision(qc);
+    setOverdueAction(null);
+  }, [
+    overdueActionStatus.data,
+    overdueActionStatus.isError,
+    overdueActionStatus.error,
+    overdueAction,
+    qc,
+  ]);
+
   // Background one-click unsubscribe watch — outside the busy latch
   // (the row already left the queue on the decide POST).
   useEffect(() => {
@@ -246,11 +321,18 @@ export function ScreenerScreen({
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, unsubWatch, qc]);
 
   const busyRowId = activeAction?.rowId ?? decidingRowId;
+  // 2026-08-12 incident amendment: the parked handle still OWNS its
+  // row — the ACTION_OVERDUE_MS release frees the QUEUE (other rows
+  // dispatchable), never the hung row itself. Re-dispatching it would
+  // mint a fresh idempotency key and a SECOND real Gmail job. This id
+  // rides the per-row busy render + per-row dispatch guards, while the
+  // queue-wide re-entry latch stays on `busyRowId` alone.
+  const parkedRowId = overdueAction?.rowId ?? null;
 
   /** Verb click — opens (or swaps) the mandatory preview (D226). */
   const onVerbClick = useCallback(
     (verb: ScreenerDecideVerb, row: ScreenerQueueRow) => {
-      if (row.id === busyRowId) return;
+      if (row.id === busyRowId || row.id === parkedRowId) return;
       if (verb === 'unsubscribe' && !canScreenerUnsubscribe(row)) return;
       setPending({
         rowId: row.id,
@@ -260,7 +342,7 @@ export function ScreenerScreen({
       });
       setExpandedRowId(row.id);
     },
-    [busyRowId],
+    [busyRowId, parkedRowId],
   );
 
   /** Preview confirm — the only place the decide mutation fires. */
@@ -268,7 +350,11 @@ export function ScreenerScreen({
     (row: ScreenerQueueRow) => {
       if (pending == null || pending.rowId !== row.id) return;
       if (pendingPreviewBlocked) return;
-      if (busyRowId != null || decide.isPending) {
+      // `parkedRowId` joins the guard for THIS row only (a preview can
+      // stay open across the park): the parked row may not re-dispatch,
+      // while the queue-wide latch (`busyRowId`) frees at the overdue
+      // release so every other row keeps working.
+      if (busyRowId != null || decide.isPending || row.id === parkedRowId) {
         toast('Still confirming your last decision — give it a moment.', 'info');
         return;
       }
@@ -355,7 +441,7 @@ export function ScreenerScreen({
         },
       );
     },
-    [pending, pendingPreviewBlocked, previewAllMailCount, busyRowId, decide, qc],
+    [pending, pendingPreviewBlocked, previewAllMailCount, busyRowId, parkedRowId, decide, qc],
   );
 
   // Keyboard shortcuts (Triage parity, D29/D227). Act on the EXPANDED
@@ -478,7 +564,7 @@ export function ScreenerScreen({
               <ScreenerRow
                 row={row}
                 expanded={expandedRowId === row.id}
-                busy={busyRowId === row.id}
+                busy={busyRowId === row.id || parkedRowId === row.id}
                 pendingVerb={pending?.rowId === row.id ? pending.verb : null}
                 previewInboxCount={previewInboxCount}
                 previewAllMailCount={previewAllMailCount}
