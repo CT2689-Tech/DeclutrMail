@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
@@ -120,6 +120,47 @@ function openPricing(): void {
   window.location.assign('/pricing');
 }
 
+/**
+ * How long one confirming decision may hold its single-slot latch.
+ * Production 2026-08-12: a backend lock bug held a Delete for 8m39s and
+ * the occupied slot silently deferred every later decision on the
+ * screen. Past this deadline the handle moves to a parking slot (still
+ * polled — the outcome lands either way) and the latch releases.
+ */
+export const ACTION_OVERDUE_MS = 120_000;
+
+/**
+ * Handle for one enqueued async action (enqueue → worker → poll).
+ * Lives in the active slot while confirming; moves to the overdue
+ * parking slot when the worker outlives ACTION_OVERDUE_MS.
+ */
+interface ActionHandle {
+  actionId: string;
+  rowId: string;
+  senderName: string;
+  verb: 'Archive' | 'Later' | 'Delete';
+  /**
+   * True when this job is the optional backlog-archive that rides an
+   * Unsubscribe decision (D9). The unsub already counted toward the
+   * session burn-down — a follow-on must not count twice.
+   */
+  followOn?: boolean;
+}
+
+/** Handle for one enqueued domain-batch composite — same lifecycle. */
+interface BatchHandle {
+  batchId: string;
+  domain: string;
+  verb: BatchVerb;
+  /**
+   * Queue rows the fan-out covers. Needed once the batch can be PARKED:
+   * the members are still in the queue (the batch is not durable yet)
+   * and must render busy / refuse re-dispatch, or a member could get a
+   * second job while the parked fan-out still runs.
+   */
+  rowIds: string[];
+}
+
 export function TriageScreen({
   state = DEFAULT_TRIAGE_STATE,
   journey = 'daily',
@@ -168,20 +209,18 @@ export function TriageScreen({
    * verbs (Keep / Unsubscribe) settle on the POST itself and latch on
    * `intentRowId`.
    */
-  const [activeAction, setActiveAction] = useState<{
-    actionId: string;
-    rowId: string;
-    senderName: string;
-    verb: 'Archive' | 'Later' | 'Delete';
-    /**
-     * True when this job is the optional backlog-archive that rides an
-     * Unsubscribe decision (D9). The unsub already counted toward the
-     * session burn-down — a follow-on must not count twice.
-     */
-    followOn?: boolean;
-  } | null>(null);
+  const [activeAction, setActiveAction] = useState<ActionHandle | null>(null);
   const [intentRowId, setIntentRowId] = useState<string | null>(null);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
+  // 2026-08-12 — the overdue parking slot. An activeAction that outlives
+  // ACTION_OVERDUE_MS moves here so the latch releases while this poll
+  // (same query key, so it dedupes with the one above) keeps watching
+  // for the terminal outcome. Single slot; when it is OCCUPIED the next
+  // overdue action stays latched and the timer re-arms when the slot
+  // frees (the effect keys on both) — displacing would stop the parked
+  // poll and silently re-arm a row whose job is still running.
+  const [overdueAction, setOverdueAction] = useState<ActionHandle | null>(null);
+  const overdueActionStatus = useActionStatus(overdueAction?.actionId ?? null);
 
   // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution. Watched
   // OUTSIDE the single-slot re-entry latch: the decision row already
@@ -210,13 +249,12 @@ export function TriageScreen({
     batch: DomainBatch;
     wakeAt: string | null;
   } | null>(null);
-  const [batchAction, setBatchAction] = useState<{
-    batchId: string;
-    domain: string;
-    verb: BatchVerb;
-  } | null>(null);
+  const [batchAction, setBatchAction] = useState<BatchHandle | null>(null);
   const enqueueBulk = useEnqueueBulkAction();
   const batchStatus = useBatchStatus(batchAction?.batchId ?? null);
+  // Batch counterpart of `overdueAction` — same parking contract.
+  const [overdueBatch, setOverdueBatch] = useState<BatchHandle | null>(null);
+  const overdueBatchStatus = useBatchStatus(overdueBatch?.batchId ?? null);
 
   // D226 — the batch sheet's REAL aggregated counts. A batch is only
   // constructed with ≥MIN_BATCH_RUN eligible rows (domain-batch.ts), so
@@ -430,6 +468,163 @@ export function TriageScreen({
     addSessionMessagesMoved,
   ]);
 
+  // ── Overdue release (2026-08-12 incident) ─────────────────────────
+  // A server-side hang must not hold the single-slot latch forever:
+  // with the slot occupied, every later decision on the screen is
+  // silently deferred. After ACTION_OVERDUE_MS the handle parks, the
+  // user is told once, and the latch releases. The effect is keyed on
+  // the handle itself, so a fresh action arms a fresh deadline and a
+  // terminal one disarms it via cleanup.
+  useEffect(() => {
+    // Park only into a FREE slot. Displacing the occupant would stop
+    // its poll while its job still runs, silently re-arming that row
+    // for a duplicate dispatch. While the slot is occupied the newer
+    // action simply stays latched; this effect re-runs (and re-arms a
+    // fresh deadline) when the slot frees.
+    if (!activeAction || overdueAction != null) return;
+    const timer = setTimeout(() => {
+      toast(
+        `${activeAction.verb} for ${activeAction.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        'info',
+      );
+      // Parking is the one moment the client KNOWS a backend hang
+      // happened (the 2026-08-12 incident was invisible until a human
+      // noticed) — measure recurrence.
+      void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
+      setOverdueAction(activeAction);
+      setActiveAction(null);
+    }, ACTION_OVERDUE_MS);
+    return () => clearTimeout(timer);
+  }, [activeAction, overdueAction]);
+
+  useEffect(() => {
+    // Same free-slot rule as the single-action park above.
+    if (!batchAction || overdueBatch != null) return;
+    const timer = setTimeout(() => {
+      toast(
+        `${batchAction.verb} for the ${batchAction.domain} batch is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        'info',
+      );
+      void track('action_overdue', { kind: 'batch', verb: batchAction.verb.toLowerCase() });
+      setOverdueBatch(batchAction);
+      setBatchAction(null);
+    }, ACTION_OVERDUE_MS);
+    return () => clearTimeout(timer);
+  }, [batchAction, overdueBatch]);
+
+  // Terminal outcome for a PARKED action — same contract as the active
+  // slot's effect above, except the expanded row is left alone (the
+  // user has long since moved on; collapsing whatever they are reading
+  // now would yank the screen). No success toast (D35).
+  useEffect(() => {
+    if (!overdueAction) return;
+    if (overdueActionStatus.isError) {
+      captureFeatureException(overdueActionStatus.error, {
+        surface: 'triage',
+        reason: 'action_status_poll',
+      });
+      toast(
+        getActionFailureCopy('status', {
+          action: `${overdueAction.verb.toLowerCase()} ${overdueAction.senderName}`,
+        }).message,
+        'warn',
+      );
+      setOverdueAction(null);
+      return;
+    }
+    const data = overdueActionStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      invalidateAfterDecision(qc);
+      if (!overdueAction.followOn) {
+        incrementSessionDecided();
+      }
+      addSessionMessagesMoved(data.affectedCount);
+    } else {
+      toast(
+        getActionFailureCopy('terminal', {
+          action: `${overdueAction.verb.toLowerCase()} ${overdueAction.senderName}`,
+        }).message,
+        'warn',
+      );
+    }
+    setOverdueAction(null);
+  }, [
+    overdueActionStatus.data,
+    overdueActionStatus.isError,
+    overdueActionStatus.error,
+    overdueAction,
+    qc,
+    incrementSessionDecided,
+    addSessionMessagesMoved,
+  ]);
+
+  useEffect(() => {
+    if (!overdueBatch) return;
+    if (overdueBatchStatus.isError) {
+      captureFeatureException(overdueBatchStatus.error, {
+        surface: 'triage',
+        reason: 'batch_status_poll',
+      });
+      toast(
+        getActionFailureCopy('status', { action: `the ${overdueBatch.domain} batch` }).message,
+        'warn',
+      );
+      setOverdueBatch(null);
+      return;
+    }
+    const data = overdueBatchStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      if (data.failed > 0) {
+        toast(
+          getActionFailureCopy('terminal', {
+            action: `${overdueBatch.verb.toLowerCase()} the ${overdueBatch.domain} batch`,
+            whatChanged: `${data.done} of ${data.total} senders completed.`,
+            whatDidNotChange: `${data.failed} senders did not complete.`,
+            nextStep: 'Check Activity for the affected senders, then retry if needed.',
+          }).message,
+          'warn',
+        );
+      }
+      invalidateAfterDecision(qc);
+      incrementSessionDecided(data.done);
+      addSessionMessagesMoved(data.affectedCount);
+    } else {
+      toast(
+        getActionFailureCopy('terminal', {
+          action: `${overdueBatch.verb.toLowerCase()} the ${overdueBatch.domain} batch`,
+        }).message,
+        'warn',
+      );
+    }
+    setOverdueBatch(null);
+  }, [
+    overdueBatchStatus.data,
+    overdueBatchStatus.isError,
+    overdueBatchStatus.error,
+    overdueBatch,
+    qc,
+    incrementSessionDecided,
+    addSessionMessagesMoved,
+  ]);
+
+  // Rows with an outstanding job — confirming, intent-settling, OR
+  // parked overdue — render busy and refuse re-dispatch. A set, not a
+  // single id: parking exists precisely so the NEXT action can start
+  // while the parked one still runs, so two rows are busy at once (and
+  // a parked batch keeps all its member rows busy). Re-dispatching any
+  // of them would mint a second real Gmail job for the same sender.
+  // Declared ABOVE dispatchAction: the dispatch choke point reads it.
+  const busyRowIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (activeAction) ids.add(activeAction.rowId);
+    if (overdueAction) ids.add(overdueAction.rowId);
+    if (intentRowId != null) ids.add(intentRowId);
+    for (const id of overdueBatch?.rowIds ?? []) ids.add(id);
+    return ids;
+  }, [activeAction, overdueAction, intentRowId, overdueBatch]);
+
   /**
    * Run the mutation for `verb` against `row` after the preview has
    * been seen (D226). The only place a mutation fires — both the
@@ -438,6 +633,12 @@ export function TriageScreen({
    * `source` is the surface that confirmed the decision — it feeds the
    * D159 `triage_action_taken` event, which fires only after the server
    * accepts the decision (never on preview open, never optimistically).
+   *
+   * Returns whether a mutation actually fired: `false` when a latch or
+   * the re-entry guard deferred the decision, `true` once any branch
+   * dispatched. Callers with dispatch-conditional side effects (the
+   * sheet's remember-preference persist) must check it; fire-and-forget
+   * callers may ignore it.
    */
   const dispatchAction = useCallback(
     (
@@ -445,7 +646,7 @@ export function TriageScreen({
       row: TriageDecisionRow,
       details: ConfirmDetails | undefined,
       source: 'sheet' | 'inline',
-    ) => {
+    ): boolean => {
       // Synchronous same-tick latch. The state/isPending guard below
       // reads the RENDER snapshot, so N handlers firing in one keydown
       // dispatch (e.g. stacked listeners) would all pass it before any
@@ -453,18 +654,27 @@ export function TriageScreen({
       // microtask — same-tick duplicates die here, sequential use is
       // unaffected. (2026-07-16 audit: one 'K' press dispatched Keep
       // for every queue row on narrow viewports.)
-      if (dispatchLatchRef.current) return;
+      if (dispatchLatchRef.current) return false;
       dispatchLatchRef.current = true;
       queueMicrotask(() => {
         dispatchLatchRef.current = false;
       });
 
-      clearPending();
-
       // Re-entry guard — one decision confirms at a time (mirrors the
       // senders single-slot flow; flow-completeness 2026-06-06 class).
       // The domain-batch slot counts: a batch IS a decision confirming.
+      // Checked BEFORE clearPending (the order onBatchVerb always had):
+      // clearing first dismissed the sheet/inline preview as if the
+      // decision were accepted while nothing dispatched (2026-08-12
+      // incident) — a deferred decision must stay pending.
+      //
+      // `busyRowIds` is checked HERE, not only at the row surface: a
+      // sheet opened on a batch member BEFORE the batch parked is a
+      // live confirm path onto a row that became busy after it opened
+      // (row-level guards never see it). The dispatch choke point is
+      // the one gate every path funnels through.
       if (
+        busyRowIds.has(row.id) ||
         activeAction != null ||
         intentRowId != null ||
         batchAction != null ||
@@ -474,8 +684,10 @@ export function TriageScreen({
         unsubIntent.isPending
       ) {
         toast('Still confirming your last decision — give it a moment.', 'info');
-        return;
+        return false;
       }
+
+      clearPending();
 
       // Keep — policy/verdict-only (D40: applies immediately). Settles
       // on the POST; no worker, no undo token.
@@ -511,7 +723,7 @@ export function TriageScreen({
             onSettled: () => setIntentRowId(null),
           },
         );
-        return;
+        return true;
       }
 
       // Unsubscribe (D9 Wave 2). The intent records the decision AND —
@@ -619,7 +831,7 @@ export function TriageScreen({
             onSettled: () => setIntentRowId(null),
           },
         );
-        return;
+        return true;
       }
 
       // Archive / Later / Delete — the async destructive pipeline (ADR-0020
@@ -692,8 +904,10 @@ export function TriageScreen({
           },
         },
       );
+      return true;
     },
     [
+      busyRowIds,
       activeAction,
       intentRowId,
       batchAction,
@@ -709,9 +923,6 @@ export function TriageScreen({
     ],
   );
 
-  // The row currently confirming — renders busy, refuses re-dispatch.
-  const busyRowId = activeAction?.rowId ?? intentRowId;
-
   /**
    * Row-level handler — bridges a button click / shortcut to the
    * sheet-or-inline preview flow (D226).
@@ -725,7 +936,7 @@ export function TriageScreen({
    */
   const onRowAction = useCallback(
     (verb: ActionVerb, row: TriageDecisionRow) => {
-      if (row.id === busyRowId) return;
+      if (busyRowIds.has(row.id)) return;
       if (verb === 'Keep') {
         // Keep has no preview surface (D40 — non-destructive, applies
         // immediately); recorded as 'inline' (row-level dispatch).
@@ -744,13 +955,18 @@ export function TriageScreen({
         setExpandedRow(row.id);
       }
     },
-    [busyRowId, dispatchAction, openPending, rememberPreference, setExpandedRow],
+    [busyRowIds, dispatchAction, openPending, rememberPreference, setExpandedRow],
   );
 
-  /** Sheet confirm — persists remember-preference, then dispatches. */
+  /** Sheet confirm — dispatches, then persists remember-preference. */
   const onSheetConfirm = useCallback(
     (details: ConfirmDetails) => {
       if (pendingAction == null || pendingRow == null) return;
+      // Dispatch FIRST — a guard-deferred confirm must not persist a
+      // preference for an action that never ran (2026-08-12 incident:
+      // a pref was saved for an Unsubscribe the latch had swallowed).
+      // dispatchAction never reads the pref, so the reorder is safe.
+      if (!dispatchAction(pendingAction.verb, pendingRow, details, 'sheet')) return;
       if (pendingAction.verb !== 'Keep' && pendingAction.verb !== 'Delete') {
         const verb = pendingAction.verb as RememberableVerb;
         setRememberPreference(verb, details.rememberPreference);
@@ -763,7 +979,6 @@ export function TriageScreen({
           persistSheetPref({ [VERB_TO_WIRE[verb]]: true });
         }
       }
-      dispatchAction(pendingAction.verb, pendingRow, details, 'sheet');
     },
     [pendingAction, pendingRow, dispatchAction, setRememberPreference, persistSheetPref],
   );
@@ -807,10 +1022,17 @@ export function TriageScreen({
    */
   const onBatchVerb = useCallback(
     (verb: BatchVerb, batch: DomainBatch) => {
+      // Parked handles count here, unlike in dispatchAction: a batch is
+      // many senders wide, so any overlap with a still-running parked
+      // job would double-touch its sender(s). Rows stay individually
+      // dispatchable (busyRowIds guards just the busy ones); batches
+      // wait for the parked work with the same honest deferral toast.
       if (
         activeAction != null ||
+        overdueAction != null ||
         intentRowId != null ||
         batchAction != null ||
+        overdueBatch != null ||
         enqueueBulk.isPending ||
         enqueueComposite.isPending ||
         keepIntent.isPending ||
@@ -828,8 +1050,10 @@ export function TriageScreen({
     },
     [
       activeAction,
+      overdueAction,
       intentRowId,
       batchAction,
+      overdueBatch,
       enqueueBulk.isPending,
       enqueueComposite.isPending,
       keepIntent.isPending,
@@ -873,6 +1097,7 @@ export function TriageScreen({
             batchId: res.batchId,
             domain: batch.domain,
             verb,
+            rowIds: eligible.map((r) => r.id),
           });
         },
         onError: (err) => {
@@ -1027,7 +1252,10 @@ export function TriageScreen({
             <VerdictBatchBanner
               batch={verdictBatch.batch}
               verdict={verdictBatch.verdict}
-              busy={batchAction?.domain === verdictBatch.batch.domain}
+              busy={
+                batchAction?.domain === verdictBatch.batch.domain ||
+                overdueBatch?.domain === verdictBatch.batch.domain
+              }
               onApply={() =>
                 onBatchVerb(
                   verdictBatch.verdict === 'archive' ? 'Archive' : 'Later',
@@ -1042,12 +1270,12 @@ export function TriageScreen({
         <TriageQueue
           rows={state.rows}
           onAction={onRowActionWithInlineConfirm}
-          busyRowId={busyRowId}
+          busyRowIds={busyRowIds}
           previewInboxCount={previewInboxCount}
           allowBatching={journey === 'daily'}
           offerUnprotect={offerUnprotect}
           onBatchVerb={onBatchVerb}
-          batchBusyDomain={batchAction?.domain ?? null}
+          batchBusyDomain={batchAction?.domain ?? overdueBatch?.domain ?? null}
         />
       )}
 

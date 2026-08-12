@@ -305,7 +305,7 @@ describe('triage_action_taken (D159)', () => {
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
     // Backlog is a separate Gmail mutation, so opt in explicitly.
-    fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Also archive the/i }));
     await confirmOpenSheet('Unsubscribe');
 
     await waitFor(() => expect(actionTakenCalls()).toHaveLength(1));

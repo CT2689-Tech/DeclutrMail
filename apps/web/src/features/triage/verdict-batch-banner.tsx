@@ -57,7 +57,7 @@ export function VerdictBatchBanner({
           tone="primary"
           disabled={busy}
           onClick={onApply}
-          aria-label={`${verb} all ${n} recommended senders — preview first`}
+          ariaLabel={`${verb} all ${n} recommended senders — preview first`}
         >
           {busy ? 'Applying…' : `${verb} all ${n}`}
         </Button>
