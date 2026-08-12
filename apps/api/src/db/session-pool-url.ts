@@ -21,11 +21,43 @@
  * Session mode (same pooler host, port 5432) pins one backend per client
  * connection — the semantics session-level locks and LISTEN require.
  *
- * The rewrite is deliberately narrow: only the documented Supabase
- * pooler host shape is touched. Direct connections (local dev,
- * `db.<ref>.supabase.co`) and anything else pass through unchanged —
- * they are already session-scoped.
+ * The rewrite is keyed on the PARSED hostname + port, not a substring:
+ * a path-less DSN (`…:6543?sslmode=require`), an uppercase host, or the
+ * legacy `db.<ref>.supabase.co:6543` PgBouncer shape must all rewrite —
+ * a silent miss here also silently disables the `SET lock_timeout`
+ * guard, since `SET` is itself session state. Direct connections (local
+ * dev, `db.<ref>.supabase.co:5432`) and non-Supabase hosts pass through
+ * unchanged — they are already session-scoped. An unparsable DSN falls
+ * back to the narrow string rewrite rather than throwing at boot.
  */
 export function toSessionPoolUrl(databaseUrl: string): string {
-  return databaseUrl.replace('.pooler.supabase.com:6543/', '.pooler.supabase.com:5432/');
+  try {
+    const url = new URL(databaseUrl);
+    const host = url.hostname.toLowerCase();
+    const supabasePooled =
+      host.endsWith('.pooler.supabase.com') ||
+      (host.startsWith('db.') && host.endsWith('.supabase.co'));
+    if (supabasePooled && url.port === '6543') {
+      url.port = '5432';
+      return url.toString();
+    }
+    return databaseUrl;
+  } catch {
+    return databaseUrl.replace('.pooler.supabase.com:6543/', '.pooler.supabase.com:5432/');
+  }
+}
+
+/**
+ * `host:port` of a DSN for boot logs — enough to distinguish "correct
+ * no-op" (direct dev DSN) from "prod pooler shape the match missed",
+ * without ever logging credentials. Unparsable input logs as such
+ * rather than risking a raw echo.
+ */
+export function safeHostPort(databaseUrl: string): string {
+  try {
+    const url = new URL(databaseUrl);
+    return `${url.hostname}:${url.port || '5432'}`;
+  } catch {
+    return 'unparsable-dsn';
+  }
 }

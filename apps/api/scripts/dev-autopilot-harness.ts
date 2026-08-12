@@ -175,7 +175,16 @@ async function main(): Promise<void> {
         return await fn();
       } finally {
         try {
-          await reserved`SELECT pg_advisory_unlock(${LABEL_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
+          // Same leak detector as the prod lock (2026-08-12): a `false`
+          // return means the unlock ran on a backend that never held the
+          // lock — this harness shares the prod namespace, so a pooled
+          // DSN here leaks against production-shaped keys.
+          const [row] = await reserved<
+            { pg_advisory_unlock: boolean }[]
+          >`SELECT pg_advisory_unlock(${LABEL_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
+          if (row?.pg_advisory_unlock !== true) {
+            log('advisory_unlock_returned_false', { mailboxAccountId });
+          }
         } catch {
           log('advisory_unlock_failed', { mailboxAccountId });
         }

@@ -53,6 +53,14 @@ fires (below). Until then, Cloud SQL provisioning is deferred.
 - Connection: **Transaction pooler** (`:6543`) mounted as
   `DATABASE_URL` on Cloud Run; **Session pooler** (`:5432`) used
   by Atlas migrations.
+- Amendment (2026-08-12, PR #509): the worker DERIVES a session-pooler
+  DSN at runtime (`toSessionPoolUrl`, port 6543 → 5432) for exactly two
+  pools carrying session-scoped state — the per-mailbox advisory-lock
+  pool and the outbox `LISTEN` connection. Session state (advisory
+  locks, `LISTEN`, `SET`) over the transaction pooler leaks across
+  backends; see MISTAKES.md 2026-08-12. Everything else stays on the
+  transaction pooler. These pools pin real backends (max 10 + 1 per
+  worker instance) — size against the project's session-mode pool_size.
 
 **Cost shift:**
 

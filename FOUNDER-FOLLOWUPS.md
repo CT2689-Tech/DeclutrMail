@@ -26,6 +26,36 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-12 — Wire an alert on the mailbox-lock leak detector
+**Source:** PR #509 (architecture-guardian review)
+**Why:** PR #509 adds structured error logs (`mailbox_lock.unlock_failed`,
+`mailbox_lock.unlock_error`, `mailbox_lock.acquire_failed`,
+`mailbox_lock.session_probe_failed`) that detect the 2026-08-12 leaked-lock
+class — but a log line nobody is paged on only works when someone greps
+(the healthz-blind-spot lesson).
+**How:** GCP Console → Logging → Log-based metrics → create a counter on
+`jsonPayload.kind =~ "^mailbox_lock\."` for the worker service, then
+Monitoring → Alerting → notify on count > 0 over 5 min, to the same channel
+as the Sentry alert rule.
+**Verifies by:** the metric exists and a synthetic `console.error` with a
+matching `kind` (temporarily added on a dev revision, or via a test log
+entry) triggers the alert once.
+**Status:** Open
+
+### 2026-08-12 — A real user's email address is committed on main (public repo)
+**Source:** PR #509 review (privacy nit)
+**Why:** `FINDINGS.md` on `main` carries a beta user's full Gmail address in
+three places, and this repo is PUBLIC. PR #509 redacted the same address
+from its new MISTAKES.md entries, but the pre-existing occurrences need a
+founder call: redact in place (history still holds them — acceptable?) or
+leave and accept.
+**How:** `rg -n "rucha" FINDINGS.md docs/` → replace with "a beta user";
+decide whether git history scrubbing is worth it (probably not — the repo
+was public when committed; redaction stops future indexing).
+**Verifies by:** `rg -i "rucha" --glob '!node_modules' .` returns zero hits
+on main.
+**Status:** Open
+
 ### 2026-08-11 — Main carries a stale implementation log; every open PR pays for it
 ### 2026-08-10 — D68's "one-click archive" is impossible under D226; patch the plan
 

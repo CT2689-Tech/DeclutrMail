@@ -48,7 +48,6 @@ import {
   InvalidGrantError,
   LABEL_ACTION_QUEUE,
   LabelActionWorker,
-  MAILBOX_ACTION_LOCK_NS,
   OUTBOX_NOTIFY_CHANNEL,
   OutboxDispatcherWorker,
   OutboxPublisher,
@@ -114,7 +113,6 @@ import type {
   LabelActionResult,
   LapseReengagementJobData,
   LapseReengagementResult,
-  MailboxActionLock,
   ScoreJobData,
   ScoreJobResult,
   SendersCounterReconciliationJobData,
@@ -135,7 +133,8 @@ import { AnthropicHaikuAdapter } from './adapters/anthropic-haiku.adapter.js';
 import { buildBriefLlmAdapter } from './adapters/brief-llm-anthropic.adapter.js';
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
-import { toSessionPoolUrl } from './db/session-pool-url.js';
+import { safeHostPort, toSessionPoolUrl } from './db/session-pool-url.js';
+import { createMailboxActionLock } from './db/mailbox-action-lock.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
 import {
   deletionReceiptEmail,
@@ -402,9 +401,13 @@ async function bootstrap(): Promise<void> {
   // client connection, which is the contract session locks require.
   // prepare:false — same Supabase tx-pooler reason as `pg` above (kept
   // for safety even though session mode would tolerate prepares).
-  const lockDatabaseUrl = toSessionPoolUrl(requireEnv('DATABASE_URL'));
+  const databaseUrl = requireEnv('DATABASE_URL');
+  const lockDatabaseUrl = toSessionPoolUrl(databaseUrl);
   bootStep('lock_pool_session_mode', {
-    rewritten: lockDatabaseUrl !== process.env.DATABASE_URL,
+    rewritten: lockDatabaseUrl !== databaseUrl,
+    // host:port only — enough to distinguish "correct no-op" (direct
+    // dev DSN) from "prod pooler shape the match missed", sans creds.
+    lockHost: safeHostPort(lockDatabaseUrl),
   });
   const lockPg = postgres(lockDatabaseUrl, {
     max: LABEL_ACTION_CONCURRENCY,
@@ -475,7 +478,7 @@ async function bootstrap(): Promise<void> {
     //   kms_decrypt → unwrap encrypted OAuth refresh token via KMS
     //   oauth_init → build OAuth2Client + set credentials
     const t0 = Date.now();
-    // eslint-disable-next-line no-console
+
     console.log(
       JSON.stringify({
         level: 'info',
@@ -488,7 +491,7 @@ async function bootstrap(): Promise<void> {
       .from(mailboxAccounts)
       .where(eq(mailboxAccounts.id, mailboxAccountId))
       .limit(1);
-    // eslint-disable-next-line no-console
+
     console.log(
       JSON.stringify({
         level: 'info',
@@ -505,7 +508,7 @@ async function bootstrap(): Promise<void> {
       throw new InvalidGrantError(`mailbox account ${mailboxAccountId} has no stored OAuth token`);
     }
     const tKms = Date.now();
-    // eslint-disable-next-line no-console
+
     console.log(
       JSON.stringify({
         level: 'info',
@@ -517,7 +520,7 @@ async function bootstrap(): Promise<void> {
       account.encryptedRefreshToken,
       account.dekEncrypted,
     );
-    // eslint-disable-next-line no-console
+
     console.log(
       JSON.stringify({
         level: 'info',
@@ -563,69 +566,29 @@ async function bootstrap(): Promise<void> {
   // serves the WatchRenewalWorker (D225).
   const gmailWatchAccess: GmailWatchAccess = { getClient: getGmailClient };
 
-  /**
-   * Per-mailbox advisory lock for destructive actions (D226, Codex
-   * review). `perMailboxPolicy` does NOT actually serialize per mailbox
-   * (BullMQ runs `concurrency` jobs across mailboxes), and destructive
-   * mutations are the wrong place to bet on benign races. A connection
-   * reserved from the DEDICATED `lockPg` pool holds the advisory lock for
-   * the whole resolve→mutate→commit; the lock is a keyed mutex, so the
-   * inner work runs on the MAIN pool. Released in `finally`; on connection
-   * loss Postgres drops the session lock automatically.
-   *
-   * Two-key form `pg_advisory_lock(ns, hashtext(mailbox))` isolates these
-   * locks under a label-action namespace. `hashtext` is 32-bit, so two
-   * distinct mailboxes can collide and over-serialize — harmless (extra
-   * mutual exclusion, never incorrect), and rare.
-   */
-  const mailboxLock: MailboxActionLock = {
-    async run(mailboxAccountId, fn) {
-      const reserved = await lockPg.reserve();
-      try {
-        // Bounded wait: a lock that cannot be acquired in 5 minutes is a
-        // stuck holder, not contention — fail the job into BullMQ's
-        // retry/dead-letter path instead of hanging forever (the
-        // 2026-08-12 leak sat invisible precisely because nothing timed
-        // out; `perMailboxPolicy.timeoutMs` is null by design for long
-        // syncs, so the bound lives on the lock wait itself).
-        await reserved`SET lock_timeout = '300s'`;
-        await reserved`SELECT pg_advisory_lock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
-        return await fn();
-      } finally {
-        try {
-          const [row] = await reserved<
-            { pg_advisory_unlock: boolean }[]
-          >`SELECT pg_advisory_unlock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
-          if (row?.pg_advisory_unlock !== true) {
-            // `false` means THIS session never held the lock — the
-            // acquire landed on a different backend (pooler regression)
-            // and the lock just leaked. This is the leak detector; it
-            // must be loud.
-            console.error(
-              JSON.stringify({
-                level: 'error',
-                kind: 'mailbox_lock.unlock_failed',
-                mailboxAccountId,
-                returned: row?.pg_advisory_unlock ?? null,
-              }),
-            );
-          }
-        } catch (err) {
-          // Best-effort unlock; the session ending releases it — but say
-          // so, because a silent catch here hid the 2026-08-12 leak.
-          console.error(
-            JSON.stringify({
-              level: 'error',
-              kind: 'mailbox_lock.unlock_error',
-              mailboxAccountId,
-              message: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
-        reserved.release();
-      }
-    },
-  };
+  // Per-mailbox advisory lock for destructive actions (D226) — see
+  // `createMailboxActionLock` for the serialization contract, the 45s
+  // lock bound (must stay below cronPolicy's 60s job cap), and the
+  // unlock leak detector. Factored out so its failure paths are
+  // unit-tested; the 2026-08-12 leak lived in an untested catch {}.
+  const mailboxLock = createMailboxActionLock(lockPg);
+  // Prove SESSION semantics on the live pool at boot instead of
+  // trusting the DSN's string shape: over a transaction-mode pooler
+  // the probe's unlock lands on another backend and returns false —
+  // exactly the 2026-08-12 failure. Loud but non-fatal: a broken lock
+  // transport degrades destructive-action serialization, while a
+  // crash-loop here would take every other queue down with it.
+  const lockProbe = await mailboxLock.probe();
+  bootStep('mailbox_lock_session_probe', lockProbe);
+  if (!lockProbe.ok) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'mailbox_lock.session_probe_failed',
+        ...lockProbe,
+      }),
+    );
+  }
 
   bootStep('redis_connection_init');
   const connection = createRedisConnection(requireEnv('REDIS_URL'));
@@ -2253,7 +2216,12 @@ async function bootstrap(): Promise<void> {
   // this connection and the dispatcher silently degrades to its 5s
   // polling fallback. Session mode makes the wake channel real.
   // prepare:false — same Supabase tx-pooler reason as `pg` above.
-  const outboxListenPg = postgres(toSessionPoolUrl(process.env.DATABASE_URL ?? ''), {
+  const outboxListenDatabaseUrl = toSessionPoolUrl(requireEnv('DATABASE_URL'));
+  bootStep('outbox_listen_session_mode', {
+    rewritten: outboxListenDatabaseUrl !== requireEnv('DATABASE_URL'),
+    lockHost: safeHostPort(outboxListenDatabaseUrl),
+  });
+  const outboxListenPg = postgres(outboxListenDatabaseUrl, {
     max: 1,
     prepare: false,
   });

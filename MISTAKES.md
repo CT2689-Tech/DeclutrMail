@@ -2408,9 +2408,9 @@ This is the BLIND-GUARD class for the seventh time — the CLAUDE.md §8 line
 LEARNINGS has now requested repeatedly is overdue.
 
 ## 2026-08-12 — Session advisory lock over the transaction pooler: an 8-minute Delete
-**PR:** (fix in the PR carrying this entry)
-**Caught by:** founder dogfood report (real user rucha.varma27's Delete of 285
-messages sat `queued` 8m39s; her Archive 20s earlier took 12s), then live
+**PR:** #509
+**Caught by:** founder dogfood report (a beta user's Delete of 285
+messages sat `queued` 8m39s; the same user's Archive 20s earlier took 12s), then live
 `pg_locks` inspection mid-block
 **What happened:** the worker's per-mailbox destructive-action lock
 (`worker.ts` mailboxLock) took a SESSION-level `pg_advisory_lock` on a
@@ -2446,7 +2446,7 @@ in the sibling PRs so a future server-side hang degrades to an honest
 "still running" instead of a bricked screen.
 
 ## 2026-08-12 — Triage cleared the pending action before the re-entry guard
-**PR:** (sibling FE PRs of the entry above)
+**PR:** #509's FE siblings (fix/d226-triage-dispatch-latch, fix/d226-action-latch-siblings)
 **Caught by:** same incident's PostHog trail — after the hung Delete, the
 user confirmed another Delete and an Unsubscribe; both silently no-oped, and
 the Unsubscribe's "remember this" preference PATCHed durably
