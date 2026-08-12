@@ -44,7 +44,7 @@ vi.mock('@/features/auth/auth-provider', () => {
 });
 
 import { ToastHost } from '@declutrmail/shared';
-import { SendersScreen } from './senders-screen';
+import { ACTION_OVERDUE_MS, SendersScreen } from './senders-screen';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { useSendersStore } from './store';
@@ -1201,6 +1201,129 @@ describe('SendersScreen — edge states', () => {
     expect(
       await screen.findByText(/protected co is protected — unprotect it first/i),
     ).toBeInTheDocument();
+  });
+
+  it('releases a stuck action latch at ACTION_OVERDUE_MS — screen frees, hung sender stays locked, parked terminal effects still run (2026-08-12 incident)', async () => {
+    // The worker hangs >2 min. The single-slot `activeAction` latch must
+    // park (info toast) instead of holding forever; OTHER senders become
+    // dispatchable while the parked handle keeps OWNING its sender (a
+    // re-dispatch would mint a second real Gmail job); and when the
+    // parked handle finally reports done its terminal effects (receipt +
+    // senders/activity invalidation) still run — minus the success
+    // toast (D35).
+    vi.useFakeTimers();
+    try {
+      // Unique display names: the toast bus is module-level, so a prior
+      // test's still-mounted "Archived … from Sender A" success toast
+      // (real-timer 3.6s window) must never collide with this test's
+      // no-success-toast assertion.
+      const ROW_ALPHA = { ...ROW, displayName: 'Overdue Alpha' };
+      const ROW_BETA = { ...ROW, id: 'b', displayName: 'Overdue Beta', email: 'b@example.com' };
+      let listGets = 0;
+      let actionPosts = 0;
+      let firstActionDone = false;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: () => {
+            listGets += 1;
+            return jsonOk({
+              data: [ROW_ALPHA, ROW_BETA],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 25 },
+                query: { totalMatching: 2, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+              },
+            });
+          },
+        },
+        sendersSummaryHandler(),
+        compositePreviewHandler(12),
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            actionPosts += 1;
+            return jsonOk({
+              data: { actionId: `act-${actionPosts}`, requestedCount: 12, status: 'queued' },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/[^/]+$/,
+          respond: (_req, url) => {
+            const id = url.pathname.split('/').pop() ?? 'act-1';
+            const done = id === 'act-1' && firstActionDone;
+            return jsonOk({
+              data: archiveStatus({
+                actionId: id,
+                status: done ? 'done' : 'executing',
+                affectedCount: done ? 12 : 0,
+                undoToken: done ? 'tok-1' : null,
+                undoExpiresAt: done ? '2027-06-16T14:35:00.000Z' : null,
+              }),
+            });
+          },
+        },
+      ]);
+      const tick = (ms: number) =>
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(ms);
+        });
+
+      renderScreenWithToasts();
+      await tick(200);
+      fireEvent.click(screen.getByRole('checkbox', { name: /select overdue alpha/i }));
+      fireEvent.keyDown(document.body, { key: 'a' });
+      await tick(200);
+      screen.getByText(/currently match.*Archive/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await tick(200);
+      expect(actionPosts).toBe(1);
+
+      // The poll keeps answering `executing`. At the deadline the latch
+      // parks: overdue toast, active slot freed.
+      await tick(ACTION_OVERDUE_MS);
+      screen.getByText(
+        'Archive for Overdue Alpha is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
+      );
+
+      // The parked handle still OWNS Overdue Alpha: re-dispatching it is
+      // refused (no second Gmail job) and the confirmed preview stays
+      // open rather than silently dropping the intent.
+      fireEvent.click(screen.getByRole('checkbox', { name: /select overdue alpha/i }));
+      fireEvent.keyDown(document.body, { key: 'a' });
+      await tick(200);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await tick(200);
+      expect(actionPosts).toBe(1);
+      screen.getByText('Still confirming your last action for this sender — give it a moment.');
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      fireEvent.keyDown(window, { key: 'Escape' });
+      await tick(50);
+
+      // The SCREEN is not bricked — a different sender dispatches.
+      fireEvent.click(screen.getByRole('checkbox', { name: /select overdue alpha/i })); // deselect
+      fireEvent.click(screen.getByRole('checkbox', { name: /select overdue beta/i }));
+      fireEvent.keyDown(document.body, { key: 'a' });
+      await tick(200);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await tick(200);
+      expect(actionPosts).toBe(2);
+
+      // The parked handle kept polling: when it reports done, the SAME
+      // terminal effects run — receipt with a working undo + senders
+      // refetch — but NO success toast.
+      const listGetsBefore = listGets;
+      firstActionDone = true;
+      await tick(2_500);
+      expect(listGets).toBeGreaterThan(listGetsBefore);
+      expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
+      expect(screen.queryByText(/Archived 12 emails from Overdue Alpha/i)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

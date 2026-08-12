@@ -181,6 +181,18 @@ export type NoiseArchiveOutcome =
   /** The status read failed. The outcome is genuinely unknown. */
   | { kind: 'unconfirmed' };
 
+/**
+ * D226 overdue release — how long the polled archive handle may stay
+ * non-terminal before it stops driving `busy`. 2026-08-12 incident: a
+ * destructive action hung >8 min server-side and every single-slot
+ * latch polling `useActionStatus`/`useBatchStatus` bricked silently —
+ * `busy` here disables the whole Noise section (CTA + every checkbox)
+ * and only released on a terminal status. At this deadline the handle
+ * parks (still polled; settle/failure side effects still run) and
+ * `busy` releases.
+ */
+export const ACTION_OVERDUE_MS = 120_000;
+
 /** Guard 4xx codes that mean "your mailbox scope moved", not "this failed". */
 const SCOPE_CONFLICT_CODES = new Set(['SELECT_MAILBOX', 'NO_ACTIVE_MAILBOX', 'MAILBOX_NOT_OWNED']);
 
@@ -303,6 +315,29 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     | { kind: 'batch'; batchId: string; senderKeys: string[]; mailboxId: string | null }
     | null
   >(null);
+  /**
+   * Overdue parking slot (ACTION_OVERDUE_MS, 2026-08-12 incident) —
+   * single slot, replaced on collision. A handle that stays
+   * non-terminal past the deadline moves here so `busy` releases; the
+   * parked poll keeps running and the terminal side effects (settle,
+   * failure outcomes, invalidations) still land.
+   */
+  const [overdueInFlight, setOverdueInFlight] = useState<typeof inFlight>(null);
+
+  // Overdue-release timer. Cleanup cancels the deadline whenever the
+  // handle clears normally, so only a genuinely stuck handle parks.
+  useEffect(() => {
+    if (!inFlight) return;
+    const t = setTimeout(() => {
+      toast(
+        'The Noise archive is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
+        'info',
+      );
+      setOverdueInFlight(inFlight);
+      setInFlight(null);
+    }, ACTION_OVERDUE_MS);
+    return () => clearTimeout(t);
+  }, [inFlight]);
 
   const toggle = useCallback((senderKey: string) => {
     setSelected((prev) => {
@@ -456,6 +491,19 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     // gone. Clearing `pending` first also makes a double-invoke
     // (⌘⏎ racing the click) a no-op at the guard above.
     if (typeof preview !== 'object' || preview.totalMessages === 0) return;
+    // 2026-08-12 incident amendment: a parked (overdue) handle still
+    // OWNS its senders — the overdue release frees the section
+    // (`busy`), never the hung subject. This confirm is a bulk entry
+    // point, so it refuses outright while ANYTHING is parked: fanning
+    // out on top of an already-hanging pipeline compounds the incident,
+    // and re-archiving a parked sender would mint a second real Gmail
+    // job under a fresh idempotency key. The sheet stays open — the
+    // confirmed intent survives for a retry once the parked handle
+    // terminates.
+    if (overdueInFlight !== null) {
+      toast('The earlier archive is still running — give it a moment.', 'info');
+      return;
+    }
     const { senderIds, senderKeys } = pending;
     setPending(null);
     setFailureOutcome(null);
@@ -521,11 +569,25 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         onError: (err) => onEnqueueError(err, senderIds.length),
       },
     );
-  }, [pending, preview, activeMailboxId, enqueueComposite, enqueueBulk, onEnqueueError]);
+  }, [
+    pending,
+    preview,
+    overdueInFlight,
+    activeMailboxId,
+    enqueueComposite,
+    enqueueBulk,
+    onEnqueueError,
+  ]);
 
   // ── Terminal handling (server confirmation only, D226) ────────────
   const singleStatus = useActionStatus(inFlight?.kind === 'single' ? inFlight.actionId : null);
   const batchStatus = useBatchStatus(inFlight?.kind === 'batch' ? inFlight.batchId : null);
+  const overdueSingleStatus = useActionStatus(
+    overdueInFlight?.kind === 'single' ? overdueInFlight.actionId : null,
+  );
+  const overdueBatchStatus = useBatchStatus(
+    overdueInFlight?.kind === 'batch' ? overdueInFlight.batchId : null,
+  );
 
   /**
    * Mail moved, so Activity and the sender counts are both stale. The
@@ -542,11 +604,14 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     void qc.invalidateQueries({ queryKey: sendersKeys.all });
   }, [qc]);
 
+  // Each caller clears its OWN slot (active `inFlight` or the parked
+  // `overdueInFlight`) — if settle cleared `inFlight` itself, a parked
+  // handle settling late would kill the tracking of a NEWER action the
+  // released latch has since accepted.
   const settle = useCallback(
     (handleId: string, keys: string[], result: { senderCount: number; affectedCount: number }) => {
       setSettled({ handleId, senderKeys: keys, ...result });
       setFailureOutcome(null);
-      setInFlight(null);
       invalidateMovedMail();
     },
     [invalidateMovedMail],
@@ -600,6 +665,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         senderCount: 1,
         affectedCount: data.affectedCount,
       });
+      setInFlight(null);
       return;
     }
     toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }).message, 'warn');
@@ -671,6 +737,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       senderCount: data.done,
       affectedCount: data.affectedCount,
     });
+    setInFlight(null);
   }, [
     inFlight,
     scopeMoved,
@@ -681,6 +748,135 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     clearSelection,
     invalidateMovedMail,
   ]);
+
+  /** Parked twin of `scopeMoved` — same 404-after-switch honesty rule. */
+  const overdueScopeMoved =
+    overdueInFlight !== null && overdueInFlight.mailboxId !== activeMailboxId;
+
+  // Overdue mirrors of the two effects above (ACTION_OVERDUE_MS): the
+  // parked handle runs the SAME terminal side effects — settle with its
+  // Done marks and receipt, failure outcomes, selection clears,
+  // invalidations, failure toasts — and frees the parked slot. Nothing
+  // here toasts success (the active path never did either).
+  useEffect(() => {
+    if (overdueInFlight?.kind !== 'single') return;
+    if (overdueSingleStatus.isError) {
+      if (overdueScopeMoved || isScopeConflict(overdueSingleStatus.error)) {
+        setOverdueInFlight(null);
+        return;
+      }
+      captureFeatureException(overdueSingleStatus.error, {
+        surface: 'brief',
+        reason: 'noise_archive_status',
+      });
+      toast(getActionFailureCopy('status', { action: 'the Noise archive' }).message, 'warn');
+      clearSelection(overdueInFlight.senderKeys);
+      setFailureOutcome({ kind: 'unconfirmed' });
+      setOverdueInFlight(null);
+      return;
+    }
+    const data = overdueSingleStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      settle(overdueInFlight.actionId, overdueInFlight.senderKeys, {
+        senderCount: 1,
+        affectedCount: data.affectedCount,
+      });
+      setOverdueInFlight(null);
+      return;
+    }
+    toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }).message, 'warn');
+    setFailureOutcome({ kind: 'failed' });
+    setOverdueInFlight(null);
+  }, [
+    overdueInFlight,
+    overdueScopeMoved,
+    overdueSingleStatus.data,
+    overdueSingleStatus.isError,
+    overdueSingleStatus.error,
+    settle,
+    clearSelection,
+  ]);
+
+  useEffect(() => {
+    if (overdueInFlight?.kind !== 'batch') return;
+    if (overdueBatchStatus.isError) {
+      if (overdueScopeMoved || isScopeConflict(overdueBatchStatus.error)) {
+        setOverdueInFlight(null);
+        return;
+      }
+      captureFeatureException(overdueBatchStatus.error, {
+        surface: 'brief',
+        reason: 'noise_archive_batch_status',
+      });
+      toast(getActionFailureCopy('status', { action: 'the Noise archive' }).message, 'warn');
+      clearSelection(overdueInFlight.senderKeys);
+      setFailureOutcome({ kind: 'unconfirmed' });
+      setOverdueInFlight(null);
+      return;
+    }
+    const data = overdueBatchStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'failed') {
+      toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }).message, 'warn');
+      setFailureOutcome({ kind: 'failed' });
+      setOverdueInFlight(null);
+      return;
+    }
+    if (data.failed > 0) {
+      toast(
+        getActionFailureCopy('terminal', {
+          action: 'the Noise archive',
+          whatChanged: `${data.done} of ${data.total} senders were archived.`,
+          whatDidNotChange: `${data.failed} did not complete.`,
+          nextStep: 'Check Activity to see which senders moved, then retry the rest.',
+        }).message,
+        'warn',
+      );
+      clearSelection(overdueInFlight.senderKeys);
+      setFailureOutcome({
+        kind: 'partial',
+        doneCount: data.done,
+        failedCount: data.failed,
+        total: data.total,
+      });
+      setOverdueInFlight(null);
+      invalidateMovedMail();
+      return;
+    }
+    settle(overdueInFlight.batchId, overdueInFlight.senderKeys, {
+      senderCount: data.done,
+      affectedCount: data.affectedCount,
+    });
+    setOverdueInFlight(null);
+  }, [
+    overdueInFlight,
+    overdueScopeMoved,
+    overdueBatchStatus.data,
+    overdueBatchStatus.isError,
+    overdueBatchStatus.error,
+    settle,
+    clearSelection,
+    invalidateMovedMail,
+  ]);
+
+  // Single-slot displacement watcher: when a SECOND overdue handle
+  // replaces a parked one, refresh the moved-mail surfaces at
+  // displacement time so the displaced senders' state cannot go
+  // permanently stale. The displaced handle's outcome/failure toast is
+  // deliberately dropped with it — Activity remains the durable record.
+  const prevOverdueRef = useRef<typeof inFlight>(null);
+  useEffect(() => {
+    const prev = prevOverdueRef.current;
+    prevOverdueRef.current = overdueInFlight;
+    const prevHandle = prev && (prev.kind === 'single' ? prev.actionId : prev.batchId);
+    const nextHandle =
+      overdueInFlight &&
+      (overdueInFlight.kind === 'single' ? overdueInFlight.actionId : overdueInFlight.batchId);
+    if (prevHandle && nextHandle && prevHandle !== nextHandle) {
+      invalidateMovedMail();
+    }
+  }, [overdueInFlight, invalidateMovedMail]);
 
   return {
     selected,

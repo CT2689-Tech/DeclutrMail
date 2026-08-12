@@ -14,15 +14,18 @@
  * the preview names the protection, the confirm says "anyway", and the
  * POST carries the acknowledgement.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { activityKeys } from '@/features/activity/api/query-keys';
+import { sendersKeys } from '@/features/senders/api/query-keys';
 
+import { SCREENER_COUNT_KEY, SCREENER_QUEUE_KEY } from './api/use-screener';
 import { SCREENER_QUEUE } from './data';
 import { DecidePreview } from './decide-preview';
-import { ScreenerScreen } from './screener-screen';
+import { ACTION_OVERDUE_MS, ScreenerScreen } from './screener-screen';
 
 vi.mock('@/lib/posthog', () => ({ track: vi.fn() }));
 vi.mock('@/lib/sentry', () => ({ captureFeatureException: vi.fn() }));
@@ -259,5 +262,134 @@ describe('ScreenerScreen — a conflict is named from its code, not its status',
     const messages = h.toast.mock.calls.map((c) => String(c[0]));
     expect(messages.some((m) => /Couldn.t delete/i.test(m))).toBe(true);
     expect(messages.some((m) => /Protected/i.test(m))).toBe(false);
+  });
+});
+
+describe('ScreenerScreen — overdue release (2026-08-12 incident)', () => {
+  const secondPlainRow = SCREENER_QUEUE.filter((r) => !r.isProtected)[1]!;
+
+  it('parks a stuck decision at ACTION_OVERDUE_MS: queue unblocks, the parked row stays locked, done still invalidates', async () => {
+    // The worker hangs >2 min. `busyRowId` must stop bricking the whole
+    // queue (the latch parks with an info toast), OTHER rows must become
+    // decidable, while the parked row itself stays busy — a re-dispatch
+    // would mint a second real Gmail job. When the parked handle finally
+    // reports done, the decision surfaces still invalidate (no success
+    // toast exists on this screen by design, D35).
+    vi.useFakeTimers();
+    try {
+      h.toast.mockClear();
+      const bodies: Record<string, unknown>[] = [];
+      let firstDone = false;
+      installFetchStub([
+        previewHandler(plainRow, 4),
+        {
+          method: 'POST',
+          path: '/api/screener/decide',
+          respond: async (req: Request) => {
+            const body = (await req.json()) as Record<string, unknown>;
+            bodies.push(body);
+            return jsonOk({
+              data: {
+                senderId: body.senderId,
+                verb: 'delete',
+                resolved: true,
+                execution: {
+                  kind: 'enqueued',
+                  actionId: `act-ovd-${bodies.length}`,
+                  status: 'queued',
+                  requestedCount: 4,
+                },
+              },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/[^/]+$/,
+          respond: (_req, url) => {
+            const done = url.pathname.endsWith('act-ovd-1') && firstDone;
+            return jsonOk({
+              data: {
+                actionId: url.pathname.split('/').pop(),
+                status: done ? 'done' : 'executing',
+                requestedCount: 4,
+                affectedCount: done ? 4 : 0,
+                undoToken: null,
+                errorCode: null,
+              },
+            });
+          },
+        },
+      ]);
+      const tick = (ms: number) =>
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(ms);
+        });
+      const client = createTestQueryClient();
+      const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+      render(
+        <QueryWrapper client={client}>
+          <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} />
+        </QueryWrapper>,
+      );
+
+      // Decision 1 — enqueued; the worker never reports terminal.
+      fireEvent.click(
+        screen.getByRole('button', { name: new RegExp(`${plainRow.senderName} — expand`) }),
+      );
+      fireEvent.keyDown(window, { key: 'd' });
+      await tick(100);
+      screen.getByText(/currently match in Inbox/i);
+      fireEvent.keyDown(window, { key: 'Enter' });
+      await tick(100);
+      expect(bodies).toHaveLength(1);
+
+      // While the latch holds, another row can PREVIEW but not confirm.
+      fireEvent.click(
+        screen.getByRole('button', { name: new RegExp(`${secondPlainRow.senderName} — expand`) }),
+      );
+      const toolbar = screen.getByRole('toolbar', {
+        name: `Decide ${secondPlainRow.senderName}`,
+      });
+      fireEvent.click(within(toolbar).getByRole('button', { name: 'Delete' }));
+      await tick(100);
+      fireEvent.keyDown(window, { key: 'Enter' });
+      await tick(100);
+      expect(bodies).toHaveLength(1);
+      expect(h.toast).toHaveBeenCalledWith(
+        'Still confirming your last decision — give it a moment.',
+        'info',
+      );
+
+      // At the deadline the stuck handle parks and the queue unblocks:
+      // the SAME still-open preview (kept, never cleared) now confirms.
+      await tick(ACTION_OVERDUE_MS);
+      expect(h.toast).toHaveBeenCalledWith(
+        `Delete for ${plainRow.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        'info',
+      );
+      fireEvent.keyDown(window, { key: 'Enter' });
+      await tick(100);
+      expect(bodies).toHaveLength(2);
+
+      // …but the PARKED row itself stays locked: its verbs render
+      // disabled, so the hung sender cannot be re-dispatched.
+      fireEvent.click(
+        screen.getByRole('button', { name: new RegExp(`${plainRow.senderName} — expand`) }),
+      );
+      const parkedToolbar = screen.getByRole('toolbar', { name: `Decide ${plainRow.senderName}` });
+      expect(within(parkedToolbar).getByRole('button', { name: 'Delete' })).toBeDisabled();
+
+      // Parked terminal `done` still invalidates every decision surface.
+      invalidateSpy.mockClear();
+      firstDone = true;
+      await tick(2_500);
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: SCREENER_QUEUE_KEY });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: SCREENER_COUNT_KEY });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: activityKeys.all });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: sendersKeys.all });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

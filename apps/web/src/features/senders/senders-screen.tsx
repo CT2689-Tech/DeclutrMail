@@ -75,6 +75,19 @@ import type { Verb } from '@declutrmail/shared/observability';
 const { color, font } = tokens;
 
 /**
+ * D226 overdue release — how long a polled action/batch handle may stay
+ * non-terminal before this screen stops treating it as the active
+ * latch. 2026-08-12 incident: a destructive action hung >8 min
+ * server-side and every screen with a single-slot latch polling
+ * `useActionStatus`/`useBatchStatus` bricked silently — the latch only
+ * released on a terminal status and the poll has no time cap. At this
+ * deadline the handle moves to a parked slot (still polled; terminal
+ * side effects still run) and the active slot frees so the screen
+ * stays usable.
+ */
+export const ACTION_OVERDUE_MS = 120_000;
+
+/**
  * FE verb labels → PostHog closed-union verb tokens. Keeps the
  * 'bulk_action_taken' event's `verb` field schema-aligned with the
  * canonical KAULD set (D227 / verb-registry). 'Protect' is internal
@@ -443,6 +456,11 @@ function SendersScreenContent({
   const revert = useRevertUndo();
   const [activeAction, setActiveAction] = useState<{
     actionId: string;
+    // The subject sender — while this handle is active OR parked
+    // overdue, that sender may not receive a second dispatch
+    // (2026-08-12 incident amendment: a re-dispatch mints a fresh
+    // idempotency key and a SECOND real Gmail job).
+    senderId: string;
     senderName: string;
     // Carried through the polled lifecycle so the done-handler can render
     // a verb-correct receipt + toast (Delete must NOT say "Archived",
@@ -453,6 +471,9 @@ function SendersScreenContent({
   const [activeBatch, setActiveBatch] = useState<{
     batchId: string;
     verb: 'Archive' | 'Delete' | 'Later';
+    /** Requested subject senders — locked against re-dispatch while
+     *  this handle is active or parked overdue (see `senderId` above). */
+    senderIds: string[];
     senderCount: number;
     selectedCount: number;
     skippedCount: number;
@@ -485,6 +506,9 @@ function SendersScreenContent({
   // selection so the senders it could NOT send for stay named.
   const [activeUnsubBatch, setActiveUnsubBatch] = useState<{
     batchId: string;
+    /** Requested subject senders — locked against re-dispatch while
+     *  this handle is active or parked overdue. */
+    senderIds: string[];
     senderCount: number;
     skipped: UnsubBatchReceiptData['skipped'];
   } | null>(null);
@@ -494,6 +518,108 @@ function SendersScreenContent({
   const unsubBatchStatus = useBatchStatus(activeUnsubBatch?.batchId ?? null);
   const revertStatus = useActionStatus(revertActionId);
   const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null);
+  // Overdue parking slots (ACTION_OVERDUE_MS, 2026-08-12 incident) —
+  // one slot per latch, replaced on collision. A handle parks here when
+  // it stays non-terminal past the deadline, freeing the active slot;
+  // the parked poll keeps running so the terminal side effects (receipt,
+  // invalidations, failure toasts) still land, minus success toasts.
+  // The parked handle still OWNS its senders: the release frees the
+  // SCREEN, never the hung subject — see `parkedSenderIds` below.
+  // `revertActionId`/`activeUnsub` deliberately have no parked slots:
+  // neither gates a re-entry guard nor renders rows busy — they are
+  // background watchers whose worst stall is a lingering dismissible
+  // receipt, not a bricked screen.
+  const [overdueAction, setOverdueAction] = useState<typeof activeAction>(null);
+  const [overdueBatch, setOverdueBatch] = useState<typeof activeBatch>(null);
+  const [overdueUnsubBatch, setOverdueUnsubBatch] = useState<typeof activeUnsubBatch>(null);
+  const overdueActionStatus = useActionStatus(overdueAction?.actionId ?? null);
+  const overdueBatchStatus = useBatchStatus(overdueBatch?.batchId ?? null);
+  const overdueUnsubBatchStatus = useBatchStatus(overdueUnsubBatch?.batchId ?? null);
+
+  // Senders a parked handle still owns — they may not receive a NEW
+  // dispatch until that handle reaches a terminal state, or a second
+  // real Gmail job would mint under a fresh idempotency key (double
+  // cleanup unit, two undo tokens, double counters).
+  const parkedSenderIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (overdueAction) ids.add(overdueAction.senderId);
+    for (const id of overdueBatch?.senderIds ?? []) ids.add(id);
+    for (const id of overdueUnsubBatch?.senderIds ?? []) ids.add(id);
+    return ids;
+  }, [overdueAction, overdueBatch, overdueUnsubBatch]);
+
+  // Single-slot displacement watchers: when a SECOND overdue handle
+  // replaces a parked one, refresh the displaced handle's surfaces at
+  // displacement time so its rows cannot go permanently stale. The
+  // displaced handle's receipt and failure toast are deliberately
+  // dropped with it — Activity remains the durable record.
+  const prevOverdueActionRef = useRef<typeof activeAction>(null);
+  useEffect(() => {
+    const prev = prevOverdueActionRef.current;
+    prevOverdueActionRef.current = overdueAction;
+    if (prev && overdueAction && prev.actionId !== overdueAction.actionId) {
+      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
+    }
+  }, [overdueAction, qc]);
+  const prevOverdueBatchRef = useRef<typeof activeBatch>(null);
+  useEffect(() => {
+    const prev = prevOverdueBatchRef.current;
+    prevOverdueBatchRef.current = overdueBatch;
+    if (prev && overdueBatch && prev.batchId !== overdueBatch.batchId) {
+      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
+    }
+  }, [overdueBatch, qc]);
+  const prevOverdueUnsubBatchRef = useRef<typeof activeUnsubBatch>(null);
+  useEffect(() => {
+    const prev = prevOverdueUnsubBatchRef.current;
+    prevOverdueUnsubBatchRef.current = overdueUnsubBatch;
+    if (prev && overdueUnsubBatch && prev.batchId !== overdueUnsubBatch.batchId) {
+      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
+    }
+  }, [overdueUnsubBatch, qc]);
+
+  // Overdue-release timers. The cleanup cancels the deadline whenever
+  // the handle clears or is replaced, so only a genuinely stuck handle
+  // ever parks. Parking replaces any earlier occupant of the slot.
+  useEffect(() => {
+    if (!activeAction) return;
+    const t = setTimeout(() => {
+      toast(
+        `${activeAction.verb} for ${activeAction.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        'info',
+      );
+      setOverdueAction(activeAction);
+      setActiveAction(null);
+    }, ACTION_OVERDUE_MS);
+    return () => clearTimeout(t);
+  }, [activeAction]);
+  useEffect(() => {
+    if (!activeBatch) return;
+    const t = setTimeout(() => {
+      toast(
+        `${activeBatch.verb} for ${activeBatch.senderCount} sender${activeBatch.senderCount === 1 ? '' : 's'} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        'info',
+      );
+      setOverdueBatch(activeBatch);
+      setActiveBatch(null);
+    }, ACTION_OVERDUE_MS);
+    return () => clearTimeout(t);
+  }, [activeBatch]);
+  useEffect(() => {
+    if (!activeUnsubBatch) return;
+    const t = setTimeout(() => {
+      toast(
+        `Unsubscribe for ${activeUnsubBatch.senderCount} sender${activeUnsubBatch.senderCount === 1 ? '' : 's'} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        'info',
+      );
+      setOverdueUnsubBatch(activeUnsubBatch);
+      setActiveUnsubBatch(null);
+    }, ACTION_OVERDUE_MS);
+    return () => clearTimeout(t);
+  }, [activeUnsubBatch]);
 
   // ADR-0020 composite preview (D226): ONE round-trip for the sender ctx
   // strip + per-time-window bucket counts — the modal's headline, chip
@@ -660,6 +786,33 @@ function SendersScreenContent({
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
 
+      // 2026-08-12 incident amendment: a parked (overdue) handle still
+      // owns its senders — the overdue release frees the SCREEN, never
+      // the hung subject. Re-dispatching one of these senders would
+      // mint a fresh idempotency key and a SECOND real Gmail job
+      // (double cleanup unit on Free, two undo tokens). Bulk entry
+      // points refuse outright while ANYTHING is parked — a fan-out on
+      // top of an already-hanging pipeline compounds the incident.
+      // Keep is exempt (standing-policy write, no Gmail mutation). The
+      // early return leaves any open preview mounted so the confirmed
+      // intent survives for a retry once the parked handle terminates.
+      const anythingParked =
+        overdueAction != null || overdueBatch != null || overdueUnsubBatch != null;
+      if (verb !== 'Keep') {
+        const overlapsParked = senders.some((s) => parkedSenderIds.has(s.id));
+        if (overlapsParked || (senders.length > 1 && anythingParked)) {
+          toast(
+            overlapsParked
+              ? senders.length === 1
+                ? 'Still confirming your last action for this sender — give it a moment.'
+                : 'Still confirming your last action for some of these senders — give it a moment.'
+              : 'An earlier action is still confirming — bulk actions unlock when it finishes.',
+            'info',
+          );
+          return;
+        }
+      }
+
       // Instrumentation single-entry — every verb-fire from this screen
       // lands here (single + bulk + composite + unsub), so PostHog +
       // Sentry attach exactly once per user intent. The 'invocation'
@@ -756,6 +909,7 @@ function SendersScreenContent({
             onSuccess: (res) =>
               setActiveAction({
                 actionId: res.actionId,
+                senderId: sender.id,
                 senderName: sender.name,
                 verb:
                   primaryType === 'delete'
@@ -885,6 +1039,7 @@ function SendersScreenContent({
                       onSuccess: (cres) =>
                         setActiveAction({
                           actionId: cres.actionId,
+                          senderId: sref.id,
                           senderName: sref.name,
                           verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
                         }),
@@ -948,6 +1103,7 @@ function SendersScreenContent({
               const skipped = res.skipped.map((skip) => ({ reason: skip.reason }));
               setActiveUnsubBatch({
                 batchId: res.batchId,
+                senderIds: senderRefs.map((sref) => sref.id),
                 senderCount: res.senderCount,
                 skipped,
               });
@@ -977,6 +1133,7 @@ function SendersScreenContent({
                     setActiveBatch({
                       batchId: bres.batchId,
                       verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                      senderIds: senderRefs.map((sref) => sref.id),
                       senderCount: bres.senderCount,
                       selectedCount: senderRefs.length,
                       skippedCount: bres.skipped.length,
@@ -1124,6 +1281,7 @@ function SendersScreenContent({
               setActiveBatch({
                 batchId: res.batchId,
                 verb,
+                senderIds: senders.map((s) => s.id),
                 senderCount: res.senderCount,
                 selectedCount: senders.length,
                 skippedCount: res.skipped.length,
@@ -1168,7 +1326,7 @@ function SendersScreenContent({
       // bucket. Protect stays a standing-policy toggle on Sender
       // Detail; no Senders-screen surface emits it as a verb.
     },
-    [enqueueBulk],
+    [enqueueBulk, parkedSenderIds],
   );
 
   // P6 — drive the Archive lifecycle off the polled status. On `done`,
@@ -1233,6 +1391,50 @@ function SendersScreenContent({
     }
     setActiveAction(null);
   }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
+
+  // Overdue mirror of the effect above (ACTION_OVERDUE_MS): the parked
+  // handle runs the SAME terminal side effects — receipt, invalidations,
+  // failure toasts — minus the success toast (D35; the overdue toast
+  // already said the result lands in Activity), then frees the slot.
+  useEffect(() => {
+    if (!overdueAction) return;
+    if (overdueActionStatus.isError) {
+      const err = overdueActionStatus.error;
+      console.warn('[senders] overdue actionStatus poll failed', {
+        actionId: overdueAction.actionId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      captureFeatureException(err, { surface: 'senders', reason: 'action_status_poll' });
+      toast(`Couldn't confirm ${overdueAction.senderName} — see Activity`, 'warn');
+      setOverdueAction(null);
+      return;
+    }
+    const data = overdueActionStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    setReceipt({ ...buildActionReceiptResult(data), senderCount: 1 });
+    if (data.status === 'done') {
+      if (data.affectedCount === 0 || !data.undoToken) {
+        toast(
+          `No inbox mail from ${overdueAction.senderName} to ${overdueAction.verb.toLowerCase()}`,
+          'info',
+        );
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
+      } else {
+        // No success toast — the receipt below still carries the undo.
+        void qc.invalidateQueries({ queryKey: sendersKeys.all });
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
+      }
+    } else {
+      toast(`Couldn't ${overdueAction.verb.toLowerCase()} ${overdueAction.senderName}`, 'warn');
+    }
+    setOverdueAction(null);
+  }, [
+    overdueActionStatus.data,
+    overdueActionStatus.isError,
+    overdueActionStatus.error,
+    overdueAction,
+    qc,
+  ]);
 
   // D9 Wave 2 — drive the unsubscribe execution off the polled action
   // status, then toast the HONEST outcome. No receipt strip: a network
@@ -1317,6 +1519,45 @@ function SendersScreenContent({
     qc,
   ]);
 
+  // Overdue mirror of the effect above (ACTION_OVERDUE_MS). The active
+  // path never toasts success here — the receipt is the surface — so
+  // the mirror is a straight copy that frees the parked slot instead.
+  useEffect(() => {
+    if (!overdueUnsubBatch) return;
+    if (overdueUnsubBatchStatus.isError) {
+      const err = overdueUnsubBatchStatus.error;
+      captureFeatureException(err, { surface: 'senders', reason: 'unsub_batch_status_poll' });
+      toast("Couldn't confirm the unsubscribe requests — see Activity", 'warn');
+      setOverdueUnsubBatch(null);
+      setUnsubBatchReceipt(null);
+      return;
+    }
+    const data = overdueUnsubBatchStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    const outcomes = data.unsubscribeOutcomes ?? null;
+    setUnsubBatchReceipt({
+      senderCount: overdueUnsubBatch.senderCount,
+      skipped: overdueUnsubBatch.skipped,
+      outcomes: outcomes
+        ? {
+            endpointAccepted: outcomes.endpointAccepted,
+            unconfirmed: outcomes.unconfirmed,
+            failed: outcomes.failed,
+          }
+        : null,
+      pending: outcomes?.pending ?? 0,
+    });
+    void qc.invalidateQueries({ queryKey: sendersKeys.all });
+    void qc.invalidateQueries({ queryKey: activityKeys.all });
+    setOverdueUnsubBatch(null);
+  }, [
+    overdueUnsubBatchStatus.data,
+    overdueUnsubBatchStatus.isError,
+    overdueUnsubBatchStatus.error,
+    overdueUnsubBatch,
+    qc,
+  ]);
+
   // D52 — drive the bulk-batch lifecycle off the aggregate poll. On
   // terminal: real receipt (real undo token covering the batch via the
   // ADR-0020 cascade) + verb-correct toasts; partial failures surface
@@ -1387,6 +1628,72 @@ function SendersScreenContent({
     }
     setActiveBatch(null);
   }, [batchStatus.data, batchStatus.isError, batchStatus.error, activeBatch, qc]);
+
+  // Overdue mirror of the effect above (ACTION_OVERDUE_MS): same
+  // receipt, partial/no-op/failure toasts and invalidations — minus the
+  // full-success toast (D35) — then the parked slot frees.
+  useEffect(() => {
+    if (!overdueBatch) return;
+    if (overdueBatchStatus.isError) {
+      const err = overdueBatchStatus.error;
+      console.warn('[senders] overdue batchStatus poll failed', {
+        batchId: overdueBatch.batchId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      captureFeatureException(err, { surface: 'senders', reason: 'batch_status_poll' });
+      toast(`Couldn't confirm the bulk ${overdueBatch.verb.toLowerCase()} — see Activity`, 'warn');
+      setOverdueBatch(null);
+      return;
+    }
+    const data = overdueBatchStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    setReceipt({
+      ...buildActionReceiptResult({
+        actionId: data.batchId,
+        verb: overdueBatch.verb.toLowerCase() as 'archive' | 'later' | 'delete',
+        direction: 'forward',
+        status: data.status,
+        requestedCount: data.requestedCount,
+        affectedCount: data.affectedCount,
+        wakeAt: overdueBatch.wakeAt,
+        undoToken: data.undoToken,
+        undoExpiresAt: null,
+        undoExecutedAt: null,
+        undoRevertedAt: null,
+        errorCode: data.status === 'failed' ? 'BATCH_FAILED' : null,
+      }),
+      senderCount: overdueBatch.senderCount,
+      selectedCount: overdueBatch.selectedCount,
+      skippedCount: overdueBatch.skippedCount,
+    });
+    const verbLowercase = overdueBatch.verb.toLowerCase();
+    if (data.status === 'failed') {
+      toast(
+        `Couldn't ${verbLowercase} mail from ${overdueBatch.senderCount} senders — see Activity`,
+        'warn',
+      );
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
+    } else {
+      if (data.failed > 0) {
+        toast(`${data.failed} of ${data.total} actions failed — see Activity`, 'warn');
+      }
+      if (data.affectedCount === 0 || !data.undoToken) {
+        toast(`No inbox mail from these senders to ${verbLowercase}`, 'info');
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
+      } else {
+        // No success toast — the receipt above still carries the undo.
+        void qc.invalidateQueries({ queryKey: sendersKeys.all });
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
+      }
+    }
+    setOverdueBatch(null);
+  }, [
+    overdueBatchStatus.data,
+    overdueBatchStatus.isError,
+    overdueBatchStatus.error,
+    overdueBatch,
+    qc,
+  ]);
 
   // P6 — drive the undo (reverse) lifecycle. On `done`, clear the receipt +
   // refresh; on `failed`, a warn toast. Same retry-false / sustained-5xx

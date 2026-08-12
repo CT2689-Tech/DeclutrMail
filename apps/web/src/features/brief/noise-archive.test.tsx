@@ -27,7 +27,10 @@ import {
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import type { BriefWire } from '@/lib/api/brief';
+import { activityKeys } from '@/features/activity/api/query-keys';
+import { sendersKeys } from '@/features/senders/api/query-keys';
 
+import { ACTION_OVERDUE_MS } from './api/use-noise-archive';
 import { BriefScreen } from './brief-screen';
 
 vi.mock('@/features/auth/auth-provider', () => ({
@@ -613,5 +616,108 @@ describe('Brief Noise bulk archive (D65)', () => {
     await waitFor(() => expect(archiveButton()).toBeDisabled());
     expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('releases a stuck archive at ACTION_OVERDUE_MS: section unblocks, parked senders refuse a re-confirm, done still settles (2026-08-12 incident)', async () => {
+    // The worker hangs >2 min. `busy` must stop disabling the whole
+    // Noise section forever (the handle parks with an info toast), the
+    // sheet must reopen — but a confirm while the parked handle may
+    // still be running is refused (a re-archive would mint a second
+    // real Gmail job). When the parked handle finally reports done, the
+    // SAME settle runs: Done ✓ marks, the real affected count, and the
+    // moved-mail invalidations.
+    vi.useFakeTimers();
+    try {
+      let batchDone = false;
+      installFetchStub([
+        briefHandler(),
+        bulkPreviewHandler(),
+        enqueueHandler(),
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/batch\//,
+          respond: () =>
+            batchDone
+              ? batchStatusHandler().respond(
+                  new Request('http://localhost/api/actions/batch/batch-1'),
+                  new URL('http://localhost/api/actions/batch/batch-1'),
+                )
+              : jsonOk({
+                  data: {
+                    batchId: 'batch-1',
+                    status: 'executing',
+                    total: 2,
+                    done: 0,
+                    failed: 0,
+                    requestedCount: 351,
+                    affectedCount: 0,
+                    undoToken: null,
+                  },
+                }),
+        },
+        undoStateHandler(),
+      ]);
+      const tick = (ms: number) =>
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(ms);
+        });
+      const client = createTestQueryClient();
+      const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+      render(
+        <QueryWrapper client={client}>
+          <BriefScreen />
+          <ToastHost />
+        </QueryWrapper>,
+      );
+      await tick(200);
+
+      // Confirm the archive; the worker never reports terminal.
+      fireEvent.click(archiveButton());
+      await tick(200);
+      const dialog = screen.getByRole('dialog');
+      const confirm = within(dialog).getByRole('button', { name: /^Archive/ });
+      expect(confirm).toBeEnabled();
+      fireEvent.click(confirm);
+      await tick(200);
+      expect(enqueued).toHaveLength(1);
+      expect(screen.getByRole('button', { name: /Archiving…/ })).toBeDisabled();
+
+      // At the deadline the handle parks: overdue toast, busy released.
+      await tick(ACTION_OVERDUE_MS);
+      screen.getByText(
+        'The Noise archive is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
+      );
+      const cta = screen.getByRole('button', { name: /^Archive \d+ senders?$/ });
+      expect(cta).toBeEnabled();
+
+      // The sheet reopens (the section is usable again), but a confirm
+      // while ANYTHING is parked is refused and the sheet stays open —
+      // the intent survives for a retry.
+      fireEvent.click(cta);
+      await tick(200);
+      const dialog2 = screen.getByRole('dialog');
+      const confirm2 = within(dialog2).getByRole('button', { name: /^Archive/ });
+      expect(confirm2).toBeEnabled();
+      fireEvent.click(confirm2);
+      await tick(100);
+      expect(enqueued).toHaveLength(1);
+      screen.getByText('The earlier archive is still running — give it a moment.');
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+      await tick(50);
+
+      // Parked terminal `done` still settles: Done ✓ marks, the real
+      // affected count, and the moved-mail invalidations.
+      invalidateSpy.mockClear();
+      batchDone = true;
+      await tick(2_500);
+      screen.getByText(/Archived 348 emails from 2 senders/i);
+      screen.getByText(/4 messages yesterday · Archived ✓/i);
+      screen.getByText(/3 messages yesterday · Archived ✓/i);
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: activityKeys.all });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: sendersKeys.all });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
