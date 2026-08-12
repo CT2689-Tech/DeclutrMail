@@ -512,12 +512,13 @@ describe('SenderDetailRoute', () => {
 
   describe('action latch — overdue release + guard trip', () => {
     /** Live composite preview for the fixture sender — arms the D226 confirm. */
-    function detailPreviewHandler() {
+    function detailPreviewHandler(opts: { count?: () => number; onFetch?: () => void } = {}) {
       return {
         method: 'GET' as const,
         path: '/api/actions/preview',
-        respond: () =>
-          jsonOk({
+        respond: () => {
+          opts.onFetch?.();
+          return jsonOk({
             data: {
               sender: {
                 id: 'linkedin',
@@ -528,7 +529,7 @@ describe('SenderDetailRoute', () => {
                 monthly: 64,
               },
               counts: {
-                all: 12,
+                all: opts.count?.() ?? 12,
                 olderThan30d: 0,
                 olderThan90d: 0,
                 olderThan180d: 0,
@@ -544,7 +545,8 @@ describe('SenderDetailRoute', () => {
               unsubAvailable: true,
               protected: false,
             },
-          }),
+          });
+        },
       };
     }
 
@@ -572,9 +574,16 @@ describe('SenderDetailRoute', () => {
       try {
         let actionPosts = 0;
         let firstActionDone = false;
+        let previewGets = 0;
+        let previewCount = 12;
         installHappyPath();
         addFetchHandlers([
-          detailPreviewHandler(),
+          detailPreviewHandler({
+            count: () => previewCount,
+            onFetch: () => {
+              previewGets += 1;
+            },
+          }),
           {
             method: 'POST',
             path: '/api/actions',
@@ -639,7 +648,12 @@ describe('SenderDetailRoute', () => {
 
         // The parked handle kept polling: done still invalidates both
         // surfaces and surfaces the receipt — with NO success toast.
+        // The archive just moved mail, so the kept-open preview must be
+        // re-counted too (D226) — the pre-action count would otherwise
+        // re-arm the confirm with a number the mutation made stale.
         invalidateSpy.mockClear();
+        const previewGetsBefore = previewGets;
+        previewCount = 5;
         firstActionDone = true;
         await tick(2_500);
         expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: sendersKeys.all });
@@ -648,8 +662,14 @@ describe('SenderDetailRoute', () => {
         const successToast = h.toast.mock.calls.find(([msg]) => /12 email/i.test(String(msg)));
         expect(successToast).toBeUndefined();
 
-        // With the parked handle terminal, the guard truly frees: the
-        // still-open confirmed preview now dispatches.
+        // The kept-open preview REFETCHED and now shows the fresh
+        // post-archive count…
+        expect(previewGets).toBeGreaterThan(previewGetsBefore);
+        const rearmedDialog = screen.getByRole('dialog');
+        expect(within(rearmedDialog).getAllByText('5').length).toBeGreaterThan(0);
+
+        // …and with the parked handle terminal, the guard truly frees:
+        // the re-armed confirm dispatches against that fresh count.
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         expect(actionPosts).toBe(2);

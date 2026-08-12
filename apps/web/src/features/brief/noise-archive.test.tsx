@@ -618,14 +618,17 @@ describe('Brief Noise bulk archive (D65)', () => {
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
-  it('releases a stuck archive at ACTION_OVERDUE_MS: section unblocks, parked senders refuse a re-confirm, done still settles (2026-08-12 incident)', async () => {
-    // The worker hangs >2 min. `busy` must stop disabling the whole
-    // Noise section forever (the handle parks with an info toast), the
-    // sheet must reopen — but a confirm while the parked handle may
-    // still be running is refused (a re-archive would mint a second
-    // real Gmail job). When the parked handle finally reports done, the
-    // SAME settle runs: Done ✓ marks, the real affected count, and the
-    // moved-mail invalidations.
+  it('parks a stuck archive at ACTION_OVERDUE_MS: toast fires, busy stays, done still settles and frees (2026-08-12 incident)', async () => {
+    // The worker hangs >2 min. The handle parks with the info toast —
+    // but on THIS surface `busy` deliberately keeps covering the parked
+    // handle: the whole section is one bulk entry point over the very
+    // senders the parked archive may still be moving, so asserting idle
+    // mid-archive (or opening a preview whose confirm is always dead)
+    // would be worse than staying visibly busy. The park's value here
+    // is the honest toast + terminal effects that outlive the deadline:
+    // when the parked handle finally reports done, the SAME settle runs
+    // — Done ✓ marks, the real affected count, the moved-mail
+    // invalidations — and only THEN does busy free.
     vi.useFakeTimers();
     try {
       let batchDone = false;
@@ -682,32 +685,18 @@ describe('Brief Noise bulk archive (D65)', () => {
       expect(enqueued).toHaveLength(1);
       expect(screen.getByRole('button', { name: /Archiving…/ })).toBeDisabled();
 
-      // At the deadline the handle parks: overdue toast, busy released.
+      // At the deadline the handle parks: overdue toast fires, and busy
+      // deliberately STAYS — the section must not assert idle while the
+      // parked archive may still be moving these very senders.
       await tick(ACTION_OVERDUE_MS);
       screen.getByText(
         'The Noise archive is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
       );
-      const cta = screen.getByRole('button', { name: /^Archive \d+ senders?$/ });
-      expect(cta).toBeEnabled();
-
-      // The sheet reopens (the section is usable again), but a confirm
-      // while ANYTHING is parked is refused and the sheet stays open —
-      // the intent survives for a retry.
-      fireEvent.click(cta);
-      await tick(200);
-      const dialog2 = screen.getByRole('dialog');
-      const confirm2 = within(dialog2).getByRole('button', { name: /^Archive/ });
-      expect(confirm2).toBeEnabled();
-      fireEvent.click(confirm2);
-      await tick(100);
-      expect(enqueued).toHaveLength(1);
-      screen.getByText('The earlier archive is still running — give it a moment.');
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
-      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
-      await tick(50);
+      expect(screen.getByRole('button', { name: /Archiving…/ })).toBeDisabled();
 
       // Parked terminal `done` still settles: Done ✓ marks, the real
-      // affected count, and the moved-mail invalidations.
+      // affected count, the moved-mail invalidations — and only now
+      // does busy free (both rows are Done, so the CTA disarms at 0).
       invalidateSpy.mockClear();
       batchDone = true;
       await tick(2_500);
@@ -716,6 +705,8 @@ describe('Brief Noise bulk archive (D65)', () => {
       screen.getByText(/3 messages yesterday · Archived ✓/i);
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: activityKeys.all });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: sendersKeys.all });
+      expect(screen.queryByRole('button', { name: /Archiving…/ })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Archive 0 senders' })).toBeDisabled();
     } finally {
       vi.useRealTimers();
     }

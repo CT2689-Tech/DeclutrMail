@@ -27,6 +27,7 @@ export type EventName =
   | 'sender_unprotected'
   // — Triage + action lifecycle —
   | 'triage_action_taken'
+  | 'action_overdue'
   | 'undo_clicked'
   | 'unsubscribe_attempted'
   | 'rule_fired'
@@ -144,6 +145,16 @@ export interface EventPayloads {
     target: number;
     decided: number;
     outcome: 'completed' | 'stopped' | 'empty';
+  };
+  /**
+   * A confirmed action outlived its overdue deadline client-side and
+   * was parked (2026-08-12 incident class). Parking is the one moment
+   * the client KNOWS a backend hang happened — this event is how
+   * recurrence stays measurable. No sender identity.
+   */
+  action_overdue: {
+    kind: 'single' | 'batch';
+    verb: string;
   };
   /**
    * A manual Unprotect — the sticky D245 override. This is the only

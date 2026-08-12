@@ -93,12 +93,15 @@ const GENERIC_RETRY_MESSAGE = "We couldn't load this sender right now.";
 
 /**
  * D226 overdue release — how long the polled action handle may stay
- * non-terminal before it stops being the active latch. 2026-08-12
- * incident: a destructive action hung >8 min server-side and the
- * `activeAction != null` re-entry guard below bricked this page — the
- * latch only released on a terminal status and the poll has no time
- * cap. At this deadline the handle parks (still polled; terminal side
- * effects still run) and the guard releases.
+ * non-terminal before it parks. 2026-08-12 incident: a destructive
+ * action hung >8 min server-side and the `activeAction != null`
+ * re-entry guard below bricked this page — the latch only released on
+ * a terminal status and the poll has no time cap. At this deadline the
+ * handle parks (still polled; terminal side effects still run). On
+ * this single-sender page the guard deliberately does NOT release at
+ * the deadline — the parked handle still owns the page's only subject
+ * — it frees when the parked handle reaches a terminal state, which
+ * the parked poll guarantees is no longer "never".
  */
 export const ACTION_OVERDUE_MS = 120_000;
 
@@ -284,9 +287,10 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   // terminal state (never forever, unlike the pre-fix latch: the
   // parked poll's done/failed/error branches all clear the slot). That
   // single-subject guard also means a second overdue can never displace
-  // a parked handle here. `revertActionId`/`activeUnsub` get no parked
-  // slot: neither gates the guard's release path nor renders the page
-  // busy — their worst stall is a lingering dismissible receipt.
+  // a parked handle here. `revertActionId` gets no parked slot (a pure
+  // background watcher); `activeUnsub` gets none either — it DOES gate
+  // a second Unsubscribe on this page (see the Unsubscribe branch), but
+  // its stall risk sits in the intent mutation, not this poll.
   const [overdueAction, setOverdueAction] = useState<typeof activeAction>(null);
   const overdueActionStatus = useActionStatus(overdueAction?.actionId ?? null);
 
@@ -295,6 +299,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   useEffect(() => {
     if (!activeAction) return;
     const t = setTimeout(() => {
+      void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
       toast(
         `${activeAction.verb} for ${activeAction.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
         'info',
@@ -555,7 +560,12 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       // additional `recordUnsubIntent.isPending` check stops a
       // double-fire while the unsub mutation itself is in flight.
       if (verb === 'Unsubscribe') {
-        if (recordUnsubIntent.isPending || activeUnsub != null) return;
+        if (recordUnsubIntent.isPending || activeUnsub != null) {
+          // Visible deferral, never a silent swallow — same voice as the
+          // destructive-branch guard above.
+          toast('Still confirming your last action — give it a moment.', 'info');
+          return;
+        }
         setPendingAction(null);
         // The "Also act on past emails" chip from the D226 preview.
         // Captured before the async hop so the historic action fires
@@ -732,6 +742,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     }
     const data = overdueActionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    // D226 — the parked mutation just changed what any kept-open (or
+    // next-opened) confirm surface describes: its preview must re-count
+    // before the freed guard lets it dispatch.
+    void qc.invalidateQueries({ queryKey: ['composite-preview'] });
+    void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
     setReceipt({ ...buildActionReceiptResult(data), senderCount: 1 });
     if (data.status === 'done') {
       if (data.affectedCount === 0 || !data.undoToken) {

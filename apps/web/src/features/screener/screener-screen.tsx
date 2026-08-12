@@ -233,10 +233,14 @@ export function ScreenerScreen({
   // Overdue-release timer (ACTION_OVERDUE_MS). Cleanup cancels the
   // deadline whenever the handle clears normally, so only a genuinely
   // stuck handle parks — releasing `busyRowId` so the queue stays
-  // usable while the worker keeps running.
+  // usable while the worker keeps running. Free-slot rule: while the
+  // parking slot is occupied the timer holds (a parked handle is never
+  // displaced mid-poll — its Gmail job may still be running) and keys
+  // on BOTH states so a fresh deadline arms when the slot frees.
   useEffect(() => {
-    if (!activeAction) return;
+    if (!activeAction || overdueAction != null) return;
     const t = setTimeout(() => {
+      void track('action_overdue', { kind: 'single', verb: activeAction.verb });
       toast(
         `${VERB_LABEL[activeAction.verb]} for ${activeAction.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
         'info',
@@ -245,7 +249,7 @@ export function ScreenerScreen({
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
     return () => clearTimeout(t);
-  }, [activeAction]);
+  }, [activeAction, overdueAction]);
 
   // Overdue mirror of the terminal effect above: same invalidations and
   // failure toasts (the active path already has no success toast, D35),
@@ -281,20 +285,6 @@ export function ScreenerScreen({
     overdueAction,
     qc,
   ]);
-
-  // Single-slot displacement watcher: when a SECOND overdue handle
-  // replaces a parked one, refresh the decision surfaces at
-  // displacement time so the displaced row cannot go permanently
-  // stale. The displaced handle's failure toast is deliberately
-  // dropped with it — Activity remains the durable record.
-  const prevOverdueActionRef = useRef<typeof activeAction>(null);
-  useEffect(() => {
-    const prev = prevOverdueActionRef.current;
-    prevOverdueActionRef.current = overdueAction;
-    if (prev && overdueAction && prev.actionId !== overdueAction.actionId) {
-      invalidateAfterDecision(qc);
-    }
-  }, [overdueAction, qc]);
 
   // Background one-click unsubscribe watch — outside the busy latch
   // (the row already left the queue on the decide POST).

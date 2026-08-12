@@ -1217,8 +1217,24 @@ describe('SendersScreen — edge states', () => {
       // test's still-mounted "Archived … from Sender A" success toast
       // (real-timer 3.6s window) must never collide with this test's
       // no-success-toast assertion.
-      const ROW_ALPHA = { ...ROW, displayName: 'Overdue Alpha' };
-      const ROW_BETA = { ...ROW, id: 'b', displayName: 'Overdue Beta', email: 'b@example.com' };
+      // Distinct domains: three senders sharing one registrable domain
+      // would collapse into a D51 brand-rollup group row (no per-card
+      // checkboxes), which is not what this test drives.
+      const ROW_ALPHA = { ...ROW, displayName: 'Overdue Alpha', domain: 'alpha-overdue.com' };
+      const ROW_BETA = {
+        ...ROW,
+        id: 'b',
+        displayName: 'Overdue Beta',
+        email: 'b@beta-overdue.com',
+        domain: 'beta-overdue.com',
+      };
+      const ROW_GAMMA = {
+        ...ROW,
+        id: 'g',
+        displayName: 'Overdue Gamma',
+        email: 'g@gamma-overdue.com',
+        domain: 'gamma-overdue.com',
+      };
       let listGets = 0;
       let actionPosts = 0;
       let firstActionDone = false;
@@ -1229,16 +1245,46 @@ describe('SendersScreen — edge states', () => {
           respond: () => {
             listGets += 1;
             return jsonOk({
-              data: [ROW_ALPHA, ROW_BETA],
+              data: [ROW_ALPHA, ROW_BETA, ROW_GAMMA],
               meta: {
                 pagination: { nextCursor: null, hasMore: false, limit: 25 },
-                query: { totalMatching: 2, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+                query: { totalMatching: 3, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
               },
             });
           },
         },
         sendersSummaryHandler(),
         compositePreviewHandler(12),
+        {
+          // Aggregated preview for the bulk-refusal step (Beta + Gamma).
+          method: 'POST',
+          path: '/api/actions/preview/bulk',
+          respond: () =>
+            jsonOk({
+              data: {
+                senders: [ROW_BETA, ROW_GAMMA].map((r) => ({
+                  senderId: r.id,
+                  name: r.displayName,
+                  counts: {
+                    all: 12,
+                    olderThan30d: 0,
+                    olderThan90d: 0,
+                    olderThan180d: 0,
+                    olderThan365d: 0,
+                  },
+                  protected: false,
+                })),
+                totals: {
+                  all: 24,
+                  olderThan30d: 0,
+                  olderThan90d: 0,
+                  olderThan180d: 0,
+                  olderThan365d: 0,
+                },
+                protectedCount: 0,
+              },
+            }),
+        },
         {
           method: 'POST',
           path: '/api/actions',
@@ -1302,10 +1348,26 @@ describe('SendersScreen — edge states', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument();
       fireEvent.keyDown(window, { key: 'Escape' });
       await tick(50);
-
-      // The SCREEN is not bricked — a different sender dispatches.
       fireEvent.click(screen.getByRole('checkbox', { name: /select overdue alpha/i })); // deselect
+
+      // Bulk entry points refuse outright while ANYTHING is parked —
+      // even for senders the parked handle does not own (a fan-out on
+      // top of an already-hanging pipeline compounds the incident).
       fireEvent.click(screen.getByRole('checkbox', { name: /select overdue beta/i }));
+      fireEvent.click(screen.getByRole('checkbox', { name: /select overdue gamma/i }));
+      fireEvent.keyDown(document.body, { key: 'a' });
+      await tick(300);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await tick(200);
+      expect(actionPosts).toBe(1);
+      screen.getByText(
+        'An earlier action is still confirming — bulk actions unlock when it finishes.',
+      );
+      fireEvent.keyDown(window, { key: 'Escape' });
+      await tick(50);
+      fireEvent.click(screen.getByRole('checkbox', { name: /select overdue gamma/i })); // deselect
+
+      // The SCREEN is not bricked — a different single sender dispatches.
       fireEvent.keyDown(document.body, { key: 'a' });
       await tick(200);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
