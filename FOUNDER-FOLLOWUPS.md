@@ -49,12 +49,36 @@ three places, and this repo is PUBLIC. PR #509 redacted the same address
 from its new MISTAKES.md entries, but the pre-existing occurrences need a
 founder call: redact in place (history still holds them — acceptable?) or
 leave and accept.
-**How:** `rg -n "rucha" FINDINGS.md docs/` → replace with "a beta user";
-decide whether git history scrubbing is worth it (probably not — the repo
-was public when committed; redaction stops future indexing).
-**Verifies by:** `rg -i "rucha" --glob '!node_modules' .` returns zero hits
-on main.
-**Status:** Open
+**How:** done 2026-08-12 — the working tree is redacted. The sweep found
+more than the original three: the beta user's email in `FINDINGS.md` ×3,
+their full name in a `senders.read-service.spec.ts` comment, and a family
+member's first name in `FINDINGS.md` and an `onboarding.service.spec.ts`
+comment. All replaced with "a beta user", "a real sender" and "the second
+test mailbox". The account holder's full legal name in the Paddle
+display-name entry below is redacted to "the account's KYC'd individual"
+in the same pass; provider-side billing identifiers were never committed
+for the same reason.
+
+Left deliberately: `chintan-ashok-thakkar` is the founder's own name in a
+required Sentry org slug, and the founder is the business's public face.
+
+**Note on the original verification.** It could never pass: the check was
+written as a literal grep for the user's name, inside the entry doing the
+tracking, so the entry's own text guaranteed a hit forever. Restated below
+without embedding the strings — a guard whose own body trips it is the
+BLIND-GUARD class wearing a different hat.
+
+**Still the founder's call:** whether to rewrite git history. Recommend
+not — the repo was already public when these landed, open PRs would all
+need rebasing, and redaction at HEAD is what stops future crawling and
+code-search indexing. Also unresolved and pre-existing: the production
+Supabase project ref sits in `docs/adr/0022-postgres-supabase-pre-launch.md`,
+which publishes the prod database hostname. Same decision, same pass.
+**Verifies by:** a case-insensitive search for the beta user's surname and
+the family member's first name over the tree (excluding `node_modules` and
+`.git`) returns hits only inside this entry's own audit trail, and zero in
+`FINDINGS.md`, `docs/`, and `apps/`.
+**Status:** Open — redaction done 2026-08-12; **narrowed to the history-rewrite decision**
 
 ### 2026-08-11 — Main carries a stale implementation log; every open PR pays for it
 ### 2026-08-10 — D68's "one-click archive" is impossible under D226; patch the plan
@@ -359,7 +383,7 @@ The refund instruction is deliberately **not** executed. The payer is a real use
 
 **Source:** founder screenshot of the sandbox checkout, 2026-07-31
 
-**Why:** the Paddle overlay footer reads "This order process is conducted by our online reseller & Merchant of Record, Paddle.com… Your data will be shared with **Nayana Ashok Thakkar** for product fulfilment", with the address `3811 Ditmars Blvd #1071, Astoria, NY 11105-1803`. That is the seller display name Paddle prints at checkout and on every receipt. A buyer paying DeclutrMail sees an unfamiliar personal name at the moment of payment — the single worst moment for a trust wobble, and a common chargeback trigger ("I don't recognise this charge").
+**Why:** the Paddle overlay footer reads "This order process is conducted by our online reseller & Merchant of Record, Paddle.com… Your data will be shared with **[the account's KYC'd individual, a personal legal name]** for product fulfilment", with the address `3811 Ditmars Blvd #1071, Astoria, NY 11105-1803`. That is the seller display name Paddle prints at checkout and on every receipt. A buyer paying DeclutrMail sees an unfamiliar personal name at the moment of payment — the single worst moment for a trust wobble, and a common chargeback trigger ("I don't recognise this charge").
 
 This is sandbox configuration, but the same field exists in production and defaults from the same account setup. Confirmed in production 2026-08-12 on a real receipt: the personal legal name appears in the email subject line, in the body header above "via paddle.com", and again on the invoice supplier line — three customer-facing surfaces, not one.
 

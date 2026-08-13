@@ -48,7 +48,7 @@ the point.
 ## Inbox (untriaged)
 
 - **2026-08-07** · `/onboarding` step 5 — **confirmed live, on a real first-run.**
-  Founder onboarded `rucha.varma27@gmail.com` end to end and step 5 pinned five
+  Founder onboarded a beta user end to end and step 5 pinned five
   senders that ALL have single-digit lifetime email counts, after the user had
   picked "reduce newsletters" on step 4. Founder's words: _"very diminishing
   value as a first time user."_ This is the same defect the Codex item below
@@ -62,7 +62,7 @@ the point.
   three states in play — shipped (no floor), uncommitted (arbitrary floor),
   proposed (outcome ranking). Triage all three together.
   **Resolved 2026-08-08 (#477):** outcome ranking shipped; the arbitrary
-  `10`/`3` floor was deleted rather than merged. `rucha.varma27@gmail.com`
+  `10`/`3` floor was deleted rather than merged. a beta user
   itself is production-only and was never reachable from this checkout.
 
 - **2026-08-07** · `/settings/senders` — **the protected-senders list never says
@@ -233,7 +233,7 @@ separable P2 if it keeps nagging.
 
 ### F002 — Sync telemetry is frontend-only; PostHog cannot answer "how did that sync go?"
 
-**Found:** 2026-08-06 · asked after retrying `rucha.varma27@gmail.com`'s sync
+**Found:** 2026-08-06 · asked after retrying a beta user's sync
 **Observed:** No dashboard exists for sync performance, and the events that
 would feed one are structurally unable to.
 
@@ -487,7 +487,7 @@ stops future mail while existing inbox mail stays put unless a backlog
 action is chosen separately, so its notice should speak to future mail.)
 
 **Edges.** Zero weak protections → show only the reassurance line, which is
-itself the win. nayana's mailbox is 0 strong / 2 weak, so the copy must not
+itself the win. the second test mailbox is 0 strong / 2 weak, so the copy must not
 read as failure when the strong count is 0. Unprotect moves no mail, so there is no undo
 window to explain — but it is not freely reversible either: D245 makes a
 manual Unprotect a STICKY override, so automatic protection will not
