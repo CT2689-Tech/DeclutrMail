@@ -107,6 +107,23 @@ function razorpayIdFor(target: PaidTier, cycle: BillingCycle, founding: boolean)
  * where the rail supports it, the pending-change notice) — renders under the
  * message. This is the same rule the app already follows for a guard's 4xx:
  * it is a designed state to reconcile with, not a retry (CLAUDE.md §8).
+ *
+ * `SUBSCRIPTION_REFUND_SETTLING` is deliberately ABSENT (D253), and the
+ * absence is the point. To reach checkout at all the read must have shown no
+ * granting and no blocking row — which during the settling window is TRUE:
+ * the refund already ended the entitlement, the customer holds nothing. The
+ * read is stale only about a dead row. Refetching would replace an accurate
+ * "you're on Free, pick a plan" screen with the non-backing notice for a
+ * subscription the customer no longer has ("A Plus subscription is on your
+ * account… Cancel it if you're done with it") and would DISABLE the picker —
+ * unmounting the confirm panel, and with it the honest message this code was
+ * created to deliver. It would reinstate, one surface over, both lies this
+ * code exists to remove.
+ *
+ * The stranding this set prevents also does not apply: nothing on screen
+ * contradicts the message, and the state needs no hidden control to resolve —
+ * it is `retryable: true`, it clears on its own, and the control the user
+ * retries from is the one already in front of them.
  */
 const STALE_BILLING_READ = new Set([
   'SUBSCRIPTION_EXISTS',
@@ -124,6 +141,12 @@ const PRE_CLAIM_REJECTIONS = new Set([
   // refusal as an ambiguous post-claim outcome and surface a payment
   // reservation for a checkout that never reached a provider.
   'SUBSCRIPTION_PAUSED_BLOCKS_NEW',
+  // The third branch of that same guard (D253) — also thrown before the
+  // claim, before any provider call. Omitting it would tell a customer whose
+  // refund is still settling that a payment may be pending, which is the
+  // opposite of true: they were just refused, nothing reached a provider,
+  // and the reservation would lock the retry the message invites.
+  'SUBSCRIPTION_REFUND_SETTLING',
   'FOUNDING_PRO_SOLD_OUT',
   'BILLING_NOT_PROVISIONED',
   'BILLING_DISABLED',

@@ -312,6 +312,63 @@ describe('BillingService', () => {
     ).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXISTS' });
   });
 
+  // D253 — the settling window. A full refund ends entitlement immediately
+  // while the row stays `active` until the provider confirms the refund
+  // settled. For that stretch the customer holds nothing AND cannot buy, and
+  // `SUBSCRIPTION_EXISTS` told them to go manage a subscription that is
+  // already dead. The refusal stands; only the reason becomes true.
+  const REFUND_SETTLING_ROW = {
+    provider: 'paddle' as const,
+    providerSubscriptionId: 'sub_refunded',
+    tier: 'plus' as const,
+    status: 'active' as const,
+    providerPriceId: 'pri_plus_m',
+    billingCycle: 'monthly' as const,
+    cancelSource: 'refund' as const,
+    entitlementEndsAt: new Date(Date.now() - 60_000),
+  };
+
+  it('a refunded row whose entitlement has LAPSED refuses with SUBSCRIPTION_REFUND_SETTLING', async () => {
+    await db
+      .insert(subscriptions)
+      .values({ workspaceId: principal.workspaceId, ...REFUND_SETTLING_ROW });
+    await expect(
+      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+    ).rejects.toMatchObject({ code: 'SUBSCRIPTION_REFUND_SETTLING' });
+  });
+
+  // The founder decision this pins (2026-08-13): refunds unlock early,
+  // CHARGEBACKS do not. A chargebacked customer stays blocked until the
+  // period ends naturally, and the unchanged refusal is what says so —
+  // re-arming the same payment method same-day is how a merchant-of-record
+  // seller account gets flagged. Identical row shape, one enum apart.
+  it('a CHARGEBACK with the same lapsed shape keeps the ORIGINAL refusal', async () => {
+    await db.insert(subscriptions).values({
+      workspaceId: principal.workspaceId,
+      ...REFUND_SETTLING_ROW,
+      providerSubscriptionId: 'sub_chargeback',
+      cancelSource: 'chargeback',
+    });
+    await expect(
+      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+    ).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXISTS' });
+  });
+
+  // A refund verdict whose entitlement runs to the period end (the partial-
+  // refund shapes) has NOT lapsed: that customer still holds the plan they
+  // paid for, so the new code's "you hold nothing" premise is false for them.
+  it('a refunded row whose entitlement is still in the FUTURE keeps SUBSCRIPTION_EXISTS', async () => {
+    await db.insert(subscriptions).values({
+      workspaceId: principal.workspaceId,
+      ...REFUND_SETTLING_ROW,
+      providerSubscriptionId: 'sub_refund_future',
+      entitlementEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+    await expect(
+      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+    ).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXISTS' });
+  });
+
   it('blocks foundingPro checkout when the 250-cap (here 2) is exhausted', async () => {
     // Two founding subscriptions in OTHER workspaces exhaust the cap.
     for (const n of [1, 2]) {

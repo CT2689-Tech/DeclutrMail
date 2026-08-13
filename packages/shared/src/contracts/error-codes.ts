@@ -226,6 +226,36 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'Your subscription is paused, so a new one cannot be started.',
   },
+  /**
+   * The THIRD branch of the same checkout guard (D253). A full refund ends
+   * entitlement immediately (`entitlement_ends_at = now()`) while the row
+   * stays `active` until the provider confirms the refund settled — so for
+   * that window the customer holds nothing AND cannot buy.
+   *
+   * `SUBSCRIPTION_EXISTS` is simply false there: no live subscription
+   * exists. Telling someone to manage a subscription that is already dead
+   * is the assert-what-you-don't-know defect its own comment warns about,
+   * one layer down.
+   *
+   * `retryable: true` — the only code in this cluster that is. It resolves
+   * with no user action once the settlement pass flips the row, so the FE
+   * must treat it as self-healing rather than permanent.
+   *
+   * Unlike its siblings this one DOES name a remedy, because here a real
+   * one exists and this layer can know it: waiting. The reason the others
+   * name none is that their exits are rail- and plan-dependent (resume,
+   * change plan, cancel — each unavailable on some rail); "try again in a
+   * few minutes" depends on nothing and points at the control the user is
+   * already looking at. Naming no remedy would have been the dishonest
+   * choice here, not the careful one.
+   */
+  SUBSCRIPTION_REFUND_SETTLING: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message:
+      'Your refund is being confirmed with your payment provider, so a new subscription can’t be started yet. This clears on its own — try again in a few minutes.',
+  },
   CHECKOUT_IN_FLIGHT: {
     status: 409,
     severityTier: 'inline_recoverable',

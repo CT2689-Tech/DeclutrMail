@@ -50,7 +50,7 @@ vi.mock('@/features/billing/checkout', () => ({
   launchCheckout: vi.fn(() => Promise.resolve()),
 }));
 
-import type { BillingSubscription } from '@declutrmail/shared/contracts';
+import { ERROR_CODES, type BillingSubscription } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
@@ -612,6 +612,61 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     await within(panel).findByRole('alert');
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+  });
+
+  // D253 — the refund-settling refusal. A full refund ends entitlement at
+  // once but leaves the row `active` until the provider confirms it settled:
+  // for that window the customer holds nothing AND cannot buy. Both registry
+  // decisions for the new code ride this one path.
+  it('a refund-settling refusal releases the reservation, keeps its message, and does NOT refetch', async () => {
+    let subscriptionReads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => {
+          subscriptionReads += 1;
+          return jsonOk({ data: FREE_BODY });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'SUBSCRIPTION_REFUND_SETTLING', message: 'ignored — registry wins' },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = screen.getByTestId('checkout-panel');
+    expect(subscriptionReads).toBe(1);
+    fireEvent.click(
+      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+
+    // PRE-CLAIM: the guard threw before any provider call, so surfacing a
+    // payment reservation would assert a charge that cannot exist — and
+    // would lock the very retry this message invites.
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+      ERROR_CODES.SUBSCRIPTION_REFUND_SETTLING.message,
+    );
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+
+    // NOT a stale read (unlike its two guard siblings): "you're on Free,
+    // pick a plan" is TRUE during the settling window. Refetching would
+    // surface a non-backing notice for a subscription the refund already
+    // ended, disable the picker, and unmount the panel carrying this
+    // message — reinstating the lie the code exists to delete.
+    expect(subscriptionReads).toBe(1);
+    expect(
+      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    ).toBeEnabled();
   });
 
   it('payment processing: checkout.completed shows the truthful pending state; only the polled server tier clears it', async () => {
