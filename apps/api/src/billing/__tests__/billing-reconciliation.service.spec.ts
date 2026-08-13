@@ -581,6 +581,56 @@ describe('BillingReconciliationService (D249)', () => {
     expect(result).toMatchObject({ verdictsEnforced: 0, verdictsUnenforced: 0 });
   });
 
+  // A null from providerCancellationFacts is a READ FAILURE, not
+  // "nothing settled". It does not throw, so the loop's catch never sees
+  // it, and the successful fetchSubscription just before it has already
+  // reset the provider's error counter — so an adjustments endpoint that
+  // is down while the subscriptions endpoint is healthy could be polled
+  // once per row, every pass, forever.
+  it('unreadable facts trip the provider circuit breaker', async () => {
+    const TRIP_AFTER = 3; // mirrors DRIFT_SWEEP_TRIP_AFTER (module-private)
+    // One workspace each: subscriptions_one_live_per_workspace permits a
+    // single active row per workspace, which is the whole invariant D253
+    // is built around.
+    for (let i = 0; i < TRIP_AFTER + 2; i += 1) {
+      const [ws] = await db
+        .insert(workspaces)
+        .values({ name: `Unreadable WS ${i}` })
+        .returning({ id: workspaces.id });
+      await db.insert(subscriptions).values({
+        workspaceId: ws!.id,
+        provider: 'paddle',
+        providerSubscriptionId: `sub_unreadable_${i}`,
+        tier: 'plus',
+        status: 'active',
+        providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+        billingCycle: 'monthly',
+        currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+        cancelAtPeriodEnd: true,
+        cancelSource: 'refund',
+        entitlementEndsAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      });
+    }
+    let factsCalls = 0;
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async (id) => ({
+          kind: 'found',
+          subscription: activePlusSub(id, new Date()),
+        }),
+        providerCancellationFacts: async () => {
+          factsCalls += 1;
+          return null;
+        },
+      }),
+    );
+
+    await svc.reconcileLiveSubscriptions();
+
+    // Stops asking once the breaker trips, rather than walking every row.
+    expect(factsCalls).toBe(TRIP_AFTER);
+  });
+
   // The customer cancels in-app, THEN asks for their money back, and
   // Paddle rejects the refund. Paddle has held `scheduled_change: cancel`
   // since their own cancel, so `cancelAtPeriodEnd` is true throughout.

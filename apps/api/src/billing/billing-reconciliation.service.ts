@@ -470,7 +470,11 @@ export class BillingReconciliationService {
         const fetched = await this.adapterFor(row.provider).fetchSubscription(
           row.providerSubscriptionId,
         );
-        consecutiveErrors[row.provider] = 0;
+        // NOT reset here. A healthy subscriptions endpoint says nothing
+        // about the adjustments endpoint, and this loop calls both — so
+        // resetting on the first would let a persistently failing second
+        // one keep the streak at zero forever. The reset moves to the
+        // point where the whole row has been read successfully.
         if (fetched.kind !== 'found') {
           // Cannot read it, so cannot claim it renews. Same posture as
           // the drift pass: a read miss is never grounds for a write.
@@ -516,12 +520,30 @@ export class BillingReconciliationService {
           row.providerSubscriptionId,
         );
         if (facts === null) {
+          // A null here is a READ FAILURE, not "nothing settled" — the
+          // adapter returns it on a 404, a malformed body, or a throw it
+          // swallowed. Because it does not throw, the catch below never
+          // sees it, and the successful `fetchSubscription` above has
+          // just reset this provider's counter to zero. So the breaker
+          // could never trip on a failing adjustments endpoint while the
+          // subscriptions endpoint stayed healthy.
+          //
+          // That was survivable while the `cancelAtPeriodEnd`
+          // short-circuit meant most rows never reached this read at all.
+          // It no longer does (see above), so every verdict row now asks
+          // every pass, and an unreachable adjustments endpoint would be
+          // hammered at DRIFT_SWEEP_MAX_ROWS per pass with nothing to
+          // stop it.
+          consecutiveErrors[row.provider] += 1;
           unenforced += 1;
           this.logger.log(
             `billing.reconcile.verdict_unreadable provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} — could not ask; no action`,
           );
           continue;
         }
+        // Both reads landed — the provider is genuinely reachable, so the
+        // consecutive-failure streak is broken.
+        consecutiveErrors[row.provider] = 0;
 
         // SETTLED FIRST. A live chargeback beside an old reversed one
         // still ends the plan, so a settled cause outranks any

@@ -320,6 +320,20 @@ guard and a test pinning that scope.
   for and logging, not fixing here.
 - **Re-litigating the refund policy.** "Money back means the service stops" is
   settled.
+- **Refutation recovery is one-shot.** `applyRevokedCancellation` clears
+  `cancel_source` and `entitlement_ends_at` but leaves `cancel_at_period_end`
+  alone (`billing-webhook.service.ts:926-940`), and clearing `cancel_source`
+  drops the row out of the verdict selector, so nothing revisits it. Where the
+  scheduled cancel was the CUSTOMER's own that is correct — they asked for it.
+  Where it was **ours**, sent by enforcement, the subscription still terminates
+  at the provider while entitlement has been restored locally, and no pass will
+  ever notice. Reachable on the chargeback rail, since a won dispute genuinely
+  reverses a settled chargeback; not reachable for refunds, which are terminal.
+  Pre-existing, and until the `:481` fix in this PR it was unreachable in
+  practice because the lift itself never ran on a scheduled-cancel row — so this
+  PR turns "never recovers" into "recovers, then quietly under-recovers". Fixing
+  it needs provenance we do not store (who scheduled the cancel), which is a
+  design decision rather than a patch.
 
 ## Open for the founder
 
