@@ -377,7 +377,17 @@ export const ActionsUnsubscribeExecutedPayloadSchema = z
     senderKey: SenderKeySchema,
     /** The execution's `action_jobs.id` — the FE poll handle. */
     actionId: UuidSchema,
-    outcome: z.enum(['endpoint_accepted', 'failed', 'unconfirmed', 'done', 'ambiguous']),
+    outcome: z.enum([
+      'endpoint_accepted',
+      'failed',
+      'unconfirmed',
+      // D252 — the endpoint refused us AND the sender advertises a
+      // mailto channel, so the manual path is still open. Distinct
+      // from `failed`, which means nothing is left to try.
+      'action_required',
+      'done',
+      'ambiguous',
+    ]),
     /** HTTP status from the target; null when the request never completed. */
     httpStatus: z.number().int().nullable(),
     /** ISO-8601 — when the terminal outcome was recorded. */

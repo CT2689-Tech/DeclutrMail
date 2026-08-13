@@ -74,6 +74,19 @@ export function initialUnsubscribeLifecycleStatus(
  */
 export const UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE = 'UNSUB_AMBIGUOUS_REDIRECT';
 
+/**
+ * `action_jobs.error_code` that marks a one-click request the endpoint
+ * REFUSED, for a sender that also advertises a `mailto:` channel — so
+ * the automated path is spent but a manual one remains (D252).
+ *
+ * `action_job_status` has no "needs the user" value, so this rides on
+ * `failed` exactly the way `unconfirmed` does, and the error code is
+ * what separates them. Without it a rejection with a live fallback is
+ * indistinguishable from a genuine dead end, which is the difference
+ * between "we can't" and "you can" — the whole point of the cascade.
+ */
+export const UNSUB_MANUAL_REQUIRED_ERROR_CODE = 'UNSUB_MANUAL_REQUIRED';
+
 /** Manual mailto transitions the client may explicitly report. */
 export const UNSUBSCRIBE_MANUAL_TRANSITIONS = ['draft_opened', 'user_marked_sent'] as const;
 export const UnsubscribeManualTransitionSchema = z.enum(UNSUBSCRIBE_MANUAL_TRANSITIONS);
