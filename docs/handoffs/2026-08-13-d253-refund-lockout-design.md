@@ -18,11 +18,11 @@ recovery is an operator holding the Paddle API key.
 
 Nobody designed this. It falls out of behaviours that are each correct alone:
 
-| Behaviour                                                 | Where                                                                                | Why it is right                                                                                                                                           |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A full refund sets `entitlement_ends_at` to SQL `now()`   | `billing-webhook.service.ts:833`                                                     | Founder decision 2026-07-31. Annual plus a 30-day guarantee meant refunding $190 _and_ granting the rest of the year. Money back means the service stops. |
-| The row is left in `status='active'`                      | `applyScheduledCancellation` never writes `status`                                   | Paddle schedules nothing on a refund — our own sweep sends the cancel later (`billing-reconciliation.service.ts:409-412`)                                 |
-| Any `active` row is the workspace's one live subscription | guard `billing.service.ts:89-107`, index `0051:72`, FE picker `billing-model.ts:258` | One subscription per workspace at a time (D120)                                                                                                           |
+| Behaviour                                                 | Where                                                                                | Why it is right                                                                                                                                                                                          |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A full refund sets `entitlement_ends_at` to SQL `now()`   | `billing-webhook.service.ts:833`                                                     | Founder decision 2026-07-31. Annual plus a 30-day guarantee meant refunding $190 _and_ granting the rest of the year. Money back means the service stops.                                                |
+| The row is left in `status='active'`                      | `applyScheduledCancellation` never writes `status`                                   | Paddle schedules nothing on a refund — our own sweep sends the cancel later (`billing-reconciliation.service.ts:409-412`)                                                                                |
+| Any `active` row is the workspace's one live subscription | guard `billing.service.ts:89-107`, index `0051:72`, FE picker `billing-model.ts:258` | One subscription per workspace at a time — the `subscriptions_one_live_per_workspace` index, NOT D120 (an earlier revision cited D120, which is titled _Plan-change flows_ and states no such invariant) |
 
 It is a revenue path, not only a trust one. A goodwill full refund is an
 ordinary support gesture, and today it makes that customer unable to pay again
@@ -223,10 +223,19 @@ Verdict enforcement lives inside the 6-hourly drift loop today
 (`reconcileLiveSubscriptions` calls it at `:395`), so settlement could take six
 hours to notice.
 
-It moves to its own **`cronPolicy`** job on a ~10 minute cadence: BullMQ
-repeatable, `BaseDeclutrWorker.processJob()`, `cron_runs` claim keyed on
+It moves to its own **`cronPolicy`** job on a ~10 minute cadence:
+`BaseDeclutrWorker.processJob()`, `cron_runs` claim keyed on
 `(worker_name, scheduled_at_minute)`. **The drift pass stops calling it**, so the
 two schedules cannot collide.
+
+An earlier revision said "BullMQ repeatable". **There are zero BullMQ repeatable
+jobs in this repo** — no `repeat:`, no `upsertJobScheduler`, and no cron
+expression anywhere. Every recurring job is an interval PRODUCER in the
+composition root that enqueues a minute-keyed job, consumed by a worker that
+claims a `cron_runs` row; the cadence is an exported `*_INTERVAL_MS` constant.
+The stated reason is that the scheduling rule then lives in TypeScript, where it
+is testable and reviewable, rather than in Redis state. `WatchRenewalWorker` is
+the template to copy end to end.
 
 A plain `setInterval` was considered and rejected. The in-repo precedent for
 that (`worker.ts:1871-1875`) is justified as _"bookkeeping on our own table, a
@@ -254,14 +263,35 @@ The code must also be added to the two hand-maintained frontend registries at
 treated as an ambiguous post-claim outcome and surfaces a payment reservation
 for a checkout that never reached a provider.
 
-### Razorpay is explicitly out of scope
+### Razorpay — SUPERSEDED, it is in scope after all
 
-`razorpay.adapter.ts:297-310` returns `null` from `providerCancellationFacts`
-unconditionally, and its `mapWebhookEvent` maps no refund or chargeback event —
-so no Razorpay row ever carries a verdict and none is affected today. Stated
-here because the day someone maps Razorpay refunds, every such customer would
-be locked out with **zero code change in this PR**. The implementation carries a
-guard and a test pinning that scope.
+This section originally read "explicitly out of scope", on the grounds that
+`providerCancellationFacts` returned `null` unconditionally and `mapWebhookEvent`
+mapped no refund or chargeback event, so no Razorpay row could carry a verdict.
+That was accurate and it was the wrong place to stop. Founder directive
+2026-08-13: _"We should handle Razorpay same way as Paddle in terms of product
+functionality."_
+
+The state it described was not neutral. Refunding a Razorpay customer did
+nothing locally — they kept the paid tier for free. A revenue leak that had
+nothing to do with the lockout, hidden behind the same missing code.
+
+Two things changed as a result:
+
+- **No provider guard is implemented.** The original plan was a
+  `provider !== 'razorpay'` check plus a test pinning it. That guard would have
+  become a permanent lockout for every Indian customer the moment Razorpay
+  refunds were mapped — the exact bug this PR exists to remove, re-created by
+  the mitigation. Scope is instead enforced by the adapter's own behaviour: an
+  adapter that cannot answer never settles. The test pins that, and keeps
+  working unchanged as the adapter learns to answer.
+- **Razorpay's read and write sides are both built here**, matching Paddle's
+  semantics but not its shapes — Razorpay has no approval gate (settlement is
+  the refund entity's `processed` status, not the event name), deducts dispute
+  funds only on accept/lose, and distinguishes chargeback _warnings_
+  (`fraud`/`retrieval` phases) from chargebacks. It also carries the
+  subscription id only on the invoice, which forced the `mapWebhookEvent` seam
+  to become async.
 
 ### Observability
 
@@ -337,7 +367,12 @@ guard and a test pinning that scope.
 
 ## Open for the founder
 
-D253 is the next free number; the plan mirror and `IMPLEMENTATION-LOG.md` are
-appended in this same PR per the Class-B rule. Neither is in the diff yet. The
-durable rule this establishes — guard, projector, sweep and **frontend** must
+D253 was confirmed free (the plan tops out at D252) and both the plan mirror and
+`IMPLEMENTATION-LOG.md` are now in the diff per the Class-B rule. The log is
+DERIVED, not hand-edited, and its D253 row reads not-started until the PR exists
+— the generator counts the PR's own `Closes D253` trailer, so `pnpm
+generate-impl-log` must be re-run after opening the PR or CI's `--check` gate
+fails.
+
+The durable rule this establishes — guard, projector, sweep and **frontend** must
 share one definition of "live" — may deserve its own ADR once shipped.

@@ -942,12 +942,18 @@ describe('BillingReconciliationService (D249)', () => {
     expect(events.filter((e) => e.eventType === 'reconciliation.refund_settled')).toHaveLength(1);
   });
 
-  it('a RAZORPAY row cannot settle today — its adapter answers null', async () => {
-    // Scope pin, not a guard. No `provider !== 'razorpay'` check exists:
-    // a hardcoded one would become a permanent lockout for every Indian
-    // customer the day Razorpay refunds are mapped. Scope is enforced by
-    // the adapter returning null, so when it learns to answer, this path
-    // starts working with no change here.
+  it('an adapter that cannot answer never settles — the scope is the ADAPTER, not a provider check', async () => {
+    // No `provider !== 'razorpay'` check exists anywhere, deliberately.
+    // A hardcoded one would have become a permanent lockout for every
+    // Indian customer the moment Razorpay refunds were mapped — the
+    // exact bug this feature removes, re-created by the mitigation.
+    //
+    // So the rule is provider-agnostic: an adapter that answers `null`
+    // cannot settle, and one that answers settles. Razorpay's adapter
+    // now DOES answer (it reads invoices → refunds → disputes), so this
+    // test no longer describes Razorpay's production state — it pins the
+    // general property, which is what has to keep holding.
+
     await db.insert(subscriptions).values({
       workspaceId,
       provider: 'razorpay',
