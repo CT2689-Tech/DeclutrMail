@@ -34,12 +34,12 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 - ⬜ Not started: 77
 - 🟡 In progress: 1
-- 🔵 Shipped: 106
+- 🔵 Shipped: 107
 - 🟢 Verified: 55
 - 🚫 Retired: 2
 - 🔴 Blocked: 0
 - ⏸️ Deferred: 0
-- **Total: 241 D-decisions**
+- **Total: 242 D-decisions**
 
 <!-- AUTO:SUMMARY:END -->
 
