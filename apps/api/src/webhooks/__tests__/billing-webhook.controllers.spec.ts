@@ -11,6 +11,7 @@ import type { Request } from 'express';
 import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
 import type { RawBodyRequest } from '@nestjs/common';
 
+import { AppException } from '../../common/app-exception.js';
 import type { DrizzleDb } from '../../db/db.module.js';
 import type { SecurityEventsService } from '../../security-events/security-events.service.js';
 import { BillingCatalog, type CatalogEntry } from '../../billing/billing-catalog.js';
@@ -168,6 +169,32 @@ describe('billing webhook controllers', () => {
       expect(await db.select().from(subscriptionEvents)).toHaveLength(1);
       const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
       expect(ws!.tier).toBe('plus');
+    });
+
+    /**
+     * Mirrors the Razorpay "refund rail" 502 test one describe block
+     * down. Paddle's real mapper cannot throw an AppException today — it
+     * is synchronous and makes no network call — so this pins the
+     * CONTRACT (an AppException the mapper throws must survive to the
+     * caller) rather than a reachable-today code path, which is why the
+     * mapper is stubbed rather than driven through a real fixture
+     * (ultrareview, 2026-08-14).
+     */
+    it('preserves a retryable AppException the mapper throws — never collapses it to a terminal 400', async () => {
+      vi.stubEnv('PADDLE_WEBHOOK_SECRET', PADDLE_SECRET);
+      const controller = makeController();
+      vi.spyOn(controller['adapter'], 'mapWebhookEvent').mockImplementation(() => {
+        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      });
+      const body = JSON.stringify(paddleSubscriptionActivated({ workspaceId }));
+
+      await expect(controller.receive(rawReq(body), paddleSign(body))).rejects.toMatchObject({
+        code: 'BILLING_PROVIDER_ERROR',
+        status: 502,
+      });
+      // No dedup row — a 400 or a 200 here would each retire the
+      // delivery from Paddle's retry queue in a different wrong way.
+      expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
     });
   });
 
