@@ -2,6 +2,8 @@ import { createHmac } from 'node:crypto';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { AppException } from '../../common/app-exception.js';
+import type { NormalizedBillingEvent } from '../billing-provider.interface.js';
 import { RazorpayAdapter } from '../razorpay.adapter.js';
 import { razorpaySubscriptionEvent } from './fixtures.js';
 
@@ -180,8 +182,8 @@ describe('RazorpayAdapter.verifyWebhookSignature', () => {
 describe('RazorpayAdapter.mapWebhookEvent', () => {
   const adapter = makeAdapter();
 
-  it('maps subscription.activated with notes attribution', () => {
-    const event = adapter.mapWebhookEvent(
+  it('maps subscription.activated with notes attribution', async () => {
+    const event = await adapter.mapWebhookEvent(
       withEventId(razorpaySubscriptionEvent({ workspaceId: WORKSPACE, planId: 'plan_x' })),
     );
     expect(event).toMatchObject({
@@ -199,7 +201,7 @@ describe('RazorpayAdapter.mapWebhookEvent', () => {
     });
   });
 
-  it('maps lifecycle statuses: halted→CANCELED (terminal, decision 2), paused→paused, cancelled/completed→canceled', () => {
+  it('maps lifecycle statuses: halted→CANCELED (terminal, decision 2), paused→paused, cancelled/completed→canceled', async () => {
     const cases: Array<[string, string, string]> = [
       ['subscription.halted', 'halted', 'canceled'],
       ['subscription.pending', 'pending', 'past_due'],
@@ -208,7 +210,7 @@ describe('RazorpayAdapter.mapWebhookEvent', () => {
       ['subscription.completed', 'completed', 'canceled'],
     ];
     for (const [event, status, expected] of cases) {
-      const mapped = adapter.mapWebhookEvent(
+      const mapped = await adapter.mapWebhookEvent(
         withEventId(razorpaySubscriptionEvent({ event, status, workspaceId: WORKSPACE })),
       );
       expect(mapped, event).toMatchObject({
@@ -218,8 +220,8 @@ describe('RazorpayAdapter.mapWebhookEvent', () => {
     }
   });
 
-  it('treats end_at <= current_end on an active sub as cancel-at-period-end', () => {
-    const mapped = adapter.mapWebhookEvent(
+  it('treats end_at <= current_end on an active sub as cancel-at-period-end', async () => {
+    const mapped = await adapter.mapWebhookEvent(
       withEventId(
         razorpaySubscriptionEvent({
           event: 'subscription.updated',
@@ -235,9 +237,9 @@ describe('RazorpayAdapter.mapWebhookEvent', () => {
     });
   });
 
-  it('ignores created/authenticated (no charge yet) + unknown events; tolerates [] notes', () => {
+  it('ignores created/authenticated (no charge yet) + unknown events; tolerates [] notes', async () => {
     expect(
-      adapter.mapWebhookEvent(
+      await adapter.mapWebhookEvent(
         withEventId(
           razorpaySubscriptionEvent({
             event: 'subscription.authenticated',
@@ -247,69 +249,320 @@ describe('RazorpayAdapter.mapWebhookEvent', () => {
       ),
     ).toMatchObject({ kind: 'ignored' });
     expect(
-      adapter.mapWebhookEvent(
+      await adapter.mapWebhookEvent(
         withEventId({ entity: 'event', event: 'payment.captured', payload: {} }),
       ),
     ).toMatchObject({ kind: 'ignored' });
     expect(
-      adapter.mapWebhookEvent(withEventId(razorpaySubscriptionEvent({ workspaceId: null }))),
+      await adapter.mapWebhookEvent(withEventId(razorpaySubscriptionEvent({ workspaceId: null }))),
     ).toMatchObject({ kind: 'subscription', subscription: { workspaceId: null } });
   });
 
-  it('throws when the header event id was not injected', () => {
-    expect(() => adapter.mapWebhookEvent(razorpaySubscriptionEvent({}))).toThrow(/event id/);
+  it('rejects when the header event id was not injected', async () => {
+    // Async now, so the envelope guard REJECTS rather than throwing
+    // synchronously. The controller awaits inside its try, so this still
+    // lands as the 400 it always did.
+    await expect(adapter.mapWebhookEvent(razorpaySubscriptionEvent({}))).rejects.toThrow(
+      /event id/,
+    );
   });
 
   /**
-   * The refund/chargeback rail. Paddle turns `adjustment.created` into
-   * `cancellation_scheduled`, which is what ends a refunded customer's
-   * entitlement — Razorpay cannot, and these tests pin WHY so the gap is
-   * a recorded decision rather than an oversight. Every one of these
-   * payloads is keyed to a payment: `payment_id` on the refund/dispute
-   * entity, `order_id` + `invoice_id` on the payment entity, and no
-   * subscription field anywhere. `cancellation_scheduled` requires a
-   * `providerSubscriptionId`; resolving one costs a
-   * `GET /v1/invoices/{invoice_id}` round-trip and `mapWebhookEvent` is
-   * synchronous by contract, so the honest answer is `ignored` + a loud
-   * log — never a mis-attributed cancellation.
+   * The refund/chargeback rail — Razorpay's answer to Paddle's
+   * `adjustment.created`, and what ends a refunded customer's
+   * entitlement. Every one of these payloads is keyed to a PAYMENT:
+   * `payment_id` on the refund/dispute entity, `order_id` +
+   * `invoice_id` on the payment entity, and no subscription field
+   * anywhere. So the mapper resolves the subscription through
+   * `GET /v1/invoices/{invoice_id}` — and when it cannot, it says so
+   * loudly instead of emitting a cancellation with a guessed id, which
+   * would end an unrelated customer's plan.
+   *
+   * The verdict rules below are NOT re-derived here: they are the same
+   * rules `providerCancellationFacts` applies to the refund and dispute
+   * LISTS (see that describe block), because the webhook writes the
+   * verdict the reconciliation read later confirms or lifts.
    */
-  describe('refund + dispute events (subscription id unresolvable at this seam)', () => {
-    it.each([
-      ['refund.created', 'pending'],
-      ['refund.created', 'processed'],
-      ['refund.processed', 'processed'],
-      ['refund.failed', 'failed'],
-    ])('%s (status %s) is ignored, never a cancellation', (event, status) => {
-      const mapped = adapter.mapWebhookEvent(
-        withEventId(razorpayRefundEvent({ event, status }), 'evt_rzp_refund_01'),
+  describe('refund + dispute events (subscription id resolved through the invoice)', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    const env = { RAZORPAY_KEY_ID: 'rzp_test_key', RAZORPAY_KEY_SECRET: 'rzp_test_secret' };
+    const INVOICE = 'inv_rzp0000000001';
+    const keyed = makeAdapter(env);
+
+    /**
+     * Serves the ONE call this mapper is allowed to make. Calls are
+     * recorded rather than asserted inline: an assertion thrown inside
+     * the fetch mock would be caught by the adapter's own error handling
+     * and resurface as a provider error, hiding what actually failed.
+     */
+    function stubInvoiceRead(
+      args: { subscriptionId?: string | null; status?: number; rawBody?: string } = {},
+    ): ReturnType<typeof vi.fn> {
+      const spy = vi.fn(async () => {
+        if (args.rawBody !== undefined) {
+          return new Response(args.rawBody, { status: args.status ?? 200 });
+        }
+        if (args.status !== undefined && args.status !== 200) {
+          return new Response('{}', { status: args.status });
+        }
+        return new Response(
+          JSON.stringify({
+            id: INVOICE,
+            entity: 'invoice',
+            // The field the whole rail hangs on.
+            subscription_id: args.subscriptionId === undefined ? SUBSCRIPTION : args.subscriptionId,
+            payment_id: PAYMENT,
+            status: 'paid',
+            amount: PAID,
+            amount_paid: PAID,
+          }),
+          { status: 200 },
+        );
+      });
+      vi.stubGlobal('fetch', spy);
+      return spy;
+    }
+
+    it('a PROCESSED full refund becomes cancellation_scheduled(refund) on the RESOLVED subscription', async () => {
+      const spy = stubInvoiceRead();
+      const mapped = await keyed.mapWebhookEvent(
+        withEventId(razorpayRefundEvent(), 'evt_rzp_refund_01'),
       );
       expect(mapped).toEqual({
-        kind: 'ignored',
+        kind: 'cancellation_scheduled',
         providerEventId: 'evt_rzp_refund_01',
-        eventType: event,
+        eventType: 'refund.processed',
+        providerSubscriptionId: SUBSCRIPTION,
+        reason: 'refund',
       });
+      // Resolved by asking Razorpay about the invoice the PAYMENT names
+      // — authenticated, and no other endpoint touched.
+      const [url, init] = spy.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`https://api.razorpay.com/v1/invoices/${INVOICE}`);
+      expect((init.headers as Record<string, string>).Authorization).toBe(
+        `Basic ${Buffer.from('rzp_test_key:rzp_test_secret').toString('base64')}`,
+      );
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('the refund ENTITY status decides, never the event name', async () => {
+      // Razorpay's own `refund.created` sample carries `status:
+      // processed` for instant refunds; a normal-speed `refund.processed`
+      // delivery can still be `pending`. Keying on the event name would
+      // get both backwards.
+      stubInvoiceRead();
+      expect(
+        await keyed.mapWebhookEvent(
+          withEventId(razorpayRefundEvent({ event: 'refund.created', status: 'processed' })),
+        ),
+      ).toMatchObject({ kind: 'cancellation_scheduled', reason: 'refund' });
+
+      const spy = stubInvoiceRead();
+      expect(
+        await keyed.mapWebhookEvent(
+          withEventId(razorpayRefundEvent({ event: 'refund.processed', status: 'pending' })),
+        ),
+      ).toMatchObject({ kind: 'ignored' });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('a FAILED full refund becomes cancellation_revoked(refund_rejected)', async () => {
+      stubInvoiceRead();
+      const mapped = await keyed.mapWebhookEvent(
+        withEventId(razorpayRefundEvent({ event: 'refund.failed', status: 'failed' })),
+      );
+      expect(mapped).toEqual({
+        kind: 'cancellation_revoked',
+        providerEventId: 'evt_rzp_test_000001',
+        eventType: 'refund.failed',
+        providerSubscriptionId: SUBSCRIPTION,
+        reason: 'refund_rejected',
+      });
+    });
+
+    it.each([
+      ['a PENDING refund — requested is not settled', { status: 'pending' }],
+      ['a PARTIAL refund — an apology, not an exit', { amount: PAID - 1 }],
+      ['a PARTIAL failed refund — contradicts nothing', { status: 'failed', amount: PAID - 1 }],
+    ])('%s is ignored, and asks the provider nothing', async (_label, args) => {
+      const spy = stubInvoiceRead();
+      expect(await keyed.mapWebhookEvent(withEventId(razorpayRefundEvent(args)))).toEqual({
+        kind: 'ignored',
+        providerEventId: 'evt_rzp_test_000001',
+        eventType: 'refund.processed',
+      });
+      // Deciding the verdict BEFORE resolving keeps the majority of this
+      // traffic off Razorpay's API entirely.
+      expect(spy).not.toHaveBeenCalled();
     });
 
     it.each([
       ['payment.dispute.created', 'open'],
-      ['payment.dispute.won', 'won'],
       ['payment.dispute.lost', 'lost'],
-      ['payment.dispute.closed', 'closed'],
-    ])('%s (status %s) is ignored, never a cancellation', (event, status) => {
-      const mapped = adapter.mapWebhookEvent(
-        withEventId(razorpayDisputeEvent({ event, status }), 'evt_rzp_disp_01'),
-      );
-      expect(mapped).toEqual({
-        kind: 'ignored',
+    ])('%s (status %s) becomes cancellation_scheduled(chargeback)', async (event, status) => {
+      stubInvoiceRead();
+      expect(
+        await keyed.mapWebhookEvent(
+          withEventId(razorpayDisputeEvent({ event, status }), 'evt_rzp_disp_01'),
+        ),
+      ).toEqual({
+        kind: 'cancellation_scheduled',
         providerEventId: 'evt_rzp_disp_01',
         eventType: event,
+        providerSubscriptionId: SUBSCRIPTION,
+        reason: 'chargeback',
       });
     });
 
-    it('a refund payload carries no subscription id — the reason the above holds', () => {
+    it('a WON dispute becomes cancellation_revoked(chargeback_reverse)', async () => {
+      stubInvoiceRead();
+      expect(
+        await keyed.mapWebhookEvent(
+          withEventId(razorpayDisputeEvent({ event: 'payment.dispute.won', status: 'won' })),
+        ),
+      ).toMatchObject({
+        kind: 'cancellation_revoked',
+        reason: 'chargeback_reverse',
+        providerSubscriptionId: SUBSCRIPTION,
+      });
+    });
+
+    it.each([
+      ['a CLOSED dispute — two opposite outcomes reach it', { status: 'closed' }],
+      ['a fraud-phase dispute — a warning, not a chargeback', { phase: 'fraud' }],
+      ['a retrieval-phase dispute — the issuer asked a question', { phase: 'retrieval' }],
+    ])('%s is ignored, and asks the provider nothing', async (_label, args) => {
+      const spy = stubInvoiceRead();
+      expect(await keyed.mapWebhookEvent(withEventId(razorpayDisputeEvent(args)))).toEqual({
+        kind: 'ignored',
+        providerEventId: 'evt_rzp_test_000001',
+        eventType: 'payment.dispute.created',
+      });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    /**
+     * THE load-bearing test. Every way the subscription id can fail to
+     * resolve, in one place, asserting the one thing that must never
+     * happen: an event carrying a wrong or blank subscription id.
+     *
+     * A mis-attributed `cancellation_scheduled` ends the plan of
+     * whichever customer that id belongs to — strictly worse than the
+     * revenue leak it would be papering over.
+     */
+    it('never emits a cancellation it could not attribute — every failure mode', async () => {
+      const run = () => keyed.mapWebhookEvent(withEventId(razorpayRefundEvent()));
+      const scenarios: Array<[string, () => Promise<NormalizedBillingEvent>]> = [
+        [
+          'network error',
+          () => {
+            vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+            return run();
+          },
+        ],
+        ['500', () => (stubInvoiceRead({ status: 500 }), run())],
+        ['404', () => (stubInvoiceRead({ status: 404 }), run())],
+        ['unparsable body', () => (stubInvoiceRead({ rawBody: 'not json' }), run())],
+        ['no subscription_id', () => (stubInvoiceRead({ subscriptionId: null }), run())],
+        ['blank subscription_id', () => (stubInvoiceRead({ subscriptionId: '' }), run())],
+        [
+          'no invoice on the payment',
+          () => {
+            stubInvoiceRead();
+            return keyed.mapWebhookEvent(withEventId(razorpayRefundEvent({ invoiceId: null })));
+          },
+        ],
+        [
+          'no API keys',
+          () => {
+            stubInvoiceRead();
+            return makeAdapter({}).mapWebhookEvent(withEventId(razorpayRefundEvent()));
+          },
+        ],
+      ];
+
+      for (const [label, invoke] of scenarios) {
+        const outcome = await invoke().then(
+          (event) => ({ event }),
+          (error: unknown) => ({ error }),
+        );
+        if ('event' in outcome) {
+          // Resolving at all is only allowed as an exact `ignored` — no
+          // subscription id field exists on it to be wrong.
+          expect(outcome.event, label).toEqual({
+            kind: 'ignored',
+            providerEventId: 'evt_rzp_test_000001',
+            eventType: 'refund.processed',
+          });
+        } else {
+          expect(outcome.error, label).toBeInstanceOf(AppException);
+        }
+      }
+    });
+
+    it.each([
+      ['a network error', { reject: true }],
+      ['a 500', { status: 500 }],
+      ['a 404 — we asked wrong, the invoice id came from a verified payload', { status: 404 }],
+      ['an unparsable 200 body', { rawBody: 'not json' }],
+    ])(
+      '%s on the invoice read THROWS so the delivery comes back',
+      async (_label, args: { reject?: boolean; status?: number; rawBody?: string }) => {
+        // The posture choice: `ignored` is stamped processed and the
+        // dedup gate makes every retry a `duplicate`, so an unmade read
+        // answered `ignored` would drop the refund forever — and the
+        // D253 verdict pass only WATCHES rows that already carry a
+        // verdict, so nothing else would ever notice.
+        if (args.reject) {
+          vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+        } else {
+          stubInvoiceRead(args);
+        }
+        await expect(
+          keyed.mapWebhookEvent(withEventId(razorpayRefundEvent())),
+        ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR', status: 502 });
+      },
+    );
+
+    it('an invoice that names no subscription is ignored — a fact, not a failed read', async () => {
+      // Retrying re-reads the same invoice and gets the same answer
+      // forever, so this one is terminal on purpose.
+      stubInvoiceRead({ subscriptionId: null });
+      expect(await keyed.mapWebhookEvent(withEventId(razorpayRefundEvent()))).toEqual({
+        kind: 'ignored',
+        providerEventId: 'evt_rzp_test_000001',
+        eventType: 'refund.processed',
+      });
+    });
+
+    it('a payment no invoice created is ignored without asking — it belongs to no subscription', async () => {
+      const spy = stubInvoiceRead();
+      expect(
+        await keyed.mapWebhookEvent(withEventId(razorpayRefundEvent({ invoiceId: null }))),
+      ).toEqual({
+        kind: 'ignored',
+        providerEventId: 'evt_rzp_test_000001',
+        eventType: 'refund.processed',
+      });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('missing API keys throw rather than dropping the refund', async () => {
+      // `authHeader` fails closed. A misconfigured key pair is fixable
+      // inside the provider's retry window; an `ignored` here would not
+      // be fixable at all.
+      await expect(
+        makeAdapter({}).mapWebhookEvent(withEventId(razorpayRefundEvent())),
+      ).rejects.toMatchObject({ code: 'BILLING_NOT_PROVISIONED' });
+    });
+
+    it('a refund payload carries no subscription id — the reason the lookup exists', () => {
       // Pinning the PREMISE, not just the behaviour. If Razorpay ever
       // adds a subscription field to either entity, this fails and the
-      // mapping above should be revisited.
+      // round-trip above should be revisited.
       const body = razorpayRefundEvent() as {
         payload: { refund: { entity: unknown }; payment: { entity: unknown } };
       };
@@ -317,14 +570,14 @@ describe('RazorpayAdapter.mapWebhookEvent', () => {
         expect(Object.keys(entity as Record<string, unknown>)).not.toContain('subscription_id');
       }
       // The one documented link, and it is an API round-trip away.
-      expect((body.payload.payment.entity as { invoice_id: string }).invoice_id).toBe(
-        'inv_rzp0000000001',
-      );
+      expect((body.payload.payment.entity as { invoice_id: string }).invoice_id).toBe(INVOICE);
     });
 
-    it('still falls through to ignored for the non-terminal refund/dispute events', () => {
+    it('still falls through to ignored for the non-terminal refund/dispute events', async () => {
       // Regression guard: adding cases above must not change what the
-      // `default:` arm answers for everything else.
+      // `default:` arm answers for everything else — and none of them
+      // may reach the provider.
+      const spy = stubInvoiceRead();
       for (const event of [
         'refund.speed_changed',
         'payment.dispute.under_review',
@@ -332,10 +585,11 @@ describe('RazorpayAdapter.mapWebhookEvent', () => {
         'payment.captured',
       ]) {
         expect(
-          adapter.mapWebhookEvent(withEventId({ entity: 'event', event, payload: {} })),
+          await keyed.mapWebhookEvent(withEventId({ entity: 'event', event, payload: {} })),
           event,
         ).toEqual({ kind: 'ignored', providerEventId: 'evt_rzp_test_000001', eventType: event });
       }
+      expect(spy).not.toHaveBeenCalled();
     });
 
     it('a refund envelope verifies under the same signature scheme', () => {

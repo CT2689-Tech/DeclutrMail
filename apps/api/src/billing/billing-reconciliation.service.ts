@@ -678,13 +678,18 @@ export class BillingReconciliationService {
           // decision, 2026-08-13). They still release normally when the
           // period ends and the real `subscription.canceled` arrives.
           //
-          // No provider check guards this. Razorpay is unaffected today
-          // because its `providerCancellationFacts` returns null and its
-          // mapper mints no verdict, so no Razorpay row ever reaches
-          // here — the scope is enforced by that adapter's own
-          // behaviour. A hardcoded `provider !== 'razorpay'` would
-          // instead become a lockout the day Razorpay refunds are
-          // mapped, which is the exact bug this PR exists to remove.
+          // No provider check guards this, and that is now load-bearing
+          // rather than merely tidy. An earlier revision justified the
+          // absence by saying Razorpay could never reach here — its
+          // facts read returned null and its mapper minted no verdict.
+          // Both clauses died in this same branch: Razorpay now reads
+          // refunds and disputes, and its mapper resolves a subscription
+          // id through the invoice, so Razorpay rows DO reach here and
+          // settle. That is the point. A hardcoded
+          // `provider !== 'razorpay'` would have become a permanent
+          // lockout for every Indian customer at exactly that moment —
+          // the bug this feature removes, re-created by its own
+          // mitigation.
           //
           // BOTH sides must agree no dispute is involved, and they are
           // asking different questions. `facts.settled === 'refund'` is

@@ -573,7 +573,7 @@ describe('BillingWebhookService.process', () => {
 
   it('applies Razorpay events via notes attribution and flips pro tier', async () => {
     const fixture = razorpaySubscriptionEvent({ workspaceId });
-    const event = razorpay.mapWebhookEvent({ ...fixture, __eventId: 'evt_rzp_1' });
+    const event = await razorpay.mapWebhookEvent({ ...fixture, __eventId: 'evt_rzp_1' });
     const outcome = await service.process('razorpay', event, fixture);
     expect(outcome).toEqual({ kind: 'processed', effect: 'subscription:active' });
 
@@ -1550,7 +1550,7 @@ describe('BillingWebhookService.process', () => {
     });
     await service.process(
       'razorpay',
-      razorpay.mapWebhookEvent({ ...activate, __eventId: 'evt_rzp_act' }),
+      await razorpay.mapWebhookEvent({ ...activate, __eventId: 'evt_rzp_act' }),
       activate,
     );
 
@@ -1563,7 +1563,7 @@ describe('BillingWebhookService.process', () => {
     canceled.created_at = SEC;
     await service.process(
       'razorpay',
-      razorpay.mapWebhookEvent({ ...canceled, __eventId: 'evt_rzp_can' }),
+      await razorpay.mapWebhookEvent({ ...canceled, __eventId: 'evt_rzp_can' }),
       canceled,
     );
 
@@ -1580,7 +1580,7 @@ describe('BillingWebhookService.process', () => {
     tiedActive.created_at = SEC;
     const outcome = await service.process(
       'razorpay',
-      razorpay.mapWebhookEvent({ ...tiedActive, __eventId: 'evt_rzp_stale' }),
+      await razorpay.mapWebhookEvent({ ...tiedActive, __eventId: 'evt_rzp_stale' }),
       tiedActive,
     );
     expect(outcome.kind).not.toBe('processed');
@@ -1786,7 +1786,7 @@ describe('BillingWebhookService.process', () => {
       },
     };
 
-    const event = razorpay.mapWebhookEvent({ ...fixture, __eventId: 'evt_pii_rzp_1' });
+    const event = await razorpay.mapWebhookEvent({ ...fixture, __eventId: 'evt_pii_rzp_1' });
     await service.process('razorpay', event, fixture);
 
     const [row] = await db.select().from(subscriptionEvents);

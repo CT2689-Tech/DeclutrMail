@@ -81,7 +81,12 @@ export class BillingPaddleWebhookController {
     let event;
     try {
       payload = JSON.parse(rawBody.toString('utf8'));
-      event = this.adapter.mapWebhookEvent(payload);
+      // The seam allows an async mapper (Razorpay resolves a
+      // subscription id through the invoices API); Paddle's is
+      // synchronous and makes no network call — every payload it maps
+      // carries `subscription_id` inline. Awaited anyway so this call
+      // site does not silently become the one that forgets.
+      event = await this.adapter.mapWebhookEvent(payload);
     } catch {
       throw new AppException({ code: 'BAD_REQUEST', message: 'Malformed Paddle webhook body.' });
     }

@@ -301,6 +301,25 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
     ).toEqual({ kind: 'ignored', providerEventId: 'evt_x', eventType: 'customer.updated' });
     expect(() => adapter.mapWebhookEvent({ data: {} })).toThrow(/event_id/);
   });
+
+  it('maps SYNCHRONOUSLY and asks Paddle nothing — the seam allows async, this mapper is not', () => {
+    // The `BillingProvider` seam accepts a promise-returning mapper
+    // because Razorpay's must resolve a subscription id through the
+    // invoices API. Paddle's payloads carry `subscription_id` inline, so
+    // its mapper stays pure — and its own signature says so. A future
+    // edit that adds a fetch here has to change that signature and every
+    // synchronous call site, which is the point of not widening it.
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      const event = adapter.mapWebhookEvent(paddleAdjustmentCreated({ action: 'refund' }));
+      expect(event).not.toBeInstanceOf(Promise);
+      expect(event).toMatchObject({ kind: 'cancellation_scheduled', reason: 'refund' });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe('PaddleAdapter checkout + cancel', () => {

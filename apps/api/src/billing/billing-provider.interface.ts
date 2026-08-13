@@ -365,10 +365,28 @@ export interface BillingProvider {
   /**
    * Map a verified webhook body to its normalized domain effect.
    * Returns `kind: 'ignored'` for recognized-but-irrelevant events;
-   * throws only on envelopes missing the provider's documented
-   * required fields (surfaces as 400 — provider stops retrying).
+   * throws on envelopes missing the provider's documented required
+   * fields (surfaces as 400 — provider stops retrying) and on a
+   * provider read this mapping needed but could not make (surfaces as
+   * 5xx — the delivery stays in the provider's retry queue).
+   *
+   * MAY BE ASYNCHRONOUS, and the union is the point: some payloads
+   * cannot be normalized without asking the provider a question.
+   * Razorpay's refund and dispute entities carry `payment_id` and the
+   * payment carries `invoice_id`, but NONE of the three names a
+   * subscription — the one documented link is
+   * `GET /v1/invoices/{id}` → `subscription_id`, and
+   * `cancellation_scheduled` cannot be minted without it.
+   *
+   * A single `Promise<…>` return would have been simpler to consume but
+   * would force EVERY adapter's mapper to be async, erasing the one
+   * property worth keeping: Paddle's mapper is pure — its payloads carry
+   * `subscription_id` inline — and its signature still says so. Adding
+   * an outbound call to a mapper that declares itself synchronous is
+   * therefore a visible signature change, not a quiet edit. Callers
+   * `await` either way; awaiting a non-promise costs a microtask.
    */
-  mapWebhookEvent(payload: unknown): NormalizedBillingEvent;
+  mapWebhookEvent(payload: unknown): NormalizedBillingEvent | Promise<NormalizedBillingEvent>;
 
   /**
    * D249 reconciliation reads — the interface's only provider-truth

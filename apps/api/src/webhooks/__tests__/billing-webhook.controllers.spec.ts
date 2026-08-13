@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 
-import { subscriptionEvents, workspaces } from '@declutrmail/db';
+import { subscriptionEvents, subscriptions, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { HttpException } from '@nestjs/common';
@@ -103,6 +103,7 @@ describe('billing webhook controllers', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   describe('Paddle controller', () => {
@@ -226,6 +227,154 @@ describe('billing webhook controllers', () => {
       expect(await db.select().from(subscriptionEvents)).toHaveLength(1);
       const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
       expect(ws!.tier).toBe('pro');
+    });
+
+    it('400s on a verified-but-malformed envelope', async () => {
+      // The mapper's envelope guard is a REJECTION now (the mapper is
+      // async), and it must still land as the terminal 400 — not as the
+      // retryable 5xx the provider-read failure gets.
+      vi.stubEnv('RAZORPAY_WEBHOOK_SECRET', RAZORPAY_SECRET);
+      const controller = makeController();
+      const body = JSON.stringify({ entity: 'event', payload: {} }); // no `event`
+      await expect(
+        controller.receive(rawReq(body), razorpaySign(body), 'evt_rzp_ctrl_bad'),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    /**
+     * The async seam (D253). A Razorpay refund payload names no
+     * subscription, so the mapper resolves one through
+     * `GET /v1/invoices/{id}` — an outbound call, made from inside a
+     * webhook handler, which puts three things under test: it happens
+     * only AFTER the signature check, it ends the plan when it succeeds,
+     * and it refuses to guess when it fails.
+     */
+    describe('refund rail', () => {
+      const RZP_KEYS = { RAZORPAY_KEY_ID: 'rzp_test_key', RAZORPAY_KEY_SECRET: 'rzp_test_secret' };
+      const INVOICE = 'inv_rzp_ctrl_0001';
+      /** The annual charge, in paise — refund amount must equal it to end the plan. */
+      const PAID = 1_900_000;
+
+      /** Signed refund envelope for the fixture's subscription payment. */
+      function refundBody(): string {
+        return JSON.stringify({
+          entity: 'event',
+          account_id: 'acc_test00000001',
+          event: 'refund.processed',
+          contains: ['refund', 'payment'],
+          payload: {
+            refund: {
+              entity: {
+                id: 'rfnd_rzp_ctrl_1',
+                entity: 'refund',
+                amount: PAID,
+                payment_id: 'pay_rzp_ctrl_1',
+                status: 'processed',
+              },
+            },
+            payment: {
+              entity: {
+                id: 'pay_rzp_ctrl_1',
+                entity: 'payment',
+                amount: PAID,
+                status: 'captured',
+                invoice_id: INVOICE,
+              },
+            },
+          },
+          created_at: 1_781_430_100,
+        });
+      }
+
+      function stubInvoice(subscriptionId: string | null, status = 200): ReturnType<typeof vi.fn> {
+        const spy = vi.fn(async () =>
+          status === 200
+            ? new Response(
+                JSON.stringify({ id: INVOICE, entity: 'invoice', subscription_id: subscriptionId }),
+                { status: 200 },
+              )
+            : new Response('{}', { status }),
+        );
+        vi.stubGlobal('fetch', spy);
+        return spy;
+      }
+
+      it('verifies the signature BEFORE calling Razorpay — an unsigned body reaches no API', async () => {
+        vi.stubEnv('RAZORPAY_WEBHOOK_SECRET', RAZORPAY_SECRET);
+        vi.stubEnv('RAZORPAY_KEY_ID', RZP_KEYS.RAZORPAY_KEY_ID);
+        vi.stubEnv('RAZORPAY_KEY_SECRET', RZP_KEYS.RAZORPAY_KEY_SECRET);
+        const spy = stubInvoice('sub_rzp00000000001');
+        const controller = makeController();
+        const body = refundBody();
+
+        await expect(
+          controller.receive(rawReq(body), razorpaySign(body, 'wrong'), 'evt_rzp_unsigned'),
+        ).rejects.toMatchObject({ status: 401 });
+        // The whole reason the ordering matters: an unauthenticated
+        // request must never become outbound traffic (nor an event row).
+        expect(spy).not.toHaveBeenCalled();
+        expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+      });
+
+      it('ends the plan of a refunded Razorpay customer — the D253 chain, end to end', async () => {
+        vi.stubEnv('RAZORPAY_WEBHOOK_SECRET', RAZORPAY_SECRET);
+        vi.stubEnv('RAZORPAY_KEY_ID', RZP_KEYS.RAZORPAY_KEY_ID);
+        vi.stubEnv('RAZORPAY_KEY_SECRET', RZP_KEYS.RAZORPAY_KEY_SECRET);
+        const controller = makeController();
+
+        const activate = JSON.stringify(razorpaySubscriptionEvent({ workspaceId }));
+        expect(
+          await controller.receive(rawReq(activate), razorpaySign(activate), 'evt_rzp_act_1'),
+        ).toEqual({ status: 'processed' });
+
+        // The invoice names the subscription the fixture activated.
+        stubInvoice('sub_rzp00000000001');
+        const body = refundBody();
+        expect(
+          await controller.receive(rawReq(body), razorpaySign(body), 'evt_rzp_refund_1'),
+        ).toEqual({ status: 'processed' });
+
+        const [sub] = await db.select().from(subscriptions);
+        // `cancel_source` is what the D253 verdict pass selects on — with
+        // it null, no Razorpay row was ever watched, confirmed, or freed.
+        expect(sub!.cancelSource).toBe('refund');
+        expect(sub!.cancelAtPeriodEnd).toBe(true);
+        const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+        expect(ws!.tier).toBe('free');
+      });
+
+      it('answers a RETRYABLE 502 when the invoice read fails, and records nothing', async () => {
+        vi.stubEnv('RAZORPAY_WEBHOOK_SECRET', RAZORPAY_SECRET);
+        vi.stubEnv('RAZORPAY_KEY_ID', RZP_KEYS.RAZORPAY_KEY_ID);
+        vi.stubEnv('RAZORPAY_KEY_SECRET', RZP_KEYS.RAZORPAY_KEY_SECRET);
+        stubInvoice(null, 500);
+        const controller = makeController();
+        const body = refundBody();
+
+        await expect(
+          controller.receive(rawReq(body), razorpaySign(body), 'evt_rzp_unread'),
+        ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR', status: 502 });
+        // No dedup row, so the provider's redelivery re-drives from
+        // scratch. A 200 + `ignored` would have stamped this processed
+        // and dropped the refund permanently.
+        expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+      });
+
+      it('records an ignored event when the invoice names no subscription — never a guess', async () => {
+        vi.stubEnv('RAZORPAY_WEBHOOK_SECRET', RAZORPAY_SECRET);
+        vi.stubEnv('RAZORPAY_KEY_ID', RZP_KEYS.RAZORPAY_KEY_ID);
+        vi.stubEnv('RAZORPAY_KEY_SECRET', RZP_KEYS.RAZORPAY_KEY_SECRET);
+        stubInvoice(null);
+        const controller = makeController();
+        const body = refundBody();
+
+        expect(
+          await controller.receive(rawReq(body), razorpaySign(body), 'evt_rzp_unlinked'),
+        ).toEqual({ status: 'ignored' });
+        const [row] = await db.select().from(subscriptionEvents);
+        expect(row!.payload).toMatchObject({ kind: 'ignored' });
+        expect(row!.payload).not.toHaveProperty('provider_subscription_id');
+      });
     });
   });
 });
