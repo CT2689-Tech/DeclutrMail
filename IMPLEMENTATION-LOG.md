@@ -297,5 +297,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D249 | Billing reconciles against provider truth, not customer memory | 🔵 | #436, #441, #466 |  |  |
 | D250 | Landing page primary headline (reverses D223) | 🔵 | #468, #470 |  |  |
 | D251 | Autopilot splits on behaviour, not access | 🔵 | #465 |  |  |
+| D252 | Unsubscribe degrades honestly | 🔵 | #514 |  |  |
 
 <!-- AUTO:DECISIONS:END -->
