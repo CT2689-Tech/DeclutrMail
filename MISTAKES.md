@@ -2585,3 +2585,49 @@ operation, and a side-write (preference, counter, funnel event) must not
 outlive the dispatch it described.
 **Enforcement update:** none automated; fixed across triage + senders detail
 + overdue release on every action-status latch in the sibling PRs.
+
+## 2026-08-13 — A D-citation recorded a landing change that never happened
+**PR:** #517 (feat(web): deepen the answer-engine surface)
+**Caught by:** founder review — "Why did we modify landing page?"
+**What happened:** the SEO/AEO/GEO pass cited `Closes D134` ("Landing page
+10-section structure") alongside D128 and D132. It changed none of the ten
+sections. What it touched on that route was the shared marketing layout's
+JSON-LD description and the shared footer's link list — both render on
+every marketing page and both belong to D132's IA. The citation was
+inferred from "these files render on `/`" plus the precedent of four
+earlier PRs already sitting in D134's row, which is exactly the D38
+umbrella pattern. Worse, it had already been merged into the log: the
+generator preserves the PR cell as an overlay and only ever ADDS refs, so
+regenerating after fixing the PR body left `#517` on D134 — the stale ref
+had to be deleted by hand before `--check` agreed.
+**Correct approach:** cite the D whose stated scope the change actually
+alters, not the D whose page the changed file happens to render on. Shared
+layout and shell edits belong to the decision that motivated them. When a
+citation turns out to be wrong, fix the PR body AND hand-remove the ref
+from `IMPLEMENTATION-LOG.md`, then re-run to confirm it stays out.
+**Rule:** before writing `Closes D###`, read that D's body and name which
+of its sentences this diff changes — if you cannot, it is the wrong D.
+**Enforcement update:** none automated (the generator cannot know intent).
+The overlay's add-only behaviour is now documented in this entry so the
+next stale ref is removed rather than regenerated over.
+
+## 2026-08-13 — The share card dropped the undo qualifier the same PR was policing
+**PR:** #517
+**Caught by:** `design-system-agent` gate ([SUGGESTION], not blocking)
+**What happened:** the new `/inbox-simulator` Open Graph card described
+Archive as "Removes the Inbox label. Nothing is deleted. Reversible from
+Activity." The first two sentences are `ACTION_SEMANTICS.archive` verbatim;
+the third silently dropped "during your plan's Undo window" — while the
+`llms.txt` shipped in the SAME commit asks answer engines not to describe
+DeclutrMail as offering universal or unlimited undo. An unfurled card is
+the one surface that travels without its page, so it is the worst place to
+shorten a limit: the reader has no other context to correct it against.
+**Correct approach:** copy on a context-free surface (share card, meta
+description, JSON-LD, llms.txt) carries the qualifier with the claim, and
+takes the wording from the shared registry rather than a hand-written
+paraphrase that happens to fit the line.
+**Rule:** if a limit fits on the page it must fit on the card — pin the
+card's text to `ACTION_SEMANTICS`, never to a literal.
+**Enforcement update:** `marketing-metadata.test.ts` now asserts the card's
+source contains `ACTION_SEMANTICS.archive.activityUndo.summary` and no
+longer contains the "Reversible from Activity." shorthand.
