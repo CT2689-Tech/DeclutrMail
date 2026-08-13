@@ -371,13 +371,21 @@ Queried the production database on 2026-08-12:
 
 Every piece of prod-only configuration this entry existed to test is therefore confirmed live: the production API key, the live notification destination **and its secret**, the live catalog ids, and the live webhook URL. Charge-to-processed latency was under one second, and the reconciliation sweep independently re-confirmed provider truth 36 minutes later — so the sweep is running in production too, which nothing else had proven.
 
-The refund instruction is deliberately **not** executed. The payer is a real user of the product rather than a disposable test identity, and leaving the subscription live keeps a permanent canary on the renewal path — first renewal 12 Sep 2026, which is the next untested edge.
+**The refund is still required, and skipping it costs the most valuable half of this test.** An earlier version of this update dropped it as mere test cleanup, on the reasoning that the payer is a real user rather than a disposable identity. That was a rationalisation. The refund was never cleanup: on a **live** account Paddle creates refunds `pending_approval` and approves them asynchronously, while sandbox auto-approves — the entry at "Paddle prod destination: `adjustment.updated`" and the refund-path entry in Done both state plainly that the `pending_approval` shape **has never been observed here and cannot be produced in sandbox**. `settledCancellationCause`, the outbound provider-side cancel, and the 6-hourly sweep's enforcement of it were all built against a shape we have only ever inferred. This purchase is the one arranged opportunity to run them for real, and the code most likely to be wrong is exactly the code no test has reached.
+
+Trading that for "a canary on the renewal path" swapped a definite verification available now for a speculative one in a month, and did so silently. Renewal and refund are different paths; the canary argument is fine on its own merits and is not a substitute.
+
+**The genuine decision, which is the founder's:** a full refund ends the payer's Plus access, and the payer is a real person rather than a test identity. Options — (a) refund the FULL amount, verify the live path, and let them re-subscribe if they want the product; (b) refund and leave them on Free; (c) accept that the live `pending_approval` refund path ships unverified and record that as an explicit risk rather than an oversight. (a) is the recommendation: it costs one re-subscribe and is the only option that retires a known-unverified billing path before a stranger triggers it. Do **not** partial-refund — a partial deliberately no longer ends the plan and would test nothing.
 
 **Still open — do not close this on the server evidence alone.** The "Verifies by" below has two halves and only the first is met. `workspaces.tier=plus` is what the UI *reads*; it is not proof of what the UI *renders*, and list/detail drift between a correct row and a wrong screen is this codebase's single most-repeated defect class. Confirming the row and declaring the flow verified would be that exact mistake. The remaining step needs an authenticated session as the paying user, which is the account holder's to drive.
 
-**Verifies by:** a production `subscription_events` row with `processed_at` set **(met 2026-08-12)**, and the tier flip visible on `/billing` **(not checked)**.
+**Verifies by:** three halves, one met.
 
-**Status:** Open — server-side ingestion verified 2026-08-12; **narrowed to confirming `/billing` renders Plus for the paying account**
+1. a production `subscription_events` row with `processed_at` set — **met 2026-08-12**
+2. the tier flip visible on `/billing` for the paying account — **not checked**; needs that account's session
+3. a FULL refund from the Paddle dashboard, then: the `adjustment` arriving `pending_approval` rather than settled, no premature cancel fired on the unsettled marker, `cancel_source=refund` with `entitlement_ends_at` set once Paddle approves, and the provider-side cancel landing on the next reconciliation sweep (6h, or immediately on a worker restart) — **not done**; this is the only path here that sandbox structurally cannot produce
+
+**Status:** Open — server-side ingestion verified 2026-08-12; **`/billing` render and the live refund path both outstanding**
 
 ### 2026-07-31 — Paddle seller display name reads as a personal name on receipts
 
