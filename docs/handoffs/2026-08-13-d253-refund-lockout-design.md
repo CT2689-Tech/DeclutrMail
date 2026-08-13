@@ -1,7 +1,10 @@
 # D253 — A refunded customer must be able to buy again
 
 **Date:** 2026-08-13
-**Status:** v3 — v1 rejected by review; v2 amended after a fourth review. See "What v1 got wrong" and the monitoring section.
+**Status:** Ready to implement. v1 was rejected by three reviews; a fourth found
+two further holes in v2; v3's open question is closed by Paddle's documentation.
+See "What v1 got wrong", "The flipped row must stay monitored", and "An approved
+refund is final".
 **Branch:** `fix/d253-refund-repurchase-lockout`
 
 ---
@@ -154,29 +157,35 @@ It must be a **dedicated synthetic event**, not a forged provider snapshot with
 cancellation when it did not, which is the same assert-what-you-don't-know
 defect in the audit trail rather than the UI.
 
-### A reversed refund is a support case, and must be a loud one
+### An approved refund is final — settled by documentation
 
-If a settled refund is later reversed, the flipped row cannot simply be undone.
-`applyRevokedCancellation` clears `cancel_source` and `entitlement_ends_at` but
-leaves `status` alone (`billing-webhook.service.ts:926-966`), so entitlement is
-not restored — and if the customer has already repurchased, restoring the old
-row would collide with the singleton index anyway. The honest end state is a
-customer holding two valid payments and one entitlement.
+A fourth review raised a blocking contradiction: is settlement a one-way door,
+or can an approved refund be reversed? **Founder direction 2026-08-13: rely on
+Paddle's documentation.** It answers cleanly.
 
-That is resolved by a human, not by code: the monitoring above surfaces it, the
-existing `reverse_not_regranted … needs support` state names it, and the
-operator refunds whichever payment should not stand. What must not happen is
-silence.
+Paddle defines four adjustment statuses. `reversed` is _"set by Paddle when a
+`chargeback_reversal` or `credit_reversal` adjustment is created for this
+adjustment"_ — chargebacks and credits, **not refunds**. A refund goes
+`pending_approval` → `approved` | `rejected`, and both are terminal.
 
-**Unresolved, and worth one question to Paddle.** Paddle's documentation
-describes refunds as pending → approved/rejected, both final — which would make
-this branch unreachable. But this repository deliberately tests an
-approved-then-reversed refund (`paddle.adapter.ts:692-698`), added because a
-prior review caught that shape counting as neither settled nor refuted. One of
-those two is wrong. The founder has an open `sellers@paddle.com` thread; asking
-there is cheap. Until answered, the design assumes reversal is possible and
-carries the monitoring and the support path — which is the safe direction if the
-answer turns out to be "it cannot happen".
+So an approved full refund cannot be undone, the flip is safe from the
+refutation angle, and there is no reversed-refund branch to build. That deletes
+the whole support path this section previously described.
+
+**A load-bearing comment in the adapter is wrong and must be corrected in this
+PR.** `paddle.adapter.ts:692-697` states that _"checking only `rejected` on
+refunds left an approved-then-reversed refund counting as neither settled nor
+refuted, so its verdict stood forever"_ — describing a state the documentation
+says cannot occur. The **code** is fine: `UNDONE_STATUSES = {rejected, reversed}`
+is a harmless superset, since a refund can only ever reach `rejected` and a
+chargeback only `reversed`. Only the explanation is false, and it is not
+harmless — it is what produced a false blocking finding in review and sent this
+design building machinery for an impossible case. Correct the comment; leave the
+set alone.
+
+Chargebacks genuinely can be reversed (you win the dispute, `chargeback_reverse`
+arrives at `paddle.adapter.ts:856`). That carries no exposure here, because a
+settled chargeback never flips the row in the first place.
 
 ### Fix the unreachable short-circuit
 
@@ -269,14 +278,16 @@ guard and a test pinning that scope.
 
 ## End-to-end behaviour
 
-| Moment                       | Today                                  | After                                                      |
-| ---------------------------- | -------------------------------------- | ---------------------------------------------------------- |
-| Refund issued                | access stops instantly                 | unchanged                                                  |
-| Immediately after            | cannot buy for the rest of the period  | cannot buy — awaiting provider confirmation, told honestly |
-| Provider confirms the refund | nothing; locked to period end          | row flips to `canceled`; can buy again within ~10 min      |
-| Refund later reversed        | —                                      | support case, logged loudly; not silently re-granted       |
-| Chargeback settles           | locked out                             | unchanged — deliberate, founder decision                   |
-| Ordinary cancel              | keeps access to period end, cannot buy | unchanged — correct, they still hold the plan              |
+| Moment                       | Today                                  | After                                                         |
+| ---------------------------- | -------------------------------------- | ------------------------------------------------------------- |
+| Refund issued                | access stops instantly                 | unchanged                                                     |
+| Immediately after            | cannot buy for the rest of the period  | cannot buy — awaiting provider confirmation, told honestly    |
+| Provider confirms the refund | nothing; locked to period end          | row flips to `canceled`; can buy again within ~10 min         |
+| Refund rejected by Paddle    | pays on, holds no entitlement (bug)    | verdict lifted, entitlement restored                          |
+| Refund later reversed        | —                                      | cannot happen; approved refunds are terminal                  |
+| Chargeback settles           | locked out                             | unchanged — deliberate, founder decision                      |
+| Paddle keeps billing anyway  | —                                      | alert; the flipped row stays watched until Paddle is terminal |
+| Ordinary cancel              | keeps access to period end, cannot buy | unchanged — correct, they still hold the plan                 |
 
 ---
 
@@ -290,8 +301,10 @@ guard and a test pinning that scope.
   the live row, never the dead one, after a refund-then-repurchase.
 - Cancel-then-refund settles — the regression test for `:481`.
 - A settled **chargeback** does not flip the row and does not unlock checkout.
-- A refund reversed after settlement produces the loud support state, not a
-  re-grant and not a unique violation.
+- A refund Paddle **rejects** after a prior cancel reaches `liftRefutedVerdict`
+  and restores entitlement — the live bug at `:481`, pinned so it stays fixed.
+- A flipped row whose provider still reports active, past_due, a successful
+  payment, or no scheduled cancellation raises the alert rather than going quiet.
 - The verdict pass claims its `cron_runs` row, does not overlap itself, and the
   drift pass no longer enforces verdicts.
 - A row that cannot settle stops being retried after its attempt bound.
