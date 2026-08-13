@@ -10,7 +10,7 @@ import {
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
 import type { DrizzleDb } from '../../db/db.module.js';
@@ -814,6 +814,47 @@ describe('BillingWebhookService.process', () => {
       // the post-flip watch pass selects on these two columns.
       expect(row!.cancelSource).toBe('refund');
       expect(row!.entitlementEndsAt).not.toBeNull();
+    });
+
+    it('emits the SAME structured shape the dunning sweep does — the churn count must not have a blind side', async () => {
+      // `billing.subscription_ended` has two emitters: this service and
+      // `billing-reconciliation.sweep.ts`. A founder query keyed on
+      // `.kind === 'billing.subscription_ended'` is only correct if BOTH
+      // produce the identical shape — `this.logger.log()` would route
+      // through Nest's ConsoleLogger as unstructured text with no `kind`
+      // field, silently invisible to that exact query (ultrareview,
+      // 2026-08-14).
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      try {
+        await seedRefunded();
+        const [before] = await db.select().from(subscriptions);
+        await service.process(
+          'paddle',
+          settledEvent('evt_rs_shape', before!.providerSubscriptionId),
+          {
+            occurred_at: new Date().toISOString(),
+          },
+        );
+
+        const endedLines = logSpy.mock.calls
+          .map((call) => call[0])
+          .filter((line): line is string => typeof line === 'string')
+          .map((line) => JSON.parse(line) as Record<string, unknown>)
+          .filter((parsed) => parsed.kind === 'billing.subscription_ended');
+        expect(endedLines).toHaveLength(1);
+        // Exactly the sweep's shape — same keys, same `level`, `kind` as
+        // a plain string (not an enum tag), `reason` as a bare value.
+        expect(endedLines[0]).toEqual({
+          level: 'info',
+          kind: 'billing.subscription_ended',
+          workspaceId,
+          provider: 'paddle',
+          tier: 'plus',
+          reason: 'refund',
+        });
+      } finally {
+        logSpy.mockRestore();
+      }
     });
 
     it('REFUSES a row carrying no verdict — it can never cancel a healthy subscription', async () => {

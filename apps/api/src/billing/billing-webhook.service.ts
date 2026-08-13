@@ -1027,6 +1027,18 @@ export class BillingWebhookService {
    * here, a chargeback and an ordinary cancel arrive as provider
    * payloads, and dunning expiry is written by the sweep with no
    * provider event at all.
+   *
+   * `console.log(JSON.stringify(...))`, deliberately NOT
+   * `this.logger.log()`. This is the one emission point that has to
+   * match its sibling in `billing-reconciliation.sweep.ts` byte-for-byte
+   * — same `kind`, same shape — because a founder-facing count is only
+   * answerable if every ending path produces the SAME queryable line.
+   * `this.logger.log()` goes through Nest's `ConsoleLogger`, which
+   * prefixes plain text (`[Nest] <pid> - <ts>  LOG [Service] ...`) with
+   * no `kind` field — a `jq 'select(.kind == "billing.subscription_ended")'`
+   * over that output would silently miss every ending routed through
+   * this method (three of the four), while still matching the sweep's
+   * dunning line. Ultrareview, 2026-08-14.
    */
   private logSubscriptionEnded(
     workspaceId: string,
@@ -1034,8 +1046,15 @@ export class BillingWebhookService {
     tier: string,
     reason: 'refund' | 'chargeback' | 'voluntary' | 'dunning',
   ): void {
-    this.logger.log(
-      `billing.subscription_ended workspace=${workspaceId} provider=${provider} tier=${tier} reason=${reason}`,
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'billing.subscription_ended',
+        workspaceId,
+        provider,
+        tier,
+        reason,
+      }),
     );
   }
 
