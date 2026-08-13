@@ -156,6 +156,7 @@ import { runBillingReconciliationSweep } from './billing/billing-reconciliation.
 import { AutopilotReadService } from './autopilot/autopilot.read-service.js';
 import { BillingCatalog } from './billing/billing-catalog.js';
 import { BillingReconciliationService } from './billing/billing-reconciliation.service.js';
+import { billingVerdictDeps } from './billing/billing-verdict.deps.js';
 import { BillingWebhookService } from './billing/billing-webhook.service.js';
 import { PaddleAdapter } from './billing/paddle.adapter.js';
 import { RazorpayAdapter } from './billing/razorpay.adapter.js';
@@ -1997,20 +1998,11 @@ async function bootstrap(): Promise<void> {
    * <minute>` dedups the tick, and the worker's `cron_runs` claim makes a
    * double-fire a durable no-op.
    */
-  const billingVerdictWorker = new BillingVerdictWorker({
-    db,
-    // `runIndex` MUST be forwarded. Both passes take the one hash
-    // bucket it names, so a wrapper that dropped it pinned production to
-    // bucket 0 on every run and starved every other bucket permanently —
-    // the exact bug the round-robin exists to prevent, reintroduced in
-    // the wiring while every test passed (Codex stop-review round 3,
-    // 2026-08-13). TypeScript allowed it because a zero-arg function is
-    // assignable to a one-arg seam; the parameter is now required rather
-    // than defaulted, so omitting it is a compile error instead of a
-    // silent production-only defect.
-    enforceLocalVerdicts: (runIndex) => billingReconciliationService.enforceLocalVerdicts(runIndex),
-    watchSettledRefunds: (runIndex) => billingReconciliationService.watchSettledRefunds(runIndex),
-  });
+  // Wiring extracted to `billing-verdict.deps.ts` so it can be tested.
+  // Inline here it broke twice invisibly — see that file's header.
+  const billingVerdictWorker = new BillingVerdictWorker(
+    billingVerdictDeps(db, billingReconciliationService),
+  );
   billingVerdictWorker.setObserver(observer);
   billingVerdictWorker.setDeadLetterRecorder(deadLetterRecorder);
 
