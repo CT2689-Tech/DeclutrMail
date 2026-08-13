@@ -62,7 +62,7 @@ the point.
   three states in play — shipped (no floor), uncommitted (arbitrary floor),
   proposed (outcome ranking). Triage all three together.
   **Resolved 2026-08-08 (#477):** outcome ranking shipped; the arbitrary
-  `10`/`3` floor was deleted rather than merged. a beta user
+  `10`/`3` floor was deleted rather than merged. The beta user's account
   itself is production-only and was never reachable from this checkout.
 
 - **2026-08-07** · `/settings/senders` — **the protected-senders list never says
@@ -487,7 +487,7 @@ stops future mail while existing inbox mail stays put unless a backlog
 action is chosen separately, so its notice should speak to future mail.)
 
 **Edges.** Zero weak protections → show only the reassurance line, which is
-itself the win. the second test mailbox is 0 strong / 2 weak, so the copy must not
+itself the win. The second test mailbox is 0 strong / 2 weak, so the copy must not
 read as failure when the strong count is 0. Unprotect moves no mail, so there is no undo
 window to explain — but it is not freely reversible either: D245 makes a
 manual Unprotect a STICKY override, so automatic protection will not

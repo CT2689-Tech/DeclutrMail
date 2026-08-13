@@ -363,15 +363,18 @@ Each piece has a documented rationale and each is right on its own. The composit
 
 It is also a revenue path, not only a trust one. A goodwill full refund is an ordinary support gesture, and today it makes that customer unable to pay again for the rest of the period.
 
-**How:** decide the intended behaviour, then one of —
+**Do not "just loosen the checkout guard".** That was this entry's first recommendation and it is strictly worse than the bug. `subscriptions_one_live_per_workspace` is live in production — `UNIQUE (workspace_id) WHERE status IN ('active','past_due')` (migration `0051_billing_reconciliation.sql:72`, confirmed present in the prod database 2026-08-12). A refunded row sits in `active`. Let checkout through while it is still there and the customer pays, `subscription.created` tries to insert a second `active` row for the same workspace, the index rejects it, and the webhook retries forever: **charged, no entitlement.** That is the identical failure this file already worked through for the paused-row sibling case — "the customer is charged while our DB refuses to record it. Strictly worse than no index." Trading "cannot buy" for "buys and receives nothing" is not a fix.
 
-(a) narrow the checkout guard to ignore rows whose entitlement has already lapsed (`entitlement_ends_at <= now()`) — a refunded row is not a live subscription in any meaningful sense;
-(b) transition refunded rows out of `active` when entitlement ends rather than when the period ends;
-(c) leave the guard and fix the message — tell the user the date they can subscribe again instead of a bare `SUBSCRIPTION_EXISTS`.
+The guard and the index key on the same thing (`status`), so any real fix has to move the row's *status*, not special-case one of the two readers. Note the tempting shortcut is impossible: the lapsed-entitlement condition cannot go into the index predicate, because Postgres requires index predicates to be IMMUTABLE and `now()` is not.
 
-Recommend (a) plus (c)'s message. Billing BE change, so §9 stop-condition review applies.
+**How:** decide the intended behaviour, then —
 
-**Verifies by:** on a workspace whose only subscription is a fully-refunded row with `entitlement_ends_at` in the past, `POST /api/billing/checkout` returns a checkout rather than `SUBSCRIPTION_EXISTS`; a still-entitled active row still refuses.
+(a) **Safe now, incomplete:** leave both guard and index alone and fix the message — tell the user the date they can subscribe again rather than a bare `SUBSCRIPTION_EXISTS`. Costs nothing, removes the confusion, leaves the customer still unable to pay.
+(b) **The real fix, needs design:** transition a refunded row out of `active` once entitlement lapses, so guard and index agree it is no longer live. The hazard to design against is provider reconciliation — Paddle reports the subscription `active` with `scheduled_change: cancel` until the period ends, so the 6-hourly sweep can flip a locally-terminal row back to `active`. If it does that *after* the customer has re-subscribed, the sweep's own write is the one that violates the index. Whatever shape this takes needs the sweep and the projector to share one definition of "live", rather than the sweep mirroring the provider while the guard reads a local column.
+
+Recommend shipping (a) immediately and scheduling (b). Billing BE change, so §9 stop-condition review applies to both.
+
+**Verifies by:** (a) a refunded workspace hitting checkout sees a message naming the date, not `SUBSCRIPTION_EXISTS`. (b) on a workspace whose only subscription is a fully-refunded row with lapsed entitlement, `POST /api/billing/checkout` returns a checkout, the resulting `subscription.created` **inserts without violating `subscriptions_one_live_per_workspace`**, and a reconciliation sweep run immediately afterwards does not resurrect the old row or fail its own write. A still-entitled active row must still refuse.
 
 **Status:** Open
 
