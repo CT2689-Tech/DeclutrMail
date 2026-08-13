@@ -4,6 +4,7 @@ import { cronRuns } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { BILLING_VERDICT_INTERVAL_MS } from './billing-verdict.queue.js';
 import type { WorkerContext } from './worker-context.js';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
@@ -77,7 +78,7 @@ export interface BillingVerdictDeps {
    * `BillingReconciliationService` (and its provider adapters, catalog
    * and Nest DI) lives. The composition root binds the method.
    */
-  enforceLocalVerdicts: () => Promise<{
+  enforceLocalVerdicts: (runIndex: number) => Promise<{
     enforced: number;
     unenforced: number;
     refuted: number;
@@ -87,7 +88,7 @@ export interface BillingVerdictDeps {
    * The READ-ONLY half: detect a provider still billing a customer whose
    * subscription row we canceled locally. Same seam rationale as above.
    */
-  watchSettledRefunds: () => Promise<{
+  watchSettledRefunds: (runIndex: number) => Promise<{
     watched: number;
     rebilling: number;
     unreadable: number;
@@ -157,6 +158,24 @@ export class BillingVerdictWorker extends BaseDeclutrWorker<
     const startedAt = Date.now();
     const runKey = `${this.workerName}:${payload.scheduledAtMinute}`;
 
+    // A counter that advances by exactly ONE per scheduled run, derived
+    // from the run's own minute rather than stored anywhere. Both passes
+    // partition their rows into buckets and take the bucket this index
+    // names, so every row is examined at least once every `buckets`
+    // runs — a hard bound instead of "eventually, probably" (D253).
+    //
+    // The stride MUST be one. Dividing by this worker's own interval is
+    // what guarantees that: a counter advancing by the cadence itself
+    // (e.g. raw minutes, +10 per run) against a bucket count that shares
+    // a factor with it would resonate and revisit the same buckets
+    // forever — the starvation this replaced, one level up.
+    //
+    // A retry of the same minute reuses the same index, which is correct:
+    // it is the same logical run and should examine the same slice.
+    const runIndex = Math.floor(
+      Date.parse(`${payload.scheduledAtMinute}:00Z`) / BILLING_VERDICT_INTERVAL_MS,
+    );
+
     // D225 durable claim. `setWhere` makes the conflict-update a no-op
     // when the slot already SUCCEEDED — RETURNING is then empty and we
     // bail idempotently. A 'running'/'failed' conflict row is a retry
@@ -189,7 +208,7 @@ export class BillingVerdictWorker extends BaseDeclutrWorker<
 
     let verdicts: Awaited<ReturnType<BillingVerdictDeps['enforceLocalVerdicts']>>;
     try {
-      verdicts = await this.deps.enforceLocalVerdicts();
+      verdicts = await this.deps.enforceLocalVerdicts(runIndex);
     } catch (err) {
       // Release the slot as 'failed' before rethrowing: the base class
       // retries per cronPolicy and the retry must be able to re-claim
@@ -202,7 +221,7 @@ export class BillingVerdictWorker extends BaseDeclutrWorker<
     let watch = { watched: 0, rebilling: 0, unreadable: 0 };
     let watchFailed = false;
     try {
-      watch = await this.deps.watchSettledRefunds();
+      watch = await this.deps.watchSettledRefunds(runIndex);
     } catch (err) {
       watchFailed = true;
       const error = err instanceof Error ? err : new Error(String(err));

@@ -30,23 +30,27 @@ type Seams = Pick<BillingVerdictDeps, 'enforceLocalVerdicts' | 'watchSettledRefu
 function makeSeams(fail: { enforce?: Error; watch?: Error } = {}): {
   seams: Seams;
   calls: string[];
+  runIndexes: number[];
 } {
   const calls: string[] = [];
+  const runIndexes: number[] = [];
   const seams: Seams = {
-    enforceLocalVerdicts: () => {
+    enforceLocalVerdicts: (runIndex: number) => {
       calls.push('enforce');
+      runIndexes.push(runIndex);
       return fail.enforce
         ? Promise.reject(fail.enforce)
         : Promise.resolve({ enforced: 2, unenforced: 1, refuted: 1, settled: 4 });
     },
-    watchSettledRefunds: () => {
+    watchSettledRefunds: (runIndex: number) => {
       calls.push('watch');
+      runIndexes.push(runIndex);
       return fail.watch
         ? Promise.reject(fail.watch)
         : Promise.resolve({ watched: 3, rebilling: 1, unreadable: 1 });
     },
   };
-  return { seams, calls };
+  return { seams, calls, runIndexes };
 }
 
 const CTX: WorkerContext = {
@@ -224,5 +228,41 @@ describe('BillingVerdictWorker', () => {
     } finally {
       logSpy.mockRestore();
     }
+  });
+
+  // Both passes partition their rows and take the slice this index
+  // names, so every row is examined at least once every `buckets` runs.
+  // That bound is worth exactly as much as the stride below.
+  it('hands both seams a run index that advances by exactly ONE per run', async () => {
+    const db = await freshTestDb();
+    const { seams, runIndexes } = makeSeams();
+    const worker = new BillingVerdictWorker({ db: db as never, ...seams });
+
+    // Three consecutive scheduled runs at the real 10-minute cadence.
+    for (const minute of ['2026-08-12T06:00', '2026-08-12T06:10', '2026-08-12T06:20']) {
+      await worker.processJob({ scheduledAtMinute: minute }, CTX);
+    }
+
+    // Both seams within a run see the SAME index — they slice the same
+    // population and must agree on which slice this run owns.
+    expect(runIndexes).toHaveLength(6);
+    const [enforce0, watch0, enforce1, watch1, enforce2, watch2] = runIndexes as [
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+    ];
+    expect(watch0).toBe(enforce0);
+    expect(watch1).toBe(enforce1);
+    expect(watch2).toBe(enforce2);
+
+    // Stride of exactly one. A counter advancing by the cadence instead
+    // (raw minutes, +10 per run) would resonate against any bucket count
+    // sharing a factor with 10 and revisit the same buckets forever —
+    // reintroducing the starvation one level up.
+    expect(enforce1 - enforce0).toBe(1);
+    expect(enforce2 - enforce1).toBe(1);
   });
 });

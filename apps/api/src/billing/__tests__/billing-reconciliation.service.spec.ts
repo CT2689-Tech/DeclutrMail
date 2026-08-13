@@ -1004,7 +1004,15 @@ describe('BillingReconciliationService (D249)', () => {
     // and should not. It is that REPEATED passes reach past the cap.
     // A single-pass test is exactly what missed this (Codex
     // stop-review, 2026-08-13).
-    const TOTAL = 130; // > VERDICT_PASS_MAX_ROWS
+    // 300 rows at a 60-row bucket target is 5 buckets, each comfortably
+    // under the 100 cap. The RATIO is chosen deliberately: at 130 rows a
+    // random-only selection covers everything in three runs about 99% of
+    // the time, so a test at that size PASSES against the broken
+    // implementation most runs — which is precisely the "unbounded
+    // probabilistic delay" being fixed, showing up as a flaky test
+    // instead of a caught bug. At 3× the cap, random-only misses ~40
+    // rows and fails every time.
+    const TOTAL = 300;
     // Seeded `paused`, not `active`, purely so one workspace can hold
     // them all: `subscriptions_one_live_per_workspace` covers
     // active/past_due only. `paused` is in the verdict selector, which
@@ -1042,11 +1050,47 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    for (let pass = 0; pass < 6; pass += 1) await svc.enforceLocalVerdicts();
+    // The bound, not a probability. 5 buckets means FIVE consecutive run
+    // indices must cover the whole population — the guarantee the
+    // round-robin makes and `random()` alone cannot (Codex stop-review
+    // round 2: "random sampling replaces permanent starvation with
+    // unbounded probabilistic delay"). Consecutive indices, because the
+    // run index advances by exactly one per scheduled run.
+    for (let runIndex = 0; runIndex < 5; runIndex += 1) {
+      await svc.enforceLocalVerdicts(runIndex);
+    }
 
-    // Under `ORDER BY updated_at ASC` this is exactly 100, every run,
-    // no matter how many passes execute.
+    // Exhaustive, not "most of them". Under `updated_at ASC` this is
+    // exactly 100 however many passes run; under random-only it lands
+    // around 260.
+    expect(everAsked.size).toBe(TOTAL);
     expect(everAsked.size).toBeGreaterThan(VERDICT_PASS_MAX_ROWS);
+  });
+
+  it('the round-robin is a no-op below the bucket target', async () => {
+    // The partition only engages under load. At real volume — which is
+    // where this product actually is — there is one bucket and every
+    // row is examined every run, so no customer waits for their slice
+    // to come around.
+    await seedVerdictRow({ cancelSource: 'refund', providerSubscriptionId: 'sub_only' });
+    const asked: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async (id) => ({
+          kind: 'found',
+          subscription: { ...activePlusSub(id, new Date()), cancelAtPeriodEnd: true },
+        }),
+        providerCancellationFacts: async (id) => {
+          asked.push(id);
+          return { settled: null, refuted: { refund: false, chargeback: false } };
+        },
+      }),
+    );
+
+    // Any run index, same answer — no row is ever skipped for being in
+    // "another bucket" when there is only one.
+    for (const runIndex of [0, 1, 7, 12345]) await svc.enforceLocalVerdicts(runIndex);
+    expect(asked).toEqual(['sub_only', 'sub_only', 'sub_only', 'sub_only']);
   });
 
   // ── D253 — the flipped row stays watched ──────────────────────────

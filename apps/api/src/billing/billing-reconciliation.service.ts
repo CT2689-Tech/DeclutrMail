@@ -38,7 +38,7 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { pendingCheckouts, subscriptions, users } from '@declutrmail/db';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
@@ -136,28 +136,50 @@ const DRIFT_SWEEP_TRIP_AFTER = 3;
 export const VERDICT_PASS_MAX_ROWS = 100;
 
 /**
- * Selection order for the two CAPPED verdict passes, and the reason they
- * are not ordered by `updated_at` like every other sweep in this file.
+ * Deterministic round-robin over a capped pass, and why the two verdict
+ * passes cannot simply order by `updated_at` like the rest of this file.
  *
  * A row the provider has not settled yet writes NOTHING — that is the
  * whole point of the restraint. So its `updated_at` never moves, and
  * `ORDER BY updated_at ASC LIMIT n` returns the *same* n rows on every
  * run, forever. Not "until the backlog drains": there is no drain, the
  * leading rows are precisely the ones that cannot progress. Row n+1 is
- * never examined again.
+ * never examined again — silent, permanent, and on a revenue path, since
+ * a refunded customer behind the cap could never buy again.
  *
- * That is silent, permanent, and sits on a revenue path — a refunded
- * customer behind the cap could never buy again, which is the exact bug
- * D253 exists to remove, re-created by its own mitigation. (Codex
- * stop-review, 2026-08-13. An earlier revision of this file named the
- * starvation mechanism in a comment and capped anyway.)
+ * Two review rounds shaped the answer (Codex stop-review, 2026-08-13):
  *
- * Random selection makes coverage eventual regardless of how many rows
- * carry verdicts, at the cost of oldest-first fairness — which is the
- * property causing the starvation, so losing it is the fix rather than
- * a concession. At a ten-minute cadence a row still gets many looks a
- * day. Hitting the cap is logged, never silent.
+ *  1. An earlier revision named that starvation in a comment and capped
+ *     anyway.
+ *  2. The first fix was `ORDER BY random()`. That removes the permanent
+ *     starvation but replaces it with an UNBOUNDED probabilistic delay —
+ *     coverage becomes eventual-in-the-limit with no guarantee for any
+ *     particular row, which is not good enough when the row is a
+ *     customer waiting to be allowed to pay us.
+ *
+ * So the population is partitioned into `ceil(total / target)` buckets by
+ * a stable hash of the subscription id, and each run takes the single
+ * bucket its run index names. Every row is therefore examined at least
+ * once every `buckets` runs — a hard bound of `buckets × cadence`, not a
+ * probability. The run index comes from the job's own scheduled minute,
+ * so it advances by exactly one per run and needs no stored cursor.
+ *
+ * Below the target the whole thing vanishes: one bucket, every row every
+ * run, which is the state this product is actually in. The machinery
+ * only engages under a load that does not exist yet.
+ *
+ * `BUCKET_TARGET_ROWS` is under the cap on purpose. Hash buckets are not
+ * perfectly even, and a bucket that overflowed the cap would be
+ * truncated at the same rows every run — the original bug, one level
+ * down. The slack makes that unlikely, ordering WITHIN a bucket is
+ * random so a truncated bucket still rotates, and filling the cap is
+ * logged either way.
  */
+const BUCKET_TARGET_ROWS = 60;
+
+/** Order within the selected bucket. Only matters if a bucket ever
+ *  overflows the cap — then it keeps the truncated tail rotating rather
+ *  than starving the same rows (see `bucketPredicate`). */
 const RANDOM_ROW_ORDER = sql`random()`;
 
 /** How long to keep watching a refund-canceled row whose
@@ -203,6 +225,41 @@ export class BillingReconciliationService {
   }
 
   /**
+   * The bucket this run owns, as a SQL predicate — or `undefined` when
+   * the whole population fits in one pass, which is the normal case and
+   * costs nothing.
+   *
+   * `hashtext` is Postgres's own stable string hash, so the partition is
+   * consistent across runs and processes without storing anything. It
+   * can return negative values (including INT_MIN, which is why `abs`
+   * would be wrong on its own), so the modulus is taken first and the
+   * sign corrected after — `((h % b) + b) % b` is always in `[0, b)`.
+   *
+   * `buckets` is recomputed from the live count every run, so the
+   * partition adapts as the backlog grows or drains. A row can therefore
+   * change bucket between runs; that is harmless, because the guarantee
+   * is "examined within `buckets` runs", not "always in bucket k".
+   */
+  private async bucketPredicate(
+    where: SQL,
+    runIndex: number,
+  ): Promise<{ predicate: SQL | undefined; buckets: number; total: number }> {
+    const [row] = await this.db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(subscriptions)
+      .where(where);
+    const total = row?.total ?? 0;
+    const buckets = Math.max(1, Math.ceil(total / BUCKET_TARGET_ROWS));
+    if (buckets === 1) return { predicate: undefined, buckets, total };
+    const bucket = ((Math.trunc(runIndex) % buckets) + buckets) % buckets;
+    return {
+      predicate: sql`((hashtext(${subscriptions.providerSubscriptionId}) % ${buckets}::int) + ${buckets}::int) % ${buckets}::int = ${bucket}::int`,
+      buckets,
+      total,
+    };
+  }
+
+  /**
    * A capped pass that fills its cap has NOT seen everything, and must
    * say so. Random selection (see `RANDOM_ROW_ORDER`) makes coverage
    * eventual rather than guaranteed within one run, so the honest
@@ -213,10 +270,18 @@ export class BillingReconciliationService {
    * Reaching this at all means verdict volume outgrew a cadence sized
    * for a handful of refunds, which is an operational signal in itself.
    */
-  private warnIfCapped(rowCount: number, pass: 'verdict' | 'refund_watch'): void {
+  private warnIfCapped(
+    rowCount: number,
+    pass: 'verdict' | 'refund_watch',
+    slice: { buckets: number; total: number },
+  ): void {
     if (rowCount < VERDICT_PASS_MAX_ROWS) return;
+    // Only reachable when a hash bucket came out well above target, so
+    // the round-robin's bound no longer holds for this bucket's tail.
+    // Random ordering within the bucket keeps it rotating, but the
+    // deterministic guarantee is gone and that is worth saying out loud.
     this.logger.warn(
-      `billing.reconcile.pass_capped pass=${pass} rows=${rowCount} cap=${VERDICT_PASS_MAX_ROWS} — more rows carry verdicts than one pass examines; selection is random so coverage is eventual, but latency on any single row is no longer bounded by the cadence`,
+      `billing.reconcile.pass_capped pass=${pass} rows=${rowCount} cap=${VERDICT_PASS_MAX_ROWS} buckets=${slice.buckets} total=${slice.total} — a hash bucket overflowed the cap, so this run truncated it; coverage stays eventual via random ordering but the per-row bound no longer holds. Lower BUCKET_TARGET_ROWS if this repeats`,
     );
   }
 
@@ -533,7 +598,12 @@ export class BillingReconciliationService {
    * every renewal window we can bill on, and it buys the retry
    * durability an inline call would not have.
    */
-  async enforceLocalVerdicts(): Promise<VerdictPassResult> {
+  async enforceLocalVerdicts(runIndex = 0): Promise<VerdictPassResult> {
+    const eligible = and(
+      inArray(subscriptions.cancelSource, ['refund', 'chargeback']),
+      inArray(subscriptions.status, ['active', 'past_due', 'paused']),
+    )!;
+    const slice = await this.bucketPredicate(eligible, runIndex);
     const rows = await this.db
       .select({
         provider: subscriptions.provider,
@@ -541,15 +611,10 @@ export class BillingReconciliationService {
         cancelSource: subscriptions.cancelSource,
       })
       .from(subscriptions)
-      .where(
-        and(
-          inArray(subscriptions.cancelSource, ['refund', 'chargeback']),
-          inArray(subscriptions.status, ['active', 'past_due', 'paused']),
-        ),
-      )
+      .where(slice.predicate ? and(eligible, slice.predicate) : eligible)
       .orderBy(RANDOM_ROW_ORDER)
       .limit(VERDICT_PASS_MAX_ROWS);
-    this.warnIfCapped(rows.length, 'verdict');
+    this.warnIfCapped(rows.length, 'verdict', slice);
 
     let enforced = 0;
     let unenforced = 0;
@@ -866,11 +931,24 @@ export class BillingReconciliationService {
    * back to a fixed window from the refund. Both make the pass
    * self-terminating with no schema change.
    */
-  async watchSettledRefunds(): Promise<{
+  async watchSettledRefunds(runIndex = 0): Promise<{
     watched: number;
     rebilling: number;
     unreadable: number;
   }> {
+    const eligible = and(
+      eq(subscriptions.status, 'canceled'),
+      eq(subscriptions.cancelSource, 'refund'),
+      // `interval '1 day' * n::int` rather than a string-built
+      // `interval 'n days'` — the multiplication takes a bound
+      // parameter, so the window constants stay TypeScript values
+      // instead of being interpolated into SQL text.
+      sql`now() <= COALESCE(
+            ${subscriptions.currentPeriodEnd},
+            ${subscriptions.entitlementEndsAt} + interval '1 day' * ${REFUND_WATCH_FALLBACK_DAYS}::int
+          ) + interval '1 day' * ${REFUND_WATCH_GRACE_DAYS}::int`,
+    )!;
+    const slice = await this.bucketPredicate(eligible, runIndex);
     const rows = await this.db
       .select({
         provider: subscriptions.provider,
@@ -878,23 +956,10 @@ export class BillingReconciliationService {
         workspaceId: subscriptions.workspaceId,
       })
       .from(subscriptions)
-      .where(
-        and(
-          eq(subscriptions.status, 'canceled'),
-          eq(subscriptions.cancelSource, 'refund'),
-          // `interval '1 day' * n::int` rather than a string-built
-          // `interval 'n days'` — the multiplication takes a bound
-          // parameter, so the window constants stay TypeScript values
-          // instead of being interpolated into SQL text.
-          sql`now() <= COALESCE(
-                ${subscriptions.currentPeriodEnd},
-                ${subscriptions.entitlementEndsAt} + interval '1 day' * ${REFUND_WATCH_FALLBACK_DAYS}::int
-              ) + interval '1 day' * ${REFUND_WATCH_GRACE_DAYS}::int`,
-        ),
-      )
+      .where(slice.predicate ? and(eligible, slice.predicate) : eligible)
       .orderBy(RANDOM_ROW_ORDER)
       .limit(VERDICT_PASS_MAX_ROWS);
-    this.warnIfCapped(rows.length, 'refund_watch');
+    this.warnIfCapped(rows.length, 'refund_watch', slice);
 
     let watched = 0;
     let rebilling = 0;
