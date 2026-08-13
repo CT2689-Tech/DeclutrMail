@@ -50,6 +50,36 @@ const API_TIMEOUT_MS = 10_000;
  */
 const TOTAL_COUNT = { monthly: 100, annual: 50 } as const;
 
+/**
+ * Page size asked of a Razorpay `collection` listing. `count` defaults
+ * to 10 and the endpoints that document a maximum cap it at 100 — but
+ * several "fetch all" endpoints (invoices by subscription) do not
+ * document `count` at all. So the walk advances by what a page ACTUALLY
+ * returned and stops on an empty one, never by the size it asked for: an
+ * endpoint that ignored `count` would return 10 rows, look shorter than
+ * the page, and be read as exhausted.
+ */
+const LIST_PAGE = 100;
+
+/**
+ * Bound on one listing walk. Hitting it means the list was NOT read, and
+ * the caller is told exactly that — a partial scan is the "which page
+ * was the chargeback on?" bug in a subtler form, and `settled` gates
+ * whether a refunded customer may buy again (D253).
+ */
+const LIST_MAX_PAGES = 50;
+
+/**
+ * Dispute phases where the merchant's money is actually at stake.
+ * `fraud` (the bank suspects a fraudulent transaction) and `retrieval`
+ * (the customer asked their issuer for transaction details) deduct
+ * nothing — they are Razorpay's shape of Paddle's `chargeback_warning`,
+ * which this system has never treated as plan-ending either. Counting
+ * them would revoke a paying customer over a question their bank asked.
+ * https://razorpay.com/docs/api/disputes/entity/
+ */
+const CHARGEBACK_PHASES = new Set(['chargeback', 'pre_arbitration', 'arbitration']);
+
 /** Razorpay subscription entity fields this adapter reads. */
 interface RazorpaySubscription {
   id: string;
@@ -95,12 +125,42 @@ function toNormalizedSubscription(entity: RazorpaySubscription): NormalizedSubsc
   };
 }
 
+/**
+ * Invoice entity fields the cancellation-facts read uses. A subscription
+ * invoice is the only documented link from a subscription to the PAYMENT
+ * a refund or dispute is keyed to (`subscription_id` → `payment_id`).
+ * `amount_paid` is what that payment actually collected, so it is the
+ * comparand for "was the whole charge returned?".
+ */
+interface RazorpayInvoice {
+  payment_id?: string | null;
+  amount_paid?: number | null;
+}
+
+/** Refund entity fields read by `providerCancellationFacts`. */
+interface RazorpayRefund {
+  amount?: number | null;
+  /** `pending` | `processed` | `failed`. */
+  status?: string | null;
+}
+
+/** Dispute entity fields read by `providerCancellationFacts`. */
+interface RazorpayDispute {
+  payment_id?: string | null;
+  /** `open` | `under_review` | `won` | `lost` | `closed`. */
+  status?: string | null;
+  /** `fraud` | `retrieval` | `chargeback` | `pre_arbitration` | `arbitration`. */
+  phase?: string | null;
+}
+
 /** Razorpay webhook envelope. */
 interface RazorpayWebhookBody {
   event?: string;
   payload?: {
     subscription?: { entity?: RazorpaySubscription };
-    payment?: { entity?: { id?: string } };
+    payment?: { entity?: { id?: string; invoice_id?: string | null } };
+    refund?: { entity?: { id?: string; payment_id?: string } };
+    dispute?: { entity?: { id?: string; payment_id?: string } };
   };
 }
 
@@ -295,18 +355,169 @@ export class RazorpayAdapter implements BillingProvider {
   }
 
   /**
-   * Always `unknown` — deliberately, and it costs nothing today: this
-   * adapter maps no refund or chargeback event, so no Razorpay row ever
-   * carries a `cancel_source` verdict for the outbound cancel to act on.
-   * Answering `unknown` rather than `none` keeps that honest: the day
-   * Razorpay refunds ARE mapped, the gate fails closed (no outbound
-   * cancel) instead of silently claiming the provider confirmed nothing.
+   * Authenticated GET of a Razorpay `collection`, walked to exhaustion.
+   *
+   * Returns `null` when the list could not be read IN FULL — network
+   * failure, non-2xx, unreadable body, or a listing longer than the page
+   * bound. A partial read is not a shorter answer, it is NO answer: the
+   * page we did not fetch is exactly where a live chargeback would hide.
+   */
+  private async listCollection<T>(path: string, label: string): Promise<T[] | null> {
+    const auth = this.authHeader();
+    const items: T[] = [];
+    let skip = 0;
+    for (let page = 0; page < LIST_MAX_PAGES; page += 1) {
+      const sep = path.includes('?') ? '&' : '?';
+      const url = `${API_BASE}${path}${sep}count=${LIST_PAGE}&skip=${skip}`;
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          headers: { Authorization: auth },
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        });
+      } catch (err) {
+        this.logger.error(
+          `razorpay.cancellation_facts.network_error ${label} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+        return null;
+      }
+      if (!res.ok) {
+        this.logger.error(`razorpay.cancellation_facts.failed ${label} status=${res.status}`);
+        return null;
+      }
+      let batch: unknown;
+      try {
+        batch = ((await res.json()) as { items?: unknown }).items;
+      } catch {
+        batch = undefined;
+      }
+      if (!Array.isArray(batch)) {
+        this.logger.error(`razorpay.cancellation_facts.malformed ${label}`);
+        return null;
+      }
+      if (batch.length === 0) return items;
+      items.push(...(batch as T[]));
+      skip += batch.length;
+    }
+    this.logger.error(
+      `razorpay.cancellation_facts.page_cap ${label} pages=${LIST_MAX_PAGES} rows=${items.length} — listing exceeds the page bound; reported UNREAD, raise LIST_MAX_PAGES`,
+    );
+    return null;
+  }
+
+  /**
+   * Razorpay's own answer to "is there a settled, plan-ending refund or
+   * chargeback for this subscription?" — the same gate Paddle answers
+   * from `/adjustments`, reached the long way round because Razorpay
+   * keys refunds and disputes to a PAYMENT, not a subscription.
+   *
+   * Three reads, in the only order the API allows:
+   *   1. `/v1/invoices?subscription_id=…` — the subscription's payments.
+   *   2. `/v1/payments/{id}/refunds` — per payment.
+   *   3. `/v1/disputes` — the ACCOUNT's list, filtered to those payments.
+   *      Razorpay documents no payment filter on it, so this is a bounded
+   *      scan; a scan that hits the bound answers `null` rather than
+   *      "no chargeback".
+   *
+   * `null` means the provider could not be asked — never "nothing is
+   * settled". A read we could not make is never grounds for an outbound
+   * write, and after D253 it is also never grounds for freeing a plan
+   * slot.
    */
   async providerCancellationFacts(
     providerSubscriptionId: string,
   ): Promise<ProviderCancellationFacts | null> {
-    this.logger.warn(`razorpay.cancellation_facts.unsupported sub=${providerSubscriptionId}`);
-    return null;
+    try {
+      const invoices = await this.listCollection<RazorpayInvoice>(
+        `/v1/invoices?subscription_id=${encodeURIComponent(providerSubscriptionId)}`,
+        `invoices sub=${providerSubscriptionId}`,
+      );
+      if (invoices === null) return null;
+
+      // Payment id → what that payment actually collected. Only a FULL
+      // refund is an exit (Paddle's `endsSubscription` rule), so the
+      // comparand has to travel with the payment: Razorpay marks no
+      // refund "partial", it just reports a smaller `amount`.
+      const collected = new Map<string, number>();
+      for (const invoice of invoices) {
+        const paymentId = invoice.payment_id;
+        const paid = invoice.amount_paid;
+        if (typeof paymentId !== 'string' || !paymentId) continue;
+        if (typeof paid !== 'number' || paid <= 0) continue;
+        collected.set(paymentId, Math.max(collected.get(paymentId) ?? 0, paid));
+      }
+      // Nothing was ever collected, so nothing is refundable and nothing
+      // is disputable. Answering here also spares the account-wide
+      // dispute scan below on a subscription that cannot have one.
+      if (collected.size === 0) {
+        return { settled: null, refuted: { refund: false, chargeback: false } };
+      }
+
+      let settledRefund = false;
+      let refutedRefund = false;
+      for (const [paymentId, paid] of collected) {
+        const refunds = await this.listCollection<RazorpayRefund>(
+          `/v1/payments/${encodeURIComponent(paymentId)}/refunds`,
+          `refunds payment=${paymentId}`,
+        );
+        if (refunds === null) return null;
+        for (const refund of refunds) {
+          // A part-refund is an apology, not an exit — same rule Paddle
+          // enforces through the item types.
+          if (typeof refund.amount !== 'number' || refund.amount < paid) continue;
+          // `processed` is Razorpay's terminal success and the ONLY
+          // settlement moment. `refund.created` fires while the refund is
+          // still `pending` — Razorpay's shape of Paddle's
+          // `pending_approval` — and a pending refund can still `fail`
+          // (Razorpay refuses payments older than six months). Settling
+          // on it would end the plan of someone whose money never came
+          // back. `pending` is therefore in NEITHER field.
+          if (refund.status === 'processed') settledRefund = true;
+          else if (refund.status === 'failed') refutedRefund = true;
+        }
+      }
+
+      const disputes = await this.listCollection<RazorpayDispute>(
+        '/v1/disputes',
+        `disputes sub=${providerSubscriptionId}`,
+      );
+      if (disputes === null) return null;
+      let settledChargeback = false;
+      let refutedChargeback = false;
+      for (const dispute of disputes) {
+        if (typeof dispute.payment_id !== 'string' || !collected.has(dispute.payment_id)) continue;
+        if (!CHARGEBACK_PHASES.has(dispute.phase ?? '')) continue;
+        if (dispute.status === 'won') {
+          // The bank accepted our documents — a positive contradiction,
+          // exactly like Paddle's `reversed` chargeback.
+          refutedChargeback = true;
+        } else if (dispute.status !== 'closed') {
+          // `open` / `under_review` / `lost` and anything unrecognized:
+          // a live claim against this payment ends the plan, mirroring
+          // Paddle's "not undone ⇒ settled". `closed` is the one status
+          // that is neither — Razorpay documents it as a fraud case
+          // resolved "after you provided either the transaction details
+          // or made a refund", and those two outcomes contradict each
+          // other. The refund case announces itself through the refund
+          // list above; guessing between them here would either revoke a
+          // customer nobody charged back or lift a verdict Razorpay
+          // never contradicted.
+          settledChargeback = true;
+        }
+      }
+
+      return {
+        settled: settledChargeback ? 'chargeback' : settledRefund ? 'refund' : null,
+        refuted: { refund: refutedRefund, chargeback: refutedChargeback },
+      };
+    } catch (err) {
+      // Missing API keys land here too (`authHeader`), and a thrown read
+      // is still an unmade one.
+      this.logger.error(
+        `razorpay.cancellation_facts.unreadable sub=${providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
   }
 
   /** D249 — GET /v1/subscriptions/{id}. See FetchSubscriptionResult. */
@@ -474,6 +685,46 @@ export class RazorpayAdapter implements BillingProvider {
           return { kind: 'ignored', providerEventId: eventId, eventType };
         }
         return { kind: 'subscription', providerEventId: eventId, eventType, subscription };
+      }
+      case 'refund.created':
+      case 'refund.processed':
+      case 'refund.failed':
+      case 'payment.dispute.created':
+      case 'payment.dispute.won':
+      case 'payment.dispute.lost':
+      case 'payment.dispute.closed': {
+        // Entitlement-relevant, recognized, and NOT actionable at this
+        // seam. `cancellation_scheduled` / `cancellation_revoked` both
+        // require a `providerSubscriptionId`, and Razorpay keys these
+        // payloads to a PAYMENT: the refund and dispute entities carry
+        // `payment_id`, the payment entity carries `order_id` and
+        // `invoice_id`, and NONE of the three has a subscription field
+        // (razorpay.com/docs/api/payments/entity,
+        // razorpay.com/docs/api/disputes/entity,
+        // razorpay.com/docs/webhooks/refunds). The one documented link is
+        // `GET /v1/invoices/{invoice_id}` → `subscription_id`, an API
+        // round-trip — and `mapWebhookEvent` is synchronous by contract
+        // (`(payload: unknown): NormalizedBillingEvent`), so the adapter
+        // cannot make it here. Razorpay's own subscriptions plugin
+        // resolves payment→subscription that same async way.
+        //
+        // Putting the invoice id in a field that MEANS subscription id
+        // would mis-attribute a cancellation to whatever row happened to
+        // match, which is worse than not acting. So: ignored — but never
+        // silently. Until the seam can resolve this, a refunded Razorpay
+        // customer keeps the paid tier, and the log line is the only
+        // place that fact exists. `invoice_id` is included because it is
+        // what support needs to find the subscription by hand.
+        const payment = body.payload?.payment?.entity;
+        const paymentId =
+          body.payload?.refund?.entity?.payment_id ??
+          body.payload?.dispute?.entity?.payment_id ??
+          payment?.id ??
+          null;
+        this.logger.error(
+          `billing.razorpay.adjustment_unlinked event=${eventType} id=${eventId} payment=${paymentId} invoice=${payment?.invoice_id ?? null} — entitlement UNCHANGED; this payload carries no subscription id and this seam cannot resolve one. Resolve the invoice to its subscription and act in the Razorpay dashboard.`,
+        );
+        return { kind: 'ignored', providerEventId: eventId, eventType };
       }
       default:
         return { kind: 'ignored', providerEventId: eventId, eventType };
