@@ -691,10 +691,24 @@ export class PaddleAdapter implements BillingProvider {
 
     // "Paddle SAYS NO" is not the same as "not yet", and the two verdicts
     // are independent — a contradiction of one says nothing about the
-    // other. Both `rejected` and `reversed` undo an adjustment; checking
-    // only `rejected` on refunds left an approved-then-reversed refund
-    // counting as neither settled nor refuted, so its verdict stood
-    // forever. A refund still `pending_approval` is in neither set.
+    // other. Both `rejected` and `reversed` undo an adjustment, and
+    // `UNDONE_STATUSES` is shared across both actions because each can
+    // only ever reach one of them. A refund still `pending_approval` is
+    // in neither set.
+    //
+    // Which status belongs to which action, per Paddle's docs: a refund
+    // goes `pending_approval` → `approved` | `rejected`, both terminal.
+    // `reversed` is set only when a `chargeback_reversal` or
+    // `credit_reversal` adjustment is created for that adjustment, so it
+    // reaches chargebacks and credits and never refunds.
+    //
+    // An earlier version of this comment justified the shared set by
+    // claiming an "approved-then-reversed refund" had counted as neither
+    // settled nor refuted. That state cannot occur, and the false
+    // explanation was not harmless — it was later read as evidence that a
+    // settled refund is revocable, which sent a design building a support
+    // path for an impossible case (D253, 2026-08-13). The SET is correct
+    // as a superset; only the reasoning was wrong.
     return {
       settled: settledChargeback ? 'chargeback' : settledRefund ? 'refund' : null,
       refuted: {
