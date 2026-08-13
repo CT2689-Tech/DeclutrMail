@@ -21,6 +21,51 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-13 — I named a starvation bug in a comment, then shipped it
+
+**PR:** D253 branch `fix/d253-refund-repurchase-lockout` (pre-merge)
+**Caught by:** Codex stop-review — _"capped verdict sweeps can permanently
+starve later refunds"_
+
+**What happened:** the verdict passes moved to a job carrying a 60-second
+timeout, so I capped them at 100 rows and kept the existing
+`ORDER BY updated_at ASC`. The justifying comment I wrote said, verbatim, that
+"an unsettled row writes nothing, its `updated_at` never moves, so
+`asc(updatedAt)` would hand back the same leading rows every run and starve
+everything behind them" — and then concluded "100 fits comfortably".
+
+It does not fit. The starvation is caused by the CAP, not by the timeout, and
+lowering the cap made it five times more likely. Rows past the cap are never
+examined again — not "until the backlog drains", because the leading rows are
+precisely the ones that cannot progress. On this path that meant a refunded
+customer behind the cap could **never buy again**: the exact bug D253 exists to
+remove, re-created by its own mitigation. Second time in one branch — a
+hardcoded `provider !== 'razorpay'` scope guard was rejected earlier for the
+identical shape.
+
+The test suite could not catch it. Every verdict test ran ONE pass, and one
+pass is indistinguishable under either ordering.
+
+Sweeping for siblings then found the same defect in the drift sweep at cap 500,
+pre-existing, where it silently removes missed-webhook recovery for every
+customer past the 500th.
+
+**Correct approach:** when a capped selector's rows do not change as a result of
+being processed, the ordering must rotate — `random()` here — and filling the
+cap must be logged. Choosing the cap is choosing which rows are never looked at.
+
+**Rule:** a `LIMIT` over rows the pass does not write is starvation unless the
+ordering rotates; test it across REPEATED passes, never one, and assert coverage
+exceeds the cap.
+
+**Enforcement update:** regression test in
+`billing-reconciliation.service.spec.ts` asserting >cap distinct rows across six
+passes (verified red against the old ordering: "expected 100 to be greater than
+100"). `billing.reconcile.pass_capped` warns on a full page.
+**Distillation trigger: SEVERITY (billing impact) — CLAUDE.md §11 candidate,
+founder call.** Its natural home is the existing "no silent caps" / blind-guard
+material rather than a new guardrail.
+
 ## 2026-08-13 — A CI speedup that made CI slower, twice over, in silence
 
 **PR:** [#515](https://github.com/CT2689-Tech/DeclutrMail/pull/515)
