@@ -217,12 +217,33 @@ async function handleUnsubscribeExecuted(
   db: DrizzleDb,
   payload: ActionsUnsubscribeExecutedPayload,
 ): Promise<void> {
-  const unsubStatus =
-    payload.outcome === 'endpoint_accepted' || payload.outcome === 'done'
-      ? ('endpoint_accepted' as const)
-      : payload.outcome === 'unconfirmed' || payload.outcome === 'ambiguous'
-        ? ('unconfirmed' as const)
-        : ('failed' as const);
+  // A SWITCH, not a ternary chain with a catch-all `else`. The previous
+  // shape defaulted every unrecognised outcome to 'failed', so widening
+  // the event enum silently stomped the worker's own row through the
+  // unconditional upsert below — compile-clean data corruption. The
+  // `never` arm makes the next added outcome a typecheck failure here
+  // instead of a wrong row in production (D252).
+  let unsubStatus: 'endpoint_accepted' | 'unconfirmed' | 'action_required' | 'failed';
+  switch (payload.outcome) {
+    case 'endpoint_accepted':
+    case 'done':
+      unsubStatus = 'endpoint_accepted';
+      break;
+    case 'unconfirmed':
+    case 'ambiguous':
+      unsubStatus = 'unconfirmed';
+      break;
+    case 'action_required':
+      unsubStatus = 'action_required';
+      break;
+    case 'failed':
+      unsubStatus = 'failed';
+      break;
+    default: {
+      const unreachable: never = payload.outcome;
+      throw new Error(`Unhandled unsubscribe outcome: ${String(unreachable)}`);
+    }
+  }
   await db
     .insert(senderPolicies)
     .values({

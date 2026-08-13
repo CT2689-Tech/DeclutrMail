@@ -4,14 +4,17 @@ import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import type { JobsOptions } from 'bullmq';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-import { actionJobs, activityLog, senderPolicies, senders } from '@declutrmail/db';
+import { actionJobs, activityLog, mailMessages, senderPolicies, senders } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 import { ActionsUnsubscribeExecutedPayloadSchema, TOPICS } from '@declutrmail/events';
-import { UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE } from '@declutrmail/shared/contracts';
+import {
+  UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
+  UNSUB_MANUAL_REQUIRED_ERROR_CODE,
+} from '@declutrmail/shared/contracts';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
@@ -110,7 +113,7 @@ export interface UnsubExecutionJobData {
 
 /** Metric-only result (logged on `worker.succeeded`). */
 export interface UnsubExecutionResult {
-  outcome: 'endpoint_accepted' | 'failed' | 'unconfirmed';
+  outcome: 'endpoint_accepted' | 'failed' | 'unconfirmed' | 'action_required';
   httpStatus: number | null;
   alreadyDone: boolean;
 }
@@ -291,7 +294,7 @@ export function unsubExecutionJobOptions(idempotencyKey: string): JobsOptions {
 
 /** Terminal outcome + the classification detail that lands in `error_code`. */
 interface OutcomeRecord {
-  outcome: 'endpoint_accepted' | 'failed' | 'unconfirmed';
+  outcome: 'endpoint_accepted' | 'failed' | 'unconfirmed' | 'action_required';
   httpStatus: number | null;
   /**
    * `action_jobs.error_code` value. NULL for endpoint acceptance. The
@@ -371,7 +374,25 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
       .from(senders)
       .where(and(eq(senders.mailboxAccountId, mailboxAccountId), eq(senders.senderKey, senderKey)))
       .limit(1);
-    if (!sender || sender.unsubscribeMethod !== 'one_click' || !sender.unsubscribeUrl) {
+    if (!sender || sender.unsubscribeMethod !== 'one_click') {
+      return this.recordOutcome(
+        job.id,
+        mailboxAccountId,
+        senderKey,
+        { outcome: 'failed', httpStatus: null, errorCode: 'UNSUB_NOT_ONE_CLICK' },
+        payload.source ?? 'manual',
+        payload.ruleId ?? null,
+      );
+    }
+
+    // D252 — resolve BOTH channels from `mail_messages` at execution
+    // time. The sender row holds one URL folded at sync time; RFC 8058
+    // URLs are minted per send and expire, so the freshest message is
+    // the only trustworthy source. The sender row stays the fallback
+    // for a mailbox whose messages have aged out of the index.
+    const channels = await this.resolveChannels(db, mailboxAccountId, senderKey);
+    const oneClickUrl = channels.oneClickUrl ?? sender.unsubscribeUrl;
+    if (!oneClickUrl) {
       return this.recordOutcome(
         job.id,
         mailboxAccountId,
@@ -383,7 +404,7 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
     }
 
     // SSRF pre-flight — scheme + resolved-address checks.
-    const targetCheck = await this.validateTarget(sender.unsubscribeUrl);
+    const targetCheck = await this.validateTarget(oneClickUrl);
     if (!targetCheck.ok) {
       return this.recordOutcome(
         job.id,
@@ -397,7 +418,7 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
 
     let response: UnsubHttpResponse;
     try {
-      response = await this.deps.http.postOneClick(sender.unsubscribeUrl, {
+      response = await this.deps.http.postOneClick(oneClickUrl, {
         timeoutMs: UNSUB_REQUEST_TIMEOUT_MS,
         // Pin the socket to the address the pre-flight already validated
         // — no second resolution (DNS-rebinding TOCTOU closed).
@@ -432,11 +453,23 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
               httpStatus: response.status,
               errorCode: UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
             }
-          : {
-              outcome: 'failed',
-              httpStatus: response.status,
-              errorCode: 'UNSUB_TARGET_REJECTED',
-            };
+          : // D252 — the endpoint refused us. That is terminal for the
+            // AUTOMATED path, not necessarily for the user: 71% of
+            // one-click senders also advertise a `mailto:` channel we
+            // were discarding at sync time. Route those to the D230
+            // manual compose hand-off instead of a dead end. `failed`
+            // now means what it says — nothing left to try.
+            channels.mailtoUrl
+            ? {
+                outcome: 'action_required',
+                httpStatus: response.status,
+                errorCode: UNSUB_MANUAL_REQUIRED_ERROR_CODE,
+              }
+            : {
+                outcome: 'failed',
+                httpStatus: response.status,
+                errorCode: 'UNSUB_TARGET_REJECTED',
+              };
     return this.recordOutcome(
       job.id,
       mailboxAccountId,
@@ -528,6 +561,54 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
    *   4. `actions.unsubscribe_executed` outbox event (observability) —
    *      still fires for EVERY outcome, so failure is fully observable.
    */
+  /**
+   * Newest URL per unsubscribe channel, read at EXECUTION time (D252).
+   *
+   * Deliberately NOT label-scoped. A sender's newest one-click message
+   * can legitimately sit in Archive or Trash, and scoping to INBOX
+   * would POST an older token than the one we actually hold — a false
+   * staleness that manufactures the very failure this fixes.
+   *
+   * Two ordered lookups rather than one grouped scan: each rides
+   * `mail_messages_account_sender_date_idx` and stops at the first row.
+   * `id DESC` breaks `internal_date` ties deterministically — `id` is a
+   * random v4 UUID, so date-only ordering picks arbitrarily and two
+   * runs could POST different tokens.
+   */
+  private async resolveChannels(
+    db: WorkerDb,
+    mailboxAccountId: string,
+    senderKey: string,
+  ): Promise<{ oneClickUrl: string | null; mailtoUrl: string | null }> {
+    const forSender = and(
+      eq(mailMessages.mailboxAccountId, mailboxAccountId),
+      eq(mailMessages.senderKey, senderKey),
+    );
+    const newestFirst = [desc(mailMessages.internalDate), desc(mailMessages.id)] as const;
+
+    const [oneClick] = await db
+      .select({ url: mailMessages.unsubscribeUrl })
+      .from(mailMessages)
+      .where(
+        and(
+          forSender,
+          eq(mailMessages.unsubscribeOneClick, true),
+          isNotNull(mailMessages.unsubscribeUrl),
+        ),
+      )
+      .orderBy(...newestFirst)
+      .limit(1);
+
+    const [mailto] = await db
+      .select({ url: mailMessages.unsubscribeMailtoUrl })
+      .from(mailMessages)
+      .where(and(forSender, isNotNull(mailMessages.unsubscribeMailtoUrl)))
+      .orderBy(...newestFirst)
+      .limit(1);
+
+    return { oneClickUrl: oneClick?.url ?? null, mailtoUrl: mailto?.url ?? null };
+  }
+
   private async recordOutcome(
     actionId: string,
     mailboxAccountId: string,
@@ -541,6 +622,11 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
       await tx
         .update(actionJobs)
         .set({
+          // `action_job_status` has no "needs the user" value, so both
+          // `unconfirmed` and `action_required` ride on `failed` and are
+          // separated by `error_code` (D252). The automated attempt did
+          // end without succeeding; what differs is whether anything is
+          // left to try, which `sender_policies.unsub_status` carries.
           status: record.outcome === 'endpoint_accepted' ? 'done' : 'failed',
           errorCode: record.errorCode,
           affectedCount: record.outcome === 'endpoint_accepted' ? 1 : 0,
@@ -570,7 +656,9 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
             ? 'unsubscribe_endpoint_accepted'
             : record.outcome === 'unconfirmed'
               ? 'unsubscribe_unconfirmed'
-              : 'unsubscribe_failed',
+              : record.outcome === 'action_required'
+                ? 'unsubscribe_action_required'
+                : 'unsubscribe_failed',
         affectedCount: 0,
         // Ties this outcome back to the execution — and through it to
         // the intent row, which carries the same id. Without it the two

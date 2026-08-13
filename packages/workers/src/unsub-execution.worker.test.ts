@@ -8,6 +8,7 @@ import {
   actionJobs,
   activityLog,
   mailboxAccounts,
+  mailMessages,
   outboxEvents,
   schema,
   senderPolicies,
@@ -121,6 +122,35 @@ async function seedSender(
     lastSeenAt: new Date('2026-05-01'),
     unsubscribeMethod: args.method === undefined ? 'one_click' : args.method,
     unsubscribeUrl: args.url === undefined ? 'https://unsub.shop.example/oneclick?u=42' : args.url,
+  });
+}
+
+/**
+ * One message carrying whichever unsubscribe channels the case needs
+ * (D252 — the executor resolves both channels from here at click time).
+ */
+async function seedMessage(
+  db: Db,
+  mailboxAccountId: string,
+  args: {
+    id: string;
+    internalDate: Date;
+    oneClickUrl?: string | null;
+    mailtoUrl?: string | null;
+    labels?: string[];
+  },
+): Promise<void> {
+  await db.insert(mailMessages).values({
+    mailboxAccountId,
+    providerMessageId: args.id,
+    providerThreadId: `t-${args.id}`,
+    senderKey: SENDER_KEY,
+    internalDate: args.internalDate,
+    isUnread: false,
+    labelIds: args.labels ?? ['INBOX'],
+    unsubscribeUrl: args.oneClickUrl ?? null,
+    unsubscribeOneClick: Boolean(args.oneClickUrl),
+    unsubscribeMailtoUrl: args.mailtoUrl ?? null,
   });
 }
 
@@ -481,6 +511,190 @@ describe('UnsubExecutionWorker', () => {
     expect(http.calls).toHaveLength(0);
     const state = await readState(actionId);
     expect(state.job.errorCode).toBe('UNSUB_NOT_ONE_CLICK');
+  });
+
+  describe('D252 — click-time channel resolution + manual cascade', () => {
+    it('POSTs the NEWEST one-click URL, not the one frozen on the sender row', async () => {
+      // The sender row holds the stale token the old sync fold froze.
+      await seedSender(db, mailboxId, { url: 'https://unsub.shop.example/oneclick?u=STALE' });
+      await seedPendingPolicy(db, mailboxId);
+      await seedMessage(db, mailboxId, {
+        id: 'm-old',
+        internalDate: new Date('2026-01-05'),
+        oneClickUrl: 'https://unsub.shop.example/oneclick?u=STALE',
+      });
+      await seedMessage(db, mailboxId, {
+        id: 'm-new',
+        internalDate: new Date('2026-08-09'),
+        oneClickUrl: 'https://unsub.shop.example/oneclick?u=FRESH',
+      });
+      const actionId = await seedExecutionJob(db, mailboxId);
+      const http = fakeHttp([200]);
+      const worker = new UnsubExecutionWorker({
+        db: db as never,
+        http,
+        outbox: new OutboxPublisher(),
+        resolveHost: PUBLIC_RESOLVE,
+      });
+
+      const result = await worker.processJob(
+        { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'k1' },
+        ctx(1),
+      );
+
+      expect(result.outcome).toBe('endpoint_accepted');
+      expect(http.calls).toHaveLength(1);
+      expect(http.calls[0]!.url).toBe('https://unsub.shop.example/oneclick?u=FRESH');
+    });
+
+    it('resolves the newest one-click URL even when that message is ARCHIVED', async () => {
+      // Label-scoping the lookup would skip this row and POST the older
+      // token — a false staleness that manufactures the failure D252
+      // exists to prevent.
+      await seedSender(db, mailboxId, { url: 'https://unsub.shop.example/oneclick?u=STALE' });
+      await seedPendingPolicy(db, mailboxId);
+      await seedMessage(db, mailboxId, {
+        id: 'm-inbox',
+        internalDate: new Date('2026-02-01'),
+        oneClickUrl: 'https://unsub.shop.example/oneclick?u=STALE',
+      });
+      await seedMessage(db, mailboxId, {
+        id: 'm-archived',
+        internalDate: new Date('2026-08-09'),
+        oneClickUrl: 'https://unsub.shop.example/oneclick?u=FRESH',
+        labels: [],
+      });
+      const actionId = await seedExecutionJob(db, mailboxId);
+      const http = fakeHttp([200]);
+      const worker = new UnsubExecutionWorker({
+        db: db as never,
+        http,
+        outbox: new OutboxPublisher(),
+        resolveHost: PUBLIC_RESOLVE,
+      });
+
+      await worker.processJob(
+        { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'k1' },
+        ctx(1),
+      );
+
+      expect(http.calls[0]!.url).toBe('https://unsub.shop.example/oneclick?u=FRESH');
+    });
+
+    it('falls back to the sender row when no message carries a one-click URL', async () => {
+      await seedSender(db, mailboxId, { url: 'https://unsub.shop.example/oneclick?u=ONLY' });
+      await seedPendingPolicy(db, mailboxId);
+      const actionId = await seedExecutionJob(db, mailboxId);
+      const http = fakeHttp([200]);
+      const worker = new UnsubExecutionWorker({
+        db: db as never,
+        http,
+        outbox: new OutboxPublisher(),
+        resolveHost: PUBLIC_RESOLVE,
+      });
+
+      const result = await worker.processJob(
+        { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'k1' },
+        ctx(1),
+      );
+
+      expect(result.outcome).toBe('endpoint_accepted');
+      expect(http.calls[0]!.url).toBe('https://unsub.shop.example/oneclick?u=ONLY');
+    });
+
+    it('a refused POST becomes action_required when a mailto channel exists', async () => {
+      await seedSender(db, mailboxId);
+      await seedPendingPolicy(db, mailboxId);
+      await seedMessage(db, mailboxId, {
+        id: 'm-1',
+        internalDate: new Date('2026-08-09'),
+        oneClickUrl: 'https://unsub.shop.example/oneclick?u=42',
+        mailtoUrl: 'mailto:unsub@shop.example?subject=stop',
+      });
+      const actionId = await seedExecutionJob(db, mailboxId);
+      const http = fakeHttp([403]);
+      const worker = new UnsubExecutionWorker({
+        db: db as never,
+        http,
+        outbox: new OutboxPublisher(),
+        resolveHost: PUBLIC_RESOLVE,
+      });
+
+      const result = await worker.processJob(
+        { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'k1' },
+        ctx(1),
+      );
+
+      expect(result.outcome).toBe('action_required');
+      const state = await readState(actionId);
+      // Rides `failed` because action_job_status has no "needs the
+      // user" value; the error code is what separates them.
+      expect(state.job.status).toBe('failed');
+      expect(state.job.errorCode).toBe('UNSUB_MANUAL_REQUIRED');
+      expect(state.policy.unsubStatus).toBe('action_required');
+      expect(state.activities[0]!.action).toBe('unsubscribe_action_required');
+      expect(state.events[0]!.payload).toMatchObject({
+        outcome: 'action_required',
+        httpStatus: 403,
+      });
+    });
+
+    it('a refused POST stays failed when the sender has NO mailto channel', async () => {
+      await seedSender(db, mailboxId);
+      await seedPendingPolicy(db, mailboxId);
+      await seedMessage(db, mailboxId, {
+        id: 'm-1',
+        internalDate: new Date('2026-08-09'),
+        oneClickUrl: 'https://unsub.shop.example/oneclick?u=42',
+      });
+      const actionId = await seedExecutionJob(db, mailboxId);
+      const http = fakeHttp([403]);
+      const worker = new UnsubExecutionWorker({
+        db: db as never,
+        http,
+        outbox: new OutboxPublisher(),
+        resolveHost: PUBLIC_RESOLVE,
+      });
+
+      const result = await worker.processJob(
+        { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'k1' },
+        ctx(1),
+      );
+
+      expect(result.outcome).toBe('failed');
+      const state = await readState(actionId);
+      expect(state.job.errorCode).toBe('UNSUB_TARGET_REJECTED');
+      expect(state.policy.unsubStatus).toBe('failed');
+      expect(state.activities[0]!.action).toBe('unsubscribe_failed');
+    });
+
+    it('an ACCEPTED POST is unaffected by a mailto channel being present', async () => {
+      await seedSender(db, mailboxId);
+      await seedPendingPolicy(db, mailboxId);
+      await seedMessage(db, mailboxId, {
+        id: 'm-1',
+        internalDate: new Date('2026-08-09'),
+        oneClickUrl: 'https://unsub.shop.example/oneclick?u=42',
+        mailtoUrl: 'mailto:unsub@shop.example',
+      });
+      const actionId = await seedExecutionJob(db, mailboxId);
+      const http = fakeHttp([200]);
+      const worker = new UnsubExecutionWorker({
+        db: db as never,
+        http,
+        outbox: new OutboxPublisher(),
+        resolveHost: PUBLIC_RESOLVE,
+      });
+
+      const result = await worker.processJob(
+        { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'k1' },
+        ctx(1),
+      );
+
+      expect(result.outcome).toBe('endpoint_accepted');
+      const state = await readState(actionId);
+      expect(state.policy.unsubStatus).toBe('endpoint_accepted');
+    });
   });
 
   describe('SSRF hardening', () => {

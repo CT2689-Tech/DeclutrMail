@@ -946,6 +946,13 @@ export class ActionsService {
 
     const skipped: BulkActionEnqueueResult['skipped'] = [];
     const actionable: Array<{ id: string; senderKey: string }> = [];
+    // D252 — mailto senders are skipped for SENDING (D230 keeps that the
+    // user's own act) but must still be RECORDED. Without the policy row
+    // written below, `recordUnsubscribeManualStatus` 409s
+    // `UNSUBSCRIBE_INTENT_REQUIRED`, so "Mark sent" was permanently dead
+    // for every mailto sender routed through the bulk path — a receipt
+    // promising a manual finish the UI could not accept (D226).
+    const manual: Array<{ id: string; senderKey: string }> = [];
     for (const id of uniqueIds) {
       const row = byId.get(id);
       if (!row) {
@@ -967,9 +974,10 @@ export class ActionsService {
       }
       if (capability === 'mailto' && row.unsubscribeUrl) {
         // D230 — hand the address back so the client can offer a
-        // prefilled compose the USER sends. Nothing is recorded and
-        // nothing is sent for these senders here.
+        // prefilled compose the USER sends. Nothing is SENT for these
+        // senders here, but the intent IS recorded (see `manual`).
         skipped.push({ senderId: id, reason: 'mailto', mailtoUrl: row.unsubscribeUrl });
+        manual.push({ id: row.id, senderKey: row.senderKey });
         continue;
       }
       const reason: BulkSkipReason = capability === 'unknown' ? 'unknown' : 'no_channel';
@@ -1075,6 +1083,66 @@ export class ActionsService {
             activityLogId: inserted.id,
             recordedAt: inserted.occurredAt.toISOString(),
             method: 'one_click',
+          },
+          schema: ActionsUnsubscribeIntentRecordedPayloadSchema,
+        });
+      }
+
+      // D252 — the same durable trio for mailto senders, minus the job:
+      // D230 means nothing is sent, so there is no execution to queue,
+      // but the policy row is what `recordUnsubscribeManualStatus`
+      // requires and the Activity row is what makes the decision
+      // visible. `action_required` is the canonical resting state for a
+      // sender waiting on the user (mirrors `recordUnsubscribeIntent`).
+      for (const sender of manual) {
+        await tx
+          .insert(senderPolicies)
+          .values({
+            mailboxAccountId,
+            senderKey: sender.senderKey,
+            policyType: 'unsubscribe',
+            unsubStatus: 'action_required',
+          })
+          .onConflictDoUpdate({
+            target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
+            set: {
+              policyType: 'unsubscribe',
+              // Only escalate a sender that has not already progressed —
+              // re-running a batch must not drag a `user_marked_sent`
+              // sender back to `action_required`.
+              unsubStatus: sql`CASE
+                WHEN ${senderPolicies.unsubStatus} IN ('draft_opened', 'user_marked_sent')
+                  THEN ${senderPolicies.unsubStatus}
+                ELSE 'action_required'::unsub_status
+              END`,
+              updatedAt: sql`now()`,
+            },
+          });
+
+        const [manualRow] = await tx
+          .insert(activityLog)
+          .values({
+            mailboxAccountId,
+            senderKey: sender.senderKey,
+            source: 'manual',
+            action: 'unsubscribe_action_required',
+            affectedCount: 0,
+            undoToken: null,
+          })
+          .returning({ id: activityLog.id, occurredAt: activityLog.occurredAt });
+        if (!manualRow) {
+          throw new Error('activity_log insert returned no row');
+        }
+
+        await this.outbox.publish(tx, {
+          topic: TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED,
+          aggregateId: manualRow.id,
+          payload: {
+            mailboxAccountId,
+            senderKey: sender.senderKey,
+            activityLogId: manualRow.id,
+            recordedAt: manualRow.occurredAt.toISOString(),
+            method: 'mailto',
           },
           schema: ActionsUnsubscribeIntentRecordedPayloadSchema,
         });
@@ -1876,6 +1944,29 @@ export class ActionsService {
   }
 
   /**
+   * Is this sender parked in a state a manual send can finish? (D252 —
+   * where the cascade leaves a one-click sender the endpoint refused.)
+   */
+  private async hasOpenManualPath(mailboxAccountId: string, senderKey: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ unsubStatus: senderPolicies.unsubStatus })
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+          eq(senderPolicies.senderKey, senderKey),
+          eq(senderPolicies.policyType, 'unsubscribe'),
+        ),
+      )
+      .limit(1);
+    return (
+      row?.unsubStatus === 'action_required' ||
+      row?.unsubStatus === 'draft_opened' ||
+      row?.unsubStatus === 'user_marked_sent'
+    );
+  }
+
+  /**
    * Record explicit progress on the manual mailto path. Opening a draft
    * is not sending it; "sent" is stored as user_marked_sent because the
    * app cannot observe Gmail delivery. Transitions are monotonic and an
@@ -1898,7 +1989,17 @@ export class ActionsService {
         message: 'Sender not found in the current mailbox.',
       });
     }
-    if (sender.unsubscribeMethod !== 'mailto') {
+    // D252 — a one_click sender whose POST the endpoint refused is
+    // parked in `action_required` with a live mailto fallback, so the
+    // manual path is legitimately open to it. Gating on the sender's
+    // METHOD alone closed that door on the exact senders the cascade
+    // exists to rescue; the policy's STATUS is the honest gate. The
+    // policy lookup below still rejects a sender with no intent at all.
+    const manualPathOpen =
+      sender.unsubscribeMethod === 'mailto' ||
+      (sender.unsubscribeMethod === 'one_click' &&
+        (await this.hasOpenManualPath(mailboxAccountId, sender.senderKey)));
+    if (!manualPathOpen) {
       throw new ConflictException({
         code: 'UNSUBSCRIBE_MANUAL_NOT_AVAILABLE',
         message: 'Manual unsubscribe progress is available only for a mailto unsubscribe.',

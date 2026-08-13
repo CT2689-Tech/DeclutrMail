@@ -141,6 +141,7 @@ export {
   initialUnsubscribeLifecycleStatus,
   normalizeUnsubscribeLifecycleStatus,
   UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
+  UNSUB_MANUAL_REQUIRED_ERROR_CODE,
   UNSUBSCRIBE_LIFECYCLE_STATUSES,
   UNSUBSCRIBE_MANUAL_TRANSITIONS,
   UnsubscribeLifecycleStatusSchema,

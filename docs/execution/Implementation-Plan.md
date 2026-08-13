@@ -9974,3 +9974,43 @@ different tiers with opposite consent defaults. Found in review 2026-08-02.
 **Open for the founder:** whether the receipt's email opt-in stays default-off
 (D189's position, inherited here) or flips on for paid tiers. Default-off is
 the safer launch posture and is what ships absent a decision.
+
+---
+
+### D252 — Unsubscribe degrades honestly
+
+**Status:** Accepted — founder-directed 2026-08-13, from the triage of a real
+Walgreens unsubscribe failure on a beta mailbox.
+
+**Decision.** When DeclutrMail's one-click unsubscribe is refused by the
+sender's endpoint, the product does not dead-end at "failed." It falls through
+to whatever the sender still offers, and only reports failure when nothing is
+left to try.
+
+Three parts:
+
+1. **Both unsubscribe channels are resolved at the moment the user acts**, from
+   the newest message we hold for that sender, rather than from a URL frozen
+   onto the sender row during sync. RFC 8058 links are minted per send and carry
+   an expiring token, so a stored link rots. Measured on production: 1187 of
+   2122 one-click senders (56%) held a stale or wrong link.
+2. **A refused one-click cascades to the manual mailto hand-off** where the
+   sender offers one — 1511 of 2122 senders (71%). This is the runtime half of
+   D9's `RFC 8058 → mailto → fallback` cascade, which ADR-0006 implemented only
+   at derivation time and explicitly deferred. D230 is unchanged: DeclutrMail
+   still never sends the opt-out mail; the user does.
+3. **Failure is disclosed, never hidden**, per D226. Unsubscribe is
+   self-verifying — the user learns the truth from their own inbox within days
+   regardless of what we claim — so a hidden failure does not avoid the trust
+   cost, it defers and compounds it. The rule that follows: never show an
+   honest failure without a next step attached.
+
+**Not this decision.** Predicting failure and withholding the control is
+rejected. We cannot know a link is dead without trying it, and hiding a working
+unsubscribe is a worse error than attempting one that fails.
+
+**Known limit.** Roughly 611 senders advertise one-click only. When their
+endpoint refuses, no channel remains and `failed` is the honest answer; the
+recourse is D9's step 3 (Gmail search) and the ordinary K/A/U/L/D verbs.
+
+**Implementation contract:** see ADR-0032, which amends ADR-0006.
