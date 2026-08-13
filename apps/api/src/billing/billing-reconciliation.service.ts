@@ -440,8 +440,27 @@ export class BillingReconciliationService {
       })
       .from(subscriptions)
       .where(inArray(subscriptions.status, ['active', 'past_due', 'paused']))
-      .orderBy(asc(subscriptions.updatedAt))
+      // Same starvation as the verdict passes, one cap up. A row whose
+      // provider truth is UNCHANGED reconciles to the same state hash,
+      // dedups in the ledger, and writes nothing — so its `updated_at`
+      // never moves either, and the healthy majority is exactly the
+      // population that cannot progress. Past 500 live subscriptions,
+      // `updated_at ASC` would pin the sweep to the same 500 forever and
+      // every customer behind them would lose the missed-webhook
+      // recovery this sweep exists to provide, silently.
+      //
+      // Pre-existing rather than introduced here, and only reachable at
+      // a scale this business has not hit. Fixed alongside its sibling
+      // because it is the identical defect on the adjacent line, and
+      // leaving it would mean shipping a known permanent-starvation bug
+      // beside the commit that fixes one (CLAUDE.md — fix the class).
+      .orderBy(RANDOM_ROW_ORDER)
       .limit(DRIFT_SWEEP_MAX_ROWS);
+    if (rows.length >= DRIFT_SWEEP_MAX_ROWS) {
+      this.logger.warn(
+        `billing.reconcile.pass_capped pass=drift rows=${rows.length} cap=${DRIFT_SWEEP_MAX_ROWS} — more live subscriptions than one sweep examines; selection is random so coverage is eventual, but no single row is guaranteed a look this run`,
+      );
+    }
 
     const result: DriftSweepResult = {
       subscriptionsChecked: 0,
