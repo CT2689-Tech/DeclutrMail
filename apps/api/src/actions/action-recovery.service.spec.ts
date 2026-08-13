@@ -1,9 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   actionJobs,
   actionRecoveryPreviews,
@@ -14,38 +10,18 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ActionRecoveryService } from './action-recovery.service.js';
 
-const MIGRATIONS_DIR = join(
-  import.meta.dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  'packages',
-  'db',
-  'migrations',
-);
-
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 type FakeQueue = ReturnType<typeof fakeQueue>;
 
 async function freshDb(): Promise<Db> {
-  const pg = new PGlite({ extensions: { citext } });
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((file) => file.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const migration = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const statement of migration.split('--> statement-breakpoint')) {
-      if (statement.trim()) await pg.query(statement.trim());
-    }
-  }
-  return drizzle(pg, { schema });
+  return freshTestDb();
 }
 
 function fakeQueue(options: { fail?: boolean } = {}) {

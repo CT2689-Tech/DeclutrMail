@@ -1,8 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   actionJobs,
   activityLog,
@@ -17,6 +12,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { freshTestPglite } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -32,17 +28,6 @@ import { ActivityReadService } from './activity.read-service.js';
  * resolution (available / expired / executed / unavailable).
  */
 
-const MIGRATIONS_DIR = join(
-  import.meta.dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  'packages',
-  'db',
-  'migrations',
-);
-
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 const NOW_MS = new Date('2026-05-25T08:00:00Z').getTime();
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -56,16 +41,7 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const driverParamLog: unknown[][] = [];
 
 async function freshDb(): Promise<Db> {
-  const pg = new PGlite({ extensions: { citext } });
-  for (const file of readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()) {
-    const sqlText = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sqlText.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) await pg.query(trimmed);
-    }
-  }
+  const pg = await freshTestPglite();
   const originalQuery = pg.query.bind(pg);
   pg.query = (async (...args: Parameters<typeof originalQuery>) => {
     if (Array.isArray(args[1])) driverParamLog.push(args[1]);

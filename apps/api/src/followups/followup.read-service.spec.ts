@@ -1,9 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   activityLog,
   followupTracker,
@@ -14,6 +10,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -42,34 +39,11 @@ function senderKeyFor(email: string): string {
  * the awaiting-only filter, and the idempotent dismiss flow.
  */
 
-const MIGRATIONS_DIR = join(
-  import.meta.dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  'packages',
-  'db',
-  'migrations',
-);
-
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 const NOW_MS = new Date('2026-05-25T08:00:00Z').getTime();
 
 async function freshDb(): Promise<Db> {
-  const pg = new PGlite({ extensions: { citext } });
-  for (const file of readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()) {
-    const sqlText = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sqlText.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  return drizzle(pg, { schema });
+  return freshTestDb();
 }
 
 async function seedMailbox(

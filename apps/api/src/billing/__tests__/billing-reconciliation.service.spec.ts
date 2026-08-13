@@ -1,24 +1,18 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   pendingCheckouts,
-  schema,
   subscriptionEvents,
   subscriptions,
   users,
   workspaces,
 } from '@declutrmail/db';
-import { drizzle } from 'drizzle-orm/pglite';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
 import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
-import type {
+import {
   FetchSubscriptionResult,
   ProviderCancellationFacts,
   NormalizedSubscription,
@@ -40,33 +34,8 @@ import { TEST_PRICE_IDS } from './fixtures.js';
  * ledger dedup, with only the provider adapters faked.
  */
 
-const MIGRATIONS_DIR = join(
-  import.meta.dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  '..',
-  'packages',
-  'db',
-  'migrations',
-);
-
 async function freshDb(): Promise<DrizzleDb> {
-  const pg = new PGlite({ extensions: { citext } });
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  return drizzle(pg, { schema }) as unknown as DrizzleDb;
+  return (await freshTestDb()) as unknown as DrizzleDb;
 }
 
 function testCatalog(): BillingCatalog {

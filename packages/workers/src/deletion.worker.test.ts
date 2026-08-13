@@ -1,8 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
+import type { PGlite } from '@electric-sql/pglite';
 import {
   accountDeletionRequests,
   actionJobs,
@@ -33,6 +29,7 @@ import {
   webhookDedup,
   workspaces,
 } from '@declutrmail/db';
+import { freshTestPglite } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { describe, expect, it } from 'vitest';
@@ -59,24 +56,12 @@ import type { WorkerContext } from './worker-context.js';
  * sync-pause predicate.
  */
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations');
 const TOPIC = 'projects/p/topics/gmail-push';
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 async function freshHarness(): Promise<{ db: Db; pg: PGlite }> {
-  const pg = new PGlite({ extensions: { citext } });
-  for (const file of readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()) {
-    const sqlText = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sqlText.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
+  const pg = await freshTestPglite();
   return { db: drizzle(pg, { schema }), pg };
 }
 

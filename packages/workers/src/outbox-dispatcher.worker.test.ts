@@ -1,8 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
+import type { PGlite } from '@electric-sql/pglite';
 import { eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -10,6 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { outboxEvents, schema } from '@declutrmail/db';
+import { freshTestPglite } from '@declutrmail/db/testing';
 
 import {
   OUTBOX_NOTIFY_CHANNEL,
@@ -54,19 +54,7 @@ type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 /** Fresh PGlite DB with every migration applied (in file-order). */
 async function freshDb(): Promise<{ db: Db; pg: PGlite }> {
-  const pg = new PGlite({ extensions: { citext } });
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sqlText = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sqlText.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
+  const pg = await freshTestPglite();
   const db = drizzle(pg, { schema });
   return { db, pg };
 }

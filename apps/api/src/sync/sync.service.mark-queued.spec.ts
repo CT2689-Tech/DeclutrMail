@@ -1,9 +1,6 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import { mailboxAccounts, providerSyncState, schema, users, workspaces } from '@declutrmail/db';
+import { freshTestPglite } from '@declutrmail/db/testing';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -13,17 +10,6 @@ import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/wo
 
 import type { DrizzleDb } from '../db/db.module.js';
 import { SyncService } from './sync.service.js';
-
-const MIGRATIONS_DIR = join(
-  import.meta.dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  'packages',
-  'db',
-  'migrations',
-);
 
 /**
  * Real conflict-update coverage for the two `markQueued` contracts:
@@ -37,15 +23,7 @@ describe('SyncService.markQueued — incremental error lifecycle', () => {
   let mailboxId: string;
 
   beforeAll(async () => {
-    pg = new PGlite({ extensions: { citext } });
-    for (const file of readdirSync(MIGRATIONS_DIR)
-      .filter((name) => name.endsWith('.sql'))
-      .sort()) {
-      const migration = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-      for (const statement of migration.split('--> statement-breakpoint')) {
-        if (statement.trim()) await pg.query(statement.trim());
-      }
-    }
+    pg = await freshTestPglite();
     db = drizzle(pg, { schema }) as unknown as DrizzleDb;
 
     const [workspace] = await db.insert(workspaces).values({ name: 'Sync test' }).returning();

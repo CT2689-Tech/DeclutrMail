@@ -1,10 +1,5 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
-import { activeSessions, schema, users, workspaces } from '@declutrmail/db';
-import { drizzle } from 'drizzle-orm/pglite';
+import { activeSessions, users, workspaces } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -48,22 +43,8 @@ vi.mock('@declutrmail/shared/copy', async (importOriginal) => ({
  * the idempotency-key encodings.
  */
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations');
-
 async function freshDb() {
-  const pg = new PGlite({ extensions: { citext } });
-  for (const file of readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  return drizzle(pg, { schema });
+  return freshTestDb();
 }
 
 async function seedUser(db: Awaited<ReturnType<typeof freshDb>>, email = 'a@b.com') {

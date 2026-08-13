@@ -1,9 +1,5 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import { schema, securityEvents, users, workspaces } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -20,34 +16,10 @@ import { SecurityEventsReadService } from './security-events-read.service.js';
  *   - ordering invariant — newest first, deterministic on tie
  */
 
-const MIGRATIONS_DIR = join(
-  import.meta.dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  'packages',
-  'db',
-  'migrations',
-);
-
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 async function freshDb(): Promise<Db> {
-  const pg = new PGlite({ extensions: { citext } });
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sqlText = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sqlText.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  return drizzle(pg, { schema });
+  return freshTestDb();
 }
 
 async function seedUser(db: Db, email: string): Promise<{ userId: string; workspaceId: string }> {

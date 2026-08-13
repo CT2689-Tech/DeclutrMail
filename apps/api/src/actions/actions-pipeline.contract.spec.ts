@@ -1,8 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   actionJobs,
   activityLog,
@@ -13,6 +8,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
 import {
   LabelActionWorker,
   OutboxPublisher,
@@ -36,34 +32,12 @@ import { ActionsService } from './actions.service.js';
  * inbound-only rule that keeps self-sent SENT+INBOX mail untouched.
  */
 
-const MIGRATIONS_DIR = join(
-  import.meta.dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  'packages',
-  'db',
-  'migrations',
-);
-
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 const SENDER_KEY = 'd'.repeat(64);
 
 async function freshDb(): Promise<Db> {
-  const pg = new PGlite({ extensions: { citext } });
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) await pg.query(trimmed);
-    }
-  }
-  return drizzle(pg, { schema });
+  return freshTestDb();
 }
 
 async function seedMailbox(db: Db): Promise<string> {

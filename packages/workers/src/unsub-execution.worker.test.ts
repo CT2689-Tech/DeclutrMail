@@ -1,23 +1,20 @@
-import { readdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { join } from 'node:path';
 
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
+import type { schema } from '@declutrmail/db';
 import {
   actionJobs,
   activityLog,
   mailboxAccounts,
   mailMessages,
   outboxEvents,
-  schema,
   senderPolicies,
   senders,
   users,
   workspaces,
 } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { eq, sql } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
+import type { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { OutboxPublisher } from './outbox-publisher.js';
@@ -46,8 +43,6 @@ import type { WorkerContext } from './worker-context.js';
  * outcome row never carries an undo token).
  */
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations');
-
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 /**
@@ -57,20 +52,7 @@ type Db = ReturnType<typeof drizzle<typeof schema>>;
  * `resetDb` (TRUNCATE) in `beforeEach` instead.
  */
 async function migratedDb(): Promise<Db> {
-  const pg = new PGlite({ extensions: { citext } });
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const migrationSql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of migrationSql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  return drizzle(pg, { schema });
+  return freshTestDb();
 }
 
 /**

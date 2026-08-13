@@ -1,19 +1,13 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
-import { drizzle, type PgliteDatabase } from 'drizzle-orm/pglite';
 import {
   automationRules,
   mailboxAccounts,
-  schema,
   screenerQuarantine,
   senderPolicies,
   senders,
   users,
   workspaces,
 } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { TOPICS } from '@declutrmail/events';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,18 +23,8 @@ import type { DrizzleDb } from '../db/db.module.js';
  * database, mirroring the actions.service.spec pattern.
  */
 
-const MIG_DIR = join(__dirname, '../../../../packages/db/migrations');
-
 async function freshDb(): Promise<DrizzleDb> {
-  const pg = new PGlite({ extensions: { citext } });
-  const db = drizzle(pg, { schema }) as unknown as PgliteDatabase<typeof schema>;
-  const files = readdirSync(MIG_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    await pg.exec(readFileSync(join(MIG_DIR, file), 'utf8'));
-  }
-  return db as unknown as DrizzleDb;
+  return (await freshTestDb()) as unknown as DrizzleDb;
 }
 
 const SENDER_KEY_A = 'a'.repeat(64);

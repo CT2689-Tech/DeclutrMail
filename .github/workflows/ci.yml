@@ -75,34 +75,47 @@ jobs:
               - '.nvmrc'
               - 'packages/config/**'
               - '.github/workflows/ci.yml'
-            # UI-only shared paths must not boot API/worker PGlite suites.
-            # A Button.tsx tweak was paying the 12 min API shard.
+            # UI-only shared paths must not boot the API/worker PGlite
+            # suites — a Button.tsx tweak was paying the full API run.
+            #
+            # Expressed as an ALLOWLIST, not `!` exclusions. dorny/paths-filter
+            # ORs its patterns (`patterns.some(...)`, default quantifier
+            # `some`), so a `!` pattern matches every path OUTSIDE its own
+            # directory and turns the whole rule permanently true — a
+            # README-only PR would boot every Postgres shard. Neither
+            # `predicate-quantifier` value fixes that: `every` would demand a
+            # file match `apps/api/**` AND `packages/db/**` at once.
+            #
+            # The closure is re-derivable; both packages import subpath
+            # exports only, never the `.` barrel:
+            #   grep -rhoE "from '@declutrmail/shared[^']*'" apps/api/src packages/workers/src | sort -u
+            # `actions` reaches `../tokens`, but only from a `.stories.tsx`
+            # that no server entry point imports. `package.json` is listed so
+            # that ADDING a subpath export re-runs both suites by itself.
+            shared_server: &shared_server
+              - 'packages/shared/package.json'
+              - 'packages/shared/tsconfig.json'
+              - 'packages/shared/src/actions/**'
+              - 'packages/shared/src/contracts/**'
+              - 'packages/shared/src/copy/**'
+              - 'packages/shared/src/entitlements/**'
+              - 'packages/shared/src/observability/**'
+              - 'packages/shared/src/senders/**'
             api:
               - *infra
               - 'apps/api/**'
               - 'packages/db/**'
               - 'packages/events/**'
-              - 'packages/shared/**'
-              - '!packages/shared/src/components/**'
-              - '!packages/shared/src/hooks/**'
-              - '!packages/shared/src/shell/**'
-              - '!packages/shared/src/state/**'
-              - '!packages/shared/src/styles/**'
-              - '!packages/shared/src/tokens/**'
-              - '!**/*.stories.tsx'
+              # 40 files under apps/api/src import @declutrmail/workers, so a
+              # worker-only behaviour change still has to run this suite.
+              - 'packages/workers/**'
+              - *shared_server
             workers:
               - *infra
               - 'packages/workers/**'
               - 'packages/db/**'
               - 'packages/events/**'
-              - 'packages/shared/**'
-              - '!packages/shared/src/components/**'
-              - '!packages/shared/src/hooks/**'
-              - '!packages/shared/src/shell/**'
-              - '!packages/shared/src/state/**'
-              - '!packages/shared/src/styles/**'
-              - '!packages/shared/src/tokens/**'
-              - '!**/*.stories.tsx'
+              - *shared_server
             db:
               - *infra
               - 'packages/db/**'
@@ -228,7 +241,13 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @declutrmail/api test -- --shard=${{ matrix.shard }}/2
+      # NO `--` before the flag. `pnpm run <script> -- --shard=…` forwards a
+      # LITERAL `--` into the script, so vitest's cac parser files everything
+      # after it under `argv['--']` and silently ignores it — both matrix legs
+      # then run the whole suite, which is exactly as slow as not sharding and
+      # reports green. The denominator is `strategy.job-total` so that resizing
+      # the matrix cannot leave a stale `/2` running half the suite green.
+      - run: pnpm --filter @declutrmail/api test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
         env:
           CLEANUP_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/declutrmail_quota_test
 
@@ -271,7 +290,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @declutrmail/workers test -- --shard=${{ matrix.shard }}/2
+      # See the note on the API shard above — no `--` before the flag.
+      - run: pnpm --filter @declutrmail/workers test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
         env:
           # A DEDICATED, EMPTY database — the test applies every
           # migration to it. Schema-level isolation is not an option:

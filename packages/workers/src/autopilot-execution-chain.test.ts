@@ -1,20 +1,14 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import { and, eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
 import {
   automationRules,
   mailboxAccounts,
   mailMessages,
-  schema,
   senders,
   triageDecisions,
   users,
   workspaces,
 } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAutopilotExecutionChain } from './autopilot-execution-chain.js';
@@ -33,23 +27,10 @@ import type { WorkerContext } from './worker-context.js';
  * and an Observe-mode pass enqueues nothing.
  */
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations');
 const NOW = new Date('2026-06-10T08:00:00Z');
 
 async function freshDb() {
-  const pg = new PGlite({ extensions: { citext } });
-  for (const file of readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  return drizzle(pg, { schema });
+  return freshTestDb();
 }
 
 const FAKE_CTX: WorkerContext = {

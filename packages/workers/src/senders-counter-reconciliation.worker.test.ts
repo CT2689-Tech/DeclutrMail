@@ -1,11 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
-import { mailMessages, mailboxAccounts, schema, senders, users, workspaces } from '@declutrmail/db';
-import { drizzle } from 'drizzle-orm/pglite';
+import type { schema } from '@declutrmail/db';
+import { mailMessages, mailboxAccounts, senders, users, workspaces } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
+import type { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 
@@ -29,24 +27,10 @@ import type { WorkerContext } from './worker-context.js';
  *   - the idempotency key follows D225's cron shape.
  */
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations');
-
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 async function freshDb(): Promise<Db> {
-  const pg = new PGlite({ extensions: { citext } });
-  for (const file of readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()) {
-    const sqlText = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sqlText.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  return drizzle(pg, { schema });
+  return freshTestDb();
 }
 
 /** D12 / ADR-0011 — `sha256("v1|" + lower(email))`, hex. */

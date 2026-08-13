@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import { activeSessions, schema, users, workspaces } from '@declutrmail/db';
+import { freshTestPglite } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -13,17 +11,6 @@ import type { DrizzleDb } from '../db/db.module.js';
 import type { JwtService } from './jwt.service.js';
 import { SessionsService } from './sessions.service.js';
 
-const MIGRATIONS_DIR = join(
-  import.meta.dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  'packages',
-  'db',
-  'migrations',
-);
-
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 describe('SessionsService.lookupActiveById', () => {
@@ -31,17 +18,7 @@ describe('SessionsService.lookupActiveById', () => {
   let db: Db;
 
   beforeAll(async () => {
-    pg = new PGlite({ extensions: { citext } });
-    const files = readdirSync(MIGRATIONS_DIR)
-      .filter((file) => file.endsWith('.sql'))
-      .sort();
-    for (const file of files) {
-      const sqlText = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-      for (const statement of sqlText.split('--> statement-breakpoint')) {
-        const trimmed = statement.trim();
-        if (trimmed) await pg.query(trimmed);
-      }
-    }
+    pg = await freshTestPglite();
     db = drizzle(pg, { schema });
   });
 
