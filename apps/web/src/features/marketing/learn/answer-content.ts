@@ -17,6 +17,8 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
   'is-it-safe-to-connect-gmail-app': {
     slug: 'is-it-safe-to-connect-gmail-app',
     path: '/answers/is-it-safe-to-connect-gmail-app',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-07-28',
     kind: 'Direct answer',
     eyebrow: 'Gmail access · risk checklist',
     title: 'Is it safe to connect a Gmail cleanup app?',
@@ -107,12 +109,19 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         label: 'Metadata-only explained',
         description: 'What the phrase includes and excludes.',
       },
+      {
+        href: '/vs/unroll-me',
+        label: 'DeclutrMail vs Unroll.Me',
+        description: 'A worked example of this checklist, with the vendor’s own sources.',
+      },
     ],
   },
 
   'what-is-metadata-only-email-analysis': {
     slug: 'what-is-metadata-only-email-analysis',
     path: '/answers/what-is-metadata-only-email-analysis',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-07-28',
     kind: 'Direct answer',
     eyebrow: 'Privacy boundary · published fields',
     title: 'What is metadata-only email analysis?',
@@ -207,6 +216,8 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
   'how-undo-works-for-gmail-cleanup': {
     slug: 'how-undo-works-for-gmail-cleanup',
     path: '/answers/how-undo-works-for-gmail-cleanup',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-07-14',
     kind: 'Direct answer',
     eyebrow: 'Recovery · action by action',
     title: 'How does undo work for Gmail cleanup?',
@@ -294,6 +305,8 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
   'best-way-to-clean-gmail-2026': {
     slug: 'best-way-to-clean-gmail-2026',
     path: '/answers/best-way-to-clean-gmail-2026',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-07-14',
     kind: 'Direct answer',
     eyebrow: '2026 field guide · choose by job',
     title: 'What is the best way to clean Gmail in 2026?',
@@ -406,6 +419,8 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
   'sender-level-vs-message-level-cleanup': {
     slug: 'sender-level-vs-message-level-cleanup',
     path: '/answers/sender-level-vs-message-level-cleanup',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-07-14',
     kind: 'Direct answer',
     eyebrow: 'Mental model · unit of decision',
     title: 'Sender-level vs message-level email cleanup',

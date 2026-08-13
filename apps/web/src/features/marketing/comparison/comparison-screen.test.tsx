@@ -10,7 +10,7 @@ import { ComparisonDetailScreen, ComparisonIndexScreen } from './comparison-scre
 describe('ComparisonIndexScreen', () => {
   beforeEach(() => track.mockClear());
 
-  it('renders all five comparison routes and the verification standard', () => {
+  it('renders every comparison route and the verification standard', () => {
     render(<ComparisonIndexScreen />);
 
     expect(screen.getByText(/Last verified July 2026/i)).toBeInTheDocument();
@@ -84,6 +84,12 @@ describe('ComparisonDetailScreen', () => {
       unmount();
     },
   );
+
+  it('stamps a page with its own verification month, not the hub floor', () => {
+    render(<ComparisonDetailScreen comparison={comparisonBySlug('unroll-me')!} />);
+    expect(screen.getAllByText(/Last verified August 2026/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Last verified July 2026/i)).not.toBeInTheDocument();
+  });
 
   it('renders a visible unknown state and does not disguise it as unsupported', () => {
     const comparison = comparisonBySlug('trimbox')!;

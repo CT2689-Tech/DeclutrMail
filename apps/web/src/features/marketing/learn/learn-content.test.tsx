@@ -6,7 +6,14 @@ import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
 import { FAQ_ENTRIES } from './faq-content';
 import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from './how-to-content';
-import { BlogIndexPage, ChangelogPage, FaqPage } from './index-pages';
+import { ANSWERS_HUB, HOW_TO_HUB, type LearnHubDefinition } from './hub-content';
+import {
+  AnswersIndexPage,
+  BlogIndexPage,
+  ChangelogPage,
+  FaqPage,
+  HowToIndexPage,
+} from './index-pages';
 import type { LearnArticle } from './types';
 
 function articleText(article: LearnArticle): string {
@@ -26,6 +33,16 @@ function articleText(article: LearnArticle): string {
   ].join(' ');
 }
 
+/**
+ * Titles are literals, not patterns. Two answer titles end in `?` and a
+ * how-to title carries one mid-string, which makes the preceding
+ * character optional — an accessible-name assertion that quietly stops
+ * matching what it names.
+ */
+function byName(text: string): RegExp {
+  return new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+}
+
 function wordCount(article: LearnArticle): number {
   return articleText(article).trim().split(/\s+/).filter(Boolean).length;
 }
@@ -36,10 +53,11 @@ const BLOG = BLOG_SLUGS.map((slug) => BLOG_ARTICLES[slug]);
 const ALL_ARTICLES = [...HOW_TO, ...ANSWERS, ...BLOG];
 
 describe('public learning content registry', () => {
-  it('ships exactly the five D132 how-to routes and five answer routes', () => {
+  it('ships exactly the published how-to routes and five answer routes', () => {
     expect(HOW_TO_SLUGS).toEqual([
       'clean-gmail-by-sender',
       'bulk-delete-emails-from-one-sender',
+      'gmail-storage-full',
       'auto-archive-future-emails-in-gmail',
       'stop-promotional-emails-gmail',
       'unsubscribe-from-emails-gmail',
@@ -77,6 +95,22 @@ describe('public learning content registry', () => {
       expect(article.kind).toBe('Launch essay');
       expect(article.sections.length, article.path).toBeGreaterThanOrEqual(6);
       expect(wordCount(article), `${article.path} word count`).toBeGreaterThanOrEqual(700);
+    }
+  });
+
+  it('dates every article with an attributable publish and modify date', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    for (const article of ALL_ARTICLES) {
+      expect(article.publishedAt, article.path).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(article.updatedAt, article.path).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // A dateModified that precedes datePublished reads as stale to a
+      // crawler and cannot be true of any real edit.
+      expect(
+        article.updatedAt >= article.publishedAt,
+        `${article.path} claims an edit before it was published`,
+      ).toBe(true);
+      // Freshness is a public claim, so it may never be post-dated.
+      expect(article.updatedAt <= today, `${article.path} claims a future edit`).toBe(true);
     }
   });
 
@@ -118,16 +152,103 @@ describe('shared learning surfaces', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('carries the freshness dates into the structured data', () => {
+    const article = HOW_TO_ARTICLES['clean-gmail-by-sender'];
+    const { container } = render(<ArticlePage article={article} />);
+    const jsonLd = JSON.parse(
+      container.querySelector('script[type="application/ld+json"]')?.textContent ?? '{}',
+    ) as Record<string, unknown>;
+    expect(jsonLd).toMatchObject({
+      '@type': 'HowTo',
+      datePublished: article.publishedAt,
+      dateModified: article.updatedAt,
+    });
+  });
+
+  it('marks up the question an answer page exists to answer', () => {
+    // Pinned so that retitling an answer out of interrogative form is a
+    // visible decision rather than a silently dropped FAQPage.
+    expect(ANSWERS.filter((article) => article.title.endsWith('?'))).toHaveLength(4);
+
+    const article = ANSWER_ARTICLES['is-it-safe-to-connect-gmail-app'];
+    const { container } = render(<ArticlePage article={article} />);
+    const nodes = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
+      (script) => JSON.parse(script.textContent ?? '{}') as Record<string, unknown>,
+    );
+
+    expect(nodes.map((node) => node['@type'])).toEqual(['Article', 'FAQPage']);
+    expect(nodes[1]?.mainEntity).toEqual([
+      {
+        '@type': 'Question',
+        name: article.title,
+        acceptedAnswer: { '@type': 'Answer', text: article.quickAnswer },
+      },
+    ]);
+  });
+
+  it('omits FAQPage on the answer whose title is a comparison, not a question', () => {
+    const { container } = render(
+      <ArticlePage article={ANSWER_ARTICLES['sender-level-vs-message-level-cleanup']} />,
+    );
+    const types = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
+      (script) => (JSON.parse(script.textContent ?? '{}') as Record<string, unknown>)['@type'],
+    );
+    expect(types).toEqual(['Article']);
+  });
+
   it('renders all three real journal posts on the blog index', () => {
     render(<BlogIndexPage />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
       /calmer, inspectable email/i,
     );
     for (const article of BLOG) {
-      expect(screen.getByRole('link', { name: new RegExp(article.title) })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: byName(article.title) })).toHaveAttribute(
         'href',
         article.path,
       );
+    }
+  });
+
+  it.each([
+    ['how-to', HOW_TO_HUB, <HowToIndexPage key="how-to" />] as const,
+    ['answers', ANSWERS_HUB, <AnswersIndexPage key="answers" />] as const,
+  ])(
+    'gives the %s cluster an addressable hub listing every page in it',
+    (_name, hub: LearnHubDefinition, element) => {
+      const { container } = render(element);
+
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(hub.heading);
+      for (const article of hub.articles) {
+        expect(screen.getByRole('link', { name: byName(article.title) })).toHaveAttribute(
+          'href',
+          article.path,
+        );
+      }
+
+      const jsonLd = JSON.parse(
+        container.querySelector('script[type="application/ld+json"]')?.textContent ?? '{}',
+      ) as { '@type': string; mainEntity: { itemListElement: Array<{ url: string }> } };
+      expect(jsonLd['@type']).toBe('CollectionPage');
+      // The ItemList must be the cluster, in order — a hub that lists nine
+      // of ten pages is the crawl gap these hubs exist to close.
+      expect(jsonLd.mainEntity.itemListElement.map((item) => item.url)).toEqual(
+        hub.articles.map((article) => `https://declutrmail.com${article.path}`),
+      );
+    },
+  );
+
+  it('leaves /blog as essays, pointing at each cluster hub instead of restating it', () => {
+    render(<BlogIndexPage />);
+
+    for (const [href, name] of [
+      ['/how-to', HOW_TO_HUB.heading],
+      ['/answers', ANSWERS_HUB.heading],
+    ] as const) {
+      expect(screen.getByRole('link', { name: byName(name) })).toHaveAttribute('href', href);
+    }
+    // The guide cards themselves must no longer be duplicated here.
+    for (const article of [...HOW_TO, ...ANSWERS]) {
+      expect(screen.queryByRole('link', { name: byName(article.title) })).toBeNull();
     }
   });
 

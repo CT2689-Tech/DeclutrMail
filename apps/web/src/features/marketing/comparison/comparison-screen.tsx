@@ -6,8 +6,8 @@ import { TrackedCta } from '../landing/tracked-cta';
 import { oauthStartUrl, siteUrl } from '../landing/urls';
 import {
   COMPARISONS,
-  COMPARISON_VERIFIED_ISO,
-  COMPARISON_VERIFIED_LABEL,
+  COMPARISONS_VERIFIED_FLOOR_ISO,
+  comparisonVerifiedLabel,
   type ComparisonCell,
   type ComparisonDefinition,
   type EvidenceState,
@@ -45,10 +45,11 @@ function EvidenceCell({ cell }: { cell: ComparisonCell }) {
   );
 }
 
-function VerificationStamp() {
+function VerificationStamp({ iso }: { iso: string }) {
   return (
     <p className="dm-compare-verified">
-      <span aria-hidden="true">●</span> {COMPARISON_VERIFIED_LABEL} · Official primary sources only
+      <span aria-hidden="true">●</span> {comparisonVerifiedLabel(iso)} · Official primary sources
+      only
     </p>
   );
 }
@@ -138,7 +139,7 @@ export function ComparisonIndexScreen() {
             </p>
           </div>
           <div className="dm-compare-index-note">
-            <VerificationStamp />
+            <VerificationStamp iso={COMPARISONS_VERIFIED_FLOOR_ISO} />
             <strong>
               {COMPARISON_COUNT_WORD.charAt(0).toUpperCase() + COMPARISON_COUNT_WORD.slice(1)}{' '}
               direct comparisons
@@ -253,7 +254,7 @@ function comparisonJsonLd(comparison: ComparisonDefinition) {
     name: comparison.title,
     description: comparison.description,
     url: `${siteUrl()}/vs/${comparison.slug}`,
-    dateModified: COMPARISON_VERIFIED_ISO,
+    dateModified: comparison.verifiedIso,
     breadcrumb: {
       '@type': 'BreadcrumbList',
       itemListElement: [
@@ -281,7 +282,7 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
             <span aria-hidden="true">/</span>
             <span>{comparison.name}</span>
           </nav>
-          <VerificationStamp />
+          <VerificationStamp iso={comparison.verifiedIso} />
           <p className="dm-mkt-hero-kicker">
             <b>{comparison.category}</b> · A direct comparison
           </p>
@@ -400,7 +401,7 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
               <p>Current data categories, Gmail access, retention, and account-deletion details.</p>
             </li>
           </ol>
-          <VerificationStamp />
+          <VerificationStamp iso={comparison.verifiedIso} />
         </section>
 
         <div className="dm-mkt-shell dm-compare-method-wrap">

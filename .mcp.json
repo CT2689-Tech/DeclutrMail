@@ -1,4 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-mcp.json",
-  "mcpServers": {}
+  "mcpServers": {
+    "gsc": {
+      "command": "npx",
+      "args": ["-y", "search-console-mcp-server"]
+    }
+  }
 }

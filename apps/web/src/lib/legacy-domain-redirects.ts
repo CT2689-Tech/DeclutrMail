@@ -41,6 +41,13 @@ export const CANONICAL_ORIGIN = 'https://declutrmail.com';
 export const LEGACY_HOST_PATTERN = '(www\\.)?declutrmail\\.ai';
 
 /**
+ * Same-site www → apex. Google indexed `www.declutrmail.com/` as the
+ * homepage canonical while `siteUrl()` emits the apex (D128). Host-gated
+ * so the apex never redirects to itself.
+ */
+export const WWW_HOST_PATTERN = 'www\\.declutrmail\\.com';
+
+/**
  * V1 URL → nearest V2 equivalent, for every V1 path that does not exist
  * verbatim on V2. Sourced from `https://declutrmail.ai/sitemap.xml`
  * (the indexed set) plus the app routes in V1's `robots.txt`.
@@ -52,7 +59,9 @@ export const LEGACY_HOST_PATTERN = '(www\\.)?declutrmail\\.ai';
 const LEGACY_PATH_MAP: Record<string, string> = {
   // --- Blog: V2 renamed every slug, none carry over -------------------
   '/blog/email-overload-problem': '/blog/why-cleanup-starts-with-senders',
-  '/blog/is-unroll-me-safe': '/answers/is-it-safe-to-connect-gmail-app',
+  // V1's Unroll.Me safety post now has a topical V2 page, not just the
+  // generic Gmail-app checklist.
+  '/blog/is-unroll-me-safe': '/vs/unroll-me',
   '/blog/launch-announcement': '/changelog',
   '/blog/privacy-first-design': '/blog/metadata-only-is-a-design-constraint',
   '/blog/psychology-of-digital-clutter': '/blog/why-cleanup-starts-with-senders',
@@ -61,16 +70,18 @@ const LEGACY_PATH_MAP: Record<string, string> = {
   '/compare/clean-email-vs-declutrmail': '/vs/clean-email',
   '/compare/leave-me-alone-vs-declutrmail': '/vs/leave-me-alone',
   '/compare/sanebox-vs-declutrmail': '/vs/sanebox',
-  // Mailstrom + Unroll.Me have no V2 page — the index is the honest target.
+  '/compare/unroll-me-vs-declutrmail': '/vs/unroll-me',
+  // The three-way post is closest to the Unroll.Me page, which links to
+  // the Leave Me Alone comparison in its own footer nav.
+  '/compare/declutrmail-vs-unroll-me-vs-leave-me-alone': '/vs/unroll-me',
+  // Mailstrom still has no V2 page — the index is the honest target.
   '/compare/mailstrom-vs-declutrmail': '/compare',
-  '/compare/unroll-me-vs-declutrmail': '/compare',
-  '/compare/declutrmail-vs-unroll-me-vs-leave-me-alone': '/compare',
 
   // --- Guides: V2 has no `/guides` section; content split how-to/answers
   '/guides': '/help',
   '/guides/auto-archive-gmail': '/how-to/auto-archive-future-emails-in-gmail',
   '/guides/find-all-email-subscriptions-gmail': '/how-to/unsubscribe-from-emails-gmail',
-  '/guides/gmail-storage-full': '/how-to/bulk-delete-emails-from-one-sender',
+  '/guides/gmail-storage-full': '/how-to/gmail-storage-full',
   '/guides/unsubscribe-safely': '/how-to/unsubscribe-from-emails-gmail',
   '/guides/inbox-zero-strategy': '/answers/best-way-to-clean-gmail-2026',
   '/guides/digital-minimalism-email': '/blog/why-cleanup-starts-with-senders',
@@ -154,5 +165,22 @@ export function legacyDomainRedirects(): Redirect[] {
     ...LEGACY_PATTERN_MAP.map(({ source, destination }) => rule(source, destination)),
     // Everything else keeps its path (`/`, `/pricing`, `/faq`, …).
     rule('/:path*', '/:path*'),
+  ];
+}
+
+/**
+ * Path-preserving 301 from www to the apex. `statusCode: 301` (not
+ * Next's `permanent: true` 308) matches the `.ai` move: GSC treats 301
+ * as the permanent-host signal. Vercel's domain radio must also be
+ * 308/301 — a 307 there wins at the edge and keeps www indexable.
+ */
+export function wwwApexRedirects(): Redirect[] {
+  return [
+    {
+      source: '/:path*',
+      has: [{ type: 'host', value: WWW_HOST_PATTERN }],
+      destination: `${CANONICAL_ORIGIN}/:path*`,
+      statusCode: 301,
+    },
   ];
 }

@@ -38,6 +38,10 @@ function Callout({ callout }: { callout: LearnCallout }) {
 }
 
 function articleJsonLd(article: LearnArticle) {
+  // Both HowTo and Article inherit CreativeWork's date properties, so the
+  // freshness signal is identical on either branch.
+  const dates = { datePublished: article.publishedAt, dateModified: article.updatedAt };
+
   if (article.kind === 'How-to guide') {
     const steps = article.sections.flatMap((section) => section.steps ?? []);
     return {
@@ -46,6 +50,7 @@ function articleJsonLd(article: LearnArticle) {
       name: article.title,
       description: article.description,
       url: `${siteUrl()}${article.path}`,
+      ...dates,
       step: steps.map((step) => ({ '@type': 'HowToStep', name: step.name, text: step.text })),
     };
   }
@@ -56,15 +61,44 @@ function articleJsonLd(article: LearnArticle) {
     headline: article.title,
     description: article.description,
     url: `${siteUrl()}${article.path}`,
+    ...dates,
     author: { '@type': 'Organization', name: 'DeclutrMail' },
     publisher: { '@type': 'Organization', name: 'DeclutrMail' },
   };
 }
 
+/**
+ * A second node marking up the one question the page exists to answer, so
+ * an answer engine can lift the response without parsing the prose.
+ *
+ * Emitted only when the title is literally interrogative and a short
+ * answer exists — the pair IS the Question/Answer, so nothing here is
+ * restated or invented. `/answers/sender-level-vs-message-level-cleanup`
+ * is titled as a comparison rather than a question and correctly gets no
+ * FAQPage; a page whose title stops being a question loses the node, and
+ * the content test pins how many pages currently qualify.
+ */
+function faqJsonLd(article: LearnArticle) {
+  if (!article.quickAnswer || !article.title.endsWith('?')) return null;
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      {
+        '@type': 'Question',
+        name: article.title,
+        acceptedAnswer: { '@type': 'Answer', text: article.quickAnswer },
+      },
+    ],
+  };
+}
+
 export function ArticlePage({ article }: { article: LearnArticle }) {
+  const faq = faqJsonLd(article);
   return (
     <LearnShell>
       <JsonLd data={articleJsonLd(article)} />
+      {faq ? <JsonLd data={faq} /> : null}
       <header className={`dm-learn-hero${article.example ? '' : ' dm-learn-hero--solo'}`}>
         <div>
           <LearnEyebrow>{article.eyebrow}</LearnEyebrow>

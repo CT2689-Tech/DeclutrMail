@@ -1,12 +1,92 @@
 import Link from 'next/link';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
-import { ANSWER_ARTICLES, ANSWER_SLUGS } from './answer-content';
+import { ANSWER_SLUGS } from './answer-content';
 import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
 import { FAQ_ENTRIES } from './faq-content';
-import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from './how-to-content';
+import { HOW_TO_SLUGS } from './how-to-content';
+import { ANSWERS_HUB, HOW_TO_HUB, type LearnHubDefinition } from './hub-content';
 import { LearnEyebrow, LearnShell } from './learn-shell';
+import type { LearnArticle } from './types';
+
+function ArticleCards({ articles, label }: { articles: readonly LearnArticle[]; label: string }) {
+  return (
+    <section className="dm-learn-grid" aria-label={label}>
+      {articles.map((article) => (
+        <Link className="dm-learn-card" href={article.path} key={article.slug}>
+          <em>{article.eyebrow}</em>
+          <strong>{article.title}</strong>
+          <span>{article.description}</span>
+          <span>{article.readingMinutes} minute read</span>
+        </Link>
+      ))}
+    </section>
+  );
+}
+
+/**
+ * A hub for one content cluster (D132 how-to and answer sets).
+ *
+ * These exist because the ten pages built to rank were previously
+ * reachable only through intra-cluster cross-links and a shared section on
+ * `/blog` — so each cluster had no addressable entry point for a crawler,
+ * an answer engine, or the footer to point at. The `ItemList` states the
+ * cluster's membership and order explicitly rather than leaving it to be
+ * inferred from the markup.
+ */
+function LearnHub({ hub }: { hub: LearnHubDefinition }) {
+  const { eyebrow, heading, lead, meta, path, description, articles, label } = hub;
+  return (
+    <LearnShell>
+      <JsonLd
+        data={{
+          '@context': 'https://schema.org',
+          '@type': 'CollectionPage',
+          name: heading,
+          description,
+          url: `${siteUrl()}${path}`,
+          isPartOf: { '@id': `${siteUrl()}/#website` },
+          mainEntity: {
+            '@type': 'ItemList',
+            itemListOrder: 'https://schema.org/ItemListOrderAscending',
+            numberOfItems: articles.length,
+            itemListElement: articles.map((article, index) => ({
+              '@type': 'ListItem',
+              position: index + 1,
+              name: article.title,
+              url: `${siteUrl()}${article.path}`,
+            })),
+          },
+        }}
+      />
+      <header className="dm-learn-hero dm-learn-hero--solo">
+        <div>
+          <LearnEyebrow>{eyebrow}</LearnEyebrow>
+          <h1 className="dm-learn-title">{heading}</h1>
+          <p className="dm-learn-lead">{lead}</p>
+          <div className="dm-learn-meta">
+            {meta.map((item, index) => (
+              <span key={item}>
+                {index > 0 ? <span aria-hidden="true">· </span> : null}
+                {item}
+              </span>
+            ))}
+          </div>
+        </div>
+      </header>
+      <ArticleCards articles={articles} label={label} />
+    </LearnShell>
+  );
+}
+
+export function HowToIndexPage() {
+  return <LearnHub hub={HOW_TO_HUB} />;
+}
+
+export function AnswersIndexPage() {
+  return <LearnHub hub={ANSWERS_HUB} />;
+}
 
 export function BlogIndexPage() {
   const articles = BLOG_SLUGS.map((slug) => BLOG_ARTICLES[slug]);
@@ -40,57 +120,38 @@ export function BlogIndexPage() {
           </div>
         </div>
       </header>
-      <section className="dm-learn-grid" aria-label="Journal articles">
-        {articles.map((article) => (
-          <Link className="dm-learn-card" href={article.path} key={article.slug}>
-            <em>{article.eyebrow}</em>
-            <strong>{article.title}</strong>
-            <span>{article.description}</span>
-            <span>{article.readingMinutes} minute read</span>
-          </Link>
-        ))}
-      </section>
-      {/* Guides hub (SEO sweep 2026-08-04): the footer's "Guides" link
-          lands here, and until now the ten how-to/answers pages —
-          the content built to rank — were reachable only through
-          intra-cluster cross-links. */}
+      <ArticleCards articles={articles} label="Journal articles" />
+      {/* The how-to and answer clusters used to be listed in full here,
+          because the footer's "Guides" link landed on /blog and they had
+          no hub of their own. They now have one each, so this is two
+          pointers instead of twenty duplicated cards — the hub stays the
+          canonical entry point for its cluster, and the essays are not
+          buried under content they have nothing to do with. */}
       <header className="dm-learn-hero dm-learn-hero--solo">
         <div>
-          <LearnEyebrow>Step-by-step</LearnEyebrow>
-          <h2 className="dm-learn-title">How-to guides</h2>
+          <LearnEyebrow>Also on DeclutrMail</LearnEyebrow>
+          <h2 className="dm-learn-title">Guides and answers</h2>
         </div>
       </header>
-      <section className="dm-learn-grid" aria-label="How-to guides">
-        {HOW_TO_SLUGS.map((slug) => {
-          const article = HOW_TO_ARTICLES[slug];
-          return (
-            <Link className="dm-learn-card" href={article.path} key={article.slug}>
-              <em>{article.eyebrow}</em>
-              <strong>{article.title}</strong>
-              <span>{article.description}</span>
-              <span>{article.readingMinutes} minute read</span>
-            </Link>
-          );
-        })}
-      </section>
-      <header className="dm-learn-hero dm-learn-hero--solo">
-        <div>
-          <LearnEyebrow>Straight answers</LearnEyebrow>
-          <h2 className="dm-learn-title">Common questions, answered</h2>
-        </div>
-      </header>
-      <section className="dm-learn-grid" aria-label="Direct answers">
-        {ANSWER_SLUGS.map((slug) => {
-          const article = ANSWER_ARTICLES[slug];
-          return (
-            <Link className="dm-learn-card" href={article.path} key={article.slug}>
-              <em>{article.eyebrow}</em>
-              <strong>{article.title}</strong>
-              <span>{article.description}</span>
-              <span>{article.readingMinutes} minute read</span>
-            </Link>
-          );
-        })}
+      <section className="dm-learn-grid" aria-label="Other learning hubs">
+        <Link className="dm-learn-card" href="/how-to">
+          <em>Step-by-step</em>
+          <strong>Gmail cleanup how-to guides</strong>
+          <span>
+            The native Gmail method first, what it changes and leaves alone, and Google’s own
+            documentation for every step.
+          </span>
+          <span>{HOW_TO_SLUGS.length} guides</span>
+        </Link>
+        <Link className="dm-learn-card" href="/answers">
+          <em>Straight answers</em>
+          <strong>Answers about Gmail cleanup</strong>
+          <span>
+            What a cleanup app can see, what each action changes, and where recovery stops — limits
+            stated, not implied.
+          </span>
+          <span>{ANSWER_SLUGS.length} answers</span>
+        </Link>
       </section>
     </LearnShell>
   );

@@ -26,6 +26,109 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-13 — GSC clicks the SEO pass could not make from here
+**Source:** session (SEO/AEO/GEO pass, D132/D134)
+**Why:** the code side of the pass is merged-ready, but three signals only
+Google can accept: the `.com` sitemap needs recrawling now that it gained
+`/how-to`, `/answers`, `/how-to/gmail-storage-full`, `/vs/unroll-me` and
+`/pricing.md`; the `.ai → .com` Change of Address needs confirming (the 301s
+and the www→apex 308 are now in place, so the move can complete); and
+"crawled, currently not indexed" URLs need a manual nudge.
+**How:** [Search Console → sc-domain:declutrmail.com](https://search.google.com/search-console?resource_id=sc-domain%3Adeclutrmail.com):
+Sitemaps → resubmit `https://declutrmail.com/sitemap.xml`; URL Inspection →
+Request Indexing on the new URLs above (cap 10–20/day, it is rate-limited);
+then Settings → Change of Address on the `.ai` property and confirm it reads
+as running rather than pending.
+**Verifies by:** Sitemaps shows a fresh "Last read" date with the higher
+discovered-URL count; each requested URL moves to "URL is on Google";
+Change of Address shows an active move.
+**Status:** Open
+
+### 2026-08-13 — Submit the sitemap to Bing and Brave (Copilot and Claude cite them)
+**Source:** session (SEO/AEO/GEO pass, D132)
+**Why:** every indexing signal so far points at Google only. Copilot answers
+lean on Bing's index and Claude's web results lean on Brave, so the AEO work
+in this pass is invisible to two of the three answer engines that matter
+until their crawlers are told the site exists.
+**How:** [Bing Webmaster Tools](https://www.bing.com/webmasters) → add
+`declutrmail.com` (import from GSC is the fastest path) → Sitemaps → submit
+`https://declutrmail.com/sitemap.xml`. Then
+[Brave Search](https://search.brave.com/help/webmaster) → register the site
+and submit the same sitemap.
+**Verifies by:** `site:declutrmail.com` returns pages on both engines, and
+Bing Webmaster shows the sitemap as successfully read.
+**Status:** Open
+
+### 2026-08-13 — List on AlternativeTo and SaaSHub, after the hero copy settles
+**Source:** session (SEO/AEO/GEO pass)
+**Why:** answer engines quote these directories when asked for alternatives
+to a named tool, and `/vs/unroll-me` now gives that query a real destination.
+Listing before the D250 hero copy is final means the description that gets
+scraped and cached is the one we are about to change.
+**How:** once the hero copy is settled, create listings on
+[AlternativeTo](https://alternativeto.net) and
+[SaaSHub](https://www.saashub.com), reusing the `llms.txt` one-line
+description verbatim so every surface says the same thing. Claim the
+listings; do not accept a category that implies category prediction (D222).
+**Verifies by:** both listings are live and their descriptions match the
+"How to describe DeclutrMail" block in `apps/web/public/llms.txt`.
+**Status:** Open
+
+### 2026-08-13 — Re-verify the five July comparison pages, then bump their dates
+**Source:** session (SEO/AEO/GEO pass)
+**Why:** comparison freshness is now per page (`verifiedIso` in
+`comparison-data.ts`), so `/vs/unroll-me` reads "Last verified August 2026"
+while the other six still read July — correctly, because only the Unroll.Me
+sources were re-read this pass. The hub shows the oldest of them, which is
+the honest floor but also the one that ages first.
+**How:** open each vendor's cited pages (Clean Email, Trimbox, SaneBox,
+Leave Me Alone, plus the Gmail Help pages), confirm each row still matches
+what the page says, correct any drift, then bump only that comparison's
+`verifiedIso`. Do not bump a date for a page you did not re-read — the
+field exists to make that impossible to fake.
+**Verifies by:** `comparison-data.test.ts` passes and each page's stamp
+matches the date its sources were actually read.
+**Status:** Open
+
+### 2026-08-13 — Monthly AI-visibility ladder (20 queries, four engines)
+**Source:** session (SEO/AEO/GEO pass)
+**Why:** GSC measures Google's index, not whether an answer engine cites us.
+Nothing in the repo can observe that, so it needs a recurring human pass —
+otherwise the AEO work is unfalsifiable.
+**How:** monthly, ask ChatGPT, Claude, Perplexity and Google AI Overviews the
+same 20 questions the content targets ("is unroll.me safe", "unroll.me
+alternative", "gmail storage full", "delete all emails from one sender",
+"is it safe to connect a gmail app", …). Record for each: cited or not,
+which URL, and whether the description matches `llms.txt`. Wrong
+descriptions are the actionable signal — they say which page needs a
+clearer factual block.
+**Verifies by:** a dated table in `docs/execution/` per run, so month N+1
+is a diff rather than a fresh impression.
+**Status:** Open
+
+### 2026-08-13 — The 121k-inbox essay needs live counts from your mailbox
+**Source:** session (SEO/AEO/GEO pass, wave 2)
+**Why:** the data essay is the strongest GEO asset in the playbook precisely
+because the numbers are real and first-party — which is also why this pass
+did not write it. Every figure has to be queried at publish time and labeled
+as one mailbox on one date. Drafting it from the dev database would publish
+a number whose completeness I cannot vouch for (a partial sync produces an
+understated total presented as a total), and it publishes your personal
+mailbox statistics, which is your call to make, not mine.
+**How:** when you want it, run the counts against your own mailbox with the
+sync confirmed complete (total messages, distinct senders, share of volume
+from the top 10 and top 50 senders, unread share, oldest message date), then
+say the word and the essay gets written around those figures at
+`/blog/anatomy-of-a-<live-total>-inbox` with the count date stated in the
+copy. Query shape: `SELECT COUNT(*) FROM mail_messages WHERE
+mailbox_account_id = $1;` plus `GROUP BY sender_key ORDER BY COUNT(*) DESC`
+for the concentration figures — and confirm
+`provider_sync_state.current_stage` reads `ready` for that mailbox first,
+otherwise the total is a partial sync wearing a total's clothes.
+**Verifies by:** the published essay's figures reproduce from a re-run of
+the same queries, and every number in it carries its as-of date.
+**Status:** Open
+
 ### 2026-08-12 — Wire an alert on the mailbox-lock leak detector
 **Source:** PR #509 (architecture-guardian review)
 **Why:** PR #509 adds structured error logs (`mailbox_lock.unlock_failed`,
