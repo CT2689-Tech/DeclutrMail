@@ -32,14 +32,14 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-- ⬜ Not started: 77
+- ⬜ Not started: 78
 - 🟡 In progress: 1
 - 🔵 Shipped: 107
 - 🟢 Verified: 55
 - 🚫 Retired: 2
 - 🔴 Blocked: 0
 - ⏸️ Deferred: 0
-- **Total: 242 D-decisions**
+- **Total: 243 D-decisions**
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -298,5 +298,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D250 | Landing page primary headline (reverses D223) | 🔵 | #468, #470 |  |  |
 | D251 | Autopilot splits on behaviour, not access | 🔵 | #465 |  |  |
 | D252 | Unsubscribe degrades honestly | 🔵 | #514 |  |  |
+| D253 | A refunded customer can buy again | ⬜ |  |  |  |
 
 <!-- AUTO:DECISIONS:END -->

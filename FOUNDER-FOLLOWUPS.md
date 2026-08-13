@@ -26,6 +26,83 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-13 — Nothing surfaces refunded-vs-cancelled churn
+**Source:** founder question during the D253 refund-lockout design, 2026-08-13 —
+*"How can we get stats on how many customers we have refunded vs just
+cancelled?"*
+**Why:** the data already exists and no human-readable surface reads it.
+`subscriptions.cancel_source` (enum `provider` | `refund` | `chargeback`,
+`packages/db/src/schema/subscriptions.ts`) records why a plan ended, and D253
+deliberately preserves it on the refund path precisely so "ended by refund"
+stays distinguishable from "cancelled normally". But there is no screen, no
+report and no alert over it — the only way to answer the founder's question
+today is to open a SQL client against production. That is the shape of question
+that gets asked when churn starts mattering and answered late because nobody
+built the surface while it was cheap.
+Verified against production 2026-08-13: exactly **1** subscription, `active`,
+with zero cancellations, refunds or chargebacks ever recorded. So the answer is
+trivially zero right now — which is the ideal moment to build the surface,
+before there is a backlog to reconcile.
+Note the timeline half is being closed separately: the D253 PR adds distinct,
+countable structured log lines per ending reason, so from that merge onward the
+event stream can be counted in log-based metrics. This follow-up is for the
+**human-readable surface** only.
+**How:** decide the surface — an internal admin view, or a periodic digest
+(weekly email / log-based metric dashboard) — and build it. Interim answer, run
+against production directly:
+
+```sql
+select coalesce(cancel_source::text,'(still active / no cancel)') as ended_by,
+       status, count(*) as subs
+from subscriptions group by 1,2 order by subs desc;
+```
+
+**Verifies by:** the refunded-vs-cancelled split is readable without opening a
+SQL client — a page, a digest, or a dashboard tile that names each
+`cancel_source` value explicitly (including zero counts, so an absent reason
+reads as zero rather than as missing).
+**Status:** Open
+
+### 2026-08-13 — A won dispute recovers entitlement but leaves our own cancel standing
+**Source:** D253 refund-lockout design, 2026-08-13 (`docs/handoffs/2026-08-13-d253-refund-lockout-design.md`, "Out of scope")
+**Why:** `applyRevokedCancellation`
+(`apps/api/src/billing/billing-webhook.service.ts`) clears `cancel_source` and
+`entitlement_ends_at` but leaves `cancel_at_period_end` set — and clearing
+`cancel_source` drops the row out of the verdict selector
+(`inArray(subscriptions.cancelSource, ['refund','chargeback'])` in
+`billing-reconciliation.service.ts`), so nothing ever revisits it.
+Where the scheduled cancel was the **customer's own**, that is correct — they
+asked for it, and restoring entitlement should not un-cancel their plan. Where
+the scheduled cancel was **ours**, sent by refund/chargeback enforcement, the
+subscription still terminates at the provider while entitlement has been
+restored locally, and no pass will ever notice. Recovery is one-shot and
+under-recovers.
+It is reachable only on the **chargeback** rail: a won dispute genuinely
+reverses a settled chargeback. It is not reachable for refunds — per Paddle's
+documentation an approved refund is terminal, so there is no reversed-refund
+path to worry about.
+Pre-existing, but D253 changes its character: until D253 fixes the
+short-circuit that skipped scheduled-cancel rows, the lift never ran on such a
+row at all, so the bug was unreachable in practice. D253 turns "never recovers"
+into "recovers, then quietly under-recovers".
+The reason it is not simply patched: the fix needs provenance we do not store
+in a column — *who scheduled this cancel* — which is a design decision, not a
+one-line change.
+**How:** first check whether it is already closed. The D253 PR attempts a
+no-migration derivation of that provenance from the `subscription_events` audit
+trail; if that landed, this entry is already resolved — move it to Done citing
+the PR. If it did not land, the decision is between (a) storing the provenance
+explicitly (a column and a migration), (b) alerting on the ambiguous case
+instead of resolving it, or (c) accepting the under-recovery and recording that
+choice here.
+**Verifies by:** a won dispute on a subscription whose cancel was sent by our
+own enforcement no longer leaves the provider silently set to terminate — it
+either revokes the scheduled cancel or raises a support-visible alert, pinned by
+a test. Or an explicit decision recorded here that the under-recovery is
+accepted.
+**Status:** Open — founder decision 2026-08-13: post-launch. Cannot bite until
+there is a chargeback that is then disputed and won.
+
 ### 2026-08-12 — Wire an alert on the mailbox-lock leak detector
 **Source:** PR #509 (architecture-guardian review)
 **Why:** PR #509 adds structured error logs (`mailbox_lock.unlock_failed`,
@@ -308,19 +385,23 @@ because these are copy decisions, and the same "don't mint a constraint" rule ap
 
 **Status:** Open — neither can bite before there is a paying customer with a failed payment or a same-day renewal
 
-### 2026-07-31 — Paddle prod destination: `adjustment.updated` (now optional)
+### 2026-07-31 — Paddle prod destination: `adjustment.updated` (needs adapter code, not just the toggle)
 
-**Source:** refund-path work 2026-07-31 (PR #452)
+**Source:** refund-path work 2026-07-31 (PR #452); **corrected 2026-08-13** during the D253 refund-lockout design
 
-**Why:** on a LIVE Paddle account most refunds are created `pending_approval` and Paddle approves them asynchronously; sandbox auto-approves, so that shape has never been seen here. We act on `adjustment.created` immediately, which is the right failure direction, and a refund Paddle later REJECTS is now corrected by the 6-hourly reconciliation sweep — it asks Paddle's `/adjustments` directly and lifts the verdict. So this is no longer a correctness gap.
+**Why:** on a LIVE Paddle account most refunds are created `pending_approval` and Paddle approves them asynchronously; sandbox auto-approves, so that shape has never been seen here. We act on `adjustment.created` immediately, which is the right failure direction, and a refund Paddle later REJECTS is corrected by the reconciliation sweep — it asks Paddle's `/adjustments` directly and lifts the verdict. So this is not a correctness gap.
 
-What subscribing buys is **latency**: the correction lands in minutes instead of up to six hours, and the same is true for a won dispute (`chargeback_reverse`).
+**Correction 2026-08-13 — the dashboard toggle alone buys nothing.** This entry previously said subscribing to the event would cut correction latency from hours to minutes. It would not. `paddle.adapter.ts` has **no `case` for `adjustment.updated`** in `mapWebhookEvent`; the event falls through to `default:` and is returned as `{ kind: 'ignored' }`, which the projector records as ignored and acts on in no way. Enabling the toggle would therefore deliver a webhook we authenticate, store and discard — the same latency as today, plus noise in the event ledger.
 
-**How:** Paddle dashboard → Developer tools → Notifications → the production destination → add `adjustment.updated` to the subscribed events. Nothing breaks if you skip it.
+The latency win is real, but it requires **both** the subscription and adapter code that maps the payload to a settlement or refutation.
 
-**Verifies by:** `adjustment.updated` visible in the production destination's event list.
+**Deliberately out of scope for the D253 PR.** D253 moves the verdict pass onto its own ~10-minute cadence, so a rejected refund is already corrected within minutes by polling. Against that, the remaining gain from a push event is marginal, and the adapter work is a second surface to get right on the revenue path. See `docs/handoffs/2026-08-13-d253-refund-lockout-design.md` ("Out of scope").
 
-**Status:** Open — nice-to-have, not a blocker
+**How:** do nothing for now. If it is ever taken up, it is two steps and the first is useless without the second: (1) add an `adjustment.updated` case to `mapWebhookEvent` in `apps/api/src/billing/paddle.adapter.ts` that maps the adjustment's status to the existing settled/refuted vocabulary; (2) Paddle dashboard → Developer tools → Notifications → the production destination → add `adjustment.updated` to the subscribed events. Nothing breaks if you skip both.
+
+**Verifies by:** an `adjustment.updated` delivery producing a real projection — the `billing.webhook.ignored … type=adjustment.updated` log line stops appearing and the subscription's local verdict actually changes — rather than the event merely appearing in the destination's subscribed list.
+
+**Status:** Open — nice-to-have, not a blocker; superseded in practice by D253's faster verdict cadence
 
 ### 2026-07-31 — Verify production billing with one real purchase (founder decision: yes)
 
