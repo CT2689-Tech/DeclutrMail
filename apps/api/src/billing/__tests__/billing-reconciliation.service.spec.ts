@@ -538,7 +538,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.enforceLocalVerdicts();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(canceled).toEqual(['sub_verdict']);
     expect(result).toMatchObject({ enforced: 1, unenforced: 0 });
   });
@@ -559,7 +559,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    await svc.enforceLocalVerdicts();
+    await svc.enforceLocalVerdicts(0);
     expect(canceled).toEqual(['sub_verdict']);
   });
 
@@ -579,7 +579,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.enforceLocalVerdicts();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(canceled).toEqual([]);
     expect(result).toMatchObject({ enforced: 0, unenforced: 0 });
   });
@@ -628,7 +628,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    await svc.enforceLocalVerdicts();
+    await svc.enforceLocalVerdicts(0);
 
     // Stops asking once the breaker trips, rather than walking every row.
     expect(factsCalls).toBe(TRIP_AFTER);
@@ -659,7 +659,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.enforceLocalVerdicts();
+    const result = await svc.enforceLocalVerdicts(0);
 
     expect(result).toMatchObject({ refuted: 1 });
     expect(canceled).toEqual([]);
@@ -699,7 +699,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.enforceLocalVerdicts();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(result.enforced).toBe(0);
   });
 
@@ -707,7 +707,7 @@ describe('BillingReconciliationService (D249)', () => {
     await seedVerdictRow({ cancelSource: 'refund' });
     const svc = service(fakeAdapter({ fetchSubscription: async () => ({ kind: 'not_found' }) }));
 
-    const result = await svc.enforceLocalVerdicts();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(result).toMatchObject({ enforced: 0, unenforced: 1 });
   });
 
@@ -746,7 +746,7 @@ describe('BillingReconciliationService (D249)', () => {
         }),
       );
 
-      const result = await svc.enforceLocalVerdicts();
+      const result = await svc.enforceLocalVerdicts(0);
       expect(canceled).toEqual([]);
       expect(result).toMatchObject({ enforced: 0, unenforced: 1 });
     });
@@ -775,7 +775,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.enforceLocalVerdicts();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(canceled).toEqual([]); // never cancel a verdict the provider denies
     expect(result).toMatchObject({ refuted: 1, enforced: 0 });
 
@@ -813,7 +813,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.enforceLocalVerdicts();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(asked).toEqual(['sub_verdict']);
     expect(canceled).toEqual(['sub_verdict']);
 
@@ -855,7 +855,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.enforceLocalVerdicts();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(result.settled).toBe(1);
 
     const [row] = await db
@@ -911,7 +911,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.enforceLocalVerdicts();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(result.settled).toBe(0);
     const [row] = await db
       .select({ status: subscriptions.status })
@@ -932,11 +932,11 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    await svc.enforceLocalVerdicts();
+    await svc.enforceLocalVerdicts(0);
     // Second pass: the row is `canceled` now, so the verdict selector no
     // longer returns it at all. Nothing to settle, nothing to write, and
     // exactly one ledger row for the settlement.
-    const second = await svc.enforceLocalVerdicts();
+    const second = await svc.enforceLocalVerdicts(0);
     expect(second.settled).toBe(0);
 
     const events = await db
@@ -981,7 +981,7 @@ describe('BillingReconciliationService (D249)', () => {
       }) as RazorpayAdapter,
     );
 
-    const result = await svc.enforceLocalVerdicts();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(result.settled).toBe(0);
     const [row] = await db
       .select({ status: subscriptions.status })
@@ -1131,7 +1131,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.watchSettledRefunds();
+    const result = await svc.watchSettledRefunds(0);
     expect(result).toMatchObject({ watched: 1, rebilling: 1 });
     // An alert, never a write — resurrecting the row would re-enter the
     // live slot a repurchase may already hold, which is the collision
@@ -1149,7 +1149,7 @@ describe('BillingReconciliationService (D249)', () => {
 
     // `not_found` is the GOOD outcome — the subscription is gone at the
     // provider, which is exactly what we want to be true.
-    expect(await svc.watchSettledRefunds()).toMatchObject({
+    expect(await svc.watchSettledRefunds(0)).toMatchObject({
       watched: 1,
       rebilling: 0,
       unreadable: 0,
@@ -1171,7 +1171,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    expect(await svc.watchSettledRefunds()).toMatchObject({ watched: 0, rebilling: 0 });
+    expect(await svc.watchSettledRefunds(0)).toMatchObject({ watched: 0, rebilling: 0 });
     expect(asked).toEqual([]);
   });
 
@@ -1202,7 +1202,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    expect(await svc.watchSettledRefunds()).toMatchObject({ watched: 0 });
+    expect(await svc.watchSettledRefunds(0)).toMatchObject({ watched: 0 });
     expect(asked).toEqual([]);
   });
 

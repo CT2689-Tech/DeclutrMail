@@ -598,7 +598,7 @@ export class BillingReconciliationService {
    * every renewal window we can bill on, and it buys the retry
    * durability an inline call would not have.
    */
-  async enforceLocalVerdicts(runIndex = 0): Promise<VerdictPassResult> {
+  async enforceLocalVerdicts(runIndex: number): Promise<VerdictPassResult> {
     const eligible = and(
       inArray(subscriptions.cancelSource, ['refund', 'chargeback']),
       inArray(subscriptions.status, ['active', 'past_due', 'paused']),
@@ -931,7 +931,7 @@ export class BillingReconciliationService {
    * back to a fixed window from the refund. Both make the pass
    * self-terminating with no schema change.
    */
-  async watchSettledRefunds(runIndex = 0): Promise<{
+  async watchSettledRefunds(runIndex: number): Promise<{
     watched: number;
     rebilling: number;
     unreadable: number;

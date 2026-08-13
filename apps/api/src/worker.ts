@@ -1999,8 +1999,17 @@ async function bootstrap(): Promise<void> {
    */
   const billingVerdictWorker = new BillingVerdictWorker({
     db,
-    enforceLocalVerdicts: () => billingReconciliationService.enforceLocalVerdicts(),
-    watchSettledRefunds: () => billingReconciliationService.watchSettledRefunds(),
+    // `runIndex` MUST be forwarded. Both passes take the one hash
+    // bucket it names, so a wrapper that dropped it pinned production to
+    // bucket 0 on every run and starved every other bucket permanently —
+    // the exact bug the round-robin exists to prevent, reintroduced in
+    // the wiring while every test passed (Codex stop-review round 3,
+    // 2026-08-13). TypeScript allowed it because a zero-arg function is
+    // assignable to a one-arg seam; the parameter is now required rather
+    // than defaulted, so omitting it is a compile error instead of a
+    // silent production-only defect.
+    enforceLocalVerdicts: (runIndex) => billingReconciliationService.enforceLocalVerdicts(runIndex),
+    watchSettledRefunds: (runIndex) => billingReconciliationService.watchSettledRefunds(runIndex),
   });
   billingVerdictWorker.setObserver(observer);
   billingVerdictWorker.setDeadLetterRecorder(deadLetterRecorder);
