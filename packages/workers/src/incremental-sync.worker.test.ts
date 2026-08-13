@@ -1,20 +1,14 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   mailboxAccounts,
   mailMessages,
   providerSyncState,
-  schema,
   senderPolicies,
   senders,
   senderTimeseries,
   users,
   workspaces,
 } from '@declutrmail/db';
-import { drizzle } from 'drizzle-orm/pglite';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -46,23 +40,8 @@ import type { WorkerContext } from './worker-context.js';
  *   - cursor-too-old → null page returned, cursor NOT advanced
  */
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations');
-
 async function freshDb(): Promise<IncrementalSyncDeps['db']> {
-  const pg = new PGlite({ extensions: { citext } });
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  return drizzle(pg, { schema }) as unknown as IncrementalSyncDeps['db'];
+  return (await freshTestDb()) as unknown as IncrementalSyncDeps['db'];
 }
 
 async function seedMailbox(db: IncrementalSyncDeps['db']): Promise<string> {

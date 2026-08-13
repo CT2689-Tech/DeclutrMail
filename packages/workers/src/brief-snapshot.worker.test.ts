@@ -1,20 +1,16 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
-import { drizzle } from 'drizzle-orm/pglite';
+import type { drizzle } from 'drizzle-orm/pglite';
 import { and, eq } from 'drizzle-orm';
+import type { schema } from '@declutrmail/db';
 import {
   briefRuns,
   mailMessages,
   mailboxAccounts,
-  schema,
   senders,
   triageDecisions,
   users,
   workspaces,
 } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BriefLlmPort } from './brief-narrative.js';
@@ -30,7 +26,6 @@ import type { WorkerContext } from './worker-context.js';
  * D69 frozen-once invariant, D70 empty-day branch, and idempotency.
  */
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations');
 const NOW = new Date('2026-05-25T08:00:00Z');
 const TODAY_LOCAL = '2026-05-25';
 const YESTERDAY_AT = (hour: number) =>
@@ -39,19 +34,7 @@ const YESTERDAY_AT = (hour: number) =>
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 async function freshDb(): Promise<Db> {
-  const pg = new PGlite({ extensions: { citext } });
-  for (const file of readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  return drizzle(pg, { schema });
+  return freshTestDb();
 }
 
 async function seedMailbox(

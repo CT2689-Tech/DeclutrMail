@@ -1,16 +1,9 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
-import { drizzle } from 'drizzle-orm/pglite';
 import { and, eq } from 'drizzle-orm';
 import {
   activityLog,
   mailboxAccounts,
   outboxEvents,
   mailMessages,
-  schema,
   screenerQuarantine,
   senderPolicies,
   senders,
@@ -19,6 +12,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { TOPICS } from '@declutrmail/events';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -39,24 +33,9 @@ import type { WorkerContext } from './worker-context.js';
  * fallback to template, and idempotency-key shape.
  */
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations');
-
 /** A fresh PGlite database with every migration applied. */
 async function freshDb(): Promise<ScoreWorkerDeps['db']> {
-  const pg = new PGlite({ extensions: { citext } });
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  return drizzle(pg, { schema }) as unknown as ScoreWorkerDeps['db'];
+  return (await freshTestDb()) as unknown as ScoreWorkerDeps['db'];
 }
 
 /** Seed workspace + user + mailbox; return ids. */

@@ -1,18 +1,12 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   accountDeletionRequests,
   mailboxAccounts,
   providerSyncState,
-  schema,
   users,
   webhookDedup,
   workspaces,
 } from '@declutrmail/db';
-import { drizzle } from 'drizzle-orm/pglite';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -31,35 +25,8 @@ import { GmailWebhookService } from '../gmail-webhook.service.js';
  * exercised against the real schema instead of a hand-rolled stub.
  */
 
-const MIGRATIONS_DIR = join(
-  import.meta.dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  '..',
-  'packages',
-  'db',
-  'migrations',
-);
-
 async function freshDb(): Promise<DrizzleDb> {
-  const pg = new PGlite({ extensions: { citext } });
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  // PGlite + postgres-js share Drizzle's query builder; the cast lets
-  // the service (typed for the postgres-js driver) run in-test.
-  return drizzle(pg, { schema }) as unknown as DrizzleDb;
+  return (await freshTestDb()) as unknown as DrizzleDb;
 }
 
 async function seedMailbox(

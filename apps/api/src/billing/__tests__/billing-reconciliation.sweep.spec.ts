@@ -1,43 +1,23 @@
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   actionJobs,
   automationRules,
   mailboxAccounts,
   pendingCheckouts,
   ruleMatchLog,
-  schema,
   subscriptions,
   users,
   workspaces,
 } from '@declutrmail/db';
-import { drizzle } from 'drizzle-orm/pglite';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { runBillingReconciliationSweep } from '../billing-reconciliation.sweep.js';
 import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
 import type { DrizzleDb } from '../../db/db.module.js';
 
-const MIGRATIONS_DIR = join(
-  import.meta.dirname ?? __dirname,
-  '../../../../../packages/db/migrations',
-);
-
 async function freshDb(): Promise<DrizzleDb> {
-  const pg = new PGlite({ extensions: { citext } });
-  for (const file of readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()) {
-    const sqlText = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sqlText.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) await pg.exec(trimmed);
-    }
-  }
-  return drizzle(pg, { schema }) as unknown as DrizzleDb;
+  return (await freshTestDb()) as unknown as DrizzleDb;
 }
 
 async function seedWorkspace(db: DrizzleDb, tier: 'free' | 'plus' | 'pro'): Promise<string> {

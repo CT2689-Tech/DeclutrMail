@@ -1,11 +1,6 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
-import { mailboxAccounts, schema, users, workspaces } from '@declutrmail/db';
+import { mailboxAccounts, users, workspaces } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
 import { describe, expect, it } from 'vitest';
 
 import { GMAIL_WATCH_STATE_KEY, persistGmailWatchState } from './gmail-watch-state.js';
@@ -29,23 +24,10 @@ import {
  * PR #209). These tests pin that contract with real jsonb semantics.
  */
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations');
 const NOW = new Date('2026-06-10T18:00:00Z'); // 23:30 IST
 
 async function freshDb() {
-  const pg = new PGlite({ extensions: { citext } });
-  for (const file of readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  return drizzle(pg, { schema });
+  return freshTestDb();
 }
 
 async function seedMailbox(

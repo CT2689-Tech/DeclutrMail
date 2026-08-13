@@ -21,6 +21,55 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-13 — A CI speedup that made CI slower, twice over, in silence
+
+**PR:** [#515](https://github.com/CT2689-Tech/DeclutrMail/pull/515)
+**Caught by:** code review of `chore/bootstrap-ci-wall-clock`, then confirmed
+against the branch's own CI runs
+
+**What happened:** a branch titled "cut PR wall-clock by sharding the slow
+suites" shipped two mechanisms that both did nothing, and measured **slower**
+than `main` (11.6 min → 12.2 min total; `Tests — API` 11.2 → 11.9 min).
+
+1. `pnpm --filter X test -- --shard=N/2` forwards a **literal `--`** into the
+   script, so vitest's cac parser files everything after it under `argv['--']`
+   and ignores it. Both matrix legs ran the whole suite. An invalid
+   `--shard=9/2` also failed to error — proof the flag never arrived.
+2. The `!` exclusions added to the `dorny/paths-filter` rules were **OR'd, not
+   subtracted**. The action compiles each pattern separately and combines with
+   `patterns.some(...)`, so `!foo/**` matches every path *outside* `foo/` and
+   made `api`/`workers` true for every diff. A README-only PR went from
+   skipping both suites to booting four Postgres jobs.
+
+Neither could fail. A shard that silently runs everything is green; a filter
+that silently says "yes" is green. And `ci.yml` is inside its own `infra`
+anchor, so the branch's own run made every filter true and exercised none of
+the logic it changed.
+
+Fixing the fixture cost then exposed a third, older bug: **no spec has ever
+closed its PGlite handle**, and each live one pins ~230MB of WASM heap. Only
+the ~840ms schema rebuild had been pacing allocation slowly enough for GC to
+keep up. At ~145ms per restore the leak outran the collector and two GitHub
+runners took a SIGTERM — no failing test, no JS heap error, nothing in the log
+but a dead machine.
+
+**Correct approach:** verify the flag reaches the tool and the filter can still
+say *no*, before trusting either. Both were falsifiable in under five minutes
+locally: run vitest with a deliberately invalid shard, and evaluate the real
+YAML against a docs-only file list with the repo's own picomatch.
+
+**Rule:** a flag or pattern that is silently discarded is indistinguishable
+from one that worked — assert the **negative** case (an invalid value must
+error; an irrelevant diff must skip) before believing the positive one.
+
+**Enforcement update:** `ci.yml` now rejects `!` patterns in its path filters
+with an explanatory error, and takes the shard denominator from
+`strategy.job-total` so a resized matrix cannot leave a stale `/2` quietly
+running half the suite green. The guard was tested against the pre-fix config
+and a synthetic reintroduction — both exit 1 — per the standing "test the
+guard's blind case first" rule. Still unguarded: that the shard flag actually
+reaches vitest.
+
 ## 2026-08-12 — Unsubscribe POSTed a token the sender had already expired
 
 **PR:** #TBD

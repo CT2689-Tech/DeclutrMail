@@ -1,18 +1,12 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import type { Job } from 'bullmq';
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   deadLetterJobs,
   mailboxAccounts,
   mailboxDataDeletionRequests,
-  schema,
   users,
   workspaces,
 } from '@declutrmail/db';
-import { drizzle } from 'drizzle-orm/pglite';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
@@ -41,22 +35,8 @@ import type {
  * `replayed_at` (and never auto-fires — D233 spirit).
  */
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations');
-
 async function freshDb() {
-  const pg = new PGlite({ extensions: { citext } });
-  for (const file of readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  return drizzle(pg, { schema });
+  return freshTestDb();
 }
 
 /** Recording observer — every call shows up in `captures` / `bgCaptures`. */

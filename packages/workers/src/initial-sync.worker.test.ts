@@ -1,8 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { PGlite } from '@electric-sql/pglite';
-import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   actionJobs,
   automationRules,
@@ -18,8 +13,8 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
 import { TOPICS } from '@declutrmail/events';
-import { drizzle } from 'drizzle-orm/pglite';
 import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -42,26 +37,9 @@ import type { WorkerContext } from './worker-context.js';
  * MISTAKES.md 2026-05-22.
  */
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations');
-
 /** A fresh PGlite database with every migration applied. */
 async function freshDb(): Promise<InitialSyncDeps['db']> {
-  const pg = new PGlite({ extensions: { citext } });
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sql.split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (trimmed) {
-        await pg.query(trimmed);
-      }
-    }
-  }
-  // PGlite + postgres-js share drizzle's query builder; the cast lets the
-  // worker (typed for the postgres-js driver) run against PGlite in-test.
-  return drizzle(pg, { schema }) as unknown as InitialSyncDeps['db'];
+  return (await freshTestDb()) as unknown as InitialSyncDeps['db'];
 }
 
 /**
