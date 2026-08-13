@@ -1,7 +1,7 @@
 # D253 — A refunded customer must be able to buy again
 
 **Date:** 2026-08-13
-**Status:** v2. v1's design was rejected by review; see "What v1 got wrong".
+**Status:** v3 — v1 rejected by review; v2 amended after a fourth review. See "What v1 got wrong" and the monitoring section.
 **Branch:** `fix/d253-refund-repurchase-lockout`
 
 ---
@@ -77,6 +77,31 @@ re-enter the live slot.
 `cancel_source='refund'` and `entitlement_ends_at` are untouched, so "ended by
 refund" stays distinguishable from "cancelled normally".
 
+### The flipped row must stay monitored
+
+The terminal floor stops **local** resurrection. It does nothing to stop
+**provider rebilling**, and that gap is the most dangerous thing about this
+design.
+
+Once the row reads `canceled`, all three reconcilers drop it — drift
+(`billing-reconciliation.service.ts:353`), workspace reconcile (`:629`) and the
+verdict pass (`:443`) all select on `status IN ('active','past_due','paused')` —
+and the floor discards any later `active`/`past_due` payload for it. A payment
+webhook changes no entitlement (`billing-webhook.service.ts:1016`). So if
+Paddle's scheduled cancel is cleared, fails to stick, or the subscription
+recovers from dunning, **Paddle keeps charging the customer while we hold them
+on Free, and nothing anywhere notices.** That is charged-without-entitlement,
+which is worse than the lockout this PR exists to fix.
+
+So the flip does not end our interest in the row. A locally-canceled row that
+still carries a refund verdict stays polled until the provider itself reports
+terminal cancellation. If the provider instead reports active, past_due, a
+successful payment, or the scheduled cancellation missing, that is an alert —
+support-visible, never silent.
+
+This is the one part of the design that cannot be skipped for scope. Without it
+the fix trades a bad state the customer can see for a worse one nobody can.
+
 ### Refunds unlock. Chargebacks do not.
 
 **Founder decision, 2026-08-13.** A settled _refund_ flips the row and frees the
@@ -91,6 +116,28 @@ not a second read. Chargeback behaviour is therefore **unchanged** by this PR �
 worth stating plainly, because "we did nothing" is the correct outcome there
 rather than an oversight.
 
+Two precision points, both load-bearing:
+
+- The branch is `facts.settled === 'refund'`, **not** `cancel_source === 'refund'`.
+  Local provenance and provider-confirmed cause are deliberately allowed to
+  differ (`billing-reconciliation.service.ts:505`, `paddle.adapter.ts:684`), and
+  the existing code path at `:508` handles every non-null cause together — so a
+  generic settled branch would silently unlock chargebacks.
+- "Chargebacks do not unlock" means **not early**, not _never_. When the period
+  ends, the real `subscription.canceled` arrives and releases the guard, the
+  index and the picker exactly as it does today. Permanent exclusion is a
+  different feature and is not built here.
+
+### Provider facts must be read in full
+
+`providerCancellationFacts` requests `per_page=50` and ignores pagination
+(`paddle.adapter.ts:654`). A subscription carrying more than 50 adjustments can
+therefore return a settled refund while an active chargeback sits outside the
+page — and this design would unlock repurchase for a customer with a live
+dispute. Pre-existing, harmless while facts only suppressed an outbound cancel,
+consequential the moment facts gate whether someone can pay us. Page through
+before deciding refund versus chargeback.
+
 ### The write must go through the projector
 
 `billing-reconciliation.service.ts:13-16` states the file's contract:
@@ -99,19 +146,67 @@ honours it by routing through `webhookService.process()` for the advisory lock,
 staleness ordering and dedup.
 
 Settlement follows that precedent: a new `NormalizedBillingEvent` kind
-(`cancellation_settled`) carrying the provider-confirmed cause, applied by the
+(`refund_settled`) carrying the provider-confirmed cause, applied by the
 projector under `lockSubscription`. Not a raw UPDATE from the sweep.
+
+It must be a **dedicated synthetic event**, not a forged provider snapshot with
+`status='canceled'`. Forging one would record that Paddle reported terminal
+cancellation when it did not, which is the same assert-what-you-don't-know
+defect in the audit trail rather than the UI.
+
+### A reversed refund is a support case, and must be a loud one
+
+If a settled refund is later reversed, the flipped row cannot simply be undone.
+`applyRevokedCancellation` clears `cancel_source` and `entitlement_ends_at` but
+leaves `status` alone (`billing-webhook.service.ts:926-966`), so entitlement is
+not restored — and if the customer has already repurchased, restoring the old
+row would collide with the singleton index anyway. The honest end state is a
+customer holding two valid payments and one entitlement.
+
+That is resolved by a human, not by code: the monitoring above surfaces it, the
+existing `reverse_not_regranted … needs support` state names it, and the
+operator refunds whichever payment should not stand. What must not happen is
+silence.
+
+**Unresolved, and worth one question to Paddle.** Paddle's documentation
+describes refunds as pending → approved/rejected, both final — which would make
+this branch unreachable. But this repository deliberately tests an
+approved-then-reversed refund (`paddle.adapter.ts:692-698`), added because a
+prior review caught that shape counting as neither settled nor refuted. One of
+those two is wrong. The founder has an open `sellers@paddle.com` thread; asking
+there is cheap. Until answered, the design assumes reversal is possible and
+carries the monitoring and the support path — which is the safe direction if the
+answer turns out to be "it cannot happen".
 
 ### Fix the unreachable short-circuit
 
 `billing-reconciliation.service.ts:481` currently skips the whole row when the
 provider reports `canceled` **or** `cancelAtPeriodEnd`. Narrow it to
-`provider.status === 'canceled'`, and use `cancelAtPeriodEnd` to skip only the
-outbound `cancelSubscription` — never the facts read.
+`provider.status === 'canceled'`, and move the `cancelAtPeriodEnd` test _below_
+the facts read, where it suppresses only the redundant outbound
+`cancelSubscription`:
+
+```
+if (provider.status === 'canceled') { project terminal cancellation; stop }
+
+const facts = await providerCancellationFacts(...)
+
+if (facts.settled !== null) {
+  if (!provider.cancelAtPeriodEnd) await cancelSubscription(...)
+  if (facts.settled === 'refund') await projectRefundSettlement(...)
+} else if (facts.refuted[localVerdict]) {
+  await liftRefutedVerdict(...)
+}
+```
 
 Without this, "customer cancels, then asks for their money back" — the most
 common refund shape there is — never settles, and any design built on settlement
 does nothing for them.
+
+It also skips **refutation**, which is the worse half and was missed until the
+fourth review. A customer who cancels, requests a refund Paddle then _rejects_,
+never reaches `liftRefutedVerdict` — so they keep paying and hold no
+entitlement. That bug exists today, independent of this feature.
 
 ### The verdict pass becomes a real cron job
 
