@@ -121,6 +121,27 @@ const DRIFT_SWEEP_MAX_ROWS = 500;
  *  provider this run — a down provider should not be hammered 500×. */
 const DRIFT_SWEEP_TRIP_AFTER = 3;
 
+/**
+ * Row cap for the two passes the verdict WORKER runs, well under
+ * `DRIFT_SWEEP_MAX_ROWS` because those two now share a 60-second budget
+ * that did not exist before (D253).
+ *
+ * The verdict pass used to run inside the untimed 6-hourly
+ * `setInterval` sweep. It is now a `cronPolicy` job, and that policy
+ * carries `timeoutMs: 60_000`. The verdict pass makes TWO sequential
+ * provider calls per row and the watch pass one, so at 500 rows a full
+ * pass could not finish inside the budget — and because an unsettled row
+ * writes nothing, its `updated_at` never moves, so `asc(updatedAt)`
+ * would hand back the same leading rows every run and starve everything
+ * behind them.
+ *
+ * 100 fits comfortably, and a partial pass is harmless: this is an
+ * idempotent convergence loop that resumes on the next tick ten minutes
+ * later. There are zero verdict rows today, so this is headroom rather
+ * than a live constraint.
+ */
+const VERDICT_PASS_MAX_ROWS = 100;
+
 /** How long to keep watching a refund-canceled row whose
  *  `current_period_end` is unknown (D253). A provider can only charge
  *  again at renewal, so with no recorded renewal date this stands in for
@@ -472,7 +493,7 @@ export class BillingReconciliationService {
         ),
       )
       .orderBy(asc(subscriptions.updatedAt))
-      .limit(DRIFT_SWEEP_MAX_ROWS);
+      .limit(VERDICT_PASS_MAX_ROWS);
 
     let enforced = 0;
     let unenforced = 0;
@@ -811,7 +832,7 @@ export class BillingReconciliationService {
         ),
       )
       .orderBy(asc(subscriptions.updatedAt))
-      .limit(DRIFT_SWEEP_MAX_ROWS);
+      .limit(VERDICT_PASS_MAX_ROWS);
 
     let watched = 0;
     let rebilling = 0;

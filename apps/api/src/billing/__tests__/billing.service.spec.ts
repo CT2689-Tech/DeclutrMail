@@ -1098,4 +1098,76 @@ describe('BillingService', () => {
       });
     });
   });
+
+  // D253. Freeing the plan slot leaves TWO rows on the workspace — the
+  // dead refunded one and the repurchase. An earlier design left the
+  // dead row `active`, and three reviews rejected it on exactly this:
+  // every reader below would then have two candidates, the dead row
+  // would win on `updated_at` (the drift sweep bumps it), and Cancel /
+  // Pause / Change-plan would fire at a subscription id that no longer
+  // bills while the live one kept charging. Flipping the dead row to
+  // `canceled` preserves the singleton these readers assume — and
+  // nothing writes to it afterwards, so it can never climb back to the
+  // front: the terminal-canceled floor updates the EVENT row, not the
+  // subscription, and the post-flip watch pass alerts without writing.
+  describe('after a refund-then-repurchase, every action targets the LIVE row', () => {
+    async function seedRefundedThenRepurchased(): Promise<void> {
+      // The dead row: refunded, entitlement gone, flipped by settlement.
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_dead_refunded',
+        tier: 'pro',
+        status: 'canceled',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        cancelAtPeriodEnd: true,
+        cancelSource: 'refund',
+        entitlementEndsAt: new Date(),
+      });
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_live_repurchase',
+        tier: 'plus',
+        status: 'active',
+        providerPriceId: 'pri_plus_m',
+        billingCycle: 'monthly',
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+      });
+      await db
+        .update(workspaces)
+        .set({ tier: 'plus' })
+        .where(eq(workspaces.id, principal.workspaceId));
+    }
+
+    it('getSubscription serves the repurchase, not the refunded plan', async () => {
+      await seedRefundedThenRepurchased();
+      const result = await service.getSubscription(principal.workspaceId);
+      // Serving pro/annual here would show a paying customer the plan
+      // they were refunded for.
+      expect(result.subscription).toMatchObject({ tier: 'plus', cycle: 'monthly' });
+    });
+
+    it('changePlan targets the live subscription id', async () => {
+      await seedRefundedThenRepurchased();
+      await service.changePlan(principal, { tierId: 'pro', cycle: 'annual' });
+      expect(paddleChangePlan).toHaveBeenCalledWith(
+        'sub_live_repurchase',
+        'pri_pro_a',
+        expect.anything(),
+      );
+    });
+
+    it('a second checkout is still refused — the LIVE row blocks it, plainly', async () => {
+      // The dead row no longer blocks; the repurchase does. So the
+      // refusal must be the ORDINARY one, never the settling message —
+      // otherwise a customer holding a healthy subscription would be
+      // told to wait for a refund that has nothing to do with them.
+      await seedRefundedThenRepurchased();
+      await expect(
+        service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+      ).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXISTS' });
+    });
+  });
 });

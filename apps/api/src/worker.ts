@@ -13,6 +13,9 @@ import {
   ActionRecoveryWorker,
   AUTOPILOT_ACTION_QUEUE,
   AUTOPILOT_APPLY_QUEUE,
+  BILLING_VERDICT_INTERVAL_MS,
+  BILLING_VERDICT_QUEUE,
+  BillingVerdictWorker,
   BRIEF_SNAPSHOT_INTERVAL_MS,
   BRIEF_SNAPSHOT_QUEUE,
   BriefSnapshotWorker,
@@ -30,6 +33,7 @@ import {
   enqueueEmailSend,
   ensureIncrementalSyncJob,
   ensureInitialSyncJob,
+  enqueueBillingVerdictTick,
   enqueueBriefSnapshotTick,
   enqueueDeadLetterTick,
   enqueueDeletionSweepTick,
@@ -92,6 +96,8 @@ import type {
   AutopilotActionResult,
   AutopilotApplyJobData,
   AutopilotApplyJobResult,
+  BillingVerdictJobData,
+  BillingVerdictResult,
   BriefSnapshotJobData,
   BriefSnapshotResult,
   DeadLetterSweepJobData,
@@ -1937,8 +1943,23 @@ async function bootstrap(): Promise<void> {
       // pass may flip dunning rows; the drift pass then verifies what
       // remains live against the provider (D249).
       const drift = await billingReconciliationService.reconcileLiveSubscriptions();
+      // The verdict counters (verdictsEnforced / verdictsUnenforced /
+      // verdictsRefuted) left this line: refund + chargeback enforcement
+      // now runs on BillingVerdictWorker's 10-minute tick (D253) and
+      // reports on its own `worker.succeeded` line. Listing the drift
+      // fields explicitly instead of spreading keeps that a VISIBLE change
+      // — a spread would have reshaped this log contract silently.
       console.log(
-        JSON.stringify({ level: 'info', kind: 'billing.reconcile.swept', ...result, ...drift }),
+        JSON.stringify({
+          level: 'info',
+          kind: 'billing.reconcile.swept',
+          ...result,
+          subscriptionsChecked: drift.subscriptionsChecked,
+          subscriptionsDrifted: drift.subscriptionsDrifted,
+          subscriptionsUnchanged: drift.subscriptionsUnchanged,
+          subscriptionsUnreadable: drift.subscriptionsUnreadable,
+          providerErrors: drift.providerErrors,
+        }),
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -1957,6 +1978,78 @@ async function bootstrap(): Promise<void> {
     void sweepBillingReconciliation();
   }, BILLING_RECONCILE_INTERVAL_MS);
   billingReconcileHandle.unref();
+
+  /**
+   * BillingVerdictWorker consumer + scheduler (D253, D249 — cronPolicy).
+   * Pushes local refund/chargeback verdicts to the provider, then checks
+   * whether the provider is still billing anyone we already canceled.
+   *
+   * This ran inside the 6-hourly sweep above until D253 made it the gate
+   * on whether a refunded customer can BUY AGAIN — a revenue path cannot
+   * wait up to six hours, so it gets its own 10-minute tick. Reusing
+   * `billingReconciliationService` (constructed above) keeps one set of
+   * provider adapters and one catalog; only the cadence is new.
+   *
+   * The two seams are injected as bound methods because
+   * `packages/workers` cannot import from `apps/api`. Same setInterval
+   * pattern as the cron workers above: the boot enqueue covers downtime
+   * across a tick boundary, the BullMQ `jobId = BillingVerdictWorker:
+   * <minute>` dedups the tick, and the worker's `cron_runs` claim makes a
+   * double-fire a durable no-op.
+   */
+  const billingVerdictWorker = new BillingVerdictWorker({
+    db,
+    enforceLocalVerdicts: () => billingReconciliationService.enforceLocalVerdicts(),
+    watchSettledRefunds: () => billingReconciliationService.watchSettledRefunds(),
+  });
+  billingVerdictWorker.setObserver(observer);
+  billingVerdictWorker.setDeadLetterRecorder(deadLetterRecorder);
+
+  const billingVerdictBullWorker = new Worker<BillingVerdictJobData, BillingVerdictResult>(
+    BILLING_VERDICT_QUEUE,
+    (job) => billingVerdictWorker.run(job),
+    // One pass at a time — both seams are convergence loops over the same
+    // rows, so overlapping ticks would only duplicate provider calls.
+    { connection, concurrency: 1, ...cronTuning },
+  );
+
+  billingVerdictBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: BILLING_VERDICT_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  const billingVerdictSchedulerQueue = new Queue<BillingVerdictJobData>(BILLING_VERDICT_QUEUE, {
+    connection,
+  });
+
+  async function enqueueBillingVerdict(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueBillingVerdictTick(billingVerdictSchedulerQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'billing_verdict.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, { kind: 'billing_verdict.scheduler_failed' });
+    }
+  }
+
+  await enqueueBillingVerdict();
+  const billingVerdictSchedulerHandle = setInterval(() => {
+    void enqueueBillingVerdict();
+  }, BILLING_VERDICT_INTERVAL_MS);
+  billingVerdictSchedulerHandle.unref();
 
   /**
    * DeadLetterWorker sweep + 60s scheduler (D225 — adminPolicy). Scans
@@ -2293,6 +2386,14 @@ async function bootstrap(): Promise<void> {
     clearInterval(followupCheckSchedulerHandle);
     clearInterval(weeklyValueReceiptSchedulerHandle);
     clearInterval(lapseReengagementSchedulerHandle);
+    clearInterval(billingVerdictSchedulerHandle);
+    // Pre-existing omissions, fixed here rather than left beside a
+    // correct sibling. Both are `.unref()`'d and both bodies return early
+    // on `shuttingDown`, so nothing was breaking today — but that made
+    // stopping them depend on each sweep body remembering to re-check the
+    // flag, which is the invariant every other handle in this list keeps.
+    clearInterval(billingReconcileHandle);
+    clearInterval(webhookDedupSweepHandle);
     void (async () => {
       if (inFlight) {
         await inFlight;
@@ -2332,6 +2433,8 @@ async function bootstrap(): Promise<void> {
       await unsubExecutionProducerQueue.close();
       await snoozeWakeBullWorker.close();
       await snoozeWakeSchedulerQueue.close();
+      await billingVerdictBullWorker.close();
+      await billingVerdictSchedulerQueue.close();
       await deadLetterBullWorker.close();
       await deadLetterSchedulerQueue.close();
       await deletionSweepBullWorker.close();
