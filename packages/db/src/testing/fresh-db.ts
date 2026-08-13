@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import { drizzle } from 'drizzle-orm/pglite';
+import { onTestFinished } from 'vitest';
 
 import * as schema from '../schema';
 
@@ -53,10 +54,35 @@ async function buildMigratedSnapshot(): Promise<Blob> {
   }
 }
 
-/** A migrated, empty PGlite instance. Prefer {@link freshTestDb}. */
+/**
+ * A migrated, empty PGlite instance. Prefer {@link freshTestDb}.
+ *
+ * Closed automatically when the test that asked for it finishes. Every live
+ * instance pins ~230MB of WASM heap, and no spec has ever closed one — that
+ * was survivable only because rebuilding the schema took ~840ms, which paced
+ * allocation slowly enough for GC to keep up. Restores are ~6x faster, so the
+ * handles have to be released explicitly or the leak outruns the collector
+ * and the machine dies with no JS heap error to explain it (two GitHub
+ * runners took a SIGTERM this way before this hook existed).
+ *
+ * `onTestFinished` is only valid inside a test, which is exactly the
+ * distinction needed: a fixture acquired in `beforeAll` is shared by the
+ * whole file and must NOT be closed after the first test, so the throw is
+ * caught and ownership stays with the caller.
+ */
 export async function freshTestPglite(): Promise<PGlite> {
   migratedSnapshot ??= buildMigratedSnapshot();
-  return new PGlite({ loadDataDir: await migratedSnapshot, extensions: { citext } });
+  const pg = new PGlite({ loadDataDir: await migratedSnapshot, extensions: { citext } });
+  try {
+    // Guarded, not try/caught: a few specs close the handle themselves, and
+    // PGlite throws "PGlite is closed" on a second close.
+    onTestFinished(async () => {
+      if (!pg.closed) await pg.close();
+    });
+  } catch {
+    // Acquired outside a test (`beforeAll`/module scope) — caller owns it.
+  }
+  return pg;
 }
 
 /** A Drizzle client over a migrated, empty PGlite instance. */

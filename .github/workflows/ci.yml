@@ -63,6 +63,19 @@ jobs:
       a11y: ${{ steps.filter.outputs.a11y }}
     steps:
       - uses: actions/checkout@v7
+      # A `!` pattern here does not subtract — it makes the rule ALWAYS
+      # TRUE. dorny/paths-filter compiles each pattern separately and ORs
+      # them (`patterns.some(...)`), so `!foo/**` matches every path
+      # outside `foo/`. That shipped once and went unnoticed because the
+      # failure mode is a filter that quietly says "yes" to everything.
+      - name: Reject negation patterns in the path filters
+        run: |
+          if grep -nE "^\s+- '!" .github/workflows/ci.yml; then
+            echo "::error::A '!' pattern makes its whole filter rule match every file." \
+                 "dorny/paths-filter ORs patterns; negation cannot subtract. Use an allowlist."
+            exit 1
+          fi
+          echo "✓ No negation patterns in the path filters."
       - uses: dorny/paths-filter@v3
         id: filter
         with:
