@@ -95,7 +95,18 @@ forgotten and it fires in the editor.
 to vary. The default does not protect a caller who forgets it — it hides them.
 
 **Rule (third):** a correctness guarantee that lives only in an untested
-composition root is not a guarantee. Three rounds produced three variants of one
+composition root is not a guarantee.
+
+**Addendum — round four: "the compiler catches it" was too strong.** Making the
+parameter required closed the omission case only. It constrains ARITY, not
+FORWARDING: `(runIndex) => service.enforceLocalVerdicts(0)` type-checks with
+zero errors and reproduces the identical bug, and a future default would remove
+the arity guard silently. Fixed by extracting the wiring to
+`billing-verdict.deps.ts` and testing it against a real worker. Verified:
+typecheck 0 errors, spec 2 failures.
+
+**Rule (fourth):** an invariant is only guarded where something EXECUTES it.
+Type signatures constrain shape, not values. Three rounds produced three variants of one
 defect — permanent starvation, unbounded delay, then a bound that never shipped
 — and each was caught by review rather than by the suite.
 
