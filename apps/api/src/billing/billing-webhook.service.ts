@@ -196,6 +196,9 @@ export function projectWebhookPayload(
       projected.provider_subscription_id = event.providerSubscriptionId;
       projected.cancellation_reason = event.reason;
       break;
+    case 'refund_settled':
+      projected.provider_subscription_id = event.providerSubscriptionId;
+      break;
     case 'ignored':
       break;
   }
@@ -302,6 +305,8 @@ export class BillingWebhookService {
         return this.applyScheduledCancellation(provider, event, eventRowId);
       case 'cancellation_revoked':
         return this.applyRevokedCancellation(provider, event, eventRowId);
+      case 'refund_settled':
+        return this.applyRefundSettlement(provider, event, eventRowId);
       case 'payment':
         return this.applyPayment(provider, event, eventRowId);
       case 'ignored':
@@ -367,6 +372,13 @@ export class BillingWebhookService {
     // truth: providers give no reliable monotonic sequence, and
     // `occurred_at` lives only inside the audit payload.
     let appliedTier: 'free' | 'plus' | 'pro' | 'team' | 'enterprise' = entry.tierId;
+    // Churn attribution for the ending log below, captured inside the
+    // transaction where the pre-update row is still readable. `null`
+    // means "this event did not END the subscription" — either it is not
+    // a terminal payload, or the row was already canceled and this is a
+    // replay. Distinguishing those two is what keeps the count honest:
+    // a provider redelivery must not read as a second churned customer.
+    let endedBy: 'refund' | 'chargeback' | 'voluntary' | null = null;
     let outcome: WebhookProcessOutcome | null;
     try {
       outcome = await this.db.transaction(async (tx) => {
@@ -523,6 +535,18 @@ export class BillingWebhookService {
             ),
           )
           .limit(1);
+        // A TRANSITION into canceled, not a state. `cancel_source` is the
+        // provenance the refund/chargeback verdicts wrote earlier;
+        // anything else — including a plain provider-side cancel and a
+        // customer's own cancel — is voluntary churn.
+        if (sub.status === 'canceled' && current?.status !== 'canceled') {
+          endedBy =
+            current?.cancelSource === 'refund'
+              ? 'refund'
+              : current?.cancelSource === 'chargeback'
+                ? 'chargeback'
+                : 'voluntary';
+        }
         if (current?.status === 'canceled' && sub.status !== 'canceled') {
           this.logger.warn(
             `billing.webhook.canceled_is_terminal provider=${provider} sub=${sub.providerSubscriptionId} event=${event.providerEventId}`,
@@ -777,6 +801,9 @@ export class BillingWebhookService {
     this.logger.log(
       `billing.subscription_changed workspace=${workspaceId} tier=${appliedTier} status=${sub.status} provider=${provider} founding=${entry.founding}`,
     );
+    if (endedBy !== null) {
+      this.logSubscriptionEnded(workspaceId, provider, appliedTier, endedBy);
+    }
     return { kind: 'processed', effect: `subscription:${sub.status}` };
   }
 
@@ -886,6 +913,130 @@ export class BillingWebhookService {
     });
 
     return outcome;
+  }
+
+  /**
+   * The provider confirmed a refund settled — stop counting this row as
+   * the workspace's live subscription, so they can buy again (D253).
+   *
+   * A full refund already ended entitlement the moment it landed
+   * (`entitlement_ends_at = now()` above), but left `status='active'`.
+   * Five surfaces independently read `active` as "this workspace has a
+   * subscription": the checkout guard (`billing.service.ts`), the
+   * `subscriptions_one_live_per_workspace` partial index, the drift and
+   * verdict selectors, and the frontend plan picker
+   * (`billing-model.ts` — "Only a canceled row leaves the slot free").
+   * So the refunded customer held nothing AND could not repurchase for
+   * the rest of a period they had already been paid back for.
+   *
+   * One write to `canceled` frees all five, because all five already
+   * exclude `canceled`. No column, no migration, no index change.
+   *
+   * Three guards in the WHERE clause, each load-bearing:
+   *
+   *   - `cancel_source = 'refund'` — NOT merely "some verdict settled".
+   *     A settled CHARGEBACK must not flip (founder decision
+   *     2026-08-13); a row whose verdict was lifted has `cancel_source`
+   *     NULL and must not flip either.
+   *   - a still-granting status — makes a replay a clean no-op rather
+   *     than a resurrection, and pairs with the terminal-canceled floor
+   *     so the dead row can never re-enter the live slot afterwards.
+   *   - provider + subscription id, under the same advisory lock as
+   *     every other writer of this row.
+   *
+   * `cancel_source` and `entitlement_ends_at` are deliberately left
+   * alone. They are the provenance that keeps "ended by refund"
+   * distinguishable from "cancelled normally" for churn reporting, and
+   * the verdict-watch pass keys on them to keep this row monitored: a
+   * locally-canceled row the provider is still billing is a worse state
+   * than the lockout this fixes, so the flip does not end our interest.
+   */
+  private async applyRefundSettlement(
+    provider: BillingProviderId,
+    event: Extract<NormalizedBillingEvent, { kind: 'refund_settled' }>,
+    eventRowId: string,
+  ): Promise<WebhookProcessOutcome> {
+    return this.db.transaction(async (tx) => {
+      await this.lockSubscription(tx, provider, event.providerSubscriptionId);
+
+      const [row] = await tx
+        .update(subscriptions)
+        .set({ status: 'canceled', updatedAt: new Date() })
+        .where(
+          and(
+            eq(subscriptions.provider, provider),
+            eq(subscriptions.providerSubscriptionId, event.providerSubscriptionId),
+            eq(subscriptions.cancelSource, 'refund'),
+            inArray(subscriptions.status, ['active', 'past_due', 'paused']),
+          ),
+        )
+        .returning({
+          workspaceId: subscriptions.workspaceId,
+          tier: subscriptions.tier,
+        });
+
+      if (!row) {
+        // Already flipped (replay), a chargeback row, a verdict since
+        // lifted, or an unknown subscription. Every one of those is
+        // correctly a no-op and none is an error.
+        this.logger.log(
+          `billing.webhook.refund_settle_no_row provider=${provider} sub=${event.providerSubscriptionId}`,
+        );
+        await tx
+          .update(subscriptionEvents)
+          .set({ processedAt: new Date() })
+          .where(eq(subscriptionEvents.id, eventRowId));
+        return { kind: 'processed', effect: 'refund_settled:no_row' } as const;
+      }
+
+      // Entitlement already ended when the refund landed, so this is
+      // normally a no-op — but it is the same cheap, idempotent call the
+      // cancellation path makes unconditionally, and skipping it would
+      // leave `workspaces.tier` stale in exactly the edge cases that
+      // motivated making THAT one unconditional (sandbox smoke
+      // 2026-07-29).
+      await this.recomputeWorkspaceTier(tx, row.workspaceId);
+
+      // The line that records a customer becoming able to pay us again.
+      this.logger.warn(
+        `billing.subscription_slot_freed workspace=${row.workspaceId} provider=${provider} sub=${event.providerSubscriptionId} tier=${row.tier} — provider confirmed the refund settled; the row is no longer live and checkout is open`,
+      );
+      this.logSubscriptionEnded(row.workspaceId, provider, row.tier, 'refund');
+
+      await tx
+        .update(subscriptionEvents)
+        .set({ processedAt: new Date() })
+        .where(eq(subscriptionEvents.id, eventRowId));
+      return { kind: 'processed', effect: 'refund_settled' } as const;
+    });
+  }
+
+  /**
+   * One countable line per subscription ENDING, tagged with why.
+   *
+   * `subscriptions.cancel_source` already distinguishes an ordinary
+   * cancel from a refund from a chargeback, and D253 deliberately
+   * preserves it — but nothing surfaced it, so "how many did we refund
+   * versus how many just cancelled?" was answerable only by hand-running
+   * SQL, and only as a snapshot. A row tells you the current mix; it
+   * cannot tell you when the mix changed. This line makes the timeline
+   * exist from the first ending onward (founder ask, 2026-08-13).
+   *
+   * Emitted at each of the four distinct ending paths rather than once
+   * centrally, because there is no single chokepoint: a refund settles
+   * here, a chargeback and an ordinary cancel arrive as provider
+   * payloads, and dunning expiry is written by the sweep with no
+   * provider event at all.
+   */
+  private logSubscriptionEnded(
+    workspaceId: string,
+    provider: BillingProviderId,
+    tier: string,
+    reason: 'refund' | 'chargeback' | 'voluntary' | 'dunning',
+  ): void {
+    this.logger.log(
+      `billing.subscription_ended workspace=${workspaceId} provider=${provider} tier=${tier} reason=${reason}`,
+    );
   }
 
   /**

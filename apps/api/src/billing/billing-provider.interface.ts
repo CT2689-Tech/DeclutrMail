@@ -122,6 +122,41 @@ export type NormalizedBillingEvent =
       reason: 'chargeback_reverse' | 'refund_rejected';
     }
   | {
+      /**
+       * The provider has CONFIRMED a refund settled, so the local row
+       * stops being the workspace's live subscription (D253).
+       *
+       * A full refund already ends entitlement the moment it lands
+       * (`entitlement_ends_at = now()`), but leaves `status='active'` —
+       * and the checkout guard, the `subscriptions_one_live_per_workspace`
+       * index and the frontend plan picker all read `active` as "this
+       * workspace already has a subscription". So a refunded customer
+       * held nothing AND could not buy again until the period they had
+       * already paid for elapsed: up to a month, up to a year on annual.
+       *
+       * Flipping to `canceled` frees all three at once, because all three
+       * already exclude `canceled`.
+       *
+       * SYNTHETIC — minted by reconciliation, never by a provider
+       * payload. It is deliberately its own kind rather than a forged
+       * `subscription` snapshot carrying `status:'canceled'`: forging one
+       * would record in `subscription_events` that the provider reported
+       * terminal cancellation when it did not. That is the same
+       * assert-what-you-don't-know defect this codebase keeps relearning,
+       * moved into the audit trail where it is harder to see.
+       *
+       * Refunds only. A settled CHARGEBACK deliberately does not mint
+       * this — that customer stays blocked until the period ends
+       * naturally (founder decision, 2026-08-13: under a merchant of
+       * record, re-arming the same payment method same-day is how a
+       * seller account gets flagged).
+       */
+      kind: 'refund_settled';
+      providerEventId: string;
+      eventType: string;
+      providerSubscriptionId: string;
+    }
+  | {
       kind: 'ignored';
       providerEventId: string;
       eventType: string;

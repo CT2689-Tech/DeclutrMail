@@ -38,7 +38,7 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { pendingCheckouts, subscriptions, users } from '@declutrmail/db';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
@@ -86,13 +86,28 @@ export interface DriftSweepResult {
   /** Provider answered 404 / unmapped status — logged, never written. */
   subscriptionsUnreadable: number;
   providerErrors: number;
+}
+
+/**
+ * Counters for the verdict pass, which is no longer part of the drift
+ * sweep. It moved to `BillingVerdictWorker` on a ~10 minute cadence
+ * because `settled` gates whether a refunded customer can buy again, and
+ * six hours is not an acceptable latency on a revenue path (D253). The
+ * three `verdicts*` fields that used to live on `DriftSweepResult` are
+ * these; they now reach observability through that worker's
+ * `worker.succeeded` line rather than `billing.reconcile.swept`.
+ */
+export interface VerdictPassResult {
   /** Local refund/chargeback verdicts newly pushed to the provider. */
-  verdictsEnforced: number;
+  enforced: number;
   /** Verdict rows the provider would not confirm a cancel for this run. */
-  verdictsUnenforced: number;
+  unenforced: number;
   /** Verdicts the provider CONTRADICTED — refund rejected or chargeback
    *  reversed — lifted so the customer stops paying for nothing. */
-  verdictsRefuted: number;
+  refuted: number;
+  /** Refunds the provider CONFIRMED — the plan slot was freed so the
+   *  customer can purchase again (D253). Chargebacks never count here. */
+  settled: number;
 }
 
 /** A candidate must postdate the claim, minus this skew allowance. */
@@ -105,6 +120,16 @@ const DRIFT_SWEEP_MAX_ROWS = 500;
 /** Consecutive provider errors before the sweep stops asking that
  *  provider this run — a down provider should not be hammered 500×. */
 const DRIFT_SWEEP_TRIP_AFTER = 3;
+
+/** How long to keep watching a refund-canceled row whose
+ *  `current_period_end` is unknown (D253). A provider can only charge
+ *  again at renewal, so with no recorded renewal date this stands in for
+ *  the longest ordinary cycle we would otherwise be blind across. */
+const REFUND_WATCH_FALLBACK_DAYS = 45;
+
+/** Grace past the renewal date. The alert is "the provider still intends
+ *  to bill", so the window has to outlast the moment it would. */
+const REFUND_WATCH_GRACE_DAYS = 7;
 
 /** Deterministic digest of the material subscription state. */
 function stateHash(sub: NormalizedSubscription): string {
@@ -367,9 +392,6 @@ export class BillingReconciliationService {
       subscriptionsUnchanged: 0,
       subscriptionsUnreadable: 0,
       providerErrors: 0,
-      verdictsEnforced: 0,
-      verdictsUnenforced: 0,
-      verdictsRefuted: 0,
     };
     const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
 
@@ -392,10 +414,10 @@ export class BillingReconciliationService {
       }
     }
 
-    const enforced = await this.enforceLocalVerdicts();
-    result.verdictsEnforced = enforced.enforced;
-    result.verdictsUnenforced = enforced.unenforced;
-    result.verdictsRefuted = enforced.refuted;
+    // Verdict enforcement deliberately does NOT run here any more. It
+    // owns its own ~10 minute job (`BillingVerdictWorker`), and calling
+    // it from both schedules would let two passes issue provider
+    // mutations for the same row concurrently (D253).
     return result;
   }
 
@@ -435,11 +457,7 @@ export class BillingReconciliationService {
    * every renewal window we can bill on, and it buys the retry
    * durability an inline call would not have.
    */
-  private async enforceLocalVerdicts(): Promise<{
-    enforced: number;
-    unenforced: number;
-    refuted: number;
-  }> {
+  async enforceLocalVerdicts(): Promise<VerdictPassResult> {
     const rows = await this.db
       .select({
         provider: subscriptions.provider,
@@ -459,6 +477,7 @@ export class BillingReconciliationService {
     let enforced = 0;
     let unenforced = 0;
     let refuted = 0;
+    let settled = 0;
     const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
 
     for (const row of rows) {
@@ -561,10 +580,62 @@ export class BillingReconciliationService {
             );
           }
           // `verdictsEnforced` keeps meaning "we sent a cancel" — the
-          // counter is spread into the `billing.reconcile.swept` log line
-          // (worker.ts), so it is an existing contract. A row the provider
-          // had already scheduled is neither enforced nor unenforced:
-          // nothing was wrong and nothing needed doing.
+          // counter is now spread into this worker's `worker.succeeded`
+          // line rather than `billing.reconcile.swept`, but its meaning
+          // is unchanged. A row the provider had already scheduled is
+          // neither enforced nor unenforced: nothing was wrong and
+          // nothing needed doing.
+
+          // D253. The provider has CONFIRMED the refund — free the plan
+          // slot so this customer can buy again.
+          //
+          // The branch is on `facts.settled`, the PROVIDER's answer, and
+          // never on `row.cancelSource`, our own marker. The two are
+          // deliberately allowed to differ (a chargeback can settle on a
+          // row we marked `refund`), and the code above handles every
+          // non-null cause together — so keying on our marker, or on a
+          // generic "something settled", would silently unlock
+          // chargebacks. Chargebacks must NOT unlock early: under a
+          // merchant of record, re-arming the same payment method
+          // same-day is how a seller account gets flagged (founder
+          // decision, 2026-08-13). They still release normally when the
+          // period ends and the real `subscription.canceled` arrives.
+          //
+          // No provider check guards this. Razorpay is unaffected today
+          // because its `providerCancellationFacts` returns null and its
+          // mapper mints no verdict, so no Razorpay row ever reaches
+          // here — the scope is enforced by that adapter's own
+          // behaviour. A hardcoded `provider !== 'razorpay'` would
+          // instead become a lockout the day Razorpay refunds are
+          // mapped, which is the exact bug this PR exists to remove.
+          //
+          // BOTH sides must agree no dispute is involved, and they are
+          // asking different questions. `facts.settled === 'refund'` is
+          // the provider's answer to "did money actually go back, and is
+          // there no live chargeback?" — it is the only thing that can
+          // confirm a settlement, which is why the branch is not on our
+          // marker alone. `row.cancelSource === 'refund'` is OUR answer
+          // to "was a dispute ever raised on this subscription?", and
+          // the provider read cannot answer it: a chargeback that was
+          // later reversed leaves `facts.settled` reading `refund` while
+          // our row still records that a dispute happened. Unlocking
+          // there would re-arm the same payment method on a customer who
+          // has disputed us before, which is precisely the founder's
+          // stated reason for the asymmetry.
+          //
+          // Requiring both is strictly SAFER than either alone, and the
+          // conjunction must be tested HERE rather than left to the
+          // projector's WHERE clause. It was there first, and the
+          // counter below then incremented — and the log line claimed
+          // the slot was released — on rows the projector had silently
+          // refused. An observability line that reports work it did not
+          // do is the same assert-what-you-don't-know defect this
+          // codebase keeps paying for, just aimed at us instead of the
+          // customer.
+          if (facts.settled === 'refund' && row.cancelSource === 'refund') {
+            await this.projectRefundSettlement(row, new Date().toISOString());
+            settled += 1;
+          }
           continue;
         }
 
@@ -601,7 +672,7 @@ export class BillingReconciliationService {
         );
       }
     }
-    return { enforced, unenforced, refuted };
+    return { enforced, unenforced, refuted, settled };
   }
 
   /**
@@ -647,6 +718,156 @@ export class BillingReconciliationService {
     this.logger.warn(
       `billing.reconcile.verdict_refuted provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} outcome=${outcome.kind} — the provider rejected the refund or reversed the chargeback; entitlement restored`,
     );
+  }
+
+  /**
+   * Free the plan slot after the provider confirms a refund (D253).
+   *
+   * Through the ONE projector, exactly like `liftRefutedVerdict` and for
+   * the same reason: this file's header promises it is "a second SOURCE,
+   * never a second WRITER", and `webhookService.process()` is what
+   * supplies the advisory lock, the dedup gate and the tier recompute.
+   *
+   * The event id is deterministic and scoped to the subscription, so
+   * re-observing the same settled refund on a later pass dedups instead
+   * of re-flipping. It carries no adjustment id: the provider fact is
+   * "a full refund has settled against this subscription", which is
+   * true once regardless of how many adjustment rows compose it.
+   */
+  private async projectRefundSettlement(
+    row: { provider: BillingProviderId; providerSubscriptionId: string },
+    observedAtIso: string,
+  ): Promise<void> {
+    const outcome = await this.webhookService.process(
+      row.provider,
+      {
+        kind: 'refund_settled',
+        providerEventId: `recon-refund-settled:${row.provider}:${row.providerSubscriptionId}`,
+        eventType: 'reconciliation.refund_settled',
+        providerSubscriptionId: row.providerSubscriptionId,
+      },
+      { occurred_at: observedAtIso },
+    );
+    this.logger.warn(
+      `billing.reconcile.refund_settled provider=${row.provider} sub=${row.providerSubscriptionId} outcome=${outcome.kind} — provider confirmed the refund; plan slot released`,
+    );
+  }
+
+  /**
+   * Keep watching a row we locally canceled on a settled refund, until
+   * the PROVIDER agrees it is terminal (D253).
+   *
+   * This is the part of the settlement design that cannot be dropped for
+   * scope. Flipping the row to `canceled` makes every other pass lose
+   * interest in it — drift, workspace reconcile and the verdict pass all
+   * select on `status IN ('active','past_due','paused')` — and the
+   * terminal-canceled floor in the projector discards any later
+   * `active`/`past_due` payload for it. A payment webhook changes no
+   * entitlement.
+   *
+   * So if the provider's scheduled cancel is cleared, never sticks, or
+   * the subscription recovers from dunning, the provider keeps charging
+   * the customer while we hold them on Free, and nothing anywhere
+   * notices. That is charged-without-entitlement — strictly worse than
+   * the lockout this feature exists to remove, and invisible where the
+   * lockout at least had a confused customer to report it.
+   *
+   * The watch is therefore an ALERT, never a write. We deliberately do
+   * not auto-resurrect the row: doing so would re-enter the live slot
+   * that a repurchase may already occupy, which is the collision the
+   * whole design is built to make unrepresentable. A human resolves it.
+   *
+   * Bounded by the row's own renewal date rather than an attempt
+   * counter, which is what the exposure actually is — a provider can
+   * only charge again at `current_period_end`, so watching past it plus
+   * a grace window buys nothing. Rows with no recorded period end fall
+   * back to a fixed window from the refund. Both make the pass
+   * self-terminating with no schema change.
+   */
+  async watchSettledRefunds(): Promise<{
+    watched: number;
+    rebilling: number;
+    unreadable: number;
+  }> {
+    const rows = await this.db
+      .select({
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+        workspaceId: subscriptions.workspaceId,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.status, 'canceled'),
+          eq(subscriptions.cancelSource, 'refund'),
+          // `interval '1 day' * n::int` rather than a string-built
+          // `interval 'n days'` — the multiplication takes a bound
+          // parameter, so the window constants stay TypeScript values
+          // instead of being interpolated into SQL text.
+          sql`now() <= COALESCE(
+                ${subscriptions.currentPeriodEnd},
+                ${subscriptions.entitlementEndsAt} + interval '1 day' * ${REFUND_WATCH_FALLBACK_DAYS}::int
+              ) + interval '1 day' * ${REFUND_WATCH_GRACE_DAYS}::int`,
+        ),
+      )
+      .orderBy(asc(subscriptions.updatedAt))
+      .limit(DRIFT_SWEEP_MAX_ROWS);
+
+    let watched = 0;
+    let rebilling = 0;
+    let unreadable = 0;
+    const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
+
+    for (const row of rows) {
+      if (consecutiveErrors[row.provider] >= DRIFT_SWEEP_TRIP_AFTER) {
+        unreadable += 1;
+        continue;
+      }
+      try {
+        const fetched = await this.adapterFor(row.provider).fetchSubscription(
+          row.providerSubscriptionId,
+        );
+        if (fetched.kind !== 'found') {
+          // `not_found` is the GOOD outcome here — the subscription is
+          // gone at the provider, which is exactly what we want to be
+          // true. Only `found_unmapped` is genuinely unreadable, and it
+          // is not an alert: an unmappable status is not evidence of
+          // billing.
+          consecutiveErrors[row.provider] = 0;
+          watched += 1;
+          if (fetched.kind === 'found_unmapped') {
+            unreadable += 1;
+            this.logger.log(
+              `billing.reconcile.refund_watch_unmapped provider=${row.provider} sub=${row.providerSubscriptionId} provider_status=${fetched.providerStatus}`,
+            );
+          }
+          continue;
+        }
+        consecutiveErrors[row.provider] = 0;
+        watched += 1;
+        const provider = fetched.subscription;
+        if (provider.status === 'canceled') continue; // converged; nothing to say
+
+        // Still live at the provider. Either it is scheduled to stop and
+        // simply has not yet — normal, and quiet — or the schedule is
+        // missing, which means the provider intends to bill a customer
+        // we have already refunded and cut off.
+        if (!provider.cancelAtPeriodEnd) {
+          rebilling += 1;
+          this.logger.error(
+            `billing.reconcile.refund_watch_rebilling workspace=${row.workspaceId} provider=${row.provider} sub=${row.providerSubscriptionId} provider_status=${provider.status} — refunded and locally canceled, but the provider is still set to RENEW; the customer will be charged for a plan they do not hold`,
+          );
+        }
+      } catch (err) {
+        consecutiveErrors[row.provider] += 1;
+        unreadable += 1;
+        this.logger.error(
+          `billing.reconcile.refund_watch_failed provider=${row.provider} sub=${row.providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    return { watched, rebilling, unreadable };
   }
 
   /**

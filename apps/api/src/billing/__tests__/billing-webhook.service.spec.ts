@@ -769,6 +769,142 @@ describe('BillingWebhookService.process', () => {
     expect(neutralized!.dismissReason).toBe('entitlement');
   });
 
+  // D253. The projector half of "a refunded customer can buy again".
+  // Reconciliation decides WHETHER to mint this event; these pin what
+  // the projector will and will not do when handed one, independent of
+  // any caller. The dangerous direction is a flip that should not
+  // happen — this is the one code path in the system that writes
+  // `status='canceled'` without the provider having said so.
+  describe('refund_settled — releasing the plan slot', () => {
+    async function seedRefunded(): Promise<void> {
+      const activate = paddleSubscriptionActivated({
+        workspaceId,
+        eventId: 'evt_rs_1',
+        periodEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+      const refund = paddleAdjustmentCreated({ eventId: 'evt_rs_2', action: 'refund' });
+      await service.process('paddle', paddle.mapWebhookEvent(refund), refund);
+    }
+
+    function settledEvent(eventId: string, providerSubscriptionId: string) {
+      return {
+        kind: 'refund_settled' as const,
+        providerEventId: eventId,
+        eventType: 'reconciliation.refund_settled',
+        providerSubscriptionId,
+      };
+    }
+
+    it('flips the row to canceled and keeps the refund provenance', async () => {
+      await seedRefunded();
+      const [before] = await db.select().from(subscriptions);
+      expect(before!.status).toBe('active'); // precondition — this IS the lockout
+
+      const outcome = await service.process(
+        'paddle',
+        settledEvent('evt_rs_3', before!.providerSubscriptionId),
+        { occurred_at: new Date().toISOString() },
+      );
+      expect(outcome).toEqual({ kind: 'processed', effect: 'refund_settled' });
+
+      const [row] = await db.select().from(subscriptions);
+      expect(row!.status).toBe('canceled');
+      // Provenance survives — "ended by refund" must stay countable, and
+      // the post-flip watch pass selects on these two columns.
+      expect(row!.cancelSource).toBe('refund');
+      expect(row!.entitlementEndsAt).not.toBeNull();
+    });
+
+    it('REFUSES a row carrying no verdict — it can never cancel a healthy subscription', async () => {
+      // The blast radius that matters. If this guard were absent, a
+      // mis-minted event would terminate a paying customer's plan with
+      // no provider event behind it and no way to tell it apart from a
+      // real cancellation afterwards.
+      const activate = paddleSubscriptionActivated({
+        workspaceId,
+        eventId: 'evt_rs_4',
+        periodEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+      const [healthy] = await db.select().from(subscriptions);
+
+      const outcome = await service.process(
+        'paddle',
+        settledEvent('evt_rs_5', healthy!.providerSubscriptionId),
+        { occurred_at: new Date().toISOString() },
+      );
+      expect(outcome).toEqual({ kind: 'processed', effect: 'refund_settled:no_row' });
+
+      const [row] = await db.select().from(subscriptions);
+      expect(row!.status).toBe('active');
+      const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+      expect(ws!.tier).toBe('plus');
+    });
+
+    it('REFUSES a chargeback row — settled disputes do not unlock early', async () => {
+      // Founder decision 2026-08-13, enforced twice over: reconciliation
+      // will not mint the event for a chargeback row, and the projector
+      // would refuse it anyway. Defence in depth is warranted here
+      // because the cost of being wrong is a flagged seller account.
+      const activate = paddleSubscriptionActivated({
+        workspaceId,
+        eventId: 'evt_rs_6',
+        periodEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+      const cb = paddleAdjustmentCreated({ eventId: 'evt_rs_7', action: 'chargeback' });
+      await service.process('paddle', paddle.mapWebhookEvent(cb), cb);
+      const [disputed] = await db.select().from(subscriptions);
+
+      const outcome = await service.process(
+        'paddle',
+        settledEvent('evt_rs_8', disputed!.providerSubscriptionId),
+        { occurred_at: new Date().toISOString() },
+      );
+      expect(outcome).toEqual({ kind: 'processed', effect: 'refund_settled:no_row' });
+
+      const [row] = await db.select().from(subscriptions);
+      expect(row!.status).toBe('active');
+      expect(row!.cancelSource).toBe('chargeback');
+    });
+
+    it('a replay is a clean no-op, and the flip cannot be undone by a later payload', async () => {
+      await seedRefunded();
+      const [seeded] = await db.select().from(subscriptions);
+      const subId = seeded!.providerSubscriptionId;
+      await service.process('paddle', settledEvent('evt_rs_9', subId), {
+        occurred_at: new Date().toISOString(),
+      });
+
+      // Same event id → the dedup gate catches it before the effect.
+      expect(
+        await service.process('paddle', settledEvent('evt_rs_9', subId), {
+          occurred_at: new Date().toISOString(),
+        }),
+      ).toEqual({ kind: 'duplicate' });
+
+      // A DIFFERENT id gets past dedup, and the status guard stops it.
+      expect(
+        await service.process('paddle', settledEvent('evt_rs_10', subId), {
+          occurred_at: new Date().toISOString(),
+        }),
+      ).toEqual({ kind: 'processed', effect: 'refund_settled:no_row' });
+
+      // And the terminal-canceled floor holds: a later granting payload
+      // cannot pull the dead row back into the live slot. That is what
+      // makes a repurchase beside it safe.
+      const renew = paddleSubscriptionActivated({
+        workspaceId,
+        eventId: 'evt_rs_11',
+        periodEndsAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      await service.process('paddle', paddle.mapWebhookEvent(renew), renew);
+      const [row] = await db.select().from(subscriptions);
+      expect(row!.status).toBe('canceled');
+    });
+  });
+
   // Winning the dispute must not be worse for the customer than losing
   // it. Paddle returns the funds; without this the revocation stands and
   // they sit on Free while paying, with nothing in the product able to
