@@ -1,0 +1,12 @@
+-- Rollback for 0055_refresh_stale_one_click_unsub_urls.sql
+--
+-- Data-only repair; the prior URLs are not preserved. They were the
+-- defect itself -- a stale per-send token, or a plain preference-centre
+-- link stored as if it were RFC 8058 one-click -- so restoring them
+-- would only reinstate a guaranteed unsubscribe failure.
+--
+-- `mail_messages` is untouched, so both the corrected fold and this
+-- statement remain reproducible from source data at any time. There is
+-- nothing mechanical to restore.
+
+SELECT 1;
