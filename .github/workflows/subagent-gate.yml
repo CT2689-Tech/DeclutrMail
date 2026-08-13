@@ -1,11 +1,12 @@
 name: Subagent gate
 
 on:
-  # No `branches:` filter, and `edited` in the types — see the note in
-  # ci.yml. A stacked PR ran no gate agents at all, and retargeting one
-  # onto main fires only `edited`, so the gate never reran either.
+  # No `branches:` filter — see the note in ci.yml. Do NOT listen for
+  # `edited` here (title/body edits retriggered the whole suite). Keep
+  # `edited` on branch-name.yml. Retarget a stacked PR by hand:
+  # `gh workflow run subagent-gate.yml --ref <branch>`.
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, edited]
+    types: [opened, synchronize, reopened, ready_for_review]
 
   # Manual trigger fallback — PR #178 hit a case on 2026-06-10 where
   # pull_request silently did not dispatch despite base + branch matching

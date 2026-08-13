@@ -8,14 +8,13 @@ on:
   # (2026-08-08; #475 merged into an already-squashed base and reached
   # no branch at all).
   #
-  # `edited` is in the types list for the second half of that bug:
-  # retargeting a stacked PR onto main after its base merges fires
-  # `edited` and NOTHING else, so with the default types the PR kept
-  # whatever stale checks it had. Title/body edits re-run CI too — that
-  # is redundant but free (public repo) and self-cancelling via the
-  # concurrency group below.
+  # Do NOT listen for `edited` here. Title/body edits used to retrigger
+  # the full ~12 min suite (and cancel the in-flight run). Retargeting a
+  # stacked PR onto main still fires only `edited` — fire CI by hand in
+  # that case: `gh workflow run ci.yml --ref <branch>`. Branch-name.yml
+  # keeps `edited` so title/body checks still update.
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, edited]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
@@ -76,18 +75,34 @@ jobs:
               - '.nvmrc'
               - 'packages/config/**'
               - '.github/workflows/ci.yml'
+            # UI-only shared paths must not boot API/worker PGlite suites.
+            # A Button.tsx tweak was paying the 12 min API shard.
             api:
               - *infra
               - 'apps/api/**'
               - 'packages/db/**'
-              - 'packages/shared/**'
               - 'packages/events/**'
+              - 'packages/shared/**'
+              - '!packages/shared/src/components/**'
+              - '!packages/shared/src/hooks/**'
+              - '!packages/shared/src/shell/**'
+              - '!packages/shared/src/state/**'
+              - '!packages/shared/src/styles/**'
+              - '!packages/shared/src/tokens/**'
+              - '!**/*.stories.tsx'
             workers:
               - *infra
               - 'packages/workers/**'
               - 'packages/db/**'
-              - 'packages/shared/**'
               - 'packages/events/**'
+              - 'packages/shared/**'
+              - '!packages/shared/src/components/**'
+              - '!packages/shared/src/hooks/**'
+              - '!packages/shared/src/shell/**'
+              - '!packages/shared/src/state/**'
+              - '!packages/shared/src/styles/**'
+              - '!packages/shared/src/tokens/**'
+              - '!**/*.stories.tsx'
             db:
               - *infra
               - 'packages/db/**'
@@ -187,6 +202,10 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.api == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     services:
       postgres:
         image: postgres:16
@@ -209,7 +228,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @declutrmail/api test
+      - run: pnpm --filter @declutrmail/api test -- --shard=${{ matrix.shard }}/2
         env:
           CLEANUP_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/declutrmail_quota_test
 
@@ -219,6 +238,10 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.workers == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     # The outbox dispatcher's SKIP LOCKED proof needs MULTIPLE real
     # connections — PGlite is single-connection in-process and cannot
     # model two ticks racing for the same rows. Without this service the
@@ -248,7 +271,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @declutrmail/workers test
+      - run: pnpm --filter @declutrmail/workers test -- --shard=${{ matrix.shard }}/2
         env:
           # A DEDICATED, EMPTY database — the test applies every
           # migration to it. Schema-level isolation is not an option:
@@ -356,8 +379,12 @@ jobs:
           # only an outright failure or a PR-context skip is an error.
           if [ "$IMPL_LOG_RESULT" != success ]; then
             if [ "$EVENT_NAME" = pull_request ] || [ "$IMPL_LOG_RESULT" != skipped ]; then
-              echo "::error::implementation log check did not succeed ($IMPL_LOG_RESULT) —" \
-                   "run 'pnpm generate-impl-log' and commit the result"
+              if [ "$IMPL_LOG_RESULT" = cancelled ]; then
+                echo "::error::implementation log check was cancelled — a newer push superseded this run"
+              else
+                echo "::error::implementation log check did not succeed ($IMPL_LOG_RESULT) —" \
+                     "run 'pnpm generate-impl-log' and commit the result"
+              fi
               exit 1
             fi
           fi
