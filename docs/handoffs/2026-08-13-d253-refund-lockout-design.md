@@ -1,7 +1,7 @@
 # D253 — A refunded customer must be able to buy again
 
 **Date:** 2026-08-13
-**Status:** Design approved by founder 2026-08-13; not yet implemented
+**Status:** v2. v1's design was rejected by review; see "What v1 got wrong".
 **Branch:** `fix/d253-refund-repurchase-lockout`
 
 ---
@@ -13,200 +13,209 @@ it back until the period they already paid for elapses** — up to a month on
 monthly, up to a year on annual. There is no in-app route back. The only
 recovery is an operator holding the Paddle API key.
 
-Nobody designed this. It falls out of three behaviours that are each correct
-alone:
+Nobody designed this. It falls out of behaviours that are each correct alone:
 
-| Behaviour                                                            | Where                                                                                  | Why it is right                                                                                                                                                      |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A full refund sets `entitlement_ends_at` to SQL `now()`              | `billing-webhook.service.ts:833`                                                       | Founder decision 2026-07-31. Annual plus a 30-day money-back guarantee meant refunding $190 _and_ granting the rest of the year. Money back means the service stops. |
-| The row stays `status='active'` until the paid period ends           | projector mirrors the provider                                                         | `status` is provider truth; Paddle keeps the subscription active with `scheduled_change: cancel` until period end                                                    |
-| Any `active` row is treated as the workspace's one live subscription | `billing.service.ts:89-107` guard and the `subscriptions_one_live_per_workspace` index | One subscription per workspace at a time (D120); plan changes are a provider-side update, not a second checkout                                                      |
-
-The composition was never decided. It is the "cancel is a one-way door" class
-(follow-up resolved 2026-07-31) recurring in the shape that fix deliberately
-excluded: that fix reopened the _un-cancel_ door and correctly left
-refund-cancels irrevocable, but nothing reopened the _purchase_ door behind
-them.
+| Behaviour                                                 | Where                                                                                | Why it is right                                                                                                                                           |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A full refund sets `entitlement_ends_at` to SQL `now()`   | `billing-webhook.service.ts:833`                                                     | Founder decision 2026-07-31. Annual plus a 30-day guarantee meant refunding $190 _and_ granting the rest of the year. Money back means the service stops. |
+| The row is left in `status='active'`                      | `applyScheduledCancellation` never writes `status`                                   | Paddle schedules nothing on a refund — our own sweep sends the cancel later (`billing-reconciliation.service.ts:409-412`)                                 |
+| Any `active` row is the workspace's one live subscription | guard `billing.service.ts:89-107`, index `0051:72`, FE picker `billing-model.ts:258` | One subscription per workspace at a time (D120)                                                                                                           |
 
 It is a revenue path, not only a trust one. A goodwill full refund is an
-ordinary support gesture and today it makes that customer unable to pay again
+ordinary support gesture, and today it makes that customer unable to pay again
 for the rest of their term.
-
-### Why the obvious fix is worse than the bug
-
-Loosening only the checkout guard — "ignore rows whose entitlement has already
-lapsed" — lets the customer pay while the webhook write still fails. Paddle
-takes the money, `subscription.created` tries to insert a second `active` row
-for the workspace, `subscriptions_one_live_per_workspace` rejects it, and the
-webhook retries forever. The customer is charged and receives nothing.
-
-This repository already reached that conclusion for the sibling case, in the
-follow-up weighing index predicates: _"the webhook write is rejected by the
-index and retries forever: the customer is charged while our DB refuses to
-record it. Strictly worse than no index."_
-
-The guard and the index key on the same thing. Any real fix has to change what
-counts as live, not special-case one of the two readers.
-
-### One shortcut is unavailable
-
-Pushing the lapsed-entitlement test into the index predicate does not work.
-Postgres requires index predicates to be `IMMUTABLE`; `now()` is not.
 
 ---
 
-## The founder decision this design encodes
+## What v1 got wrong
 
-**Question posed 2026-08-13:** you refund a customer, they buy again the same
-day, then Paddle rejects the refund — their original payment stands and they
-have paid twice. What should happen?
+v1 proposed a `cancel_settled_at` column plus a narrowed index predicate. Three
+independent reviews rejected it. Recorded because the reasoning constrains v2.
 
-**Answer chosen:** _wait for Paddle to confirm._ Repurchase unlocks when the
-refund **settles**, not when it is requested. Double payment becomes
-impossible. The accepted cost is that a refunded customer waits for provider
-confirmation before they can buy again.
+1. **It would have shipped green and changed nothing.** The settlement write
+   was to live in the verdict loop, but `billing-reconciliation.service.ts:481`
+   short-circuits on `provider.cancelAtPeriodEnd` **before** the
+   `providerCancellationFacts` call at `:494`. Our own enforcement is what
+   converges the provider, so the row is skipped forever after.
+2. **It broke a singleton at least six readers depend on.** Leaving the dead row
+   `active` beside a repurchase means two rows match every
+   `orderBy(desc(updatedAt)).limit(1)` reader. The drift sweep bumps
+   `updated_at` on the dead row, so it wins. `getSubscription`
+   (`billing.service.ts:266`) would serve the refunded plan to a paying
+   customer, and Cancel / Pause / Change-plan would fire at the dead
+   subscription id while the live one kept billing.
+3. **It did not reach the customer.** The FE picker is keyed on status —
+   `billing-model.ts:258`, whose comment reads _"Only a canceled row leaves the
+   slot free."_ A backend-only change leaves the plan picker locked, so the
+   stated value of the fix never arrives.
+4. **The lift race was narrowed, not closed.** `chargeback_reverse` reaches
+   `applyRevokedCancellation` from a live webhook with no settled filter and no
+   unique-violation handler, ending in the "charged while our DB refuses to
+   record it" state v1 quoted to reject the simpler fix.
 
-This choice does more than pick a policy — it removes the hardest edge in the
-design. The dangerous case was a verdict being lifted _after_ a repurchase:
-two live rows, and the correcting write is the one the index rejects. Gating
-on settlement makes that unreachable, because settlement is the thing that
-unlocks buying. The race is designed out rather than handled.
+v1 also rejected the design below on a false premise — "`status` is provider
+truth". It is not: the dunning sweep writes `status='canceled'` with no provider
+event (`billing-reconciliation.sweep.ts:72-81`), and Razorpay `halted` maps to
+`canceled` locally while Razorpay still says halted.
 
 ---
 
 ## Design
 
-### 1. Persist settlement
+**When the provider confirms a refund has settled, flip the local row to
+`status='canceled'`.** No column, no migration, no index change.
 
-Add one nullable column to `subscriptions`:
+### Why this shape
 
-```
-cancel_settled_at  timestamptz  null
-```
+The index, the checkout guard and the FE picker **already** exclude `canceled`,
+so one write frees all three. The singleton every other reader assumes is
+preserved. And the collision v1 argued away becomes unrepresentable: the
+terminal-canceled floor at `billing-webhook.service.ts:526-535` ignores any
+later payload that would move a row out of `canceled`, so the dead row can never
+re-enter the live slot.
 
-Set **only** when the provider confirms a plan-ending refund or chargeback.
-Never set from `adjustment.created`, which is a request rather than an outcome.
-Cleared back to `null` by `liftRefutedVerdict` alongside the existing
-`cancel_source` / `entitlement_ends_at` reset.
+`cancel_source='refund'` and `entitlement_ends_at` are untouched, so "ended by
+refund" stays distinguishable from "cancelled normally".
 
-The sweep already computes exactly this fact — `cancellationFacts()` asks the
-provider whether it holds a settled, plan-ending adjustment — and then discards
-the answer. This change persists what it already knows. No new provider calls
-and no new webhook subscriptions.
+### Refunds unlock. Chargebacks do not.
 
-### 2. Both readers ask the same question
+**Founder decision, 2026-08-13.** A settled _refund_ flips the row and frees the
+slot. A settled _chargeback_ does not — that customer stays blocked until the
+period ends naturally, and must contact support to subscribe again. Under a
+merchant of record, repeat chargebacks are what gets a seller account flagged or
+terminated, and re-arming the same payment method same-day is how that starts.
 
-The checkout guard and the partial unique index stop treating a settled-cancel
-row as live:
+`facts.settled` returns `'refund' | 'chargeback' | null` from one call
+(`billing-provider.interface.ts:212`), so the asymmetry is a branch on its value,
+not a second read. Chargeback behaviour is therefore **unchanged** by this PR —
+worth stating plainly, because "we did nothing" is the correct outcome there
+rather than an oversight.
 
-- Index predicate becomes
-  `WHERE status IN ('active','past_due') AND cancel_settled_at IS NULL`
-- The guard query adds `cancel_settled_at IS NULL`
+### The write must go through the projector
 
-`cancel_settled_at IS NULL` is a plain column test, so it is legal in an index
-predicate where the `now()` formulation was not.
+`billing-reconciliation.service.ts:13-16` states the file's contract:
+_"Reconciliation is a second SOURCE, never a second WRITER."_ `liftRefutedVerdict`
+honours it by routing through `webhookService.process()` for the advisory lock,
+staleness ordering and dedup.
 
-This deliberately leaves ordinary cancels alone. A customer who cancels
-normally keeps access to period end, so their row _should_ still hold the slot.
-`cancel_source='provider'` never sets `cancel_settled_at`. Only a **settled**
-refund or chargeback releases it.
+Settlement follows that precedent: a new `NormalizedBillingEvent` kind
+(`cancellation_settled`) carrying the provider-confirmed cause, applied by the
+projector under `lockSubscription`. Not a raw UPDATE from the sweep.
 
-`recomputeWorkspaceTier` needs no change: a refunded row already stops granting
-via its `entitlement_ends_at` deadline.
+### Fix the unreachable short-circuit
 
-### 3. A distinct refusal code
+`billing-reconciliation.service.ts:481` currently skips the whole row when the
+provider reports `canceled` **or** `cancelAtPeriodEnd`. Narrow it to
+`provider.status === 'canceled'`, and use `cancelAtPeriodEnd` to skip only the
+outbound `cancelSubscription` — never the facts read.
 
-Today a blocked repurchase returns `SUBSCRIPTION_EXISTS`, which after a refund
-is simply false — there is no live subscription. That is the
-assert-what-you-do-not-know defect this codebase keeps hitting.
+Without this, "customer cancels, then asks for their money back" — the most
+common refund shape there is — never settles, and any design built on settlement
+does nothing for them.
 
-During the settling window the guard returns a distinct code instead. Customer
-facing wording is a design-freeze surface (D220) and is **not** decided here;
-this change returns the code and leaves copy to the founder.
+### The verdict pass becomes a real cron job
 
-### 4. Split the sweep
+Verdict enforcement lives inside the 6-hourly drift loop today
+(`reconcileLiveSubscriptions` calls it at `:395`), so settlement could take six
+hours to notice.
 
-Verdict enforcement currently lives inside the per-row loop of
-`reconcileLiveSubscriptions()`, which runs every 6 hours plus on boot
-(`worker.ts:1916`). So settlement could take up to 6 hours to be noticed, and
-the customer waits that long to buy again.
+It moves to its own **`cronPolicy`** job on a ~10 minute cadence: BullMQ
+repeatable, `BaseDeclutrWorker.processJob()`, `cron_runs` claim keyed on
+`(worker_name, scheduled_at_minute)`. **The drift pass stops calling it**, so the
+two schedules cannot collide.
 
-Extract the verdict logic into one method and call it from two schedules:
+A plain `setInterval` was considered and rejected. The in-repo precedent for
+that (`worker.ts:1871-1875`) is justified as _"bookkeeping on our own table, a
+missed tick self-heals"_. This job issues outbound provider mutations and is the
+sole gate on a revenue path — it is neither.
 
-| Pass    | Selects                                                                              | Cadence        |
-| ------- | ------------------------------------------------------------------------------------ | -------------- |
-| Verdict | rows with `cancel_source IN ('refund','chargeback')` and `cancel_settled_at IS NULL` | ~10 minutes    |
-| Drift   | unchanged                                                                            | 6 hours + boot |
+Selection is bounded so a row that can never settle does not poll forever: rows
+carrying an unsettled refund verdict, capped by attempt count, oldest first. A
+row that exhausts its attempts is logged for support rather than retried
+silently.
 
-The verdict pass normally matches zero rows and exits without a single provider
-call, so the cadence is nearly free at runtime. It is still a second scheduled
-job in the worker composition root and carries its own smoke.
+### A refusal that tells the truth
 
-This is bundled rather than deferred deliberately: the fix's entire value is
-"the customer can buy again", and a six-hour wall undermines it enough that
-shipping without this would be the ship-the-partial pattern the founder has
-rejected before.
+During the settling window checkout still refuses, and `SUBSCRIPTION_EXISTS` is
+false there — no live subscription exists. A new code says so.
 
-### 5. Fail closed
+It cannot be registered without copy: `ErrorCodeSpec`
+(`packages/shared/src/contracts/error-codes.ts:26-34`) requires `status`,
+`severityTier`, `retryable` and `message`. Values: **409** matching its siblings,
+and **`retryable: true`** — unlike `SUBSCRIPTION_EXISTS` and
+`SUBSCRIPTION_PAUSED_BLOCKS_NEW`, this one genuinely resolves on its own.
 
-If the provider is unreachable, settlement is never written and the customer
-stays blocked. That is the direction the founder's answer chose — never double
-charge, accept a wait. A read failure is never grounds for a write, consistent
-with the existing rule in `billing-provider.interface.ts`.
+The code must also be added to the two hand-maintained frontend registries at
+`plan-picker.tsx:111-133`. A new code absent from `PRE_CLAIM_REJECTIONS` is
+treated as an ambiguous post-claim outcome and surfaces a payment reservation
+for a checkout that never reached a provider.
+
+### Razorpay is explicitly out of scope
+
+`razorpay.adapter.ts:297-310` returns `null` from `providerCancellationFacts`
+unconditionally, and its `mapWebhookEvent` maps no refund or chargeback event —
+so no Razorpay row ever carries a verdict and none is affected today. Stated
+here because the day someone maps Razorpay refunds, every such customer would
+be locked out with **zero code change in this PR**. The implementation carries a
+guard and a test pinning that scope.
+
+### Observability
+
+- A dedicated log kind for the settlement write itself — this is the line that
+  records a customer becoming able to pay again, and v1 specified none.
+- A distinct failure kind for the new pass, so it is separable from
+  `billing.reconcile.sweep_failed` in Sentry.
+- `billing.reconcile.swept` changes shape when verdict counters leave
+  `DriftSweepResult`; that is an existing log contract and the change is noted
+  rather than silent.
+- One Sentry capture per failure (D203), preserved through the extraction.
 
 ---
 
-## End-to-end behaviour after the change
+## End-to-end behaviour
 
-| Moment            | Today                                  | After                                                                    |
-| ----------------- | -------------------------------------- | ------------------------------------------------------------------------ |
-| Refund issued     | access stops instantly                 | unchanged                                                                |
-| Immediately after | cannot buy for the rest of the period  | cannot buy — awaiting provider confirmation                              |
-| Provider approves | nothing; still locked to period end    | can buy again, within ~10 min                                            |
-| Provider rejects  | locked out regardless                  | original plan is restored; no second purchase existed to collide with it |
-| Ordinary cancel   | keeps access to period end, cannot buy | unchanged — correct, they still hold the plan                            |
+| Moment                       | Today                                  | After                                                      |
+| ---------------------------- | -------------------------------------- | ---------------------------------------------------------- |
+| Refund issued                | access stops instantly                 | unchanged                                                  |
+| Immediately after            | cannot buy for the rest of the period  | cannot buy — awaiting provider confirmation, told honestly |
+| Provider confirms the refund | nothing; locked to period end          | row flips to `canceled`; can buy again within ~10 min      |
+| Refund later reversed        | —                                      | support case, logged loudly; not silently re-granted       |
+| Chargeback settles           | locked out                             | unchanged — deliberate, founder decision                   |
+| Ordinary cancel              | keeps access to period end, cannot buy | unchanged — correct, they still hold the plan              |
 
 ---
 
 ## Testing
 
-- A refunded-and-settled row does not block checkout, **and** the resulting
+- A settled refund flips the row to `canceled`, **and** a subsequent
   `subscription.created` inserts without violating
-  `subscriptions_one_live_per_workspace`. This is the assertion that would have
-  caught the rejected design; a guard-only test passes against a broken system.
-- A refunded-but-unsettled row still blocks, with the new code rather than
-  `SUBSCRIPTION_EXISTS`.
-- An ordinary provider cancel still blocks.
-- A refuted verdict clears `cancel_settled_at` and the row blocks again.
-- The sweep writes `cancel_settled_at` only on provider confirmation, and never
-  from `adjustment.created`.
-- The verdict pass selects only unsettled-verdict rows and makes no provider
-  call when there are none.
-- Migration applies and reverts cleanly; the replacement index is present with
-  the new predicate.
-
----
+  `subscriptions_one_live_per_workspace`. A guard-only assertion passes against
+  a broken system, so the insert is the assertion that matters.
+- `getSubscription` and each of Cancel / Un-cancel / Pause / Change-plan target
+  the live row, never the dead one, after a refund-then-repurchase.
+- Cancel-then-refund settles — the regression test for `:481`.
+- A settled **chargeback** does not flip the row and does not unlock checkout.
+- A refund reversed after settlement produces the loud support state, not a
+  re-grant and not a unique violation.
+- The verdict pass claims its `cron_runs` row, does not overlap itself, and the
+  drift pass no longer enforces verdicts.
+- A row that cannot settle stops being retried after its attempt bound.
+- Razorpay rows never acquire a verdict; the scope guard holds.
 
 ## Out of scope
 
-- **`adjustment.updated` handling.** The adapter has no case for it today — it
-  falls to `default:` and is recorded as `ignored`, so the existing follow-up
-  advising the Paddle dashboard toggle is incomplete and buys nothing without
-  adapter code. At a 10-minute verdict cadence the remaining gain is marginal.
-  The follow-up should be corrected to say so.
-- **Customer-facing copy** for the new refusal code (D220 design freeze).
-- **The `past_due` dunning-expiry variant** of the same lockout — worth
-  checking for and logging, not fixing here.
-- **History of the refund policy itself.** "Money back means the service stops"
-  is settled and is not revisited.
+- **`adjustment.updated` handling.** The adapter has no case for it — it falls
+  to `default:` and is recorded as `ignored`, so the existing follow-up advising
+  only the Paddle dashboard toggle is incomplete and buys nothing without
+  adapter code. At a 10-minute cadence the remaining gain is marginal.
+- **The `past_due` dunning-expiry variant** of the same lockout — worth checking
+  for and logging, not fixing here.
+- **Re-litigating the refund policy.** "Money back means the service stops" is
+  settled.
 
----
+## Open for the founder
 
-## Open question for the founder
-
-This is unbuilt work someone will ask "is it built yet?" about, so by the
-2026-07-28 ratified split it takes a **D-number** (D253) rather than an ADR, and
-the plan mirror plus `IMPLEMENTATION-LOG.md` are appended in this same PR per
-the Class-B rule. The durable _rule_ it establishes — guard, projector and sweep
-must share one definition of "live" — may deserve its own ADR once shipped.
-Flagged rather than decided.
+D253 is the next free number; the plan mirror and `IMPLEMENTATION-LOG.md` are
+appended in this same PR per the Class-B rule. Neither is in the diff yet. The
+durable rule this establishes — guard, projector, sweep and **frontend** must
+share one definition of "live" — may deserve its own ADR once shipped.
