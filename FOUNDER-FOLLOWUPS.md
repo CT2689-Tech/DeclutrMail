@@ -346,6 +346,35 @@ What subscribing buys is **latency**: the correction lands in minutes instead of
 
 **Status:** Open — nice-to-have, not a blocker
 
+### 2026-08-12 — A refunded customer is locked out of paying you again
+
+**Source:** session 2026-08-12, found while planning the live refund verification (the stop-time review caught a recommendation that would have done this to a real payer)
+
+**Why:** three individually-correct behaviours compose into a state nobody chose.
+
+- `apps/api/src/billing/billing-webhook.service.ts:833` — a FULL refund sets `entitlement_ends_at` to SQL `now()`, so access ends **immediately**, not at period end
+- the row nonetheless stays `status='active'` until the paid period elapses
+- `apps/api/src/billing/billing.service.ts:89-107` — checkout refuses `SUBSCRIPTION_EXISTS` for any row in `('active','past_due','paused')`
+- `apps/api/src/billing/billing.service.ts:465` — `resume-cancellation` refuses `CANCELLATION_NOT_REVOCABLE` when `cancel_source='refund'`
+
+Net effect: a refunded customer loses their plan instantly **and cannot buy it again until the period they already paid for runs out** — up to a month on monthly, up to a **year on annual**. No in-app path back. The only recovery is an operator holding the Paddle API key.
+
+Each piece has a documented rationale and each is right on its own. The composition was never decided. This is the "cancel is a one-way door" class (Done 2026-07-31) recurring in the shape that fix deliberately excluded: it made the USER's own cancel revocable and correctly left refund-cancels irrevocable — but nothing re-opened the *purchase* door behind them.
+
+It is also a revenue path, not only a trust one. A goodwill full refund is an ordinary support gesture, and today it makes that customer unable to pay again for the rest of the period.
+
+**How:** decide the intended behaviour, then one of —
+
+(a) narrow the checkout guard to ignore rows whose entitlement has already lapsed (`entitlement_ends_at <= now()`) — a refunded row is not a live subscription in any meaningful sense;
+(b) transition refunded rows out of `active` when entitlement ends rather than when the period ends;
+(c) leave the guard and fix the message — tell the user the date they can subscribe again instead of a bare `SUBSCRIPTION_EXISTS`.
+
+Recommend (a) plus (c)'s message. Billing BE change, so §9 stop-condition review applies.
+
+**Verifies by:** on a workspace whose only subscription is a fully-refunded row with `entitlement_ends_at` in the past, `POST /api/billing/checkout` returns a checkout rather than `SUBSCRIPTION_EXISTS`; a still-entitled active row still refuses.
+
+**Status:** Open
+
 ### 2026-07-31 — Verify production billing with one real purchase (founder decision: yes)
 
 **Source:** session 2026-07-31 (founder chose "one real purchase, then refund")
@@ -375,7 +404,17 @@ Every piece of prod-only configuration this entry existed to test is therefore c
 
 Trading that for "a canary on the renewal path" swapped a definite verification available now for a speculative one in a month, and did so silently. Renewal and refund are different paths; the canary argument is fine on its own merits and is not a substitute.
 
-**The genuine decision, which is the founder's:** a full refund ends the payer's Plus access, and the payer is a real person rather than a test identity. Options — (a) refund the FULL amount, verify the live path, and let them re-subscribe if they want the product; (b) refund and leave them on Free; (c) accept that the live `pending_approval` refund path ships unverified and record that as an explicit risk rather than an oversight. (a) is the recommendation: it costs one re-subscribe and is the only option that retires a known-unverified billing path before a stranger triggers it. Do **not** partial-refund — a partial deliberately no longer ends the plan and would test nothing.
+**Do NOT refund this subscription to get the verification.** An earlier version of this entry recommended "refund the full amount and let them re-subscribe". That path does not exist. Three deliberate behaviours compose into a lockout:
+
+- `billing-webhook.service.ts:833` sets `entitlement_ends_at` to SQL `now()` on a full refund — access ends **immediately**, not at period end
+- the row nonetheless stays `status='active'` until the paid period ends, and `billing.service.ts:89-107` refuses a new checkout with `SUBSCRIPTION_EXISTS` for any row in `('active','past_due','paused')`
+- `billing.service.ts:465` refuses `resume-cancellation` with `CANCELLATION_NOT_REVOCABLE` when `cancel_source='refund'`
+
+So refunding this payer would drop them to Free instantly and leave them unable to buy Plus again until 12 Sep 2026, with no in-app path back — recoverable only by an operator holding the Paddle API key. See the separate entry recording that composition as a defect.
+
+**Verify on the founder's own account instead.** Production holds exactly one subscription row, so the founder's workspace is unencumbered and `SUBSCRIPTION_EXISTS` will not block a checkout there. Buy Plus monthly on the founder's own workspace, refund THAT in full, and watch the live path — it exercises the identical `pending_approval` arrival, `settledCancellationCause`, and sweep-enforced provider cancel, costs $9 for a few minutes, touches nobody else, and matches this entry's original intent that the first real payer be the founder. The founder's own workspace absorbs the same month-long re-subscribe lockout, which is acceptable for an operator and is not acceptable for anyone else.
+
+Do **not** partial-refund — a partial is filtered at the adapter, never becomes a verdict, and would test nothing.
 
 **Still open — do not close this on the server evidence alone.** The "Verifies by" below has two halves and only the first is met. `workspaces.tier=plus` is what the UI *reads*; it is not proof of what the UI *renders*, and list/detail drift between a correct row and a wrong screen is this codebase's single most-repeated defect class. Confirming the row and declaring the flow verified would be that exact mistake. The remaining step needs an authenticated session as the paying user, which is the account holder's to drive.
 
@@ -383,7 +422,7 @@ Trading that for "a canary on the renewal path" swapped a definite verification 
 
 1. a production `subscription_events` row with `processed_at` set — **met 2026-08-12**
 2. the tier flip visible on `/billing` for the paying account — **not checked**; needs that account's session
-3. a FULL refund from the Paddle dashboard, then: the `adjustment` arriving `pending_approval` rather than settled, no premature cancel fired on the unsettled marker, `cancel_source=refund` with `entitlement_ends_at` set once Paddle approves, and the provider-side cancel landing on the next reconciliation sweep (6h, or immediately on a worker restart) — **not done**; this is the only path here that sandbox structurally cannot produce
+3. a FULL refund **on a separate founder-owned purchase, not on this one**, then: the `adjustment` arriving `pending_approval` rather than settled, no premature cancel fired on the unsettled marker, `cancel_source=refund` with `entitlement_ends_at` set once Paddle approves, and the provider-side cancel landing on the next reconciliation sweep (6h, or immediately on a worker restart) — **not done**; this is the only path here that sandbox structurally cannot produce
 
 **Status:** Open — server-side ingestion verified 2026-08-12; **`/billing` render and the live refund path both outstanding**
 
