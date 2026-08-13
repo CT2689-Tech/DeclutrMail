@@ -1,4 +1,4 @@
-import { and, asc, count, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, count, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
@@ -49,15 +49,24 @@ export const DORMANT_DAYS = 5;
 export const SEND_BAND_DAYS = 1;
 
 /**
- * Users examined per tick.
+ * Dormancy-band candidates examined per tick.
  *
- * The scan is bounded and ORDERED because `cronPolicy`'s 60s timeout is
- * a bare `Promise.race` — it does not abort this loop. An unbounded,
- * unordered scan past 60s "fails" the job, a retry starts a SECOND
- * concurrent copy from the top, and candidates late in an arbitrary
- * order are systematically never reached. Ordering by `created_at, id`
- * makes each tick deterministic, and the hourly cadence against a 24h
- * band leaves ~24 passes to cover a backlog.
+ * The scan is bounded because `cronPolicy`'s 60s timeout is a bare
+ * `Promise.race` — it does not abort this loop. An unbounded scan past
+ * 60s "fails" the job and a retry starts a SECOND concurrent copy from
+ * the top.
+ *
+ * The original justification for the ordering was wrong and is worth
+ * keeping visible: it claimed `created_at, id` ordering plus "the hourly
+ * cadence against a 24h band leaves ~24 passes to cover a backlog". It
+ * left 24 passes over the SAME 500 rows. `created_at` is immutable and
+ * this pass writes nothing to `users`, so the page could never move, and
+ * the band was checked in TypeScript AFTER the limit — so the limit
+ * bounded the whole user table, not the candidates.
+ *
+ * The band now lives in the query, which is what makes this cap bound
+ * something meaningful, and the ordering is random so that reaching it
+ * delays a user rather than excluding them permanently.
  */
 export const CANDIDATE_BATCH_SIZE = 500;
 
@@ -187,6 +196,38 @@ export class LapseReengagementWorker extends BaseDeclutrWorker<
     const startedAt = Date.now();
     const now = (this.deps.now ?? (() => new Date()))();
 
+    // Dormant for at least DORMANT_DAYS but less than one band-width
+    // more. Expressed as an instant range on "last seen" so the two
+    // comparisons cannot drift apart.
+    const bandNewestLastSeen = new Date(now.getTime() - DORMANT_DAYS * DAY_MS);
+    const bandOldestLastSeen = new Date(now.getTime() - (DORMANT_DAYS + SEND_BAND_DAYS) * DAY_MS);
+
+    // The band is applied in SQL, not only in the loop below.
+    //
+    // It used to run only in TypeScript, which meant `LIMIT 500` bounded
+    // THE WHOLE USER TABLE rather than the candidates — ordered by
+    // `created_at ASC`, which is immutable, in a pass that writes
+    // nothing back to `users`. Past 500 accounts older than a week the
+    // query returned the same 500 oldest users every hour forever, and
+    // nobody who signed up after them could ever receive a win-back
+    // email. It reported itself healthy while doing it:
+    // `candidatesChecked: 500, bandSkips: 500, emailsQueued: 0` reads
+    // exactly like "nobody is dormant right now". (Repo sweep after the
+    // D253 starvation fixes, 2026-08-13 — same defect, purer instance,
+    // since `created_at` cannot rotate even in principle.)
+    //
+    // Filtering here makes the cap bound real candidates, and a one-day
+    // dormancy band is narrow enough that 500 becomes a number this
+    // product would have to be enormous to reach.
+    //
+    // `GREATEST` ignores NULLs in Postgres, so a user who never opened a
+    // session falls back to `created_at` — the same rule the loop below
+    // applies, kept identical deliberately. The loop keeps its own check
+    // as the authority: `bandSkips` staying at zero is the signal that
+    // the two agree, and a non-zero count means they have drifted.
+    // Dates go in as ISO text with an explicit cast; postgres.js rejects
+    // a bare JS Date in a raw fragment.
+    const lastSeenExpr = sql`GREATEST(max(${activeSessions.lastUsedAt}), ${users.createdAt})`;
     const candidates = await this.deps.db
       .select({
         id: users.id,
@@ -198,14 +239,28 @@ export class LapseReengagementWorker extends BaseDeclutrWorker<
       .leftJoin(activeSessions, eq(activeSessions.userId, users.id))
       .where(lte(users.createdAt, new Date(now.getTime() - ACCOUNT_AGE_DAYS * DAY_MS)))
       .groupBy(users.id, users.createdAt, users.preferences)
-      .orderBy(asc(users.createdAt), asc(users.id))
+      .having(
+        sql`${lastSeenExpr} > ${bandOldestLastSeen.toISOString()}::timestamptz AND ${lastSeenExpr} <= ${bandNewestLastSeen.toISOString()}::timestamptz`,
+      )
+      // Random, not `created_at ASC`. The band makes the cap practically
+      // unreachable; this covers the case where it is reached anyway, so
+      // a full page truncates at different users each tick instead of
+      // the same ones — the bug above, in miniature.
+      .orderBy(sql`random()`)
       .limit(CANDIDATE_BATCH_SIZE);
 
-    // Dormant for at least DORMANT_DAYS but less than one band-width
-    // more. Expressed as an instant range on "last seen" so the two
-    // comparisons cannot drift apart.
-    const bandNewestLastSeen = new Date(now.getTime() - DORMANT_DAYS * DAY_MS);
-    const bandOldestLastSeen = new Date(now.getTime() - (DORMANT_DAYS + SEND_BAND_DAYS) * DAY_MS);
+    if (candidates.length >= CANDIDATE_BATCH_SIZE) {
+      // Never silent. A full page means dormant users went unexamined
+      // this tick, and no counter below can show it.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'lapse_reengagement.batch_capped',
+          candidates: candidates.length,
+          cap: CANDIDATE_BATCH_SIZE,
+        }),
+      );
+    }
 
     let emailsQueued = 0;
     let bandSkips = 0;

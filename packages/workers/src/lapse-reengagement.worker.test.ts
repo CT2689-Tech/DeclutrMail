@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
 import type { schema } from '@declutrmail/db';
 import {
@@ -200,7 +201,14 @@ describe('LapseReengagementWorker', () => {
 
     expect(result).toMatchObject({
       emailsQueued: 1,
-      bandSkips: 2,
+      // The dormancy band is applied in SQL now, so the out-of-band
+      // users (active, long-gone) and the too-young one never reach the
+      // loop at all — `candidatesChecked` counts band candidates rather
+      // than scanned rows. `bandSkips` staying at 0 is the assertion
+      // that the SQL predicate and the loop's own check agree; a
+      // non-zero value would mean they have drifted apart.
+      candidatesChecked: 2,
+      bandSkips: 0,
       emptyQueueSkips: 1,
       usersFailed: 0,
     });
@@ -237,7 +245,11 @@ describe('LapseReengagementWorker', () => {
     const { worker, enqueued } = buildWorker(db);
     const result = await worker.processJob({ scheduledAtMinute: '2026-08-10T12:00' }, CTX);
 
-    expect(result).toMatchObject({ emailsQueued: 1, bandSkips: 2 });
+    // One email, not three — the point of the band. The two deeper
+    // sleepers are excluded by the SQL predicate rather than counted and
+    // skipped in the loop, so `bandSkips` is 0 and `candidatesChecked`
+    // is 1 (see the note in the first test).
+    expect(result).toMatchObject({ emailsQueued: 1, candidatesChecked: 1, bandSkips: 0 });
     expect(enqueued).toHaveLength(1);
   });
 
@@ -266,9 +278,11 @@ describe('LapseReengagementWorker', () => {
     const { worker, enqueued } = buildWorker(db);
     const result = await worker.processJob({ scheduledAtMinute: '2026-08-10T12:00' }, CTX);
 
-    // Only the 30-day-old account clears the age floor, and it lands in
-    // the band skip rather than being mistaken for an active user.
-    expect(result).toMatchObject({ candidatesChecked: 1, bandSkips: 1, emailsQueued: 0 });
+    // Neither is emailed, and neither reaches the loop: the 5.5-day-old
+    // account fails the 7-day age floor, and the 30-day-old one falls
+    // outside the band because its last contact IS its creation. Both
+    // exclusions now happen in SQL.
+    expect(result).toMatchObject({ candidatesChecked: 0, bandSkips: 0, emailsQueued: 0 });
     expect(enqueued).toHaveLength(0);
   });
 
@@ -432,5 +446,62 @@ describe('LapseReengagementWorker', () => {
       emailsQueued: 0,
       dedupSkips: 1,
     });
+  });
+
+  /**
+   * The band moved into SQL because it was NOT in SQL: `LIMIT 500`
+   * bounded the whole user table, ordered by `created_at ASC` — a column
+   * that never changes, in a pass that writes nothing back to `users`.
+   * Past 500 accounts older than a week the query returned the same 500
+   * oldest users every hour forever, so nobody who signed up after them
+   * could ever be sent a win-back email. It looked healthy while doing
+   * it: `candidatesChecked: 500, bandSkips: 500, emailsQueued: 0` reads
+   * exactly like "nobody is dormant right now".
+   */
+  it('does not starve newer accounts behind a wall of older ones', async () => {
+    const db = await freshDb();
+    // 12 accounts that are old but NOT dormant — under the old query
+    // these filled the page in `created_at` order and hid everyone else.
+    for (let i = 0; i < 12; i += 1) {
+      await seedUser(db, {
+        email: `wall${i}@example.com`,
+        ageDays: 200 + i,
+        lastSeenDaysAgo: 1,
+        pending: 2,
+      });
+    }
+    // The newest account, and the only dormant one.
+    const target = await seedUser(db, {
+      email: 'newest-dormant@example.com',
+      ageDays: 30,
+      lastSeenDaysAgo: 5.5,
+      pending: 2,
+    });
+
+    const { worker, enqueued } = buildWorker(db);
+    const result = await worker.processJob({ scheduledAtMinute: '2026-08-10T12:00' }, CTX);
+
+    // The wall never enters the candidate set — that is the fix. A
+    // cap-shaped bug would show here as `emailsQueued: 0`.
+    expect(result).toMatchObject({ candidatesChecked: 1, emailsQueued: 1 });
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({ userId: target.userId });
+  });
+
+  it('treats a never-signed-in user as last seen at CREATION, not "just now"', async () => {
+    // The SQL band leans on Postgres `GREATEST` ignoring NULLs, so a user
+    // with no session row falls back to `created_at`. Under strict
+    // GREATEST semantics (MySQL's) the expression would be NULL, every
+    // never-signed-in user would silently drop out of every comparison,
+    // and the exclusion would look identical to the correct one from the
+    // outside. Pinned directly because no processJob assertion can tell
+    // those two apart.
+    const db = await freshDb();
+    const [row] = (
+      (await db.execute(
+        sql`SELECT GREATEST(NULL::timestamptz, '2020-01-01T00:00:00Z'::timestamptz) IS NULL AS is_null`,
+      )) as unknown as { rows: { is_null: boolean }[] }
+    ).rows;
+    expect(row?.is_null).toBe(false);
   });
 });
