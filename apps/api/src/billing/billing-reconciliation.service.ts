@@ -123,24 +123,42 @@ const DRIFT_SWEEP_TRIP_AFTER = 3;
 
 /**
  * Row cap for the two passes the verdict WORKER runs, well under
- * `DRIFT_SWEEP_MAX_ROWS` because those two now share a 60-second budget
- * that did not exist before (D253).
+ * `DRIFT_SWEEP_MAX_ROWS` because those two share a 60-second budget the
+ * untimed 6-hourly sweep did not have: `cronPolicy` carries
+ * `timeoutMs: 60_000`, the verdict pass makes TWO sequential provider
+ * calls per row and the watch pass one, so 500 rows could not finish.
  *
- * The verdict pass used to run inside the untimed 6-hourly
- * `setInterval` sweep. It is now a `cronPolicy` job, and that policy
- * carries `timeoutMs: 60_000`. The verdict pass makes TWO sequential
- * provider calls per row and the watch pass one, so at 500 rows a full
- * pass could not finish inside the budget — and because an unsettled row
- * writes nothing, its `updated_at` never moves, so `asc(updatedAt)`
- * would hand back the same leading rows every run and starve everything
- * behind them.
- *
- * 100 fits comfortably, and a partial pass is harmless: this is an
- * idempotent convergence loop that resumes on the next tick ten minutes
- * later. There are zero verdict rows today, so this is headroom rather
- * than a live constraint.
+ * A cap here is NOT the harmless partial pass it would be in a sweep
+ * that eventually revisits everything. These passes are selected with
+ * `RANDOM_ROW_ORDER` for a reason — see it. Read that before changing
+ * either the cap or the ordering; they are one mechanism.
  */
-const VERDICT_PASS_MAX_ROWS = 100;
+export const VERDICT_PASS_MAX_ROWS = 100;
+
+/**
+ * Selection order for the two CAPPED verdict passes, and the reason they
+ * are not ordered by `updated_at` like every other sweep in this file.
+ *
+ * A row the provider has not settled yet writes NOTHING — that is the
+ * whole point of the restraint. So its `updated_at` never moves, and
+ * `ORDER BY updated_at ASC LIMIT n` returns the *same* n rows on every
+ * run, forever. Not "until the backlog drains": there is no drain, the
+ * leading rows are precisely the ones that cannot progress. Row n+1 is
+ * never examined again.
+ *
+ * That is silent, permanent, and sits on a revenue path — a refunded
+ * customer behind the cap could never buy again, which is the exact bug
+ * D253 exists to remove, re-created by its own mitigation. (Codex
+ * stop-review, 2026-08-13. An earlier revision of this file named the
+ * starvation mechanism in a comment and capped anyway.)
+ *
+ * Random selection makes coverage eventual regardless of how many rows
+ * carry verdicts, at the cost of oldest-first fairness — which is the
+ * property causing the starvation, so losing it is the fix rather than
+ * a concession. At a ten-minute cadence a row still gets many looks a
+ * day. Hitting the cap is logged, never silent.
+ */
+const RANDOM_ROW_ORDER = sql`random()`;
 
 /** How long to keep watching a refund-canceled row whose
  *  `current_period_end` is unknown (D253). A provider can only charge
@@ -182,6 +200,24 @@ export class BillingReconciliationService {
 
   private adapterFor(provider: BillingProviderId): BillingProvider {
     return provider === 'paddle' ? this.paddle : this.razorpay;
+  }
+
+  /**
+   * A capped pass that fills its cap has NOT seen everything, and must
+   * say so. Random selection (see `RANDOM_ROW_ORDER`) makes coverage
+   * eventual rather than guaranteed within one run, so the honest
+   * reading of a full page is "there is more than I can hold" — and a
+   * pass that quietly returns clean counters over a truncated set reads
+   * as "nothing wrong" when it verified only part of the population.
+   *
+   * Reaching this at all means verdict volume outgrew a cadence sized
+   * for a handful of refunds, which is an operational signal in itself.
+   */
+  private warnIfCapped(rowCount: number, pass: 'verdict' | 'refund_watch'): void {
+    if (rowCount < VERDICT_PASS_MAX_ROWS) return;
+    this.logger.warn(
+      `billing.reconcile.pass_capped pass=${pass} rows=${rowCount} cap=${VERDICT_PASS_MAX_ROWS} — more rows carry verdicts than one pass examines; selection is random so coverage is eventual, but latency on any single row is no longer bounded by the cadence`,
+    );
   }
 
   /**
@@ -492,8 +528,9 @@ export class BillingReconciliationService {
           inArray(subscriptions.status, ['active', 'past_due', 'paused']),
         ),
       )
-      .orderBy(asc(subscriptions.updatedAt))
+      .orderBy(RANDOM_ROW_ORDER)
       .limit(VERDICT_PASS_MAX_ROWS);
+    this.warnIfCapped(rows.length, 'verdict');
 
     let enforced = 0;
     let unenforced = 0;
@@ -831,8 +868,9 @@ export class BillingReconciliationService {
               ) + interval '1 day' * ${REFUND_WATCH_GRACE_DAYS}::int`,
         ),
       )
-      .orderBy(asc(subscriptions.updatedAt))
+      .orderBy(RANDOM_ROW_ORDER)
       .limit(VERDICT_PASS_MAX_ROWS);
+    this.warnIfCapped(rows.length, 'refund_watch');
 
     let watched = 0;
     let rebilling = 0;

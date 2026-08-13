@@ -19,7 +19,10 @@ import {
   SubscriptionSearchQuery,
   SubscriptionSearchResult,
 } from '../billing-provider.interface.js';
-import { BillingReconciliationService } from '../billing-reconciliation.service.js';
+import {
+  BillingReconciliationService,
+  VERDICT_PASS_MAX_ROWS,
+} from '../billing-reconciliation.service.js';
 import { BillingWebhookService } from '../billing-webhook.service.js';
 import type { PaddleAdapter } from '../paddle.adapter.js';
 import type { RazorpayAdapter } from '../razorpay.adapter.js';
@@ -985,6 +988,65 @@ describe('BillingReconciliationService (D249)', () => {
       .from(subscriptions)
       .where(eq(subscriptions.providerSubscriptionId, 'sub_rzp'));
     expect(row?.status).toBe('active');
+  });
+
+  it('a verdict backlog past the cap does NOT starve the rows behind it', async () => {
+    // The cap is 100 and both capped passes select at RANDOM, not by
+    // `updated_at`. That looks arbitrary until you notice an unsettled
+    // row writes nothing — deliberately, it is the whole restraint — so
+    // its `updated_at` never moves. Ordered by `updated_at ASC LIMIT
+    // 100`, the leading 100 rows would be the SAME 100 forever, and
+    // they are precisely the ones that cannot progress. Row 101 would
+    // never be examined again: a refunded customer permanently unable
+    // to buy, which is the bug this whole feature removes.
+    //
+    // So the assertion is not "one pass covers everything" — it cannot,
+    // and should not. It is that REPEATED passes reach past the cap.
+    // A single-pass test is exactly what missed this (Codex
+    // stop-review, 2026-08-13).
+    const TOTAL = 130; // > VERDICT_PASS_MAX_ROWS
+    // Seeded `paused`, not `active`, purely so one workspace can hold
+    // them all: `subscriptions_one_live_per_workspace` covers
+    // active/past_due only. `paused` is in the verdict selector, which
+    // is the part under test, and 130 workspaces would prove the same
+    // thing far more slowly.
+    await db.insert(subscriptions).values(
+      Array.from({ length: TOTAL }, (_, i) => ({
+        workspaceId,
+        provider: 'paddle' as const,
+        providerSubscriptionId: `sub_backlog_${i}`,
+        tier: 'plus' as const,
+        status: 'paused' as const,
+        providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+        billingCycle: 'monthly' as const,
+        currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+        cancelAtPeriodEnd: true,
+        cancelSource: 'refund' as const,
+        entitlementEndsAt: new Date(),
+      })),
+    );
+
+    const everAsked = new Set<string>();
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async (id) => ({
+          kind: 'found',
+          subscription: { ...activePlusSub(id, new Date()), cancelAtPeriodEnd: true },
+        }),
+        // Nothing ever settles — the state that pins the leading rows in
+        // place under a stable ordering, and writes nothing.
+        providerCancellationFacts: async (id) => {
+          everAsked.add(id);
+          return { settled: null, refuted: { refund: false, chargeback: false } };
+        },
+      }),
+    );
+
+    for (let pass = 0; pass < 6; pass += 1) await svc.enforceLocalVerdicts();
+
+    // Under `ORDER BY updated_at ASC` this is exactly 100, every run,
+    // no matter how many passes execute.
+    expect(everAsked.size).toBeGreaterThan(VERDICT_PASS_MAX_ROWS);
   });
 
   // ── D253 — the flipped row stays watched ──────────────────────────
