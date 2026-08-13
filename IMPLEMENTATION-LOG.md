@@ -183,13 +183,13 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D125 | Snoozed + Followups stay at V2 launch with usage-tracking exit clause | ⬜ |  |  |  |
 | D126 | Retention investment package (5-part) | 🔵 | #497 |  |  |
 | D127 | Brand name: **DeclutrMail** (locked from V1) | ⬜ |  |  |  |
-| D128 | Primary domain: **DeclutrMail.com | 🔵 | #369 |  |  |
+| D128 | Primary domain: **DeclutrMail.com | 🔵 | #369, #517 |  |  |
 | D129 | Hero tagline: *"Clean Gmail by controlling senders, not individual emails."* | ⬜ |  |  |  |
 | D130 | Brand voice principles (locked, summarizing Phase 1) | ⬜ |  |  |  |
 | D131 | Top nav: **6-item flat | ⬜ |  |  |  |
-| D132 | 28-page launch IA (scaled with Claude SEO agent maintenance) | 🔵 | #283, #307, #325 |  |  |
+| D132 | 28-page launch IA (scaled with Claude SEO agent maintenance) | 🔵 | #283, #307, #325, #517 |  |  |
 | D133 | Inbox Simulator: **Claude Code React build with real engine | ⬜ |  |  |  |
-| D134 | Landing page 10-section structure | 🔵 | #202, #196, #307, #471 |  |  |
+| D134 | Landing page 10-section structure | 🔵 | #202, #196, #307, #471, #517 |  |  |
 | D135 | Hero animated preview card | ⬜ |  |  |  |
 | D136 | Social proof strategy: beta quotes post-launch (no testimonials at launch) | ⬜ |  |  |  |
 | D137 | FAQ content (10 questions) | 🔵 | #290 |  |  |
