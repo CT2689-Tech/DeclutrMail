@@ -76,6 +76,29 @@ implementation passed ~99% of runs, so the assertion was itself probabilistic.
 **A test for a coverage guarantee has to be sized so the broken version fails
 every time, not most times.**
 
+**Addendum — round three: the bound never reached production.** The service
+round-robined correctly and the worker passed the index correctly, and the
+composition root wired both seams as zero-argument wrappers
+(`enforceLocalVerdicts: () => service.enforceLocalVerdicts()`). So `runIndex`
+fell back to its default every run, production examined bucket 0 and nothing
+else, and every other bucket was starved permanently — the original bug, whole,
+in the one file on the branch with no test, while all 252 billing tests passed
+because they call the service directly.
+
+TypeScript permitted it because a zero-arg function is assignable to a one-arg
+seam. **The `= 0` default is what made the call legal.** The parameter is now
+required, so omitting it is `TS2554` — verified by reverting the wiring and
+watching it fail to compile. That is a better guard than a test: it cannot be
+forgotten and it fires in the editor.
+
+**Rule (second):** never give a default to a parameter whose entire purpose is
+to vary. The default does not protect a caller who forgets it — it hides them.
+
+**Rule (third):** a correctness guarantee that lives only in an untested
+composition root is not a guarantee. Three rounds produced three variants of one
+defect — permanent starvation, unbounded delay, then a bound that never shipped
+— and each was caught by review rather than by the suite.
+
 **Addendum — the repo sweep found two more, one worse.**
 
 - `lapse-reengagement.worker.ts` — FIXED. Same shape but ordered by
