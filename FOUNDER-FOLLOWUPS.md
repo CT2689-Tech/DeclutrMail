@@ -330,9 +330,30 @@ What subscribing buys is **latency**: the correction lands in minutes instead of
 
 **How:** buy **Plus monthly ($9)** on production with a real card, confirm the webhook grants the tier (`subscriptions.status=active`, `workspaces.tier=plus`, a `subscription_events` row), then refund it from the Paddle dashboard. Everything except the card entry can be driven by an agent. Not blocked: the refund path was reported here as broken on 2026-07-31 and that diagnosis was wrong (see Done). Refund the FULL amount — a partial refund deliberately no longer ends the plan. The provider-side cancel lands on the next reconciliation sweep (6h, or immediately on a worker restart), so allow for that before checking Paddle.
 
-**Verifies by:** a production `subscription_events` row with `processed_at` set, and the tier flip visible on `/billing`.
+**Update 2026-08-12 — the server half is verified; the UI half is not.** The entry sat asserting "0 subscriptions, 0 webhooks, 0 customers" for eleven days after that stopped being true, so the premise above is stale. A real Plus monthly purchase was made on production on 12 Aug 2026 and was **not** refunded, so production now carries one live subscription renewing 12 Sep 2026. Provider-side identifiers are deliberately not recorded here — see the redaction note in the Open entry about personal data on a public repo; read them from the Paddle dashboard when needed.
 
-**Status:** Open — needs the founder's card
+Queried the production database on 2026-08-12:
+
+- `subscriptions` — exactly one row, provider `paddle`, `status=active`, created `05:45:39Z`
+- `workspaces.tier` — `plus`
+- `subscription_events` — 4 rows, **all four with `processed_at` set**:
+
+| event | at (UTC) |
+|---|---|
+| `subscription.created` | 05:45:39.541 |
+| `subscription.activated` | 05:45:39.550 |
+| `transaction.completed` | 05:45:40.443 |
+| `reconciliation.subscription` | 06:21:20.152 |
+
+Every piece of prod-only configuration this entry existed to test is therefore confirmed live: the production API key, the live notification destination **and its secret**, the live catalog ids, and the live webhook URL. Charge-to-processed latency was under one second, and the reconciliation sweep independently re-confirmed provider truth 36 minutes later — so the sweep is running in production too, which nothing else had proven.
+
+The refund instruction is deliberately **not** executed. The payer is a real user of the product rather than a disposable test identity, and leaving the subscription live keeps a permanent canary on the renewal path — first renewal 12 Sep 2026, which is the next untested edge.
+
+**Still open — do not close this on the server evidence alone.** The "Verifies by" below has two halves and only the first is met. `workspaces.tier=plus` is what the UI *reads*; it is not proof of what the UI *renders*, and list/detail drift between a correct row and a wrong screen is this codebase's single most-repeated defect class. Confirming the row and declaring the flow verified would be that exact mistake. The remaining step needs an authenticated session as the paying user, which is the account holder's to drive.
+
+**Verifies by:** a production `subscription_events` row with `processed_at` set **(met 2026-08-12)**, and the tier flip visible on `/billing` **(not checked)**.
+
+**Status:** Open — server-side ingestion verified 2026-08-12; **narrowed to confirming `/billing` renders Plus for the paying account**
 
 ### 2026-07-31 — Paddle seller display name reads as a personal name on receipts
 
@@ -340,13 +361,28 @@ What subscribing buys is **latency**: the correction lands in minutes instead of
 
 **Why:** the Paddle overlay footer reads "This order process is conducted by our online reseller & Merchant of Record, Paddle.com… Your data will be shared with **Nayana Ashok Thakkar** for product fulfilment", with the address `3811 Ditmars Blvd #1071, Astoria, NY 11105-1803`. That is the seller display name Paddle prints at checkout and on every receipt. A buyer paying DeclutrMail sees an unfamiliar personal name at the moment of payment — the single worst moment for a trust wobble, and a common chargeback trigger ("I don't recognise this charge").
 
-This is sandbox configuration, but the same field exists in production and defaults from the same account setup.
+This is sandbox configuration, but the same field exists in production and defaults from the same account setup. Confirmed in production 2026-08-12 on a real receipt: the personal legal name appears in the email subject line, in the body header above "via paddle.com", and again on the invoice supplier line — three customer-facing surfaces, not one.
 
-**How:** Paddle Dashboard → Checkout → Checkout settings (and Business details) → set the public seller/business name to **DeclutrMail**. Check BOTH environments; sandbox and production are configured separately. While there, confirm the business address shown is one that should be public.
+**Corrections on the record (2026-08-12).** Two claims above are wrong.
 
-**Verifies by:** open a sandbox checkout — the footer names DeclutrMail, not a person.
+1. **The Astoria address is Paddle's, not the founder's.** The production invoice labels `3811 Ditmars Blvd #1071, Astoria 11105-1803` as "Invoice from: **Paddle.com Inc**". No personal address is exposed at checkout. Nothing to fix.
+2. **The statement descriptor is already correct.** The invoice footer reads `PADDLE.NET* DECLUTR`, not the Paddle default of the first 10 characters of the legal name. Nothing to fix.
 
-**Status:** Open
+**How.** There is no single "public seller/business name" field; Paddle has three, and only one is self-serve:
+
+| Surface | Field | Change via |
+|---|---|---|
+| Card statement | Statement descriptor | Dashboard → Checkout Settings — **already set to `DECLUTR`** |
+| Receipt emails, invoices | **Company Display Name** (overrides Legal Name) | `sellers@paddle.com` |
+| Checkout data-sharing footer | **Company Legal Name** (KYC entity) | `sellers@paddle.com` + entity documents |
+
+Paddle replied ~2026-08-06 asking the founder to confirm whether DeclutrMail is a registered legal entity or a brand/trading name. It is a **brand/trading name** — the KYC entity remains the individual, and claiming otherwise on a merchant-of-record account without a registration document risks suspension. Confirming brand-name unblocks three of four requested changes (Product Website `.ai` → `.com`, Company Display Name → DeclutrMail, Contact Name → DeclutrMail Support); Company Legal Name stays as-is. The Seller ID is in the Paddle dashboard and the support thread; it is deliberately not written here.
+
+**Open question inside the ticket:** Paddle's help centre documents Company Display Name as overriding the Legal Name "within the customer emails". It does not say whether it also governs the checkout footer disclosure and the invoice supplier line. If it does not, those two surfaces stay entity-bound and a registered assumed-name certificate becomes the only lever — a legal/tax decision the founder has deliberately not opened yet.
+
+**Verifies by:** a production receipt whose subject and body header read DeclutrMail, not a person; then open a checkout and read the footer to settle the open question empirically.
+
+**Status:** Open — reply to Paddle drafted 2026-08-12, awaiting founder send
 
 
 ### 2026-07-30 — The derived impl-log gate: two drift classes, only one of them loud
