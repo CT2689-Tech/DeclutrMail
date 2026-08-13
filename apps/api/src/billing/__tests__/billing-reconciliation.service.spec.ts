@@ -581,6 +581,47 @@ describe('BillingReconciliationService (D249)', () => {
     expect(result).toMatchObject({ verdictsEnforced: 0, verdictsUnenforced: 0 });
   });
 
+  // The customer cancels in-app, THEN asks for their money back, and
+  // Paddle rejects the refund. Paddle has held `scheduled_change: cancel`
+  // since their own cancel, so `cancelAtPeriodEnd` is true throughout.
+  //
+  // That flag used to short-circuit this loop before the facts read, so
+  // the refutation below was unreachable: `entitlement_ends_at` stayed
+  // pinned at the moment the refund was requested and the customer kept
+  // paying for a plan we no longer granted. Nothing logged it, because
+  // from the sweep's side the row had simply "converged".
+  it('provider scheduled the cancel AND rejected the refund → verdict is still lifted', async () => {
+    await seedVerdictRow({ cancelSource: 'refund' });
+    const canceled: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: { ...activePlusSub('sub_verdict', new Date()), cancelAtPeriodEnd: true },
+        }),
+        providerCancellationFacts: async () => REFUTED_REFUND,
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+
+    const result = await svc.reconcileLiveSubscriptions();
+
+    expect(result).toMatchObject({ verdictsRefuted: 1 });
+    expect(canceled).toEqual([]);
+
+    const [row] = await db
+      .select({
+        cancelSource: subscriptions.cancelSource,
+        entitlementEndsAt: subscriptions.entitlementEndsAt,
+      })
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_verdict'));
+    expect(row?.cancelSource).toBeNull();
+    expect(row?.entitlementEndsAt).toBeNull();
+  });
+
   it('an ORDINARY live row is never cancelled by the verdict pass', async () => {
     // The blast radius that matters: a row with no local verdict must
     // never receive an outbound cancel. `cancelSubscription` is left

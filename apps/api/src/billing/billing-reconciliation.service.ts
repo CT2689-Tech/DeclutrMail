@@ -478,9 +478,30 @@ export class BillingReconciliationService {
           continue;
         }
         const provider = fetched.subscription;
-        if (provider.status === 'canceled' || provider.cancelAtPeriodEnd) {
-          continue; // already converged — the common steady state
+        if (provider.status === 'canceled') {
+          continue; // provider is terminal — nothing left to enforce or refute
         }
+        // `cancelAtPeriodEnd` deliberately does NOT short-circuit here. It
+        // used to, as "already converged — the common steady state", and
+        // that skipped the facts read entirely for any row the provider
+        // had already scheduled to cancel. Two ordinary timelines land
+        // there, and both end badly:
+        //
+        //   1. The customer cancels in-app, then asks for their money
+        //      back. Paddle has held `scheduled_change: cancel` since
+        //      their own cancel, so the refund verdict is never settled
+        //      and the plan slot is never released.
+        //   2. That same refund is REJECTED by Paddle. The refutation
+        //      below is never reached either, so `entitlement_ends_at`
+        //      stays pinned at the moment the refund was requested and
+        //      the customer keeps paying for a plan we no longer grant.
+        //
+        // (2) is the live bug: cancel-then-rejected-refund is not exotic,
+        // and it silently bills someone for nothing. Our OWN enforcement
+        // is what sets `cancelAtPeriodEnd` in the first place (below), so
+        // the old condition also made every enforced row permanently
+        // unreadable afterwards. The flag now suppresses only the
+        // redundant outbound cancel, never discovery.
         // Our own marker is NOT proof. `adjustment.created` fires while a
         // live-account refund is still `pending_approval`, and Paddle may
         // yet reject it — cancelling on that would end the subscription of
@@ -506,11 +527,22 @@ export class BillingReconciliationService {
         // still ends the plan, so a settled cause outranks any
         // refutation — checking refutation first would skip the cancel.
         if (facts.settled !== null) {
-          await this.adapterFor(row.provider).cancelSubscription(row.providerSubscriptionId);
-          enforced += 1;
-          this.logger.warn(
-            `billing.reconcile.verdict_enforced provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} provider_says=${facts.settled} — provider was still set to renew a ${facts.settled === 'chargeback' ? 'charged-back' : 'refunded'} subscription; scheduled cancel at period end`,
-          );
+          // Only send the cancel if the provider is not already scheduled
+          // to stop. Re-sending is not harmful, but it is a wasted
+          // provider mutation on every pass for a row that has already
+          // converged — and this loop now revisits those rows by design.
+          if (!provider.cancelAtPeriodEnd) {
+            await this.adapterFor(row.provider).cancelSubscription(row.providerSubscriptionId);
+            enforced += 1;
+            this.logger.warn(
+              `billing.reconcile.verdict_enforced provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} provider_says=${facts.settled} — provider was still set to renew a ${facts.settled === 'chargeback' ? 'charged-back' : 'refunded'} subscription; scheduled cancel at period end`,
+            );
+          }
+          // `verdictsEnforced` keeps meaning "we sent a cancel" — the
+          // counter is spread into the `billing.reconcile.swept` log line
+          // (worker.ts), so it is an existing contract. A row the provider
+          // had already scheduled is neither enforced nor unenforced:
+          // nothing was wrong and nothing needed doing.
           continue;
         }
 
