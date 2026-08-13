@@ -1,11 +1,9 @@
 import Link from 'next/link';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
-import { ANSWER_SLUGS } from './answer-content';
 import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
 import { FAQ_ENTRIES } from './faq-content';
-import { HOW_TO_SLUGS } from './how-to-content';
 import { ANSWERS_HUB, HOW_TO_HUB, type LearnHubDefinition } from './hub-content';
 import { LearnEyebrow, LearnShell } from './learn-shell';
 import type { LearnArticle } from './types';
@@ -126,7 +124,9 @@ export function BlogIndexPage() {
           no hub of their own. They now have one each, so this is two
           pointers instead of twenty duplicated cards — the hub stays the
           canonical entry point for its cluster, and the essays are not
-          buried under content they have nothing to do with. */}
+          buried under content they have nothing to do with. Every field
+          reads off the hub definition (`meta[0]` is its cluster count) so
+          this pointer cannot describe a hub the hub does not describe. */}
       <header className="dm-learn-hero dm-learn-hero--solo">
         <div>
           <LearnEyebrow>Also on DeclutrMail</LearnEyebrow>
@@ -134,24 +134,14 @@ export function BlogIndexPage() {
         </div>
       </header>
       <section className="dm-learn-grid" aria-label="Other learning hubs">
-        <Link className="dm-learn-card" href="/how-to">
-          <em>Step-by-step</em>
-          <strong>Gmail cleanup how-to guides</strong>
-          <span>
-            The native Gmail method first, what it changes and leaves alone, and Google’s own
-            documentation for every step.
-          </span>
-          <span>{HOW_TO_SLUGS.length} guides</span>
-        </Link>
-        <Link className="dm-learn-card" href="/answers">
-          <em>Straight answers</em>
-          <strong>Answers about Gmail cleanup</strong>
-          <span>
-            What a cleanup app can see, what each action changes, and where recovery stops — limits
-            stated, not implied.
-          </span>
-          <span>{ANSWER_SLUGS.length} answers</span>
-        </Link>
+        {[HOW_TO_HUB, ANSWERS_HUB].map((hub) => (
+          <Link className="dm-learn-card" href={hub.path} key={hub.path}>
+            <em>{hub.eyebrow}</em>
+            <strong>{hub.heading}</strong>
+            <span>{hub.description}</span>
+            <span>{hub.meta[0]}</span>
+          </Link>
+        ))}
       </section>
     </LearnShell>
   );

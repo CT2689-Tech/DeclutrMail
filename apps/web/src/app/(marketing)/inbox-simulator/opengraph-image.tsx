@@ -10,8 +10,10 @@ import { ImageResponse } from 'next/og';
  * itself: an action preview, with the count and the exact Gmail changes
  * visible before approval.
  *
- * The numbers are the simulator's own synthetic fixture, and the card says
- * so, because the page labels every example the same way.
+ * The sender and count are the illustrative pair the how-to guides already
+ * use (`Sale Signal`, 84 current messages), shown here under Archive
+ * because that is the reversible action. Synthetic either way, and the
+ * card says so, because the page labels every example the same way.
  *
  * Wiring note: this card's public URL carries a build-time suffix and a
  * cache-busting query, so it cannot be pinned by hand. The page instead
@@ -144,15 +146,21 @@ export default function InboxSimulatorOpenGraphImage() {
             match right now
           </span>
         </div>
+        {/* An unfurled card travels without its page, so the undo qualifier
+            travels with the claim — `action-semantics.ts` Archive verbatim,
+            not the "Reversible from Activity" shorthand that reads as
+            unlimited undo. */}
         <div
           style={{
             display: 'flex',
+            flexDirection: 'column',
             fontSize: 26,
             color: MUTED,
             marginTop: 12,
           }}
         >
-          <span>Removes the Inbox label. Nothing is deleted. Reversible from Activity.</span>
+          <span>Removes the Inbox label. Nothing is deleted.</span>
+          <span>Undo from Activity during your plan’s Undo window.</span>
         </div>
       </div>
 

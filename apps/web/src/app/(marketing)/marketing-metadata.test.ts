@@ -9,12 +9,14 @@
  * absolute form in real HTML.
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import nodePath from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 import type { Metadata } from 'next';
+
+import { ACTION_SEMANTICS } from '@declutrmail/shared/actions';
 
 import { metadata as landing } from './page';
 import { metadata as beta } from './beta/page';
@@ -119,6 +121,29 @@ describe('the simulator carries its own share card — playbook G7', () => {
   it('describes the card as the synthetic preview it renders', () => {
     expect(simulatorCardAlt).toMatch(/preview/i);
     expect(simulatorCardAlt).toMatch(/synthetic/i);
+  });
+
+  /**
+   * The card shipped once saying only "Reversible from Activity" — the
+   * shorthand that reads as unlimited undo, on the one surface that
+   * travels without its page. Pinned to the shared registry rather than to
+   * a literal so the card cannot drift from what Archive actually does.
+   */
+  it('states Archive undo as the plan window, not as unconditional', () => {
+    const source = readFileSync(
+      nodePath.join(
+        nodePath.dirname(fileURLToPath(import.meta.url)),
+        'inbox-simulator',
+        'opengraph-image.tsx',
+      ),
+      'utf8',
+    );
+    const straightQuotes = (text: string) => text.replace(/[’‘]/g, "'");
+
+    expect(straightQuotes(source)).toContain(
+      straightQuotes(ACTION_SEMANTICS.archive.activityUndo.summary),
+    );
+    expect(source).not.toMatch(/Reversible from Activity\./);
   });
 });
 
