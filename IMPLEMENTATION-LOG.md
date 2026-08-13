@@ -189,7 +189,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D131 | Top nav: **6-item flat | ⬜ |  |  |  |
 | D132 | 28-page launch IA (scaled with Claude SEO agent maintenance) | 🔵 | #283, #307, #325, #517 |  |  |
 | D133 | Inbox Simulator: **Claude Code React build with real engine | ⬜ |  |  |  |
-| D134 | Landing page 10-section structure | 🔵 | #202, #196, #307, #471, #517 |  |  |
+| D134 | Landing page 10-section structure | 🔵 | #202, #196, #307, #471 |  |  |
 | D135 | Hero animated preview card | ⬜ |  |  |  |
 | D136 | Social proof strategy: beta quotes post-launch (no testimonials at launch) | ⬜ |  |  |  |
 | D137 | FAQ content (10 questions) | 🔵 | #290 |  |  |

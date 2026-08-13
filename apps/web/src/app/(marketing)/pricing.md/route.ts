@@ -13,6 +13,8 @@
  * `llms.txt` and the `text/markdown` alternate on `/pricing`.
  */
 
+import { type PricePoint } from '@declutrmail/shared/entitlements';
+
 import {
   CAPABILITY_LABELS,
   TIER_JOBS,
@@ -27,10 +29,7 @@ import {
 import { siteUrl } from '@/features/marketing/landing/urls';
 
 /** "$9/mo · ₹749/mo in India" — both real manifest amounts, never an FX rate. */
-function priceLine(
-  point: { usdCents: number; inrPaise: number; razorpayPlanId: string | null },
-  per: string,
-): string {
+function priceLine(point: PricePoint, per: string): string {
   const usd = `${formatUsd(point.usdCents)}${per}`;
   // INR is quoted only where that exact price point is provisioned on
   // Razorpay, matching what an India checkout will actually charge.
@@ -79,9 +78,14 @@ function promoSection(): string {
 }
 
 function unavailableSection(): string {
-  const rows = pricingTiers()
-    .filter((tier) => !tier.purchasable)
-    .map((tier) => `- ${tier.name}: not purchasable at launch — ${tier.nonPurchasableRow?.label}.`);
+  // The manifest pairs `nonPurchasableRow` with `purchasable: false`
+  // exactly, asserted in entitlements.test.ts — so a missing row means
+  // that test is already red. Skip the line rather than interpolate
+  // `undefined` into a document whose whole claim is exact figures.
+  const rows = pricingTiers().flatMap((tier) => {
+    const row = tier.purchasable ? undefined : tier.nonPurchasableRow;
+    return row ? [`- ${tier.name}: not purchasable at launch — ${row.label}.`] : [];
+  });
   return rows.length ? ['## Not available yet', '', ...rows].join('\n') : '';
 }
 

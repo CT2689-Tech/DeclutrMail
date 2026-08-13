@@ -1120,7 +1120,13 @@ const gmailNative: ComparisonDefinition = {
   ],
 };
 
-export const COMPARISONS: readonly ComparisonDefinition[] = [
+/**
+ * Typed non-empty so the verification floor below needs no assertion: an
+ * empty list would otherwise type as `string` while holding `undefined`,
+ * and the hub would render "Last verified Invalid Date" — the worst
+ * failure mode for a page whose entire claim is that it was verified.
+ */
+export const COMPARISONS: readonly [ComparisonDefinition, ...ComparisonDefinition[]] = [
   cleanEmail,
   trimbox,
   sanebox,
@@ -1134,9 +1140,10 @@ export const COMPARISONS: readonly ComparisonDefinition[] = [
  * The oldest per-page verification date. The hub covers every page at
  * once, so it must claim the weakest of them, not the freshest.
  */
-export const COMPARISONS_VERIFIED_FLOOR_ISO = COMPARISONS.map(
-  (comparison) => comparison.verifiedIso,
-).sort()[0]!;
+export const COMPARISONS_VERIFIED_FLOOR_ISO = COMPARISONS.reduce(
+  (oldest, comparison) => (comparison.verifiedIso < oldest ? comparison.verifiedIso : oldest),
+  COMPARISONS[0].verifiedIso,
+);
 
 export function comparisonBySlug(slug: string): ComparisonDefinition | undefined {
   return COMPARISONS.find((comparison) => comparison.slug === slug);
