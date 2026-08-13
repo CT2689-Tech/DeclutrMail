@@ -59,12 +59,41 @@ ordering rotates; test it across REPEATED passes, never one, and assert coverage
 exceeds the cap.
 
 **Enforcement update:** regression test in
-`billing-reconciliation.service.spec.ts` asserting >cap distinct rows across six
-passes (verified red against the old ordering: "expected 100 to be greater than
-100"). `billing.reconcile.pass_capped` warns on a full page.
+`billing-reconciliation.service.spec.ts` asserting exhaustive coverage across
+consecutive run indices (verified red twice: stable ordering covers 100 of 300,
+random-only covers 265 of 300). `billing.reconcile.pass_capped` warns on a full
+page.
 **Distillation trigger: SEVERITY (billing impact) — CLAUDE.md §11 candidate,
 founder call.** Its natural home is the existing "no silent caps" / blind-guard
 material rather than a new guardrail.
+
+**Addendum — the first fix was also wrong.** `ORDER BY random()` removed the
+permanent starvation and replaced it with an unbounded probabilistic delay
+(second Codex stop-review). Both passes now round-robin over hash buckets keyed
+on a run index that advances by exactly one per run, which is a real bound.
+Worth noting the test failed to catch this too: at 130 rows a random-only
+implementation passed ~99% of runs, so the assertion was itself probabilistic.
+**A test for a coverage guarantee has to be sized so the broken version fails
+every time, not most times.**
+
+**Addendum — the repo sweep found two more, one worse.**
+
+- `lapse-reengagement.worker.ts` — FIXED. Same shape but ordered by
+  `users.created_at`, which is immutable, so it could never rotate even in
+  principle, and the dormancy band was applied in TypeScript *after* the LIMIT
+  so the cap bounded the whole user table. Past 500 accounts, no one who signed
+  up later could ever receive a win-back email. Its docstring claimed "~24
+  passes to cover a backlog"; it was 24 passes over the same 500 rows.
+- `dead-letter.worker.ts:110` — LEFT ALONE, deliberately. Identical pattern
+  (`ORDER BY failed_at ASC LIMIT 500`, no write-back, in-memory dedup), but
+  `BaseDeclutrWorker` already fires `captureFailure` at park time, so the sweep
+  is a re-alerter rather than the alerter. Starvation there costs a duplicate
+  alert, not a missed one, and oldest-first ordering is meaningful for triage.
+  Recorded so the next sweep does not re-derive it.
+
+Everything else checked out: claim-and-write passes (`outbox-dispatcher`, the
+`cron_runs` claims), delete-loops, keyset pagination, and unlimited scans are
+all immune by construction.
 
 ## 2026-08-13 — A CI speedup that made CI slower, twice over, in silence
 
