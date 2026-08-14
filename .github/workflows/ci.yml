@@ -582,7 +582,13 @@ jobs:
           sed -n '1,240p' api-e2e.log
           sed -n '1,240p' web-e2e.log
           exit 1
-      - name: Run the authenticated accessibility gate
+      # Runs BOTH a11y lanes — a11y-smoke (5 authed screens) and
+      # a11y-public (11 public routes) — because the projects' testMatch
+      # selects a11y-*.spec.ts and this script no longer names a file.
+      # The job's own `name:` still says "Authenticated" and is left
+      # alone deliberately: it is a required status check, and renaming
+      # it would make the requirement match nothing.
+      - name: Run the accessibility gate (authenticated + public)
         run: pnpm e2e:a11y
         env:
           E2E_JSON_REPORT: ${{ github.workspace }}/e2e-a11y-report.json

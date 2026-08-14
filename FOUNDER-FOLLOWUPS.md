@@ -65,23 +65,22 @@ change that one constant to `support@` and drop the third address.
 no longer appears in `apps/web/src`.
 **Status:** Open
 
-### 2026-08-14 — The CASA verification date is hand-copied in four places
+### 2026-08-14 — Recertify the Google OAuth verification before 21 Apr 2027
 **Source:** session (website launch-readiness pass)
-**Why:** "21 April 2026" is written out independently at
-`privacy/page.tsx:131`, `security/page.tsx:117`,
-`settings/privacy-data/privacy-data-screen.tsx:327` and now the landing trust
-strip (`landing/hero.tsx`). There is no shared constant, so a recertification
-next April updates whichever ones someone remembers. This is the repo's
-signature defect class — a surface asserting something it does not know —
-pointed at its only third-party credential. Flagged rather than refactored
-because collapsing four existing sites is adjacent work the trust-strip change
-did not need (CLAUDE.md §1.3).
-**How:** one exported constant (date + scope) that all four render, ideally
-beside the other claim-bearing copy in `packages/shared/src/copy/`, with a test
-asserting no bare date literal remains.
-**Verifies by:** `rg '21 April 2026' apps/web/src` returns only the constant's
-definition.
-**Status:** Open — not urgent; recertification is due Apr 2027.
+**Why:** the CASA verification is the product's only third-party credential and
+it recertifies annually. Four public and in-app surfaces state the date, and as
+of PR #521 they all read one constant
+(`CASA_VERIFICATION_APPROVED_ON` in `packages/shared/src/copy/privacy.ts`), so
+the code side of a recertification is a one-line edit. What no code can do is
+the recertification itself.
+**How:** start ~20 Feb 2027 (per the CASA entry already in this file), then
+update the single constant. `apps/web/src/features/marketing/casa-claim.test.ts`
+fails if anyone re-inlines a date at a claim site, so the constant cannot drift
+back out of sync.
+**Verifies by:** the constant matches Google's approval date and
+`pnpm --filter @declutrmail/web test` passes.
+**Status:** Open — due Apr 2027. The four-way duplication that prompted this is
+closed.
 
 ### 2026-08-13 — Nothing surfaces refunded-vs-cancelled churn
 **Source:** founder question during the D253 refund-lockout design, 2026-08-13 —

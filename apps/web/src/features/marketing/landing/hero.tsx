@@ -1,4 +1,10 @@
-import { ACTION_PREVIEW_CLAIM, OAUTH_SCOPE_DISCLOSURE, PrivacyBadge } from '@declutrmail/shared';
+import {
+  ACTION_PREVIEW_CLAIM,
+  CASA_VERIFICATION_APPROVED_MONTH,
+  CASA_VERIFICATION_APPROVED_ON,
+  OAUTH_SCOPE_DISCLOSURE,
+  PrivacyBadge,
+} from '@declutrmail/shared';
 import { VERB_REGISTRY } from '@declutrmail/shared/actions';
 
 import { oauthStartUrl } from './urls';
@@ -166,16 +172,15 @@ function TrustStrip() {
           what /security#verification already states — Google APPROVED
           our OAuth verification for one restricted scope; it is not a
           certification of the product, so never "certified"/"audited".
-          NOTE: the 21 April 2026 date is hand-written in three other
-          places (privacy/page.tsx:131, security/page.tsx:117,
-          settings/privacy-data/privacy-data-screen.tsx:327) with no
-          shared constant. Flagged, not refactored here. */}
+          The date comes from shared copy, like the two claims above it:
+          verification recertifies annually, so a hand-copied date is one
+          that goes stale on a schedule. */}
       <a
         className="dm-mkt-trust-item"
         href="/security#verification"
-        title="Google approved DeclutrMail's OAuth verification on 21 April 2026 for the single restricted scope we request, gmail.modify."
+        title={`Google approved DeclutrMail's OAuth verification on ${CASA_VERIFICATION_APPROVED_ON} for the single restricted scope we request, gmail.modify.`}
       >
-        Google OAuth verification approved, April 2026 (CASA Tier 2)
+        Google OAuth verification approved, {CASA_VERIFICATION_APPROVED_MONTH} (CASA Tier 2)
       </a>
     </div>
   );
