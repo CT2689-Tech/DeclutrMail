@@ -298,6 +298,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D250 | Landing page primary headline (reverses D223) | 🔵 | #468, #470 |  |  |
 | D251 | Autopilot splits on behaviour, not access | 🔵 | #465 |  |  |
 | D252 | Unsubscribe degrades honestly | 🔵 | #514 |  |  |
-| D253 | A refunded customer can buy again | 🔵 | #518 |  |  |
+| D253 | A refunded customer can buy again | 🔵 | #518, #520 |  |  |
 
 <!-- AUTO:DECISIONS:END -->
