@@ -217,6 +217,46 @@ describe('deriveBillingViewState — non-backing reasons', () => {
     });
   });
 
+  describe('the D253 refund-settling window', () => {
+    // The shape the first live refund produced (2026-08-14): the refund
+    // ended entitlement immediately, so the workspace reads `free`, while
+    // the row stays `active` until the provider confirms.
+    const refunded = {
+      ...SUB,
+      tier: 'plus' as const,
+      status: 'active' as const,
+      cancelSource: 'refund' as const,
+      cancelAtPeriodEnd: true,
+    };
+
+    it('a live row under a refund verdict is refund_settling, not tier_mismatch', () => {
+      const view = deriveBillingViewState(snapshot({ data: body('free', refunded) }));
+      expect(view).toMatchObject({ nonBacking: { reason: 'refund_settling', sub: refunded } });
+    });
+
+    it('still blocks checkout — the server would answer 409 until it settles', () => {
+      const view = deriveBillingViewState(snapshot({ data: body('free', refunded) }));
+      const nonBacking = 'nonBacking' in view ? view.nonBacking : null;
+      expect(nonBackingBlocksNewCheckout(nonBacking)).toBe(true);
+    });
+
+    it('a CHARGEBACK row keeps the old story — it never unlocks, so the copy must not promise it', () => {
+      const chargedBack = { ...refunded, cancelSource: 'chargeback' as const };
+      expect(deriveBillingViewState(snapshot({ data: body('free', chargedBack) }))).toMatchObject({
+        nonBacking: { reason: 'tier_mismatch' },
+      });
+    });
+
+    it('once the refund settles the row is canceled, which outranks the verdict', () => {
+      // Terminal beats in-flight: a settled refund frees the slot, and the
+      // canceled copy already invites a fresh purchase.
+      const settled = { ...refunded, status: 'canceled' as const, currentPeriodEnd: null };
+      expect(deriveBillingViewState(snapshot({ data: body('free', settled) }))).toMatchObject({
+        nonBacking: { reason: 'canceled' },
+      });
+    });
+  });
+
   it('a canceled row is reason canceled', () => {
     const sub = { ...SUB, status: 'canceled' as const, currentPeriodEnd: null };
     const view = deriveBillingViewState(snapshot({ data: body('free', sub) }));

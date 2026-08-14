@@ -18,6 +18,7 @@
  * helpers the screen uses — a manifest re-price re-prices this file.
  */
 
+import { focusManager } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -58,7 +59,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { launchCheckout, type CheckoutEvents } from './checkout';
 import type { BillingIntent } from './billing-intent';
-import { annualMonthsFree, quotedPlanPrice } from './billing-model';
+import { annualMonthsFree, quotedPlanPrice, REFUND_SETTLING_POLL_MS } from './billing-model';
 import { BillingScreen } from './billing-screen';
 import { pendingCheckoutKey, writePendingCheckout } from './pending-checkout';
 
@@ -87,6 +88,39 @@ const PAUSED_BODY: BillingSubscription = {
     currentPeriodEnd: '2026-08-24T18:30:00.000Z',
     cancelAtPeriodEnd: false,
     cancelSource: null,
+    pauseUntil: null,
+    foundingMember: false,
+    scheduledChange: null,
+  },
+};
+
+/**
+ * What the read ACTUALLY returns during the D253 settling window, copied
+ * from the first live refund (prod, 2026-08-14): a full refund ends
+ * entitlement at once, so `tier` is already `free`, while the row stays
+ * `active` with `cancel_at_period_end` pinned until the provider confirms.
+ *
+ * The pre-existing settling test stubs `FREE_BODY` — a `subscription:
+ * null` read — and manufactures the 409 from the checkout endpoint. That
+ * pairing cannot occur: the server only throws
+ * `SUBSCRIPTION_REFUND_SETTLING` when a refund row exists, and when one
+ * exists the read returns it. So that test exercised the error path over a
+ * screen state production never produces, and the real screen — picker
+ * locked by the row, notice reading "Cancel it if you're done with it" —
+ * went uncovered until a founder hit it by hand.
+ */
+const REFUND_SETTLING_BODY: BillingSubscription = {
+  tier: 'free',
+  foundingMember: false,
+  pendingCheckout: null,
+  subscription: {
+    provider: 'paddle',
+    tier: 'plus',
+    status: 'active',
+    cycle: 'monthly',
+    currentPeriodEnd: '2026-09-12T05:45:37.562Z',
+    cancelAtPeriodEnd: true,
+    cancelSource: 'refund',
     pauseUntil: null,
     foundingMember: false,
     scheduledChange: null,
@@ -667,6 +701,142 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(
       within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
     ).toBeEnabled();
+  });
+
+  it('the settling window explains itself instead of telling you to cancel', async () => {
+    // The state the previous test could not reach. Founder-observed on the
+    // first live refund: the picker is locked (correct — checkout would
+    // 409), but the notice read "A Plus subscription is on your account …
+    // Cancel it if you're done with it", which names the wrong cause and
+    // the wrong remedy, and cancel is inert because the row is already
+    // scheduled.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: REFUND_SETTLING_BODY }),
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('non-backing-subscription-notice');
+    expect(notice).toHaveTextContent('Your refund is being processed');
+    expect(notice).toHaveTextContent(/subscribe again once your payment provider confirms/i);
+
+    // The two lies, gone.
+    expect(notice).not.toHaveTextContent(/Cancel it if you/i);
+    expect(notice).not.toHaveTextContent(/isn.t what grants it/i);
+
+    // No verb: resume is refused server-side (CANCELLATION_NOT_REVOCABLE)
+    // and cancel is a no-op on an already-scheduled row, so offering
+    // either would be a control that changes nothing.
+    expect(within(notice).queryByRole('button')).toBeNull();
+
+    // Still no purchase CTA — that part was always right, since the server
+    // refuses this row's checkout until the refund settles.
+    expect(screen.queryByRole('button', { name: /Upgrade to Plus/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Upgrade to Pro/i })).toBeNull();
+  });
+
+  it('the settling window polls itself back to life when the refund settles', async () => {
+    // The notice promises "we'll switch this back on automatically", and
+    // nothing else in the app can keep that promise: `refetchOnWindowFocus`
+    // is off globally, so without a poll an open tab sits on the settling
+    // state past the moment the plan became purchasable again — the screen
+    // asserting a recovery it does not perform (Codex stop-review,
+    // 2026-08-14).
+    let body: BillingSubscription = REFUND_SETTLING_BODY;
+    let reads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => {
+          reads += 1;
+          return jsonOk({ data: body });
+        },
+      },
+    ]);
+
+    // Fake timers BEFORE the render, unlike the payment-processing test
+    // above: that one waits on a timer registered later, by the overlay
+    // callback, while this poll's interval is created by the query observer
+    // at MOUNT. Installed afterwards, the interval would already be on the
+    // real clock and no amount of advancing would fire it — the failure
+    // mode that made a working poll look broken while writing this.
+    // `shouldAdvanceTime` keeps Testing Library's own waiting usable.
+    //
+    // jsdom also reports the window unfocused, and
+    // `refetchIntervalInBackground` is deliberately left off, so the
+    // interval is paused here for exactly the reason it pauses on a
+    // backgrounded tab in production. Declaring focus is what a user
+    // looking at the screen does.
+    focusManager.setFocused(true);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderScreen();
+      expect(await screen.findByTestId('non-backing-subscription-notice')).toHaveTextContent(
+        'Your refund is being processed',
+      );
+      expect(reads).toBe(1);
+
+      // The provider approves: the verdict pass flips the row terminal and
+      // frees the plan slot. The screen has been told nothing.
+      body = {
+        ...REFUND_SETTLING_BODY,
+        subscription: { ...REFUND_SETTLING_BODY.subscription!, status: 'canceled' },
+      };
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(REFUND_SETTLING_POLL_MS + 1_000);
+      });
+      expect(reads).toBeGreaterThan(1);
+
+      // Recovered with no reload: the settling copy is gone and the plan is
+      // purchasable again.
+      await waitFor(() =>
+        expect(screen.getByTestId('non-backing-subscription-notice')).toHaveTextContent(
+          /subscription ended/i,
+        ),
+      );
+      expect(screen.getByRole('button', { name: /Upgrade to Plus/i })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      focusManager.setFocused(undefined);
+    }
+  });
+
+  it('a settled subscription is NOT polled — the poll is scoped to the wait', async () => {
+    // Guards the blind case: a poll that never turns off would bill every
+    // idle billing tab a read a minute, forever.
+    let reads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => {
+          reads += 1;
+          return jsonOk({ data: FREE_BODY });
+        },
+      },
+    ]);
+    // Focused and faked the same way as the test above, so a poll that
+    // wrongly stayed on WOULD be observed here — the blind case this
+    // guards is a timer that never turns off.
+    focusManager.setFocused(true);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderScreen();
+      await screen.findByRole('button', { name: /Upgrade to Plus/i });
+      expect(reads).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(REFUND_SETTLING_POLL_MS * 3);
+      });
+      expect(reads).toBe(1);
+    } finally {
+      vi.useRealTimers();
+      focusManager.setFocused(undefined);
+    }
   });
 
   it('payment processing: checkout.completed shows the truthful pending state; only the polled server tier clears it', async () => {

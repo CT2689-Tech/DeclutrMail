@@ -40,6 +40,8 @@ import {
   emptyPlanView,
   formatBillingDate,
   nonBackingBlocksNewCheckout,
+  isRefundSettling,
+  REFUND_SETTLING_POLL_MS,
   type BillingPlanView,
   type NonBackingRecord,
 } from './billing-model';
@@ -134,9 +136,16 @@ export function BillingScreen({
   const [pending, setPending] = useState<PendingCheckout | null>(null);
   const [processingPhase, setProcessingPhase] = useState<ProcessingPhase>('fresh');
   const subscriptionQuery = useBillingSubscription({
+    // Two waits, and the pending-payment one outranks: it is measured in
+    // seconds and its lock hides the settling notice anyway.
     refetchInterval:
       pending === null
-        ? false
+        ? // The settling window polls itself back to life. Read off the
+          // query's own data rather than the derived view, which does not
+          // exist yet at this line — and the promise the notice makes
+          // ("we'll switch this back on automatically") is only true
+          // because of this.
+          (query) => (isRefundSettling(query.state.data) ? REFUND_SETTLING_POLL_MS : false)
         : processingPhase === 'unconfirmed'
           ? PAYMENT_UNCONFIRMED_POLL_MS
           : PAYMENT_PROCESSING_POLL_MS,
@@ -1404,6 +1413,34 @@ function NonBackingSubscriptionNotice({
     );
   }
 
+  // The D253 settling window. Says why the picker is locked and that it
+  // clears itself, and offers NO verb: resume is refused server-side
+  // (`CANCELLATION_NOT_REVOCABLE`), and cancel is inert here because the
+  // projector already pinned `cancel_at_period_end` — the service skips
+  // the provider round-trip on a second cancel, so the button would
+  // change nothing while implying it did.
+  //
+  // No date is promised. The refund clears when the provider approves it,
+  // and on a live Paddle account that is a review queue we cannot see —
+  // the first real refund sat pending well past the "a few minutes" the
+  // error copy claims (2026-08-14). Naming a deadline we cannot keep is
+  // the same assert-what-you-don't-know defect this screen exists to
+  // avoid, so the copy stays vague where the truth is.
+  if (reason === 'refund_settling') {
+    return (
+      <div role="status" data-testid="non-backing-subscription-notice" style={boxStyle}>
+        <span>
+          <strong style={{ fontWeight: 600 }}>Your refund is being processed.</strong>{' '}
+          <span style={{ color: color.fgSoft }}>
+            Your {tierName} access has ended and your account is on {entitlementName}. You can
+            subscribe again once your payment provider confirms the refund. Nothing to do until then
+            — we&rsquo;ll switch this back on automatically.
+          </span>
+        </span>
+      </div>
+    );
+  }
+
   const until = formatBillingDate(sub.pauseUntil);
   const retainedPeriodEnd = formatBillingDate(sub.currentPeriodEnd);
   const isPaused = sub.status === 'paused';
@@ -1419,6 +1456,11 @@ function NonBackingSubscriptionNotice({
   // refuses it (`CANCELLATION_NOT_REVOCABLE`); offering the button anyway
   // is the same guaranteed-409 defect the pause offer already avoids
   // (Codex stop-review, 2026-07-31).
+  // In practice only `chargeback` reaches this line — a `refund` row
+  // returns above as `refund_settling`. Both arms are kept deliberately:
+  // this is a revenue path, and the cost of the redundant check is
+  // nothing next to the cost of a reordering upstream silently offering
+  // resume on a refunded row.
   const verdictBlocked = sub.cancelSource === 'refund' || sub.cancelSource === 'chargeback';
   const canSelfServeResume =
     isPaused && sub.provider === 'paddle' && retainedPeriodEnd !== null && !verdictBlocked;
