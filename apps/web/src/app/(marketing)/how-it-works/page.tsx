@@ -16,7 +16,7 @@ import {
 export const metadata: Metadata = marketingPageMetadata({
   title: 'How DeclutrMail works with Gmail — DeclutrMail',
   description:
-    'See how DeclutrMail groups Gmail metadata by sender, previews manual mailbox changes, and keeps one-time cleanup separate from Autopilot rules you deliberately enable.',
+    'How DeclutrMail groups Gmail metadata by sender, previews manual mailbox changes, and keeps one-time cleanup separate from Autopilot rules you enable.',
   path: '/how-it-works',
 });
 

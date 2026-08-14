@@ -695,7 +695,7 @@ const unrollMe: ComparisonDefinition = {
   verifiedIso: '2026-08-13',
   title: 'DeclutrMail vs Unroll.Me',
   description:
-    'A source-backed comparison of DeclutrMail and Unroll.Me for Gmail cleanup, blocking, daily digests, email-data access, the market-research business model, and cost.',
+    'A source-backed comparison of DeclutrMail and Unroll.Me on Gmail cleanup, blocking, digests, email-data access, the market-research business model and cost.',
   verdict:
     'Unroll.Me is free because your commercial email feeds a market-research business it names on its own site. DeclutrMail charges for subscriptions instead, does not fetch full message bodies, and previews each move before it runs — the trade is money for data access, and it is worth deciding deliberately.',
   indexSummary:

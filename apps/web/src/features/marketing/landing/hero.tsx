@@ -147,17 +147,14 @@ function LedgerCard() {
 
 /**
  * Trust strip (D134 §2). The privacy claim is EXCLUSIVELY the shared
- * PrivacyBadge (D228 locked copy via packages/shared/src/copy/privacy.ts)
- * — the badge sits on a fixed light "paper" chip so its designed light
- * palette stays readable when the marketing surface flips dark.
+ * PrivacyBadge (D228 locked copy via packages/shared/src/copy/privacy.ts).
  */
 function TrustStrip() {
   return (
     <div className="dm-mkt-trust">
-      {/* The chip deliberately matches the marketing surface token.
-          `.dm-mkt` is color-scheme: light with no dark override today;
-          if a dark marketing theme ever lands, revisit so the badge's
-          designed light palette stays readable. */}
+      {/* The chip matches the marketing surface token, so it re-resolves
+          with `.dm-mkt`'s dark block (landing.css) rather than pinning a
+          light background under a badge whose own palette already flips. */}
       <span style={{ background: 'var(--mkt-bg)', borderRadius: 8, display: 'inline-flex' }}>
         <PrivacyBadge variant="inline" />
       </span>

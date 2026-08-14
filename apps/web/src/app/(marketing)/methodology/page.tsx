@@ -15,7 +15,7 @@ import {
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Methodology — DeclutrMail',
   description:
-    'The inspectable boundaries behind DeclutrMail: a published Gmail field allowlist, deterministic recommendations, mandatory previews, and explicit plan-gated automation.',
+    'The inspectable boundaries behind DeclutrMail: a published Gmail field allowlist, deterministic recommendations, mandatory previews and plan-gated automation.',
   path: '/methodology',
 });
 

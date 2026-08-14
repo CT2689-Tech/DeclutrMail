@@ -31,7 +31,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Security — DeclutrMail',
   description:
-    'How DeclutrMail protects your Gmail: metadata-only storage (full bodies fetched: 0), one narrowly used OAuth scope, envelope-encrypted tokens, and Google OAuth verification approved in April 2026.',
+    'Metadata-only storage, full bodies fetched: 0, one narrow OAuth scope, envelope-encrypted tokens, and Google OAuth verification approved in April 2026.',
   path: '/security',
 });
 
