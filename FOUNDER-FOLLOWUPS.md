@@ -26,6 +26,63 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-14 — Rule on static marketing rendering vs the nonce CSP
+**Source:** session (website launch-readiness pass)
+**Why:** not one HTML page is prerendered — `.next/prerender-manifest.json`
+after a production build holds 8 routes, all metadata assets, and
+`"dynamicRoutes": {}`. Every visitor and crawler hit on all 34 public routes is
+a Node function render, with no ISR and no HTML `Cache-Control` anywhere. For a
+Show HN / Product Hunt spike that is the difference between a CDN serving bytes
+and a function pool serving renders. Fixing it means removing two `headers()`
+reads from `apps/web/src/app/layout.tsx` (`:48` nonce, `:55` billing geo), and
+the nonce one changes CSP behaviour — a CLAUDE.md §9 stop condition, so an
+agent may not decide it. Note the build's `○●ƒ` column is misleading here:
+`/blog/[slug]` and `/vs/[competitor]` read as `●` (SSG) but emit no HTML and
+appear in neither manifest.
+**How:** read
+[`docs/execution/static-marketing-csp-options-2026-08-14.md`](docs/execution/static-marketing-csp-options-2026-08-14.md)
+— three options with files, CSP trade and effort. The recommendation is Option
+A: split the CSP by subtree so `(app)` keeps nonce + `strict-dynamic` and
+`(marketing)` runs on `'self'` + a hash for the one static script, with
+`/pricing` left dynamic so its INR/USD region pricing stays correct. Approve,
+pick another option, or say no.
+**Verifies by:** §5 of that memo — the prerender manifest lists the marketing
+routes, both subtrees still carry the full security-header set, and a marketing
+page loads with zero CSP violations in the console.
+**Status:** Open — blocks the Lighthouse half of D160, which would otherwise
+encode a baseline this decision is about to change.
+
+### 2026-08-14 — `hello@declutrmail.com` is published on /pricing and routes nowhere
+**Source:** session (website launch-readiness pass)
+**Why:** `pricing-screen.tsx:45` publishes it as the Enterprise "Contact sales"
+address, with a founder note in the source saying inbound routing "must exist
+before launch". It is a third address — `/contact` publishes only `support@`
+and `privacy@` — and apex MX now resolves to Google Workspace, so it will
+accept mail and drop it unless an alias exists.
+**How:** either add `hello@` as a Workspace alias onto the inbox you read, or
+change that one constant to `support@` and drop the third address.
+**Verifies by:** a test send to `hello@declutrmail.com` arrives, or the string
+no longer appears in `apps/web/src`.
+**Status:** Open
+
+### 2026-08-14 — The CASA verification date is hand-copied in four places
+**Source:** session (website launch-readiness pass)
+**Why:** "21 April 2026" is written out independently at
+`privacy/page.tsx:131`, `security/page.tsx:117`,
+`settings/privacy-data/privacy-data-screen.tsx:327` and now the landing trust
+strip (`landing/hero.tsx`). There is no shared constant, so a recertification
+next April updates whichever ones someone remembers. This is the repo's
+signature defect class — a surface asserting something it does not know —
+pointed at its only third-party credential. Flagged rather than refactored
+because collapsing four existing sites is adjacent work the trust-strip change
+did not need (CLAUDE.md §1.3).
+**How:** one exported constant (date + scope) that all four render, ideally
+beside the other claim-bearing copy in `packages/shared/src/copy/`, with a test
+asserting no bare date literal remains.
+**Verifies by:** `rg '21 April 2026' apps/web/src` returns only the constant's
+definition.
+**Status:** Open — not urgent; recertification is due Apr 2027.
+
 ### 2026-08-13 — Nothing surfaces refunded-vs-cancelled churn
 **Source:** founder question during the D253 refund-lockout design, 2026-08-13 —
 *"How can we get stats on how many customers we have refunded vs just
