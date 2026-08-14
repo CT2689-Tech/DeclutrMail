@@ -106,6 +106,30 @@ describe('landing page — D134', () => {
     expect(JSON.stringify(metadata.title)).toContain('Preview Gmail cleanup by sender');
   });
 
+  describe('D138 trust strip — the verification item the visitor can check', () => {
+    it('links the CASA claim to the page that substantiates it', () => {
+      const { container } = renderLanding();
+      const link = Array.from(container.querySelectorAll('a')).find((a) =>
+        a.textContent?.includes('CASA Tier 2'),
+      );
+      expect(link).toBeDefined();
+      expect(link?.getAttribute('href')).toBe('/security#verification');
+    });
+
+    it('claims only an APPROVED OAuth verification, never a certification', () => {
+      const { container } = renderLanding();
+      const strip = container.querySelector('.dm-mkt-trust');
+      const text = strip?.textContent ?? '';
+      expect(text).toContain('Google OAuth verification approved');
+      // Google approved a verification for one restricted scope. It did
+      // not certify or audit the product, and the strip must never say
+      // it did — /security#verification is the bound on this wording.
+      for (const overstatement of ['certified', 'audited', 'Certified', 'Audited']) {
+        expect(text).not.toContain(overstatement);
+      }
+    });
+  });
+
   it('emits FAQPage JSON-LD mirroring the rendered FAQ verbatim (D132 SEO batch)', () => {
     const { container } = renderLanding();
     const scripts = Array.from(container.querySelectorAll('script[type="application/ld+json"]'));

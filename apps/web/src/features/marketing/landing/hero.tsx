@@ -162,6 +162,21 @@ function TrustStrip() {
       <span className="dm-mkt-trust-item" title={ACTION_PREVIEW_CLAIM}>
         Live current-scope preview before manual mail moves
       </span>
+      {/* D138's third trust item, restored. The wording may not exceed
+          what /security#verification already states — Google APPROVED
+          our OAuth verification for one restricted scope; it is not a
+          certification of the product, so never "certified"/"audited".
+          NOTE: the 21 April 2026 date is hand-written in three other
+          places (privacy/page.tsx:131, security/page.tsx:117,
+          settings/privacy-data/privacy-data-screen.tsx:327) with no
+          shared constant. Flagged, not refactored here. */}
+      <a
+        className="dm-mkt-trust-item"
+        href="/security#verification"
+        title="Google approved DeclutrMail's OAuth verification on 21 April 2026 for the single restricted scope we request, gmail.modify."
+      >
+        Google OAuth verification approved, April 2026 (CASA Tier 2)
+      </a>
     </div>
   );
 }

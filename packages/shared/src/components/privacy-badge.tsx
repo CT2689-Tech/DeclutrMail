@@ -58,7 +58,13 @@ export function PrivacyBadge({
         <strong style={{ fontWeight: 600, color: color.primaryDeep }}>
           {PRIVACY_BADGE_HEADLINE}
         </strong>
-        <span style={{ color: color.fgMuted }}>
+        {/* fgSoft, not fgMuted. At 12px on the badge's primarySoft tint
+            fgMuted measures 4.31:1 — under the 4.5:1 WCAG AA floor for
+            normal text — which axe reported on all 19 public pages, this
+            being the one element the whole trust wedge rests on. fgSoft
+            measures 6.23:1 and is the next step in the same family, so
+            the muted-vs-headline hierarchy is unchanged. */}
+        <span style={{ color: color.fgSoft }}>
           {PRIVACY_STORAGE_LABEL} {PRIVACY_STORAGE_ITEMS.join(', ')}.
         </span>
       </div>

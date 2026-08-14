@@ -146,6 +146,9 @@ jobs:
               - 'apps/api/**'
               - 'packages/db/**'
               - 'packages/shared/**'
+              # The gate's own specs and helpers. Without this a PR that
+              # edits only a11y-*.spec.ts never runs the lane it changes.
+              - 'packages/e2e/**'
 
   typecheck:
     name: Typecheck
