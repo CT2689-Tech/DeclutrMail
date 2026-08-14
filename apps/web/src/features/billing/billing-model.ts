@@ -199,7 +199,7 @@ export type BackingState =
   | { state: 'none' }
   | { state: 'active' | 'past_due' | 'cancel_scheduled'; sub: SubscriptionRecord };
 
-export type NonBackingReason = 'paused' | 'canceled' | 'tier_mismatch';
+export type NonBackingReason = 'paused' | 'canceled' | 'tier_mismatch' | 'refund_settling';
 
 /**
  * A real, actionable subscription record that does NOT grant the
@@ -254,6 +254,13 @@ export function emptyPlanView(entitlementTier: TierId): BillingPlanView {
  * guaranteed dead-end 409, so the picker must stay locked until the
  * row is resumed into backing or canceled. Only a canceled row leaves
  * the slot free. Mirrors the SERVER's status set — not the reason.
+ *
+ * `refund_settling` blocks too, and must. The server refuses that row's
+ * checkout with `SUBSCRIPTION_REFUND_SETTLING` until the provider
+ * confirms the refund, so offering the CTA would still be a guaranteed
+ * 409. What that reason changes is the NOTICE, which now says why and
+ * that it clears itself — the picker staying locked is correct, a locked
+ * picker with no explanation was not.
  */
 export function nonBackingBlocksNewCheckout(record: NonBackingRecord | null): boolean {
   return record !== null && record.sub.status !== 'canceled';
@@ -261,6 +268,24 @@ export function nonBackingBlocksNewCheckout(record: NonBackingRecord | null): bo
 
 function nonBackingReason(sub: SubscriptionRecord, entitlementTier: TierId): NonBackingReason {
   if (sub.status === 'canceled') return 'canceled';
+  // A live row under a REFUND verdict is the D253 settling window, and it
+  // needs its own story because every other reason here misreads it.
+  //
+  // The row is `active` while `entitlement_ends_at` has already lapsed, so
+  // the generic `tier_mismatch` copy fires — "this subscription isn't what
+  // grants it. Cancel it if you're done with it." Both halves mislead: the
+  // cause is a refund in flight, not a stray subscription, and cancel does
+  // nothing (the projector already pinned `cancel_at_period_end`, and the
+  // service's cancel is idempotent, so the click skips the provider
+  // entirely). Meanwhile the picker is locked, so the screen offered no
+  // explanation and one inert button — observed on the first live refund,
+  // 2026-08-14.
+  //
+  // CHARGEBACK is deliberately NOT here. A settled refund frees the plan
+  // slot; a settled chargeback never does (founder decision, 2026-08-13),
+  // so "you'll be able to subscribe again once this is confirmed" would be
+  // false for it. It keeps the existing story until its period ends.
+  if (sub.cancelSource === 'refund') return 'refund_settling';
   if (sub.status === 'paused') {
     // A paused row under an entitlement that OUTRANKS it is the A6
     // repro shape: the plan is granted from elsewhere, and resuming

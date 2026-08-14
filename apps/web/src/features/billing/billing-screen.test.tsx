@@ -93,6 +93,39 @@ const PAUSED_BODY: BillingSubscription = {
   },
 };
 
+/**
+ * What the read ACTUALLY returns during the D253 settling window, copied
+ * from the first live refund (prod, 2026-08-14): a full refund ends
+ * entitlement at once, so `tier` is already `free`, while the row stays
+ * `active` with `cancel_at_period_end` pinned until the provider confirms.
+ *
+ * The pre-existing settling test stubs `FREE_BODY` — a `subscription:
+ * null` read — and manufactures the 409 from the checkout endpoint. That
+ * pairing cannot occur: the server only throws
+ * `SUBSCRIPTION_REFUND_SETTLING` when a refund row exists, and when one
+ * exists the read returns it. So that test exercised the error path over a
+ * screen state production never produces, and the real screen — picker
+ * locked by the row, notice reading "Cancel it if you're done with it" —
+ * went uncovered until a founder hit it by hand.
+ */
+const REFUND_SETTLING_BODY: BillingSubscription = {
+  tier: 'free',
+  foundingMember: false,
+  pendingCheckout: null,
+  subscription: {
+    provider: 'paddle',
+    tier: 'plus',
+    status: 'active',
+    cycle: 'monthly',
+    currentPeriodEnd: '2026-09-12T05:45:37.562Z',
+    cancelAtPeriodEnd: true,
+    cancelSource: 'refund',
+    pauseUntil: null,
+    foundingMember: false,
+    scheduledChange: null,
+  },
+};
+
 const SUB: NonNullable<BillingSubscription['subscription']> = {
   provider: 'paddle',
   tier: 'pro',
@@ -667,6 +700,41 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(
       within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
     ).toBeEnabled();
+  });
+
+  it('the settling window explains itself instead of telling you to cancel', async () => {
+    // The state the previous test could not reach. Founder-observed on the
+    // first live refund: the picker is locked (correct — checkout would
+    // 409), but the notice read "A Plus subscription is on your account …
+    // Cancel it if you're done with it", which names the wrong cause and
+    // the wrong remedy, and cancel is inert because the row is already
+    // scheduled.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: REFUND_SETTLING_BODY }),
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('non-backing-subscription-notice');
+    expect(notice).toHaveTextContent('Your refund is being processed');
+    expect(notice).toHaveTextContent(/subscribe again once your payment provider confirms/i);
+
+    // The two lies, gone.
+    expect(notice).not.toHaveTextContent(/Cancel it if you/i);
+    expect(notice).not.toHaveTextContent(/isn.t what grants it/i);
+
+    // No verb: resume is refused server-side (CANCELLATION_NOT_REVOCABLE)
+    // and cancel is a no-op on an already-scheduled row, so offering
+    // either would be a control that changes nothing.
+    expect(within(notice).queryByRole('button')).toBeNull();
+
+    // Still no purchase CTA — that part was always right, since the server
+    // refuses this row's checkout until the refund settles.
+    expect(screen.queryByRole('button', { name: /Upgrade to Plus/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Upgrade to Pro/i })).toBeNull();
   });
 
   it('payment processing: checkout.completed shows the truthful pending state; only the polled server tier clears it', async () => {
