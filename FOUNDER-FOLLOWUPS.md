@@ -49,12 +49,36 @@ three places, and this repo is PUBLIC. PR #509 redacted the same address
 from its new MISTAKES.md entries, but the pre-existing occurrences need a
 founder call: redact in place (history still holds them — acceptable?) or
 leave and accept.
-**How:** `rg -n "rucha" FINDINGS.md docs/` → replace with "a beta user";
-decide whether git history scrubbing is worth it (probably not — the repo
-was public when committed; redaction stops future indexing).
-**Verifies by:** `rg -i "rucha" --glob '!node_modules' .` returns zero hits
-on main.
-**Status:** Open
+**How:** done 2026-08-12 — the working tree is redacted. The sweep found
+more than the original three: the beta user's email in `FINDINGS.md` ×3,
+their full name in a `senders.read-service.spec.ts` comment, and a family
+member's first name in `FINDINGS.md` and an `onboarding.service.spec.ts`
+comment. All replaced with "a beta user", "a real sender" and "the second
+test mailbox". The account holder's full legal name in the Paddle
+display-name entry below is redacted to "the account's KYC'd individual"
+in the same pass; provider-side billing identifiers were never committed
+for the same reason.
+
+Left deliberately: `chintan-ashok-thakkar` is the founder's own name in a
+required Sentry org slug, and the founder is the business's public face.
+
+**Note on the original verification.** It could never pass: the check was
+written as a literal grep for the user's name, inside the entry doing the
+tracking, so the entry's own text guaranteed a hit forever. Restated below
+without embedding the strings — a guard whose own body trips it is the
+BLIND-GUARD class wearing a different hat.
+
+**Still the founder's call:** whether to rewrite git history. Recommend
+not — the repo was already public when these landed, open PRs would all
+need rebasing, and redaction at HEAD is what stops future crawling and
+code-search indexing. Also unresolved and pre-existing: the production
+Supabase project ref sits in `docs/adr/0022-postgres-supabase-pre-launch.md`,
+which publishes the prod database hostname. Same decision, same pass.
+**Verifies by:** a case-insensitive search for the beta user's surname and
+the family member's first name over the tree (excluding `node_modules` and
+`.git`) returns hits only inside this entry's own audit trail, and zero in
+`FINDINGS.md`, `docs/`, and `apps/`.
+**Status:** Open — redaction done 2026-08-12; **narrowed to the history-rewrite decision**
 
 ### 2026-08-11 — Main carries a stale implementation log; every open PR pays for it
 ### 2026-08-10 — D68's "one-click archive" is impossible under D226; patch the plan
@@ -322,6 +346,38 @@ What subscribing buys is **latency**: the correction lands in minutes instead of
 
 **Status:** Open — nice-to-have, not a blocker
 
+### 2026-08-12 — A refunded customer is locked out of paying you again
+
+**Source:** session 2026-08-12, found while planning the live refund verification (the stop-time review caught a recommendation that would have done this to a real payer)
+
+**Why:** three individually-correct behaviours compose into a state nobody chose.
+
+- `apps/api/src/billing/billing-webhook.service.ts:833` — a FULL refund sets `entitlement_ends_at` to SQL `now()`, so access ends **immediately**, not at period end
+- the row nonetheless stays `status='active'` until the paid period elapses
+- `apps/api/src/billing/billing.service.ts:89-107` — checkout refuses `SUBSCRIPTION_EXISTS` for any row in `('active','past_due','paused')`
+- `apps/api/src/billing/billing.service.ts:465` — `resume-cancellation` refuses `CANCELLATION_NOT_REVOCABLE` when `cancel_source='refund'`
+
+Net effect: a refunded customer loses their plan instantly **and cannot buy it again until the period they already paid for runs out** — up to a month on monthly, up to a **year on annual**. No in-app path back. The only recovery is an operator holding the Paddle API key.
+
+Each piece has a documented rationale and each is right on its own. The composition was never decided. This is the "cancel is a one-way door" class (Done 2026-07-31) recurring in the shape that fix deliberately excluded: it made the USER's own cancel revocable and correctly left refund-cancels irrevocable — but nothing re-opened the *purchase* door behind them.
+
+It is also a revenue path, not only a trust one. A goodwill full refund is an ordinary support gesture, and today it makes that customer unable to pay again for the rest of the period.
+
+**Do not "just loosen the checkout guard".** That was this entry's first recommendation and it is strictly worse than the bug. `subscriptions_one_live_per_workspace` is live in production — `UNIQUE (workspace_id) WHERE status IN ('active','past_due')` (migration `0051_billing_reconciliation.sql:72`, confirmed present in the prod database 2026-08-12). A refunded row sits in `active`. Let checkout through while it is still there and the customer pays, `subscription.created` tries to insert a second `active` row for the same workspace, the index rejects it, and the webhook retries forever: **charged, no entitlement.** That is the identical failure this file already worked through for the paused-row sibling case — "the customer is charged while our DB refuses to record it. Strictly worse than no index." Trading "cannot buy" for "buys and receives nothing" is not a fix.
+
+The guard and the index key on the same thing (`status`), so any real fix has to move the row's *status*, not special-case one of the two readers. Note the tempting shortcut is impossible: the lapsed-entitlement condition cannot go into the index predicate, because Postgres requires index predicates to be IMMUTABLE and `now()` is not.
+
+**How:** decide the intended behaviour, then —
+
+(a) **Safe now, incomplete:** leave both guard and index alone and fix the message — tell the user the date they can subscribe again rather than a bare `SUBSCRIPTION_EXISTS`. Costs nothing, removes the confusion, leaves the customer still unable to pay.
+(b) **The real fix, needs design:** transition a refunded row out of `active` once entitlement lapses, so guard and index agree it is no longer live. The hazard to design against is provider reconciliation — Paddle reports the subscription `active` with `scheduled_change: cancel` until the period ends, so the 6-hourly sweep can flip a locally-terminal row back to `active`. If it does that *after* the customer has re-subscribed, the sweep's own write is the one that violates the index. Whatever shape this takes needs the sweep and the projector to share one definition of "live", rather than the sweep mirroring the provider while the guard reads a local column.
+
+Recommend shipping (a) immediately and scheduling (b). Billing BE change, so §9 stop-condition review applies to both.
+
+**Verifies by:** (a) a refunded workspace hitting checkout sees a message naming the date, not `SUBSCRIPTION_EXISTS`. (b) on a workspace whose only subscription is a fully-refunded row with lapsed entitlement, `POST /api/billing/checkout` returns a checkout, the resulting `subscription.created` **inserts without violating `subscriptions_one_live_per_workspace`**, and a reconciliation sweep run immediately afterwards does not resurrect the old row or fail its own write. A still-entitled active row must still refuse.
+
+**Status:** Open
+
 ### 2026-07-31 — Verify production billing with one real purchase (founder decision: yes)
 
 **Source:** session 2026-07-31 (founder chose "one real purchase, then refund")
@@ -330,23 +386,77 @@ What subscribing buys is **latency**: the correction lands in minutes instead of
 
 **How:** buy **Plus monthly ($9)** on production with a real card, confirm the webhook grants the tier (`subscriptions.status=active`, `workspaces.tier=plus`, a `subscription_events` row), then refund it from the Paddle dashboard. Everything except the card entry can be driven by an agent. Not blocked: the refund path was reported here as broken on 2026-07-31 and that diagnosis was wrong (see Done). Refund the FULL amount — a partial refund deliberately no longer ends the plan. The provider-side cancel lands on the next reconciliation sweep (6h, or immediately on a worker restart), so allow for that before checking Paddle.
 
-**Verifies by:** a production `subscription_events` row with `processed_at` set, and the tier flip visible on `/billing`.
+**Update 2026-08-12 — the server half is verified; the UI half is not.** The entry sat asserting "0 subscriptions, 0 webhooks, 0 customers" for eleven days after that stopped being true, so the premise above is stale. A real Plus monthly purchase was made on production on 12 Aug 2026 and was **not** refunded, so production now carries one live subscription renewing 12 Sep 2026. Provider-side identifiers are deliberately not recorded here — see the redaction note in the Open entry about personal data on a public repo; read them from the Paddle dashboard when needed.
 
-**Status:** Open — needs the founder's card
+Queried the production database on 2026-08-12:
+
+- `subscriptions` — exactly one row, provider `paddle`, `status=active`, created `05:45:39Z`
+- `workspaces.tier` — `plus`
+- `subscription_events` — 4 rows, **all four with `processed_at` set**:
+
+| event | at (UTC) |
+|---|---|
+| `subscription.created` | 05:45:39.541 |
+| `subscription.activated` | 05:45:39.550 |
+| `transaction.completed` | 05:45:40.443 |
+| `reconciliation.subscription` | 06:21:20.152 |
+
+Every piece of prod-only configuration this entry existed to test is therefore confirmed live: the production API key, the live notification destination **and its secret**, the live catalog ids, and the live webhook URL. Charge-to-processed latency was under one second, and the reconciliation sweep independently re-confirmed provider truth 36 minutes later — so the sweep is running in production too, which nothing else had proven.
+
+**The refund is still required, and skipping it costs the most valuable half of this test.** An earlier version of this update dropped it as mere test cleanup, on the reasoning that the payer is a real user rather than a disposable identity. That was a rationalisation. The refund was never cleanup: on a **live** account Paddle creates refunds `pending_approval` and approves them asynchronously, while sandbox auto-approves — the entry at "Paddle prod destination: `adjustment.updated`" and the refund-path entry in Done both state plainly that the `pending_approval` shape **has never been observed here and cannot be produced in sandbox**. `settledCancellationCause`, the outbound provider-side cancel, and the 6-hourly sweep's enforcement of it were all built against a shape we have only ever inferred. This purchase is the one arranged opportunity to run them for real, and the code most likely to be wrong is exactly the code no test has reached.
+
+Trading that for "a canary on the renewal path" swapped a definite verification available now for a speculative one in a month, and did so silently. Renewal and refund are different paths; the canary argument is fine on its own merits and is not a substitute.
+
+**Do NOT refund this subscription to get the verification.** An earlier version of this entry recommended "refund the full amount and let them re-subscribe". That path does not exist. Three deliberate behaviours compose into a lockout:
+
+- `billing-webhook.service.ts:833` sets `entitlement_ends_at` to SQL `now()` on a full refund — access ends **immediately**, not at period end
+- the row nonetheless stays `status='active'` until the paid period ends, and `billing.service.ts:89-107` refuses a new checkout with `SUBSCRIPTION_EXISTS` for any row in `('active','past_due','paused')`
+- `billing.service.ts:465` refuses `resume-cancellation` with `CANCELLATION_NOT_REVOCABLE` when `cancel_source='refund'`
+
+So refunding this payer would drop them to Free instantly and leave them unable to buy Plus again until 12 Sep 2026, with no in-app path back — recoverable only by an operator holding the Paddle API key. See the separate entry recording that composition as a defect.
+
+**Verify on the founder's own account instead.** Production holds exactly one subscription row, so the founder's workspace is unencumbered and `SUBSCRIPTION_EXISTS` will not block a checkout there. Buy Plus monthly on the founder's own workspace, refund THAT in full, and watch the live path — it exercises the identical `pending_approval` arrival, `settledCancellationCause`, and sweep-enforced provider cancel, costs $9 for a few minutes, touches nobody else, and matches this entry's original intent that the first real payer be the founder. The founder's own workspace absorbs the same month-long re-subscribe lockout, which is acceptable for an operator and is not acceptable for anyone else.
+
+Do **not** partial-refund — a partial is filtered at the adapter, never becomes a verdict, and would test nothing.
+
+**Still open — do not close this on the server evidence alone.** The "Verifies by" below has two halves and only the first is met. `workspaces.tier=plus` is what the UI *reads*; it is not proof of what the UI *renders*, and list/detail drift between a correct row and a wrong screen is this codebase's single most-repeated defect class. Confirming the row and declaring the flow verified would be that exact mistake. The remaining step needs an authenticated session as the paying user, which is the account holder's to drive.
+
+**Verifies by:** three halves, one met.
+
+1. a production `subscription_events` row with `processed_at` set — **met 2026-08-12**
+2. the tier flip visible on `/billing` for the paying account — **not checked**; needs that account's session
+3. a FULL refund **on a separate founder-owned purchase, not on this one**, then: the `adjustment` arriving `pending_approval` rather than settled, no premature cancel fired on the unsettled marker, `cancel_source=refund` with `entitlement_ends_at` set once Paddle approves, and the provider-side cancel landing on the next reconciliation sweep (6h, or immediately on a worker restart) — **not done**; this is the only path here that sandbox structurally cannot produce
+
+**Status:** Open — server-side ingestion verified 2026-08-12; **`/billing` render and the live refund path both outstanding**
 
 ### 2026-07-31 — Paddle seller display name reads as a personal name on receipts
 
 **Source:** founder screenshot of the sandbox checkout, 2026-07-31
 
-**Why:** the Paddle overlay footer reads "This order process is conducted by our online reseller & Merchant of Record, Paddle.com… Your data will be shared with **Nayana Ashok Thakkar** for product fulfilment", with the address `3811 Ditmars Blvd #1071, Astoria, NY 11105-1803`. That is the seller display name Paddle prints at checkout and on every receipt. A buyer paying DeclutrMail sees an unfamiliar personal name at the moment of payment — the single worst moment for a trust wobble, and a common chargeback trigger ("I don't recognise this charge").
+**Why:** the Paddle overlay footer reads "This order process is conducted by our online reseller & Merchant of Record, Paddle.com… Your data will be shared with **[the account's KYC'd individual, a personal legal name]** for product fulfilment", with the address `3811 Ditmars Blvd #1071, Astoria, NY 11105-1803`. That is the seller display name Paddle prints at checkout and on every receipt. A buyer paying DeclutrMail sees an unfamiliar personal name at the moment of payment — the single worst moment for a trust wobble, and a common chargeback trigger ("I don't recognise this charge").
 
-This is sandbox configuration, but the same field exists in production and defaults from the same account setup.
+This is sandbox configuration, but the same field exists in production and defaults from the same account setup. Confirmed in production 2026-08-12 on a real receipt: the personal legal name appears in the email subject line, in the body header above "via paddle.com", and again on the invoice supplier line — three customer-facing surfaces, not one.
 
-**How:** Paddle Dashboard → Checkout → Checkout settings (and Business details) → set the public seller/business name to **DeclutrMail**. Check BOTH environments; sandbox and production are configured separately. While there, confirm the business address shown is one that should be public.
+**Corrections on the record (2026-08-12).** Two claims above are wrong.
 
-**Verifies by:** open a sandbox checkout — the footer names DeclutrMail, not a person.
+1. **The Astoria address is Paddle's, not the founder's.** The production invoice labels `3811 Ditmars Blvd #1071, Astoria 11105-1803` as "Invoice from: **Paddle.com Inc**". No personal address is exposed at checkout. Nothing to fix.
+2. **The statement descriptor is already correct.** The invoice footer reads `PADDLE.NET* DECLUTR`, not the Paddle default of the first 10 characters of the legal name. Nothing to fix.
 
-**Status:** Open
+**How.** There is no single "public seller/business name" field; Paddle has three, and only one is self-serve:
+
+| Surface | Field | Change via |
+|---|---|---|
+| Card statement | Statement descriptor | Dashboard → Checkout Settings — **already set to `DECLUTR`** |
+| Receipt emails, invoices | **Company Display Name** (overrides Legal Name) | `sellers@paddle.com` |
+| Checkout data-sharing footer | **Company Legal Name** (KYC entity) | `sellers@paddle.com` + entity documents |
+
+Paddle replied ~2026-08-06 asking the founder to confirm whether DeclutrMail is a registered legal entity or a brand/trading name. It is a **brand/trading name** — the KYC entity remains the individual, and claiming otherwise on a merchant-of-record account without a registration document risks suspension. Confirming brand-name unblocks three of four requested changes (Product Website `.ai` → `.com`, Company Display Name → DeclutrMail, Contact Name → DeclutrMail Support); Company Legal Name stays as-is. The Seller ID is in the Paddle dashboard and the support thread; it is deliberately not written here.
+
+**Open question inside the ticket:** Paddle's help centre documents Company Display Name as overriding the Legal Name "within the customer emails". It does not say whether it also governs the checkout footer disclosure and the invoice supplier line. If it does not, those two surfaces stay entity-bound and a registered assumed-name certificate becomes the only lever — a legal/tax decision the founder has deliberately not opened yet.
+
+**Verifies by:** a production receipt whose subject and body header read DeclutrMail, not a person; then open a checkout and read the footer to settle the open question empirically.
+
+**Status:** Open — reply to Paddle drafted 2026-08-12, awaiting founder send
 
 
 ### 2026-07-30 — The derived impl-log gate: two drift classes, only one of them loud
