@@ -44,20 +44,41 @@ discovered-URL count; each requested URL moves to "URL is on Google";
 Change of Address shows an active move.
 
 **A GSC MCP server was pulled back out of `.mcp.json` before merge
-(2026-08-14).** The branch had added `search-console-mcp-server`, run
-unpinned via `npx -y`. Nothing was found wrong with the package — its
-declared dependencies are just the MCP SDK and zod — but `.mcp.json` is
-project-scoped and **this repo is public**, so a committed entry hands
-every contributor and every agent that opens the repo an auto-`npx` of
-whatever `latest` resolves to that day, for a package first published
-2026-07-02 with a single maintainer. Its own description ("no Google
-Cloud project required") also means the OAuth app belongs to the vendor,
-so a Search Console grant made through it travels through a third party
-rather than `declutrmail-ai-prod`. None of that is disqualifying for a
-personal tool; all of it is disqualifying for a public repo's shared
-config. Put it in `~/.claude.json` if you want it, and pin an exact
-version. Committing it needs a `secrets-inventory.md` row for the OAuth
-path first.
+(2026-08-13).** The branch had added `search-console-mcp-server`, invoked
+unpinned via `npx -y`. Two reasons, both narrow:
+
+- `.mcp.json` is project-scoped and **this repo is public**, so a
+  committed entry puts a server nobody here chose in front of every
+  contributor and every agent that opens the repo. Claude Code does
+  prompt before running a project-scoped server, so it is a trust prompt
+  rather than silent execution — but one approval then runs whatever
+  `latest` resolves to that day, for a package first published
+  2026-07-02 (verified via `npm view`) with a single listed maintainer.
+- It is unrelated to what that PR was for.
+
+Nothing was found wrong with the package. Its declared dependencies are
+only the MCP SDK and zod.
+
+**A claim in the first version of this note was wrong and is struck.** It
+said the vendor's "no Google Cloud project required" line meant the OAuth
+app was theirs and a Search Console grant would travel through a third
+party. That was inferred from a marketing string, asserted as fact, and
+never checked. The project's own README documents the opposite design: a
+built-in Google **Desktop** OAuth client, `npx search-console-mcp-server
+login`, tokens minted by Google directly to the local machine and stored
+in `~/.search-console-mcp/`, with `SEARCH_CONSOLE_MCP_CLIENT_ID` /
+`_SECRET` available to substitute your own client. That is the vendor's
+account, not something verified here, but it is documented and my
+assertion contradicted it. What survives is smaller: the OAuth **client
+identity** is still the author's unless you set those two variables, so
+the Google consent screen names their app rather than
+`declutrmail-ai-prod`.
+
+None of this is disqualifying for a personal tool. Put it in
+`~/.claude.json` if you want it, pin an exact version, and set the two
+client variables if you would rather the grant sit under your own GCP
+project. Committing it to this repo instead would want a
+`secrets-inventory.md` row for the token path first.
 **Status:** Open
 
 ### 2026-08-13 — Submit the sitemap to Bing and Brave (Copilot and Claude cite them)
