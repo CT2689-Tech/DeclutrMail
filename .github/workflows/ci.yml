@@ -348,6 +348,33 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @declutrmail/web test
 
+  build-web:
+    name: Build — Web + bundle budget
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Nothing in CI ran a production web build before this job, so a
+      # build-only break (a server/client boundary violation, a bad
+      # metadata export) reached Vercel unchallenged. `next build` is
+      # also the only thing that produces the manifest the budget reads.
+      - name: Build the web app
+        run: pnpm --filter @declutrmail/web build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      # D160's other unbuilt check. See the script header for what the
+      # numbers mean and why they are a ratchet rather than a target.
+      - name: Enforce the public bundle budget
+        run: node scripts/check-web-bundle-budget.mjs
+
   test-units:
     name: Tests — Shared units
     needs: changes
