@@ -15,6 +15,7 @@ export const metadata: Metadata = marketingPageMetadata({
   description:
     'Free is the full manual cleanup toolkit, Plus removes the cap and adds the Screener plus rules you approve, and Pro adds unattended automation. Full bodies fetched: 0.',
   path: '/pricing',
+  markdownAlternate: '/pricing.md',
 });
 
 export default function PricingPage() {

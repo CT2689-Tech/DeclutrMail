@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import { MARKETING_PATHS } from '@/app/sitemap';
+
 import {
   CANONICAL_ORIGIN,
   LEGACY_HOST_PATTERN,
+  WWW_HOST_PATTERN,
   legacyDomainRedirects,
   resolveLegacyPath,
+  wwwApexRedirects,
 } from './legacy-domain-redirects';
 
 /**
@@ -64,49 +68,16 @@ const V1_SITEMAP = [
 const V1_AI_CONTEXT = ['/llms.txt', '/llms-full.txt', '/ai.txt'] as const;
 
 /**
- * Routes that exist on V2. Public set mirrors
- * `https://declutrmail.com/sitemap.xml` (fetched 2026-07-21); the authed
- * set mirrors `apps/web/src/app/(app)`. If a redirect target is missing
- * here, it is missing on the live site too.
+ * Routes that exist on V2. The public set is the sitemap itself, not a
+ * copy of it: a hand-maintained mirror silently went stale as V2 gained
+ * routes, so a redirect could only be proved against the list's last
+ * edit. Non-sitemap public files and the authed targets are added by
+ * hand because nothing enumerates them.
  */
-const V2_ROUTES = new Set([
-  '/',
-  '/answers/best-way-to-clean-gmail-2026',
-  '/answers/how-undo-works-for-gmail-cleanup',
-  '/answers/is-it-safe-to-connect-gmail-app',
-  '/answers/sender-level-vs-message-level-cleanup',
-  '/answers/what-is-metadata-only-email-analysis',
-  '/beta',
-  '/blog',
-  '/blog/metadata-only-is-a-design-constraint',
-  '/blog/reversible-does-not-mean-risk-free',
-  '/blog/why-cleanup-starts-with-senders',
-  '/changelog',
-  '/compare',
-  '/contact',
-  '/cookies',
-  '/faq',
-  '/help',
-  '/how-it-works',
-  '/how-to/auto-archive-future-emails-in-gmail',
-  '/how-to/bulk-delete-emails-from-one-sender',
-  '/how-to/clean-gmail-by-sender',
-  '/how-to/stop-promotional-emails-gmail',
-  '/how-to/unsubscribe-from-emails-gmail',
-  '/inbox-simulator',
+const V2_ROUTES = new Set<string>([
+  ...MARKETING_PATHS,
+  // Served from `public/`, so absent from the sitemap.
   '/llms.txt',
-  '/methodology',
-  '/pricing',
-  '/privacy',
-  '/refunds',
-  '/security',
-  '/sign-in',
-  '/terms',
-  '/vs/clean-email',
-  '/vs/gmail-filters',
-  '/vs/leave-me-alone',
-  '/vs/sanebox',
-  '/vs/trimbox',
   // Authed app routes — redirect targets for V1's old app URLs.
   '/activity',
   '/autopilot',
@@ -128,6 +99,16 @@ describe('legacy-domain redirects (declutrmail.ai → declutrmail.com)', () => {
       expect(V2_ROUTES.has(destination), `${path} → ${destination} does not exist on V2`).toBe(
         true,
       );
+    });
+
+    it('sends both V1 Unroll.Me comparisons to the V2 page rather than the hub', () => {
+      expect(resolveLegacyPath('/compare/unroll-me-vs-declutrmail')).toBe('/vs/unroll-me');
+      expect(resolveLegacyPath('/compare/declutrmail-vs-unroll-me-vs-leave-me-alone')).toBe(
+        '/vs/unroll-me',
+      );
+      expect(resolveLegacyPath('/blog/is-unroll-me-safe')).toBe('/vs/unroll-me');
+      // Mailstrom still has no page of its own; the hub stays the target.
+      expect(resolveLegacyPath('/compare/mailstrom-vs-declutrmail')).toBe('/compare');
     });
 
     it('keeps the six shared paths on their own URL instead of rerouting them', () => {
@@ -205,5 +186,31 @@ describe('legacy-domain redirects (declutrmail.ai → declutrmail.com)', () => {
       expect(rules.at(-1)?.source).toBe('/:path*');
       expect(rules.filter((rule) => rule.source === '/:path*')).toHaveLength(1);
     });
+  });
+});
+
+describe('www → apex redirects (D128)', () => {
+  const rules = wwwApexRedirects();
+  const matches = (host: string) => new RegExp(`^(?:${WWW_HOST_PATTERN})$`).test(host);
+
+  it('is a single path-preserving 301 gated on www only', () => {
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toEqual({
+      source: '/:path*',
+      has: [{ type: 'host', value: WWW_HOST_PATTERN }],
+      destination: `${CANONICAL_ORIGIN}/:path*`,
+      statusCode: 301,
+    });
+    expect(rules[0]).not.toHaveProperty('permanent');
+  });
+
+  it('matches www and rejects the apex, app subdomain, and the retired .ai hosts', () => {
+    expect(matches('www.declutrmail.com')).toBe(true);
+
+    expect(matches('declutrmail.com')).toBe(false);
+    expect(matches('app.declutrmail.com')).toBe(false);
+    expect(matches('declutrmail.ai')).toBe(false);
+    expect(matches('www.declutrmail.ai')).toBe(false);
+    expect(matches('www.declutrmail.com.attacker.test')).toBe(false);
   });
 });

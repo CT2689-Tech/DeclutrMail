@@ -106,7 +106,14 @@ const SITE_JSON_LD = {
       '@type': 'SoftwareApplication',
       name: 'DeclutrMail',
       url: siteUrl(),
-      description: 'A Gmail sender-control companion with live previews and Activity undo.',
+      // ADR-0030: lead with the preview guarantee, keep the sender as the
+      // mechanism. The previous string led with "sender-control", which is
+      // the capability Gmail shipped natively in July 2025, and compressed
+      // recovery into "Activity undo" — the shorthand that reads as
+      // universal undo. This is the description an answer engine quotes,
+      // so it carries the limits with the claim.
+      description:
+        'Gmail cleanup that previews every action before it runs — the current matching count, an available sample, and the exact Gmail changes — then takes one decision per sender: Keep, Archive, Unsubscribe, Later, or Delete. Archive and Later are reversible from Activity for the plan’s undo window; a delivered unsubscribe request cannot be recalled.',
       applicationCategory: 'UtilitiesApplication',
       operatingSystem: 'Web',
       offers: tierOffers(),

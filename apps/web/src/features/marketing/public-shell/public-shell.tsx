@@ -31,7 +31,9 @@ const FOOTER_GROUPS = [
     links: [
       { href: '/methodology', label: 'Methodology' },
       { href: '/compare', label: 'Compare' },
-      { href: '/blog', label: 'Guides' },
+      { href: '/how-to', label: 'Guides' },
+      { href: '/answers', label: 'Answers' },
+      { href: '/blog', label: 'Journal' },
       { href: '/faq', label: 'FAQ' },
     ],
   },
