@@ -11,7 +11,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { BillingSubscriptionSchema } from '@declutrmail/shared/contracts';
+import { BillingSubscriptionSchema, type BillingSubscription } from '@declutrmail/shared/contracts';
 
 import { apiGet, ApiError } from '@/lib/api/client';
 
@@ -50,11 +50,21 @@ export function isBillingDisabledError(error: unknown): boolean {
 
 export function useBillingSubscription(options?: {
   /**
-   * Poll cadence for the post-checkout "payment processing" state —
-   * the ONLY sanctioned repeat-read: a success-path 200 poll while the
-   * webhook grant is in flight, never an error retry.
+   * Poll cadence for the two states that WAIT on something server-side:
+   * the post-checkout "payment processing" window, and the D253
+   * refund-settling window. Both are success-path 200 polls while a
+   * provider outcome is in flight — never an error retry.
+   *
+   * The function form is accepted because the settling state is a
+   * property of the data this very query returns, so the caller cannot
+   * know it before the query exists. TanStack hands the query in, and
+   * `refetchIntervalInBackground` is left at its default so either poll
+   * runs only while the tab is focused.
    */
-  refetchInterval?: number | false;
+  refetchInterval?:
+    | number
+    | false
+    | ((query: { state: { data: BillingSubscription | undefined } }) => number | false);
 }) {
   return useQuery({
     queryKey: billingKeys.subscription(),

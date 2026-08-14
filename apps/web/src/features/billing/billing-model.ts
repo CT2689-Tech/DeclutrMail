@@ -175,6 +175,42 @@ export const MONEY_BACK_NOTE = '30-day money-back guarantee';
 export type SubscriptionRecord = NonNullable<BillingSubscription['subscription']>;
 
 /**
+ * Poll cadence while a refund settles.
+ *
+ * The settling notice tells the customer the screen will switch itself
+ * back on, and without a poll that is false: `refetchOnWindowFocus` is
+ * off globally (`lib/query-client.ts`) and this query's
+ * `refetchInterval` defaults to false, so an open tab would sit on the
+ * settling state until a hard reload — including long after the refund
+ * settled and the plan became purchasable again. Promising automatic
+ * recovery while providing none is the assert-what-you-don't-know defect
+ * aimed at the one screen that had just been fixed for it (Codex
+ * stop-review, 2026-08-14).
+ *
+ * A minute, not seconds: the wait is a provider review queue measured in
+ * hours, so this exists to catch the transition eventually rather than
+ * promptly. `refetchIntervalInBackground` is deliberately left at its
+ * default (false) — the interval then runs only while the tab is
+ * focused, which is exactly when the promise is observable, and a
+ * day-long wait costs nothing while nobody is looking.
+ */
+export const REFUND_SETTLING_POLL_MS = 60_000;
+
+/**
+ * Is a refund in flight on this payload's subscription?
+ *
+ * Gates the poll above. Deliberately BROADER than the `refund_settling`
+ * notice, which additionally requires the row to be non-backing: if a
+ * refund lands while the entitlement it funded still matches, we would
+ * rather poll and find out than pin a stale screen on a technicality.
+ * Every state this admits resolves by re-reading.
+ */
+export function isRefundSettling(data: BillingSubscription | undefined): boolean {
+  const sub = data?.subscription;
+  return sub != null && sub.status !== 'canceled' && sub.cancelSource === 'refund';
+}
+
+/**
  * The billing read answered 200 with a payload the contract schema
  * cannot narrow. Thrown by the read hook's Zod parse; the derive layer
  * maps it to the `unknown` view state — the screen renders honest

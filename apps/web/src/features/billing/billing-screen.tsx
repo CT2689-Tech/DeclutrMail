@@ -40,6 +40,8 @@ import {
   emptyPlanView,
   formatBillingDate,
   nonBackingBlocksNewCheckout,
+  isRefundSettling,
+  REFUND_SETTLING_POLL_MS,
   type BillingPlanView,
   type NonBackingRecord,
 } from './billing-model';
@@ -134,9 +136,16 @@ export function BillingScreen({
   const [pending, setPending] = useState<PendingCheckout | null>(null);
   const [processingPhase, setProcessingPhase] = useState<ProcessingPhase>('fresh');
   const subscriptionQuery = useBillingSubscription({
+    // Two waits, and the pending-payment one outranks: it is measured in
+    // seconds and its lock hides the settling notice anyway.
     refetchInterval:
       pending === null
-        ? false
+        ? // The settling window polls itself back to life. Read off the
+          // query's own data rather than the derived view, which does not
+          // exist yet at this line — and the promise the notice makes
+          // ("we'll switch this back on automatically") is only true
+          // because of this.
+          (query) => (isRefundSettling(query.state.data) ? REFUND_SETTLING_POLL_MS : false)
         : processingPhase === 'unconfirmed'
           ? PAYMENT_UNCONFIRMED_POLL_MS
           : PAYMENT_PROCESSING_POLL_MS,

@@ -18,6 +18,7 @@
  * helpers the screen uses — a manifest re-price re-prices this file.
  */
 
+import { focusManager } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -58,7 +59,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { launchCheckout, type CheckoutEvents } from './checkout';
 import type { BillingIntent } from './billing-intent';
-import { annualMonthsFree, quotedPlanPrice } from './billing-model';
+import { annualMonthsFree, quotedPlanPrice, REFUND_SETTLING_POLL_MS } from './billing-model';
 import { BillingScreen } from './billing-screen';
 import { pendingCheckoutKey, writePendingCheckout } from './pending-checkout';
 
@@ -735,6 +736,107 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // refuses this row's checkout until the refund settles.
     expect(screen.queryByRole('button', { name: /Upgrade to Plus/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /Upgrade to Pro/i })).toBeNull();
+  });
+
+  it('the settling window polls itself back to life when the refund settles', async () => {
+    // The notice promises "we'll switch this back on automatically", and
+    // nothing else in the app can keep that promise: `refetchOnWindowFocus`
+    // is off globally, so without a poll an open tab sits on the settling
+    // state past the moment the plan became purchasable again — the screen
+    // asserting a recovery it does not perform (Codex stop-review,
+    // 2026-08-14).
+    let body: BillingSubscription = REFUND_SETTLING_BODY;
+    let reads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => {
+          reads += 1;
+          return jsonOk({ data: body });
+        },
+      },
+    ]);
+
+    // Fake timers BEFORE the render, unlike the payment-processing test
+    // above: that one waits on a timer registered later, by the overlay
+    // callback, while this poll's interval is created by the query observer
+    // at MOUNT. Installed afterwards, the interval would already be on the
+    // real clock and no amount of advancing would fire it — the failure
+    // mode that made a working poll look broken while writing this.
+    // `shouldAdvanceTime` keeps Testing Library's own waiting usable.
+    //
+    // jsdom also reports the window unfocused, and
+    // `refetchIntervalInBackground` is deliberately left off, so the
+    // interval is paused here for exactly the reason it pauses on a
+    // backgrounded tab in production. Declaring focus is what a user
+    // looking at the screen does.
+    focusManager.setFocused(true);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderScreen();
+      expect(await screen.findByTestId('non-backing-subscription-notice')).toHaveTextContent(
+        'Your refund is being processed',
+      );
+      expect(reads).toBe(1);
+
+      // The provider approves: the verdict pass flips the row terminal and
+      // frees the plan slot. The screen has been told nothing.
+      body = {
+        ...REFUND_SETTLING_BODY,
+        subscription: { ...REFUND_SETTLING_BODY.subscription!, status: 'canceled' },
+      };
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(REFUND_SETTLING_POLL_MS + 1_000);
+      });
+      expect(reads).toBeGreaterThan(1);
+
+      // Recovered with no reload: the settling copy is gone and the plan is
+      // purchasable again.
+      await waitFor(() =>
+        expect(screen.getByTestId('non-backing-subscription-notice')).toHaveTextContent(
+          /subscription ended/i,
+        ),
+      );
+      expect(screen.getByRole('button', { name: /Upgrade to Plus/i })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      focusManager.setFocused(undefined);
+    }
+  });
+
+  it('a settled subscription is NOT polled — the poll is scoped to the wait', async () => {
+    // Guards the blind case: a poll that never turns off would bill every
+    // idle billing tab a read a minute, forever.
+    let reads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => {
+          reads += 1;
+          return jsonOk({ data: FREE_BODY });
+        },
+      },
+    ]);
+    // Focused and faked the same way as the test above, so a poll that
+    // wrongly stayed on WOULD be observed here — the blind case this
+    // guards is a timer that never turns off.
+    focusManager.setFocused(true);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderScreen();
+      await screen.findByRole('button', { name: /Upgrade to Plus/i });
+      expect(reads).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(REFUND_SETTLING_POLL_MS * 3);
+      });
+      expect(reads).toBe(1);
+    } finally {
+      vi.useRealTimers();
+      focusManager.setFocused(undefined);
+    }
   });
 
   it('payment processing: checkout.completed shows the truthful pending state; only the polled server tier clears it', async () => {
