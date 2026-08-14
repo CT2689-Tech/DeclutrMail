@@ -1,12 +1,17 @@
 # Static marketing rendering vs the nonce CSP — a decision for the founder
 
-**Date:** 2026-08-14 · **Status:** ⚠️ **RULED THEN RETRACTED — the options this
-memo offered were wrong. Re-decision required; see §0.**
+**Date:** 2026-08-14 · **Status:** **Option A′ RULED (founder, 2026-08-14).
+Not yet implemented — spec in §6.**
 
-The founder approved Option A on 2026-08-14 on the strength of §2 below. Before
-implementing it I measured what the page actually emits, and the premise both
-Option A and Option B rest on does not hold. **Nothing has been implemented.**
-Read §0 first; §2's A and B are unbuildable as written.
+Read in this order: **§0** (what the first version of this memo got wrong),
+**§3a** (the real options), **§6** (the implementation spec and its verification
+bar). §2 and §3 are decision history — Option A as written there is unbuildable
+and Option B is withdrawn; they are kept only so the retraction is legible.
+
+**The ruling:** `(marketing)` may run `script-src 'self' 'unsafe-inline'`;
+`(app)` keeps nonce + `strict-dynamic` **unchanged**; `/pricing` stays dynamic.
+The founder additionally set the verification bar: **prove it in a real browser
+before claiming it works.**
 **Relates to:** D175 (strict nonce CSP), D160 (Lighthouse ≥90 on marketing),
 D128 (canonical origin)
 
@@ -272,3 +277,74 @@ win, but it also decides which responses stop carrying `nosniff` and the rest of
 the static header set — a security-headers change, and the same §9 stop
 condition. It should ride along with whichever option is chosen, as an explicit
 decision rather than a side effect.
+
+---
+
+## 6. Implementation spec — Option A′ (RULED 2026-08-14)
+
+**Approved:** the `(marketing)` subtree may run `script-src 'self'
+'unsafe-inline'`; `(app)` keeps nonce + `strict-dynamic` unchanged; `/pricing`
+stays dynamic. Verification bar set by the founder: **prove it in a real browser
+before claiming it works.**
+
+### Why this is bigger than §2's "M effort" estimate
+
+Three structural facts, checked on `main` @ `99d6155`, that the original options
+did not account for:
+
+1. **`apps/web/src/app/(app)/layout.tsx` is `'use client'`.** A client component
+   cannot call `headers()`, so the nonce cannot simply move "into the app
+   layout" — the authed groups need a server boundary above the client shell.
+2. **There are THREE groups needing the theme script, not two.**
+   `(marketing)`, `(app)`, and `app/onboarding/layout.tsx`. The last two are
+   authed and both need the script **nonced**, because `strict-dynamic` makes
+   `'self'` stop authorizing even a same-origin external script.
+3. **`regionProvider` is threaded from the root layout** (`layout.tsx:55` →
+   `<Providers regionProvider>` → `BillingCurrencyProvider`). `/pricing` is a
+   MARKETING route that consumes it (`useRegionProvider`). So removing the root
+   `headers()` read breaks region pricing unless the region is re-sourced per
+   group — and getting that wrong quotes the wrong currency at the point of sale.
+
+### The change, in order
+
+1. `middleware.ts` — branch `buildContentSecurityPolicy` on pathname. Marketing
+   paths get `script-src 'self' 'unsafe-inline'` and **no** nonce; everything
+   else keeps today's string verbatim. Reuse `AUTHED_APP_PATHS` (already shared
+   with `robots.ts`) rather than minting a second path list.
+2. `app/layout.tsx` — drop **both** `headers()` reads (`:48` nonce, `:55` geo)
+   and the `<script src="/theme-init.js" nonce>` tag. Keep fonts, metadata,
+   `<html>`/`<body>`.
+3. `(marketing)/layout.tsx` — render `<script src="/theme-init.js" />`, no
+   nonce. Authorized by `'self'` because marketing has no `strict-dynamic`.
+4. Authed groups — add a server layout above each client shell that reads the
+   nonce and renders `<script src="/theme-init.js" nonce={nonce} />`.
+5. Region — re-source `regionProvider` for the routes that consume it.
+   `/pricing`, `/beta` and `/sign-in` already read `searchParams`, which keeps
+   them dynamic regardless, so `/pricing` can read the geo header itself.
+   `(app)/billing` already does exactly this (`billing/page.tsx:32`) — copy that
+   shape rather than inventing one.
+
+### Verification — all of it, not a sample
+
+- `pnpm --filter @declutrmail/web build`; assert `.next/prerender-manifest.json`
+  lists the marketing routes and `find .next/server/app -name '*.html'` returns
+  them. **The manifest is the authority, not the `○●ƒ` column** (§1).
+- **Browser, both subtrees, both themes:** load a marketing page AND an authed
+  page with the console open; assert **zero CSP violations**. This is the check
+  that would have caught §0's error, and it is the bar the founder set.
+- `curl -I` both subtrees: each must still carry `Content-Security-Policy`,
+  `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`,
+  `Strict-Transport-Security`, `X-Frame-Options`. The app response must contain
+  a nonce; the marketing response must not.
+- Theme resolves with **no flash** in both themes on all three groups — that is
+  the property step 2 puts at risk.
+- `/pricing` still quotes INR from an India-geo request and USD otherwise.
+- `pnpm check:bundle` and the public a11y lane unchanged.
+
+### Do not
+
+- Weaken `(app)`'s CSP in any way. A nonce makes browsers ignore
+  `'unsafe-inline'`, so the subtrees are independent — keep it that way.
+- Add `'unsafe-inline'` to `script-src` anywhere outside `(marketing)`.
+- Resolve `/pricing`'s currency on the client to make it prerenderable. It would
+  flash the wrong price on the page where someone decides to pay.
