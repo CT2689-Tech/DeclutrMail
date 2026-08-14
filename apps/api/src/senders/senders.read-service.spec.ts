@@ -1711,7 +1711,7 @@ describe('SendersReadService', () => {
       });
     });
 
-    // THE INVARIANT THIS BROKE ON (live: sender "Rucha Varma", 2026-07-17).
+    // THE INVARIANT THIS BROKE ON (live: a real sender, 2026-07-17).
     //
     // `monthlyVolume` / `readRate` / `volumeTrend` must mean exactly ONE
     // thing product-wide. The list read rolling last-30d windows off
