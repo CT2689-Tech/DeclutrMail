@@ -26,6 +26,7 @@ import type { CheckoutSession, SubscriptionStatus } from '@declutrmail/shared/co
 import { AppException } from '../common/app-exception.js';
 import type {
   BillingProvider,
+  CancellationFactsCache,
   CreateCheckoutInput,
   FetchSubscriptionResult,
   NormalizedBillingEvent,
@@ -70,6 +71,15 @@ const LIST_PAGE = 100;
 const LIST_MAX_PAGES = 50;
 
 /**
+ * Key for the one account-wide read this adapter memoizes per pass.
+ *
+ * Provider-prefixed because a single `CancellationFactsCache` is handed
+ * to whichever adapter each row belongs to, so the key space is shared
+ * even though nothing else in it is today.
+ */
+const DISPUTES_CACHE_KEY = 'razorpay:/v1/disputes';
+
+/**
  * Dispute phases where the merchant's money is actually at stake.
  * `fraud` (the bank suspects a fraudulent transaction) and `retrieval`
  * (the customer asked their issuer for transaction details) deduct
@@ -79,6 +89,47 @@ const LIST_MAX_PAGES = 50;
  * https://razorpay.com/docs/api/disputes/entity/
  */
 const CHARGEBACK_PHASES = new Set(['chargeback', 'pre_arbitration', 'arbitration']);
+
+/**
+ * Reduce an account-wide dispute listing to this subscription's verdict.
+ *
+ * Pure and list-in, so `providerCancellationFacts` can run it over a
+ * cached snapshot and then again over a fresh read without the two
+ * drifting apart — the re-scan is only trustworthy because it is
+ * literally the same rule.
+ *
+ * `collected` is the subscription's own payment ids: the caller filters
+ * an ACCOUNT list here rather than sharing a verdict, so one row's
+ * chargeback can never end another row's plan.
+ */
+function scanDisputes(
+  disputes: RazorpayDispute[],
+  collected: Map<string, number>,
+): { settledChargeback: boolean; refutedChargeback: boolean } {
+  let settledChargeback = false;
+  let refutedChargeback = false;
+  for (const dispute of disputes) {
+    if (typeof dispute.payment_id !== 'string' || !collected.has(dispute.payment_id)) continue;
+    if (!CHARGEBACK_PHASES.has(dispute.phase ?? '')) continue;
+    if (dispute.status === 'won') {
+      // The bank accepted our documents — a positive contradiction,
+      // exactly like Paddle's `reversed` chargeback.
+      refutedChargeback = true;
+    } else if (dispute.status !== 'closed') {
+      // `open` / `under_review` / `lost` and anything unrecognized: a
+      // live claim against this payment ends the plan, mirroring
+      // Paddle's "not undone ⇒ settled". `closed` is the one status that
+      // is neither — Razorpay documents it as a fraud case resolved
+      // "after you provided either the transaction details or made a
+      // refund", and those two outcomes contradict each other. The
+      // refund case announces itself through the refund list; guessing
+      // between them here would either revoke a customer nobody charged
+      // back or lift a verdict Razorpay never contradicted.
+      settledChargeback = true;
+    }
+  }
+  return { settledChargeback, refutedChargeback };
+}
 
 /** Razorpay subscription entity fields this adapter reads. */
 interface RazorpaySubscription {
@@ -503,6 +554,14 @@ export class RazorpayAdapter implements BillingProvider {
    *      scan; a scan that hits the bound answers `null` rather than
    *      "no chargeback".
    *
+   * Read 3 asks the same account-wide question no matter which
+   * subscription is being checked, so a reconciliation pass over N rows
+   * would re-fetch and re-walk one identical list N times — up to
+   * `VERDICT_PASS_MAX_ROWS` × `LIST_MAX_PAGES` requests inside a job with
+   * a 60s budget shared with the watch pass that follows it. Pass a
+   * `cache` to collapse it to once per pass; omit it and every call reads
+   * fresh, which is what webhook-time callers want.
+   *
    * `null` means the provider could not be asked — never "nothing is
    * settled". A read we could not make is never grounds for an outbound
    * write, and after D253 it is also never grounds for freeing a plan
@@ -510,6 +569,7 @@ export class RazorpayAdapter implements BillingProvider {
    */
   async providerCancellationFacts(
     providerSubscriptionId: string,
+    cache?: CancellationFactsCache,
   ): Promise<ProviderCancellationFacts | null> {
     try {
       const invoices = await this.listCollection<RazorpayInvoice>(
@@ -561,33 +621,51 @@ export class RazorpayAdapter implements BillingProvider {
         }
       }
 
-      const disputes = await this.listCollection<RazorpayDispute>(
-        '/v1/disputes',
-        `disputes sub=${providerSubscriptionId}`,
-      );
+      // Labelled account-wide rather than by subscription because that
+      // is what it is, and because a cached read is shared by rows the
+      // first caller knows nothing about — naming one of them in the log
+      // line would attribute a whole pass's failure to whichever row
+      // happened to go first.
+      const readDisputes = () =>
+        this.listCollection<RazorpayDispute>('/v1/disputes', 'disputes account-wide');
+      const disputes = await (cache
+        ? cache.once(DISPUTES_CACHE_KEY, readDisputes)
+        : readDisputes());
       if (disputes === null) return null;
-      let settledChargeback = false;
-      let refutedChargeback = false;
-      for (const dispute of disputes) {
-        if (typeof dispute.payment_id !== 'string' || !collected.has(dispute.payment_id)) continue;
-        if (!CHARGEBACK_PHASES.has(dispute.phase ?? '')) continue;
-        if (dispute.status === 'won') {
-          // The bank accepted our documents — a positive contradiction,
-          // exactly like Paddle's `reversed` chargeback.
-          refutedChargeback = true;
-        } else if (dispute.status !== 'closed') {
-          // `open` / `under_review` / `lost` and anything unrecognized:
-          // a live claim against this payment ends the plan, mirroring
-          // Paddle's "not undone ⇒ settled". `closed` is the one status
-          // that is neither — Razorpay documents it as a fraud case
-          // resolved "after you provided either the transaction details
-          // or made a refund", and those two outcomes contradict each
-          // other. The refund case announces itself through the refund
-          // list above; guessing between them here would either revoke a
-          // customer nobody charged back or lift a verdict Razorpay
-          // never contradicted.
-          settledChargeback = true;
-        }
+      let { settledChargeback, refutedChargeback } = scanDisputes(disputes, collected);
+
+      // CONFIRM BEFORE THE IRREVERSIBLE ANSWER.
+      //
+      // A cached list is a snapshot taken when the pass's FIRST row ran,
+      // so a chargeback raised mid-pass is invisible to every row after
+      // it. That is harmless for every answer this method gives except
+      // one. `settled: 'refund'` is what lets
+      // `BillingReconciliationService` call `projectRefundSettlement` and
+      // free the workspace's plan slot — and a chargeback outranks a
+      // refund precisely so a disputer never gets that. Serving a stale
+      // "no chargeback" here would re-arm the same payment method for
+      // someone actively disputing us, which is the founder's stated
+      // reason the asymmetry exists (2026-08-13).
+      //
+      // It is not recoverable either. The settlement flips the row to
+      // terminal `canceled`, every other pass selects on
+      // `('active','past_due','paused')` and so loses interest, and the
+      // watch pass is an ALERT that deliberately never resurrects a row
+      // — "a human resolves it". A perf optimisation must not be able to
+      // create a state that needs an operator.
+      //
+      // So the cache serves the scan, and the one answer that can free a
+      // slot is re-read fresh. The extra call happens only when a refund
+      // is actually settling, which is rare and is exactly where
+      // correctness outranks the request count. Worst case — every row
+      // in a pass settling at once — degrades to the per-row read this
+      // cache removed, which is the right way round for that case.
+      if (cache && settledRefund && !settledChargeback) {
+        const fresh = await readDisputes();
+        // Not "no chargeback": a read we could not make is never grounds
+        // for a write, and here the write is the unrecoverable one.
+        if (fresh === null) return null;
+        ({ settledChargeback, refutedChargeback } = scanDisputes(fresh, collected));
       }
 
       return {

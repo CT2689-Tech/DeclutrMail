@@ -13,6 +13,7 @@ import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js'
 import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import {
+  CancellationFactsCache,
   FetchSubscriptionResult,
   ProviderCancellationFacts,
   NormalizedSubscription,
@@ -70,7 +71,10 @@ function fakeAdapter(overrides: {
   fetchSubscription?: (id: string) => Promise<FetchSubscriptionResult>;
   searchSubscriptions?: (query: SubscriptionSearchQuery) => Promise<SubscriptionSearchResult>;
   cancelSubscription?: (id: string) => Promise<void>;
-  providerCancellationFacts?: (id: string) => Promise<ProviderCancellationFacts | null>;
+  providerCancellationFacts?: (
+    id: string,
+    cache?: CancellationFactsCache,
+  ) => Promise<ProviderCancellationFacts | null>;
 }): PaddleAdapter & RazorpayAdapter {
   return {
     fetchSubscription:
@@ -632,6 +636,61 @@ describe('BillingReconciliationService (D249)', () => {
 
     // Stops asking once the breaker trips, rather than walking every row.
     expect(factsCalls).toBe(TRIP_AFTER);
+  });
+
+  // The adapter's own cache tests prove the memo works when a cache is
+  // HANDED to it; only this one proves the service hands it one. Without
+  // it, deleting the argument at the call site leaves every adapter test
+  // green while the account-wide read silently returns to once-per-row.
+  it('hands every row in a pass the same cache, and each pass a new one', async () => {
+    for (let i = 0; i < 3; i += 1) {
+      const [ws] = await db
+        .insert(workspaces)
+        .values({ name: `Cache WS ${i}` })
+        .returning({ id: workspaces.id });
+      await db.insert(subscriptions).values({
+        workspaceId: ws!.id,
+        provider: 'paddle',
+        providerSubscriptionId: `sub_cache_${i}`,
+        tier: 'plus',
+        status: 'active',
+        providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+        billingCycle: 'monthly',
+        currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+        cancelAtPeriodEnd: true,
+        cancelSource: 'refund',
+        entitlementEndsAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      });
+    }
+    const seen: Array<CancellationFactsCache | undefined> = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async (id) => ({
+          kind: 'found',
+          subscription: activePlusSub(id, new Date()),
+        }),
+        providerCancellationFacts: async (_id, cache) => {
+          seen.push(cache);
+          // Not settled and not refuted: the row is left alone, so the
+          // pass walks all three instead of stopping on the first write.
+          return { settled: null, refuted: { refund: false, chargeback: false } };
+        },
+      }),
+    );
+
+    await svc.enforceLocalVerdicts(0);
+    expect(seen).toHaveLength(3);
+    expect(seen[0]).toBeInstanceOf(CancellationFactsCache);
+    // Identity, not equality — a per-row cache would compare equal while
+    // deduplicating nothing.
+    expect(seen[1]).toBe(seen[0]);
+    expect(seen[2]).toBe(seen[0]);
+
+    const firstPass = seen[0];
+    seen.length = 0;
+    await svc.enforceLocalVerdicts(0);
+    // The invalidation boundary: pass two cannot read pass one's answers.
+    expect(seen[0]).not.toBe(firstPass);
   });
 
   // The customer cancels in-app, THEN asks for their money back, and

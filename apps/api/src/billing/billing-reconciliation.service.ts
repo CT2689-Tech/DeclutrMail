@@ -43,10 +43,11 @@ import { pendingCheckouts, subscriptions, users } from '@declutrmail/db';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import type {
-  BillingProvider,
-  NormalizedBillingEvent,
-  NormalizedSubscription,
+import {
+  CancellationFactsCache,
+  type BillingProvider,
+  type NormalizedBillingEvent,
+  type NormalizedSubscription,
 } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
 import { BillingWebhookService, GRANTING_STATUSES } from './billing-webhook.service.js';
@@ -621,6 +622,14 @@ export class BillingReconciliationService {
     let refuted = 0;
     let settled = 0;
     const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
+    // Scoped to THIS pass and never stored on the service. Some provider
+    // reads behind `providerCancellationFacts` are account-wide rather
+    // than per-subscription (Razorpay's disputes list), so without this
+    // the loop below re-asks one identical question per row. Declaring it
+    // here rather than as a field is the whole safety argument: the next
+    // pass cannot see this one's answers, because after this method
+    // returns nothing holds a reference to them.
+    const factsCache = new CancellationFactsCache();
 
     for (const row of rows) {
       if (consecutiveErrors[row.provider] >= DRIFT_SWEEP_TRIP_AFTER) {
@@ -679,6 +688,7 @@ export class BillingReconciliationService {
         // outage is never read as a rejected refund.
         const facts = await this.adapterFor(row.provider).providerCancellationFacts(
           row.providerSubscriptionId,
+          factsCache,
         );
         if (facts === null) {
           // A null here is a READ FAILURE, not "nothing settled" — the
