@@ -1,11 +1,37 @@
-// Security headers + strict nonce-based CSP (D175).
+// Security headers + CSP (D175).
 //
-// Every document request gets a fresh per-request nonce. The CSP is set
-// on BOTH the request headers (so Next.js App Router picks the nonce up
-// and stamps it onto its own framework <script> tags during dynamic
-// rendering — see the root layout's `headers()` call, which forces every
-// route dynamic so prerendered HTML can never ship a stale nonce) and
-// the response headers (what the browser actually enforces).
+// TWO POLICIES, split by pathname (founder ruling 2026-08-14, Option A′
+// — docs/execution/static-marketing-csp-options-2026-08-14.md):
+//
+//   AUTHED (`isAuthedAppPath`) — unchanged strict D175 policy. A fresh
+//     per-request nonce plus 'strict-dynamic'. The nonce is set on BOTH
+//     the request headers (so Next.js App Router stamps it onto its own
+//     framework <script> tags during dynamic rendering — see the
+//     `(app)` / `/onboarding` server layouts' `headers()` calls, which
+//     keep those groups dynamic) and the response headers (what the
+//     browser enforces).
+//
+//   PUBLIC (everything else — the `(marketing)` group, 404, errors) —
+//     `script-src 'self' 'unsafe-inline'`, NO nonce. This is what buys
+//     static prerendering: a page rendered at build time has no request
+//     to mint a nonce from, and its HTML carries ~31 inline framework
+//     scripts (RSC flight data, hydration, timing) that a host-source
+//     like 'self' can never authorize. Prerendering therefore COSTS
+//     'unsafe-inline' on this subtree — it is not merely the loss of
+//     'strict-dynamic'.
+//
+// The two do not leak into each other: a nonce in script-src makes
+// CSP2+ browsers IGNORE 'unsafe-inline', so the authed subtree keeps its
+// full strength no matter what the public one allows.
+//
+// What the public subtree gives up, stated plainly: any inline script
+// present in marketing HTML executes. That HTML is generated at build
+// time from typed content modules — no user input, no query-param
+// reflection, no CMS, no third-party scripts — so an attacker able to
+// inject into it is an attacker who can already edit the bundle. The
+// two marketing pages that DO read per-request state (`/` and
+// `/pricing`, for the D117 billing rail) are dynamic, and neither
+// reflects a URL value into the document.
 //
 // Pattern follows the official Next.js CSP guide:
 // https://nextjs.org/docs/app/guides/content-security-policy
@@ -109,26 +135,36 @@ export interface CspEnv {
 /**
  * Build the D175 policy string for one request. Pure — exported for
  * unit tests; `middleware` below is the only runtime caller.
+ *
+ * `nonce === null` selects the PUBLIC (marketing) policy — see the
+ * "Two policies" note in the header comment.
  */
-export function buildContentSecurityPolicy(nonce: string, env: CspEnv): string {
+export function buildContentSecurityPolicy(nonce: string | null, env: CspEnv): string {
   const apiOrigin = originOf(env.apiUrl);
   const posthogOrigin = originOf(env.posthogHost) ?? 'https://us.i.posthog.com';
   const sentryOrigin = originOf(env.sentryDsn);
 
   const directives = [
     `default-src 'self'`,
-    // 'strict-dynamic' lets the nonced Next.js bootstrap scripts load
-    // the chunk graph. The vendor host entries below are a CSP2-only
+    // AUTHED: 'strict-dynamic' lets the nonced Next.js bootstrap scripts
+    // load the chunk graph. The vendor host entries below are a CSP2-only
     // fallback: under strict-dynamic, CSP3 browsers IGNORE host-source
     // expressions in script-src, so a STATIC third-party <script src>
     // (Paddle.js, Razorpay checkout) is blocked — U13 must load those
-    // via a nonced loader (see the Paddle/Razorpay header note). Dev
-    // needs 'unsafe-eval' for React Refresh / eval source maps (per the
-    // Next.js CSP guide) — production never includes it.
+    // via a nonced loader (see the Paddle/Razorpay header note).
+    //
+    // PUBLIC (nonce === null): 'unsafe-inline' instead, because a
+    // prerendered page has no request to mint a nonce from and its HTML
+    // carries ~31 inline framework scripts (RSC flight data, hydration,
+    // timing) that 'self' cannot authorize. Host-sources DO apply here —
+    // there is no strict-dynamic to make browsers ignore them.
+    //
+    // Dev needs 'unsafe-eval' for React Refresh / eval source maps (per
+    // the Next.js CSP guide) — production never includes it.
     `script-src ${sources(
       `'self'`,
-      `'nonce-${nonce}'`,
-      `'strict-dynamic'`,
+      nonce === null ? `'unsafe-inline'` : `'nonce-${nonce}'`,
+      nonce !== null && `'strict-dynamic'`,
       env.isDev && `'unsafe-eval'`,
       'https://*.paddle.com',
       'https://checkout.razorpay.com',
@@ -215,10 +251,30 @@ export function cspHeaderName(reportOnlyFlag: string | undefined): string {
     : 'Content-Security-Policy';
 }
 
+/**
+ * Is this an authed app document? One predicate, three consumers: which
+ * CSP the response gets, whether a nonce is minted, and the noindex tag.
+ *
+ * `AUTHED_APP_PATHS` (shared with `robots.ts`) is the single list. Prefix
+ * matching means a new subroute inherits the authed policy automatically;
+ * anything unlisted is treated as public, which is the safe default for
+ * the noindex tag and the deliberate one for the CSP (a public page that
+ * accidentally got the strict policy would ship dead HTML once
+ * prerendered — see the header note).
+ */
+export function isAuthedAppPath(pathname: string): boolean {
+  return AUTHED_APP_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 export function middleware(request: NextRequest): NextResponse {
+  const { pathname } = request.nextUrl;
+  const authed = isAuthedAppPath(pathname);
+
   // 128 bits of webcrypto randomness, base64 — the canonical nonce
-  // recipe from the Next.js CSP guide.
-  const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
+  // recipe from the Next.js CSP guide. Authed documents only: the
+  // public subtree is prerendered, so there is no request at render
+  // time to carry a nonce into the HTML.
+  const nonce = authed ? Buffer.from(crypto.randomUUID()).toString('base64') : null;
 
   const csp = buildContentSecurityPolicy(nonce, {
     isDev: process.env.NODE_ENV !== 'production',
@@ -232,9 +288,15 @@ export function middleware(request: NextRequest): NextResponse {
   // Request copy: Next.js reads the nonce out of this header and stamps
   // it on its own inline/framework scripts during SSR. `x-nonce` is the
   // documented channel for app code (next/script tags) to read it.
+  //
+  // Authed documents only. Setting either header on a public request
+  // would be inert at best — nothing under `(marketing)` reads
+  // `headers()`, which is precisely what lets it prerender.
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set('x-nonce', nonce);
-  requestHeaders.set('Content-Security-Policy', csp);
+  if (nonce !== null) {
+    requestHeaders.set('x-nonce', nonce);
+    requestHeaders.set('Content-Security-Policy', csp);
+  }
   // Billing region hint (D117). Vercel geolocates at the edge; the
   // header is ABSENT locally and on any non-Vercel host, so every
   // reader must treat "unknown" as the normal case and fall back to the
@@ -253,8 +315,7 @@ export function middleware(request: NextRequest): NextResponse {
   // an externally linked /triage could still surface in SERPs as a
   // bare "indexed, though blocked" entry. Same path list as robots.ts,
   // one source of truth.
-  const { pathname } = request.nextUrl;
-  if (AUTHED_APP_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+  if (authed) {
     response.headers.set('X-Robots-Tag', 'noindex, nofollow');
   }
   return response;
