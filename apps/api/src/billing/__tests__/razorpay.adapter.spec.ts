@@ -1064,5 +1064,103 @@ describe('RazorpayAdapter.providerCancellationFacts', () => {
       await adapter.providerCancellationFacts(SUBSCRIPTION, new CancellationFactsCache());
       expect(disputeReads(calls)).toBe(2);
     });
+
+    describe('a chargeback raised mid-pass still outranks a settled refund', () => {
+      // The one answer a stale snapshot must never give. `settled:
+      // 'refund'` frees the workspace plan slot, the settlement flips the
+      // row terminal-canceled, and the watch pass deliberately never
+      // resurrects it — so serving a cached "no chargeback" here re-arms
+      // the payment method of someone actively disputing us, permanently
+      // and with no automated recovery.
+
+      /**
+       * A pass shaped like the real thing: `SUBSCRIPTION_B` has no
+       * refund, so it only takes the snapshot; `SUBSCRIPTION` has a
+       * settled full refund, so it is the row that can free a slot. The
+       * disputes listing is clean on the FIRST walk and holds a live
+       * chargeback on every walk after it — filed after the snapshot.
+       *
+       * `laterWalksFail` swaps the chargeback for a 500, to check the
+       * unreadable-confirm path.
+       */
+      function stubChargebackAfterSnapshot(laterWalksFail = false): string[] {
+        const calls: string[] = [];
+        let disputeWalks = 0;
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(async (url: string | URL) => {
+            const href = String(url);
+            calls.push(href);
+            const skip = Number(new URL(href).searchParams.get('skip') ?? '0');
+            const page = (rows: unknown[]) =>
+              new Response(JSON.stringify({ items: skip === 0 ? rows : [] }), { status: 200 });
+            if (href.includes('/v1/invoices'))
+              return page([href.includes(SUBSCRIPTION_B) ? invoiceB : invoice]);
+            // Only the settling subscription's payment carries a refund.
+            if (href.includes(`/v1/payments/${PAYMENT}/refunds`))
+              return page([refund('processed')]);
+            if (href.includes('/refunds')) return page([]);
+            if (skip === 0) disputeWalks += 1;
+            if (disputeWalks <= 1) return page([]);
+            if (laterWalksFail) return new Response('nope', { status: 500 });
+            return page([dispute('open', 'chargeback', PAYMENT)]);
+          }),
+        );
+        return calls;
+      }
+
+      it('re-reads before reporting a settled refund, and reports the chargeback', async () => {
+        const calls = stubChargebackAfterSnapshot();
+        const adapter = makeAdapter(env);
+        const cache = new CancellationFactsCache();
+        // An earlier, non-settling row walks the account list while it is
+        // still clean — this is what puts the stale snapshot in the cache.
+        expect(await adapter.providerCancellationFacts(SUBSCRIPTION_B, cache)).toEqual(NONE);
+        expect(disputeReads(calls)).toBe(1);
+
+        expect(await adapter.providerCancellationFacts(SUBSCRIPTION, cache)).toEqual({
+          settled: 'chargeback',
+          refuted: { refund: false, chargeback: false },
+        });
+        // Snapshot + the confirming re-read. Without the confirm this
+        // stays 1 and the answer is the slot-freeing `settled: 'refund'`.
+        expect(disputeReads(calls)).toBe(2);
+      });
+
+      it('an unreadable confirming re-read answers null, never "refund"', async () => {
+        // A read we could not make is never grounds for a write, and this
+        // is the write that needs a human to undo.
+        const calls = stubChargebackAfterSnapshot(true);
+        const adapter = makeAdapter(env);
+        const cache = new CancellationFactsCache();
+        expect(await adapter.providerCancellationFacts(SUBSCRIPTION_B, cache)).toEqual(NONE);
+        expect(await adapter.providerCancellationFacts(SUBSCRIPTION, cache)).toBeNull();
+        expect(disputeReads(calls)).toBe(2);
+      });
+
+      it('no settled refund ⇒ no confirming re-read — the dedup still holds', async () => {
+        // The confirm is scoped to the one dangerous answer. Every other
+        // row in a pass must still cost zero extra requests, or the fix
+        // has quietly undone the optimisation it is guarding.
+        const calls = stubTwoSubscriptions([]);
+        const adapter = makeAdapter(env);
+        const cache = new CancellationFactsCache();
+        expect(await adapter.providerCancellationFacts(SUBSCRIPTION, cache)).toEqual(NONE);
+        expect(await adapter.providerCancellationFacts(SUBSCRIPTION_B, cache)).toEqual(NONE);
+        expect(disputeReads(calls)).toBe(1);
+      });
+
+      it('without a cache there is no snapshot, so no confirming re-read', async () => {
+        // The uncached path already reads fresh per row; adding a second
+        // read there would be pure waste.
+        const calls = stubChargebackAfterSnapshot();
+        const adapter = makeAdapter(env);
+        expect(await adapter.providerCancellationFacts(SUBSCRIPTION)).toEqual({
+          settled: 'refund',
+          refuted: { refund: false, chargeback: false },
+        });
+        expect(disputeReads(calls)).toBe(1);
+      });
+    });
   });
 });

@@ -280,6 +280,17 @@ export interface ProviderCancellationFacts {
  * `(id: string)` method here, which is why Paddle needs no no-op path.
  * Passing no cache is always correct and always fresh — that is the
  * shape webhook-time callers get.
+ *
+ * RULE FOR ANY ADAPTER THAT USES THIS. A snapshot is taken when the
+ * pass's first row runs, so it cannot see anything that happened during
+ * the pass. That is fine for every answer EXCEPT one: an adapter must
+ * never report `settled: 'refund'` off a cached read alone. That answer
+ * lets the caller free the workspace's plan slot, the settlement is
+ * terminal, and the watch pass deliberately never resurrects the row —
+ * so a stale "no chargeback" re-arms a disputing customer permanently,
+ * with only an operator able to undo it. Re-read fresh before giving it
+ * (`RazorpayAdapter.providerCancellationFacts` is the worked example).
+ * The cost lands only on rows that are actually settling.
  */
 export class CancellationFactsCache {
   private readonly reads = new Map<string, Promise<unknown>>();
