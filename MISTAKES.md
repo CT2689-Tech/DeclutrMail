@@ -21,6 +21,53 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-13 — A cache widened the window on a read gating an irreversible write
+
+**PR:** [#519](https://github.com/CT2689-Tech/DeclutrMail/pull/519) (caught pre-merge)
+
+**Caught by:** Codex stop-time review
+
+**What happened:** I deduplicated Razorpay's account-wide `/v1/disputes`
+walk with a per-pass cache — a straightforward, well-scoped performance
+fix for a real O(N×50) request storm. What I did not carry through was
+what one of the cached answers is *used for*. The disputes read decides
+`settledChargeback`, and `settled: 'refund'` (which only holds when no
+chargeback was found) is what lets `enforceLocalVerdicts` free the
+workspace's plan slot. A cached snapshot is taken when the pass's first
+row runs, so a chargeback filed mid-pass was invisible to every row
+after it — meaning a customer with a live chargeback could have had
+their plan slot released and repurchased immediately. That is the exact
+outcome D253's refund/chargeback asymmetry exists to prevent, and it is
+unrecoverable: the settlement flips the row terminal `canceled`, every
+other pass stops selecting it, and `watchSettledRefunds` deliberately
+never resurrects a row ("a human resolves it").
+
+I had reasoned carefully about the cache's *lifetime* (scope-bound, no
+clock, no cross-pass staleness) and wrote three paragraphs defending it.
+I never asked the different question: **within** one pass, is every
+cached answer still safe to act on? The staleness I had bounded was
+across passes; the harm was inside one.
+
+**Correct approach:** before caching a read, classify what each answer
+it feeds can *cause*. Any answer that gates an irreversible or
+operator-only-recoverable write must be confirmed against a fresh read,
+regardless of how narrow the staleness window looks. Here that meant
+serving the snapshot for everything except `settled: 'refund'`, which
+re-reads fresh — so the cost lands only on rows actually settling.
+
+**Rule:** A cache may serve any answer EXCEPT one that gates an
+irreversible write; confirm that one fresh. "The window is only 60
+seconds" is not a safety argument when the wrong side of the race needs
+a human to undo.
+
+**Enforcement update:** Rule recorded on `CancellationFactsCache` in
+`billing-provider.interface.ts` so any future adapter using it inherits
+the constraint, with `RazorpayAdapter.providerCancellationFacts` named
+as the worked example. Regression test asserts the race resolves to
+`chargeback`; verified it returns `refund` when the confirm is disabled.
+No hook — this is a reasoning failure, not a pattern grep can see.
+Candidate for CLAUDE.md §2 if it recurs.
+
 ## 2026-08-13 — I named a starvation bug in a comment, then shipped it
 
 **PR:** D253 branch `fix/d253-refund-repurchase-lockout` (pre-merge)
