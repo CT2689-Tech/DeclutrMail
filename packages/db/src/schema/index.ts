@@ -9,6 +9,7 @@ export * from './billing-customers';
 export * from './brief-runs';
 export * from './cron-runs';
 export * from './dead-letter-jobs';
+export * from './domain-icons';
 export * from './followup-tracker';
 export * from './mail-messages';
 export * from './mailbox-accounts';

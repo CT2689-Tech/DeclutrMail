@@ -45,6 +45,18 @@ export const FLAG_MANIFEST = {
       'mailboxes). Off: the manual "Load more senders" button is the ' +
       'only pagination affordance (it stays rendered either way).',
   },
+  brandLogos: {
+    default: false,
+    description:
+      'Brand logos on sender avatars, served from the first-party icon ' +
+      'cache (ADR-0034). Off: `Avatar` renders the ADR-0024 monogram ' +
+      'only and makes no request at all — no /api/icons call, no <img>, ' +
+      'so the surface is byte-identical to pre-ADR-0034. On: the ' +
+      'monogram still renders as the base layer and a logo fades over ' +
+      'it when one is cached. Default off until BIMI coverage and the ' +
+      'unverified-VMC question are settled on real data ' +
+      '(FOUNDER-FOLLOWUPS 2026-08-14).',
+  },
   gmailDeeplinkSearchFallback: {
     default: false,
     description:

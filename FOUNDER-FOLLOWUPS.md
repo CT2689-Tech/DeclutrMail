@@ -26,6 +26,68 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-14 — Regenerate `atlas.sum` for migration 0056
+**Source:** session — ADR-0034 brand icon cache (migration
+`0056_domain_icons.sql`).
+**Why:** The migration is written, applies cleanly, and round-trips
+(forward → rollback → forward verified against real Postgres 16 and in
+the PGlite round-trip test). What is missing is its `atlas.sum` entry.
+Atlas validates that checksum file before doing anything, so
+`migration-lint` in CI will fail with a checksum mismatch until it is
+regenerated — a red check that is bookkeeping, not a schema problem.
+
+I could not do it here: the Atlas CLI is not installed in this
+container and its installer is blocked by the sandbox's egress proxy
+(403). Hand-writing the file was the wrong trade — Atlas's directory
+hash is not a plain sha256 of the file bytes, and a subtly wrong
+checksum that still *looks* valid fails far more confusingly than a
+missing one.
+
+**How:** With Atlas installed locally (`brew install ariga/tap/atlas`):
+```
+cd packages/db && atlas migrate hash --dir 'file://migrations'
+```
+then commit the updated `migrations/atlas.sum`.
+**Verifies by:** The `migration-lint` check on the PR goes green.
+**Status:** Open
+
+### 2026-08-14 — Decide the unverified-VMC question before `brandLogos` goes on
+**Source:** session — ADR-0034 brand icon cache (BIMI-first logos).
+**Why:** BIMI logos are self-published. A domain puts a TXT record in its
+own DNS pointing at its own artwork, and we fetch it. Nothing in Phase 1
+proves the publisher owns the trademark, because verifying the VMC (the
+`a=` certificate) means chain-validating against the BIMI CA trust list —
+real scope, deliberately not built yet.
+
+The consequence is concrete: `chase-security-alerts.example` can publish
+Chase's mark, and we would render it beside that sender. That lends
+DeclutrMail's UI credibility to a lookalike domain, which is a
+phishing-assist risk. It is exactly why Gmail requires a verified VMC
+before showing a BIMI logo.
+
+Two things bound it today and neither is a substitute for verification:
+we only ever consult a domain the user already receives mail from, and
+the avatar always renders beside the sender's real domain text. The
+resolver additionally requires an `a=` tag to be present, but that is a
+shape check an attacker satisfies with any URL — not authentication.
+
+This is why `brandLogos` ships defaulted OFF. The code is complete and
+tested; what is missing is your call on the risk.
+
+**How:** Pick one:
+  1. **Verify VMCs** — build the certificate-chain check as a follow-up
+     PR, then default the flag on. Highest confidence, most work.
+  2. **Accept the risk** — flip `NEXT_PUBLIC_DM_FLAG_BRAND_LOGOS=true` in
+     Vercel and redeploy, on the reasoning that the mark is decorative
+     and the domain is always visible next to it.
+  3. **Restrict the surface** — show logos only where no trust decision
+     is being made, and never in Screener (first-contact senders, where a
+     lookalike is most likely and most costly).
+**Verifies by:** A decision recorded here, and — for (1) or (3) — the
+follow-up PR that implements it. For (2), logos visible on the Senders
+grid with the flag on in production.
+**Status:** Open
+
 ### 2026-08-13 — Nothing surfaces refunded-vs-cancelled churn
 **Source:** founder question during the D253 refund-lockout design, 2026-08-13 —
 *"How can we get stats on how many customers we have refunded vs just
