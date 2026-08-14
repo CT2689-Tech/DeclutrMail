@@ -1,8 +1,14 @@
 # Static marketing rendering vs the nonce CSP — a decision for the founder
 
-**Date:** 2026-08-14 · **Status:** options memo, nothing applied
-**Needs:** a founder ruling. Changing this touches CSP, which CLAUDE.md §9
-lists as a stop condition.
+**Date:** 2026-08-14 · **Status:** **RULED — Option A approved (founder,
+2026-08-14).** Implementation pending; §1's measured facts and §5's verification
+plan remain the contract.
+
+**The ruling, in full.** The `(marketing)` subtree may run **without**
+`strict-dynamic`, using `'self'` + a hash for `/theme-init.js`. `(app)` keeps
+the strict nonce CSP **unchanged**. `/pricing` **stays dynamic** so its INR/USD
+region pricing stays correct. Options B and C below are retained as decision
+history — do not implement them.
 **Relates to:** D175 (strict nonce CSP), D160 (Lighthouse ≥90 on marketing),
 D128 (canonical origin)
 

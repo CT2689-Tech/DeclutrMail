@@ -26,6 +26,24 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-14 — Look at the real Paddle checkout overlay once
+**Source:** founder relayed Paddle support reply (Barbara), 2026-08-14
+**Why:** the seller display name is updated in Account Settings — that half is
+done. But the reply is hedged, not a guarantee: the checkout overlay's *"Your
+data will be shared with…"* line _"should use the display name where available,
+but **some checkout surfaces may still fall back to the legal or account name**
+depending on the checkout version/configuration."_ The legal entity is
+deliberately staying `NAYANA ASHOK THAKKAR` (DeclutrMail is a trading name with
+no separately registered entity), so the fallback path puts a personal name in
+front of a buyer at the moment of payment. Nothing in this repo can observe
+which branch Paddle takes.
+**How:** open a real checkout from `/pricing` (the live Plus path, or sandbox)
+and read the overlay's data-sharing line and the payment sheet. If it says
+`NAYANA ASHOK THAKKAR`, reply on the same thread quoting that sentence back and
+ask which checkout version uses the display name.
+**Verifies by:** the overlay reads `DeclutrMail`, not a personal name.
+**Status:** Open — account details confirmed; the rendered overlay is untested.
+
 ### 2026-08-14 — Rule on static marketing rendering vs the nonce CSP
 **Source:** session (website launch-readiness pass)
 **Why:** not one HTML page is prerendered — `.next/prerender-manifest.json`
@@ -49,8 +67,12 @@ pick another option, or say no.
 **Verifies by:** §5 of that memo — the prerender manifest lists the marketing
 routes, both subtrees still carry the full security-header set, and a marketing
 page loads with zero CSP violations in the console.
-**Status:** Open — blocks the Lighthouse half of D160, which would otherwise
-encode a baseline this decision is about to change.
+**Status:** RULED 2026-08-14 — **Option A approved.** The `(marketing)` subtree
+may run without `strict-dynamic`, using `'self'` + a hash for `/theme-init.js`;
+`(app)` keeps the strict nonce CSP unchanged; `/pricing` stays dynamic so its
+INR/USD region pricing stays correct. Implementation tracked separately; this
+entry closes when the prerender manifest lists the marketing routes and both
+subtrees still carry the full security-header set (memo §5).
 
 ### 2026-08-14 — `hello@declutrmail.com` is published on /pricing and routes nowhere
 **Source:** session (website launch-readiness pass)
@@ -63,7 +85,9 @@ accept mail and drop it unless an alias exists.
 change that one constant to `support@` and drop the third address.
 **Verifies by:** a test send to `hello@declutrmail.com` arrives, or the string
 no longer appears in `apps/web/src`.
-**Status:** Open
+**Status:** Done 2026-08-14 — founder chose `support@`. `rg 'hello@declutrmail'`
+over `apps/web/src` returns nothing; the Enterprise mailto now points at the
+delivery-tested address. No new mailbox needed.
 
 ### 2026-08-14 — Recertify the Google OAuth verification before 21 Apr 2027
 **Source:** session (website launch-readiness pass)
@@ -572,7 +596,12 @@ Note the 60-char figure is a rule of thumb — Google renders ~580px, and glyph 
 so an ADR should say what it actually measures.
 **Verifies by:** `/blog` title reflects the decision; if (c), an ADR exists in `docs/adr/`
 and the assertion is restored citing it.
-**Status:** Open
+**Status:** Done 2026-08-14 — founder chose **(a)**: accept the truncation, keep
+the locked D250 string. No code change, and deliberately **no CI title-length
+assertion** — without a ratified budget that would be an agent-minted constraint
+(§11), which is why the earlier attempt was reverted. `/blog` is a single
+outlier; every other public title sits at 42–58 chars. Descriptions are a
+separate matter and were trimmed to ≤160 in #521.
 
 ### 2026-08-05 — Six marketing meta descriptions exceed 160 characters
 **Source:** SEO pass during PR #470
