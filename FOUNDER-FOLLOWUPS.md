@@ -465,38 +465,6 @@ The latency win is real, but it requires **both** the subscription and adapter c
 
 **Status:** Open — nice-to-have, not a blocker; superseded in practice by D253's faster verdict cadence
 
-### 2026-08-12 — A refunded customer is locked out of paying you again
-
-**Source:** session 2026-08-12, found while planning the live refund verification (the stop-time review caught a recommendation that would have done this to a real payer)
-
-**Why:** three individually-correct behaviours compose into a state nobody chose.
-
-- `apps/api/src/billing/billing-webhook.service.ts:833` — a FULL refund sets `entitlement_ends_at` to SQL `now()`, so access ends **immediately**, not at period end
-- the row nonetheless stays `status='active'` until the paid period elapses
-- `apps/api/src/billing/billing.service.ts:89-107` — checkout refuses `SUBSCRIPTION_EXISTS` for any row in `('active','past_due','paused')`
-- `apps/api/src/billing/billing.service.ts:465` — `resume-cancellation` refuses `CANCELLATION_NOT_REVOCABLE` when `cancel_source='refund'`
-
-Net effect: a refunded customer loses their plan instantly **and cannot buy it again until the period they already paid for runs out** — up to a month on monthly, up to a **year on annual**. No in-app path back. The only recovery is an operator holding the Paddle API key.
-
-Each piece has a documented rationale and each is right on its own. The composition was never decided. This is the "cancel is a one-way door" class (Done 2026-07-31) recurring in the shape that fix deliberately excluded: it made the USER's own cancel revocable and correctly left refund-cancels irrevocable — but nothing re-opened the *purchase* door behind them.
-
-It is also a revenue path, not only a trust one. A goodwill full refund is an ordinary support gesture, and today it makes that customer unable to pay again for the rest of the period.
-
-**Do not "just loosen the checkout guard".** That was this entry's first recommendation and it is strictly worse than the bug. `subscriptions_one_live_per_workspace` is live in production — `UNIQUE (workspace_id) WHERE status IN ('active','past_due')` (migration `0051_billing_reconciliation.sql:72`, confirmed present in the prod database 2026-08-12). A refunded row sits in `active`. Let checkout through while it is still there and the customer pays, `subscription.created` tries to insert a second `active` row for the same workspace, the index rejects it, and the webhook retries forever: **charged, no entitlement.** That is the identical failure this file already worked through for the paused-row sibling case — "the customer is charged while our DB refuses to record it. Strictly worse than no index." Trading "cannot buy" for "buys and receives nothing" is not a fix.
-
-The guard and the index key on the same thing (`status`), so any real fix has to move the row's *status*, not special-case one of the two readers. Note the tempting shortcut is impossible: the lapsed-entitlement condition cannot go into the index predicate, because Postgres requires index predicates to be IMMUTABLE and `now()` is not.
-
-**How:** decide the intended behaviour, then —
-
-(a) **Safe now, incomplete:** leave both guard and index alone and fix the message — tell the user the date they can subscribe again rather than a bare `SUBSCRIPTION_EXISTS`. Costs nothing, removes the confusion, leaves the customer still unable to pay.
-(b) **The real fix, needs design:** transition a refunded row out of `active` once entitlement lapses, so guard and index agree it is no longer live. The hazard to design against is provider reconciliation — Paddle reports the subscription `active` with `scheduled_change: cancel` until the period ends, so the 6-hourly sweep can flip a locally-terminal row back to `active`. If it does that *after* the customer has re-subscribed, the sweep's own write is the one that violates the index. Whatever shape this takes needs the sweep and the projector to share one definition of "live", rather than the sweep mirroring the provider while the guard reads a local column.
-
-Recommend shipping (a) immediately and scheduling (b). Billing BE change, so §9 stop-condition review applies to both.
-
-**Verifies by:** (a) a refunded workspace hitting checkout sees a message naming the date, not `SUBSCRIPTION_EXISTS`. (b) on a workspace whose only subscription is a fully-refunded row with lapsed entitlement, `POST /api/billing/checkout` returns a checkout, the resulting `subscription.created` **inserts without violating `subscriptions_one_live_per_workspace`**, and a reconciliation sweep run immediately afterwards does not resurrect the old row or fail its own write. A still-entitled active row must still refuse.
-
-**Status:** Open
-
 ### 2026-07-31 — Verify production billing with one real purchase (founder decision: yes)
 
 **Source:** session 2026-07-31 (founder chose "one real purchase, then refund")
@@ -1498,6 +1466,38 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-08-12 — A refunded customer is locked out of paying you again
+
+**Source:** session 2026-08-12, found while planning the live refund verification (the stop-time review caught a recommendation that would have done this to a real payer)
+
+**Why:** three individually-correct behaviours compose into a state nobody chose.
+
+- `apps/api/src/billing/billing-webhook.service.ts:833` — a FULL refund sets `entitlement_ends_at` to SQL `now()`, so access ends **immediately**, not at period end
+- the row nonetheless stays `status='active'` until the paid period elapses
+- `apps/api/src/billing/billing.service.ts:89-107` — checkout refuses `SUBSCRIPTION_EXISTS` for any row in `('active','past_due','paused')`
+- `apps/api/src/billing/billing.service.ts:465` — `resume-cancellation` refuses `CANCELLATION_NOT_REVOCABLE` when `cancel_source='refund'`
+
+Net effect: a refunded customer loses their plan instantly **and cannot buy it again until the period they already paid for runs out** — up to a month on monthly, up to a **year on annual**. No in-app path back. The only recovery is an operator holding the Paddle API key.
+
+Each piece has a documented rationale and each is right on its own. The composition was never decided. This is the "cancel is a one-way door" class (Done 2026-07-31) recurring in the shape that fix deliberately excluded: it made the USER's own cancel revocable and correctly left refund-cancels irrevocable — but nothing re-opened the *purchase* door behind them.
+
+It is also a revenue path, not only a trust one. A goodwill full refund is an ordinary support gesture, and today it makes that customer unable to pay again for the rest of the period.
+
+**Do not "just loosen the checkout guard".** That was this entry's first recommendation and it is strictly worse than the bug. `subscriptions_one_live_per_workspace` is live in production — `UNIQUE (workspace_id) WHERE status IN ('active','past_due')` (migration `0051_billing_reconciliation.sql:72`, confirmed present in the prod database 2026-08-12). A refunded row sits in `active`. Let checkout through while it is still there and the customer pays, `subscription.created` tries to insert a second `active` row for the same workspace, the index rejects it, and the webhook retries forever: **charged, no entitlement.** That is the identical failure this file already worked through for the paused-row sibling case — "the customer is charged while our DB refuses to record it. Strictly worse than no index." Trading "cannot buy" for "buys and receives nothing" is not a fix.
+
+The guard and the index key on the same thing (`status`), so any real fix has to move the row's *status*, not special-case one of the two readers. Note the tempting shortcut is impossible: the lapsed-entitlement condition cannot go into the index predicate, because Postgres requires index predicates to be IMMUTABLE and `now()` is not.
+
+**How:** decide the intended behaviour, then —
+
+(a) **Safe now, incomplete:** leave both guard and index alone and fix the message — tell the user the date they can subscribe again rather than a bare `SUBSCRIPTION_EXISTS`. Costs nothing, removes the confusion, leaves the customer still unable to pay.
+(b) **The real fix, needs design:** transition a refunded row out of `active` once entitlement lapses, so guard and index agree it is no longer live. The hazard to design against is provider reconciliation — Paddle reports the subscription `active` with `scheduled_change: cancel` until the period ends, so the 6-hourly sweep can flip a locally-terminal row back to `active`. If it does that *after* the customer has re-subscribed, the sweep's own write is the one that violates the index. Whatever shape this takes needs the sweep and the projector to share one definition of "live", rather than the sweep mirroring the provider while the guard reads a local column.
+
+Recommend shipping (a) immediately and scheduling (b). Billing BE change, so §9 stop-condition review applies to both.
+
+**Verifies by:** (a) a refunded workspace hitting checkout sees a message naming the date, not `SUBSCRIPTION_EXISTS`. (b) on a workspace whose only subscription is a fully-refunded row with lapsed entitlement, `POST /api/billing/checkout` returns a checkout, the resulting `subscription.created` **inserts without violating `subscriptions_one_live_per_workspace`**, and a reconciliation sweep run immediately afterwards does not resurrect the old row or fail its own write. A still-entitled active row must still refuse.
+
+**Status:** Done 2026-08-14 — shipped as (b) in PR #518. One definition of live is now written down in `docs/adr/0033-one-definition-of-live-subscription.md`: a refunded row leaves `active` only once the provider confirms the refund settled, so the checkout guard, `subscriptions_one_live_per_workspace`, and the reconciliation sweep all read the same predicate and the sweep can no longer resurrect the row behind a repurchase. (a) shipped alongside it as `SUBSCRIPTION_REFUND_SETTLING` — the checkout now says the refund is being confirmed instead of the false `SUBSCRIPTION_EXISTS`. A settled **chargeback** deliberately still does not unlock early. The won-dispute case is split out as its own Open entry above.
 
 ### 2026-07-31 — Cancel is a one-way door: no in-app path back, and D118's pause offer was never built
 
