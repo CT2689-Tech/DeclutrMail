@@ -23,7 +23,9 @@ export const MARKETING_PATHS = [
   '/beta',
   '/compare',
   ...COMPARISONS.map((comparison) => `/vs/${comparison.slug}` as const),
+  '/how-to',
   ...HOW_TO_SLUGS.map((slug) => `/how-to/${slug}` as const),
+  '/answers',
   ...ANSWER_SLUGS.map((slug) => `/answers/${slug}` as const),
   '/blog',
   ...BLOG_SLUGS.map((slug) => `/blog/${slug}` as const),
@@ -46,9 +48,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority:
       path === '/'
         ? 1
-        : ['/how-it-works', '/inbox-simulator', '/methodology', '/pricing', '/compare'].includes(
-              path,
-            )
+        : [
+              '/how-it-works',
+              '/inbox-simulator',
+              '/methodology',
+              '/pricing',
+              '/compare',
+              '/how-to',
+              '/answers',
+            ].includes(path)
           ? 0.8
           : 0.6,
   }));

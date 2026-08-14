@@ -23,8 +23,9 @@ export function publicPageForPath(pathname: string | null): PublicPage | null {
   if (pathname === '/methodology') return 'methodology';
   if (pathname === '/compare') return 'compare';
   if (pathname.startsWith('/vs/')) return 'comparison';
-  if (pathname.startsWith('/how-to/')) return 'how_to';
-  if (pathname.startsWith('/answers/')) return 'answer';
+  // The cluster hub belongs to its cluster's family, as `/blog` does below.
+  if (pathname === '/how-to' || pathname.startsWith('/how-to/')) return 'how_to';
+  if (pathname === '/answers' || pathname.startsWith('/answers/')) return 'answer';
   if (pathname === '/blog' || pathname.startsWith('/blog/')) return 'blog';
   if (pathname === '/changelog') return 'changelog';
   if (pathname === '/faq') return 'faq';

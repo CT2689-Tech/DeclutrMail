@@ -26,15 +26,41 @@ export function marketingPageMetadata({
   title,
   description,
   path,
+  markdownAlternate,
+  routeOwnCard = false,
 }: {
   title: string;
   description: string;
   path: string;
+  /**
+   * Set when the route has its own co-located `opengraph-image.tsx`.
+   *
+   * That file's URL is NOT `/<route>/opengraph-image`: Next appends a
+   * build-time suffix and a cache-busting query
+   * (`/inbox-simulator/opengraph-image-13uu0c?083db155e168ad19`), so a
+   * hand-pinned path 404s — verified 2026-08-13. What Next does do is
+   * attach the co-located card to og:image AND twitter:image by itself,
+   * for this segment only, even though this helper declares `openGraph`.
+   * So the correct move is to omit the images here and let the file
+   * convention win. The default card still has to be pinned for every
+   * other page, because the ROOT card is only auto-attached to routes
+   * that declare no `openGraph` at all.
+   */
+  routeOwnCard?: boolean;
+  /**
+   * A plain-text representation of this page for answer engines, linked as
+   * `<link rel="alternate" type="text/markdown">`. Discovery only — the
+   * HTML page stays canonical, and the alternate is not indexed separately.
+   */
+  markdownAlternate?: string;
 }): Metadata {
   return {
     title: { absolute: title },
     description,
-    alternates: { canonical: path },
+    alternates: {
+      canonical: path,
+      ...(markdownAlternate ? { types: { 'text/markdown': markdownAlternate } } : {}),
+    },
     openGraph: {
       title,
       description,
@@ -42,13 +68,13 @@ export function marketingPageMetadata({
       siteName: 'DeclutrMail',
       type: 'website',
       locale: 'en_US',
-      images: [OG_IMAGE],
+      ...(routeOwnCard ? {} : { images: [OG_IMAGE] }),
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
-      images: [{ url: OG_IMAGE.url, alt: OG_IMAGE.alt }],
+      ...(routeOwnCard ? {} : { images: [{ url: OG_IMAGE.url, alt: OG_IMAGE.alt }] }),
     },
   };
 }

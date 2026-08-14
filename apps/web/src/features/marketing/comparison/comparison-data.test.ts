@@ -2,19 +2,25 @@ import { describe, expect, it } from 'vitest';
 
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
-import { COMPARISONS, COMPARISON_VERIFIED_LABEL, comparisonBySlug } from './comparison-data';
+import {
+  COMPARISONS,
+  COMPARISONS_VERIFIED_FLOOR_ISO,
+  comparisonBySlug,
+  comparisonVerifiedLabel,
+} from './comparison-data';
 
 const EXPECTED_SLUGS = [
   'clean-email',
   'trimbox',
   'sanebox',
   'leave-me-alone',
+  'unroll-me',
   'gmail-filters',
   'gmail',
 ];
 
 describe('comparison data', () => {
-  it('publishes exactly the six requested, statically addressable comparisons', () => {
+  it('publishes exactly the requested, statically addressable comparisons', () => {
     expect(COMPARISONS.map((comparison) => comparison.slug)).toEqual(EXPECTED_SLUGS);
     for (const slug of EXPECTED_SLUGS) {
       expect(comparisonBySlug(slug)?.rows.length).toBeGreaterThanOrEqual(8);
@@ -37,6 +43,10 @@ describe('comparison data', () => {
       'www.trimbox.io',
       'www.sanebox.com',
       'leavemealone.com',
+      'unroll.me',
+      // The regulator's own release, for the one claim no vendor page makes
+      // about itself.
+      'www.ftc.gov',
       'support.google.com',
     ]);
 
@@ -79,6 +89,37 @@ describe('comparison data', () => {
       expect(point).toBeTruthy();
       expect(copy).toContain(`$${(point?.usdCents ?? 0) / 100}`);
     }
-    expect(COMPARISON_VERIFIED_LABEL).toBe('Last verified July 2026');
+  });
+
+  it('stamps each page with its own verification date and the hub with the oldest', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    for (const comparison of COMPARISONS) {
+      expect(comparison.verifiedIso).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // A freshness claim in the future is a claim nobody made.
+      expect(comparison.verifiedIso <= today).toBe(true);
+      expect(COMPARISONS_VERIFIED_FLOOR_ISO <= comparison.verifiedIso).toBe(true);
+    }
+    expect(comparisonVerifiedLabel('2026-07-11')).toBe('Last verified July 2026');
+    expect(comparisonVerifiedLabel(comparisonBySlug('unroll-me')!.verifiedIso)).toBe(
+      'Last verified August 2026',
+    );
+  });
+
+  it('keeps the Unroll.Me funding and enforcement claims tied to their own sources', () => {
+    const unrollMe = comparisonBySlug('unroll-me')!;
+    const hosts = unrollMe.sources.map((source) => new URL(source.url).hostname);
+    expect(hosts).toContain('unroll.me');
+    expect(hosts).toContain('www.ftc.gov');
+
+    const funding = unrollMe.rows.find((row) => row.label === 'How the product is funded');
+    // The vendor says this about itself; we quote rather than characterize.
+    expect(funding?.competitor.detail).toContain('market research business, NielsenIQ');
+
+    const history = unrollMe.rows.find((row) => row.label === 'Disclosure history');
+    // "Alleged" is the FTC's own framing of a settled complaint. Stating it
+    // as proven fact would be the exact misrepresentation this row is about.
+    expect(history?.competitor.detail).toMatch(/alleged/i);
+    expect(history?.declutrMail.detail).toMatch(/absence of a record/i);
+    expect(JSON.stringify(unrollMe)).not.toMatch(/\bsteals?\b|\bspyware\b|\bscam\b/i);
   });
 });

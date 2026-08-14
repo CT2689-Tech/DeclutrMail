@@ -12,6 +12,8 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
   'why-cleanup-starts-with-senders': {
     slug: 'why-cleanup-starts-with-senders',
     path: '/blog/why-cleanup-starts-with-senders',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-07-14',
     kind: 'Launch essay',
     eyebrow: 'Product thesis · attention over volume',
     title: 'Why email cleanup should start with senders',
@@ -127,6 +129,8 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
   'metadata-only-is-a-design-constraint': {
     slug: 'metadata-only-is-a-design-constraint',
     path: '/blog/metadata-only-is-a-design-constraint',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-07-14',
     kind: 'Launch essay',
     eyebrow: 'Privacy engineering · capability follows data',
     title: 'Metadata-only should be a design constraint',
@@ -217,6 +221,8 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
   'reversible-does-not-mean-risk-free': {
     slug: 'reversible-does-not-mean-risk-free',
     path: '/blog/reversible-does-not-mean-risk-free',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-07-14',
     kind: 'Launch essay',
     eyebrow: 'Trust design · previews before recovery',
     title: 'Reversible does not mean risk-free',

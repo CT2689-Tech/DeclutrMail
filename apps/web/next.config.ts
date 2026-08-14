@@ -1,17 +1,18 @@
 import type { NextConfig } from 'next';
 import { withSentryConfig } from '@sentry/nextjs';
 
-import { legacyDomainRedirects } from './src/lib/legacy-domain-redirects';
+import { legacyDomainRedirects, wwwApexRedirects } from './src/lib/legacy-domain-redirects';
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@declutrmail/shared'],
 
   /**
    * 301 the retired `declutrmail.ai` origin onto the canonical
-   * `declutrmail.com` (D128). Host-gated — see the module docblock for
-   * why that gate is load-bearing.
+   * `declutrmail.com` (D128), and 301 `www.declutrmail.com` onto the
+   * apex so Google cannot keep www as a second canonical. Host-gated —
+   * see the module docblock for why that gate is load-bearing.
    */
-  redirects: async () => legacyDomainRedirects(),
+  redirects: async () => [...wwwApexRedirects(), ...legacyDomainRedirects()],
 
   /**
    * Inject release tag into the PUBLIC env at build time so

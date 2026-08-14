@@ -3,6 +3,7 @@ import type { LearnArticle } from './types';
 export const HOW_TO_SLUGS = [
   'clean-gmail-by-sender',
   'bulk-delete-emails-from-one-sender',
+  'gmail-storage-full',
   'auto-archive-future-emails-in-gmail',
   'stop-promotional-emails-gmail',
   'unsubscribe-from-emails-gmail',
@@ -14,6 +15,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
   'clean-gmail-by-sender': {
     slug: 'clean-gmail-by-sender',
     path: '/how-to/clean-gmail-by-sender',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-07-28',
     kind: 'How-to guide',
     eyebrow: 'Inbox method · sender first',
     title: 'How to clean Gmail by sender',
@@ -163,11 +166,13 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
   'bulk-delete-emails-from-one-sender': {
     slug: 'bulk-delete-emails-from-one-sender',
     path: '/how-to/bulk-delete-emails-from-one-sender',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-08-13',
     kind: 'How-to guide',
     eyebrow: 'Gmail cleanup · exact scope',
-    title: 'How to bulk delete emails from one sender',
+    title: 'How to delete all emails from one sender in Gmail',
     description:
-      'Safely delete Gmail messages from one sender using a verified search, with clear Trash and future-mail boundaries.',
+      'Delete all emails from one sender in Gmail using a verified search, with clear Trash and future-mail boundaries.',
     intro:
       'Bulk delete is safe only when the search is precise and the effect is understood. Gmail moves deleted messages to Trash; it does not unsubscribe you or stop the sender from writing again.',
     readingMinutes: 6,
@@ -291,14 +296,197 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     ],
   },
 
+  'gmail-storage-full': {
+    slug: 'gmail-storage-full',
+    path: '/how-to/gmail-storage-full',
+    publishedAt: '2026-08-13',
+    updatedAt: '2026-08-13',
+    kind: 'How-to guide',
+    eyebrow: 'Storage quota · what actually frees space',
+    title: 'Gmail storage full? How to free up space',
+    description:
+      'Free space when Gmail says storage is full: empty Trash and Spam first, find large attachments with Gmail’s size operators, and see why archiving frees nothing.',
+    intro:
+      'A full Gmail is usually not a Gmail problem. Google gives each personal account up to 15 GB shared across Gmail, Drive, and Photos, so the mail is competing with backups and photo libraries for the same quota. That also means most cleanup advice aimed at tidiness — archive, unsubscribe, inbox zero — recovers no space at all.',
+    readingMinutes: 8,
+    example: {
+      label: 'Illustrative example — synthetic data',
+      caption:
+        'Invented senders showing which decisions return storage and which only tidy the inbox. Not a screenshot and not a claim about your mailbox.',
+      rows: [
+        {
+          sender: 'Statement Delivery',
+          detail: '212 messages · PDF attachments around 2 MB each',
+          action: 'Delete',
+          result: 'Space returns only after Gmail Trash is emptied.',
+        },
+        {
+          sender: 'Render Farm Reports',
+          detail: '14 messages matching has:attachment larger:10M',
+          action: 'Delete',
+          result: 'A handful of messages can outweigh thousands of text ones.',
+        },
+        {
+          sender: 'Photo Share Digest',
+          detail: 'Large inline images · rarely opened',
+          action: 'Archive',
+          result: 'Leaves the inbox and frees no storage whatsoever.',
+        },
+      ],
+    },
+    sections: [
+      {
+        id: 'what-full-means',
+        title: 'What “full” actually refers to',
+        paragraphs: [
+          'Google documents a single quota of up to 15 GB per personal account, shared between Gmail, Google Drive, and Google Photos. Gmail messages and their attachments count toward it, and Google states explicitly that Spam and Trash count too until those folders are cleared.',
+          'Consequences arrive across every service, not just mail. Google says that when you are over quota you cannot upload files to Drive or back up photos, your ability to send and receive email can be impacted, and Drive Help adds that messages sent to you go back to the sender. Google also warns that content in an account left over quota for two years may be deleted, with at least three months of notice first.',
+        ],
+        bullets: [
+          'Check where the space actually went before deleting mail: Drive and Photos share the same 15 GB.',
+          'Emptying Spam and Trash is the fastest recovery Google documents, because both still occupy quota.',
+          'Expect a delay — Google says storage can take 48–72 hours to reflect a large deletion.',
+        ],
+      },
+      {
+        id: 'native-steps',
+        title: 'The native Google method, in the order that pays off',
+        paragraphs: [
+          'Work biggest-first. A few dozen attachment-heavy messages usually free more space than thousands of ordinary ones, and Gmail’s search operators can name them exactly.',
+        ],
+        steps: [
+          {
+            name: 'Empty Spam, then Trash',
+            text: 'Google calls this the quickest way to recover space. Both folders count against the quota until you permanently clear them, and clearing them is not reversible.',
+          },
+          {
+            name: 'Find the heavy mail with size operators',
+            text: 'Search has:attachment larger:10M for the worst offenders, filename:.pdf larger:5M for document build-up, and older_than:2y has:attachment for stale attachments. Add in:anywhere to include Spam and Trash.',
+          },
+          {
+            name: 'Verify before you select everything',
+            text: 'Open a few results. Attachment-heavy senders often mix statements and receipts you may want to keep, and Gmail’s select-all applies to every conversation matching the query.',
+          },
+          {
+            name: 'Delete, then empty Trash again',
+            text: 'Deleting moves mail to Trash, which still counts against your quota. The space is only released when Trash is emptied or Gmail’s roughly 30-day retention expires.',
+          },
+          {
+            name: 'Check Drive and Photos, not just Gmail',
+            text: 'In Drive, the Storage view lists your files largest-first. Google’s storage manager also cleans up by service — note that items it deletes from Gmail and Drive are permanently deleted and cannot be recovered.',
+          },
+        ],
+      },
+      {
+        id: 'archive-frees-nothing',
+        title: 'Archive, unsubscribe, and inbox zero free no space',
+        paragraphs: [
+          'Archiving removes the Inbox label. The message, and every byte of its attachments, stays in All Mail and stays on your quota. The same is true of labels, filters that skip the inbox, and any tool that promises a cleaner inbox without deleting anything.',
+          'Unsubscribing is worth doing, but it is a future-volume decision, not a storage one: it prevents the next hundred messages from arriving and removes nothing that has already landed. If the goal is a working mailbox today, deletion of large mail plus an emptied Trash is the only lever that moves the number.',
+        ],
+        callout: {
+          title: 'Only permanent deletion returns bytes',
+          body: 'Archive keeps the message. Delete moves it to Trash, which still counts. Space comes back when Trash is emptied or its retention window expires — and then only after Google’s systems catch up, which can take up to 48–72 hours.',
+          tone: 'truth',
+        },
+      },
+      {
+        id: 'by-sender',
+        title: 'Attack it by sender when a few sources own the weight',
+        paragraphs: [
+          'Attachment volume is rarely spread evenly. Statements, scanned documents, automated reports, and image-heavy newsletters tend to concentrate in a handful of recurring senders, which makes the sender the efficient unit of work. In Gmail you can combine the two ideas directly: from:(reports@example.com) has:attachment larger:5M.',
+          'DeclutrMail ranks recurring senders by volume and shows the size of each message in a sender’s recent-messages list, so you can see which sources are heavy before acting. Two limits are worth stating plainly: it does not compute a storage total per sender or report space reclaimed, and its Delete moves matching mail to Gmail Trash — you still empty Trash in Gmail to get the space back.',
+        ],
+        steps: [
+          {
+            name: 'Start with the senders that repeat',
+            text: 'High-volume senders with routine attachments are the best candidates. One decision covers hundreds of messages.',
+          },
+          {
+            name: 'Read the per-message sizes',
+            text: 'A sender’s recent messages show individual sizes where Gmail reports them. Use that as evidence for which senders deserve deletion rather than an archive.',
+          },
+          {
+            name: 'Preview the Delete, then confirm',
+            text: 'The preview names the sender and the count that will move to Trash. Confirm that nothing in the set is a document you would need to retrieve later.',
+          },
+          {
+            name: 'Empty Gmail Trash to realize the space',
+            text: 'This step happens in Gmail, not in DeclutrMail. Until Trash is cleared, the quota reads the same as before.',
+          },
+        ],
+      },
+      {
+        id: 'prune-or-pay',
+        title: 'Decide honestly between pruning and paying',
+        paragraphs: [
+          'If a mailbox is mostly years of attachments you genuinely may need, extra storage through Google One is the cheaper answer than an afternoon of risky bulk deletion. Pruning wins when the weight is concentrated in mail you can name and would never open again — old reports, expired offers, superseded drafts.',
+          'A useful test: run has:attachment larger:10M and older_than:2y has:attachment, and look at what comes back. If the results are mostly things you would delete without hesitation, prune. If you hesitate on most of them, buy the storage and spend the effort on future volume instead.',
+        ],
+      },
+      {
+        id: 'keep-it-down',
+        title: 'Keep the number down after the first pass',
+        paragraphs: [
+          'Set a quarterly habit rather than a one-off purge: search larger:10M older_than:1y, delete what has expired, and empty Trash. Storage creep is driven by a small set of automated senders, so the same review usually finds the same names.',
+          'Then handle future volume separately with unsubscribes, Gmail filters, or an Autopilot preset. Those keep the inbox from refilling; they will not shrink what is already stored, and any tool that implies otherwise is describing tidiness, not bytes.',
+        ],
+      },
+    ],
+    sources: [
+      {
+        href: 'https://support.google.com/googleone/answer/9312312?hl=en',
+        label: 'Google: How your Google storage works',
+        description:
+          'Official 15 GB shared quota, what counts (including Spam and Trash), over-quota effects, and the two-year deletion policy.',
+      },
+      {
+        href: 'https://support.google.com/drive/answer/6374270?hl=en',
+        label: 'Google: Manage your storage in Drive, Gmail & Photos',
+        description:
+          'Official short-term fix (empty Trash and Spam), large-file search recipes, and the 48–72 hour update delay.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/7190?hl=en',
+        label: 'Google: Refine searches in Gmail',
+        description:
+          'Official reference for larger:, size:, has:attachment, filename:, and in:anywhere.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/7401?hl=en',
+        label: 'Google: Delete or recover deleted Gmail messages',
+        description: 'Official Trash behavior, the roughly 30-day window, and permanent deletion.',
+      },
+    ],
+    related: [
+      {
+        href: '/how-to/bulk-delete-emails-from-one-sender',
+        label: 'Delete one sender safely',
+        description: 'Scope a Gmail Trash move without guessing.',
+      },
+      {
+        href: '/how-to/clean-gmail-by-sender',
+        label: 'Clean by sender',
+        description: 'Turn recurring sources into a short review queue.',
+      },
+      {
+        href: '/answers/how-undo-works-for-gmail-cleanup',
+        label: 'Undo boundaries',
+        description: 'What Trash recovery does and does not cover.',
+      },
+    ],
+  },
+
   'auto-archive-future-emails-in-gmail': {
     slug: 'auto-archive-future-emails-in-gmail',
     path: '/how-to/auto-archive-future-emails-in-gmail',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-08-13',
     kind: 'How-to guide',
     eyebrow: 'Automation · with a review phase',
-    title: 'How to auto-archive future emails in Gmail',
+    title: 'How to auto archive emails in Gmail',
     description:
-      'Create a Gmail Skip Inbox filter, or use DeclutrMail’s observed low-engagement preset without confusing one-time Archive with a future rule.',
+      'Archive Gmail messages automatically with a Skip Inbox filter, or use DeclutrMail’s observed low-engagement preset without confusing one-time Archive with a future rule.',
     intro:
       'A one-time Archive removes Inbox from mail that already exists. Future auto-archive requires a separate filter or automation rule. Keeping that distinction visible is the safest way to avoid mail disappearing unexpectedly.',
     readingMinutes: 7,
@@ -435,6 +623,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
   'stop-promotional-emails-gmail': {
     slug: 'stop-promotional-emails-gmail',
     path: '/how-to/stop-promotional-emails-gmail',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-07-28',
     kind: 'How-to guide',
     eyebrow: 'Future delivery · sender by sender',
     title: 'How to stop promotional emails in Gmail',
@@ -570,6 +760,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
   'unsubscribe-from-emails-gmail': {
     slug: 'unsubscribe-from-emails-gmail',
     path: '/how-to/unsubscribe-from-emails-gmail',
+    publishedAt: '2026-07-14',
+    updatedAt: '2026-08-04',
     kind: 'How-to guide',
     eyebrow: 'List email · delivery control',
     title: 'How to unsubscribe from emails in Gmail',

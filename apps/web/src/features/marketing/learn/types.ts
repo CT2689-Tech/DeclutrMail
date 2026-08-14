@@ -41,6 +41,18 @@ export interface RelatedLink {
 export interface LearnArticle {
   readonly slug: string;
   readonly path: string;
+  /** ISO `YYYY-MM-DD`, emitted as schema.org `datePublished`. */
+  readonly publishedAt: string;
+  /**
+   * ISO `YYYY-MM-DD`, emitted as schema.org `dateModified`.
+   *
+   * This is a public freshness claim, so it must be attributable, not
+   * aspirational: it tracks the last substantive edit to THIS article,
+   * not the last commit that happened to touch the file. When editing
+   * an article, bump its own date; when in doubt, the truthful value is
+   * `git blame` over the article's line range, not today.
+   */
+  readonly updatedAt: string;
   readonly kind: 'How-to guide' | 'Direct answer' | 'Launch essay';
   readonly title: string;
   readonly description: string;

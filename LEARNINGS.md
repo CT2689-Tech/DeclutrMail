@@ -20,6 +20,24 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-13 — A running dev server smoked the previous `next.config.ts`
+**Context:** Verifying the retargeted V1 redirects (`/compare/unroll-me-vs-declutrmail` → `/vs/unroll-me`, `/guides/gmail-storage-full` → `/how-to/gmail-storage-full`) with host-spoofed curls against the dev server already listening on :3000.
+**Finding:** Every redirect returned 301 to its OLD destination. The server was healthy, the route pages were live (hot-reloaded), and the tests were green — but `next dev` reads `redirects()` once at boot, so a config edit is invisible until restart. The smoke had passed the page changes and silently failed the config change, which is the worse half: a stale redirect map cannot be caught by any unit test, because the unit test asserts the map, not the server. A fresh server on another port returned the correct targets immediately.
+**Rule (provisional):** A smoke that touches `next.config.ts` (redirects, headers, rewrites) MUST run against a server started AFTER the edit — hot reload covers `app/**` and not the config. Same rule as the G2 "foreign process served the smoke" class, one layer down: the process is yours, its configuration is not.
+**Distillation trigger:** promote to CLAUDE.md §8 smoke table (a `next.config.ts` row) if a second config-layer change is smoked against a stale process.
+
+## 2026-08-13 — A freshness date is per artifact or it is a fiction
+**Context:** Adding `/vs/unroll-me`, whose sources were read on 2026-08-13, to a comparison set carrying one global `COMPARISON_VERIFIED_ISO = '2026-07-11'` — the constant that feeds both the visible "Last verified" stamp and the WebPage `dateModified`.
+**Finding:** Neither option with one constant is honest. Leaving it at July stamps a page verified today with a date nobody verified it on; bumping it to August claims six pages were re-read when they were not — under a badge that reads "Official primary sources only". Splitting it (`verifiedIso` per comparison, hub shows the oldest) cost about ten lines and made the dishonest state unrepresentable: you cannot bump a page's date without editing that page. The same shape had already appeared earlier in this pass, when article `publishedAt` / `updatedAt` had to come from `git blame` per article rather than "today for all of them".
+**Rule (provisional):** A public freshness claim belongs to the artifact it describes, never to the batch. When several artifacts share one date field, the aggregate surface shows the OLDEST of them (a floor is a claim you can keep) and each detail surface shows its own.
+**Distillation trigger:** promote to CLAUDE.md §2.6 if a third public-facing date claim is found sharing one constant across independently-verified artifacts.
+
+## 2026-08-13 — An accessible-name assertion built from content is a pattern, not a literal
+**Context:** A new how-to titled "Gmail storage full? How to free up space" failed the hub test that asserts a link per article, via `getByRole('link', { name: new RegExp(article.title) })`.
+**Finding:** The title was being compiled as a regex, so `?` made the preceding character optional and the pattern stopped matching its own subject. The two existing answer titles ending in `?` had been quietly weakened the same way for weeks — passing, because a suffixed `?` only loosens the tail. The failure was luck: mid-string punctuation broke it loudly, tail punctuation never would have.
+**Rule (provisional):** Escape any content string used to build a matcher (`text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')`), or pass the literal. A matcher derived from the data under test must assert the data, not a dialect of it.
+**Distillation trigger:** promote to CLAUDE.md §8 DoD if a third unescaped content-derived matcher is found.
+
 ## 2026-08-08 — The composite score was a real quantity in disguise
 **Context:** The `protect_important` brief asked to rank weakly-protected senders by "how much UNREAD mail the protection is shielding (`volume x unread%`)", with two worked examples: God of Prompt (166 emails, 13% read) and GetYourGuide (34, 3%).
 **Finding:** `volume × unread%` = `volume × (unread / volume)` = **unread**. The "composite score" is algebraically just the unread message count — 166 × 0.87 ≈ 145 and 34 × 0.97 ≈ 33, which are exactly those senders' unread counts in the DB. Implementing it as a weighted score would have produced identical ordering while being unexplainable to a user and untestable against a real number; implementing it as "unread inbox mail" made the ranking key a fact the row can SAY ("shielding 145 unread") and the ordering self-evident. The one substantive choice left was the denominator — lifetime indexed vs currently-in-inbox — resolved to inbox-only, because that is the set a cleanup verb would actually move, so a sender whose whole history is already archived correctly ranks as shielding nothing.

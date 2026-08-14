@@ -9,18 +9,29 @@
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 /**
- * The ONE comparison-freshness date. The visible label and the WebPage
- * JSON-LD `dateModified` both derive from it — two hand-edited literals
- * drifted before (SEO sweep 2026-08-04). Bump it only after actually
- * re-verifying every competitor claim against primary sources.
+ * Freshness is per comparison, because verification is per comparison:
+ * a page whose sources were re-read today and a page last read in July
+ * cannot honestly share one stamp. The visible label and the WebPage
+ * JSON-LD `dateModified` both derive from `verifiedIso`, so the two
+ * cannot drift apart the way hand-edited literals did (SEO sweep
+ * 2026-08-04). Bump a page's date only after re-reading ITS sources.
  */
-export const COMPARISON_VERIFIED_ISO = '2026-07-11';
-export const COMPARISON_VERIFIED_LABEL = `Last verified ${new Date(
-  COMPARISON_VERIFIED_ISO,
-).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })}`;
+export function comparisonVerifiedLabel(iso: string): string {
+  return `Last verified ${new Date(iso).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })}`;
+}
 
 export type ComparisonSlug =
-  'clean-email' | 'trimbox' | 'sanebox' | 'leave-me-alone' | 'gmail-filters' | 'gmail';
+  | 'clean-email'
+  | 'trimbox'
+  | 'sanebox'
+  | 'leave-me-alone'
+  | 'unroll-me'
+  | 'gmail-filters'
+  | 'gmail';
 
 export type EvidenceState = 'supported' | 'limited' | 'not-supported' | 'unknown' | 'native';
 
@@ -46,6 +57,8 @@ export interface ComparisonDefinition {
   readonly slug: ComparisonSlug;
   readonly name: string;
   readonly category: string;
+  /** ISO `YYYY-MM-DD` this page's sources were last read end to end. */
+  readonly verifiedIso: string;
   readonly title: string;
   readonly description: string;
   readonly verdict: string;
@@ -124,6 +137,12 @@ const DECLUTR = {
     detail: 'Full message bodies and attachments are not fetched.',
     state: 'supported',
   },
+  funding: {
+    summary: 'Subscriptions only',
+    detail:
+      'The published privacy policy states that Gmail data is not sold and is not used for advertising of any kind, and that it is not transferred to third parties except the subprocessors needed to run the service.',
+    state: 'supported',
+  },
   price: {
     summary: `Free, ${plusMonthly} Plus, or ${proMonthly} Pro monthly`,
     detail: `Free includes ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions per month. Plus is ${plusAnnual}/year; Pro is ${proAnnual}/year${foundingAnnual ? `, with a limited ${foundingAnnual} founding offer` : ''} in the current tier manifest.`,
@@ -135,6 +154,7 @@ const cleanEmail: ComparisonDefinition = {
   slug: 'clean-email',
   name: 'Clean Email',
   category: 'Broad cleanup suite',
+  verifiedIso: '2026-07-11',
   title: 'DeclutrMail vs Clean Email',
   description:
     'A source-backed comparison of DeclutrMail and Clean Email for Gmail cleanup, automation, unsubscribe, privacy, and pricing.',
@@ -265,6 +285,7 @@ const trimbox: ComparisonDefinition = {
   slug: 'trimbox',
   name: 'Trimbox',
   category: 'In-inbox unsubscriber',
+  verifiedIso: '2026-07-11',
   title: 'DeclutrMail vs Trimbox',
   description:
     'A source-backed comparison of DeclutrMail and Trimbox for Gmail unsubscribe, past-email deletion, automation, privacy, and pricing.',
@@ -395,6 +416,7 @@ const sanebox: ComparisonDefinition = {
   slug: 'sanebox',
   name: 'SaneBox',
   category: 'Importance sorting',
+  verifiedIso: '2026-07-11',
   title: 'DeclutrMail vs SaneBox',
   description:
     'A source-backed comparison of DeclutrMail and SaneBox for sender cleanup, importance sorting, training, privacy, providers, and pricing.',
@@ -526,6 +548,7 @@ const leaveMeAlone: ComparisonDefinition = {
   slug: 'leave-me-alone',
   name: 'Leave Me Alone',
   category: 'Subscription control',
+  verifiedIso: '2026-07-11',
   title: 'DeclutrMail vs Leave Me Alone',
   description:
     'A source-backed comparison of DeclutrMail and Leave Me Alone for unsubscribe, newsletter rollups, sender cleanup, privacy, providers, and pricing.',
@@ -657,10 +680,176 @@ const leaveMeAlone: ComparisonDefinition = {
   ],
 };
 
+/**
+ * The one comparison where the decisive difference is not a feature.
+ * Unroll.Me publishes its market-research model on its own site, so the
+ * funding row is sourced from the vendor, not inferred — and the 2019
+ * FTC settlement is cited from the FTC's own release rather than from
+ * the press coverage of it. No adjective goes beyond what those two
+ * documents say.
+ */
+const unrollMe: ComparisonDefinition = {
+  slug: 'unroll-me',
+  name: 'Unroll.Me',
+  category: 'Digest and blocking',
+  verifiedIso: '2026-08-13',
+  title: 'DeclutrMail vs Unroll.Me',
+  description:
+    'A source-backed comparison of DeclutrMail and Unroll.Me for Gmail cleanup, blocking, daily digests, email-data access, the market-research business model, and cost.',
+  verdict:
+    'Unroll.Me is free because your commercial email feeds a market-research business it names on its own site. DeclutrMail charges for subscriptions instead, does not fetch full message bodies, and previews each move before it runs — the trade is money for data access, and it is worth deciding deliberately.',
+  indexSummary:
+    'A free daily digest funded by market research, versus a paid Gmail workflow that does not fetch message bodies.',
+  primaryUnit: 'Subscription sender and daily digest',
+  providerScope: 'Gmail documented; other providers not named',
+  publicEntryPoint: 'Free sign-up; funded by market research',
+  chooseCompetitor: {
+    headline: 'Choose Unroll.Me if the digest is the point',
+    points: [
+      'You want many subscriptions collapsed into one daily digest email rather than decided one by one.',
+      'Paying nothing matters more to you than limiting what a vendor reads, and you accept the market-research terms.',
+      'Your mailbox holds little you would mind a research panel deriving purchase data from.',
+    ],
+  },
+  chooseDeclutrMail: {
+    headline: 'Choose DeclutrMail to pay in money, not mailbox access',
+    points: [
+      'You want full message bodies and attachments never fetched, with the stored field list published.',
+      'You want the count, a sample, and the exact Gmail changes before Archive, Later, or Delete runs.',
+      'You would rather be the customer than the panel: no mailbox data is sold, shared for research, or used for advertising.',
+    ],
+  },
+  rows: [
+    {
+      label: 'Core approach',
+      declutrMail: DECLUTR.focus,
+      competitor: {
+        summary: 'Keep, Block, Rollup',
+        detail:
+          'The product page describes blocking unwanted email, keeping the mail you want, and rolling the rest up into a single daily digest.',
+        state: 'supported',
+      },
+    },
+    {
+      label: 'Mailbox support',
+      declutrMail: DECLUTR.providers,
+      competitor: {
+        summary: 'Gmail documented; other providers not stated by name',
+        detail:
+          'The product page says it supports major email providers without naming them. The privacy notice documents Gmail sign-in, plus a Google App Password route for accounts outside Google’s restricted-scope rules.',
+        state: 'unknown',
+      },
+    },
+    {
+      label: 'Existing-mail cleanup',
+      declutrMail: DECLUTR.existingMail,
+      competitor: {
+        summary: 'Rollup collects subscriptions into a digest',
+        detail:
+          'Chosen subscriptions are gathered into one daily email. Bulk archiving or deleting a sender’s existing backlog is not stated on the reviewed product page.',
+        state: 'limited',
+      },
+    },
+    {
+      label: 'Future-mail automation',
+      declutrMail: DECLUTR.futureMail,
+      competitor: {
+        summary: 'Core behavior',
+        detail:
+          'Keep, Block, and Rollup are ongoing per-sender dispositions rather than one-time cleanups.',
+        state: 'supported',
+      },
+    },
+    {
+      label: 'Unsubscribe',
+      declutrMail: DECLUTR.unsubscribe,
+      competitor: {
+        summary: 'Blocking is the published mechanism',
+        detail:
+          'The reviewed pages describe blocking unwanted email. Whether an opt-out request is delivered to the sender, or mail is instead handled after it arrives, is not stated.',
+        state: 'limited',
+      },
+    },
+    {
+      label: 'Preview and recovery',
+      declutrMail: DECLUTR.recovery,
+      competitor: {
+        summary: 'Not publicly stated',
+        detail:
+          'A count-and-sample preview before a change, and any undo window afterwards, were not stated on the reviewed product and privacy pages.',
+        state: 'unknown',
+      },
+    },
+    {
+      label: 'Email-data posture',
+      declutrMail: DECLUTR.data,
+      competitor: {
+        summary: 'Copies of commercial emails; Gmail terms cover bodies and attachments',
+        detail:
+          'The privacy notice says that connecting an inbox collects copies of and information from commercial email — receipts, confirmations, promotions — and that its Gmail access may read, write, modify, or control message bodies including attachments, headers, and settings to provide the service. It also states this Gmail data is not used to serve advertisements.',
+        state: 'limited',
+      },
+    },
+    {
+      label: 'How the product is funded',
+      declutrMail: DECLUTR.funding,
+      competitor: {
+        summary: 'A market-research panel, stated on its own site',
+        detail:
+          'Its site says: “We use your data to fuel our market research business, NielsenIQ.” The privacy notice says panelist data about the commercial emails you receive, plus demographics, may be sold or shared with customers including e-commerce businesses, investment companies, consumer brands, media companies, and data brokers — while directly identifying details are never sold to target you.',
+        state: 'supported',
+      },
+    },
+    {
+      label: 'Disclosure history',
+      declutrMail: {
+        summary: 'No regulatory action',
+        detail:
+          'DeclutrMail is a new product with no enforcement history; treat that as absence of a record, not as a track record.',
+        state: 'supported',
+      },
+      competitor: {
+        summary: 'FTC settlement finalized December 2019',
+        detail:
+          'The FTC alleged Unrollme falsely told consumers it would not “touch” their personal emails while sharing users’ e-receipts with its then-parent Slice Technologies for market-research products. The finalized order bars misrepresenting what it collects, uses, stores, or shares, and required deleting affected e-receipts absent express consent.',
+        state: 'supported',
+      },
+    },
+    {
+      label: 'Public starting point',
+      declutrMail: DECLUTR.price,
+      competitor: {
+        summary: 'Free sign-up; paid tiers not publicly stated',
+        detail:
+          'The product page offers a free sign-up, and no pricing page or paid plan was published on the reviewed site. The privacy notice describes the market-research business the free service funds.',
+        state: 'unknown',
+      },
+    },
+  ],
+  sources: [
+    {
+      label: 'Unroll.Me product page',
+      url: 'https://unroll.me/',
+      note: 'Keep, Block, Rollup positioning, the single daily digest, free sign-up, and the provider-support claim.',
+    },
+    {
+      label: 'Unroll.Me privacy notice',
+      url: 'https://unroll.me/legal/privacy',
+      note: 'Commercial-email collection, selling and sharing panelist data, Gmail restricted-use terms, and account-deletion coupling.',
+    },
+    {
+      label: 'FTC — settlement finalized with Unrollme',
+      url: 'https://www.ftc.gov/news-events/news/press-releases/2019/12/ftc-finalizes-settlement-company-misled-consumers-about-how-it-accesses-uses-their-email',
+      note: 'The Commission’s own account of the allegations, the e-receipt sharing, and what the final order requires.',
+    },
+  ],
+};
+
 const gmailFilters: ComparisonDefinition = {
   slug: 'gmail-filters',
   name: 'Gmail filters',
   category: 'Native rules',
+  verifiedIso: '2026-07-11',
   title: 'DeclutrMail vs Gmail filters',
   description:
     'A source-backed comparison of DeclutrMail and native Gmail filters for sender cleanup, future-mail rules, unsubscribe, preview, recovery, and cost.',
@@ -795,6 +984,7 @@ const gmailNative: ComparisonDefinition = {
   slug: 'gmail',
   name: "Gmail's built-in cleanup",
   category: 'Native tools',
+  verifiedIso: '2026-07-11',
   title: "DeclutrMail vs Gmail's built-in cleanup",
   description:
     "A source-backed comparison of DeclutrMail and Gmail's own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and sender-level control.",
@@ -930,14 +1120,30 @@ const gmailNative: ComparisonDefinition = {
   ],
 };
 
-export const COMPARISONS: readonly ComparisonDefinition[] = [
+/**
+ * Typed non-empty so the verification floor below needs no assertion: an
+ * empty list would otherwise type as `string` while holding `undefined`,
+ * and the hub would render "Last verified Invalid Date" — the worst
+ * failure mode for a page whose entire claim is that it was verified.
+ */
+export const COMPARISONS: readonly [ComparisonDefinition, ...ComparisonDefinition[]] = [
   cleanEmail,
   trimbox,
   sanebox,
   leaveMeAlone,
+  unrollMe,
   gmailFilters,
   gmailNative,
 ];
+
+/**
+ * The oldest per-page verification date. The hub covers every page at
+ * once, so it must claim the weakest of them, not the freshest.
+ */
+export const COMPARISONS_VERIFIED_FLOOR_ISO = COMPARISONS.reduce(
+  (oldest, comparison) => (comparison.verifiedIso < oldest ? comparison.verifiedIso : oldest),
+  COMPARISONS[0].verifiedIso,
+);
 
 export function comparisonBySlug(slug: string): ComparisonDefinition | undefined {
   return COMPARISONS.find((comparison) => comparison.slug === slug);
