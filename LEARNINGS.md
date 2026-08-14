@@ -1175,3 +1175,37 @@ at a script. The §8 line already queued for promotion covers it if worded to
 include capability claims: *an unproven input is INVALID, never PASS* extends to
 an unprobed tool being UNKNOWN, never UNAVAILABLE. Promote to CLAUDE.md §8
 alongside the existing overdue line if this recurs once more.
+
+## 2026-08-14 — A dev server writing `.next` corrupts a concurrent production build
+**Context:** measuring `experimental.optimizePackageImports` on the marketing
+bundle. `next build` was run while `next dev` was still up from an earlier
+smoke, both pointed at `apps/web/.next`.
+**Finding:** `next start` against that build threw
+`EvalError: Code generation from strings disallowed for this context` from the
+edge middleware on every request — 500s across all 19 public pages. It looked
+exactly like a real regression caused by the config change. It was not: with the
+dev server stopped, the same config builds and serves cleanly, and so does the
+baseline. The dev server had been rewriting `.next` under the build.
+**Rule (provisional):** stop `next dev` before `next build` when both target the
+same app, and A/B any suspected build regression by rebuilding BOTH sides from a
+quiet tree before believing either result.
+**Distillation trigger:** promote to CLAUDE.md §8 if a session again attributes a
+build failure to a code change that a quiet-tree rebuild clears.
+
+## 2026-08-14 — An axe scan that starts at first paint measures the animation, not the page
+**Context:** adding a public-route accessibility lane. The desktop project
+(motion enabled) reported a serious colour-contrast failure on
+`.dm-mkt-hero-note`; the mobile project (reduced motion) did not.
+**Finding:** the element is fine — it settles at 5.11:1 light and 6.04:1 dark,
+over the 4.5:1 floor. The landing reveals fade over 0.7s with up to 0.24s of
+stagger and the hero sequence runs `8s 1 forwards`, so a scan triggered as soon
+as the `h1` is visible sampled a partially transparent element and reported its
+blended colour. A ready signal that proves *content exists* does not prove
+*presentation has settled*.
+**Rule (provisional):** for any axe lane over an animated surface, emulate
+`prefers-reduced-motion: reduce` — it takes the global override in
+`tokens.css:386` and scans the settled state, which is what contrast rules
+govern — or explicitly await the animations. Verify by running the matrix twice
+and requiring identical results.
+**Distillation trigger:** promote to CLAUDE.md §8 if a third timing-dependent
+gate ships with a ready signal weaker than the property it asserts.

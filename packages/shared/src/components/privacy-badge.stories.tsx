@@ -62,6 +62,28 @@ export const Inline: Story<typeof PrivacyBadge> = {
   ),
 };
 
+/**
+ * Inline on dark — the exact combination that failed WCAG AA.
+ *
+ * The inline variant sits on its own `primarySoft` tint, not on
+ * `color.card` like the card variant, and that tint is what put the
+ * storage list at 4.31:1 against the 4.5:1 floor on all 19 public
+ * pages. `Inline` above renders on `color.bg` and `DarkMode` below
+ * renders the CARD variant, so before this story the failing state had
+ * no visual-regression coverage at all (D210).
+ */
+export const InlineOnDark: Story<typeof PrivacyBadge> = {
+  args: { variant: 'inline' },
+  parameters: {
+    backgrounds: { default: 'dark' },
+  },
+  render: (args: BadgeArgs) => (
+    <div data-theme="dark" style={{ background: color.bg, padding: 24 }}>
+      <PrivacyBadge {...args} />
+    </div>
+  ),
+};
+
 /** Dark-mode preview — card variant on an ink surface. */
 export const DarkMode: Story<typeof PrivacyBadge> = {
   args: { variant: 'card' },

@@ -31,7 +31,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 const TITLE = 'Preview Gmail cleanup by sender — DeclutrMail';
 const DESCRIPTION =
-  'Review Gmail by sender with Keep, Archive, Unsubscribe, Later, and Delete. See the exact count and Gmail changes before manual mail moves, then verify outcomes in Activity.';
+  'Review Gmail by sender with Keep, Archive, Unsubscribe, Later, and Delete. See the exact count and Gmail changes before a manual move, then verify in Activity.';
 
 // metadataBase is inherited from the root layout (D128 origin).
 export const metadata: Metadata = marketingPageMetadata({

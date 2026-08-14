@@ -30,12 +30,20 @@ const LEARN_CSS = `
 .dm-learn-callout p { font-size: 14px; margin: 5px 0 0; }
 .dm-learn-example { background: ${color.fg}; color: ${color.fgInverse}; border-radius: ${radius.xl}px; box-shadow: ${shadow.lift}; overflow: hidden; }
 .dm-learn-example-head { padding: 16px 18px; border-bottom: 1px solid ${color.lineInverse}; }
-.dm-learn-example-label { font-family: ${font.mono}; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: ${color.fgInverseMuted}; }
+/* fgInverseSoft, not fgInverseMuted, on both of the small-text rules in
+   this inverted slab. In DARK the slab flips to a light surface and
+   fgInverseMuted (alpha .56) blends to 3.83:1 at 10-11px — under the
+   4.5:1 AA floor — which axe flagged across all 11 /how-to and /answers
+   pages. fgInverseSoft measures 6.38:1 dark and 9.44:1 light, and is the
+   token .dm-learn-example-head p already uses one line below. Fixed at
+   the two call sites rather than by editing the token, which is frozen
+   and used well beyond this block. */
+.dm-learn-example-label { font-family: ${font.mono}; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: ${color.fgInverseSoft}; }
 .dm-learn-example-head p { color: ${color.fgInverseSoft}; font-size: 13px; line-height: 1.5; margin: 7px 0 0; }
 .dm-learn-example-row { display: grid; grid-template-columns: minmax(0, 1.4fr) auto; gap: 12px; padding: 15px 18px; border-bottom: 1px solid ${color.lineInverse}; }
 .dm-learn-example-row:last-child { border-bottom: 0; }
 .dm-learn-example-row strong { display: block; font-size: 13px; color: ${color.fgInverse}; }
-.dm-learn-example-row small { display: block; margin-top: 3px; color: ${color.fgInverseMuted}; font-size: 11px; line-height: 1.45; }
+.dm-learn-example-row small { display: block; margin-top: 3px; color: ${color.fgInverseSoft}; font-size: 11px; line-height: 1.45; }
 .dm-learn-action { align-self: center; text-align: right; }
 .dm-learn-action b { display: inline-block; padding: 5px 8px; border: 1px solid ${color.lineInverse}; border-radius: 9999px; color: ${color.fgInverse}; font-family: ${font.mono}; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
 .dm-learn-action small { max-width: 160px; }

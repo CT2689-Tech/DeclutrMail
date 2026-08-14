@@ -1,7 +1,8 @@
 /// <reference lib="dom" />
 
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+
+import { expectNoBlockingAxeViolations, expectNoViewportOverflow } from '../helpers/a11y';
 
 /**
  * Authenticated accessibility release gate.
@@ -38,26 +39,6 @@ const ROUTES = [
   { path: '/billing', readyRole: 'region', readyName: 'About Plan & billing' },
 ] as const;
 
-async function expectNoBlockingAxeViolations(page: Page): Promise<void> {
-  const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-    .analyze();
-  const blocking = results.violations.filter(
-    (violation) => violation.impact === 'critical' || violation.impact === 'serious',
-  );
-  const report = blocking
-    .map(
-      (violation) =>
-        `${violation.id} (${violation.impact}): ${violation.help}\n` +
-        violation.nodes
-          .map((node) => `  ${node.target.join(' ')}: ${node.failureSummary}`)
-          .join('\n'),
-    )
-    .join('\n\n');
-
-  expect(blocking, report || 'no serious or critical axe violations').toEqual([]);
-}
-
 const MOBILE_PROJECT = 'a11y-mobile-reduced-motion';
 
 /**
@@ -85,17 +66,6 @@ async function expectCriticalControlsHaveNames(page: Page, isMobile: boolean): P
   await expect(
     page.getByRole('button', { name: 'chintan.e2e.billing@synthetic.test', exact: true }),
   ).toHaveAccessibleName('chintan.e2e.billing@synthetic.test');
-}
-
-async function expectNoViewportOverflow(page: Page): Promise<void> {
-  const overflow = await page.evaluate(() => ({
-    viewportWidth: window.innerWidth,
-    documentWidth: document.documentElement.scrollWidth,
-  }));
-  expect(
-    overflow.documentWidth,
-    `document width ${overflow.documentWidth}px exceeds viewport ${overflow.viewportWidth}px`,
-  ).toBeLessThanOrEqual(overflow.viewportWidth + 1);
 }
 
 test.beforeEach(async ({ page }, testInfo) => {

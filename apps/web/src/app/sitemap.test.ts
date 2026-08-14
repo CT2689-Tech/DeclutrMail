@@ -20,6 +20,11 @@ import { describe, expect, it } from 'vitest';
 
 import sitemap from './sitemap';
 import robots, { AUTHED_APP_PATHS } from './robots';
+import {
+  COMPARISONS,
+  COMPARISONS_VERIFIED_FLOOR_ISO,
+} from '@/features/marketing/comparison/comparison-data';
+import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from '@/features/marketing/learn/how-to-content';
 
 const MARKETING_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '(marketing)');
 
@@ -102,5 +107,39 @@ describe('sitemap — D134', () => {
 
   it('robots.txt points crawlers at this sitemap (D132 SEO batch)', () => {
     expect(robots().sitemap).toBe('https://declutrmail.com/sitemap.xml');
+  });
+
+  describe('lastModified', () => {
+    const entryFor = (pathname: string) =>
+      sitemap().find((entry) => new URL(entry.url).pathname === pathname);
+
+    it('dates a comparison page from its own verifiedIso', () => {
+      const unrollMe = COMPARISONS.find((comparison) => comparison.slug === 'unroll-me');
+      expect(entryFor('/vs/unroll-me')?.lastModified).toBe(unrollMe?.verifiedIso);
+    });
+
+    it('dates an article from its own updatedAt', () => {
+      const slug = HOW_TO_SLUGS[0]!;
+      expect(entryFor(`/how-to/${slug}`)?.lastModified).toBe(HOW_TO_ARTICLES[slug].updatedAt);
+    });
+
+    it('dates a hub from its OLDEST child, never its freshest', () => {
+      const childDates = COMPARISONS.map((comparison) => comparison.verifiedIso);
+      const compare = entryFor('/compare')?.lastModified;
+      expect(compare).toBe(COMPARISONS_VERIFIED_FLOOR_ISO);
+      // The floor is genuinely weaker than the freshest child, so this
+      // assertion would fail if the hub ever started claiming the max.
+      expect(compare).not.toBe(childDates.reduce((a, b) => (a > b ? a : b)));
+    });
+
+    it('omits lastModified where no attributable date exists', () => {
+      // Legal and product pages carry no machine-readable freshness
+      // field, so they must ship NO <lastmod> rather than a build-time
+      // one — an invented date is a claim nothing can back.
+      for (const pathname of ['/', '/pricing', '/security', '/privacy', '/terms']) {
+        expect(entryFor(pathname)).toBeDefined();
+        expect(entryFor(pathname)?.lastModified).toBeUndefined();
+      }
+    });
   });
 });

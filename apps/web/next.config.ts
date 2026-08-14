@@ -7,6 +7,22 @@ const nextConfig: NextConfig = {
   transpilePackages: ['@declutrmail/shared'],
 
   /**
+   * `@declutrmail/shared` is imported through its root barrel from ~25
+   * marketing files, and that barrel re-exports the whole design system
+   * — AppShell, Sidebar, ToastHost, the Zustand ui store. The package
+   * declares no `sideEffects`, so nothing lets the bundler prove those
+   * are droppable. This rewrites barrel imports to their concrete
+   * modules at build time, which is the supported fix and needs no
+   * change to the package's own manifest.
+   *
+   * Measured with `node scripts/check-web-bundle-budget.mjs` either side
+   * of the change; keep it only while it earns its place.
+   */
+  experimental: {
+    optimizePackageImports: ['@declutrmail/shared'],
+  },
+
+  /**
    * 301 the retired `declutrmail.ai` origin onto the canonical
    * `declutrmail.com` (D128), and 301 `www.declutrmail.com` onto the
    * apex so Google cannot keep www as a second canonical. Host-gated —

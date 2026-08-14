@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   Button,
   Card,
+  CASA_VERIFICATION_APPROVED_ON,
   DATA_EXPORT_FORMAT_MANIFEST,
   DATA_EXPORT_LIMITATION,
   GMAIL_CONNECTION_DATA_INVENTORY,
@@ -324,8 +325,9 @@ export function PrivacyDataView({
                 <div style={exitTitleStyle}>CASA Tier 2 verification</div>
                 <div style={exitDetailStyle}>
                   DeclutrMail&apos;s Gmail access goes through Google&apos;s CASA security
-                  assessment. Google approved our OAuth verification on 21 April 2026 for the single
-                  restricted scope we request, gmail.modify. It is recertified annually.
+                  assessment. Google approved our OAuth verification on{' '}
+                  {CASA_VERIFICATION_APPROVED_ON} for the single restricted scope we request,
+                  gmail.modify. It is recertified annually.
                 </div>
               </div>
             </li>

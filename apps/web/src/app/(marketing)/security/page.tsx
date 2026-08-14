@@ -18,6 +18,8 @@
 
 import type { Metadata } from 'next';
 import {
+  CASA_VERIFICATION_APPROVED_MONTH,
+  CASA_VERIFICATION_APPROVED_ON,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
@@ -30,8 +32,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Security — DeclutrMail',
-  description:
-    'How DeclutrMail protects your Gmail: metadata-only storage (full bodies fetched: 0), one narrowly used OAuth scope, envelope-encrypted tokens, and Google OAuth verification approved in April 2026.',
+  description: `Metadata-only storage, full bodies fetched: 0, one narrow OAuth scope, envelope-encrypted tokens, and Google OAuth verification approved in ${CASA_VERIFICATION_APPROVED_MONTH}.`,
   path: '/security',
 });
 
@@ -114,9 +115,12 @@ export default function SecurityPage() {
         <p>
           Apps using restricted Gmail scopes are subject to Google&rsquo;s independent CASA (Cloud
           Application Security Assessment) process. Google{' '}
-          <strong>approved DeclutrMail&rsquo;s OAuth verification on 21 April 2026</strong> for the
-          single restricted scope we request, <code>gmail.modify</code>. Verification is recertified
-          annually, and any new scope or change to our consent screen requires a fresh review.
+          <strong>
+            approved DeclutrMail&rsquo;s OAuth verification on {CASA_VERIFICATION_APPROVED_ON}
+          </strong>{' '}
+          for the single restricted scope we request, <code>gmail.modify</code>. Verification is
+          recertified annually, and any new scope or change to our consent screen requires a fresh
+          review.
         </p>
       </LegalSection>
 

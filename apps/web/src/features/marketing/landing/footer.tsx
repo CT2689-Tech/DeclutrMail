@@ -5,10 +5,6 @@ import { TrackedCta } from './tracked-cta';
 
 /**
  * D134 §10 — final CTA + footer.
- *
- * Footer links include /privacy /terms /refunds — those routes ship in
- * the sibling legal unit and may 404 until it merges (expected,
- * noted in the PR).
  */
 
 export function FinalCta() {

@@ -13,6 +13,8 @@ export {
   PRIVACY_NEVER_LABEL,
   GMAIL_PREVIEW_FIELD_LABEL,
   OAUTH_SCOPE_DISCLOSURE,
+  CASA_VERIFICATION_APPROVED_ON,
+  CASA_VERIFICATION_APPROVED_MONTH,
 } from './privacy';
 
 export { BUSINESS_POSTAL_ADDRESS, postalAddressLine, hasPostalAddress } from './postal-address';

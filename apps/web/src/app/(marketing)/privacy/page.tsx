@@ -15,6 +15,7 @@ import {
   ACTION_SAFETY_SUMMARY,
   AI_PROCESSING_DISCLOSURE,
   ANALYTICS_PRIVACY_CLAIM,
+  CASA_VERIFICATION_APPROVED_ON,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
@@ -128,8 +129,8 @@ export default function PrivacyPolicyPage() {
           <li>
             Apps using restricted Gmail scopes are subject to Google&rsquo;s independent CASA (Cloud
             Application Security Assessment) process. Google approved DeclutrMail&rsquo;s OAuth
-            verification on 21 April 2026 for the single restricted scope we request, gmail.modify.
-            Verification is recertified annually.
+            verification on {CASA_VERIFICATION_APPROVED_ON} for the single restricted scope we
+            request, gmail.modify. Verification is recertified annually.
           </li>
         </ul>
         <p>

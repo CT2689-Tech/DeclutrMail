@@ -1,4 +1,10 @@
-import { ACTION_PREVIEW_CLAIM, OAUTH_SCOPE_DISCLOSURE, PrivacyBadge } from '@declutrmail/shared';
+import {
+  ACTION_PREVIEW_CLAIM,
+  CASA_VERIFICATION_APPROVED_MONTH,
+  CASA_VERIFICATION_APPROVED_ON,
+  OAUTH_SCOPE_DISCLOSURE,
+  PrivacyBadge,
+} from '@declutrmail/shared';
 import { VERB_REGISTRY } from '@declutrmail/shared/actions';
 
 import { oauthStartUrl } from './urls';
@@ -147,17 +153,14 @@ function LedgerCard() {
 
 /**
  * Trust strip (D134 §2). The privacy claim is EXCLUSIVELY the shared
- * PrivacyBadge (D228 locked copy via packages/shared/src/copy/privacy.ts)
- * — the badge sits on a fixed light "paper" chip so its designed light
- * palette stays readable when the marketing surface flips dark.
+ * PrivacyBadge (D228 locked copy via packages/shared/src/copy/privacy.ts).
  */
 function TrustStrip() {
   return (
     <div className="dm-mkt-trust">
-      {/* The chip deliberately matches the marketing surface token.
-          `.dm-mkt` is color-scheme: light with no dark override today;
-          if a dark marketing theme ever lands, revisit so the badge's
-          designed light palette stays readable. */}
+      {/* The chip matches the marketing surface token, so it re-resolves
+          with `.dm-mkt`'s dark block (landing.css) rather than pinning a
+          light background under a badge whose own palette already flips. */}
       <span style={{ background: 'var(--mkt-bg)', borderRadius: 8, display: 'inline-flex' }}>
         <PrivacyBadge variant="inline" />
       </span>
@@ -165,6 +168,20 @@ function TrustStrip() {
       <span className="dm-mkt-trust-item" title={ACTION_PREVIEW_CLAIM}>
         Live current-scope preview before manual mail moves
       </span>
+      {/* D138's third trust item, restored. The wording may not exceed
+          what /security#verification already states — Google APPROVED
+          our OAuth verification for one restricted scope; it is not a
+          certification of the product, so never "certified"/"audited".
+          The date comes from shared copy, like the two claims above it:
+          verification recertifies annually, so a hand-copied date is one
+          that goes stale on a schedule. */}
+      <a
+        className="dm-mkt-trust-item"
+        href="/security#verification"
+        title={`Google approved DeclutrMail's OAuth verification on ${CASA_VERIFICATION_APPROVED_ON} for the single restricted scope we request, gmail.modify.`}
+      >
+        Google OAuth verification approved, {CASA_VERIFICATION_APPROVED_MONTH} (CASA Tier 2)
+      </a>
     </div>
   );
 }
