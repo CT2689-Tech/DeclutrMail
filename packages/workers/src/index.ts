@@ -386,3 +386,16 @@ export {
   snoozeWakeNowJobId,
 } from './snooze-wake.queue.js';
 export type { SnoozeLabelMapRedis, SnoozeLabelMapStore } from './snooze-wake.queue.js';
+export { BillingVerdictWorker } from './billing-verdict.worker.js';
+export type {
+  BillingVerdictDeps,
+  BillingVerdictJobData,
+  BillingVerdictResult,
+} from './billing-verdict.worker.js';
+export {
+  BILLING_VERDICT_INTERVAL_MS,
+  BILLING_VERDICT_JOB,
+  BILLING_VERDICT_QUEUE,
+  billingVerdictJobOptions,
+  enqueueBillingVerdictTick,
+} from './billing-verdict.queue.js';

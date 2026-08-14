@@ -87,7 +87,15 @@ export class BillingService {
     // the guard. Loosening it would let a second live subscription start
     // while the provider could still resume the paused one.
     const [existing] = await this.db
-      .select({ id: subscriptions.id, status: subscriptions.status })
+      .select({
+        id: subscriptions.id,
+        status: subscriptions.status,
+        cancelSource: subscriptions.cancelSource,
+        // Compared in SQL rather than JS: `entitlement_ends_at` is written
+        // with the DATABASE's `now()` on a refund, so an app/DB clock skew
+        // would read a just-lapsed row as still granting.
+        entitlementLapsed: sql<boolean>`${subscriptions.entitlementEndsAt} is not null and ${subscriptions.entitlementEndsAt} <= now()`,
+      })
       .from(subscriptions)
       .where(
         and(
@@ -100,9 +108,27 @@ export class BillingService {
       .orderBy(sql`CASE WHEN ${subscriptions.status} = 'paused' THEN 1 ELSE 0 END`)
       .limit(1);
     if (existing) {
+      // D253 — the settling window. A row ended by a REFUND whose entitlement
+      // has ALREADY lapsed is not a live subscription: it is a dead row still
+      // sitting in the slot until the provider confirms the refund settled,
+      // at which point it flips to `canceled` and the slot frees. The
+      // customer holds nothing, so `SUBSCRIPTION_EXISTS` here is a lie —
+      // it points them at a subscription to manage that no longer grants
+      // anything. Say what is actually true, and that it resolves itself.
+      //
+      // CHARGEBACKS are deliberately NOT in this branch (founder decision
+      // 2026-08-13): that customer stays blocked until the period ends
+      // naturally, and the unchanged refusal is what tells them so.
+      const refundSettling =
+        (existing.status === 'active' || existing.status === 'past_due') &&
+        existing.cancelSource === 'refund' &&
+        existing.entitlementLapsed;
       throw new AppException({
-        code:
-          existing.status === 'paused' ? 'SUBSCRIPTION_PAUSED_BLOCKS_NEW' : 'SUBSCRIPTION_EXISTS',
+        code: refundSettling
+          ? 'SUBSCRIPTION_REFUND_SETTLING'
+          : existing.status === 'paused'
+            ? 'SUBSCRIPTION_PAUSED_BLOCKS_NEW'
+            : 'SUBSCRIPTION_EXISTS',
       });
     }
 

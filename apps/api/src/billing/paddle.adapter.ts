@@ -654,20 +654,54 @@ export class PaddleAdapter implements BillingProvider {
   async providerCancellationFacts(
     providerSubscriptionId: string,
   ): Promise<ProviderCancellationFacts | null> {
-    let body: unknown | null;
-    try {
-      body = await this.reconciliationGet(
-        `/adjustments?subscription_id=${encodeURIComponent(providerSubscriptionId)}&per_page=50`,
-        `adjustments sub=${providerSubscriptionId}`,
-      );
-    } catch {
-      // Already logged by reconciliationGet. A read we could not make is
-      // never grounds for an outbound write.
-      return null;
+    // Paddle caps a list page, so page one alone answered a different
+    // question than the one asked: a subscription with more adjustments
+    // than fit could report a settled refund while a LIVE chargeback sat
+    // on page two — and D253 makes that answer the gate on whether a
+    // refunded customer may buy again. Walk `meta.pagination` to the end.
+    // The cap bounds a pathological listing; hitting it reports UNREAD,
+    // because a partial scan is this same bug in a subtler form.
+    const MAX_PAGES = 10;
+    const rows: PaddleAdjustment[] = [];
+    let path = `/adjustments?subscription_id=${encodeURIComponent(providerSubscriptionId)}&per_page=50`;
+
+    for (let page = 0; ; page += 1) {
+      if (page === MAX_PAGES) {
+        this.logger.warn(
+          `paddle.cancellation_facts.page_cap sub=${providerSubscriptionId} pages=${MAX_PAGES} rows=${rows.length} — adjustments listing exceeds the page cap; reported UNREAD, raise MAX_PAGES`,
+        );
+        return null;
+      }
+      let body: unknown | null;
+      try {
+        body = await this.reconciliationGet(path, `adjustments sub=${providerSubscriptionId}`);
+      } catch {
+        // Already logged by reconciliationGet. A read we could not make is
+        // never grounds for an outbound write.
+        return null;
+      }
+      if (body === null) return null;
+      const pageRows = (body as { data?: PaddleAdjustment[] }).data;
+      if (!Array.isArray(pageRows)) return null;
+      rows.push(...pageRows);
+
+      const pagination = (body as { meta?: { pagination?: { has_more?: boolean; next?: string } } })
+        .meta?.pagination;
+      // `next` is populated on the LAST page too, so `has_more` is the
+      // only honest terminator — walking while `next` exists would run
+      // every healthy read to the cap and report it unread.
+      if (pagination?.has_more !== true) break;
+      if (typeof pagination.next !== 'string' || !URL.canParse(pagination.next)) {
+        this.logger.warn(
+          `paddle.cancellation_facts.next_unreadable sub=${providerSubscriptionId} pages=${page + 1} — has_more with no usable next URL; reported UNREAD`,
+        );
+        return null;
+      }
+      // Paddle's cursor, our host: keep only path + query so a
+      // provider-supplied origin can never redirect an API-key read.
+      const next = new URL(pagination.next);
+      path = `${next.pathname}${next.search}`;
     }
-    if (body === null) return null;
-    const rows = (body as { data?: PaddleAdjustment[] }).data;
-    if (!Array.isArray(rows)) return null;
 
     // A chargeback IS the settled event — the funds are already gone and
     // Paddle raised it, not us, so there is nothing left to approve. Only
@@ -691,10 +725,24 @@ export class PaddleAdapter implements BillingProvider {
 
     // "Paddle SAYS NO" is not the same as "not yet", and the two verdicts
     // are independent — a contradiction of one says nothing about the
-    // other. Both `rejected` and `reversed` undo an adjustment; checking
-    // only `rejected` on refunds left an approved-then-reversed refund
-    // counting as neither settled nor refuted, so its verdict stood
-    // forever. A refund still `pending_approval` is in neither set.
+    // other. Both `rejected` and `reversed` undo an adjustment, and
+    // `UNDONE_STATUSES` is shared across both actions because each can
+    // only ever reach one of them. A refund still `pending_approval` is
+    // in neither set.
+    //
+    // Which status belongs to which action, per Paddle's docs: a refund
+    // goes `pending_approval` → `approved` | `rejected`, both terminal.
+    // `reversed` is set only when a `chargeback_reversal` or
+    // `credit_reversal` adjustment is created for that adjustment, so it
+    // reaches chargebacks and credits and never refunds.
+    //
+    // An earlier version of this comment justified the shared set by
+    // claiming an "approved-then-reversed refund" had counted as neither
+    // settled nor refuted. That state cannot occur, and the false
+    // explanation was not harmless — it was later read as evidence that a
+    // settled refund is revocable, which sent a design building a support
+    // path for an impossible case (D253, 2026-08-13). The SET is correct
+    // as a superset; only the reasoning was wrong.
     return {
       settled: settledChargeback ? 'chargeback' : settledRefund ? 'refund' : null,
       refuted: {

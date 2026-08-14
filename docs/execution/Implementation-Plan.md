@@ -10014,3 +10014,80 @@ endpoint refuses, no channel remains and `failed` is the honest answer; the
 recourse is D9's step 3 (Gmail search) and the ordinary K/A/U/L/D verbs.
 
 **Implementation contract:** see ADR-0032, which amends ADR-0006.
+
+---
+
+### D253 — A refunded customer can buy again
+
+**Status:** Accepted — founder-directed 2026-08-13. A first design was rejected
+by three independent reviews and a fourth found two further holes in its
+successor; the reasoning that survived is recorded in ADR-0033.
+
+**The state this fixes.** Refunding a customer today ends their access
+immediately **and blocks them from purchasing again until the period they
+already paid for elapses** — up to a month on monthly, up to a year on annual.
+There is no in-app route back; the only recovery is an operator holding the
+provider's API key. Nobody chose this. It falls out of three behaviours that are
+each correct alone: a full refund ends entitlement at once (founder decision,
+2026-07-31), the subscription row stays live because the provider schedules
+nothing on a refund, and any live row is the workspace's one subscription.
+
+It is a revenue path, not only a trust one. A goodwill full refund is an
+ordinary support gesture, and today it makes that customer unable to pay us
+again for the rest of their term.
+
+**Decision.** Once the provider confirms the refund has settled, the workspace's
+live-subscription slot is released and the customer can purchase again.
+
+Five parts:
+
+1. **Entitlement is unchanged.** Money back still means the service stops, the
+   moment the refund is recorded. What changes is only whether the customer may
+   start a new subscription afterwards.
+2. **Refunds unlock. Chargebacks do not.** A settled chargeback leaves that
+   customer blocked until the period ends naturally; they contact support to
+   subscribe again. Under a merchant of record, repeat chargebacks are what gets
+   a seller account flagged or terminated, and re-arming the same payment method
+   the same day is how that starts. "Does not unlock" means **not early**, not
+   never — when the period ends, the ordinary cancellation arrives and releases
+   the slot exactly as it does today. Permanent exclusion is a different feature
+   and is not decided here.
+3. **The unlock is provider-confirmed, never inferred from our own record.** Why
+   we believe a plan ended and what the provider confirms are deliberately
+   allowed to differ, so the release keys on the provider's confirmed cause. An
+   unlock decided from local provenance would free chargebacks along with
+   refunds.
+4. **A released row stays watched.** Releasing the slot does not end our
+   interest in the subscription. It stays polled until the provider itself
+   reports terminal cancellation, and a provider that still reports the
+   subscription active, past due, freshly paid, or with no cancellation
+   scheduled raises a support-visible alert. Charging a customer who holds no
+   entitlement is worse than the lockout this decision exists to fix, and it is
+   the failure this shape could otherwise create where nobody can see it.
+5. **The interim refusal tells the truth.** Between the refund and the
+   provider's confirmation, checkout still refuses — but "you already have a
+   subscription" is false there. The refusal says instead that the refund is
+   being confirmed and that it resolves on its own, in minutes rather than at
+   the end of the period.
+
+**Not this decision.** The refund policy itself. "Money back means the service
+stops" was settled 2026-07-31 and is not reopened.
+
+**Known limit.** Only Paddle carries refund and chargeback verdicts today —
+Razorpay maps neither event, so no Razorpay customer is locked out and none is
+unlocked. The day Razorpay refunds are mapped, this decision has to be extended
+to them in the same change, or every refunded Razorpay customer inherits the
+lockout with no code written against them.
+
+**Extends** D249 (billing reconciles against provider truth, not customer
+memory). **Preserves** the one-live-subscription-per-workspace invariant
+(`subscriptions_one_live_per_workspace`, migration 0051) rather than relaxing
+it. **Does not amend** D121 (no trials; 30-day money-back guarantee) or D229
+(webhook auth).
+
+**Verifies by:** a settled refund releases the slot and a subsequent purchase
+succeeds — the purchase, not the guard, is the assertion; a settled chargeback
+does not release it; and a released row whose provider still reports the
+subscription live raises the alert rather than going quiet.
+
+**Implementation contract:** see ADR-0033.

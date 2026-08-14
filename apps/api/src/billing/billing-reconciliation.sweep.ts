@@ -77,11 +77,39 @@ export async function runBillingReconciliationSweep(
     WHERE status = 'past_due'
       AND entitlement_ends_at IS NOT NULL
       AND entitlement_ends_at < now()
-    RETURNING workspace_id
+    RETURNING workspace_id, provider, tier, cancel_source
   `);
-  const flippedWorkspaceIds = resultRows(flipped)
+  const flippedRows = resultRows(flipped);
+  const flippedWorkspaceIds = flippedRows
     .map((r) => r.workspace_id)
     .filter((v): v is string => typeof v === 'string');
+
+  // One countable ending per churned subscription, tagged with why
+  // (founder ask 2026-08-13 — "refunded vs just cancelled"). This is the
+  // fourth ending path and the only one with no provider event behind
+  // it, which is exactly why it needs its own line: nothing else records
+  // that these customers left.
+  //
+  // The reason comes from `cancel_source`, not a hardcoded 'dunning'.
+  // The UPDATE above only defaults it when it is NULL, so a row that
+  // already carried a refund or chargeback verdict keeps that provenance
+  // and must be counted under it — otherwise dunning would absorb
+  // endings it did not cause.
+  for (const row of flippedRows) {
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'billing.subscription_ended',
+        workspaceId: row.workspace_id,
+        provider: row.provider,
+        tier: row.tier,
+        reason:
+          row.cancel_source === 'refund' || row.cancel_source === 'chargeback'
+            ? row.cancel_source
+            : 'dunning',
+      }),
+    );
+  }
 
   const recomputed = await db.execute(sql`
     UPDATE workspaces w

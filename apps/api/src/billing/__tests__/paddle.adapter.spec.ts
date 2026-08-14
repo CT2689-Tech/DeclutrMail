@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 
+import { Logger } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PaddleAdapter } from '../paddle.adapter.js';
@@ -300,6 +301,25 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
     ).toEqual({ kind: 'ignored', providerEventId: 'evt_x', eventType: 'customer.updated' });
     expect(() => adapter.mapWebhookEvent({ data: {} })).toThrow(/event_id/);
   });
+
+  it('maps SYNCHRONOUSLY and asks Paddle nothing — the seam allows async, this mapper is not', () => {
+    // The `BillingProvider` seam accepts a promise-returning mapper
+    // because Razorpay's must resolve a subscription id through the
+    // invoices API. Paddle's payloads carry `subscription_id` inline, so
+    // its mapper stays pure — and its own signature says so. A future
+    // edit that adds a fetch here has to change that signature and every
+    // synchronous call site, which is the point of not widening it.
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      const event = adapter.mapWebhookEvent(paddleAdjustmentCreated({ action: 'refund' }));
+      expect(event).not.toBeInstanceOf(Promise);
+      expect(event).toMatchObject({ kind: 'cancellation_scheduled', reason: 'refund' });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe('PaddleAdapter checkout + cancel', () => {
@@ -510,6 +530,105 @@ describe('PaddleAdapter checkout + cancel', () => {
         vi.fn().mockResolvedValue(new Response('{"data":null}', { status: 200 })),
       );
       expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('s')).toBeNull();
+    });
+
+    // Pagination (D253). `settled` is about to gate whether a refunded
+    // customer may buy again, so "which page was the chargeback on?" is
+    // the difference between a lockout and a repurchase during a live
+    // dispute. Paddle answers `meta.pagination.has_more` + a `next` URL
+    // carrying the `after` cursor.
+    describe('pagination', () => {
+      const page = (rows: unknown[], pagination: Record<string, unknown>) =>
+        new Response(JSON.stringify({ data: rows, meta: { pagination } }), { status: 200 });
+      const nextUrl = (after: string) =>
+        `https://sandbox-api.paddle.com/adjustments?subscription_id=sub_x&per_page=50&after=${after}`;
+
+      it('walks past page one — a chargeback on page two is still settled', async () => {
+        const calls: string[] = [];
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(async (url: string | URL) => {
+            calls.push(String(url));
+            return calls.length === 1
+              ? page([{ action: 'refund', status: 'approved', items: FULL }], {
+                  per_page: 50,
+                  next: nextUrl('adj_p1_last'),
+                  has_more: true,
+                })
+              : // `next` is populated on the last page too — only
+                // `has_more` may end the walk.
+                page([{ action: 'chargeback', status: 'approved' }], {
+                  per_page: 50,
+                  next: nextUrl('adj_p2_last'),
+                  has_more: false,
+                });
+          }),
+        );
+
+        expect(
+          await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('sub_x'),
+        ).toEqual({ settled: 'chargeback', refuted: { refund: false, chargeback: false } });
+        expect(calls).toHaveLength(2);
+        // Paddle's cursor, our host.
+        expect(calls[1]).toBe(nextUrl('adj_p1_last'));
+      });
+
+      it('a page it could not read is UNREAD, never the pages it did read', async () => {
+        // The subtler form of the same bug: page one holds an approved
+        // refund, page two is unknown — answering `refund` here would
+        // unlock repurchase over a chargeback nobody fetched.
+        const fetchSpy = vi
+          .fn()
+          .mockResolvedValueOnce(
+            page([{ action: 'refund', status: 'approved', items: FULL }], {
+              per_page: 50,
+              next: nextUrl('adj_p1_last'),
+              has_more: true,
+            }),
+          )
+          .mockResolvedValueOnce(new Response('{}', { status: 500 }));
+        vi.stubGlobal('fetch', fetchSpy);
+
+        expect(
+          await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('sub_x'),
+        ).toBeNull();
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+      });
+
+      it('reports UNREAD at the page cap instead of a truncated scan', async () => {
+        const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+        const fetchSpy = vi.fn(async () =>
+          page([{ action: 'refund', status: 'approved', items: FULL }], {
+            per_page: 50,
+            next: nextUrl('adj_endless'),
+            has_more: true,
+          }),
+        );
+        vi.stubGlobal('fetch', fetchSpy);
+
+        expect(
+          await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('sub_x'),
+        ).toBeNull();
+        expect(fetchSpy).toHaveBeenCalledTimes(10);
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining('paddle.cancellation_facts.page_cap sub=sub_x'),
+        );
+        warnSpy.mockRestore();
+      });
+
+      it('a single page is one call — no speculative second read', async () => {
+        const fetchSpy = vi
+          .fn()
+          .mockResolvedValue(
+            adjustmentsBody([{ action: 'refund', status: 'approved', items: FULL }]),
+          );
+        vi.stubGlobal('fetch', fetchSpy);
+
+        expect(
+          await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('sub_x'),
+        ).toEqual({ settled: 'refund', refuted: { refund: false, chargeback: false } });
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+      });
     });
   });
 

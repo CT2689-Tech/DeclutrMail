@@ -6,7 +6,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
@@ -19,7 +19,10 @@ import {
   SubscriptionSearchQuery,
   SubscriptionSearchResult,
 } from '../billing-provider.interface.js';
-import { BillingReconciliationService } from '../billing-reconciliation.service.js';
+import {
+  BillingReconciliationService,
+  VERDICT_PASS_MAX_ROWS,
+} from '../billing-reconciliation.service.js';
 import { BillingWebhookService } from '../billing-webhook.service.js';
 import type { PaddleAdapter } from '../paddle.adapter.js';
 import type { RazorpayAdapter } from '../razorpay.adapter.js';
@@ -535,9 +538,9 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.reconcileLiveSubscriptions();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(canceled).toEqual(['sub_verdict']);
-    expect(result).toMatchObject({ verdictsEnforced: 1, verdictsUnenforced: 0 });
+    expect(result).toMatchObject({ enforced: 1, unenforced: 0 });
   });
 
   it('chargeback row is enforced too', async () => {
@@ -556,7 +559,7 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    await svc.reconcileLiveSubscriptions();
+    await svc.enforceLocalVerdicts(0);
     expect(canceled).toEqual(['sub_verdict']);
   });
 
@@ -576,9 +579,100 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.reconcileLiveSubscriptions();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(canceled).toEqual([]);
-    expect(result).toMatchObject({ verdictsEnforced: 0, verdictsUnenforced: 0 });
+    expect(result).toMatchObject({ enforced: 0, unenforced: 0 });
+  });
+
+  // A null from providerCancellationFacts is a READ FAILURE, not
+  // "nothing settled". It does not throw, so the loop's catch never sees
+  // it, and the successful fetchSubscription just before it has already
+  // reset the provider's error counter — so an adjustments endpoint that
+  // is down while the subscriptions endpoint is healthy could be polled
+  // once per row, every pass, forever.
+  it('unreadable facts trip the provider circuit breaker', async () => {
+    const TRIP_AFTER = 3; // mirrors DRIFT_SWEEP_TRIP_AFTER (module-private)
+    // One workspace each: subscriptions_one_live_per_workspace permits a
+    // single active row per workspace, which is the whole invariant D253
+    // is built around.
+    for (let i = 0; i < TRIP_AFTER + 2; i += 1) {
+      const [ws] = await db
+        .insert(workspaces)
+        .values({ name: `Unreadable WS ${i}` })
+        .returning({ id: workspaces.id });
+      await db.insert(subscriptions).values({
+        workspaceId: ws!.id,
+        provider: 'paddle',
+        providerSubscriptionId: `sub_unreadable_${i}`,
+        tier: 'plus',
+        status: 'active',
+        providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+        billingCycle: 'monthly',
+        currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+        cancelAtPeriodEnd: true,
+        cancelSource: 'refund',
+        entitlementEndsAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      });
+    }
+    let factsCalls = 0;
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async (id) => ({
+          kind: 'found',
+          subscription: activePlusSub(id, new Date()),
+        }),
+        providerCancellationFacts: async () => {
+          factsCalls += 1;
+          return null;
+        },
+      }),
+    );
+
+    await svc.enforceLocalVerdicts(0);
+
+    // Stops asking once the breaker trips, rather than walking every row.
+    expect(factsCalls).toBe(TRIP_AFTER);
+  });
+
+  // The customer cancels in-app, THEN asks for their money back, and
+  // Paddle rejects the refund. Paddle has held `scheduled_change: cancel`
+  // since their own cancel, so `cancelAtPeriodEnd` is true throughout.
+  //
+  // That flag used to short-circuit this loop before the facts read, so
+  // the refutation below was unreachable: `entitlement_ends_at` stayed
+  // pinned at the moment the refund was requested and the customer kept
+  // paying for a plan we no longer granted. Nothing logged it, because
+  // from the sweep's side the row had simply "converged".
+  it('provider scheduled the cancel AND rejected the refund → verdict is still lifted', async () => {
+    await seedVerdictRow({ cancelSource: 'refund' });
+    const canceled: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: { ...activePlusSub('sub_verdict', new Date()), cancelAtPeriodEnd: true },
+        }),
+        providerCancellationFacts: async () => REFUTED_REFUND,
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+
+    const result = await svc.enforceLocalVerdicts(0);
+
+    expect(result).toMatchObject({ refuted: 1 });
+    expect(canceled).toEqual([]);
+
+    const [row] = await db
+      .select({
+        cancelSource: subscriptions.cancelSource,
+        entitlementEndsAt: subscriptions.entitlementEndsAt,
+      })
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_verdict'));
+    expect(row?.cancelSource).toBeNull();
+    expect(row?.entitlementEndsAt).toBeNull();
   });
 
   it('an ORDINARY live row is never cancelled by the verdict pass', async () => {
@@ -605,16 +699,16 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.reconcileLiveSubscriptions();
-    expect(result.verdictsEnforced).toBe(0);
+    const result = await svc.enforceLocalVerdicts(0);
+    expect(result.enforced).toBe(0);
   });
 
   it('provider read miss → no cancel claimed, counted unenforced', async () => {
     await seedVerdictRow({ cancelSource: 'refund' });
     const svc = service(fakeAdapter({ fetchSubscription: async () => ({ kind: 'not_found' }) }));
 
-    const result = await svc.reconcileLiveSubscriptions();
-    expect(result).toMatchObject({ verdictsEnforced: 0, verdictsUnenforced: 1 });
+    const result = await svc.enforceLocalVerdicts(0);
+    expect(result).toMatchObject({ enforced: 0, unenforced: 1 });
   });
 
   // The outbound cancel needs TWO facts, and our own marker is only the
@@ -652,9 +746,9 @@ describe('BillingReconciliationService (D249)', () => {
         }),
       );
 
-      const result = await svc.reconcileLiveSubscriptions();
+      const result = await svc.enforceLocalVerdicts(0);
       expect(canceled).toEqual([]);
-      expect(result).toMatchObject({ verdictsEnforced: 0, verdictsUnenforced: 1 });
+      expect(result).toMatchObject({ enforced: 0, unenforced: 1 });
     });
   }
 
@@ -681,9 +775,9 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    const result = await svc.reconcileLiveSubscriptions();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(canceled).toEqual([]); // never cancel a verdict the provider denies
-    expect(result).toMatchObject({ verdictsRefuted: 1, verdictsEnforced: 0 });
+    expect(result).toMatchObject({ refuted: 1, enforced: 0 });
 
     const [row] = await db.select().from(subscriptions);
     expect(row!.cancelSource).toBeNull();
@@ -719,9 +813,397 @@ describe('BillingReconciliationService (D249)', () => {
       }),
     );
 
-    await svc.reconcileLiveSubscriptions();
+    const result = await svc.enforceLocalVerdicts(0);
     expect(asked).toEqual(['sub_verdict']);
     expect(canceled).toEqual(['sub_verdict']);
+
+    // …but it does NOT release the plan slot. A dispute was raised on
+    // this subscription, and the provider read cannot un-say that: a
+    // chargeback later reversed reports `settled: 'refund'` while our
+    // row still records the dispute. Re-arming a disputed payment
+    // method early is the founder's stated reason for the
+    // refund/chargeback asymmetry (2026-08-13), so both sources must
+    // AGREE before the slot opens.
+    const [unflipped] = await db
+      .select({ status: subscriptions.status })
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_verdict'));
+    expect(unflipped?.status).toBe('active');
+    expect(result.settled).toBe(0);
+  });
+
+  // ── D253 — a refunded customer must be able to buy again ──────────
+  //
+  // A full refund ends entitlement instantly but leaves `status='active'`,
+  // and five surfaces read `active` as "this workspace has a
+  // subscription": the checkout guard, the one-live-per-workspace partial
+  // index, the drift and verdict selectors, and the frontend picker. So
+  // the refunded customer held nothing AND could not repurchase for the
+  // rest of a period they had already been paid back for.
+
+  it('a settled refund frees the slot: the row flips AND a repurchase inserts', async () => {
+    await seedVerdictRow({ cancelSource: 'refund' });
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          // Already scheduled to stop, so no outbound cancel is needed —
+          // the steady state the old short-circuit skipped entirely.
+          subscription: { ...activePlusSub('sub_verdict', new Date()), cancelAtPeriodEnd: true },
+        }),
+        providerCancellationFacts: async () => SETTLED_REFUND,
+      }),
+    );
+
+    const result = await svc.enforceLocalVerdicts(0);
+    expect(result.settled).toBe(1);
+
+    const [row] = await db
+      .select({
+        status: subscriptions.status,
+        cancelSource: subscriptions.cancelSource,
+        entitlementEndsAt: subscriptions.entitlementEndsAt,
+      })
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_verdict'));
+    expect(row?.status).toBe('canceled');
+    // Provenance SURVIVES the flip. "Ended by refund" must stay
+    // distinguishable from "cancelled normally" for churn reporting, and
+    // the post-flip watch selects on exactly these two columns.
+    expect(row?.cancelSource).toBe('refund');
+    expect(row?.entitlementEndsAt).not.toBeNull();
+
+    // THE assertion. A guard-only check passes against a broken system:
+    // the lockout lived in the `subscriptions_one_live_per_workspace`
+    // partial index, so the only proof the customer can actually buy
+    // again is a second live row inserting beside the dead one.
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_repurchase',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      billingCycle: 'monthly',
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+      cancelAtPeriodEnd: false,
+    });
+    const live = await db
+      .select({ id: subscriptions.providerSubscriptionId })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.workspaceId, workspaceId), eq(subscriptions.status, 'active')));
+    expect(live.map((r) => r.id)).toEqual(['sub_repurchase']);
+  });
+
+  it('a settled CHARGEBACK does not free the slot', async () => {
+    // Founder decision 2026-08-13. Under a merchant of record, repeat
+    // chargebacks flag a seller account, and re-arming the same payment
+    // method same-day is how that starts. They release normally when the
+    // period ends — not early.
+    await seedVerdictRow({ cancelSource: 'chargeback' });
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: { ...activePlusSub('sub_verdict', new Date()), cancelAtPeriodEnd: true },
+        }),
+        providerCancellationFacts: async () => SETTLED_CHARGEBACK,
+      }),
+    );
+
+    const result = await svc.enforceLocalVerdicts(0);
+    expect(result.settled).toBe(0);
+    const [row] = await db
+      .select({ status: subscriptions.status })
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_verdict'));
+    expect(row?.status).toBe('active');
+  });
+
+  it('re-observing the same settled refund is a no-op, not a second flip', async () => {
+    await seedVerdictRow({ cancelSource: 'refund' });
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: { ...activePlusSub('sub_verdict', new Date()), cancelAtPeriodEnd: true },
+        }),
+        providerCancellationFacts: async () => SETTLED_REFUND,
+      }),
+    );
+
+    await svc.enforceLocalVerdicts(0);
+    // Second pass: the row is `canceled` now, so the verdict selector no
+    // longer returns it at all. Nothing to settle, nothing to write, and
+    // exactly one ledger row for the settlement.
+    const second = await svc.enforceLocalVerdicts(0);
+    expect(second.settled).toBe(0);
+
+    const events = await db
+      .select({ eventType: subscriptionEvents.eventType })
+      .from(subscriptionEvents);
+    expect(events.filter((e) => e.eventType === 'reconciliation.refund_settled')).toHaveLength(1);
+  });
+
+  it('an adapter that cannot answer never settles — the scope is the ADAPTER, not a provider check', async () => {
+    // No `provider !== 'razorpay'` check exists anywhere, deliberately.
+    // A hardcoded one would have become a permanent lockout for every
+    // Indian customer the moment Razorpay refunds were mapped — the
+    // exact bug this feature removes, re-created by the mitigation.
+    //
+    // So the rule is provider-agnostic: an adapter that answers `null`
+    // cannot settle, and one that answers settles. Razorpay's adapter
+    // now DOES answer (it reads invoices → refunds → disputes), so this
+    // test no longer describes Razorpay's production state — it pins the
+    // general property, which is what has to keep holding.
+
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'razorpay',
+      providerSubscriptionId: 'sub_rzp',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: TEST_PRICE_IDS.razorpay.plus_monthly,
+      billingCycle: 'monthly',
+      currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      cancelAtPeriodEnd: true,
+      cancelSource: 'refund',
+      entitlementEndsAt: new Date(),
+    });
+    const svc = service(
+      fakeAdapter({}),
+      fakeAdapter({
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: activePlusSub('sub_rzp', new Date()),
+        }),
+        providerCancellationFacts: async () => null,
+      }) as RazorpayAdapter,
+    );
+
+    const result = await svc.enforceLocalVerdicts(0);
+    expect(result.settled).toBe(0);
+    const [row] = await db
+      .select({ status: subscriptions.status })
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_rzp'));
+    expect(row?.status).toBe('active');
+  });
+
+  it('a verdict backlog past the cap does NOT starve the rows behind it', async () => {
+    // The cap is 100 and both capped passes select at RANDOM, not by
+    // `updated_at`. That looks arbitrary until you notice an unsettled
+    // row writes nothing — deliberately, it is the whole restraint — so
+    // its `updated_at` never moves. Ordered by `updated_at ASC LIMIT
+    // 100`, the leading 100 rows would be the SAME 100 forever, and
+    // they are precisely the ones that cannot progress. Row 101 would
+    // never be examined again: a refunded customer permanently unable
+    // to buy, which is the bug this whole feature removes.
+    //
+    // So the assertion is not "one pass covers everything" — it cannot,
+    // and should not. It is that REPEATED passes reach past the cap.
+    // A single-pass test is exactly what missed this (Codex
+    // stop-review, 2026-08-13).
+    // 300 rows at a 60-row bucket target is 5 buckets, each comfortably
+    // under the 100 cap. The RATIO is chosen deliberately: at 130 rows a
+    // random-only selection covers everything in three runs about 99% of
+    // the time, so a test at that size PASSES against the broken
+    // implementation most runs — which is precisely the "unbounded
+    // probabilistic delay" being fixed, showing up as a flaky test
+    // instead of a caught bug. At 3× the cap, random-only misses ~40
+    // rows and fails every time.
+    const TOTAL = 300;
+    // Seeded `paused`, not `active`, purely so one workspace can hold
+    // them all: `subscriptions_one_live_per_workspace` covers
+    // active/past_due only. `paused` is in the verdict selector, which
+    // is the part under test, and 130 workspaces would prove the same
+    // thing far more slowly.
+    await db.insert(subscriptions).values(
+      Array.from({ length: TOTAL }, (_, i) => ({
+        workspaceId,
+        provider: 'paddle' as const,
+        providerSubscriptionId: `sub_backlog_${i}`,
+        tier: 'plus' as const,
+        status: 'paused' as const,
+        providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+        billingCycle: 'monthly' as const,
+        currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+        cancelAtPeriodEnd: true,
+        cancelSource: 'refund' as const,
+        entitlementEndsAt: new Date(),
+      })),
+    );
+
+    const everAsked = new Set<string>();
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async (id) => ({
+          kind: 'found',
+          subscription: { ...activePlusSub(id, new Date()), cancelAtPeriodEnd: true },
+        }),
+        // Nothing ever settles — the state that pins the leading rows in
+        // place under a stable ordering, and writes nothing.
+        providerCancellationFacts: async (id) => {
+          everAsked.add(id);
+          return { settled: null, refuted: { refund: false, chargeback: false } };
+        },
+      }),
+    );
+
+    // The bound, not a probability. 5 buckets means FIVE consecutive run
+    // indices must cover the whole population — the guarantee the
+    // round-robin makes and `random()` alone cannot (Codex stop-review
+    // round 2: "random sampling replaces permanent starvation with
+    // unbounded probabilistic delay"). Consecutive indices, because the
+    // run index advances by exactly one per scheduled run.
+    for (let runIndex = 0; runIndex < 5; runIndex += 1) {
+      await svc.enforceLocalVerdicts(runIndex);
+    }
+
+    // Exhaustive, not "most of them". Under `updated_at ASC` this is
+    // exactly 100 however many passes run; under random-only it lands
+    // around 260.
+    expect(everAsked.size).toBe(TOTAL);
+    expect(everAsked.size).toBeGreaterThan(VERDICT_PASS_MAX_ROWS);
+  });
+
+  it('the round-robin is a no-op below the bucket target', async () => {
+    // The partition only engages under load. At real volume — which is
+    // where this product actually is — there is one bucket and every
+    // row is examined every run, so no customer waits for their slice
+    // to come around.
+    await seedVerdictRow({ cancelSource: 'refund', providerSubscriptionId: 'sub_only' });
+    const asked: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async (id) => ({
+          kind: 'found',
+          subscription: { ...activePlusSub(id, new Date()), cancelAtPeriodEnd: true },
+        }),
+        providerCancellationFacts: async (id) => {
+          asked.push(id);
+          return { settled: null, refuted: { refund: false, chargeback: false } };
+        },
+      }),
+    );
+
+    // Any run index, same answer — no row is ever skipped for being in
+    // "another bucket" when there is only one.
+    for (const runIndex of [0, 1, 7, 12345]) await svc.enforceLocalVerdicts(runIndex);
+    expect(asked).toEqual(['sub_only', 'sub_only', 'sub_only', 'sub_only']);
+  });
+
+  // ── D253 — the flipped row stays watched ──────────────────────────
+  //
+  // Flipping to `canceled` makes every other pass lose interest, and the
+  // terminal-canceled floor discards any later granting payload. So if
+  // the provider's cancel is cleared or never sticks, it keeps charging
+  // a customer we hold on Free and nothing notices — strictly worse than
+  // the lockout, and invisible where the lockout at least had a confused
+  // customer to report it.
+
+  /** A row already flipped by a settled refund. */
+  async function seedFlippedRefundRow(input: { currentPeriodEnd: Date }) {
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_flipped',
+      tier: 'plus',
+      status: 'canceled',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      billingCycle: 'monthly',
+      currentPeriodEnd: input.currentPeriodEnd,
+      cancelAtPeriodEnd: true,
+      cancelSource: 'refund',
+      entitlementEndsAt: new Date(),
+    });
+  }
+
+  it('a flipped row the provider is still set to RENEW raises the alert', async () => {
+    await seedFlippedRefundRow({ currentPeriodEnd: new Date(Date.now() + 20 * 24 * 3600 * 1000) });
+    const svc = service(
+      fakeAdapter({
+        // Paddle's scheduled cancel is gone — it intends to bill again.
+        fetchSubscription: async () => ({
+          kind: 'found',
+          subscription: activePlusSub('sub_flipped', new Date()),
+        }),
+      }),
+    );
+
+    const result = await svc.watchSettledRefunds(0);
+    expect(result).toMatchObject({ watched: 1, rebilling: 1 });
+    // An alert, never a write — resurrecting the row would re-enter the
+    // live slot a repurchase may already hold, which is the collision
+    // the whole design makes unrepresentable.
+    const [row] = await db
+      .select({ status: subscriptions.status })
+      .from(subscriptions)
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_flipped'));
+    expect(row?.status).toBe('canceled');
+  });
+
+  it('a flipped row the provider agrees is terminal stays quiet', async () => {
+    await seedFlippedRefundRow({ currentPeriodEnd: new Date(Date.now() + 20 * 24 * 3600 * 1000) });
+    const svc = service(fakeAdapter({ fetchSubscription: async () => ({ kind: 'not_found' }) }));
+
+    // `not_found` is the GOOD outcome — the subscription is gone at the
+    // provider, which is exactly what we want to be true.
+    expect(await svc.watchSettledRefunds(0)).toMatchObject({
+      watched: 1,
+      rebilling: 0,
+      unreadable: 0,
+    });
+  });
+
+  it('the watch stops once the renewal it guards against has passed', async () => {
+    // Self-terminating with no attempt counter and no schema change: a
+    // provider can only charge again at `current_period_end`, so past it
+    // plus a grace window there is nothing left to catch.
+    await seedFlippedRefundRow({ currentPeriodEnd: new Date(Date.now() - 60 * 24 * 3600 * 1000) });
+    const asked: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async (id) => {
+          asked.push(id);
+          return { kind: 'found', subscription: activePlusSub('sub_flipped', new Date()) };
+        },
+      }),
+    );
+
+    expect(await svc.watchSettledRefunds(0)).toMatchObject({ watched: 0, rebilling: 0 });
+    expect(asked).toEqual([]);
+  });
+
+  it('the watch ignores rows that are not refund-canceled', async () => {
+    // An ordinary cancelled row carries no refund verdict and is not our
+    // business; polling it would cost a provider call per churned
+    // customer, forever.
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_ordinary',
+      tier: 'plus',
+      status: 'canceled',
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
+      billingCycle: 'monthly',
+      currentPeriodEnd: new Date(Date.now() + 20 * 24 * 3600 * 1000),
+      cancelAtPeriodEnd: true,
+      cancelSource: 'provider',
+      entitlementEndsAt: new Date(),
+    });
+    const asked: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async (id) => {
+          asked.push(id);
+          return { kind: 'not_found' };
+        },
+      }),
+    );
+
+    expect(await svc.watchSettledRefunds(0)).toMatchObject({ watched: 0 });
+    expect(asked).toEqual([]);
   });
 
   // ── reconcileWorkspaceSubscriptions — the stuck-plan-change path ──

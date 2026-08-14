@@ -38,7 +38,7 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { pendingCheckouts, subscriptions, users } from '@declutrmail/db';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
@@ -86,13 +86,28 @@ export interface DriftSweepResult {
   /** Provider answered 404 / unmapped status — logged, never written. */
   subscriptionsUnreadable: number;
   providerErrors: number;
+}
+
+/**
+ * Counters for the verdict pass, which is no longer part of the drift
+ * sweep. It moved to `BillingVerdictWorker` on a ~10 minute cadence
+ * because `settled` gates whether a refunded customer can buy again, and
+ * six hours is not an acceptable latency on a revenue path (D253). The
+ * three `verdicts*` fields that used to live on `DriftSweepResult` are
+ * these; they now reach observability through that worker's
+ * `worker.succeeded` line rather than `billing.reconcile.swept`.
+ */
+export interface VerdictPassResult {
   /** Local refund/chargeback verdicts newly pushed to the provider. */
-  verdictsEnforced: number;
+  enforced: number;
   /** Verdict rows the provider would not confirm a cancel for this run. */
-  verdictsUnenforced: number;
+  unenforced: number;
   /** Verdicts the provider CONTRADICTED — refund rejected or chargeback
    *  reversed — lifted so the customer stops paying for nothing. */
-  verdictsRefuted: number;
+  refuted: number;
+  /** Refunds the provider CONFIRMED — the plan slot was freed so the
+   *  customer can purchase again (D253). Chargebacks never count here. */
+  settled: number;
 }
 
 /** A candidate must postdate the claim, minus this skew allowance. */
@@ -105,6 +120,77 @@ const DRIFT_SWEEP_MAX_ROWS = 500;
 /** Consecutive provider errors before the sweep stops asking that
  *  provider this run — a down provider should not be hammered 500×. */
 const DRIFT_SWEEP_TRIP_AFTER = 3;
+
+/**
+ * Row cap for the two passes the verdict WORKER runs, well under
+ * `DRIFT_SWEEP_MAX_ROWS` because those two share a 60-second budget the
+ * untimed 6-hourly sweep did not have: `cronPolicy` carries
+ * `timeoutMs: 60_000`, the verdict pass makes TWO sequential provider
+ * calls per row and the watch pass one, so 500 rows could not finish.
+ *
+ * A cap here is NOT the harmless partial pass it would be in a sweep
+ * that eventually revisits everything. These passes are selected with
+ * `RANDOM_ROW_ORDER` for a reason — see it. Read that before changing
+ * either the cap or the ordering; they are one mechanism.
+ */
+export const VERDICT_PASS_MAX_ROWS = 100;
+
+/**
+ * Deterministic round-robin over a capped pass, and why the two verdict
+ * passes cannot simply order by `updated_at` like the rest of this file.
+ *
+ * A row the provider has not settled yet writes NOTHING — that is the
+ * whole point of the restraint. So its `updated_at` never moves, and
+ * `ORDER BY updated_at ASC LIMIT n` returns the *same* n rows on every
+ * run, forever. Not "until the backlog drains": there is no drain, the
+ * leading rows are precisely the ones that cannot progress. Row n+1 is
+ * never examined again — silent, permanent, and on a revenue path, since
+ * a refunded customer behind the cap could never buy again.
+ *
+ * Two review rounds shaped the answer (Codex stop-review, 2026-08-13):
+ *
+ *  1. An earlier revision named that starvation in a comment and capped
+ *     anyway.
+ *  2. The first fix was `ORDER BY random()`. That removes the permanent
+ *     starvation but replaces it with an UNBOUNDED probabilistic delay —
+ *     coverage becomes eventual-in-the-limit with no guarantee for any
+ *     particular row, which is not good enough when the row is a
+ *     customer waiting to be allowed to pay us.
+ *
+ * So the population is partitioned into `ceil(total / target)` buckets by
+ * a stable hash of the subscription id, and each run takes the single
+ * bucket its run index names. Every row is therefore examined at least
+ * once every `buckets` runs — a hard bound of `buckets × cadence`, not a
+ * probability. The run index comes from the job's own scheduled minute,
+ * so it advances by exactly one per run and needs no stored cursor.
+ *
+ * Below the target the whole thing vanishes: one bucket, every row every
+ * run, which is the state this product is actually in. The machinery
+ * only engages under a load that does not exist yet.
+ *
+ * `BUCKET_TARGET_ROWS` is under the cap on purpose. Hash buckets are not
+ * perfectly even, and a bucket that overflowed the cap would be
+ * truncated at the same rows every run — the original bug, one level
+ * down. The slack makes that unlikely, ordering WITHIN a bucket is
+ * random so a truncated bucket still rotates, and filling the cap is
+ * logged either way.
+ */
+const BUCKET_TARGET_ROWS = 60;
+
+/** Order within the selected bucket. Only matters if a bucket ever
+ *  overflows the cap — then it keeps the truncated tail rotating rather
+ *  than starving the same rows (see `bucketPredicate`). */
+const RANDOM_ROW_ORDER = sql`random()`;
+
+/** How long to keep watching a refund-canceled row whose
+ *  `current_period_end` is unknown (D253). A provider can only charge
+ *  again at renewal, so with no recorded renewal date this stands in for
+ *  the longest ordinary cycle we would otherwise be blind across. */
+const REFUND_WATCH_FALLBACK_DAYS = 45;
+
+/** Grace past the renewal date. The alert is "the provider still intends
+ *  to bill", so the window has to outlast the moment it would. */
+const REFUND_WATCH_GRACE_DAYS = 7;
 
 /** Deterministic digest of the material subscription state. */
 function stateHash(sub: NormalizedSubscription): string {
@@ -136,6 +222,67 @@ export class BillingReconciliationService {
 
   private adapterFor(provider: BillingProviderId): BillingProvider {
     return provider === 'paddle' ? this.paddle : this.razorpay;
+  }
+
+  /**
+   * The bucket this run owns, as a SQL predicate — or `undefined` when
+   * the whole population fits in one pass, which is the normal case and
+   * costs nothing.
+   *
+   * `hashtext` is Postgres's own stable string hash, so the partition is
+   * consistent across runs and processes without storing anything. It
+   * can return negative values (including INT_MIN, which is why `abs`
+   * would be wrong on its own), so the modulus is taken first and the
+   * sign corrected after — `((h % b) + b) % b` is always in `[0, b)`.
+   *
+   * `buckets` is recomputed from the live count every run, so the
+   * partition adapts as the backlog grows or drains. A row can therefore
+   * change bucket between runs; that is harmless, because the guarantee
+   * is "examined within `buckets` runs", not "always in bucket k".
+   */
+  private async bucketPredicate(
+    where: SQL,
+    runIndex: number,
+  ): Promise<{ predicate: SQL | undefined; buckets: number; total: number }> {
+    const [row] = await this.db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(subscriptions)
+      .where(where);
+    const total = row?.total ?? 0;
+    const buckets = Math.max(1, Math.ceil(total / BUCKET_TARGET_ROWS));
+    if (buckets === 1) return { predicate: undefined, buckets, total };
+    const bucket = ((Math.trunc(runIndex) % buckets) + buckets) % buckets;
+    return {
+      predicate: sql`((hashtext(${subscriptions.providerSubscriptionId}) % ${buckets}::int) + ${buckets}::int) % ${buckets}::int = ${bucket}::int`,
+      buckets,
+      total,
+    };
+  }
+
+  /**
+   * A capped pass that fills its cap has NOT seen everything, and must
+   * say so. Random selection (see `RANDOM_ROW_ORDER`) makes coverage
+   * eventual rather than guaranteed within one run, so the honest
+   * reading of a full page is "there is more than I can hold" — and a
+   * pass that quietly returns clean counters over a truncated set reads
+   * as "nothing wrong" when it verified only part of the population.
+   *
+   * Reaching this at all means verdict volume outgrew a cadence sized
+   * for a handful of refunds, which is an operational signal in itself.
+   */
+  private warnIfCapped(
+    rowCount: number,
+    pass: 'verdict' | 'refund_watch',
+    slice: { buckets: number; total: number },
+  ): void {
+    if (rowCount < VERDICT_PASS_MAX_ROWS) return;
+    // Only reachable when a hash bucket came out well above target, so
+    // the round-robin's bound no longer holds for this bucket's tail.
+    // Random ordering within the bucket keeps it rotating, but the
+    // deterministic guarantee is gone and that is worth saying out loud.
+    this.logger.warn(
+      `billing.reconcile.pass_capped pass=${pass} rows=${rowCount} cap=${VERDICT_PASS_MAX_ROWS} buckets=${slice.buckets} total=${slice.total} — a hash bucket overflowed the cap, so this run truncated it; coverage stays eventual via random ordering but the per-row bound no longer holds. Lower BUCKET_TARGET_ROWS if this repeats`,
+    );
   }
 
   /**
@@ -358,8 +505,27 @@ export class BillingReconciliationService {
       })
       .from(subscriptions)
       .where(inArray(subscriptions.status, ['active', 'past_due', 'paused']))
-      .orderBy(asc(subscriptions.updatedAt))
+      // Same starvation as the verdict passes, one cap up. A row whose
+      // provider truth is UNCHANGED reconciles to the same state hash,
+      // dedups in the ledger, and writes nothing — so its `updated_at`
+      // never moves either, and the healthy majority is exactly the
+      // population that cannot progress. Past 500 live subscriptions,
+      // `updated_at ASC` would pin the sweep to the same 500 forever and
+      // every customer behind them would lose the missed-webhook
+      // recovery this sweep exists to provide, silently.
+      //
+      // Pre-existing rather than introduced here, and only reachable at
+      // a scale this business has not hit. Fixed alongside its sibling
+      // because it is the identical defect on the adjacent line, and
+      // leaving it would mean shipping a known permanent-starvation bug
+      // beside the commit that fixes one (CLAUDE.md — fix the class).
+      .orderBy(RANDOM_ROW_ORDER)
       .limit(DRIFT_SWEEP_MAX_ROWS);
+    if (rows.length >= DRIFT_SWEEP_MAX_ROWS) {
+      this.logger.warn(
+        `billing.reconcile.pass_capped pass=drift rows=${rows.length} cap=${DRIFT_SWEEP_MAX_ROWS} — more live subscriptions than one sweep examines; selection is random so coverage is eventual, but no single row is guaranteed a look this run`,
+      );
+    }
 
     const result: DriftSweepResult = {
       subscriptionsChecked: 0,
@@ -367,9 +533,6 @@ export class BillingReconciliationService {
       subscriptionsUnchanged: 0,
       subscriptionsUnreadable: 0,
       providerErrors: 0,
-      verdictsEnforced: 0,
-      verdictsUnenforced: 0,
-      verdictsRefuted: 0,
     };
     const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
 
@@ -392,10 +555,10 @@ export class BillingReconciliationService {
       }
     }
 
-    const enforced = await this.enforceLocalVerdicts();
-    result.verdictsEnforced = enforced.enforced;
-    result.verdictsUnenforced = enforced.unenforced;
-    result.verdictsRefuted = enforced.refuted;
+    // Verdict enforcement deliberately does NOT run here any more. It
+    // owns its own ~10 minute job (`BillingVerdictWorker`), and calling
+    // it from both schedules would let two passes issue provider
+    // mutations for the same row concurrently (D253).
     return result;
   }
 
@@ -435,11 +598,12 @@ export class BillingReconciliationService {
    * every renewal window we can bill on, and it buys the retry
    * durability an inline call would not have.
    */
-  private async enforceLocalVerdicts(): Promise<{
-    enforced: number;
-    unenforced: number;
-    refuted: number;
-  }> {
+  async enforceLocalVerdicts(runIndex: number): Promise<VerdictPassResult> {
+    const eligible = and(
+      inArray(subscriptions.cancelSource, ['refund', 'chargeback']),
+      inArray(subscriptions.status, ['active', 'past_due', 'paused']),
+    )!;
+    const slice = await this.bucketPredicate(eligible, runIndex);
     const rows = await this.db
       .select({
         provider: subscriptions.provider,
@@ -447,18 +611,15 @@ export class BillingReconciliationService {
         cancelSource: subscriptions.cancelSource,
       })
       .from(subscriptions)
-      .where(
-        and(
-          inArray(subscriptions.cancelSource, ['refund', 'chargeback']),
-          inArray(subscriptions.status, ['active', 'past_due', 'paused']),
-        ),
-      )
-      .orderBy(asc(subscriptions.updatedAt))
-      .limit(DRIFT_SWEEP_MAX_ROWS);
+      .where(slice.predicate ? and(eligible, slice.predicate) : eligible)
+      .orderBy(RANDOM_ROW_ORDER)
+      .limit(VERDICT_PASS_MAX_ROWS);
+    this.warnIfCapped(rows.length, 'verdict', slice);
 
     let enforced = 0;
     let unenforced = 0;
     let refuted = 0;
+    let settled = 0;
     const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
 
     for (const row of rows) {
@@ -470,7 +631,11 @@ export class BillingReconciliationService {
         const fetched = await this.adapterFor(row.provider).fetchSubscription(
           row.providerSubscriptionId,
         );
-        consecutiveErrors[row.provider] = 0;
+        // NOT reset here. A healthy subscriptions endpoint says nothing
+        // about the adjustments endpoint, and this loop calls both — so
+        // resetting on the first would let a persistently failing second
+        // one keep the streak at zero forever. The reset moves to the
+        // point where the whole row has been read successfully.
         if (fetched.kind !== 'found') {
           // Cannot read it, so cannot claim it renews. Same posture as
           // the drift pass: a read miss is never grounds for a write.
@@ -478,9 +643,30 @@ export class BillingReconciliationService {
           continue;
         }
         const provider = fetched.subscription;
-        if (provider.status === 'canceled' || provider.cancelAtPeriodEnd) {
-          continue; // already converged — the common steady state
+        if (provider.status === 'canceled') {
+          continue; // provider is terminal — nothing left to enforce or refute
         }
+        // `cancelAtPeriodEnd` deliberately does NOT short-circuit here. It
+        // used to, as "already converged — the common steady state", and
+        // that skipped the facts read entirely for any row the provider
+        // had already scheduled to cancel. Two ordinary timelines land
+        // there, and both end badly:
+        //
+        //   1. The customer cancels in-app, then asks for their money
+        //      back. Paddle has held `scheduled_change: cancel` since
+        //      their own cancel, so the refund verdict is never settled
+        //      and the plan slot is never released.
+        //   2. That same refund is REJECTED by Paddle. The refutation
+        //      below is never reached either, so `entitlement_ends_at`
+        //      stays pinned at the moment the refund was requested and
+        //      the customer keeps paying for a plan we no longer grant.
+        //
+        // (2) is the live bug: cancel-then-rejected-refund is not exotic,
+        // and it silently bills someone for nothing. Our OWN enforcement
+        // is what sets `cancelAtPeriodEnd` in the first place (below), so
+        // the old condition also made every enforced row permanently
+        // unreadable afterwards. The flag now suppresses only the
+        // redundant outbound cancel, never discovery.
         // Our own marker is NOT proof. `adjustment.created` fires while a
         // live-account refund is still `pending_approval`, and Paddle may
         // yet reject it — cancelling on that would end the subscription of
@@ -495,22 +681,108 @@ export class BillingReconciliationService {
           row.providerSubscriptionId,
         );
         if (facts === null) {
+          // A null here is a READ FAILURE, not "nothing settled" — the
+          // adapter returns it on a 404, a malformed body, or a throw it
+          // swallowed. Because it does not throw, the catch below never
+          // sees it, and the successful `fetchSubscription` above has
+          // just reset this provider's counter to zero. So the breaker
+          // could never trip on a failing adjustments endpoint while the
+          // subscriptions endpoint stayed healthy.
+          //
+          // That was survivable while the `cancelAtPeriodEnd`
+          // short-circuit meant most rows never reached this read at all.
+          // It no longer does (see above), so every verdict row now asks
+          // every pass, and an unreachable adjustments endpoint would be
+          // hammered at DRIFT_SWEEP_MAX_ROWS per pass with nothing to
+          // stop it.
+          consecutiveErrors[row.provider] += 1;
           unenforced += 1;
           this.logger.log(
             `billing.reconcile.verdict_unreadable provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} — could not ask; no action`,
           );
           continue;
         }
+        // Both reads landed — the provider is genuinely reachable, so the
+        // consecutive-failure streak is broken.
+        consecutiveErrors[row.provider] = 0;
 
         // SETTLED FIRST. A live chargeback beside an old reversed one
         // still ends the plan, so a settled cause outranks any
         // refutation — checking refutation first would skip the cancel.
         if (facts.settled !== null) {
-          await this.adapterFor(row.provider).cancelSubscription(row.providerSubscriptionId);
-          enforced += 1;
-          this.logger.warn(
-            `billing.reconcile.verdict_enforced provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} provider_says=${facts.settled} — provider was still set to renew a ${facts.settled === 'chargeback' ? 'charged-back' : 'refunded'} subscription; scheduled cancel at period end`,
-          );
+          // Only send the cancel if the provider is not already scheduled
+          // to stop. Re-sending is not harmful, but it is a wasted
+          // provider mutation on every pass for a row that has already
+          // converged — and this loop now revisits those rows by design.
+          if (!provider.cancelAtPeriodEnd) {
+            await this.adapterFor(row.provider).cancelSubscription(row.providerSubscriptionId);
+            enforced += 1;
+            this.logger.warn(
+              `billing.reconcile.verdict_enforced provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} provider_says=${facts.settled} — provider was still set to renew a ${facts.settled === 'chargeback' ? 'charged-back' : 'refunded'} subscription; scheduled cancel at period end`,
+            );
+          }
+          // `verdictsEnforced` keeps meaning "we sent a cancel" — the
+          // counter is now spread into this worker's `worker.succeeded`
+          // line rather than `billing.reconcile.swept`, but its meaning
+          // is unchanged. A row the provider had already scheduled is
+          // neither enforced nor unenforced: nothing was wrong and
+          // nothing needed doing.
+
+          // D253. The provider has CONFIRMED the refund — free the plan
+          // slot so this customer can buy again.
+          //
+          // The branch is on `facts.settled`, the PROVIDER's answer, and
+          // never on `row.cancelSource`, our own marker. The two are
+          // deliberately allowed to differ (a chargeback can settle on a
+          // row we marked `refund`), and the code above handles every
+          // non-null cause together — so keying on our marker, or on a
+          // generic "something settled", would silently unlock
+          // chargebacks. Chargebacks must NOT unlock early: under a
+          // merchant of record, re-arming the same payment method
+          // same-day is how a seller account gets flagged (founder
+          // decision, 2026-08-13). They still release normally when the
+          // period ends and the real `subscription.canceled` arrives.
+          //
+          // No provider check guards this, and that is now load-bearing
+          // rather than merely tidy. An earlier revision justified the
+          // absence by saying Razorpay could never reach here — its
+          // facts read returned null and its mapper minted no verdict.
+          // Both clauses died in this same branch: Razorpay now reads
+          // refunds and disputes, and its mapper resolves a subscription
+          // id through the invoice, so Razorpay rows DO reach here and
+          // settle. That is the point. A hardcoded
+          // `provider !== 'razorpay'` would have become a permanent
+          // lockout for every Indian customer at exactly that moment —
+          // the bug this feature removes, re-created by its own
+          // mitigation.
+          //
+          // BOTH sides must agree no dispute is involved, and they are
+          // asking different questions. `facts.settled === 'refund'` is
+          // the provider's answer to "did money actually go back, and is
+          // there no live chargeback?" — it is the only thing that can
+          // confirm a settlement, which is why the branch is not on our
+          // marker alone. `row.cancelSource === 'refund'` is OUR answer
+          // to "was a dispute ever raised on this subscription?", and
+          // the provider read cannot answer it: a chargeback that was
+          // later reversed leaves `facts.settled` reading `refund` while
+          // our row still records that a dispute happened. Unlocking
+          // there would re-arm the same payment method on a customer who
+          // has disputed us before, which is precisely the founder's
+          // stated reason for the asymmetry.
+          //
+          // Requiring both is strictly SAFER than either alone, and the
+          // conjunction must be tested HERE rather than left to the
+          // projector's WHERE clause. It was there first, and the
+          // counter below then incremented — and the log line claimed
+          // the slot was released — on rows the projector had silently
+          // refused. An observability line that reports work it did not
+          // do is the same assert-what-you-don't-know defect this
+          // codebase keeps paying for, just aimed at us instead of the
+          // customer.
+          if (facts.settled === 'refund' && row.cancelSource === 'refund') {
+            await this.projectRefundSettlement(row, new Date().toISOString());
+            settled += 1;
+          }
           continue;
         }
 
@@ -547,7 +819,7 @@ export class BillingReconciliationService {
         );
       }
     }
-    return { enforced, unenforced, refuted };
+    return { enforced, unenforced, refuted, settled };
   }
 
   /**
@@ -593,6 +865,157 @@ export class BillingReconciliationService {
     this.logger.warn(
       `billing.reconcile.verdict_refuted provider=${row.provider} sub=${row.providerSubscriptionId} local=${row.cancelSource} outcome=${outcome.kind} — the provider rejected the refund or reversed the chargeback; entitlement restored`,
     );
+  }
+
+  /**
+   * Free the plan slot after the provider confirms a refund (D253).
+   *
+   * Through the ONE projector, exactly like `liftRefutedVerdict` and for
+   * the same reason: this file's header promises it is "a second SOURCE,
+   * never a second WRITER", and `webhookService.process()` is what
+   * supplies the advisory lock, the dedup gate and the tier recompute.
+   *
+   * The event id is deterministic and scoped to the subscription, so
+   * re-observing the same settled refund on a later pass dedups instead
+   * of re-flipping. It carries no adjustment id: the provider fact is
+   * "a full refund has settled against this subscription", which is
+   * true once regardless of how many adjustment rows compose it.
+   */
+  private async projectRefundSettlement(
+    row: { provider: BillingProviderId; providerSubscriptionId: string },
+    observedAtIso: string,
+  ): Promise<void> {
+    const outcome = await this.webhookService.process(
+      row.provider,
+      {
+        kind: 'refund_settled',
+        providerEventId: `recon-refund-settled:${row.provider}:${row.providerSubscriptionId}`,
+        eventType: 'reconciliation.refund_settled',
+        providerSubscriptionId: row.providerSubscriptionId,
+      },
+      { occurred_at: observedAtIso },
+    );
+    this.logger.warn(
+      `billing.reconcile.refund_settled provider=${row.provider} sub=${row.providerSubscriptionId} outcome=${outcome.kind} — provider confirmed the refund; plan slot released`,
+    );
+  }
+
+  /**
+   * Keep watching a row we locally canceled on a settled refund, until
+   * the PROVIDER agrees it is terminal (D253).
+   *
+   * This is the part of the settlement design that cannot be dropped for
+   * scope. Flipping the row to `canceled` makes every other pass lose
+   * interest in it — drift, workspace reconcile and the verdict pass all
+   * select on `status IN ('active','past_due','paused')` — and the
+   * terminal-canceled floor in the projector discards any later
+   * `active`/`past_due` payload for it. A payment webhook changes no
+   * entitlement.
+   *
+   * So if the provider's scheduled cancel is cleared, never sticks, or
+   * the subscription recovers from dunning, the provider keeps charging
+   * the customer while we hold them on Free, and nothing anywhere
+   * notices. That is charged-without-entitlement — strictly worse than
+   * the lockout this feature exists to remove, and invisible where the
+   * lockout at least had a confused customer to report it.
+   *
+   * The watch is therefore an ALERT, never a write. We deliberately do
+   * not auto-resurrect the row: doing so would re-enter the live slot
+   * that a repurchase may already occupy, which is the collision the
+   * whole design is built to make unrepresentable. A human resolves it.
+   *
+   * Bounded by the row's own renewal date rather than an attempt
+   * counter, which is what the exposure actually is — a provider can
+   * only charge again at `current_period_end`, so watching past it plus
+   * a grace window buys nothing. Rows with no recorded period end fall
+   * back to a fixed window from the refund. Both make the pass
+   * self-terminating with no schema change.
+   */
+  async watchSettledRefunds(runIndex: number): Promise<{
+    watched: number;
+    rebilling: number;
+    unreadable: number;
+  }> {
+    const eligible = and(
+      eq(subscriptions.status, 'canceled'),
+      eq(subscriptions.cancelSource, 'refund'),
+      // `interval '1 day' * n::int` rather than a string-built
+      // `interval 'n days'` — the multiplication takes a bound
+      // parameter, so the window constants stay TypeScript values
+      // instead of being interpolated into SQL text.
+      sql`now() <= COALESCE(
+            ${subscriptions.currentPeriodEnd},
+            ${subscriptions.entitlementEndsAt} + interval '1 day' * ${REFUND_WATCH_FALLBACK_DAYS}::int
+          ) + interval '1 day' * ${REFUND_WATCH_GRACE_DAYS}::int`,
+    )!;
+    const slice = await this.bucketPredicate(eligible, runIndex);
+    const rows = await this.db
+      .select({
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+        workspaceId: subscriptions.workspaceId,
+      })
+      .from(subscriptions)
+      .where(slice.predicate ? and(eligible, slice.predicate) : eligible)
+      .orderBy(RANDOM_ROW_ORDER)
+      .limit(VERDICT_PASS_MAX_ROWS);
+    this.warnIfCapped(rows.length, 'refund_watch', slice);
+
+    let watched = 0;
+    let rebilling = 0;
+    let unreadable = 0;
+    const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
+
+    for (const row of rows) {
+      if (consecutiveErrors[row.provider] >= DRIFT_SWEEP_TRIP_AFTER) {
+        unreadable += 1;
+        continue;
+      }
+      try {
+        const fetched = await this.adapterFor(row.provider).fetchSubscription(
+          row.providerSubscriptionId,
+        );
+        if (fetched.kind !== 'found') {
+          // `not_found` is the GOOD outcome here — the subscription is
+          // gone at the provider, which is exactly what we want to be
+          // true. Only `found_unmapped` is genuinely unreadable, and it
+          // is not an alert: an unmappable status is not evidence of
+          // billing.
+          consecutiveErrors[row.provider] = 0;
+          watched += 1;
+          if (fetched.kind === 'found_unmapped') {
+            unreadable += 1;
+            this.logger.log(
+              `billing.reconcile.refund_watch_unmapped provider=${row.provider} sub=${row.providerSubscriptionId} provider_status=${fetched.providerStatus}`,
+            );
+          }
+          continue;
+        }
+        consecutiveErrors[row.provider] = 0;
+        watched += 1;
+        const provider = fetched.subscription;
+        if (provider.status === 'canceled') continue; // converged; nothing to say
+
+        // Still live at the provider. Either it is scheduled to stop and
+        // simply has not yet — normal, and quiet — or the schedule is
+        // missing, which means the provider intends to bill a customer
+        // we have already refunded and cut off.
+        if (!provider.cancelAtPeriodEnd) {
+          rebilling += 1;
+          this.logger.error(
+            `billing.reconcile.refund_watch_rebilling workspace=${row.workspaceId} provider=${row.provider} sub=${row.providerSubscriptionId} provider_status=${provider.status} — refunded and locally canceled, but the provider is still set to RENEW; the customer will be charged for a plan they do not hold`,
+          );
+        }
+      } catch (err) {
+        consecutiveErrors[row.provider] += 1;
+        unreadable += 1;
+        this.logger.error(
+          `billing.reconcile.refund_watch_failed provider=${row.provider} sub=${row.providerSubscriptionId} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    return { watched, rebilling, unreadable };
   }
 
   /**

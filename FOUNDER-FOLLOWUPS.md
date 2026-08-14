@@ -26,6 +26,121 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-14 — Razorpay's account-wide dispute list is re-walked per verdict row
+**Source:** Ultrareview cloud audit of PR #518 (D253), 2026-08-14
+**Why:** `RazorpayAdapter.providerCancellationFacts`
+(`apps/api/src/billing/razorpay.adapter.ts`) makes three reads: invoices by
+subscription, refunds by payment (both naturally scoped), and `/v1/disputes` —
+which Razorpay exposes with **no** subscription or payment filter, so it is an
+account-wide list, paginated up to `LIST_MAX_PAGES` (50), filtered client-side
+per call. `BillingReconciliationService.enforceLocalVerdicts` calls this once
+per verdict row, sequentially, with no caching between rows — so a pass over
+`VERDICT_PASS_MAX_ROWS` (100) Razorpay rows re-fetches and re-walks the
+identical account-wide list up to 100 times. Worst case: 100 × 50 = 5,000
+`/v1/disputes` calls in one pass, against a `cronPolicy` job whose `timeoutMs`
+(60s) is shared with the read-only watch pass that runs after it.
+Not reachable today: production holds 1 subscription and 0 disputes ever
+(same query as the churn-visibility follow-up above confirms this), so no
+Razorpay row carries a verdict and this loop never executes. It becomes live
+the first time a Razorpay refund or dispute happens — by which point the fix
+should already be in.
+Genuinely deferred rather than fixed in D253's PR: the two real fixes both
+have a shape distinct from the sequential-tests fixed on this branch — (a) a
+per-pass memo *inside* `RazorpayAdapter` needs a deliberate invalidation
+boundary (a bare TTL is workable but time-based, adding non-determinism to
+what has otherwise been a fully deterministic branch), or (b) hoisting the
+disputes read into the caller and threading it through `providerCancellationFacts`
+changes the shared `BillingProvider` interface both adapters implement, so
+Paddle would need a documented no-op path. Either is a real, scoped change —
+not a stub — and belongs in its own PR rather than widening this one's
+already-large review surface.
+**How:** pick (a) or (b) above and implement it. (a) is more contained (stays
+inside `razorpay.adapter.ts`, no interface change) and is the likely default
+unless Razorpay dispute volume is expected to be high enough that a single
+account-wide list itself becomes large.
+**Verifies by:** a test seeding N verdict rows and asserting the `/v1/disputes`
+endpoint is called O(1) times per pass rather than O(N) — mirroring the
+call-count assertions already used for the Paddle pagination fix on this same
+branch (`paddle.adapter.spec.ts`, "a single page is one call").
+**Status:** Open
+
+### 2026-08-13 — Nothing surfaces refunded-vs-cancelled churn
+**Source:** founder question during the D253 refund-lockout design, 2026-08-13 —
+*"How can we get stats on how many customers we have refunded vs just
+cancelled?"*
+**Why:** the data already exists and no human-readable surface reads it.
+`subscriptions.cancel_source` (enum `provider` | `refund` | `chargeback`,
+`packages/db/src/schema/subscriptions.ts`) records why a plan ended, and D253
+deliberately preserves it on the refund path precisely so "ended by refund"
+stays distinguishable from "cancelled normally". But there is no screen, no
+report and no alert over it — the only way to answer the founder's question
+today is to open a SQL client against production. That is the shape of question
+that gets asked when churn starts mattering and answered late because nobody
+built the surface while it was cheap.
+Verified against production 2026-08-13: exactly **1** subscription, `active`,
+with zero cancellations, refunds or chargebacks ever recorded. So the answer is
+trivially zero right now — which is the ideal moment to build the surface,
+before there is a backlog to reconcile.
+Note the timeline half is being closed separately: the D253 PR adds distinct,
+countable structured log lines per ending reason, so from that merge onward the
+event stream can be counted in log-based metrics. This follow-up is for the
+**human-readable surface** only.
+**How:** decide the surface — an internal admin view, or a periodic digest
+(weekly email / log-based metric dashboard) — and build it. Interim answer, run
+against production directly:
+
+```sql
+select coalesce(cancel_source::text,'(still active / no cancel)') as ended_by,
+       status, count(*) as subs
+from subscriptions group by 1,2 order by subs desc;
+```
+
+**Verifies by:** the refunded-vs-cancelled split is readable without opening a
+SQL client — a page, a digest, or a dashboard tile that names each
+`cancel_source` value explicitly (including zero counts, so an absent reason
+reads as zero rather than as missing).
+**Status:** Open
+
+### 2026-08-13 — A won dispute recovers entitlement but leaves our own cancel standing
+**Source:** D253 refund-lockout design, 2026-08-13 (`docs/handoffs/2026-08-13-d253-refund-lockout-design.md`, "Out of scope")
+**Why:** `applyRevokedCancellation`
+(`apps/api/src/billing/billing-webhook.service.ts`) clears `cancel_source` and
+`entitlement_ends_at` but leaves `cancel_at_period_end` set — and clearing
+`cancel_source` drops the row out of the verdict selector
+(`inArray(subscriptions.cancelSource, ['refund','chargeback'])` in
+`billing-reconciliation.service.ts`), so nothing ever revisits it.
+Where the scheduled cancel was the **customer's own**, that is correct — they
+asked for it, and restoring entitlement should not un-cancel their plan. Where
+the scheduled cancel was **ours**, sent by refund/chargeback enforcement, the
+subscription still terminates at the provider while entitlement has been
+restored locally, and no pass will ever notice. Recovery is one-shot and
+under-recovers.
+It is reachable only on the **chargeback** rail: a won dispute genuinely
+reverses a settled chargeback. It is not reachable for refunds — per Paddle's
+documentation an approved refund is terminal, so there is no reversed-refund
+path to worry about.
+Pre-existing, but D253 changes its character: until D253 fixes the
+short-circuit that skipped scheduled-cancel rows, the lift never ran on such a
+row at all, so the bug was unreachable in practice. D253 turns "never recovers"
+into "recovers, then quietly under-recovers".
+The reason it is not simply patched: the fix needs provenance we do not store
+in a column — *who scheduled this cancel* — which is a design decision, not a
+one-line change.
+**How:** first check whether it is already closed. The D253 PR attempts a
+no-migration derivation of that provenance from the `subscription_events` audit
+trail; if that landed, this entry is already resolved — move it to Done citing
+the PR. If it did not land, the decision is between (a) storing the provenance
+explicitly (a column and a migration), (b) alerting on the ambiguous case
+instead of resolving it, or (c) accepting the under-recovery and recording that
+choice here.
+**Verifies by:** a won dispute on a subscription whose cancel was sent by our
+own enforcement no longer leaves the provider silently set to terminate — it
+either revokes the scheduled cancel or raises a support-visible alert, pinned by
+a test. Or an explicit decision recorded here that the under-recovery is
+accepted.
+**Status:** Open — founder decision 2026-08-13: post-launch. Cannot bite until
+there is a chargeback that is then disputed and won.
+
 ### 2026-08-13 — GSC clicks the SEO pass could not make from here
 **Source:** session (SEO/AEO/GEO pass, D132/D134)
 **Why:** the code side of the pass is merged-ready, but three signals only
@@ -472,51 +587,23 @@ because these are copy decisions, and the same "don't mint a constraint" rule ap
 
 **Status:** Open — neither can bite before there is a paying customer with a failed payment or a same-day renewal
 
-### 2026-07-31 — Paddle prod destination: `adjustment.updated` (now optional)
+### 2026-07-31 — Paddle prod destination: `adjustment.updated` (needs adapter code, not just the toggle)
 
-**Source:** refund-path work 2026-07-31 (PR #452)
+**Source:** refund-path work 2026-07-31 (PR #452); **corrected 2026-08-13** during the D253 refund-lockout design
 
-**Why:** on a LIVE Paddle account most refunds are created `pending_approval` and Paddle approves them asynchronously; sandbox auto-approves, so that shape has never been seen here. We act on `adjustment.created` immediately, which is the right failure direction, and a refund Paddle later REJECTS is now corrected by the 6-hourly reconciliation sweep — it asks Paddle's `/adjustments` directly and lifts the verdict. So this is no longer a correctness gap.
+**Why:** on a LIVE Paddle account most refunds are created `pending_approval` and Paddle approves them asynchronously; sandbox auto-approves, so that shape has never been seen here. We act on `adjustment.created` immediately, which is the right failure direction, and a refund Paddle later REJECTS is corrected by the reconciliation sweep — it asks Paddle's `/adjustments` directly and lifts the verdict. So this is not a correctness gap.
 
-What subscribing buys is **latency**: the correction lands in minutes instead of up to six hours, and the same is true for a won dispute (`chargeback_reverse`).
+**Correction 2026-08-13 — the dashboard toggle alone buys nothing.** This entry previously said subscribing to the event would cut correction latency from hours to minutes. It would not. `paddle.adapter.ts` has **no `case` for `adjustment.updated`** in `mapWebhookEvent`; the event falls through to `default:` and is returned as `{ kind: 'ignored' }`, which the projector records as ignored and acts on in no way. Enabling the toggle would therefore deliver a webhook we authenticate, store and discard — the same latency as today, plus noise in the event ledger.
 
-**How:** Paddle dashboard → Developer tools → Notifications → the production destination → add `adjustment.updated` to the subscribed events. Nothing breaks if you skip it.
+The latency win is real, but it requires **both** the subscription and adapter code that maps the payload to a settlement or refutation.
 
-**Verifies by:** `adjustment.updated` visible in the production destination's event list.
+**Deliberately out of scope for the D253 PR.** D253 moves the verdict pass onto its own ~10-minute cadence, so a rejected refund is already corrected within minutes by polling. Against that, the remaining gain from a push event is marginal, and the adapter work is a second surface to get right on the revenue path. See `docs/handoffs/2026-08-13-d253-refund-lockout-design.md` ("Out of scope").
 
-**Status:** Open — nice-to-have, not a blocker
+**How:** do nothing for now. If it is ever taken up, it is two steps and the first is useless without the second: (1) add an `adjustment.updated` case to `mapWebhookEvent` in `apps/api/src/billing/paddle.adapter.ts` that maps the adjustment's status to the existing settled/refuted vocabulary; (2) Paddle dashboard → Developer tools → Notifications → the production destination → add `adjustment.updated` to the subscribed events. Nothing breaks if you skip both.
 
-### 2026-08-12 — A refunded customer is locked out of paying you again
+**Verifies by:** an `adjustment.updated` delivery producing a real projection — the `billing.webhook.ignored … type=adjustment.updated` log line stops appearing and the subscription's local verdict actually changes — rather than the event merely appearing in the destination's subscribed list.
 
-**Source:** session 2026-08-12, found while planning the live refund verification (the stop-time review caught a recommendation that would have done this to a real payer)
-
-**Why:** three individually-correct behaviours compose into a state nobody chose.
-
-- `apps/api/src/billing/billing-webhook.service.ts:833` — a FULL refund sets `entitlement_ends_at` to SQL `now()`, so access ends **immediately**, not at period end
-- the row nonetheless stays `status='active'` until the paid period elapses
-- `apps/api/src/billing/billing.service.ts:89-107` — checkout refuses `SUBSCRIPTION_EXISTS` for any row in `('active','past_due','paused')`
-- `apps/api/src/billing/billing.service.ts:465` — `resume-cancellation` refuses `CANCELLATION_NOT_REVOCABLE` when `cancel_source='refund'`
-
-Net effect: a refunded customer loses their plan instantly **and cannot buy it again until the period they already paid for runs out** — up to a month on monthly, up to a **year on annual**. No in-app path back. The only recovery is an operator holding the Paddle API key.
-
-Each piece has a documented rationale and each is right on its own. The composition was never decided. This is the "cancel is a one-way door" class (Done 2026-07-31) recurring in the shape that fix deliberately excluded: it made the USER's own cancel revocable and correctly left refund-cancels irrevocable — but nothing re-opened the *purchase* door behind them.
-
-It is also a revenue path, not only a trust one. A goodwill full refund is an ordinary support gesture, and today it makes that customer unable to pay again for the rest of the period.
-
-**Do not "just loosen the checkout guard".** That was this entry's first recommendation and it is strictly worse than the bug. `subscriptions_one_live_per_workspace` is live in production — `UNIQUE (workspace_id) WHERE status IN ('active','past_due')` (migration `0051_billing_reconciliation.sql:72`, confirmed present in the prod database 2026-08-12). A refunded row sits in `active`. Let checkout through while it is still there and the customer pays, `subscription.created` tries to insert a second `active` row for the same workspace, the index rejects it, and the webhook retries forever: **charged, no entitlement.** That is the identical failure this file already worked through for the paused-row sibling case — "the customer is charged while our DB refuses to record it. Strictly worse than no index." Trading "cannot buy" for "buys and receives nothing" is not a fix.
-
-The guard and the index key on the same thing (`status`), so any real fix has to move the row's *status*, not special-case one of the two readers. Note the tempting shortcut is impossible: the lapsed-entitlement condition cannot go into the index predicate, because Postgres requires index predicates to be IMMUTABLE and `now()` is not.
-
-**How:** decide the intended behaviour, then —
-
-(a) **Safe now, incomplete:** leave both guard and index alone and fix the message — tell the user the date they can subscribe again rather than a bare `SUBSCRIPTION_EXISTS`. Costs nothing, removes the confusion, leaves the customer still unable to pay.
-(b) **The real fix, needs design:** transition a refunded row out of `active` once entitlement lapses, so guard and index agree it is no longer live. The hazard to design against is provider reconciliation — Paddle reports the subscription `active` with `scheduled_change: cancel` until the period ends, so the 6-hourly sweep can flip a locally-terminal row back to `active`. If it does that *after* the customer has re-subscribed, the sweep's own write is the one that violates the index. Whatever shape this takes needs the sweep and the projector to share one definition of "live", rather than the sweep mirroring the provider while the guard reads a local column.
-
-Recommend shipping (a) immediately and scheduling (b). Billing BE change, so §9 stop-condition review applies to both.
-
-**Verifies by:** (a) a refunded workspace hitting checkout sees a message naming the date, not `SUBSCRIPTION_EXISTS`. (b) on a workspace whose only subscription is a fully-refunded row with lapsed entitlement, `POST /api/billing/checkout` returns a checkout, the resulting `subscription.created` **inserts without violating `subscriptions_one_live_per_workspace`**, and a reconciliation sweep run immediately afterwards does not resurrect the old row or fail its own write. A still-entitled active row must still refuse.
-
-**Status:** Open
+**Status:** Open — nice-to-have, not a blocker; superseded in practice by D253's faster verdict cadence
 
 ### 2026-07-31 — Verify production billing with one real purchase (founder decision: yes)
 
@@ -1519,6 +1606,38 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-08-12 — A refunded customer is locked out of paying you again
+
+**Source:** session 2026-08-12, found while planning the live refund verification (the stop-time review caught a recommendation that would have done this to a real payer)
+
+**Why:** three individually-correct behaviours compose into a state nobody chose.
+
+- `apps/api/src/billing/billing-webhook.service.ts:833` — a FULL refund sets `entitlement_ends_at` to SQL `now()`, so access ends **immediately**, not at period end
+- the row nonetheless stays `status='active'` until the paid period elapses
+- `apps/api/src/billing/billing.service.ts:89-107` — checkout refuses `SUBSCRIPTION_EXISTS` for any row in `('active','past_due','paused')`
+- `apps/api/src/billing/billing.service.ts:465` — `resume-cancellation` refuses `CANCELLATION_NOT_REVOCABLE` when `cancel_source='refund'`
+
+Net effect: a refunded customer loses their plan instantly **and cannot buy it again until the period they already paid for runs out** — up to a month on monthly, up to a **year on annual**. No in-app path back. The only recovery is an operator holding the Paddle API key.
+
+Each piece has a documented rationale and each is right on its own. The composition was never decided. This is the "cancel is a one-way door" class (Done 2026-07-31) recurring in the shape that fix deliberately excluded: it made the USER's own cancel revocable and correctly left refund-cancels irrevocable — but nothing re-opened the *purchase* door behind them.
+
+It is also a revenue path, not only a trust one. A goodwill full refund is an ordinary support gesture, and today it makes that customer unable to pay again for the rest of the period.
+
+**Do not "just loosen the checkout guard".** That was this entry's first recommendation and it is strictly worse than the bug. `subscriptions_one_live_per_workspace` is live in production — `UNIQUE (workspace_id) WHERE status IN ('active','past_due')` (migration `0051_billing_reconciliation.sql:72`, confirmed present in the prod database 2026-08-12). A refunded row sits in `active`. Let checkout through while it is still there and the customer pays, `subscription.created` tries to insert a second `active` row for the same workspace, the index rejects it, and the webhook retries forever: **charged, no entitlement.** That is the identical failure this file already worked through for the paused-row sibling case — "the customer is charged while our DB refuses to record it. Strictly worse than no index." Trading "cannot buy" for "buys and receives nothing" is not a fix.
+
+The guard and the index key on the same thing (`status`), so any real fix has to move the row's *status*, not special-case one of the two readers. Note the tempting shortcut is impossible: the lapsed-entitlement condition cannot go into the index predicate, because Postgres requires index predicates to be IMMUTABLE and `now()` is not.
+
+**How:** decide the intended behaviour, then —
+
+(a) **Safe now, incomplete:** leave both guard and index alone and fix the message — tell the user the date they can subscribe again rather than a bare `SUBSCRIPTION_EXISTS`. Costs nothing, removes the confusion, leaves the customer still unable to pay.
+(b) **The real fix, needs design:** transition a refunded row out of `active` once entitlement lapses, so guard and index agree it is no longer live. The hazard to design against is provider reconciliation — Paddle reports the subscription `active` with `scheduled_change: cancel` until the period ends, so the 6-hourly sweep can flip a locally-terminal row back to `active`. If it does that *after* the customer has re-subscribed, the sweep's own write is the one that violates the index. Whatever shape this takes needs the sweep and the projector to share one definition of "live", rather than the sweep mirroring the provider while the guard reads a local column.
+
+Recommend shipping (a) immediately and scheduling (b). Billing BE change, so §9 stop-condition review applies to both.
+
+**Verifies by:** (a) a refunded workspace hitting checkout sees a message naming the date, not `SUBSCRIPTION_EXISTS`. (b) on a workspace whose only subscription is a fully-refunded row with lapsed entitlement, `POST /api/billing/checkout` returns a checkout, the resulting `subscription.created` **inserts without violating `subscriptions_one_live_per_workspace`**, and a reconciliation sweep run immediately afterwards does not resurrect the old row or fail its own write. A still-entitled active row must still refuse.
+
+**Status:** Done 2026-08-13 — shipped as (b) in PR #518. One definition of live is now written down in `docs/adr/0033-one-definition-of-live-subscription.md`: a refunded row leaves `active` only once the provider confirms the refund settled, so the checkout guard, `subscriptions_one_live_per_workspace`, and the reconciliation sweep all read the same predicate and the sweep can no longer resurrect the row behind a repurchase. (a) shipped alongside it as `SUBSCRIPTION_REFUND_SETTLING` — the checkout now says the refund is being confirmed instead of the false `SUBSCRIPTION_EXISTS`. A settled **chargeback** deliberately still does not unlock early. The won-dispute case is split out as its own Open entry above.
 
 ### 2026-07-31 — Cancel is a one-way door: no in-app path back, and D118's pause offer was never built
 

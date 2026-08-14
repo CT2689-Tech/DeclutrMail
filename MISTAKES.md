@@ -21,6 +21,114 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-13 — I named a starvation bug in a comment, then shipped it
+
+**PR:** D253 branch `fix/d253-refund-repurchase-lockout` (pre-merge)
+**Caught by:** Codex stop-review — _"capped verdict sweeps can permanently
+starve later refunds"_
+
+**What happened:** the verdict passes moved to a job carrying a 60-second
+timeout, so I capped them at 100 rows and kept the existing
+`ORDER BY updated_at ASC`. The justifying comment I wrote said, verbatim, that
+"an unsettled row writes nothing, its `updated_at` never moves, so
+`asc(updatedAt)` would hand back the same leading rows every run and starve
+everything behind them" — and then concluded "100 fits comfortably".
+
+It does not fit. The starvation is caused by the CAP, not by the timeout, and
+lowering the cap made it five times more likely. Rows past the cap are never
+examined again — not "until the backlog drains", because the leading rows are
+precisely the ones that cannot progress. On this path that meant a refunded
+customer behind the cap could **never buy again**: the exact bug D253 exists to
+remove, re-created by its own mitigation. Second time in one branch — a
+hardcoded `provider !== 'razorpay'` scope guard was rejected earlier for the
+identical shape.
+
+The test suite could not catch it. Every verdict test ran ONE pass, and one
+pass is indistinguishable under either ordering.
+
+Sweeping for siblings then found the same defect in the drift sweep at cap 500,
+pre-existing, where it silently removes missed-webhook recovery for every
+customer past the 500th.
+
+**Correct approach:** when a capped selector's rows do not change as a result of
+being processed, the ordering must rotate — `random()` here — and filling the
+cap must be logged. Choosing the cap is choosing which rows are never looked at.
+
+**Rule:** a `LIMIT` over rows the pass does not write is starvation unless the
+ordering rotates; test it across REPEATED passes, never one, and assert coverage
+exceeds the cap.
+
+**Enforcement update:** regression test in
+`billing-reconciliation.service.spec.ts` asserting exhaustive coverage across
+consecutive run indices (verified red twice: stable ordering covers 100 of 300,
+random-only covers 265 of 300). `billing.reconcile.pass_capped` warns on a full
+page.
+**Distillation trigger: SEVERITY (billing impact) — CLAUDE.md §11 candidate,
+founder call.** Its natural home is the existing "no silent caps" / blind-guard
+material rather than a new guardrail.
+
+**Addendum — the first fix was also wrong.** `ORDER BY random()` removed the
+permanent starvation and replaced it with an unbounded probabilistic delay
+(second Codex stop-review). Both passes now round-robin over hash buckets keyed
+on a run index that advances by exactly one per run, which is a real bound.
+Worth noting the test failed to catch this too: at 130 rows a random-only
+implementation passed ~99% of runs, so the assertion was itself probabilistic.
+**A test for a coverage guarantee has to be sized so the broken version fails
+every time, not most times.**
+
+**Addendum — round three: the bound never reached production.** The service
+round-robined correctly and the worker passed the index correctly, and the
+composition root wired both seams as zero-argument wrappers
+(`enforceLocalVerdicts: () => service.enforceLocalVerdicts()`). So `runIndex`
+fell back to its default every run, production examined bucket 0 and nothing
+else, and every other bucket was starved permanently — the original bug, whole,
+in the one file on the branch with no test, while all 252 billing tests passed
+because they call the service directly.
+
+TypeScript permitted it because a zero-arg function is assignable to a one-arg
+seam. **The `= 0` default is what made the call legal.** The parameter is now
+required, so omitting it is `TS2554` — verified by reverting the wiring and
+watching it fail to compile. That is a better guard than a test: it cannot be
+forgotten and it fires in the editor.
+
+**Rule (second):** never give a default to a parameter whose entire purpose is
+to vary. The default does not protect a caller who forgets it — it hides them.
+
+**Rule (third):** a correctness guarantee that lives only in an untested
+composition root is not a guarantee.
+
+**Addendum — round four: "the compiler catches it" was too strong.** Making the
+parameter required closed the omission case only. It constrains ARITY, not
+FORWARDING: `(runIndex) => service.enforceLocalVerdicts(0)` type-checks with
+zero errors and reproduces the identical bug, and a future default would remove
+the arity guard silently. Fixed by extracting the wiring to
+`billing-verdict.deps.ts` and testing it against a real worker. Verified:
+typecheck 0 errors, spec 2 failures.
+
+**Rule (fourth):** an invariant is only guarded where something EXECUTES it.
+Type signatures constrain shape, not values. Three rounds produced three variants of one
+defect — permanent starvation, unbounded delay, then a bound that never shipped
+— and each was caught by review rather than by the suite.
+
+**Addendum — the repo sweep found two more, one worse.**
+
+- `lapse-reengagement.worker.ts` — FIXED. Same shape but ordered by
+  `users.created_at`, which is immutable, so it could never rotate even in
+  principle, and the dormancy band was applied in TypeScript *after* the LIMIT
+  so the cap bounded the whole user table. Past 500 accounts, no one who signed
+  up later could ever receive a win-back email. Its docstring claimed "~24
+  passes to cover a backlog"; it was 24 passes over the same 500 rows.
+- `dead-letter.worker.ts:110` — LEFT ALONE, deliberately. Identical pattern
+  (`ORDER BY failed_at ASC LIMIT 500`, no write-back, in-memory dedup), but
+  `BaseDeclutrWorker` already fires `captureFailure` at park time, so the sweep
+  is a re-alerter rather than the alerter. Starvation there costs a duplicate
+  alert, not a missed one, and oldest-first ordering is meaningful for triage.
+  Recorded so the next sweep does not re-derive it.
+
+Everything else checked out: claim-and-write passes (`outbox-dispatcher`, the
+`cron_runs` claims), delete-loops, keyset pagination, and unlimited scans are
+all immune by construction.
+
 ## 2026-08-13 — A CI speedup that made CI slower, twice over, in silence
 
 **PR:** [#515](https://github.com/CT2689-Tech/DeclutrMail/pull/515)

@@ -33,6 +33,24 @@ describe('ERROR_CODES registry (ADR-0014)', () => {
     );
     expect(ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message).not.toContain('disconnect');
   });
+
+  // D253 — the three-way checkout guard. Same status, same tier; the ONE
+  // field that differs is `retryable`, and it is the whole contract: the
+  // refund-settling window resolves with no user action, so the FE must not
+  // treat it as the permanent refusal its two siblings are.
+  it('SUBSCRIPTION_REFUND_SETTLING is the retryable member of the checkout-guard trio', () => {
+    expect(ERROR_CODES.SUBSCRIPTION_REFUND_SETTLING).toMatchObject({
+      status: 409,
+      severityTier: 'inline_recoverable',
+      retryable: true,
+    });
+    expect(ERROR_CODES.SUBSCRIPTION_EXISTS.retryable).toBe(false);
+    expect(ERROR_CODES.SUBSCRIPTION_PAUSED_BLOCKS_NEW.retryable).toBe(false);
+    // The copy must not re-assert the subscription the refund already
+    // ended — that lie is the entire reason this code exists.
+    expect(ERROR_CODES.SUBSCRIPTION_REFUND_SETTLING.message).toContain('refund');
+    expect(ERROR_CODES.SUBSCRIPTION_REFUND_SETTLING.message).not.toMatch(/already has/i);
+  });
 });
 
 describe('isErrorCode', () => {

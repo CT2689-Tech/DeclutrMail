@@ -10,7 +10,7 @@ import {
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
 import type { DrizzleDb } from '../../db/db.module.js';
@@ -573,7 +573,7 @@ describe('BillingWebhookService.process', () => {
 
   it('applies Razorpay events via notes attribution and flips pro tier', async () => {
     const fixture = razorpaySubscriptionEvent({ workspaceId });
-    const event = razorpay.mapWebhookEvent({ ...fixture, __eventId: 'evt_rzp_1' });
+    const event = await razorpay.mapWebhookEvent({ ...fixture, __eventId: 'evt_rzp_1' });
     const outcome = await service.process('razorpay', event, fixture);
     expect(outcome).toEqual({ kind: 'processed', effect: 'subscription:active' });
 
@@ -767,6 +767,183 @@ describe('BillingWebhookService.process', () => {
       .where(eq(ruleMatchLog.id, match!.id));
     expect(neutralized!.resolution).toBe('dismissed');
     expect(neutralized!.dismissReason).toBe('entitlement');
+  });
+
+  // D253. The projector half of "a refunded customer can buy again".
+  // Reconciliation decides WHETHER to mint this event; these pin what
+  // the projector will and will not do when handed one, independent of
+  // any caller. The dangerous direction is a flip that should not
+  // happen — this is the one code path in the system that writes
+  // `status='canceled'` without the provider having said so.
+  describe('refund_settled — releasing the plan slot', () => {
+    async function seedRefunded(): Promise<void> {
+      const activate = paddleSubscriptionActivated({
+        workspaceId,
+        eventId: 'evt_rs_1',
+        periodEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+      const refund = paddleAdjustmentCreated({ eventId: 'evt_rs_2', action: 'refund' });
+      await service.process('paddle', paddle.mapWebhookEvent(refund), refund);
+    }
+
+    function settledEvent(eventId: string, providerSubscriptionId: string) {
+      return {
+        kind: 'refund_settled' as const,
+        providerEventId: eventId,
+        eventType: 'reconciliation.refund_settled',
+        providerSubscriptionId,
+      };
+    }
+
+    it('flips the row to canceled and keeps the refund provenance', async () => {
+      await seedRefunded();
+      const [before] = await db.select().from(subscriptions);
+      expect(before!.status).toBe('active'); // precondition — this IS the lockout
+
+      const outcome = await service.process(
+        'paddle',
+        settledEvent('evt_rs_3', before!.providerSubscriptionId),
+        { occurred_at: new Date().toISOString() },
+      );
+      expect(outcome).toEqual({ kind: 'processed', effect: 'refund_settled' });
+
+      const [row] = await db.select().from(subscriptions);
+      expect(row!.status).toBe('canceled');
+      // Provenance survives — "ended by refund" must stay countable, and
+      // the post-flip watch pass selects on these two columns.
+      expect(row!.cancelSource).toBe('refund');
+      expect(row!.entitlementEndsAt).not.toBeNull();
+    });
+
+    it('emits the SAME structured shape the dunning sweep does — the churn count must not have a blind side', async () => {
+      // `billing.subscription_ended` has two emitters: this service and
+      // `billing-reconciliation.sweep.ts`. A founder query keyed on
+      // `.kind === 'billing.subscription_ended'` is only correct if BOTH
+      // produce the identical shape — `this.logger.log()` would route
+      // through Nest's ConsoleLogger as unstructured text with no `kind`
+      // field, silently invisible to that exact query (ultrareview,
+      // 2026-08-14).
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      try {
+        await seedRefunded();
+        const [before] = await db.select().from(subscriptions);
+        await service.process(
+          'paddle',
+          settledEvent('evt_rs_shape', before!.providerSubscriptionId),
+          {
+            occurred_at: new Date().toISOString(),
+          },
+        );
+
+        const endedLines = logSpy.mock.calls
+          .map((call) => call[0])
+          .filter((line): line is string => typeof line === 'string')
+          .map((line) => JSON.parse(line) as Record<string, unknown>)
+          .filter((parsed) => parsed.kind === 'billing.subscription_ended');
+        expect(endedLines).toHaveLength(1);
+        // Exactly the sweep's shape — same keys, same `level`, `kind` as
+        // a plain string (not an enum tag), `reason` as a bare value.
+        expect(endedLines[0]).toEqual({
+          level: 'info',
+          kind: 'billing.subscription_ended',
+          workspaceId,
+          provider: 'paddle',
+          tier: 'plus',
+          reason: 'refund',
+        });
+      } finally {
+        logSpy.mockRestore();
+      }
+    });
+
+    it('REFUSES a row carrying no verdict — it can never cancel a healthy subscription', async () => {
+      // The blast radius that matters. If this guard were absent, a
+      // mis-minted event would terminate a paying customer's plan with
+      // no provider event behind it and no way to tell it apart from a
+      // real cancellation afterwards.
+      const activate = paddleSubscriptionActivated({
+        workspaceId,
+        eventId: 'evt_rs_4',
+        periodEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+      const [healthy] = await db.select().from(subscriptions);
+
+      const outcome = await service.process(
+        'paddle',
+        settledEvent('evt_rs_5', healthy!.providerSubscriptionId),
+        { occurred_at: new Date().toISOString() },
+      );
+      expect(outcome).toEqual({ kind: 'processed', effect: 'refund_settled:no_row' });
+
+      const [row] = await db.select().from(subscriptions);
+      expect(row!.status).toBe('active');
+      const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+      expect(ws!.tier).toBe('plus');
+    });
+
+    it('REFUSES a chargeback row — settled disputes do not unlock early', async () => {
+      // Founder decision 2026-08-13, enforced twice over: reconciliation
+      // will not mint the event for a chargeback row, and the projector
+      // would refuse it anyway. Defence in depth is warranted here
+      // because the cost of being wrong is a flagged seller account.
+      const activate = paddleSubscriptionActivated({
+        workspaceId,
+        eventId: 'evt_rs_6',
+        periodEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+      const cb = paddleAdjustmentCreated({ eventId: 'evt_rs_7', action: 'chargeback' });
+      await service.process('paddle', paddle.mapWebhookEvent(cb), cb);
+      const [disputed] = await db.select().from(subscriptions);
+
+      const outcome = await service.process(
+        'paddle',
+        settledEvent('evt_rs_8', disputed!.providerSubscriptionId),
+        { occurred_at: new Date().toISOString() },
+      );
+      expect(outcome).toEqual({ kind: 'processed', effect: 'refund_settled:no_row' });
+
+      const [row] = await db.select().from(subscriptions);
+      expect(row!.status).toBe('active');
+      expect(row!.cancelSource).toBe('chargeback');
+    });
+
+    it('a replay is a clean no-op, and the flip cannot be undone by a later payload', async () => {
+      await seedRefunded();
+      const [seeded] = await db.select().from(subscriptions);
+      const subId = seeded!.providerSubscriptionId;
+      await service.process('paddle', settledEvent('evt_rs_9', subId), {
+        occurred_at: new Date().toISOString(),
+      });
+
+      // Same event id → the dedup gate catches it before the effect.
+      expect(
+        await service.process('paddle', settledEvent('evt_rs_9', subId), {
+          occurred_at: new Date().toISOString(),
+        }),
+      ).toEqual({ kind: 'duplicate' });
+
+      // A DIFFERENT id gets past dedup, and the status guard stops it.
+      expect(
+        await service.process('paddle', settledEvent('evt_rs_10', subId), {
+          occurred_at: new Date().toISOString(),
+        }),
+      ).toEqual({ kind: 'processed', effect: 'refund_settled:no_row' });
+
+      // And the terminal-canceled floor holds: a later granting payload
+      // cannot pull the dead row back into the live slot. That is what
+      // makes a repurchase beside it safe.
+      const renew = paddleSubscriptionActivated({
+        workspaceId,
+        eventId: 'evt_rs_11',
+        periodEndsAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      await service.process('paddle', paddle.mapWebhookEvent(renew), renew);
+      const [row] = await db.select().from(subscriptions);
+      expect(row!.status).toBe('canceled');
+    });
   });
 
   // Winning the dispute must not be worse for the customer than losing
@@ -1414,7 +1591,7 @@ describe('BillingWebhookService.process', () => {
     });
     await service.process(
       'razorpay',
-      razorpay.mapWebhookEvent({ ...activate, __eventId: 'evt_rzp_act' }),
+      await razorpay.mapWebhookEvent({ ...activate, __eventId: 'evt_rzp_act' }),
       activate,
     );
 
@@ -1427,7 +1604,7 @@ describe('BillingWebhookService.process', () => {
     canceled.created_at = SEC;
     await service.process(
       'razorpay',
-      razorpay.mapWebhookEvent({ ...canceled, __eventId: 'evt_rzp_can' }),
+      await razorpay.mapWebhookEvent({ ...canceled, __eventId: 'evt_rzp_can' }),
       canceled,
     );
 
@@ -1444,7 +1621,7 @@ describe('BillingWebhookService.process', () => {
     tiedActive.created_at = SEC;
     const outcome = await service.process(
       'razorpay',
-      razorpay.mapWebhookEvent({ ...tiedActive, __eventId: 'evt_rzp_stale' }),
+      await razorpay.mapWebhookEvent({ ...tiedActive, __eventId: 'evt_rzp_stale' }),
       tiedActive,
     );
     expect(outcome.kind).not.toBe('processed');
@@ -1650,7 +1827,7 @@ describe('BillingWebhookService.process', () => {
       },
     };
 
-    const event = razorpay.mapWebhookEvent({ ...fixture, __eventId: 'evt_pii_rzp_1' });
+    const event = await razorpay.mapWebhookEvent({ ...fixture, __eventId: 'evt_pii_rzp_1' });
     await service.process('razorpay', event, fixture);
 
     const [row] = await db.select().from(subscriptionEvents);
