@@ -40,9 +40,17 @@
  *
  * Decorative by contract: every call site renders the sender name
  * adjacent, so the whole avatar stays `aria-hidden`.
+ *
+ * NO STATE, DELIBERATELY. An earlier draft tracked load success in
+ * `useState` to fade the logo in, which made this a Client Component —
+ * and `packages/shared`'s barrel is imported by server components
+ * (`app/not-found.tsx`), so the web build failed outright. The state
+ * was never needed: an `<img>` that 204s, 401s, or fails to decode
+ * paints nothing at all with `alt=""`, so the monogram underneath
+ * simply shows through. Layering instead of branching keeps this a
+ * zero-JS server component — which matters for something rendered a
+ * few hundred times on one Senders page.
  */
-
-import { useState } from 'react';
 
 import { resolveFlag } from '../flags/resolve';
 import { brandRoot } from '../senders/brand-root';
@@ -105,10 +113,6 @@ export function Avatar({
   const hue = hashString(root.length > 0 ? root : name) % 360;
   const iconUrl = brandIconUrl(domain, size);
 
-  // `loaded` gates the fade only. It never gates the monogram, so a
-  // logo that never arrives is indistinguishable from a sender that
-  // has none.
-  const [loaded, setLoaded] = useState(false);
   const radius = Math.max(6, Math.round(size * 0.28));
 
   return (
@@ -145,11 +149,12 @@ export function Avatar({
           alt=""
           width={size}
           height={size}
-          // A 204 yields no image and fires `error`; so does a 401, a
-          // dropped connection, or malformed bytes. All of them simply
-          // leave `loaded` false, which leaves the monogram visible.
-          onLoad={() => setLoaded(true)}
-          onError={() => setLoaded(false)}
+          // No load/error handlers: a 204, a 401, a dropped connection
+          // or malformed bytes all paint nothing for an `alt=""` image,
+          // leaving the monogram beneath visible. Handling the events
+          // would buy nothing and cost the whole component its
+          // server-renderability.
+          //
           // Avatars appear far down long virtualized lists; there is no
           // reason to fetch one before it is near the viewport.
           loading="lazy"
@@ -166,10 +171,11 @@ export function Avatar({
             // read as the same object rather than two kinds of thing.
             padding: Math.max(2, Math.round(size * 0.14)),
             boxSizing: 'border-box',
+            // Opaque, so a loaded mark fully covers the initial rather
+            // than sitting on top of it. An unloaded one paints
+            // nothing, background included.
             background: `hsl(${hue} 30% var(--dm-avatar-bg-l, 94%))`,
             borderRadius: radius,
-            opacity: loaded ? 1 : 0,
-            transition: 'opacity 120ms ease-out',
           }}
         />
       )}

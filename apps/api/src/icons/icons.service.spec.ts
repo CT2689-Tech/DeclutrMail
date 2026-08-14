@@ -1,7 +1,6 @@
-import { domainIcons, schema } from '@declutrmail/db';
+import { domainIcons } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import type { Queue } from 'bullmq';
-import { drizzle } from 'drizzle-orm/pglite';
 import { describe, expect, it } from 'vitest';
 
 import { IconsService } from './icons.service.js';
@@ -15,7 +14,8 @@ import { IconsService } from './icons.service.js';
  * domain from a logo-less one.
  */
 
-type Db = ReturnType<typeof drizzle<typeof schema>>;
+/** Sourced from the helper the tests actually construct `db` with. */
+type Db = Awaited<ReturnType<typeof freshTestDb>>;
 
 const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"/>');
 const HASH = 'a'.repeat(64);
