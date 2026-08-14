@@ -26,44 +26,6 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-08-14 — Razorpay's account-wide dispute list is re-walked per verdict row
-**Source:** Ultrareview cloud audit of PR #518 (D253), 2026-08-14
-**Why:** `RazorpayAdapter.providerCancellationFacts`
-(`apps/api/src/billing/razorpay.adapter.ts`) makes three reads: invoices by
-subscription, refunds by payment (both naturally scoped), and `/v1/disputes` —
-which Razorpay exposes with **no** subscription or payment filter, so it is an
-account-wide list, paginated up to `LIST_MAX_PAGES` (50), filtered client-side
-per call. `BillingReconciliationService.enforceLocalVerdicts` calls this once
-per verdict row, sequentially, with no caching between rows — so a pass over
-`VERDICT_PASS_MAX_ROWS` (100) Razorpay rows re-fetches and re-walks the
-identical account-wide list up to 100 times. Worst case: 100 × 50 = 5,000
-`/v1/disputes` calls in one pass, against a `cronPolicy` job whose `timeoutMs`
-(60s) is shared with the read-only watch pass that runs after it.
-Not reachable today: production holds 1 subscription and 0 disputes ever
-(same query as the churn-visibility follow-up above confirms this), so no
-Razorpay row carries a verdict and this loop never executes. It becomes live
-the first time a Razorpay refund or dispute happens — by which point the fix
-should already be in.
-Genuinely deferred rather than fixed in D253's PR: the two real fixes both
-have a shape distinct from the sequential-tests fixed on this branch — (a) a
-per-pass memo *inside* `RazorpayAdapter` needs a deliberate invalidation
-boundary (a bare TTL is workable but time-based, adding non-determinism to
-what has otherwise been a fully deterministic branch), or (b) hoisting the
-disputes read into the caller and threading it through `providerCancellationFacts`
-changes the shared `BillingProvider` interface both adapters implement, so
-Paddle would need a documented no-op path. Either is a real, scoped change —
-not a stub — and belongs in its own PR rather than widening this one's
-already-large review surface.
-**How:** pick (a) or (b) above and implement it. (a) is more contained (stays
-inside `razorpay.adapter.ts`, no interface change) and is the likely default
-unless Razorpay dispute volume is expected to be high enough that a single
-account-wide list itself becomes large.
-**Verifies by:** a test seeding N verdict rows and asserting the `/v1/disputes`
-endpoint is called O(1) times per pass rather than O(N) — mirroring the
-call-count assertions already used for the Paddle pagination fix on this same
-branch (`paddle.adapter.spec.ts`, "a single page is one call").
-**Status:** Open
-
 ### 2026-08-13 — Nothing surfaces refunded-vs-cancelled churn
 **Source:** founder question during the D253 refund-lockout design, 2026-08-13 —
 *"How can we get stats on how many customers we have refunded vs just
@@ -1606,6 +1568,44 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-08-14 — Razorpay's account-wide dispute list is re-walked per verdict row
+**Source:** Ultrareview cloud audit of PR #518 (D253), 2026-08-14
+**Why:** `RazorpayAdapter.providerCancellationFacts`
+(`apps/api/src/billing/razorpay.adapter.ts`) makes three reads: invoices by
+subscription, refunds by payment (both naturally scoped), and `/v1/disputes` —
+which Razorpay exposes with **no** subscription or payment filter, so it is an
+account-wide list, paginated up to `LIST_MAX_PAGES` (50), filtered client-side
+per call. `BillingReconciliationService.enforceLocalVerdicts` calls this once
+per verdict row, sequentially, with no caching between rows — so a pass over
+`VERDICT_PASS_MAX_ROWS` (100) Razorpay rows re-fetches and re-walks the
+identical account-wide list up to 100 times. Worst case: 100 × 50 = 5,000
+`/v1/disputes` calls in one pass, against a `cronPolicy` job whose `timeoutMs`
+(60s) is shared with the read-only watch pass that runs after it.
+Not reachable today: production holds 1 subscription and 0 disputes ever
+(same query as the churn-visibility follow-up above confirms this), so no
+Razorpay row carries a verdict and this loop never executes. It becomes live
+the first time a Razorpay refund or dispute happens — by which point the fix
+should already be in.
+Genuinely deferred rather than fixed in D253's PR: the two real fixes both
+have a shape distinct from the sequential-tests fixed on this branch — (a) a
+per-pass memo *inside* `RazorpayAdapter` needs a deliberate invalidation
+boundary (a bare TTL is workable but time-based, adding non-determinism to
+what has otherwise been a fully deterministic branch), or (b) hoisting the
+disputes read into the caller and threading it through `providerCancellationFacts`
+changes the shared `BillingProvider` interface both adapters implement, so
+Paddle would need a documented no-op path. Either is a real, scoped change —
+not a stub — and belongs in its own PR rather than widening this one's
+already-large review surface.
+**How:** pick (a) or (b) above and implement it. (a) is more contained (stays
+inside `razorpay.adapter.ts`, no interface change) and is the likely default
+unless Razorpay dispute volume is expected to be high enough that a single
+account-wide list itself becomes large.
+**Verifies by:** a test seeding N verdict rows and asserting the `/v1/disputes`
+endpoint is called O(1) times per pass rather than O(N) — mirroring the
+call-count assertions already used for the Paddle pagination fix on this same
+branch (`paddle.adapter.spec.ts`, "a single page is one call").
+**Status:** Done 2026-08-13 — fixed by option (a), a caller-owned `CancellationFactsCache` passed into `providerCancellationFacts`. The account-wide `/v1/disputes` walk is now read once per pass instead of once per row; the cache is allocated inside `enforceLocalVerdicts` and dropped when it returns, so no clock and no staleness window were introduced. Paddle needed no change (the parameter is optional). Verified by call-count tests in `razorpay.adapter.spec.ts` plus a service test asserting the same cache instance reaches every row and a NEW one reaches the next pass — that service test was confirmed to fail when the argument is removed.
 
 ### 2026-08-12 — A refunded customer is locked out of paying you again
 

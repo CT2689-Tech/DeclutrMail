@@ -3,7 +3,10 @@ import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AppException } from '../../common/app-exception.js';
-import type { NormalizedBillingEvent } from '../billing-provider.interface.js';
+import {
+  CancellationFactsCache,
+  type NormalizedBillingEvent,
+} from '../billing-provider.interface.js';
 import { RazorpayAdapter } from '../razorpay.adapter.js';
 import { razorpaySubscriptionEvent } from './fixtures.js';
 
@@ -947,6 +950,119 @@ describe('RazorpayAdapter.providerCancellationFacts', () => {
     expect(await makeAdapter(env).providerCancellationFacts(SUBSCRIPTION)).toEqual({
       settled: 'chargeback',
       refuted: { refund: false, chargeback: false },
+    });
+  });
+
+  describe('per-pass cache', () => {
+    // A second subscription with its OWN payment, so the disputes list
+    // the cache holds contains a row belonging to neither, one belonging
+    // to the first, and none belonging to the second.
+    const SUBSCRIPTION_B = 'sub_rzp00000000002';
+    const PAYMENT_B = 'pay_rzp0000000002';
+    const invoiceB = { ...invoice, id: 'inv_rzp0000000002', payment_id: PAYMENT_B };
+    /**
+     * How many times the disputes WALK was started, not how many HTTP
+     * calls it made — one read is `skip=0` plus however many pages
+     * follow, so counting raw calls would measure pagination depth
+     * instead of the dedup under test.
+     */
+    const disputeReads = (calls: string[]) =>
+      calls.filter((c) => c.includes('/v1/disputes') && new URL(c).searchParams.get('skip') === '0')
+        .length;
+
+    /** Serves BOTH subscriptions' invoices from one stub. */
+    function stubTwoSubscriptions(disputes: unknown[]): string[] {
+      const calls: string[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string | URL) => {
+          const href = String(url);
+          calls.push(href);
+          const skip = Number(new URL(href).searchParams.get('skip') ?? '0');
+          const page = (rows: unknown[]) =>
+            new Response(JSON.stringify({ items: skip === 0 ? rows : [] }), { status: 200 });
+          if (href.includes('/v1/invoices'))
+            return page([href.includes(SUBSCRIPTION_B) ? invoiceB : invoice]);
+          if (href.includes('/refunds')) return page([]);
+          if (href.includes('/v1/disputes')) return page(disputes);
+          throw new Error(`unexpected url ${href}`);
+        }),
+      );
+      return calls;
+    }
+
+    it('without a cache the account-wide list is re-read per subscription', async () => {
+      // The baseline the fix removes. Asserted so the test below is
+      // measuring the cache rather than an endpoint nobody calls twice.
+      const calls = stubTwoSubscriptions([]);
+      const adapter = makeAdapter(env);
+      await adapter.providerCancellationFacts(SUBSCRIPTION);
+      await adapter.providerCancellationFacts(SUBSCRIPTION_B);
+      expect(disputeReads(calls)).toBe(2);
+    });
+
+    it('with a cache it is read once per pass, however many rows', async () => {
+      const calls = stubTwoSubscriptions([]);
+      const adapter = makeAdapter(env);
+      const cache = new CancellationFactsCache();
+      await adapter.providerCancellationFacts(SUBSCRIPTION, cache);
+      await adapter.providerCancellationFacts(SUBSCRIPTION_B, cache);
+      expect(disputeReads(calls)).toBe(1);
+      // The subscription-SCOPED reads still happen per row — the cache
+      // must not have collapsed the reads that differ by subscription.
+      expect(calls.filter((c) => c.includes('/v1/invoices')).length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('a cached list is still filtered per subscription — no cross-row leak', async () => {
+      // The safety property. The cache holds the RAW account list, so
+      // each row applies its own `payment_id` filter to it. Sharing a
+      // verdict instead would revoke a customer nobody charged back.
+      const calls = stubTwoSubscriptions([dispute('lost', 'chargeback', PAYMENT)]);
+      const adapter = makeAdapter(env);
+      const cache = new CancellationFactsCache();
+      expect(await adapter.providerCancellationFacts(SUBSCRIPTION, cache)).toEqual({
+        settled: 'chargeback',
+        refuted: { refund: false, chargeback: false },
+      });
+      expect(await adapter.providerCancellationFacts(SUBSCRIPTION_B, cache)).toEqual(NONE);
+      expect(disputeReads(calls)).toBe(1);
+    });
+
+    it('an unreadable list is cached too — the page-cap case cannot restorm', async () => {
+      // `null` repeated per row is the 100 × 50 request storm this cache
+      // exists to prevent, and a listing past the page bound fails
+      // identically every time, so re-reading it buys nothing.
+      const calls: string[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string | URL) => {
+          const href = String(url);
+          calls.push(href);
+          const skip = Number(new URL(href).searchParams.get('skip') ?? '0');
+          const page = (rows: unknown[]) =>
+            new Response(JSON.stringify({ items: skip === 0 ? rows : [] }), { status: 200 });
+          if (href.includes('/v1/invoices'))
+            return page([href.includes(SUBSCRIPTION_B) ? invoiceB : invoice]);
+          if (href.includes('/refunds')) return page([]);
+          return new Response('nope', { status: 500 });
+        }),
+      );
+      const adapter = makeAdapter(env);
+      const cache = new CancellationFactsCache();
+      expect(await adapter.providerCancellationFacts(SUBSCRIPTION, cache)).toBeNull();
+      expect(await adapter.providerCancellationFacts(SUBSCRIPTION_B, cache)).toBeNull();
+      expect(disputeReads(calls)).toBe(1);
+    });
+
+    it('a fresh cache re-reads — one pass never sees the previous pass', async () => {
+      // The invalidation boundary, and the reason this is a caller-owned
+      // object rather than adapter state: a new pass allocates a new
+      // cache, so provider truth cannot go stale across sweeps.
+      const calls = stubTwoSubscriptions([]);
+      const adapter = makeAdapter(env);
+      await adapter.providerCancellationFacts(SUBSCRIPTION, new CancellationFactsCache());
+      await adapter.providerCancellationFacts(SUBSCRIPTION, new CancellationFactsCache());
+      expect(disputeReads(calls)).toBe(2);
     });
   });
 });

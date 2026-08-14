@@ -26,6 +26,7 @@ import type { CheckoutSession, SubscriptionStatus } from '@declutrmail/shared/co
 import { AppException } from '../common/app-exception.js';
 import type {
   BillingProvider,
+  CancellationFactsCache,
   CreateCheckoutInput,
   FetchSubscriptionResult,
   NormalizedBillingEvent,
@@ -68,6 +69,15 @@ const LIST_PAGE = 100;
  * whether a refunded customer may buy again (D253).
  */
 const LIST_MAX_PAGES = 50;
+
+/**
+ * Key for the one account-wide read this adapter memoizes per pass.
+ *
+ * Provider-prefixed because a single `CancellationFactsCache` is handed
+ * to whichever adapter each row belongs to, so the key space is shared
+ * even though nothing else in it is today.
+ */
+const DISPUTES_CACHE_KEY = 'razorpay:/v1/disputes';
 
 /**
  * Dispute phases where the merchant's money is actually at stake.
@@ -503,6 +513,14 @@ export class RazorpayAdapter implements BillingProvider {
    *      scan; a scan that hits the bound answers `null` rather than
    *      "no chargeback".
    *
+   * Read 3 asks the same account-wide question no matter which
+   * subscription is being checked, so a reconciliation pass over N rows
+   * would re-fetch and re-walk one identical list N times — up to
+   * `VERDICT_PASS_MAX_ROWS` × `LIST_MAX_PAGES` requests inside a job with
+   * a 60s budget shared with the watch pass that follows it. Pass a
+   * `cache` to collapse it to once per pass; omit it and every call reads
+   * fresh, which is what webhook-time callers want.
+   *
    * `null` means the provider could not be asked — never "nothing is
    * settled". A read we could not make is never grounds for an outbound
    * write, and after D253 it is also never grounds for freeing a plan
@@ -510,6 +528,7 @@ export class RazorpayAdapter implements BillingProvider {
    */
   async providerCancellationFacts(
     providerSubscriptionId: string,
+    cache?: CancellationFactsCache,
   ): Promise<ProviderCancellationFacts | null> {
     try {
       const invoices = await this.listCollection<RazorpayInvoice>(
@@ -561,10 +580,16 @@ export class RazorpayAdapter implements BillingProvider {
         }
       }
 
-      const disputes = await this.listCollection<RazorpayDispute>(
-        '/v1/disputes',
-        `disputes sub=${providerSubscriptionId}`,
-      );
+      // Labelled account-wide rather than by subscription because that
+      // is what it is, and because a cached read is shared by rows the
+      // first caller knows nothing about — naming one of them in the log
+      // line would attribute a whole pass's failure to whichever row
+      // happened to go first.
+      const readDisputes = () =>
+        this.listCollection<RazorpayDispute>('/v1/disputes', 'disputes account-wide');
+      const disputes = await (cache
+        ? cache.once(DISPUTES_CACHE_KEY, readDisputes)
+        : readDisputes());
       if (disputes === null) return null;
       let settledChargeback = false;
       let refutedChargeback = false;

@@ -255,6 +255,61 @@ export interface ProviderCancellationFacts {
   refuted: { refund: boolean; chargeback: boolean };
 }
 
+/**
+ * Scratch space shared by every `providerCancellationFacts` call in ONE
+ * reconciliation pass, created and dropped by the caller.
+ *
+ * Exists because some provider reads are account-wide rather than
+ * subscription-scoped, so asking them once per row asks the identical
+ * question N times. Razorpay's `/v1/disputes` is the case: it documents
+ * no payment or subscription filter, so the adapter pages the whole
+ * account list and filters client-side. Verified 2026-08-14 against
+ * Razorpay's Fetch All Disputes reference — `expand` is the only
+ * documented query parameter — so this is the API's shape, not a missing
+ * optimisation in the adapter.
+ *
+ * The LIFETIME is the point, and it is enforced by scope rather than by
+ * a clock. The caller allocates one before its loop and lets it fall out
+ * of reach after; nothing can read a value from a previous pass because
+ * no reference to it survives. A TTL would have given the same dedup
+ * with a staleness window and a time-dependent test, on a code path
+ * whose entire value is being deterministic about provider truth.
+ *
+ * OPTIONAL on the interface, so a provider whose reads are already
+ * scoped implements nothing: TypeScript accepts a narrower
+ * `(id: string)` method here, which is why Paddle needs no no-op path.
+ * Passing no cache is always correct and always fresh — that is the
+ * shape webhook-time callers get.
+ */
+export class CancellationFactsCache {
+  private readonly reads = new Map<string, Promise<unknown>>();
+
+  /**
+   * Run `read` once per `key` for this pass, handing every later caller
+   * the first call's promise.
+   *
+   * Memoizes the PROMISE, not the resolved value, so callers that
+   * overlap share one in-flight request rather than racing to start a
+   * second.
+   *
+   * A failed read is memoized too, deliberately. `listCollection`
+   * answers `null` for "could not read in full", and its two causes both
+   * argue for holding it: a listing past the page bound fails
+   * identically every time, which is the 100-rows × 50-pages case this
+   * type exists to prevent, and a network fault re-read per row would
+   * hammer a provider that is already unwell. Neither loses safety — a
+   * null is never grounds for a write, so the pass simply leaves those
+   * rows unenforced and the next sweep asks again with a fresh cache.
+   */
+  once<T>(key: string, read: () => Promise<T>): Promise<T> {
+    const inFlight = this.reads.get(key);
+    if (inFlight !== undefined) return inFlight as Promise<T>;
+    const started = read();
+    this.reads.set(key, started);
+    return started;
+  }
+}
+
 export interface BillingProvider {
   readonly id: BillingProviderId;
 
@@ -319,6 +374,7 @@ export interface BillingProvider {
    */
   providerCancellationFacts(
     providerSubscriptionId: string,
+    cache?: CancellationFactsCache,
   ): Promise<ProviderCancellationFacts | null>;
 
   /**
