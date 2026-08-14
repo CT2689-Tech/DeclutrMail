@@ -715,7 +715,7 @@ describe('OnboardingService', () => {
     });
 
     it('reports zero strong without treating it as an empty review', async () => {
-      // nayana's mailbox: 0 strong / 2 weak. The strong count being zero
+      // the second test mailbox: 0 strong / 2 weak. The strong count being zero
       // is not a failure and must not read as one — there are still two
       // protections to look at.
       await seedDecision(db, mailboxId, {

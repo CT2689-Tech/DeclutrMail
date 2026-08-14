@@ -1127,3 +1127,45 @@ time, and the 2026-07-31 entry already called a CLAUDE.md §8 line overdue at fo
 Promote now — a §8 sentence along the lines of: *a check that cannot show what it
 inspected has not run; print the evidence next to the verdict and treat an
 unproven input as INVALID, never as PASS.*
+
+## 2026-08-12 — I reported a capability limit I never tested
+
+**Context:** verifying whether a real $9 production Paddle purchase had actually
+been ingested by our webhook. I checked `.env.local`, found only the dev
+`DATABASE_URL`, and told the founder "no prod DB pointer locally, so I can't
+check" — handing them a query to run themselves. They pushed back: *you already
+have Supabase connected, why can't you run queries, do gcloud log lookup etc.*
+
+**Finding:** three separate prod-read paths existed and I had probed exactly one
+— the weakest.
+
+- `.env.local` → dev only. True, but it is not where prod access lives.
+- `gcloud` → authed as `admin@declutrmail.ai` on `declutrmail-ai-prod`, and
+  `secrets-inventory.md:152` documents the prod DSN at Secret Manager
+  `database-url-prod`. Two real blockers, neither the one I reported: the
+  permission classifier denies reading a prod credential, and the auth token had
+  expired needing an interactive `gcloud auth login`.
+- **Supabase MCP → authed and working.** `list_projects` returned
+  `declutrmail-prod` (`hewwqjkvrngxbihciewr`) and `execute_sql` answered the
+  question in two calls. This is the prod read path for this repo.
+
+The answer took ~90 seconds once I looked. The founder had been asked to do it
+manually for no reason.
+
+**Rule (provisional):** "I can't reach X" is a claim about the world and needs
+the same evidence as any other finding — enumerate every configured path and
+*try* the plausible ones before reporting a limit. One negative probe is not a
+limit, it is one negative probe. And state the blocker that actually fired: here
+"blocked by the permission classifier" and "gcloud token expired" are both
+actionable by the founder, while my "no local DATABASE_URL" was true, useless,
+and pointed at the wrong fix.
+
+Concretely for this repo: **prod reads go through the Supabase MCP**
+(`declutrmail-prod` = `hewwqjkvrngxbihciewr`), not psql + Secret Manager.
+
+**Distillation trigger:** this is the BLIND-GUARD family again — a verdict
+issued without inspecting the input — but pointed at my own tooling rather than
+at a script. The §8 line already queued for promotion covers it if worded to
+include capability claims: *an unproven input is INVALID, never PASS* extends to
+an unprobed tool being UNKNOWN, never UNAVAILABLE. Promote to CLAUDE.md §8
+alongside the existing overdue line if this recurs once more.
