@@ -1,16 +1,63 @@
 # Static marketing rendering vs the nonce CSP — a decision for the founder
 
-**Date:** 2026-08-14 · **Status:** **RULED — Option A approved (founder,
-2026-08-14).** Implementation pending; §1's measured facts and §5's verification
-plan remain the contract.
+**Date:** 2026-08-14 · **Status:** ⚠️ **RULED THEN RETRACTED — the options this
+memo offered were wrong. Re-decision required; see §0.**
 
-**The ruling, in full.** The `(marketing)` subtree may run **without**
-`strict-dynamic`, using `'self'` + a hash for `/theme-init.js`. `(app)` keeps
-the strict nonce CSP **unchanged**. `/pricing` **stays dynamic** so its INR/USD
-region pricing stays correct. Options B and C below are retained as decision
-history — do not implement them.
+The founder approved Option A on 2026-08-14 on the strength of §2 below. Before
+implementing it I measured what the page actually emits, and the premise both
+Option A and Option B rest on does not hold. **Nothing has been implemented.**
+Read §0 first; §2's A and B are unbuildable as written.
 **Relates to:** D175 (strict nonce CSP), D160 (Lighthouse ≥90 on marketing),
 D128 (canonical origin)
+
+---
+
+## 0. Correction — what this memo got wrong
+
+**The error.** §1 said the nonce has "only one explicit consumer in JSX",
+`/theme-init.js`, and treated Next's own scripts as an aside. That framing led
+both Option A ("`'self'` plus a **hash** for `/theme-init.js`") and Option B
+("drop `/theme-init.js`") to conclude that removing one script unblocks
+prerendering. It does not.
+
+**Measured on a production build of `/`** (`next start`, HTML parsed, not
+inferred):
+
+|                               | count                                                    |
+| ----------------------------- | -------------------------------------------------------- |
+| External scripts              | 18 — **all same-origin** (`/_next/…`, `/theme-init.js`)  |
+| Inline `application/ld+json`  | 2 — data blocks, never executed, `script-src` irrelevant |
+| **Inline EXECUTABLE scripts** | **31 — every one nonce-authorized**                      |
+
+Of those 31: **27 are Next's own `self.__next_f.push(...)`** RSC flight-data
+pushes, plus hydration (`$RC`) and timing (`$RT`) scripts. They carry the
+payload hydration needs, so they are not optional and not removable.
+
+**Why that breaks A and B.** `script-src 'self'` never authorizes an _inline_
+script — host-source expressions apply to fetched scripts only. So on a
+prerendered page, where no request exists to mint a nonce, those 31 scripts are
+refused and the page ships dead. Deleting `/theme-init.js` (Option B) removes 1
+of 32 and changes nothing about the other 31.
+
+**Why per-script hashes are not the escape hatch.** 27 of the 31 contain
+page-specific flight data, so their hashes differ per page and change whenever
+content changes. That needs build-time hash extraction plus a per-page CSP
+header — which defeats the single middleware-set header this design is built on,
+and creates a silent-breakage class the moment a hash and a page drift apart.
+
+**What Option A actually costs, stated correctly:** `script-src 'self'
+'unsafe-inline'` on the `(marketing)` subtree. Not "loses `strict-dynamic`" —
+**gains `'unsafe-inline'`**, which authorizes _any_ inline script in that
+subtree's HTML. That is a materially larger concession than what was approved,
+which is why it went back to the founder rather than being built.
+
+**One nuance in its favour:** a nonce or hash in `script-src` makes browsers
+_ignore_ `'unsafe-inline'` (CSP2+). So adding it to the marketing subtree cannot
+weaken `(app)`, which keeps its nonce — the two subtrees stay genuinely
+independent.
+
+**The honest option set is now A′ vs C** (§3a). Option B is withdrawn: it does
+not achieve prerendering at any CSP strength.
 
 ---
 
@@ -122,7 +169,50 @@ Leave rendering dynamic and absorb a launch spike with Vercel function scaling.
 
 ---
 
-## 3. Recommendation
+## 3a. The corrected option set (supersedes §2 and §3)
+
+### Option A′ — prerender marketing, `'unsafe-inline'` on that subtree only
+
+`(app)` keeps nonce + `strict-dynamic`, unchanged. `(marketing)` gets
+`script-src 'self' 'unsafe-inline'`, chosen by pathname in middleware, and the
+root layout's two `headers()` reads move into `(app)`. `/pricing` stays dynamic
+for INR/USD.
+
+- **Gains:** 33 routes prerender and become CDN-cacheable. This is the only
+  option that gets the launch-traffic win.
+- **Costs:** any inline script present in marketing HTML executes. The realistic
+  vector matters here: that HTML is generated at build time from typed content
+  modules, with no user input, no query-param reflection, no CMS and no
+  third-party scripts. An attacker who can inject into it is an attacker who can
+  already edit the bundle. Note `style-src` already carries `'unsafe-inline'`
+  repo-wide.
+- **Effort:** M.
+
+### Option C — stay dynamic (status quo)
+
+- **Gains:** CSP stays maximally strict everywhere. Zero effort, zero risk.
+- **Costs:** every visitor and crawler hit on 34 routes stays a function render,
+  with no HTML cache under a launch spike. Lighthouse ≥90 (D160) likely stays
+  out of reach, and the D160 Lighthouse gate stays unscoped.
+
+### Not available, for the record
+
+- **Option B** — withdrawn, see §0.
+- **Per-script hashes** — see §0.
+- **Caching the dynamic HTML at the CDN** — a cached page would serve a stale
+  nonce while middleware mints a fresh one per request, so HTML and header
+  disagree and the page breaks. Making them agree means pinning the nonce per
+  cache entry, i.e. nonce reuse across users, which is the same class of
+  concession as A′ without the full prerender win. **Not verified against
+  Vercel's middleware/cache ordering** — it is listed so nobody re-derives it as
+  an obvious win.
+
+---
+
+## 3. Recommendation — SUPERSEDED, kept as decision history
+
+_The reasoning below was written against the withdrawn Option A. It is retained
+so the retraction is legible, not as guidance._
 
 **Option A**, with `/pricing` left dynamic for now.
 

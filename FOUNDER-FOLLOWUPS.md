@@ -67,12 +67,15 @@ pick another option, or say no.
 **Verifies by:** §5 of that memo — the prerender manifest lists the marketing
 routes, both subtrees still carry the full security-header set, and a marketing
 page loads with zero CSP violations in the console.
-**Status:** RULED 2026-08-14 — **Option A approved.** The `(marketing)` subtree
-may run without `strict-dynamic`, using `'self'` + a hash for `/theme-init.js`;
-`(app)` keeps the strict nonce CSP unchanged; `/pricing` stays dynamic so its
-INR/USD region pricing stays correct. Implementation tracked separately; this
-entry closes when the prerender manifest lists the marketing routes and both
-subtrees still carry the full security-header set (memo §5).
+**Status:** ⚠️ **Re-opened 2026-08-14.** Option A was approved, then retracted
+before any code was written — the memo's options rested on a premise I had not
+measured. A marketing page emits **31 executable inline scripts, all
+nonce-authorized** (27 of them Next's own RSC flight-data pushes), and `'self'`
+never authorizes an inline script. So prerendering costs `'unsafe-inline'` on
+the marketing subtree, not "loses `strict-dynamic`" — a materially larger
+concession than what was approved — and Option B does not achieve prerendering
+at all. Corrected analysis and the real A′ vs C choice are in memo §0 and §3a.
+**Nothing implemented; awaiting a fresh ruling.**
 
 ### 2026-08-14 — `hello@declutrmail.com` is published on /pricing and routes nowhere
 **Source:** session (website launch-readiness pass)
