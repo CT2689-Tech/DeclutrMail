@@ -51,6 +51,15 @@ function recordingHttp(responses: BimiHttpResponse[]): BimiHttpPort & { calls: s
 const publicHost = async () => ['93.184.216.34'];
 const txt = (record: string) => async () => [[record]];
 
+/**
+ * Certificate verification is stubbed here so these cases can cover
+ * record parsing, fetching and the SSRF guard without threading a cert
+ * fixture through every one. The real verifier is exercised against a
+ * real OpenSSL-generated chain in `vmc-verifier.test.ts`.
+ */
+const acceptVmc = () => ({ ok: true }) as const;
+const rejectVmc = (reason: string) => () => ({ ok: false, reason }) as const;
+
 describe('parseBimiRecord', () => {
   it('parses tags', () => {
     expect(parseBimiRecord(RECORD)).toEqual({
@@ -124,6 +133,7 @@ describe('resolveBimiIcon', () => {
       resolveTxt: txt(RECORD),
       resolveHost: publicHost,
       http: stubHttp({}),
+      verifyVmc: acceptVmc,
     });
 
     expect(result.status).toBe('ok');
@@ -249,17 +259,21 @@ describe('resolveBimiIcon', () => {
       const http = recordingHttp([
         { status: 301, contentType: null, location: 'https://cdn.example/logo.svg' },
         { status: 200, contentType: 'image/svg+xml', body: Buffer.from(LOGO) },
+        // The VMC fetch that follows the logo.
+        { status: 200, contentType: 'application/pkix-cert', body: Buffer.from('PEM') },
       ]);
       const result = await resolveBimiIcon('brand.example', {
         resolveTxt: txt(RECORD),
         resolveHost: publicHost,
         http,
+        verifyVmc: acceptVmc,
       });
 
       expect(result.status).toBe('ok');
       expect(http.calls).toEqual([
         'https://brand.example/logo.svg',
         'https://cdn.example/logo.svg',
+        'https://brand.example/vmc.pem',
       ]);
     });
 
@@ -296,6 +310,7 @@ describe('resolveBimiIcon', () => {
       resolveTxt: txt(RECORD),
       resolveHost: publicHost,
       http: stubHttp({ contentType: 'image/svg+xml; charset=utf-8' }),
+      verifyVmc: acceptVmc,
     });
 
     expect(result.status).toBe('ok');
@@ -330,6 +345,93 @@ describe('resolveBimiIcon', () => {
     });
 
     expect(result).toEqual({ status: 'none', reason: 'http 404' });
+  });
+
+  describe('VMC verification', () => {
+    it('stores nothing when the certificate does not verify', async () => {
+      // The whole point of Phase 2: a well-formed record serving real
+      // SVG still yields no logo unless the cert stands behind it.
+      const result = await resolveBimiIcon('evil.example', {
+        resolveTxt: txt(RECORD),
+        resolveHost: publicHost,
+        http: stubHttp({}),
+        verifyVmc: rejectVmc('vmc: certificate does not commit to this logo'),
+      });
+
+      expect(result).toEqual({
+        status: 'none',
+        reason: 'vmc: certificate does not commit to this logo',
+      });
+    });
+
+    it('hands the verifier the domain and the exact bytes being served', async () => {
+      const seen: Array<{ domain: string; logo: string; pem: string }> = [];
+      await resolveBimiIcon('brand.example', {
+        resolveTxt: txt(RECORD),
+        resolveHost: publicHost,
+        http: stubHttp({}),
+        verifyVmc: (opts) => {
+          seen.push({ domain: opts.domain, logo: opts.logo.toString('utf8'), pem: opts.pem });
+          return { ok: true };
+        },
+      });
+
+      // Verifying against anything other than the bytes we are about to
+      // store would make the check theatre.
+      expect(seen).toEqual([{ domain: 'brand.example', logo: LOGO, pem: LOGO }]);
+    });
+
+    it('fetches the certificate through the SSRF guard too', async () => {
+      // The `a=` URL comes from the same attacker-controlled record as
+      // `l=`, so it gets the same treatment — including redirects.
+      const http = recordingHttp([
+        { status: 200, contentType: 'image/svg+xml', body: Buffer.from(LOGO) },
+      ]);
+      const result = await resolveBimiIcon('evil.example', {
+        resolveTxt: txt('v=BIMI1; l=https://brand.example/l.svg; a=http://brand.example/vmc.pem'),
+        resolveHost: publicHost,
+        http,
+        verifyVmc: acceptVmc,
+      });
+
+      expect(result).toEqual({ status: 'none', reason: 'vmc fetch: insecure scheme' });
+      // The logo was fetched; the plain-http cert URL never was.
+      expect(http.calls).toEqual(['https://brand.example/l.svg']);
+    });
+
+    it('refuses a certificate url pointed at a private address', async () => {
+      const http = recordingHttp([
+        { status: 200, contentType: 'image/svg+xml', body: Buffer.from(LOGO) },
+      ]);
+      const result = await resolveBimiIcon('evil.example', {
+        resolveTxt: txt('v=BIMI1; l=https://cdn.example/l.svg; a=https://internal.example/v.pem'),
+        resolveHost: async (host) =>
+          host === 'internal.example' ? ['169.254.169.254'] : ['93.184.216.34'],
+        http,
+        verifyVmc: acceptVmc,
+      });
+
+      expect(result).toEqual({ status: 'none', reason: 'vmc fetch: private target' });
+      expect(http.calls).toEqual(['https://cdn.example/l.svg']);
+    });
+
+    it('accepts whatever content type the issuer serves the PEM as', async () => {
+      // Issuers serve PEM as application/pkix-cert, x-pem-file, or
+      // text/plain. The bytes are validated by parsing them as X.509,
+      // which beats trusting a header.
+      const http = recordingHttp([
+        { status: 200, contentType: 'image/svg+xml', body: Buffer.from(LOGO) },
+        { status: 200, contentType: 'text/plain', body: Buffer.from('PEM') },
+      ]);
+      const result = await resolveBimiIcon('brand.example', {
+        resolveTxt: txt(RECORD),
+        resolveHost: publicHost,
+        http,
+        verifyVmc: acceptVmc,
+      });
+
+      expect(result.status).toBe('ok');
+    });
   });
 
   it('reports a transport failure as a miss rather than throwing', async () => {

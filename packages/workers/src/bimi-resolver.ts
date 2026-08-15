@@ -8,6 +8,7 @@ import {
   DNS_RESOLVE_HOST,
   type ResolveHost,
 } from './ssrf-guard.js';
+import { verifyVmc, type VmcOptions, type VmcResult } from './vmc-verifier.js';
 
 /**
  * BIMI logo resolution (ADR-0034 §4).
@@ -23,34 +24,22 @@ import {
  * itself rather than scraped. It is also SVG, which is why Phase 1
  * needs no raster pipeline — one vector renders at every avatar size.
  *
- * ─── WHAT THIS DOES NOT DO ────────────────────────────────────────────
+ * ─── THE RECORD ALONE PROVES NOTHING ──────────────────────────────────
  *
- * It does NOT verify the VMC (the `a=` tag — an X.509 certificate
- * attesting that the publisher owns the trademark). Verification means
- * chain-validating against the BIMI CA trust list and matching the
- * embedded logo, which is real scope and is not in Phase 1.
+ * A BIMI record is just DNS the domain owner published, so `l=` on its
+ * own is an assertion, not evidence: anyone can register
+ * `chase-security-alerts.example` and point it at Chase's artwork.
+ * Rendering that beside the sender would lend our UI's credibility to
+ * a lookalike.
  *
- * The consequence is specific and worth stating plainly: any domain can
- * publish any artwork. `chase-security-alerts.example` can serve
- * Chase's mark, and this resolver will fetch it. Rendering it beside
- * that sender lends our UI's credibility to a lookalike — a
- * phishing-assist risk, which is precisely why Gmail requires a
- * verified VMC before it displays a BIMI logo.
+ * So NOTHING is stored unless the `a=` certificate verifies —
+ * chain to a publicly trusted root, the BIMI extended-key-usage, a SAN
+ * covering this domain, and a commitment to the exact bytes behind
+ * `l=`. See `vmc-verifier.ts`; founder decision 2026-08-15 was to build
+ * that before enabling logos at all, which is the same bar Gmail sets.
  *
- * Two things bound it today, and neither is a substitute for
- * verification:
- *
- *   1. A record is only consulted for a domain the user ALREADY
- *      receives mail from, and the avatar always renders beside the
- *      sender's real domain text, which we never hide.
- *   2. We require the `a=` tag to be present (below). That is a
- *      formality an attacker can satisfy with any URL — it is a shape
- *      check, NOT authentication — but it restricts the surface to
- *      publishers following the full BIMI form and it is where real
- *      verification will attach.
- *
- * This is the open decision gating the `brandLogos` flag being turned
- * on by default. See FOUNDER-FOLLOWUPS.md 2026-08-14.
+ * A record with no `a=` tag therefore yields no logo, however
+ * well-formed it otherwise is.
  * ──────────────────────────────────────────────────────────────────────
  *
  * The `l=` URL is attacker-controlled by construction, so the fetch
@@ -149,6 +138,13 @@ export interface BimiDeps {
   resolveHost?: ResolveHost;
   /** Outbound HTTP seam — injectable so tests never leave the process. */
   http?: BimiHttpPort;
+  /**
+   * VMC verification seam. Injectable so the resolver's own tests can
+   * exercise record/fetch/SSRF behaviour without carrying a cert
+   * fixture through every case; `vmc-verifier.test.ts` tests the real
+   * thing against a real chain.
+   */
+  verifyVmc?: (opts: VmcOptions) => VmcResult;
 }
 
 /**
@@ -227,15 +223,34 @@ export async function resolveBimiIcon(
   // An empty `l=` is a brand explicitly declining to publish a mark.
   if (logoUrl === '') return { status: 'none', reason: 'record declines a logo' };
 
-  // Shape check, NOT authentication — see the VMC note in the module
-  // header. Real verification attaches here.
-  if (!tags.a) return { status: 'none', reason: 'record carries no vmc tag' };
+  // No `a=`, no logo. The certificate is the only thing that makes the
+  // `l=` claim checkable, so a record without one is unusable to us
+  // however well-formed it otherwise is.
+  const vmcUrl = tags.a ?? '';
+  if (vmcUrl === '') return { status: 'none', reason: 'record carries no vmc tag' };
 
-  const fetched = await fetchGuarded(logoUrl, http, deps.resolveHost ?? DNS_RESOLVE_HOST);
+  const resolveHost = deps.resolveHost ?? DNS_RESOLVE_HOST;
+
+  const fetched = await fetchGuarded(logoUrl, http, resolveHost, SVG_MIME);
   if (fetched.status === 'none') return fetched;
 
   const valid = validateBimiSvg(fetched.image);
   if (!valid.ok) return { status: 'none', reason: valid.reason };
+
+  // The VMC is fetched through the SAME guard: its URL comes from the
+  // same attacker-controlled record. No content-type constraint —
+  // issuers serve PEM as everything from application/pkix-cert to
+  // text/plain, and the bytes are validated by parsing them as X.509,
+  // which is a far stronger check than a header.
+  const vmc = await fetchGuarded(vmcUrl, http, resolveHost, null);
+  if (vmc.status === 'none') return { status: 'none', reason: `vmc fetch: ${vmc.reason}` };
+
+  const verified = (deps.verifyVmc ?? verifyVmc)({
+    pem: vmc.image.toString('utf8'),
+    domain,
+    logo: fetched.image,
+  });
+  if (!verified.ok) return { status: 'none', reason: verified.reason };
 
   return { status: 'ok', image: fetched.image, mime: SVG_MIME };
 }
@@ -248,6 +263,8 @@ async function fetchGuarded(
   url: string,
   http: BimiHttpPort,
   resolveHost: ResolveHost,
+  /** Required response mime, or null to accept any (see the VMC call). */
+  expectMime: string | null,
 ): Promise<{ status: 'ok'; image: Buffer } | BimiNone> {
   let current = url;
 
@@ -284,9 +301,13 @@ async function fetchGuarded(
     if (response.tooLarge) return { status: 'none', reason: 'oversize' };
     if (!response.body) return { status: 'none', reason: 'empty body' };
 
-    // Content-type may carry parameters (`image/svg+xml; charset=utf-8`).
-    const mime = (response.contentType ?? '').split(';', 1)[0]?.trim().toLowerCase();
-    if (mime !== SVG_MIME) return { status: 'none', reason: `unexpected content-type: ${mime}` };
+    if (expectMime !== null) {
+      // Content-type may carry parameters (`image/svg+xml; charset=utf-8`).
+      const mime = (response.contentType ?? '').split(';', 1)[0]?.trim().toLowerCase();
+      if (mime !== expectMime) {
+        return { status: 'none', reason: `unexpected content-type: ${mime}` };
+      }
+    }
 
     return { status: 'ok', image: response.body };
   }

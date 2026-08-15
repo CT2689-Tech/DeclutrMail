@@ -1,18 +1,24 @@
-// Avatar (ADR-0024 monogram) tests.
+// Avatar tests (ADR-0024 monogram + ADR-0034 brand logos).
 //
-// The load-bearing assertions are the two ADR guarantees:
-//   1. NO network surface — no `<img>`, no third-party icon-host URL
-//      (the pre-ADR-0024 waterfall leaked every sender domain to
-//      Clearbit/DDG/Google from the user's browser).
-//   2. Deterministic identity — same brand ⇒ same tint, across the
+// The load-bearing assertions are the ADR guarantees:
+//   1. NO THIRD-PARTY network surface. ADR-0024 removed a waterfall
+//      that leaked every sender domain to Clearbit/DDG/Google from the
+//      user's browser; ADR-0034 brought logos back without reopening
+//      it, so the only host that may ever appear is our own.
+//   2. The monogram is the FLOOR — it renders whatever the image does,
+//      so no failure path yields an empty box.
+//   3. Deterministic identity — same brand ⇒ same tint, across the
 //      bulk-mail subdomain prefixes senders rotate through.
+//
+// Flag state is always set explicitly: `brandLogos` has defaulted both
+// ways, so a test that rides the default asserts nothing stable.
 //
 // SSR-rendered (`react-dom/server`) like the other shared-package
 // tests — no jsdom toolchain is wired into this package.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Avatar, brandIconUrl } from './avatar';
+import { Avatar } from './avatar';
 
 /**
  * Re-import the module with `brandLogos` on. The flag and API base are
@@ -26,6 +32,17 @@ async function withLogosEnabled(apiBase = 'https://api.declutrmail.test') {
   return import('./avatar');
 }
 
+/**
+ * The kill-switch state. Asserted explicitly rather than by relying on
+ * the manifest default, which has now been both values — a test that
+ * silently tracks the default tests nothing.
+ */
+async function withLogosDisabled() {
+  vi.stubEnv('NEXT_PUBLIC_DM_FLAG_BRAND_LOGOS', 'false');
+  vi.resetModules();
+  return import('./avatar');
+}
+
 /** The inline-style hsl() background is the tint fingerprint. */
 function tintOf(markup: string): string {
   const m = markup.match(/background:hsl\([^)]*\)/);
@@ -33,11 +50,15 @@ function tintOf(markup: string): string {
 }
 
 describe('Avatar (monogram, ADR-0024)', () => {
-  it('renders the initial as a monogram with NO <img> and no third-party URL', () => {
+  it('renders the initial as a monogram and never a third-party URL', () => {
+    // The ADR-0024 privacy guarantee, which holds in BOTH flag states:
+    // the browser talks to nobody but us.
     const markup = renderToStaticMarkup(<Avatar name="Groupon" domain="groupon.com" />);
-    expect(markup).not.toContain('<img');
     expect(markup).not.toMatch(/clearbit|duckduckgo|google\.com/i);
-    expect(markup).toContain('>G</span>');
+    // `>G<` rather than `>G</span>`: with logos on, the glyph's sibling
+    // is the <img> layered over it. The monogram is still rendered,
+    // which is the guarantee that matters.
+    expect(markup).toContain('>G<');
   });
 
   it('derives the same tint for the same brand across bulk-mail subdomains', () => {
@@ -65,11 +86,23 @@ describe('Avatar (monogram, ADR-0024)', () => {
       'aria-hidden="true"',
     );
   });
+});
 
-  it('requests nothing at all while `brandLogos` is off', () => {
-    // Flag off must be byte-identical to pre-ADR-0034: not a request
-    // that 204s, but no request.
-    expect(brandIconUrl('groupon.com', 40)).toBeNull();
+describe('Avatar with `brandLogos` off', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('requests nothing at all', async () => {
+    // The kill-switch must be byte-identical to pre-ADR-0034: not a
+    // request that 204s, but no request and no <img> element.
+    const { Avatar: NoLogos, brandIconUrl: url } = await withLogosDisabled();
+
+    expect(url('groupon.com', 40)).toBeNull();
+    expect(
+      renderToStaticMarkup(<NoLogos name="Groupon" domain="groupon.com" size={40} />),
+    ).not.toContain('<img');
   });
 });
 

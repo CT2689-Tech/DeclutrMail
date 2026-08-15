@@ -96,7 +96,46 @@ share a registrable domain, so the `SameSite=Lax` session cookie is
 sent on the subresource request. If it ever is not, icons 401 and the
 UI shows monograms — the same floor as every other failure.
 
-### 4. Resolution cascade, server-side only
+### 4a. Nothing is stored without a verified VMC
+
+Founder decision 2026-08-15, taken over three cheaper alternatives
+(accept the risk; a sender-tenure gate; hiding logos in Screener).
+Those price the attack up; only verification removes it, and it is the
+bar Gmail sets before displaying a BIMI logo.
+
+A record's `l=` tag is an assertion by whoever controls the domain, so
+`chase-security-alerts.example` can point it at Chase's artwork. The
+`a=` tag makes the claim checkable — a Verified Mark Certificate,
+issued only by CAs that check trademark ownership, committing to a
+specific image. `vmc-verifier.ts` requires all four of:
+
+1. the chain validates to a **publicly trusted root** (Node's bundled
+   Mozilla store, not a hand-maintained BIMI CA fingerprint list — a
+   pinned list we cannot verify would be either silently dead or wrong
+   in the permissive direction);
+2. the leaf carries the **VMC extended-key-usage**
+   (`1.3.6.1.5.5.7.3.31`) — the real discriminator, since a public CA
+   will issue an attacker a TLS cert for their own domain but not a
+   VMC;
+3. the leaf's **SAN covers this domain**, so a genuine VMC cannot be
+   replayed against another brand; and
+4. the certificate **commits to the exact bytes** behind `l=`, which is
+   what stops a legitimate VMC holder serving someone else's artwork.
+
+The certificate is fetched through the same SSRF guard as the logo —
+its URL comes from the same attacker-controlled record.
+
+Checks 2 and 4 are DER substring searches rather than a full RFC 6170
+parse. That is a deliberate trade, argued in the module header: a false
+negative costs one monogram, while a false positive would require a
+certificate that chains to a public root to contain either the exact
+VMC OID encoding or the SHA-256 of the image we just fetched — which is
+the attestation we were looking for. Full ASN.1 traversal of
+`LogotypeExtn` is the classic silently-permissive failure, and the
+maintained library that would avoid hand-rolling it demands a global
+`reflect-metadata` polyfill this package will not take.
+
+### 4b. Resolution cascade, server-side only
 
 `DomainIconWorker` (`batchPolicy`, idempotency key = domain, so a
 thousand concurrent misses collapse to one job):
@@ -144,12 +183,13 @@ Below 24px (table rows) `Avatar` stays monogram-only: downscaled marks
 are where mixed fidelity looks worst, and the identity anchor is
 already doing its job there.
 
-### 7. Behind `brandLogos`, defaulting off
+### 7. Behind `brandLogos`, defaulting on
 
-ADR-0025 manifest row, default `false` for the landing PR. It makes
-outbound network calls on a new path; it earns a smoke on real data
-before it is on by default. Flipping is a one-value change plus a
-Vercel env var.
+ADR-0025 manifest row. It landed `false` while VMC verification was
+still an open question; with §4a built, the condition that justified
+keeping it dark is gone, so it defaults `true`. It remains a
+kill-switch: one env var turns every avatar back into a monogram
+without a revert.
 
 ## Consequences
 
@@ -168,6 +208,13 @@ Vercel env var.
 
 ### Negative
 
+- Requiring a verified VMC cuts coverage further: a brand that
+  publishes BIMI without a certificate gets no logo. That narrows the
+  set to brands that paid for trademark verification — which is the
+  point, and happens to be the set users recognise, but it is a real
+  reduction against BIMI-only.
+- Each resolution is now two outbound fetches (logo, then certificate)
+  rather than one. Still once per domain for the whole product.
 - BIMI coverage is real but partial — long-tail senders stay monograms.
   That is the intended steady state, not a gap to close.
 - `bytea` images inflate database dumps. At the projected ceiling
@@ -209,6 +256,13 @@ Vercel env var.
 
 - `packages/workers/src/domain-icon.worker.test.ts` — cascade order,
   negative caching, TTL refresh, idempotency on domain.
+- `packages/workers/src/vmc-verifier.test.ts` — run against a REAL
+  OpenSSL-generated chain (`src/__fixtures__/vmc/`), not mocks: a valid
+  VMC is accepted, and each of the attacks is refused — a certificate
+  that is not a VMC, a genuine VMC replayed against another domain, a
+  VMC serving artwork it does not commit to, and a chain signed by an
+  untrusted CA. Also asserts the fixture chain does NOT verify against
+  the real public trust store, which guards the injected-anchors seam.
 - `packages/workers/src/bimi-resolver.test.ts` — SSRF guard rejects
   private/loopback/link-local/CGNAT targets and redirects into them;
   http scheme, oversize body, wrong content-type, and script-bearing

@@ -32,6 +32,9 @@ function bimiDeps(overrides: { record?: string; http?: BimiHttpPort } = {}) {
   return {
     resolveTxt: async () => [[overrides.record ?? RECORD]],
     resolveHost: async () => ['93.184.216.34'],
+    // Certificate verification is covered against a real chain in
+    // `vmc-verifier.test.ts`; these cases are about cache behaviour.
+    verifyVmc: () => ({ ok: true }) as const,
     http:
       overrides.http ??
       ({
@@ -44,10 +47,19 @@ function bimiDeps(overrides: { record?: string; http?: BimiHttpPort } = {}) {
   };
 }
 
-/** An http port that counts dials — proves work was or was not repeated. */
+/**
+ * An http port that counts dials — proves work was or was not repeated.
+ *
+ * One RESOLUTION is two dials since Phase 2: the logo, then the
+ * certificate that has to stand behind it. `resolutions` is the number
+ * the cache guarantees bound, so that is what the tests assert on.
+ */
 function countingHttp() {
   const port = {
     calls: 0,
+    get resolutions() {
+      return port.calls / FETCHES_PER_RESOLUTION;
+    },
     get: async () => {
       port.calls++;
       return { status: 200, contentType: 'image/svg+xml', body: Buffer.from(LOGO) };
@@ -55,6 +67,9 @@ function countingHttp() {
   };
   return port;
 }
+
+/** Logo + VMC. */
+const FETCHES_PER_RESOLUTION = 2;
 
 describe('DomainIconWorker', () => {
   it('stores a resolved mark', async () => {
@@ -119,7 +134,7 @@ describe('DomainIconWorker', () => {
     const second = await worker.processJob({ domain: 'brand.example' }, CTX);
 
     expect(second.outcome).toBe('still_fresh');
-    expect(http.calls).toBe(1);
+    expect(http.resolutions).toBe(1);
   });
 
   it('re-resolves once the TTL has passed', async () => {
@@ -145,7 +160,7 @@ describe('DomainIconWorker', () => {
     // Same bytes → the payload is left alone but the TTL restarts, so
     // every client's cached ETag stays valid.
     expect(result.outcome).toBe('unchanged');
-    expect(http.calls).toBe(2);
+    expect(http.resolutions).toBe(2);
     const [row] = await db.select().from(domainIcons);
     expect(row?.fetchedAt.toISOString()).toBe(later.toISOString());
   });

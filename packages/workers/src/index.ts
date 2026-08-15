@@ -206,6 +206,8 @@ export {
   validateBimiSvg,
 } from './bimi-resolver.js';
 export type { BimiDeps, BimiHttpPort, BimiResolution } from './bimi-resolver.js';
+export { parsePemChain, verifyVmc, VMC_EKU_OID } from './vmc-verifier.js';
+export type { VmcOptions, VmcResult } from './vmc-verifier.js';
 export { createAutopilotExecutionChain } from './autopilot-execution-chain.js';
 export type { AutopilotExecutionChain } from './autopilot-execution-chain.js';
 export { BriefSnapshotWorker } from './brief-snapshot.worker.js';
