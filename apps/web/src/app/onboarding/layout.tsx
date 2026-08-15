@@ -11,12 +11,26 @@
 // `AuthProvider` only around the authed steps (sync gate onward) and
 // the secondary-connect gate. See `page.tsx`'s docblock.
 
-import type { ReactNode } from 'react';
-import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
+// THEME SCRIPT (Option A′, founder 2026-08-14): `/onboarding` is listed
+// in `AUTHED_APP_PATHS`, so middleware gives it the strict nonce +
+// 'strict-dynamic' CSP. Under 'strict-dynamic' a host-source authorizes
+// nothing, so the resolver runs only if it carries the nonce — read here
+// because the root layout may no longer read `headers()` (doing so
+// un-statics all 34 public pages). No `BillingCurrencyProvider`:
+// onboarding quotes no price, so `useRegionProvider`'s own default
+// stands.
 
-export default function OnboardingLayout({ children }: { children: ReactNode }) {
+import type { ReactNode } from 'react';
+import { headers } from 'next/headers';
+
+import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
+import { ThemeScript } from '@/features/theme/theme-script';
+
+export default async function OnboardingLayout({ children }: { children: ReactNode }) {
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
     <>
+      <ThemeScript nonce={nonce} />
       {children}
       {/* D147 consent ask — onboarding is a fresh visitor's first app
           surface, so the analytics opt-in must be answerable here too. */}

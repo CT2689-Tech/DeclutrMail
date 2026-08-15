@@ -8,10 +8,12 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { AUTHED_APP_PATHS } from './app/robots';
 import {
   STATIC_SECURITY_HEADERS,
   buildContentSecurityPolicy,
   cspHeaderName,
+  isAuthedAppPath,
   type CspEnv,
 } from './middleware';
 
@@ -135,6 +137,93 @@ describe('buildContentSecurityPolicy (D175)', () => {
     const connectSrc = directive(csp, 'connect-src') ?? '';
     const occurrences = connectSrc.split('https://us.i.posthog.com').length - 1;
     expect(occurrences).toBe(1);
+  });
+});
+
+/**
+ * The public half of the Option A′ split (founder 2026-08-14).
+ *
+ * These assertions are the contract that keeps the concession BOUNDED:
+ * 'unsafe-inline' is what buys prerendering, and it must appear on the
+ * public policy only, in script-src only, and must never drag
+ * 'strict-dynamic' or a nonce along with it.
+ */
+describe('buildContentSecurityPolicy — public (marketing) policy, Option A′', () => {
+  it('trades the nonce for unsafe-inline and drops strict-dynamic', () => {
+    const scriptSrc = directive(buildContentSecurityPolicy(null, PROD_ENV), 'script-src');
+
+    expect(scriptSrc).toContain(`'unsafe-inline'`);
+    expect(scriptSrc).toContain(`'self'`);
+    // A nonce would make CSP2+ browsers IGNORE 'unsafe-inline', which
+    // is precisely what a prerendered page cannot survive.
+    expect(scriptSrc).not.toContain('nonce-');
+    // Without strict-dynamic, host-sources apply again — that is what
+    // authorizes /theme-init.js on this subtree.
+    expect(scriptSrc).not.toContain(`'strict-dynamic'`);
+    expect(scriptSrc).not.toContain(`'unsafe-eval'`);
+  });
+
+  it('confines the concession to script-src — every other directive is byte-identical', () => {
+    const authed = buildContentSecurityPolicy(NONCE, PROD_ENV);
+    const publicCsp = buildContentSecurityPolicy(null, PROD_ENV);
+    const names = [
+      'default-src',
+      'style-src',
+      'img-src',
+      'font-src',
+      'connect-src',
+      'frame-src',
+      'frame-ancestors',
+      'base-uri',
+      'form-action',
+      'object-src',
+      'upgrade-insecure-requests',
+    ];
+
+    for (const name of names) {
+      expect(directive(publicCsp, name), `${name} must not differ between subtrees`).toBe(
+        directive(authed, name),
+      );
+    }
+  });
+
+  it('still adds unsafe-eval in dev only', () => {
+    expect(
+      directive(buildContentSecurityPolicy(null, { ...PROD_ENV, isDev: true }), 'script-src'),
+    ).toContain(`'unsafe-eval'`);
+  });
+});
+
+describe('isAuthedAppPath — which subtree a request belongs to', () => {
+  it('matches every authed path and their subroutes', () => {
+    for (const path of AUTHED_APP_PATHS) {
+      expect(isAuthedAppPath(path), path).toBe(true);
+      expect(isAuthedAppPath(`${path}/nested/deep`), `${path}/…`).toBe(true);
+    }
+  });
+
+  it('treats the public surface as public — including the two dynamic price pages', () => {
+    for (const path of [
+      '/',
+      '/pricing',
+      '/security',
+      '/privacy',
+      '/how-to/clean-gmail-by-sender',
+      '/vs/unroll-me',
+      '/blog/some-post',
+      '/sign-in',
+      '/some-404',
+    ]) {
+      expect(isAuthedAppPath(path), path).toBe(false);
+    }
+  });
+
+  it('does not match a public path that merely PREFIXES an authed one', () => {
+    // `/settings-guide` is not `/settings`. A substring match here would
+    // hand a public page the strict policy and ship it dead once
+    // prerendered.
+    expect(isAuthedAppPath('/settings-guide')).toBe(false);
+    expect(isAuthedAppPath('/billingx')).toBe(false);
   });
 });
 

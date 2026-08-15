@@ -9,7 +9,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Compare Gmail cleanup tools — DeclutrMail',
   description:
-    'Source-backed comparisons of DeclutrMail, Clean Email, Trimbox, SaneBox, Leave Me Alone, Unroll.Me, and native Gmail cleanup. Official sources, clear unknowns, no affiliate rankings.',
+    'Comparisons of DeclutrMail, Clean Email, Trimbox, SaneBox, Leave Me Alone, Unroll.Me and native Gmail cleanup. Official sources, clear unknowns, no rankings.',
   path: '/compare',
 });
 

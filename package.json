@@ -19,6 +19,8 @@
     "e2e:a11y": "pnpm --filter @declutrmail/e2e e2e:a11y",
     "e2e:ui": "pnpm --filter @declutrmail/e2e e2e:ui",
     "build": "pnpm -r --parallel build",
+    "check:bundle": "node scripts/check-web-bundle-budget.mjs",
+    "check:prerender": "node scripts/check-prerendered-routes.mjs",
     "verify-d": "tsx scripts/verify-d.ts",
     "generate-impl-log": "tsx scripts/generate-impl-log.ts",
     "check-changelog": "tsx scripts/check-changelog.ts",

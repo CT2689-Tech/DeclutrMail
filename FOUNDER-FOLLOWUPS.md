@@ -26,6 +26,97 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-14 — Look at the real Paddle checkout overlay once
+**Source:** founder relayed Paddle support reply (Barbara), 2026-08-14
+**Why:** the seller display name is updated in Account Settings — that half is
+done. But the reply is hedged, not a guarantee: the checkout overlay's *"Your
+data will be shared with…"* line _"should use the display name where available,
+but **some checkout surfaces may still fall back to the legal or account name**
+depending on the checkout version/configuration."_ The legal entity is
+deliberately staying `NAYANA ASHOK THAKKAR` (DeclutrMail is a trading name with
+no separately registered entity), so the fallback path puts a personal name in
+front of a buyer at the moment of payment. Nothing in this repo can observe
+which branch Paddle takes.
+**How:** open a real checkout from `/pricing` (the live Plus path, or sandbox)
+and read the overlay's data-sharing line and the payment sheet. If it says
+`NAYANA ASHOK THAKKAR`, reply on the same thread quoting that sentence back and
+ask which checkout version uses the display name.
+**Verifies by:** the overlay reads `DeclutrMail`, not a personal name.
+**Status:** Open — account details confirmed; the rendered overlay is untested.
+
+### 2026-08-14 — Rule on static marketing rendering vs the nonce CSP
+**Source:** session (website launch-readiness pass)
+**Why:** not one HTML page is prerendered — `.next/prerender-manifest.json`
+after a production build holds 8 routes, all metadata assets, and
+`"dynamicRoutes": {}`. Every visitor and crawler hit on all 34 public routes is
+a Node function render, with no ISR and no HTML `Cache-Control` anywhere. For a
+Show HN / Product Hunt spike that is the difference between a CDN serving bytes
+and a function pool serving renders. Fixing it means removing two `headers()`
+reads from `apps/web/src/app/layout.tsx` (`:48` nonce, `:55` billing geo), and
+the nonce one changes CSP behaviour — a CLAUDE.md §9 stop condition, so an
+agent may not decide it. Note the build's `○●ƒ` column is misleading here:
+`/blog/[slug]` and `/vs/[competitor]` read as `●` (SSG) but emit no HTML and
+appear in neither manifest.
+**How:** read
+[`docs/execution/static-marketing-csp-options-2026-08-14.md`](docs/execution/static-marketing-csp-options-2026-08-14.md)
+— three options with files, CSP trade and effort. The recommendation is Option
+A: split the CSP by subtree so `(app)` keeps nonce + `strict-dynamic` and
+`(marketing)` runs on `'self'` + a hash for the one static script, with
+`/pricing` left dynamic so its INR/USD region pricing stays correct. Approve,
+pick another option, or say no.
+**Verifies by:** §5 of that memo — the prerender manifest lists the marketing
+routes, both subtrees still carry the full security-header set, and a marketing
+page loads with zero CSP violations in the console.
+**Status:** **RULED 2026-08-14 — Option A′.** (Option A was approved first, then
+retracted before any code was written: the memo rested on a premise I had not
+measured. A marketing page emits **31 executable inline scripts, all
+nonce-authorized**, and `'self'` never authorizes an inline script, so the real
+cost is `'unsafe-inline'` on the marketing subtree. Option B is withdrawn
+entirely — see memo §0.)
+
+The ruling: `(marketing)` may run `script-src 'self' 'unsafe-inline'`; `(app)`
+keeps nonce + `strict-dynamic` unchanged; `/pricing` stays dynamic. Founder also
+set the verification bar — **prove it in a browser before claiming it works.**
+
+**Still open because it is not built.** The spec is memo §6, and it is larger
+than the original estimate: `(app)/layout.tsx` is a client component so the
+authed groups need a server boundary for the nonce; there are three groups
+needing the theme script, not two; and `regionProvider` is threaded from the
+root layout into `/pricing`, so removing that read mis-quotes currency at the
+point of sale if done carelessly. Nothing is half-done — the tree is clean.
+
+### 2026-08-14 — `hello@declutrmail.com` is published on /pricing and routes nowhere
+**Source:** session (website launch-readiness pass)
+**Why:** `pricing-screen.tsx:45` publishes it as the Enterprise "Contact sales"
+address, with a founder note in the source saying inbound routing "must exist
+before launch". It is a third address — `/contact` publishes only `support@`
+and `privacy@` — and apex MX now resolves to Google Workspace, so it will
+accept mail and drop it unless an alias exists.
+**How:** either add `hello@` as a Workspace alias onto the inbox you read, or
+change that one constant to `support@` and drop the third address.
+**Verifies by:** a test send to `hello@declutrmail.com` arrives, or the string
+no longer appears in `apps/web/src`.
+**Status:** Done 2026-08-14 — founder chose `support@`. `rg 'hello@declutrmail'`
+over `apps/web/src` returns nothing; the Enterprise mailto now points at the
+delivery-tested address. No new mailbox needed.
+
+### 2026-08-14 — Recertify the Google OAuth verification before 21 Apr 2027
+**Source:** session (website launch-readiness pass)
+**Why:** the CASA verification is the product's only third-party credential and
+it recertifies annually. Four public and in-app surfaces state the date, and as
+of PR #521 they all read one constant
+(`CASA_VERIFICATION_APPROVED_ON` in `packages/shared/src/copy/privacy.ts`), so
+the code side of a recertification is a one-line edit. What no code can do is
+the recertification itself.
+**How:** start ~20 Feb 2027 (per the CASA entry already in this file), then
+update the single constant. `apps/web/src/features/marketing/casa-claim.test.ts`
+fails if anyone re-inlines a date at a claim site, so the constant cannot drift
+back out of sync.
+**Verifies by:** the constant matches Google's approval date and
+`pnpm --filter @declutrmail/web test` passes.
+**Status:** Open — due Apr 2027. The four-way duplication that prompted this is
+closed.
+
 ### 2026-08-14 — Regenerate `atlas.sum` for migration 0056
 **Source:** session — ADR-0034 brand icon cache (migration
 `0056_domain_icons.sql`).
@@ -541,7 +632,12 @@ Note the 60-char figure is a rule of thumb — Google renders ~580px, and glyph 
 so an ADR should say what it actually measures.
 **Verifies by:** `/blog` title reflects the decision; if (c), an ADR exists in `docs/adr/`
 and the assertion is restored citing it.
-**Status:** Open
+**Status:** Done 2026-08-14 — founder chose **(a)**: accept the truncation, keep
+the locked D250 string. No code change, and deliberately **no CI title-length
+assertion** — without a ratified budget that would be an agent-minted constraint
+(§11), which is why the earlier attempt was reverted. `/blog` is a single
+outlier; every other public title sits at 42–58 chars. Descriptions are a
+separate matter and were trimmed to ≤160 in #521.
 
 ### 2026-08-05 — Six marketing meta descriptions exceed 160 characters
 **Source:** SEO pass during PR #470

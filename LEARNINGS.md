@@ -20,6 +20,18 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-14 — The root `not-found.tsx` un-statics the entire app
+**Context:** Implementing Option A′ (prerender the public site). The approved spec named two dynamic reads to remove, both in `apps/web/src/app/layout.tsx`: the CSP nonce and the D117 geo header. Both were removed, the build was re-run — and `prerender-manifest.json` still listed **8 routes, all metadata assets**, exactly as before. Zero HTML files. The change appeared to have done nothing.
+**Finding:** A third read was doing it: `cookies()` in `app/not-found.tsx`, reading the session cookie to pick the D140 audience-aware CTAs. Next folds the ROOT not-found into **every route's** render tree (it is the boundary any segment's `notFound()` lands in), so one per-request read there propagates to all 34 public pages — including pages that have no session concept at all. Removing it flipped 38 routes to static in a single build. Nothing in the toolchain says this: types pass, tests pass, every page renders correctly, and `next build`'s `○ ● ƒ` column is independently untrustworthy here — it marked `/blog/[slug]` and `/vs/[competitor]` as `●` (SSG) and printed "Generating static pages (71/71)" while emitting zero HTML. The only honest signal is `prerender-manifest.json`.
+**Rule (provisional):** When auditing what forces dynamic rendering, the shared-node set is `layout.tsx` **plus `not-found.tsx`, `error.tsx` and `global-error.tsx`** — not just layouts. And assert prerendering against `.next/prerender-manifest.json`, never the route table (`scripts/check-prerendered-routes.mjs` does this in CI). Corollary: those root-level surfaces sit outside every route group, so anything a group's layout provides — the theme script here — has to be provided for them separately.
+**Distillation trigger:** promote to CLAUDE.md §8 if a second silent prerender regression ships, or if a third root-level surface is found missing something its route-group siblings get.
+
+## 2026-08-14 — Zod v4's JIT trips CSP on every public page
+**Context:** Browser-verifying the A′ CSP split with `securitypolicyviolation` listeners.
+**Finding:** Every page that loads the Zod chunk logs one `script-src blocked eval`, from `$ZodObjectJIT` calling `new Function` to compile a fast object validator. It is **pre-existing and unrelated to A′** — prod `script-src` has never carried `'unsafe-eval'` (`env.isDev && 'unsafe-eval'`), so it was blocked identically under the old nonce policy. Zod v4 catches the refusal and falls back to its interpreted parser, so nothing breaks; the cost is a console violation on public pages and a slower parse path. Separately: `page.evaluate()` in Playwright is itself subject to `script-src`, so a naive harness reports its OWN eval as an app violation — the first run blamed `/triage` for a violation that was the test's. Reading state back through DOM attributes instead of `evaluate()` removed the false positive.
+**Rule (provisional):** When counting CSP violations in a browser harness, read results through attributes/title rather than `page.evaluate()`, or the harness manufactures the violation class it is measuring. And before filing a CSP violation as a regression, check whether the directive it names was ever satisfied by the previous policy.
+**Distillation trigger:** promote if a third-party library's CSP interaction is misdiagnosed as a regression a second time.
+
 ## 2026-08-14 — A swallowed enqueue error turned a hard failure into an invisible one
 **Context:** ADR-0034's icon read path deliberately swallows `Queue.add` errors, so a Redis outage degrades to "monograms" instead of breaking the page that asked for an avatar. Live smoke against real Redis, after every unit test was green.
 **Finding:** `Queue.add` threw `Custom Id cannot contain :` for `jobId: "DomainIconWorker:chase.com"`, and the catch turned it into silence. The endpoint answered a perfectly correct 204, the UI rendered a perfectly correct monogram, and NOTHING was ever queued — the feature was 100% inert with a green suite, because every unit test stubs the queue and asserts the options object rather than BullMQ's acceptance of it. The two properties combined into the failure: swallowing is right for resilience, but it converts a config error indistinguishable-from-outage. Measuring the actual rule was also worth doing — with bullmq 6, ids with exactly two colons are accepted and all other counts rejected (`a:b:c` passes, `a:b` throws), so the existing cron ids (`Worker:2026-08-14T08:00`) work only by landing on that count, and would break silently the same way if that format ever changed.
@@ -1193,3 +1205,37 @@ at a script. The §8 line already queued for promotion covers it if worded to
 include capability claims: *an unproven input is INVALID, never PASS* extends to
 an unprobed tool being UNKNOWN, never UNAVAILABLE. Promote to CLAUDE.md §8
 alongside the existing overdue line if this recurs once more.
+
+## 2026-08-14 — A dev server writing `.next` corrupts a concurrent production build
+**Context:** measuring `experimental.optimizePackageImports` on the marketing
+bundle. `next build` was run while `next dev` was still up from an earlier
+smoke, both pointed at `apps/web/.next`.
+**Finding:** `next start` against that build threw
+`EvalError: Code generation from strings disallowed for this context` from the
+edge middleware on every request — 500s across all 19 public pages. It looked
+exactly like a real regression caused by the config change. It was not: with the
+dev server stopped, the same config builds and serves cleanly, and so does the
+baseline. The dev server had been rewriting `.next` under the build.
+**Rule (provisional):** stop `next dev` before `next build` when both target the
+same app, and A/B any suspected build regression by rebuilding BOTH sides from a
+quiet tree before believing either result.
+**Distillation trigger:** promote to CLAUDE.md §8 if a session again attributes a
+build failure to a code change that a quiet-tree rebuild clears.
+
+## 2026-08-14 — An axe scan that starts at first paint measures the animation, not the page
+**Context:** adding a public-route accessibility lane. The desktop project
+(motion enabled) reported a serious colour-contrast failure on
+`.dm-mkt-hero-note`; the mobile project (reduced motion) did not.
+**Finding:** the element is fine — it settles at 5.11:1 light and 6.04:1 dark,
+over the 4.5:1 floor. The landing reveals fade over 0.7s with up to 0.24s of
+stagger and the hero sequence runs `8s 1 forwards`, so a scan triggered as soon
+as the `h1` is visible sampled a partially transparent element and reported its
+blended colour. A ready signal that proves *content exists* does not prove
+*presentation has settled*.
+**Rule (provisional):** for any axe lane over an animated surface, emulate
+`prefers-reduced-motion: reduce` — it takes the global override in
+`tokens.css:386` and scans the settled state, which is what contrast rules
+govern — or explicitly await the animations. Verify by running the matrix twice
+and requiring identical results.
+**Distillation trigger:** promote to CLAUDE.md §8 if a third timing-dependent
+gate ships with a ready signal weaker than the property it asserts.

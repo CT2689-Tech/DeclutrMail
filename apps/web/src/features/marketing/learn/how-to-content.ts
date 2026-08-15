@@ -486,7 +486,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     eyebrow: 'Automation · with a review phase',
     title: 'How to auto archive emails in Gmail',
     description:
-      'Archive Gmail messages automatically with a Skip Inbox filter, or use DeclutrMail’s observed low-engagement preset without confusing one-time Archive with a future rule.',
+      'Archive Gmail automatically with a Skip Inbox filter, or use DeclutrMail’s observed low-engagement preset without confusing one-time Archive with a future rule.',
     intro:
       'A one-time Archive removes Inbox from mail that already exists. Future auto-archive requires a separate filter or automation rule. Keeping that distinction visible is the safest way to avoid mail disappearing unexpectedly.',
     readingMinutes: 7,

@@ -39,10 +39,14 @@ const { color, font, radius, shadow } = tokens;
  * table → footer.
  */
 
-// Enterprise row contact (D19 "Contact sales"). NOTE for the founder:
-// inbound routing for this address must exist before launch — swap here
-// if a different sales address is chosen.
-const ENTERPRISE_CONTACT_MAILTO = 'mailto:hello@declutrmail.com?subject=DeclutrMail%20Enterprise';
+// Enterprise row contact (D19 "Contact sales").
+//
+// support@, not a separate hello@ (founder decision 2026-08-14). The apex
+// now has Google Workspace MX, so an unaliased address would ACCEPT
+// enterprise mail and drop it silently — worse than bouncing. support@ is
+// the address /contact already publishes and the one that has been
+// delivery-tested, so this adds no surface that is not already verified.
+const ENTERPRISE_CONTACT_MAILTO = 'mailto:support@declutrmail.com?subject=DeclutrMail%20Enterprise';
 
 export function PricingScreen() {
   // Annual by default (founder-locked 2026-08-02). The annual price is

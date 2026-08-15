@@ -32,9 +32,9 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-- ⬜ Not started: 77
+- ⬜ Not started: 76
 - 🟡 In progress: 1
-- 🔵 Shipped: 108
+- 🔵 Shipped: 109
 - 🟢 Verified: 55
 - 🚫 Retired: 2
 - 🔴 Blocked: 0
@@ -187,13 +187,13 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D129 | Hero tagline: *"Clean Gmail by controlling senders, not individual emails."* | ⬜ |  |  |  |
 | D130 | Brand voice principles (locked, summarizing Phase 1) | ⬜ |  |  |  |
 | D131 | Top nav: **6-item flat | ⬜ |  |  |  |
-| D132 | 28-page launch IA (scaled with Claude SEO agent maintenance) | 🔵 | #283, #307, #325, #517 |  |  |
+| D132 | 28-page launch IA (scaled with Claude SEO agent maintenance) | 🔵 | #283, #307, #325, #517, #521 |  |  |
 | D133 | Inbox Simulator: **Claude Code React build with real engine | ⬜ |  |  |  |
 | D134 | Landing page 10-section structure | 🔵 | #202, #196, #307, #471 |  |  |
 | D135 | Hero animated preview card | ⬜ |  |  |  |
 | D136 | Social proof strategy: beta quotes post-launch (no testimonials at launch) | ⬜ |  |  |  |
 | D137 | FAQ content (10 questions) | 🔵 | #290 |  |  |
-| D138 | Trust strip content (just after hero) | ⬜ |  |  |  |
+| D138 | Trust strip content (just after hero) | 🔵 | #521 |  |  |
 | D139 | Methodology: **Layered (summary + expandable deep sections) | ⬜ |  |  |  |
 | D140 | Diagrams: **3 conceptual, no architecture | ⬜ |  |  |  |
 | D141 | CASA letter and certifications | ⬜ |  |  |  |
@@ -215,7 +215,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425, #496, #506, #508 |  |  |
 | D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473, #474, #502, #498 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
-| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7 | gh run 26327595271 ci.yml green on main |  |
+| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
@@ -230,7 +230,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D172 | Monorepo with pnpm + Turborepo; 3 apps + 3 packages | ⬜ |  |  |  |
 | D173 | Mobile architecture stance: **Refactor-when-ready (Option A + C discipline) | 🔵 | #11 |  |  |
 | D174 | `.worktreeinclude` content (Claude subagent worktree setup) | ⬜ |  |  |  |
-| D175 | Content Security Policy (CSP): **Strict from day 1, nonce-based | 🔵 | #201 |  |  |
+| D175 | Content Security Policy (CSP): **Strict from day 1, nonce-based | 🔵 | #201, #525 |  |  |
 | D176 | Bot protection: **Cloudflare Turnstile on signup/OAuth init | ⬜ |  |  |  |
 | D177 | Secret management: **GCP Secret Manager + env var refs | ⬜ |  |  |  |
 | D178 | Dependency scanning: **Dependabot + Snyk free tier | ⬜ |  |  |  |

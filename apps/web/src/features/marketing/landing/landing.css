@@ -917,6 +917,19 @@
   font-weight: 700;
 }
 
+/* A trust item the visitor can go and check for themselves. */
+a.dm-mkt-trust-item {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--mkt-line);
+  text-underline-offset: 3px;
+}
+
+a.dm-mkt-trust-item:hover,
+a.dm-mkt-trust-item:focus-visible {
+  text-decoration-color: var(--mkt-accent);
+}
+
 /* ── Problem: the arithmetic ────────────────────────────────── */
 
 .dm-mkt-arith {

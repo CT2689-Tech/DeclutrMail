@@ -103,16 +103,16 @@ export default defineConfig({
   projects: [
     {
       name: 'default',
-      testIgnore: /a11y-smoke\.spec\.ts/,
+      testIgnore: /a11y-[a-z-]+\.spec\.ts/,
     },
     {
       name: 'a11y-desktop',
-      testMatch: /a11y-smoke\.spec\.ts/,
+      testMatch: /a11y-[a-z-]+\.spec\.ts/,
       use: { viewport: { width: 1280, height: 800 } },
     },
     {
       name: 'a11y-mobile-reduced-motion',
-      testMatch: /a11y-smoke\.spec\.ts/,
+      testMatch: /a11y-[a-z-]+\.spec\.ts/,
       use: {
         viewport: { width: 375, height: 812 },
         contextOptions: { reducedMotion: 'reduce' },

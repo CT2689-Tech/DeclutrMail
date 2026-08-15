@@ -16,13 +16,21 @@
 // `(app)` route-group layout and `/onboarding`'s layout. Public routes
 // (the `(marketing)` group, 404, error boundaries) render without any
 // auth round-trip.
+//
+// The billing rail (D117) is NOT here either, for the same shape of
+// reason (Option A′, founder 2026-08-14): sourcing it means reading the
+// edge geo header, and reading it at the root forces every route
+// dynamic. Each surface that quotes a price now mounts its own
+// `BillingCurrencyProvider` — `(app)/layout.tsx` for the in-app price
+// surfaces, `/` and `/pricing` for the two public ones. Anywhere else,
+// `useRegionProvider`'s own default (Paddle, the always-provisioned
+// international rail) applies, which is what a page with no price shows
+// anyway.
 
 'use client';
 
 import { useState, type ReactNode } from 'react';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
-import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
-import type { BillingProviderId } from '@declutrmail/shared/contracts';
 import { makeQueryClient } from '@/lib/query-client';
 
 let browserQueryClient: QueryClient | undefined;
@@ -38,20 +46,7 @@ function getQueryClient(): QueryClient {
   return browserQueryClient;
 }
 
-export function Providers({
-  children,
-  regionProvider = 'paddle',
-}: {
-  children: ReactNode;
-  /** Edge-resolved preferred rail (D117) — server-seeded so the first
-   *  paint is already right for the visitor's region. Price surfaces
-   *  clamp it per point; it is a preference, not a resolved currency. */
-  regionProvider?: BillingProviderId;
-}) {
+export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(getQueryClient);
-  return (
-    <QueryClientProvider client={queryClient}>
-      <BillingCurrencyProvider provider={regionProvider}>{children}</BillingCurrencyProvider>
-    </QueryClientProvider>
-  );
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }

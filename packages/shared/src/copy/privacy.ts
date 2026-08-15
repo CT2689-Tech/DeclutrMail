@@ -75,3 +75,22 @@ const GMAIL_MAIL_SCOPE_NAME = GMAIL_OAUTH_ACCESS[0].scope.split('/').at(-1);
  */
 export const OAUTH_SCOPE_DISCLOSURE =
   `Asks for the ${GMAIL_MAIL_SCOPE_NAME} scope. ${PRIVACY_BADGE_HEADLINE}.` as const;
+
+/**
+ * The date Google approved DeclutrMail's OAuth verification for the single
+ * restricted scope, under the CASA assessment.
+ *
+ * This is the product's only third-party credential, and before this
+ * constant existed the date was hand-written on four separate surfaces
+ * (`/privacy`, `/security`, Settings → Privacy & Data, and the landing
+ * trust strip). Verification is recertified ANNUALLY, so a hand-copied
+ * date is a claim that goes stale on a known schedule and updates only
+ * where someone remembers to look.
+ *
+ * **The word is `approved`.** Google approved a verification; it did not
+ * certify or audit the product. No surface may upgrade that.
+ */
+export const CASA_VERIFICATION_APPROVED_ON = '21 April 2026' as const;
+
+/** Month-level form, for surfaces too narrow for the full date. */
+export const CASA_VERIFICATION_APPROVED_MONTH = 'April 2026' as const;

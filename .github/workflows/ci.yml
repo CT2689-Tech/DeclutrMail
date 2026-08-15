@@ -146,6 +146,9 @@ jobs:
               - 'apps/api/**'
               - 'packages/db/**'
               - 'packages/shared/**'
+              # The gate's own specs and helpers. Without this a PR that
+              # edits only a11y-*.spec.ts never runs the lane it changes.
+              - 'packages/e2e/**'
 
   typecheck:
     name: Typecheck
@@ -344,6 +347,37 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @declutrmail/web test
+
+  build-web:
+    name: Build — Web + bundle budget
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Nothing in CI ran a production web build before this job, so a
+      # build-only break (a server/client boundary violation, a bad
+      # metadata export) reached Vercel unchallenged. `next build` is
+      # also the only thing that produces the manifest the budget reads.
+      - name: Build the web app
+        run: pnpm --filter @declutrmail/web build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      # D160's other unbuilt check. See the script header for what the
+      # numbers mean and why they are a ratchet rather than a target.
+      - name: Enforce the public bundle budget
+        run: node scripts/check-web-bundle-budget.mjs
+      # One per-request read in a shared node silently un-statics the
+      # whole public site, and nothing else fails when it happens.
+      - name: Assert the public site is still prerendered
+        run: node scripts/check-prerendered-routes.mjs
 
   test-units:
     name: Tests — Shared units
@@ -552,7 +586,13 @@ jobs:
           sed -n '1,240p' api-e2e.log
           sed -n '1,240p' web-e2e.log
           exit 1
-      - name: Run the authenticated accessibility gate
+      # Runs BOTH a11y lanes — a11y-smoke (5 authed screens) and
+      # a11y-public (11 public routes) — because the projects' testMatch
+      # selects a11y-*.spec.ts and this script no longer names a file.
+      # The job's own `name:` still says "Authenticated" and is left
+      # alone deliberately: it is a required status check, and renaming
+      # it would make the requirement match nothing.
+      - name: Run the accessibility gate (authenticated + public)
         run: pnpm e2e:a11y
         env:
           E2E_JSON_REPORT: ${{ github.workspace }}/e2e-a11y-report.json

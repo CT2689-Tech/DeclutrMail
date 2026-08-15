@@ -349,13 +349,19 @@ export function TriageRow({
               confidence belongs to the suppressed verdict, so showing
               it here would mislead (2026-07-10: "Keep · 95%" where 95%
               was the unsubscribe confidence). */}
+          {/* No `opacity` here. The Pill's tone colours are AA-compliant
+              on their own tint (teal 5.70:1, amber 4.65:1), but dimming
+              them to 0.85 blends them toward the background and drops
+              this 9.5px text to 4.27:1 / 3.63:1 — under the 4.5:1 floor.
+              axe flagged it on /inbox-simulator, the one public page
+              that renders a triage row. The suffix is already
+              de-emphasised by being mono and smaller; it does not need
+              the opacity as well. */}
           {row.protectionReason !== null ? (
-            <span style={{ fontFamily: font.mono, fontSize: 9.5, opacity: 0.85 }}>
-              {' · '}protected
-            </span>
+            <span style={{ fontFamily: font.mono, fontSize: 9.5 }}>{' · '}protected</span>
           ) : (
             recommendedVerb !== null && (
-              <span style={{ fontFamily: font.mono, fontSize: 9.5, opacity: 0.85 }}>
+              <span style={{ fontFamily: font.mono, fontSize: 9.5 }}>
                 {' · '}
                 {Math.round(row.confidence * 100)}%
               </span>
