@@ -28,6 +28,10 @@ import { describe, expect, it } from 'vitest';
 const MUST_STAY_STATIC = [
   'src/app/layout.tsx',
   'src/app/(marketing)/layout.tsx',
+  // `/` quotes prices but stays STATIC anyway: a dynamic route defers
+  // every <head> tag past </head>, which blanks the link preview on the
+  // most-shared URL the product has. See the page's docblock.
+  'src/app/(marketing)/page.tsx',
   'src/app/(marketing)/security/page.tsx',
   'src/app/(marketing)/privacy/page.tsx',
   'src/app/(marketing)/how-it-works/page.tsx',
@@ -41,15 +45,12 @@ const MUST_STAY_STATIC = [
 ] as const;
 
 /**
- * The deliberate exceptions, each with a reason that is a product fact.
- * `/` and `/pricing` quote money and the India rail is live-provisioned,
- * so they must see the visitor's geo. `/beta` and `/sign-in` read
- * `searchParams` and were never prerenderable.
+ * The deliberate exception. `/pricing` is the page where someone decides
+ * to pay, and the India rail is live-provisioned, so it must see the
+ * visitor's geo even at the cost of its own <head> tags. `/beta` and
+ * `/sign-in` read `searchParams` and were never prerenderable.
  */
-const INTENTIONALLY_DYNAMIC = [
-  'src/app/(marketing)/page.tsx',
-  'src/app/(marketing)/pricing/page.tsx',
-] as const;
+const INTENTIONALLY_DYNAMIC = ['src/app/(marketing)/pricing/page.tsx'] as const;
 
 const read = (relative: string) => readFileSync(path.resolve(process.cwd(), relative), 'utf8');
 
