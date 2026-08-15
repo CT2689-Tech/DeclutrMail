@@ -72,8 +72,7 @@ rebrands and newly-published BIMI records eventually land).
 
 ### 3. The read path never blocks on an outbound fetch
 
-`GET /api/icons/:domain` is unauthenticated (it returns no user data)
-and answers only from cache:
+`GET /api/icons/:domain` answers only from cache:
 
 | cache state | response                                                    |
 | ----------- | ----------------------------------------------------------- |
@@ -83,6 +82,19 @@ and answers only from cache:
 
 `204` is the contract for "monogram, and we're on it" — not an error. A
 cold domain costs a render nothing.
+
+The route is **authenticated**, despite returning no user data. An
+earlier draft of this ADR left it open on the reasoning that public
+brand artwork needs no guard; that was wrong on two counts, both about
+what an anonymous caller could do rather than what they could read. A
+miss ENQUEUES an outbound resolution, so an open route lets a stranger
+drive our DNS and HTTPS fetches at domains of their choosing and fill
+our cache table doing it; and the cache is a global set of domains our
+users receive mail from, which anonymous probing turns into an oracle
+for that set. Cookies reach it from an `<img>` because API and web
+share a registrable domain, so the `SameSite=Lax` session cookie is
+sent on the subresource request. If it ever is not, icons 401 and the
+UI shows monograms — the same floor as every other failure.
 
 ### 4. Resolution cascade, server-side only
 
@@ -114,11 +126,19 @@ rendering, where script execution is inert regardless.
 
 ### 6. Monogram is the floor, never a fallback that can fail
 
-`Avatar` renders the monogram as its base layer **always**, and fades
-an `<img>` over it on `200`. Every failure mode — `204`, network error,
+`Avatar` renders the monogram as its base layer **always**, and layers
+an `<img>` over it. Every failure mode — `204`, `401`, network error,
 decode error, flag off — degrades to exactly what ships today, with no
 layout shift and no empty box. The component API (`{name, domain?,
 size?}`) is unchanged.
+
+It layers rather than branches, and that is load-bearing: an earlier
+draft tracked load success in `useState` to fade the logo in, which
+made `Avatar` a Client Component and broke the web build outright,
+because `packages/shared`'s barrel is imported by server components.
+An `<img alt="">` that fails paints nothing, so the monogram beneath
+shows through with no state at all. `Avatar` MUST stay JS-free — it
+renders a few hundred times on one Senders page.
 
 Below 24px (table rows) `Avatar` stays monogram-only: downscaled marks
 are where mixed fidelity looks worst, and the identity anchor is
