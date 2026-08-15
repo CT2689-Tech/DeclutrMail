@@ -1221,3 +1221,9 @@ govern — or explicitly await the animations. Verify by running the matrix twic
 and requiring identical results.
 **Distillation trigger:** promote to CLAUDE.md §8 if a third timing-dependent
 gate ships with a ready signal weaker than the property it asserts.
+
+## 2026-08-15 — "Record + continue" recorded nothing, so a dead grant retried forever
+**Context:** 96% of production Sentry volume traced to two issues that turned out to be one bug — `InvalidGrantError` from `WatchRenewalWorker` (362 events / 5 days, escalating) and `dead_letter.parked` (1,943 events / 17 days), interleaved one minute apart.
+**Finding:** The hourly sweep selects mailboxes on `status='active' AND readiness_status='ready' AND token IS NOT NULL`. Its per-mailbox catch block was commented *"Record + continue — one bad grant must not stop the sweep"* and did exactly half of that: it logged, reported to Sentry, incremented a counter, and continued — but wrote nothing durable. So a mailbox whose Google token was revoked stayed `active`, matched the query again next tick, failed again, and reported again, indefinitely. A **permanent** condition sat on a **scheduled retry**. The isolation half of the contract was right and well-tested; "record" was the word doing no work, and no test asserted it because the test only checked that the *other* mailboxes still succeeded.
+**Rule (provisional):** When a loop catches an error and continues, ask what makes the NEXT iteration different. If nothing does, and the error is permanent, the handler is a generator of duplicate alerts rather than a recovery. Test it as a sequence, not a single pass: run the job twice and assert the failing item is absent from the second run. That two-tick test is what proved the fix here, and it fails loudly against the old code.
+**Distillation trigger:** promote to CLAUDE.md §8 if a second permanent-condition-on-a-retry-schedule reaches production.
