@@ -10091,3 +10091,54 @@ does not release it; and a released row whose provider still reports the
 subscription live raises the alert rather than going quiet.
 
 **Implementation contract:** see ADR-0033.
+
+### D254 — Brand logos on sender avatars
+
+**Status:** Candidate — implemented behind a flag defaulted OFF, awaiting
+founder ratification of the D-number and of the open risk below.
+Founder-directed 2026-08-14 ("we have email domains, can we also use nice
+logos while displaying their icon?"). The reasoning is recorded in ADR-0034;
+this entry exists so the work has a build status.
+
+**The state this changes.** Sender avatars are deterministic monograms
+(ADR-0024): one initial on a per-domain tint. That decision removed a
+third-party favicon waterfall which leaked every sender's domain to Clearbit,
+DuckDuckGo, and Google **from the user's browser with the user's IP attached**
+— on a page whose wedge is "we don't read your mail" — and which produced
+page-level fidelity variance that read as cheap. ADR-0024 §Decision 3
+deferred logos rather than banning them, and named the shape they would
+have to return in.
+
+**Decision.** Brand logos return, served exclusively from a first-party
+`GET /api/icons/:domain` backed by a global, domain-keyed server cache. The
+browser never talks to an icon source.
+
+Five parts:
+
+1. **One row, one fetch, for the whole product.** The cache is keyed on the
+   brand-root domain and carries no `user_id` and no `mailbox_account_id`.
+   That is a privacy requirement, not an optimisation: a per-user icon table
+   is a queryable index of who receives mail from whom, which is the artifact
+   D7/D228 says we do not hold. Consequence: if 4,000 users receive mail from
+   one brand, that is one outbound fetch, ever.
+2. **BIMI first.** Brands publish their own logo via a DNS TXT record at
+   `default._bimi.<domain>` — no vendor, no account, no bill, no licensing
+   question, and it is SVG, so there is no raster pipeline and no new
+   dependency. A paid vendor tier (Brandfetch / Logo.dev) is Phase 2 and is
+   config-gated; an absent key skips it.
+3. **Misses are cached.** A domain with no discoverable logo is stored as a
+   negative with a TTL. Without that, every render of a logo-less sender
+   re-enqueues a fetch forever.
+4. **The monogram is the floor, not a fallback.** It renders unconditionally
+   and the logo composites over it in the same silhouette. Every failure path
+   — nothing cached, 401, network error, flag off — lands on exactly what
+   ships today, with no layout shift. Below 24px the logo is skipped entirely.
+5. **The read path never blocks on an outbound fetch.** A miss answers
+   immediately and schedules resolution in a worker.
+
+**Open risk (gates turning the flag on).** BIMI logos are self-published and
+this phase does not verify the VMC, so a lookalike domain can publish a real
+brand's mark and we would render it — a phishing-assist risk. See
+FOUNDER-FOLLOWUPS.md 2026-08-14 for the three options.
+
+**Implementation contract:** see ADR-0034.

@@ -45,6 +45,20 @@ export const FLAG_MANIFEST = {
       'mailboxes). Off: the manual "Load more senders" button is the ' +
       'only pagination affordance (it stays rendered either way).',
   },
+  brandLogos: {
+    default: true,
+    description:
+      'Brand logos on sender avatars, served from the first-party icon ' +
+      'cache (ADR-0034). Off: `Avatar` renders the ADR-0024 monogram ' +
+      'only and makes no request at all — no /api/icons call, no <img>, ' +
+      'so the surface is byte-identical to pre-ADR-0034. On: the ' +
+      'monogram still renders as the base layer and a logo layers over ' +
+      'it when one is cached. Defaulted on once VMC verification landed ' +
+      '(founder decision 2026-08-15) — nothing is ever stored unless ' +
+      "the brand's certificate chains to a public root, carries the " +
+      'BIMI EKU, covers the domain, and commits to that exact image, so ' +
+      'a lookalike cannot borrow a real brand mark.',
+  },
   gmailDeeplinkSearchFallback: {
     default: false,
     description:

@@ -27,6 +27,8 @@ import {
   DeadLetterWorker,
   DELETION_SWEEP_INTERVAL_MS,
   DELETION_SWEEP_QUEUE,
+  DOMAIN_ICON_QUEUE,
+  DomainIconWorker,
   DrizzleDeadLetterRecorder,
   EMAIL_SEND_QUEUE,
   EmailSendWorker,
@@ -104,6 +106,8 @@ import type {
   DeadLetterSweepResult,
   DeletionSweepJobData,
   DeletionSweepResult,
+  DomainIconJobData,
+  DomainIconResult,
   EmailSendJobData,
   EmailSendResult,
   FollowupCheckJobData,
@@ -2053,6 +2057,39 @@ async function bootstrap(): Promise<void> {
   billingVerdictSchedulerHandle.unref();
 
   /**
+   * DomainIconWorker (ADR-0034 — batchPolicy). Resolves one domain's
+   * BIMI mark into the global `domain_icons` cache.
+   *
+   * No scheduler: this queue is purely demand-driven. `IconsService`
+   * enqueues on a cache miss or a stale hit, and BullMQ collapses
+   * concurrent enqueues for a domain into one job via the domain-keyed
+   * jobId. A domain nobody renders is never fetched.
+   *
+   * Concurrency 4 — the work is a DNS lookup plus one small HTTPS GET
+   * against an unrelated third party per job, so there is no shared
+   * rate limit to respect, but there is also no reason to let a cold
+   * mailbox open dozens of sockets at once.
+   */
+  const domainIconWorker = new DomainIconWorker({ db });
+  domainIconWorker.setObserver(observer);
+  domainIconWorker.setDeadLetterRecorder(deadLetterRecorder);
+  const domainIconBullWorker = new Worker<DomainIconJobData, DomainIconResult>(
+    DOMAIN_ICON_QUEUE,
+    (job) => domainIconWorker.run(job),
+    { connection, concurrency: 4, ...userFacingTuning },
+  );
+  domainIconBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: DOMAIN_ICON_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  /**
    * DeadLetterWorker sweep + 60s scheduler (D225 — adminPolicy). Scans
    * `dead_letter_jobs` for unreplayed rows and alerts exactly once per
    * row per process lifetime: one `dead_letter.parked` error log + one
@@ -2436,6 +2473,7 @@ async function bootstrap(): Promise<void> {
       await snoozeWakeSchedulerQueue.close();
       await billingVerdictBullWorker.close();
       await billingVerdictSchedulerQueue.close();
+      await domainIconBullWorker.close();
       await deadLetterBullWorker.close();
       await deadLetterSchedulerQueue.close();
       await deletionSweepBullWorker.close();
