@@ -83,3 +83,6 @@ docs/eval/sender-classification-eval-set.csv
 
 # Storybook static build output (apps/web/storybook-static)
 storybook-static/
+
+# Lighthouse CI reports (D160 gate) — regenerated per run, kept as CI artifacts.
+.lighthouseci/

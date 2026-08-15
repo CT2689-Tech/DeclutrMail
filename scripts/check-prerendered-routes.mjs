@@ -34,8 +34,7 @@ const MANIFEST = path.join(WEB, '.next', 'prerender-manifest.json');
  * CDN cache.
  */
 const INTENTIONALLY_DYNAMIC = new Map([
-  ['/', 'quotes prices via PricingTeaser; needs edge geo for the D117 rail'],
-  ['/pricing', 'the page where someone decides to pay; needs edge geo'],
+  ['/pricing', 'the page where someone decides to pay; needs edge geo for the D117 rail'],
   ['/beta', 'reads searchParams (invite code)'],
   ['/sign-in', 'reads searchParams (return destination)'],
   ['/changelog/rss.xml', 'route handler, not a page'],

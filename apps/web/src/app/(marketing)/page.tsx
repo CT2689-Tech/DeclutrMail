@@ -1,10 +1,6 @@
 import type { Metadata } from 'next';
-import { headers } from 'next/headers';
 
 import '@/features/marketing/landing/landing.css';
-import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
-import { defaultProviderForCountry } from '@/features/billing/billing-region';
-import { COUNTRY_HEADER } from '@/middleware';
 import { Hero } from '@/features/marketing/landing/hero';
 import {
   GmailCompanion,
@@ -45,24 +41,33 @@ export const metadata: Metadata = marketingPageMetadata({
 });
 
 /**
- * DYNAMIC ON PURPOSE — one of two public pages that is (Option A′,
- * founder 2026-08-14; the other is `/pricing`).
+ * STATIC. The landing page is prerendered, and that is load-bearing for
+ * more than speed.
  *
- * `PricingTeaser` quotes real amounts, and since 2026-07-25 the India
- * rail is live-provisioned (`razorpayPlanId` is populated for every paid
- * point), so an India-geo visitor is genuinely quoted and charged INR.
- * Prerendering this page would bake in the Paddle/USD default and show
- * an Indian visitor `$9` here and `₹749` one click later on /pricing —
- * the landing page contradicting the price the purchase then charges,
- * which is exactly the defect `pricing-teaser.tsx`'s own docblock exists
- * to prevent.
+ * It was briefly dynamic (#525) so `PricingTeaser` could quote the
+ * visitor's rail — INR for India. Adding the D160 Lighthouse gate
+ * surfaced what that cost: **Next defers ALL metadata out of `<head>` on
+ * a dynamic route.** Measured on a production build, `/` shipped its
+ * `<title>`, description, canonical, and every `og:`/`twitter:` tag at
+ * byte ~37,800, long past `</head>` at byte ~2,045, for React to hoist
+ * during hydration. Google executes JS and would cope. Social and chat
+ * crawlers — X, LinkedIn, Slack, Discord — do not: they read raw
+ * `<head>` and stop. Every share of declutrmail.com rendered as a blank
+ * card, on the one URL a launch gets shared as.
  *
- * The 30 public pages that quote no price DO prerender; this read costs
- * only the two that do. If the founder later accepts a USD-only landing
- * teaser, deleting this read is all it takes to make `/` static.
+ * Moving the read into a `<Suspense>` boundary does not help; the
+ * deferral follows the ROUTE being dynamic, not the component tree. So
+ * the choice is binary, and a working link preview on the most-shared
+ * page beats currency precision on a teaser strip that links to
+ * `/pricing` for the real grid.
+ *
+ * What this costs: the teaser quotes USD to everyone (the
+ * `useRegionProvider` default). `/pricing` still quotes INR to India,
+ * and `/billing` — where checkout actually opens — reads geo server-side
+ * and charges correctly. No one is charged a price they were not shown
+ * at the point of sale; the landing strip is simply denominated in USD.
  */
-export default async function LandingPage() {
-  const country = (await headers()).get(COUNTRY_HEADER);
+export default function LandingPage() {
   return (
     <div className="dm-mkt">
       <div className="dm-mkt-shell">
@@ -74,9 +79,7 @@ export default async function LandingPage() {
       <PrivacyDesk />
       <ProductTour />
       <GmailCompanion />
-      <BillingCurrencyProvider provider={defaultProviderForCountry(country)}>
-        <PricingTeaser />
-      </BillingCurrencyProvider>
+      <PricingTeaser />
       <Faq />
       <FinalCta />
     </div>
