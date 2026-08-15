@@ -212,9 +212,115 @@ describe('WatchRenewalWorker', () => {
     // Per-mailbox Sentry capture via the observer seam (D159).
     expect(captured).toHaveLength(1);
     expect(captured[0]).toMatchObject({ error: grantError, kind: 'gmail_watch.renewal_failed' });
-    // Partial failure still records a SUCCEEDED run — the next 6h tick retries the bad mailbox.
+    // Partial failure still records a SUCCEEDED run.
     const runs = await db.select().from(cronRuns);
     expect(runs[0]!.status).toBe('succeeded');
+    // …and the revoked grant is recorded durably, which is what both
+    // ends the retry loop and lights the frontend's reconnect gate.
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, bad));
+    expect(state!.lastIncrementalErrorCode).toBe('InvalidGrantError');
+    expect(state!.lastIncrementalErrorAt).not.toBeNull();
+    // Readiness must NOT flip — that column routes an onboarded user
+    // back to /onboarding (see the schema docblock).
+    expect(state!.readinessStatus).toBe('ready');
+  });
+
+  /**
+   * The regression this whole change exists for. Before it, a revoked
+   * grant was retried every tick forever — 362 InvalidGrantError events
+   * in 5 days, each parking a job in the dead-letter queue an hour later
+   * (Sentry DECLUTRMAIL-WEB-X / -R).
+   */
+  it('STOPS retrying a revoked grant: the next sweep skips it entirely', async () => {
+    const db = await freshDb();
+    const bad = await seedMailbox(db, { email: 'revoked@x.com' });
+    const good = await seedMailbox(db, { email: 'fine@x.com' });
+    const grantError = new InvalidGrantError('reconnect required');
+    const { access, watchCalls } = makeWatchAccess({ [bad]: grantError });
+    const captured: Error[] = [];
+    const observer: WorkerObserver = {
+      captureFailure: () => {},
+      captureBackgroundFailure: (error) => captured.push(error),
+    };
+    const worker = new WatchRenewalWorker({
+      db: db as never,
+      gmailWatch: access,
+      topicName: TOPIC,
+      observer,
+    });
+
+    const first = await worker.processJob({ scheduledAtMinute: MINUTE }, CTX);
+    expect(first).toMatchObject({ eligible: 2, watched: 1, failed: 1 });
+
+    // A LATER tick — a fresh run key, so the cron claim does not dedup it.
+    const second = await worker.processJob({ scheduledAtMinute: '2026-06-11T12:00' }, CTX);
+
+    // The revoked mailbox is gone from the eligible set: not attempted,
+    // not failed, and — the point — not reported to Sentry a second time.
+    expect(second).toMatchObject({ eligible: 1, watched: 1, failed: 0 });
+    expect(watchCalls.filter((id) => id === bad)).toHaveLength(1);
+    expect(watchCalls.filter((id) => id === good)).toHaveLength(2);
+    expect(captured).toHaveLength(1);
+  });
+
+  it('keeps retrying a TRANSIENT failure — only a revoked grant is permanent', async () => {
+    const db = await freshDb();
+    const flaky = await seedMailbox(db, { email: 'flaky@x.com' });
+    const { access, watchCalls } = makeWatchAccess({ [flaky]: new Error('Gmail 503') });
+    const worker = new WatchRenewalWorker({
+      db: db as never,
+      gmailWatch: access,
+      topicName: TOPIC,
+    });
+
+    await worker.processJob({ scheduledAtMinute: MINUTE }, CTX).catch(() => {});
+    await worker.processJob({ scheduledAtMinute: '2026-06-11T12:00' }, CTX).catch(() => {});
+
+    // Attempted BOTH times — a blip must not disable a mailbox.
+    expect(watchCalls.filter((id) => id === flaky)).toHaveLength(2);
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, flaky));
+    expect(state!.lastIncrementalErrorCode).toBeNull();
+  });
+
+  it('re-includes a mailbox once a later successful sync clears the reconnect flag', async () => {
+    const db = await freshDb();
+    const mailbox = await seedMailbox(db, { email: 'reconnected@x.com' });
+    // Stale invalid grant, then a SUCCESSFUL sync after it — exactly the
+    // shape `markQueued({freshCredentials:true})` leaves behind, and the
+    // same freshness rule the frontend's reconnect gate applies.
+    await db
+      .update(providerSyncState)
+      .set({
+        lastIncrementalErrorCode: 'InvalidGrantError',
+        lastIncrementalErrorAt: new Date('2026-06-10T00:00:00Z'),
+        lastSyncedAt: new Date('2026-06-11T00:00:00Z'),
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailbox));
+    const { access, watchCalls } = makeWatchAccess({});
+    const worker = new WatchRenewalWorker({
+      db: db as never,
+      gmailWatch: access,
+      topicName: TOPIC,
+    });
+
+    const result = await worker.processJob({ scheduledAtMinute: MINUTE }, CTX);
+
+    expect(result).toMatchObject({ eligible: 1, watched: 1, failed: 0 });
+    expect(watchCalls).toEqual([mailbox]);
+  });
+
+  it('pins the error name the worker, the API and the web app all key on', () => {
+    // Four sites share this literal (worker eligibility, the worker's
+    // recording branch, the API's markQueued clearing rule, and the web
+    // app's INVALID_GRANT_CODE). If the class name ever changes, the
+    // string must change with it in all four.
+    expect(new InvalidGrantError('x').name).toBe('InvalidGrantError');
   });
 
   it('throws (systemic fault) when EVERY eligible mailbox fails, recording a failed cron_runs row', async () => {
