@@ -117,31 +117,6 @@ back out of sync.
 **Status:** Open — due Apr 2027. The four-way duplication that prompted this is
 closed.
 
-### 2026-08-14 — Regenerate `atlas.sum` for migration 0056
-**Source:** session — ADR-0034 brand icon cache (migration
-`0056_domain_icons.sql`).
-**Why:** The migration is written, applies cleanly, and round-trips
-(forward → rollback → forward verified against real Postgres 16 and in
-the PGlite round-trip test). What is missing is its `atlas.sum` entry.
-Atlas validates that checksum file before doing anything, so
-`migration-lint` in CI will fail with a checksum mismatch until it is
-regenerated — a red check that is bookkeeping, not a schema problem.
-
-I could not do it here: the Atlas CLI is not installed in this
-container and its installer is blocked by the sandbox's egress proxy
-(403). Hand-writing the file was the wrong trade — Atlas's directory
-hash is not a plain sha256 of the file bytes, and a subtly wrong
-checksum that still *looks* valid fails far more confusingly than a
-missing one.
-
-**How:** With Atlas installed locally (`brew install ariga/tap/atlas`):
-```
-cd packages/db && atlas migrate hash --dir 'file://migrations'
-```
-then commit the updated `migrations/atlas.sum`.
-**Verifies by:** The `migration-lint` check on the PR goes green.
-**Status:** Open
-
 ### 2026-08-13 — Nothing surfaces refunded-vs-cancelled churn
 **Source:** founder question during the D253 refund-lockout design, 2026-08-13 —
 *"How can we get stats on how many customers we have refunded vs just
@@ -1689,6 +1664,44 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-08-14 — Regenerate `atlas.sum` for migration 0056
+**Source:** session — ADR-0034 brand icon cache (migration
+`0056_domain_icons.sql`).
+**Why:** The migration is written, applies cleanly, and round-trips
+(forward → rollback → forward verified against real Postgres 16 and in
+the PGlite round-trip test). What is missing is its `atlas.sum` entry.
+Atlas validates that checksum file before doing anything, so
+`migration-lint` in CI will fail with a checksum mismatch until it is
+regenerated — a red check that is bookkeeping, not a schema problem.
+
+I could not do it here: the Atlas CLI is not installed in this
+container and its installer is blocked by the sandbox's egress proxy
+(403). Hand-writing the file was the wrong trade — Atlas's directory
+hash is not a plain sha256 of the file bytes, and a subtly wrong
+checksum that still *looks* valid fails far more confusingly than a
+missing one.
+
+**How:** With Atlas installed locally (`brew install ariga/tap/atlas`):
+```
+cd packages/db && atlas migrate hash --dir 'file://migrations'
+```
+then commit the updated `migrations/atlas.sum`.
+**Verifies by:** The `migration-lint` check on the PR goes green.
+**Status:** Done 2026-08-15 — no founder action needed after all, and my
+earlier reasoning here was wrong. I had said hand-writing the file was too
+risky because Atlas's directory hash is not a plain sha256 of the file bytes.
+The first half was right; the conclusion was not. PR #513 had already done
+this successfully and CI's `atlas migrate lint` confirmed it, which meant the
+55 committed entries were a verification oracle I had overlooked.
+
+The algorithm, recovered and checked against all 55: each file's `h1:` is a
+SINGLE RUNNING sha256 over (filename + content) for that file **and every
+file before it** in name order, base64 — not an isolated per-file digest,
+which is why the obvious first guess fails. The header total is a sha256 over
+each (filename + base64 hash **without** the `h1:` prefix), concatenated.
+Regenerating reproduced all 55 pre-existing lines byte-identically and added
+exactly one, so this is verified rather than guessed.
 
 ### 2026-08-14 — Decide the unverified-VMC question before `brandLogos` goes on
 **Source:** session — ADR-0034 brand icon cache (BIMI-first logos).
