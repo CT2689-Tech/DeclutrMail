@@ -11,6 +11,7 @@ import { BriefModule } from './briefs/brief.module.js';
 import { DbModule } from './db/db.module.js';
 import { FollowupModule } from './followups/followup.module.js';
 import { HealthModule } from './health/health.module.js';
+import { IconsModule } from './icons/icons.module.js';
 import { MailboxAccountsModule } from './mailboxes/mailbox-accounts.module.js';
 import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { ProductFeedbackModule } from './product-feedback/product-feedback.module.js';
@@ -73,6 +74,10 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     // BILLING_ENABLED=true / the webhook signing secrets are set.
     BillingModule,
     SendersModule,
+    // ADR-0034 brand icons — a global domain-keyed cache, no
+    // mailbox scope. Fails open without REDIS_URL (serves what is
+    // cached, schedules nothing).
+    IconsModule,
     ScreenerModule,
     TriageModule,
     AutopilotModule,

@@ -65,6 +65,13 @@ export { cronRunStatus, cronRuns } from './schema/cron-runs';
 export type { CronRun, NewCronRun } from './schema/cron-runs';
 export { deadLetterJobs } from './schema/dead-letter-jobs';
 export type { DeadLetterJob, NewDeadLetterJob } from './schema/dead-letter-jobs';
+export {
+  DOMAIN_ICON_TTL_DAYS,
+  domainIcons,
+  domainIconSource,
+  domainIconStatus,
+} from './schema/domain-icons';
+export type { DomainIcon, NewDomainIcon } from './schema/domain-icons';
 export { followupStatus, followupTracker } from './schema/followup-tracker';
 export type {
   FollowupStatus,

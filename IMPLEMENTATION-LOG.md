@@ -34,12 +34,12 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 - ⬜ Not started: 76
 - 🟡 In progress: 1
-- 🔵 Shipped: 109
+- 🔵 Shipped: 110
 - 🟢 Verified: 55
 - 🚫 Retired: 2
 - 🔴 Blocked: 0
 - ⏸️ Deferred: 0
-- **Total: 243 D-decisions**
+- **Total: 244 D-decisions**
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -299,5 +299,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D251 | Autopilot splits on behaviour, not access | 🔵 | #465 |  |  |
 | D252 | Unsubscribe degrades honestly | 🔵 | #514 |  |  |
 | D253 | A refunded customer can buy again | 🔵 | #518, #519, #520 |  |  |
+| D254 | Brand logos on sender avatars | 🔵 | #524 |  |  |
 
 <!-- AUTO:DECISIONS:END -->

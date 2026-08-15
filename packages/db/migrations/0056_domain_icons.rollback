@@ -1,0 +1,16 @@
+-- Rollback for 0056_domain_icons.sql
+--
+-- Drops the brand icon cache outright. Nothing is preserved and
+-- nothing needs to be: every row is either public brand artwork
+-- re-fetchable from its source DNS record, or a cached miss that
+-- costs one lookup to re-derive. No user data has ever been in this
+-- table (see the forward migration's no-user-linkage note), so there
+-- is no retention or deletion obligation attached to discarding it.
+--
+-- The enums drop after the table that references them.
+
+DROP TABLE IF EXISTS "domain_icons";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "domain_icon_source";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "domain_icon_status";

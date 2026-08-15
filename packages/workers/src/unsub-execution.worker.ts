@@ -1,5 +1,3 @@
-import type { LookupAddress } from 'node:dns';
-import { lookup } from 'node:dns/promises';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
@@ -18,6 +16,16 @@ import {
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
+// SSRF primitives moved to `ssrf-guard.ts` when DomainIconWorker
+// (ADR-0034) became the second consumer of the same guard. Re-exported
+// below so this module's public surface is unchanged.
+import {
+  buildPinnedLookup,
+  classifyAddress,
+  DNS_RESOLVE_HOST,
+  type PinnedLookup,
+  type ResolveHost,
+} from './ssrf-guard.js';
 import { TransientError, ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -155,42 +163,6 @@ const ONE_CLICK_BODY = 'List-Unsubscribe=One-Click';
  */
 export const UNSUB_USER_AGENT = 'DeclutrMail/1.0 (+https://declutrmail.com)';
 
-/** The `dns.lookup`-compatible shape `node:http(s)` request options accept. */
-type PinnedLookup = (
-  hostname: string,
-  optionsOrCb: { all?: boolean } | PinnedLookupCallback,
-  maybeCb?: PinnedLookupCallback,
-) => void;
-type PinnedLookupCallback = (
-  err: Error | null,
-  address: string | LookupAddress[],
-  family?: number,
-) => void;
-
-/**
- * A `dns.lookup`-compatible function that ALWAYS yields the pre-validated
- * pinned address, ignoring the requested hostname. This is what closes
- * the DNS-rebinding TOCTOU: the connector resolves through this instead
- * of a real resolver, so the socket can only dial the address the SSRF
- * pre-flight already classified. Honors the undici-style `options.all`
- * (array) form for safety, though Node's own connector calls the
- * non-`all` `(hostname, options, cb)` form.
- *
- * Exported for direct unit testing — the pin is the whole security
- * property, so it gets its own test rather than only the integration.
- */
-export function buildPinnedLookup(pinnedAddress: string, family: 4 | 6): PinnedLookup {
-  return (_hostname, optionsOrCb, maybeCb) => {
-    const all = typeof optionsOrCb === 'function' ? false : optionsOrCb.all === true;
-    const cb = typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb!;
-    if (all) {
-      cb(null, [{ address: pinnedAddress, family }]);
-    } else {
-      cb(null, pinnedAddress, family);
-    }
-  };
-}
-
 /**
  * Production adapter — `node:https.request` (or `node:http.request` only
  * on the insecure local-smoke path), pinned to the pre-validated address
@@ -252,14 +224,6 @@ export const FETCH_UNSUB_HTTP_PORT: UnsubHttpPort = {
       req.end(ONE_CLICK_BODY);
     });
   },
-};
-
-/** Resolver seam — `node:dns` lookup in production; injectable for tests. */
-export type ResolveHost = (hostname: string) => Promise<string[]>;
-
-const DNS_RESOLVE_HOST: ResolveHost = async (hostname) => {
-  const records = await lookup(hostname, { all: true, verbatim: true });
-  return records.map((r) => r.address);
 };
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
@@ -745,39 +709,6 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
   }
 }
 
-/**
- * Classify one resolved IP. 'loopback' is split out because the
- * insecure-targets flag exempts loopback ONLY (a 127.0.0.1 smoke fake)
- * while RFC 1918 / link-local / ULA stay blocked unconditionally.
- */
-export function classifyAddress(address: string): 'public' | 'loopback' | 'private' {
-  // Normalize IPv4-mapped IPv6 (`::ffff:10.0.0.1`) to the v4 form so
-  // the v4 range checks below apply.
-  const normalized = address.toLowerCase().startsWith('::ffff:')
-    ? address.slice('::ffff:'.length)
-    : address;
-
-  if (isIP(normalized) === 4) {
-    const octets = normalized.split('.').map((o) => Number.parseInt(o, 10));
-    const [a, b] = octets as [number, number, number, number];
-    if (a === 127) return 'loopback';
-    if (a === 0) return 'private'; // 0.0.0.0/8 — "this network"
-    if (a === 10) return 'private'; // RFC 1918
-    if (a === 172 && b >= 16 && b <= 31) return 'private'; // RFC 1918
-    if (a === 192 && b === 168) return 'private'; // RFC 1918
-    if (a === 169 && b === 254) return 'private'; // link-local (incl. GCP metadata)
-    if (a === 100 && b >= 64 && b <= 127) return 'private'; // CGNAT 100.64/10
-    return 'public';
-  }
-
-  // IPv6.
-  const lower = normalized.toLowerCase();
-  if (lower === '::1') return 'loopback';
-  if (lower === '::') return 'private'; // unspecified
-  const firstGroup = lower.split(':', 1)[0] ?? '';
-  // fc00::/7 — unique local.
-  if (firstGroup.startsWith('fc') || firstGroup.startsWith('fd')) return 'private';
-  // fe80::/10 — link-local (fe80–febf).
-  if (/^fe[89ab]/.test(firstGroup)) return 'private';
-  return 'public';
-}
+// Re-exported for back-compat: these lived here until DomainIconWorker
+// (ADR-0034) needed the same guard. Definitions are in `ssrf-guard.ts`.
+export { buildPinnedLookup, classifyAddress, type PinnedLookup, type ResolveHost };
