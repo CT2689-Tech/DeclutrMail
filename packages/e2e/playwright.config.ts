@@ -103,7 +103,17 @@ export default defineConfig({
   projects: [
     {
       name: 'default',
-      testIgnore: /a11y-[a-z-]+\.spec\.ts/,
+      testIgnore: /(a11y|render)-[a-z-]+\.spec\.tsx?/,
+    },
+    /* Real-browser paint assertions for shared components. These serve
+     * their own SSR'd page and stub endpoint, so they need no stack, no
+     * database and no session — they exist because SSR markup tests
+     * cannot see how an engine paints a FAILED image, which is how the
+     * ADR-0034 avatar shipped broken. */
+    {
+      name: 'render',
+      testMatch: /render-[a-z-]+\.spec\.tsx?/,
+      use: { viewport: { width: 640, height: 240 } },
     },
     {
       name: 'a11y-desktop',

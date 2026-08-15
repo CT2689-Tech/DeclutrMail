@@ -21,6 +21,57 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-15 — Every avatar shipped as a broken-image glyph
+
+**PR:** #524 (https://github.com/CT2689-Tech/DeclutrMail/pull/524) — fixed by the follow-up PR
+**Caught by:** production — the founder, on app.declutrmail.com/senders, minutes after merge
+
+**What happened:** ADR-0034 layered a brand logo over the monogram with
+an `<img>`, on the written claim that "an `<img alt="">` that fails
+paints nothing, so the monogram underneath shows through". The claim is
+false. Chromium paints a broken-image placeholder for a failed image
+that has been given dimensions, and the layer also carried an opaque
+`background` that covered the monogram whether or not any bytes
+arrived. `GET /api/icons/:domain` answers `204` for any uncached
+domain — every domain, on first render — so the miss path was the
+DEFAULT path, and every avatar on the Senders page rendered as a
+broken-image glyph on a blank tile. The exact failure ADR-0034 §6
+exists to forbid.
+
+Everything was green. `avatar.test.tsx` asserted the monogram was in
+the markup (it was) and that an `<img>` existed (it did); 4,759 unit
+tests, all 23 CI checks, five gate agents, a live API smoke against
+real Postgres and real DNS, and a manual `curl` of the endpoint in
+every state — none of which renders a failed image in an engine. The
+component had never once been loaded in a browser. The smoke I ran
+covered the SERVER half of the feature thoroughly and the CLIENT half
+not at all, and I reported it as an end-to-end smoke.
+
+**Correct approach:** the layer is a CSS `background-image` with no
+background-color of its own — a failed CSS background paints nothing in
+every engine, and the monogram beneath is simply what shows. Beyond the
+fix: a visual guarantee needs an assertion in a real engine. Markup
+tests cannot see paint, and "I reasoned about what the browser does" is
+not a verification step.
+
+**Rule:** if a change alters what the user SEES, load it in a browser
+before calling it smoked — and if the guarantee is about a FAILURE
+state, drive the failure (204/401/offline), never just the happy path.
+An `<img>` whose src can legitimately return no image is a broken-image
+glyph waiting to ship; use a CSS background.
+
+**Enforcement update:** new CI-gating Playwright project `render`
+(`packages/e2e/specs/render-avatar-logo.spec.ts`) screenshots the
+avatar, deletes the logo layer, and requires the shots to be
+byte-identical on `204`/`401`/connection-refused and to differ on a
+cached mark — verified to FAIL on the shipped-broken component. It runs
+before the stack boots, needing no database, session or Gmail. Also:
+ADR-0034 §6 rewritten with the real constraint, and `avatar.test.tsx`
+now states in its header that it cannot see paint and names the spec
+that can.
+
+---
+
 ## 2026-08-13 — A cache widened the window on a read gating an irreversible write
 
 **PR:** [#519](https://github.com/CT2689-Tech/DeclutrMail/pull/519) (caught pre-merge)

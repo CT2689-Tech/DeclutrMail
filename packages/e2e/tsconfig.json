@@ -3,6 +3,11 @@
   "include": ["specs/**/*", "helpers/**/*", "playwright.config.ts", "global-setup.ts"],
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    // `helpers/ssr-avatar.ts` imports a real component from
+    // `@declutrmail/shared`, which pulls .tsx into the program. No spec
+    // here writes JSX itself — Playwright's transform compiles it with
+    // a component-testing factory React cannot render.
+    "jsx": "react-jsx"
   }
 }

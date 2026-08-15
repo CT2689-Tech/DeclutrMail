@@ -22,6 +22,13 @@ import { applyBillingSeed } from './helpers/seed-billing';
  * Set-Cookie side effect.
  */
 export default async function globalSetup(_config: FullConfig): Promise<void> {
+  // The `render` project asserts how Chromium PAINTS shared components
+  // against a page and endpoint it serves itself. It needs no stack, no
+  // database and no session, and it must stay runnable (and CI-gating)
+  // without one — so its script opts out of the seed + dev-login that
+  // every stack-backed project requires.
+  if (process.env.E2E_SKIP_STACK_SETUP === '1') return;
+
   // Gmail-free billing seed (D183) — BEFORE any login: the dev-login
   // never creates users, so the synthetic billing user must already
   // exist (and a Gmail-free environment may set E2E_LOGIN_EMAIL to it,

@@ -22,11 +22,37 @@
  * logos still reads as one system rather than half-broken.
  *
  * THE MONOGRAM IS THE FLOOR, NOT A FALLBACK. It renders as the base
- * layer unconditionally and the logo fades in on top of it. There is
+ * layer unconditionally and the logo composites on top of it. There is
  * no failure path that yields an empty box: a 204 (nothing cached), a
  * 401, a network error, a decode error, or the flag being off all end
  * with exactly what shipped before ADR-0034, and none of them shift
  * layout.
+ *
+ * THE LOGO LAYER IS A CSS BACKGROUND, NOT AN `<img>` — and that is the
+ * whole guarantee, not a styling preference. The first cut used an
+ * `<img>` on the claim that "a 204 or a 401 paints nothing at all with
+ * `alt=""`". That claim is false. Chromium paints a BROKEN-IMAGE
+ * placeholder for a failed image that has been given dimensions, and
+ * the layer also carried an opaque `background` that painted over the
+ * monogram whether or not any bytes arrived. Since `/api/icons/:domain`
+ * answers 204 on a cold cache — the state EVERY domain is in until a
+ * worker fills it — the effect in production was that every avatar on
+ * the page became a broken-image glyph on a blank tile. A failed CSS
+ * background image has no such placeholder in any engine: it paints
+ * nothing, and the monogram beneath is simply what you see.
+ *
+ * Two consequences worth stating plainly:
+ *
+ *   - The layer must stay TRANSPARENT apart from the image itself. Any
+ *     background-color here re-creates the bug in its second form.
+ *     Covering the initial is therefore the mark's own job — BIMI SVG
+ *     Tiny PS forbids transparency, so a verified mark is an opaque
+ *     tile. A spec-violating mark would show the initial faintly
+ *     behind it; that is a cosmetic edge, not a broken box.
+ *   - `loading="lazy"` has no background-image equivalent. Senders
+ *     loads 50 rows at a time and the requests are conditional (strong
+ *     ETag → 304), so this is a real but small cost, paid to make the
+ *     failure path safe.
  *
  * Below `LOGO_MIN_SIZE` the logo is skipped entirely. Table rows draw
  * this at 22px, where a downscaled mark is exactly the mixed-fidelity
@@ -42,12 +68,11 @@
  * adjacent, so the whole avatar stays `aria-hidden`.
  *
  * NO STATE, DELIBERATELY. An earlier draft tracked load success in
- * `useState` to fade the logo in, which made this a Client Component —
- * and `packages/shared`'s barrel is imported by server components
- * (`app/not-found.tsx`), so the web build failed outright. The state
- * was never needed: an `<img>` that 204s, 401s, or fails to decode
- * paints nothing at all with `alt=""`, so the monogram underneath
- * simply shows through. Layering instead of branching keeps this a
+ * `useState` to hide a failed logo, which made this a Client Component
+ * — and `packages/shared`'s barrel is imported by server components
+ * (`app/not-found.tsx`), so the web build failed outright. The state is
+ * not needed once the layer is a CSS background: failure paints
+ * nothing on its own, with no event to handle. That keeps this a
  * zero-JS server component — which matters for something rendered a
  * few hundred times on one Senders page.
  */
@@ -144,38 +169,25 @@ export function Avatar({
     >
       {initial}
       {iconUrl !== null && (
-        <img
-          src={iconUrl}
-          alt=""
-          width={size}
-          height={size}
-          // No load/error handlers: a 204, a 401, a dropped connection
-          // or malformed bytes all paint nothing for an `alt=""` image,
-          // leaving the monogram beneath visible. Handling the events
-          // would buy nothing and cost the whole component its
-          // server-renderability.
-          //
-          // Avatars appear far down long virtualized lists; there is no
-          // reason to fetch one before it is near the viewport.
-          loading="lazy"
-          decoding="async"
+        <span
           style={{
             position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            // `contain` never crops: brand marks are not all square,
-            // and a cropped logo is worse than a small one.
-            objectFit: 'contain',
             // The uniform inset is what makes a logo and a monogram
             // read as the same object rather than two kinds of thing.
-            padding: Math.max(2, Math.round(size * 0.14)),
-            boxSizing: 'border-box',
-            // Opaque, so a loaded mark fully covers the initial rather
-            // than sitting on top of it. An unloaded one paints
-            // nothing, background included.
-            background: `hsl(${hue} 30% var(--dm-avatar-bg-l, 94%))`,
-            borderRadius: radius,
+            inset: Math.max(2, Math.round(size * 0.14)),
+            // `iconUrl` is safe to interpolate into a CSS url() token:
+            // the only variable segment is `encodeURIComponent`'d, and
+            // that escapes every character that could close the quoted
+            // string (`"` → %22, `\` → %5C, newlines → %0A).
+            backgroundImage: `url("${iconUrl}")`,
+            // `contain` never crops: brand marks are not all square,
+            // and a cropped logo is worse than a small one.
+            backgroundSize: 'contain',
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'center',
+            // NO background-color, ever — see the header. A color here
+            // paints over the monogram on every cache miss.
+            borderRadius: Math.max(4, radius - 2),
           }}
         />
       )}

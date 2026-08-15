@@ -94,7 +94,8 @@ users receive mail from, which anonymous probing turns into an oracle
 for that set. Cookies reach it from an `<img>` because API and web
 share a registrable domain, so the `SameSite=Lax` session cookie is
 sent on the subresource request. If it ever is not, icons 401 and the
-UI shows monograms — the same floor as every other failure.
+UI shows monograms — the same floor as every other failure, which §6
+now actually delivers.
 
 ### 4a. Nothing is stored without a verified VMC
 
@@ -160,24 +161,53 @@ a wall-clock timeout, and an `image/svg+xml` content-type check.
 
 Fetched SVG is validated against the SVG Tiny PS profile shape BIMI
 requires and sanitized (no `<script>`, no event handlers, no external
-references) before storage. It is served exclusively for `<img>`
-rendering, where script execution is inert regardless.
+references) before storage. It is rendered exclusively as a CSS
+background image (see §6), where script execution is inert regardless.
 
 ### 6. Monogram is the floor, never a fallback that can fail
 
 `Avatar` renders the monogram as its base layer **always**, and layers
-an `<img>` over it. Every failure mode — `204`, `401`, network error,
+the mark over it. Every failure mode — `204`, `401`, network error,
 decode error, flag off — degrades to exactly what ships today, with no
 layout shift and no empty box. The component API (`{name, domain?,
 size?}`) is unchanged.
 
 It layers rather than branches, and that is load-bearing: an earlier
-draft tracked load success in `useState` to fade the logo in, which
-made `Avatar` a Client Component and broke the web build outright,
-because `packages/shared`'s barrel is imported by server components.
-An `<img alt="">` that fails paints nothing, so the monogram beneath
-shows through with no state at all. `Avatar` MUST stay JS-free — it
-renders a few hundred times on one Senders page.
+draft tracked load success in `useState`, which made `Avatar` a Client
+Component and broke the web build outright, because `packages/shared`'s
+barrel is imported by server components. `Avatar` MUST stay JS-free —
+it renders a few hundred times on one Senders page.
+
+**The logo layer is a CSS `background-image`, never an `<img>`, and
+this is a correctness requirement rather than a styling choice.** The
+first implementation used an `<img>` on the stated reasoning that "an
+`<img alt="">` that fails paints nothing, so the monogram shows
+through". That reasoning was wrong, and shipped: Chromium paints a
+broken-image placeholder for a failed image that has been given
+dimensions, and the layer additionally carried an opaque background
+that covered the monogram whether or not any bytes arrived. Because
+`204` is the answer for every uncached domain — i.e. every domain on
+first render — the live result was a page of broken-image glyphs on
+blank tiles, which is precisely the "empty box" this section forbids.
+A failed CSS background image has no placeholder in any engine.
+
+Two constraints follow, and both must hold:
+
+1. The layer carries **no background-color of its own**. Covering the
+   monogram is the mark's own job — BIMI SVG Tiny PS forbids
+   transparency, so a verified mark is an opaque tile. A
+   spec-violating mark shows the initial faintly behind it; that is
+   cosmetic, not a broken box.
+2. `loading="lazy"` has no background-image equivalent, so it is lost.
+   Senders loads 50 rows at a time and requests are conditional
+   (strong ETag → `304`), which is the price of a safe failure path.
+
+Markup assertions cannot see any of this — the broken version passed
+them. The guarantee is therefore asserted in a real engine by
+`packages/e2e/specs/render-avatar-logo.spec.ts` (CI project `render`),
+which screenshots the avatar, deletes the logo layer, and requires the
+two shots to be byte-identical on `204`/`401`/connection-refused and to
+differ on a cached mark.
 
 Below 24px (table rows) `Avatar` stays monogram-only: downscaled marks
 are where mixed fidelity looks worst, and the identity anchor is
@@ -269,8 +299,13 @@ without a revert.
   SVG all rejected.
 - `apps/api/src/icons/icons.controller.spec.ts` — 200/204/enqueue
   matrix, ETag revalidation, no auth requirement, rate limit applied.
+- `packages/e2e/specs/render-avatar-logo.spec.ts` — in Chromium: a
+  `204`, a `401` and a refused connection each paint NOTHING over the
+  monogram, and a cached mark paints and covers it. The assertion that
+  the shipped-broken version fails.
 - `packages/shared/src/components/avatar.test.tsx` — monogram base
-  layer survives every img failure mode; monogram-only under 24px; flag
-  off renders zero network surface.
+  layer present in markup; layer carries no background-color and emits
+  no `<img>`; monogram-only under 24px; flag off renders zero network
+  surface. Markup-level only — see the spec above for paint.
 - Schema check: `domain_icons` has no column referencing a user or
   mailbox (asserted in the schema test).
