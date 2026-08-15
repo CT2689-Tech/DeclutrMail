@@ -353,7 +353,7 @@ jobs:
     needs: changes
     if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -378,6 +378,25 @@ jobs:
       # whole public site, and nothing else fails when it happens.
       - name: Assert the public site is still prerendered
         run: node scripts/check-prerendered-routes.mjs
+      # D160's remaining unbuilt gate. Runs against the BUILT app via
+      # `next start` — a `next dev` score measures nothing production has.
+      - name: Lighthouse — marketing pages (D160 ≥90)
+        run: pnpm check:lighthouse
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports
+          path: apps/web/.lighthouseci/
+          retention-days: 7
+          # `.lighthouseci` is a DOTFILE directory, and upload-artifact
+          # skips hidden paths by default — the first run reported
+          # "No files were found" seconds after LHCI logged "Done writing
+          # reports to disk". Without this the gate passes but leaves no
+          # evidence of the numbers it passed on.
+          include-hidden-files: true
 
   test-units:
     name: Tests — Shared units
