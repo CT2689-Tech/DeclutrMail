@@ -9,7 +9,8 @@
 // answer), so every story below shows the MONOGRAM. That is the
 // intended reference: the monogram is the floor every avatar falls
 // back to, so it is the state worth pinning visually. The logo layer
-// composites into the same rounded square at the same inset — see the
+// composites into the same rounded square at the same inset, opaque so
+// a loaded mark covers the initial rather than sitting on it — see the
 // `SizeScale` note for why nothing below 24px ever carries one.
 //
 // Storybook itself is seeded in PR 3 (D210). Until then this file uses
@@ -42,7 +43,7 @@ const meta: StoryMeta<typeof Avatar> = {
     docs: {
       description: {
         component:
-          'Sender identity anchor. One silhouette everywhere: rounded square, hairline border, a single initial on a deterministic per-domain tint (ADR-0024). With `brandLogos` on (ADR-0034), a brand mark from our first-party /api/icons endpoint fades in over that monogram — the monogram itself never stops rendering, so no failure path yields an empty box. Decorative by contract: always aria-hidden, with the sender name adjacent.',
+          'Sender identity anchor. One silhouette everywhere: rounded square, hairline border, a single initial on a deterministic per-domain tint (ADR-0024). With `brandLogos` on (ADR-0034), a brand mark from our first-party /api/icons endpoint layers over that monogram — the monogram itself never stops rendering, so no failure path yields an empty box and the component stays JS-free. Decorative by contract: always aria-hidden, with the sender name adjacent.',
       },
     },
   },
