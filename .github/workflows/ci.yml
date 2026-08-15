@@ -374,6 +374,10 @@ jobs:
       # numbers mean and why they are a ratchet rather than a target.
       - name: Enforce the public bundle budget
         run: node scripts/check-web-bundle-budget.mjs
+      # One per-request read in a shared node silently un-statics the
+      # whole public site, and nothing else fails when it happens.
+      - name: Assert the public site is still prerendered
+        run: node scripts/check-prerendered-routes.mjs
 
   test-units:
     name: Tests — Shared units

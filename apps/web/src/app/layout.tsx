@@ -1,13 +1,9 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { headers } from 'next/headers';
 import { Fraunces, Geist, Geist_Mono } from 'next/font/google';
 import '@declutrmail/shared/tokens.css';
-import { isFeatureEnabled } from '@/lib/flags';
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { Providers } from './providers';
-import { defaultProviderForCountry } from '@/features/billing/billing-region';
-import { COUNTRY_HEADER } from '@/middleware';
 
 const geist = Geist({
   subsets: ['latin'],
@@ -35,24 +31,29 @@ export const metadata: Metadata = {
   description: 'A Gmail sender-control companion with live previews and Activity undo.',
 };
 
-export default async function RootLayout({ children }: { children: ReactNode }) {
-  // CSP nonce plumbing (D175). `src/middleware.ts` mints a per-request
-  // nonce and stamps it into the `Content-Security-Policy` request
-  // header; Next.js applies it to its own framework <script> tags
-  // automatically — but ONLY during dynamic rendering. Reading
-  // `headers()` here opts every route out of static prerendering, so no
-  // page can ever ship build-time HTML whose inline bootstrap scripts
-  // carry a stale (or missing) nonce. Any future inline <Script> must
-  // read the nonce the same way: `(await headers()).get('x-nonce')`.
-  // https://nextjs.org/docs/app/guides/content-security-policy
-  const requestHeaders = await headers();
-  const nonce = requestHeaders.get('x-nonce') ?? undefined;
-  // Preferred billing rail (D117), resolved at the edge. Read here so
-  // every in-app price — tier gate, upgrade nudges, plan strip — quotes
-  // the rail the visitor will be charged on, from first paint. Each
-  // price surface clamps this per point, so an unprovisioned region
-  // still renders (and charges) the international rail.
-  const regionProvider = defaultProviderForCountry(requestHeaders.get(COUNTRY_HEADER));
+/**
+ * NOTHING IN THIS FILE MAY READ `headers()`, `cookies()` OR
+ * `searchParams` (Option A′, founder 2026-08-14).
+ *
+ * The root layout is the one node every route shares, so a single
+ * per-request read here opts the WHOLE app out of static prerendering.
+ * It used to make two — the D175 CSP nonce and the D117 billing rail —
+ * which is why not one HTML page was prerendered. Both now live in the
+ * layer that actually needs them:
+ *
+ *   nonce  → `(app)/layout.tsx` + `onboarding/layout.tsx` (server
+ *            boundaries above the client shells), which pass it to
+ *            `<ThemeScript>`. The `(marketing)` group needs no nonce —
+ *            its CSP authorizes the script by 'self'.
+ *   region → `(app)/layout.tsx` for the in-app price surfaces, and the
+ *            two marketing pages that quote a price (`/`, `/pricing`),
+ *            each wrapping its own `BillingCurrencyProvider`.
+ *
+ * Adding a per-request read back here silently un-statics 30+ public
+ * pages, with no test failure to warn you. `prerender-static-routes.test.ts`
+ * is the guard.
+ */
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     // suppressHydrationWarning: theme-init.js sets `data-theme` before
     // hydration, so the client html attributes legitimately differ
@@ -63,21 +64,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       suppressHydrationWarning
     >
       <body>
-        {/* Theme resolver — parser-blocking on purpose so a stored dark
-            preference applies before first paint (no light flash).
-            Nonced: script-src is 'strict-dynamic', which ignores 'self'
-            host-source in CSP3 — without the nonce this static asset
-            would be blocked (see src/middleware.ts D175 notes).
-            suppressHydrationWarning: browsers hide the nonce attribute
-            from DOM reads, so the client always sees "" — a known,
-            harmless mismatch on any nonced tag. */}
-        {/* darkMode flag off ⇒ skip the resolver entirely: data-theme is
-            never set, so the app renders light even for users with a
-            stored dark preference (ADR-0025 kill-switch semantics). */}
-        {isFeatureEnabled('darkMode') && (
-          <script src="/theme-init.js" nonce={nonce} suppressHydrationWarning />
-        )}
-        <Providers regionProvider={regionProvider}>{children}</Providers>
+        {/* The theme resolver is rendered by each route group, not here —
+            two of the three groups need it nonced and this layout may
+            not read the nonce. See `features/theme/theme-script.tsx`. */}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

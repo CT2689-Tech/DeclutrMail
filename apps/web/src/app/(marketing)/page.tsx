@@ -1,6 +1,10 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 
 import '@/features/marketing/landing/landing.css';
+import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
+import { defaultProviderForCountry } from '@/features/billing/billing-region';
+import { COUNTRY_HEADER } from '@/middleware';
 import { Hero } from '@/features/marketing/landing/hero';
 import {
   GmailCompanion,
@@ -40,7 +44,25 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/',
 });
 
-export default function LandingPage() {
+/**
+ * DYNAMIC ON PURPOSE — one of two public pages that is (Option A′,
+ * founder 2026-08-14; the other is `/pricing`).
+ *
+ * `PricingTeaser` quotes real amounts, and since 2026-07-25 the India
+ * rail is live-provisioned (`razorpayPlanId` is populated for every paid
+ * point), so an India-geo visitor is genuinely quoted and charged INR.
+ * Prerendering this page would bake in the Paddle/USD default and show
+ * an Indian visitor `$9` here and `₹749` one click later on /pricing —
+ * the landing page contradicting the price the purchase then charges,
+ * which is exactly the defect `pricing-teaser.tsx`'s own docblock exists
+ * to prevent.
+ *
+ * The 30 public pages that quote no price DO prerender; this read costs
+ * only the two that do. If the founder later accepts a USD-only landing
+ * teaser, deleting this read is all it takes to make `/` static.
+ */
+export default async function LandingPage() {
+  const country = (await headers()).get(COUNTRY_HEADER);
   return (
     <div className="dm-mkt">
       <div className="dm-mkt-shell">
@@ -52,7 +74,9 @@ export default function LandingPage() {
       <PrivacyDesk />
       <ProductTour />
       <GmailCompanion />
-      <PricingTeaser />
+      <BillingCurrencyProvider provider={defaultProviderForCountry(country)}>
+        <PricingTeaser />
+      </BillingCurrencyProvider>
       <Faq />
       <FinalCta />
     </div>

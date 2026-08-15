@@ -55,7 +55,7 @@ vi.mock('@/features/triage/triage-undo-tray', () => ({
   },
 }));
 
-import AppLayout from './layout';
+import { AppChromeLayout as AppLayout } from './app-chrome-layout';
 
 afterEach(() => {
   vi.restoreAllMocks();

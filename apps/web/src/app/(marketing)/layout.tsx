@@ -25,6 +25,7 @@ import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { PublicRouteTracker } from '@/features/marketing/public-route-tracker';
 import { PublicFooter, PublicHeader } from '@/features/marketing/public-shell/public-shell';
+import { ThemeScript } from '@/features/theme/theme-script';
 import '@/features/marketing/public-shell/public-shell.css';
 
 const { color, font } = tokens;
@@ -123,6 +124,26 @@ const SITE_JSON_LD = {
 };
 
 export default function MarketingLayout({ children }: { children: ReactNode }) {
+  return (
+    <>
+      {/* Un-nonced on purpose: this group's CSP is `script-src 'self'
+          'unsafe-inline'` with NO 'strict-dynamic', so 'self' authorizes
+          the same-origin asset by itself. A nonce here would be stale the
+          moment the page is prerendered. Rendered ABOVE the wrapper div
+          so it still executes before anything paints. */}
+      <ThemeScript />
+      <MarketingShell>{children}</MarketingShell>
+    </>
+  );
+}
+
+/**
+ * NOTHING BELOW THIS POINT MAY READ `headers()`, `cookies()` OR
+ * `searchParams` — that is what keeps 30+ public pages prerenderable
+ * (Option A′). The two public pages that genuinely need per-request
+ * state, `/` and `/pricing`, read it in the PAGE and stay dynamic.
+ */
+function MarketingShell({ children }: { children: ReactNode }) {
   return (
     // No data-theme pin: the public subtree follows the app preference,
     // resolved on <html> by theme-init.js before first paint. This node
