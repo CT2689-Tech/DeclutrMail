@@ -24,6 +24,40 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-15 — Confirm brand-logo requests actually carry the session cookie
+
+**Source:** PR #528 (the avatar broken-image fix) — an ADR-0034 claim I asserted but never verified
+**Why:** `GET /api/icons/:domain` is behind `JwtGuard`, and the browser
+reaches it as a subresource of the avatar. The session cookie
+(`dm_access`) is `SameSite=Lax`, which is sent on a SAME-SITE
+subresource request and NOT on a cross-site one. ADR-0034 states that
+API and web "share a registrable domain, so the `SameSite=Lax` session
+cookie is sent" — that is an assumption about the deployed
+`NEXT_PUBLIC_API_URL`, not something the repo pins. If prod points the
+web app at an API on a different registrable domain (a `*.run.app` URL,
+say), every icon request 401s and **no logo ever appears** — silently,
+because after #528 a 401 degrades to the monogram, which looks correct.
+
+This is not a bug and not a merge blocker; it decides whether the
+feature does anything at all.
+
+**How:** open https://app.declutrmail.com/senders with DevTools →
+Network, filter `icons`, and read the status of any `/api/icons/…`
+request:
+- `200` — a cached mark; working.
+- `204` — no mark cached yet; working (a resolution was enqueued).
+  Reload in a minute; frequently-seen brands should flip to `200`.
+- `401` — cookies are NOT reaching the endpoint. Then either move the
+  API onto `*.declutrmail.com`, or the route needs a different auth
+  posture than a cookie-borne subresource.
+
+**Verifies by:** at least one `/api/icons/…` request returning `200`
+with `content-type: image/svg+xml`, and a visible brand mark on a
+BIMI-publishing sender (PayPal, eBay and CNN all resolved live during
+the #524 smoke).
+**Status:** Open
+
+
 <!-- Newest at top. -->
 
 ### 2026-08-14 — Look at the real Paddle checkout overlay once
