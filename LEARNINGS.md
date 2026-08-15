@@ -1245,3 +1245,15 @@ govern — or explicitly await the animations. Verify by running the matrix twic
 and requiring identical results.
 **Distillation trigger:** promote to CLAUDE.md §8 if a third timing-dependent
 gate ships with a ready signal weaker than the property it asserts.
+
+## 2026-08-15 — A dynamic route in Next ships an empty `<head>`
+**Context:** Building D160's never-built Lighthouse gate. `/` and `/pricing` scored SEO 91 while `/security` and `/how-to/*` scored 100. The failing audit was `meta-description` — on pages whose metadata is demonstrably present.
+**Finding:** The tags are emitted, just not in `<head>`. Measured on a production build: on `/`, `<title>` and `<meta name="description">` land at byte ~37,800 while `</head>` closes at byte ~2,045. Next defers ALL metadata past `</head>` on a DYNAMIC route, for React to hoist during hydration — `og:title`, `og:image`, `twitter:card` and `rel=canonical` too. Google executes JS and copes. X, LinkedIn, Slack and Discord do not: they read raw `<head>` and stop, so every share of the homepage rendered a blank card. Moving the per-request read into a `<Suspense>` boundary does NOT help — the deferral follows the ROUTE being dynamic, not the component tree (verified: still deferred). So it is binary per route.
+**Rule (provisional):** Any public page that gets shared as a link must be statically rendered, full stop — a per-request read costs it every `<head>` tag, not just its cache. Assert it: the static URLs in `lighthouserc.cjs` are pinned at `seo: 1.0` precisely because `meta-description` drops the score to 0.91 the moment metadata leaves the head, which is the cheapest available detector for this.
+**Distillation trigger:** promote to CLAUDE.md §8 if a second SEO/meta regression ships from a rendering-mode change.
+
+## 2026-08-15 — `assertMatrix` in the wrong place is a gate that passes everything
+**Context:** Adding per-URL Lighthouse thresholds so the static pages could be held to a stricter SEO floor than dynamic `/pricing`.
+**Finding:** `assertMatrix` belongs at `ci.assert.assertMatrix`. Placed one level up at `ci.assertMatrix` it is silently ignored: `lhci autorun` runs the collection, prints "Done running autorun", and **exits 0 having asserted nothing** — no warning, no "0 assertions" line, and the run looks identical to a passing one. Only `lhci assert` standalone says anything at all ("No assertions to use"). It was caught by a positive control — raising a threshold above the measured value and checking for a non-zero exit — not by reading the output, which was indistinguishable from success.
+**Rule (provisional):** A newly added gate is not proven by a green run; it is proven by a red one. Always run a positive control — move a threshold past the measured value and confirm a non-zero exit — before claiming a check gates anything. Applies equally to lint rules, CI assertions and hooks.
+**Distillation trigger:** promote to CLAUDE.md §8 "Definition of done" if a second silently-inert check is found.

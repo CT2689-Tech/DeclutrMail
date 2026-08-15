@@ -15,11 +15,23 @@ import { TrackedCta } from './tracked-cta';
  * packages/shared/src/entitlements/pricing.config.ts flows here with no copy
  * edit.
  *
- * Client only to read the region rail (D117): these amounts must name
- * the same currency /pricing and the checkout do, or the landing page
- * quotes a price the purchase then contradicts. Still server-RENDERED,
- * so the crawler sees the numbers. Each amount clamps per price point,
- * so an unprovisioned rail shows the USD checkout would actually charge.
+ * CURRENCY: this strip quotes USD to everyone. It reads
+ * `useRegionProvider`, but `/` is a STATIC route with no provider above
+ * it, so the hook returns its own default (Paddle → USD) rather than the
+ * visitor's rail.
+ *
+ * That is deliberate, not an oversight. The previous note here said
+ * these amounts "must name the same currency /pricing and the checkout
+ * do" — true as a goal, but it was traded away knowingly: sourcing the
+ * rail requires a per-request read, a per-request read makes the route
+ * dynamic, and a dynamic route in Next defers every `<head>` tag past
+ * `</head>`, so declutrmail.com shared to X/LinkedIn/Slack rendered a
+ * blank card. See `app/(marketing)/page.tsx` for the measurement.
+ *
+ * The guarantee that actually matters still holds: nobody is charged a
+ * price they were not shown AT THE POINT OF SALE. `/pricing` quotes the
+ * visitor's rail, `/billing` reads geo server-side, and checkout charges
+ * what it displays. This strip is a teaser that links to that grid.
  */
 
 export function PricingTeaser() {
