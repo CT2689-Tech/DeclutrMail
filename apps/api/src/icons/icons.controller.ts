@@ -49,10 +49,19 @@ export class IconsController {
   constructor(@Inject(IconsService) private readonly icons: IconsService) {}
 
   @Get(':domain')
-  // Shares the read bucket: this is a read against OUR Postgres, and a
-  // grid render fans out one request per distinct sender domain, so
-  // the limit has to tolerate the same burst a page load does.
-  @RateLimit('triage-load')
+  // Explicit limit, which is what matters here: an override makes the
+  // interceptor use a ROUTE-SCOPED key instead of the shared
+  // `triage-load:user:<id>` pool. Without it this route would drain the
+  // same 120/min counter the sender and triage list reads are checked
+  // against — and it fans out one request per distinct sender domain on
+  // a page, so a couple of scrolls would 429 the user's actual data.
+  // That exact starvation is recorded as a live incident in
+  // `rate-limit.interceptor.ts` (2026-06-11, sender-detail e2e loads).
+  //
+  // 600/min suits the fan-out: these are primary-key lookups against
+  // our own Postgres, and the response is browser-cached for a day, so
+  // repeat views cost nothing. Still a hard wall for a scraper.
+  @RateLimit({ bucket: 'triage-load', limit: 600, windowSec: 60 })
   // Revalidate daily rather than pinning `immutable`: a rebrand should
   // land within a day, and the ETag makes the revalidation free.
   @Header('Cache-Control', 'private, max-age=86400, stale-while-revalidate=604800')

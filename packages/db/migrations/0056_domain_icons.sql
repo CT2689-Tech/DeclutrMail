@@ -79,11 +79,11 @@ CREATE TABLE "domain_icons" (
   )
 );
 --> statement-breakpoint
--- Staleness sweep: `WHERE status = ? AND fetched_at < now() - ttl`.
--- Composite because the two statuses carry different TTLs, so the
--- scan always filters on both columns together.
-CREATE INDEX "domain_icons_status_fetched_at_idx"
-  ON "domain_icons" ("status", "fetched_at");
+-- No secondary index, deliberately. Refresh is demand-driven (the read
+-- path re-queues a stale row it just served), so there is no staleness
+-- sweep and every query here is a primary-key lookup by domain. An
+-- index on (status, fetched_at) would be write amplification with no
+-- reader. Add one with the sweep, if a sweep ever earns its place.
 --> statement-breakpoint
 -- Every public table keeps the deny-by-default boundary (0049). No
 -- policy is granted: the API and workers connect as the table owner.

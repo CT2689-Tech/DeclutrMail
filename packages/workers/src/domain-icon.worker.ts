@@ -109,6 +109,19 @@ export class DomainIconWorker extends BaseDeclutrWorker<DomainIconJobData, Domai
     now: Date,
   ): Promise<Omit<DomainIconResult, 'durationMs'>> {
     if (resolution.status === 'none') {
+      // Why a brand got no logo is the only diagnostic this feature
+      // produces — without it, "no logo" is indistinguishable from a
+      // bug, and the reason was documented as logged while nothing
+      // logged it. Domain and reason only; both are public facts about
+      // a DNS record.
+      console.info(
+        JSON.stringify({
+          level: 'info',
+          kind: 'domain_icon.unresolved',
+          domain,
+          reason: resolution.reason,
+        }),
+      );
       // The row that stops this domain being re-resolved on every
       // render for the next 30 days.
       await this.deps.db

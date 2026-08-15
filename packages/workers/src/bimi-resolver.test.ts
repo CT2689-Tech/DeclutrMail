@@ -434,17 +434,83 @@ describe('resolveBimiIcon', () => {
     });
   });
 
-  it('reports a transport failure as a miss rather than throwing', async () => {
-    const result = await resolveBimiIcon('brand.example', {
-      resolveTxt: txt(RECORD),
-      resolveHost: publicHost,
-      http: {
-        get: async () => {
-          throw new Error('ECONNRESET');
-        },
+  describe('transient faults are not cached as misses', () => {
+    // The distinction that matters: NXDOMAIN is an ANSWER (store it,
+    // that is the negative cache working), a resolver or socket
+    // outage is not. Swallowing the latter writes a 30-day cached miss
+    // over a blip and never engages batchPolicy's retry budget,
+    // because processJob would have returned normally.
+    const dnsError = (code: string) => Object.assign(new Error(code), { code });
+
+    it.each(['SERVFAIL', 'EAI_AGAIN', 'ECONNREFUSED', 'ETIMEOUT'])(
+      'rethrows a %s DNS failure so the job retries',
+      async (code) => {
+        await expect(
+          resolveBimiIcon('brand.example', {
+            resolveTxt: async () => {
+              throw dnsError(code);
+            },
+            resolveHost: publicHost,
+            http: stubHttp({}),
+            verifyVmc: acceptVmc,
+          }),
+        ).rejects.toThrow(/DNS lookup failed/);
       },
+    );
+
+    it('still caches NXDOMAIN as a miss', async () => {
+      const result = await resolveBimiIcon('nobody.example', {
+        resolveTxt: async () => {
+          throw dnsError('ENOTFOUND');
+        },
+        resolveHost: publicHost,
+        http: stubHttp({}),
+      });
+
+      expect(result).toEqual({ status: 'none', reason: 'no bimi record' });
     });
 
-    expect(result).toEqual({ status: 'none', reason: 'fetch failed' });
+    it('rethrows a socket failure while fetching the logo', async () => {
+      await expect(
+        resolveBimiIcon('brand.example', {
+          resolveTxt: txt(RECORD),
+          resolveHost: publicHost,
+          http: {
+            get: async () => {
+              throw new Error('ECONNRESET');
+            },
+          },
+          verifyVmc: acceptVmc,
+        }),
+      ).rejects.toThrow(/fetch failed/);
+    });
+
+    it('rethrows a transient host lookup failure', async () => {
+      await expect(
+        resolveBimiIcon('brand.example', {
+          resolveTxt: txt(RECORD),
+          resolveHost: async () => {
+            throw dnsError('SERVFAIL');
+          },
+          http: stubHttp({}),
+          verifyVmc: acceptVmc,
+        }),
+      ).rejects.toThrow(/host lookup failed/);
+    });
+
+    it('still treats a genuinely dead hostname as a miss', async () => {
+      // The published URL points at a name that does not exist — a
+      // real fact about the record, not an outage.
+      const result = await resolveBimiIcon('brand.example', {
+        resolveTxt: txt(RECORD),
+        resolveHost: async () => {
+          throw dnsError('ENOTFOUND');
+        },
+        http: stubHttp({}),
+        verifyVmc: acceptVmc,
+      });
+
+      expect(result).toEqual({ status: 'none', reason: 'dns failure' });
+    });
   });
 });

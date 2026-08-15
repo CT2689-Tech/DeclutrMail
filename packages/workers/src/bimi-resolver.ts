@@ -9,6 +9,7 @@ import {
   type ResolveHost,
 } from './ssrf-guard.js';
 import { verifyVmc, type VmcOptions, type VmcResult } from './vmc-verifier.js';
+import { TransientError } from './worker-errors.js';
 
 /**
  * BIMI logo resolution (ADR-0034 §4).
@@ -49,6 +50,31 @@ import { verifyVmc, type VmcOptions, type VmcResult } from './vmc-verifier.js';
  * swap it, a redirect budget with the full guard re-run per hop, a
  * response-size ceiling, and a wall-clock timeout.
  */
+
+/**
+ * DNS failures that mean "ask again later", not "this domain has no
+ * record". `NXDOMAIN`/`NODATA` are answers; everything here is the
+ * resolver failing to give one.
+ */
+const TRANSIENT_DNS_CODES: ReadonlySet<string> = new Set([
+  'SERVFAIL',
+  'EAI_AGAIN',
+  'ETIMEOUT',
+  'ETIMEOUT_DNS',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EREFUSED',
+]);
+
+function isTransientDnsError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && TRANSIENT_DNS_CODES.has(code);
+}
+
+function describeError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
 
 /** Refuse to buffer more than this. SVG Tiny PS marks are a few KB. */
 export const BIMI_MAX_BYTES = 64 * 1024;
@@ -208,9 +234,22 @@ export async function resolveBimiIcon(
   let records: string[][];
   try {
     records = await resolveTxt(`default._bimi.${domain}`);
-  } catch {
-    // NXDOMAIN is the overwhelmingly common answer and is not an error
-    // worth retrying — the vast majority of domains publish no BIMI.
+  } catch (err) {
+    // NXDOMAIN is the overwhelmingly common answer and is a real
+    // result: the vast majority of domains publish no BIMI, and
+    // storing that as a cached miss is the whole point of the negative
+    // cache.
+    //
+    // A resolver OUTAGE is not that. Swallowing SERVFAIL/EAI_AGAIN
+    // here would return a terminal 'none' that the worker writes with
+    // a 30-day TTL, so one DNS blip would disable logos for every
+    // domain rendered during it — and because `processJob` returned
+    // normally, batchPolicy's retry budget would never engage. Rethrow
+    // instead, which is what the sibling consumer of this same guard
+    // does with network faults (`unsub-execution.worker.ts`).
+    if (isTransientDnsError(err)) {
+      throw new TransientError(`BIMI DNS lookup failed for ${domain}: ${describeError(err)}`);
+    }
     return { status: 'none', reason: 'no bimi record' };
   }
 
@@ -280,8 +319,11 @@ async function fetchGuarded(
         pinnedAddress: target.pinnedAddress,
         family: target.family,
       });
-    } catch {
-      return { status: 'none', reason: 'fetch failed' };
+    } catch (err) {
+      // Same reasoning as the DNS branch: a socket error is "ask again
+      // later", and storing it as a 30-day cached miss would disable
+      // this brand's logo over a blip. Let batchPolicy retry.
+      throw new TransientError(`BIMI fetch failed for ${current}: ${describeError(err)}`);
     }
 
     if (response.status >= 300 && response.status < 400) {
@@ -348,7 +390,12 @@ async function validateTarget(
   } else {
     try {
       addresses = await resolveHost(hostname);
-    } catch {
+    } catch (err) {
+      if (isTransientDnsError(err)) {
+        throw new TransientError(`BIMI host lookup failed for ${hostname}: ${describeError(err)}`);
+      }
+      // A name that genuinely does not resolve is a real answer about
+      // this record: the URL it published is dead.
       return { ok: false, reason: 'dns failure' };
     }
   }

@@ -4,14 +4,21 @@
 // logos). Per D210 — every shared component ships Storybook coverage
 // of its states.
 //
-// Storybook renders with `brandLogos` OFF (its env carries no
-// `NEXT_PUBLIC_DM_FLAG_BRAND_LOGOS`, and there is no icon endpoint to
-// answer), so every story below shows the MONOGRAM. That is the
-// intended reference: the monogram is the floor every avatar falls
-// back to, so it is the state worth pinning visually. The logo layer
-// composites into the same rounded square at the same inset, opaque so
-// a loaded mark covers the initial rather than sitting on it — see the
-// `SizeScale` note for why nothing below 24px ever carries one.
+// What these stories actually show: `brandLogos` now defaults ON, so
+// `Avatar` emits its `<img>` here too — but Storybook has no icon
+// endpoint to answer it, so every request fails and the MONOGRAM
+// underneath is what renders. That is not a caveat, it is the
+// guarantee being demonstrated: the monogram is the floor, and a logo
+// that never arrives is indistinguishable from a sender that has none.
+//
+// (An earlier version of this note claimed the flag was off. It was,
+// until VMC verification landed and the default flipped — the comment
+// outlived the fact.)
+//
+// The logo layer composites into the same rounded square at the same
+// inset, opaque so a loaded mark covers the initial rather than
+// sitting on it. See `SizeScale` for why nothing below 24px carries
+// one.
 //
 // Storybook itself is seeded in PR 3 (D210). Until then this file uses
 // locally-declared lightweight CSF types so it typechecks without

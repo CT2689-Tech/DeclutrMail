@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, pgEnum, pgTable, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { check, integer, pgEnum, pgTable, timestamp, varchar } from 'drizzle-orm/pg-core';
 
 import { bytea } from './_custom-types';
 
@@ -97,11 +97,21 @@ export const domainIcons = pgTable(
   },
   (table) => ({
     /**
-     * Powers the staleness scan (`WHERE fetched_at < now() - ttl`).
-     * Composite on status because the two TTLs differ, so the sweep
-     * always filters on both columns together.
+     * The payload columns travel together or not at all.
+     *
+     * Declared here as well as in the migration so the two cannot
+     * drift — a constraint that exists only in the SQL is invisible to
+     * `drizzle-kit generate`, which would then propose dropping it.
+     *
+     * Without it a partial write could leave `status='ok'` with a NULL
+     * image, which the endpoint would serve as a 200 with an empty
+     * body: a broken `<img>` on every surface rendering that sender,
+     * with the monogram floor bypassed exactly where it is needed.
      */
-    staleIdx: index('domain_icons_status_fetched_at_idx').on(table.status, table.fetchedAt),
+    imageMatchesStatus: check(
+      'domain_icons_image_matches_status_chk',
+      sql`(${table.status} = 'ok' AND ${table.image} IS NOT NULL AND ${table.mime} IS NOT NULL AND ${table.source} IS NOT NULL AND ${table.contentHash} IS NOT NULL AND ${table.byteSize} IS NOT NULL) OR (${table.status} = 'none' AND ${table.image} IS NULL AND ${table.mime} IS NULL AND ${table.source} IS NULL AND ${table.contentHash} IS NULL AND ${table.byteSize} IS NULL)`,
+    ),
   }),
 );
 

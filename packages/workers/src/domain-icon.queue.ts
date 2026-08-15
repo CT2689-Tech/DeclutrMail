@@ -50,7 +50,16 @@ export function domainIconJobOptions(domain: string): JobsOptions {
       ? { backoff: { type: policy.backoff.type, delay: policy.backoff.delayMs } }
       : {}),
     removeOnComplete: { age: 24 * 60 * 60 },
-    removeOnFail: false,
+    // Failures need a tail for the SAME reason completions do, and
+    // leaving them forever is worse here than losing the record.
+    // `Queue.add` is a no-op while a job with this id exists in ANY
+    // state, and the producer swallows enqueue results — so one
+    // terminal failure (an unusable domain throws ValidationError,
+    // which the base worker turns into an UnrecoverableError) would
+    // make that domain permanently un-enqueueable, invisibly. A 7-day
+    // tail keeps failures inspectable while guaranteeing the domain
+    // becomes retryable; the dead-letter table is the durable record.
+    removeOnFail: { age: 7 * 24 * 60 * 60 },
   };
 }
 
