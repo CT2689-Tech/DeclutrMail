@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { cronRuns, mailboxAccounts, providerSyncState } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
@@ -12,6 +12,35 @@ import type { WorkerObserver } from './worker-observer.js';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
+
+/**
+ * The classified error name for a revoked or expired Gmail OAuth grant.
+ *
+ * A string, not an imported class: this package must not depend on
+ * `apps/api`, and the value travels as `error.name` anyway. The same
+ * literal is the contract at three other sites — the API's
+ * `markQueued` clearing rule, `IncrementalSyncWorker.onTerminalFailure`,
+ * and the web app's `INVALID_GRANT_CODE` — so changing it means changing
+ * all four together.
+ */
+const INVALID_GRANT_ERROR = 'InvalidGrantError';
+
+/**
+ * Mailboxes NOT currently waiting on a reconnect.
+ *
+ * The mirror of the frontend's `syncStatusNeedsReconnect`: a recorded
+ * `InvalidGrantError` counts only while it is newer than the last
+ * successful sync, so a mailbox that has since reconnected and synced
+ * becomes eligible again on its own. Anything other than an invalid
+ * grant is left alone — a rate limit or a Gmail blip SHOULD be retried
+ * next tick.
+ */
+const notNeedingReconnect = or(
+  sql`${providerSyncState.lastIncrementalErrorCode} IS DISTINCT FROM ${INVALID_GRANT_ERROR}`,
+  sql`${providerSyncState.lastIncrementalErrorAt} IS NULL`,
+  sql`${providerSyncState.lastSyncedAt} IS NOT NULL
+      AND ${providerSyncState.lastSyncedAt} >= ${providerSyncState.lastIncrementalErrorAt}`,
+);
 
 /**
  * Periodic renewal payload. The cron scheduler enqueues one job per
@@ -97,15 +126,20 @@ export interface WatchRenewalDeps {
  *
  * Eligibility: `mailbox_accounts.status = 'active'` AND
  * `provider_sync_state.readiness_status = 'ready'` AND a stored OAuth
- * token. Not-yet-ready mailboxes get their first watch at OAuth
- * connect (see `GmailWatchService.watchMailbox`); the sweep covers
- * them once ready (a failed connect-time watch is healed within ≤6h,
- * and the 5-min incremental drift sweep masks the gap meanwhile).
+ * token AND not currently awaiting a reconnect (`notNeedingReconnect`).
+ * Not-yet-ready mailboxes get their first watch at OAuth connect (see
+ * `GmailWatchService.watchMailbox`); the sweep covers them once ready
+ * (a failed connect-time watch is healed within ≤6h, and the 5-min
+ * incremental drift sweep masks the gap meanwhile).
  *
  * FAILURE ISOLATION (the U16 contract): one bad grant must not stop
  * the sweep. Each mailbox renews inside its own try/catch — a failure
  * is logged, Sentry'd via `deps.observer`, counted, and the sweep
- * continues. The JOB only fails (→ retry/dead-letter + the base
+ * continues. A REVOKED grant is additionally recorded as needing
+ * reconnect, which drops it from the next sweep: it cannot succeed
+ * until the user reauthorizes, so retrying it hourly only manufactured
+ * error volume (see the catch block). Transient failures are untouched
+ * and still retry every tick. The JOB only fails (→ retry/dead-letter + the base
  * class's single capture) when EVERY eligible mailbox failed, which
  * indicates a systemic fault (Redis-side topic misconfig, Gmail
  * outage) rather than one revoked grant.
@@ -181,6 +215,19 @@ export class WatchRenewalWorker extends BaseDeclutrWorker<WatchRenewalJobData, W
           eq(mailboxAccounts.status, 'active'),
           eq(providerSyncState.readinessStatus, 'ready'),
           isNotNull(mailboxAccounts.encryptedRefreshToken),
+          // A revoked grant is PERMANENT until the user reconnects, so a
+          // mailbox already flagged for reconnect is skipped rather than
+          // retried. Without this the sweep re-attempted the same dead
+          // token every tick forever: 362 InvalidGrantError events in 5
+          // days, each exhausting retries into the dead-letter queue an
+          // hour apart (Sentry DECLUTRMAIL-WEB-X / -R, 2026-08-15).
+          //
+          // Deliberately the SAME predicate the frontend's
+          // `syncStatusNeedsReconnect` uses, so the worker's idea of
+          // "needs reconnect" and the reconnect gate the user sees can
+          // never disagree: the error is current only while it is newer
+          // than the last success.
+          notNeedingReconnect,
         ),
       )
       .orderBy(mailboxAccounts.createdAt);
@@ -210,6 +257,30 @@ export class WatchRenewalWorker extends BaseDeclutrWorker<WatchRenewalJobData, W
         // Record + continue — one bad grant must not stop the sweep.
         failed += 1;
         const error = err instanceof Error ? err : new Error(String(err));
+        // A revoked grant is not a transient failure, and "record" has to
+        // mean something durable or the next tick repeats it verbatim.
+        // Writing the same columns `IncrementalSyncWorker.onTerminalFailure`
+        // writes does two things at once: this mailbox drops out of the
+        // eligibility query above, and the reconnect gate the frontend
+        // already builds from these columns finally lights up. Recovery is
+        // the existing one — `markQueued({freshCredentials:true})` clears
+        // them on reconnect (and ONLY for InvalidGrantError), after which
+        // the mailbox becomes eligible again with no further action here.
+        //
+        // Readiness is deliberately NOT flipped to 'failed': that column
+        // routes a fully-onboarded user back to /onboarding (see the
+        // `last_incremental_error_at` docblock in the schema).
+        const needsReconnect = error.name === INVALID_GRANT_ERROR;
+        if (needsReconnect) {
+          await this.deps.db
+            .update(providerSyncState)
+            .set({
+              lastIncrementalErrorAt: new Date(),
+              lastIncrementalErrorCode: INVALID_GRANT_ERROR,
+              updatedAt: new Date(),
+            })
+            .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+        }
         console.error(
           JSON.stringify({
             level: 'error',
@@ -217,8 +288,13 @@ export class WatchRenewalWorker extends BaseDeclutrWorker<WatchRenewalJobData, W
             mailboxAccountId,
             error: error.name,
             message: error.message,
+            needsReconnect,
           }),
         );
+        // Report a revoked grant ONCE — on the tick that discovers it.
+        // Afterwards the mailbox is ineligible, so there is nothing left
+        // to re-report; a genuinely transient failure still reports every
+        // tick, which is what makes a recurring one visible.
         this.deps.observer?.captureBackgroundFailure(error, {
           kind: 'gmail_watch.renewal_failed',
           tags: { mailboxAccountId, worker: this.workerName },
