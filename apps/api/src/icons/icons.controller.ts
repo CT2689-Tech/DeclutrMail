@@ -1,8 +1,9 @@
-import { Controller, Get, Inject, Param, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Inject, Param, Req, Res, UseFilters, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
+import { IconErrorFilter } from './icon-error.filter.js';
 import { IconsService } from './icons.service.js';
 
 /**
@@ -78,6 +79,10 @@ export const MISS_CACHE_CONTROL = 'private, max-age=60';
  */
 @Controller('icons')
 @UseGuards(JwtGuard)
+// Failures answer with a status and no body — see the filter. A JSON
+// error body here is silently eaten by Chromium's ORB, which is what
+// hid the real status code through three rounds of debugging.
+@UseFilters(IconErrorFilter)
 export class IconsController {
   // Explicit token rather than constructor-type inference: the test
   // runner does not emit `design:paramtypes`, so type-based resolution
