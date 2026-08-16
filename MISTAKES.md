@@ -2844,3 +2844,85 @@ card's text to `ACTION_SEMANTICS`, never to a literal.
 **Enforcement update:** `marketing-metadata.test.ts` now asserts the card's
 source contains `ACTION_SEMANTICS.archive.activityUndo.summary` and no
 longer contains the "Reversible from Activity." shorthand.
+
+## 2026-08-16 — A provisional 204 was cached with the answer's lifetime
+**PR:** #533
+**Caught by:** founder, in production ("still icons are failing")
+**What happened:** `GET /api/icons/:domain` set one route-wide
+`Cache-Control: private, max-age=86400, stale-while-revalidate=604800`.
+That is right for a resolved mark and wrong for the `204` that the same
+route returns for every domain it has never seen — a `204` there means
+"not resolved YET", because the lookup only enqueues the work and the
+mark lands seconds later from the worker. So the browser committed to
+"this sender has no logo" for a day and kept serving it stale for a week
+after. Every domain starts absent, so the first page view poisoned every
+sender at once and no amount of successful resolution could surface a
+logo. Two rounds of fixes (#528 paint, #530 CSP) landed on top of a cache
+that could not show their results.
+
+The same header also destroyed the evidence: `stale-while-revalidate`
+makes Chromium fire background revalidations that DevTools reports with
+no initiator, type `Other`, 0 B, and `(failed) net::ERR_ABORTED` when the
+page navigates first. A screenful of those reads as a dead endpoint, and
+that is what the incident was first diagnosed as — a network fault that
+did not exist. Reproduced exactly in headless Chromium before any code
+changed, which is what ruled out CSP, CORP/COEP and ORB.
+
+Underneath it, BIMI discovery queried only `default._bimi.<exact
+domain>`, so bulk mail from `member.`/`official.`/`info.` subdomains
+found nothing even when the brand publishes a record — verified live:
+`member.americanexpress.com` NXDOMAIN, `americanexpress.com` answers.
+**Correct approach:** a provisional answer and a settled answer are two
+different responses and must not share a cache lifetime. Decide the
+lifetime in the branch that knows which one it is, never route-wide.
+**Rule:** before caching a response, ask what it will still be true of in
+`max-age` seconds — if the server itself is working to change it, that is
+the ceiling.
+**Enforcement update:** `icons.controller.spec.ts` asserts the miss
+carries `max-age=60` and no `stale-while-revalidate`, and that a `304`
+restarts the freshness window; both verified to fail against the old
+header. `bimi-resolver.test.ts` covers the ancestor walk and pins VMC
+verification to the domain the record was published on.
+
+## 2026-08-16 — Our own error body hid the error, and I called ORB ruled out
+**PR:** #535
+**Caught by:** founder, in production — third report of the same symptom
+**What happened:** `GET /api/icons/:domain` is exempt from the D202 envelope
+on the SUCCESS path (an image cannot parse JSON) but not on the ERROR
+path, where the global filter wrote `{error:{…}}` as `application/json`.
+Every API response also carries `X-Content-Type-Options: nosniff`, and
+Chromium's Opaque Response Blocking refuses a JSON body delivered to a
+cross-origin no-cors image request. ORB drops the response BEFORE the
+status reaches the page, so DevTools showed `(failed)
+net::ERR_BLOCKED_BY_ORB`, type `Other`, 0 B, and **no status code** —
+which is why three rounds (#528 paint, #530 CSP, #533 caching) each fixed
+something real without touching what the founder was actually seeing.
+
+My part in it: I *did* test ORB against our headers before writing #533,
+and reported it ruled out. I had only tested the 204 and the 200
+`image/svg+xml` — the two responses that pass. I never tested what the
+route returns when it FAILS, which is the only case that was happening.
+I then found a defect I could reproduce (stale-while-revalidate firing
+initiator-less revalidations that abort with `ERR_ABORTED`, matching the
+screenshot's shape) and treated the match as confirmation. The truncated
+`net::…` in that screenshot was almost certainly `ERR_BLOCKED_BY_ORB` the
+whole time; `ERR_ABORTED` was a hypothesis that fit the visible shape,
+not the observed error. The caching defect was real and worth fixing, but
+it was not the reported failure.
+**Correct approach:** when a probe clears a suspect, enumerate which
+responses it covered and check that the failing case is among them —
+"our headers pass ORB" was true of the success path and false of the
+error path. And when a reproduction merely MATCHES the symptom's shape,
+that is a candidate, not a confirmation: the distinguishing evidence here
+(the exact `net::ERR_*` string) was always one hover away and I inferred
+around it twice.
+**Rule:** a route exempt from the envelope is exempt on its ERROR path
+too — a body the caller cannot parse is worse than no body, because it
+can hide the status. And never report a cause as ruled out without naming
+the responses actually tested.
+**Enforcement update:** `IconErrorFilter` makes every failure on this
+route bodiless, verified in headless Chromium (JSON 401 → blocked, status
+invisible; bodiless 401 → status visible). `icons.controller.spec.ts`
+asserts both a rejected request and an unexpected failure carry a
+readable status, no JSON content-type and an empty body; both verified to
+fail without the filter.

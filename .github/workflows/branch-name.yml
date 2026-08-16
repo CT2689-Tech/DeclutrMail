@@ -4,8 +4,11 @@ on:
   # No `branches:` filter — see the note in ci.yml. A stacked PR (base is
   # another feature branch) skipped this gate entirely, so a §6-violating
   # branch name only surfaced once the stack was retargeted onto main.
+  # No `ready_for_review` — see the note in ci.yml. Un-drafting yields no
+  # new SHA and nothing here skips drafts, so it only re-ran checks that
+  # had already passed.
   pull_request:
-    types: [opened, edited, reopened, synchronize, ready_for_review]
+    types: [opened, edited, reopened, synchronize]
 
 permissions:
   pull-requests: read
