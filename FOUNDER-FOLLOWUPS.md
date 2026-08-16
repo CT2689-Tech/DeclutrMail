@@ -24,6 +24,27 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-16 — Check prod for dead-lettered label actions since #509 (2026-08-12)
+
+**Source:** #536 verification smoke — the first real archive since #509 merged
+dead-lettered on `SET lock_timeout = $1` (see MISTAKES.md 2026-08-16; fix in
+fix/d226-lock-timeout-set-config)
+**Why:** Every K/A/U/L/D label action executed in PROD between 2026-08-12
+10:05 PT and the fix deploy failed all five attempts and dead-lettered —
+any archive/later/delete/unsubscribe you ran while dogfooding did not
+actually change Gmail, and the UI may have shown it as pending/failed.
+Dev showed `DeadLetterWorker … alerted:0`, so the prod alert may not have
+fired either — worth confirming why.
+**How:** After merging the fix PR and deploying: (1) in prod SQL, `SELECT id,
+verb, status, created_at FROM action_jobs WHERE status='failed' AND
+created_at > '2026-08-12' ORDER BY created_at;` (2) decide per row: re-run
+the action from the UI, or leave it — there is no auto-replay for
+destructive actions by design (D233); (3) check whether the dead-letter
+alert fired for these and, if not, why.
+**Verifies by:** a fresh archive in prod completes (`action_jobs.status='done'`
+with `affected_count > 0`) and the failed-rows list is dispositioned.
+**Status:** Open
+
 ### 2026-08-15 — Confirm brand-logo requests actually carry the session cookie
 
 **Source:** PR #528 (the avatar broken-image fix) — an ADR-0034 claim I asserted but never verified
