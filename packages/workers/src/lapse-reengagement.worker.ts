@@ -93,16 +93,31 @@ export const CANDIDATE_BATCH_SIZE = 500;
  * `TRIAGE_DECIDED_WINDOW_DAYS` is duplicated here as a literal because
  * `packages/workers` cannot import from `apps/api`. Its source of truth
  * is the read service; the two must move together.
+ *
+ * TAKES `now` RATHER THAN CALLING SQL `now()`. Every other instant in
+ * this job derives from the injected clock (`deps.now`, resolved once
+ * per run); this predicate used the DATABASE's wall clock, so one job
+ * evaluated its dormancy band and its decided-window against two
+ * different times. That is a determinism hole under a worker whose
+ * D225 cron key is the scheduled minute: the same key re-run later
+ * could legitimately produce a different answer.
+ *
+ * It is benign in production, where a run happens within seconds of
+ * the minute it is keyed to — but it made the suite time-dependent,
+ * and it detonated on 2026-08-16 when real time drifted far enough
+ * past the pinned test clock that a seeded decision fell out of the
+ * window and a "queue is empty" case started queueing mail. Any test
+ * that pins `deps.now` was silently only half-pinned.
  */
 const TRIAGE_DECIDED_WINDOW_DAYS = 7;
-const NOT_DECIDED_RECENTLY = sql`NOT EXISTS (
+const notDecidedRecently = (now: Date) => sql`NOT EXISTS (
   SELECT 1
   FROM activity_log al
   LEFT JOIN undo_journal uj ON uj.token = al.undo_token
   WHERE al.mailbox_account_id = triage_decisions.mailbox_account_id
     AND al.sender_key = triage_decisions.sender_key
     AND al.action IN ('keep', 'archive', 'unsubscribe', 'later', 'delete')
-    AND al.occurred_at >= now() - make_interval(days => ${TRIAGE_DECIDED_WINDOW_DAYS})
+    AND al.occurred_at >= ${now}::timestamptz - make_interval(days => ${TRIAGE_DECIDED_WINDOW_DAYS})
     AND (al.undo_token IS NULL OR uj.reverted_at IS NULL)
 )`;
 
@@ -301,7 +316,7 @@ export class LapseReengagementWorker extends BaseDeclutrWorker<
           continue;
         }
 
-        const pendingCount = await this.countPendingTriageSenders(candidate.id);
+        const pendingCount = await this.countPendingTriageSenders(candidate.id, now);
         if (pendingCount === 0) {
           // Nothing is waiting, so there is nothing true to say. D189's
           // empty-state instinct applies here too: silence beats a
@@ -378,7 +393,7 @@ export class LapseReengagementWorker extends BaseDeclutrWorker<
    * Both narrowings, plus the account-wide scope, are why the email
    * says "across your mailboxes" and never claims to equal the queue.
    */
-  private async countPendingTriageSenders(userId: string): Promise<number> {
+  private async countPendingTriageSenders(userId: string, now: Date): Promise<number> {
     const [row] = await this.deps.db
       .select({ pending: count() })
       .from(triageDecisions)
@@ -396,7 +411,7 @@ export class LapseReengagementWorker extends BaseDeclutrWorker<
           eq(mailboxAccounts.status, 'active'),
           ne(triageDecisions.verdict, 'keep'),
           or(isNull(senderPolicies.isProtected), eq(senderPolicies.isProtected, false)),
-          NOT_DECIDED_RECENTLY,
+          notDecidedRecently(now),
         ),
       );
     return Number(row?.pending ?? 0);

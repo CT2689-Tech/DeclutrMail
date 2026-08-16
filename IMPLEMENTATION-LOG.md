@@ -181,7 +181,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D123 | Tier-specific Triage empty-state copy | 🔵 | #219 |  |  |
 | D124 | **PARTIALLY SUPERSEDED by D245; preset #5 replacement retained | ⬜ |  |  |  |
 | D125 | Snoozed + Followups stay at V2 launch with usage-tracking exit clause | ⬜ |  |  |  |
-| D126 | Retention investment package (5-part) | 🔵 | #497 |  |  |
+| D126 | Retention investment package (5-part) | 🔵 | #497, #531 |  |  |
 | D127 | Brand name: **DeclutrMail** (locked from V1) | ⬜ |  |  |  |
 | D128 | Primary domain: **DeclutrMail.com | 🔵 | #369, #517 |  |  |
 | D129 | Hero tagline: *"Clean Gmail by controlling senders, not individual emails."* | ⬜ |  |  |  |

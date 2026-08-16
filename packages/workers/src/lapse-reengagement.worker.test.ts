@@ -49,7 +49,12 @@ interface Seeded {
   mailboxId: string;
 }
 
-async function seedUser(db: Db, input: SeedInput): Promise<Seeded> {
+/**
+ * `clock` defaults to NOW, so every existing call is unchanged. It
+ * exists so a test can seed against a clock deliberately far from real
+ * time — see "evaluates the decided-window against the INJECTED clock".
+ */
+async function seedUser(db: Db, input: SeedInput, clock: Date = NOW): Promise<Seeded> {
   const [workspace] = await db
     .insert(workspaces)
     .values({ name: input.email, tier: 'free' })
@@ -59,7 +64,7 @@ async function seedUser(db: Db, input: SeedInput): Promise<Seeded> {
     .values({
       workspaceId: workspace!.id,
       email: input.email,
-      createdAt: new Date(NOW.getTime() - input.ageDays * DAY_MS),
+      createdAt: new Date(clock.getTime() - input.ageDays * DAY_MS),
       ...(input.remindersOff ? { preferences: { emailPrefs: { reminders: false } } } : {}),
     })
     .returning({ id: users.id });
@@ -67,7 +72,7 @@ async function seedUser(db: Db, input: SeedInput): Promise<Seeded> {
   if (input.deletionStatus) {
     await db.insert(accountDeletionRequests).values({
       userId: user!.id,
-      effectiveAt: new Date(NOW.getTime() + 7 * DAY_MS),
+      effectiveAt: new Date(clock.getTime() + 7 * DAY_MS),
       basis: 'flat-grace',
       status: input.deletionStatus,
     });
@@ -87,7 +92,7 @@ async function seedUser(db: Db, input: SeedInput): Promise<Seeded> {
       userId: user!.id,
       jti: crypto.randomUUID(),
       refreshTokenHash: `hash-${input.email}`,
-      lastUsedAt: new Date(NOW.getTime() - input.lastSeenDaysAgo * DAY_MS),
+      lastUsedAt: new Date(clock.getTime() - input.lastSeenDaysAgo * DAY_MS),
     });
   }
 
@@ -100,8 +105,8 @@ async function seedUser(db: Db, input: SeedInput): Promise<Seeded> {
       confidence: '0.90',
       reasoning: 'noisy',
       generatedBy: 'template',
-      producedAt: new Date(NOW.getTime() - 2 * DAY_MS),
-      expiresAt: new Date(NOW.getTime() + 30 * DAY_MS),
+      producedAt: new Date(clock.getTime() - 2 * DAY_MS),
+      expiresAt: new Date(clock.getTime() + 30 * DAY_MS),
     });
     if (input.protectPending) {
       await db.insert(senderPolicies).values({
@@ -118,7 +123,7 @@ async function seedUser(db: Db, input: SeedInput): Promise<Seeded> {
         source: 'triage',
         action: 'archive',
         affectedCount: 3,
-        occurredAt: new Date(NOW.getTime() - 1 * DAY_MS),
+        occurredAt: new Date(clock.getTime() - 1 * DAY_MS),
       });
     }
   }
@@ -135,12 +140,12 @@ const CTX: WorkerContext = {
   policy: 'cronPolicy',
 };
 
-function buildWorker(db: Db) {
+function buildWorker(db: Db, clock: Date = NOW) {
   const enqueued: EmailSendJobData[] = [];
   const prepared: Array<{ userId: string; pendingCount: number }> = [];
   const worker = new LapseReengagementWorker({
     db: db as never,
-    now: () => NOW,
+    now: () => clock,
     prepareEmail: async (input): Promise<PreparedLapseEmail> => {
       prepared.push(input);
       return {
@@ -283,6 +288,56 @@ describe('LapseReengagementWorker', () => {
     // outside the band because its last contact IS its creation. Both
     // exclusions now happen in SQL.
     expect(result).toMatchObject({ candidatesChecked: 0, bandSkips: 0, emailsQueued: 0 });
+    expect(enqueued).toHaveLength(0);
+  });
+
+  /**
+   * THE REGRESSION GUARD for a wall-clock/scheduled-clock split.
+   *
+   * `notDecidedRecently` used SQL `now()` while every other instant in
+   * the job came from the injected clock, so a run silently evaluated
+   * its dormancy band and its decided-window against two different
+   * times. Nothing caught it until 2026-08-16, when real time drifted
+   * far enough past this file's pinned clock that a seeded decision
+   * fell out of the 7-day window and a "queue is empty" case started
+   * queueing mail — on `main`, with no code change.
+   *
+   * This pins the whole scenario to a clock YEARS from real time and
+   * derives every date from it, so the assertion can only pass if the
+   * decided-window honours the injected clock. Under the old SQL the
+   * decision is decades outside a real-`now()` window, the senders read
+   * as undecided, and an email is queued.
+   *
+   * It also cannot rot the way the original did: the gap to real time
+   * is measured in years, not days, and no date literal is hardcoded.
+   */
+  it('evaluates the decided-window against the INJECTED clock, not the database wall clock', async () => {
+    const farPast = new Date('2019-04-02T09:15:00.000Z');
+    const db = await freshDb();
+
+    // Dormant inside the band, and every pending sender was decided one
+    // day before the pinned clock — i.e. INSIDE the 7-day window as of
+    // `farPast`, and nowhere near it as of real `now()`.
+    await seedUser(
+      db,
+      {
+        email: 'decided-in-pinned-window@example.com',
+        ageDays: 30,
+        lastSeenDaysAgo: 5.5,
+        pending: 3,
+        decidePending: true,
+      },
+      farPast,
+    );
+
+    const { worker, enqueued } = buildWorker(db, farPast);
+    const result = await worker.processJob(
+      { scheduledAtMinute: farPast.toISOString().slice(0, 16) },
+      CTX,
+    );
+
+    // The queue is empty as of the pinned clock, so nothing is sent.
+    expect(result).toMatchObject({ emailsQueued: 0, emptyQueueSkips: 1 });
     expect(enqueued).toHaveLength(0);
   });
 
