@@ -1,11 +1,22 @@
 #!/usr/bin/env node
 /**
- * First Load JS budget for the PUBLIC marketing routes.
+ * First Load JS budget for every route — public marketing AND the
+ * authed app.
  *
  * D160 lists "Bundle size budget (frontend)" among the checks CI must
  * run (docs/execution/Implementation-Plan.md:4144). It was never built,
  * and the implementation log records D160 as verified anyway — so until
  * now nothing could observe a marketing page doubling its JS.
+ *
+ * WHY THE AUTHED ROUTES ARE HERE NOW. The first version of this script
+ * covered `(marketing)` only, and the Lighthouse gate scores four
+ * marketing URLs — so the two HEAVIEST routes in the product, the ones
+ * a paying user actually lives in, were the only ones nothing watched.
+ * Measuring the page-load complaint on 2026-08-15 put numbers on it:
+ * `/senders` at 221.5 kB and `/triage` at 211.3 kB, roughly double the
+ * marketing long tail, and neither had ever been observed. A budget
+ * that skips the routes that matter most is the failure mode this file
+ * already warns about two paragraphs down.
  *
  * WHAT IT MEASURES. For each route, the union of the JS chunks Next
  * lists for it in `.next/app-build-manifest.json`, gzipped and summed.
@@ -15,17 +26,17 @@
  * managed to fail every route at once.
  *
  * WHY DERIVED, NOT LISTED. The route set comes from the manifest, so a
- * new marketing page is budgeted the day it ships. A hand-maintained
- * list would let a new page arrive unmeasured, which is the failure
- * mode this repo already knows: a check that passes because it is
- * looking at nothing.
+ * new page is budgeted the day it ships. A hand-maintained list would
+ * let a new page arrive unmeasured, which is the failure mode this repo
+ * already knows: a check that passes because it is looking at nothing.
  *
- * WHY THESE LIMITS. `DEFAULT_KB` plus a small override table, each set
- * from the measured value rounded up to the next 5 kB. They are a
+ * WHY THESE LIMITS. A per-group default plus an override table, each
+ * set from the measured value rounded up to the next 5 kB. They are a
  * ratchet — "this route may not get heavier by accident" — not a claim
- * that any route is fast enough. Raising one is a deliberate edit that
- * belongs in a commit message; lowering one as routes get lighter is
- * always welcome.
+ * that any route is fast enough. `/senders` at 221.5 kB is emphatically
+ * NOT a blessing of 221.5 kB; it is a floor under the regression.
+ * Raising one is a deliberate edit that belongs in a commit message;
+ * lowering one as routes get lighter is always welcome.
  */
 
 import { gzipSync } from 'node:zlib';
@@ -45,11 +56,43 @@ const nextDir = path.join(repoRoot, 'apps/web/.next');
  */
 const DEFAULT_KB = 120;
 
-/** Routes that legitimately carry more, keyed by manifest page key. */
+/**
+ * Budget for an authed `(app)` route without an override.
+ *
+ * Set at 195 because the mid-weight cluster — settings, brief, activity,
+ * autopilot, billing, screener — sits at 188.0-192.4 kB and shares
+ * essentially one chunk graph. A NEW authed screen landing under this
+ * is normal; landing over it means it pulled in something the others do
+ * not, which is exactly the moment worth a second look.
+ */
+const AUTHED_DEFAULT_KB = 195;
+
+/**
+ * Routes that legitimately carry more, keyed by manifest page key.
+ * Measured 2026-08-15; comments carry the observed value so drift is
+ * visible in the diff when someone edits a number.
+ */
 const OVERRIDES_KB = {
   '/(marketing)/page': 125, // 117.2 — hero + ledger demo + FAQ
   '/(marketing)/pricing/page': 130, // 121.5 — cycle toggle, tier cards, compare table
   '/(marketing)/inbox-simulator/page': 190, // 181.8 — the only real interactive surface
+
+  // The three heaviest surfaces in the product. Each is above the authed
+  // default for a reason worth naming, so a future reader can tell an
+  // earned cost from an accident.
+  '/(app)/senders/page': 225, // 221.5 — grid + table + compose strip + saved views
+  '/(app)/triage/page': 215, // 211.3 — action sheet, preview, undo tray
+  '/(app)/senders/[id]/page': 210, // 207.8 — detail: timeseries + history + messages
+
+  // Below the authed default, pinned tighter than it so they cannot
+  // silently drift up into the cluster.
+  '/(app)/settings/senders/page': 180, // 179.6
+  '/(app)/quiet/page': 175, // 174.6
+  '/(app)/settings/privacy/page': 175, // 173.4
+  '/(app)/later/page': 145, // 144.0
+  '/(app)/followups/page': 145, // 141.0
+  '/(app)/admin/security/page': 125, // 120.4
+  '/(app)/settings/help/page': 115, // 112.2
 };
 
 let manifest;
@@ -80,21 +123,41 @@ function gzippedSize(file) {
   return size;
 }
 
-const routes = Object.keys(manifest.pages)
-  .filter((key) => key.startsWith('/(marketing)/') && key.endsWith('/page'))
-  .sort();
+/**
+ * The two route groups this script budgets, each with its own default.
+ * A route in NEITHER group (`/onboarding`, the root `/_not-found`) is
+ * deliberately unmeasured — add it here when it deserves a ratchet.
+ */
+const GROUPS = [
+  { label: 'public', prefix: '/(marketing)/', defaultKb: DEFAULT_KB },
+  { label: 'authed', prefix: '/(app)/', defaultKb: AUTHED_DEFAULT_KB },
+];
 
-if (routes.length === 0) {
-  console.error('✗ bundle budget: no (marketing) routes in the manifest — nothing was measured.');
-  process.exit(1);
+const rows = [];
+for (const group of GROUPS) {
+  const routes = Object.keys(manifest.pages)
+    .filter((key) => key.startsWith(group.prefix) && key.endsWith('/page'))
+    .sort();
+
+  // Each group is asserted non-empty SEPARATELY. A single combined check
+  // would let one group vanish — a renamed route group, a build that
+  // emitted only half the app — while the other kept the script green,
+  // which is the "passes because it is looking at nothing" failure this
+  // file exists to avoid.
+  if (routes.length === 0) {
+    console.error(
+      `✗ bundle budget: no ${group.prefix} routes in the manifest — that group went unmeasured.`,
+    );
+    process.exit(1);
+  }
+
+  for (const route of routes) {
+    const files = new Set(manifest.pages[route].filter((f) => f.endsWith('.js')));
+    const kb = [...files].reduce((sum, file) => sum + gzippedSize(file), 0) / 1024;
+    const budgetKb = OVERRIDES_KB[route] ?? group.defaultKb;
+    rows.push({ route, kb, budgetKb, over: kb > budgetKb, group: group.label });
+  }
 }
-
-const rows = routes.map((route) => {
-  const files = new Set(manifest.pages[route].filter((f) => f.endsWith('.js')));
-  const kb = [...files].reduce((sum, file) => sum + gzippedSize(file), 0) / 1024;
-  const budgetKb = OVERRIDES_KB[route] ?? DEFAULT_KB;
-  return { route, kb, budgetKb, over: kb > budgetKb };
-});
 
 rows.sort((a, b) => b.kb - a.kb);
 for (const row of rows) {
@@ -105,8 +168,11 @@ for (const row of rows) {
 
 const failed = rows.filter((row) => row.over);
 if (failed.length > 0) {
-  console.error(`\n✗ bundle budget: ${failed.length} of ${rows.length} public route(s) over.`);
+  console.error(`\n✗ bundle budget: ${failed.length} of ${rows.length} route(s) over.`);
   process.exit(1);
 }
 
-console.log(`\n✓ bundle budget: ${rows.length} public route(s) within budget (gzipped).`);
+const counts = GROUPS.map(
+  (g) => `${rows.filter((r) => r.group === g.label).length} ${g.label}`,
+).join(' + ');
+console.log(`\n✓ bundle budget: ${rows.length} route(s) within budget (${counts}, gzipped).`);
