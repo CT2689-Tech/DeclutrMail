@@ -7,6 +7,7 @@
     "e2e": "playwright test",
     "e2e:a11y": "playwright test --project=a11y-desktop --project=a11y-mobile-reduced-motion",
     "e2e:billing": "playwright test billing-upgrade.spec.ts --project=default",
+    "e2e:render": "E2E_SKIP_STACK_SETUP=1 playwright test --project=render",
     "e2e:ui": "playwright test --ui",
     "e2e:install": "playwright install chromium",
     "typecheck": "tsc --noEmit",
@@ -16,6 +17,10 @@
     "@axe-core/playwright": "^4.12.1",
     "@declutrmail/shared": "workspace:*",
     "@playwright/test": "^1.60.0",
-    "postgres": "^3.4.5"
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "postgres": "^3.4.5",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   }
 }

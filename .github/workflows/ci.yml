@@ -566,6 +566,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install Chromium
         run: pnpm --filter @declutrmail/e2e exec playwright install --with-deps chromium
+      # Deliberately BEFORE the stack boots: these specs serve their own
+      # page and stub endpoint, so needing nothing is a property worth
+      # proving, and a paint regression fails in seconds rather than
+      # after a 3-minute stack start. They exist because SSR markup
+      # tests cannot see how an engine paints a FAILED image — which is
+      # how the ADR-0034 avatar shipped every logo as a broken-image
+      # glyph over the monogram it was supposed to leave alone.
+      - name: Run the shared-component paint specs
+        run: pnpm --filter @declutrmail/e2e run e2e:render
+        env:
+          E2E_JSON_REPORT: ${{ github.workspace }}/e2e-render-report.json
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update -qq
@@ -628,6 +639,7 @@ jobs:
       - name: Assert both e2e lanes actually ran
         if: always()
         run: |
+          node scripts/assert-e2e-ran.mjs e2e-render-report.json "component paint specs"
           node scripts/assert-e2e-ran.mjs e2e-a11y-report.json "accessibility gate"
           node scripts/assert-e2e-ran.mjs e2e-billing-report.json "billing money path"
       - name: Upload accessibility diagnostics
