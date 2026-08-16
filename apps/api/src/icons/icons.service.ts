@@ -52,7 +52,15 @@ export class IconsService {
     private readonly queue: Queue<DomainIconJobData> | null = null,
   ) {}
 
-  async lookup(rawDomain: string): Promise<IconLookup> {
+  /**
+   * `mayEnqueue` — whether this caller is allowed to cause outbound
+   * work. False for anonymous callers (founder decision 2026-08-16):
+   * the route is readable without a session so that an image
+   * subresource, which cannot refresh an expired token, still gets its
+   * logo — but only a session may grow the cache. Reads are otherwise
+   * identical, so an anonymous hit still serves the mark.
+   */
+  async lookup(rawDomain: string, opts: { mayEnqueue: boolean }): Promise<IconLookup> {
     const domain = brandRoot(rawDomain);
     // Rubbish never becomes a queued job. Silent miss rather than a
     // 400: the caller is an <img> tag, which can do nothing with an
@@ -73,7 +81,7 @@ export class IconsService {
       .limit(1);
 
     if (!row) {
-      await this.schedule(domain);
+      if (opts.mayEnqueue) await this.schedule(domain);
       return { kind: 'miss' };
     }
 
@@ -81,7 +89,7 @@ export class IconsService {
       // Re-queue, then serve whatever we hold. A stale mark is a far
       // better answer than no mark, and the job dedups on the domain
       // so a busy page cannot pile up refreshes.
-      await this.schedule(domain);
+      if (opts.mayEnqueue) await this.schedule(domain);
     }
 
     if (row.status === 'none' || !row.image || !row.mime) return { kind: 'miss' };

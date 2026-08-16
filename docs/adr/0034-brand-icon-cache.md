@@ -103,19 +103,40 @@ A short `max-age` and no `stale-while-revalidate` on the miss fixes both
 the behaviour and the diagnosability; 60s still collapses the re-render
 fan-out of one browsing session.
 
-The route is **authenticated**, despite returning no user data. An
-earlier draft of this ADR left it open on the reasoning that public
-brand artwork needs no guard; that was wrong on two counts, both about
-what an anonymous caller could do rather than what they could read. A
-miss ENQUEUES an outbound resolution, so an open route lets a stranger
-drive our DNS and HTTPS fetches at domains of their choosing and fill
-our cache table doing it; and the cache is a global set of domains our
-users receive mail from, which anonymous probing turns into an oracle
-for that set. Cookies reach it from an `<img>` because API and web
-share a registrable domain, so the `SameSite=Lax` session cookie is
-sent on the subresource request. If it ever is not, icons 401 and the
-UI shows monograms — the same floor as every other failure, which §6
-now actually delivers.
+The route is **readable anonymously; only a session can cause work**
+(founder decision 2026-08-16, replacing a blanket `JwtGuard`).
+
+The guard existed for two reasons. The first still holds and is still
+enforced, now precisely: a miss ENQUEUES an outbound resolution, so
+`mayEnqueue` is false without a session — an anonymous caller reads the
+cache and can never grow it, and cannot drive our DNS and HTTPS fetches
+at domains of their choosing. The second is knowingly given up: the
+cache is a global set of domains our users receive mail from, so
+anonymous probing turns it into an oracle for that set. It is
+aggregate, carries no user linkage (§1) and holds nothing but public
+brand artwork. Anonymous callers are rate-limited by IP, since the
+interceptor keys on `req.user?.id ?? req.ip`.
+
+**Why the guard could not stay.** `dm_access` lives 15 minutes, and the
+web client recovers from an expired one by rotating through
+`POST /api/auth/refresh` and replaying the call. A CSS
+`background-image` cannot: it is a browser subresource fetch with no
+code around it, deliberately, because §6 makes `Avatar` a zero-JS
+server component drawn hundreds of times per page. So every visit after
+the token aged out sent ~50 icon requests with a dead cookie — all 401
+— while the app's own calls refreshed and worked. A perfectly
+functional page with no logos, permanently, because an image never
+retries. Verified in production 2026-08-16: a direct
+`GET /api/icons/zillow.com` answered `HTTP 401`.
+
+Failures on this route carry a status and **no body**. An image cannot
+parse the D202 envelope, and sending one actively hid the problem:
+Chromium's ORB refuses a JSON body delivered to a cross-origin no-cors
+image request when `nosniff` is set, dropping the response before the
+status reaches the page. DevTools showed `(failed)
+net::ERR_BLOCKED_BY_ORB`, type `Other`, 0 B, no status — which is why
+three rounds of fixes landed without anyone being able to see that the
+answer was 401 all along.
 
 ### 4a. Nothing is stored without a verified VMC
 

@@ -24,62 +24,6 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
-### 2026-08-15 — Confirm brand-logo requests actually carry the session cookie
-
-**Source:** PR #528 (the avatar broken-image fix) — an ADR-0034 claim I asserted but never verified
-
-**Partly answered by #530, but NOT closed.** #530 found and fixed a
-different cause of the same symptom: `apiOrigin` was threaded into
-`connect-src` but not `img-src`, so production CSP refused the image
-outright. That is fixed. The cookie question here is independent and
-still unverified — CSP blocking the request and the request arriving
-without a session cookie both look identical from the outside (a clean
-monogram, no error). The check below distinguishes them, and is worth
-running now that CSP is no longer masking the answer.
-**Why:** `GET /api/icons/:domain` is behind `JwtGuard`, and the browser
-reaches it as a subresource of the avatar. The session cookie
-(`dm_access`) is `SameSite=Lax`, which is sent on a SAME-SITE
-subresource request and NOT on a cross-site one. ADR-0034 states that
-API and web "share a registrable domain, so the `SameSite=Lax` session
-cookie is sent" — that is an assumption about the deployed
-`NEXT_PUBLIC_API_URL`, not something the repo pins. If prod points the
-web app at an API on a different registrable domain (a `*.run.app` URL,
-say), every icon request 401s and **no logo ever appears** — silently,
-because after #528 a 401 degrades to the monogram, which looks correct.
-
-This is not a bug and not a merge blocker; it decides whether the
-feature does anything at all.
-
-**Ran 2026-08-16 and came back unreadable — see #533.** Every
-`/api/icons/…` row showed `(failed) net::…`, 0 B, type `Other`, no
-initiator, and no status at all. Those rows were not the avatar's
-requests: they were `stale-while-revalidate` background revalidations of
-already-cached responses, aborted when the page navigated. The avatar's
-own requests were served from cache and never hit the network, so the
-status this check needs was nowhere on screen. #533 removes
-`stale-while-revalidate` from the miss and cuts its `max-age` to 60s, so
-the panel shows real statuses again — but **tick "Disable cache" before
-reloading**, or a fresh entry can still answer this from cache.
-
-**How:** open https://app.declutrmail.com/senders with DevTools →
-Network, tick **Disable cache**, filter `icons`, reload, and read the
-status of any `/api/icons/…` request:
-- `200` — a cached mark; working.
-- `204` — no mark cached yet; working (a resolution was enqueued).
-  Reload in a minute; frequently-seen brands should flip to `200`.
-- `401` — cookies are NOT reaching the endpoint. Then either move the
-  API onto `*.declutrmail.com`, or the route needs a different auth
-  posture than a cookie-borne subresource.
-
-**Verifies by:** at least one `/api/icons/…` request returning `200`
-with `content-type: image/svg+xml`, and a visible brand mark on a
-BIMI-publishing sender (PayPal, eBay and CNN all resolved live during
-the #524 smoke).
-**Status:** Open
-
-
-<!-- Newest at top. -->
-
 ### 2026-08-15 — Decide the CSP `img-src` fix for D254 brand logos
 **Source:** session — page-load performance investigation, 2026-08-15
 **Why:** D254 (#524) serves sender logos from `${NEXT_PUBLIC_API_URL}/api/icons/:domain`. That is same-origin locally (the var is empty) and a DIFFERENT origin in production, where `middleware.ts` `img-src` does not list `apiOrigin` — so every brand logo is CSP-refused in production while working perfectly on your machine. Verified in a browser against the real production headers: `Refused to load the image 'https://api.declutrmail.com/api/icons/example.com' … "img-src 'self' …"`. It fails safe (the monogram still renders) so it would degrade silently. Not changed in this PR because CSP configuration is a CLAUDE.md §9 stop condition.
@@ -1725,6 +1669,75 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-08-15 — Confirm brand-logo requests actually carry the session cookie
+
+**Source:** PR #528 (the avatar broken-image fix) — an ADR-0034 claim I asserted but never verified
+
+**Partly answered by #530, but NOT closed.** #530 found and fixed a
+different cause of the same symptom: `apiOrigin` was threaded into
+`connect-src` but not `img-src`, so production CSP refused the image
+outright. That is fixed. The cookie question here is independent and
+still unverified — CSP blocking the request and the request arriving
+without a session cookie both look identical from the outside (a clean
+monogram, no error). The check below distinguishes them, and is worth
+running now that CSP is no longer masking the answer.
+**Why:** `GET /api/icons/:domain` is behind `JwtGuard`, and the browser
+reaches it as a subresource of the avatar. The session cookie
+(`dm_access`) is `SameSite=Lax`, which is sent on a SAME-SITE
+subresource request and NOT on a cross-site one. ADR-0034 states that
+API and web "share a registrable domain, so the `SameSite=Lax` session
+cookie is sent" — that is an assumption about the deployed
+`NEXT_PUBLIC_API_URL`, not something the repo pins. If prod points the
+web app at an API on a different registrable domain (a `*.run.app` URL,
+say), every icon request 401s and **no logo ever appears** — silently,
+because after #528 a 401 degrades to the monogram, which looks correct.
+
+This is not a bug and not a merge blocker; it decides whether the
+feature does anything at all.
+
+**Ran 2026-08-16 and came back unreadable — see #533.** Every
+`/api/icons/…` row showed `(failed) net::…`, 0 B, type `Other`, no
+initiator, and no status at all. Those rows were not the avatar's
+requests: they were `stale-while-revalidate` background revalidations of
+already-cached responses, aborted when the page navigated. The avatar's
+own requests were served from cache and never hit the network, so the
+status this check needs was nowhere on screen. #533 removes
+`stale-while-revalidate` from the miss and cuts its `max-age` to 60s, so
+the panel shows real statuses again — but **tick "Disable cache" before
+reloading**, or a fresh entry can still answer this from cache.
+
+**How:** open https://app.declutrmail.com/senders with DevTools →
+Network, tick **Disable cache**, filter `icons`, reload, and read the
+status of any `/api/icons/…` request:
+- `200` — a cached mark; working.
+- `204` — no mark cached yet; working (a resolution was enqueued).
+  Reload in a minute; frequently-seen brands should flip to `200`.
+- `401` — cookies are NOT reaching the endpoint. Then either move the
+  API onto `*.declutrmail.com`, or the route needs a different auth
+  posture than a cookie-borne subresource.
+
+**Verifies by:** at least one `/api/icons/…` request returning `200`
+with `content-type: image/svg+xml`, and a visible brand mark on a
+BIMI-publishing sender (PayPal, eBay and CNN all resolved live during
+the #524 smoke).
+**ANSWERED 2026-08-16: `HTTP 401`.** A direct
+`GET https://api.declutrmail.com/api/icons/zillow.com` returned 401. The
+cause was not the cookie's domain or SameSite — the app's own XHRs reach
+the same origin with the same cookie and work fine. It is that
+`dm_access` lives 15 minutes and only the web client can recover: it
+rotates through `POST /api/auth/refresh` and replays. A CSS
+`background-image` cannot, so every visit after the token aged out sent
+~50 icon requests with a dead cookie while the app itself refreshed and
+worked. The 401 was invisible because the JSON error body was eaten by
+ORB (#535). Resolved by #536: the route now reads anonymously and only a
+session may enqueue outbound work.
+
+**Status:** Done 2026-08-16
+
+
+<!-- Newest at top. -->
+
 
 ### 2026-08-14 — Regenerate `atlas.sum` for migration 0056
 **Source:** session — ADR-0034 brand icon cache (migration
