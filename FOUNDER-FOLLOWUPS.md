@@ -1730,7 +1730,7 @@ rotates through `POST /api/auth/refresh` and replays. A CSS
 `background-image` cannot, so every visit after the token aged out sent
 ~50 icon requests with a dead cookie while the app itself refreshed and
 worked. The 401 was invisible because the JSON error body was eaten by
-ORB (#535). Resolved by #536: the route now reads anonymously and only a
+ORB (#535). Resolved by #537: the route now reads anonymously and only a
 session may enqueue outbound work.
 
 **Status:** Done 2026-08-16
