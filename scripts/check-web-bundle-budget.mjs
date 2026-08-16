@@ -80,7 +80,7 @@ const OVERRIDES_KB = {
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
-  '/(app)/senders/page': 205, // 200.0 — grid + table + compose strip + saved views
+  '/(app)/senders/page': 200, // 197.5 — grid + table + compose strip + saved views
   '/(app)/triage/page': 195, // 192.3 — action sheet, preview, undo tray
   '/(app)/senders/[id]/page': 185, // 184.1 — detail: timeseries + history + messages
 

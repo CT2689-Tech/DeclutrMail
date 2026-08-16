@@ -63,7 +63,8 @@ import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SenderGrid } from './grid/sender-grid';
 import { DensityToggle, ViewToggle } from './view-toggle';
-import { SenderTable, type SenderTableVerb } from './sender-table';
+import { preloadSenderTable, SenderTable } from './sender-table/lazy';
+import type { SenderTableVerb } from './sender-table';
 import { rollupByDomain } from './domain-rollup';
 import { useSendersStore } from './store';
 import type { SenderListDirection, SenderListRow, SenderListSort } from '@/lib/api/senders';
@@ -676,6 +677,12 @@ function SendersScreenContent({
   // Table row density — session-scoped beside `view`; the header's
   // DensityToggle writes it, only SenderTable reads it.
   const density = useSendersStore((s) => s.density);
+  // The Table view is code-split (D160) — warm its chunk once the grid
+  // has painted so flipping the ViewToggle stays instant. See
+  // `sender-table/lazy.tsx`.
+  useEffect(() => {
+    preloadSenderTable();
+  }, []);
   const selectedSenders = useMemo(
     () => senders.filter((s) => selected.has(s.id)),
     [selected, senders],
