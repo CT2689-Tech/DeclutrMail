@@ -1,9 +1,9 @@
 import { Controller, Get, Inject, Param, Req, Res, UseFilters, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { JwtGuard } from '../auth/jwt.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { IconErrorFilter } from './icon-error.filter.js';
+import { OptionalJwtGuard } from './optional-jwt.guard.js';
 import { IconsService } from './icons.service.js';
 
 /**
@@ -59,26 +59,42 @@ export const MISS_CACHE_CONTROL = 'private, max-age=60';
  *         published", or "bad domain", and does not need to — the
  *         rendered result is identical in all three.
  *
- * AUTHENTICATED, despite returning no user data. Two reasons, both
- * about what an anonymous caller could otherwise do:
+ * READABLE ANONYMOUSLY; ONLY A SESSION CAN CAUSE WORK.
+ * (Founder decision 2026-08-16, replacing the blanket `JwtGuard`.)
  *
- *   1. A miss ENQUEUES an outbound resolution. Unauthenticated, that
- *      is a stranger driving our DNS and HTTPS fetches at domains of
- *      their choosing, and filling our cache table while they do it.
- *   2. The cache is a global set of domains our users receive mail
- *      from. Anonymous probing turns it into an oracle for that set —
- *      aggregate, but not something to hand out.
+ * The guard was there for two reasons. The first still holds and is
+ * still enforced: a miss ENQUEUES an outbound resolution, and a
+ * stranger must not be able to drive our DNS and HTTPS fetches at
+ * domains of their choosing or fill our cache table doing it. That is
+ * now enforced precisely — `mayEnqueue` is false without a session, so
+ * an anonymous caller can read the cache and never grow it.
  *
- * Cookies reach it from an `<img>` because API and web share a
- * registrable domain (`COOKIE_DOMAIN`), so the `SameSite=Lax` session
- * cookie is sent on this subresource request. If it ever is not, every
- * icon 401s and the UI shows monograms — the same floor as any other
- * failure, which is why this route needs no fallback of its own.
+ * The second reason is knowingly given up: the cache is a global set of
+ * domains our users receive mail from, so anonymous probing turns it
+ * into an oracle for that set. It is aggregate, carries no user
+ * linkage (see `domain_icons`), and holds nothing but public brand
+ * artwork — and the alternative cost the feature entirely.
+ *
+ * WHY THE GUARD COULD NOT STAY. `dm_access` lives 15 minutes. The web
+ * client recovers from an expired one by rotating through
+ * `POST /api/auth/refresh` and replaying the call. A CSS
+ * `background-image` cannot: it is a browser subresource fetch with no
+ * code around it, deliberately, because ADR-0034 makes `Avatar` a
+ * zero-JS server component drawn hundreds of times per page. So every
+ * visit after the token aged out sent ~50 icon requests with a dead
+ * cookie — all 401 — while the app's own calls refreshed and worked.
+ * A perfectly functional page with no logos, forever, because an image
+ * never retries. Verified in production 2026-08-16: a direct
+ * `GET /api/icons/zillow.com` answered `HTTP 401`.
+ *
+ * Anonymous callers are rate-limited by IP: the interceptor keys on
+ * `req.user?.id ?? req.ip`, so a missing session degrades to a
+ * per-address counter rather than a shared pool.
  *
  * Privacy (D7, D228): no Gmail data is read, written, or logged here.
  */
 @Controller('icons')
-@UseGuards(JwtGuard)
+@UseGuards(OptionalJwtGuard)
 // Failures answer with a status and no body — see the filter. A JSON
 // error body here is silently eaten by Chromium's ORB, which is what
 // hid the real status code through three rounds of debugging.
@@ -108,7 +124,8 @@ export class IconsController {
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    const result = await this.icons.lookup(domain);
+    // A session is the licence to cause outbound work, not to read.
+    const result = await this.icons.lookup(domain, { mayEnqueue: req.user !== undefined });
 
     if (result.kind === 'miss') {
       res.setHeader('Cache-Control', MISS_CACHE_CONTROL);

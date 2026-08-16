@@ -1,10 +1,10 @@
-import { CanActivate, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, type ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { JwtGuard } from '../auth/jwt.guard.js';
 import { IconsController } from './icons.controller.js';
 import { IconsService, type IconLookup } from './icons.service.js';
+import { OptionalJwtGuard } from './optional-jwt.guard.js';
 
 /**
  * IconsController HTTP tests (ADR-0034).
@@ -16,34 +16,56 @@ import { IconsService, type IconLookup } from './icons.service.js';
  * `<img>` cannot parse one), and the ETag/304 handshake only exists at
  * that layer.
  *
- * The guard is stubbed to pass. That it is PRESENT is asserted
- * separately below, since the route being authenticated is a
- * deliberate decision (an anonymous caller could otherwise drive our
- * outbound fetches) and not an accident of copying another controller.
+ * The guard is stubbed. `passGuard` stands in for a valid session and
+ * populates `req.user`; `anonGuard` stands in for none. The difference
+ * is load-bearing: since the founder's 2026-08-16 decision the route
+ * READS anonymously — an image subresource cannot refresh an expired
+ * token, so requiring one meant no logo ever rendered — but only a
+ * session may cause an outbound resolution.
  */
 
 const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"/>');
 const ETAG = `"${'a'.repeat(64)}"`;
 
-const passGuard: CanActivate = { canActivate: () => true };
+/** A valid session: populates `req.user` exactly as the real guard does. */
+const passGuard: CanActivate = {
+  canActivate: (ctx: ExecutionContext) => {
+    ctx.switchToHttp().getRequest().user = {
+      userId: 'user-1',
+      workspaceId: 'ws-1',
+      sessionId: 'sess-1',
+      jti: 'jti-1',
+    };
+    return true;
+  },
+};
 
-async function appFor(lookup: IconLookup, seen: string[] = []) {
+/** No session — admitted, but must not be able to grow the cache. */
+const anonGuard: CanActivate = { canActivate: () => true };
+
+async function appFor(
+  lookup: IconLookup,
+  seen: string[] = [],
+  guard: CanActivate = passGuard,
+  seenOpts: Array<{ mayEnqueue: boolean }> = [],
+) {
   const moduleRef = await Test.createTestingModule({
     controllers: [IconsController],
     providers: [
       {
         provide: IconsService,
         useValue: {
-          lookup: async (domain: string) => {
+          lookup: async (domain: string, opts: { mayEnqueue: boolean }) => {
             seen.push(domain);
+            seenOpts.push(opts);
             return lookup;
           },
         },
       },
     ],
   })
-    .overrideGuard(JwtGuard)
-    .useValue(passGuard)
+    .overrideGuard(OptionalJwtGuard)
+    .useValue(guard)
     .compile();
 
   const app = moduleRef.createNestApplication();
@@ -179,7 +201,7 @@ describe('IconsController', () => {
       controllers: [IconsController],
       providers: [{ provide: IconsService, useValue: { lookup: async () => ({ kind: 'miss' }) } }],
     })
-      .overrideGuard(JwtGuard)
+      .overrideGuard(OptionalJwtGuard)
       .useValue(denyGuard)
       .compile();
     app = moduleRef.createNestApplication();
@@ -211,7 +233,7 @@ describe('IconsController', () => {
         },
       ],
     })
-      .overrideGuard(JwtGuard)
+      .overrideGuard(OptionalJwtGuard)
       .useValue(passGuard)
       .compile();
     app = moduleRef.createNestApplication();
@@ -226,12 +248,47 @@ describe('IconsController', () => {
     expect((await res.text()).length).toBe(0);
   });
 
-  it('is guarded by JwtGuard', async () => {
-    // Asserted structurally: an anonymous caller must not be able to
-    // enqueue outbound resolutions, so losing this guard is a security
-    // regression rather than a behaviour change a test would catch by
-    // accident.
+  it('serves a cached mark to an ANONYMOUS caller', async () => {
+    app = await appFor(
+      { kind: 'hit', image: SVG, mime: 'image/svg+xml', etag: ETAG },
+      [],
+      anonGuard,
+    );
+
+    const res = await fetch(`${await app.getUrl()}/icons/chase.com`);
+
+    // The whole point of the 2026-08-16 decision: an image subresource
+    // cannot rotate an expired 15-minute token the way the web client
+    // does, so requiring a session meant every icon 401'd and no logo
+    // ever rendered.
+    expect(res.status).toBe(200);
+  });
+
+  it('lets a SESSION cause outbound work, and an anonymous caller never', async () => {
+    const authed: Array<{ mayEnqueue: boolean }> = [];
+    app = await appFor({ kind: 'miss' }, [], passGuard, authed);
+    await fetch(`${await app.getUrl()}/icons/nobody.example`);
+    await app.close();
+
+    const anon: Array<{ mayEnqueue: boolean }> = [];
+    app = await appFor({ kind: 'miss' }, [], anonGuard, anon);
+    await fetch(`${await app.getUrl()}/icons/nobody.example`);
+
+    // This is the half of the old guard that still matters and is still
+    // enforced: a miss ENQUEUES an outbound resolution, and a stranger
+    // must not be able to drive our DNS and HTTPS fetches at domains of
+    // their choosing or fill our cache table doing it. Reading the
+    // cache is free; growing it needs a session.
+    expect(authed).toEqual([{ mayEnqueue: true }]);
+    expect(anon).toEqual([{ mayEnqueue: false }]);
+  });
+
+  it('admits an anonymous caller instead of refusing', async () => {
+    // Structural: the route must carry the OPTIONAL guard. Swapping the
+    // strict `JwtGuard` back in is the exact regression that made every
+    // logo invisible in production, and it would not fail any other
+    // test here (they all stub the guard).
     const guards = Reflect.getMetadata('__guards__', IconsController) as unknown[] | undefined;
-    expect(guards).toContain(JwtGuard);
+    expect(guards).toContain(OptionalJwtGuard);
   });
 });
