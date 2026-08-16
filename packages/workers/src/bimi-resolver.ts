@@ -219,6 +219,85 @@ export function validateBimiSvg(bytes: Buffer): { ok: true } | { ok: false; reas
 }
 
 /**
+ * Domains to try, most specific first: the domain itself, then each
+ * ancestor down to a two-label name.
+ *
+ * BIMI discovery is modelled on DMARC's: look under the author domain,
+ * and fall back to the ORGANIZATIONAL domain when it publishes
+ * nothing. Skipping that fallback is why this feature rendered almost
+ * no marks in production. Bulk senders mail from subdomains and
+ * publish the record at the brand — verified live 2026-08-16:
+ *
+ *   default._bimi.member.americanexpress.com  NXDOMAIN
+ *   default._bimi.americanexpress.com         v=BIMI1; l=…
+ *   default._bimi.official.asos.com           NXDOMAIN
+ *   default._bimi.asos.com                    v=BIMI1; l=…
+ *
+ * `brandRoot` does not close this gap: it strips a fixed list of bulk
+ * prefixes (`mail1.`, `news.`, `notify.`…), and real senders use
+ * `member.`, `official.`, `info.`, `reply.`, `h5.` — an open set that
+ * cannot be enumerated. Walking the DNS name is the enumeration.
+ *
+ * WALKING PAST THE PUBLIC SUFFIX IS SAFE, so no PSL is needed here.
+ * The walk stops at two labels, which for `brand.co.uk` means
+ * `co.uk` is queried — but a record found there could only produce a
+ * mark by also presenting a VMC whose SAN covers `co.uk`, issued by a
+ * BIMI-authorised CA. That is the whole point of the certificate gate
+ * (see this module's header): DNS alone never decides what we render,
+ * so an over-broad walk costs an extra NXDOMAIN, not a wrong logo.
+ */
+export function bimiLookupCandidates(domain: string): string[] {
+  const labels = domain.split('.');
+  const candidates: string[] = [];
+  for (let i = 0; i + 2 <= labels.length; i++) candidates.push(labels.slice(i).join('.'));
+  return candidates;
+}
+
+/**
+ * First BIMI record on the candidate chain, with the domain it was
+ * published on — the certificate is checked against THAT name, not the
+ * subdomain we started from, because a brand's VMC carries the brand's
+ * SAN (`americanexpress.com`), not each mailing subdomain.
+ */
+async function findBimiRecord(
+  domain: string,
+  resolveTxt: (name: string) => Promise<string[][]>,
+): Promise<{ tags: Record<string, string>; recordDomain: string } | null> {
+  for (const candidate of bimiLookupCandidates(domain)) {
+    let records: string[][];
+    try {
+      records = await resolveTxt(`default._bimi.${candidate}`);
+    } catch (err) {
+      // NXDOMAIN is the overwhelmingly common answer and is a real
+      // result: the vast majority of domains publish no BIMI, and
+      // storing that as a cached miss is the whole point of the negative
+      // cache. Here it means "ask the parent" rather than "give up".
+      //
+      // A resolver OUTAGE is not that. Swallowing SERVFAIL/EAI_AGAIN
+      // here would return a terminal 'none' that the worker writes with
+      // a 30-day TTL, so one DNS blip would disable logos for every
+      // domain rendered during it — and because `processJob` returned
+      // normally, batchPolicy's retry budget would never engage. Rethrow
+      // instead, which is what the sibling consumer of this same guard
+      // does with network faults (`unsub-execution.worker.ts`).
+      if (isTransientDnsError(err)) {
+        throw new TransientError(`BIMI DNS lookup failed for ${candidate}: ${describeError(err)}`);
+      }
+      continue;
+    }
+
+    const tags = records
+      .map((chunks) => parseBimiRecord(chunks.join('')))
+      .find((parsed): parsed is Record<string, string> => parsed !== null);
+    // The FIRST record on the chain decides, including when it declines
+    // a logo with an empty `l=`. A brand that publishes "no mark for
+    // this subdomain" is answering the question, not passing it up.
+    if (tags) return { tags, recordDomain: candidate };
+  }
+  return null;
+}
+
+/**
  * Resolve one domain's BIMI logo. Never throws for an expected
  * condition — a missing record, a hostile URL, or unusable bytes all
  * return `{status:'none'}` with a reason, which the worker stores as a
@@ -231,32 +310,9 @@ export async function resolveBimiIcon(
   const resolveTxt = deps.resolveTxt ?? dnsResolveTxt;
   const http = deps.http ?? FETCH_BIMI_HTTP_PORT;
 
-  let records: string[][];
-  try {
-    records = await resolveTxt(`default._bimi.${domain}`);
-  } catch (err) {
-    // NXDOMAIN is the overwhelmingly common answer and is a real
-    // result: the vast majority of domains publish no BIMI, and
-    // storing that as a cached miss is the whole point of the negative
-    // cache.
-    //
-    // A resolver OUTAGE is not that. Swallowing SERVFAIL/EAI_AGAIN
-    // here would return a terminal 'none' that the worker writes with
-    // a 30-day TTL, so one DNS blip would disable logos for every
-    // domain rendered during it — and because `processJob` returned
-    // normally, batchPolicy's retry budget would never engage. Rethrow
-    // instead, which is what the sibling consumer of this same guard
-    // does with network faults (`unsub-execution.worker.ts`).
-    if (isTransientDnsError(err)) {
-      throw new TransientError(`BIMI DNS lookup failed for ${domain}: ${describeError(err)}`);
-    }
-    return { status: 'none', reason: 'no bimi record' };
-  }
-
-  const tags = records
-    .map((chunks) => parseBimiRecord(chunks.join('')))
-    .find((parsed): parsed is Record<string, string> => parsed !== null);
-  if (!tags) return { status: 'none', reason: 'no bimi record' };
+  const found = await findBimiRecord(domain, resolveTxt);
+  if (!found) return { status: 'none', reason: 'no bimi record' };
+  const { tags, recordDomain } = found;
 
   const logoUrl = tags.l ?? '';
   // An empty `l=` is a brand explicitly declining to publish a mark.
@@ -286,7 +342,7 @@ export async function resolveBimiIcon(
 
   const verified = (deps.verifyVmc ?? verifyVmc)({
     pem: vmc.image.toString('utf8'),
-    domain,
+    domain: recordDomain,
     logo: fetched.image,
   });
   if (!verified.ok) return { status: 'none', reason: verified.reason };

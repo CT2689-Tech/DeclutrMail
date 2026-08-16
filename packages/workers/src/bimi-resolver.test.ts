@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BIMI_MAX_BYTES,
+  bimiLookupCandidates,
   parseBimiRecord,
   resolveBimiIcon,
   validateBimiSvg,
@@ -127,6 +128,24 @@ describe('validateBimiSvg', () => {
   });
 });
 
+describe('bimiLookupCandidates', () => {
+  it('walks ancestors down to a two-label name', () => {
+    expect(bimiLookupCandidates('info.asics.com')).toEqual(['info.asics.com', 'asics.com']);
+    expect(bimiLookupCandidates('brand.com')).toEqual(['brand.com']);
+  });
+
+  it('does not need a public-suffix list', () => {
+    // `co.uk` is queried and that is fine: a record there still has to
+    // present a VMC whose SAN covers `co.uk` from a BIMI-authorised CA.
+    // The certificate, not DNS, decides what gets rendered.
+    expect(bimiLookupCandidates('mail.brand.co.uk')).toEqual([
+      'mail.brand.co.uk',
+      'brand.co.uk',
+      'co.uk',
+    ]);
+  });
+});
+
 describe('resolveBimiIcon', () => {
   it('returns the mark for a well-formed record', async () => {
     const result = await resolveBimiIcon('brand.example', {
@@ -173,6 +192,119 @@ describe('resolveBimiIcon', () => {
     });
 
     expect(result).toEqual({ status: 'none', reason: 'record carries no vmc tag' });
+  });
+
+  /**
+   * The gap that made this feature render almost nothing in
+   * production: bulk senders mail from `member.`/`official.`/`info.`
+   * subdomains and publish BIMI at the brand. Verified against live
+   * DNS 2026-08-16 — `member.americanexpress.com` and
+   * `official.asos.com` are NXDOMAIN while their parents both answer.
+   */
+  describe('organizational-domain fallback', () => {
+    /** TXT seam answering per NAME; anything unlisted is NXDOMAIN. */
+    function txtZone(zone: Record<string, string>) {
+      return async (name: string): Promise<string[][]> => {
+        const record = zone[name];
+        if (record === undefined) {
+          throw Object.assign(new Error(`queryTxt ENOTFOUND ${name}`), { code: 'ENOTFOUND' });
+        }
+        return [[record]];
+      };
+    }
+
+    it('falls back to the parent when the mailing subdomain publishes nothing', async () => {
+      const result = await resolveBimiIcon('member.americanexpress.example', {
+        resolveTxt: txtZone({ 'default._bimi.americanexpress.example': RECORD }),
+        resolveHost: publicHost,
+        http: stubHttp({}),
+        verifyVmc: acceptVmc,
+      });
+
+      expect(result.status).toBe('ok');
+    });
+
+    it('checks the certificate against the domain the record came from', async () => {
+      const seen: string[] = [];
+      await resolveBimiIcon('member.americanexpress.example', {
+        resolveTxt: txtZone({ 'default._bimi.americanexpress.example': RECORD }),
+        resolveHost: publicHost,
+        http: stubHttp({}),
+        verifyVmc: (opts) => {
+          seen.push(opts.domain);
+          return { ok: true };
+        },
+      });
+
+      // A brand's VMC carries the BRAND's SAN. Verifying the parent's
+      // record against the subdomain we happened to start from would
+      // fail every fallback and quietly undo this whole path.
+      expect(seen).toEqual(['americanexpress.example']);
+    });
+
+    it('walks every ancestor, most specific first', async () => {
+      const asked: string[] = [];
+      await resolveBimiIcon('a.b.brand.example', {
+        resolveTxt: async (name) => {
+          asked.push(name);
+          throw Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' });
+        },
+        resolveHost: publicHost,
+        http: stubHttp({}),
+      });
+
+      expect(asked).toEqual([
+        'default._bimi.a.b.brand.example',
+        'default._bimi.b.brand.example',
+        'default._bimi.brand.example',
+      ]);
+    });
+
+    it('prefers the subdomain record over the parent', async () => {
+      const seen: string[] = [];
+      await resolveBimiIcon('reply.ebay.example', {
+        resolveTxt: txtZone({
+          'default._bimi.reply.ebay.example': RECORD,
+          'default._bimi.ebay.example': RECORD,
+        }),
+        resolveHost: publicHost,
+        http: stubHttp({}),
+        verifyVmc: (opts) => {
+          seen.push(opts.domain);
+          return { ok: true };
+        },
+      });
+
+      expect(seen).toEqual(['reply.ebay.example']);
+    });
+
+    it('respects a subdomain that declines a logo instead of asking the parent', async () => {
+      const result = await resolveBimiIcon('quiet.brand.example', {
+        resolveTxt: txtZone({
+          'default._bimi.quiet.brand.example': 'v=BIMI1; l=; a=',
+          'default._bimi.brand.example': RECORD,
+        }),
+        resolveHost: publicHost,
+        http: stubHttp({}),
+        verifyVmc: acceptVmc,
+      });
+
+      // "No mark for this subdomain" is an answer, not a referral.
+      expect(result).toEqual({ status: 'none', reason: 'record declines a logo' });
+    });
+
+    it('still throws on a resolver outage rather than walking past it', async () => {
+      // Otherwise one DNS blip is written as a 30-day cached miss.
+      await expect(
+        resolveBimiIcon('member.brand.example', {
+          resolveTxt: async () => {
+            throw Object.assign(new Error('SERVFAIL'), { code: 'SERVFAIL' });
+          },
+          resolveHost: publicHost,
+          http: stubHttp({}),
+        }),
+      ).rejects.toThrow(/BIMI DNS lookup failed/);
+    });
   });
 
   describe('SSRF guard', () => {
