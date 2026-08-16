@@ -113,6 +113,7 @@ export const WithInvoices: Story<typeof InvoiceHistory> = {
         invoices: [PAID, RAZORPAY_ROW],
         unavailableProviders: [],
         truncated: false,
+        omittedRows: 0,
       })}
     >
       <InvoiceHistory />
@@ -123,7 +124,65 @@ export const WithInvoices: Story<typeof InvoiceHistory> = {
 /** First period, nothing collected yet — an empty state, not an error. */
 export const NoInvoicesYet: Story<typeof InvoiceHistory> = {
   render: () => (
-    <Frame client={clientWith({ invoices: [], unavailableProviders: [], truncated: false })}>
+    <Frame
+      client={clientWith({
+        invoices: [],
+        unavailableProviders: [],
+        truncated: false,
+        omittedRows: 0,
+      })}
+    >
+      <InvoiceHistory />
+    </Frame>
+  ),
+};
+
+/** In flight — the D211 loading skeleton, no layout shift on settle. */
+export const Loading: Story<typeof InvoiceHistory> = {
+  render: () => {
+    // A fetch that never settles keeps the query in `isLoading` for the
+    // life of the story — the same trick as the failing variant, held
+    // open instead of rejected.
+    globalThis.fetch = (() => new Promise(() => {})) as typeof globalThis.fetch;
+    return (
+      <Frame client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <InvoiceHistory />
+      </Frame>
+    );
+  },
+};
+
+/**
+ * The provider ANSWERED but no row was renderable — with wrong field
+ * names every row drops, and this must never read as "no invoices yet"
+ * (the failed-read-as-empty defect; gate network 2026-08-16).
+ */
+export const AllRowsOmitted: Story<typeof InvoiceHistory> = {
+  render: () => (
+    <Frame
+      client={clientWith({
+        invoices: [],
+        unavailableProviders: [],
+        truncated: false,
+        omittedRows: 3,
+      })}
+    >
+      <InvoiceHistory />
+    </Frame>
+  ),
+};
+
+/** Some rows rendered, some could not — the list admits the gap. */
+export const SomeRowsOmitted: Story<typeof InvoiceHistory> = {
+  render: () => (
+    <Frame
+      client={clientWith({
+        invoices: [PAID],
+        unavailableProviders: [],
+        truncated: false,
+        omittedRows: 1,
+      })}
+    >
       <InvoiceHistory />
     </Frame>
   ),
@@ -146,6 +205,7 @@ export const PartialList: Story<typeof InvoiceHistory> = {
         invoices: [PAID],
         unavailableProviders: ['razorpay'],
         truncated: false,
+        omittedRows: 0,
       })}
     >
       <InvoiceHistory />
@@ -161,6 +221,7 @@ export const UnknownStatus: Story<typeof InvoiceHistory> = {
         invoices: [{ ...PAID, status: 'unknown' }],
         unavailableProviders: [],
         truncated: false,
+        omittedRows: 0,
       })}
     >
       <InvoiceHistory />
@@ -168,7 +229,8 @@ export const UnknownStatus: Story<typeof InvoiceHistory> = {
   ),
 };
 
-const emptyClient = () => clientWith({ invoices: [], unavailableProviders: [], truncated: false });
+const emptyClient = () =>
+  clientWith({ invoices: [], unavailableProviders: [], truncated: false, omittedRows: 0 });
 
 export const PaymentMethodPaddle: Story<typeof PaymentMethodCard> = {
   render: () => (

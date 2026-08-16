@@ -217,8 +217,12 @@ export function isRefundSettling(data: BillingSubscription | undefined): boolean
  * ignorance instead of `TIER_MANIFEST[garbage]` or an invented price.
  */
 export class BillingPayloadError extends Error {
-  constructor() {
-    super('GET /api/billing/subscription returned a payload outside BillingSubscriptionSchema');
+  constructor(endpoint = 'GET /api/billing/subscription') {
+    // The endpoint is part of the message so a Sentry line names WHICH
+    // read broke its contract — three more billing endpoints now throw
+    // this class, and an argument-less error attributed them all to the
+    // subscription read (gate network 2026-08-16).
+    super(`${endpoint} returned a payload outside its contract schema`);
     this.name = 'BillingPayloadError';
   }
 }
@@ -444,9 +448,17 @@ export function backingStatusNote(
     // wording — "update your payment method with the provider" — sent
     // the customer to a provider they had no link to, on the one status
     // where not acting ends the plan (ADR-0035).
+    //
+    // Provider-split because the affordance is: on Razorpay the section
+    // below says the card CANNOT be changed self-serve, so "update your
+    // payment method below" would point at a refusal (gate network
+    // 2026-08-16). The note promises only what its rail can deliver.
     return {
       tone: 'warn',
-      text: 'Payment past due — update your payment method below to keep your plan.',
+      text:
+        backing.sub.provider === 'razorpay'
+          ? 'Payment past due — see the payment-method section below; we’ll help you fix this.'
+          : 'Payment past due — update your payment method below to keep your plan.',
     };
   }
   return null;

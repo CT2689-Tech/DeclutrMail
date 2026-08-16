@@ -553,6 +553,15 @@ export type PaymentMethodSessionResult =
 export interface ProviderInvoicePage {
   invoices: ProviderInvoice[];
   truncated: boolean;
+  /**
+   * Rows the provider returned that were dropped as unrenderable
+   * (missing date/amount/currency — never-fabricate). Carried so the
+   * caller can distinguish "never billed" from "billed, but nothing was
+   * renderable": with wrong field names every row drops, and without
+   * this count that reads as an empty history (gate network 2026-08-16,
+   * CONFIRMED).
+   */
+  omitted: number;
 }
 
 /** One provider billing document, normalized (see `listInvoices`). */

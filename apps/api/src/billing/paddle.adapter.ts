@@ -1083,13 +1083,14 @@ export class PaddleAdapter implements BillingProvider {
     );
     // 404 on the collection means the subscription is unknown to
     // Paddle — no rows, which is data, not a failure.
-    if (body === null) return { invoices: [], truncated: false };
+    if (body === null) return { invoices: [], truncated: false, omitted: 0 };
     const rows = (body as { data?: PaddleTransaction[] }).data;
     if (!Array.isArray(rows)) {
       this.logger.error(`paddle.transactions.malformed sub=${providerSubscriptionId}`);
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     const invoices: ProviderInvoice[] = [];
+    let omitted = 0;
     for (const row of rows) {
       const status = row.status ?? '';
       if (!row.id || status === 'draft') continue;
@@ -1104,6 +1105,7 @@ export class PaddleAdapter implements BillingProvider {
         this.logger.warn(
           `paddle.transactions.row_incomplete sub=${providerSubscriptionId} txn=${row.id} — dropped from the invoice list`,
         );
+        omitted += 1;
         continue;
       }
       invoices.push({
@@ -1125,7 +1127,7 @@ export class PaddleAdapter implements BillingProvider {
       (body as { meta?: { pagination?: { has_more?: boolean } | null } }).meta?.pagination
         ?.has_more,
     );
-    return { invoices, truncated: hasMore };
+    return { invoices, truncated: hasMore, omitted };
   }
 
   /**

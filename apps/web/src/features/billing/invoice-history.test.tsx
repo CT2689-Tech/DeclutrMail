@@ -55,7 +55,7 @@ beforeEach(() => {
 describe('InvoiceHistory', () => {
   it('renders a paid row with its formatted amount and a download control', async () => {
     apiGet.mockResolvedValue({
-      data: { invoices: [PAID_ROW], unavailableProviders: [], truncated: false },
+      data: { invoices: [PAID_ROW], unavailableProviders: [], truncated: false, omittedRows: 0 },
     });
     wrap(<InvoiceHistory />);
     expect(await screen.findByText('$19.00')).toBeInTheDocument();
@@ -72,7 +72,7 @@ describe('InvoiceHistory', () => {
 
   it('does not claim "no invoices" when the only rail we could ask was unreachable', async () => {
     apiGet.mockResolvedValue({
-      data: { invoices: [], unavailableProviders: ['paddle'], truncated: false },
+      data: { invoices: [], unavailableProviders: ['paddle'], truncated: false, omittedRows: 0 },
     });
     wrap(<InvoiceHistory />);
     expect(await screen.findByText(/couldn’t reach your payment provider/i)).toBeInTheDocument();
@@ -81,7 +81,12 @@ describe('InvoiceHistory', () => {
 
   it('says the list is partial when one rail failed but the other returned rows', async () => {
     apiGet.mockResolvedValue({
-      data: { invoices: [PAID_ROW], unavailableProviders: ['razorpay'], truncated: false },
+      data: {
+        invoices: [PAID_ROW],
+        unavailableProviders: ['razorpay'],
+        truncated: false,
+        omittedRows: 0,
+      },
     });
     wrap(<InvoiceHistory />);
     expect(await screen.findByText(/may be missing invoices/i)).toBeInTheDocument();
@@ -93,6 +98,7 @@ describe('InvoiceHistory', () => {
         invoices: [{ ...PAID_ROW, status: 'unknown' as const }],
         unavailableProviders: [],
         truncated: false,
+        omittedRows: 0,
       },
     });
     wrap(<InvoiceHistory />);
@@ -116,6 +122,7 @@ describe('InvoiceHistory', () => {
         ],
         unavailableProviders: [],
         truncated: false,
+        omittedRows: 0,
       },
     });
     wrap(<InvoiceHistory />);
@@ -130,6 +137,7 @@ describe('InvoiceHistory', () => {
         invoices: [{ ...PAID_ROW, hostedUrl: null, documentAvailable: false }],
         unavailableProviders: [],
         truncated: false,
+        omittedRows: 0,
       },
     });
     wrap(<InvoiceHistory />);
@@ -139,10 +147,31 @@ describe('InvoiceHistory', () => {
 
   it('discloses a truncated list rather than passing it off as complete', async () => {
     apiGet.mockResolvedValue({
-      data: { invoices: [PAID_ROW], unavailableProviders: [], truncated: true },
+      data: { invoices: [PAID_ROW], unavailableProviders: [], truncated: true, omittedRows: 0 },
     });
     wrap(<InvoiceHistory />);
     expect(await screen.findByText(/most recent invoices/i)).toBeInTheDocument();
+  });
+
+  it('never claims "no invoices yet" when rows exist but none were renderable', async () => {
+    // The all-rows-dropped shape: the provider answered, every row was
+    // unrenderable (wrong field names would do exactly this), and the
+    // customer DOES have invoices (gate network 2026-08-16, CONFIRMED).
+    apiGet.mockResolvedValue({
+      data: { invoices: [], unavailableProviders: [], truncated: false, omittedRows: 4 },
+    });
+    wrap(<InvoiceHistory />);
+    expect(await screen.findByText(/your invoices exist/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no invoices yet/i)).not.toBeInTheDocument();
+  });
+
+  it('admits partially-omitted rows beside a non-empty list', async () => {
+    apiGet.mockResolvedValue({
+      data: { invoices: [PAID_ROW], unavailableProviders: [], truncated: false, omittedRows: 2 },
+    });
+    wrap(<InvoiceHistory />);
+    await screen.findByText('$19.00');
+    expect(screen.getByText(/2 invoices couldn’t\s+be displayed/i)).toBeInTheDocument();
   });
 
   it('fetches nothing when disabled (billing dark / never subscribed)', () => {
@@ -189,14 +218,30 @@ describe('PaymentMethodCard', () => {
     expect(screen.getByText(/finishes confirming/i)).toBeInTheDocument();
   });
 
-  it('renders the refusal as a fact when the rail answers unsupported at click time', async () => {
+  it('renders a paddle refusal with GENERIC copy — the India-mandate claim belongs to Razorpay', async () => {
+    // A non-Razorpay rail answering `unsupported` is unexpected, and the
+    // mandate sentence is a fact about Razorpay specifically — showing
+    // it to a Paddle customer explains the refusal with a fact that
+    // isn't one (gate network 2026-08-16).
     apiPost.mockResolvedValue({
       data: { kind: 'unsupported', provider: 'paddle', reason: 'no_self_serve' },
     });
     wrap(<PaymentMethodCard provider="paddle" isPastDue={false} />);
     screen.getByRole('button', { name: 'Update payment method' }).click();
-    await waitFor(() => expect(screen.getByText(/authorized mandate/i)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/can’t be changed from here right now/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/authorized mandate/i)).not.toBeInTheDocument();
     // A 200 "this rail cannot" must not surface as a retryable error.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('renders a razorpay refusal with the mandate explanation', async () => {
+    apiPost.mockResolvedValue({
+      data: { kind: 'unsupported', provider: 'razorpay', reason: 'no_self_serve' },
+    });
+    wrap(<PaymentMethodCard provider="paddle" isPastDue={false} />);
+    screen.getByRole('button', { name: 'Update payment method' }).click();
+    await waitFor(() => expect(screen.getByText(/authorized mandate/i)).toBeInTheDocument());
   });
 });

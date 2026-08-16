@@ -368,12 +368,23 @@ export const BillingInvoiceListSchema = z.object({
   invoices: z.array(BillingInvoiceSchema),
   unavailableProviders: z.array(BillingProviderIdSchema),
   /**
-   * The provider reported more rows than one page returned. Both
-   * adapters ask for a single large page (200), so this is unreachable
-   * for any realistic account — but a capped read must never pass for a
-   * complete history, so the cap is reported rather than assumed away.
+   * The read was CAPPED: a provider reported more rows than one page
+   * returned, or the workspace holds more subscription rows than the
+   * per-read fan-out bound walks. Unreachable for any realistic account
+   * — but a capped read must never pass for a complete history, so the
+   * cap is reported rather than assumed away.
    */
   truncated: z.boolean(),
+  /**
+   * Rows a provider RETURNED that could not be rendered without
+   * inventing a date, amount or currency (never-fabricate) and were
+   * dropped. Load-bearing for the empty state: zero renderable rows
+   * with `omittedRows > 0` means "your invoices exist and we could not
+   * display them", which must never read as "no invoices yet" — the
+   * failed-read-as-empty defect, in the one shape `unavailableProviders`
+   * cannot catch because the rail DID answer (gate network, 2026-08-16).
+   */
+  omittedRows: z.number().int().min(0),
 });
 export type BillingInvoiceList = z.infer<typeof BillingInvoiceListSchema>;
 

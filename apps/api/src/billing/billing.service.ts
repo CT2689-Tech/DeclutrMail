@@ -30,6 +30,7 @@ import {
 } from '@declutrmail/db';
 import type {
   BillingInvoice,
+  BillingProviderId,
   BillingInvoiceDocument,
   BillingInvoiceList,
   BillingSubscription,
@@ -1155,15 +1156,23 @@ export class BillingService {
       .from(subscriptions)
       .where(eq(subscriptions.workspaceId, workspaceId))
       .orderBy(desc(subscriptions.updatedAt))
-      .limit(MAX_INVOICE_SUBSCRIPTIONS);
+      // One past the bound: an extra row proves the cap actually cut
+      // something, so `truncated` can report it — the silent-cap shape
+      // the contract forbids (gate network 2026-08-16). The walk itself
+      // still covers only the bound.
+      .limit(MAX_INVOICE_SUBSCRIPTIONS + 1);
+    const capped = rows.length > MAX_INVOICE_SUBSCRIPTIONS;
+    const walked = capped ? rows.slice(0, MAX_INVOICE_SUBSCRIPTIONS) : rows;
 
     const invoices: BillingInvoice[] = [];
-    const unavailable = new Set<'paddle' | 'razorpay'>();
-    let truncated = false;
-    for (const row of rows) {
+    const unavailable = new Set<BillingProviderId>();
+    let truncated = capped;
+    let omittedRows = 0;
+    for (const row of walked) {
       try {
         const page = await this.adapterFor(row.provider).listInvoices(row.providerSubscriptionId);
         truncated = truncated || page.truncated;
+        omittedRows += page.omitted;
         for (const invoice of page.invoices) {
           invoices.push({ ...invoice, provider: row.provider });
         }
@@ -1178,7 +1187,7 @@ export class BillingService {
       }
     }
     invoices.sort((a, b) => Date.parse(b.issuedAt) - Date.parse(a.issuedAt));
-    return { invoices, unavailableProviders: [...unavailable], truncated };
+    return { invoices, unavailableProviders: [...unavailable], truncated, omittedRows };
   }
 
   /**
@@ -1196,9 +1205,17 @@ export class BillingService {
    * ownership set is a stale authorization decision.
    */
   async invoiceDocument(workspaceId: string, invoiceId: string): Promise<BillingInvoiceDocument> {
-    const { invoices } = await this.listInvoices(workspaceId);
+    const { invoices, unavailableProviders } = await this.listInvoices(workspaceId);
     const owned = invoices.find((i) => i.id === invoiceId);
     if (!owned) {
+      // Absent from an INCOMPLETE listing proves nothing: with a rail
+      // unreachable, the id may belong to exactly the rows we could not
+      // read, and NOT_FOUND would tell the customer their invoice does
+      // not exist during a provider blip (gate network 2026-08-16).
+      // Only a complete listing may answer "not yours".
+      if (unavailableProviders.length > 0) {
+        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      }
       throw new AppException({ code: 'NOT_FOUND' });
     }
     if (!owned.documentAvailable) {

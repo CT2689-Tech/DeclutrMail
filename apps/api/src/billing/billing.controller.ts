@@ -15,7 +15,7 @@
 // `BILLING_ENABLED=true` — the module is always loaded so the routes
 // exist and fail CLEANLY (not 404) while billing is dark.
 
-import { Delete, Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Delete, Body, Controller, Get, Header, Param, Post, UseGuards } from '@nestjs/common';
 import {
   BillingReconcileRequestSchema,
   CancelRequestSchema,
@@ -120,10 +120,18 @@ export class BillingController {
    * The service re-derives ownership from this workspace's own listing
    * before forwarding the id (invoices are not persisted, so there is no
    * local row to authorize against and an unchecked id would be an IDOR
-   * onto a stranger's invoice). Not cached anywhere: the URL
-   * authenticates its bearer.
+   * onto a stranger's invoice).
+   *
+   * The response carries a short-lived bearer URL, so `no-store` is
+   * enforced at the HTTP layer, not just promised in prose — nothing
+   * between here and the browser may keep a copy. GET is deliberate,
+   * unlike the sibling session mint's POST: this asks Paddle for a link
+   * to an EXISTING document (idempotent, no provider-side state), while
+   * the portal session creates an authenticated surface that can move
+   * money — different verbs because they are different acts.
    */
   @Get('invoices/:id/document')
+  @Header('Cache-Control', 'private, no-store')
   @RateLimit({ bucket: 'default', limit: 20, windowSec: 60 })
   async invoiceDocument(
     @CurrentUser() principal: Principal,

@@ -20,12 +20,17 @@
  *     open this page after leaving is to fetch last year's receipts.
  */
 
-import { Button, Eyebrow, ErrorState as RecoverableErrorState, tokens } from '@declutrmail/shared';
+import {
+  Button,
+  EmptyState,
+  Eyebrow,
+  ErrorState as RecoverableErrorState,
+  tokens,
+} from '@declutrmail/shared';
 import type { BillingInvoice } from '@declutrmail/shared/contracts';
 
 import { formatProviderAmount, formatBillingDate } from './billing-model';
-import { useInvoiceDocument } from './api/use-payment-method';
-import { useInvoices } from './api/use-invoices';
+import { useInvoiceDocument, useInvoices } from './api/use-invoices';
 
 const { color, radius, shadow } = tokens;
 
@@ -40,20 +45,23 @@ const SECTION_STYLE = {
   gap: 12,
 } as const;
 
-/** Row status → the word a customer recognizes on a statement. */
-function statusLabel(status: BillingInvoice['status']): string | null {
-  if (status === 'paid') return 'Paid';
-  if (status === 'due') return 'Due';
-  if (status === 'canceled') return 'Canceled';
-  // `unknown` deliberately renders NOTHING rather than a guess — the
-  // provider used a status we do not map, and inventing "Paid" over it
-  // is the one error that matters here.
-  return null;
-}
+/**
+ * Row status → the word a customer recognizes on a statement.
+ * Exhaustive over the contract enum, so a new member is a type error
+ * here rather than a silent fall-through. `unknown` deliberately maps
+ * to NOTHING rather than a guess — the provider used a status we do not
+ * map, and inventing "Paid" over it is the one error that matters here.
+ */
+const STATUS_LABEL: Record<BillingInvoice['status'], string | null> = {
+  paid: 'Paid',
+  due: 'Due',
+  canceled: 'Canceled',
+  unknown: null,
+};
 
 export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const invoices = useInvoices({ enabled });
-  const document = useInvoiceDocument();
+  const mint = useInvoiceDocument();
 
   if (!enabled) return null;
 
@@ -92,20 +100,38 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       <Eyebrow>Invoices</Eyebrow>
 
       {data.invoices.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 13, color: color.fgSoft }}>
-          {partial
-            ? // NOT "no invoices": the one rail that could have had them
-              // is exactly the one we failed to read.
-              'We couldn’t reach your payment provider, so we can’t show your invoices right now.'
-            : 'No invoices yet. Your first one appears here once a payment has been collected.'}
-        </p>
+        // THREE distinct empty answers, never collapsed: a rail we could
+        // not ask (partial), rows that exist but none renderable
+        // (omitted — with wrong field names EVERY row drops, and calling
+        // that "no invoices yet" is the failed-read-as-empty defect,
+        // gate network 2026-08-16 CONFIRMED), and the genuine
+        // never-billed state (D212 EmptyState primitive).
+        partial ? (
+          <p style={{ margin: 0, fontSize: 13, color: color.fgSoft }}>
+            We couldn&rsquo;t reach your payment provider, so we can&rsquo;t show your invoices
+            right now.
+          </p>
+        ) : data.omittedRows > 0 ? (
+          <p role="status" style={{ margin: 0, fontSize: 13, color: color.amber }}>
+            Your invoices exist, but we couldn&rsquo;t display them. Email{' '}
+            <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+              support@declutrmail.com
+            </a>{' '}
+            and we&rsquo;ll send them to you directly.
+          </p>
+        ) : (
+          <EmptyState
+            title="No invoices yet"
+            description="Your first one appears here once a payment has been collected."
+          />
+        )
       ) : (
         <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 2 }}>
           {data.invoices.map((invoice) => {
             const amount = formatProviderAmount(invoice.amount, invoice.currencyCode);
             const date = formatBillingDate(invoice.issuedAt);
-            const label = statusLabel(invoice.status);
-            const busy = document.isPending && document.variables === invoice.id;
+            const label = STATUS_LABEL[invoice.status];
+            const busy = mint.isPending && mint.variables === invoice.id;
             return (
               <li
                 key={`${invoice.provider}:${invoice.id}`}
@@ -149,8 +175,8 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                   ) : invoice.documentAvailable ? (
                     <Button
                       tone="default"
-                      disabled={document.isPending}
-                      onClick={() => document.mutate(invoice.id)}
+                      disabled={mint.isPending}
+                      onClick={() => mint.mutate(invoice.id)}
                     >
                       {busy ? 'Preparing…' : 'Download'}
                     </Button>
@@ -174,19 +200,27 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         </p>
       ) : null}
 
+      {data.omittedRows > 0 && data.invoices.length > 0 ? (
+        <p role="status" style={{ margin: 0, fontSize: 12, color: color.amber }}>
+          {data.omittedRows === 1 ? 'One invoice' : `${data.omittedRows} invoices`} couldn&rsquo;t
+          be displayed. Email support@declutrmail.com if you need{' '}
+          {data.omittedRows === 1 ? 'it' : 'them'}.
+        </p>
+      ) : null}
+
       {data.truncated ? (
         <p style={{ margin: 0, fontSize: 12, color: color.fgMuted }}>
           Showing your most recent invoices. Email support@declutrmail.com if you need older ones.
         </p>
       ) : null}
 
-      {document.error ? (
+      {mint.error ? (
         <div
           role="alert"
           style={{
             fontSize: 12,
             color: color.red,
-            background: 'rgba(239,68,68,0.08)',
+            background: color.redBg,
             border: `1px solid ${color.red}`,
             borderRadius: 8,
             padding: '8px 10px',

@@ -166,6 +166,24 @@ export function BillingScreen({
     void track('page_viewed', { page: 'billing', mailbox_id: me.activeMailboxId });
   }, [me.activeMailboxId]);
 
+  // Freshness on RETURN from the Paddle portal. Leaving for the portal
+  // is a full navigation, so a pre-navigation invalidate can never
+  // refetch — and the one return path that does NOT reload this page is
+  // the back/forward cache, which restores the old JS heap wholesale.
+  // With refetchOnWindowFocus globally off (the 409-storm rule) and no
+  // poll on past_due, a bfcache restore would keep showing "your last
+  // payment didn't go through" after the card was fixed (gate network
+  // 2026-08-16, CONFIRMED). `pageshow` with `persisted` is exactly that
+  // path and nothing else — a normal load refetches on its own.
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      void queryClient.invalidateQueries({ queryKey: billingKeys.all });
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, [queryClient]);
+
   // Hydrate the lock from storage (reload / late mount) and follow
   // writes from OTHER tabs — localStorage fires `storage` there, so a
   // payment completed in tab A locks (and later unlocks) tab B live.
@@ -456,6 +474,16 @@ export function BillingScreen({
   // a granting status only (cancel_scheduled locks the picker anyway).
   const grantingBackingSub =
     plan.backing.state === 'active' || plan.backing.state === 'past_due' ? plan.backing.sub : null;
+  // The payment-method section's own gate — WIDER than the picker's.
+  // `cancel_scheduled` collapses a past_due row under it (the derive
+  // layer keys on cancelAtPeriodEnd first), but dunning continues until
+  // the period ends: that customer still needs the card affordance even
+  // though the picker rightly stays locked (gate network 2026-08-16).
+  const paymentMethodSub =
+    grantingBackingSub ??
+    (plan.backing.state === 'cancel_scheduled' && plan.backing.sub.status === 'past_due'
+      ? plan.backing.sub
+      : null);
   // The non-backing notice renders only in the settled plan state — a
   // pending money action's banner owns the screen's story until the
   // webhook resolves it, and billing-dark has no rows to describe.
@@ -573,10 +601,10 @@ export function BillingScreen({
           the picker. Withheld while a money action is unresolved — the
           portal can start a payment, and arming two money paths at once
           is the double-charge case this screen is built around. */}
-      {!billingDark && grantingBackingSub ? (
+      {!billingDark && paymentMethodSub ? (
         <PaymentMethodCard
-          provider={grantingBackingSub.provider}
-          isPastDue={plan.backing.state === 'past_due'}
+          provider={paymentMethodSub.provider}
+          isPastDue={paymentMethodSub.status === 'past_due'}
           disabled={pending !== null}
           disabledReason={
             pending !== null ? 'Available once the payment above finishes confirming.' : null

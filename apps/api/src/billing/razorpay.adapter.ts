@@ -529,7 +529,16 @@ export class RazorpayAdapter implements BillingProvider {
    * bound. A partial read is not a shorter answer, it is NO answer: the
    * page we did not fetch is exactly where a live chargeback would hide.
    */
-  private async listCollection<T>(path: string, label: string): Promise<T[] | null> {
+  private async listCollection<T>(
+    path: string,
+    label: string,
+    // Which subsystem a failure pages under. The default keeps every
+    // cancellation-facts caller (and its pinned log assertions) exactly
+    // as it was; the D119 invoice read passes 'api_read' so an invoice
+    // outage does not page as a cancellation-facts incident (the same
+    // misattribution the Paddle side fixed by renaming its helper).
+    subsystem: 'cancellation_facts' | 'api_read' = 'cancellation_facts',
+  ): Promise<T[] | null> {
     const auth = this.authHeader();
     const items: T[] = [];
     let skip = 0;
@@ -544,12 +553,12 @@ export class RazorpayAdapter implements BillingProvider {
         });
       } catch (err) {
         this.logger.error(
-          `razorpay.cancellation_facts.network_error ${label} err=${err instanceof Error ? err.message : String(err)}`,
+          `razorpay.${subsystem}.network_error ${label} err=${err instanceof Error ? err.message : String(err)}`,
         );
         return null;
       }
       if (!res.ok) {
-        this.logger.error(`razorpay.cancellation_facts.failed ${label} status=${res.status}`);
+        this.logger.error(`razorpay.${subsystem}.failed ${label} status=${res.status}`);
         return null;
       }
       let batch: unknown;
@@ -559,7 +568,7 @@ export class RazorpayAdapter implements BillingProvider {
         batch = undefined;
       }
       if (!Array.isArray(batch)) {
-        this.logger.error(`razorpay.cancellation_facts.malformed ${label}`);
+        this.logger.error(`razorpay.${subsystem}.malformed ${label}`);
         return null;
       }
       if (batch.length === 0) return items;
@@ -567,7 +576,7 @@ export class RazorpayAdapter implements BillingProvider {
       skip += batch.length;
     }
     this.logger.error(
-      `razorpay.cancellation_facts.page_cap ${label} pages=${LIST_MAX_PAGES} rows=${items.length} — listing exceeds the page bound; reported UNREAD, raise LIST_MAX_PAGES`,
+      `razorpay.${subsystem}.page_cap ${label} pages=${LIST_MAX_PAGES} rows=${items.length} — listing exceeds the page bound; reported UNREAD, raise LIST_MAX_PAGES`,
     );
     return null;
   }
@@ -1045,11 +1054,13 @@ export class RazorpayAdapter implements BillingProvider {
     const rows = await this.listCollection<RazorpayInvoice>(
       `/v1/invoices?subscription_id=${encodeURIComponent(providerSubscriptionId)}`,
       `invoices sub=${providerSubscriptionId}`,
+      'api_read',
     );
     if (rows === null) {
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     const invoices: ProviderInvoice[] = [];
+    let omitted = 0;
     for (const row of rows) {
       const status = row.status ?? '';
       if (!row.id || status === 'draft') continue;
@@ -1064,6 +1075,7 @@ export class RazorpayAdapter implements BillingProvider {
         this.logger.warn(
           `razorpay.invoices.row_incomplete sub=${providerSubscriptionId} invoice=${row.id} — dropped from the invoice list`,
         );
+        omitted += 1;
         continue;
       }
       invoices.push({
@@ -1085,7 +1097,7 @@ export class RazorpayAdapter implements BillingProvider {
     // `listCollection` walks every page and reports an unread listing as
     // null (including at the page cap), so a value that reaches here is
     // complete by construction.
-    return { invoices, truncated: false };
+    return { invoices, truncated: false, omitted };
   }
 
   /**

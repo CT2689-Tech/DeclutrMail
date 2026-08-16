@@ -49,10 +49,14 @@ export function PaymentMethodCard({
   const session = usePaymentMethodSession();
   // The resolved `unsupported` answer, kept so the refusal renders as a
   // fact rather than as an error. It is a 200: the rail cannot do this,
-  // which is not something a retry fixes.
-  const [unsupported, setUnsupported] = useState(false);
-  const isRazorpay = provider === 'razorpay';
-  const showSupportPath = isRazorpay || unsupported;
+  // which is not something a retry fixes. The REFUSING provider is kept
+  // with it — the India-mandate explanation is a claim about Razorpay,
+  // and rendering it over another rail's refusal would explain the
+  // refusal with a fact that isn't one (gate network 2026-08-16).
+  const [refusedBy, setRefusedBy] = useState<BillingProviderId | null>(null);
+  const supportProvider = provider === 'razorpay' ? 'razorpay' : refusedBy;
+  const showSupportPath = supportProvider !== null;
+  const mandateExplains = supportProvider === 'razorpay';
 
   return (
     <section
@@ -73,14 +77,27 @@ export function PaymentMethodCard({
 
       <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: color.fgSoft }}>
         {showSupportPath ? (
-          <>
-            Subscriptions billed in India are collected against an authorized mandate, so the card
-            can&rsquo;t be changed from here. Email{' '}
-            <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
-              support@declutrmail.com
-            </a>{' '}
-            and we&rsquo;ll send you a link to re-authorize it.
-          </>
+          mandateExplains ? (
+            <>
+              Subscriptions billed in India are collected against an authorized mandate, so the card
+              can&rsquo;t be changed from here. Email{' '}
+              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                support@declutrmail.com
+              </a>{' '}
+              and we&rsquo;ll send you a link to re-authorize it.
+            </>
+          ) : (
+            // A non-Razorpay rail answered `unsupported` — a state we
+            // don't expect, so no mechanism is claimed for it. Only the
+            // support path itself is asserted.
+            <>
+              Your payment method can&rsquo;t be changed from here right now. Email{' '}
+              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                support@declutrmail.com
+              </a>{' '}
+              and we&rsquo;ll sort it out with you.
+            </>
+          )
         ) : (
           <>
             Your card is held by Paddle, our payment provider — we never see or store it. Updating
@@ -111,7 +128,7 @@ export function PaymentMethodCard({
                     // needs local state — and reaching it here means the
                     // rail changed under us, so tell the truth rather
                     // than leaving a button that did nothing.
-                    if (result.kind === 'unsupported') setUnsupported(true);
+                    if (result.kind === 'unsupported') setRefusedBy(result.provider);
                   },
                 })
               }
@@ -128,7 +145,7 @@ export function PaymentMethodCard({
               style={{
                 fontSize: 12,
                 color: color.red,
-                background: 'rgba(239,68,68,0.08)',
+                background: color.redBg,
                 border: `1px solid ${color.red}`,
                 borderRadius: 8,
                 padding: '8px 10px',
