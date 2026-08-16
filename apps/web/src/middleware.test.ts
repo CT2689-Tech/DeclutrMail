@@ -55,10 +55,37 @@ describe('buildContentSecurityPolicy (D175)', () => {
     expect(directive(csp, 'object-src')).toBe(`object-src 'none'`);
     expect(directive(csp, 'font-src')).toBe(`font-src 'self'`);
     // googleusercontent per D175 + the avatar.tsx sender-logo chain
-    // (Clearbit → DuckDuckGo → Google S2), image-only origins.
+    // (Clearbit → DuckDuckGo → Google S2), image-only origins. The API
+    // origin rides here too — D254 serves brand logos from it.
     expect(directive(csp, 'img-src')).toBe(
+      `img-src 'self' data: https://api.declutrmail.com https://*.googleusercontent.com https://logo.clearbit.com https://icons.duckduckgo.com https://www.google.com`,
+    );
+  });
+
+  // D254 regression. The brand-logo endpoint is a first-party
+  // `${NEXT_PUBLIC_API_URL}/api/icons/:domain`, so the API origin must be
+  // allowed for IMAGES, not only for XHR. These are separate CSP grants
+  // and the bug shipped because only connect-src had it: locally the env
+  // var is empty, the URL collapses to same-origin, `'self'` covers it,
+  // and every local smoke passes while production refuses every logo.
+  it('allows the API origin as an IMAGE source, not just a connect source (D254)', () => {
+    const csp = buildContentSecurityPolicy(NONCE, PROD_ENV);
+
+    expect(directive(csp, 'img-src')).toContain('https://api.declutrmail.com');
+    expect(directive(csp, 'connect-src')).toContain('https://api.declutrmail.com');
+  });
+
+  // The same-origin collapse is exactly what hid the bug, so pin it:
+  // with no API URL configured the directive must not sprout an empty or
+  // malformed source — `'self'` is doing the work and that is correct.
+  it('omits the API origin from img-src when the API is same-origin (D254)', () => {
+    const csp = buildContentSecurityPolicy(NONCE, { ...PROD_ENV, apiUrl: undefined });
+    const imgSrc = directive(csp, 'img-src');
+
+    expect(imgSrc).toBe(
       `img-src 'self' data: https://*.googleusercontent.com https://logo.clearbit.com https://icons.duckduckgo.com https://www.google.com`,
     );
+    expect(imgSrc).not.toContain('  ');
   });
 
   it('allowlists the billing + telemetry vendors per D175', () => {

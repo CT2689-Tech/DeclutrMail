@@ -1067,6 +1067,17 @@ export class SendersReadService {
       -- Materialised once per request so the per-sender membership check
       -- below is an O(1) hash lookup, not an N×M scan.
       --
+      -- AS MATERIALIZED is LOAD-BEARING, not decoration. Since PG12 a
+      -- non-recursive CTE referenced ONCE is inlined, and this one is —
+      -- inside a per-row CASE — so the planner pushed a copy into every
+      -- branch: nine SubPlans, each a full seq scan of mail_messages
+      -- (measured 2026-08-15 at 204k messages — 189.7ms execution,
+      -- 60,945 shared buffers, against D150's <200ms p95 SLO). The
+      -- keyword forces the single evaluation this comment always
+      -- claimed: 63.1ms and 10,489 buffers. Removing it silently
+      -- restores the N-scan plan — EXPLAIN must show a "CTE replied"
+      -- node, never SubPlans.
+      --
       -- PRIVACY (D7/D228) — DO NOT project the email column to the wire.
       -- This set IS the user's personal outbound address book (a sensitive
       -- derived artifact) and is allowed only because the outer SELECT
@@ -1076,7 +1087,7 @@ export class SendersReadService {
       -- store only the BOOLEAN "did this sender appear in the replied set"
       -- predicate. A guard test on GET /api/senders/summary asserts no
       -- email-shaped string ever appears in the response body.
-      replied AS (
+      replied AS MATERIALIZED (
         SELECT DISTINCT lower(recip) AS email
         FROM ${mailMessages}, unnest(recipient_emails) AS recip
         WHERE mailbox_account_id = ${mailboxAccountId}

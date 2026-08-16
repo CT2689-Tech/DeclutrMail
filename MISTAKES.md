@@ -21,6 +21,14 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-15 — Brand logos are CSP-blocked in production, and only in production
+**PR:** #524 (D254 — "Serve brand logos from a first-party cache")
+**Caught by:** manual measurement — the 21 `/api/icons/*` requests present in a same-origin build vanished from a cross-origin one
+**What happened:** D254 moved sender logos to a first-party `${NEXT_PUBLIC_API_URL}/api/icons/:domain`. `NEXT_PUBLIC_API_URL` is EMPTY locally, so the URL is same-origin `/api/icons/…` and `img-src 'self'` allows it — every local smoke passes. In production the API is a different origin (Vercel → Cloud Run) and `middleware.ts` `img-src` lists `'self' data: https://*.googleusercontent.com https://logo.clearbit.com https://icons.duckduckgo.com https://www.google.com` — `apiOrigin` is threaded into `connect-src` but NOT `img-src`. Confirmed in a browser against the real production headers: `Refused to load the image 'https://api.declutrmail.com/api/icons/example.com' because it violates … "img-src 'self' …"`. The feature fails safe (the monogram underneath always renders), so it would have degraded silently — no error, no empty box, just no logos ever. The same directive still allows the three third-party hosts (clearbit / duckduckgo / google) that ADR-0024 and D254 removed; they are now dead allowances.
+**Correct approach:** any URL built from `NEXT_PUBLIC_API_URL` must be added to the CSP directive matching its FETCH TYPE, not just `connect-src` — an `<img>` needs `img-src`, and `apiOrigin` was already a variable in that file. Local same-origin collapse means a smoke on `localhost` cannot see this class of bug; it needs a build with `NEXT_PUBLIC_API_URL` set to a different origin.
+**Rule:** When a feature starts loading a subresource from the API origin, add `apiOrigin` to that subresource's CSP directive and prove it with a cross-origin build — `'self'` is a local-dev accident, not coverage.
+**Enforcement update:** none yet — CSP is a CLAUDE.md §9 stop condition, so this is reported for the founder rather than changed here. Candidate: extend the D175 CSP test to assert every directive that can carry an API-origin URL includes `apiOrigin`.
+
 ## 2026-08-13 — A cache widened the window on a read gating an irreversible write
 
 **PR:** [#519](https://github.com/CT2689-Tech/DeclutrMail/pull/519) (caught pre-merge)

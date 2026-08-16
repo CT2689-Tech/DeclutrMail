@@ -26,6 +26,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-08-15 — Decide the CSP `img-src` fix for D254 brand logos
+**Source:** session — page-load performance investigation, 2026-08-15
+**Why:** D254 (#524) serves sender logos from `${NEXT_PUBLIC_API_URL}/api/icons/:domain`. That is same-origin locally (the var is empty) and a DIFFERENT origin in production, where `middleware.ts` `img-src` does not list `apiOrigin` — so every brand logo is CSP-refused in production while working perfectly on your machine. Verified in a browser against the real production headers: `Refused to load the image 'https://api.declutrmail.com/api/icons/example.com' … "img-src 'self' …"`. It fails safe (the monogram still renders) so it would degrade silently. Not changed in this PR because CSP configuration is a CLAUDE.md §9 stop condition.
+**How:** the fix is to thread the existing `apiOrigin` variable into the `img-src` directive in `apps/web/src/middleware.ts`, exactly as `connect-src` already does. While there, decide whether to drop `https://logo.clearbit.com`, `https://icons.duckduckgo.com` and `https://www.google.com` from `img-src` — ADR-0024 and D254 removed that third-party chain, so those are now dead allowances widening the policy for nothing.
+**Verifies by:** build with `NEXT_PUBLIC_API_URL` set to a non-local origin, load an authed screen, and confirm the `/api/icons/*` requests fire with zero `Refused to load the image` console entries.
+**Status:** Open — **the `img-src` half is approved and implemented in #530** (founder call 2026-08-15), verified in a browser against the real production headers: `blocked/failed` → `loaded`. This item stays Open for the SECOND half only: whether to also drop the three dead third-party logo hosts. #530 deliberately left them alone as a separate decision. Move to Done once that is settled.
+
 ### 2026-08-14 — Look at the real Paddle checkout overlay once
 **Source:** founder relayed Paddle support reply (Barbara), 2026-08-14
 **Why:** the seller display name is updated in Account Settings — that half is

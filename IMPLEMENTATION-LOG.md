@@ -205,7 +205,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D147 | Cookie consent banner: **Minimal (essential always-on + optional analytics) | 🔵 | #282, #289, #320, #474 |  |  |
 | D148 | Localization: **English only + DPDP Act compliance clause | 🔵 | #291 |  |  |
 | D149 | Launch strategy: **Strategy A (full V2 as designed) at 25-35 hrs/week + heavy Phase 4 Claude OS investment | ⬜ |  |  |  |
-| D150 | Indexing strategy: **12 indexes at launch (9 composite + 1 trigram + 2 partial) | 🟢 | #13, #194 | packages/db/tests/migration-roundtrip.test.ts (3/3) |  |
+| D150 | Indexing strategy: **12 indexes at launch (9 composite + 1 trigram + 2 partial) | 🟢 | #13, #194, #529 | packages/db/tests/migration-roundtrip.test.ts (3/3) |  |
 | D151 | Partitioning: **Hybrid (hash mail_messages, range activity_log) | ⬜ |  |  |  |
 | D152 | Migration tooling: **Drizzle Kit + Atlas hybrid | 🟢 | #5 | atlas migrate status OK, 5 executed; drizzle-kit + atlas hybrid |  |
 | D153 | API style: **REST + Zod schemas + Swagger/OpenAPI auto-gen | ⬜ |  |  |  |
@@ -215,7 +215,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425, #496, #506, #508 |  |  |
 | D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473, #474, #502, #498 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
-| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526 | gh run 26327595271 ci.yml green on main |  |
+| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526, #529 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
@@ -299,6 +299,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D251 | Autopilot splits on behaviour, not access | 🔵 | #465 |  |  |
 | D252 | Unsubscribe degrades honestly | 🔵 | #514 |  |  |
 | D253 | A refunded customer can buy again | 🔵 | #518, #519, #520 |  |  |
-| D254 | Brand logos on sender avatars | 🔵 | #524 |  |  |
+| D254 | Brand logos on sender avatars | 🔵 | #524, #530 |  |  |
 
 <!-- AUTO:DECISIONS:END -->
