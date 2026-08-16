@@ -1,9 +1,45 @@
-import { Controller, Get, Header, Inject, Param, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Inject, Param, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { IconsService } from './icons.service.js';
+
+/**
+ * A resolved mark is stable, so revalidate daily rather than pinning
+ * `immutable` — a rebrand lands within a day and the strong ETag makes
+ * the revalidation a 304.
+ */
+export const HIT_CACHE_CONTROL = 'private, max-age=86400, stale-while-revalidate=604800';
+
+/**
+ * A MISS IS PROVISIONAL AND MUST NOT CARRY THE HIT'S LIFETIME.
+ *
+ * This route answers 204 for every domain it has never seen, because
+ * the lookup only ENQUEUES resolution — the mark lands in the cache
+ * seconds later, from the worker. Sending the hit's `max-age=86400,
+ * stale-while-revalidate=604800` with that 204 meant the browser
+ * committed to "this sender has no logo" for a day, and kept serving
+ * it stale for a week after. Since every domain starts as a miss, the
+ * first ever page view poisoned the cache for every sender at once,
+ * and no amount of successful resolution afterwards could show a
+ * single logo. That is what "the icons are still failing" looked like
+ * from the outside (incident 2026-08-16 — see MISTAKES.md).
+ *
+ * It also produced the misleading evidence: `stale-while-revalidate`
+ * makes Chromium fire a background revalidation that DevTools reports
+ * with no initiator, type `Other`, 0 B, and — when the page navigates
+ * before it lands — `(failed) net::ERR_ABORTED`. A wall of those reads
+ * exactly like a broken endpoint. It was the caching directive.
+ *
+ * 60s instead: long enough to collapse the fan-out of one browsing
+ * session (a Senders page draws ~50 avatars, and re-renders and
+ * back/forward within the minute cost nothing), short enough that the
+ * next visit picks up whatever the worker resolved in the meantime.
+ * No `stale-while-revalidate` — a provisional answer should be asked
+ * again, not served stale in the background.
+ */
+export const MISS_CACHE_CONTROL = 'private, max-age=60';
 
 /**
  * Brand icon route (ADR-0034).
@@ -62,9 +98,6 @@ export class IconsController {
   // our own Postgres, and the response is browser-cached for a day, so
   // repeat views cost nothing. Still a hard wall for a scraper.
   @RateLimit({ bucket: 'triage-load', limit: 600, windowSec: 60 })
-  // Revalidate daily rather than pinning `immutable`: a rebrand should
-  // land within a day, and the ETag makes the revalidation free.
-  @Header('Cache-Control', 'private, max-age=86400, stale-while-revalidate=604800')
   async icon(
     @Param('domain') domain: string,
     @Req() req: Request,
@@ -73,9 +106,14 @@ export class IconsController {
     const result = await this.icons.lookup(domain);
 
     if (result.kind === 'miss') {
+      res.setHeader('Cache-Control', MISS_CACHE_CONTROL);
       res.status(204).end();
       return;
     }
+
+    // Set before the 304 too, so a revalidation restarts the freshness
+    // window rather than leaving the entry stale on every later view.
+    res.setHeader('Cache-Control', HIT_CACHE_CONTROL);
 
     if (req.headers['if-none-match'] === result.etag) {
       res.status(304).end();
