@@ -51,46 +51,46 @@ const nextDir = path.join(repoRoot, 'apps/web/.next');
  * Budget for any public route without an override, in gzipped kB.
  *
  * Baseline as of the `optimizePackageImports` change: the long tail of
- * content pages sits at 108.4-108.7 kB, the two ProductStory pages and
- * /sign-in at 113.7.
+ * content pages sits at 108.3-108.8 kB, the two ProductStory pages and
+ * /sign-in at 113.6-113.9.
  */
-const DEFAULT_KB = 120;
+const DEFAULT_KB = 115;
 
 /**
  * Budget for an authed `(app)` route without an override.
  *
- * Set at 195 because the mid-weight cluster — settings, brief, activity,
- * autopilot, billing, screener — sits at 188.0-192.4 kB and shares
+ * Set at 180 because the mid-weight cluster — settings, brief, activity,
+ * autopilot, billing, screener — sits at 170.5-175.4 kB and shares
  * essentially one chunk graph. A NEW authed screen landing under this
  * is normal; landing over it means it pulled in something the others do
  * not, which is exactly the moment worth a second look.
  */
-const AUTHED_DEFAULT_KB = 195;
+const AUTHED_DEFAULT_KB = 180;
 
 /**
  * Routes that legitimately carry more, keyed by manifest page key.
- * Measured 2026-08-15; comments carry the observed value so drift is
+ * Measured 2026-08-16; comments carry the observed value so drift is
  * visible in the diff when someone edits a number.
  */
 const OVERRIDES_KB = {
-  '/(marketing)/page': 125, // 117.2 — hero + ledger demo + FAQ
-  '/(marketing)/pricing/page': 130, // 121.5 — cycle toggle, tier cards, compare table
-  '/(marketing)/inbox-simulator/page': 190, // 181.8 — the only real interactive surface
+  '/(marketing)/page': 120, // 116.9 — hero + ledger demo + FAQ
+  '/(marketing)/pricing/page': 125, // 121.2 — cycle toggle, tier cards, compare table
+  '/(marketing)/inbox-simulator/page': 170, // 169.8 — the only real interactive surface
 
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
-  '/(app)/senders/page': 225, // 221.5 — grid + table + compose strip + saved views
-  '/(app)/triage/page': 215, // 211.3 — action sheet, preview, undo tray
-  '/(app)/senders/[id]/page': 210, // 207.8 — detail: timeseries + history + messages
+  '/(app)/senders/page': 210, // 206.5 — grid + table + compose strip + saved views
+  '/(app)/triage/page': 200, // 195.9 — action sheet, preview, undo tray
+  '/(app)/senders/[id]/page': 195, // 191.3 — detail: timeseries + history + messages
 
   // Below the authed default, pinned tighter than it so they cannot
   // silently drift up into the cluster.
-  '/(app)/settings/senders/page': 180, // 179.6
-  '/(app)/quiet/page': 175, // 174.6
-  '/(app)/settings/privacy/page': 175, // 173.4
-  '/(app)/later/page': 145, // 144.0
-  '/(app)/followups/page': 145, // 141.0
+  '/(app)/settings/privacy/page': 165, // 162.5
+  '/(app)/settings/senders/page': 165, // 161.4
+  '/(app)/quiet/page': 160, // 158.9
+  '/(app)/later/page': 145, // 141.9
+  '/(app)/followups/page': 145, // 141.9
   '/(app)/admin/security/page': 125, // 120.4
   '/(app)/settings/help/page': 115, // 112.2
 };
