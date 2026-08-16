@@ -1,4 +1,4 @@
-import { CanActivate } from '@nestjs/common';
+import { CanActivate, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -167,6 +167,63 @@ describe('IconsController', () => {
     // Normalization is the service's job (one brand root ⇒ one cache
     // key); the controller must not pre-chew it into something else.
     expect(seen).toEqual(['mail1.brand.example']);
+  });
+
+  it('answers a REJECTED request with a status and no body', async () => {
+    const denyGuard: CanActivate = {
+      canActivate: () => {
+        throw new UnauthorizedException('Missing session.');
+      },
+    };
+    const moduleRef = await Test.createTestingModule({
+      controllers: [IconsController],
+      providers: [{ provide: IconsService, useValue: { lookup: async () => ({ kind: 'miss' }) } }],
+    })
+      .overrideGuard(JwtGuard)
+      .useValue(denyGuard)
+      .compile();
+    app = moduleRef.createNestApplication();
+    await app.listen(0, '127.0.0.1');
+
+    const res = await fetch(`${await app.getUrl()}/icons/chase.com`);
+
+    // The status must be READABLE. A JSON error body here is dropped by
+    // Chromium's ORB before the status reaches the page — the caller is
+    // a cross-origin no-cors image and we send nosniff — so DevTools
+    // showed `(failed) net::ERR_BLOCKED_BY_ORB` with no status at all,
+    // for three rounds of debugging (incident 2026-08-16).
+    expect(res.status).toBe(401);
+    expect(res.headers.get('content-type') ?? '').not.toContain('application/json');
+    expect((await res.text()).length).toBe(0);
+  });
+
+  it('answers an unexpected FAILURE with a status and no body', async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [IconsController],
+      providers: [
+        {
+          provide: IconsService,
+          useValue: {
+            lookup: async () => {
+              throw new Error('db down');
+            },
+          },
+        },
+      ],
+    })
+      .overrideGuard(JwtGuard)
+      .useValue(passGuard)
+      .compile();
+    app = moduleRef.createNestApplication();
+    await app.listen(0, '127.0.0.1');
+
+    const res = await fetch(`${await app.getUrl()}/icons/chase.com`);
+
+    // Same rule for a 500: an image cannot read an envelope, and a body
+    // it cannot read is worse than none — it hides the status.
+    expect(res.status).toBe(500);
+    expect(res.headers.get('content-type') ?? '').not.toContain('application/json');
+    expect((await res.text()).length).toBe(0);
   });
 
   it('is guarded by JwtGuard', async () => {
