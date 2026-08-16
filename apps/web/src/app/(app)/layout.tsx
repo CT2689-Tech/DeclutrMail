@@ -32,13 +32,48 @@ import { COUNTRY_HEADER } from '@/middleware';
 
 import { AppChromeLayout } from './app-chrome-layout';
 
+/**
+ * Origin of the API, when it is a DIFFERENT one from the web app
+ * (production: Vercel → Cloud Run). `null` same-origin, which is local
+ * dev and needs no warm-up.
+ */
+function crossOriginApi(): string | null {
+  const configured = process.env.NEXT_PUBLIC_API_URL;
+  if (!configured) return null;
+  try {
+    return new URL(configured).origin;
+  } catch {
+    return null;
+  }
+}
+
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const requestHeaders = await headers();
   const nonce = requestHeaders.get('x-nonce') ?? undefined;
   const regionProvider = defaultProviderForCountry(requestHeaders.get(COUNTRY_HEADER));
+  const apiOrigin = crossOriginApi();
 
   return (
     <>
+      {/* Warm DNS + TCP + TLS to the API before any of it is needed.
+          EVERY authed screen blocks on `GET /api/auth/me` (AuthProvider
+          renders the skeleton until it lands), and that request cannot
+          even be issued until ~270ms of JS has downloaded, parsed and
+          hydrated — measured on the production build, 2026-08-15. On a
+          cross-origin API that first request then pays a full connection
+          setup on top. Doing it here spends that handshake against the
+          hydration window instead of after it.
+
+          `preconnect` and NOT `preload`: a preload would have to match
+          the eventual fetch's credentials mode and headers exactly or
+          the browser issues a SECOND request. Warming the connection has
+          no such matching rule, so it cannot double-fetch. */}
+      {apiOrigin !== null && (
+        <>
+          <link rel="preconnect" href={apiOrigin} crossOrigin="use-credentials" />
+          <link rel="dns-prefetch" href={apiOrigin} />
+        </>
+      )}
       <ThemeScript nonce={nonce} />
       <BillingCurrencyProvider provider={regionProvider}>
         <AppChromeLayout>{children}</AppChromeLayout>

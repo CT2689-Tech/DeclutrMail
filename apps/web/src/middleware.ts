@@ -176,7 +176,19 @@ export function buildContentSecurityPolicy(nonce: string | null, env: CspEnv): s
     `style-src 'self' 'unsafe-inline'`,
     // googleusercontent per D175; the last three are the sender-logo
     // chain in packages/shared avatar.tsx (see header comment).
-    `img-src 'self' data: https://*.googleusercontent.com https://logo.clearbit.com https://icons.duckduckgo.com https://www.google.com`,
+    //
+    // apiOrigin is here for the SAME reason it is in connect-src, and it
+    // is a SEPARATE grant: CSP allowlists per fetch type, so permitting
+    // the API for XHR says nothing about permitting it for <img>. D254
+    // moved sender logos to a first-party `${NEXT_PUBLIC_API_URL}/api/
+    // icons/:domain`, and that variable is EMPTY in local dev — the URL
+    // collapses to same-origin, 'self' covers it, and every local smoke
+    // passes. In production the API is a different origin and the
+    // browser refused every logo. The failure is invisible from the
+    // outside (Avatar always renders its monogram underneath), so
+    // nothing surfaced it. Any future subresource loaded from the API
+    // needs its own directive entry too.
+    `img-src ${sources(`'self'`, 'data:', apiOrigin, 'https://*.googleusercontent.com', 'https://logo.clearbit.com', 'https://icons.duckduckgo.com', 'https://www.google.com')}`,
     `font-src 'self'`,
     `connect-src ${sources(
       `'self'`,
