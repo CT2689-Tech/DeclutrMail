@@ -36,25 +36,41 @@ actually change Gmail, and the UI may have shown it as pending/failed.
 Dev showed `DeadLetterWorker … alerted:0`, so the prod alert may not have
 fired either — worth confirming why.
 **How:** After merging the fix PR and deploying: (1) in prod SQL, list ONLY
-this outage's class — the lock failure records `error_code='PostgresError'`.
-Do NOT widen this to all failed rows: failures from other causes carry
-other codes (ValidationError, UNSUB_DNS_FAILURE, …), and a failed `delete`
-from some unrelated cause is irreversible and must not ride a blanket
-retry list.
+this outage's signature. The lock failure throws BEFORE anything touches
+Gmail, so its rows carry `error_code='PostgresError'` AND
+`affected_count = 0` AND no undo token — all three together are the "failed
+pre-execution" proof that makes a row safe to reason about.
+`error_code` alone is NOT enough (it names the error class, and some other
+Postgres failure mid-execution would share it), and do NOT widen to all
+failed rows: other causes carry other codes (ValidationError,
+UNSUB_DNS_FAILURE, …), and a failed `delete` from an unrelated cause is
+irreversible and must not ride a retry list.
 
 ```sql
 SELECT id, verb, direction, requested_count, created_at
 FROM action_jobs
 WHERE status = 'failed'
   AND error_code = 'PostgresError'
+  AND affected_count = 0
+  AND undo_token IS NULL
   AND created_at >= '2026-08-12'
   AND created_at < '<timestamp of the fix deploy>'
-ORDER BY created_at;
+ORDER BY direction, created_at;
 ```
 
-(2) decide per row: re-issue the intent from the UI — which re-runs the
-D226 preview against current mail, never the stale selection — or leave
-it; there is no auto-replay for destructive actions by design (D233);
+(2) disposition rows BY DIRECTION — the two paths are opposites:
+  - `direction='forward'`: nothing executed (that is what the signature
+    proves), so re-issuing the intent from the UI is safe — it re-runs
+    the D226 preview against current mail, never the stale selection —
+    or leave it; there is no auto-replay for destructive actions by
+    design (D233).
+  - `direction='reverse'`: this is a FAILED UNDO — the forward already
+    ran. Do NOT re-issue the original intent (that would double-apply).
+    Retry the undo from Activity if its window is still open; if the
+    window has lapsed, treat it as manual recovery and decide by hand.
+  - Any failed row NOT matching the full signature is out of scope for
+    this list — investigate it on its own cause, never batch-retry it.
+
 (3) check whether the dead-letter alert fired for these and, if not, why.
 **Verifies by:** a fresh archive in prod completes (`action_jobs.status='done'`
 with `affected_count > 0`) and the failed-rows list is dispositioned.
