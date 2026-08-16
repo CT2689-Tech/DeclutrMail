@@ -81,7 +81,7 @@ const OVERRIDES_KB = {
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
   '/(app)/senders/page': 205, // 200.0 — grid + table + compose strip + saved views
-  '/(app)/triage/page': 200, // 195.9 — action sheet, preview, undo tray
+  '/(app)/triage/page': 195, // 192.3 — action sheet, preview, undo tray
   '/(app)/senders/[id]/page': 185, // 184.1 — detail: timeseries + history + messages
 
   // Below the authed default, pinned tighter than it so they cannot
