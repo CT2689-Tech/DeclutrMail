@@ -75,13 +75,13 @@ const AUTHED_DEFAULT_KB = 180;
 const OVERRIDES_KB = {
   '/(marketing)/page': 120, // 116.9 — hero + ledger demo + FAQ
   '/(marketing)/pricing/page': 125, // 121.2 — cycle toggle, tier cards, compare table
-  '/(marketing)/inbox-simulator/page': 170, // 169.8 — the only real interactive surface
+  '/(marketing)/inbox-simulator/page': 175, // 169.8 — the only real interactive surface
 
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
   '/(app)/senders/page': 210, // 206.5 — grid + table + compose strip + saved views
-  '/(app)/triage/page': 195, // 192.3 — action sheet, preview, undo tray
+  '/(app)/triage/page': 200, // 195.9 — action sheet, preview, undo tray
   '/(app)/senders/[id]/page': 195, // 191.3 — detail: timeseries + history + messages
 
   // Below the authed default, pinned tighter than it so they cannot

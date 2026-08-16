@@ -36,9 +36,9 @@ import {
 
 import { useKeepIntent } from './api/use-triage-actions';
 import { invalidateAfterDecision } from './api/invalidate';
-import { ActionSheet, BatchActionSheet, TriageKeyboardHelp } from './overlays.lazy';
-import type { ConfirmDetails } from './action-sheet';
+import { ActionSheet, type ConfirmDetails } from './action-sheet';
 import type { PreviewCount } from './action-preview';
+import { BatchActionSheet } from './batch-action-sheet';
 import {
   TRIAGE_QUEUE,
   TRIAGE_SESSION_STATS,
@@ -49,6 +49,7 @@ import { findVerdictBatch, type DomainBatch } from './domain-batch';
 import { VerdictBatchBanner } from './verdict-batch-banner';
 import type { BatchVerb } from './domain-batch-card';
 import { TriageEmptyState } from './empty-state';
+import { TriageKeyboardHelp } from './keyboard-help';
 import { SessionProgress } from './session-progress';
 import { useTriageStore, type RememberableVerb, type SheetableVerb } from './store';
 import { TodayStrip } from './today-strip';
