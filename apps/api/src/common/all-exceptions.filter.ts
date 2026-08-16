@@ -160,6 +160,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
 
     const error: ApiError = { ...rest, correlationId, traceId, displayId };
+    this.respond(res, status, error);
+  }
+
+  /**
+   * Write the failure. Split out so a route that is EXEMPT from the
+   * D202 envelope can answer failures in its own shape without losing
+   * the logging, classification and Sentry capture above — those are
+   * the same for every route and must not be forked to change a body.
+   *
+   * See `icons/icon-error.filter.ts` for the one such route today.
+   */
+  protected respond(res: Response, status: number, error: ApiError): void {
     res.status(status).json({ error });
   }
 
