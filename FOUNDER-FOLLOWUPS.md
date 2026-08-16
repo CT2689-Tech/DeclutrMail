@@ -1783,11 +1783,30 @@ log is derived and current" green.
 ran and passed on `71690e8`, including "Implementation log is derived
 and current", which confirms the hand-written D160 row was right.
 
-So the trigger is not dead, and no `gh workflow run` is needed. What the
-two dead pushes have in common is that each carried ONLY markdown; the
-push that dispatched also carried code. That is a correlation across
-three data points, not a mechanism — worth remembering if a docs-only
-push on another PR goes unbuilt, not worth acting on yet.
+So the trigger is not dead, and no `gh workflow run` is needed.
+
+**Correction, same day.** I first wrote here that the two dead pushes
+had "only markdown" in common. A fourth data point killed that:
+`4a245f2` is markdown-only and dispatched a full 20-check run. Recording
+the retraction rather than quietly deleting it, because the wrong reason
+was in this file for about twenty minutes and someone could have read it.
+
+What fits all four points is the PR's MERGEABILITY, not its contents:
+
+| push | PR state at the time | dispatched? |
+|---|---|---|
+| `654f4db` (opened) | clean | yes |
+| `55f75dc` | dirty — #535 had just landed on main | no |
+| `5845cab` | dirty | no |
+| `71690e8` (the merge that resolved it) | dirty → clean | yes |
+| `4a245f2` | clean | yes |
+
+A `pull_request` event carries the merge ref, and while the PR conflicts
+GitHub cannot compute one — a plausible mechanism for the event never
+being delivered. **Unconfirmed:** it is one hypothesis consistent with
+five observations, not something I tested. The actionable half needs no
+mechanism: if pushes to a PR stop producing CI runs, check
+`mergeable_state` before reaching for `workflow_dispatch`.
 
 One correction to the "How" above: #534 removed `ready_for_review` from
 `ci.yml`'s trigger types, so on main's version the un-draft toggle no
