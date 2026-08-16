@@ -2,10 +2,12 @@ name: Migration lint (Atlas)
 
 on:
   # No `branches:` filter — see the note in ci.yml. `edited` is omitted
-  # so a title/body tweak does not re-lint. Retarget by hand:
+  # so a title/body tweak does not re-lint, and `ready_for_review` for
+  # the same reason (un-drafting yields no new SHA; nothing here skips
+  # drafts). Retarget by hand:
   # `gh workflow run migration-lint.yml --ref <branch>`.
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]
     paths:
       - 'packages/db/migrations/**'
       - 'packages/db/src/schema/**'
