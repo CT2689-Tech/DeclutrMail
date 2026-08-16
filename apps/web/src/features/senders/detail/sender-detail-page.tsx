@@ -14,7 +14,8 @@ import {
 } from '@declutrmail/shared';
 import { buildActionReceiptResult, getActionSemantics } from '@declutrmail/shared/actions';
 import { type ActionRequest, type ActionVerb, type Sender } from '../data';
-import { ConfirmActionModal, type ConfirmOptions } from '../confirm-action-modal';
+import { ConfirmActionModal } from '../confirm-action-modal.lazy';
+import type { ConfirmOptions } from '../confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from '../receipt-strip';
 import { RecommendationBanner } from './recommendation-banner';
 import { ActionToolbar } from './action-toolbar';
