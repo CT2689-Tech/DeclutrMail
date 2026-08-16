@@ -2844,7 +2844,14 @@ describe('BillingScreen — one billing story (A6)', () => {
     renderScreen();
 
     const notice = await screen.findByTestId('non-backing-subscription-notice');
-    expect(notice).toHaveTextContent('Payment past due — update your payment method');
+    // D119/ADR-0035: this row is NOT the one granting the plan, so its
+    // dunning line routes to support rather than to the payment-method
+    // section — that section acts on the granting subscription, and
+    // sending the customer there could update the wrong card. The old
+    // copy ("update your payment method with the provider") named no
+    // destination at all.
+    expect(notice).toHaveTextContent('Payment past due on this subscription');
+    expect(notice).toHaveTextContent('support@declutrmail.com');
     expect(notice).toHaveTextContent('Your account is on Pro');
     // The mismatch row never puts its price on the card…
     const card = screen.getByTestId('current-plan-card');

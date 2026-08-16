@@ -46,6 +46,8 @@ import {
   type NonBackingRecord,
 } from './billing-model';
 import { CancelModal } from './cancel-modal';
+import { InvoiceHistory } from './invoice-history';
+import { PaymentMethodCard } from './payment-method-card';
 import { usePauseSubscription } from './api/use-pause-subscription';
 import { useResumeCancellation } from './api/use-resume-cancellation';
 import { useResumeSubscription } from './api/use-resume-subscription';
@@ -113,8 +115,11 @@ function processingPhaseAt(pending: PendingCheckout, now: number): ProcessingPha
  * screen polls the subscription read until the WEBHOOK flips the tier,
  * and never claims the new plan before the server does.
  *
- * No payment-method / invoice sections at beta: the BE exposes no
- * portal or invoice surface yet (D119's full layout lands with it).
+ * Payment method + invoices (D119/ADR-0035) render from PROVIDER-owned
+ * artifacts — we hold no card data and generate no invoice document.
+ * The two sections are asymmetric on purpose: Paddle is the merchant of
+ * record and has a hosted form and a signed PDF, Razorpay has neither
+ * and says so.
  */
 export function BillingScreen({
   initialIntent = null,
@@ -455,6 +460,10 @@ export function BillingScreen({
   // pending money action's banner owns the screen's story until the
   // webhook resolves it, and billing-dark has no rows to describe.
   const nonBacking = view.kind === 'plan' ? plan.nonBacking : null;
+  // Has this workspace ever had a subscription of any kind? An
+  // EXISTENCE question, not a plan fact, so it may read both arms of
+  // the derived view: a cancelled row still owes its owner receipts.
+  const hasBillingHistory = plan.backing.state !== 'none' || plan.nonBacking !== null;
 
   return (
     <div
@@ -556,6 +565,25 @@ export function BillingScreen({
         }
       />
 
+      {/* D119/ADR-0035. Tied to the GRANTING record: the instrument
+          that matters is the one funding the current plan, and a
+          cancelled row's card is not something to send anyone to
+          update. On past_due this is the screen's primary action, which
+          is why it sits directly under the plan card rather than below
+          the picker. Withheld while a money action is unresolved — the
+          portal can start a payment, and arming two money paths at once
+          is the double-charge case this screen is built around. */}
+      {!billingDark && grantingBackingSub ? (
+        <PaymentMethodCard
+          provider={grantingBackingSub.provider}
+          isPastDue={plan.backing.state === 'past_due'}
+          disabled={pending !== null}
+          disabledReason={
+            pending !== null ? 'Available once the payment above finishes confirming.' : null
+          }
+        />
+      ) : null}
+
       {plan.scheduledChange && backingSub ? (
         <ScheduledPlanChangeNotice
           currentTier={backingSub.tier}
@@ -632,6 +660,13 @@ export function BillingScreen({
           startPending('change_unconfirmed', target, cycle, attemptId)
         }
       />
+
+      {/* Renders for anyone who has EVER paid, including a workspace
+          now back on Free: the tax need outlives the subscription, and
+          fetching last year's receipts is the commonest reason to open
+          this page after leaving. Billing-dark carries no rows to read
+          and never fetches. */}
+      <InvoiceHistory enabled={!billingDark && hasBillingHistory} />
 
       <CancelModal
         open={cancelOpen}
@@ -1494,8 +1529,20 @@ function NonBackingSubscriptionNotice({
         )}
       </span>
       {mismatch && sub.status === 'past_due' ? (
+        // Deliberately NOT pointed at the payment-method section above.
+        // That section acts on the GRANTING subscription, and this row
+        // is by definition not it — sending the customer there could
+        // have them update the card on a different subscription than
+        // the one that is failing. The old copy ("update your payment
+        // method with the provider") named no destination at all; this
+        // names the only one that is certainly correct (ADR-0035).
         <p style={{ margin: 0, fontSize: 12.5, color: color.amber }}>
-          Payment past due — update your payment method with the provider to keep it.
+          Payment past due on this subscription. It isn&rsquo;t the one granting your current plan,
+          so email{' '}
+          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+            support@declutrmail.com
+          </a>{' '}
+          and we&rsquo;ll sort out which one you want to keep.
         </p>
       ) : null}
       {isPaused && !canSelfServeResume ? (

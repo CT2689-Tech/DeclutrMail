@@ -440,9 +440,13 @@ export function backingStatusNote(
     };
   }
   if (backing.state === 'past_due') {
+    // Names the affordance that is now ON THIS SCREEN. The previous
+    // wording — "update your payment method with the provider" — sent
+    // the customer to a provider they had no link to, on the one status
+    // where not acting ends the plan (ADR-0035).
     return {
       tone: 'warn',
-      text: 'Payment past due — update your payment method with the provider to keep your plan.',
+      text: 'Payment past due — update your payment method below to keep your plan.',
     };
   }
   return null;
