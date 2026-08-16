@@ -18,11 +18,11 @@ header comment states (`billing-screen.tsx:116`):
 
 D119's specced layout (`Implementation-Plan.md:3038`) drew a `Payment method`
 block and an `Invoices` block. Neither shipped. The 2026-07-27 Resend spec
-deferred them explicitly: *"D119 portal / invoice surface — adjacent to pause,
-own scope."* This document is that scope.
+deferred them explicitly: _"D119 portal / invoice surface — adjacent to pause,
+own scope."_ This document is that scope.
 
 **Two live dead ends** motivate PR A above everything else. A `past_due`
-customer is told to *"update your payment method with the provider"* and given
+customer is told to _"update your payment method with the provider"_ and given
 no link — at `billing-model.ts:442` and again at `billing-screen.tsx:1496`.
 That is the one status where not acting ends the subscription.
 
@@ -45,17 +45,17 @@ D-candidates marked ⚠️ need founder ratification into the plan before their 
 opens (CLAUDE.md §11 — a D-number is something you ask "is it built yet?"
 about).
 
-| PR | Ships | Closes | Depends on |
-| --- | --- | --- | --- |
-| **A** | Payment method + invoice history; both `past_due` dead ends fixed; ADR-0035 | D119 | — |
-| **B** | Exact next charge: amount, tax, instrument, date | ⚠️ D255 | A |
-| **C** | Card-expiry pre-emption (screen + 14-day email) | ⚠️ D256 | A |
-| **D** | Dunning as a designed state — retry schedule, grace window | ⚠️ D257 | A, C |
-| **E** | Proration shown inline on the picker, before the click | D120 | B |
-| **F** | Billing-period value receipt; founding-member counterfactual; inverted quota | ⚠️ D258 | — |
-| **G** | Reason-matched save offers (existing prices only) | ⚠️ D259 | — |
-| **H** | Cancellation receipt + data continuity | D118 | G |
-| **I** | Craft pass: year archive, currency statement, print stylesheet, keyboard, one-page IA | D119 | A, B, F |
+| PR    | Ships                                                                                 | Closes  | Depends on |
+| ----- | ------------------------------------------------------------------------------------- | ------- | ---------- |
+| **A** | Payment method + invoice history; both `past_due` dead ends fixed; ADR-0035           | D119    | —          |
+| **B** | Exact next charge: amount, tax, instrument, date                                      | ⚠️ D255 | A          |
+| **C** | Card-expiry pre-emption (screen + 14-day email)                                       | ⚠️ D256 | A          |
+| **D** | Dunning as a designed state — retry schedule, grace window                            | ⚠️ D257 | A, C       |
+| **E** | Proration shown inline on the picker, before the click                                | D120    | B          |
+| **F** | Billing-period value receipt; founding-member counterfactual; inverted quota          | ⚠️ D258 | —          |
+| **G** | Reason-matched save offers (existing prices only)                                     | ⚠️ D259 | —          |
+| **H** | Cancellation receipt + data continuity                                                | D118    | G          |
+| **I** | Craft pass: year archive, currency statement, print stylesheet, keyboard, one-page IA | D119    | A, B, F    |
 
 **Held, not scheduled — self-serve refund inside the 30-day window.** It sits
 in section 3 and the founder selected that section, but it is the only
@@ -114,22 +114,22 @@ further down.
 
 ### State table (CLAUDE.md §8 — written first, carried into the PR body)
 
-| State / transition | UI shows | Cache effect | Tested? |
-| --- | --- | --- | --- |
-| Never subscribed (free, no record) | No invoice section at all | — | unit |
-| **Free but previously paid** | Invoices still reachable — the tax need outlives the subscription | — | unit |
-| Active, first period, not yet billed | Invoice section with an empty state, not an error | — | unit |
-| Active, ≥1 invoice | List + per-row document link | no `staleTime` on document URLs | unit + story |
-| `past_due` (Paddle) | Payment-method update as primary CTA | invalidate on return | unit + story |
-| `past_due` (Razorpay) | Support-assisted copy, no dead button | — | unit + story |
-| `paused` | Invoices visible; payment method visible | — | unit |
-| `cancel_scheduled` | Both visible through period end | — | unit |
-| Canceled after refund / chargeback | Invoices visible (the charge happened); no payment-method CTA | — | unit |
-| Billing dark (503) | Neither section renders | — | unit |
-| Provider unreachable | Real error state with retry — never an empty list reading as "no invoices" | no negative caching | unit + story |
-| Workspace with both provider rows | Union of both, each row labelled by provider | — | unit |
-| Checkout pending in flight | Payment-method session withheld; the portal can initiate a payment and the double-charge lock exists for exactly that | — | unit |
-| Document URL expired mid-session | Re-mint on click, never a 403 surfaced raw | never cached | unit |
+| State / transition                   | UI shows                                                                                                              | Cache effect                    | Tested?      |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ------------ |
+| Never subscribed (free, no record)   | No invoice section at all                                                                                             | —                               | unit         |
+| **Free but previously paid**         | Invoices still reachable — the tax need outlives the subscription                                                     | —                               | unit         |
+| Active, first period, not yet billed | Invoice section with an empty state, not an error                                                                     | —                               | unit         |
+| Active, ≥1 invoice                   | List + per-row document link                                                                                          | no `staleTime` on document URLs | unit + story |
+| `past_due` (Paddle)                  | Payment-method update as primary CTA                                                                                  | invalidate on return            | unit + story |
+| `past_due` (Razorpay)                | Support-assisted copy, no dead button                                                                                 | —                               | unit + story |
+| `paused`                             | Invoices visible; payment method visible                                                                              | —                               | unit         |
+| `cancel_scheduled`                   | Both visible through period end                                                                                       | —                               | unit         |
+| Canceled after refund / chargeback   | Invoices visible (the charge happened); no payment-method CTA                                                         | —                               | unit         |
+| Billing dark (503)                   | Neither section renders                                                                                               | —                               | unit         |
+| Provider unreachable                 | Real error state with retry — never an empty list reading as "no invoices"                                            | no negative caching             | unit + story |
+| Workspace with both provider rows    | Union of both, each row labelled by provider                                                                          | —                               | unit         |
+| Checkout pending in flight           | Payment-method session withheld; the portal can initiate a payment and the double-charge lock exists for exactly that | —                               | unit         |
+| Document URL expired mid-session     | Re-mint on click, never a 403 surfaced raw                                                                            | never cached                    | unit         |
 
 ### Out of scope for PR A
 

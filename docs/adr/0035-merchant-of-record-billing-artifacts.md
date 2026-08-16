@@ -40,12 +40,12 @@ never shipped.
 
 The asymmetry is already visible in the code, unnamed:
 
-| Site | What it shows |
-| --- | --- |
-| `apps/api/src/billing/paddle.adapter.ts` | Never reads `management_urls` or `/transactions`. No portal, no invoice, no instrument. |
-| `apps/api/src/billing/razorpay.adapter.ts:575` | Reads `/v1/invoices?subscription_id=` — but only to detect refunds, never for a customer-facing list. |
-| `apps/web/src/features/billing/billing-model.ts:442` | `past_due` → *"update your payment method with the provider"*, linking nowhere. |
-| `apps/web/src/features/billing/billing-screen.tsx:1496` | The same dead-end sentence, a second time, on the non-backing row. |
+| Site                                                    | What it shows                                                                                                                                                       |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/src/billing/paddle.adapter.ts`                | Never reads `management_urls` or `/transactions`. No portal, no invoice, no instrument.                                                                             |
+| `apps/api/src/billing/razorpay.adapter.ts:575`          | Reads `/v1/invoices?subscription_id=` — but only to detect refunds, never for a customer-facing list.                                                               |
+| `apps/web/src/features/billing/billing-model.ts:442`    | `past_due` → _"update your payment method with the provider"_, linking nowhere.                                                                                     |
+| `apps/web/src/features/billing/billing-screen.tsx:1496` | The same dead-end sentence, a second time, on the non-backing row.                                                                                                  |
 | `apps/web/src/features/billing/billing-screen.tsx:1503` | Razorpay resume is **already** a typed refusal with support-assisted copy. The precedent for handling an absent rail honestly exists — it just was not generalized. |
 
 Both `past_due` sentences were written provider-agnostically precisely because
@@ -62,12 +62,12 @@ Every billing artifact affordance resolves per-provider through the
 explicit "not supported on this rail" variant that the frontend renders as an
 honest support-assisted state.
 
-| Affordance | Paddle | Razorpay |
-| --- | --- | --- |
-| Payment-method update | Provider-hosted session URL, minted per click | **Unsupported** — typed refusal, support-assisted copy |
-| Invoice list | `GET /transactions?subscription_id=…` | `GET /v1/invoices?subscription_id=…` |
-| Invoice document | Paddle-issued PDF via a signed URL fetched at click time | Razorpay-hosted `short_url` |
-| Tax invoice owner | Paddle | **DeclutrMail** — GST, currently unowned |
+| Affordance            | Paddle                                                   | Razorpay                                               |
+| --------------------- | -------------------------------------------------------- | ------------------------------------------------------ |
+| Payment-method update | Provider-hosted session URL, minted per click            | **Unsupported** — typed refusal, support-assisted copy |
+| Invoice list          | `GET /transactions?subscription_id=…`                    | `GET /v1/invoices?subscription_id=…`                   |
+| Invoice document      | Paddle-issued PDF via a signed URL fetched at click time | Razorpay-hosted `short_url`                            |
+| Tax invoice owner     | Paddle                                                   | **DeclutrMail** — GST, currently unowned               |
 
 Five rules follow, and they bind every future change to this surface:
 
@@ -75,7 +75,7 @@ Five rules follow, and they bind every future change to this surface:
    document. A second artifact of ours would be non-authoritative and would
    invite exactly the reconciliation question it appears to answer.
 2. **We never persist payment-instrument details.** Brand, last four, and
-   expiry may be *displayed* from a live provider read; none of it is written
+   expiry may be _displayed_ from a live provider read; none of it is written
    to our database.
 3. **Provider capability is typed, never nullable.** An unsupported affordance
    returns an explicit variant the FE must handle. `null` would let a missing
@@ -99,7 +99,7 @@ Five rules follow, and they bind every future change to this surface:
   retention window, new privacy-page line, to duplicate a provider-held
   artifact. Costs more than the availability it buys.
 - **Hide the invoice section for Razorpay** — rejected backwards: Indian
-  customers need invoices *more* than Paddle customers, because we are their
+  customers need invoices _more_ than Paddle customers, because we are their
   seller of record.
 - **Render a disabled "Update card" button on Razorpay** — rejected as a §10
   fake-completion: a control whose only possible outcome is a refusal.
@@ -114,7 +114,7 @@ Five rules follow, and they bind every future change to this surface:
 - The two `past_due` dead ends get a real destination on the rail that has one,
   and an honest one on the rail that does not.
 - No legal-document duplication, and no card data in our database.
-- The Razorpay payment-method gap becomes a *stated* product limitation
+- The Razorpay payment-method gap becomes a _stated_ product limitation
   instead of an undiscovered one, matching how Razorpay pause and resume are
   already handled.
 

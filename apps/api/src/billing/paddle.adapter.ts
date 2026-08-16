@@ -36,7 +36,11 @@ import type {
   PlanChangePreviewResult,
   PlanChangeResult,
   PlanChangeTiming,
+  PaymentMethodSessionInput,
+  PaymentMethodSessionResult,
   ProviderCancellationFacts,
+  ProviderInvoice,
+  ProviderInvoicePage,
   SignatureVerifyResult,
   SubscriptionSearchQuery,
   SubscriptionSearchResult,
@@ -46,6 +50,19 @@ import type {
 const DEFAULT_MAX_SKEW_SEC = 5;
 
 const API_TIMEOUT_MS = 10_000;
+
+/**
+ * How many billing documents one invoice read returns — Paddle's
+ * per-page maximum.
+ *
+ * Deliberately a single page, not a paginated walk: this is a
+ * customer-facing list on a page that must load fast, and a monthly
+ * subscription accrues 12 rows a year, so 200 covers any real account.
+ * The cap is nonetheless REPORTED rather than assumed away — when the
+ * provider says there is more, `truncated` carries that to the UI
+ * instead of a short list quietly reading as complete (no-silent-caps).
+ */
+const INVOICE_PAGE_SIZE = 200;
 
 /**
  * `custom_data` travels to Paddle THROUGH THE BROWSER
@@ -108,7 +125,42 @@ interface PaddleTransaction {
   subscription_id?: string | null;
   customer_id?: string | null;
   custom_data?: { workspace_id?: string; sig?: string } | null;
+  // D119 billing-document fields. `billed_at` is null on a transaction
+  // that has not been billed yet (draft/ready), hence the `created_at`
+  // fallback; `details.totals.grand_total` is the tax-INCLUSIVE total
+  // in the currency's lowest unit, which is the number a customer
+  // recognizes from their statement.
+  id?: string;
+  status?: string;
+  billed_at?: string | null;
+  created_at?: string | null;
+  currency_code?: string | null;
+  details?: { totals?: { grand_total?: string | null } | null } | null;
 }
+
+/**
+ * Paddle transaction statuses → the normalized invoice status.
+ *
+ * `draft` is deliberately absent: a draft transaction is not a billing
+ * document and never reaches the customer's list (it is filtered before
+ * mapping). Anything Paddle adds later maps to `unknown` rather than
+ * being rounded into `paid` — see `ProviderInvoice.status`.
+ */
+const PADDLE_INVOICE_STATUS: Readonly<Record<string, ProviderInvoice['status']>> = {
+  paid: 'paid',
+  completed: 'paid',
+  billed: 'due',
+  ready: 'due',
+  past_due: 'due',
+  canceled: 'canceled',
+};
+
+/**
+ * Statuses for which Paddle can produce an invoice PDF. A transaction
+ * that was never billed has no document to mint, so advertising one
+ * would hand the FE a button whose only outcome is a 404.
+ */
+const PADDLE_DOCUMENT_STATUSES = new Set(['billed', 'paid', 'completed', 'past_due']);
 
 /**
  * Adjustment statuses that mean UNDONE. Paddle's four are `approved`,
@@ -579,13 +631,20 @@ export class PaddleAdapter implements BillingProvider {
   }
 
   /**
-   * Authenticated GET for the D249 reconciliation reads. Returns the
+   * Authenticated GET for this adapter's read-only calls — the D249
+   * reconciliation reads and the D119 billing-artifact reads
+   * (transactions, invoice documents, portal sessions). Returns the
    * parsed body, `null` on 404 (a read miss is data, not an error),
    * and throws `BILLING_PROVIDER_ERROR` on network failure or any
-   * other non-2xx — the reconciler maps that to `provider_unavailable`
-   * and writes nothing.
+   * other non-2xx.
+   *
+   * What the throw MEANS is the caller's to decide, and the two
+   * families decide differently: the reconciler maps it to
+   * `provider_unavailable` and writes nothing, while the invoice list
+   * reports the rail as unavailable rather than serving a silently
+   * short list. Neither may treat it as "no rows".
    */
-  private async reconciliationGet(path: string, label: string): Promise<unknown | null> {
+  private async authedGet(path: string, label: string): Promise<unknown | null> {
     const apiKey = this.env.PADDLE_API_KEY;
     if (!apiKey) {
       throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
@@ -598,13 +657,13 @@ export class PaddleAdapter implements BillingProvider {
       });
     } catch (err) {
       this.logger.error(
-        `paddle.reconcile_read.network_error ${label} err=${err instanceof Error ? err.message : String(err)}`,
+        `paddle.api_read.network_error ${label} err=${err instanceof Error ? err.message : String(err)}`,
       );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     if (res.status === 404) return null;
     if (!res.ok) {
-      this.logger.error(`paddle.reconcile_read.failed ${label} status=${res.status}`);
+      this.logger.error(`paddle.api_read.failed ${label} status=${res.status}`);
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     return res.json();
@@ -612,14 +671,14 @@ export class PaddleAdapter implements BillingProvider {
 
   /** D249 — GET /subscriptions/{id}. See FetchSubscriptionResult. */
   async fetchSubscription(providerSubscriptionId: string): Promise<FetchSubscriptionResult> {
-    const body = await this.reconciliationGet(
+    const body = await this.authedGet(
       `/subscriptions/${encodeURIComponent(providerSubscriptionId)}`,
       `sub=${providerSubscriptionId}`,
     );
     if (body === null) return { kind: 'not_found' };
     const sub = (body as { data?: PaddleSubscription }).data;
     if (!sub?.id) {
-      this.logger.error(`paddle.reconcile_read.malformed sub=${providerSubscriptionId}`);
+      this.logger.error(`paddle.api_read.malformed sub=${providerSubscriptionId}`);
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     const normalized = toNormalizedSubscription(sub, this.env.PADDLE_WEBHOOK_SECRET);
@@ -674,9 +733,9 @@ export class PaddleAdapter implements BillingProvider {
       }
       let body: unknown | null;
       try {
-        body = await this.reconciliationGet(path, `adjustments sub=${providerSubscriptionId}`);
+        body = await this.authedGet(path, `adjustments sub=${providerSubscriptionId}`);
       } catch {
-        // Already logged by reconciliationGet. A read we could not make is
+        // Already logged by authedGet. A read we could not make is
         // never grounds for an outbound write.
         return null;
       }
@@ -765,7 +824,7 @@ export class PaddleAdapter implements BillingProvider {
    * this search is the claimless backstop, not the primary.
    */
   async searchSubscriptions(query: SubscriptionSearchQuery): Promise<SubscriptionSearchResult> {
-    const customersBody = await this.reconciliationGet(
+    const customersBody = await this.authedGet(
       `/customers?email=${encodeURIComponent(query.email)}`,
       `email_search`,
     );
@@ -774,7 +833,7 @@ export class PaddleAdapter implements BillingProvider {
       .map((c) => c.id)
       .filter((id): id is string => typeof id === 'string' && id.length > 0);
     if (ids.length === 0) return { subscriptions: [], inProgress: 0 };
-    const subsBody = await this.reconciliationGet(
+    const subsBody = await this.authedGet(
       `/subscriptions?customer_id=${encodeURIComponent(ids.join(','))}&per_page=50`,
       `subs_by_customer`,
     );
@@ -930,5 +989,166 @@ export class PaddleAdapter implements BillingProvider {
       default:
         return { kind: 'ignored', providerEventId: eventId, eventType };
     }
+  }
+
+  /**
+   * D119 / ADR-0035 — Paddle owns the payment instrument, so the update
+   * happens on Paddle's own hosted surface, not ours.
+   *
+   * `POST /customers/{id}/portal-sessions` mints a customer-scoped,
+   * short-lived session. `subscription_ids` asks Paddle for the
+   * per-subscription deep links, so the customer lands on the card form
+   * for THIS subscription instead of a portal overview they then have
+   * to navigate. The deep link is preferred; the general overview is
+   * the fallback when Paddle returns a session without one.
+   *
+   * Never cached, never persisted (ADR-0035 §4) — the URL authenticates
+   * the bearer, so a stored copy is a credential.
+   */
+  async paymentMethodSession(
+    input: PaymentMethodSessionInput,
+  ): Promise<PaymentMethodSessionResult> {
+    const apiKey = this.env.PADDLE_API_KEY;
+    if (!apiKey) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.baseUrl}/customers/${encodeURIComponent(input.providerCustomerId)}/portal-sessions`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'Paddle-Version': '1',
+          },
+          body: JSON.stringify({ subscription_ids: [input.providerSubscriptionId] }),
+          signal: AbortSignal.timeout(API_TIMEOUT_MS),
+        },
+      );
+    } catch (err) {
+      this.logger.error(
+        `paddle.portal_session.network_error customer=${input.providerCustomerId} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (!res.ok) {
+      this.logger.error(
+        `paddle.portal_session.failed customer=${input.providerCustomerId} status=${res.status}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    const body = (await res.json()) as {
+      data?: {
+        urls?: {
+          general?: { overview?: string | null } | null;
+          subscriptions?: Array<{
+            id?: string;
+            update_subscription_payment_method?: string | null;
+          }> | null;
+        } | null;
+      };
+    };
+    const urls = body.data?.urls;
+    const deepLink = urls?.subscriptions?.find(
+      (s) => s.id === input.providerSubscriptionId,
+    )?.update_subscription_payment_method;
+    const url = deepLink ?? urls?.general?.overview ?? null;
+    if (!url) {
+      // A 200 with no usable URL is a malformed answer, not a missing
+      // capability: Paddle DOES support this. Reporting `unsupported`
+      // here would tell the customer to email support about a rail that
+      // works, so it throws and the FE renders the error state.
+      this.logger.error(
+        `paddle.portal_session.malformed customer=${input.providerCustomerId} — 200 with no portal URL`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    return { kind: 'url', url };
+  }
+
+  /**
+   * D119 / ADR-0035 — the subscription's billed transactions, newest
+   * first. Proxied on read; nothing is persisted.
+   *
+   * Drafts are filtered out rather than mapped: a draft transaction is
+   * an internal artifact, not a billing document, and listing one would
+   * show the customer a charge that has not happened.
+   */
+  async listInvoices(providerSubscriptionId: string): Promise<ProviderInvoicePage> {
+    const body = await this.authedGet(
+      `/transactions?subscription_id=${encodeURIComponent(providerSubscriptionId)}&per_page=${INVOICE_PAGE_SIZE}&order_by=billed_at[DESC]`,
+      `transactions sub=${providerSubscriptionId}`,
+    );
+    // 404 on the collection means the subscription is unknown to
+    // Paddle — no rows, which is data, not a failure.
+    if (body === null) return { invoices: [], truncated: false };
+    const rows = (body as { data?: PaddleTransaction[] }).data;
+    if (!Array.isArray(rows)) {
+      this.logger.error(`paddle.transactions.malformed sub=${providerSubscriptionId}`);
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    const invoices: ProviderInvoice[] = [];
+    for (const row of rows) {
+      const status = row.status ?? '';
+      if (!row.id || status === 'draft') continue;
+      const issuedAt = row.billed_at ?? row.created_at ?? null;
+      const amount = row.details?.totals?.grand_total ?? null;
+      const currencyCode = row.currency_code ?? null;
+      // Every displayed row must carry a real date, amount and
+      // currency. A row missing any of them cannot be rendered without
+      // inventing one, so it is dropped and logged rather than shown
+      // with a blank or a zero (never-fabricate).
+      if (!issuedAt || !amount || !currencyCode) {
+        this.logger.warn(
+          `paddle.transactions.row_incomplete sub=${providerSubscriptionId} txn=${row.id} — dropped from the invoice list`,
+        );
+        continue;
+      }
+      invoices.push({
+        id: row.id,
+        issuedAt,
+        amount,
+        currencyCode,
+        status: PADDLE_INVOICE_STATUS[status] ?? 'unknown',
+        // Paddle's invoice is a signed PDF minted per click, not a
+        // stable page — so there is no hosted URL to hand out here.
+        hostedUrl: null,
+        documentAvailable: PADDLE_DOCUMENT_STATUSES.has(status),
+      });
+    }
+    // Paddle signals another page by returning a `next` link. Absent
+    // meta is read as "no more" rather than as truncation: claiming a
+    // hidden remainder we cannot see would be its own fabrication.
+    const hasMore = Boolean(
+      (body as { meta?: { pagination?: { has_more?: boolean } | null } }).meta?.pagination
+        ?.has_more,
+    );
+    return { invoices, truncated: hasMore };
+  }
+
+  /**
+   * D119 / ADR-0035 — `GET /transactions/{id}/invoice` returns a SIGNED,
+   * short-lived link to Paddle's own PDF. Minted per click and handed
+   * straight to the browser; never stored, never cached.
+   *
+   * Null on 404: the transaction exists but has no document (the
+   * not-yet-billed case the `documentAvailable` flag already filters,
+   * kept here because the flag is advisory and the click can race a
+   * status change).
+   */
+  async invoiceDocumentUrl(invoiceId: string): Promise<string | null> {
+    const body = await this.authedGet(
+      `/transactions/${encodeURIComponent(invoiceId)}/invoice`,
+      `invoice txn=${invoiceId}`,
+    );
+    if (body === null) return null;
+    const url = (body as { data?: { url?: string | null } }).data?.url ?? null;
+    if (!url) {
+      this.logger.error(`paddle.invoice_document.malformed txn=${invoiceId} — 200 with no url`);
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    return url;
   }
 }

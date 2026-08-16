@@ -31,9 +31,12 @@ import type {
   FetchSubscriptionResult,
   NormalizedBillingEvent,
   NormalizedSubscription,
+  PaymentMethodSessionResult,
   PlanChangePreviewResult,
   PlanChangeResult,
   ProviderCancellationFacts,
+  ProviderInvoice,
+  ProviderInvoicePage,
   SignatureVerifyResult,
   SubscriptionSearchQuery,
   SubscriptionSearchResult,
@@ -189,7 +192,36 @@ interface RazorpayInvoice {
   payment_id?: string | null;
   amount_paid?: number | null;
   subscription_id?: string | null;
+  // D119 billing-document fields. `short_url` is Razorpay's own hosted
+  // invoice page — a stable link, unlike Paddle's per-click signed PDF,
+  // which is why this rail advertises `hostedUrl` and mints nothing.
+  id?: string;
+  status?: string | null;
+  /** Unix seconds. `issued_at` is null while an invoice is still a draft. */
+  issued_at?: number | null;
+  date?: number | null;
+  /** Billed total in the currency's lowest unit (paise for INR). */
+  amount?: number | null;
+  currency?: string | null;
+  short_url?: string | null;
 }
+
+/**
+ * Razorpay invoice statuses → the normalized invoice status.
+ *
+ * `draft` is absent by design (filtered before mapping — a draft is not
+ * a billing document). `expired` and `deleted` join `cancelled` under
+ * `canceled`: all three mean the same thing to a customer reading their
+ * history — this one was never collected.
+ */
+const RAZORPAY_INVOICE_STATUS: Readonly<Record<string, ProviderInvoice['status']>> = {
+  paid: 'paid',
+  issued: 'due',
+  partially_paid: 'due',
+  cancelled: 'canceled',
+  expired: 'canceled',
+  deleted: 'canceled',
+};
 
 /** Refund entity fields read by the facts read and the webhook mapping. */
 interface RazorpayRefund {
@@ -975,5 +1007,94 @@ export class RazorpayAdapter implements BillingProvider {
       default:
         return { kind: 'ignored', providerEventId: eventId, eventType };
     }
+  }
+
+  /**
+   * D119 / ADR-0035 — Razorpay has no self-serve payment-method change.
+   *
+   * This is a CAPABILITY answer, not a failure: a Razorpay subscription
+   * is collected against an authorized mandate, and pointing it at a
+   * different instrument means re-authorizing that mandate — a flow
+   * that moves money and belongs in its own decision. Returning the
+   * typed refusal lets the FE render support-assisted copy, exactly as
+   * it already does for Razorpay pause and resume, instead of a button
+   * whose only possible outcome is an error.
+   *
+   * No network call: the answer does not depend on the account's state,
+   * so asking Razorpay would only add a way to fail.
+   */
+  async paymentMethodSession(): Promise<PaymentMethodSessionResult> {
+    return { kind: 'unsupported', reason: 'no_self_serve' };
+  }
+
+  /**
+   * D119 / ADR-0035 — the subscription's invoices, newest first.
+   *
+   * Razorpay exposes a stable hosted page per invoice (`short_url`), so
+   * every row carries `hostedUrl` and none advertises a mintable
+   * document. Note the standing asymmetry this surface inherits:
+   * Razorpay is an aggregator, so these are OUR invoices collected
+   * through it, and the GST-compliant document remains our obligation
+   * (ADR-0035, §Neutral).
+   *
+   * `listCollection` returns null when the listing could not be read in
+   * full — including the page-cap case — and an unread listing must not
+   * degrade into "no invoices", so it throws.
+   */
+  async listInvoices(providerSubscriptionId: string): Promise<ProviderInvoicePage> {
+    const rows = await this.listCollection<RazorpayInvoice>(
+      `/v1/invoices?subscription_id=${encodeURIComponent(providerSubscriptionId)}`,
+      `invoices sub=${providerSubscriptionId}`,
+    );
+    if (rows === null) {
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    const invoices: ProviderInvoice[] = [];
+    for (const row of rows) {
+      const status = row.status ?? '';
+      if (!row.id || status === 'draft') continue;
+      const issuedAtUnix = row.issued_at ?? row.date ?? null;
+      const issuedAt = issuedAtUnix === null ? null : unixToIso(issuedAtUnix);
+      const amount = row.amount;
+      const currencyCode = row.currency ?? null;
+      // A row that cannot state its date, amount and currency cannot be
+      // rendered without inventing one of them, so it is dropped and
+      // logged rather than shown blank or zeroed (never-fabricate).
+      if (!issuedAt || amount === null || amount === undefined || !currencyCode) {
+        this.logger.warn(
+          `razorpay.invoices.row_incomplete sub=${providerSubscriptionId} invoice=${row.id} — dropped from the invoice list`,
+        );
+        continue;
+      }
+      invoices.push({
+        id: row.id,
+        issuedAt,
+        // Razorpay quotes the lowest unit as a NUMBER; the normalized
+        // shape carries the string both rails share.
+        amount: String(amount),
+        currencyCode,
+        status: RAZORPAY_INVOICE_STATUS[status] ?? 'unknown',
+        hostedUrl: row.short_url ?? null,
+        // Nothing to mint: the hosted page above IS the artifact.
+        documentAvailable: false,
+      });
+    }
+    // Newest first. Razorpay's listing order is not contractual, so the
+    // sort happens here rather than being assumed from the response.
+    invoices.sort((a, b) => Date.parse(b.issuedAt) - Date.parse(a.issuedAt));
+    // `listCollection` walks every page and reports an unread listing as
+    // null (including at the page cap), so a value that reaches here is
+    // complete by construction.
+    return { invoices, truncated: false };
+  }
+
+  /**
+   * D119 / ADR-0035 — Razorpay mints no per-click document; `short_url`
+   * on the row is the artifact. Null is the capability answer, and the
+   * FE never asks: every Razorpay row reports `documentAvailable:
+   * false`.
+   */
+  async invoiceDocumentUrl(): Promise<string | null> {
+    return null;
   }
 }

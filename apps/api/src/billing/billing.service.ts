@@ -21,6 +21,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
+  billingCustomers,
   pendingCheckouts,
   subscriptionEvents,
   subscriptions,
@@ -28,10 +29,14 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import type {
+  BillingInvoice,
+  BillingInvoiceDocument,
+  BillingInvoiceList,
   BillingSubscription,
   CancelRequest,
   CheckoutRequest,
   CheckoutSession,
+  PaymentMethodSession,
   PlanChangePreview,
   PlanChangeRequest,
 } from '@declutrmail/shared/contracts';
@@ -50,6 +55,17 @@ const PENDING_CHECKOUT_TTL_MS = 30 * 60 * 1000;
 
 /** D118 — the pause offer's fixed length ("Pause for 30 days"). */
 const PAUSE_DAYS = 30;
+
+/**
+ * How many of a workspace's subscription rows the invoice read walks.
+ *
+ * Each row costs one provider round-trip, so the fan-out is bounded
+ * rather than left to grow with history. Ten is far above what the
+ * one-live-subscription rule can produce in practice (a row is created
+ * per purchase, not per renewal), and the rows are taken newest-first
+ * so the cap can only ever drop the oldest.
+ */
+const MAX_INVOICE_SUBSCRIPTIONS = 10;
 
 @Injectable()
 export class BillingService {
@@ -1113,6 +1129,150 @@ export class BillingService {
   }
 
   /** D126 — Founding Pro spots left (advisory; webhook path is authoritative). */
+  /**
+   * D119 / ADR-0035 — the workspace's billing documents, proxied on
+   * read from every rail it has ever paid on.
+   *
+   * Reads EVERY subscription row, not just the granting one. A
+   * customer who cancelled still needs last year's invoices — the tax
+   * need outlives the subscription — and a workspace that switched
+   * region holds rows under both providers (`billing_customers` is
+   * unique on `(workspace_id, provider)`), so keying this off the
+   * current backing subscription would silently hide half the history.
+   *
+   * A rail that cannot be read is NAMED rather than skipped. An empty
+   * or short list that quietly omits a provider reads as "you have no
+   * invoices", which is the assert-what-you-don't-know defect this
+   * screen was rebuilt to avoid; `unavailableProviders` lets the UI say
+   * the list is partial.
+   */
+  async listInvoices(workspaceId: string): Promise<BillingInvoiceList> {
+    const rows = await this.db
+      .select({
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+      })
+      .from(subscriptions)
+      .where(eq(subscriptions.workspaceId, workspaceId))
+      .orderBy(desc(subscriptions.updatedAt))
+      .limit(MAX_INVOICE_SUBSCRIPTIONS);
+
+    const invoices: BillingInvoice[] = [];
+    const unavailable = new Set<'paddle' | 'razorpay'>();
+    let truncated = false;
+    for (const row of rows) {
+      try {
+        const page = await this.adapterFor(row.provider).listInvoices(row.providerSubscriptionId);
+        truncated = truncated || page.truncated;
+        for (const invoice of page.invoices) {
+          invoices.push({ ...invoice, provider: row.provider });
+        }
+      } catch (err) {
+        // One rail failing must not fail the whole read: the other
+        // rail's invoices are still true, and a 500 here would hide
+        // them behind an error state.
+        this.logger.error(
+          `billing.invoices.provider_unavailable workspace=${workspaceId} provider=${row.provider} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+        unavailable.add(row.provider);
+      }
+    }
+    invoices.sort((a, b) => Date.parse(b.issuedAt) - Date.parse(a.issuedAt));
+    return { invoices, unavailableProviders: [...unavailable], truncated };
+  }
+
+  /**
+   * D119 / ADR-0035 — mint a document URL for one invoice, per click.
+   *
+   * The ownership check is the point. Invoices are not persisted
+   * (ADR-0035 §5), so there is no local row to authorize against — and
+   * without a check, any authenticated user could pass an arbitrary
+   * Paddle transaction id and mint a link to a STRANGER's invoice. So
+   * the id is re-derived from this workspace's own listing and must
+   * appear there; an id that does not is `NOT_FOUND`, never forwarded
+   * to the provider.
+   *
+   * The extra provider read is deliberate and is not cached: a cached
+   * ownership set is a stale authorization decision.
+   */
+  async invoiceDocument(workspaceId: string, invoiceId: string): Promise<BillingInvoiceDocument> {
+    const { invoices } = await this.listInvoices(workspaceId);
+    const owned = invoices.find((i) => i.id === invoiceId);
+    if (!owned) {
+      throw new AppException({ code: 'NOT_FOUND' });
+    }
+    if (!owned.documentAvailable) {
+      // The row advertised no document. Reaching here means the client
+      // asked anyway (or the status changed under it) — answer with the
+      // fact rather than a provider 404.
+      throw new AppException({ code: 'NOT_FOUND' });
+    }
+    const url = await this.adapterFor(owned.provider).invoiceDocumentUrl(invoiceId);
+    if (url === null) {
+      throw new AppException({ code: 'NOT_FOUND' });
+    }
+    return { provider: owned.provider, url };
+  }
+
+  /**
+   * D119 / ADR-0035 — a session for changing the payment instrument.
+   *
+   * Scoped to the GRANTING subscription: the instrument that matters is
+   * the one funding the plan the workspace is on, and a cancelled row's
+   * card is not something to send anyone to update. `past_due` is
+   * included deliberately — it is the status where this surface earns
+   * its existence.
+   *
+   * Returns the adapter's typed capability unchanged, including the
+   * `unsupported` arm (Razorpay). That arm is a 200, not an error: "this
+   * rail cannot" is an answer, and rendering it as a failure would tell
+   * the customer to retry something that will never work.
+   */
+  async paymentMethodSession(workspaceId: string): Promise<PaymentMethodSession> {
+    const [sub] = await this.db
+      .select({
+        provider: subscriptions.provider,
+        providerSubscriptionId: subscriptions.providerSubscriptionId,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.workspaceId, workspaceId),
+          inArray(subscriptions.status, ['active', 'past_due']),
+        ),
+      )
+      .orderBy(desc(subscriptions.updatedAt))
+      .limit(1);
+    if (!sub) {
+      throw new AppException({ code: 'NO_ACTIVE_SUBSCRIPTION' });
+    }
+    const [customer] = await this.db
+      .select({ providerCustomerId: billingCustomers.providerCustomerId })
+      .from(billingCustomers)
+      .where(
+        and(
+          eq(billingCustomers.workspaceId, workspaceId),
+          eq(billingCustomers.provider, sub.provider),
+        ),
+      )
+      .limit(1);
+    if (!customer) {
+      // A granting subscription with no customer row is a broken
+      // mapping, not a capability limit — say so loudly instead of
+      // reporting the rail as unsupported and sending the customer to
+      // support with the wrong story.
+      this.logger.error(
+        `billing.payment_method.no_customer_row workspace=${workspaceId} provider=${sub.provider}`,
+      );
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    const result = await this.adapterFor(sub.provider).paymentMethodSession({
+      providerCustomerId: customer.providerCustomerId,
+      providerSubscriptionId: sub.providerSubscriptionId,
+    });
+    return { ...result, provider: sub.provider };
+  }
+
   async foundingRemaining(): Promise<number> {
     const rows = await this.db
       .select({ id: subscriptions.id })
