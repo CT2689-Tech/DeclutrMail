@@ -53,7 +53,9 @@ describe('IconsService', () => {
     await seedIcon(db);
     const { queue, added } = fakeQueue();
 
-    const result = await new IconsService(db as never, queue).lookup('brand.example');
+    const result = await new IconsService(db as never, queue).lookup('brand.example', {
+      mayEnqueue: true,
+    });
 
     expect(result.kind).toBe('hit');
     expect(result.kind === 'hit' && result.image.equals(SVG)).toBe(true);
@@ -66,7 +68,9 @@ describe('IconsService', () => {
     const db = await freshTestDb();
     const { queue, added } = fakeQueue();
 
-    const result = await new IconsService(db as never, queue).lookup('unknown.example');
+    const result = await new IconsService(db as never, queue).lookup('unknown.example', {
+      mayEnqueue: true,
+    });
 
     expect(result).toEqual({ kind: 'miss' });
     expect(added).toHaveLength(1);
@@ -80,7 +84,9 @@ describe('IconsService', () => {
     await db.insert(domainIcons).values({ domain: 'nobody.example', status: 'none' });
     const { queue, added } = fakeQueue();
 
-    const result = await new IconsService(db as never, queue).lookup('nobody.example');
+    const result = await new IconsService(db as never, queue).lookup('nobody.example', {
+      mayEnqueue: true,
+    });
 
     // The whole point of the negative cache: a logo-less sender must
     // not re-enqueue work on every render.
@@ -95,7 +101,7 @@ describe('IconsService', () => {
     const service = new IconsService(db as never, queue);
 
     for (const domain of ['mail1.brand.example', 'NOTIFY.brand.example', 'brand.example']) {
-      expect((await service.lookup(domain)).kind).toBe('hit');
+      expect((await service.lookup(domain, { mayEnqueue: true })).kind).toBe('hit');
     }
   });
 
@@ -105,7 +111,9 @@ describe('IconsService', () => {
     await seedIcon(db, { fetchedAt: longAgo });
     const { queue, added } = fakeQueue();
 
-    const result = await new IconsService(db as never, queue).lookup('brand.example');
+    const result = await new IconsService(db as never, queue).lookup('brand.example', {
+      mayEnqueue: true,
+    });
 
     // Stale-while-revalidate: a stale mark beats no mark.
     expect(result.kind).toBe('hit');
@@ -120,7 +128,9 @@ describe('IconsService', () => {
       .values({ domain: 'nobody.example', status: 'none', fetchedAt: longAgo });
     const { queue, added } = fakeQueue();
 
-    const result = await new IconsService(db as never, queue).lookup('nobody.example');
+    const result = await new IconsService(db as never, queue).lookup('nobody.example', {
+      mayEnqueue: true,
+    });
 
     expect(result).toEqual({ kind: 'miss' });
     expect(added).toHaveLength(1);
@@ -132,19 +142,43 @@ describe('IconsService', () => {
       const db = await freshTestDb();
       const { queue, added } = fakeQueue();
 
-      const result = await new IconsService(db as never, queue).lookup(domain);
+      const result = await new IconsService(db as never, queue).lookup(domain, {
+        mayEnqueue: true,
+      });
 
       expect(result).toEqual({ kind: 'miss' });
       expect(added).toEqual([]);
     },
   );
 
+  it('serves an anonymous caller from cache but schedules nothing for one', async () => {
+    const db = await freshTestDb();
+    await seedIcon(db);
+    const { queue, added } = fakeQueue();
+    const service = new IconsService(db as never, queue);
+
+    const hit = await service.lookup('brand.example', { mayEnqueue: false });
+    const miss = await service.lookup('unknown.example', { mayEnqueue: false });
+
+    // Reading the cache without a session is deliberate (founder
+    // decision 2026-08-16): an image subresource cannot refresh an
+    // expired token, so requiring one meant no logo ever rendered.
+    expect(hit.kind).toBe('hit');
+    expect(miss).toEqual({ kind: 'miss' });
+    // Growing it is not. This is the half of the old guard that still
+    // matters: a stranger must not drive our DNS and HTTPS fetches at
+    // domains of their choosing, or fill this table doing it.
+    expect(added).toEqual([]);
+  });
+
   it('degrades to a miss when the queue is unavailable', async () => {
     const db = await freshTestDb();
 
     // No Redis in local dev — serve what is cached, schedule nothing,
     // and never fail the read.
-    const result = await new IconsService(db as never, null).lookup('unknown.example');
+    const result = await new IconsService(db as never, null).lookup('unknown.example', {
+      mayEnqueue: true,
+    });
 
     expect(result).toEqual({ kind: 'miss' });
   });
@@ -159,7 +193,9 @@ describe('IconsService', () => {
 
     // A queue outage means "monograms until it recovers", never a
     // broken avatar or a 500 on the page that asked for one.
-    await expect(new IconsService(db as never, broken).lookup('unknown.example')).resolves.toEqual({
+    await expect(
+      new IconsService(db as never, broken).lookup('unknown.example', { mayEnqueue: true }),
+    ).resolves.toEqual({
       kind: 'miss',
     });
   });
