@@ -57,12 +57,18 @@ about).
 | **H** | Cancellation receipt + data continuity                                                | D118    | G          |
 | **I** | Craft pass: year archive, currency statement, print stylesheet, keyboard, one-page IA | D119    | A, B, F    |
 
-**Held, not scheduled — self-serve refund inside the 30-day window.** It sits
-in section 3 and the founder selected that section, but it is the only
+**Deferred to post-launch — self-serve refund inside the 30-day window.**
+Founder decision, 2026-08-16. It sits in section 3, but it is the only
 irreversible money-mover in the set and CLAUDE.md §9 makes refund behaviour a
-stop-and-ask. It needs an explicit yes plus an abuse policy (one per customer,
-first period only) before it gets a D-number. Everything else in section 3
-proceeds without it.
+stop-and-ask, so it was raised rather than built. The answer is to document it
+now and revisit after launch; until then the published 30-day guarantee is
+honoured by emailing support, which is the behaviour today.
+
+Whoever picks it up needs two things this program deliberately did not decide:
+an abuse policy (one per customer? first period only?) and a D-number. The
+machinery it would ride already exists — D253's refund-settling state, the
+`cancel_source` verdict, and the reconciliation sweep — so the work is the
+policy, not the plumbing. Everything else in section 3 proceeds without it.
 
 ---
 
