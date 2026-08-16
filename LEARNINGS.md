@@ -1282,3 +1282,25 @@ gate ships with a ready signal weaker than the property it asserts.
 **Finding:** `assertMatrix` belongs at `ci.assert.assertMatrix`. Placed one level up at `ci.assertMatrix` it is silently ignored: `lhci autorun` runs the collection, prints "Done running autorun", and **exits 0 having asserted nothing** — no warning, no "0 assertions" line, and the run looks identical to a passing one. Only `lhci assert` standalone says anything at all ("No assertions to use"). It was caught by a positive control — raising a threshold above the measured value and checking for a non-zero exit — not by reading the output, which was indistinguishable from success.
 **Rule (provisional):** A newly added gate is not proven by a green run; it is proven by a red one. Always run a positive control — move a threshold past the measured value and confirm a non-zero exit — before claiming a check gates anything. Applies equally to lint rules, CI assertions and hooks.
 **Distillation trigger:** promote to CLAUDE.md §8 "Definition of done" if a second silently-inert check is found.
+
+## 2026-08-16 — `ready_for_review` is opt-in, and it is usually a duplicate run
+**Context:** #533 passed all 11 required checks, then marking the PR ready
+for review re-ran every one of them on the identical commit and blocked
+the merge for ~12 minutes with `9 of 11 required status checks have not
+succeeded: 3 expected`.
+**Finding:** GitHub's default `pull_request` activity types are `[opened,
+synchronize, reopened]` — `ready_for_review` is NOT among them. Four
+workflows here opted into it. That opt-in only earns its keep when jobs
+skip draft PRs (`if: github.event.pull_request.draft == false`); no job
+in this repo does, so drafts were already fully tested and un-drafting
+re-tested the same SHA. Check runs are keyed by SHA, so the earlier green
+run satisfies branch protection on its own — the re-run buys nothing.
+The repo had already learned the identical lesson for `edited` (the
+comment in `ci.yml` says so); `ready_for_review` sat in the same list
+untouched.
+**Rule (provisional):** only list a `pull_request` activity type beyond
+the default three when a job's behaviour actually differs for that
+event. For draft-related types, that means a `draft` condition must
+exist somewhere first.
+**Distillation trigger:** promote to CLAUDE.md §5 if a third
+retrigger-waste entry lands (this is the second, after `edited`).
