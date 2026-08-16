@@ -25,6 +25,12 @@ PGBIN=/usr/lib/postgresql/16/bin
 PGDATA=/tmp/dmpg
 PSQL="$PGBIN/psql -h 127.0.0.1 -p 5432 -U postgres"
 LOG=/tmp/dmlogs; mkdir -p "$LOG"
+# The pg block below redirects into $LOG *as the postgres user*. When this
+# script first runs as root, mkdir just made the dir root-owned, initdb's
+# redirect fails with EACCES, and pg silently never starts (2026-08-16 —
+# the API then came up against no database while the script printed
+# success). Root can hand the dir over; a non-root run already owns it.
+chown postgres "$LOG" 2>/dev/null || true
 
 up() {
   # Postgres (as the `postgres` user — the root-restriction workaround).
@@ -33,6 +39,14 @@ up() {
       $PGBIN/initdb -D $PGDATA -U postgres --auth=trust >$LOG/initdb.log 2>&1 && \
       $PGBIN/pg_ctl -D $PGDATA -o '-p 5432 -k /tmp -c listen_addresses=127.0.0.1' -l $LOG/pg.log start"
     sleep 2
+    # Fail LOUD if pg still isn't answering — every later step degrades
+    # confusingly without it (migrations no-op, API boots against nothing)
+    # and the old behavior was to sail on and print "API up on :4000".
+    if ! $PSQL -tAc 'select 1' >/dev/null 2>&1; then
+      echo "Postgres did not come up; see $LOG/initdb.log and $LOG/pg.log" >&2
+      tail -5 "$LOG/initdb.log" 2>/dev/null >&2
+      exit 1
+    fi
     $PSQL -tc "CREATE DATABASE declutrmail;" 2>/dev/null
     $PSQL -d declutrmail -tc "CREATE EXTENSION IF NOT EXISTS citext;" >/dev/null
   fi
@@ -71,6 +85,14 @@ EOF
   # would otherwise carry it forever; exact match leaves any deliberate
   # future value alone). Runs before the API (re)start below picks it up.
   sed -i '/^COOKIE_DOMAIN=localhost$/d' .env.local
+  # Next.js reads env from the APP dir, not the repo root — without this
+  # file the web dev server never sees NEXT_PUBLIC_API_URL, the browser
+  # calls :3000/api/* (itself) and every page 404s on /api/auth/me
+  # (2026-08-16). Create-once, same guard as the root env above.
+  [ -f apps/web/.env.local ] || cat > apps/web/.env.local <<EOF
+NEXT_PUBLIC_API_URL=http://localhost:4000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+EOF
   # API (restart so a branch checkout's code is picked up).
   lsof -ti:4000 2>/dev/null | xargs -r kill -9 2>/dev/null
   nohup pnpm --filter @declutrmail/api start >"$LOG/api.log" 2>&1 &
