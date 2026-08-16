@@ -112,9 +112,20 @@ because after #528 a 401 degrades to the monogram, which looks correct.
 This is not a bug and not a merge blocker; it decides whether the
 feature does anything at all.
 
+**Ran 2026-08-16 and came back unreadable — see #533.** Every
+`/api/icons/…` row showed `(failed) net::…`, 0 B, type `Other`, no
+initiator, and no status at all. Those rows were not the avatar's
+requests: they were `stale-while-revalidate` background revalidations of
+already-cached responses, aborted when the page navigated. The avatar's
+own requests were served from cache and never hit the network, so the
+status this check needs was nowhere on screen. #533 removes
+`stale-while-revalidate` from the miss and cuts its `max-age` to 60s, so
+the panel shows real statuses again — but **tick "Disable cache" before
+reloading**, or a fresh entry can still answer this from cache.
+
 **How:** open https://app.declutrmail.com/senders with DevTools →
-Network, filter `icons`, and read the status of any `/api/icons/…`
-request:
+Network, tick **Disable cache**, filter `icons`, reload, and read the
+status of any `/api/icons/…` request:
 - `200` — a cached mark; working.
 - `204` — no mark cached yet; working (a resolution was enqueued).
   Reload in a minute; frequently-seen brands should flip to `200`.

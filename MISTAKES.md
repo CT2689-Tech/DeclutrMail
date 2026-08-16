@@ -2844,3 +2844,42 @@ card's text to `ACTION_SEMANTICS`, never to a literal.
 **Enforcement update:** `marketing-metadata.test.ts` now asserts the card's
 source contains `ACTION_SEMANTICS.archive.activityUndo.summary` and no
 longer contains the "Reversible from Activity." shorthand.
+
+## 2026-08-16 — A provisional 204 was cached with the answer's lifetime
+**PR:** #533
+**Caught by:** founder, in production ("still icons are failing")
+**What happened:** `GET /api/icons/:domain` set one route-wide
+`Cache-Control: private, max-age=86400, stale-while-revalidate=604800`.
+That is right for a resolved mark and wrong for the `204` that the same
+route returns for every domain it has never seen — a `204` there means
+"not resolved YET", because the lookup only enqueues the work and the
+mark lands seconds later from the worker. So the browser committed to
+"this sender has no logo" for a day and kept serving it stale for a week
+after. Every domain starts absent, so the first page view poisoned every
+sender at once and no amount of successful resolution could surface a
+logo. Two rounds of fixes (#528 paint, #530 CSP) landed on top of a cache
+that could not show their results.
+
+The same header also destroyed the evidence: `stale-while-revalidate`
+makes Chromium fire background revalidations that DevTools reports with
+no initiator, type `Other`, 0 B, and `(failed) net::ERR_ABORTED` when the
+page navigates first. A screenful of those reads as a dead endpoint, and
+that is what the incident was first diagnosed as — a network fault that
+did not exist. Reproduced exactly in headless Chromium before any code
+changed, which is what ruled out CSP, CORP/COEP and ORB.
+
+Underneath it, BIMI discovery queried only `default._bimi.<exact
+domain>`, so bulk mail from `member.`/`official.`/`info.` subdomains
+found nothing even when the brand publishes a record — verified live:
+`member.americanexpress.com` NXDOMAIN, `americanexpress.com` answers.
+**Correct approach:** a provisional answer and a settled answer are two
+different responses and must not share a cache lifetime. Decide the
+lifetime in the branch that knows which one it is, never route-wide.
+**Rule:** before caching a response, ask what it will still be true of in
+`max-age` seconds — if the server itself is working to change it, that is
+the ceiling.
+**Enforcement update:** `icons.controller.spec.ts` asserts the miss
+carries `max-age=60` and no `stale-while-revalidate`, and that a `304`
+restarts the freshness window; both verified to fail against the old
+header. `bimi-resolver.test.ts` covers the ancestor walk and pins VMC
+verification to the domain the record was published on.

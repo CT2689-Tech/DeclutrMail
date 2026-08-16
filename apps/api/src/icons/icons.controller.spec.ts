@@ -115,6 +115,37 @@ describe('IconsController', () => {
     expect(res.headers.get('cache-control')).toContain('max-age=86400');
   });
 
+  it('caches a MISS briefly — it is provisional, not an answer', async () => {
+    app = await appFor({ kind: 'miss' });
+
+    const res = await fetch(`${await app.getUrl()}/icons/nobody.example`);
+
+    // The 204 means "not resolved YET": the lookup only enqueued the
+    // work, which lands seconds later. Sending the hit's day-long
+    // lifetime with it committed the browser to "this sender has no
+    // logo" for a day — and since EVERY domain starts as a miss, one
+    // page view made the whole feature look dead no matter what the
+    // worker resolved afterwards (incident 2026-08-16).
+    expect(res.headers.get('cache-control')).toBe('private, max-age=60');
+    // No stale-while-revalidate either: that is what fired the
+    // initiator-less background revalidations which show up as
+    // `(failed) net::ERR_ABORTED` and read like a broken endpoint.
+    expect(res.headers.get('cache-control')).not.toContain('stale-while-revalidate');
+  });
+
+  it('restarts the freshness window on a 304', async () => {
+    app = await appFor({ kind: 'hit', image: SVG, mime: 'image/svg+xml', etag: ETAG });
+
+    const res = await fetch(`${await app.getUrl()}/icons/chase.com`, {
+      headers: { 'If-None-Match': ETAG },
+    });
+
+    // Without this the entry stays stale forever and every later view
+    // pays for a revalidation it already made.
+    expect(res.status).toBe(304);
+    expect(res.headers.get('cache-control')).toContain('max-age=86400');
+  });
+
   it('serves the SVG under a locked-down CSP with sniffing off', async () => {
     app = await appFor({ kind: 'hit', image: SVG, mime: 'image/svg+xml', etag: ETAG });
 

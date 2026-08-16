@@ -74,14 +74,34 @@ rebrands and newly-published BIMI records eventually land).
 
 `GET /api/icons/:domain` answers only from cache:
 
-| cache state | response                                                    |
-| ----------- | ----------------------------------------------------------- |
-| `ok`        | `200 image/svg+xml` + strong ETag + immutable cache headers |
-| `none`      | `204`                                                       |
-| absent      | `204`, and enqueue a fetch job                              |
+| cache state | response                                                                       |
+| ----------- | ------------------------------------------------------------------------------ |
+| `ok`        | `200 image/svg+xml` + strong ETag + `max-age=86400` + `stale-while-revalidate` |
+| `none`      | `204` + `max-age=60`                                                           |
+| absent      | `204` + `max-age=60`, and enqueue a fetch job                                  |
 
 `204` is the contract for "monogram, and we're on it" — not an error. A
 cold domain costs a render nothing.
+
+**The two lifetimes must differ, and shipping them the same broke the
+feature outright.** A `204` is provisional by construction: the lookup
+that produced it only _enqueued_ resolution, and the mark lands seconds
+later. The first cut sent the hit's `max-age=86400,
+stale-while-revalidate=604800` on the `204` as well, so a browser that
+asked once committed to "this sender has no logo" for a day and served
+that answer stale for a week after. Since every domain is absent the
+first time it is seen, one page view poisoned every sender at once and
+no amount of successful resolution afterwards could surface a single
+logo (incident 2026-08-16).
+
+It also destroyed the evidence. `stale-while-revalidate` makes Chromium
+fire a background revalidation that DevTools reports with **no
+initiator, type `Other`, 0 B**, and — when the page navigates before it
+lands — `(failed) net::ERR_ABORTED`. A screenful of those reads exactly
+like a dead endpoint, which is what the incident was first diagnosed as.
+A short `max-age` and no `stale-while-revalidate` on the miss fixes both
+the behaviour and the diagnosability; 60s still collapses the re-render
+fan-out of one browsing session.
 
 The route is **authenticated**, despite returning no user data. An
 earlier draft of this ADR left it open on the reasoning that public
@@ -142,6 +162,21 @@ maintained library that would avoid hand-rolling it demands a global
 thousand concurrent misses collapse to one job):
 
 1. **BIMI** — DNS TXT `default._bimi.<domain>`, parse the `l=` URL.
+   Discovery walks the name from the domain up to its ancestors, most
+   specific first, exactly as DMARC falls back to the organizational
+   domain. Querying only the exact domain is why this resolved almost
+   nothing: bulk mail arrives from `member.`/`official.`/`info.`/`h5.`
+   subdomains and the record is published at the brand. Verified
+   against live DNS 2026-08-16 — `member.americanexpress.com` and
+   `official.asos.com` are NXDOMAIN while both parents answer.
+   `brandRoot` cannot close this gap, since it strips a fixed list of
+   bulk prefixes and the real set is open-ended.
+   The certificate is then checked against the domain the record was
+   **published on**, because a brand's VMC carries the brand's SAN, not
+   each mailing subdomain's. No public-suffix list is needed to bound
+   the walk: a record found at, say, `co.uk` still has to present a VMC
+   whose SAN covers `co.uk` from a BIMI-authorised CA, so an over-broad
+   walk costs an extra NXDOMAIN rather than a wrong logo (§4a).
 2. **Vendor** (Brandfetch / Logo.dev) — Phase 2, config-gated; an
    absent API key skips the tier entirely.
 3. Neither → `status='none'`.

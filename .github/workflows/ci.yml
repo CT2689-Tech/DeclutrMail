@@ -13,8 +13,19 @@ on:
   # stacked PR onto main still fires only `edited` — fire CI by hand in
   # that case: `gh workflow run ci.yml --ref <branch>`. Branch-name.yml
   # keeps `edited` so title/body checks still update.
+  #
+  # `ready_for_review` is off for the same reason, and it is NOT a
+  # GitHub default — the default set is [opened, synchronize, reopened],
+  # so listing it was an opt-in to duplicate work. That opt-in only pays
+  # off when jobs SKIP draft PRs; nothing here does (no `draft`
+  # condition anywhere in this repo's workflows), so a draft is already
+  # fully tested. Un-drafting changes no code, produces no new SHA, and
+  # re-ran all 11 required checks on a commit that had just passed them
+  # — ~12 min of nothing, every time (2026-08-16, #533). Check runs are
+  # keyed by SHA, so the earlier green run still satisfies branch
+  # protection after the PR is marked ready.
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 
