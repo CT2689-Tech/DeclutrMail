@@ -35,12 +35,27 @@ any archive/later/delete/unsubscribe you ran while dogfooding did not
 actually change Gmail, and the UI may have shown it as pending/failed.
 Dev showed `DeadLetterWorker … alerted:0`, so the prod alert may not have
 fired either — worth confirming why.
-**How:** After merging the fix PR and deploying: (1) in prod SQL, `SELECT id,
-verb, status, created_at FROM action_jobs WHERE status='failed' AND
-created_at > '2026-08-12' ORDER BY created_at;` (2) decide per row: re-run
-the action from the UI, or leave it — there is no auto-replay for
-destructive actions by design (D233); (3) check whether the dead-letter
-alert fired for these and, if not, why.
+**How:** After merging the fix PR and deploying: (1) in prod SQL, list ONLY
+this outage's class — the lock failure records `error_code='PostgresError'`.
+Do NOT widen this to all failed rows: failures from other causes carry
+other codes (ValidationError, UNSUB_DNS_FAILURE, …), and a failed `delete`
+from some unrelated cause is irreversible and must not ride a blanket
+retry list.
+
+```sql
+SELECT id, verb, direction, requested_count, created_at
+FROM action_jobs
+WHERE status = 'failed'
+  AND error_code = 'PostgresError'
+  AND created_at >= '2026-08-12'
+  AND created_at < '<timestamp of the fix deploy>'
+ORDER BY created_at;
+```
+
+(2) decide per row: re-issue the intent from the UI — which re-runs the
+D226 preview against current mail, never the stale selection — or leave
+it; there is no auto-replay for destructive actions by design (D233);
+(3) check whether the dead-letter alert fired for these and, if not, why.
 **Verifies by:** a fresh archive in prod completes (`action_jobs.status='done'`
 with `affected_count > 0`) and the failed-rows list is dispositioned.
 **Status:** Open
