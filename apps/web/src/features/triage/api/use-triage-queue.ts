@@ -14,9 +14,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api/client';
 import type { TriageDecisionRow, TriageSessionStats } from '@/features/triage/data';
+import { triageQueueQueryOptions, triageStatsQueryOptions } from './query-options';
 
-export const TRIAGE_QUEUE_KEY = ['triage', 'queue'] as const;
-export const TRIAGE_STATS_KEY = ['triage', 'stats'] as const;
+export { TRIAGE_QUEUE_KEY, TRIAGE_STATS_KEY } from './query-options';
 export const TODAY_SUMMARY_KEY = ['triage', 'today-summary'] as const;
 
 /**
@@ -31,30 +31,22 @@ export interface TodaySummary {
   noiseReductionPct: number | null;
 }
 
+async function readTriageQueue(signal: AbortSignal): Promise<TriageDecisionRow[]> {
+  const envelope = await apiGet<TriageDecisionRow[]>('/api/triage/queue', { signal });
+  return envelope.data;
+}
+
+async function readTriageStats(signal: AbortSignal): Promise<TriageSessionStats> {
+  const envelope = await apiGet<TriageSessionStats>('/api/triage/stats', { signal });
+  return envelope.data;
+}
+
 export function useTriageQueue() {
-  return useQuery({
-    queryKey: TRIAGE_QUEUE_KEY,
-    queryFn: async ({ signal }) => {
-      const envelope = await apiGet<TriageDecisionRow[]>('/api/triage/queue', {
-        signal,
-      });
-      return envelope.data;
-    },
-    staleTime: 30_000,
-  });
+  return useQuery(triageQueueQueryOptions(readTriageQueue));
 }
 
 export function useTriageStats() {
-  return useQuery({
-    queryKey: TRIAGE_STATS_KEY,
-    queryFn: async ({ signal }) => {
-      const envelope = await apiGet<TriageSessionStats>('/api/triage/stats', {
-        signal,
-      });
-      return envelope.data;
-    },
-    staleTime: 30_000,
-  });
+  return useQuery(triageStatsQueryOptions(readTriageStats));
 }
 
 /**

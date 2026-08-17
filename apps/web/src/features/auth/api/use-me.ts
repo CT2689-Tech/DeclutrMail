@@ -9,67 +9,11 @@
 
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  MailboxDataDeletionView,
-  MailboxIndexedDataState,
-  SyncReadiness,
-} from '@declutrmail/shared/contracts';
-import type { TierId } from '@declutrmail/shared/entitlements';
+import type { SyncReadiness } from '@declutrmail/shared/contracts';
 import { apiGet, apiPatch, ApiError } from '@/lib/api/client';
+import { ME_QUERY_KEY, type Me } from './me-contract';
 
-/**
- * Workspace billing tier as served by `/api/auth/me` (D19). The full
- * 5-row ladder — team/enterprise rank AT pro for feature gates (see
- * `satisfiesActionTier` in `@declutrmail/shared/entitlements`).
- */
-export type Tier = TierId;
-
-export interface MeUser {
-  id: string;
-  email: string;
-  workspaceId: string;
-  /** IANA timezone used for local Brief generation; null until captured. */
-  timezone: string | null;
-}
-
-export interface MeMailbox {
-  id: string;
-  email: string;
-  status: 'active' | 'disconnected';
-  connectedAt: string | null;
-  /** Initial-sync readiness; `null` until the first sync row exists (D116). */
-  readiness: SyncReadiness | null;
-  /**
-   * D245 local-data lifecycle. Optional during the rolling API/web deploy;
-   * callers treat an omitted active mailbox as indexed and an omitted
-   * disconnected mailbox as retained.
-   */
-  indexedDataState?: MailboxIndexedDataState;
-  /** Latest in-flight/completed indexed-data deletion request, when any. */
-  dataDeletion?: MailboxDataDeletionView | null;
-}
-
-export interface Me {
-  user: MeUser;
-  mailboxes: MeMailbox[];
-  activeMailboxId: string | null;
-  /** Workspace billing tier (D19) — drives every FE entitlement gate. */
-  tier: Tier;
-  /**
-   * Cleanup actions left THIS PERIOD (A3: Free = 50/month); `null` =
-   * unlimited (every paid tier). Refreshed with the `me` query, so a
-   * `FREE_CAP_REACHED` 402's `details` is the fresher signal mid-flow.
-   */
-  cleanupRemaining: number | null;
-  /**
-   * Next anniversary reset instant (ISO), server-computed (A3) — the
-   * browser NEVER derives it. `null` = unlimited tier. Optional on the
-   * wire for deploy-skew tolerance.
-   */
-  cleanupResetsAt?: string | null;
-}
-
-export const ME_QUERY_KEY = ['auth', 'me'] as const;
+export { ME_QUERY_KEY, type Me, type MeMailbox, type MeUser, type Tier } from './me-contract';
 
 /** Non-terminal readiness states — a mailbox here is still syncing. */
 const SYNCING_READINESS: ReadonlyArray<SyncReadiness> = ['queued', 'syncing'];

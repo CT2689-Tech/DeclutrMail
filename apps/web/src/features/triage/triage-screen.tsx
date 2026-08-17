@@ -1224,7 +1224,7 @@ export function TriageScreen({
         />
       )}
 
-      {state.kind === 'loading' && <LoadingState />}
+      {state.kind === 'loading' && <TriageLoadingState />}
       {state.kind === 'error' && <TriageErrorState error={state.error} onRetry={state.retry} />}
       {/* "See Plus" routes to the real pricing page (D19) — a hard
           navigation since /pricing lives in the (marketing) route
@@ -1326,7 +1326,7 @@ function TriageErrorState({ error, onRetry }: { error: unknown; onRetry: () => v
 }
 
 /** Skeleton stack — matches the row's vertical rhythm. */
-function LoadingState() {
+export function TriageLoadingState() {
   return (
     <div
       role="status"

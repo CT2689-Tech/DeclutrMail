@@ -127,6 +127,13 @@ export class IconsController {
     // A session is the licence to cause outbound work, not to read.
     const result = await this.icons.lookup(domain, { mayEnqueue: req.user !== undefined });
 
+    // CSS `background-image` is a no-cors subresource. Cross-origin SVG
+    // with `nosniff` is ORB-eligible, which is what production DevTools
+    // reported as CORB + `(failed)` on every `/api/icons/:domain` while
+    // local same-origin loads worked. CORP `cross-origin` tells Chromium
+    // the bytes are meant to be painted by the web app origin.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+
     if (result.kind === 'miss') {
       res.setHeader('Cache-Control', MISS_CACHE_CONTROL);
       res.status(204).end();

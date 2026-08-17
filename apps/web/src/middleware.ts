@@ -174,8 +174,10 @@ export function buildContentSecurityPolicy(nonce: string | null, env: CspEnv): s
     // See header comment: attributes can't be nonced; design system is
     // inline-style based. script-src stays strict.
     `style-src 'self' 'unsafe-inline'`,
-    // googleusercontent per D175; the last three are the sender-logo
-    // chain in packages/shared avatar.tsx (see header comment).
+    // googleusercontent per D175 (Google profile photos on the account
+    // menu). Brand logos are first-party `${NEXT_PUBLIC_API_URL}/api/
+    // icons/:domain` (D254 / ADR-0034) — the retired Clearbit →
+    // DuckDuckGo → Google S2 waterfall must not stay on the policy.
     //
     // apiOrigin is here for the SAME reason it is in connect-src, and it
     // is a SEPARATE grant: CSP allowlists per fetch type, so permitting
@@ -188,7 +190,7 @@ export function buildContentSecurityPolicy(nonce: string | null, env: CspEnv): s
     // outside (Avatar always renders its monogram underneath), so
     // nothing surfaced it. Any future subresource loaded from the API
     // needs its own directive entry too.
-    `img-src ${sources(`'self'`, 'data:', apiOrigin, 'https://*.googleusercontent.com', 'https://logo.clearbit.com', 'https://icons.duckduckgo.com', 'https://www.google.com')}`,
+    `img-src ${sources(`'self'`, 'data:', apiOrigin, 'https://*.googleusercontent.com')}`,
     `font-src 'self'`,
     `connect-src ${sources(
       `'self'`,

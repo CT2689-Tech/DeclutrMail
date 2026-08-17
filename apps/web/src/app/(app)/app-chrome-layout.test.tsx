@@ -27,26 +27,36 @@
  *      hit an endpoint the server would 402.
  */
 
+import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { DEFAULT_SENDERS_QUERY } from '@/features/senders/api/query-options';
+import { sendersKeys } from '@/features/senders/api/query-keys';
+import { useSenders } from '@/features/senders/api/use-senders';
+import { makeQueryClient } from '@/lib/query-client';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
 
-const { pushSpy, replaceSpy, undoTrayPropsSpy, pathnameRef } = vi.hoisted(() => ({
-  pushSpy: vi.fn(),
-  replaceSpy: vi.fn(),
-  undoTrayPropsSpy: vi.fn(),
-  // Mutable so tests can drive the pathname-dependent branch (the
-  // user-scoped-route fallback under no active mailbox). Defaults to a
-  // mailbox-scoped route so every pre-existing test is unaffected.
-  pathnameRef: { current: '/senders' },
-}));
+const { pushSpy, replaceSpy, refreshSpy, undoTrayPropsSpy, pathnameRef, searchParamsRef } =
+  vi.hoisted(() => ({
+    pushSpy: vi.fn(),
+    replaceSpy: vi.fn(),
+    refreshSpy: vi.fn(),
+    undoTrayPropsSpy: vi.fn(),
+    // Mutable so tests can drive the pathname-dependent branch (the
+    // user-scoped-route fallback under no active mailbox). Defaults to a
+    // mailbox-scoped route so every pre-existing test is unaffected.
+    pathnameRef: { current: '/senders' },
+    searchParamsRef: { current: '' },
+  }));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: pushSpy, replace: replaceSpy }),
+  useRouter: () => ({ push: pushSpy, replace: replaceSpy, refresh: refreshSpy }),
   usePathname: () => pathnameRef.current,
+  useSearchParams: () => new URLSearchParams(searchParamsRef.current),
 }));
 vi.mock('@/features/triage/triage-undo-tray', () => ({
   ProductUndoTray: (props: { enableShortcut?: boolean; mailboxId?: string }) => {
@@ -56,13 +66,16 @@ vi.mock('@/features/triage/triage-undo-tray', () => ({
 }));
 
 import { AppChromeLayout as AppLayout } from './app-chrome-layout';
+import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 
 afterEach(() => {
   vi.restoreAllMocks();
   pushSpy.mockClear();
   replaceSpy.mockClear();
+  refreshSpy.mockClear();
   undoTrayPropsSpy.mockClear();
   pathnameRef.current = '/senders';
+  searchParamsRef.current = '';
 });
 
 function renderLayout() {
@@ -209,6 +222,135 @@ describe('(app) layout auth boundary — D134', () => {
 });
 
 describe('(app) layout integration mounts — U-NAV', () => {
+  it('does not refetch the default senders list before the route boundary hydrates it', async () => {
+    const sendersSpy = vi.fn((_request: Request, _url: URL) =>
+      ok({ data: [], meta: { pagination: { hasMore: false, nextCursor: null } } }),
+    );
+    installFetchStub(
+      authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }).map((handler) =>
+        handler.path === '/api/senders' ? { ...handler, respond: sendersSpy } : handler,
+      ),
+    );
+
+    const serverClient = makeQueryClient();
+    serverClient.setQueryData(sendersKeys.list(DEFAULT_SENDERS_QUERY), {
+      pages: [
+        {
+          data: [{}],
+          meta: {
+            pagination: { hasMore: false, nextCursor: null },
+            query: {
+              globalMaxTotal: 0,
+              totalMatching: 0,
+              filterCounts: {},
+              asOf: '2026-08-16T00:00:00.000Z',
+            },
+          },
+        },
+      ],
+      pageParams: [undefined],
+    });
+
+    function StreamedSendersRoute() {
+      const [arrived, setArrived] = useState(false);
+      useEffect(() => setArrived(true), []);
+      return arrived ? (
+        <HydrationBoundary state={dehydrate(serverClient)}>
+          <SendersRouteProbe />
+        </HydrationBoundary>
+      ) : null;
+    }
+
+    function SendersRouteProbe() {
+      const senders = useSenders(DEFAULT_SENDERS_QUERY);
+      return <span>{senders.isSuccess ? 'hydrated senders route' : 'senders loading'}</span>;
+    }
+
+    render(
+      <QueryWrapper client={makeQueryClient()}>
+        <AppLayout>
+          <StreamedSendersRoute />
+        </AppLayout>
+      </QueryWrapper>,
+    );
+
+    expect(await screen.findByText('hydrated senders route')).toBeInTheDocument();
+    expect(sendersSpy).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      const sendersNav = screen
+        .getAllByRole('button')
+        .find((button) => button.textContent?.includes('Senders'));
+      expect(sendersNav).toHaveTextContent('1');
+    });
+  });
+
+  it('falls back to one route-owned browser request when server prefetch data is absent', async () => {
+    const sendersSpy = vi.fn((_request: Request, _url: URL) =>
+      ok({
+        data: [],
+        meta: {
+          pagination: { hasMore: false, nextCursor: null },
+          query: {
+            globalMaxTotal: 0,
+            totalMatching: 0,
+            filterCounts: {},
+            asOf: '2026-08-16T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+    installFetchStub(
+      authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }).map((handler) =>
+        handler.path === '/api/senders' ? { ...handler, respond: sendersSpy } : handler,
+      ),
+    );
+
+    function SendersRouteProbe() {
+      const senders = useSenders(DEFAULT_SENDERS_QUERY);
+      return <span>{senders.isSuccess ? 'route fallback ready' : 'route fallback loading'}</span>;
+    }
+
+    render(
+      <QueryWrapper client={makeQueryClient()}>
+        <AppLayout>
+          <SendersRouteProbe />
+        </AppLayout>
+      </QueryWrapper>,
+    );
+
+    expect(await screen.findByText('route fallback ready')).toBeInTheDocument();
+    expect(sendersSpy).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the nav-chip default query enabled on a filtered senders URL', async () => {
+    searchParamsRef.current = 'q=amazon.com';
+    const sendersSpy = vi.fn((_request: Request, _url: URL) =>
+      ok({
+        data: [],
+        meta: {
+          pagination: { hasMore: false, nextCursor: null },
+          query: {
+            globalMaxTotal: 0,
+            totalMatching: 0,
+            filterCounts: {},
+            asOf: '2026-08-16T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+    installFetchStub(
+      authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }).map((handler) =>
+        handler.path === '/api/senders' ? { ...handler, respond: sendersSpy } : handler,
+      ),
+    );
+
+    renderLayout();
+
+    expect(await screen.findByText('authed app body')).toBeInTheDocument();
+    await vi.waitFor(() => expect(sendersSpy).toHaveBeenCalledOnce());
+    expect(sendersSpy.mock.calls[0]![1].toString()).not.toContain('q=');
+  });
+
   it('replaces the route with /onboarding when onboarding is incomplete (strict gate)', async () => {
     installFetchStub(authedHandlers({ onboardedAt: null }));
 
@@ -220,6 +362,16 @@ describe('(app) layout integration mounts — U-NAV', () => {
     // Once the gate engages the chrome renders nothing behind the
     // redirect — no half-authed screen.
     expect(screen.queryByText('authed app body')).not.toBeInTheDocument();
+  });
+
+  it('refreshes the router when the active mailbox scope resets', async () => {
+    installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }));
+    renderLayout();
+    expect(await screen.findByText('authed app body')).toBeInTheDocument();
+
+    window.dispatchEvent(new Event(MAILBOX_SCOPE_RESET_EVENT));
+
+    expect(refreshSpy).toHaveBeenCalledOnce();
   });
 
   it('renders children + the full nav (incl. Screener/Billing) on the happy path, with no banner', async () => {

@@ -92,6 +92,7 @@ describe('IconsController', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('image/svg+xml');
     expect(res.headers.get('etag')).toBe(ETAG);
+    expect(res.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect(Buffer.from(await res.arrayBuffer()).equals(SVG)).toBe(true);
   });
 
@@ -103,6 +104,7 @@ describe('IconsController', () => {
     // 204 means "render the monogram". An error status would make every
     // logo-less sender look like a fault in the console.
     expect(res.status).toBe(204);
+    expect(res.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect((await res.text()).length).toBe(0);
   });
 

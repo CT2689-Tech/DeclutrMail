@@ -1,7 +1,8 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { AppShell, ToastHost } from '@declutrmail/shared';
 import {
   hasCapability,
@@ -18,11 +19,18 @@ import { UpgradeModal } from '@/features/billing/upgrade-modal';
 import { AccountMenu } from '@/features/mailboxes/account-menu';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 import { useMailboxSyncToasts } from '@/features/mailboxes/use-mailbox-sync-toasts';
+import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { useOnboardingGate } from '@/features/onboarding/use-onboarding-gate';
 import { useScreenerCount } from '@/features/screener/api/use-screener';
 import { ScreenerBadge } from '@/features/screener/screener-badge';
 import { LaterReturnAlert } from '@/features/snoozed/later-return-alert';
 import { useSenders } from '@/features/senders/api/use-senders';
+import {
+  DEFAULT_SENDERS_QUERY,
+  shouldHydrateDefaultSenders,
+} from '@/features/senders/api/query-options';
+import { sendersKeys } from '@/features/senders/api/query-keys';
+import type { SenderListEnvelope } from '@/lib/api/senders';
 import { SyncErrorBanner } from '@/features/sync/sync-error-banner';
 import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
 import { ThemeToggle } from '@/features/theme/theme-toggle';
@@ -71,10 +79,10 @@ import { isFeatureEnabled } from '@/lib/flags';
  *                           user-scoped and must survive zero mailboxes).
  *   7. normal             — AppShell + children.
  *
- * Sender-count chip: derived from the live `useSenders` infinite query
- * (first page) — represents the active mailbox's count + a `+` suffix
- * when there's more data behind the cursor. Hidden until the first
- * page returns so we never flash a stale `0`.
+ * Sender-count chip: derived from the default senders list (same query
+ * `/senders` hydrates) — first-page count + a `+` suffix when there's
+ * more data behind the cursor. Hidden until the first page returns so
+ * we never flash a stale `0`.
  *
  * Screener badge (D74): `ScreenerBadge` fed by `useScreenerCount`,
  * mounted only for tiers with the `screener` capability (D77) — see
@@ -126,9 +134,82 @@ function isUserScopedRoute(pathname: string): boolean {
   );
 }
 
+type SendersCount = number | string | undefined;
+
+function countDefaultSenders(data: InfiniteData<SenderListEnvelope> | undefined): SendersCount {
+  const firstPage = data?.pages[0];
+  if (firstPage === undefined) return undefined;
+  return firstPage.meta.pagination.hasMore ? `${firstPage.data.length}+` : firstPage.data.length;
+}
+
+/**
+ * Publish the nav-chip count without letting the shell create an empty
+ * default-list query before the nested `/senders` HydrationBoundary arrives.
+ * A disabled `useSenders` still creates that cache entry; TanStack then
+ * defers hydration and the enabled route consumer races it with a browser
+ * fetch. Reading QueryCache directly is query-free and still updates the chip
+ * as soon as the route hydrates (or completes its client fallback).
+ */
+function HydratedSendersCountObserver({ onCount }: { onCount: (count: SendersCount) => void }) {
+  const queryClient = useQueryClient();
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => queryClient.getQueryCache().subscribe(onStoreChange),
+    [queryClient],
+  );
+  const getSnapshot = useCallback(
+    () =>
+      queryClient.getQueryData<InfiniteData<SenderListEnvelope>>(
+        sendersKeys.list(DEFAULT_SENDERS_QUERY),
+      ),
+    [queryClient],
+  );
+  const data = useSyncExternalStore(subscribe, getSnapshot, () => undefined);
+  const count = countDefaultSenders(data);
+
+  useEffect(() => onCount(count), [count, onCount]);
+  return null;
+}
+
+function FetchedSendersCountObserver({
+  enabled,
+  onCount,
+}: {
+  enabled: boolean;
+  onCount: (count: SendersCount) => void;
+}) {
+  const senders = useSenders({ ...DEFAULT_SENDERS_QUERY, enabled });
+  const count = countDefaultSenders(senders.data);
+
+  useEffect(() => onCount(count), [count, onCount]);
+  return null;
+}
+
+function SendersCountObserver({
+  routeOwnsDefaultSenders,
+  enabled,
+  onCount,
+}: {
+  routeOwnsDefaultSenders: boolean;
+  enabled: boolean;
+  onCount: (count: SendersCount) => void;
+}) {
+  return routeOwnsDefaultSenders ? (
+    <HydratedSendersCountObserver onCount={onCount} />
+  ) : (
+    <FetchedSendersCountObserver enabled={enabled} onCount={onCount} />
+  );
+}
+
 function AppChrome({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const refreshServerScope = () => router.refresh();
+    window.addEventListener(MAILBOX_SCOPE_RESET_EVENT, refreshServerScope);
+    return () => window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, refreshServerScope);
+  }, [router]);
   const { me } = useAuth();
   useAnalyticsIdentity(me.user.id);
   // D245: `snoozed` remains the internal capability/nav key, while
@@ -144,16 +225,31 @@ function AppChrome({ children }: { children: ReactNode }) {
   // Returning-user strict onboarding gate (D6/D109/D113) — ladder #4.
   const onboardingGate = useOnboardingGate();
 
-  // First page is enough — the chip is a hint, not an inventory. Gated
-  // off when there's no active mailbox so it can't 409.
-  const senders = useSenders({ limit: 50, enabled: hasActiveMailbox });
-  const firstPage = senders.data?.pages[0];
-  const sendersCount =
-    firstPage === undefined
-      ? undefined
-      : firstPage.meta.pagination.hasMore
-        ? `${firstPage.data.length}+`
-        : firstPage.data.length;
+  // First page of the DEFAULT senders list — the chip is a hint, not an
+  // inventory. The bare `/senders` route owns this query because its
+  // server HydrationBoundary can stream in after the client shell mounts.
+  // Stay subscribed to that cache entry but do not start a competing
+  // browser request while the route is responsible for hydrating it.
+  // Filtered URLs do not hydrate the default list, so the chip retains its
+  // normal client fetch there. No active mailbox remains gated to avoid 409.
+  const routeOwnsDefaultSenders =
+    pathname === '/senders' && shouldHydrateDefaultSenders(searchParams);
+  const countOwner = routeOwnsDefaultSenders ? 'route' : 'shell';
+  const [sendersCountState, setSendersCountState] = useState<{
+    owner: 'route' | 'shell';
+    count: SendersCount;
+  }>({ owner: countOwner, count: undefined });
+  const sendersCount = sendersCountState.owner === countOwner ? sendersCountState.count : undefined;
+  const publishSendersCount = useCallback(
+    (count: SendersCount) => {
+      setSendersCountState((current) =>
+        current.owner === countOwner && current.count === count
+          ? current
+          : { owner: countOwner, count },
+      );
+    },
+    [countOwner],
+  );
 
   // Screener badge (D74) — Screener is granted at Plus (D77, reversed
   // by D251), so the count query is gated on the tier capability: a
@@ -226,6 +322,11 @@ function AppChrome({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <SendersCountObserver
+        routeOwnsDefaultSenders={routeOwnsDefaultSenders}
+        enabled={hasActiveMailbox}
+        onCount={publishSendersCount}
+      />
       <SyncNowAnimationStyle />
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
         <GracePeriodBanner />

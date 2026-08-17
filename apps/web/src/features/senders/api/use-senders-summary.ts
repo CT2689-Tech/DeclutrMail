@@ -26,12 +26,8 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { fetchSendersSummary } from '@/lib/api/senders';
-import { sendersKeys } from './query-keys';
+import { sendersSummaryQueryOptions } from './query-options';
 
 export function useSendersSummary(params: { q?: string | undefined } = {}) {
-  const q = params.q && params.q.length > 0 ? params.q : undefined;
-  return useQuery({
-    queryKey: sendersKeys.summary({ q }),
-    queryFn: ({ signal }) => fetchSendersSummary({ q }, signal),
-  });
+  return useQuery(sendersSummaryQueryOptions(params, fetchSendersSummary));
 }

@@ -3,10 +3,10 @@
  *
  * Verifies the success branch resolves the SyncStatus payload and the
  * `refetchInterval` policy: poll quickly while syncing, more slowly on
- * failed/ready states, and heal a paused tab immediately on focus. We
- * assert the policy function directly off `query.state` rather than
- * racing real timers — the cadence value is the contract, not wall-clock
- * behaviour.
+ * failed/ready states, and heal a paused tab on focus once the cached
+ * reading is stale. We assert the policy function directly off
+ * `query.state` rather than racing real timers — the cadence value is
+ * the contract, not wall-clock behaviour.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -19,6 +19,7 @@ import {
   SYNC_POLL_MS,
   SYNC_FAILED_POLL_MS,
   SYNC_READY_POLL_MS,
+  SYNC_STATUS_KEY,
 } from './use-sync-status';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -99,7 +100,7 @@ describe('useSyncStatus', () => {
     ).toBe(SYNC_FAILED_POLL_MS);
   });
 
-  it('refetches ready status immediately when a backgrounded tab regains focus', async () => {
+  it('refetches ready status on focus only after the cached reading goes stale', async () => {
     let requests = 0;
     focusManager.setFocused(false);
     installFetchStub([
@@ -120,6 +121,13 @@ describe('useSyncStatus', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(requests).toBe(1);
 
+    act(() => focusManager.setFocused(true));
+    await waitFor(() => expect(result.current.isFetching).toBe(false));
+    expect(requests).toBe(1);
+
+    const cached = client.getQueryCache().find({ queryKey: [...SYNC_STATUS_KEY, null] });
+    cached?.setState({ ...cached.state, dataUpdatedAt: Date.now() - 60_000 });
+    act(() => focusManager.setFocused(false));
     act(() => focusManager.setFocused(true));
     await waitFor(() => {
       expect(requests).toBe(2);

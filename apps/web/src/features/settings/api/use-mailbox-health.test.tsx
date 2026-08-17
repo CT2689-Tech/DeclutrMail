@@ -33,7 +33,7 @@ describe('useMailboxesHealth', () => {
     resetFetchStub();
   });
 
-  it('refreshes active-mailbox health when a backgrounded tab regains focus', async () => {
+  it('refreshes stale mailbox health when a backgrounded tab regains focus', async () => {
     let requests = 0;
     focusManager.setFocused(false);
     installFetchStub([
@@ -56,6 +56,8 @@ describe('useMailboxesHealth', () => {
       expect(result.current[MAILBOX.id]?.lastSyncedAt).toBe('2026-07-12T10:00:00.000Z'),
     );
 
+    const cached = client.getQueryCache().find({ queryKey: ['sync', 'status', MAILBOX.id] });
+    cached?.setState({ ...cached.state, dataUpdatedAt: Date.now() - 60_000 });
     act(() => focusManager.setFocused(true));
     await waitFor(() => {
       expect(requests).toBe(2);

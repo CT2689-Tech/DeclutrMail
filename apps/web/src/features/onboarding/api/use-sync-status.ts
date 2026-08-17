@@ -20,7 +20,7 @@
  * per-mailbox Settings observers.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { queryOptions, useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api/client';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 
@@ -34,6 +34,14 @@ export const SYNC_FAILED_POLL_MS = 10_000;
 
 /** Low-frequency health refresh after initial sync has completed. */
 export const SYNC_READY_POLL_MS = 60_000;
+
+/**
+ * Freshness window for a cached status reading. Long enough that DevTools
+ * focus / tab switches do not 304-storm, short enough that a paused
+ * `refetchInterval` still heals on the next stale focus. Poll cadence
+ * (`refetchInterval`) is independent and still 3s/10s/60s.
+ */
+export const SYNC_STATUS_STALE_TIME_MS = 30_000;
 
 /**
  * Poll-cadence policy. Ready mailboxes keep a low-frequency health poll
@@ -58,26 +66,37 @@ export function syncRefetchInterval(data: SyncStatus | undefined): number {
   return SYNC_POLL_MS;
 }
 
+export function syncStatusQueryKey(mailboxId?: string) {
+  return [...SYNC_STATUS_KEY, mailboxId ?? null] as const;
+}
+
+type SyncStatusReader = (signal: AbortSignal) => Promise<SyncStatus>;
+
+export function syncStatusQueryOptions(mailboxId: string | undefined, reader: SyncStatusReader) {
+  return queryOptions({
+    queryKey: syncStatusQueryKey(mailboxId),
+    queryFn: ({ signal }) => reader(signal),
+    staleTime: SYNC_STATUS_STALE_TIME_MS,
+    refetchInterval: (query) => syncRefetchInterval(query.state.data),
+    // Global query defaults disable focus refetches to prevent storms.
+    // Sync health is the narrow exception: a backgrounded tab may have
+    // paused its timer, so a STALE reading should restore truth on
+    // return. Fresh readings stay put — otherwise DevTools focus fires
+    // a 304 storm.
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useSyncStatus(mailboxId?: string, opts: { enabled?: boolean } = {}) {
   return useQuery({
-    // Key by mailbox so two gates (primary + a syncing secondary) never
-    // share a cache entry.
-    queryKey: [...SYNC_STATUS_KEY, mailboxId ?? null] as const,
-    queryFn: async ({ signal }) => {
+    ...syncStatusQueryOptions(mailboxId, async (signal) => {
       const envelope = await apiGet<SyncStatus>('/api/v1/sync/status', { signal, mailboxId });
       return envelope.data;
-    },
+    }),
     // `enabled: false` lets the onboarding step machine hold the poll
     // off while there is NO active mailbox (a session-resolved call
     // would 409 NO_ACTIVE_MAILBOX every 3s — the designed-state-not-
     // retry rule, CLAUDE.md §8). Existing callers pass nothing.
     enabled: opts.enabled ?? true,
-    refetchInterval: (query) => syncRefetchInterval(query.state.data),
-    // Global query defaults disable focus refetches to prevent storms.
-    // Sync health is the narrow exception: a backgrounded tab may have
-    // paused its timer, so returning should immediately restore truth.
-    refetchOnWindowFocus: true,
-    // The gate is the whole point of the screen — keep it fresh.
-    staleTime: 0,
   });
 }

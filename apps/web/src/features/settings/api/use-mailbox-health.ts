@@ -6,7 +6,8 @@
  * `X-Active-Mailbox-Id` via the apiGet `mailboxId` option), sharing the
  * cache keys + poll policy of `useSyncStatus` so the settings card and
  * the sync gate never disagree. Ready mailboxes refresh at the shared
- * low-frequency cadence and immediately on tab focus. Disconnected
+ * low-frequency cadence and on tab focus once the cached reading is
+ * stale. Disconnected
  * mailboxes are not queried — `CurrentMailboxGuard` only resolves active
  * ones, and their health ("Disconnected") already rides on
  * `me.mailboxes[].status`.
@@ -36,7 +37,7 @@ import { useQueries } from '@tanstack/react-query';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 
 import { apiGet } from '@/lib/api/client';
-import { SYNC_STATUS_KEY, syncRefetchInterval } from '@/features/onboarding/api/use-sync-status';
+import { syncStatusQueryOptions } from '@/features/onboarding/api/use-sync-status';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
 
@@ -68,20 +69,13 @@ export function useMailboxesHealth(
   const active = mailboxes.filter((m) => m.status === 'active');
   const results = useQueries({
     queries: active.map((m) => ({
-      // Same key as `useSyncStatus(m.id)` — one cache entry per mailbox
-      // shared with the sync gate / account-switcher polls.
-      queryKey: [...SYNC_STATUS_KEY, m.id] as const,
-      queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      ...syncStatusQueryOptions(m.id, async (signal: AbortSignal) => {
         const envelope = await apiGet<SyncStatus>('/api/v1/sync/status', {
           signal,
           mailboxId: m.id,
         });
         return envelope.data;
-      },
-      refetchInterval: (query: { state: { data: SyncStatus | undefined } }) =>
-        syncRefetchInterval(query.state.data),
-      refetchOnWindowFocus: true,
-      staleTime: 0,
+      }),
       // AccountMenu keeps its panel closed most of the time; callers can
       // defer non-selected mailbox observers until the health UI is visible.
       // Settings omits this option and remains continuously enabled.

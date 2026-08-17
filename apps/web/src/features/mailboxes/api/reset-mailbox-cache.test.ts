@@ -13,7 +13,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { resetMailboxScopedCache } from './reset-mailbox-cache';
+import { MAILBOX_SCOPE_RESET_EVENT, resetMailboxScopedCache } from './reset-mailbox-cache';
 
 describe('resetMailboxScopedCache', () => {
   it('invalidates all queries (refetch active) and never clear()s — clear left the switch stale', async () => {
@@ -40,5 +40,16 @@ describe('resetMailboxScopedCache', () => {
 
     expect(qc.getQueryState(['senders', 'list'])?.isInvalidated).toBe(true);
     expect(qc.getQueryState(['triage', 'queue'])?.isInvalidated).toBe(true);
+  });
+
+  it('notifies the app shell to refresh mailbox-scoped server payloads', async () => {
+    const qc = new QueryClient();
+    const listener = vi.fn();
+    window.addEventListener(MAILBOX_SCOPE_RESET_EVENT, listener);
+
+    await resetMailboxScopedCache(qc);
+
+    expect(listener).toHaveBeenCalledOnce();
+    window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, listener);
   });
 });

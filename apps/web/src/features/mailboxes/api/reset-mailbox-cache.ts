@@ -2,6 +2,8 @@ import type { QueryClient } from '@tanstack/react-query';
 
 import { apiErrorCode } from '@/lib/api/client';
 
+export const MAILBOX_SCOPE_RESET_EVENT = 'declutrmail:mailbox-scope-reset';
+
 /**
  * Reset all mailbox-scoped server state after the active mailbox
  * changes — switch, disconnect, or reconnect (D116).
@@ -28,6 +30,9 @@ import { apiErrorCode } from '@/lib/api/client';
  */
 export async function resetMailboxScopedCache(qc: QueryClient): Promise<void> {
   await qc.invalidateQueries();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(MAILBOX_SCOPE_RESET_EVENT));
+  }
 }
 
 /**
