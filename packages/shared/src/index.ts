@@ -61,6 +61,13 @@ export { ErrorState } from './components/error-state';
 export type { ErrorStateProps } from './components/error-state';
 export { ScreenIntro } from './components/screen-intro';
 
+// ADR-0036 — DeclutrMail's own identity (NOT the sender brand icons of
+// D254 / ADR-0034). Pre-promoted per ADR-0007 §Decision 2: brand-locked
+// surface with the marketing header, footer and legal layout as day-1
+// consumers. Colours are literal, not tokenized — see the ADR.
+export { Logo } from './components/logo';
+export type { LogoProps, LogoTone, LogoVariant } from './components/logo';
+
 // ADR-0016 — shared numeric primitive for Senders + Sender-Detail
 // surfaces. Variants: hero / display / stat / data. Replaces ad-hoc
 // `font.display` + fontSize combos at every callsite that renders a

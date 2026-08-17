@@ -132,15 +132,16 @@ utilities, types, and Zod schemas:
 **Pre-promotion pointer list** (primitives spec-named as pre-promoted
 in the plan today, per D199 worked-examples table):
 
-| Primitive                                                                          | Source D-decision        | Why pre-promoted                                                      |
-| ---------------------------------------------------------------------------------- | ------------------------ | --------------------------------------------------------------------- |
-| Universal leaf primitives (`<Button>`, `<Input>`, `<Chip>`, `<Modal>`, `<Drawer>`) | design system foundation | Universal; no shared-shape spec needed                                |
-| `<ConditionChip>`                                                                  | D197                     | Spec names ≥3 consumers (Senders D51, Activity D56, Autopilot custom) |
-| `<FieldOperatorValue>`                                                             | D197                     | Same                                                                  |
-| `<DragReorderList>`                                                                | D197                     | Notification reordering, Pinned senders, Quiet schedule               |
-| `<TriggerSelector>`                                                                | D197                     | Brief schedule (D64), Quiet schedule (D92)                            |
-| `<RecommendationBadge>`                                                            | D36, D39, D50            | Spec names ≥3 consumers                                               |
-| `<PrivacyBadge>`                                                                   | D7, D228                 | Trust artifact — locked copy, locked surface                          |
+| Primitive                                                                          | Source D-decision        | Why pre-promoted                                                                    |
+| ---------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------- |
+| Universal leaf primitives (`<Button>`, `<Input>`, `<Chip>`, `<Modal>`, `<Drawer>`) | design system foundation | Universal; no shared-shape spec needed                                              |
+| `<ConditionChip>`                                                                  | D197                     | Spec names ≥3 consumers (Senders D51, Activity D56, Autopilot custom)               |
+| `<FieldOperatorValue>`                                                             | D197                     | Same                                                                                |
+| `<DragReorderList>`                                                                | D197                     | Notification reordering, Pinned senders, Quiet schedule                             |
+| `<TriggerSelector>`                                                                | D197                     | Brief schedule (D64), Quiet schedule (D92)                                          |
+| `<RecommendationBadge>`                                                            | D36, D39, D50            | Spec names ≥3 consumers                                                             |
+| `<PrivacyBadge>`                                                                   | D7, D228                 | Trust artifact — locked copy, locked surface                                        |
+| `<Logo>`                                                                           | D255 (ADR-0036)          | Brand artifact — locked geometry and colour; marketing header, footer, legal layout |
 
 **Recon discipline before starting a feature PR** (mitigates the
 parallel-worktree duplication risk until `architecture-guardian`
