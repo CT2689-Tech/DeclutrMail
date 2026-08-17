@@ -171,6 +171,15 @@ describe('SenderTable', () => {
     ).toBeTruthy();
   });
 
+  it('keeps the first-party brand-logo layer available in table view', () => {
+    const { container } = render(<Harness {...{}} />);
+    const senderCell = container.querySelector('tr[data-dm-sender-id] td:nth-child(2)');
+
+    // Grid↔Table is a layout choice, not an identity-fidelity choice:
+    // a cached mark must remain eligible when the user switches views.
+    expect(senderCell?.querySelector('[style*="background-image"]')).toBeTruthy();
+  });
+
   it('primary verb button calls onAction with the derived verb (no mutation)', () => {
     // Fixture row: unprotected, recently seen, no engine verdict →
     // `deriveDefaultPrimary` falls back to the `people` intent → Keep.

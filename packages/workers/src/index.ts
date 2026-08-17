@@ -190,7 +190,12 @@ export {
   QUIET_HOURS_STATE_KEY,
   readQuietHoursState,
 } from './quiet-hours-state.js';
-export { DomainIconWorker, isResolvableDomain, isStale } from './domain-icon.worker.js';
+export {
+  DomainIconWorker,
+  isResolvableDomain,
+  isStale,
+  isWebsiteIconFallbackEnabled,
+} from './domain-icon.worker.js';
 export type { DomainIconDeps, DomainIconJobData, DomainIconResult } from './domain-icon.worker.js';
 export {
   DOMAIN_ICON_JOB,
@@ -206,6 +211,18 @@ export {
   validateBimiSvg,
 } from './bimi-resolver.js';
 export type { BimiDeps, BimiHttpPort, BimiResolution } from './bimi-resolver.js';
+export { resolveBrandfetchIcon } from './brandfetch-icon-resolver.js';
+export type {
+  BrandfetchIconDeps,
+  BrandfetchIconHttpPort,
+  BrandfetchIconResolution,
+} from './brandfetch-icon-resolver.js';
+export { resolveWebsiteIcon } from './website-icon-resolver.js';
+export type {
+  WebsiteIconDeps,
+  WebsiteIconHttpPort,
+  WebsiteIconResolution,
+} from './website-icon-resolver.js';
 export { parsePemChain, verifyVmc, VMC_EKU_OID } from './vmc-verifier.js';
 export type { VmcOptions, VmcResult } from './vmc-verifier.js';
 export { createAutopilotExecutionChain } from './autopilot-execution-chain.js';

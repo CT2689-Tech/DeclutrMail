@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS "brand_domain_aliases";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "brand_domain_alias_source";
+--> statement-breakpoint
+ALTER TABLE "domain_icons"
+  ALTER COLUMN "resolver_version" SET DEFAULT 5;
+--> statement-breakpoint
+UPDATE "domain_icons"
+SET "resolver_version" = 5
+WHERE "status" = 'none' AND "resolver_version" >= 6;

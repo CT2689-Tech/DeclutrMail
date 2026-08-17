@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
-import { domainIcons } from '@declutrmail/db';
-import { brandRoot } from '@declutrmail/shared/senders';
+import { brandDomainAliases, domainIcons } from '@declutrmail/db';
+import { brandRoot, organizationalDomain } from '@declutrmail/shared/senders';
 import { enqueueDomainIcon, isResolvableDomain, isStale } from '@declutrmail/workers';
 import type { DomainIconJobData } from '@declutrmail/workers';
 
@@ -32,7 +32,7 @@ export type IconLookup =
  *
  * It NEVER fetches inline. A cache miss returns immediately and the
  * outbound work happens in `DomainIconWorker`, so render latency is
- * never coupled to a third party's DNS and TLS. That is the whole
+ * never coupled to remote brand infrastructure's DNS and TLS. That is the whole
  * reason the read path is allowed to be on the critical path at all.
  *
  * Refresh is demand-driven: a stale row is served AND re-queued
@@ -41,7 +41,8 @@ export type IconLookup =
  *
  * Privacy (D7, D228): the only input is a domain string and the only
  * output is public brand artwork. Nothing here reads or writes
- * user-scoped data — see `domain_icons`' no-user-linkage note.
+ * user-scoped data — both `domain_icons` and the public alias registry
+ * intentionally carry no user or mailbox linkage.
  */
 @Injectable()
 export class IconsService {
@@ -61,48 +62,96 @@ export class IconsService {
    * identical, so an anonymous hit still serves the mark.
    */
   async lookup(rawDomain: string, opts: { mayEnqueue: boolean }): Promise<IconLookup> {
-    const domain = brandRoot(rawDomain);
+    const discoveryDomain = brandRoot(rawDomain).replace(/\.$/, '');
+    const organizational = organizationalDomain(rawDomain);
     // Rubbish never becomes a queued job. Silent miss rather than a
     // 400: the caller is an <img> tag, which can do nothing with an
     // error, and a bad domain is indistinguishable from an unknown one
     // as far as the rendered result goes.
+    if (!isResolvableDomain(organizational)) return { kind: 'miss' };
+
+    const [alias] = await this.db
+      .select({ canonicalDomain: brandDomainAliases.canonicalDomain })
+      .from(brandDomainAliases)
+      .where(
+        and(
+          eq(brandDomainAliases.aliasDomain, organizational),
+          eq(brandDomainAliases.confidence, 100),
+        ),
+      )
+      .limit(1);
+    const domain = alias?.canonicalDomain ?? organizational;
+    // The migration seeds validated values and schema checks prevent
+    // self-aliases, but a manually reviewed future row is still input
+    // to outbound resolution and must cross the same boundary.
     if (!isResolvableDomain(domain)) return { kind: 'miss' };
 
-    const [row] = await this.db
+    const cacheDomains = discoveryDomain === domain ? [domain] : [discoveryDomain, domain];
+    const rows = await this.db
       .select({
+        domain: domainIcons.domain,
         status: domainIcons.status,
         image: domainIcons.image,
         mime: domainIcons.mime,
         contentHash: domainIcons.contentHash,
+        source: domainIcons.source,
+        resolverVersion: domainIcons.resolverVersion,
         fetchedAt: domainIcons.fetchedAt,
       })
       .from(domainIcons)
-      .where(eq(domainIcons.domain, domain))
-      .limit(1);
+      .where(inArray(domainIcons.domain, cacheDomains));
 
-    if (!row) {
-      if (opts.mayEnqueue) await this.schedule(domain);
-      return { kind: 'miss' };
+    const now = new Date();
+    const byDomain = new Map(rows.map((row) => [row.domain, row] as const));
+    const canonicalRow = byDomain.get(domain);
+    const canonicalStale =
+      canonicalRow !== undefined &&
+      isStale(
+        {
+          status: canonicalRow.status,
+          source: canonicalRow.source,
+          fetchedAt: canonicalRow.fetchedAt,
+          resolverVersion: canonicalRow.resolverVersion,
+        },
+        now,
+      );
+
+    // Canonical migration and refresh are demand-driven. An existing
+    // exact-domain mark may be served below while one canonical job is
+    // queued, so this never regresses a visible logo to a monogram.
+    if ((!canonicalRow || canonicalStale) && opts.mayEnqueue) {
+      await this.schedule(domain, discoveryDomain);
     }
 
-    if (isStale({ status: row.status, fetchedAt: row.fetchedAt }, new Date())) {
-      // Re-queue, then serve whatever we hold. A stale mark is a far
-      // better answer than no mark, and the job dedups on the domain
-      // so a busy page cannot pile up refreshes.
-      if (opts.mayEnqueue) await this.schedule(domain);
+    for (const candidate of cacheDomains) {
+      const row = byDomain.get(candidate);
+      if (!row || row.status === 'none' || !row.image || !row.mime) continue;
+      const stale = isStale(
+        {
+          status: row.status,
+          source: row.source,
+          fetchedAt: row.fetchedAt,
+          resolverVersion: row.resolverVersion,
+        },
+        now,
+      );
+      // Provider artwork may be cached for at most 30 days. Once stale,
+      // skip it and try the canonical cache rather than serving expired
+      // third-party bytes under stale-while-revalidate.
+      if (row.source === 'brandfetch' && stale) continue;
+
+      return {
+        kind: 'hit',
+        image: Buffer.from(row.image),
+        mime: row.mime,
+        // `content_hash` is sha256 of the bytes, so it is already a
+        // strong validator; fall back to hashing only if a legacy row
+        // somehow lacks it.
+        etag: `"${row.contentHash ?? createHash('sha256').update(row.image).digest('hex')}"`,
+      };
     }
 
-    if (row.status === 'none' || !row.image || !row.mime) return { kind: 'miss' };
-
-    return {
-      kind: 'hit',
-      image: Buffer.from(row.image),
-      mime: row.mime,
-      // `content_hash` is sha256 of the bytes, so it is already a
-      // strong validator; fall back to hashing only if a legacy row
-      // somehow lacks it.
-      etag: `"${row.contentHash ?? createHash('sha256').update(row.image).digest('hex')}"`,
-    };
+    return { kind: 'miss' };
   }
 
   /**
@@ -110,10 +159,10 @@ export class IconsService {
    * outage must degrade to "monogram forever" rather than break the
    * page that asked for an avatar.
    */
-  private async schedule(domain: string): Promise<void> {
+  private async schedule(domain: string, discoveryDomain: string): Promise<void> {
     if (!this.queue) return;
     try {
-      await enqueueDomainIcon(this.queue, domain);
+      await enqueueDomainIcon(this.queue, domain, discoveryDomain);
     } catch (err) {
       console.error(
         JSON.stringify({

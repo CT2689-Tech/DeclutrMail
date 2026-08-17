@@ -6,15 +6,15 @@ import { bytea } from './_custom-types';
 /**
  * Brand icon cache (ADR-0034).
  *
- * ONE row per brand-root domain, for the WHOLE product. Not per user,
+ * ONE row per canonical brand domain, for the WHOLE product. Not per user,
  * not per mailbox — see the privacy note below, which is the reason
  * this table looks the way it does.
  *
  * Populated by `DomainIconWorker` (batchPolicy, idempotency key =
  * domain) and read by `GET /api/icons/:domain`. A logo is a property
  * of a domain, not of anyone's relationship to it, so 4,000 users who
- * all receive mail from Chase share ONE row and ONE outbound fetch,
- * ever.
+ * all receive mail from Chase share ONE row and ONE bounded resolution
+ * cascade per cache TTL.
  *
  * PRIVACY (D7, D228, ADR-0034 §1). This table intentionally carries no
  * `user_id` and no `mailbox_account_id`. Adding either would turn a
@@ -26,30 +26,46 @@ import { bytea } from './_custom-types';
  * NEGATIVE CACHING (ADR-0034 §2). `status='none'` is a real, stored
  * answer, not an absent row. A domain with no discoverable logo must
  * be remembered as such or every render of that sender re-enqueues a
- * fetch forever. Absence of a row means "never looked", which is the
- * only state that enqueues work.
+ * fetch forever. Absence, TTL expiry, or an older resolver version
+ * enqueues work; a current fresh negative does not.
  */
 export const domainIconStatus = pgEnum('domain_icon_status', ['ok', 'none']);
 
-/** Where an `ok` image came from — provenance for attribution + coverage review. */
-export const domainIconSource = pgEnum('domain_icon_source', ['bimi', 'vendor']);
+/**
+ * Where an `ok` image came from — provenance for attribution + coverage review.
+ * `vendor` is the legacy DB label for official-website normalized rasters.
+ * `brandfetch` stays distinct because its cached artwork must refresh
+ * on the provider's shorter 30-day term (ADR-0034 §4c).
+ */
+export const domainIconSource = pgEnum('domain_icon_source', ['bimi', 'vendor', 'brandfetch']);
 
 /** Refresh horizons (ADR-0034 §2), applied by the worker at write time. */
 export const DOMAIN_ICON_TTL_DAYS = {
   /** A stored mark goes stale in 90d so rebrands eventually land. */
   ok: 90,
+  /** Brandfetch permits cached artwork for at most 30 days. */
+  brandfetch: 30,
   /** A miss is retried after 30d so newly-published BIMI records land. */
   none: 30,
 } as const;
+
+/**
+ * Version of the resolution cascade that produced a cache row.
+ * Increment when a new source or acceptance rule can turn an old
+ * negative into a mark. Hits remain valid across resolver upgrades;
+ * only older misses are retried immediately.
+ */
+export const DOMAIN_ICON_RESOLVER_VERSION = 6;
 
 export const domainIcons = pgTable(
   'domain_icons',
   {
     /**
-     * Brand-root domain, lowercased — `chase.com`, never
-     * `mail1.chase.com`. Producers normalize through the same
-     * `brandRoot()` the monogram tint uses so a brand's subdomains
-     * collapse to one row (and one fetch).
+     * Canonical brand domain, lowercased — `chase.com`, never
+     * `alertsp.chase.com`. Producers derive the Public-Suffix-List
+     * organizational domain and then apply only fully verified aliases
+     * such as `temuemail.com -> temu.com`, so a brand's sending domains
+     * collapse to one row (and one resolution run per cache TTL).
      *
      * Bounded `varchar(253)`: the DNS maximum name length. A
      * pathological sender cannot inflate the PK index.
@@ -64,10 +80,10 @@ export const domainIcons = pgTable(
      * `domain_icons_image_matches_status_chk` in the migration so the
      * two columns can never disagree.
      *
-     * Phase 1 stores BIMI's SVG verbatim (post-sanitization): vector,
-     * a few KB, scales to every avatar size with no raster pipeline.
-     * `bytea` rather than `text` so a Phase 2 vendor PNG/WebP lands in
-     * the same column without a type migration.
+     * BIMI stores SVG verbatim (post-sanitization): vector, a few KB,
+     * and scalable to every avatar size. Official-site artwork is
+     * normalized to PNG before it lands here.
+     * `bytea` rather than `text` lets raster and SVG share the column.
      */
     image: bytea('image'),
 
@@ -89,6 +105,9 @@ export const domainIcons = pgTable(
      * without summing `length(image)` over the table.
      */
     byteSize: integer('byte_size'),
+
+    /** Resolution cascade version; older negative rows are provisional. */
+    resolverVersion: integer('resolver_version').notNull().default(DOMAIN_ICON_RESOLVER_VERSION),
 
     /** Last resolution attempt. Drives the TTL sweep — see `DOMAIN_ICON_TTL_DAYS`. */
     fetchedAt: timestamp('fetched_at', { withTimezone: true, mode: 'date' })

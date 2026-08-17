@@ -203,6 +203,22 @@ describe('dead-letter pipeline (D225)', () => {
       expect(row?.payload).toEqual(payload);
     });
 
+    it('keeps the public brand domain required to replay a domain-icon job', async () => {
+      const db = await freshDb();
+      const recorder = new DrizzleDeadLetterRecorder({ db: db as never });
+
+      const payload = { domain: 'bankofamerica.com' };
+      await recorder.record({
+        queue: 'domain-icon',
+        jobId: 'DomainIconWorker-bankofamerica.com',
+        payload,
+        error: 'boom',
+      });
+
+      const [row] = await db.select().from(deadLetterJobs);
+      expect(row?.payload).toEqual(payload);
+    });
+
     it('caps the persisted error at DEAD_LETTER_ERROR_MAX_LEN', async () => {
       const db = await freshDb();
       const recorder = new DrizzleDeadLetterRecorder({ db: db as never });
@@ -224,6 +240,7 @@ describe('dead-letter pipeline (D225)', () => {
       // DEAD_LETTER_PAYLOAD_ALLOWED_KEYS (replay contract + D7 review).
       expect([...DEAD_LETTER_PAYLOAD_ALLOWED_KEYS]).toEqual([
         'actionId',
+        'domain',
         'endHistoryId',
         'idempotencyKey',
         'mailboxAccountId',

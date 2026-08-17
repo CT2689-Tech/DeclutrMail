@@ -1,0 +1,18 @@
+-- Rollback for 0059_domain_icon_brandfetch.sql.
+-- Cached Brandfetch rasters remain usable as generic vendor artwork.
+
+UPDATE "domain_icons" SET "source" = 'vendor' WHERE "source" = 'brandfetch';
+--> statement-breakpoint
+ALTER TABLE "domain_icons" ALTER COLUMN "resolver_version" SET DEFAULT 3;
+--> statement-breakpoint
+ALTER TABLE "domain_icons" DROP CONSTRAINT "domain_icons_image_matches_status_chk";
+--> statement-breakpoint
+ALTER TABLE "domain_icons" ALTER COLUMN "source" TYPE text USING "source"::text;
+--> statement-breakpoint
+DROP TYPE "public"."domain_icon_source";
+--> statement-breakpoint
+CREATE TYPE "public"."domain_icon_source" AS ENUM('bimi', 'vendor');
+--> statement-breakpoint
+ALTER TABLE "domain_icons" ALTER COLUMN "source" TYPE "public"."domain_icon_source" USING "source"::"public"."domain_icon_source";
+--> statement-breakpoint
+ALTER TABLE "domain_icons" ADD CONSTRAINT "domain_icons_image_matches_status_chk" CHECK (("status" = 'ok' AND "image" IS NOT NULL AND "mime" IS NOT NULL AND "source" IS NOT NULL AND "content_hash" IS NOT NULL AND "byte_size" IS NOT NULL) OR ("status" = 'none' AND "image" IS NULL AND "mime" IS NULL AND "source" IS NULL AND "content_hash" IS NULL AND "byte_size" IS NULL));

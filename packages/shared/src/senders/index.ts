@@ -1,5 +1,5 @@
 // packages/shared/src/senders/index.ts — re-exports for `@declutrmail/shared/senders`.
-export { brandRoot } from './brand-root';
+export { brandRoot, organizationalDomain } from './brand-root';
 export {
   WINDOWS,
   CONFIDENCE,

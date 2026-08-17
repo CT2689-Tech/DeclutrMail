@@ -45,7 +45,7 @@ export const MISS_CACHE_CONTROL = 'private, max-age=60';
 /**
  * Brand icon route (ADR-0034).
  *
- *   GET /api/icons/:domain → 200 image/svg+xml | 304 | 204
+ *   GET /api/icons/:domain → 200 image/svg+xml|image/png | 304 | 204
  *
  * ENVELOPE EXEMPTION (ADR-0008). This is the one route that returns
  * raw bytes rather than the `{ok,data}` envelope: it is an `<img>`
@@ -144,11 +144,11 @@ export class IconsController {
 
     res.setHeader('ETag', result.etag);
     res.setHeader('Content-Type', result.mime);
-    // Defence in depth for the SVG we serve from our own origin. The
-    // bytes were already validated against SVG Tiny PS (no script, no
-    // external refs) at resolution time, and an `<img>` context does
-    // not execute script — these headers cover the case where someone
-    // opens the URL directly.
+    // Defence in depth for the image we serve from our own origin. BIMI
+    // SVG was validated against Tiny PS (no script/external refs), and
+    // website raster art was decoded + re-encoded as PNG. An `<img>`
+    // context does not execute script; these headers also cover someone
+    // opening the URL directly.
     res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.status(200).send(result.image);

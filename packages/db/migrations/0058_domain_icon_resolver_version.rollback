@@ -1,0 +1,5 @@
+-- Rollback for 0058_domain_icon_resolver_version.sql.
+-- Cached artwork remains intact; only resolver provenance is removed.
+
+ALTER TABLE "domain_icons"
+  DROP COLUMN "resolver_version";

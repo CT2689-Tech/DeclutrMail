@@ -7,6 +7,7 @@ export * from './activity-log';
 export * from './automation-rules';
 export * from './billing-customers';
 export * from './brief-runs';
+export * from './brand-domain-aliases';
 export * from './cron-runs';
 export * from './dead-letter-jobs';
 export * from './domain-icons';

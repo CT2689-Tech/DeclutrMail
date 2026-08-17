@@ -95,6 +95,17 @@ describe('IconsController', () => {
     expect(Buffer.from(await res.arrayBuffer()).equals(SVG)).toBe(true);
   });
 
+  it('serves a normalized official-site mark as PNG', async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    app = await appFor({ kind: 'hit', image: png, mime: 'image/png', etag: ETAG });
+
+    const res = await fetch(`${await app.getUrl()}/icons/bankofamerica.com`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('image/png');
+    expect(Buffer.from(await res.arrayBuffer()).equals(png)).toBe(true);
+  });
+
   it('answers 204 — not an error — when there is no mark', async () => {
     app = await appFor({ kind: 'miss' });
 

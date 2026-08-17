@@ -61,11 +61,14 @@ export type {
   BriefSenderGroup,
   NewBriefRun,
 } from './schema/brief-runs';
+export { brandDomainAliases, brandDomainAliasSource } from './schema/brand-domain-aliases';
+export type { BrandDomainAlias, NewBrandDomainAlias } from './schema/brand-domain-aliases';
 export { cronRunStatus, cronRuns } from './schema/cron-runs';
 export type { CronRun, NewCronRun } from './schema/cron-runs';
 export { deadLetterJobs } from './schema/dead-letter-jobs';
 export type { DeadLetterJob, NewDeadLetterJob } from './schema/dead-letter-jobs';
 export {
+  DOMAIN_ICON_RESOLVER_VERSION,
   DOMAIN_ICON_TTL_DAYS,
   domainIcons,
   domainIconSource,

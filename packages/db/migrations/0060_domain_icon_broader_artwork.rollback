@@ -1,0 +1,9 @@
+-- Revert the resolver default and make misses produced by the broader
+-- acceptance policy provisional under resolver version 4.
+
+ALTER TABLE "domain_icons"
+  ALTER COLUMN "resolver_version" SET DEFAULT 4;
+--> statement-breakpoint
+UPDATE "domain_icons"
+SET "resolver_version" = 3
+WHERE "status" = 'none' AND "resolver_version" >= 4;

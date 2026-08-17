@@ -2,10 +2,11 @@
  * Sender avatar — MONOGRAM base, optional brand logo over it
  * (ADR-0024 + ADR-0034).
  *
- * One silhouette everywhere: rounded square, hairline border, a single
- * initial on a muted per-domain tint. ADR-0024 established that
- * silhouette after a 3-tier third-party favicon waterfall (Clearbit →
- * DuckDuckGo → Google S2) was removed for two reasons that still hold:
+ * One silhouette everywhere: rounded square, a fine hairline, and a
+ * single initial on a neutral dimensional tile in both themes. ADR-0024
+ * established that silhouette after a 3-tier third-party favicon
+ * waterfall (Clearbit → DuckDuckGo → Google S2) was removed for two
+ * reasons that still hold:
  *
  *   1. PRIVACY. Every rendered sender fired that sender's domain to up
  *      to three third parties from the user's browser (with the user's
@@ -54,15 +55,14 @@
  *     ETag → 304), so this is a real but small cost, paid to make the
  *     failure path safe.
  *
- * Below `LOGO_MIN_SIZE` the logo is skipped entirely. Table rows draw
- * this at 22px, where a downscaled mark is exactly the mixed-fidelity
- * problem ADR-0024 diagnosed, and the identity anchor is already doing
- * its job at that size.
+ * Below `LOGO_MIN_SIZE` the logo is skipped entirely. Compact 22px
+ * contexts remain monogram-only; Sender table rows use the 24px floor
+ * so switching between Grid and Table does not suppress a cached mark.
  *
- * Tint derivation: djb2 hash of the brand-level root domain (falls
- * back to the display name) → hue; fixed low saturation + high
- * lightness so every tint sits inside the cool/editorial palette (D2).
- * Same domain ⇒ same tint on every surface, session after session.
+ * Monograms are achromatic by design. Generated hue looks like brand
+ * identity without being brand identity, and competes with verified
+ * marks. The initial provides differentiation until a cached logo is
+ * available.
  *
  * Decorative by contract: every call site renders the sender name
  * adjacent, so the whole avatar stays `aria-hidden`.
@@ -79,16 +79,7 @@
 
 import { resolveFlag } from '../flags/resolve';
 import { brandRoot } from '../senders/brand-root';
-import { color, font } from '../tokens/tokens';
-
-/** djb2 — tiny, stable, good spread for short ASCII strings. */
-function hashString(s: string): number {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-    h = (h * 33) ^ s.charCodeAt(i);
-  }
-  return h >>> 0;
-}
+import { font } from '../tokens/tokens';
 
 /**
  * Smallest avatar that may carry a logo. Below this a brand mark is
@@ -134,8 +125,6 @@ export function Avatar({
   size?: number;
 }) {
   const initial = (name.trim()[0] ?? '?').toUpperCase();
-  const root = brandRoot(domain);
-  const hue = hashString(root.length > 0 ? root : name) % 360;
   const iconUrl = brandIconUrl(domain, size);
 
   const radius = Math.max(6, Math.round(size * 0.28));
@@ -150,17 +139,18 @@ export function Avatar({
         justifyContent: 'center',
         width: size,
         height: size,
+        boxSizing: 'border-box',
         borderRadius: radius,
-        // Hue stays per-domain; LIGHTNESS is theme-owned
-        // (styles/tokens.css --dm-avatar-*-l) so monograms keep their
-        // muted tint on dark surfaces instead of glowing paper-white.
-        background: `hsl(${hue} 30% var(--dm-avatar-bg-l, 94%))`,
-        border: `1px solid ${color.border}`,
-        color: `hsl(${hue} 26% var(--dm-avatar-fg-l, 34%))`,
+        // Achromatic in both themes: only a verified logo introduces
+        // brand color. Theme tokens still own depth and contrast.
+        background: `linear-gradient(145deg, hsl(0 0% var(--dm-avatar-highlight-l, 97%)) 0%, hsl(0 0% var(--dm-avatar-bg-l, 93%)) 64%, hsl(0 0% var(--dm-avatar-shadow-l, 89%)) 100%)`,
+        border: `1px solid hsl(0 0% var(--dm-avatar-rim-l, 78%) / var(--dm-avatar-rim-a, 0.52))`,
+        boxShadow: `inset 0 1px 0 hsl(0 0% var(--dm-avatar-shine-l, 100%) / var(--dm-avatar-shine-a, 0.72)), 0 1px 2px rgb(14 20 19 / var(--dm-avatar-depth-a, 0.08))`,
+        color: `hsl(0 0% var(--dm-avatar-fg-l, 30%))`,
         fontFamily: font.mono,
         fontSize: size * 0.4,
-        fontWeight: 500,
-        letterSpacing: '0.01em',
+        fontWeight: 600,
+        letterSpacing: '-0.02em',
         lineHeight: 1,
         flexShrink: 0,
         userSelect: 'none',
@@ -172,22 +162,22 @@ export function Avatar({
         <span
           style={{
             position: 'absolute',
-            // The uniform inset is what makes a logo and a monogram
-            // read as the same object rather than two kinds of thing.
-            inset: Math.max(2, Math.round(size * 0.14)),
+            // Stored marks are opaque square assets. Extend through the
+            // parent's 1px rim so a successful logo becomes the avatar
+            // instead of looking nested inside the monogram tile. On a
+            // failed request this layer still paints nothing at all.
+            inset: -1,
             // `iconUrl` is safe to interpolate into a CSS url() token:
             // the only variable segment is `encodeURIComponent`'d, and
             // that escapes every character that could close the quoted
             // string (`"` → %22, `\` → %5C, newlines → %0A).
             backgroundImage: `url("${iconUrl}")`,
-            // `contain` never crops: brand marks are not all square,
-            // and a cropped logo is worse than a small one.
-            backgroundSize: 'contain',
+            backgroundSize: 'cover',
             backgroundRepeat: 'no-repeat',
             backgroundPosition: 'center',
             // NO background-color, ever — see the header. A color here
             // paints over the monogram on every cache miss.
-            borderRadius: Math.max(4, radius - 2),
+            borderRadius: radius,
           }}
         />
       )}

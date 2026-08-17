@@ -1,4 +1,4 @@
-h1:s/90rdDOx+HVqyEyeX+41dYWrzduvB0iAYmoHRGtL6s=
+h1:/a0RfEvQwLf9vhXJivJa2YCBv1Yt07khZEr3PyJiXV4=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:1hE97u6u+JGGjHXjH50rrMA0K/i4UlPvqrkuN2Qs6Uk=
 0002_mailbox_oauth_tokens.sql h1:+w05bo7XzLJhpjftjhpIwna1kU+1MFYMWq6QJH0HZgg=
@@ -55,3 +55,7 @@ h1:s/90rdDOx+HVqyEyeX+41dYWrzduvB0iAYmoHRGtL6s=
 0054_sync_runs.sql h1:n8d7/VnROGKHf7wabVVUY5wmCoc+uOviASg6QFklrRg=
 0055_refresh_stale_one_click_unsub_urls.sql h1:3CcQfAwFfrhbEFc9dOJOqE68USRjdu9lbNSENm2h+Vg=
 0056_domain_icons.sql h1:ZUFf3gVn1DGf2AMZOPET+ohQZsu4/6fWseFJiVaI+7E=
+0058_domain_icon_resolver_version.sql h1:3JbGhy/IILGea5l2SwABljY+t0QVYNNXmmAEyyeLnqo=
+0059_domain_icon_brandfetch.sql h1:MrDBSfSNgdGxX2om7mVAVuJYBXLDMcC5NRa3m+aApIE=
+0060_domain_icon_broader_artwork.sql h1:hvMOdAxs3JP8Iktr4YNQvBrnjqnsVz1X90wNeoA2xhY=
+0061_brand_domain_aliases.sql h1:3DQeZKcHUJupWtxIYmb2PThKr1dmn17WQi/2FPfnyzE=
