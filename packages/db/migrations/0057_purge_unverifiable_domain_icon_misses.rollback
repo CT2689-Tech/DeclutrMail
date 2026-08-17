@@ -1,0 +1,13 @@
+-- Rollback for 0057_purge_unverifiable_domain_icon_misses.sql
+--
+-- INTENTIONALLY EMPTY. The forward migration deletes cached negative
+-- lookups, and restoring them would mean re-asserting "this domain
+-- publishes no mark" about domains we never correctly checked -- the
+-- exact wrong state the migration exists to clear.
+--
+-- Nothing is lost by not restoring them: absence of a row is the
+-- "never looked" state, so the read path simply re-enqueues resolution
+-- on demand. The rows regenerate themselves, correctly, for whichever
+-- domains someone actually renders.
+
+SELECT 1;

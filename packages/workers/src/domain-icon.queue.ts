@@ -15,6 +15,33 @@ export const DOMAIN_ICON_QUEUE = 'domain-icon';
 export const DOMAIN_ICON_JOB = 'domain-icon';
 
 /**
+ * Resolver generation, embedded in the job id.
+ *
+ * THIS FEATURE HAS TWO CACHES, AND A FIX MUST INVALIDATE BOTH. The
+ * durable one is the `domain_icons` row; the other is this job id,
+ * because `Queue.add` is a no-op while a job with the same id exists in
+ * ANY state and completions are retained for 24h. So clearing only the
+ * table leaves every recently-resolved domain silently un-enqueueable —
+ * the read path asks, the producer drops it, and nothing writes a row.
+ *
+ * Bumping this on a semantic change to resolution retires the old ids
+ * outright, so every domain re-enqueues on its next render instead of
+ * waiting out someone else's 24h tail. It is the code-side partner to
+ * the data migration, and it means a resolver fix needs no Redis
+ * surgery in production to actually take effect.
+ *
+ * v2 — 2026-08-17. v1 could not verify any real VMC (SHA-256 logotype
+ * commitment against an ecosystem that uses SHA-1; chain anchored in
+ * Node's TLS store, which carries no Verified Mark roots), so every v1
+ * completion recorded a miss that was never a real answer.
+ *
+ * BUMP THIS whenever resolution semantics change — a new source, a
+ * changed validation rule, a corrected verifier. Do not bump it for
+ * refactors that cannot change the outcome.
+ */
+export const DOMAIN_ICON_RESOLVER_VERSION = 'v2';
+
+/**
  * Job options keyed on the DOMAIN alone.
  *
  * This is the mechanism that makes a first page-load of a large
@@ -44,7 +71,7 @@ export function domainIconJobOptions(domain: string): JobsOptions {
     // all throw). The cron queues' `Worker:2026-08-14T08:00` ids
     // survive only by landing on that accepted count. Do not read
     // those as precedent — just keep colons out.
-    jobId: `DomainIconWorker-${domain}`,
+    jobId: `DomainIconWorker-${DOMAIN_ICON_RESOLVER_VERSION}-${domain}`,
     attempts: policy.maxAttempts,
     ...(policy.backoff
       ? { backoff: { type: policy.backoff.type, delay: policy.backoff.delayMs } }

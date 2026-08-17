@@ -195,6 +195,7 @@ export type { DomainIconDeps, DomainIconJobData, DomainIconResult } from './doma
 export {
   DOMAIN_ICON_JOB,
   DOMAIN_ICON_QUEUE,
+  DOMAIN_ICON_RESOLVER_VERSION,
   domainIconJobOptions,
   enqueueDomainIcon,
 } from './domain-icon.queue.js';

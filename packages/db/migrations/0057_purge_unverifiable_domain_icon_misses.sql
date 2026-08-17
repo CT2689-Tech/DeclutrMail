@@ -1,0 +1,30 @@
+-- Purge cached icon misses written by the broken verifier (ADR-0034).
+--
+-- WHY A DATA MIGRATION AND NOT JUST A CODE FIX. Until 2026-08-17
+-- `verifyVmc` could not accept ANY real Verified Mark Certificate: it
+-- computed the logotype commitment as SHA-256 when every issuer commits
+-- with SHA-1, and it anchored the chain in Node's TLS root store, which
+-- contains no Verified Mark roots at all. Both checks failed closed, so
+-- every domain resolved to `status='none'`.
+--
+-- That answer is cached for 30 days (`DOMAIN_ICON_TTL_DAYS.none`), and
+-- a `none` row is what STOPS the read path re-enqueueing. So the rows
+-- this bug wrote actively suppress the fix: with them in place, a
+-- corrected worker is never asked to look again, and every avatar keeps
+-- rendering a monogram until the last one ages out. Shipping the code
+-- fix without this migration would have looked exactly like the three
+-- previous attempts -- deploy, no change, no error.
+--
+-- SCOPED TO MISSES. `status='ok'` rows are real verified artwork and
+-- are left alone; in practice there are none, because nothing could
+-- ever verify. Deleting rather than back-dating `fetched_at` so the
+-- rows return through the normal "never looked" path, which is the
+-- only state that enqueues.
+--
+-- SAFE BY CONSTRUCTION. This table holds public brand artwork and
+-- negative lookups, with no user linkage of any kind (see
+-- 0056_domain_icons.sql). Nothing here is user data, nothing is
+-- irrecoverable: each deleted row costs one DNS lookup to re-derive,
+-- on demand, only for domains someone actually renders.
+
+DELETE FROM "domain_icons" WHERE "status" = 'none';

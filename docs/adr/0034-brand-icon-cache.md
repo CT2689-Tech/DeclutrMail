@@ -151,10 +151,8 @@ A record's `l=` tag is an assertion by whoever controls the domain, so
 issued only by CAs that check trademark ownership, committing to a
 specific image. `vmc-verifier.ts` requires all four of:
 
-1. the chain validates to a **publicly trusted root** (Node's bundled
-   Mozilla store, not a hand-maintained BIMI CA fingerprint list — a
-   pinned list we cannot verify would be either silently dead or wrong
-   in the permissive direction);
+1. the chain validates to an **authorised VMC root** — the pinned set in
+   `vmc-trust-anchors.ts` (DigiCert and GlobalSign Verified Mark roots);
 2. the leaf carries the **VMC extended-key-usage**
    (`1.3.6.1.5.5.7.3.31`) — the real discriminator, since a public CA
    will issue an attacker a TLS cert for their own domain but not a
@@ -167,15 +165,45 @@ specific image. `vmc-verifier.ts` requires all four of:
 The certificate is fetched through the same SSRF guard as the logo —
 its URL comes from the same attacker-controlled record.
 
+**Amended 2026-08-17.** Checks 1 and 4 as originally specified could
+never pass, and the feature rendered zero logos from launch until the
+amendment:
+
+- **Check 1 said Node's Mozilla store.** That store exists for TLS
+  server authentication; Verified Mark roots are distributed through the
+  BIMI Group's authorised-CA programme and are absent from it (Node 24:
+  146 roots, zero VMC roots). Every certificate that reached check 1 was
+  refused. The original rationale feared a pinned list would be
+  "silently dead or wrong in the permissive direction" — the store was
+  in fact BOTH, since any of 146 public CAs would otherwise have
+  satisfied it, leaving the EKU scan as the sole VMC discriminator.
+  Pinning is the stricter option, and each root is confirmed twice: from
+  the CA's own HTTPS distribution point and by fingerprint against a
+  live chain.
+- **Check 4 hashed with SHA-256.** RFC 6170 carries the commitment as a
+  `HashAlgAndValue`, so the ISSUER chooses the digest, and every VMC in
+  production uses SHA-1 (five live certs, three issuers, all SHA-1).
+  `LOGO_HASH_ALGORITHMS` now tries the algorithms the spec permits.
+  Accepting SHA-1 is sound here because the attack this check stops is
+  second-preimage, which SHA-1 still resists; only collision resistance
+  is broken, and that variant additionally requires passing a CA's
+  trademark check for a mark you authored.
+
 Checks 2 and 4 are DER substring searches rather than a full RFC 6170
 parse. That is a deliberate trade, argued in the module header: a false
 negative costs one monogram, while a false positive would require a
-certificate that chains to a public root to contain either the exact
-VMC OID encoding or the SHA-256 of the image we just fetched — which is
-the attestation we were looking for. Full ASN.1 traversal of
+certificate that chains to an authorised VMC root to contain either the
+exact VMC OID encoding or a digest of the image we just fetched — which
+is the attestation we were looking for. Full ASN.1 traversal of
 `LogotypeExtn` is the classic silently-permissive failure, and the
 maintained library that would avoid hand-rolling it demands a global
 `reflect-metadata` polyfill this package will not take.
+
+Neither defect was catchable by the suite that covered them: the
+OpenSSL fixture's logotype carried SHA-256 (the implementation's own
+assumption), and tests always inject `trustAnchors`, so the shipped
+default was never exercised. `vmc-verifier.test.ts` therefore also runs
+an unmodified production chain through the shipped defaults.
 
 ### 4b. Resolution cascade, server-side only
 

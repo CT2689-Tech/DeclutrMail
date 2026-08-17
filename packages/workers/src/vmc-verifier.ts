@@ -1,5 +1,6 @@
 import { createHash, X509Certificate } from 'node:crypto';
-import { rootCertificates } from 'node:tls';
+
+import { VMC_TRUST_ANCHORS } from './vmc-trust-anchors.js';
 
 /**
  * VMC verification (ADR-0034 Phase 2).
@@ -20,11 +21,14 @@ import { rootCertificates } from 'node:tls';
  * Four things must all hold, and any failure means "no logo" (the
  * caller falls back to the monogram, so failing closed is free):
  *
- *   1. The chain validates to a PUBLICLY TRUSTED root. We use Node's
- *      bundled Mozilla root store rather than a hand-maintained list
- *      of BIMI CA fingerprints — a pinned list we cannot verify from
- *      here would either be wrong (feature silently dead) or, worse,
- *      wrong in the permissive direction.
+ *   1. The chain validates to an AUTHORISED VMC ROOT — the pinned set
+ *      in `vmc-trust-anchors.ts`, not Node's bundled root store. That
+ *      store is Mozilla's TLS trust list and contains no VMC roots at
+ *      all, so anchoring there rejected every real certificate and
+ *      took the whole feature down silently. Pinning is also the
+ *      STRICTER option here, not the looser one: the TLS store would
+ *      accept any of 146 public CAs, leaving the EKU scan as the only
+ *      thing distinguishing a VMC from an ordinary server cert.
  *   2. The leaf carries the VMC extended-key-usage OID. This is the
  *      real discriminator: a public CA will happily issue a TLS cert
  *      for an attacker's own domain, but only a BIMI-authorised CA
@@ -70,6 +74,47 @@ const VMC_EKU_DER = Buffer.from([0x06, 0x08, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07,
 /** DER encoding of the `id-pe-logotype` extension OID (1.3.6.1.5.5.7.1.12). */
 const LOGOTYPE_EXT_DER = Buffer.from([0x06, 0x08, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x01, 0x0c]);
 
+/**
+ * Digests to try for the logotype commitment (check 4).
+ *
+ * THE ALGORITHM IS THE CA'S CHOICE, NOT OURS. RFC 6170 carries the
+ * commitment as a `HashAlgAndValue` — an AlgorithmIdentifier plus the
+ * value — so the issuer states which digest it used. Assuming one was
+ * this feature's total-failure bug: the first cut hashed with SHA-256
+ * only, and EVERY VMC in production commits with SHA-1, so check 4
+ * rejected 100% of real certificates. Verified 2026-08-17 against five
+ * live VMCs from three issuers (DigiCert, Entrust, and Robinhood's
+ * self-hosted bundle): bankofamerica.com, splitwise.com, paypal.com,
+ * americanexpress.com, robinhood.com — all SHA-1, none SHA-256.
+ *
+ * Because rejection is DESIGNED to fall back to a monogram, the failure
+ * was silent and looked exactly like "these brands publish no logo".
+ * Hence the list rather than a second hardcoded guess: the next issuer
+ * to modernize must not take the feature down again for another round.
+ *
+ * ON ACCEPTING SHA-1. This is not the usual SHA-1-is-broken case, and
+ * the distinction is the whole justification:
+ *
+ *   - The attack this check stops is SECOND-PREIMAGE: take the hash a
+ *     CA already certified for someone else's mark and produce a
+ *     different SVG matching it. SHA-1 second-preimage resistance is
+ *     NOT broken (~2^160); only COLLISION resistance is.
+ *   - The collision variant needs the attacker to author both images
+ *     up front and then get a BIMI-authorised CA to certify one of
+ *     them — which means passing that CA's trademark verification for
+ *     a mark they own. It buys a wrong logo in a 28px avatar rendered
+ *     beside the sender's real name, which we always show.
+ *   - Refusing SHA-1 buys no security, only zero logos: it rejects
+ *     every certificate the ecosystem actually issues. Gmail, Apple
+ *     Mail and Yahoo render these same certs.
+ *
+ * A false positive still needs the DER after the logotype OID to
+ * contain the exact digest of the image we just fetched, which remains
+ * the attestation we are looking for — see the module note on why this
+ * is a scan and not a parse.
+ */
+const LOGO_HASH_ALGORITHMS = ['sha1', 'sha256', 'sha512'] as const;
+
 /** Chain depth ceiling — a real VMC chain is leaf + 1-2 intermediates. */
 const MAX_CHAIN_DEPTH = 8;
 
@@ -85,9 +130,10 @@ export interface VmcOptions {
   /** Clock seam for tests. */
   now?: Date;
   /**
-   * Trust anchors as PEM strings. Defaults to Node's bundled Mozilla
-   * root store. Injectable ONLY so tests can supply their own CA — a
-   * fixture chain can never reach a real public root.
+   * Trust anchors as PEM strings. Defaults to the pinned VMC roots —
+   * NOT Node's TLS store, which contains none (see
+   * `vmc-trust-anchors.ts`). Injectable ONLY so tests can supply their
+   * own CA; a fixture chain can never reach a real VMC root.
    */
   trustAnchors?: readonly string[];
 }
@@ -137,15 +183,19 @@ export function verifyVmc(opts: VmcOptions): VmcResult {
   // 4. The cert must commit to THIS image.
   const logotypeAt = leaf.raw.indexOf(LOGOTYPE_EXT_DER);
   if (logotypeAt === -1) return { ok: false, reason: 'vmc: no logotype extension' };
-  const logoHash = createHash('sha256').update(opts.logo).digest();
   // Scoped to the bytes after the extension OID: extensions are laid
   // out sequentially, so the logotype content follows its own OID.
-  if (leaf.raw.subarray(logotypeAt).indexOf(logoHash) === -1) {
+  const logotype = leaf.raw.subarray(logotypeAt);
+  if (
+    !LOGO_HASH_ALGORITHMS.some((alg) =>
+      logotype.includes(createHash(alg).update(opts.logo).digest()),
+    )
+  ) {
     return { ok: false, reason: 'vmc: certificate does not commit to this logo' };
   }
 
-  // 5. Chain to a publicly trusted root.
-  return verifyChain(chain, opts.trustAnchors ?? rootCertificates, now);
+  // 5. Chain to an authorised VMC root.
+  return verifyChain(chain, opts.trustAnchors ?? VMC_TRUST_ANCHORS, now);
 }
 
 /**

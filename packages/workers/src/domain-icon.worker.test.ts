@@ -5,7 +5,7 @@ import { domainIcons } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 
 import { DomainIconWorker, isResolvableDomain, isStale } from './domain-icon.worker.js';
-import { domainIconJobOptions } from './domain-icon.queue.js';
+import { domainIconJobOptions, DOMAIN_ICON_RESOLVER_VERSION } from './domain-icon.queue.js';
 import type { BimiHttpPort } from './bimi-resolver.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -254,8 +254,18 @@ describe('DomainIconWorker', () => {
 describe('domainIconJobOptions', () => {
   it('keys the job on the domain so concurrent misses collapse', () => {
     // 200 uncached senders on one grid render must produce ONE job.
-    expect(domainIconJobOptions('brand.example').jobId).toBe('DomainIconWorker-brand.example');
-    expect(domainIconJobOptions('other.example').jobId).toBe('DomainIconWorker-other.example');
+    expect(domainIconJobOptions('brand.example').jobId).toBe('DomainIconWorker-v2-brand.example');
+    expect(domainIconJobOptions('other.example').jobId).toBe('DomainIconWorker-v2-other.example');
+  });
+
+  it('carries the resolver generation so a fix is not masked by old jobs', () => {
+    // `Queue.add` is a no-op while a job with the same id exists in any
+    // state, and completions are retained 24h — so without a version
+    // segment, correcting the resolver leaves every recently-resolved
+    // domain un-enqueueable and the fix invisible. See the constant.
+    expect(domainIconJobOptions('brand.example').jobId).toContain(
+      `-${DOMAIN_ICON_RESOLVER_VERSION}-`,
+    );
   });
 
   it('uses a job id BullMQ will accept', () => {

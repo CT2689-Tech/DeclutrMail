@@ -24,6 +24,49 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-17 — Add the Entrust VMC root once a live Entrust chain is available
+**Source:** VMC verification fix (this branch — see MISTAKES.md 2026-08-17)
+**Why:** `vmc-trust-anchors.ts` pins the DigiCert and GlobalSign Verified
+Mark roots, which covered all 16 live VMCs sampled across 34 domains
+(15 DigiCert, 1 GlobalSign). Entrust is the third CA on the BIMI
+authorised list, so brands using it currently resolve to "no logo" —
+correct-looking, and wrong. It was deliberately NOT pinned: no live
+Entrust-issued VMC turned up in the sample and its published root could
+not be retrieved from `aia.entrust.net` / `web.entrust.com`, so it
+failed the two-way confirmation bar every other pin met. Guessing a root
+is the one mistake that would be wrong in the permissive direction.
+**How:**
+1. Find a domain with an Entrust VMC:
+   `dig +short TXT default._bimi.<domain>` → fetch the `a=` bundle →
+   `openssl x509 -noout -subject` on the last cert.
+2. Fetch the root from the CA-Issuers AIA URI published by that chain's
+   intermediate (that is how the GlobalSign root was obtained), and
+   confirm its SHA-256 matches the root presented in the chain.
+3. Add the PEM + fingerprint to `vmc-trust-anchors.ts` with the same
+   provenance comment block; `vmc-trust-anchors.test.ts` covers the rest.
+**Verifies by:** the new root's fingerprint appears in
+`VMC_TRUST_ANCHOR_FINGERPRINTS`, the anchors test passes, and an
+Entrust-issued domain resolves to `status='ok'` in `domain_icons`.
+**Status:** Open
+
+### 2026-08-17 — Dead CSP `img-src` allowances for the removed favicon vendors
+**Source:** VMC verification fix (this branch)
+**Why:** `apps/web/src/middleware.ts` still allows `logo.clearbit.com`,
+`icons.duckduckgo.com` and `www.google.com` in `img-src`. ADR-0024
+removed that third-party favicon waterfall precisely because it
+broadcast the user's correspondent list to three vendors, and ADR-0034
+replaced it with the first-party cache. Nothing requests those hosts any
+more, so these are standing permissions for the exact fetch the privacy
+wedge says we do not make. Noted rather than changed here: CSP
+configuration is a CLAUDE.md §9 stop condition, and this PR's scope is
+the verifier. MISTAKES.md flagged them as dead on 2026-08-16.
+**How:** delete the three hosts from the `img-src` list in
+`apps/web/src/middleware.ts`, redeploy, load `/senders`.
+**Verifies by:** the response `Content-Security-Policy` header on
+`app.declutrmail.com` no longer names clearbit/duckduckgo/google, and
+brand logos still render (they come from `apiOrigin`, which stays).
+**Status:** Open
+
 ### 2026-08-16 — Self-serve refund: post-launch, and it needs a policy before it needs code
 
 **Source:** billing premium program scoping, 2026-08-16 — raised under CLAUDE.md
@@ -147,6 +190,25 @@ status of any `/api/icons/…` request:
 with `content-type: image/svg+xml`, and a visible brand mark on a
 BIMI-publishing sender (PayPal, eBay and CNN all resolved live during
 the #524 smoke).
+
+**ANSWERED 2026-08-17 — the cookie was never the problem, and neither
+was auth.** Two independent facts settle it:
+- Reads are anonymous since #537 (`OptionalJwtGuard`), so a missing
+  cookie cannot 401 this route at all. Confirmed against production
+  with no cookie whatsoever: `GET https://api.declutrmail.com/api/icons/
+  bankofamerica.com` → **`204`**, not `401`.
+- That `204` was an EMPTY CACHE, not an auth or transport failure.
+  `verifyVmc` could not accept any real certificate (SHA-256 logotype
+  hash vs the ecosystem's SHA-1; chain anchored in Node's TLS store,
+  which holds no VMC roots), so every domain had ever only been stored
+  as `status='none'`. See MISTAKES.md 2026-08-17.
+
+The `verifies by` bar above was met end-to-end on a local build served
+cross-origin (web `:3104` → API `:4104`, so no same-origin collapse):
+`200` + `content-type: image/svg+xml`, and visible marks for Bank of
+America, American Express, LinkedIn, Robinhood and Splitwise, with zero
+CSP console errors. **Still Open only for the production re-check** once
+this branch deploys — the remaining question is prod, not the design.
 **Status:** Open
 
 

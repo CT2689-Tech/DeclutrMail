@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { rootCertificates } from 'node:tls';
 
 import { describe, expect, it } from 'vitest';
 
@@ -154,5 +156,79 @@ describe('verifyVmc', () => {
 
   it('pins the VMC EKU OID', () => {
     expect(VMC_EKU_OID).toBe('1.3.6.1.5.5.7.3.31');
+  });
+});
+
+/**
+ * THE REGRESSION SUITE FOR THE 2026-08-17 OUTAGE.
+ *
+ * Everything above runs on OpenSSL-generated fixtures, and that is
+ * precisely why all of it stayed green while the feature was 100% dead
+ * in production: the generated logotype carries the logo's SHA-256 and
+ * the chain ends at a fixture CA, so the fixtures agreed with the two
+ * assumptions that were wrong. Real VMCs commit with SHA-1 and chain to
+ * a Verified Mark root that is not in any TLS trust store.
+ *
+ * These cases use an unmodified production chain and the DEFAULT trust
+ * anchors, so they fail if either assumption is reintroduced.
+ */
+describe('verifyVmc against a real production VMC', () => {
+  const REAL = join(FIXTURES, 'real');
+  const REAL_CHAIN = readFileSync(join(REAL, 'bankofamerica.chain.pem'), 'utf8');
+  const REAL_LOGO = readFileSync(join(REAL, 'bankofamerica.svg'));
+  /** Inside the leaf's 2026-04-11 → 2027-04-13 window; see the README. */
+  const REAL_NOW = new Date('2026-09-01T00:00:00Z');
+
+  const verifyReal = (overrides: Record<string, unknown> = {}) =>
+    verifyVmc({
+      pem: REAL_CHAIN,
+      domain: 'bankofamerica.com',
+      logo: REAL_LOGO,
+      now: REAL_NOW,
+      ...overrides,
+    });
+
+  it('accepts it with the shipped defaults', () => {
+    // The end-to-end assertion: no injected anchors, no adjusted logo.
+    // This exact input returned `does not commit to this logo`, and
+    // then `chain does not reach a trusted root`, before the fix.
+    expect(verifyReal()).toEqual({ ok: true });
+  });
+
+  it('accepts a SHA-1 logotype commitment', () => {
+    // Stated as its own case so the intent survives a fixture swap:
+    // the ecosystem commits with SHA-1, and hardcoding SHA-256 was the
+    // bug. Assert the fixture really is SHA-1 so this cannot quietly
+    // become a re-test of the SHA-256 path.
+    const sha1 = createHash('sha1').update(REAL_LOGO).digest();
+    const sha256 = createHash('sha256').update(REAL_LOGO).digest();
+    const der = parsePemChain(REAL_CHAIN)[0]!.raw;
+    expect(der.includes(sha1)).toBe(true);
+    expect(der.includes(sha256)).toBe(false);
+    expect(verifyReal()).toEqual({ ok: true });
+  });
+
+  it('still refuses artwork the real certificate does not commit to', () => {
+    // Accepting SHA-1 must not weaken the check it implements: a
+    // genuine VMC serving someone else's mark is the attack.
+    const result = verifyReal({ logo: Buffer.from('<svg>someone elses mark</svg>') });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.reason).toMatch(/does not commit/);
+  });
+
+  it('still refuses a real VMC replayed against another brand', () => {
+    const result = verifyReal({ domain: 'declutrmail.com' });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.reason).toMatch(/SAN/);
+  });
+
+  it('does not verify against Node’s TLS root store', () => {
+    // The precise reason check 5 could never pass: Mozilla's bundle is
+    // for server authentication and carries no Verified Mark roots. If
+    // someone "simplifies" the pinned anchors back to `rootCertificates`,
+    // this fails instead of the feature silently dying again.
+    const result = verifyReal({ trustAnchors: rootCertificates });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.reason).toMatch(/trusted root/);
   });
 });

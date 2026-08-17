@@ -1318,3 +1318,57 @@ event. For draft-related types, that means a `draft` condition must
 exist somewhere first.
 **Distillation trigger:** promote to CLAUDE.md §5 if a third
 retrigger-waste entry lands (this is the second, after `edited`).
+
+## 2026-08-17 — A silent-fallback gate needs a real-world artifact, not a fixture
+**Context:** brand logos (ADR-0034/D254) had never rendered in
+production. Three prior rounds fixed real transport defects and changed
+nothing, because the actual failure was two layers deeper in VMC
+verification — which failed closed into a monogram, i.e. into a state
+indistinguishable from "this brand publishes no logo".
+**Finding:** the whole test suite was green throughout. The OpenSSL
+fixture's logotype extension carried the logo's SHA-256 — the same
+assumption the verifier made — while every real issuer commits with
+SHA-1. A generated fixture encodes the author's model of the protocol,
+so it can only catch deviations from that model, never errors *in* it.
+The second defect (anchoring in Node's TLS store, which contains no VMC
+roots) was invisible for the same reason: tests inject `trustAnchors`,
+so the default path was never exercised by anything.
+
+Two diagnostic moves did all the work, and both were cheap:
+- Running the REAL resolver against the REAL network in a throwaway
+  probe. Seven domains, one file, ~1s — it printed the exact rejection
+  reason and turned three rounds of speculation into a fact.
+- Re-running it after each fix. The first fix revealed a *second* gate
+  behind it (`does not commit` → `does not reach a trusted root`).
+  Shipping after fix one would have been failed attempt #4.
+**Rule (provisional):** for any gate that fails closed into a plausible
+UI state, keep one test that runs an unmodified real-world artifact
+through the SHIPPED defaults. Assert the negative too — pin that the
+fixture really is SHA-1, and that the anchors really are absent from the
+TLS store — so the test cannot quietly decay into re-testing the
+assumption it exists to disprove.
+**Distillation trigger:** promote to CLAUDE.md §8 if a third
+"green tests, dead feature" entry lands (this is the second, after the
+D254 CSP `img-src` miss on 2026-08-16 — same feature, same silent
+fallback, same local-vs-prod invisibility).
+
+## 2026-08-17 — A cached negative outlives the bug that produced it
+**Context:** same incident. With the verifier fixed and proven against
+the live network, the founder would still have seen no change.
+**Finding:** the feature keeps TWO caches of a resolution, and the bug's
+own output sat in both. `domain_icons.status='none'` is cached 30 days
+AND is the exact state that stops the read path re-enqueueing, so the
+wrong answer defends itself. The BullMQ `jobId` does the same for 24h —
+`Queue.add` is a no-op while a job with that id exists in any state — and
+that one is easy to miss because it lives in Redis, not the schema.
+Observed live: after purging the table, three of four test domains still
+would not resolve until the job id changed.
+**Rule (provisional):** when fixing a resolver whose misses are cached,
+enumerate every layer holding the old answer (DB row, queue job id,
+HTTP cache-control, CDN) and invalidate each in the same change. Prefer a
+version segment in the key over a manual purge — it needs no production
+ops and cannot be forgotten at deploy time.
+**Distillation trigger:** this is the THIRD cached-provisional-answer
+defect in this feature alone (browser `stale-while-revalidate` on a 204,
+the 30-day `none` row, the 24h job id). Promote to CLAUDE.md §2 as a
+guardrail if it recurs outside D254.

@@ -2985,3 +2985,67 @@ invisible; bodiless 401 → status visible). `icons.controller.spec.ts`
 asserts both a rejected request and an unexpected failure carry a
 readable status, no JSON content-type and an empty body; both verified to
 fail without the filter.
+
+## 2026-08-17 — Brand logos: verification could never pass, three attempts hid it
+**PR:** (this branch — `fix/d254-vmc-verification`)
+**Caught by:** founder, after three prior "fixes" left every avatar a monogram
+**What happened:** `verifyVmc` rejected **100% of real Verified Mark
+Certificates**, so `DomainIconWorker` wrote `status='none'` for every
+domain it ever resolved and the feature has never once rendered a logo in
+production. Two independent defects, either alone fatal:
+
+1. **Logotype commitment hashed with SHA-256.** RFC 6170 carries the
+   commitment as a `HashAlgAndValue` — the ISSUER picks the digest — and
+   every VMC in production uses **SHA-1**. Measured against five live
+   certs from three issuers: all SHA-1, none SHA-256.
+2. **Chain anchored in `tls.rootCertificates`.** That is Mozilla's TLS
+   server-auth store. Verified Mark roots are distributed through the
+   BIMI Group's authorised-CA programme and are **not in it** — Node 24
+   ships 146 roots, of which zero are VMC roots. The module header had
+   even predicted the failure mode ("silently dead") and then chose it.
+
+Three rounds of fixes (`<img>`→CSS background, miss cache-control,
+`JwtGuard`→`OptionalJwtGuard`, `IconErrorFilter`) were all real defects
+on the *transport* — and none of them could ever have produced a logo,
+because nothing had ever been stored to serve.
+
+**Why the tests were green the whole time:** the OpenSSL fixture's
+logotype carries the logo's **SHA-256**, i.e. the fixture was built to
+match the implementation's assumption rather than the ecosystem's
+behaviour. Whoever writes the fixture and whoever writes the check make
+the same assumption, so a synthetic fixture cannot catch this class.
+
+**Two caches, one fix.** Correcting the code was still not enough to be
+visible: a rejection is cached as `status='none'` for **30 days**, and a
+`none` row is precisely what stops the read path re-enqueueing — so the
+bug's own output suppresses its fix. The BullMQ `jobId` is a *second*
+cache with the same property (`Queue.add` is a no-op while a job with
+that id exists in any state; completions are retained 24h), which
+independently blocked re-resolution — observed live during the smoke,
+where purging the table alone left three of four domains stuck.
+
+**Correct approach:** never hardcode a parameter the peer chooses —
+read it, or accept every value the spec allows. Never assume a trust
+store contains anchors for a programme it was not built for; assert the
+membership instead. And a fix to a cached computation is not shipped
+until every layer caching the old answer is invalidated in the same
+change.
+
+**Rule:** when a verification gate fails closed into an
+indistinguishable-from-normal fallback, it MUST be exercised against a
+real-world artifact, not a self-generated fixture — and any fix to a
+cached resolver ships with the invalidation for every cache that holds
+its output.
+
+**Enforcement update:**
+- `LOGO_HASH_ALGORITHMS` tries sha1/sha256/sha512; `vmc-trust-anchors.ts`
+  pins the DigiCert + GlobalSign VMC roots (each confirmed twice: the
+  CA's own HTTPS endpoint AND a fingerprint match against a live chain).
+- `vmc-verifier.test.ts` gains a suite running an **unmodified
+  production chain** with the shipped defaults; verified to fail with the
+  exact original errors when either defect is reintroduced.
+- `vmc-trust-anchors.test.ts` asserts the pins parse, are self-signed,
+  in date, and are **disjoint from Node's TLS store** — the assumption
+  that broke this.
+- Migration `0057` purges the poisoned misses; `DOMAIN_ICON_RESOLVER_VERSION`
+  in the job id retires stale completions so no Redis surgery is needed.

@@ -75,8 +75,10 @@ describe('IconsService', () => {
     expect(result).toEqual({ kind: 'miss' });
     expect(added).toHaveLength(1);
     expect(added[0]?.data).toEqual({ domain: 'unknown.example' });
-    // Domain-keyed so a grid full of the same sender collapses to one job.
-    expect(added[0]?.opts).toMatchObject({ jobId: 'DomainIconWorker-unknown.example' });
+    // Domain-keyed so a grid full of the same sender collapses to one
+    // job, with the resolver generation so a corrected resolver is not
+    // masked by a retained completion (see `domain-icon.queue.ts`).
+    expect(added[0]?.opts).toMatchObject({ jobId: 'DomainIconWorker-v2-unknown.example' });
   });
 
   it('misses WITHOUT scheduling for a cached negative', async () => {
