@@ -5,7 +5,8 @@ import { and, eq, inArray } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
 import { brandDomainAliases, domainIcons } from '@declutrmail/db';
-import { brandRoot, organizationalDomain } from '@declutrmail/shared/senders';
+import { brandRoot } from '@declutrmail/shared/senders';
+import { organizationalDomain } from '@declutrmail/shared/senders/organizational-domain';
 import { enqueueDomainIcon, isResolvableDomain, isStale } from '@declutrmail/workers';
 import type { DomainIconJobData } from '@declutrmail/workers';
 

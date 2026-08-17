@@ -9,7 +9,8 @@ import {
   domainIcons,
   type schema,
 } from '@declutrmail/db';
-import { brandRoot, organizationalDomain } from '@declutrmail/shared/senders';
+import { brandRoot } from '@declutrmail/shared/senders';
+import { organizationalDomain } from '@declutrmail/shared/senders/organizational-domain';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { resolveBimiIcon, type BimiDeps, type BimiResolution } from './bimi-resolver.js';

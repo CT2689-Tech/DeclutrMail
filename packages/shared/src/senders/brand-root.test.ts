@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { organizationalDomain } from './brand-root';
+import { organizationalDomain } from './organizational-domain';
 
 describe('organizationalDomain', () => {
   it('collapses arbitrary mailing subdomains to the registrable brand domain', () => {
