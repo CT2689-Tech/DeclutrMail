@@ -7,16 +7,17 @@ import type { DomainIconJobData } from '@declutrmail/workers';
 import { AuthModule } from '../auth/auth.module.js';
 import { IconsController } from './icons.controller.js';
 import { DOMAIN_ICON_QUEUE_TOKEN, IconsService } from './icons.service.js';
+import { OptionalJwtGuard } from './optional-jwt.guard.js';
 
 /**
  * IconsModule (ADR-0034) — the first-party brand icon endpoint.
  *
  * Owns nothing user-scoped: its only table is `domain_icons`, a global
- * cache keyed on domain. That is why it imports `AuthModule` (the
- * route is authenticated to stop anonymous callers driving our
- * outbound fetches) but no mailbox module — icons are not
- * mailbox-scoped and the route deliberately has no `CurrentMailbox`
- * dependency.
+ * cache keyed on domain. It imports `AuthModule` for `OptionalJwtGuard`
+ * — the route READS anonymously but only an authenticated caller may
+ * cause an outbound resolution — and no mailbox module, since icons
+ * are not mailbox-scoped and the route deliberately has no
+ * `CurrentMailbox` dependency.
  *
  * The queue producer is null without `REDIS_URL` (same fail-open shape
  * as `ActionsModule` / `SendersModule`): local dev with no Redis
@@ -28,6 +29,7 @@ import { DOMAIN_ICON_QUEUE_TOKEN, IconsService } from './icons.service.js';
   controllers: [IconsController],
   providers: [
     IconsService,
+    OptionalJwtGuard,
     {
       provide: DOMAIN_ICON_QUEUE_TOKEN,
       useFactory: (): Queue<DomainIconJobData> | null => {
