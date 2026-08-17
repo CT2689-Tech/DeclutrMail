@@ -17,9 +17,28 @@ const nextConfig: NextConfig = {
    *
    * Measured with `node scripts/check-web-bundle-budget.mjs` either side
    * of the change; keep it only while it earns its place.
+   *
+   * The SUBPATH barrels have to be listed one by one. `optimizePackage-
+   * Imports` matches the import specifier, not the package, so listing
+   * `@declutrmail/shared` alone leaves every
+   * `from '@declutrmail/shared/contracts'` untouched — and that barrel
+   * re-exports ~20 Zod schema modules, so one import of `Envelope` was
+   * dragging billing, onboarding, autopilot, account-deletion and the
+   * rest of the contract surface onto every authed route. Adding the
+   * subpaths took `/senders` 221.5 -> 206.5 kB and `/triage` 211.4 ->
+   * 195.9 kB with no source change at all.
    */
   experimental: {
-    optimizePackageImports: ['@declutrmail/shared'],
+    optimizePackageImports: [
+      '@declutrmail/shared',
+      '@declutrmail/shared/actions',
+      '@declutrmail/shared/contracts',
+      '@declutrmail/shared/copy',
+      '@declutrmail/shared/entitlements',
+      '@declutrmail/shared/flags',
+      '@declutrmail/shared/observability',
+      '@declutrmail/shared/senders',
+    ],
   },
 
   /**

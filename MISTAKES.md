@@ -46,6 +46,42 @@ exoneration; produce a control before publishing a systemic diagnosis.
 
 ## 2026-08-15 — Every avatar shipped as a broken-image glyph
 
+## 2026-08-16 — Every label action dead-lettered for four days on a parameterized SET
+
+**PR:** #509 (https://github.com/CT2689-Tech/DeclutrMail/pull/509) — fixed by fix/d226-lock-timeout-set-config
+**Caught by:** manual test — the #536 verification smoke's first real archive; every structural gate and CI run in between was green
+
+**What happened:** #509 moved the mailbox advisory lock onto a reserved
+session connection and wrote `` reserved`SET lock_timeout =
+${MAILBOX_LOCK_TIMEOUT}` ``. postgres.js sends every `${}` as a bind
+parameter, and Postgres does not accept bind parameters in `SET` — the
+server answers `syntax error at or near "$1"` before the lock is ever
+taken. Since the lock wraps resolve→mutate→commit, EVERY K/A/U/L/D
+label action (archive, later, delete, unsubscribe label changes) failed
+all five attempts and dead-lettered, in dev and prod alike, from
+2026-08-12 to 2026-08-16. The worker log scrubbed the cause to
+`error:"WorkerError"` / `error_code:"PostgresError"`; the real message
+only existed in the Postgres server log. The spec passed because its
+fake pool joins the template strings and never executes SQL — it
+asserted `statements[0]` CONTAINS `SET lock_timeout`, which is true of
+the broken statement. A blind guard, per the standing rule: it was
+never tested against input that would fail.
+
+**Correct approach:** GUC assignment with a runtime value goes through
+`SELECT set_config('lock_timeout', $1, false)` — a plain function call
+that takes bind parameters. And any DB-touching change smokes against a
+real Postgres at least once before merge; a tagged-template mock can
+only ever re-assert the author's assumption.
+
+**Rule:** Never interpolate into `SET`/utility statements via a tagged
+template — use `set_config()` for parameterized GUCs; and when a worker
+failure is scrubbed, read the Postgres server log for the unscrubbed
+statement before theorizing.
+
+**Enforcement update:** spec now records bind values and pins "a SET
+statement carries zero bind parameters"; none beyond that — the class
+sweep found a single instance (snooze.service.ts uses a literal).
+
 **PR:** #524 (https://github.com/CT2689-Tech/DeclutrMail/pull/524) — fixed by the follow-up PR
 **Caught by:** production — the founder, on app.declutrmail.com/senders, minutes after merge
 

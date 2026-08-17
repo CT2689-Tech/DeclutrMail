@@ -86,6 +86,114 @@ today). Then it gets a D-number and a PR.
 `IMPLEMENTATION-LOG.md`.
 **Status:** Open — deferred to post-launch 2026-08-16
 
+### 2026-08-16 — Check prod for dead-lettered label actions since #509 (2026-08-12)
+
+**Source:** #536 verification smoke — the first real archive since #509 merged
+dead-lettered on `SET lock_timeout = $1` (see MISTAKES.md 2026-08-16; fix in
+fix/d226-lock-timeout-set-config)
+**Why:** Every K/A/U/L/D label action executed in PROD between 2026-08-12
+10:05 PT and the fix deploy failed all five attempts and dead-lettered —
+any archive/later/delete/unsubscribe you ran while dogfooding did not
+actually change Gmail, and the UI may have shown it as pending/failed.
+Dev showed `DeadLetterWorker … alerted:0`, so the prod alert may not have
+fired either — worth confirming why.
+**How:** After merging the fix PR and deploying: (1) in prod SQL, list ONLY
+this outage's signature. The lock failure throws BEFORE anything touches
+Gmail, so its rows carry `error_code='PostgresError'` AND
+`affected_count = 0` AND no undo token — all three together are the "failed
+pre-execution" proof that makes a row safe to reason about.
+`error_code` alone is NOT enough (it names the error class, and some other
+Postgres failure mid-execution would share it), and do NOT widen to all
+failed rows: other causes carry other codes (ValidationError,
+UNSUB_DNS_FAILURE, …), and a failed `delete` from an unrelated cause is
+irreversible and must not ride a retry list.
+
+```sql
+SELECT id, verb, direction, requested_count, created_at
+FROM action_jobs
+WHERE status = 'failed'
+  AND error_code = 'PostgresError'
+  AND affected_count = 0
+  AND undo_token IS NULL
+  AND created_at >= '2026-08-12'
+  AND created_at < '<timestamp of the fix deploy>'
+ORDER BY direction, created_at;
+```
+
+(2) disposition rows BY DIRECTION — the two paths are opposites:
+  - `direction='forward'`: nothing executed (that is what the signature
+    proves), so re-issuing the intent from the UI is safe — it re-runs
+    the D226 preview against current mail, never the stale selection —
+    or leave it; there is no auto-replay for destructive actions by
+    design (D233).
+  - `direction='reverse'`: this is a FAILED UNDO — the forward already
+    ran. Do NOT re-issue the original intent (that would double-apply).
+    Retry the undo from Activity if its window is still open; if the
+    window has lapsed, treat it as manual recovery and decide by hand.
+  - Any failed row NOT matching the full signature is out of scope for
+    this list — investigate it on its own cause, never batch-retry it.
+
+(3) check whether the dead-letter alert fired for these and, if not, why.
+**Verifies by:** a fresh archive in prod completes (`action_jobs.status='done'`
+with `affected_count > 0`) and the failed-rows list is dispositioned.
+**Status:** Open
+
+### 2026-08-15 — Confirm brand-logo requests actually carry the session cookie
+
+**Source:** PR #528 (the avatar broken-image fix) — an ADR-0034 claim I asserted but never verified
+
+**Partly answered by #530, but NOT closed.** #530 found and fixed a
+different cause of the same symptom: `apiOrigin` was threaded into
+`connect-src` but not `img-src`, so production CSP refused the image
+outright. That is fixed. The cookie question here is independent and
+still unverified — CSP blocking the request and the request arriving
+without a session cookie both look identical from the outside (a clean
+monogram, no error). The check below distinguishes them, and is worth
+running now that CSP is no longer masking the answer.
+**Why:** `GET /api/icons/:domain` is behind `JwtGuard`, and the browser
+reaches it as a subresource of the avatar. The session cookie
+(`dm_access`) is `SameSite=Lax`, which is sent on a SAME-SITE
+subresource request and NOT on a cross-site one. ADR-0034 states that
+API and web "share a registrable domain, so the `SameSite=Lax` session
+cookie is sent" — that is an assumption about the deployed
+`NEXT_PUBLIC_API_URL`, not something the repo pins. If prod points the
+web app at an API on a different registrable domain (a `*.run.app` URL,
+say), every icon request 401s and **no logo ever appears** — silently,
+because after #528 a 401 degrades to the monogram, which looks correct.
+
+This is not a bug and not a merge blocker; it decides whether the
+feature does anything at all.
+
+**Ran 2026-08-16 and came back unreadable — see #533.** Every
+`/api/icons/…` row showed `(failed) net::…`, 0 B, type `Other`, no
+initiator, and no status at all. Those rows were not the avatar's
+requests: they were `stale-while-revalidate` background revalidations of
+already-cached responses, aborted when the page navigated. The avatar's
+own requests were served from cache and never hit the network, so the
+status this check needs was nowhere on screen. #533 removes
+`stale-while-revalidate` from the miss and cuts its `max-age` to 60s, so
+the panel shows real statuses again — but **tick "Disable cache" before
+reloading**, or a fresh entry can still answer this from cache.
+
+**How:** open https://app.declutrmail.com/senders with DevTools →
+Network, tick **Disable cache**, filter `icons`, reload, and read the
+status of any `/api/icons/…` request:
+- `200` — a cached mark; working.
+- `204` — no mark cached yet; working (a resolution was enqueued).
+  Reload in a minute; frequently-seen brands should flip to `200`.
+- `401` — cookies are NOT reaching the endpoint. Then either move the
+  API onto `*.declutrmail.com`, or the route needs a different auth
+  posture than a cookie-borne subresource.
+
+**Verifies by:** at least one `/api/icons/…` request returning `200`
+with `content-type: image/svg+xml`, and a visible brand mark on a
+BIMI-publishing sender (PayPal, eBay and CNN all resolved live during
+the #524 smoke).
+**Status:** Open
+
+
+<!-- Newest at top. -->
+
 ### 2026-08-15 — Decide the CSP `img-src` fix for D254 brand logos
 **Source:** session — page-load performance investigation, 2026-08-15
 **Why:** D254 (#524) serves sender logos from `${NEXT_PUBLIC_API_URL}/api/icons/:domain`. That is same-origin locally (the var is empty) and a DIFFERENT origin in production, where `middleware.ts` `img-src` does not list `apiOrigin` — so every brand logo is CSP-refused in production while working perfectly on your machine. Verified in a browser against the real production headers: `Refused to load the image 'https://api.declutrmail.com/api/icons/example.com' … "img-src 'self' …"`. It fails safe (the monogram still renders) so it would degrade silently. Not changed in this PR because CSP configuration is a CLAUDE.md §9 stop condition.
@@ -1731,6 +1839,94 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-08-16 — Fire CI by hand on PR #536: `pull_request.synchronize` never dispatched
+
+**Source:** PR #536 (D160 bundle work) — session hit it live
+
+**Why:** #536's only CI run is the one from `opened`, at `654f4db`. It
+failed on the derived implementation log, which is expected — the
+generator counts the open PR's own `Closes` trailers, so the log can
+only be correct once the PR exists. That was fixed in `55f75dc` and a
+second commit landed in `5845cab`, and **neither push created a CI
+run**. So the PR's checks tab shows a red result for a commit that is
+two behind the head, and the fix is unverified rather than wrong.
+
+Two pushes, zero `pull_request` runs, while CodeQL ran on both — CodeQL
+listens on `push`, and `ci.yml`'s `push:` trigger is `branches: [main]`
+only, so on a feature branch it depends entirely on `pull_request`.
+This is the silent-non-dispatch class `ci.yml`'s own header already
+records from PR #178 (2026-06-10).
+
+I could not self-serve it: `POST /actions/workflows/ci.yml/dispatches`
+answers `403 Resource not accessible by integration` for this session's
+token.
+
+**How:** either
+
+```bash
+gh workflow run ci.yml --ref claude/reduce-senders-triage-js-qnlol2
+```
+
+or push any commit to the branch from a normal credential, or toggle
+the PR out of draft and back (`ready_for_review` is in `ci.yml`'s
+trigger types).
+
+Prefer one of the latter two if the impl-log row matters to you: under
+`workflow_dispatch` the `impl-log` job is gated on
+`github.event_name == 'pull_request'` and SKIPS, and the `test`
+aggregate then passes without checking the log at all — green, having
+looked at nothing.
+
+**What is already known-good without it:** `pnpm typecheck`, `pnpm lint`
+(0 errors), `pnpm format:check`, `pnpm --filter @declutrmail/web test`
+(168 files / 1,923 tests) and `pnpm check:bundle` all pass locally on
+the exact head tree. The one thing local runs cannot cover is the
+implementation-log row: `pnpm generate-impl-log` shells out to
+`gh pr list` and `gh` is not installed in the CCR container, so that row
+was written by hand to exactly the value the failing CI run derived and
+printed.
+
+**Verifies by:** a CI run on `5845cab` (or later) with "Implementation
+log is derived and current" green.
+
+**Resolved without founder action, 2026-08-16.** Main had moved on
+(#533/#534/#535) and the PR had gone `mergeable_state: dirty`. Merging
+`origin/main` into the branch and pushing the merge commit produced the
+`synchronize` event the two previous pushes never did — all 20 checks
+ran and passed on `71690e8`, including "Implementation log is derived
+and current", which confirms the hand-written D160 row was right.
+
+So the trigger is not dead, and no `gh workflow run` is needed.
+
+**Correction, same day.** I first wrote here that the two dead pushes
+had "only markdown" in common. A fourth data point killed that:
+`4a245f2` is markdown-only and dispatched a full 20-check run. Recording
+the retraction rather than quietly deleting it, because the wrong reason
+was in this file for about twenty minutes and someone could have read it.
+
+What fits all four points is the PR's MERGEABILITY, not its contents:
+
+| push | PR state at the time | dispatched? |
+|---|---|---|
+| `654f4db` (opened) | clean | yes |
+| `55f75dc` | dirty — #535 had just landed on main | no |
+| `5845cab` | dirty | no |
+| `71690e8` (the merge that resolved it) | dirty → clean | yes |
+| `4a245f2` | clean | yes |
+
+A `pull_request` event carries the merge ref, and while the PR conflicts
+GitHub cannot compute one — a plausible mechanism for the event never
+being delivered. **Unconfirmed:** it is one hypothesis consistent with
+five observations, not something I tested. The actionable half needs no
+mechanism: if pushes to a PR stop producing CI runs, check
+`mergeable_state` before reaching for `workflow_dispatch`.
+
+One correction to the "How" above: #534 removed `ready_for_review` from
+`ci.yml`'s trigger types, so on main's version the un-draft toggle no
+longer fires CI. Pushing a commit is the remedy that still works.
+
+**Status:** Done 2026-08-16
 
 ### 2026-08-15 — Confirm brand-logo requests actually carry the session cookie
 

@@ -59,7 +59,12 @@ export function createMailboxActionLock(lockPg: Sql): MailboxActionLock & {
       // wolf on the one failure mode the timeout deliberately creates.
       let acquired = false;
       try {
-        await reserved`SET lock_timeout = ${MAILBOX_LOCK_TIMEOUT}`;
+        // `set_config`, not `SET`: postgres.js sends `${}` as a bind
+        // parameter and `SET` cannot take one — the server answers
+        // `syntax error at or near "$1"`, which failed EVERY label
+        // action from #509 (2026-08-12) until caught 2026-08-16. The
+        // mocked spec asserted the string, never executed it.
+        await reserved`SELECT set_config('lock_timeout', ${MAILBOX_LOCK_TIMEOUT}, false)`;
         try {
           await reserved`SELECT pg_advisory_lock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
         } catch (err) {

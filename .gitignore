@@ -5,6 +5,10 @@ node_modules/
 dist/
 build/
 .next/
+# Scratch distDir for the sourcemapped attribution build described in
+# LEARNINGS.md 2026-08-16 — `.next/` alone does not cover it, so the run
+# leaves ~3k untracked files and `pnpm format:check` fails on them.
+.next-analyze/
 .turbo/
 *.tsbuildinfo
 
