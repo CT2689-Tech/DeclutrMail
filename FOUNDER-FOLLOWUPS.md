@@ -24,6 +24,114 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-16 — Check prod for dead-lettered label actions since #509 (2026-08-12)
+
+**Source:** #536 verification smoke — the first real archive since #509 merged
+dead-lettered on `SET lock_timeout = $1` (see MISTAKES.md 2026-08-16; fix in
+fix/d226-lock-timeout-set-config)
+**Why:** Every K/A/U/L/D label action executed in PROD between 2026-08-12
+10:05 PT and the fix deploy failed all five attempts and dead-lettered —
+any archive/later/delete/unsubscribe you ran while dogfooding did not
+actually change Gmail, and the UI may have shown it as pending/failed.
+Dev showed `DeadLetterWorker … alerted:0`, so the prod alert may not have
+fired either — worth confirming why.
+**How:** After merging the fix PR and deploying: (1) in prod SQL, list ONLY
+this outage's signature. The lock failure throws BEFORE anything touches
+Gmail, so its rows carry `error_code='PostgresError'` AND
+`affected_count = 0` AND no undo token — all three together are the "failed
+pre-execution" proof that makes a row safe to reason about.
+`error_code` alone is NOT enough (it names the error class, and some other
+Postgres failure mid-execution would share it), and do NOT widen to all
+failed rows: other causes carry other codes (ValidationError,
+UNSUB_DNS_FAILURE, …), and a failed `delete` from an unrelated cause is
+irreversible and must not ride a retry list.
+
+```sql
+SELECT id, verb, direction, requested_count, created_at
+FROM action_jobs
+WHERE status = 'failed'
+  AND error_code = 'PostgresError'
+  AND affected_count = 0
+  AND undo_token IS NULL
+  AND created_at >= '2026-08-12'
+  AND created_at < '<timestamp of the fix deploy>'
+ORDER BY direction, created_at;
+```
+
+(2) disposition rows BY DIRECTION — the two paths are opposites:
+  - `direction='forward'`: nothing executed (that is what the signature
+    proves), so re-issuing the intent from the UI is safe — it re-runs
+    the D226 preview against current mail, never the stale selection —
+    or leave it; there is no auto-replay for destructive actions by
+    design (D233).
+  - `direction='reverse'`: this is a FAILED UNDO — the forward already
+    ran. Do NOT re-issue the original intent (that would double-apply).
+    Retry the undo from Activity if its window is still open; if the
+    window has lapsed, treat it as manual recovery and decide by hand.
+  - Any failed row NOT matching the full signature is out of scope for
+    this list — investigate it on its own cause, never batch-retry it.
+
+(3) check whether the dead-letter alert fired for these and, if not, why.
+**Verifies by:** a fresh archive in prod completes (`action_jobs.status='done'`
+with `affected_count > 0`) and the failed-rows list is dispositioned.
+**Status:** Open
+
+### 2026-08-15 — Confirm brand-logo requests actually carry the session cookie
+
+**Source:** PR #528 (the avatar broken-image fix) — an ADR-0034 claim I asserted but never verified
+
+**Partly answered by #530, but NOT closed.** #530 found and fixed a
+different cause of the same symptom: `apiOrigin` was threaded into
+`connect-src` but not `img-src`, so production CSP refused the image
+outright. That is fixed. The cookie question here is independent and
+still unverified — CSP blocking the request and the request arriving
+without a session cookie both look identical from the outside (a clean
+monogram, no error). The check below distinguishes them, and is worth
+running now that CSP is no longer masking the answer.
+**Why:** `GET /api/icons/:domain` is behind `JwtGuard`, and the browser
+reaches it as a subresource of the avatar. The session cookie
+(`dm_access`) is `SameSite=Lax`, which is sent on a SAME-SITE
+subresource request and NOT on a cross-site one. ADR-0034 states that
+API and web "share a registrable domain, so the `SameSite=Lax` session
+cookie is sent" — that is an assumption about the deployed
+`NEXT_PUBLIC_API_URL`, not something the repo pins. If prod points the
+web app at an API on a different registrable domain (a `*.run.app` URL,
+say), every icon request 401s and **no logo ever appears** — silently,
+because after #528 a 401 degrades to the monogram, which looks correct.
+
+This is not a bug and not a merge blocker; it decides whether the
+feature does anything at all.
+
+**Ran 2026-08-16 and came back unreadable — see #533.** Every
+`/api/icons/…` row showed `(failed) net::…`, 0 B, type `Other`, no
+initiator, and no status at all. Those rows were not the avatar's
+requests: they were `stale-while-revalidate` background revalidations of
+already-cached responses, aborted when the page navigated. The avatar's
+own requests were served from cache and never hit the network, so the
+status this check needs was nowhere on screen. #533 removes
+`stale-while-revalidate` from the miss and cuts its `max-age` to 60s, so
+the panel shows real statuses again — but **tick "Disable cache" before
+reloading**, or a fresh entry can still answer this from cache.
+
+**How:** open https://app.declutrmail.com/senders with DevTools →
+Network, tick **Disable cache**, filter `icons`, reload, and read the
+status of any `/api/icons/…` request:
+- `200` — a cached mark; working.
+- `204` — no mark cached yet; working (a resolution was enqueued).
+  Reload in a minute; frequently-seen brands should flip to `200`.
+- `401` — cookies are NOT reaching the endpoint. Then either move the
+  API onto `*.declutrmail.com`, or the route needs a different auth
+  posture than a cookie-borne subresource.
+
+**Verifies by:** at least one `/api/icons/…` request returning `200`
+with `content-type: image/svg+xml`, and a visible brand mark on a
+BIMI-publishing sender (PayPal, eBay and CNN all resolved live during
+the #524 smoke).
+**Status:** Open
+
+
+<!-- Newest at top. -->
+
 ### 2026-08-15 — Decide the CSP `img-src` fix for D254 brand logos
 **Source:** session — page-load performance investigation, 2026-08-15
 **Why:** D254 (#524) serves sender logos from `${NEXT_PUBLIC_API_URL}/api/icons/:domain`. That is same-origin locally (the var is empty) and a DIFFERENT origin in production, where `middleware.ts` `img-src` does not list `apiOrigin` — so every brand logo is CSP-refused in production while working perfectly on your machine. Verified in a browser against the real production headers: `Refused to load the image 'https://api.declutrmail.com/api/icons/example.com' … "img-src 'self' …"`. It fails safe (the monogram still renders) so it would degrade silently. Not changed in this PR because CSP configuration is a CLAUDE.md §9 stop condition.
