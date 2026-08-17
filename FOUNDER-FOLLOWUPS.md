@@ -1778,6 +1778,94 @@ cloud sessions auto-discover them on startup.
 
 ## Done
 
+### 2026-08-16 — Fire CI by hand on PR #536: `pull_request.synchronize` never dispatched
+
+**Source:** PR #536 (D160 bundle work) — session hit it live
+
+**Why:** #536's only CI run is the one from `opened`, at `654f4db`. It
+failed on the derived implementation log, which is expected — the
+generator counts the open PR's own `Closes` trailers, so the log can
+only be correct once the PR exists. That was fixed in `55f75dc` and a
+second commit landed in `5845cab`, and **neither push created a CI
+run**. So the PR's checks tab shows a red result for a commit that is
+two behind the head, and the fix is unverified rather than wrong.
+
+Two pushes, zero `pull_request` runs, while CodeQL ran on both — CodeQL
+listens on `push`, and `ci.yml`'s `push:` trigger is `branches: [main]`
+only, so on a feature branch it depends entirely on `pull_request`.
+This is the silent-non-dispatch class `ci.yml`'s own header already
+records from PR #178 (2026-06-10).
+
+I could not self-serve it: `POST /actions/workflows/ci.yml/dispatches`
+answers `403 Resource not accessible by integration` for this session's
+token.
+
+**How:** either
+
+```bash
+gh workflow run ci.yml --ref claude/reduce-senders-triage-js-qnlol2
+```
+
+or push any commit to the branch from a normal credential, or toggle
+the PR out of draft and back (`ready_for_review` is in `ci.yml`'s
+trigger types).
+
+Prefer one of the latter two if the impl-log row matters to you: under
+`workflow_dispatch` the `impl-log` job is gated on
+`github.event_name == 'pull_request'` and SKIPS, and the `test`
+aggregate then passes without checking the log at all — green, having
+looked at nothing.
+
+**What is already known-good without it:** `pnpm typecheck`, `pnpm lint`
+(0 errors), `pnpm format:check`, `pnpm --filter @declutrmail/web test`
+(168 files / 1,923 tests) and `pnpm check:bundle` all pass locally on
+the exact head tree. The one thing local runs cannot cover is the
+implementation-log row: `pnpm generate-impl-log` shells out to
+`gh pr list` and `gh` is not installed in the CCR container, so that row
+was written by hand to exactly the value the failing CI run derived and
+printed.
+
+**Verifies by:** a CI run on `5845cab` (or later) with "Implementation
+log is derived and current" green.
+
+**Resolved without founder action, 2026-08-16.** Main had moved on
+(#533/#534/#535) and the PR had gone `mergeable_state: dirty`. Merging
+`origin/main` into the branch and pushing the merge commit produced the
+`synchronize` event the two previous pushes never did — all 20 checks
+ran and passed on `71690e8`, including "Implementation log is derived
+and current", which confirms the hand-written D160 row was right.
+
+So the trigger is not dead, and no `gh workflow run` is needed.
+
+**Correction, same day.** I first wrote here that the two dead pushes
+had "only markdown" in common. A fourth data point killed that:
+`4a245f2` is markdown-only and dispatched a full 20-check run. Recording
+the retraction rather than quietly deleting it, because the wrong reason
+was in this file for about twenty minutes and someone could have read it.
+
+What fits all four points is the PR's MERGEABILITY, not its contents:
+
+| push | PR state at the time | dispatched? |
+|---|---|---|
+| `654f4db` (opened) | clean | yes |
+| `55f75dc` | dirty — #535 had just landed on main | no |
+| `5845cab` | dirty | no |
+| `71690e8` (the merge that resolved it) | dirty → clean | yes |
+| `4a245f2` | clean | yes |
+
+A `pull_request` event carries the merge ref, and while the PR conflicts
+GitHub cannot compute one — a plausible mechanism for the event never
+being delivered. **Unconfirmed:** it is one hypothesis consistent with
+five observations, not something I tested. The actionable half needs no
+mechanism: if pushes to a PR stop producing CI runs, check
+`mergeable_state` before reaching for `workflow_dispatch`.
+
+One correction to the "How" above: #534 removed `ready_for_review` from
+`ci.yml`'s trigger types, so on main's version the un-draft toggle no
+longer fires CI. Pushing a commit is the remedy that still works.
+
+**Status:** Done 2026-08-16
+
 ### 2026-08-15 — Confirm brand-logo requests actually carry the session cookie
 
 **Source:** PR #528 (the avatar broken-image fix) — an ADR-0034 claim I asserted but never verified
