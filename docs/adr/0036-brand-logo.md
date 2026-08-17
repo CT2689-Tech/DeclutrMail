@@ -44,13 +44,38 @@ accent stroke inside the mark.
 
 **Specification**
 
-| Property    | Value                                      |
-| ----------- | ------------------------------------------ |
-| Mark stroke | 5.5u, round caps                           |
-| Mark height | = cap height of the D                      |
-| Gap         | 0.3 x cap height                           |
-| Clear space | 16u, measured from the tail                |
-| Small cut   | <= 24px: stroke 7, shorter tail, wider gap |
+| Property           | Value                                      |
+| ------------------ | ------------------------------------------ |
+| Mark stroke        | 5.5u, round caps                           |
+| Mark height        | = cap height of the D                      |
+| Gap (mark to word) | 0.3 x mark height                          |
+| Word size          | 0.87 x mark height; 0.52 when stacked      |
+| Small cut          | <= 24px: stroke 7, shorter tail, wider gap |
+| Clear space        | 16u from the tail — a LAYOUT rule          |
+
+Clear space is the one row the component cannot enforce. The viewBox
+pads 3u left and 5u top, which is bleed room for the round caps, not
+clear space. Keeping 16u clear of the tail is the consumer's job, and
+the `<Logo>` element's own box does not reserve it.
+
+**The Never list.** These are the ways the mark breaks, in the order
+they are likely to happen:
+
+- **Never resize it with CSS.** `size` is the only supported sizing
+  channel, because the two-cut swap is derived from it. `width` and
+  `height` on the `<svg>` are presentation attributes, so a consumer
+  rule like `.brand svg { width: 16px }` wins — and renders the
+  _regular_ cut at 16px, which is the exact smudge the two cuts exist
+  to prevent. Nothing would fail: not the type checker, not the test
+  suite (which only ever sizes through the prop), not a gate.
+- **Never re-colour it from a stylesheet or a `className`.** The tone
+  triple is the whole colour surface.
+- **Never add a badge, dot, container, card or shadow** to the mark.
+  The break in the frame carries the idea; a badge reads as an unread
+  count, which is the opposite of the product's claim.
+- **Never redraw the small cut by scaling the large one.**
+- **Never letterspace, re-weight or re-set the wordmark.** Fraunces
+  800 at `-0.03em` is specification.
 
 **Palette** — Ink `#0E1413` (frame, `Declutr`), Teal `#006B5F`
 (stroke, `Mail`), Mint `#79E6DC` (dark-surface accent), Paper
@@ -142,10 +167,24 @@ gap) rather than scaling the 64px drawing down.
 - Literal hexes mean a future palette change must touch this component
   deliberately. That is the intent, but it is a maintenance edge a
   reviewer should expect.
-- `light-dark()` is Baseline 2024. Older browsers land on the light
-  pair via the fallback attribute — correct on light, invisible on
-  dark. Acceptable: those browsers predate the `data-theme` toggle's
-  own support floor.
+- `light-dark()` is Baseline 2024, and the mark and the wordmark
+  degrade differently on a browser without it. Both drop the style
+  declaration, but what they fall back to is not the same thing:
+
+  The mark keeps a plain `stroke` attribute underneath, and that
+  fallback is load-bearing — SVG `stroke` defaults to `none`, so
+  without it the mark would not render at all. It lands on the light
+  pair: correct on light, invisible on dark.
+
+  The wordmark has no equivalent and deliberately gets none. `color`
+  inherits, so dropping the declaration leaves the word at the
+  consumer's text colour — `var(--dm-fg)` on both day-1 consumers,
+  which is legible in either theme. What is lost is the two-tone
+  split: `Mail` renders in the body colour rather than the accent.
+  Adding a fallback would mean a second `color` on the same element,
+  which a style object cannot express, in exchange for a degradation
+  that is already benign. The mark's fallback prevents an invisible
+  logo; a wordmark fallback would only prevent a monochrome one.
 
 ### Neutral
 

@@ -1,14 +1,18 @@
 // Storybook CSF3 stories for the brand logo (D255 + ADR-0036).
 //
-// Storybook itself is seeded in PR 3 (D210). Until then this file uses
-// locally-declared lightweight CSF types so it typechecks without
-// `@storybook/react` installed. When the seed lands, swap the local
-// `Meta` / `StoryObj` shims for the real imports — story shapes do
-// not change.
+// The `Meta` / `StoryObj` shims below are local by design, not because
+// the seed is pending: `apps/web/.storybook/main.ts` reaches these
+// files through its glob, but `packages/shared` carries no Storybook
+// dependency of its own, so the types cannot be imported here.
 //
 // `SizeLadder` and `SmallCut` are the two that earn their keep: the
 // mark is drawn at two cuts and the swap happens at 24px, so a
 // regression there is invisible in any single-size story.
+//
+// Every story that makes a claim about THEME renders the same markup
+// under both `data-theme` values in one frame. A tone story that shows
+// only one theme cannot distinguish "pinned" from "reactive" — it
+// would look identical either way.
 
 import type { ComponentProps } from 'react';
 import { Logo } from './logo';
@@ -95,7 +99,6 @@ export const HeaderSize: Story<typeof Logo> = {
  */
 export const DarkMode: Story<typeof Logo> = {
   args: { variant: 'horizontal', tone: 'duo', size: 28 },
-  parameters: { backgrounds: { default: 'dark' } },
   render: (args: LogoArgs) => (
     <Surface theme="dark">
       <Logo {...args} />
@@ -158,20 +161,67 @@ export const Variants: Story<typeof Logo> = {
 };
 
 /**
- * The pinned tones. `reversed` and `ink` do NOT follow the theme —
- * they are for surfaces whose background is fixed independently of it
- * (an always-teal card, a one-colour export). Rendered here on a teal
- * block so `reversed` is legible; `ink` is the print cut.
+ * The lockup at small sizes — the band the mark's two-cut rule does
+ * NOT protect.
+ *
+ * `SizeLadder` and `SmallCut` both render `variant="mark"`, so the
+ * wordmark is never seen below 27px anywhere else. It has no second
+ * cut: `fontSize` is a flat `size * 0.87`, which is 13.9px Fraunces
+ * 800 at -0.03em when `size={16}`. This story is where that gets
+ * looked at, and where a floor would be set if one is needed.
+ */
+export const LockupSmall: Story<typeof Logo> = {
+  render: () => (
+    <Surface>
+      {[16, 20, 24, 27, 32].map((size) => (
+        <div key={size} style={{ textAlign: 'center' }}>
+          <Logo size={size} label={null} />
+          <div style={{ fontSize: 11, color: color.fgMuted, marginTop: 8 }}>{size}px</div>
+        </div>
+      ))}
+    </Surface>
+  ),
+};
+
+/**
+ * The pinned tones, rendered under BOTH themes in one frame.
+ *
+ * This is the only way the claim is falsifiable. `reversed` and `ink`
+ * repeat one value across both `light-dark()` slots, so they must look
+ * identical in the two rows below — while `duo`, shown alongside for
+ * contrast, must not. Rendered on fixed hex backgrounds because that
+ * is the situation these tones exist for: a surface whose colour is
+ * decided independently of the user's theme.
  */
 export const PinnedTones: Story<typeof Logo> = {
   render: () => (
-    <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-      <div style={{ background: '#006B5F', padding: 32 }}>
-        <Logo tone="reversed" size={36} label={null} />
-      </div>
-      <div style={{ background: '#FAFAF7', padding: 32 }}>
-        <Logo tone="ink" size={36} label={null} />
-      </div>
+    <div>
+      {(['light', 'dark'] as const).map((theme) => (
+        <div
+          key={theme}
+          data-theme={theme}
+          style={{ background: color.bg, padding: 24, display: 'flex', gap: 20, flexWrap: 'wrap' }}
+        >
+          <div style={{ background: '#006B5F', padding: 24, textAlign: 'center' }}>
+            <Logo tone="reversed" size={32} label={null} />
+            <div style={{ fontSize: 11, color: '#FAFAF7', opacity: 0.7, marginTop: 8 }}>
+              reversed · pinned
+            </div>
+          </div>
+          <div style={{ background: '#FAFAF7', padding: 24, textAlign: 'center' }}>
+            <Logo tone="ink" size={32} label={null} />
+            <div style={{ fontSize: 11, color: '#0E1413', opacity: 0.6, marginTop: 8 }}>
+              ink · pinned
+            </div>
+          </div>
+          <div style={{ padding: 24, textAlign: 'center' }}>
+            <Logo tone="duo" size={32} label={null} />
+            <div style={{ fontSize: 11, color: color.fgMuted, marginTop: 8 }}>
+              duo · follows data-theme=&quot;{theme}&quot;
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   ),
 };
