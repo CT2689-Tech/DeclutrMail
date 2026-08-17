@@ -3,12 +3,28 @@ import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-import { DOMAIN_ICON_TTL_DAYS, domainIcons, type schema } from '@declutrmail/db';
+import {
+  DOMAIN_ICON_RESOLVER_VERSION,
+  DOMAIN_ICON_TTL_DAYS,
+  domainIcons,
+  type schema,
+} from '@declutrmail/db';
 import { brandRoot } from '@declutrmail/shared/senders';
+import { organizationalDomain } from '@declutrmail/shared/senders/organizational-domain';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { resolveBimiIcon, type BimiDeps, type BimiResolution } from './bimi-resolver.js';
-import { ValidationError } from './worker-errors.js';
+import {
+  resolveBrandfetchIcon,
+  type BrandfetchIconDeps,
+  type BrandfetchIconResolution,
+} from './brandfetch-icon-resolver.js';
+import {
+  resolveWebsiteIcon,
+  type WebsiteIconDeps,
+  type WebsiteIconResolution,
+} from './website-icon-resolver.js';
+import { TransientError, ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 import type { WorkerPolicy } from './worker-policies.js';
 
@@ -16,14 +32,22 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
 
 /** One domain to resolve. */
 export interface DomainIconJobData {
-  /** Brand-root domain. Re-normalized here — producers can be wrong. */
+  /** Canonical brand domain and cache key. Re-normalized here. */
   domain: string;
+  /**
+   * Original sender-side domain for the strongest exact BIMI attempt.
+   * Website and Brandfetch discovery still use `domain` so a mailing-
+   * only alias cannot suppress the canonical brand's artwork.
+   */
+  discoveryDomain?: string;
 }
 
 /** Metric-only result (logged on `worker.succeeded`). */
 export interface DomainIconResult {
   /** What was written: a mark, a cached miss, or nothing at all. */
-  outcome: 'stored' | 'cached_miss' | 'unchanged' | 'still_fresh';
+  outcome: 'stored' | 'cached_miss' | 'preserved_stale' | 'unchanged' | 'still_fresh';
+  /** Resolution tier for coverage metrics; null when no resolution succeeded. */
+  source: 'bimi' | 'website' | 'brandfetch' | null;
   /** Bytes stored; 0 for a miss. */
   byteSize: number;
   durationMs: number;
@@ -33,17 +57,31 @@ export interface DomainIconDeps {
   db: WorkerDb;
   /** Resolver seams — injected in tests so no job leaves the process. */
   bimi?: BimiDeps;
+  /** Present to enable the official-website fallback after BIMI misses. */
+  website?: WebsiteIconDeps;
+  /** Present to enable the server-only Brandfetch fallback after first-party misses. */
+  brandfetch?: BrandfetchIconDeps;
   /** Override clock for tests. */
   now?: () => Date;
 }
+
+type DomainIconResolution =
+  | (Extract<BimiResolution, { status: 'ok' }> & { source: 'bimi' })
+  | (Extract<WebsiteIconResolution, { status: 'ok' }> & { source: 'vendor' })
+  | (Extract<BrandfetchIconResolution, { status: 'ok' }> & { source: 'brandfetch' })
+  | Extract<BimiResolution, { status: 'none' }>;
+
+/** Keep a known-good mark for at most one extra TTL while refreshes retry. */
+const STALE_MARK_GRACE_DAYS = DOMAIN_ICON_TTL_DAYS.ok;
 
 /**
  * DomainIconWorker (ADR-0034) — resolves one domain's brand mark and
  * writes it to the global icon cache.
  *
- * Policy: `batchPolicy` (D203/D225). Idempotency key is the domain
- * (`domain-icon.queue.ts`), so concurrent misses for the same brand
- * collapse into one job.
+ * Policy: `batchPolicy` (D203/D225). Idempotency key is resolver
+ * version + domain (`domain-icon.queue.ts`), so concurrent misses for
+ * the same brand collapse while a strategy upgrade bypasses the old
+ * completed job.
  *
  * The work is deliberately trivial to repeat: the row is an upsert
  * keyed on the domain, so a retry after a partial failure simply
@@ -72,18 +110,57 @@ export class DomainIconWorker extends BaseDeclutrWorker<DomainIconJobData, Domai
     const startedAt = Date.now();
     const now = this.deps.now?.() ?? new Date();
 
-    const domain = brandRoot(payload.domain);
+    const domain = organizationalDomain(payload.domain);
+    const discoveryDomain = brandRoot(payload.discoveryDomain ?? domain).replace(/\.$/, '');
     // A producer that enqueued rubbish is a bug, not a transient
     // fault — fail terminally rather than burning three attempts.
     if (!isResolvableDomain(domain)) {
       throw new ValidationError(`DomainIconWorker: unusable domain "${payload.domain}"`);
     }
-
-    if (await this.isFresh(domain, now)) {
-      return { outcome: 'still_fresh', byteSize: 0, durationMs: Date.now() - startedAt };
+    if (!isResolvableDomain(discoveryDomain)) {
+      throw new ValidationError(
+        `DomainIconWorker: unusable discovery domain "${payload.discoveryDomain}"`,
+      );
     }
 
-    const resolution = await resolveBimiIcon(domain, this.deps.bimi);
+    if (await this.isFresh(domain, now)) {
+      return {
+        outcome: 'still_fresh',
+        source: null,
+        byteSize: 0,
+        durationMs: Date.now() - startedAt,
+      };
+    }
+
+    const bimi = await resolveBimiIcon(discoveryDomain, this.deps.bimi);
+    let resolution: DomainIconResolution | undefined;
+    const missReasons = [`bimi: ${bimi.status === 'none' ? bimi.reason : 'resolved'}`];
+    let websiteFailure: TransientError | undefined;
+    if (bimi.status === 'ok') {
+      resolution = { ...bimi, source: 'bimi' };
+    } else if (this.deps.website) {
+      try {
+        const website = await resolveWebsiteIcon(domain, this.deps.website);
+        if (website.status === 'ok') resolution = { ...website, source: 'vendor' };
+        else missReasons.push(`website: ${website.reason}`);
+      } catch (err) {
+        if (!(err instanceof TransientError)) throw err;
+        websiteFailure = err;
+        missReasons.push('website: transient failure');
+      }
+    }
+
+    if (!resolution && this.deps.brandfetch) {
+      const brandfetch = await resolveBrandfetchIcon(domain, this.deps.brandfetch);
+      if (brandfetch.status === 'ok') resolution = { ...brandfetch, source: 'brandfetch' };
+      else missReasons.push(`brandfetch: ${brandfetch.reason}`);
+    }
+
+    // Never turn an official-site outage into a month-long negative.
+    // A Brandfetch success is safe to cache; a Brandfetch miss is not
+    // proof that the temporarily unavailable site has no logo.
+    if (!resolution && websiteFailure) throw websiteFailure;
+    resolution ??= { status: 'none', reason: missReasons.join('; ') };
 
     return {
       ...(await this.store(domain, resolution, now)),
@@ -94,7 +171,12 @@ export class DomainIconWorker extends BaseDeclutrWorker<DomainIconJobData, Domai
   /** True when a row exists and has not aged past its status' TTL. */
   private async isFresh(domain: string, now: Date): Promise<boolean> {
     const [row] = await this.deps.db
-      .select({ status: domainIcons.status, fetchedAt: domainIcons.fetchedAt })
+      .select({
+        status: domainIcons.status,
+        source: domainIcons.source,
+        fetchedAt: domainIcons.fetchedAt,
+        resolverVersion: domainIcons.resolverVersion,
+      })
       .from(domainIcons)
       .where(eq(domainIcons.domain, domain))
       .limit(1);
@@ -105,10 +187,27 @@ export class DomainIconWorker extends BaseDeclutrWorker<DomainIconJobData, Domai
 
   private async store(
     domain: string,
-    resolution: BimiResolution,
+    resolution: DomainIconResolution,
     now: Date,
   ): Promise<Omit<DomainIconResult, 'durationMs'>> {
+    const [existing] = await this.deps.db
+      .select({
+        status: domainIcons.status,
+        source: domainIcons.source,
+        contentHash: domainIcons.contentHash,
+        byteSize: domainIcons.byteSize,
+        fetchedAt: domainIcons.fetchedAt,
+      })
+      .from(domainIcons)
+      .where(eq(domainIcons.domain, domain))
+      .limit(1);
+
     if (resolution.status === 'none') {
+      const maxStaleAgeMs = (DOMAIN_ICON_TTL_DAYS.ok + STALE_MARK_GRACE_DAYS) * 24 * 60 * 60 * 1000;
+      const preserveStale =
+        existing?.status === 'ok' &&
+        existing.source !== 'brandfetch' &&
+        now.getTime() - existing.fetchedAt.getTime() < maxStaleAgeMs;
       // Why a brand got no logo is the only diagnostic this feature
       // produces — without it, "no logo" is indistinguishable from a
       // bug, and the reason was documented as logged while nothing
@@ -120,13 +219,26 @@ export class DomainIconWorker extends BaseDeclutrWorker<DomainIconJobData, Domai
           kind: 'domain_icon.unresolved',
           domain,
           reason: resolution.reason,
+          outcome: preserveStale ? 'preserved_stale' : 'cached_miss',
         }),
       );
+      if (preserveStale) {
+        return {
+          outcome: 'preserved_stale',
+          source: existing.source === 'vendor' ? 'website' : existing.source,
+          byteSize: existing.byteSize ?? 0,
+        };
+      }
       // The row that stops this domain being re-resolved on every
       // render for the next 30 days.
       await this.deps.db
         .insert(domainIcons)
-        .values({ domain, status: 'none', fetchedAt: now })
+        .values({
+          domain,
+          status: 'none',
+          resolverVersion: DOMAIN_ICON_RESOLVER_VERSION,
+          fetchedAt: now,
+        })
         .onConflictDoUpdate({
           target: domainIcons.domain,
           set: {
@@ -136,30 +248,32 @@ export class DomainIconWorker extends BaseDeclutrWorker<DomainIconJobData, Domai
             source: null,
             contentHash: null,
             byteSize: null,
+            resolverVersion: DOMAIN_ICON_RESOLVER_VERSION,
             fetchedAt: now,
           },
         });
-      return { outcome: 'cached_miss', byteSize: 0 };
+      return { outcome: 'cached_miss', source: null, byteSize: 0 };
     }
 
     const contentHash = createHash('sha256').update(resolution.image).digest('hex');
     const byteSize = resolution.image.byteLength;
+    const source = resolution.source === 'vendor' ? 'website' : resolution.source;
 
-    // Byte-identical re-publish: bump `fetched_at` so the TTL restarts
-    // without rewriting the payload (and without changing the ETag
-    // every client already holds).
-    const [existing] = await this.deps.db
-      .select({ contentHash: domainIcons.contentHash })
-      .from(domainIcons)
-      .where(eq(domainIcons.domain, domain))
-      .limit(1);
-
+    // Byte-identical re-publish: bump `fetched_at` and provenance so the
+    // TTL and coverage metrics reflect the successful tier, without
+    // rewriting the payload or changing the ETag clients already hold.
     if (existing?.contentHash === contentHash) {
       await this.deps.db
         .update(domainIcons)
-        .set({ fetchedAt: now })
+        .set({
+          source: resolution.source,
+          mime: resolution.mime,
+          byteSize,
+          resolverVersion: DOMAIN_ICON_RESOLVER_VERSION,
+          fetchedAt: now,
+        })
         .where(eq(domainIcons.domain, domain));
-      return { outcome: 'unchanged', byteSize };
+      return { outcome: 'unchanged', source, byteSize };
     }
 
     await this.deps.db
@@ -169,9 +283,10 @@ export class DomainIconWorker extends BaseDeclutrWorker<DomainIconJobData, Domai
         status: 'ok',
         image: resolution.image,
         mime: resolution.mime,
-        source: 'bimi',
+        source: resolution.source,
         contentHash,
         byteSize,
+        resolverVersion: DOMAIN_ICON_RESOLVER_VERSION,
         fetchedAt: now,
       })
       .onConflictDoUpdate({
@@ -180,15 +295,26 @@ export class DomainIconWorker extends BaseDeclutrWorker<DomainIconJobData, Domai
           status: 'ok',
           image: resolution.image,
           mime: resolution.mime,
-          source: 'bimi',
+          source: resolution.source,
           contentHash,
           byteSize,
+          resolverVersion: DOMAIN_ICON_RESOLVER_VERSION,
           fetchedAt: now,
         },
       });
 
-    return { outcome: 'stored', byteSize };
+    return { outcome: 'stored', source, byteSize };
   }
+}
+
+/**
+ * Server-side kill switch for the unverified official-website tier.
+ * BIMI remains available when this is false. Default-on matches the
+ * accepted ADR amendment; only the exact deployed value `false`
+ * disables outbound website discovery.
+ */
+export function isWebsiteIconFallbackEnabled(rawValue: string | undefined): boolean {
+  return rawValue !== 'false';
 }
 
 /**
@@ -214,9 +340,20 @@ export function isResolvableDomain(domain: string): boolean {
  * the TTL needs no scheduler to be real.
  */
 export function isStale(
-  row: { status: 'ok' | 'none'; fetchedAt: Date },
+  row: {
+    status: 'ok' | 'none';
+    source: 'bimi' | 'vendor' | 'brandfetch' | null;
+    fetchedAt: Date;
+    resolverVersion: number;
+  },
   now: Date = new Date(),
 ): boolean {
-  const ttlDays = DOMAIN_ICON_TTL_DAYS[row.status];
+  if (row.status === 'none' && row.resolverVersion < DOMAIN_ICON_RESOLVER_VERSION) {
+    return true;
+  }
+  const ttlDays =
+    row.status === 'ok' && row.source === 'brandfetch'
+      ? DOMAIN_ICON_TTL_DAYS.brandfetch
+      : DOMAIN_ICON_TTL_DAYS[row.status];
   return now.getTime() - row.fetchedAt.getTime() >= ttlDays * 24 * 60 * 60 * 1000;
 }

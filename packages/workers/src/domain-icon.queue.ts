@@ -1,5 +1,7 @@
 import type { JobsOptions, Queue } from 'bullmq';
 
+import { DOMAIN_ICON_RESOLVER_VERSION } from '@declutrmail/db';
+
 import { WORKER_POLICIES } from './worker-policies.js';
 import type { DomainIconJobData } from './domain-icon.worker.js';
 
@@ -15,7 +17,7 @@ export const DOMAIN_ICON_QUEUE = 'domain-icon';
 export const DOMAIN_ICON_JOB = 'domain-icon';
 
 /**
- * Job options keyed on the DOMAIN alone.
+ * Job options keyed on resolver VERSION + CANONICAL DOMAIN.
  *
  * This is the mechanism that makes a first page-load of a large
  * mailbox cheap. A grid rendering 200 uncached senders fires 200
@@ -24,10 +26,13 @@ export const DOMAIN_ICON_JOB = 'domain-icon';
  * domains rather than by requests — and across users, by distinct
  * domains product-wide rather than per mailbox.
  *
- * `removeOnComplete` keeps a 24h tail: once a job completes and is
- * reaped, a later miss for the same domain can enqueue again, which is
- * exactly what a TTL refresh needs. The row itself is the durable
- * dedup — the worker re-checks freshness before doing any work.
+ * The version component matters when the cascade gains a source: an
+ * older completed job may remain in Redis for 24h, but it must not
+ * suppress the new strategy's immediate retry. Within one version,
+ * the domain still collapses concurrent requests to one job.
+ * `removeOnComplete` keeps a 24h inspection tail; after it is reaped,
+ * a later TTL refresh can enqueue the same version again. The row is
+ * the durable dedup — the worker re-checks freshness before fetching.
  */
 export function domainIconJobOptions(domain: string): JobsOptions {
   const policy = WORKER_POLICIES.batchPolicy;
@@ -44,32 +49,41 @@ export function domainIconJobOptions(domain: string): JobsOptions {
     // all throw). The cron queues' `Worker:2026-08-14T08:00` ids
     // survive only by landing on that accepted count. Do not read
     // those as precedent — just keep colons out.
-    jobId: `DomainIconWorker-${domain}`,
+    // Versioning lets a resolver upgrade immediately enqueue work even
+    // while the previous strategy's completed job remains in Redis.
+    jobId: `DomainIconWorker-v${DOMAIN_ICON_RESOLVER_VERSION}-${domain}`,
     attempts: policy.maxAttempts,
     ...(policy.backoff
       ? { backoff: { type: policy.backoff.type, delay: policy.backoff.delayMs } }
       : {}),
     removeOnComplete: { age: 24 * 60 * 60 },
-    // Failures need a tail for the SAME reason completions do, and
-    // leaving them forever is worse here than losing the record.
+    // Failures need a short tail for inspection, and leaving them
+    // forever is worse here than losing the Redis copy of the record.
     // `Queue.add` is a no-op while a job with this id exists in ANY
     // state, and the producer swallows enqueue results — so one
     // terminal failure (an unusable domain throws ValidationError,
     // which the base worker turns into an UnrecoverableError) would
-    // make that domain permanently un-enqueueable, invisibly. A 7-day
-    // tail keeps failures inspectable while guaranteeing the domain
-    // becomes retryable; the dead-letter table is the durable record.
-    removeOnFail: { age: 7 * 24 * 60 * 60 },
+    // make that domain permanently un-enqueueable, invisibly. One hour
+    // avoids hammering a temporarily unhealthy website while preventing
+    // one outage from suppressing a new logo for a week. The dead-letter
+    // table and Sentry are the durable failure records.
+    removeOnFail: { age: 60 * 60 },
   };
 }
 
 /**
- * Enqueue one domain for resolution. Idempotent on the domain — safe to
- * call from every cache miss without coordination.
+ * Enqueue one canonical domain for resolution. Idempotent on that
+ * canonical key — aliases and arbitrary subdomains safely converge on
+ * one job without coordination.
  */
 export async function enqueueDomainIcon(
   queue: Queue<DomainIconJobData>,
   domain: string,
+  discoveryDomain?: string,
 ): Promise<void> {
-  await queue.add(DOMAIN_ICON_JOB, { domain }, domainIconJobOptions(domain));
+  await queue.add(
+    DOMAIN_ICON_JOB,
+    { domain, ...(discoveryDomain && discoveryDomain !== domain ? { discoveryDomain } : {}) },
+    domainIconJobOptions(domain),
+  );
 }

@@ -168,10 +168,10 @@ export const breakpoint = {
   lg: 1280,
 } as const;
 
-// `avatarColors` (the saturated monogram fills) retired with ADR-0024 —
-// the Avatar derives a muted per-domain tint itself, inside the D2
-// cool/editorial palette. The saturated set included hues outside the
-// ADR-0016 A3 accent map (violet, red, green).
+// `avatarColors` (the saturated monogram fills) retired with ADR-0024.
+// Monograms are neutral in both themes; only verified logos introduce
+// brand color. The old set also included hues outside the ADR-0016 A3
+// accent map (violet, red, green).
 
 export const tokens = {
   color,

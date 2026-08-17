@@ -1,4 +1,4 @@
-import { domainIcons } from '@declutrmail/db';
+import { brandDomainAliases, DOMAIN_ICON_RESOLVER_VERSION, domainIcons } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import type { Queue } from 'bullmq';
 import { describe, expect, it } from 'vitest';
@@ -76,7 +76,9 @@ describe('IconsService', () => {
     expect(added).toHaveLength(1);
     expect(added[0]?.data).toEqual({ domain: 'unknown.example' });
     // Domain-keyed so a grid full of the same sender collapses to one job.
-    expect(added[0]?.opts).toMatchObject({ jobId: 'DomainIconWorker-unknown.example' });
+    expect(added[0]?.opts).toMatchObject({
+      jobId: `DomainIconWorker-v${DOMAIN_ICON_RESOLVER_VERSION}-unknown.example`,
+    });
   });
 
   it('misses WITHOUT scheduling for a cached negative', async () => {
@@ -105,6 +107,86 @@ describe('IconsService', () => {
     }
   });
 
+  it('reuses a cached organizational-domain mark for an arbitrary sender subdomain', async () => {
+    const db = await freshTestDb();
+    await seedIcon(db, { domain: 'chase.com' });
+    const { queue, added } = fakeQueue();
+
+    const result = await new IconsService(db as never, queue).lookup('alertsp.chase.com', {
+      mayEnqueue: true,
+    });
+
+    expect(result.kind).toBe('hit');
+    expect(added).toEqual([]);
+  });
+
+  it('reuses a canonical cache entry through a verified mailing-domain alias', async () => {
+    const db = await freshTestDb();
+    await seedIcon(db, { domain: 'temu.com' });
+    const { queue, added } = fakeQueue();
+
+    const result = await new IconsService(db as never, queue).lookup('news.temuemail.com', {
+      mayEnqueue: true,
+    });
+
+    expect(result.kind).toBe('hit');
+    expect(added).toEqual([]);
+  });
+
+  it('does not rewrite a domain from an alias candidate below automatic confidence', async () => {
+    const db = await freshTestDb();
+    await db.insert(brandDomainAliases).values({
+      aliasDomain: 'mailing-brand.example',
+      canonicalDomain: 'brand.example',
+      source: 'manual_review',
+      confidence: 80,
+    });
+    await seedIcon(db);
+    const { queue, added } = fakeQueue();
+
+    const result = await new IconsService(db as never, queue).lookup('mailing-brand.example', {
+      mayEnqueue: true,
+    });
+
+    expect(result).toEqual({ kind: 'miss' });
+    expect(added[0]?.data).toEqual({ domain: 'mailing-brand.example' });
+  });
+
+  it('schedules the canonical domain while retaining the sender domain for exact BIMI discovery', async () => {
+    const db = await freshTestDb();
+    const { queue, added } = fakeQueue();
+
+    const result = await new IconsService(db as never, queue).lookup('news.temuemail.com', {
+      mayEnqueue: true,
+    });
+
+    expect(result).toEqual({ kind: 'miss' });
+    expect(added[0]?.data).toEqual({
+      domain: 'temu.com',
+      discoveryDomain: 'temuemail.com',
+    });
+    expect(added[0]?.opts).toMatchObject({
+      jobId: `DomainIconWorker-v${DOMAIN_ICON_RESOLVER_VERSION}-temu.com`,
+    });
+  });
+
+  it('keeps serving an existing exact-domain mark while canonical cache migration is queued', async () => {
+    const db = await freshTestDb();
+    await seedIcon(db, { domain: 'welcome.americanexpress.com' });
+    const { queue, added } = fakeQueue();
+
+    const result = await new IconsService(db as never, queue).lookup(
+      'welcome.americanexpress.com',
+      { mayEnqueue: true },
+    );
+
+    expect(result.kind).toBe('hit');
+    expect(added[0]?.data).toEqual({
+      domain: 'americanexpress.com',
+      discoveryDomain: 'welcome.americanexpress.com',
+    });
+  });
+
   it('serves a stale mark and re-queues it', async () => {
     const db = await freshTestDb();
     const longAgo = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000);
@@ -120,12 +202,43 @@ describe('IconsService', () => {
     expect(added).toHaveLength(1);
   });
 
+  it('stops serving stale Brandfetch artwork while its refresh is queued', async () => {
+    const db = await freshTestDb();
+    const longAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    await seedIcon(db, { source: 'brandfetch', mime: 'image/png', fetchedAt: longAgo });
+    const { queue, added } = fakeQueue();
+
+    const result = await new IconsService(db as never, queue).lookup('brand.example', {
+      mayEnqueue: true,
+    });
+
+    expect(result).toEqual({ kind: 'miss' });
+    expect(added).toHaveLength(1);
+  });
+
   it('re-queues a stale negative but still reports a miss', async () => {
     const db = await freshTestDb();
     const longAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
     await db
       .insert(domainIcons)
       .values({ domain: 'nobody.example', status: 'none', fetchedAt: longAgo });
+    const { queue, added } = fakeQueue();
+
+    const result = await new IconsService(db as never, queue).lookup('nobody.example', {
+      mayEnqueue: true,
+    });
+
+    expect(result).toEqual({ kind: 'miss' });
+    expect(added).toHaveLength(1);
+  });
+
+  it('re-queues a fresh negative produced by an older resolver strategy', async () => {
+    const db = await freshTestDb();
+    await db.insert(domainIcons).values({
+      domain: 'nobody.example',
+      status: 'none',
+      resolverVersion: DOMAIN_ICON_RESOLVER_VERSION - 1,
+    });
     const { queue, added } = fakeQueue();
 
     const result = await new IconsService(db as never, queue).lookup('nobody.example', {

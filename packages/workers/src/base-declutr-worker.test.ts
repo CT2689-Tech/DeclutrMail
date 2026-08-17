@@ -253,6 +253,62 @@ describe('BaseDeclutrWorker', () => {
       const success = lifecycleLines().find((line) => line.kind === 'worker.succeeded');
       expect(success?.result).toEqual({ messagesSynced: 1176, unreadable: 4 });
     });
+
+    it('keeps the closed domain-icon outcome and byte-size metrics', async () => {
+      class DomainIconShapedWorker extends BaseDeclutrWorker<
+        TestPayload,
+        { outcome: 'stored'; source: 'website'; byteSize: number; durationMs: number }
+      > {
+        override readonly workerName = 'DomainIconShapedWorker';
+        override readonly policy = 'batchPolicy' as const;
+        override async processJob() {
+          return {
+            outcome: 'stored' as const,
+            source: 'website' as const,
+            byteSize: 6_136,
+            durationMs: 27,
+          };
+        }
+      }
+
+      await new DomainIconShapedWorker().run(fakeJob({ data: {} }));
+
+      const success = lifecycleLines().find((line) => line.kind === 'worker.succeeded');
+      expect(success?.result).toEqual({
+        outcome: 'stored',
+        source: 'website',
+        byteSize: 6_136,
+        durationMs: 27,
+      });
+    });
+
+    it('keeps Brandfetch as a closed domain-icon source metric', async () => {
+      class BrandfetchIconShapedWorker extends BaseDeclutrWorker<
+        TestPayload,
+        { outcome: 'stored'; source: 'brandfetch'; byteSize: number; durationMs: number }
+      > {
+        override readonly workerName = 'BrandfetchIconShapedWorker';
+        override readonly policy = 'batchPolicy' as const;
+        override async processJob() {
+          return {
+            outcome: 'stored' as const,
+            source: 'brandfetch' as const,
+            byteSize: 5_900,
+            durationMs: 31,
+          };
+        }
+      }
+
+      await new BrandfetchIconShapedWorker().run(fakeJob({ data: {} }));
+
+      const success = lifecycleLines().find((line) => line.kind === 'worker.succeeded');
+      expect(success?.result).toEqual({
+        outcome: 'stored',
+        source: 'brandfetch',
+        byteSize: 5_900,
+        durationMs: 31,
+      });
+    });
   });
 
   describe('retryable error path', () => {

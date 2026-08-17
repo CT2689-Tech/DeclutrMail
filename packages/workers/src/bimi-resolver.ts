@@ -5,7 +5,10 @@ import { isIP } from 'node:net';
 import {
   buildPinnedLookup,
   classifyAddress,
+  describeNetworkError,
   DNS_RESOLVE_HOST,
+  isTransientDnsError,
+  isTransientHttpStatus,
   type ResolveHost,
 } from './ssrf-guard.js';
 import { verifyVmc, type VmcOptions, type VmcResult } from './vmc-verifier.js';
@@ -22,7 +25,7 @@ import { TransientError } from './worker-errors.js';
  *
  * It is the source we prefer over any logo vendor: no account, no bill,
  * no licensing question, and the artwork is published by the brand
- * itself rather than scraped. It is also SVG, which is why Phase 1
+ * itself rather than scraped. It is also SVG, so this preferred tier
  * needs no raster pipeline — one vector renders at every avatar size.
  *
  * ─── THE RECORD ALONE PROVES NOTHING ──────────────────────────────────
@@ -50,31 +53,6 @@ import { TransientError } from './worker-errors.js';
  * swap it, a redirect budget with the full guard re-run per hop, a
  * response-size ceiling, and a wall-clock timeout.
  */
-
-/**
- * DNS failures that mean "ask again later", not "this domain has no
- * record". `NXDOMAIN`/`NODATA` are answers; everything here is the
- * resolver failing to give one.
- */
-const TRANSIENT_DNS_CODES: ReadonlySet<string> = new Set([
-  'SERVFAIL',
-  'EAI_AGAIN',
-  'ETIMEOUT',
-  'ETIMEOUT_DNS',
-  'ECONNREFUSED',
-  'ECONNRESET',
-  'EREFUSED',
-]);
-
-function isTransientDnsError(err: unknown): boolean {
-  const code = (err as { code?: unknown } | null)?.code;
-  return typeof code === 'string' && TRANSIENT_DNS_CODES.has(code);
-}
-
-function describeError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
-}
 
 /** Refuse to buffer more than this. SVG Tiny PS marks are a few KB. */
 export const BIMI_MAX_BYTES = 64 * 1024;
@@ -111,6 +89,7 @@ const FORBIDDEN_SVG_PATTERNS: ReadonlyArray<{ pattern: RegExp; reason: string }>
   { pattern: /<\s*script/i, reason: 'script element' },
   { pattern: /<\s*foreignObject/i, reason: 'foreignObject element' },
   { pattern: /<\s*image\b/i, reason: 'raster image element' },
+  { pattern: /<\s*feImage\b/i, reason: 'filter image element' },
   { pattern: /<\s*use\b/i, reason: 'use element' },
   { pattern: /<!\s*ENTITY/i, reason: 'entity declaration' },
   { pattern: /<!\s*DOCTYPE/i, reason: 'doctype declaration' },
@@ -118,6 +97,7 @@ const FORBIDDEN_SVG_PATTERNS: ReadonlyArray<{ pattern: RegExp; reason: string }>
   // friends do not match.
   { pattern: /\son[a-z]+\s*=/i, reason: 'event handler attribute' },
   { pattern: /javascript:/i, reason: 'javascript: url' },
+  { pattern: /@\s*import\b/i, reason: 'stylesheet import' },
   // Any absolute reference out of the document — SVG Tiny PS is
   // self-contained, and an external ref would re-introduce exactly the
   // third-party fetch ADR-0024 removed, this time from our own origin.
@@ -153,7 +133,16 @@ export interface BimiHttpResponse {
 export interface BimiHttpPort {
   get(
     url: string,
-    opts: { timeoutMs: number; maxBytes: number; pinnedAddress: string; family: 4 | 6 },
+    opts: {
+      timeoutMs: number;
+      maxBytes: number;
+      pinnedAddress: string;
+      family: 4 | 6;
+      accept?: string;
+      userAgent?: string;
+      /** Optional bearer credential. Callers must never forward it across hosts. */
+      authorization?: string;
+    },
   ): Promise<BimiHttpResponse>;
 }
 
@@ -214,6 +203,19 @@ export function validateBimiSvg(bytes: Buffer): { ok: true } | { ok: false; reas
 
   for (const { pattern, reason } of FORBIDDEN_SVG_PATTERNS) {
     if (pattern.test(text)) return { ok: false, reason: `forbidden content: ${reason}` };
+  }
+  // CSS presentation attributes commonly use `url(#gradient)`, which
+  // is self-contained and safe. Any other CSS URL could make the SVG
+  // decoder read a relative file or perform an outbound request, so it
+  // must be rejected before `sharp` rasterizes website artwork.
+  for (const match of text.matchAll(/url\s*\(([^)]*)\)/gi)) {
+    const target = (match[1] ?? '')
+      .trim()
+      .replace(/^(["'])(.*)\1$/, '$2')
+      .trim();
+    if (!target.startsWith('#')) {
+      return { ok: false, reason: 'forbidden content: external css url' };
+    }
   }
   return { ok: true };
 }
@@ -281,7 +283,9 @@ async function findBimiRecord(
       // instead, which is what the sibling consumer of this same guard
       // does with network faults (`unsub-execution.worker.ts`).
       if (isTransientDnsError(err)) {
-        throw new TransientError(`BIMI DNS lookup failed for ${candidate}: ${describeError(err)}`);
+        throw new TransientError(
+          `BIMI DNS lookup failed for ${candidate}: ${describeNetworkError(err)}`,
+        );
       }
       continue;
     }
@@ -374,12 +378,14 @@ async function fetchGuarded(
         maxBytes: BIMI_MAX_BYTES,
         pinnedAddress: target.pinnedAddress,
         family: target.family,
+        accept: expectMime ?? '*/*',
+        userAgent: BIMI_USER_AGENT,
       });
     } catch (err) {
       // Same reasoning as the DNS branch: a socket error is "ask again
       // later", and storing it as a 30-day cached miss would disable
       // this brand's logo over a blip. Let batchPolicy retry.
-      throw new TransientError(`BIMI fetch failed for ${current}: ${describeError(err)}`);
+      throw new TransientError(`BIMI fetch failed for ${current}: ${describeNetworkError(err)}`);
     }
 
     if (response.status >= 300 && response.status < 400) {
@@ -395,6 +401,9 @@ async function fetchGuarded(
       continue;
     }
 
+    if (isTransientHttpStatus(response.status)) {
+      throw new TransientError(`BIMI fetch failed for ${current}: HTTP ${response.status}`);
+    }
     if (response.status !== 200) return { status: 'none', reason: `http ${response.status}` };
     if (response.tooLarge) return { status: 'none', reason: 'oversize' };
     if (!response.body) return { status: 'none', reason: 'empty body' };
@@ -448,7 +457,9 @@ async function validateTarget(
       addresses = await resolveHost(hostname);
     } catch (err) {
       if (isTransientDnsError(err)) {
-        throw new TransientError(`BIMI host lookup failed for ${hostname}: ${describeError(err)}`);
+        throw new TransientError(
+          `BIMI host lookup failed for ${hostname}: ${describeNetworkError(err)}`,
+        );
       }
       // A name that genuinely does not resolve is a real answer about
       // this record: the URL it published is dead.
@@ -488,9 +499,15 @@ export const FETCH_BIMI_HTTP_PORT: BimiHttpPort = {
           path: `${parsed.pathname}${parsed.search}`,
           method: 'GET',
           headers: {
-            Accept: SVG_MIME,
-            'User-Agent': BIMI_USER_AGENT,
+            Accept: opts.accept ?? SVG_MIME,
+            'User-Agent': opts.userAgent ?? BIMI_USER_AGENT,
+            ...(opts.authorization ? { Authorization: opts.authorization } : {}),
           },
+          // `ClientRequest#setTimeout` is only an inactivity timeout: a
+          // hostile server can keep the socket alive forever by
+          // trickling one byte. The abort signal is a true wall-clock
+          // deadline for DNS/TLS/headers/body together.
+          signal: AbortSignal.timeout(opts.timeoutMs),
           lookup: buildPinnedLookup(opts.pinnedAddress, opts.family) as never,
           servername: hostname,
         },
@@ -523,9 +540,6 @@ export const FETCH_BIMI_HTTP_PORT: BimiHttpPort = {
           res.on('error', reject);
         },
       );
-      req.setTimeout(opts.timeoutMs, () => {
-        req.destroy(new Error(`BIMI fetch timed out after ${opts.timeoutMs}ms`));
-      });
       req.on('error', reject);
       req.end();
     });

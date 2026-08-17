@@ -40,6 +40,7 @@
 // is explicitly cleared so this runs anywhere Chromium does.
 
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
@@ -57,10 +58,10 @@ const here = fileURLToPath(new URL('.', import.meta.url));
  * empty API base keeps the icon URL relative so it resolves against
  * this spec's own server.
  */
-function ssrAvatar(): string {
+function ssrAvatar(name: string, domain: string, size: number): string {
   return execFileSync(
     `${here}../../../node_modules/.bin/tsx`,
-    [`${here}../helpers/ssr-avatar.ts`, 'Chase', 'chase.com', '40'],
+    [`${here}../helpers/ssr-avatar.ts`, name, domain, String(size)],
     {
       encoding: 'utf8',
       env: {
@@ -76,19 +77,31 @@ function ssrAvatar(): string {
   );
 }
 
-const AVATAR_MARKUP = ssrAvatar();
+const AVATAR_MARKUP = [
+  ['Chase', 'chase.com', 40],
+  ['Bank of America', 'bankofamerica.com', 24],
+  ['Airbnb', 'airbnb.com', 28],
+  ['Figma', 'figma.com', 72],
+]
+  .map(([name, domain, size]) => ssrAvatar(String(name), String(domain), Number(size)))
+  .join('');
+const TOKENS_CSS = readFileSync(
+  new URL('../../shared/src/styles/tokens.css', import.meta.url),
+  'utf8',
+);
 
-/** A mark that is unmistakable against the pale monogram tint. */
+/** A mark that is unmistakable against the pale neutral monogram. */
 const LOGO_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
   '<rect width="64" height="64" fill="#0b6"/>' +
   '<circle cx="32" cy="32" r="16" fill="#fff"/></svg>';
 
-type IconState = 'miss' | 'unauthenticated' | 'hit';
+type IconState = 'miss' | 'rejected' | 'hit';
 
 /**
- * Serve one page containing a single real `Avatar`, plus the icon
- * endpoint in the requested state.
+ * Serve one page containing real `Avatar` instances at every production
+ * size, plus the icon endpoint in the requested state. The 40px Chase
+ * fixture stays first because the logo paint tests use it as their target.
  */
 async function serveAvatar(state: IconState): Promise<{ url: string; close: () => Promise<void> }> {
   const server: Server = createServer((req, res) => {
@@ -99,8 +112,9 @@ async function serveAvatar(state: IconState): Promise<{ url: string; close: () =
         res.writeHead(204);
         return res.end();
       }
-      if (state === 'unauthenticated') {
-        // The route is behind JwtGuard; an expired session gets this.
+      if (state === 'rejected') {
+        // The route is public now, but a proxy/auth regression must
+        // still reveal the monogram instead of an empty/broken tile.
         res.writeHead(401);
         return res.end();
       }
@@ -108,9 +122,11 @@ async function serveAvatar(state: IconState): Promise<{ url: string; close: () =
       return res.end(LOGO_SVG);
     }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    const theme = new URL(req.url ?? '/', 'http://avatar.test').searchParams.get('theme');
     res.end(
-      `<!doctype html><meta charset="utf-8">` +
-        `<body style="margin:0;padding:24px;background:#fff">${AVATAR_MARKUP}</body>`,
+      `<!doctype html><html data-theme="${theme === 'dark' ? 'dark' : 'light'}">` +
+        `<meta charset="utf-8"><style>${TOKENS_CSS}</style>` +
+        `<body style="margin:0;padding:24px;background:var(--dm-bg);display:flex;align-items:center;gap:20px">${AVATAR_MARKUP}</body></html>`,
     );
   });
 
@@ -118,7 +134,14 @@ async function serveAvatar(state: IconState): Promise<{ url: string; close: () =
   const { port } = server.address() as AddressInfo;
   return {
     url: `http://127.0.0.1:${port}/`,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        // Chromium may keep the last icon/page socket alive. Waiting
+        // for that idle connection makes this otherwise self-contained
+        // paint spec hang nondeterministically after its assertions.
+        server.closeAllConnections();
+      }),
   };
 }
 
@@ -151,7 +174,54 @@ async function shotWithAndWithoutLogoLayer(page: Page) {
 test.use({ storageState: { cookies: [], origins: [] } });
 
 test.describe('Avatar brand logo (ADR-0034) — real-browser paint', () => {
-  for (const state of ['miss', 'unauthenticated'] as const) {
+  test('the premium monogram treatment holds at every production size in both themes', async ({
+    page,
+  }) => {
+    const { url, close } = await serveAvatar('miss');
+    try {
+      const readTiles = () =>
+        page.locator('[aria-hidden="true"]').evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const style = getComputedStyle(node);
+            const rect = node.getBoundingClientRect();
+            return {
+              size: rect.width,
+              background: style.backgroundImage,
+              border: style.borderColor,
+              shadow: style.boxShadow,
+              weight: style.fontWeight,
+            };
+          }),
+        );
+
+      await page.goto(`${url}?theme=light`);
+      const light = await readTiles();
+      expect(light.map(({ size }) => size)).toEqual([40, 24, 28, 72]);
+      expect(
+        light.every(
+          ({ background, border, shadow, weight }) =>
+            background.includes('linear-gradient') &&
+            border !== 'rgba(0, 0, 0, 0)' &&
+            shadow !== 'none' &&
+            weight === '600',
+        ),
+      ).toBe(true);
+
+      await page.goto(`${url}?theme=dark`);
+      const dark = await readTiles();
+      expect(dark.map(({ size }) => size)).toEqual([40, 24, 28, 72]);
+      expect(new Set(light.map(({ background }) => background))).toHaveProperty('size', 1);
+      expect(new Set(dark.map(({ background }) => background))).toHaveProperty('size', 1);
+      expect(new Set(dark.map(({ border }) => border))).toHaveProperty('size', 1);
+      expect(dark.map(({ background }) => background)).not.toEqual(
+        light.map(({ background }) => background),
+      );
+    } finally {
+      await close();
+    }
+  });
+
+  for (const state of ['miss', 'rejected'] as const) {
     test(`a ${state} icon response paints nothing over the monogram`, async ({ page }) => {
       const { url, close } = await serveAvatar(state);
       try {
@@ -204,6 +274,33 @@ test.describe('Avatar brand logo (ADR-0034) — real-browser paint', () => {
         return { path: new URL(src, location.href).pathname, status: res.status };
       });
       expect(served).toEqual({ path: '/api/icons/chase.com', status: 200 });
+
+      const geometry = await page
+        .locator('[aria-hidden="true"]')
+        .first()
+        .evaluate((avatar) => {
+          const layer = avatar.querySelector<HTMLElement>('[style*="background-image"]');
+          if (!layer) return null;
+          const avatarRect = avatar.getBoundingClientRect();
+          const layerRect = layer.getBoundingClientRect();
+          return {
+            avatar: {
+              x: avatarRect.x,
+              y: avatarRect.y,
+              width: avatarRect.width,
+              height: avatarRect.height,
+            },
+            layer: {
+              x: layerRect.x,
+              y: layerRect.y,
+              width: layerRect.width,
+              height: layerRect.height,
+            },
+            backgroundSize: getComputedStyle(layer).backgroundSize,
+          };
+        });
+      expect(geometry?.layer).toEqual(geometry?.avatar);
+      expect(geometry?.backgroundSize).toBe('cover');
 
       const { before, after, layers } = await shotWithAndWithoutLogoLayer(page);
 
