@@ -2844,7 +2844,14 @@ describe('BillingScreen — one billing story (A6)', () => {
     renderScreen();
 
     const notice = await screen.findByTestId('non-backing-subscription-notice');
-    expect(notice).toHaveTextContent('Payment past due — update your payment method');
+    // D119/ADR-0035: this row is NOT the one granting the plan, so its
+    // dunning line routes to support rather than to the payment-method
+    // section — that section acts on the granting subscription, and
+    // sending the customer there could update the wrong card. The old
+    // copy ("update your payment method with the provider") named no
+    // destination at all.
+    expect(notice).toHaveTextContent('Payment past due on this subscription');
+    expect(notice).toHaveTextContent('support@declutrmail.com');
     expect(notice).toHaveTextContent('Your account is on Pro');
     // The mismatch row never puts its price on the card…
     const card = screen.getByTestId('current-plan-card');
@@ -2907,5 +2914,116 @@ describe('BillingScreen — one billing story (A6)', () => {
     fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Free')).toBeInTheDocument();
+  });
+});
+
+describe('D119 billing-artifact render gates (screen-level)', () => {
+  const EMPTY_INVOICES = {
+    invoices: [],
+    unavailableProviders: [],
+    truncated: false,
+    omittedRows: 0,
+  };
+
+  /** Both billing reads stubbed — the screen mounts the invoice section. */
+  function stubBillingReads(subscription: BillingSubscription) {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: subscription }),
+      },
+      {
+        method: 'GET',
+        path: '/api/billing/invoices',
+        respond: () => jsonOk({ data: EMPTY_INVOICES }),
+      },
+    ]);
+  }
+
+  it('billing dark renders NEITHER section and fetches no invoices', async () => {
+    let invoicesFetched = false;
+    installFetchStub([
+      { method: 'GET', path: '/api/billing/subscription', respond: billingDisabled503 },
+      {
+        method: 'GET',
+        path: '/api/billing/invoices',
+        respond: () => {
+          invoicesFetched = true;
+          return jsonOk({ data: EMPTY_INVOICES });
+        },
+      },
+    ]);
+    renderScreen();
+    await screen.findByTestId('billing-disabled-notice');
+    expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('invoice-history')).not.toBeInTheDocument();
+    expect(invoicesFetched).toBe(false);
+  });
+
+  it('a never-subscribed free workspace gets no invoice section and no payment-method card', async () => {
+    stubBillingReads({
+      tier: 'free',
+      foundingMember: false,
+      subscription: null,
+      pendingCheckout: null,
+    });
+    renderScreen();
+    await screen.findByTestId('current-plan-card');
+    expect(screen.queryByTestId('invoice-history')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument();
+  });
+
+  it('free-but-PREVIOUSLY-paid keeps invoices reachable — the tax need outlives the subscription', async () => {
+    stubBillingReads({
+      tier: 'free',
+      foundingMember: false,
+      pendingCheckout: null,
+      subscription: { ...SUB, tier: 'plus', status: 'canceled', currentPeriodEnd: null },
+    });
+    renderScreen();
+    expect(await screen.findByTestId('invoice-history')).toBeInTheDocument();
+    // …but a canceled row's card is not something to send anyone to update.
+    expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument();
+  });
+
+  it('an active subscriber gets both sections', async () => {
+    stubBillingReads(PRO_SUB);
+    renderScreen();
+    expect(await screen.findByTestId('payment-method-card')).toBeInTheDocument();
+    expect(await screen.findByTestId('invoice-history')).toBeInTheDocument();
+  });
+
+  it('cancel_scheduled + past_due keeps the payment-method affordance — dunning continues to period end', async () => {
+    // The derive layer collapses a past_due row under cancel_scheduled
+    // (cancelAtPeriodEnd wins), but the failing card still needs fixing
+    // until the period actually ends (gate network 2026-08-16).
+    stubBillingReads({
+      tier: 'pro',
+      foundingMember: false,
+      pendingCheckout: null,
+      subscription: {
+        ...SUB,
+        status: 'past_due',
+        cancelAtPeriodEnd: true,
+        cancelSource: 'provider',
+      },
+    });
+    renderScreen();
+    const card = await screen.findByTestId('payment-method-card');
+    expect(within(card).getByText(/didn’t go through/i)).toBeInTheDocument();
+  });
+
+  it('a pending money action withholds the payment-method control and says why', async () => {
+    stubBillingReads(PRO_SUB);
+    // The localStorage lock is the pending-payment machine's persisted
+    // form — written the way the checkout flow writes it. The awaited
+    // target must NOT match the stubbed read (pro/monthly), or the
+    // tier-flip detector rightly clears the lock on first data.
+    writePendingCheckout('w', 'checkout', 'pro', 'monthly', 'pro', 'annual');
+    renderScreen();
+    const card = await screen.findByTestId('payment-method-card');
+    expect(within(card).getByRole('button', { name: 'Update payment method' })).toBeDisabled();
+    expect(within(card).getByText(/finishes confirming/i)).toBeInTheDocument();
   });
 });

@@ -287,6 +287,114 @@ export const BillingReconcileResponseSchema = z.object({
 });
 export type BillingReconcileResponse = z.infer<typeof BillingReconcileResponseSchema>;
 
+// ── D119 / ADR-0035 — provider-owned billing artifacts ───────────────
+//
+// The merchant-of-record split is NOT symmetric, so neither are these
+// contracts. Paddle is the legal seller: it owns the tax invoice, the
+// payment instrument and the receipt. Razorpay is an aggregator — we
+// are the seller of record for India. Every affordance below therefore
+// carries an explicit "this rail cannot do it" variant rather than a
+// nullable field: a missing CAPABILITY and a failed READ must never
+// render identically (the defect class ADR-0027's derive layer exists
+// to prevent).
+
+/**
+ * POST /api/billing/payment-method/session response `data`.
+ *
+ *   - `url` — a provider-hosted session the FE opens. Short-lived and
+ *     customer-specific: minted per click, never cached (ADR-0035 §4).
+ *   - `unsupported` — the rail has no self-serve path. Razorpay
+ *     subscriptions cannot change instrument without re-authorizing the
+ *     mandate, so the FE renders support-assisted copy. This mirrors
+ *     the existing typed refusals for Razorpay pause/resume; a disabled
+ *     button whose only outcome is a refusal is a §10 fake completion.
+ */
+export const PaymentMethodSessionSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('url'),
+    provider: BillingProviderIdSchema,
+    url: z.url(),
+  }),
+  z.object({
+    kind: z.literal('unsupported'),
+    provider: BillingProviderIdSchema,
+    reason: z.literal('no_self_serve'),
+  }),
+]);
+export type PaymentMethodSession = z.infer<typeof PaymentMethodSessionSchema>;
+
+/**
+ * One invoice row, normalized across providers.
+ *
+ * `amount` is in the currency's LOWEST unit (the existing provider-money
+ * convention — `formatProviderAmount` divides by the currency's own
+ * exponent, never a hard-coded 100).
+ *
+ * `status` carries `unknown` deliberately: both providers have status
+ * vocabularies wider than this enum, and mapping an unrecognized one
+ * onto `paid` or `due` would assert something the read did not say.
+ *
+ * The two document paths differ by rail (ADR-0035): Razorpay exposes a
+ * hosted invoice page directly (`hostedUrl`), while a Paddle invoice is
+ * a signed PDF that must be minted per click (`documentAvailable`).
+ */
+export const BillingInvoiceSchema = z.object({
+  id: z.string().min(1),
+  provider: BillingProviderIdSchema,
+  issuedAt: z.iso.datetime(),
+  amount: z.string().min(1),
+  currencyCode: z.string().min(1),
+  status: z.enum(['paid', 'due', 'canceled', 'unknown']),
+  /** Provider-hosted invoice page, when the rail exposes a stable one. */
+  hostedUrl: z.url().nullable(),
+  /** Whether `GET /invoices/:id/document` can mint a document URL. */
+  documentAvailable: z.boolean(),
+});
+export type BillingInvoice = z.infer<typeof BillingInvoiceSchema>;
+
+/**
+ * GET /api/billing/invoices response `data`.
+ *
+ * `unavailableProviders` is load-bearing honesty, not diagnostics. A
+ * workspace can hold customer rows under BOTH rails (billing_customers
+ * is unique on `(workspace_id, provider)`, so a region switch creates a
+ * second row), and one rail being unreachable must not render as "you
+ * have no invoices" — an empty or short list that silently omits a
+ * provider is the same assert-what-you-don't-know defect the billing
+ * screen was rebuilt to avoid. Non-empty ⇒ the list is PARTIAL and the
+ * UI must say so.
+ */
+export const BillingInvoiceListSchema = z.object({
+  invoices: z.array(BillingInvoiceSchema),
+  unavailableProviders: z.array(BillingProviderIdSchema),
+  /**
+   * The read was CAPPED: a provider reported more rows than one page
+   * returned, or the workspace holds more subscription rows than the
+   * per-read fan-out bound walks. Unreachable for any realistic account
+   * — but a capped read must never pass for a complete history, so the
+   * cap is reported rather than assumed away.
+   */
+  truncated: z.boolean(),
+  /**
+   * Rows a provider RETURNED that could not be rendered without
+   * inventing a date, amount or currency (never-fabricate) and were
+   * dropped. Load-bearing for the empty state: zero renderable rows
+   * with `omittedRows > 0` means "your invoices exist and we could not
+   * display them", which must never read as "no invoices yet" — the
+   * failed-read-as-empty defect, in the one shape `unavailableProviders`
+   * cannot catch because the rail DID answer (gate network, 2026-08-16).
+   */
+  omittedRows: z.number().int().min(0),
+});
+export type BillingInvoiceList = z.infer<typeof BillingInvoiceListSchema>;
+
+/** GET /api/billing/invoices/:id/document response `data` — minted per click. */
+export const BillingInvoiceDocumentSchema = z.object({
+  provider: BillingProviderIdSchema,
+  url: z.url(),
+});
+export type BillingInvoiceDocument = z.infer<typeof BillingInvoiceDocumentSchema>;
+
 /**
  * POST /api/billing/change-plan/preview — read-only dry run of a plan
  * change (D117/D120) so the confirm panel states the exact charge

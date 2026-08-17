@@ -15,7 +15,7 @@
 // `BILLING_ENABLED=true` — the module is always loaded so the routes
 // exist and fail CLEANLY (not 404) while billing is dark.
 
-import { Delete, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Delete, Body, Controller, Get, Header, Param, Post, UseGuards } from '@nestjs/common';
 import {
   BillingReconcileRequestSchema,
   CancelRequestSchema,
@@ -23,10 +23,13 @@ import {
   PlanChangePreviewRequestSchema,
   PlanChangeRequestSchema,
   ok,
+  type BillingInvoiceDocument,
+  type BillingInvoiceList,
   type BillingReconcileResponse,
   type BillingSubscription,
   type CheckoutSession,
   type Envelope,
+  type PaymentMethodSession,
   type PlanChangePreview,
 } from '@declutrmail/shared/contracts';
 
@@ -94,6 +97,70 @@ export class BillingController {
     assertBillingEnabled();
     await this.billing.releasePendingCheckout(principal.workspaceId);
     return ok({ released: true } as const);
+  }
+
+  /**
+   * GET /api/billing/invoices — D119/ADR-0035 billing documents, proxied
+   * from every rail this workspace has paid on. Nothing is persisted.
+   *
+   * Rate-limited below the plain reads: each call fans out to one
+   * provider round-trip per subscription row.
+   */
+  @Get('invoices')
+  @RateLimit({ bucket: 'default', limit: 20, windowSec: 60 })
+  async invoices(@CurrentUser() principal: Principal): Promise<Envelope<BillingInvoiceList>> {
+    assertBillingEnabled();
+    return ok(await this.billing.listInvoices(principal.workspaceId));
+  }
+
+  /**
+   * GET /api/billing/invoices/:id/document — a short-lived link to the
+   * provider's own invoice document, minted per click.
+   *
+   * The service re-derives ownership from this workspace's own listing
+   * before forwarding the id (invoices are not persisted, so there is no
+   * local row to authorize against and an unchecked id would be an IDOR
+   * onto a stranger's invoice).
+   *
+   * The response carries a short-lived bearer URL, so `no-store` is
+   * enforced at the HTTP layer, not just promised in prose — nothing
+   * between here and the browser may keep a copy. GET is deliberate,
+   * unlike the sibling session mint's POST: this asks Paddle for a link
+   * to an EXISTING document (idempotent, no provider-side state), while
+   * the portal session creates an authenticated surface that can move
+   * money — different verbs because they are different acts.
+   */
+  @Get('invoices/:id/document')
+  @Header('Cache-Control', 'private, no-store')
+  @RateLimit({ bucket: 'default', limit: 20, windowSec: 60 })
+  async invoiceDocument(
+    @CurrentUser() principal: Principal,
+    @Param('id') id: string,
+  ): Promise<Envelope<BillingInvoiceDocument>> {
+    assertBillingEnabled();
+    return ok(await this.billing.invoiceDocument(principal.workspaceId, id));
+  }
+
+  /**
+   * POST /api/billing/payment-method/session — a provider-hosted surface
+   * for changing the payment instrument (D119/ADR-0035).
+   *
+   * POST, not GET: it MINTS a short-lived credential-bearing session at
+   * the provider rather than reading state, so it takes CsrfGuard and
+   * must not be prefetched or cached by anything in between.
+   *
+   * The `unsupported` arm (Razorpay has no self-serve path) is a 200.
+   * "This rail cannot" is an answer, not a failure — surfacing it as an
+   * error would invite a retry that can never succeed.
+   */
+  @Post('payment-method/session')
+  @UseGuards(CsrfGuard)
+  @RateLimit({ bucket: 'default', limit: 10, windowSec: 60 })
+  async paymentMethodSession(
+    @CurrentUser() principal: Principal,
+  ): Promise<Envelope<PaymentMethodSession>> {
+    assertBillingEnabled();
+    return ok(await this.billing.paymentMethodSession(principal.workspaceId));
   }
 
   /** GET /api/billing/subscription — current sub + tier + founding flag. */

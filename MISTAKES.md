@@ -21,6 +21,31 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-16 — Diff-only reasoning "cleared" a CI failure my own PR body caused
+
+**PR:** #532
+**Caught by:** comparing against a control — PR #533, opened against the same
+main minutes later, had the same check green, which killed the systemic story
+**What happened:** the `Implementation log is derived and current` check went
+red on #532. I verified `git diff origin/main...HEAD` touched no
+`IMPLEMENTATION-LOG.md`, concluded my branch could not be the cause, and
+published "pre-existing stale log on main" to the PR body — matching an open
+FOUNDER-FOLLOWUPS entry, which made the wrong story feel confirmed. The real
+mechanism is by design and documented in the generator itself: `readOpenPr()`
+counts the OPEN PR's `Closes D###` trailer, so the derived log depends on the
+PR **body**, not only the diff — a PR citing a D must regenerate after opening.
+**Correct approach:** before declaring a red check systemic, find a control
+(another open PR on the same base) and read the checker's own source; the
+regenerate-after-open requirement was written in a comment ~40 lines from where
+I stopped reading. A matching open follow-up is a prior, not a diagnosis.
+**Rule:** a derived-artifact check can depend on inputs outside the diff (PR
+body, branch name, provider state) — "my diff doesn't touch that file" is not
+exoneration; produce a control before publishing a systemic diagnosis.
+**Enforcement update:** none — the PR body was corrected in place, and the fix
+(append `#532` to D119's PR cell) was validated by CI re-deriving to green.
+
+## 2026-08-15 — Every avatar shipped as a broken-image glyph
+
 ## 2026-08-16 — Every label action dead-lettered for four days on a parameterized SET
 
 **PR:** #509 (https://github.com/CT2689-Tech/DeclutrMail/pull/509) — fixed by fix/d226-lock-timeout-set-config

@@ -185,6 +185,9 @@ export type { WaitlistJoinRequest, WaitlistJoinResult } from './waitlist';
 // between the NestJS billing module and the FE billing screen.
 export {
   BillingCycleSchema,
+  BillingInvoiceDocumentSchema,
+  BillingInvoiceListSchema,
+  BillingInvoiceSchema,
   BillingProviderIdSchema,
   BillingReconcileOutcomeSchema,
   BillingReconcileRequestSchema,
@@ -194,6 +197,7 @@ export {
   CheckoutRequestSchema,
   CheckoutSessionSchema,
   PaddleCheckoutSessionSchema,
+  PaymentMethodSessionSchema,
   PlanChangePreviewRequestSchema,
   PlanChangePreviewSchema,
   PlanChangeRequestSchema,
@@ -203,6 +207,9 @@ export {
 } from './billing';
 export type {
   BillingCycle,
+  BillingInvoice,
+  BillingInvoiceDocument,
+  BillingInvoiceList,
   BillingProviderId,
   BillingReconcileOutcome,
   BillingReconcileRequest,
@@ -212,6 +219,7 @@ export type {
   CheckoutRequest,
   CheckoutSession,
   PaddleCheckoutSession,
+  PaymentMethodSession,
   PlanChangePreview,
   PlanChangePreviewRequest,
   PlanChangeRequest,

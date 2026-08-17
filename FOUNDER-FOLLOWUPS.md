@@ -24,6 +24,26 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-16 — Self-serve refund: post-launch, and it needs a policy before it needs code
+
+**Source:** billing premium program scoping, 2026-08-16 — raised under CLAUDE.md
+§9 (refund behaviour is a stop-and-ask) and deferred by founder decision
+**Why:** the published 30-day money-back guarantee appears on six surfaces and
+is honoured today by emailing support. Making it self-serve is the single
+strongest trust signal available on the billing page and is on-brand for a
+privacy-positioned product — but it is also the only irreversible money-mover in
+the premium scope, so it was deliberately not built alongside the rest.
+The plumbing already exists: D253's refund-settling state, `cancel_source` as a
+local verdict, and the reconciliation sweep that enforces it. What does not exist
+is the POLICY, and that is the part only the founder can set.
+**How:** decide, post-launch, (a) whether a refund is self-serve at all,
+(b) the abuse bound — one per customer? first period only? annual excluded? —
+and (c) whether a refunded customer may immediately re-purchase (D253 says yes
+today). Then it gets a D-number and a PR.
+**Verifies by:** a decision recorded here, and — if yes — a D-row in
+`IMPLEMENTATION-LOG.md`.
+**Status:** Open — deferred to post-launch 2026-08-16
+
 ### 2026-08-16 — Check prod for dead-lettered label actions since #509 (2026-08-12)
 
 **Source:** #536 verification smoke — the first real archive since #509 merged
@@ -1777,6 +1797,60 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-08-16 — Paddle sandbox API key, to finish the D119 billing smoke
+
+**Source:** PR #532 (D119 payment method + invoices) — the local smoke went as far
+as it can without provider credentials
+**Why:** the whole surface is Paddle reads, and three of them have never been
+exercised against the real API. Everything reachable without a key is smoked and
+green (see below), but these three cannot be:
+
+1. `POST /customers/{id}/portal-sessions` — does the response carry
+   `urls.subscriptions[].update_subscription_payment_method` for the deep link,
+   or only `urls.general.overview`? The adapter prefers the deep link and falls
+   back, so either shape works — but "throws on a 200 with no usable URL" has
+   never actually run against Paddle.
+2. `GET /transactions?subscription_id=…` — are `details.totals.grand_total`,
+   `currency_code`, `billed_at` and `status` the field names Paddle returns, and
+   does `meta.pagination.has_more` exist? Wrong names would silently drop every
+   row through the `row_incomplete` guard, which logs but shows an empty list.
+3. `GET /transactions/{id}/invoice` — does it return `data.url`, and is that URL
+   served with a download disposition? The FE navigates same-tab
+   (`window.location.assign`), which downloads if the disposition is set and
+   navigates AWAY from the app if it is not. This is the one that could look
+   wrong to a customer.
+
+What IS already smoked locally against a real API + Postgres, no credentials
+needed: billing-dark 503s, `NO_ACTIVE_SUBSCRIPTION`, the IDOR guard 404ing a
+stranger's transaction id without calling the provider, the two-rail union
+across a cancelled row, `unavailableProviders` rendering as "we couldn't reach
+your payment provider" rather than "no invoices", Razorpay's typed refusal, both
+`past_due` copy variants, the provider-error path on a real click, and invoices
+staying reachable for a workspace back on Free.
+
+**How:** put a **sandbox** key in `.env.local` — `PADDLE_API_KEY=…` and
+`PADDLE_ENV=sandbox` — alongside `BILLING_ENABLED=true`, then re-run
+`./scripts/cloud-smoke.sh up`, seed a Paddle subscription whose
+`provider_subscription_id` is a real sandbox `sub_…`, and click through
+`/billing`. Sandbox only: a production key here would mint real portal sessions
+against live customers.
+**Verifies by:** the payment-method button reaching a Paddle-hosted form, the
+invoice list showing at least one row with a real amount and date, and Download
+producing a PDF without navigating away from `/billing`.
+**Status:** Done 2026-08-17 — key added to the founder's local `.env.local`; a
+local Claude session ran the playbook against the real Paddle sandbox and
+posted the evidence on PR #532 (comment, 2026-08-17). **3/3 PASS:** (1) the
+portal session returns the per-subscription
+`update_subscription_payment_method` deep link (the adapter's preferred path
+runs; overview fallback dormant); (2) `/api/billing/invoices` returned two
+real rows — `details.totals.grand_total` / `currency_code` / `billed_at` /
+`status` / `meta.pagination.has_more` are all correct field names, and
+`omittedRows: 0`; (3) the invoice document URL serves
+`Content-Type: application/pdf` with `Content-Disposition: attachment` — the
+Download click saves the PDF and stays on `/billing`, so the same-tab
+navigation design holds. One non-actionable note: HEAD on the presigned URL
+403s (S3 signatures are method-scoped); nothing in the FE issues HEAD.
 
 ### 2026-08-16 — Fire CI by hand on PR #536: `pull_request.synchronize` never dispatched
 

@@ -479,4 +479,102 @@ export interface BillingProvider {
    * SubscriptionSearchQuery.
    */
   searchSubscriptions(query: SubscriptionSearchQuery): Promise<SubscriptionSearchResult>;
+
+  /**
+   * D119 / ADR-0035 — a self-serve payment-method surface, when the rail
+   * has one.
+   *
+   * Returns a CAPABILITY, never a nullable URL: Razorpay subscriptions
+   * cannot change instrument without re-authorizing the mandate, and
+   * `null` would make "this rail can't" indistinguishable from "the
+   * read failed". The FE renders the `unsupported` arm as
+   * support-assisted copy, exactly as it already does for Razorpay
+   * pause and resume.
+   *
+   * The URL is short-lived and customer-specific — minted per call,
+   * never cached or persisted. Throws `BILLING_PROVIDER_ERROR` on
+   * network/5xx.
+   */
+  paymentMethodSession(input: PaymentMethodSessionInput): Promise<PaymentMethodSessionResult>;
+
+  /**
+   * D119 / ADR-0035 — the subscription's billing documents, newest
+   * first, proxied on read and never persisted.
+   *
+   * Amounts come back in the currency's LOWEST unit (the existing
+   * provider-money convention). A status this adapter cannot map stays
+   * `'unknown'` rather than being rounded to `paid` — both providers'
+   * status vocabularies are wider than the normalized enum, and
+   * guessing would assert something the read did not say.
+   *
+   * Throws `BILLING_PROVIDER_ERROR` on network/5xx: the caller reports
+   * the rail as unavailable rather than serving a silently short list.
+   */
+  listInvoices(providerSubscriptionId: string): Promise<ProviderInvoicePage>;
+
+  /**
+   * D119 / ADR-0035 — mint a document URL for one invoice, per click.
+   *
+   * `null` here means this rail mints nothing because it does not need
+   * to: Razorpay exposes a stable hosted invoice page on the row itself
+   * (`hostedUrl`), so there is no per-click artifact to create. That is
+   * a capability fact the row already carries via `documentAvailable`,
+   * not an error — unlike `paymentMethodSession`, the FE never has to
+   * distinguish a null here from a failure, because it only calls this
+   * for rows that advertised `documentAvailable: true`.
+   */
+  invoiceDocumentUrl(invoiceId: string): Promise<string | null>;
+}
+
+/**
+ * Input to `paymentMethodSession`. Both ids are passed because the two
+ * rails key the surface differently — Paddle's portal session is
+ * CUSTOMER-scoped (and takes the subscription only to deep-link the
+ * right row), while a future subscription-scoped rail would need the
+ * subscription id. Neither adapter may infer one from the other.
+ */
+export interface PaymentMethodSessionInput {
+  providerCustomerId: string;
+  providerSubscriptionId: string;
+}
+
+export type PaymentMethodSessionResult =
+  { kind: 'url'; url: string } | { kind: 'unsupported'; reason: 'no_self_serve' };
+
+/**
+ * One page of billing documents.
+ *
+ * `truncated` exists so a capped read cannot pass for a complete
+ * history. Both adapters ask for a single large page; when the provider
+ * reports more rows behind it, that fact reaches the UI rather than
+ * being dropped — a list that silently omits older invoices is worse
+ * than one that admits it (no-silent-caps).
+ */
+export interface ProviderInvoicePage {
+  invoices: ProviderInvoice[];
+  truncated: boolean;
+  /**
+   * Rows the provider returned that were dropped as unrenderable
+   * (missing date/amount/currency — never-fabricate). Carried so the
+   * caller can distinguish "never billed" from "billed, but nothing was
+   * renderable": with wrong field names every row drops, and without
+   * this count that reads as an empty history (gate network 2026-08-16,
+   * CONFIRMED).
+   */
+  omitted: number;
+}
+
+/** One provider billing document, normalized (see `listInvoices`). */
+export interface ProviderInvoice {
+  /** Provider-side id — the handle `invoiceDocumentUrl` takes. */
+  id: string;
+  issuedAt: string;
+  /** Lowest currency unit, as a string (provider-money convention). */
+  amount: string;
+  currencyCode: string;
+  status: 'paid' | 'due' | 'canceled' | 'unknown';
+  /** A stable provider-hosted page, when the rail exposes one. */
+  hostedUrl: string | null;
+  /** Whether `invoiceDocumentUrl` can mint a document for this row. */
+  documentAvailable: boolean;
 }
