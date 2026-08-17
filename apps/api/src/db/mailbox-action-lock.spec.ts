@@ -22,10 +22,12 @@ interface FakeBehavior {
 
 function makeFakePool(behavior: FakeBehavior) {
   const statements: string[] = [];
+  const boundValues: unknown[][] = [];
   const release = vi.fn();
-  const reserved = (strings: TemplateStringsArray, ..._values: unknown[]) => {
+  const reserved = (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join('?');
     statements.push(text);
+    boundValues.push(values);
     if (text.includes('pg_advisory_lock(')) {
       if (behavior.acquireError) return Promise.reject(behavior.acquireError);
       return Promise.resolve([]);
@@ -40,7 +42,7 @@ function makeFakePool(behavior: FakeBehavior) {
   const pool = {
     reserve: () => Promise.resolve(reserved),
   } as unknown as Sql;
-  return { pool, statements, release };
+  return { pool, statements, boundValues, release };
 }
 
 describe('createMailboxActionLock', () => {
@@ -60,15 +62,33 @@ describe('createMailboxActionLock', () => {
   }
 
   it('happy path: sets lock_timeout, acquires, runs fn, unlocks, releases — no error logs', async () => {
-    const { pool, statements, release } = makeFakePool({});
+    const { pool, statements, boundValues, release } = makeFakePool({});
     const lock = createMailboxActionLock(pool);
     const result = await lock.run('mailbox-1', () => Promise.resolve('done'));
     expect(result).toBe('done');
-    expect(statements[0]).toContain('SET lock_timeout');
+    expect(statements[0]).toContain("set_config('lock_timeout'");
+    expect(boundValues[0]).toEqual([MAILBOX_LOCK_TIMEOUT]);
     expect(statements[1]).toContain('pg_advisory_lock(');
     expect(statements[2]).toContain('pg_advisory_unlock(');
     expect(release).toHaveBeenCalledOnce();
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('never issues a parameterized SET — the server rejects `SET x = $1` outright', async () => {
+    // Regression pin for the #509 outage: `SET lock_timeout = ${...}`
+    // reaches Postgres as `SET lock_timeout = $1`, a syntax error that
+    // failed every label action for four days. A GUC assignment that
+    // needs a bind parameter must go through set_config(). This fake
+    // never executes SQL, so the ONLY thing it can verify is the shape:
+    // any statement that starts with SET must carry zero bind values.
+    const { pool, statements, boundValues } = makeFakePool({});
+    const lock = createMailboxActionLock(pool);
+    await lock.run('mailbox-1', () => Promise.resolve(undefined));
+    for (const [i, text] of statements.entries()) {
+      if (/^\s*SET\b/i.test(text)) {
+        expect(boundValues[i]).toEqual([]);
+      }
+    }
   });
 
   it('unlock returning false logs the leak detector and still releases', async () => {
