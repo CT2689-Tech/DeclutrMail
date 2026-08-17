@@ -2162,7 +2162,7 @@ function SendersScreenContent({
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {(totalMatching ?? senders.length).toLocaleString()}
+            {(totalMatching ?? senders.length).toLocaleString('en-US')}
           </span>
           <span
             style={{
@@ -2250,7 +2250,7 @@ function SendersScreenContent({
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
-              {(totalMatching ?? senders.length).toLocaleString()}
+              {(totalMatching ?? senders.length).toLocaleString('en-US')}
             </strong>{' '}
             senders match.
           </span>
@@ -2510,7 +2510,7 @@ function SenderResultsFreshness({
           <span aria-hidden="true">·</span>
           <span>
             {totalSenders !== null
-              ? `${totalSenders.toLocaleString()} senders indexed for ${mailboxEmail}`
+              ? `${totalSenders.toLocaleString('en-US')} senders indexed for ${mailboxEmail}`
               : `Matching count and rows for ${mailboxEmail}`}
           </span>
         </>

@@ -1,8 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { useEffect, type ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { AppShell, ToastHost } from '@declutrmail/shared';
 import {
   hasCapability,
@@ -24,13 +23,7 @@ import { useOnboardingGate } from '@/features/onboarding/use-onboarding-gate';
 import { useScreenerCount } from '@/features/screener/api/use-screener';
 import { ScreenerBadge } from '@/features/screener/screener-badge';
 import { LaterReturnAlert } from '@/features/snoozed/later-return-alert';
-import { useSenders } from '@/features/senders/api/use-senders';
-import {
-  DEFAULT_SENDERS_QUERY,
-  shouldHydrateDefaultSenders,
-} from '@/features/senders/api/query-options';
-import { sendersKeys } from '@/features/senders/api/query-keys';
-import type { SenderListEnvelope } from '@/lib/api/senders';
+import { useSendersSummary } from '@/features/senders/api/use-senders-summary';
 import { SyncErrorBanner } from '@/features/sync/sync-error-banner';
 import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
 import { ThemeToggle } from '@/features/theme/theme-toggle';
@@ -134,76 +127,9 @@ function isUserScopedRoute(pathname: string): boolean {
   );
 }
 
-type SendersCount = number | string | undefined;
-
-function countDefaultSenders(data: InfiniteData<SenderListEnvelope> | undefined): SendersCount {
-  const firstPage = data?.pages[0];
-  if (firstPage === undefined) return undefined;
-  return firstPage.meta.pagination.hasMore ? `${firstPage.data.length}+` : firstPage.data.length;
-}
-
-/**
- * Publish the nav-chip count without letting the shell create an empty
- * default-list query before the nested `/senders` HydrationBoundary arrives.
- * A disabled `useSenders` still creates that cache entry; TanStack then
- * defers hydration and the enabled route consumer races it with a browser
- * fetch. Reading QueryCache directly is query-free and still updates the chip
- * as soon as the route hydrates (or completes its client fallback).
- */
-function HydratedSendersCountObserver({ onCount }: { onCount: (count: SendersCount) => void }) {
-  const queryClient = useQueryClient();
-  const subscribe = useCallback(
-    (onStoreChange: () => void) => queryClient.getQueryCache().subscribe(onStoreChange),
-    [queryClient],
-  );
-  const getSnapshot = useCallback(
-    () =>
-      queryClient.getQueryData<InfiniteData<SenderListEnvelope>>(
-        sendersKeys.list(DEFAULT_SENDERS_QUERY),
-      ),
-    [queryClient],
-  );
-  const data = useSyncExternalStore(subscribe, getSnapshot, () => undefined);
-  const count = countDefaultSenders(data);
-
-  useEffect(() => onCount(count), [count, onCount]);
-  return null;
-}
-
-function FetchedSendersCountObserver({
-  enabled,
-  onCount,
-}: {
-  enabled: boolean;
-  onCount: (count: SendersCount) => void;
-}) {
-  const senders = useSenders({ ...DEFAULT_SENDERS_QUERY, enabled });
-  const count = countDefaultSenders(senders.data);
-
-  useEffect(() => onCount(count), [count, onCount]);
-  return null;
-}
-
-function SendersCountObserver({
-  routeOwnsDefaultSenders,
-  enabled,
-  onCount,
-}: {
-  routeOwnsDefaultSenders: boolean;
-  enabled: boolean;
-  onCount: (count: SendersCount) => void;
-}) {
-  return routeOwnsDefaultSenders ? (
-    <HydratedSendersCountObserver onCount={onCount} />
-  ) : (
-    <FetchedSendersCountObserver enabled={enabled} onCount={onCount} />
-  );
-}
-
 function AppChrome({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   useEffect(() => {
     const refreshServerScope = () => router.refresh();
@@ -225,31 +151,11 @@ function AppChrome({ children }: { children: ReactNode }) {
   // Returning-user strict onboarding gate (D6/D109/D113) — ladder #4.
   const onboardingGate = useOnboardingGate();
 
-  // First page of the DEFAULT senders list — the chip is a hint, not an
-  // inventory. The bare `/senders` route owns this query because its
-  // server HydrationBoundary can stream in after the client shell mounts.
-  // Stay subscribed to that cache entry but do not start a competing
-  // browser request while the route is responsible for hydrating it.
-  // Filtered URLs do not hydrate the default list, so the chip retains its
-  // normal client fetch there. No active mailbox remains gated to avoid 409.
-  const routeOwnsDefaultSenders =
-    pathname === '/senders' && shouldHydrateDefaultSenders(searchParams);
-  const countOwner = routeOwnsDefaultSenders ? 'route' : 'shell';
-  const [sendersCountState, setSendersCountState] = useState<{
-    owner: 'route' | 'shell';
-    count: SendersCount;
-  }>({ owner: countOwner, count: undefined });
-  const sendersCount = sendersCountState.owner === countOwner ? sendersCountState.count : undefined;
-  const publishSendersCount = useCallback(
-    (count: SendersCount) => {
-      setSendersCountState((current) =>
-        current.owner === countOwner && current.count === count
-          ? current
-          : { owner: countOwner, count },
-      );
-    },
-    [countOwner],
-  );
+  // The app boundary owns this mailbox-wide aggregate, so the nav never
+  // races a nested route hydration boundary. It is exact (not a first-page
+  // `50+` approximation) and the Senders screen reuses the same cache entry.
+  const sendersSummary = useSendersSummary({}, { enabled: hasActiveMailbox });
+  const sendersCount = sendersSummary.data?.data.activeSenders;
 
   // Screener badge (D74) — Screener is granted at Plus (D77, reversed
   // by D251), so the count query is gated on the tier capability: a
@@ -322,11 +228,6 @@ function AppChrome({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <SendersCountObserver
-        routeOwnsDefaultSenders={routeOwnsDefaultSenders}
-        enabled={hasActiveMailbox}
-        onCount={publishSendersCount}
-      />
       <SyncNowAnimationStyle />
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
         <GracePeriodBanner />

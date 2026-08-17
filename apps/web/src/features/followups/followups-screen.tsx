@@ -335,7 +335,7 @@ export function FollowupListItem({
   const recipient = recipientLine(row);
   const subject = truncate(row.subject, 60);
   const now = useNow();
-  const relative = relativeTime(row.sentAt, now);
+  const relative = now === null ? '' : relativeTime(row.sentAt, now);
   const gmailHref = mailboxEmail
     ? GmailOpenLinkService.buildOpenLink({
         mailboxEmail,

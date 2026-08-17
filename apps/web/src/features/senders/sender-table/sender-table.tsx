@@ -550,7 +550,9 @@ function SenderRow({
         >
           {/* Monthly cadence — same fact the card leads with ("N in last
               30d"). Nullable when the sender has no timeseries rows. */}
-          {sender.monthlyVolume != null ? `${sender.monthlyVolume.toLocaleString()}/mo` : '—'}
+          {sender.monthlyVolume != null
+            ? `${sender.monthlyVolume.toLocaleString('en-US')}/mo`
+            : '—'}
         </td>
 
         <td style={{ ...cellStyle, width: 90 }}>
@@ -658,7 +660,7 @@ function TotalCell({ value, max, accent }: { value: number; max: number; accent?
           variant="display"` (Fraunces 28/400/-0.025em) so the row
           total scale matches the SenderDetailHeader h1 + Hero slice
           headline. Was ad-hoc 18px/600. */}
-      <NumericDisplay value={safeValue.toLocaleString()} variant="display" />
+      <NumericDisplay value={safeValue.toLocaleString('en-US')} variant="display" />
       {max > 0 ? (
         <span
           aria-hidden="true"

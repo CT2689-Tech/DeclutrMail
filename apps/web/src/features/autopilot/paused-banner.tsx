@@ -2,6 +2,7 @@
 
 import { Eyebrow, tokens } from '@declutrmail/shared';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
+import { useNow } from '@/lib/use-now';
 
 const { color, font } = tokens;
 
@@ -17,6 +18,7 @@ const { color, font } = tokens;
  * `PATCH /api/autopilot/rules/:id` — wired in a follow-up UI PR).
  */
 export function PausedBanner({ rules }: { rules: AutopilotRuleDto[] }) {
+  const now = useNow();
   // Source-of-truth for "paused since" is the latest `modeChangedAt`
   // across all rules — the global pause-all flipped each row's
   // `mode_changed_at` to the same instant, so any rule's value is a
@@ -81,7 +83,7 @@ export function PausedBanner({ rules }: { rules: AutopilotRuleDto[] }) {
             margin: '2px 0 0',
           }}
         >
-          {lastChanged != null ? (
+          {lastChanged != null && now !== null ? (
             <>Paused since {formatPauseDate(lastChanged)}.</>
           ) : (
             <>Every rule is paused.</>

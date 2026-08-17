@@ -103,7 +103,7 @@ export function SenderGroup({
             <span
               style={{ marginLeft: 8, color: color.fgMuted, fontFamily: font.mono, fontSize: 11 }}
             >
-              · {monthly.toLocaleString()}/mo
+              · {monthly.toLocaleString('en-US')}/mo
             </span>
           </span>
         </div>

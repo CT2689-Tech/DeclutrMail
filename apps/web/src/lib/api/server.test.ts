@@ -29,4 +29,24 @@ describe('serverGet', () => {
       },
     });
   });
+
+  it('scopes an explicit mailbox read with the same header as the browser client', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:4000');
+    const fetchSpy = vi.fn(async () => Response.json({ data: { readiness: 'ready' } }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await serverGet('/api/v1/sync/status', 'dm_access=token', undefined, {
+      mailboxId: 'mailbox-2',
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith('http://localhost:4000/api/v1/sync/status', {
+      cache: 'no-store',
+      signal: expect.any(AbortSignal),
+      headers: {
+        Accept: 'application/json',
+        Cookie: 'dm_access=token',
+        'X-Active-Mailbox-Id': 'mailbox-2',
+      },
+    });
+  });
 });

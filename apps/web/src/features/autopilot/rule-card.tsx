@@ -83,6 +83,7 @@ export function RuleCard({
   // D10/D101 — Observe-mode digest, only meaningful while the rule is
   // actually watching (enabled + Observe). Disabled rules stay quiet.
   const digestSummary = rule.enabled ? observeDigestSummary(rule) : null;
+  const observeSummary = observeWindowSummary(rule, now);
 
   return (
     <li
@@ -131,17 +132,17 @@ export function RuleCard({
           color: color.fgMuted,
         }}
       >
-        <span>{lastRunSummary(rule)}</span>
+        <span>{lastRunSummary(rule, now !== null)}</span>
         <span aria-hidden="true">·</span>
         <span>
           {pendingApproximate
             ? `${pendingCount} pending in the latest 50`
             : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
         </span>
-        {observeWindowSummary(rule, now) != null && (
+        {observeSummary != null && (
           <>
             <span aria-hidden="true">·</span>
-            <span>{observeWindowSummary(rule, now)}</span>
+            <span>{observeSummary}</span>
           </>
         )}
       </div>
@@ -261,19 +262,22 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
  * fail. Activity is the ledger of what actually happened; this line
  * reports what the rule matched.
  */
-function lastRunSummary(rule: AutopilotRuleDto): string {
+function lastRunSummary(rule: AutopilotRuleDto, localizeDate: boolean): string {
   if (rule.lastRunAt == null) return "Hasn't run yet";
   const d = new Date(rule.lastRunAt);
-  const when = Number.isNaN(d.getTime())
-    ? rule.lastRunAt
-    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const when = !localizeDate
+    ? 'recorded'
+    : Number.isNaN(d.getTime())
+      ? rule.lastRunAt
+      : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   return `Last run ${when} · ${rule.lastRunActions} matched · ${rule.lastRunSenders} sender${rule.lastRunSenders === 1 ? '' : 's'}`;
 }
 
 /** D10 observe-window countdown; null when not in Observe mode. */
-function observeWindowSummary(rule: AutopilotRuleDto, now: number): string | null {
+function observeWindowSummary(rule: AutopilotRuleDto, now: number | null): string | null {
   if (rule.mode !== 'observe' || rule.observeWindowEndsAt == null) return null;
   if (rule.observeWindowElapsed) return 'Observe window complete';
+  if (now === null) return null;
   const ends = new Date(rule.observeWindowEndsAt).getTime();
   if (Number.isNaN(ends)) return null;
   const daysLeft = Math.max(1, Math.ceil((ends - now) / (24 * 60 * 60 * 1000)));

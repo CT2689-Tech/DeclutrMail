@@ -16,7 +16,10 @@ export function makeServerQueryClient(): QueryClient {
 }
 
 function isDesignedPrefetchFailure(error: unknown): boolean {
-  return error instanceof ServerApiError && error.status >= 400 && error.status < 500;
+  if (!(error instanceof ServerApiError)) return false;
+  if (error.status >= 400 && error.status < 500) return true;
+  const body = error.body as { error?: { code?: unknown } } | undefined;
+  return error.status === 503 && body?.error?.code === 'BILLING_DISABLED';
 }
 
 export async function settleServerQueries(

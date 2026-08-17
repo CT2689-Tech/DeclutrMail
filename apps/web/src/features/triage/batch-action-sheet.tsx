@@ -175,7 +175,7 @@ export function BatchActionSheet({
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {preview.totals.all.toLocaleString()}
+                  {preview.totals.all.toLocaleString('en-US')}
                 </strong>
                 <span style={{ fontSize: 12, color: color.fgSoft }}>
                   email{preview.totals.all === 1 ? '' : 's'} currently match in Inbox. Gmail is
@@ -224,7 +224,9 @@ export function BatchActionSheet({
                       flexShrink: 0,
                     }}
                   >
-                    {s.protected ? 'protected — skipped' : `${s.counts.all.toLocaleString()}`}
+                    {s.protected
+                      ? 'protected — skipped'
+                      : `${s.counts.all.toLocaleString('en-US')}`}
                   </span>
                 </div>
               ))}

@@ -8,6 +8,9 @@
  * cross-midnight hint.
  */
 
+import { act } from 'react';
+import { hydrateRoot, type Root } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -130,5 +133,38 @@ describe('QuietHoursCard — form contract', () => {
     expect(screen.getByRole('checkbox', { name: 'Quiet hours on' })).not.toBeChecked();
     expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00');
     expect(screen.getByLabelText('Quiet window end')).toHaveValue('07:00');
+  });
+
+  it('hydrates before loading the browser timezone catalog', async () => {
+    const supportedValues = vi.spyOn(Intl, 'supportedValuesOf');
+    supportedValues.mockReturnValue(['Etc/GMT']);
+    const props: QuietHoursCardProps = {
+      mailboxEmail: 'a@b.com',
+      mailboxStatus: 'active',
+      state: { kind: 'ready', config: CONFIG, activeNow: false },
+      saving: false,
+      onSave: vi.fn(),
+    };
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(<QuietHoursCard {...props} />);
+
+    supportedValues.mockReturnValue(['America/Coyhaique', 'Etc/GMT']);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let root: Root | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, <QuietHoursCard {...props} />);
+    });
+
+    expect(
+      consoleError.mock.calls.some(([message]) => String(message).includes('Hydration failed')),
+    ).toBe(false);
+
+    const select = container.querySelector('select');
+    expect(select).not.toBeNull();
+    fireEvent.focus(select!);
+    expect([...select!.options].map((option) => option.value)).toContain('America/Coyhaique');
+
+    await act(async () => root?.unmount());
+    supportedValues.mockRestore();
   });
 });

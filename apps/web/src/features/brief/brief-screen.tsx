@@ -558,8 +558,8 @@ function NoiseOutcomeLine({ outcome }: { outcome: NoiseArchiveOutcome }) {
       const { affectedCount, senderCount, undo } = outcome;
       return (
         <>
-          Archived {affectedCount.toLocaleString()} email{affectedCount === 1 ? '' : 's'} from{' '}
-          {senderCount} sender{senderCount === 1 ? '' : 's'}.
+          Archived {affectedCount.toLocaleString('en-US')} email{affectedCount === 1 ? '' : 's'}{' '}
+          from {senderCount} sender{senderCount === 1 ? '' : 's'}.
           {undo === 'available' && ' Undo it from Recent actions at the bottom of the screen.'}
           {undo === 'expired' && ' The undo window for this archive has passed.'}
         </>

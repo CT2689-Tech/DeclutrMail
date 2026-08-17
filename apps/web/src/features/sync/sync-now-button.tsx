@@ -103,19 +103,10 @@ export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } 
   // the post-202 completion poll. Both disable the button.
   const [arming, setArming] = useState(false);
   const [watching, setWatching] = useState(false);
-  // Re-render tick so "2m ago" ages without any data change.
-  const [, setTick] = useState(0);
-  const now = useNow();
+  const now = useNow(60_000);
 
   const lastSyncedAt = status.data?.last_synced_at ?? null;
   const lastErrorAt = status.data?.last_sync_error_at ?? null;
-
-  // Age the freshness label once a minute.
-  useEffect(() => {
-    if (lastSyncedAt === null) return undefined;
-    const t = setInterval(() => setTick((n) => n + 1), 60_000);
-    return () => clearInterval(t);
-  }, [lastSyncedAt]);
 
   // Watch driver — re-poll status while watching; time out honestly
   // (we do NOT know the run will finish; a dead worker never stamps).
@@ -201,7 +192,7 @@ export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } 
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-      {lastSyncedAt !== null && (
+      {lastSyncedAt !== null && now !== null && (
         <span
           // Collapsed below `sm` so the topbar keeps the account switcher
           // fully on-screen on a phone (the sync button stays as icon-only).

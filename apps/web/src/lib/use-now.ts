@@ -3,29 +3,25 @@
 /**
  * `useNow` — a render-safe "current time" for relative-time labels.
  *
- * Calling `Date.now()` in a render body hands the server render and the
- * client hydration two different clocks, so a label like "synced 3m ago"
- * can hydrate-mismatch whenever the two straddle a unit boundary
- * (FOUNDER-FOLLOWUPS 2026-07-16). This hook keeps the first client
- * render's value stable for the whole render (lazy `useState` init), then
- * corrects once on mount — after which updates are ordinary state
- * changes, which React never warn about.
+ * Calling `Date.now()` in a render body hands the server render and client
+ * hydration different clocks. The shared `null` server/first-client
+ * snapshot keeps that first markup deterministic; the real clock appears
+ * after mount as an ordinary state update.
  *
- * Residual: the initial client render still computes its own clock, so a
- * mismatch remains possible in the millisecond the two renders straddle a
- * label boundary — strictly rarer than the per-render call it replaces,
- * and these surfaces render client-fetched data behind skeletons anyway.
- *
- * NOT a ticker: the value updates on mount, not on an interval. Surfaces
- * that need live ticking own their own interval state.
+ * An optional refresh interval supports labels that must age while a tab
+ * stays open. Callers that only need a hydration-safe local timestamp omit
+ * it and pay one post-mount update.
  */
 
 import { useEffect, useState } from 'react';
 
-export function useNow(): number {
-  const [now, setNow] = useState(() => Date.now());
+export function useNow(refreshIntervalMs?: number): number | null {
+  const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     setNow(Date.now());
-  }, []);
+    if (refreshIntervalMs === undefined) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), refreshIntervalMs);
+    return () => window.clearInterval(timer);
+  }, [refreshIntervalMs]);
   return now;
 }

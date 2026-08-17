@@ -28,6 +28,12 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchSendersSummary } from '@/lib/api/senders';
 import { sendersSummaryQueryOptions } from './query-options';
 
-export function useSendersSummary(params: { q?: string | undefined } = {}) {
-  return useQuery(sendersSummaryQueryOptions(params, fetchSendersSummary));
+export function useSendersSummary(
+  params: { q?: string | undefined } = {},
+  options: { enabled?: boolean } = {},
+) {
+  return useQuery({
+    ...sendersSummaryQueryOptions(params, fetchSendersSummary),
+    enabled: options.enabled ?? true,
+  });
 }

@@ -92,11 +92,11 @@ export function TodayStripView({ summary }: { summary: TodaySummary }) {
         <span style={{ fontSize: 12.5, color: color.fgSoft }}>
           You received{' '}
           <strong style={{ color: color.fg, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-            {summary.receivedToday.toLocaleString()}
+            {summary.receivedToday.toLocaleString('en-US')}
           </strong>{' '}
           email{summary.receivedToday === 1 ? '' : 's'} from{' '}
           <strong style={{ color: color.fg, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-            {summary.sendersToday.toLocaleString()}
+            {summary.sendersToday.toLocaleString('en-US')}
           </strong>{' '}
           sender{summary.sendersToday === 1 ? '' : 's'}.
         </span>
@@ -105,7 +105,7 @@ export function TodayStripView({ summary }: { summary: TodaySummary }) {
         <span style={{ fontSize: 12.5, color: color.fgSoft }}>
           DeclutrMail handled{' '}
           <strong style={{ color: color.fg, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-            {summary.handledAutomatically.toLocaleString()}
+            {summary.handledAutomatically.toLocaleString('en-US')}
           </strong>{' '}
           automatically.
         </span>
@@ -113,7 +113,7 @@ export function TodayStripView({ summary }: { summary: TodaySummary }) {
       {showDecisions && (
         <span style={{ fontSize: 12.5, color: color.fgSoft }}>
           <strong style={{ color: color.fg, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-            {summary.queuedDecisions.toLocaleString()}
+            {summary.queuedDecisions.toLocaleString('en-US')}
           </strong>{' '}
           sender decision{summary.queuedDecisions === 1 ? '' : 's'}
           {summary.noiseReductionPct != null && summary.noiseReductionPct > 0 ? (

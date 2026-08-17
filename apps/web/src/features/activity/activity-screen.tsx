@@ -59,6 +59,11 @@ import { useActivitySupportBundle } from './api/use-activity-support-bundle';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
 import { WeeklyReviewCard } from './weekly-review-card';
+import {
+  readActivityDateFilters,
+  readActivityFilters,
+  readActivityOutcomeFilters,
+} from './activity-route-filters';
 
 const { color, font, shadow } = tokens;
 
@@ -99,9 +104,9 @@ export function ActivityScreen() {
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   const activeMailboxId = auth?.me.activeMailboxId ?? null;
 
-  const dateFilters = readDateFiltersFromUrl(params);
-  const outcomeFilters = readOutcomeFiltersFromUrl(params);
-  const filters = readFiltersFromUrl(params, dateFilters, outcomeFilters);
+  const dateFilters = readActivityDateFilters(params);
+  const outcomeFilters = readActivityOutcomeFilters(params);
+  const filters = readActivityFilters(params, dateFilters, outcomeFilters);
   const groupMode = readGroupMode(params.get('group'));
 
   // Layout breakpoint resolved ONCE at the screen root and threaded down
@@ -2172,8 +2177,8 @@ function ActivityRow({
   const verbLabel = activityRowActionLabel(row);
   const sourceLabel = SOURCE_LABEL[row.source];
   const now = useNow();
-  const relative = relativeTime(row.occurredAt, now);
-  const absolute = absoluteTime(row.occurredAt);
+  const relative = now === null ? '' : relativeTime(row.occurredAt, now);
+  const absolute = now === null ? '' : absoluteTime(row.occurredAt);
   const isSyntheticReviewEvidence =
     row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected';
   const dotColor =
@@ -3517,109 +3522,6 @@ const SOURCE_LABEL: Record<ActivityRowWire['source'], string> = {
   autopilot: 'Autopilot',
   screener: 'Screener',
 };
-
-const ALLOWED_VERBS: ReadonlySet<ActivityVerbFilterWire> = new Set([
-  'keep',
-  'archive',
-  'unsubscribe',
-  'later',
-  'delete',
-  'followup-dismiss',
-]);
-
-interface ActivityDateFilters {
-  dateFrom: string | null;
-  dateTo: string | null;
-  isInvalid: boolean;
-}
-
-interface ActivityOutcomeFilters {
-  outcomes: readonly ActivityReviewOutcomeWire[];
-  isInvalid: boolean;
-}
-
-function readDateFiltersFromUrl(params: URLSearchParams): ActivityDateFilters {
-  const rawDateFrom = params.get('date_from');
-  const rawDateTo = params.get('date_to');
-  const dateFrom = readIsoDate(rawDateFrom);
-  const dateTo = readIsoDate(rawDateTo);
-  const hasMalformedDate =
-    (rawDateFrom !== null && rawDateFrom !== '' && dateFrom === null) ||
-    (rawDateTo !== null && rawDateTo !== '' && dateTo === null);
-  const hasReversedRange =
-    dateFrom !== null && dateTo !== null && Date.parse(dateFrom) >= Date.parse(dateTo);
-  return { dateFrom, dateTo, isInvalid: hasMalformedDate || hasReversedRange };
-}
-
-function readFiltersFromUrl(
-  params: URLSearchParams,
-  dates: ActivityDateFilters = readDateFiltersFromUrl(params),
-  outcomeFilter: ActivityOutcomeFilters = readOutcomeFiltersFromUrl(params),
-): ActivityFilters {
-  return {
-    window: readWindow(params.get('window')),
-    source: readSource(params.get('source')),
-    verbs: readVerbs(params.get('verb')),
-    senderQuery: (params.get('sender_q') ?? '').trim(),
-    dateFrom: dates.dateFrom,
-    dateTo: dates.dateTo,
-    outcomes: outcomeFilter.outcomes,
-  };
-}
-
-function readOutcomeFiltersFromUrl(params: URLSearchParams): ActivityOutcomeFilters {
-  const raw = params.get('outcome');
-  if (!raw) return { outcomes: [], isInvalid: false };
-  const allowed = new Set<ActivityReviewOutcomeWire>([
-    'completed',
-    'skipped',
-    'failed',
-    'recovered',
-    'protected',
-  ]);
-  const seen = new Set<ActivityReviewOutcomeWire>();
-  let isInvalid = false;
-  for (const token of raw.split(',')) {
-    const value = token.trim() as ActivityReviewOutcomeWire;
-    if (!value || !allowed.has(value)) {
-      isInvalid = true;
-    } else {
-      seen.add(value);
-    }
-  }
-  return { outcomes: [...seen], isInvalid };
-}
-
-function readWindow(raw: string | null): ActivityWindowWire {
-  if (raw === '7d' || raw === '30d' || raw === '90d' || raw === 'all') return raw;
-  return '30d';
-}
-
-function readSource(raw: string | null): ActivitySourceFilterWire {
-  if (raw === 'triage' || raw === 'manual' || raw === 'autopilot' || raw === 'screener') {
-    return raw;
-  }
-  return 'all';
-}
-
-function readVerbs(raw: string | null): readonly ActivityVerbFilterWire[] {
-  if (!raw) return [];
-  const seen = new Set<ActivityVerbFilterWire>();
-  for (const token of raw.split(',')) {
-    const trimmed = token.trim();
-    if (ALLOWED_VERBS.has(trimmed as ActivityVerbFilterWire)) {
-      seen.add(trimmed as ActivityVerbFilterWire);
-    }
-  }
-  return [...seen];
-}
-
-function readIsoDate(raw: string | null): string | null {
-  if (!raw) return null;
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
-}
 
 function readGroupMode(raw: string | null): GroupMode {
   return raw === 'sender' ? 'sender' : 'none';

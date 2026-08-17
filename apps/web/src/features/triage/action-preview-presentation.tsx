@@ -247,7 +247,7 @@ function ImpactFigure({
   }
   return (
     <>
-      <strong style={strongStyle}>{inboxCount.toLocaleString()}</strong>
+      <strong style={strongStyle}>{inboxCount.toLocaleString('en-US')}</strong>
       <span style={captionStyle}>
         email{inboxCount === 1 ? '' : 's'} currently match in Inbox. Gmail is checked again at
         execution, so the final moved count can change.

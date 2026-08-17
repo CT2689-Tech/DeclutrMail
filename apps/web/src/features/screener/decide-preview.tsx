@@ -225,7 +225,7 @@ export function DecidePreview({
                         opacity: active ? 0.85 : 0.7,
                       }}
                     >
-                      {opt.count.toLocaleString()}
+                      {opt.count.toLocaleString('en-US')}
                     </span>
                   )}
                 </button>
@@ -391,7 +391,7 @@ function ImpactFigure({
 
   return (
     <>
-      <strong style={strongStyle}>{count.toLocaleString()}</strong>
+      <strong style={strongStyle}>{count.toLocaleString('en-US')}</strong>
       <span style={captionStyle}>
         email{count === 1 ? '' : 's'} currently match{' '}
         {allMailReach ? 'across inbox + archived' : 'in Inbox'}. Gmail is checked again at

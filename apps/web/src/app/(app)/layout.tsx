@@ -27,7 +27,7 @@ import { headers } from 'next/headers';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
-import { ServerAuthBoundary } from '@/features/auth/server-auth-boundary';
+import { ServerAppBoundary } from '@/features/auth/server-app-boundary';
 import { ThemeScript } from '@/features/theme/theme-script';
 import { COUNTRY_HEADER } from '@/middleware';
 
@@ -75,9 +75,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       )}
       <ThemeScript nonce={nonce} />
       <BillingCurrencyProvider provider={regionProvider}>
-        <ServerAuthBoundary cookieHeader={cookieHeader}>
+        <ServerAppBoundary cookieHeader={cookieHeader}>
           <AppChromeLayout>{children}</AppChromeLayout>
-        </ServerAuthBoundary>
+        </ServerAppBoundary>
       </BillingCurrencyProvider>
     </>
   );

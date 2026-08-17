@@ -141,6 +141,32 @@ function authedHandlers(opts: {
     },
     {
       method: 'GET',
+      path: '/api/senders/summary',
+      respond: () =>
+        ok({
+          data: {
+            totalSenders: 1,
+            activeSenders: 1,
+            last30dVolume: 0,
+            noiseReducible: 0,
+            protected: 0,
+            needsReview: 0,
+            byBucket: {
+              one_time: 0,
+              protect: 0,
+              people: 0,
+              needs_review: 0,
+              quiet: 0,
+              dormant: 0,
+              bulk: 0,
+              other: 1,
+            },
+            asOf: '2026-08-16T00:00:00.000Z',
+          },
+        }),
+    },
+    {
+      method: 'GET',
       path: '/api/account/deletion',
       respond: () =>
         ok({
@@ -222,7 +248,7 @@ describe('(app) layout auth boundary — D134', () => {
 });
 
 describe('(app) layout integration mounts — U-NAV', () => {
-  it('does not refetch the default senders list before the route boundary hydrates it', async () => {
+  it('keeps a streamed route list independent from the shell summary count', async () => {
     const sendersSpy = vi.fn((_request: Request, _url: URL) =>
       ok({ data: [], meta: { pagination: { hasMore: false, nextCursor: null } } }),
     );
@@ -322,33 +348,33 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(sendersSpy).toHaveBeenCalledOnce();
   });
 
-  it('keeps the nav-chip default query enabled on a filtered senders URL', async () => {
+  it('keeps the nav summary unfiltered on a filtered senders URL', async () => {
     searchParamsRef.current = 'q=amazon.com';
-    const sendersSpy = vi.fn((_request: Request, _url: URL) =>
+    const summarySpy = vi.fn((_request: Request, _url: URL) =>
       ok({
-        data: [],
-        meta: {
-          pagination: { hasMore: false, nextCursor: null },
-          query: {
-            globalMaxTotal: 0,
-            totalMatching: 0,
-            filterCounts: {},
-            asOf: '2026-08-16T00:00:00.000Z',
-          },
+        data: {
+          totalSenders: 1,
+          activeSenders: 1,
+          last30dVolume: 0,
+          noiseReducible: 0,
+          protected: 0,
+          needsReview: 0,
+          byBucket: {},
+          asOf: '2026-08-16T00:00:00.000Z',
         },
       }),
     );
     installFetchStub(
       authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }).map((handler) =>
-        handler.path === '/api/senders' ? { ...handler, respond: sendersSpy } : handler,
+        handler.path === '/api/senders/summary' ? { ...handler, respond: summarySpy } : handler,
       ),
     );
 
     renderLayout();
 
     expect(await screen.findByText('authed app body')).toBeInTheDocument();
-    await vi.waitFor(() => expect(sendersSpy).toHaveBeenCalledOnce());
-    expect(sendersSpy.mock.calls[0]![1].toString()).not.toContain('q=');
+    await vi.waitFor(() => expect(summarySpy).toHaveBeenCalledOnce());
+    expect(summarySpy.mock.calls[0]![1].toString()).not.toContain('q=');
   });
 
   it('replaces the route with /onboarding when onboarding is incomplete (strict gate)', async () => {

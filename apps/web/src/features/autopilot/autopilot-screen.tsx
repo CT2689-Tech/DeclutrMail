@@ -451,7 +451,10 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         for (const m of matches) next.delete(m.id);
         return next;
       });
-      toast(`Approved ${count.toLocaleString()} suggestion${count === 1 ? '' : 's'}`, 'info');
+      toast(
+        `Approved ${count.toLocaleString('en-US')} suggestion${count === 1 ? '' : 's'}`,
+        'info',
+      );
     };
     const onError = (err: unknown) => {
       captureFeatureException(err, { surface: 'autopilot', reason: 'approve_failed' });

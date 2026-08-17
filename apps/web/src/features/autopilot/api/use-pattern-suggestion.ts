@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchPatternSuggestion } from '@/lib/api/autopilot';
-import { autopilotKeys } from './query-keys';
+import { patternSuggestionQueryOptions } from './query-options';
 
 export function usePatternSuggestion() {
-  return useQuery({
-    queryKey: autopilotKeys.patternSuggestion(),
-    queryFn: ({ signal }) => fetchPatternSuggestion(signal).then((env) => env.data),
-  });
+  return useQuery(
+    patternSuggestionQueryOptions((signal) =>
+      fetchPatternSuggestion(signal).then((env) => env.data),
+    ),
+  );
 }

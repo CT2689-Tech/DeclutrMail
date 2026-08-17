@@ -57,13 +57,13 @@ function whyLine(row: TriageDecisionRow): string {
     // evidence.
     const shielded = row.unreadInboxCount;
     return shielded != null && shielded > 0
-      ? `${evidence} · shielding ${shielded.toLocaleString()} unread`
+      ? `${evidence} · shielding ${shielded.toLocaleString('en-US')} unread`
       : evidence;
   }
   if (row.last90dMessages === 0) {
     // Quiet within the rolling window — say so plainly. Received total
     // carries the "they DID mail you" context without faking cadence.
-    return `Quiet 90d · ${row.totalAllTime.toLocaleString()} received`;
+    return `Quiet 90d · ${row.totalAllTime.toLocaleString('en-US')} received`;
   }
   if (row.readRate === null) {
     // No denominator, so no rate. Reachable independently of the quiet

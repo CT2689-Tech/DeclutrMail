@@ -1,13 +1,17 @@
-import type { Envelope } from '@declutrmail/shared/contracts';
+import type { Envelope, PaginatedEnvelope } from '@declutrmail/shared/contracts';
 import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 
 import {
-  sendersListPath,
+  type DecisionHistoryRowDto,
   type ListSendersParams,
+  type MailMessageRow,
+  type SenderDetailDto,
   type SenderListEnvelope,
   type SenderSummaryDto,
+  type TimeseriesPointDto,
 } from '@/lib/api/senders';
 import { sendersKeys } from './query-keys';
+import { retryUnless4xx } from './retry';
 import {
   parseSendersScope,
   searchParamsFromRecord,
@@ -55,29 +59,13 @@ export const DEFAULT_SENDERS_QUERY: SendersQueryOptions = sendersListQueryFromSc
   },
 });
 
-/**
- * Hydrate only when the URL is the same list the bare `/senders` screen
- * reads. Unknown keys (`utm_*`) and explicit `?activity=active` still
- * match. Real filters (`q`, `activity=all`, …) skip so we never flash
- * the default list.
- */
-export function shouldHydrateDefaultSenders(
-  params: SendersSearchParams | Pick<URLSearchParams, 'get'>,
-): boolean {
-  const candidate = params as Partial<Pick<URLSearchParams, 'get'>>;
-  const search =
-    typeof candidate.get === 'function'
-      ? (candidate as Pick<URLSearchParams, 'get'>)
-      : searchParamsFromRecord(params as SendersSearchParams);
-  const query = sendersListQueryFromScreen(parseSendersScope(search));
-  return sendersListPath(query) === sendersListPath(DEFAULT_SENDERS_QUERY);
+/** Exact first-page query the client screen derives from a route URL. */
+export function sendersQueryFromSearchParams(params: SendersSearchParams): SendersQueryOptions {
+  return sendersListQueryFromScreen(parseSendersScope(searchParamsFromRecord(params)));
 }
 
-export function shouldPrefetchSenders(
-  me: { activeMailboxId: string | null } | null,
-  params: SendersSearchParams,
-): boolean {
-  return me !== null && me.activeMailboxId !== null && shouldHydrateDefaultSenders(params);
+export function shouldPrefetchSenders(me: { activeMailboxId: string | null } | null): boolean {
+  return me !== null && me.activeMailboxId !== null;
 }
 
 type SendersReader = (
@@ -107,5 +95,61 @@ export function sendersSummaryQueryOptions(
   return queryOptions({
     queryKey: sendersKeys.summary({ q }),
     queryFn: ({ signal }) => reader({ q }, signal),
+  });
+}
+
+type SenderReader<T> = (signal: AbortSignal) => Promise<T>;
+
+export function senderDetailQueryOptions(
+  id: string,
+  reader: SenderReader<Envelope<SenderDetailDto, unknown>>,
+) {
+  return queryOptions({
+    queryKey: sendersKeys.detail(id),
+    queryFn: ({ signal }) => reader(signal),
+    retry: retryUnless4xx,
+  });
+}
+
+export function senderMessagesQueryOptions(
+  id: string,
+  reader: (
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ) => Promise<PaginatedEnvelope<MailMessageRow>>,
+) {
+  return infiniteQueryOptions({
+    queryKey: sendersKeys.messages(id),
+    queryFn: ({ pageParam, signal }) => reader(pageParam, signal),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.meta.pagination.nextCursor ?? undefined,
+    retry: retryUnless4xx,
+  });
+}
+
+export function senderTimeseriesQueryOptions(
+  id: string,
+  reader: SenderReader<Envelope<TimeseriesPointDto[], unknown>>,
+) {
+  return queryOptions({
+    queryKey: sendersKeys.timeseries(id),
+    queryFn: ({ signal }) => reader(signal),
+    retry: retryUnless4xx,
+  });
+}
+
+export function senderHistoryQueryOptions(
+  id: string,
+  reader: (
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ) => Promise<PaginatedEnvelope<DecisionHistoryRowDto>>,
+) {
+  return infiniteQueryOptions({
+    queryKey: sendersKeys.history(id),
+    queryFn: ({ pageParam, signal }) => reader(pageParam, signal),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.meta.pagination.nextCursor ?? undefined,
+    retry: retryUnless4xx,
   });
 }

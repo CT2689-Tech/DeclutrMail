@@ -139,12 +139,12 @@ function ActivationReport({
   const { result } = preview;
   const weeklyCopy =
     result.weeklyVolume.basis === 'observed_7d'
-      ? `7-day observed volume: ${result.weeklyVolume.observedMatches.toLocaleString()} match${
+      ? `7-day observed volume: ${result.weeklyVolume.observedMatches.toLocaleString('en-US')} match${
           result.weeklyVolume.observedMatches === 1 ? '' : 'es'
         }.`
-      : `Early weekly estimate: about ${result.weeklyVolume.estimatedMatches.toLocaleString()} match${
+      : `Early weekly estimate: about ${result.weeklyVolume.estimatedMatches.toLocaleString('en-US')} match${
           result.weeklyVolume.estimatedMatches === 1 ? '' : 'es'
-        }, extrapolated from ${result.weeklyVolume.observedMatches.toLocaleString()} over ${
+        }, extrapolated from ${result.weeklyVolume.observedMatches.toLocaleString('en-US')} over ${
           result.weeklyVolume.observedDays
         } day${result.weeklyVolume.observedDays === 1 ? '' : 's'}.`;
 
@@ -172,12 +172,12 @@ function ActivationReport({
         {actionableNowCopy(rule, result.actionableSenderCount, result.actionableMessageCount)}
       </div>
       <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
-        {result.protectedWouldMatchCount.toLocaleString()} additional matching sender
+        {result.protectedWouldMatchCount.toLocaleString('en-US')} additional matching sender
         {result.protectedWouldMatchCount === 1 ? ' is' : 's are'} Protected and will be skipped.
       </div>
       <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>{weeklyCopy}</div>
       <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
-        Daily safety cap: {result.dailyActionCap.toLocaleString()} action
+        Daily safety cap: {result.dailyActionCap.toLocaleString('en-US')} action
         {result.dailyActionCap === 1 ? '' : 's'}. Extra matches wait for a later sweep.
       </div>
       <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>{recoveryCopy(rule)}</div>
@@ -191,13 +191,13 @@ function actionableNowCopy(
   messageCount: number,
 ): string {
   if (rule.actionKind === 'unsubscribe') {
-    return `${senderCount.toLocaleString()} unsubscribe request${
+    return `${senderCount.toLocaleString('en-US')} unsubscribe request${
       senderCount === 1 ? '' : 's'
-    } actionable now. Those senders currently account for ${messageCount.toLocaleString()} inbox message${
+    } actionable now. Those senders currently account for ${messageCount.toLocaleString('en-US')} inbox message${
       messageCount === 1 ? '' : 's'
     }; unsubscribing does not remove existing mail.`;
   }
-  return `${senderCount.toLocaleString()} sender${senderCount === 1 ? '' : 's'} and ${messageCount.toLocaleString()} inbox message${messageCount === 1 ? '' : 's'} actionable now.`;
+  return `${senderCount.toLocaleString('en-US')} sender${senderCount === 1 ? '' : 's'} and ${messageCount.toLocaleString('en-US')} inbox message${messageCount === 1 ? '' : 's'} actionable now.`;
 }
 
 function recoveryCopy(rule: AutopilotRuleDto): string {

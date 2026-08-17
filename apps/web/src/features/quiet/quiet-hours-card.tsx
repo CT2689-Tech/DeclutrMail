@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, Pill, Skeleton, tokens } from '@declutrmail/shared';
 import {
   parseTimeToMinutes,
@@ -58,12 +58,12 @@ function timeZoneOptions(current: string): string[] {
   }
 }
 
-const DEFAULT_DRAFT = (): QuietHoursConfig => ({
+const DEFAULT_DRAFT: QuietHoursConfig = {
   enabled: false,
   startLocal: '22:00',
   endLocal: '07:00',
-  timezone: browserTimeZone(),
-});
+  timezone: 'UTC',
+};
 
 export function QuietHoursCard(props: QuietHoursCardProps) {
   const { mailboxEmail, mailboxStatus, state, saving, onSave, onRetry } = props;
@@ -119,7 +119,8 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
       {state.kind === 'ready' && (
         <QuietHoursForm
           key={configKey(state.config)}
-          initial={state.config ?? DEFAULT_DRAFT()}
+          initial={state.config ?? DEFAULT_DRAFT}
+          useBrowserDefault={state.config === null}
           saving={saving}
           onSave={onSave}
         />
@@ -137,23 +138,35 @@ function configKey(config: QuietHoursConfig | null): string {
 
 function QuietHoursForm({
   initial,
+  useBrowserDefault,
   saving,
   onSave,
 }: {
   initial: QuietHoursConfig;
+  useBrowserDefault: boolean;
   saving: boolean;
   onSave: (config: QuietHoursConfig) => void;
 }) {
+  const [baseline, setBaseline] = useState<QuietHoursConfig>(initial);
   const [draft, setDraft] = useState<QuietHoursConfig>(initial);
+  const [zones, setZones] = useState<string[]>([initial.timezone]);
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  const zones = useMemo(() => timeZoneOptions(draft.timezone), [draft.timezone]);
+  useEffect(() => {
+    if (!useBrowserDefault) return;
+    const timezone = browserTimeZone();
+    const next = { ...initial, timezone };
+    setBaseline(next);
+    setDraft(next);
+    setZones([timezone]);
+  }, [initial, useBrowserDefault]);
+
   const crossesMidnight = parseTimeToMinutes(draft.startLocal) > parseTimeToMinutes(draft.endLocal);
   const dirty =
-    draft.enabled !== initial.enabled ||
-    draft.startLocal !== initial.startLocal ||
-    draft.endLocal !== initial.endLocal ||
-    draft.timezone !== initial.timezone;
+    draft.enabled !== baseline.enabled ||
+    draft.startLocal !== baseline.startLocal ||
+    draft.endLocal !== baseline.endLocal ||
+    draft.timezone !== baseline.timezone;
 
   const set = (patch: Partial<QuietHoursConfig>) => {
     setValidationError(null);
@@ -243,6 +256,7 @@ function QuietHoursForm({
           <select
             value={draft.timezone}
             disabled={saving}
+            onFocus={() => setZones(timeZoneOptions(draft.timezone))}
             onChange={(e) => set({ timezone: e.target.value })}
             aria-label="Quiet window timezone"
             style={{ ...inputStyle, width: '100%' }}

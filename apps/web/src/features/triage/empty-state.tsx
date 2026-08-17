@@ -260,7 +260,7 @@ function StatTile({ label, value }: { label: string; value: number }) {
           fontVariantNumeric: 'tabular-nums',
         }}
       >
-        {value.toLocaleString()}
+        {value.toLocaleString('en-US')}
       </div>
       <div
         style={{

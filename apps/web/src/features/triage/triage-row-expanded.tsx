@@ -46,7 +46,7 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
           gap: 12,
         }}
       >
-        <Stat label="per month" value={row.monthlyVolume.toLocaleString()} />
+        <Stat label="per month" value={row.monthlyVolume.toLocaleString('en-US')} />
         <Stat
           label="read rate"
           value={readPct === null ? '—' : `${readPct}%`}

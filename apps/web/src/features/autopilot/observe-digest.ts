@@ -18,8 +18,8 @@ import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 export function observeDigestSummary(rule: AutopilotRuleDto): string | null {
   const digest = rule.observeDigest;
   if (digest == null || digest.senders7d === 0) return null;
-  const senders = `${digest.senders7d.toLocaleString()} sender${digest.senders7d === 1 ? '' : 's'}`;
-  const emails = `${digest.messages7d.toLocaleString()} email${digest.messages7d === 1 ? '' : 's'}`;
+  const senders = `${digest.senders7d.toLocaleString('en-US')} sender${digest.senders7d === 1 ? '' : 's'}`;
+  const emails = `${digest.messages7d.toLocaleString('en-US')} email${digest.messages7d === 1 ? '' : 's'}`;
   switch (rule.actionKind) {
     case 'archive':
       return `Would have archived ${emails} from ${senders} in the last 7 days`;

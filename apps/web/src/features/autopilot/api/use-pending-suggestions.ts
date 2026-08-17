@@ -6,11 +6,12 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { fetchPendingSuggestions } from '@/lib/api/autopilot';
-import { autopilotKeys } from './query-keys';
+import { pendingSuggestionsQueryOptions } from './query-options';
 
 export function usePendingSuggestions() {
-  return useQuery({
-    queryKey: autopilotKeys.pendingSuggestions(),
-    queryFn: ({ signal }) => fetchPendingSuggestions(signal).then((env) => env.data),
-  });
+  return useQuery(
+    pendingSuggestionsQueryOptions((signal) =>
+      fetchPendingSuggestions(signal).then((env) => env.data),
+    ),
+  );
 }

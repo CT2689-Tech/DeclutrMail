@@ -18,7 +18,6 @@ import {
   patchSnooze,
   wakeNow,
   wakeRecoveryNow,
-  type SnoozedSenderRow,
 } from '@/lib/api/snoozed';
 import type {
   SnoozeUpdateRequest,
@@ -27,12 +26,12 @@ import type {
 } from '@declutrmail/shared/contracts';
 
 import { snoozedKeys } from './query-keys';
+import { laterRecoveryQueryOptions, snoozedListQueryOptions } from './query-options';
 
 export function useSnoozed(options?: { refetchInterval?: number | false }) {
   return useQuery({
-    queryKey: snoozedKeys.list(),
-    queryFn: ({ signal }) => fetchSnoozed(signal),
-    select: (envelope): SnoozedSenderRow[] => envelope.data,
+    ...snoozedListQueryOptions(fetchSnoozed),
+    select: (envelope) => envelope.data,
     ...(options?.refetchInterval !== undefined
       ? {
           refetchInterval: options.refetchInterval,
@@ -48,13 +47,9 @@ export function useSnoozed(options?: { refetchInterval?: number | false }) {
 /** Passive all-tier recovery check; errors fail quiet in app chrome. */
 export function useLaterRecovery(options: { enabled: boolean }) {
   return useQuery({
-    queryKey: snoozedKeys.recovery(),
-    queryFn: ({ signal }) => fetchLaterRecovery(signal),
+    ...laterRecoveryQueryOptions(fetchLaterRecovery),
     select: (envelope) => envelope.data,
     enabled: options.enabled,
-    retry: false,
-    refetchInterval: 60_000,
-    refetchOnWindowFocus: true,
   });
 }
 

@@ -14,7 +14,7 @@ import { sendersKeys } from './api/query-keys';
 import {
   DEFAULT_SENDERS_QUERY,
   sendersListQueryFromScreen,
-  shouldHydrateDefaultSenders,
+  sendersQueryFromSearchParams,
   shouldPrefetchSenders,
 } from './api/query-options';
 import { useSenders } from './api/use-senders';
@@ -63,6 +63,9 @@ describe('ServerSendersBoundary', () => {
       if (url.endsWith('/api/senders/summary')) {
         return Response.json({ data: { totalSenders: 0 } });
       }
+      if (url.endsWith('/api/me/settings')) {
+        return Response.json({ data: { senderViews: [] } });
+      }
       throw new Error(`Unexpected request: ${url}`);
     });
     vi.stubGlobal('fetch', fetchSpy);
@@ -75,10 +78,11 @@ describe('ServerSendersBoundary', () => {
     render(<QueryClientProvider client={makeQueryClient()}>{boundary}</QueryClientProvider>);
 
     expect(screen.getByText('Senders ready')).toBeInTheDocument();
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
     expect(fetchSpy.mock.calls.map(([input]) => String(input))).toEqual([
       'http://localhost:4000/api/senders?limit=50&sort=total&direction=desc&activity=active',
       'http://localhost:4000/api/senders/summary',
+      'http://localhost:4000/api/me/settings',
     ]);
   });
 
@@ -97,24 +101,11 @@ describe('ServerSendersBoundary', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('hydrates the default list even when the URL carries ignored or redundant keys', () => {
-    expect(shouldHydrateDefaultSenders({})).toBe(true);
-    expect(shouldHydrateDefaultSenders({ utm_source: 'newsletter' })).toBe(true);
-    expect(shouldHydrateDefaultSenders({ activity: 'active' })).toBe(true);
-    expect(shouldHydrateDefaultSenders({ q: '' })).toBe(true);
-    expect(shouldHydrateDefaultSenders({ get: 'campaign-tag' })).toBe(true);
-    expect(shouldHydrateDefaultSenders(new URLSearchParams('utm_source=newsletter'))).toBe(true);
-    expect(shouldHydrateDefaultSenders({ q: 'amazon.com' })).toBe(false);
-    expect(shouldHydrateDefaultSenders({ activity: 'all' })).toBe(false);
-  });
-
-  it('prefetches only when a mailbox is active and the URL is the default list', () => {
+  it('prefetches the exact route URL whenever a mailbox is active', () => {
     const me = { activeMailboxId: 'mailbox-1' };
-    expect(shouldPrefetchSenders(me, {})).toBe(true);
-    expect(shouldPrefetchSenders(me, { utm_source: 'newsletter' })).toBe(true);
-    expect(shouldPrefetchSenders(null, {})).toBe(false);
-    expect(shouldPrefetchSenders({ activeMailboxId: null }, {})).toBe(false);
-    expect(shouldPrefetchSenders(me, { q: 'amazon.com' })).toBe(false);
+    expect(shouldPrefetchSenders(me)).toBe(true);
+    expect(shouldPrefetchSenders(null)).toBe(false);
+    expect(shouldPrefetchSenders({ activeMailboxId: null })).toBe(false);
   });
 
   it('hydrates the same list key the Senders screen reads on a bare URL', () => {
@@ -138,8 +129,9 @@ describe('ServerSendersBoundary', () => {
     );
   });
 
-  it('hydrates the nav-chip query from the same default list the screen reads', async () => {
+  it('hydrates the exact filtered deep-link list and matching search summary', async () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:4000');
+    const query = sendersQueryFromSearchParams({ q: 'amazon.com', activity: 'all' });
     const fetchSpy = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.includes('/api/senders?')) {
@@ -147,48 +139,43 @@ describe('ServerSendersBoundary', () => {
           data: [],
           meta: {
             pagination: { nextCursor: null, hasMore: false },
-            query: {
-              globalMaxTotal: 0,
-              totalMatching: 0,
-              filterCounts: {},
-              asOf: '2026-08-16T00:00:00.000Z',
-            },
+            query: { globalMaxTotal: 0, totalMatching: 0, filterCounts: {}, asOf: 'now' },
           },
         });
       }
-      if (url.endsWith('/api/senders/summary')) {
+      if (url.includes('/api/senders/summary')) {
         return Response.json({ data: { totalSenders: 0 } });
+      }
+      if (url.endsWith('/api/me/settings')) {
+        return Response.json({ data: { senderViews: [] } });
       }
       throw new Error(`Unexpected request: ${url}`);
     });
     vi.stubGlobal('fetch', fetchSpy);
 
-    function ScreenAndChipProbe() {
-      const senders = useSenders(
-        sendersListQueryFromScreen({
-          compose: DEFAULT_COMPOSE,
-          sort: 'total',
-          direction: 'desc',
-          q: '',
-        }),
-      );
-      const chip = useSenders({ ...DEFAULT_SENDERS_QUERY });
+    function FilteredProbe() {
+      const list = useSenders(query);
+      const summary = useSendersSummary({ q: query.q });
       return (
-        <div>
-          {senders.isSuccess && chip.isSuccess ? 'Senders and chip ready' : 'Senders loading'}
-        </div>
+        <div>{list.isSuccess && summary.isSuccess ? 'Filtered ready' : 'Filtered loading'}</div>
       );
     }
 
     const boundary = await ServerSendersBoundary({
       cookieHeader: 'dm_access=token',
       enabled: true,
-      children: <ScreenAndChipProbe />,
+      query,
+      summaryQ: query.q,
+      children: <FilteredProbe />,
     });
     render(<QueryClientProvider client={makeQueryClient()}>{boundary}</QueryClientProvider>);
 
-    expect(screen.getByText('Senders and chip ready')).toBeInTheDocument();
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Filtered ready')).toBeInTheDocument();
+    expect(fetchSpy.mock.calls.map(([input]) => String(input))).toEqual([
+      'http://localhost:4000/api/senders?limit=50&sort=total&direction=desc&q=amazon.com',
+      'http://localhost:4000/api/senders/summary?q=amazon.com',
+      'http://localhost:4000/api/me/settings',
+    ]);
   });
 
   it('does not retry designed 4xx states during server prefetch', async () => {
@@ -208,6 +195,6 @@ describe('ServerSendersBoundary', () => {
       children: <div>Fallback</div>,
     });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
 });

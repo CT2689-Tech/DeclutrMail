@@ -9,7 +9,7 @@ import type {
   OnboardingPresetKey,
 } from '@declutrmail/shared/contracts';
 
-import { autopilotKeys } from '@/features/autopilot/api/query-keys';
+import { autopilotRulesQueryOptions } from '@/features/autopilot/api/query-options';
 import { fetchAutopilotRules } from '@/lib/api/autopilot';
 import { captureFeatureException } from '@/lib/sentry';
 import { track } from '@/lib/posthog';
@@ -87,8 +87,7 @@ export function StepPresetPick({
   // stops the moment the seeder has run (or immediately, when rules
   // already exist).
   const rules = useQuery({
-    queryKey: autopilotKeys.rules(),
-    queryFn: ({ signal }) => fetchAutopilotRules(signal).then((env) => env.data),
+    ...autopilotRulesQueryOptions((signal) => fetchAutopilotRules(signal).then((env) => env.data)),
     refetchInterval: (query) =>
       query.state.data && query.state.data.length > 0 ? false : RULES_SEED_POLL_MS,
   });

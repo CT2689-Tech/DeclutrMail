@@ -119,7 +119,7 @@ export function SenderRowDetail({
     // "Received", never "all-time" — ADR-0014 §Neutral mandates the word:
     // `total_received` is within-retention, recounted from `mail_messages`
     // nightly, so a completeness claim would be false (findings doc 7).
-    { k: 'Received', v: s.totalReceived.toLocaleString(), small: 'emails' },
+    { k: 'Received', v: s.totalReceived.toLocaleString('en-US'), small: 'emails' },
     // What the inbox verbs can actually reach RIGHT NOW (ADR-0028
     // companion). A sender whose Gmail filters skip the inbox reads
     // "hundreds received · 0 in inbox" here instead of three no-op
@@ -129,7 +129,7 @@ export function SenderRowDetail({
       ? [
           {
             k: 'In inbox',
-            v: s.inboxCount.toLocaleString(),
+            v: s.inboxCount.toLocaleString('en-US'),
             small: 'now',
             ...(s.inboxCount === 0 ? { valueColor: color.fgMuted } : {}),
           },
@@ -150,7 +150,7 @@ export function SenderRowDetail({
               ? color.fg
               : color.amber,
     },
-    { k: 'Last 30 days', v: (s.monthlyVolume ?? 0).toLocaleString(), small: 'messages' },
+    { k: 'Last 30 days', v: (s.monthlyVolume ?? 0).toLocaleString('en-US'), small: 'messages' },
   ];
 
   return (

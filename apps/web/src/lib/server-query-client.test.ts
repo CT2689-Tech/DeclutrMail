@@ -34,4 +34,15 @@ describe('settleServerQueries', () => {
       tags: { surface: 'server-hydration', hydration_surface: 'senders' },
     });
   });
+
+  it('stays quiet when billing is intentionally disabled', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await settleServerQueries('billing', [
+      Promise.reject(
+        new ServerApiError(503, { error: { code: 'BILLING_DISABLED' } }, 'billing disabled'),
+      ),
+    ]);
+    expect(warn).not.toHaveBeenCalled();
+    expect(sentry.captureException).not.toHaveBeenCalled();
+  });
 });

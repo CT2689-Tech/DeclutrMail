@@ -139,10 +139,10 @@ export function MailboxesCard({
                     >
                       {m.email}
                     </span>
-                    {m.status === 'active' && health?.lastSyncedAt && (
+                    {m.status === 'active' && health?.lastSyncedAt && now !== null && (
                       <span
                         style={{ display: 'block', fontSize: 11, color: color.fgMuted }}
-                        title={new Date(health.lastSyncedAt).toLocaleString()}
+                        title={new Date(health.lastSyncedAt).toLocaleString('en-US')}
                       >
                         Synced {relAge(health.lastSyncedAt, now)}
                       </span>

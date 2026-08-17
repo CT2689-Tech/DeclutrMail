@@ -163,7 +163,7 @@ export function DecisionHistory({
                         fontVariantNumeric: 'tabular-nums',
                       }}
                     >
-                      {row.count.toLocaleString()} email{row.count === 1 ? '' : 's'}
+                      {row.count.toLocaleString('en-US')} email{row.count === 1 ? '' : 's'}
                     </span>
                   )}
                 </span>

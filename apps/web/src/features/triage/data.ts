@@ -571,7 +571,7 @@ export function lastSeenLabel(
 
 /** Compact "12.4k" formatter — matches senders/data.ts:fmtCompact. */
 export function fmtCompact(n: number): string {
-  if (n < 1000) return n.toLocaleString();
+  if (n < 1000) return n.toLocaleString('en-US');
   if (n < 10000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
   if (n < 1_000_000) return Math.round(n / 1000) + 'k';
   return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';

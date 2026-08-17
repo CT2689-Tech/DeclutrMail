@@ -383,9 +383,9 @@ export function SenderCard({
                 verb is a no-op — "hundreds received · 0 in inbox" must be
                 readable on the card face, not only inside the peek.
                 Absent on the wire ⇒ omitted, never a fabricated 0. */}
-            {sender.totalReceived.toLocaleString()} received
+            {sender.totalReceived.toLocaleString('en-US')} received
             {sender.inboxCount !== undefined && sender.inboxCount !== null && (
-              <> · {sender.inboxCount.toLocaleString()} in inbox</>
+              <> · {sender.inboxCount.toLocaleString('en-US')} in inbox</>
             )}
           </span>
         </div>

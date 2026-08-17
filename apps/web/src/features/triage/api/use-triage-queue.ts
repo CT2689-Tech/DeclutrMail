@@ -14,10 +14,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api/client';
 import type { TriageDecisionRow, TriageSessionStats } from '@/features/triage/data';
-import { triageQueueQueryOptions, triageStatsQueryOptions } from './query-options';
+import {
+  todaySummaryQueryOptions,
+  triageQueueQueryOptions,
+  triageStatsQueryOptions,
+} from './query-options';
 
 export { TRIAGE_QUEUE_KEY, TRIAGE_STATS_KEY } from './query-options';
-export const TODAY_SUMMARY_KEY = ['triage', 'today-summary'] as const;
+export { TODAY_SUMMARY_KEY } from './query-options';
 
 /**
  * D214 — the "Today" strip payload. Mirrors the BE `TodaySummary`
@@ -55,14 +59,12 @@ export function useTriageStats() {
  * feature (D189) reuses this query when it lands.
  */
 export function useTodaySummary() {
-  return useQuery({
-    queryKey: TODAY_SUMMARY_KEY,
-    queryFn: async ({ signal }) => {
+  return useQuery(
+    todaySummaryQueryOptions(async (signal) => {
       const envelope = await apiGet<TodaySummary>('/api/triage/today-summary', {
         signal,
       });
       return envelope.data;
-    },
-    staleTime: 30_000,
-  });
+    }),
+  );
 }

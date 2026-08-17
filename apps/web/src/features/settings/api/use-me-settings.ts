@@ -33,8 +33,9 @@ import type {
 import { apiGet, apiPatch } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import { useTriageStore, type RememberableVerb } from '@/features/triage/store';
+import { ME_SETTINGS_QUERY_KEY, meSettingsQueryOptions } from './query-options';
 
-export const ME_SETTINGS_QUERY_KEY = ['me-settings'] as const;
+export { ME_SETTINGS_QUERY_KEY } from './query-options';
 
 /** Wire key (contract) ↔ UI verb (triage store) mapping. */
 const WIRE_TO_VERB: Record<keyof ActionSheetPrefs, RememberableVerb> = {
@@ -50,16 +51,12 @@ export const VERB_TO_WIRE: Record<RememberableVerb, keyof ActionSheetPrefs> = {
 };
 
 export function useMeSettings() {
-  return useQuery({
-    queryKey: ME_SETTINGS_QUERY_KEY,
-    queryFn: async (): Promise<MeSettings> => {
+  return useQuery(
+    meSettingsQueryOptions(async (): Promise<MeSettings> => {
       const env = await apiGet<MeSettings>('/api/me/settings');
       return env.data;
-    },
-    // Preferences only change through this device's own mutations (or
-    // another device's — minute-level staleness is fine for settings).
-    staleTime: 60_000,
-  });
+    }),
+  );
 }
 
 /**

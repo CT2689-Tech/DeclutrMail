@@ -10,6 +10,7 @@ import type { UndoTrayDataSource, UndoTrayEntry } from '@declutrmail/shared';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
+import { undoEntriesQueryOptions } from '@/features/undo/query-options';
 import { useActionStatus, useRevertUndo } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
 import { isTerminalStatus } from '@/lib/api/actions';
@@ -45,22 +46,15 @@ export function invalidateAfterUndo(qc: QueryClient): void {
  * `<UndoTray>` via its `dataSource` seam.
  */
 function useUndoEntries(mailboxId?: string) {
-  return useQuery({
-    queryKey: undoKeys.tray(mailboxId),
-    queryFn: async ({ signal }) => {
+  return useQuery(
+    undoEntriesQueryOptions(mailboxId, async (signal) => {
       const env = await apiGet<UndoTrayEntry[]>('/api/undo', {
         signal,
         ...(mailboxId ? { mailboxId } : {}),
       });
       return env.data;
-    },
-    // The tray must react to actions taken in another tab (D35).
-    // `makeQueryClient` opts out of refetch-on-focus globally; this
-    // hook opts back in, debounced by staleTime (mirrors the shared
-    // hook's rationale).
-    refetchOnWindowFocus: true,
-    staleTime: 15_000,
-  });
+    }),
+  );
 }
 
 /**

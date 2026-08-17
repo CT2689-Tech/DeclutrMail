@@ -9,8 +9,7 @@
 
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { fetchSenderHistory } from '@/lib/api/senders';
-import { sendersKeys } from './query-keys';
-import { retryUnless4xx } from './retry';
+import { senderHistoryQueryOptions } from './query-options';
 
 export interface UseSenderHistoryOptions {
   /** Page size — default 10 per D46. */
@@ -19,15 +18,9 @@ export interface UseSenderHistoryOptions {
 
 export function useSenderHistory(id: string, options: UseSenderHistoryOptions = {}) {
   return useInfiniteQuery({
-    queryKey: sendersKeys.history(id),
-    queryFn: ({ pageParam, signal }) =>
-      fetchSenderHistory(id, { limit: options.limit, cursor: pageParam ?? undefined }, signal),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.meta.pagination.nextCursor ?? undefined,
-    // Share the 404-aware retry predicate with `useSenderDetail` so a
-    // stale sender id short-circuits all four panes in lockstep
-    // (silent-failure-hunter finding on PR #41).
-    retry: retryUnless4xx,
+    ...senderHistoryQueryOptions(id, (cursor, signal) =>
+      fetchSenderHistory(id, { limit: options.limit, cursor }, signal),
+    ),
     enabled: id.length > 0,
   });
 }
