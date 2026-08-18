@@ -9,6 +9,7 @@
     "e2e:billing": "playwright test billing-upgrade.spec.ts --project=default",
     "e2e:render": "E2E_SKIP_STACK_SETUP=1 playwright test --project=render",
     "e2e:ui": "playwright test --ui",
+    "e2e:hydration": "playwright test hydration-smoke.spec.ts --project=default",
     "e2e:install": "playwright install chromium",
     "typecheck": "tsc --noEmit",
     "build": "echo 'no build'"

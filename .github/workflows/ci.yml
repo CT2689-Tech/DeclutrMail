@@ -644,6 +644,17 @@ jobs:
         run: pnpm e2e:a11y
         env:
           E2E_JSON_REPORT: ${{ github.workspace }}/e2e-a11y-report.json
+      # Server-hydration correctness under a non-en-US locale + zone.
+      # Runs HERE because this job already boots the whole stack this
+      # spec needs, so the marginal cost is one Playwright invocation.
+      # It has earned it: run by hand on 2026-08-18 it caught a /brief
+      # locale mismatch and a /senders hydration race, both of which
+      # passed every other gate. de-DE / Asia-Kolkata are pinned inside
+      # the spec, not here.
+      - name: Run the hydration smoke (non-en-US locale + timezone)
+        run: pnpm --filter @declutrmail/e2e run e2e:hydration
+        env:
+          E2E_JSON_REPORT: ${{ github.workspace }}/e2e-hydration-report.json
       - name: Run the billing money-path spec
         # Was runnable-but-never-run: PR #401 changed the Free tier and
         # this spec rotted invisibly (flow audit 2026-07-28). In CI it
@@ -660,6 +671,7 @@ jobs:
           node scripts/assert-e2e-ran.mjs e2e-render-report.json "component paint specs"
           node scripts/assert-e2e-ran.mjs e2e-a11y-report.json "accessibility gate"
           node scripts/assert-e2e-ran.mjs e2e-billing-report.json "billing money path"
+          node scripts/assert-e2e-ran.mjs e2e-hydration-report.json "hydration smoke"
       - name: Upload accessibility diagnostics
         if: failure()
         uses: actions/upload-artifact@v6

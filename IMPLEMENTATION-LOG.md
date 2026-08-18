@@ -215,7 +215,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425, #496, #506, #508 |  |  |
 | D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473, #474, #502, #498, #546, #549, #550, #551, #554 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
-| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526, #529, #534, #536, #556 | gh run 26327595271 ci.yml green on main |  |
+| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526, #529, #534, #536, #556, #558 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
@@ -261,7 +261,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | 🟢 | #49 | packages/workers/src/base-declutr-worker.test.ts |  |
 | D204 | Read-only services per feature + events for cross-feature writes (refines D201) | 🟢 | #37, #78, #113 | apps/api/src/triage/triage.service.spec.ts — D204 read-only |  |
 | D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | 🔵 | #121, #123, #218, #372 |  |  |
-| D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | 🔵 | #127 |  |  |
+| D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | 🔵 | #127, #558 |  |  |
 | D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | 🟢 | #113, #226, #388 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
 | D208 | "What happens next" preview mandatory before every automation or destructive action | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — preview mandatory before mutation | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D209 | Trust-first microcopy hard rule (extends D194) | 🔵 | #410, #419 |  |  |

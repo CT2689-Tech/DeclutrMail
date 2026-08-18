@@ -94,7 +94,59 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Deploy must not outrun CI.
+  #
+  # This workflow and `ci.yml` both trigger on the same push to `main`,
+  # so they RACED: on 2026-08-18 #554 shipped to Cloud Run while its own
+  # CI run was failing the bundle budget, and the red only surfaced when
+  # the next PR inherited it. A size gate shipping is survivable; the
+  # same path would have deployed a failing test suite just as happily.
+  #
+  # `workflow_dispatch` skips the wait on purpose — a manual re-deploy
+  # (secret rotation, env repull) must never be blocked behind CI.
+  await-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      # `gh run list` reads the CI run for this commit.
+      actions: read
+    steps:
+      - name: Require the CI run for this commit to be green
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          deadline=$(( SECONDS + 40 * 60 ))
+          while (( SECONDS < deadline )); do
+            info=$(gh run list --repo "$REPO" --workflow CI --commit "$SHA" \
+                     --limit 1 --json status,conclusion \
+                     --jq '.[0] | "\(.status)|\(.conclusion // "")"' 2>/dev/null || true)
+            status=${info%%|*}
+            conclusion=${info#*|}
+            if [ "$status" = completed ]; then
+              if [ "$conclusion" = success ]; then
+                echo "CI is green for $SHA — proceeding with the deploy."
+                exit 0
+              fi
+              echo "::error::CI concluded '$conclusion' for $SHA — refusing to deploy."
+              exit 1
+            fi
+            if [ -z "$status" ]; then
+              echo "No CI run registered for $SHA yet; waiting…"
+            else
+              echo "CI is '$status' for $SHA; waiting…"
+            fi
+            sleep 20
+          done
+          echo "::error::Timed out waiting for the CI run for $SHA."
+          exit 1
+
   build-and-deploy:
+    needs: await-ci
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
