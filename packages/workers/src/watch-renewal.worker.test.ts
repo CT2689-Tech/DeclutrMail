@@ -196,6 +196,7 @@ describe('WatchRenewalWorker', () => {
     const observer: WorkerObserver = {
       captureFailure: () => {},
       captureBackgroundFailure: (error, ctx) => captured.push({ error, kind: ctx.kind }),
+      recordBackgroundNotice: () => {},
     };
     const worker = new WatchRenewalWorker({
       db: db as never,
@@ -244,6 +245,7 @@ describe('WatchRenewalWorker', () => {
     const observer: WorkerObserver = {
       captureFailure: () => {},
       captureBackgroundFailure: (error) => captured.push(error),
+      recordBackgroundNotice: () => {},
     };
     const worker = new WatchRenewalWorker({
       db: db as never,

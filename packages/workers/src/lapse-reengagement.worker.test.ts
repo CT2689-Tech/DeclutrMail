@@ -473,6 +473,7 @@ describe('LapseReengagementWorker', () => {
       captureBackgroundFailure: (_error: Error, context: { kind: string }) => {
         captured.push(context.kind);
       },
+      recordBackgroundNotice: () => {},
     });
 
     const result = await worker.processJob({ scheduledAtMinute: '2026-08-10T12:00' }, CTX);

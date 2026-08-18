@@ -1,5 +1,6 @@
 import type {
   BackgroundFailureContext,
+  BackgroundNoticeContext,
   WorkerFailureContext,
   WorkerObserver,
 } from '@declutrmail/workers';
@@ -40,6 +41,7 @@ export async function createSentryWorkerObserver(
     return {
       captureFailure() {},
       captureBackgroundFailure() {},
+      recordBackgroundNotice() {},
     };
   }
   // Dynamic import keeps the heavy @sentry/node bundle out of test/dev
@@ -72,6 +74,24 @@ export async function createSentryWorkerObserver(
         });
         Sentry.captureException(error);
       });
+    },
+    recordBackgroundNotice(ctx: BackgroundNoticeContext): void {
+      // The LOGS channel, not `captureException` — see
+      // `BackgroundNoticeContext`. `kind` rides as an attribute because
+      // `scrubSentryLog` rebuilds the log's message from it; the message
+      // passed here is discarded at the wire, so it exists only to keep
+      // the call readable.
+      const attributes = { kind: ctx.kind, ...stringifyTags(ctx.tags) };
+      const level = ctx.level ?? 'warn';
+      if (level === 'error') {
+        Sentry.logger.error(ctx.kind, attributes);
+        return;
+      }
+      if (level === 'info') {
+        Sentry.logger.info(ctx.kind, attributes);
+        return;
+      }
+      Sentry.logger.warn(ctx.kind, attributes);
     },
   };
 }

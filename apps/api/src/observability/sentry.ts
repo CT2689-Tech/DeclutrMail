@@ -1,4 +1,8 @@
-import { scrubSentryEvent, scrubTelemetryPayload } from '@declutrmail/shared/observability';
+import {
+  scrubSentryEvent,
+  scrubSentryLog,
+  scrubTelemetryPayload,
+} from '@declutrmail/shared/observability';
 
 /**
  * Sentry server bootstrap (D159).
@@ -52,6 +56,16 @@ export async function initSentry(): Promise<void> {
       release: process.env.SENTRY_RELEASE,
       // Exceptions only (D159 + D7) — explicitly disable traces.
       tracesSampleRate: 0,
+      // The LOGS channel (D159, 2026-08-18). Notices that are not crashes
+      // — `dead_letter.parked`, the CAN-SPAM postal refusal — belong here,
+      // not on the errors quota, which is the only Sentry budget that runs
+      // out: errors sat at 4,000/5,000 while logs sat at 0 of 5 GB.
+      //
+      // This does NOT re-enable auto-instrumentation. Logs use their own
+      // transport; `defaultIntegrations: false` below still stands, which
+      // is what keeps the worker bootstrap from hanging (see the comment
+      // on `integrations`).
+      enableLogs: true,
       profilesSampleRate: 0,
       // Never auto-collect IP, user-agent, cookies, request bodies, etc.
       sendDefaultPii: false,
@@ -83,6 +97,14 @@ export async function initSentry(): Promise<void> {
       beforeSend: (event) =>
         scrubSentryEvent(event as unknown as Record<string, unknown>, 'server') as unknown as
           typeof event | null,
+      // `beforeSend` does NOT run on logs. Without this hook the logs
+      // channel would be a SECOND, unscrubbed egress path to Sentry — and
+      // a log's `message` is free text, the same hazard `Error.message` is
+      // stripped for. `scrubSentryLog` reconstructs the message from an
+      // allowlisted `kind`, so a log's text can only ever be one of a
+      // closed set of strings.
+      beforeSendLog: (log) =>
+        scrubSentryLog(log as unknown as Record<string, unknown>) as unknown as typeof log | null,
       beforeBreadcrumb: (breadcrumb) =>
         scrubTelemetryPayload(
           breadcrumb as unknown as Record<string, unknown>,

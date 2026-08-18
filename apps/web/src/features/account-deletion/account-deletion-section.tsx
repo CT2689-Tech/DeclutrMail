@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Button, Card, tokens } from '@declutrmail/shared';
 import { ApiError } from '@/lib/api/client';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import {
   useAccountDeletionStatus,
   useCancelAccountDeletion,
@@ -116,6 +117,7 @@ function PendingState({
   isCancelling: boolean;
   cancelFailed: boolean;
 }) {
+  const timeZone = useUserTimeZone();
   return (
     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <p style={{ fontSize: 13, color: color.danger, fontWeight: 600, margin: 0 }}>
@@ -123,7 +125,7 @@ function PendingState({
           ? 'Deletion is in progress — your data is being removed.'
           : basis === 'waived-immediate'
             ? 'Deletion requested with the undo waiver — your data deletes shortly.'
-            : `Deletion scheduled for ${formatDate(effectiveAt)}.`}
+            : `Deletion scheduled for ${formatDate(effectiveAt, timeZone)}.`}
       </p>
       {!executing && basis === 'undo-window' && (
         <p style={{ ...mutedTextStyle, marginTop: 0 }}>

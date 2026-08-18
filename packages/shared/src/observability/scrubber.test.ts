@@ -5,6 +5,7 @@ import {
   scrubObject,
   scrubSentryBreadcrumb,
   scrubSentryEvent,
+  scrubSentryLog,
   scrubTelemetryPayload,
   scrubUrlDerived,
 } from './scrubber.js';
@@ -295,46 +296,100 @@ describe('scrubSentryEvent — server profile (D158)', () => {
     // PermanentError is not a browser-approved type; the frame survives.
     expect(exc?.type).toBeUndefined();
   });
+});
 
-  /**
-   * The dead-letter alert's only discriminators. Both were being passed
-   * by `dead-letter.worker.ts` and silently dropped here, which is how
-   * 3,095 events across three unrelated failure kinds ended up sharing
-   * one issue titled "Error" (DECLUTRMAIL-WEB-R, 2026-08-18).
-   */
-  it('keeps the dead-letter discriminators — queue and dead_letter_id', () => {
+/**
+ * Server stack frames (D159, 2026-08-18).
+ *
+ * `sanitizeFrameUrl` only ever matched `/_next/static/**` — a BROWSER
+ * pattern — so every server frame lost its filename, and `function` was
+ * copied in neither profile. Every server stacktrace in Sentry read
+ * `at <unknown> (<unknown>:566:32)`. The old test asserted only that
+ * `stacktrace` was DEFINED, which `{lineno, colno}` alone satisfies — so
+ * it passed while the trace was useless. These assert legibility, and
+ * (mostly) that widening the gate did not widen the leak.
+ */
+describe('scrubSentryEvent — server stack frames', () => {
+  function framesOf(frames: unknown[], profile: 'server' | 'browser' = 'server') {
     const out = scrubSentryEvent(
       {
-        ...serverEvent,
-        exception: {
-          values: [{ type: 'DeadLetterParkedError', value: 'Dead letter parked: …' }],
-        },
-        tags: {
-          kind: 'dead_letter.parked',
-          queue: 'incremental-sync',
-          dead_letter_id: '9f1c2b40-0000-4000-8000-0000000000ab',
-        },
+        event_id: 'a'.repeat(32),
+        exception: { values: [{ type: 'PermanentError', stacktrace: { frames } }] },
       },
-      'server',
+      profile,
     );
+    const exc = (out?.exception as { values: Record<string, unknown>[] } | undefined)?.values?.[0];
+    return (exc?.stacktrace as { frames: Record<string, unknown>[] } | undefined)?.frames;
+  }
 
-    expect(out?.tags).toEqual({
-      kind: 'dead_letter.parked',
-      queue: 'incremental-sync',
-      dead_letter_id: '9f1c2b40-0000-4000-8000-0000000000ab',
+  it('keeps the filename and function of a server frame', () => {
+    const frames = framesOf([
+      {
+        filename: '/app/dist/worker.js',
+        function: 'DeadLetterWorker.processJob',
+        lineno: 566,
+        colno: 32,
+        in_app: true,
+      },
+    ]);
+    expect(frames?.[0]).toEqual({
+      filename: 'app:///dist/worker.js',
+      function: 'DeadLetterWorker.processJob',
+      lineno: 566,
+      colno: 32,
+      in_app: true,
     });
-    const exc = (out?.exception as { values: Record<string, unknown>[] }).values[0]!;
-    expect(exc.type).toBe('DeadLetterParkedError');
-    // The name carries the meaning; the message stays stripped.
-    expect(exc.value).toBeUndefined();
   });
 
-  it('a queue tag carrying prose is still rejected by SAFE_SERVER_TAG', () => {
-    const out = scrubSentryEvent(
-      { ...serverEvent, tags: { queue: 'subject was "Re: your invoice"' } },
-      'server',
-    );
-    expect(out?.tags).toBeUndefined();
+  it('keeps a node_modules frame so the vendor boundary stays visible', () => {
+    const frames = framesOf([
+      { filename: '/app/node_modules/bullmq/dist/classes/worker.js', function: 'Worker.run' },
+    ]);
+    expect(frames?.[0]?.filename).toBe('app:///node_modules/bullmq/dist/classes/worker.js');
+  });
+
+  it('the browser profile does NOT gain server paths', () => {
+    const frames = framesOf([{ filename: '/app/dist/worker.js', lineno: 5 }], 'browser');
+    expect(frames?.[0]).toEqual({ lineno: 5 });
+  });
+
+  // --- the gate, not the feature -------------------------------------
+
+  it('rejects a path carrying an address', () => {
+    const frames = framesOf([{ filename: '/app/dist/someone@example.com.js', lineno: 1 }]);
+    expect(frames?.[0]).toEqual({ lineno: 1 });
+  });
+
+  it('rejects a PERCENT-ENCODED address — decoded before the charset test', () => {
+    const frames = framesOf([{ filename: '/app/dist/someone%40example.com.js', lineno: 1 }]);
+    expect(frames?.[0]).toEqual({ lineno: 1 });
+  });
+
+  it('drops a query string instead of shipping it', () => {
+    const frames = framesOf([
+      { filename: '/app/dist/worker.js?subject=Re%3A%20your%20invoice', lineno: 1 },
+    ]);
+    expect(frames?.[0]?.filename).toBe('app:///dist/worker.js');
+    expect(JSON.stringify(frames)).not.toContain('invoice');
+  });
+
+  it('drops host and userinfo from an absolute URL', () => {
+    const frames = framesOf([{ filename: 'https://user:pw@evil.example/app/x.js', lineno: 1 }]);
+    expect(JSON.stringify(frames)).not.toContain('evil.example');
+    expect(JSON.stringify(frames)).not.toContain('pw');
+  });
+
+  it('rejects a non-code extension', () => {
+    const frames = framesOf([{ filename: '/app/dist/message.eml', lineno: 1 }]);
+    expect(frames?.[0]).toEqual({ lineno: 1 });
+  });
+
+  it('rejects a function name carrying prose or an address', () => {
+    const frames = framesOf([
+      { filename: '/app/dist/worker.js', function: 'sendTo someone@example.com', lineno: 1 },
+    ]);
+    expect(frames?.[0]?.function).toBeUndefined();
+    expect(frames?.[0]?.filename).toBe('app:///dist/worker.js');
   });
 });
 
@@ -934,5 +989,116 @@ describe('scrubObject — repeat visits', () => {
     const out = scrubObject({ items: [message, message] });
     expect(out.items[0]?.snippet).toBe('[redacted]');
     expect(out.items[1]?.snippet).toBe('[redacted]');
+  });
+});
+
+/**
+ * The LOGS channel (D159, 2026-08-18).
+ *
+ * `beforeSend` does NOT run on logs, so without `scrubSentryLog` enabling
+ * logs would be a second, UNSCRUBBED egress path to Sentry — and a log's
+ * `message` is free text, the exact hazard `Error.message` is stripped
+ * for. The defence is that the message is never passed through: it is
+ * rebuilt from an allowlisted `kind`.
+ */
+describe('scrubSentryLog', () => {
+  it('rebuilds the message from kind and keeps the allowlisted attributes', () => {
+    const out = scrubSentryLog({
+      level: 'error',
+      message: 'Dead letter parked: incremental-sync/mb-1 — subject "Re: your invoice"',
+      attributes: {
+        kind: 'dead_letter.parked',
+        queue: 'incremental-sync',
+        dead_letter_id: '9f1c2b40-0000-4000-8000-0000000000ab',
+        job_id: 'ref_9906812f2a111b480ad475f1',
+      },
+    });
+
+    // The message is the KIND, not what the caller wrote.
+    expect(out?.message).toBe('dead_letter.parked');
+    expect(JSON.stringify(out)).not.toContain('invoice');
+    expect(out?.level).toBe('error');
+    expect(out?.attributes).toEqual({
+      kind: 'dead_letter.parked',
+      queue: 'incremental-sync',
+      dead_letter_id: '9f1c2b40-0000-4000-8000-0000000000ab',
+      job_id: 'ref_9906812f2a111b480ad475f1',
+    });
+  });
+
+  it('keeps the postal-refusal attributes that the event channel had been dropping', () => {
+    const out = scrubSentryLog({
+      level: 'warn',
+      message: 'refused',
+      attributes: {
+        kind: 'email.refused_no_postal_address',
+        email_kind: 'sync-reminder-24h',
+        outcome: 'skipped_no_postal_address',
+      },
+    });
+    expect(out?.level).toBe('warn');
+    expect(out?.attributes).toMatchObject({
+      email_kind: 'sync-reminder-24h',
+      outcome: 'skipped_no_postal_address',
+    });
+  });
+
+  // --- deny-by-default ------------------------------------------------
+
+  it('drops a log with no kind', () => {
+    expect(scrubSentryLog({ level: 'error', message: 'something happened' })).toBeNull();
+  });
+
+  it('drops a log whose kind is not allowlisted — a caller cannot invent one', () => {
+    expect(
+      scrubSentryLog({ level: 'error', message: 'x', attributes: { kind: 'some.new.kind' } }),
+    ).toBeNull();
+  });
+
+  it('drops null/undefined', () => {
+    expect(scrubSentryLog(null)).toBeNull();
+    expect(scrubSentryLog(undefined)).toBeNull();
+  });
+
+  it('drops attributes outside the allowlist', () => {
+    const out = scrubSentryLog({
+      level: 'warn',
+      message: 'x',
+      attributes: {
+        kind: 'dead_letter.parked',
+        subject: 'Re: your invoice from Acme',
+        recipient: 'someone@example.com',
+      },
+    });
+    expect(out?.attributes).toEqual({ kind: 'dead_letter.parked' });
+    expect(JSON.stringify(out)).not.toContain('invoice');
+    expect(JSON.stringify(out)).not.toContain('someone@example.com');
+  });
+
+  it('rejects an allowlisted attribute carrying prose or an address', () => {
+    const out = scrubSentryLog({
+      level: 'warn',
+      message: 'x',
+      attributes: { kind: 'dead_letter.parked', queue: 'someone@example.com wrote' },
+    });
+    expect(out?.attributes).toEqual({ kind: 'dead_letter.parked' });
+  });
+
+  it('falls back to error for an unknown level rather than passing it through', () => {
+    const out = scrubSentryLog({
+      level: 'catastrophe',
+      message: 'x',
+      attributes: { kind: 'dead_letter.parked' },
+    });
+    expect(out?.level).toBe('error');
+  });
+
+  it('accepts warn — the log protocol spells it differently from events', () => {
+    const out = scrubSentryLog({
+      level: 'warn',
+      message: 'x',
+      attributes: { kind: 'dead_letter.parked' },
+    });
+    expect(out?.level).toBe('warn');
   });
 });
