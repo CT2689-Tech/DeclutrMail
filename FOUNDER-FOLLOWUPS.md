@@ -51,58 +51,6 @@ you are ready to publish.
 consent screen shows the teal mark, not the two-bars-and-a-check card.
 **Status:** Open
 
-### 2026-08-18 — OG cards render in Noto Sans, not Fraunces
-
-**Source:** session — D255 brand rollout
-**Why:** `ImageResponse` registers no fonts, so Satori falls back to its
-bundled Noto Sans. Every word on both share cards — the headline and the
-wordmark — is therefore set in a font the brand does not use, while the
-site itself is Fraunces 800. This is the surface strangers meet the brand
-through, and it currently looks like a different product. Pre-existing,
-not introduced by the D255 work, and out of scope for it: fixing it means
-committing a font binary, which is a decision rather than a correction.
-**How:** Fraunces is SIL OFL, so it is redistributable with its licence.
-Commit a static Fraunces 800 `.ttf` (Satori reads ttf/otf/woff, NOT woff2)
-under `apps/web/src/app/fonts/`, then pass it to both cards:
-
-```ts
-const fraunces = await readFile(join(process.cwd(), 'src/app/fonts/Fraunces-800.ttf'));
-return new ImageResponse(<Card />, {
-  ...size,
-  fonts: [{ name: 'Fraunces', data: fraunces, weight: 800, style: 'normal' }],
-});
-```
-
-Then set `fontFamily: 'Fraunces'` on the headline and the wordmark, and
-`letterSpacing: '-0.03em'` on the wordmark per ADR-0036. Do NOT fetch the
-font over the network at build time — that makes OG generation fail
-whenever Google Fonts is unreachable from CI.
-**Verifies by:** `curl localhost:3000/opengraph-image` and the headline is
-the serif that matches the landing page, not Noto Sans.
-**Status:** Open
-
-### 2026-08-18 — Wire `pnpm check:icons` into CI
-
-**Source:** session — D255 brand icon generation
-**Why:** Nothing in the repo tests the rasterised brand assets. A stale
-favicon or app icon fails no typecheck, no unit test and no gate — the
-exact silent-drift class ADR-0036 flags. `scripts/generate-brand-icons.mjs
---check` closes it, but a checker nobody runs is a no-op.
-**How:** In `.github/workflows/ci.yml`, alongside the existing
-`pnpm generate-impl-log --check` step (~line 207), add a step to the same
-job:
-
-```yaml
-      - run: pnpm check:icons
-```
-
-Apply it from the MAIN checkout, not a worktree — PRs touching
-`.github/workflows` refuse to merge when the branch was pushed from a
-worktree (the gh token lacks `workflow` scope).
-**Verifies by:** CI shows a `check:icons` step; corrupting any file under
-`apps/web/public/icons/` in a scratch branch turns the job red.
-**Status:** Open
-
 ### 2026-08-16 — Self-serve refund: post-launch, and it needs a policy before it needs code
 
 **Source:** billing premium program scoping, 2026-08-16 — raised under CLAUDE.md
@@ -1869,6 +1817,68 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-08-18 — Wire `pnpm check:icons` into CI
+
+**Source:** session — D255 brand icon generation
+**Why:** Nothing in the repo tests the rasterised brand assets. A stale
+favicon or app icon fails no typecheck, no unit test and no gate — the
+exact silent-drift class ADR-0036 flags. `scripts/generate-brand-icons.mjs
+--check` closes it, but a checker nobody runs is a no-op.
+**How:** In `.github/workflows/ci.yml`, alongside the existing
+`pnpm generate-impl-log --check` step (~line 207), add a step to the same
+job:
+
+```yaml
+      - run: pnpm check:icons
+```
+
+Apply it from the MAIN checkout, not a worktree — PRs touching
+`.github/workflows` refuse to merge when the branch was pushed from a
+worktree (the gh token lacks `workflow` scope).
+**Verifies by:** CI shows a `check:icons` step; corrupting any file under
+`apps/web/public/icons/` in a scratch branch turns the job red.
+**Status:** Done 2026-08-18 — wired into the `lint` job in ci.yml (that job
+always runs, unlike the PR-only impl-log job). NOTE: this touches
+`.github/workflows`, so the branch must be pushed from the MAIN checkout,
+not a worktree — a worktree push lacks the `workflow` token scope and the
+PR will refuse to merge.
+
+
+### 2026-08-18 — OG cards render in Noto Sans, not Fraunces
+
+**Source:** session — D255 brand rollout
+**Why:** `ImageResponse` registers no fonts, so Satori falls back to its
+bundled Noto Sans. Every word on both share cards — the headline and the
+wordmark — is therefore set in a font the brand does not use, while the
+site itself is Fraunces 800. This is the surface strangers meet the brand
+through, and it currently looks like a different product. Pre-existing,
+not introduced by the D255 work, and out of scope for it: fixing it means
+committing a font binary, which is a decision rather than a correction.
+**How:** Fraunces is SIL OFL, so it is redistributable with its licence.
+Commit a static Fraunces 800 `.ttf` (Satori reads ttf/otf/woff, NOT woff2)
+under `apps/web/src/app/fonts/`, then pass it to both cards:
+
+```ts
+const fraunces = await readFile(join(process.cwd(), 'src/app/fonts/Fraunces-800.ttf'));
+return new ImageResponse(<Card />, {
+  ...size,
+  fonts: [{ name: 'Fraunces', data: fraunces, weight: 800, style: 'normal' }],
+});
+```
+
+Then set `fontFamily: 'Fraunces'` on the headline and the wordmark, and
+`letterSpacing: '-0.03em'` on the wordmark per ADR-0036. Do NOT fetch the
+font over the network at build time — that makes OG generation fail
+whenever Google Fonts is unreachable from CI.
+**Verifies by:** `curl localhost:3000/opengraph-image` and the headline is
+the serif that matches the landing page, not Noto Sans.
+**Status:** Done 2026-08-18 — Fraunces ExtraBold + Geist Regular/Bold
+vendored under apps/web/src/features/marketing/og/ with their OFL licences,
+registered via ogFonts(). Both families, not just Fraunces: Satori uses the
+first registered font for unstyled text, so shipping the display face alone
+set the body copy in it too.
+
 
 ### 2026-08-15 — Decide the CSP `img-src` fix for D254 brand logos
 **Source:** session — page-load performance investigation, 2026-08-15

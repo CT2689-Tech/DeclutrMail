@@ -1,6 +1,7 @@
 import { ImageResponse } from 'next/og';
 
 import { ogMarkDataUri } from '@/features/marketing/og/brand-mark';
+import { ogFonts } from '@/features/marketing/og/fonts';
 
 /**
  * Route-level Open Graph card for /inbox-simulator.
@@ -37,7 +38,7 @@ const TEAL = '#006B5F';
 const MUTED = '#646D69';
 const LINE = 'rgba(14,20,19,0.14)';
 
-export default function InboxSimulatorOpenGraphImage() {
+export default async function InboxSimulatorOpenGraphImage() {
   return new ImageResponse(
     <div
       style={{
@@ -97,9 +98,12 @@ export default function InboxSimulatorOpenGraphImage() {
             style={{
               display: 'flex',
               marginLeft: 14,
+              fontFamily: 'Fraunces',
               fontSize: 30,
-              fontWeight: 700,
-              letterSpacing: -1.2,
+              fontWeight: 800,
+              // ADR-0036 locks -0.03em; resolved to px because
+              // Satori does not reliably honour em for letterSpacing.
+              letterSpacing: -0.9,
             }}
           >
             <span style={{ color: INK }}>Declutr</span>
@@ -115,8 +119,9 @@ export default function InboxSimulatorOpenGraphImage() {
         style={{
           display: 'flex',
           flexDirection: 'column',
+          fontFamily: 'Fraunces',
           fontSize: 58,
-          fontWeight: 700,
+          fontWeight: 800,
           color: INK,
           lineHeight: 1.06,
           letterSpacing: -1.8,
@@ -203,6 +208,6 @@ export default function InboxSimulatorOpenGraphImage() {
         <span>Keep · Archive · Unsubscribe · Later · Delete</span>
       </div>
     </div>,
-    size,
+    { ...size, fonts: await ogFonts() },
   );
 }

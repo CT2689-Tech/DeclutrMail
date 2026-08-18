@@ -221,6 +221,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      # Re-renders every brand raster from the geometry in ADR-0036 and
+      # fails when a committed file disagrees. Nothing else covers these:
+      # a stale favicon or app icon passes typecheck, the suite and every
+      # gate, so without this the only signal is someone noticing the
+      # wrong icon in a browser tab. Fix a failure with:
+      #   node scripts/generate-brand-icons.mjs
+      - run: pnpm check:icons
 
   format:
     name: Format check

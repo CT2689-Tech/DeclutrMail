@@ -1,6 +1,7 @@
 import { ImageResponse } from 'next/og';
 
 import { ogMarkDataUri } from '@/features/marketing/og/brand-mark';
+import { ogFonts } from '@/features/marketing/og/fonts';
 
 /**
  * Default Open Graph card (D134 SEO, D250 headline — reverses D223,
@@ -21,7 +22,7 @@ const PAPER = '#FAFAF7';
 const TEAL = '#006B5F';
 const MUTED = '#646D69';
 
-export default function OpenGraphImage() {
+export default async function OpenGraphImage() {
   return new ImageResponse(
     <div
       style={{
@@ -80,9 +81,12 @@ export default function OpenGraphImage() {
             style={{
               display: 'flex',
               marginLeft: 14,
+              fontFamily: 'Fraunces',
               fontSize: 34,
-              fontWeight: 700,
-              letterSpacing: -1.2,
+              fontWeight: 800,
+              // ADR-0036 locks -0.03em; resolved to px because
+              // Satori does not reliably honour em for letterSpacing.
+              letterSpacing: -1.02,
             }}
           >
             <span style={{ color: INK }}>Declutr</span>
@@ -102,8 +106,9 @@ export default function OpenGraphImage() {
           justifyContent: 'center',
           // 72px fits the locked three-line headline inside 630px with
           // the eyebrow + badge footer (was 92px for the two-line D223).
+          fontFamily: 'Fraunces',
           fontSize: 72,
-          fontWeight: 700,
+          fontWeight: 800,
           color: INK,
           lineHeight: 1.08,
           letterSpacing: -2,
@@ -133,6 +138,6 @@ export default function OpenGraphImage() {
         <span>Keep · Archive · Unsubscribe · Later · Delete</span>
       </div>
     </div>,
-    size,
+    { ...size, fonts: await ogFonts() },
   );
 }
