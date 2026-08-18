@@ -24,48 +24,6 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
-### 2026-08-18 — Google OAuth logo: submitted, under full Trust & Safety review
-
-**Source:** session — D255 brand rollout
-**Why:** `docs/brand/oauth-consent-logo-120.png` now carries the real mark.
-Uploaded and saved 2026-08-18; the consent screen still shows the old D134
-placeholder until review completes.
-
-**CORRECTION — the guidance originally written here was wrong.** It said a
-logo swap triggers *brand* verification only, resolving in minutes or 2-3
-days, leaving app/scope verification and CASA untouched. That is not what
-happened. Saving the logo opened a **full Trust & Safety review**: the
-Verification Center now lists homepage requirements, privacy policy
-requirements, app functionality, branding guidelines, appropriate data
-access, minimum scopes and additional requirements. Google's stated
-timeline is **4-6 weeks**, with a first contact email in 3-5 days.
-
-The lesson: on an app holding restricted Gmail scopes, branding is not
-separable from verification. Treat ANY consent-screen change as
-re-opening the whole review, and batch such changes rather than making
-them one at a time.
-
-**Good news:** "Your last approved consent screen is still in use." Users
-are unaffected for the whole review window — sign-in keeps working and
-keeps showing the old logo.
-
-**How (remaining):**
-1. **Confirm `support@declutrmail.com` actually receives mail.** This is
-   the developer contact Trust & Safety will write to, and a missed email
-   stalls or fails the review. MX for declutrmail.com points at Google
-   Workspace, but the entry that closed the mailbox work noted ".com
-   delivery pending the declutrmail.com domain-alias add". Send a test
-   from an outside address and confirm it lands.
-2. Watch for the first email within 3-5 days.
-3. Do NOT make further branding changes while under review — each one
-   risks restarting the clock.
-4. The review re-examines `/`, `/privacy` and `/terms`. They are live and
-   were audited 2026-07-19, so this should be a re-confirmation rather
-   than new work, but they need to stay reachable and unchanged.
-**Verifies by:** Verification Center shows branding approved; a fresh
-Google account signing in sees the teal mark rather than the two-bars-and-
-a-check card.
-**Status:** Open — submitted 2026-08-18, under review
 ### 2026-08-16 — Self-serve refund: post-launch, and it needs a policy before it needs code
 
 **Source:** billing premium program scoping, 2026-08-16 — raised under CLAUDE.md
@@ -1832,6 +1790,35 @@ cloud sessions auto-discover them on startup.
 **Status:** Open
 
 ## Done
+
+### 2026-08-18 — Publish the new Google OAuth consent logo
+
+**Source:** session — D255 brand rollout
+**Why:** the consent screen showed the D134 placeholder — the first thing a
+new user sees, before they trust the app with Gmail access.
+**How:** Cloud Console → Google Auth Platform → Branding → Change logo →
+upload `docs/brand/oauth-consent-logo-120.png` → Save.
+**Verifies by:** Branding page reads "Your branding has been verified and is
+being shown to users" with the new mark rendered; Verification Center shows
+Branding ✅ and Data access ✅.
+**Status:** Done 2026-08-18 — uploaded, re-verified and live the same day.
+
+**Note on the review scope, because this session got it wrong in both
+directions.** A logo swap on this app triggers BRANDING re-verification
+only. Data access stayed verified throughout and was never re-examined,
+and CASA was untouched. It completed within minutes.
+
+Mid-flight, the Verification Center's "Verification progress" panel showed
+a seven-item checklist (homepage, privacy policy, app functionality,
+branding, data access, minimum scopes, additional requirements) and quoted
+"up to 4-6 weeks". That panel is GENERIC copy for the full verification
+form — it is not a statement about what is actually being re-reviewed. The
+reliable signal is the two status cards in the Verification Center: only
+Branding went amber, Data access never left green.
+
+So: a consent-screen logo change is cheap and same-day. Do not read the
+4-6 week panel as your timeline unless the Data access card also leaves
+verified.
 
 ### 2026-08-18 — Wire `pnpm check:icons` into CI
 
