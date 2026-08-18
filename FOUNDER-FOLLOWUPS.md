@@ -24,6 +24,28 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-18 — Wire `pnpm check:icons` into CI
+
+**Source:** session — D255 brand icon generation
+**Why:** Nothing in the repo tests the rasterised brand assets. A stale
+favicon or app icon fails no typecheck, no unit test and no gate — the
+exact silent-drift class ADR-0036 flags. `scripts/generate-brand-icons.mjs
+--check` closes it, but a checker nobody runs is a no-op.
+**How:** In `.github/workflows/ci.yml`, alongside the existing
+`pnpm generate-impl-log --check` step (~line 207), add a step to the same
+job:
+
+```yaml
+      - run: pnpm check:icons
+```
+
+Apply it from the MAIN checkout, not a worktree — PRs touching
+`.github/workflows` refuse to merge when the branch was pushed from a
+worktree (the gh token lacks `workflow` scope).
+**Verifies by:** CI shows a `check:icons` step; corrupting any file under
+`apps/web/public/icons/` in a scratch branch turns the job red.
+**Status:** Open
+
 ### 2026-08-16 — Self-serve refund: post-launch, and it needs a policy before it needs code
 
 **Source:** billing premium program scoping, 2026-08-16 — raised under CLAUDE.md
