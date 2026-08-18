@@ -8,6 +8,7 @@ export type {
 } from './worker-observer.js';
 export {
   AuthExpiredError,
+  DeadLetterParkedError,
   InvalidGrantError,
   isNonRetryable,
   PermanentError,

@@ -295,6 +295,47 @@ describe('scrubSentryEvent — server profile (D158)', () => {
     // PermanentError is not a browser-approved type; the frame survives.
     expect(exc?.type).toBeUndefined();
   });
+
+  /**
+   * The dead-letter alert's only discriminators. Both were being passed
+   * by `dead-letter.worker.ts` and silently dropped here, which is how
+   * 3,095 events across three unrelated failure kinds ended up sharing
+   * one issue titled "Error" (DECLUTRMAIL-WEB-R, 2026-08-18).
+   */
+  it('keeps the dead-letter discriminators — queue and dead_letter_id', () => {
+    const out = scrubSentryEvent(
+      {
+        ...serverEvent,
+        exception: {
+          values: [{ type: 'DeadLetterParkedError', value: 'Dead letter parked: …' }],
+        },
+        tags: {
+          kind: 'dead_letter.parked',
+          queue: 'incremental-sync',
+          dead_letter_id: '9f1c2b40-0000-4000-8000-0000000000ab',
+        },
+      },
+      'server',
+    );
+
+    expect(out?.tags).toEqual({
+      kind: 'dead_letter.parked',
+      queue: 'incremental-sync',
+      dead_letter_id: '9f1c2b40-0000-4000-8000-0000000000ab',
+    });
+    const exc = (out?.exception as { values: Record<string, unknown>[] }).values[0]!;
+    expect(exc.type).toBe('DeadLetterParkedError');
+    // The name carries the meaning; the message stays stripped.
+    expect(exc.value).toBeUndefined();
+  });
+
+  it('a queue tag carrying prose is still rejected by SAFE_SERVER_TAG', () => {
+    const out = scrubSentryEvent(
+      { ...serverEvent, tags: { queue: 'subject was "Re: your invoice"' } },
+      'server',
+    );
+    expect(out?.tags).toBeUndefined();
+  });
 });
 
 describe('scrubSentryEvent (deny-by-default browser wire policy)', () => {
