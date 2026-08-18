@@ -1,13 +1,20 @@
 import { and, eq, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-import { cronRuns, mailMessages, mailboxAccounts, senderPolicies } from '@declutrmail/db';
+import {
+  cronRuns,
+  mailMessages,
+  mailboxAccounts,
+  providerSyncState,
+  senderPolicies,
+} from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 import { getActionDescriptor } from '@declutrmail/shared/actions';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { GmailMutationAccess } from './gmail-mutation-client.js';
 import type { MailboxActionLock } from './label-action.worker.js';
+import { notNeedingReconnect } from './mailbox-reconnect.js';
 import { createLimiter } from './reasoning.js';
 import type { SnoozeLabelMapStore } from './snooze-wake.queue.js';
 import type { WorkerContext } from './worker-context.js';
@@ -339,11 +346,20 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
     // Disconnected mailboxes are skipped — no Gmail client exists for
     // them, and their lists have no live reader. Per-mailbox try/catch
     // so one failing mailbox cannot stop the others.
+    //
+    // A mailbox awaiting reconnect is skipped for the same reason the
+    // due-timer query skips a `needs_attention` failure: a revoked grant
+    // is permanent until the user reconnects, so `getClient` below can
+    // only throw, every tick, forever. LEFT join — a mailbox with no
+    // `provider_sync_state` row has a NULL error code, which
+    // `notNeedingReconnect` admits, so eligibility is unchanged for
+    // everything except a live revoked grant.
     let mappingsRefreshed = woken;
     const mailboxes = await this.deps.db
       .select({ id: mailboxAccounts.id })
       .from(mailboxAccounts)
-      .where(eq(mailboxAccounts.status, 'active'));
+      .leftJoin(providerSyncState, eq(providerSyncState.mailboxAccountId, mailboxAccounts.id))
+      .where(and(eq(mailboxAccounts.status, 'active'), notNeedingReconnect));
     await Promise.all(
       mailboxes
         .filter((mb) => !byMailbox.has(mb.id))

@@ -3,7 +3,7 @@ import 'reflect-metadata';
 import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker } from 'bullmq';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { OAuth2Client } from 'google-auth-library';
 import postgres from 'postgres';
 import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
@@ -57,6 +57,7 @@ import {
   LabelActionWorker,
   OUTBOX_NOTIFY_CHANNEL,
   OutboxDispatcherWorker,
+  selectIncrementalDriftCandidates,
   OutboxPublisher,
   RateLimiter,
   RedisSnoozeLabelMapStore,
@@ -1431,6 +1432,10 @@ async function bootstrap(): Promise<void> {
    *   3. **Pub/Sub still rolling out** — until `users.watch` is wired,
    *      every mailbox is in this state.
    *
+   * A mailbox awaiting reconnect is EXCLUDED (see
+   * `selectIncrementalDriftCandidates`) — its cursor can never advance,
+   * so without that it would look stale forever and be retried forever.
+   *
    * Idempotent end-to-end:
    *   - `ensureIncrementalSyncJob` dedups by `${mailbox}:${cursor}` so
    *     a sweep that fires while the previous one's job is still in
@@ -1449,30 +1454,15 @@ async function bootstrap(): Promise<void> {
   async function driftSweepIncrementalSync(): Promise<void> {
     if (shuttingDown) return;
     try {
-      const cutoff = sql`now() - interval '${sql.raw(
-        String(INCREMENTAL_DRIFT_STALE_AFTER_MS),
-      )} milliseconds'`;
-      const rows = await db
-        .select({
-          mailboxAccountId: providerSyncState.mailboxAccountId,
-          lastHistoryId: providerSyncState.lastHistoryId,
-        })
-        .from(providerSyncState)
-        .innerJoin(mailboxAccounts, eq(providerSyncState.mailboxAccountId, mailboxAccounts.id))
-        .where(
-          and(
-            eq(mailboxAccounts.status, 'active'),
-            eq(providerSyncState.readinessStatus, 'ready'),
-            sql`${providerSyncState.lastHistoryId} IS NOT NULL AND ${providerSyncState.historyIdUpdatedAt} < ${cutoff}`,
-          ),
-        )
-        .limit(INCREMENTAL_DRIFT_BATCH);
+      const rows = await selectIncrementalDriftCandidates(db, {
+        staleAfterMs: INCREMENTAL_DRIFT_STALE_AFTER_MS,
+        limit: INCREMENTAL_DRIFT_BATCH,
+      });
 
       let enqueued = 0;
       let noop = 0;
       for (const row of rows) {
         if (shuttingDown) break;
-        if (row.lastHistoryId === null) continue;
         const cursor = row.lastHistoryId.toString();
         const outcome = await ensureIncrementalSyncJob(incrementalReconcilerQueue, {
           mailboxAccountId: row.mailboxAccountId,

@@ -1,4 +1,10 @@
-import { mailMessages, providerSyncState, senders, senderTimeseries } from '@declutrmail/db';
+import {
+  mailboxAccounts,
+  mailMessages,
+  providerSyncState,
+  senders,
+  senderTimeseries,
+} from '@declutrmail/db';
 import type { GmailCategory, schema } from '@declutrmail/db';
 import { and, eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -6,6 +12,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
+import { notNeedingReconnect } from './mailbox-reconnect.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
 import type { GmailAccess, GmailHistoryRecord, GmailMetadataClient } from './ports.js';
@@ -16,6 +23,62 @@ import type { WorkerContext } from './worker-context.js';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
+
+/** One mailbox the drift sweep should re-sync, with its current cursor. */
+export interface IncrementalDriftCandidate {
+  mailboxAccountId: string;
+  lastHistoryId: bigint;
+}
+
+/**
+ * Mailboxes whose incremental cursor has gone stale and should be
+ * re-swept (D38 prod-ready pass; producer lives in `apps/api`'s worker
+ * composition root).
+ *
+ * Stale means `history_id_updated_at` older than `staleAfterMs` — but
+ * ONLY a mailbox that could actually succeed on the retry. `history_id`
+ * advances on a successful sync, so a mailbox that fails every attempt
+ * never stops looking stale: staleness and failure share a cause, and
+ * the sweep re-qualifies the mailbox it just failed on. For a revoked
+ * grant — permanent until the user reconnects — that is an infinite
+ * loop, which is why `notNeedingReconnect` is not optional here.
+ *
+ * It shipped without that predicate and one revoked grant produced ~600
+ * Sentry events a day (288 five-minute ticks, each an
+ * `InvalidGrantError` plus the `dead_letter.parked` alert for the row it
+ * parked), consuming 80% of the monthly error budget — Sentry
+ * DECLUTRMAIL-WEB-X / -R, 2026-08-18. The identical bug in
+ * `WatchRenewalWorker` was fixed three days earlier (#527); this is its
+ * sibling sweep, missed at the time.
+ */
+export async function selectIncrementalDriftCandidates(
+  db: WorkerDb,
+  opts: { staleAfterMs: number; limit: number },
+): Promise<IncrementalDriftCandidate[]> {
+  const cutoff = sql`now() - interval '${sql.raw(String(opts.staleAfterMs))} milliseconds'`;
+  const rows = await db
+    .select({
+      mailboxAccountId: providerSyncState.mailboxAccountId,
+      lastHistoryId: providerSyncState.lastHistoryId,
+    })
+    .from(providerSyncState)
+    .innerJoin(mailboxAccounts, eq(providerSyncState.mailboxAccountId, mailboxAccounts.id))
+    .where(
+      and(
+        eq(mailboxAccounts.status, 'active'),
+        eq(providerSyncState.readinessStatus, 'ready'),
+        sql`${providerSyncState.lastHistoryId} IS NOT NULL AND ${providerSyncState.historyIdUpdatedAt} < ${cutoff}`,
+        notNeedingReconnect,
+      ),
+    )
+    .limit(opts.limit);
+
+  return rows.flatMap((row) =>
+    row.lastHistoryId === null
+      ? []
+      : [{ mailboxAccountId: row.mailboxAccountId, lastHistoryId: row.lastHistoryId }],
+  );
+}
 
 /** Gmail `CATEGORY_*` label → `senders.gmail_category` enum (D222).
  * `GmailCategory` derives from the canonical pg_enum via @declutrmail/db. */

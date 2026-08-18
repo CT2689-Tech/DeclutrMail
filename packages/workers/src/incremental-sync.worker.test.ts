@@ -12,7 +12,10 @@ import { freshTestDb } from '@declutrmail/db/testing';
 import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { IncrementalSyncWorker } from './incremental-sync.worker.js';
+import {
+  IncrementalSyncWorker,
+  selectIncrementalDriftCandidates,
+} from './incremental-sync.worker.js';
 import type { IncrementalSyncDeps } from './incremental-sync.worker.js';
 import type {
   GmailAccess,
@@ -1279,5 +1282,105 @@ describe('IncrementalSyncWorker — onNewSender first-seen callback (D75)', () =
     expect(result.added).toBe(1);
     const senderRows = await db.select().from(senders);
     expect(senderRows).toHaveLength(1);
+  });
+});
+
+/**
+ * Drift-sweep eligibility (D38 prod-ready pass).
+ *
+ * The regression these cover: `history_id_updated_at` only advances on a
+ * SUCCESSFUL sync, so a mailbox that fails every attempt looks stale
+ * forever. When the failure is a revoked grant — permanent until the
+ * user reconnects — the sweep re-qualifies the mailbox it just failed
+ * on, every tick, forever. In production that was ~600 Sentry events a
+ * day off one mailbox (Sentry DECLUTRMAIL-WEB-X / -R, 2026-08-18) and
+ * 80% of the monthly error budget. The sibling sweep in
+ * `WatchRenewalWorker` had the same bug (#527); this is the same test
+ * shape, for the producer that was missed.
+ */
+describe('selectIncrementalDriftCandidates', () => {
+  const STALE = { staleAfterMs: 10 * 60 * 1000, limit: 100 };
+
+  let db: IncrementalSyncDeps['db'];
+  let mailboxAccountId: string;
+
+  /** Push the cursor stamp past the staleness cutoff. */
+  async function makeStale(): Promise<void> {
+    await db
+      .update(providerSyncState)
+      .set({ historyIdUpdatedAt: new Date(Date.now() - 60 * 60 * 1000) })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+  }
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxAccountId = await seedMailbox(db);
+    await makeStale();
+  });
+
+  it('returns a stale mailbox with no recorded error', async () => {
+    const rows = await selectIncrementalDriftCandidates(db, STALE);
+    expect(rows).toEqual([{ mailboxAccountId, lastHistoryId: 1000n }]);
+  });
+
+  it('skips a mailbox whose grant was revoked — the infinite-retry regression', async () => {
+    await db
+      .update(providerSyncState)
+      .set({
+        lastIncrementalErrorAt: new Date(),
+        lastIncrementalErrorCode: 'InvalidGrantError',
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+
+    const rows = await selectIncrementalDriftCandidates(db, STALE);
+    expect(rows).toEqual([]);
+  });
+
+  it('returns it again once a later success proves the reconnect landed', async () => {
+    const errorAt = new Date(Date.now() - 60 * 60 * 1000);
+    await db
+      .update(providerSyncState)
+      .set({
+        lastIncrementalErrorAt: errorAt,
+        lastIncrementalErrorCode: 'InvalidGrantError',
+        lastSyncedAt: new Date(errorAt.getTime() + 60 * 1000),
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+
+    const rows = await selectIncrementalDriftCandidates(db, STALE);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('still retries a transient failure — only a revoked grant is permanent', async () => {
+    await db
+      .update(providerSyncState)
+      .set({
+        lastIncrementalErrorAt: new Date(),
+        lastIncrementalErrorCode: 'TransientError',
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+
+    const rows = await selectIncrementalDriftCandidates(db, STALE);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('skips a mailbox whose cursor is fresh', async () => {
+    await db
+      .update(providerSyncState)
+      .set({ historyIdUpdatedAt: new Date() })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+
+    const rows = await selectIncrementalDriftCandidates(db, STALE);
+    expect(rows).toEqual([]);
+  });
+
+  it('skips a disconnected mailbox', async () => {
+    await db
+      .update(mailboxAccounts)
+      .set({ status: 'disconnected' })
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+
+    const rows = await selectIncrementalDriftCandidates(db, STALE);
+    expect(rows).toEqual([]);
   });
 });

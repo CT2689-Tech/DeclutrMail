@@ -3,6 +3,7 @@ import {
   cronRuns,
   mailMessages,
   mailboxAccounts,
+  providerSyncState,
   senderPolicies,
   senders,
   users,
@@ -513,6 +514,51 @@ describe('SnoozeWakeWorker — sweep', () => {
       CTX,
     );
     expect(again.mappingsRefreshed).toBe(0);
+  });
+
+  /**
+   * Sibling of the incremental drift-sweep regression (Sentry
+   * DECLUTRMAIL-WEB-X / -R, 2026-08-18): a periodic sweep that spends a
+   * mailbox's Gmail grant must stop once that grant is revoked, or it
+   * re-attempts the same dead token every tick forever. Here the cost is
+   * Gmail quota and log noise rather than Sentry budget — this loop
+   * never captured — but the exit is the same one.
+   */
+  it('skips the mapping refresh for a mailbox awaiting reconnect', async () => {
+    await db.insert(providerSyncState).values({
+      mailboxAccountId: mailboxId,
+      readinessStatus: 'ready',
+      lastIncrementalErrorAt: new Date(),
+      lastIncrementalErrorCode: 'InvalidGrantError',
+    });
+
+    const result = await worker.processJob(
+      { kind: 'sweep', scheduledAtMinute: '2026-06-11T12:00' },
+      CTX,
+    );
+
+    expect(result.mappingsRefreshed).toBe(0);
+    expect(labelMap.store.get(mailboxId)).toBeUndefined();
+    expect(gmail.calls).toHaveLength(0);
+  });
+
+  it('resumes the mapping refresh once a later success clears the revoked grant', async () => {
+    const errorAt = new Date(Date.now() - 60 * 60 * 1000);
+    await db.insert(providerSyncState).values({
+      mailboxAccountId: mailboxId,
+      readinessStatus: 'ready',
+      lastIncrementalErrorAt: errorAt,
+      lastIncrementalErrorCode: 'InvalidGrantError',
+      lastSyncedAt: new Date(errorAt.getTime() + 60 * 1000),
+    });
+
+    const result = await worker.processJob(
+      { kind: 'sweep', scheduledAtMinute: '2026-06-11T12:00' },
+      CTX,
+    );
+
+    expect(result.mappingsRefreshed).toBe(1);
+    expect(labelMap.store.get(mailboxId)).toBe('Label_7');
   });
 
   it('a due timer on a disconnected mailbox lies dormant, then wakes after reconnect', async () => {
