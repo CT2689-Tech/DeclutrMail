@@ -8,9 +8,11 @@
  * "9:00 AM local") and serialized to ISO on the wire. The zone must be
  * an explicit argument because these labels are server-rendered into
  * hydrated HTML (/later): the server's process zone is not the user's,
- * and any drift between the server string and the first client render
- * makes React discard the server tree (error #418; e2e
- * hydration-smoke).
+ * and locale/zone drift between the server string and the first client
+ * render makes React discard the server tree (error #418; e2e
+ * hydration-smoke). The `now` clock itself still differs by the
+ * hydration delay — a midnight crossing inside that window can flip a
+ * bucket (rare, accepted; React falls back to a client render).
  */
 
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';

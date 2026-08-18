@@ -28,10 +28,12 @@ function toneFor(
 }
 
 /**
- * Locale + zone pinned: these rows are server-rendered into hydrated
- * HTML on /senders/[id], so both halves must be deterministic (React
- * #418; e2e hydration-smoke). The user zone decides the calendar day.
- * Exported for the exact-string unit test.
+ * Locale + zone pinned to close the D200 hydration-determinism class
+ * (React #418; e2e hydration-smoke). NOTE: this component is currently
+ * unmounted — /senders/[id] replaced it with DecisionTimeline and its
+ * deletion is deferred (see sender-detail-page.tsx) — the pin keeps the
+ * retained file compliant with the features-wide lint ban. Exported for
+ * the exact-string unit test.
  */
 export function dateLabel(iso: string, now: Date, timeZone: string): string {
   const then = new Date(iso);

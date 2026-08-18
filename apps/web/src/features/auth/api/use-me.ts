@@ -8,7 +8,7 @@
  */
 
 import { useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SyncReadiness } from '@declutrmail/shared/contracts';
 import { apiGet, apiPatch, ApiError } from '@/lib/api/client';
 import { ME_QUERY_KEY, type Me } from './me-contract';
@@ -96,7 +96,9 @@ export function useMe() {
 export function useUserTimeZone(): string {
   const { data } = useQuery<Me>({
     queryKey: ME_QUERY_KEY,
-    enabled: false,
+    // skipToken makes the never-fetch intent explicit: this observer
+    // must only mirror what `useMe` (mounted by app chrome) maintains.
+    queryFn: skipToken,
     staleTime: Infinity,
   });
   return data?.user.timezone ?? 'UTC';

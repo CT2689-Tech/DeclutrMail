@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { dateLabel } from './decision-history';
 
-// Exact strings: the decision-history rows are server-rendered into
-// hydrated HTML on /senders/[id], so the label must be identical on
-// the server and in any browser locale/zone (React #418; e2e
-// hydration-smoke). The user zone decides the calendar day.
+// Exact strings, pinned locale + explicit zone (D200 hydration
+// determinism class; React #418; e2e hydration-smoke). The component
+// is currently unmounted (DecisionTimeline replaced it; deletion
+// deferred) — the pin + test keep the retained file compliant with
+// the features-wide lint ban.
 describe('dateLabel', () => {
   const NOW = new Date('2026-08-18T08:00:00Z');
 

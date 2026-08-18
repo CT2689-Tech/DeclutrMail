@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Button, tokens } from '@declutrmail/shared';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { useAccountDeletionStatus, useCancelAccountDeletion } from './api/use-account-deletion';
 import { formatDate } from './delete-account-modal';
 
@@ -29,6 +30,7 @@ export function GracePeriodBanner() {
   const { data } = useAccountDeletionStatus();
   const cancel = useCancelAccountDeletion();
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const timeZone = useUserTimeZone();
 
   const request = data?.request;
   if (!request) return null;
@@ -57,7 +59,7 @@ export function GracePeriodBanner() {
             ? 'Account deletion is in progress.'
             : immediate
               ? 'Account deletion was requested with the undo waiver — your data deletes shortly.'
-              : `Account deletion scheduled for ${formatDate(request.effectiveAt)}.`}
+              : `Account deletion scheduled for ${formatDate(request.effectiveAt, timeZone)}.`}
         </span>
         {!executing && request.basis === 'undo-window' && (
           <span style={{ fontSize: 11.5, color: color.fgSoft }}>

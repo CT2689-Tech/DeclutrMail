@@ -3123,8 +3123,10 @@ function toLocalDateTimeInput(date: Date): string {
 
 function formatRecoveryDate(iso: string): string {
   const date = new Date(iso);
+  // Locale pinned for consistency (post-intent modal copy — never in
+  // server HTML); the zone stays the browser's.
   return Number.isFinite(date.getTime())
-    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+    ? new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
     : // An unparseable wire date must not leak the raw ISO string into copy.
       'an unknown time';
 }

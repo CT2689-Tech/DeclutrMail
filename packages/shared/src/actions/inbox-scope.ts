@@ -110,8 +110,8 @@ export function tiedWindowNoticeCopy(
   const age =
     newestInboxDays === null
       ? 'this sender has nothing newer'
-      : `this sender's newest inbox email is ${newestInboxDays.toLocaleString()} day${newestInboxDays === 1 ? '' : 's'} old`;
-  return `Every window through ${widest.label} matches the same ${top.count.toLocaleString()} — ${age}, so those windows exclude nothing.`;
+      : `this sender's newest inbox email is ${newestInboxDays.toLocaleString('en-US')} day${newestInboxDays === 1 ? '' : 's'} old`;
+  return `Every window through ${widest.label} matches the same ${top.count.toLocaleString('en-US')} — ${age}, so those windows exclude nothing.`;
 }
 
 /**
@@ -167,15 +167,15 @@ export function inboxScopeNoticeCopy(
     //
     // "though" carries the tension the reader needs without asserting a
     // cause, a destination, or a history.
-    const arrivals = `${notice.recentArrivals.toLocaleString()} arrived in the last 30 days`;
+    const arrivals = `${notice.recentArrivals.toLocaleString('en-US')} arrived in the last 30 days`;
     return `${opener.replace(/\.$/, '')} — though ${arrivals}. ${tail}`;
   }
 
   const { inboxTotal, olderThanDays } = notice;
   const one = inboxTotal === 1;
-  const days = `${olderThanDays.toLocaleString()} day${olderThanDays === 1 ? '' : 's'}`;
+  const days = `${olderThanDays.toLocaleString('en-US')} day${olderThanDays === 1 ? '' : 's'}`;
   return (
-    `${inboxTotal.toLocaleString()} email${one ? '' : 's'} from ${subject} ${one ? 'is' : 'are'} in your inbox, ` +
+    `${inboxTotal.toLocaleString('en-US')} email${one ? '' : 's'} from ${subject} ${one ? 'is' : 'are'} in your inbox, ` +
     `but ${one ? `it is not older than ${days}` : `none are older than ${days}`}. ` +
     `Widen the window to include ${one ? 'it' : 'them'}.`
   );
