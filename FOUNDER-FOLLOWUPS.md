@@ -24,6 +24,30 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-18 — `scripts/` is not typechecked in CI
+**Source:** PR adding `scripts/check-cron-stale.ts` (D159 observability push)
+**Why:** `pnpm typecheck` is `pnpm -r --parallel typecheck`, which runs each
+workspace package's own script. The ROOT `tsconfig.json` includes
+`scripts/**/*.ts`, but nothing ever runs it — so every root script is
+type-unchecked. `tsx` strips types without checking them, so a broken script
+runs fine until the one input it mishandles shows up.
+
+This is not theoretical: `npx tsc -p tsconfig.json` today reports pre-existing
+errors in `scripts/generate-impl-log.ts` (2) and `scripts/status.ts` (1), and
+the new cron watchdog had 4 — including `Cannot find module 'postgres'`, which
+worked only by pnpm hoisting and would have broken on a stricter install. That
+one was caught by hand, not by CI. These are watchdogs and release tooling: a
+script that silently rots is a guardrail that silently stops guarding.
+
+**How:** add a root `typecheck:scripts` (`tsc --noEmit -p tsconfig.json`), wire
+it into `pnpm typecheck` and the CI Typecheck job, then fix the 3 pre-existing
+errors it surfaces. Out of scope for the PR that found it — fixing them there
+would have mixed unrelated changes into an observability PR.
+**Verifies by:** `pnpm typecheck` fails when a root script has a type error;
+CI Typecheck job covers `scripts/`.
+**Status:** Open
+
+
 ### 2026-08-16 — Self-serve refund: post-launch, and it needs a policy before it needs code
 
 **Source:** billing premium program scoping, 2026-08-16 — raised under CLAUDE.md
