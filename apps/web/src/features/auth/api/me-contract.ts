@@ -26,6 +26,17 @@ export interface MeMailbox {
   connectedAt: string | null;
   /** Initial-sync readiness; `null` until the first sync row exists (D116). */
   readiness: SyncReadiness | null;
+  /**
+   * The Gmail grant is revoked and re-consent is the only fix (D224).
+   * Server-computed with the same rule as `syncStatusNeedsReconnect`, so
+   * the chrome can gate every broken mailbox — not only the active one —
+   * without a per-mailbox status poll on every page.
+   *
+   * Optional during a rolling API/web deploy (D245), same as
+   * `indexedDataState`: absent reads as "no reconnect needed", so the
+   * banner stays quiet rather than false-alarming on a stale API.
+   */
+  needsReconnect?: boolean;
   /** Optional during a rolling API/web deploy (D245). */
   indexedDataState?: MailboxIndexedDataState;
   /** Latest indexed-data deletion request, when any. */
