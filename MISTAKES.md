@@ -21,6 +21,37 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-18 — Fixed one sweep that retried a revoked Gmail grant, left its sibling running
+
+**PR:** #TBD (follows #527)
+**Caught by:** production — a Sentry "80% of your reserved errors volume" billing
+email, not by any gate, test, or alert of ours
+**What happened:** #527 fixed `WatchRenewalWorker` re-attempting a revoked Gmail
+grant every tick, and its comment even cited the Sentry issue ids. But two
+producers had that bug, not one. The incremental drift sweeper in
+`apps/api/src/worker.ts` kept selecting the same dead mailbox every 5 minutes:
+its eligibility test is `history_id_updated_at` staleness, and `history_id`
+only advances on a SUCCESSFUL sync — so failure and eligibility shared a cause
+and the sweep re-qualified the mailbox it had just failed on. Each tick cost
+two Sentry events (the `InvalidGrantError`, then the `dead_letter.parked` alert
+for the row it parked), so ONE revoked grant produced ~600 events/day — 288 of
+them exactly the 5-minute tick count — and 3,820 of the month's 5,000 reserved
+errors. The tier cannot bill, so the real cost was the next two days of
+monitoring going dark.
+**Correct approach:** when a fix removes a permanent-failure retry loop, grep
+for every sibling that spends the same credential on a timer and fix them in
+the same PR. Here that was two more: the drift sweeper, and
+`SnoozeWakeWorker`'s label-map refresh (same shape, logs only, never captured
+— found by smoking, not by reading).
+**Rule:** a periodic sweep whose staleness signal can only be cleared by the
+operation that is failing has no exit — give it an explicit permanent-failure
+predicate, and when you add one, apply it to every sweep in that class at once.
+**Enforcement update:** `notNeedingReconnect` moved out of
+`watch-renewal.worker.ts` into `packages/workers/src/mailbox-reconnect.ts` as
+the single shared predicate, applied at all three sites; its docblock states
+that every Gmail-grant-spending sweep must include it. Regression tests added
+per site, each verified to fail with the predicate removed.
+
 ## 2026-08-16 — Diff-only reasoning "cleared" a CI failure my own PR body caused
 
 **PR:** #532

@@ -117,8 +117,15 @@ export { RateLimiter } from './rate-limiter.js';
 export type { RateLimiterClock } from './rate-limiter.js';
 export { InitialSyncWorker } from './initial-sync.worker.js';
 export type { InitialSyncDeps, InitialSyncResult } from './initial-sync.worker.js';
-export { IncrementalSyncWorker } from './incremental-sync.worker.js';
-export type { IncrementalSyncDeps, IncrementalSyncResult } from './incremental-sync.worker.js';
+export {
+  IncrementalSyncWorker,
+  selectIncrementalDriftCandidates,
+} from './incremental-sync.worker.js';
+export type {
+  IncrementalDriftCandidate,
+  IncrementalSyncDeps,
+  IncrementalSyncResult,
+} from './incremental-sync.worker.js';
 export {
   createLimiter,
   DEFAULT_EXPLAIN_TIMEOUT_MS,
