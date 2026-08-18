@@ -269,7 +269,7 @@ function lastRunSummary(rule: AutopilotRuleDto, localizeDate: boolean): string {
     ? 'recorded'
     : Number.isNaN(d.getTime())
       ? rule.lastRunAt
-      : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   return `Last run ${when} · ${rule.lastRunActions} matched · ${rule.lastRunSenders} sender${rule.lastRunSenders === 1 ? '' : 's'}`;
 }
 

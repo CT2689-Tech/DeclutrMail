@@ -8,7 +8,7 @@
  */
 
 import { useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SyncReadiness } from '@declutrmail/shared/contracts';
 import { apiGet, apiPatch, ApiError } from '@/lib/api/client';
 import { ME_QUERY_KEY, type Me } from './me-contract';
@@ -83,6 +83,25 @@ export function useMe() {
   }, [query.data, queryClient]);
 
   return query;
+}
+
+/**
+ * Hydration-safe IANA timezone for date/time labels rendered into
+ * server HTML. Reads the `me` cache without ever fetching: the server
+ * pass and the first client render see the same cache entry (or the
+ * same absence → 'UTC'), so a label formatted with this zone can never
+ * mismatch on hydration (React #418; e2e hydration-smoke). The
+ * browser-zone healing in `useMe` keeps the value current after mount.
+ */
+export function useUserTimeZone(): string {
+  const { data } = useQuery<Me>({
+    queryKey: ME_QUERY_KEY,
+    // skipToken makes the never-fetch intent explicit: this observer
+    // must only mirror what `useMe` (mounted by app chrome) maintains.
+    queryFn: skipToken,
+    staleTime: Infinity,
+  });
+  return data?.user.timezone ?? 'UTC';
 }
 
 export function browserTimeZone(): string | null {

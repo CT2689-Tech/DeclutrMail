@@ -598,7 +598,7 @@ function OutcomeSummary({ decisions }: { decisions: readonly DemoDecision[] }) {
     <dl className="dm-simulator-outcome" aria-label="Sample outcome">
       <div>
         <dt>Messages moved</dt>
-        <dd>{messagesMoved.toLocaleString()}</dd>
+        <dd>{messagesMoved.toLocaleString('en-US')}</dd>
       </div>
       <div>
         <dt>Undoable actions</dt>

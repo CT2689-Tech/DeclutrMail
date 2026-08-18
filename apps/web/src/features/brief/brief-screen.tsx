@@ -1039,7 +1039,10 @@ export function formatRunDate(runDateLocal: string): string {
   // we only want the calendar fields, not a moment in time.
   const utc = new Date(Date.UTC(Number(yStr), Number(mStr) - 1, Number(dStr)));
   if (!Number.isFinite(utc.getTime())) return runDateLocal;
-  return utc.toLocaleDateString(undefined, {
+  // Locale pinned: this label is server-rendered into hydrated HTML, so
+  // a runtime-default locale mismatches on any non-en-US browser and
+  // React discards the server tree (error #418; e2e hydration-smoke).
+  return utc.toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
     day: 'numeric',

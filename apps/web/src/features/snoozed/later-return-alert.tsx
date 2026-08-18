@@ -2,6 +2,7 @@
 
 import { Button, tokens } from '@declutrmail/shared';
 
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { ApiError } from '@/lib/api/client';
 
 import { useLaterRecovery, useWakeRecoveryNow } from './api/use-snoozed';
@@ -16,6 +17,7 @@ const { color, font } = tokens;
 export function LaterReturnAlert({ enabled }: { enabled: boolean }) {
   const recovery = useLaterRecovery({ enabled });
   const wake = useWakeRecoveryNow();
+  const timeZone = useUserTimeZone();
   const summary = recovery.data;
   const issue = summary?.firstIssue;
 
@@ -53,7 +55,7 @@ export function LaterReturnAlert({ enabled }: { enabled: boolean }) {
         {countCopy} could not be confirmed as returned on time. Nothing will be deleted; check your
         inbox or Gmail&apos;s DeclutrMail/Later label.
         {issue.lastReturnAttemptAt
-          ? ` Last tried ${formatAttempt(issue.lastReturnAttemptAt)}.`
+          ? ` Last tried ${formatAttempt(issue.lastReturnAttemptAt, timeZone)}.`
           : ''}{' '}
         {guidance}
       </span>
@@ -76,8 +78,14 @@ export function LaterReturnAlert({ enabled }: { enabled: boolean }) {
   );
 }
 
-function formatAttempt(iso: string): string {
+/**
+ * Locale + zone pinned: this banner is server-rendered into hydrated
+ * HTML on every app route (the recovery summary is prefetched by the
+ * ServerAppBoundary), so both halves must be deterministic (React
+ * #418; e2e hydration-smoke). Exported for the exact-string unit test.
+ */
+export function formatAttempt(iso: string, timeZone: string): string {
   const attemptedAt = new Date(iso);
   if (Number.isNaN(attemptedAt.getTime())) return 'at an unknown time';
-  return attemptedAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  return attemptedAt.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone });
 }

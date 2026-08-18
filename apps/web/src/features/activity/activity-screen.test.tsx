@@ -24,7 +24,13 @@ import {
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
-import { absoluteTime, ActivityScreen, relativeTime } from './activity-screen';
+import {
+  absoluteTime,
+  ActivityScreen,
+  formatExpiry,
+  relativeTime,
+  windowToLabel,
+} from './activity-screen';
 import type { ActivityRowWire, ActivityStatsWire } from '@/lib/api/activity';
 import type { ActionRecoveryPreviewResult } from '@/lib/api/actions';
 
@@ -876,16 +882,33 @@ describe('ActivityScreen — pure helpers', () => {
   it('absoluteTime keeps seconds — the bucket alone hides one composite burst', () => {
     // Three rows of one composite all render "1h ago"; only the exact
     // stamp shows they were seconds apart (founder, 2026-08-12).
-    const iso = new Date(NOW).toISOString();
-    const out = absoluteTime(iso);
-    expect(out).not.toBe('');
-    // Seconds must survive the format, whatever the runtime locale is.
-    const seconds = new Date(iso).toLocaleTimeString(undefined, { timeStyle: 'medium' });
-    expect(out).toContain(seconds);
+    // Exact strings via an explicit zone: locale is pinned to en-US, so
+    // only the zone may move the label — never the machine.
+    expect(absoluteTime('2026-08-12T10:34:56Z', 'Asia/Kolkata')).toBe('Aug 12, 2026, 4:04:56 PM');
+    expect(absoluteTime('2026-08-12T10:34:56Z', 'UTC')).toBe('Aug 12, 2026, 10:34:56 AM');
   });
 
   it('absoluteTime returns empty for an unparseable stamp', () => {
     expect(absoluteTime('not-a-date')).toBe('');
+  });
+
+  it('windowToLabel renders the picked calendar day, whatever the machine zone', () => {
+    // `readIsoDate` normalizes a date-input pick to a UTC-midnight
+    // instant; the label must recover that exact day (an unpinned
+    // formatter shows the PREVIOUS day in UTC-negative zones and
+    // mismatches hydration in every non-en-US locale).
+    expect(windowToLabel('30d', '2026-08-01T00:00:00.000Z', '2026-08-10T00:00:00.000Z')).toBe(
+      'Aug 1 – Aug 10',
+    );
+    expect(windowToLabel('30d', null, '2026-08-10T00:00:00.000Z')).toBe('… – Aug 10');
+    expect(windowToLabel('7d', null, null)).toBe('This week');
+  });
+
+  it('formatExpiry pins the undo-expiry day to the user zone', () => {
+    // 20:00 UTC is already the NEXT day in IST — the user zone decides
+    // the day, not the server or browser zone.
+    expect(formatExpiry('2026-08-10T20:00:00Z', 'Asia/Kolkata')).toBe('Aug 11');
+    expect(formatExpiry('2026-08-10T20:00:00Z', 'UTC')).toBe('Aug 10');
   });
 });
 
