@@ -129,6 +129,16 @@ describe('ServerSendersBoundary', () => {
     );
   });
 
+  it('hashes an untrimmed ?q deep link to the same key the screen reads', () => {
+    // The screen debounces `query.trim()`; the route parser must trim
+    // before hashing or `?q=%20acme` hydrates a key no observer reads.
+    const query = sendersQueryFromSearchParams({ q: ' acme ' });
+    expect(query.q).toBe('acme');
+    expect(hashKey(sendersKeys.list(query))).toEqual(
+      hashKey(sendersKeys.list(sendersQueryFromSearchParams({ q: 'acme' }))),
+    );
+  });
+
   it('hydrates the exact filtered deep-link list and matching search summary', async () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:4000');
     const query = sendersQueryFromSearchParams({ q: 'amazon.com', activity: 'all' });
