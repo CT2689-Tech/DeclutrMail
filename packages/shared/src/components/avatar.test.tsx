@@ -7,8 +7,8 @@
 //      it, so the only host that may ever appear is our own.
 //   2. The monogram is the FLOOR — it renders whatever the image does,
 //      so no failure path yields an empty box.
-//   3. Deterministic identity — same brand ⇒ same tint, across the
-//      bulk-mail subdomain prefixes senders rotate through.
+//   3. Neutral fallback — generated color never masquerades as brand
+//      identity; only a successfully loaded mark introduces color.
 //
 // LIMIT OF THIS FILE, STATED SO NOBODY TRUSTS IT TOO FAR. These are
 // markup assertions. An earlier version of guarantee 2 passed here
@@ -52,10 +52,14 @@ async function withLogosDisabled() {
   return import('./avatar');
 }
 
-/** The inline-style hsl() background is the tint fingerprint. */
-function tintOf(markup: string): string {
-  const m = markup.match(/background:hsl\([^)]*\)/);
+/** The inline gradient is the monogram surface fingerprint. */
+function surfaceOf(markup: string): string {
+  const m = markup.match(/background:[^;]*hsl\([^)]*\)/);
   return m?.[0] ?? '';
+}
+
+function rimOf(markup: string): string {
+  return markup.match(/border:1px solid ([^;]+)/)?.[1] ?? '';
 }
 
 describe('Avatar (monogram, ADR-0024)', () => {
@@ -70,19 +74,51 @@ describe('Avatar (monogram, ADR-0024)', () => {
     expect(markup).toContain('>G<');
   });
 
-  it('derives the same tint for the same brand across bulk-mail subdomains', () => {
-    const a = renderToStaticMarkup(<Avatar name="Brand" domain="brand.com" />);
-    const b = renderToStaticMarkup(<Avatar name="Brand" domain="mail1.brand.com" />);
-    const c = renderToStaticMarkup(<Avatar name="Brand" domain="news.brand.com" />);
-    expect(tintOf(a)).not.toBe('');
-    expect(tintOf(b)).toBe(tintOf(a));
-    expect(tintOf(c)).toBe(tintOf(a));
+  it('uses one neutral surface across brands and bulk-mail subdomains', () => {
+    const markups = [
+      <Avatar name="Brand" domain="brand.com" />,
+      <Avatar name="Brand" domain="mail1.brand.com" />,
+      <Avatar name="Acme" domain="acme.io" />,
+    ].map((avatar) => renderToStaticMarkup(avatar));
+    const surfaces = markups.map(surfaceOf);
+    const rims = markups.map(rimOf);
+
+    expect(surfaces[0]).toContain('hsl(0 0%');
+    expect(new Set(surfaces)).toHaveProperty('size', 1);
+    expect(new Set(rims)).toHaveProperty('size', 1);
   });
 
-  it('derives different tints for different domains (identity, not decoration)', () => {
-    const a = renderToStaticMarkup(<Avatar name="Acme" domain="acme.com" />);
-    const b = renderToStaticMarkup(<Avatar name="Acme" domain="acme.io" />);
-    expect(tintOf(a)).not.toBe(tintOf(b));
+  it('renders the monogram as a dimensional tonal tile without another DOM layer', () => {
+    const markup = renderToStaticMarkup(<Avatar name="Chase" domain="chase.com" size={22} />);
+
+    expect(markup).toContain('background:linear-gradient(145deg');
+    expect(markup).toContain('box-shadow:inset 0 1px 0');
+    expect(markup.match(/<span/g)).toHaveLength(1);
+  });
+
+  it('leaves neutral depth and contrast under light/dark theme control', () => {
+    const markup = renderToStaticMarkup(<Avatar name="Chase" domain="chase.com" size={40} />);
+
+    for (const token of [
+      '--dm-avatar-highlight-l',
+      '--dm-avatar-bg-l',
+      '--dm-avatar-shadow-l',
+      '--dm-avatar-fg-l',
+      '--dm-avatar-rim-l',
+      '--dm-avatar-shine-l',
+    ]) {
+      expect(markup).toContain(`var(${token}`);
+    }
+  });
+
+  it('uses the same deliberate display weight and optical spacing at every size', () => {
+    for (const size of [22, 28, 40, 72]) {
+      const markup = renderToStaticMarkup(<Avatar name="Chase" domain="chase.com" size={size} />);
+
+      expect(markup).toContain('font-family:var(--dm-font-mono)');
+      expect(markup).toContain('font-weight:600');
+      expect(markup).toContain('letter-spacing:-0.02em');
+    }
   });
 
   it('falls back to the name when domain is absent and never renders an empty glyph', () => {
@@ -151,7 +187,7 @@ describe('Avatar brand logos (ADR-0034)', () => {
     // over the monogram on every cache miss, whether or not any image
     // bytes ever arrive. Exactly ONE element here may carry the tint —
     // the monogram wrapper.
-    expect(markup.match(/background:hsl\(/g)).toHaveLength(1);
+    expect(markup.match(/background:(?:hsl|linear-gradient)\(/g)).toHaveLength(1);
   });
 
   it('emits no <img>, whose failure state is a broken-image glyph', async () => {
@@ -175,8 +211,8 @@ describe('Avatar brand logos (ADR-0034)', () => {
   it('stays monogram-only below the legibility floor', async () => {
     const { Avatar: Logos, brandIconUrl: url, LOGO_MIN_SIZE } = await withLogosEnabled();
 
-    // Table rows draw at 22px — where a downscaled mark is exactly the
-    // mixed-fidelity problem ADR-0024 diagnosed.
+    // Compact 22px contexts remain monogram-only; table rows use the
+    // 24px floor so Grid↔Table does not change identity fidelity.
     expect(url('chase.com', LOGO_MIN_SIZE - 1)).toBeNull();
     expect(url('chase.com', LOGO_MIN_SIZE)).not.toBeNull();
     expect(renderToStaticMarkup(<Logos name="Chase" domain="chase.com" size={22} />)).not.toContain(

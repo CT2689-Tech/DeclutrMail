@@ -107,8 +107,11 @@ describe('validateBimiSvg', () => {
     ['a doctype', '<!DOCTYPE svg><svg><rect/></svg>'],
     ['a foreignObject', '<svg><foreignObject><div/></foreignObject></svg>'],
     ['an external image', '<svg><image href="https://evil.example/x.png"/></svg>'],
+    ['a filter image', '<svg><feImage href="relative.png"/></svg>'],
     ['an external use', '<svg><use href="https://evil.example/x.svg#a"/></svg>'],
     ['an external stylesheet ref', '<svg><a href="https://evil.example/x"/></svg>'],
+    ['a stylesheet import', '<svg><style>@import "https://evil.example/x.css";</style></svg>'],
+    ['an external CSS URL', '<svg><rect style="fill:url(https://evil.example/x.svg)"/></svg>'],
   ])('rejects %s', (_label, content) => {
     expect(validateBimiSvg(Buffer.from(content)).ok).toBe(false);
   });
@@ -122,8 +125,9 @@ describe('validateBimiSvg', () => {
     expect(validateBimiSvg(huge)).toEqual({ ok: false, reason: 'oversize' });
   });
 
-  it('does not mistake ordinary attributes for event handlers', () => {
-    const svg = '<svg version="1.1" viewBox="0 0 64 64"><rect fill="#000"/></svg>';
+  it('does not mistake ordinary attributes or local paint references for active content', () => {
+    const svg =
+      '<svg version="1.1" viewBox="0 0 64 64"><defs><linearGradient id="g"/></defs><rect fill="url(#g)"/></svg>';
     expect(validateBimiSvg(Buffer.from(svg))).toEqual({ ok: true });
   });
 });
@@ -478,6 +482,19 @@ describe('resolveBimiIcon', () => {
 
     expect(result).toEqual({ status: 'none', reason: 'http 404' });
   });
+
+  it.each([408, 425, 429, 500, 503])(
+    'retries a transient HTTP %s instead of caching or downgrading the mark',
+    async (status) => {
+      await expect(
+        resolveBimiIcon('brand.example', {
+          resolveTxt: txt(RECORD),
+          resolveHost: publicHost,
+          http: { get: async () => ({ status, contentType: null }) },
+        }),
+      ).rejects.toThrow(new RegExp(`HTTP ${status}`));
+    },
+  );
 
   describe('VMC verification', () => {
     it('stores nothing when the certificate does not verify', async () => {

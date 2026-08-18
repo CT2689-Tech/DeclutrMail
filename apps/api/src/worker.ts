@@ -52,6 +52,7 @@ import {
   INITIAL_SYNC_QUEUE,
   InitialSyncWorker,
   InvalidGrantError,
+  isWebsiteIconFallbackEnabled,
   LABEL_ACTION_QUEUE,
   LabelActionWorker,
   OUTBOX_NOTIFY_CHANNEL,
@@ -2058,19 +2059,27 @@ async function bootstrap(): Promise<void> {
 
   /**
    * DomainIconWorker (ADR-0034 — batchPolicy). Resolves one domain's
-   * BIMI mark into the global `domain_icons` cache.
+   * verified BIMI mark, then an official-site application icon, then
+   * Brandfetch as a server-only final fallback, into the global cache.
    *
    * No scheduler: this queue is purely demand-driven. `IconsService`
    * enqueues on a cache miss or a stale hit, and BullMQ collapses
    * concurrent enqueues for a domain into one job via the domain-keyed
    * jobId. A domain nobody renders is never fetched.
    *
-   * Concurrency 4 — the work is a DNS lookup plus one small HTTPS GET
-   * against an unrelated third party per job, so there is no shared
-   * rate limit to respect, but there is also no reason to let a cold
-   * mailbox open dozens of sockets at once.
+   * Concurrency 4 — the work is a bounded handful of DNS lookups and
+   * small HTTPS GETs against unrelated brand infrastructure per job.
+   * Four also bounds bursts against Brandfetch's shared quota while a
+   * cold mailbox warms; there is no reason to open dozens of sockets.
    */
-  const domainIconWorker = new DomainIconWorker({ db });
+  const brandfetchApiKey = process.env.BRANDFETCH_API_KEY?.trim();
+  const domainIconWorker = new DomainIconWorker({
+    db,
+    ...(isWebsiteIconFallbackEnabled(process.env.DOMAIN_ICON_WEBSITE_FALLBACK_ENABLED)
+      ? { website: {} }
+      : {}),
+    ...(brandfetchApiKey ? { brandfetch: { apiKey: brandfetchApiKey } } : {}),
+  });
   domainIconWorker.setObserver(observer);
   domainIconWorker.setDeadLetterRecorder(deadLetterRecorder);
   const domainIconBullWorker = new Worker<DomainIconJobData, DomainIconResult>(

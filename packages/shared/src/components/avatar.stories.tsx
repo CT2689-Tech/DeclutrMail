@@ -19,8 +19,8 @@
 // failure state is reading the right thing; the automated version of
 // this check is `packages/e2e/specs/render-avatar-logo.spec.ts`.
 //
-// The logo layer composites into the same rounded square at the same
-// inset. See `SizeScale` for why nothing below 24px carries one.
+// A successful logo fills the rounded square rather than nesting inside
+// the monogram tile. See `SizeScale` for why nothing below 24px carries one.
 //
 // Storybook itself is seeded in PR 3 (D210). Until then this file uses
 // locally-declared lightweight CSF types so it typechecks without
@@ -52,7 +52,7 @@ const meta: StoryMeta<typeof Avatar> = {
     docs: {
       description: {
         component:
-          'Sender identity anchor. One silhouette everywhere: rounded square, hairline border, a single initial on a deterministic per-domain tint (ADR-0024). With `brandLogos` on (ADR-0034), a brand mark from our first-party /api/icons endpoint layers over that monogram — the monogram itself never stops rendering, so no failure path yields an empty box and the component stays JS-free. Decorative by contract: always aria-hidden, with the sender name adjacent.',
+          'Sender identity anchor. One silhouette everywhere: rounded square, fine rim, a Geist Mono initial, and a neutral dimensional surface in both themes. Only a verified logo introduces brand color (ADR-0024). With `brandLogos` on (ADR-0034), a brand mark from our first-party /api/icons endpoint layers over that monogram — the monogram itself never stops rendering, so no failure path yields an empty box and the component stays JS-free. Decorative by contract: always aria-hidden, with the sender name adjacent.',
       },
     },
   },
@@ -72,29 +72,25 @@ export const Default: Story<typeof Avatar> = {
   args: { name: 'Groupon', domain: 'groupon.com' },
 };
 
-/**
- * Tint is derived from the BRAND ROOT, so every bulk-mail subdomain a
- * sender rotates through resolves to one identity — and, with logos on,
- * to one cached row and one outbound fetch.
- */
-export const StableAcrossSubdomains: Story<typeof Avatar> = {
+/** The neutral floor stays consistent across a sender's subdomains. */
+export const NeutralAcrossSubdomains: Story<typeof Avatar> = {
   render: () => (
     <div>
       <Row label="brand.com">
         <Avatar name="Brand" domain="brand.com" size={40} />
       </Row>
-      <Row label="mail1.brand.com — same tint">
+      <Row label="mail1.brand.com — same neutral floor">
         <Avatar name="Brand" domain="mail1.brand.com" size={40} />
       </Row>
-      <Row label="news.brand.com — same tint">
+      <Row label="news.brand.com — same neutral floor">
         <Avatar name="Brand" domain="news.brand.com" size={40} />
       </Row>
     </div>
   ),
 };
 
-/** Different domains must read as different identities, not decoration. */
-export const DistinctPerDomain: Story<typeof Avatar> = {
+/** Initials distinguish misses without inventing a brand color. */
+export const InitialsAcrossDomains: Story<typeof Avatar> = {
   render: () => (
     <div style={{ display: 'flex', gap: 10 }}>
       {['chase.com', 'united.com', 'acme.io', 'groupon.com', 'figma.com'].map((domain) => (
@@ -110,17 +106,17 @@ export const DistinctPerDomain: Story<typeof Avatar> = {
 };
 
 /**
- * The sizes in use. `LOGO_MIN_SIZE` (24px) is the legibility floor:
- * table rows draw at 22px and stay monogram-only, because a downscaled
- * brand mark is exactly the mixed-fidelity problem ADR-0024 diagnosed.
+ * The sizes in use. `LOGO_MIN_SIZE` (24px) is the legibility floor;
+ * compact 22px contexts remain monogram-only while table rows use the
+ * floor so a Grid↔Table switch preserves a cached mark.
  */
 export const SizeScale: Story<typeof Avatar> = {
   render: () => (
     <div>
-      <Row label="22px — table row (never carries a logo)">
+      <Row label="22px — compact (never carries a logo)">
         <Avatar name="Chase" domain="chase.com" size={22} />
       </Row>
-      <Row label={`${LOGO_MIN_SIZE}px — logo floor`}>
+      <Row label={`${LOGO_MIN_SIZE}px — table row / logo floor`}>
         <Avatar name="Chase" domain="chase.com" size={LOGO_MIN_SIZE} />
       </Row>
       <Row label="28px — default">

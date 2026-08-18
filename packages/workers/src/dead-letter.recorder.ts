@@ -50,7 +50,7 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  * every `*JobData` shape that runs through `BaseDeclutrWorker`
  * (initial/incremental sync, score, autopilot-apply, label-action,
  * unsub-execution, undo-expiry, followup-check, brief-snapshot,
- * senders-counter-reconciliation, dead-letter sweep). Mirrors the
+ * senders-counter-reconciliation, domain-icon, dead-letter sweep). Mirrors the
  * closed-union `BUCKET_DEFAULTS` pattern: adding a key here is a
  * deliberate human edit, never an accident of a new worker's payload.
  *
@@ -63,6 +63,7 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  */
 export const DEAD_LETTER_PAYLOAD_ALLOWED_KEYS = [
   'actionId',
+  'domain',
   'endHistoryId',
   'idempotencyKey',
   'mailboxAccountId',

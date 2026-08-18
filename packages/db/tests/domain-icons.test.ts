@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 
-import { domainIcons } from '../src';
+import { DOMAIN_ICON_RESOLVER_VERSION, domainIcons } from '../src';
 import { freshTestDb } from '../src/testing';
 
 /**
@@ -91,6 +91,23 @@ describe('domain_icons', () => {
     expect(row?.fetchedAt).toBeInstanceOf(Date);
   });
 
+  it('records Brandfetch provenance separately for its shorter cache term', async () => {
+    const db = await freshTestDb();
+
+    await db.insert(domainIcons).values({
+      domain: 'retailmenot.com',
+      status: 'ok',
+      image: SVG,
+      mime: 'image/png',
+      source: 'brandfetch',
+      contentHash: 'b'.repeat(64),
+      byteSize: SVG.byteLength,
+    });
+
+    const [row] = await db.select().from(domainIcons);
+    expect(row?.source).toBe('brandfetch');
+  });
+
   it('stores a cached miss with no payload', async () => {
     const db = await freshTestDb();
 
@@ -101,6 +118,7 @@ describe('domain_icons', () => {
     expect(row?.status).toBe('none');
     expect(row?.image).toBeNull();
     expect(row?.source).toBeNull();
+    expect(row?.resolverVersion).toBe(DOMAIN_ICON_RESOLVER_VERSION);
   });
 
   it('rejects ok without an image', async () => {

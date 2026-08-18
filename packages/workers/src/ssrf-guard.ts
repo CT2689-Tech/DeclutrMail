@@ -2,6 +2,31 @@ import type { LookupAddress } from 'node:dns';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
+/** Resolver failures that mean "retry", not "the name does not exist". */
+const TRANSIENT_DNS_CODES: ReadonlySet<string> = new Set([
+  'SERVFAIL',
+  'EAI_AGAIN',
+  'ETIMEOUT',
+  'ETIMEOUT_DNS',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EREFUSED',
+]);
+
+export function isTransientDnsError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && TRANSIENT_DNS_CODES.has(code);
+}
+
+export function describeNetworkError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** HTTP responses that describe a temporary condition, not a durable miss. */
+export function isTransientHttpStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
 /**
  * Shared SSRF primitives for outbound fetches of attacker-influenced
  * URLs.

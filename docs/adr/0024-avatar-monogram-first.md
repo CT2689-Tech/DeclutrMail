@@ -1,7 +1,8 @@
-# ADR-0024: Sender avatars are monogram-first; brand logos deferred behind a first-party proxy
+# ADR-0024: Sender avatars are monogram-first with a first-party logo layer
 
 - **Status:** Accepted
 - **Date:** 2026-07-03
+- **Amended:** 2026-08-17 (premium tonal tile)
 - **Deciders:** chintan.a.thakkar@gmail.com
 - **Related D-decisions:** D1/D2 (Geist + cool/editorial palette), D7/D228
   (privacy posture — the trust wedge), D227 (canonical verbs, unaffected)
@@ -36,22 +37,24 @@ domain per session, and `sender-table` rows rendered no avatar at all
 
 ## Decision
 
-1. **Monogram-only `Avatar`.** One silhouette everywhere: rounded
-   square, `color.border` hairline, single initial (Geist Mono 500) on
-   a deterministic muted tint. Tint = djb2 hash of the brand-level
-   root domain (bulk-mail prefixes stripped: `mail1.brand.com` →
-   `brand.com`; falls back to display name) → hue at fixed
-   `30%/94%` (bg) and `26%/34%` (fg) — always inside the D2 cool
-   palette. No network I/O of any kind. `avatarColors` is retired
-   from tokens.
-2. **Table rows gain the same monogram** (22px) in the Sender cell so
-   both list views anchor identity identically.
-3. **Brand logos are DEFERRED, not banned.** If logos return, they load
-   exclusively through a first-party `GET /api/icons/:domain` proxy
-   (server-side fetch + cache + ≥64px quality gate, monogram
-   fallback), so no user browser ever talks to an icon vendor. That
-   endpoint is its own PR + privacy-auditor review; nothing in this
-   ADR blocks it.
+1. **Monogram-first `Avatar`.** One silhouette everywhere: rounded
+   square, fine hairline, single initial (Geist Mono 600) on a neutral
+   tonal tile. A restrained theme-owned gradient, inset highlight and
+   shallow elevation provide depth without another DOM layer or any
+   runtime state. Both themes are achromatic: inferred color must not
+   imply brand identity, and verified logos are the only avatars that
+   introduce brand color. The declared `size` includes the border
+   (`border-box`) so a 40px identity anchor occupies exactly 40px.
+   `avatarColors` remains retired from tokens.
+2. **Table rows gain the same identity anchor** (24px) in the Sender
+   cell so both list views preserve the same monogram or cached mark.
+3. **Brand logos use the monogram as their floor.** ADR-0034 now
+   implements the once-deferred first-party `GET /api/icons/:domain`
+   layer (server-side fetch + global cache + quality gate). No user
+   browser talks to an icon vendor, and every miss or failed image
+   reveals this same intentional monogram without shifting layout. A
+   successful opaque mark fills the avatar edge-to-edge, visually replacing
+   the tile rather than appearing inside it.
 
 ## Consequences
 
@@ -59,18 +62,20 @@ domain per session, and `sender-table` rows rendered no avatar at all
 
 - Zero third-party requests from sender surfaces — the trust-wedge
   contradiction is gone, and so are the waterfall's 404 round-trips.
-- Page-level visual coherence: one avatar silhouette, one tint system,
-  all hues palette-interior. Stable identity per brand across
+- Page-level visual coherence: one avatar silhouette and one neutral
+  fallback treatment in both themes. Stable identity per brand across
   subdomains, sessions, and surfaces (card, table, detail, triage,
   screener, activity, review session).
 - `Avatar` is now a pure synchronous component — no state, no effects,
   no `img` error churn during fast scrolls.
+- A common neutral surface avoids invented brand color and semantic-status
+  confusion, while tonal depth makes a missing-logo monogram feel intentional.
 
 ### Negative
 
-- Recognizable brand marks (the ~90% Clearbit hit rate) are gone until
-  the proxy tier ships. Monograms carry less instant recognition for
-  household brands.
+- Monograms carry less instant recognition than a successful logo for
+  household brands, so they remain visible for cache misses and the
+  intentionally unsupported long tail.
 - Any screenshot/marketing asset showing old logo avatars is stale.
 
 ### Neutral
@@ -96,8 +101,11 @@ domain per session, and `sender-table` rows rendered no avatar at all
 
 - `packages/shared/src/components/avatar.test.tsx` — asserts no
   `<img>`/vendor URL surface, deterministic tint across bulk-mail
-  subdomains, distinct tints per domain, initial fallbacks,
-  `aria-hidden`.
+  subdomains, a neutral surface in both themes, dimensional surface and rim, premium
+  typography, initial fallbacks, `aria-hidden`.
+- `packages/e2e/specs/render-avatar-logo.spec.ts` — real-browser
+  verification at 24/28/40/72px in both themes, plus the logo failure
+  states that must reveal the monogram unchanged.
 - Manual smoke (dev login): grid cards, table rows, detail header,
   review session all render monograms; DevTools network panel shows
   zero requests to `clearbit.com`, `duckduckgo.com`, `google.com/s2`.

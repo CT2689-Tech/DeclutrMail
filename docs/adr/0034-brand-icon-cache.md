@@ -1,7 +1,9 @@
-# ADR-0034: Brand logos return through a first-party, globally-cached icon endpoint (BIMI first)
+# ADR-0034: Brand logos return through a first-party, globally-cached icon endpoint
 
 - **Status:** Accepted
 - **Date:** 2026-08-14
+- **Amended:** 2026-08-17 (official-site + Brandfetch cached fallback;
+  organizational-domain and verified-alias canonicalization)
 - **Deciders:** chintan.a.thakkar@gmail.com
 - **Related D-decisions:** D7/D228 (privacy posture — the trust wedge),
   D1/D2 (Geist + cool/editorial palette), D156 (rate limiting),
@@ -37,18 +39,21 @@ Two facts reshaped the design away from ADR-0024's sketch:
    licensing ambiguity — the brand authorized it, and it is the same
    mechanism Gmail itself uses for sender avatars. Coverage skews to
    exactly the household names users recognize.
-2. **BIMI serves SVG, so Phase 1 needs no image processing.** Vector
-   scales to every avatar size with no raster normalization, no
-   quality-gate-by-pixel-size, and — decisively — no `sharp`
-   dependency (the workspace has none today).
+2. **BIMI serves SVG, so its tier needs no image processing.** Vector
+   scales to every avatar size with no raster normalization. The
+   official-site and Brandfetch fallbacks added by the 2026-08-17
+   amendments process raster artwork through `sharp`; the BIMI path
+   itself remains SVG after sanitization and VMC verification.
 
 ## Decision
 
 ### 1. One global cache keyed by domain, with no user linkage
 
-`domain_icons` is keyed on the brand-root domain alone (`chase.com`,
-bulk-mail prefixes stripped by the same `brandRoot()` the monogram tint
-uses). It carries **no `user_id` and no `mailbox_account_id`**.
+`domain_icons` is keyed on the canonical brand domain alone (`chase.com`,
+never `alertsp.chase.com` or `temuemail.com`). Canonicalization first uses
+the Public Suffix List to find the organizational domain, then applies a
+fully verified cross-domain alias when one exists (§4b). It carries **no
+`user_id` and no `mailbox_account_id`**.
 
 This is a hard privacy requirement, not an optimization. A per-user
 icon table is a queryable index of who receives mail from whom —
@@ -56,9 +61,9 @@ precisely the artifact D7/D228 says we do not hold. Keyed on domain
 alone, the table is a public-brand-asset cache that happens to have
 been populated by domains we saw.
 
-Consequence: one outbound fetch per domain **for the entire product,
-ever**. If 4,000 users receive mail from Chase, that is one fetch and
-3,999 cache hits. Distinct-domain count grows sublinearly with users
+Consequence: one resolution run per domain and TTL **for the entire
+product**. If 4,000 users receive mail from Chase, that is one bounded
+resolution cascade and 3,999 cache hits. Distinct-domain count grows sublinearly with users
 because sender domains follow a hard power law, so the cache improves
 as the userbase grows.
 
@@ -67,18 +72,34 @@ as the userbase grows.
 A domain with no discoverable logo is written as `status='none'` with a
 TTL, not left absent. Without this, every render of a logo-less sender
 re-enqueues a fetch forever — a self-inflicted DDoS, and the most
-common way this pattern fails. TTLs: 90d on `ok`, 30d on `none` (so
-rebrands and newly-published BIMI records eventually land).
+common way this pattern fails. TTLs: 90d on BIMI/official-site `ok`, 30d
+on Brandfetch `ok`, and 30d on `none` (so rebrands and newly-published
+BIMI records eventually land while vendor caching stays within terms).
+
+A first-party refresh miss does not immediately erase a known-good mark. The worker
+keeps it for one additional 90-day grace window, leaves its original
+`fetched_at` intact, and retries after the completed job's 24-hour Redis
+tail. This absorbs intermittent WAF 403s and temporarily missing website
+metadata without making old branding immortal: after 180 days from the
+last successful resolution, another miss converts the row to `none`.
+Brandfetch rows get no stale grace: after 30 days the read path schedules
+a refresh and renders the monogram until fresh provider artwork lands.
+Transient DNS, socket, 408/425/429, and 5xx failures throw and use the
+worker retry policy; terminal failed jobs release their dedup key after
+one hour, while the durable dead-letter row retains the evidence.
+The dead-letter payload allowlist retains only the public canonical
+`domain` for this queue, which makes manual replay possible without
+linking the failure to a user or mailbox.
 
 ### 3. The read path never blocks on an outbound fetch
 
 `GET /api/icons/:domain` answers only from cache:
 
-| cache state | response                                                                       |
-| ----------- | ------------------------------------------------------------------------------ |
-| `ok`        | `200 image/svg+xml` + strong ETag + `max-age=86400` + `stale-while-revalidate` |
-| `none`      | `204` + `max-age=60`                                                           |
-| absent      | `204` + `max-age=60`, and enqueue a fetch job                                  |
+| cache state | response                                                            |
+| ----------- | ------------------------------------------------------------------- |
+| `ok`        | `200 image/svg+xml` or `image/png` + strong ETag + hit cache policy |
+| `none`      | `204` + `max-age=60`                                                |
+| absent      | `204` + `max-age=60`, and enqueue a fetch job                       |
 
 `204` is the contract for "monogram, and we're on it" — not an error. A
 cold domain costs a render nothing.
@@ -138,7 +159,7 @@ net::ERR_BLOCKED_BY_ORB`, type `Other`, 0 B, no status — which is why
 three rounds of fixes landed without anyone being able to see that the
 answer was 401 all along.
 
-### 4a. Nothing is stored without a verified VMC
+### 4a. The BIMI tier stores nothing without a verified VMC
 
 Founder decision 2026-08-15, taken over three cheaper alternatives
 (accept the risk; a sender-tenure gate; hiding logos in Screener).
@@ -177,12 +198,50 @@ the attestation we were looking for. Full ASN.1 traversal of
 maintained library that would avoid hand-rolling it demands a global
 `reflect-metadata` polyfill this package will not take.
 
+**Founder amendment 2026-08-17.** The VMC rule remains absolute for
+anything labelled BIMI, but is no longer the only permitted source.
+Production sampling found coverage too sparse and, in at least one case,
+the surfaced artwork did not match the professional institution mark the
+user expected. After BIMI misses, the worker may therefore use artwork
+published by the domain's own HTTPS website.
+
+Website artwork is **not identity verification**. A lookalike domain can
+publish a copied bank logo, so the UI must never present a website-derived
+mark as authenticated, trusted, or proof of sender identity. It is visual
+decoration over the existing sender/domain text; phishing protection must
+continue to rely on mail authentication and the product's safety paths.
+
 ### 4b. Resolution cascade, server-side only
 
-`DomainIconWorker` (`batchPolicy`, idempotency key = domain, so a
-thousand concurrent misses collapse to one job):
+Before resolution, the API derives two domains:
 
-1. **BIMI** — DNS TXT `default._bimi.<domain>`, parse the `l=` URL.
+- the **discovery domain**, which preserves the sender-controlled domain
+  for exact BIMI lookup; and
+- the **canonical domain**, which is the Public-Suffix-List organizational
+  domain after a fully verified alias rewrite.
+
+For example, `news.temuemail.com` has discovery domain `temuemail.com` and
+canonical domain `temu.com`. `alertsp.chase.com` canonicalizes directly to
+`chase.com`, without requiring an alias. Private suffixes are enabled, so
+unrelated tenants such as `shop.github.io` do not collapse into one cache
+entry.
+
+`brand_domain_aliases` is a global registry of public facts such as
+`temuemail.com -> temu.com`. Like `domain_icons`, it has no user or mailbox
+link. Automatic rewriting requires `confidence=100`; seeded relationships
+must cite official brand documentation. Shared email-service domains must
+never be added: an ESP domain can serve unrelated brands, so mapping it
+globally would display the wrong logo and poison the cache for every user.
+
+During migration, a valid exact-domain cache hit remains visible while the
+canonical row is populated. This avoids turning an already-recognizable
+sender back into a monogram merely because its cache key improved.
+
+`DomainIconWorker` (`batchPolicy`, idempotency key = resolver version +
+canonical domain, so a thousand concurrent aliases and subdomains collapse
+to one job while a new discovery strategy bypasses the old completed job):
+
+1. **BIMI** — DNS TXT `default._bimi.<discovery-domain>`, parse the `l=` URL.
    Discovery walks the name from the domain up to its ancestors, most
    specific first, exactly as DMARC falls back to the organizational
    domain. Querying only the exact domain is why this resolved almost
@@ -198,27 +257,73 @@ thousand concurrent misses collapse to one job):
    the walk: a record found at, say, `co.uk` still has to present a VMC
    whose SAN covers `co.uk` from a BIMI-authorised CA, so an over-broad
    walk costs an extra NXDOMAIN rather than a wrong logo (§4a).
-2. **Vendor** (Brandfetch / Logo.dev) — Phase 2, config-gated; an
-   absent API key skips the tier entirely.
-3. Neither → `status='none'`.
+2. **Official website** — fetch `https://<canonical-domain>/` (then the bounded
+   `www` variant), and try artwork in this order: Apple
+   Touch icon, web-app manifest icon, declared standard favicon, explicit
+   application tile image, conventional `/apple-touch-icon.png`. Generic
+   Open Graph/Twitter images are excluded because a square promotional
+   photo is not necessarily a brand mark. Every
+   candidate is decoded, quality-gated, stripped of metadata, and
+   normalized to an opaque 128×128 PNG. The quality floor accepts a
+   32px source (sufficient for the product's 24–40px common display
+   sizes) and a 1:2–2:1 aspect ratio, preferring larger square marks but
+   showing a usable real logo instead of a monogram when that is all a
+   brand publishes. Self-contained SVG favicons pass the same active-
+   content and external-reference safety gate as BIMI before being
+   rasterized. The entire path uses the same
+   public-address pinning and redirect revalidation as BIMI, plus 1 MiB
+   image / 2 MiB page ceilings and a true wall-clock request deadline.
+   `domain_icon_source='vendor'` is the existing schema's compatibility
+   bucket for this non-BIMI raster tier; changing that enum solely for a
+   provenance-label rename would require an otherwise unnecessary
+   production migration.
+3. **Brandfetch Brand API** — only after both first-party tiers miss,
+   the worker may query Brandfetch by canonical domain with the
+   server-only `BRANDFETCH_API_KEY`. It selects a square raster icon,
+   downloads it through the same SSRF guard, and runs the same bounded
+   128×128 opaque-PNG normalization. The API credential is attached only
+   to the fixed metadata request and is stripped before every redirect;
+   it is never sent to an artwork host. `domain_icon_source='brandfetch'`
+   preserves provenance so these rows stop serving and refresh at the
+   provider's 30-day cache limit. A `401`/`403` is a terminal deployment
+   configuration error, while `429`/`5xx` remains retryable and never
+   becomes a month-long domain miss.
+   This tier is approved for local evaluation only. Brandfetch's current
+   general terms make cached delivery subject to a specific written
+   agreement; a developer key alone is not that agreement. Production
+   must leave the key unbound until that permission and an acceptable
+   subscription plan are documented.
+4. Neither → `status='none'`.
 
-No user browser ever talks to an icon source. Phase 1 has no third
-party in the path at all — a DNS lookup from our resolver plus a fetch
-of a brand's own asset.
+Every cache row also records the resolver version. A fresh negative
+from an older cascade is retried immediately instead of waiting for its
+30-day TTL; successful artwork remains valid across resolver upgrades.
+The job id carries the same version so BullMQ's retained completion for
+the previous strategy cannot suppress that retry.
+
+No user browser ever talks to an icon source. Official-site and Brandfetch
+resolution both happen in the worker; the browser reads only DeclutrMail's
+first-party cache endpoint. The cache is global by domain, so every user
+reuses the same stored bytes rather than causing another provider request.
 
 ### 5. The `l=` URL is attacker-controlled — fetch it behind an SSRF guard
 
-The BIMI URL comes from a DNS record controlled by whoever owns the
-sender domain, which includes every spammer who ever mailed a user. The
-fetch therefore requires: `https` only, DNS resolution with rejection of
+The BIMI URL, official-site metadata, and Brandfetch-provided asset URLs come from infrastructure
+controlled by whoever owns the sender domain, which includes every
+spammer who ever mailed a user. Every fetch therefore requires: `https`
+only, DNS resolution with rejection of
 private / loopback / link-local / CGNAT / unique-local ranges
 (re-checked after every redirect), a redirect cap, a response-size cap,
-a wall-clock timeout, and an `image/svg+xml` content-type check.
+a wall-clock timeout, and a content-type check appropriate to the tier.
 
 Fetched SVG is validated against the SVG Tiny PS profile shape BIMI
 requires and sanitized (no `<script>`, no event handlers, no external
 references) before storage. It is rendered exclusively as a CSS
 background image (see §6), where script execution is inert regardless.
+Website candidates accept PNG, JPEG, WebP, or safely self-contained SVG;
+Brandfetch candidates remain raster-only. All are decoded and re-encoded
+as PNG before storage, so source metadata and active/non-image payloads
+do not survive that boundary.
 
 ### 6. Monogram is the floor, never a fallback that can fail
 
@@ -227,6 +332,12 @@ the mark over it. Every failure mode — `204`, `401`, network error,
 decode error, flag off — degrades to exactly what ships today, with no
 layout shift and no empty box. The component API (`{name, domain?,
 size?}`) is unchanged.
+
+On a successful hit, the stored opaque square extends through the avatar
+rim and visually replaces the neutral tile. It is intentionally not inset:
+an inset mark creates a generic tile around a second branded tile, while the
+product direction is a standalone logo when one exists and a monogram only
+when it does not.
 
 It layers rather than branches, and that is load-bearing: an earlier
 draft tracked load success in `useState`, which made `Avatar` a Client
@@ -251,7 +362,8 @@ Two constraints follow, and both must hold:
 
 1. The layer carries **no background-color of its own**. Covering the
    monogram is the mark's own job — BIMI SVG Tiny PS forbids
-   transparency, so a verified mark is an opaque tile. A
+   transparency, and website raster marks are flattened onto white, so
+   a valid stored mark is an opaque tile. A
    spec-violating mark shows the initial faintly behind it; that is
    cosmetic, not a broken box.
 2. `loading="lazy"` has no background-image equivalent, so it is lost.
@@ -263,11 +375,13 @@ them. The guarantee is therefore asserted in a real engine by
 `packages/e2e/specs/render-avatar-logo.spec.ts` (CI project `render`),
 which screenshots the avatar, deletes the logo layer, and requires the
 two shots to be byte-identical on `204`/`401`/connection-refused and to
-differ on a cached mark.
+differ on a cached mark. The hit case also asserts that the layer occupies
+the avatar's full geometry, preventing the nested-tile treatment from
+returning.
 
-Below 24px (table rows) `Avatar` stays monogram-only: downscaled marks
-are where mixed fidelity looks worst, and the identity anchor is
-already doing its job there.
+Below 24px `Avatar` stays monogram-only: downscaled marks are where
+mixed fidelity looks worst. Sender table rows use the 24px floor so a
+Grid↔Table switch preserves a cached mark (founder smoke, 2026-08-17).
 
 ### 7. Behind `brandLogos`, defaulting on
 
@@ -277,20 +391,32 @@ keeping it dark is gone, so it defaults `true`. It remains a
 kill-switch: one env var turns every avatar back into a monogram
 without a revert.
 
+The worker has a separate server-side kill switch,
+`DOMAIN_ICON_WEBSITE_FALLBACK_ENABLED`. Only exact `false` disables
+official-site discovery; verified BIMI and already-cached rows continue
+to work. Production pins the value explicitly in the Cloud Run deploy
+manifest because that manifest full-replaces environment variables.
+Brandfetch is independently fail-closed: it is enabled only when the
+worker receives `BRANDFETCH_API_KEY`. The API and web services never
+receive that secret. The production deploy intentionally does not bind
+one until the caching agreement and budget gate above are satisfied.
+
 ## Consequences
 
 ### Positive
 
 - Zero third-party requests from the browser — ADR-0024's privacy win
-  is fully preserved, and Phase 1 adds no third party at all.
-- One fetch per domain product-wide means a vendor (if Phase 2 ever
-  lands) sees a slow trickle of distinct domains with no volume, no
-  timing, and no user attribution — it cannot distinguish one user from
-  ten thousand.
+  is fully preserved.
+- One resolution per domain and TTL product-wide means an official
+  website or Brandfetch cannot distinguish one user from ten thousand,
+  and subsequent users reuse the same stored bytes.
 - Recognizable marks return for the brands users actually recognize,
   without reintroducing page-level fidelity variance.
-- No new runtime dependency: BIMI is SVG, so no `sharp`, no raster
-  pipeline.
+- Consistent raster output: every website-derived mark is the same
+  bounded 128×128 opaque PNG regardless of the source format.
+- Lifecycle logs expose only closed `outcome` / `source` values and byte
+  counts, so coverage and failure ratios are measurable without logging
+  mailbox or user identifiers.
 
 ### Negative
 
@@ -302,7 +428,12 @@ without a revert.
 - Each resolution is now two outbound fetches (logo, then certificate)
   rather than one. Still once per domain for the whole product.
 - BIMI coverage is real but partial — long-tail senders stay monograms.
-  That is the intended steady state, not a gap to close.
+  Official-site discovery improves that coverage but still intentionally
+  falls back to monograms when no usable brand asset exists.
+- Website-derived artwork is unverified and can be copied by a lookalike
+  domain. The logo is never an authentication signal (§4a).
+- `sharp` is now a workers runtime dependency, including its native
+  platform package in deployed images.
 - `bytea` images inflate database dumps. At the projected ceiling
   (~600MB worst case, realistically far less) this is immaterial; past
   a few GB, moving bytes to object storage is the migration, and it is
@@ -310,25 +441,32 @@ without a revert.
 - A new outbound-fetch surface exists, with the SSRF guard as its only
   protection. That guard is security-critical code and is tested as
   such.
+- Brandfetch's free Brand API allowance is 100 brand fetches one-time;
+  its current paid tier starts far above the founder's <$20/month target.
+  The optional tier therefore improves a prototype or small warm cache,
+  but it is not a sustainable full-catalog production source on the free
+  plan. Quota exhaustion is fail-soft (monograms), never a broken page.
 
 ### Neutral
 
 - `Avatar`'s public API and `aria-hidden` contract are unchanged.
-- The monogram tint system stays exactly as ADR-0024 specified; logos
-  ride on top of it rather than replacing it.
+- The premium tonal monogram system stays exactly as amended in
+  ADR-0024; logos ride on top of it rather than replacing it.
 
 ## Alternatives considered
 
-- **Vendor-first (Brandfetch / Logo.dev) as Phase 1.** Rejected for the
-  landing PR: it needs an account, a bill, attribution terms, and a
-  privacy-note amendment, all to answer a question — "is coverage good
-  enough to matter?" — that BIMI answers for free. Deferred, not dead.
+- **Browser-embedded Logo API (Brandfetch / Logo.dev).** Rejected. Direct
+  embedding would send every displayed sender domain plus the user's IP
+  and referrer to a vendor and would require a CSP/privacy amendment. The
+  Brandfetch public client ID is therefore not used. The authenticated
+  server-side Brand API is accepted only as the final tier, behind the
+  global first-party cache and the 30-day refresh boundary above.
 - **Per-user or per-mailbox icon rows.** Rejected: builds a
   correspondent index, which is the exact artifact the privacy posture
   denies holding. Also multiplies fetches by userbase for no benefit,
   since logos have no user-specific variant.
 - **Blocking fetch on cache miss.** Rejected: couples render latency to
-  a third party's DNS and TLS. The 204 + background-fetch contract
+  remote brand infrastructure's DNS and TLS. The 204 + background-fetch contract
   makes a cold domain indistinguishable from a logo-less one at render
   time.
 - **Object storage for the bytes.** Rejected for now: at ~4KB/row it
@@ -341,7 +479,12 @@ without a revert.
 ## Verification
 
 - `packages/workers/src/domain-icon.worker.test.ts` — cascade order,
-  negative caching, TTL refresh, idempotency on domain.
+  negative caching, TTL refresh, canonical cache key with exact-domain
+  BIMI discovery, and idempotency on domain.
+- `packages/shared/src/senders/brand-root.test.ts` — Public-Suffix-List
+  organizational domains, including multi-label and private suffixes.
+- `packages/db/tests/brand-domain-aliases.test.ts` — official alias seeds,
+  confidence/evidence, and absence of user/mailbox linkage.
 - `packages/workers/src/vmc-verifier.test.ts` — run against a REAL
   OpenSSL-generated chain (`src/__fixtures__/vmc/`), not mocks: a valid
   VMC is accepted, and each of the attacks is refused — a certificate
@@ -353,6 +496,10 @@ without a revert.
   private/loopback/link-local/CGNAT targets and redirects into them;
   http scheme, oversize body, wrong content-type, and script-bearing
   SVG all rejected.
+- `packages/workers/src/website-icon-resolver.test.ts` — official-site
+  candidate order, lazy manifest fallback, DNS/redirect SSRF rejection,
+  byte/quality gates, raster normalization, and transient-vs-cacheable
+  failure behavior.
 - `apps/api/src/icons/icons.controller.spec.ts` — 200/204/enqueue
   matrix, ETag revalidation, no auth requirement, rate limit applied.
 - `packages/e2e/specs/render-avatar-logo.spec.ts` — in Chromium: a
