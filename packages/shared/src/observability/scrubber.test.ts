@@ -5,6 +5,7 @@ import {
   scrubObject,
   scrubSentryBreadcrumb,
   scrubSentryEvent,
+  scrubSentryTransaction,
   scrubSentryLog,
   scrubTelemetryPayload,
   scrubUrlDerived,
@@ -1100,5 +1101,100 @@ describe('scrubSentryLog', () => {
       attributes: { kind: 'dead_letter.parked' },
     });
     expect(out?.level).toBe('warn');
+  });
+});
+
+/**
+ * Tracing was off entirely until 2026-08-18 because a span carries more
+ * user data by default than any other signal (D7, D228). These cases are
+ * the terms on which it was turned on — every one of them is a DENIAL.
+ */
+describe('scrubSentryTransaction', () => {
+  function txn(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      type: 'transaction',
+      event_id: 'a'.repeat(32),
+      transaction: 'GET /api/v1/senders',
+      contexts: { trace: { trace_id: 'b'.repeat(32), span_id: 'c'.repeat(16), op: 'http.server' } },
+      spans: [],
+      ...overrides,
+    };
+  }
+
+  it('drops span descriptions — that is where the SQL and the URLs live', () => {
+    const out = scrubSentryTransaction(
+      txn({
+        spans: [
+          {
+            op: 'db.query',
+            span_id: 'd'.repeat(16),
+            description: "SELECT * FROM users WHERE email = 'someone@example.com'",
+          },
+        ],
+      }),
+      'server',
+    );
+    const spans = out?.spans as Record<string, unknown>[];
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.op).toBe('db.query');
+    expect(spans[0]!.description).toBeUndefined();
+    expect(JSON.stringify(out)).not.toContain('example.com');
+    expect(JSON.stringify(out)).not.toContain('SELECT');
+  });
+
+  it('drops a span whose op is not in the closed set', () => {
+    const out = scrubSentryTransaction(
+      txn({ spans: [{ op: 'custom.unreviewed', span_id: 'd'.repeat(16) }] }),
+      'server',
+    );
+    expect(out?.spans).toBeUndefined();
+  });
+
+  it('keeps structural span data and drops everything else', () => {
+    const out = scrubSentryTransaction(
+      txn({
+        spans: [
+          {
+            op: 'http.client',
+            span_id: 'd'.repeat(16),
+            data: {
+              'http.request.method': 'GET',
+              'http.response.status_code': 200,
+              'http.url': 'https://gmail.googleapis.com/messages?q=from:someone@example.com',
+              'db.statement': "SELECT 1 WHERE email='x@y.com'",
+            },
+          },
+        ],
+      }),
+      'server',
+    );
+    const spans = out?.spans as Record<string, unknown>[];
+    expect(spans[0]!.data).toEqual({
+      'http.request.method': 'GET',
+      'http.response.status_code': 200,
+    });
+    expect(JSON.stringify(out)).not.toContain('example.com');
+  });
+
+  it('refuses the whole envelope when the name carries an email address', () => {
+    expect(
+      scrubSentryTransaction(txn({ transaction: 'GET /u/someone@example.com' }), 'server'),
+    ).toBeNull();
+  });
+
+  it('cuts the query string before judging the name — search terms never ship', () => {
+    const out = scrubSentryTransaction(txn({ transaction: '/senders?q=invoice' }), 'server');
+    expect(out?.transaction).toBe('/senders');
+  });
+
+  it('refuses a non-transaction envelope — the mirror of scrubSentryEvent', () => {
+    expect(scrubSentryTransaction({ ...txn(), type: undefined }, 'server')).toBeNull();
+    expect(scrubSentryEvent(txn(), 'server')).toBeNull();
+  });
+
+  it('caps spans so a runaway loop cannot ship an unbounded payload', () => {
+    const many = Array.from({ length: 900 }, () => ({ op: 'db.query', span_id: 'd'.repeat(16) }));
+    const out = scrubSentryTransaction(txn({ spans: many }), 'server');
+    expect((out?.spans as unknown[]).length).toBe(500);
   });
 });

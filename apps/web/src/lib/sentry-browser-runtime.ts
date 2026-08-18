@@ -1,7 +1,11 @@
 'use client';
 
 import * as Sentry from '@sentry/nextjs';
-import { scrubSentryBreadcrumb, scrubSentryEvent } from '@declutrmail/shared/observability';
+import {
+  scrubSentryBreadcrumb,
+  scrubSentryEvent,
+  scrubSentryTransaction,
+} from '@declutrmail/shared/observability';
 import type { BrowserSentryRuntime } from './sentry';
 
 /**
@@ -23,7 +27,25 @@ const SAFE_BROWSER_INTEGRATIONS = new Set([
   'LinkedErrors',
   'Dedupe',
   'NextjsClientStackFrameNormalization',
+  // Tracing (D159, founder-authorised 2026-08-18). This set is
+  // fail-closed by NAME, so a sample rate alone would have been a silent
+  // no-op — the integration would still have been filtered out here.
+  'BrowserTracing',
 ]);
+
+/**
+ * Parse a `0..1` sample rate, falling back on anything unparseable.
+ *
+ * Same posture as the API's copy: a malformed or out-of-range value
+ * returns the DEFAULT rather than clamping toward 1, because the failure
+ * mode of this knob is a quota bill and the safe direction is down.
+ */
+function readSampleRate(raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) return fallback;
+  return parsed;
+}
 
 const browserRuntime: BrowserSentryRuntime = {
   addBreadcrumb(crumb): void {
@@ -80,7 +102,11 @@ export function initSentryBrowserRuntime(dsn: string): BrowserSentryRuntime {
       dsn,
       environment: process.env.NEXT_PUBLIC_VERCEL_ENV ?? process.env.NODE_ENV ?? 'development',
       release: process.env.NEXT_PUBLIC_SENTRY_RELEASE,
-      tracesSampleRate: 0,
+      // Browser traces show the pageload → navigation → fetch chain behind
+      // an error. Shipped behind `beforeSendTransaction` below, which drops
+      // every span description (full request URLs live there) and
+      // key-allowlists span data.
+      tracesSampleRate: readSampleRate(process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE, 0.2),
       traceLifecycle: 'static',
       streamGenAiSpans: false,
       replaysSessionSampleRate: 0,
@@ -107,7 +133,9 @@ export function initSentryBrowserRuntime(dsn: string): BrowserSentryRuntime {
         ),
       beforeSend: (event) =>
         scrubSentryEvent(event as unknown as Record<string, unknown>) as unknown as typeof event,
-      beforeSendTransaction: () => null,
+      beforeSendTransaction: (event) =>
+        scrubSentryTransaction(event as unknown as Record<string, unknown>) as unknown as
+          typeof event | null,
       beforeSendLog: () => null,
       beforeSendMetric: () => null,
       beforeBreadcrumb: (breadcrumb) =>
