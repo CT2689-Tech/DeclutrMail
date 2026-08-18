@@ -63,4 +63,32 @@ export default tseslint.config(
       '@typescript-eslint/no-require-imports': 'off',
     },
   },
+  {
+    // Hydration determinism (D200): a `toLocale*String` call that falls
+    // back to the runtime locale renders one string on the server and a
+    // different one in any non-en-US browser, so React discards the
+    // whole server tree (error #418 — caught by the e2e hydration
+    // smoke under de-DE / Asia/Kolkata). Pin 'en-US' — and pass an
+    // explicit `timeZone` (from `useUserTimeZone()`) when the value is
+    // an instant and the label can reach server-rendered HTML — or
+    // gate the label behind `useNow()`.
+    files: ['apps/web/src/features/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.property.name=/^toLocale(Date|Time)?String$/] > Identifier.arguments[name='undefined']",
+          message:
+            "toLocale*String(undefined, …) renders with the runtime locale and breaks hydration (React #418). Pin 'en-US' (plus an explicit timeZone for instants in server-rendered HTML).",
+        },
+        {
+          selector:
+            'CallExpression[callee.property.name=/^toLocale(Date|Time)?String$/][arguments.length=0]',
+          message:
+            "toLocale*String() renders with the runtime locale and breaks hydration (React #418). Pin 'en-US' (plus an explicit timeZone for instants in server-rendered HTML).",
+        },
+      ],
+    },
+  },
 );

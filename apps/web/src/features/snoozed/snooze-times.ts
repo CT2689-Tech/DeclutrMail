@@ -1,10 +1,16 @@
 /**
  * Pure date helpers for the Snoozed surface (D80 grouping + D82
- * presets). All functions take an explicit `now` so tests are
- * deterministic; callers pass `new Date()`.
+ * presets). All functions take an explicit `now` — and, for the
+ * bucket/label helpers, an explicit IANA `timeZone` — so tests are
+ * deterministic; callers pass `new Date()` and `useUserTimeZone()`.
  *
- * Times are computed in the user's LOCAL timezone (D82 — "5:00 PM
- * local", "9:00 AM local") and serialized to ISO on the wire.
+ * Times are computed in the user's timezone (D82 — "5:00 PM local",
+ * "9:00 AM local") and serialized to ISO on the wire. The zone must be
+ * an explicit argument because these labels are server-rendered into
+ * hydrated HTML (/later): the server's process zone is not the user's,
+ * and any drift between the server string and the first client render
+ * makes React discard the server tree (error #418; e2e
+ * hydration-smoke).
  */
 
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';
@@ -21,55 +27,71 @@ export const WAKE_BUCKET_LABELS: Record<WakeBucket, string> = {
   eventually: 'Eventually',
 };
 
-function startOfDay(d: Date): Date {
-  const out = new Date(d);
-  out.setHours(0, 0, 0, 0);
-  return out;
-}
-
 function addDays(d: Date, days: number): Date {
   const out = new Date(d);
   out.setDate(out.getDate() + days);
   return out;
 }
 
-/** D80 — bucket a wake time relative to `now` (local calendar days). */
-export function wakeBucket(snoozedUntil: string, now: Date): WakeBucket {
+/**
+ * Calendar-day ordinal of an instant in an IANA zone. en-CA renders
+ * YYYY-MM-DD; converting those fields to a UTC day count makes integer
+ * differences calendar-day differences in that zone.
+ */
+function calendarDayOrdinal(d: Date, timeZone: string): number {
+  const ymd = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+  const y = Number(ymd.slice(0, 4));
+  const m = Number(ymd.slice(5, 7));
+  const day = Number(ymd.slice(8, 10));
+  return Date.UTC(y, m - 1, day) / 86_400_000;
+}
+
+/** D80 — bucket a wake time relative to `now` (calendar days in `timeZone`). */
+export function wakeBucket(snoozedUntil: string, now: Date, timeZone: string): WakeBucket {
   const wake = new Date(snoozedUntil);
   if (Number.isNaN(wake.getTime())) {
     throw new RangeError('Invalid Later wake time.');
   }
-  const tomorrowStart = startOfDay(addDays(now, 1));
-  if (wake < tomorrowStart) return 'today';
-  if (wake < startOfDay(addDays(now, 2))) return 'tomorrow';
-  if (wake < startOfDay(addDays(now, 7))) return 'week';
+  const dayDiff = calendarDayOrdinal(wake, timeZone) - calendarDayOrdinal(now, timeZone);
+  if (dayDiff <= 0) return 'today';
+  if (dayDiff === 1) return 'tomorrow';
+  if (dayDiff < 7) return 'week';
   return 'eventually';
 }
 
 export type GroupedSnoozed = Record<WakeBucket, SnoozedSenderRow[]>;
 
-export function groupByWakeTime(rows: readonly SnoozedSenderRow[], now: Date): GroupedSnoozed {
+export function groupByWakeTime(
+  rows: readonly SnoozedSenderRow[],
+  now: Date,
+  timeZone: string,
+): GroupedSnoozed {
   const grouped: GroupedSnoozed = { today: [], tomorrow: [], week: [], eventually: [] };
   for (const row of rows) {
-    grouped[wakeBucket(row.snoozedUntil, now)].push(row);
+    grouped[wakeBucket(row.snoozedUntil, now, timeZone)].push(row);
   }
   return grouped;
 }
 
 /** "Tomorrow 9:00 AM" / "Fri 7:00 AM" / "May 23" — D80 row format. */
-export function formatWakeTime(iso: string, now: Date): string {
+export function formatWakeTime(iso: string, now: Date, timeZone: string): string {
   const wake = new Date(iso);
   if (Number.isNaN(wake.getTime())) {
     throw new RangeError('Invalid Later wake time.');
   }
-  const time = wake.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  const bucket = wakeBucket(iso, now);
+  const time = wake.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone });
+  const bucket = wakeBucket(iso, now, timeZone);
   if (bucket === 'today') return `Today ${time}`;
   if (bucket === 'tomorrow') return `Tomorrow ${time}`;
   if (bucket === 'week') {
-    return `${wake.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`;
+    return `${wake.toLocaleDateString('en-US', { weekday: 'short', timeZone })} ${time}`;
   }
-  return wake.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return wake.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone });
 }
 
 // ── D82 presets ───────────────────────────────────────────────────────

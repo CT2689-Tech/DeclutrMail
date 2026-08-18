@@ -1,6 +1,7 @@
 'use client';
 
 import { Eyebrow, EmptyState, Pill, tokens } from '@declutrmail/shared';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { relTimeFromIso } from './data';
 import type { DecisionAction, DecisionHistoryRow } from './types';
 
@@ -26,11 +27,17 @@ function toneFor(
   }
 }
 
-function dateLabel(iso: string, now: Date = new Date()): string {
+/**
+ * Locale + zone pinned: these rows are server-rendered into hydrated
+ * HTML on /senders/[id], so both halves must be deterministic (React
+ * #418; e2e hydration-smoke). The user zone decides the calendar day.
+ * Exported for the exact-string unit test.
+ */
+export function dateLabel(iso: string, now: Date, timeZone: string): string {
   const then = new Date(iso);
   const ageDays = (now.getTime() - then.getTime()) / (1000 * 60 * 60 * 24);
   if (ageDays <= 7) return relTimeFromIso(iso, now);
-  return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone });
 }
 
 /**
@@ -56,6 +63,7 @@ export function DecisionHistory({
   onUndo?: (row: DecisionHistoryRow) => void;
 }) {
   const now = new Date();
+  const timeZone = useUserTimeZone();
   return (
     <section
       aria-label="Decision history"
@@ -132,7 +140,7 @@ export function DecisionHistory({
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {dateLabel(row.at, now)}
+                  {dateLabel(row.at, now, timeZone)}
                 </span>
                 <span
                   style={{

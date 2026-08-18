@@ -345,11 +345,11 @@ describe('BriefScreen — D61 mark-opened mutation', () => {
 describe('BriefScreen — pure helpers', () => {
   it('formatRunDate produces a friendly local label without TZ shift', () => {
     // The Date input is parsed as UTC midnight; the formatter renders
-    // the calendar fields verbatim so no off-by-one ever appears.
-    const out = formatRunDate('2026-05-24');
-    // Expect a weekday + month-name fragment; locale-independent.
-    expect(out).toMatch(/May/);
-    expect(out).toMatch(/24/);
+    // the calendar fields verbatim so no off-by-one ever appears. The
+    // exact string is asserted because this label is server-rendered
+    // into hydrated HTML: it must not vary with the runtime locale or
+    // React discards the server tree (error #418; e2e hydration-smoke).
+    expect(formatRunDate('2026-05-24')).toBe('Sun, May 24');
   });
 
   it('formatRunDate passes through malformed input unchanged', () => {

@@ -43,6 +43,7 @@ import type {
   ActivityWindowWire,
 } from '@/lib/api/activity';
 import { newIdempotencyKey, type ActionRecoveryPreviewResult } from '@/lib/api/actions';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
@@ -3239,6 +3240,7 @@ function UndoCell({
 }) {
   const revert = useRevertActivity();
   const undo = row.undoState;
+  const timeZone = useUserTimeZone();
 
   // Mutation state lives per-row via the hook's mutationKey-free shape:
   // we read `revert.isPending` + `revert.error` directly. Multiple
@@ -3307,7 +3309,7 @@ function UndoCell({
   if (undo.kind === 'expired') {
     return (
       <span
-        title={`Undo window closed on ${formatExpiry(undo.expiredAt)}.`}
+        title={`Undo window closed on ${formatExpiry(undo.expiredAt, timeZone)}.`}
         style={{
           ...baseStyle,
           color: color.fgMuted,
@@ -3526,18 +3528,28 @@ function readGroupMode(raw: string | null): GroupMode {
   return raw === 'sender' ? 'sender' : 'none';
 }
 
-function windowToLabel(
+/**
+ * Locale + zone pinned: the filter summary is server-rendered into
+ * hydrated HTML (React #418; e2e hydration-smoke). `readIsoDate`
+ * normalizes a date-input pick to a UTC-midnight instant, so rendering
+ * the UTC fields recovers the exact day the user picked — an unpinned
+ * zone showed the PREVIOUS day on UTC-negative machines. Exported for
+ * the exact-string unit test.
+ */
+export function windowToLabel(
   window: ActivityWindowWire,
   dateFrom: string | null,
   dateTo: string | null,
 ): string {
   if (dateFrom || dateTo) {
-    const fromStr = dateFrom
-      ? new Date(dateFrom).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-      : '…';
-    const toStr = dateTo
-      ? new Date(dateTo).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-      : '…';
+    const dayLabel = (iso: string) =>
+      new Date(iso).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'UTC',
+      });
+    const fromStr = dateFrom ? dayLabel(dateFrom) : '…';
+    const toStr = dateTo ? dayLabel(dateTo) : '…';
     return `${fromStr} – ${toStr}`;
   }
   switch (window) {
@@ -3564,12 +3576,17 @@ function windowToLabel(
  * which hides that they were one action. Seconds are included for
  * exactly that case.
  */
-export function absoluteTime(iso: string): string {
+export function absoluteTime(iso: string, timeZone?: string): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return '';
-  return d.toLocaleString(undefined, {
+  // Locale pinned for consistency with every other label (the tooltip
+  // itself is set after mount — `now !== null` — so it never reaches
+  // server HTML). The zone stays the browser's; tests pass an explicit
+  // one for exact-string determinism.
+  return d.toLocaleString('en-US', {
     dateStyle: 'medium',
     timeStyle: 'medium',
+    timeZone,
   });
 }
 
@@ -3586,10 +3603,15 @@ export function relativeTime(iso: string, nowMs: number = Date.now()): string {
   return 'just now';
 }
 
-function formatExpiry(iso: string): string {
+/**
+ * Locale + zone pinned: the expired-undo tooltip is server-rendered
+ * into hydrated HTML (React #418; e2e hydration-smoke). The user zone
+ * decides the calendar day. Exported for the exact-string unit test.
+ */
+export function formatExpiry(iso: string, timeZone: string): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone });
 }
 
 function isoDateOnly(iso: string | null): string {

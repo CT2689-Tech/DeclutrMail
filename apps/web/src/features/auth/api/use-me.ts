@@ -85,6 +85,23 @@ export function useMe() {
   return query;
 }
 
+/**
+ * Hydration-safe IANA timezone for date/time labels rendered into
+ * server HTML. Reads the `me` cache without ever fetching: the server
+ * pass and the first client render see the same cache entry (or the
+ * same absence → 'UTC'), so a label formatted with this zone can never
+ * mismatch on hydration (React #418; e2e hydration-smoke). The
+ * browser-zone healing in `useMe` keeps the value current after mount.
+ */
+export function useUserTimeZone(): string {
+  const { data } = useQuery<Me>({
+    queryKey: ME_QUERY_KEY,
+    enabled: false,
+    staleTime: Infinity,
+  });
+  return data?.user.timezone ?? 'UTC';
+}
+
 export function browserTimeZone(): string | null {
   if (typeof Intl === 'undefined') return null;
   try {
