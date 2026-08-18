@@ -84,43 +84,54 @@ describe('formatWakeTime (D80)', () => {
 });
 
 describe('snoozePresets (D82)', () => {
+  // Presets are created in the USER zone (same zone the /later rows
+  // display in), never the machine/browser zone — otherwise "Later
+  // today (5:00 PM)" could save an instant the row then renders as
+  // "Today 7:30 PM". Exact ISO instants prove the wall times.
+  const at = (presets: ReturnType<typeof snoozePresets>, id: string) =>
+    presets.find((p) => p.id === id)!.at.toISOString();
+
+  it('resolves every wall time in the given zone (exact instants)', () => {
+    const presets = snoozePresets(NOW, TZ); // Thu 2026-06-11 08:00 IST
+    expect(at(presets, 'later_today')).toBe('2026-06-11T11:30:00.000Z'); // 17:00 IST
+    expect(at(presets, 'tomorrow')).toBe('2026-06-12T03:30:00.000Z'); // Fri 09:00 IST
+    expect(at(presets, 'weekend')).toBe('2026-06-13T03:30:00.000Z'); // Sat 09:00 IST
+    expect(at(presets, 'next_week')).toBe('2026-06-15T03:30:00.000Z'); // Mon 09:00 IST
+    expect(at(presets, 'next_month')).toBe('2026-07-01T03:30:00.000Z'); // Jul 1 09:00 IST
+  });
+
   it('every preset resolves to a FUTURE wake time', () => {
-    for (const preset of snoozePresets(NOW)) {
+    for (const preset of snoozePresets(NOW, TZ)) {
       expect(preset.at.getTime()).toBeGreaterThan(NOW.getTime());
     }
   });
 
-  it('includes Later today (5 PM) only while 5 PM is still ahead', () => {
-    const morning = snoozePresets(new Date(2026, 5, 11, 8, 0, 0));
-    expect(morning.some((p) => p.id === 'later_today')).toBe(true);
-
-    const evening = snoozePresets(new Date(2026, 5, 11, 18, 0, 0));
-    expect(evening.some((p) => p.id === 'later_today')).toBe(false);
+  it('the zone decides whether Later today is still ahead, not the machine', () => {
+    // 13:00 UTC = 18:30 IST: 5 PM has passed in IST but not in UTC —
+    // the SAME instant includes the preset in one zone and not the other.
+    const now = new Date('2026-06-11T13:00:00Z');
+    expect(snoozePresets(now, TZ).some((p) => p.id === 'later_today')).toBe(false);
+    const utc = snoozePresets(now, 'UTC');
+    expect(utc.some((p) => p.id === 'later_today')).toBe(true);
+    expect(at(utc, 'later_today')).toBe('2026-06-11T17:00:00.000Z');
   });
 
-  it('weekend lands on a Saturday 9 AM, next_week on a Monday 9 AM', () => {
-    const presets = snoozePresets(new Date(2026, 5, 11, 8, 0, 0));
-    const weekend = presets.find((p) => p.id === 'weekend')!;
-    expect(weekend.at.getDay()).toBe(6);
-    expect(weekend.at.getHours()).toBe(9);
-    const nextWeek = presets.find((p) => p.id === 'next_week')!;
-    expect(nextWeek.at.getDay()).toBe(1);
-    expect(nextWeek.at.getHours()).toBe(9);
-  });
-
-  it('next_month is the 1st at 9 AM', () => {
-    const preset = snoozePresets(new Date(2026, 5, 11, 8, 0, 0)).find(
-      (p) => p.id === 'next_month',
-    )!;
-    expect(preset.at.getDate()).toBe(1);
-    expect(preset.at.getMonth()).toBe(6); // July
-    expect(preset.at.getHours()).toBe(9);
+  it('lands on the wall clock across a DST transition', () => {
+    // Sat 2026-03-07 12:00 EST; US DST starts Sun 2026-03-08. Tomorrow
+    // 9 AM must be 09:00 EDT (-04), not a naive +24h from EST (-05).
+    const now = new Date('2026-03-07T12:00:00-05:00');
+    const presets = snoozePresets(now, 'America/New_York');
+    expect(at(presets, 'tomorrow')).toBe('2026-03-08T13:00:00.000Z');
   });
 
   it('on a Saturday, weekend points at the NEXT Saturday', () => {
-    const saturday = new Date(2026, 5, 13, 10, 0, 0); // Sat 2026-06-13
-    const weekend = snoozePresets(saturday).find((p) => p.id === 'weekend')!;
-    expect(weekend.at.getDay()).toBe(6);
-    expect(weekend.at.getTime()).toBeGreaterThan(saturday.getTime());
+    const saturday = new Date('2026-06-13T10:00:00+05:30'); // Sat IST morning
+    const presets = snoozePresets(saturday, TZ);
+    expect(at(presets, 'weekend')).toBe('2026-06-20T03:30:00.000Z'); // Sat Jun 20 09:00 IST
+  });
+
+  it('next_month rolls the year over from December', () => {
+    const december = new Date('2026-12-10T08:00:00+05:30');
+    expect(at(snoozePresets(december, TZ), 'next_month')).toBe('2027-01-01T03:30:00.000Z');
   });
 });

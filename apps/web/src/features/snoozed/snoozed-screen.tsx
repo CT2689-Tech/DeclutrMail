@@ -519,7 +519,10 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
   const setSnooze = useSetSnooze();
   const [reason, setReason] = useState(row.reason ?? '');
   const [custom, setCustom] = useState('');
-  const presets = useMemo(() => snoozePresets(new Date()), []);
+  // Presets resolve in the user zone — the zone the rows display in —
+  // so the saved instant reads back as the wall time that was picked.
+  const timeZone = useUserTimeZone();
+  const presets = useMemo(() => snoozePresets(new Date(), timeZone), [timeZone]);
 
   const submit = (until: string, presetId: SnoozePresetEventId) => {
     const trimmed = reason.trim();

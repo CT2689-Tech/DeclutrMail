@@ -29,28 +29,58 @@ export const WAKE_BUCKET_LABELS: Record<WakeBucket, string> = {
   eventually: 'Eventually',
 };
 
-function addDays(d: Date, days: number): Date {
-  const out = new Date(d);
-  out.setDate(out.getDate() + days);
-  return out;
-}
-
-/**
- * Calendar-day ordinal of an instant in an IANA zone. en-CA renders
- * YYYY-MM-DD; converting those fields to a UTC day count makes integer
- * differences calendar-day differences in that zone.
- */
-function calendarDayOrdinal(d: Date, timeZone: string): number {
+/** Calendar fields (1-based month) of an instant in an IANA zone. */
+function zonedYmd(d: Date, timeZone: string): { y: number; m: number; d: number } {
   const ymd = new Intl.DateTimeFormat('en-CA', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   }).format(d);
-  const y = Number(ymd.slice(0, 4));
-  const m = Number(ymd.slice(5, 7));
-  const day = Number(ymd.slice(8, 10));
+  return { y: Number(ymd.slice(0, 4)), m: Number(ymd.slice(5, 7)), d: Number(ymd.slice(8, 10)) };
+}
+
+/**
+ * Calendar-day ordinal of an instant in an IANA zone. Converting the
+ * zone's calendar fields to a UTC day count makes integer differences
+ * calendar-day differences in that zone.
+ */
+function calendarDayOrdinal(d: Date, timeZone: string): number {
+  const { y, m, d: day } = zonedYmd(d, timeZone);
   return Date.UTC(y, m - 1, day) / 86_400_000;
+}
+
+/** The instant's wall clock in `timeZone`, re-read as a UTC timestamp. */
+function wallClockAsUtcMs(ts: number, timeZone: string): number {
+  const s = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).format(ts);
+  const match = s.match(/^(\d{4})-(\d{2})-(\d{2}),? (\d{2}):(\d{2}):(\d{2})$/);
+  if (!match) throw new RangeError(`Unexpected zoned format: ${s}`);
+  const [, y, mo, d, h, mi, se] = match;
+  return Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(se));
+}
+
+/**
+ * The instant whose wall clock in `timeZone` reads (y, m0, d, hour:00).
+ * Overflowing fields (day > month length, m0 = 12) normalize the way
+ * `Date.UTC` does. Two offset-correction passes converge across any
+ * DST step between the naive guess and the target.
+ */
+function zonedInstant(y: number, m0: number, d: number, hour: number, timeZone: string): Date {
+  const targetWall = Date.UTC(y, m0, d, hour, 0, 0, 0);
+  let ts = targetWall;
+  for (let i = 0; i < 2; i++) {
+    ts += targetWall - wallClockAsUtcMs(ts, timeZone);
+  }
+  return new Date(ts);
 }
 
 /** D80 — bucket a wake time relative to `now` (calendar days in `timeZone`). */
@@ -105,45 +135,48 @@ export interface SnoozePreset {
   at: Date;
 }
 
-function at(d: Date, hours: number): Date {
-  const out = new Date(d);
-  out.setHours(hours, 0, 0, 0);
-  return out;
-}
-
 /**
- * The D82 preset list, resolved against `now`. "Later today" (5 PM) is
- * omitted once it would be in the past — a preset must always yield a
- * future wake time (the contract rejects past values).
+ * The D82 preset list, resolved against `now` in the user's zone —
+ * the SAME zone the /later rows display in, so "Later today (5:00 PM)"
+ * always saves the instant the row will render back as "Today 5:00 PM".
+ * "Later today" is omitted once it would be in the past — a preset
+ * must always yield a future wake time (the contract rejects past
+ * values).
  */
-export function snoozePresets(now: Date): SnoozePreset[] {
+export function snoozePresets(now: Date, timeZone: string): SnoozePreset[] {
   const presets: SnoozePreset[] = [];
+  const { y, m, d } = zonedYmd(now, timeZone);
+  const at = (dayOffset: number, hour: number) =>
+    zonedInstant(y, m - 1, d + dayOffset, hour, timeZone);
 
-  const laterToday = at(now, 17);
+  const laterToday = at(0, 17);
   if (laterToday > now) {
     presets.push({ id: 'later_today', label: 'Later today (5:00 PM)', at: laterToday });
   }
 
-  presets.push({ id: 'tomorrow', label: 'Tomorrow (9:00 AM)', at: at(addDays(now, 1), 9) });
+  presets.push({ id: 'tomorrow', label: 'Tomorrow (9:00 AM)', at: at(1, 9) });
 
   // Next Saturday — when today IS Saturday (or Sunday), the coming one.
-  const day = now.getDay(); // 0 = Sunday … 6 = Saturday
+  const day = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sunday … 6 = Saturday
   const daysToSaturday = (6 - day + 7) % 7 || 7;
   presets.push({
     id: 'weekend',
     label: 'This weekend (Sat 9:00 AM)',
-    at: at(addDays(now, daysToSaturday), 9),
+    at: at(daysToSaturday, 9),
   });
 
   const daysToMonday = (1 - day + 7) % 7 || 7;
   presets.push({
     id: 'next_week',
     label: 'Next week (Mon 9:00 AM)',
-    at: at(addDays(now, daysToMonday), 9),
+    at: at(daysToMonday, 9),
   });
 
-  const firstOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1, 9, 0, 0, 0);
-  presets.push({ id: 'next_month', label: 'Next month (1st, 9:00 AM)', at: firstOfNextMonth });
+  presets.push({
+    id: 'next_month',
+    label: 'Next month (1st, 9:00 AM)',
+    at: zonedInstant(y, m, 1, 9, timeZone),
+  });
 
   return presets;
 }
