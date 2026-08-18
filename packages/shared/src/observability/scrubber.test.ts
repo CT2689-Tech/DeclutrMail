@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import { scrubObject, scrubTelemetryPayload, scrubUrlDerived } from './scrubber.js';
 import {
   __testing,
-  scrubObject,
   scrubSentryBreadcrumb,
   scrubSentryEvent,
   scrubSentryTransaction,
   scrubSentryLog,
-  scrubTelemetryPayload,
-  scrubUrlDerived,
-} from './scrubber.js';
+} from './sentry-scrubber.js';
 
 /**
  * Privacy scrubber unit tests (D7, D228, D159).
