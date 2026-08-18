@@ -36,6 +36,12 @@ import { clearSessionCookies, setSessionCookies } from './session-cookies.js';
  */
 export interface MailboxView extends MailboxSummary {
   readiness: SyncReadiness | null;
+  /**
+   * The Gmail grant is revoked and re-consent is the only fix (D224).
+   * Served here so the app chrome can gate EVERY broken mailbox without
+   * polling `/sync/status` once per mailbox on every page.
+   */
+  needsReconnect: boolean;
 }
 
 /** Wire shape for GET /api/auth/me — drives the FE AuthProvider. */
@@ -102,13 +108,15 @@ export class AuthController {
     // Compose per-mailbox sync readiness via the sync facade (D116, D204).
     // The tier + free-cap position ride the same response (D19/D77) —
     // `cleanupSummary` skips the count scan entirely for paid tiers.
-    const [readiness, quota] = await Promise.all([
+    const [readiness, needsReconnect, quota] = await Promise.all([
       this.sync.getReadinessByMailbox(mailboxes.map((m) => m.id)),
+      this.sync.getNeedsReconnectByMailbox(mailboxes.map((m) => m.id)),
       this.entitlements.cleanupSummary(principal.workspaceId),
     ]);
     const mailboxViews: MailboxView[] = mailboxes.map((m) => ({
       ...m,
       readiness: readiness.get(m.id) ?? null,
+      needsReconnect: needsReconnect.get(m.id) ?? false,
     }));
     return ok({
       user: {

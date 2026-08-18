@@ -7,6 +7,7 @@ import {
   ensureInitialSyncJob,
   type IncrementalSyncJobData,
 } from '@declutrmail/workers';
+import { INVALID_GRANT_ERROR } from '@declutrmail/workers';
 import type { InitialSyncJobData } from '@declutrmail/workers';
 import type { SyncReadiness, SyncStatus } from '@declutrmail/shared/contracts';
 
@@ -321,6 +322,52 @@ export class SyncService {
       .from(providerSyncState)
       .where(inArray(providerSyncState.mailboxAccountId, mailboxAccountIds));
     return new Map(rows.map((r) => [r.mailboxAccountId, r.readinessStatus]));
+  }
+
+  /**
+   * Which mailboxes currently need a Gmail reconnect, keyed by id.
+   *
+   * The server-side mirror of the frontend's `syncStatusNeedsReconnect`
+   * and the workers' `notNeedingReconnect`, and deliberately the SAME
+   * rule as both: a recorded `InvalidGrantError` counts only while it is
+   * newer than the last success, so a mailbox that has since reconnected
+   * and synced clears itself. Two sources, matching the frontend's:
+   * `last_incremental_error_code` (incremental terminal failure, recency
+   * checked) and `error_code` (initial-sync failure — readiness stays
+   * `failed` until a successful run, so no recency check is meaningful).
+   *
+   * Served from `me` so the app chrome can surface a reconnect gate for
+   * EVERY broken mailbox without polling `/sync/status` once per mailbox
+   * on every page. Before this, the banner could only be rendered for the
+   * active mailbox, and a second mailbox whose grant had been revoked
+   * went silent everywhere except the account-switcher dropdown — the
+   * founder learned about one from a Sentry billing email instead
+   * (2026-08-18).
+   *
+   * Ids only, no message-derived state — privacy posture §2.1.
+   */
+  async getNeedsReconnectByMailbox(mailboxAccountIds: string[]): Promise<Map<string, boolean>> {
+    if (mailboxAccountIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({
+        mailboxAccountId: providerSyncState.mailboxAccountId,
+        errorCode: providerSyncState.errorCode,
+        lastIncrementalErrorCode: providerSyncState.lastIncrementalErrorCode,
+        lastIncrementalErrorAt: providerSyncState.lastIncrementalErrorAt,
+        lastSyncedAt: providerSyncState.lastSyncedAt,
+      })
+      .from(providerSyncState)
+      .where(inArray(providerSyncState.mailboxAccountId, mailboxAccountIds));
+
+    return new Map(
+      rows.map((r) => {
+        const incrementalAuthError =
+          r.lastIncrementalErrorCode === INVALID_GRANT_ERROR &&
+          r.lastIncrementalErrorAt !== null &&
+          (r.lastSyncedAt === null || r.lastIncrementalErrorAt > r.lastSyncedAt);
+        return [r.mailboxAccountId, incrementalAuthError || r.errorCode === INVALID_GRANT_ERROR];
+      }),
+    );
   }
 
   /**
