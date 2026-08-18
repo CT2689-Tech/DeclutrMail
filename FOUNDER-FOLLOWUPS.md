@@ -24,33 +24,48 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
-### 2026-08-18 — Publish the new Google OAuth consent logo
+### 2026-08-18 — Google OAuth logo: submitted, under full Trust & Safety review
 
 **Source:** session — D255 brand rollout
-**Why:** `docs/brand/oauth-consent-logo-120.png` now carries the real mark
-instead of the D134 placeholder, but the file in the repo changes nothing
-on its own. Until it is uploaded and published, the Google sign-in screen
-— the first thing a new user sees, before they trust you with Gmail
-access — still shows the placeholder.
-**How:** Cloud Console → APIs & Services → OAuth consent screen → Branding
-→ upload `docs/brand/oauth-consent-logo-120.png` → **Verify Branding** →
-**Publish branding**.
+**Why:** `docs/brand/oauth-consent-logo-120.png` now carries the real mark.
+Uploaded and saved 2026-08-18; the consent screen still shows the old D134
+placeholder until review completes.
 
-Two things to know before starting. This triggers *brand* verification
-only — minutes if automated, 2–3 business days if it goes to manual
-review. It does NOT trigger app/scope verification or CASA, because the
-Gmail restricted scopes are unchanged. The live consent screen keeps
-working throughout; the change sits in Draft Branding and is invisible to
-users until published.
+**CORRECTION — the guidance originally written here was wrong.** It said a
+logo swap triggers *brand* verification only, resolving in minutes or 2-3
+days, leaving app/scope verification and CASA untouched. That is not what
+happened. Saving the logo opened a **full Trust & Safety review**: the
+Verification Center now lists homepage requirements, privacy policy
+requirements, app functionality, branding guidelines, appropriate data
+access, minimum scopes and additional requirements. Google's stated
+timeline is **4-6 weeks**, with a first contact email in 3-5 days.
 
-**The trap:** a compliant verification result is valid for **7 days**. If
-you do not click *Publish branding* inside that window, the status reverts
-to "Need to re-verify" and you run it again. So do not click Verify until
-you are ready to publish.
-**Verifies by:** Sign in to DeclutrMail with a fresh Google account; the
-consent screen shows the teal mark, not the two-bars-and-a-check card.
-**Status:** Open
+The lesson: on an app holding restricted Gmail scopes, branding is not
+separable from verification. Treat ANY consent-screen change as
+re-opening the whole review, and batch such changes rather than making
+them one at a time.
 
+**Good news:** "Your last approved consent screen is still in use." Users
+are unaffected for the whole review window — sign-in keeps working and
+keeps showing the old logo.
+
+**How (remaining):**
+1. **Confirm `support@declutrmail.com` actually receives mail.** This is
+   the developer contact Trust & Safety will write to, and a missed email
+   stalls or fails the review. MX for declutrmail.com points at Google
+   Workspace, but the entry that closed the mailbox work noted ".com
+   delivery pending the declutrmail.com domain-alias add". Send a test
+   from an outside address and confirm it lands.
+2. Watch for the first email within 3-5 days.
+3. Do NOT make further branding changes while under review — each one
+   risks restarting the clock.
+4. The review re-examines `/`, `/privacy` and `/terms`. They are live and
+   were audited 2026-07-19, so this should be a re-confirmation rather
+   than new work, but they need to stay reachable and unchanged.
+**Verifies by:** Verification Center shows branding approved; a fresh
+Google account signing in sees the teal mark rather than the two-bars-and-
+a-check card.
+**Status:** Open — submitted 2026-08-18, under review
 ### 2026-08-16 — Self-serve refund: post-launch, and it needs a policy before it needs code
 
 **Source:** billing premium program scoping, 2026-08-16 — raised under CLAUDE.md
