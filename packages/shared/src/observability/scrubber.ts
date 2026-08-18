@@ -388,6 +388,16 @@ const SENTRY_SERVER_TAG_ALLOWLIST = new Set([
   // reached Sentry as a bare class name and took a production database
   // query to identify.
   'error_reason',
+  // Which pipeline died, and which parked row to replay. Both are the
+  // dead-letter alert's only discriminators once `Error.message` is
+  // stripped: `queue` is a closed internal set of BullMQ queue names,
+  // `dead_letter_id` a random row UUID carrying no user data. Added
+  // 2026-08-18 — `dead-letter.worker.ts` had been passing both since it
+  // was written, and both were being dropped here, so 3,095 events
+  // across three unrelated failure kinds shared one issue titled
+  // "Error" with nothing to tell them apart (DECLUTRMAIL-WEB-R).
+  'queue',
+  'dead_letter_id',
 ]);
 const SENTRY_BREADCRUMB_CATEGORIES = new Set([
   'sync',
@@ -421,6 +431,7 @@ const SENTRY_SERVER_EXCEPTION_TYPES = new Set([
   'RateLimitError',
   'InvalidGrantError',
   'EmailRaceLostError',
+  'DeadLetterParkedError',
   'ReplyError',
   'ZodError',
 ]);

@@ -20,6 +20,26 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-18 — An allowlist silently dropped the tag it was meant to carry
+
+**Context:** triaging DECLUTRMAIL-WEB-R — 3,095 Sentry events titled "Error",
+spanning three unrelated failure kinds with nothing to tell them apart.
+**Finding:** `dead-letter.worker.ts` had been passing `queue` and
+`dead_letter_id` as tags since it was written. Neither was in
+`SENTRY_SERVER_TAG_ALLOWLIST`, so the scrubber discarded both. Nothing failed:
+the call site looked correct, the scrubber looked correct, tests on each side
+passed. The loss was only visible from the far end — querying Sentry and
+getting `queue: ""` back for every one of 2,529 events.
+**Rule (provisional):** an allowlist is a contract with two sides. A tag added
+at a call site without a matching allowlist entry is not a no-op, it is a
+silent drop — so a test that asserts the call site passes a tag proves nothing
+about whether the tag arrives. Assert survival THROUGH the scrubber, not
+emission into it.
+**Distillation trigger:** promote to CLAUDE.md §2 if a third
+allowlist/denylist pair is found silently dropping its payload — this is the
+same shape as the BLIND-GUARD class already logged (a guard that reports
+success having verified nothing).
+
 ## 2026-08-16 — A subpath barrel is invisible to `optimizePackageImports`
 **Context:** Cutting the JS on `/senders` + `/triage` (D160). `next.config.ts` already listed `optimizePackageImports: ['@declutrmail/shared']`, so barrel bloat looked like solved ground.
 **Finding:** The option matches the **import specifier**, not the package. Listing `@declutrmail/shared` optimises `from '@declutrmail/shared'` and leaves every `from '@declutrmail/shared/contracts'` — 86 import sites — untouched. That barrel re-exports ~20 Zod schema modules, so one `import type { Envelope }` was dragging billing, onboarding, autopilot, account-deletion, quiet-hours, snoozed and the rest onto every authed route. Adding the seven subpaths the package's `exports` map declares: `/senders` 221.5 → 206.5 kB, `/triage` 211.4 → 195.9 kB, `/senders/[id]` 207.8 → 191.3 kB, and 13–18 kB off every other authed route — **zero source changes**. Attribution came from a throwaway build with `productionBrowserSourceMaps: true` into a scratch `distDir`, mapping each chunk's segments back to sources; `zod` alone was 19.9 kB gz on both routes before the change.
