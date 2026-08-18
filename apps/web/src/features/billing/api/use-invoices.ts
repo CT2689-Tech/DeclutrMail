@@ -16,35 +16,20 @@
  */
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import {
-  BillingInvoiceListSchema,
-  BillingInvoiceDocumentSchema,
-} from '@declutrmail/shared/contracts';
-import type { BillingInvoiceList } from '@declutrmail/shared/contracts';
+import { BillingInvoiceDocumentSchema } from '@declutrmail/shared/contracts';
 
 import { apiGet } from '@/lib/api/client';
 
 import { BillingPayloadError } from '../billing-model';
-import { billingKeys } from './query-keys';
+import { billingInvoicesQueryOptions } from './query-options';
+import { parseBillingInvoices } from './parse-payload';
 
 export function useInvoices(options?: { enabled?: boolean }) {
-  return useQuery<BillingInvoiceList>({
-    queryKey: billingKeys.invoices(),
-    queryFn: async ({ signal }) => {
+  return useQuery({
+    ...billingInvoicesQueryOptions(async (signal) => {
       const envelope = await apiGet<unknown>('/api/billing/invoices', { signal });
-      const parsed = BillingInvoiceListSchema.safeParse(envelope.data);
-      if (!parsed.success) {
-        throw new BillingPayloadError('GET /api/billing/invoices');
-      }
-      return parsed.data;
-    },
-    // Same rule as the subscription read: billing-dark answers 503 and
-    // a read guard's 4xx/5xx is a designed state, never a retry loop
-    // (§8 — the 409-storm class).
-    retry: false,
-    // Longer than the subscription read: invoices change monthly at
-    // most, and each refetch costs a provider round-trip per row.
-    staleTime: 5 * 60_000,
+      return parseBillingInvoices(envelope.data);
+    }),
     enabled: options?.enabled ?? true,
   });
 }

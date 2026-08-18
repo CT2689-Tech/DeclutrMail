@@ -76,7 +76,7 @@ export function RecommendationBanner({
           <p style={{ margin: '5px 0 0', fontSize: 13, lineHeight: 1.55 }}>{reasoning}</p>
         </div>
         <div>
-          <Eyebrow tone="default">Observed facts</Eyebrow>
+          <Eyebrow tone="default">Details used</Eyebrow>
           <ul
             style={{
               margin: '6px 0 0',

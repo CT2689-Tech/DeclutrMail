@@ -26,7 +26,7 @@ import {
   type SenderListSort,
   type TriStateFilter,
 } from '@/lib/api/senders';
-import { sendersKeys } from './query-keys';
+import { sendersInfiniteQueryOptions } from './query-options';
 
 export interface UseSendersOptions {
   category?: GmailCategory | undefined;
@@ -75,48 +75,10 @@ export interface UseSendersOptions {
 }
 
 export function useSenders(options: UseSendersOptions = {}) {
+  const { enabled = true, ...query } = options;
   return useInfiniteQuery({
-    // Sort + direction + every compose axis are part of the cache key.
-    // Switching any filter resets to page 1 (per the contract: a cursor
-    // is bound to its query context).
-    queryKey: sendersKeys.list({
-      category: options.category,
-      limit: options.limit,
-      isProtected: options.isProtected,
-      sort: options.sort,
-      direction: options.direction,
-      q: options.q,
-      activity: options.activity,
-      activityNegate: options.activityNegate,
-      unsubReady: options.unsubReady,
-      replied: options.replied,
-      windowDays: options.windowDays,
-      domain: options.domain,
-      unsubIgnored: options.unsubIgnored,
-    }),
-    queryFn: ({ pageParam, signal }) =>
-      fetchSenders(
-        {
-          category: options.category,
-          limit: options.limit,
-          isProtected: options.isProtected,
-          sort: options.sort,
-          direction: options.direction,
-          q: options.q,
-          activity: options.activity,
-          activityNegate: options.activityNegate,
-          unsubReady: options.unsubReady,
-          replied: options.replied,
-          windowDays: options.windowDays,
-          domain: options.domain,
-          unsubIgnored: options.unsubIgnored,
-          cursor: pageParam ?? undefined,
-        },
-        signal,
-      ),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.meta.pagination.nextCursor ?? undefined,
-    enabled: options.enabled ?? true,
+    ...sendersInfiniteQueryOptions(query, fetchSenders),
+    enabled,
     // Keep the prior results on screen while a NEW key resolves (e.g. a
     // search term change) so the list doesn't blank to a skeleton on
     // every keystroke — `isLoading` only fires on the first-ever load.

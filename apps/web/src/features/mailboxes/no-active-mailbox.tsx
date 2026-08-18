@@ -201,7 +201,7 @@ export function NoActiveMailboxView({
 
       {deletingMailboxes.length > 0 && (
         <p role="status" style={{ margin: '14px 0 0', color: color.fgMuted, fontSize: 12 }}>
-          Deleting indexed data: {deletingMailboxes.map((mailbox) => mailbox.email).join(' · ')}
+          Deleting saved data: {deletingMailboxes.map((mailbox) => mailbox.email).join(' · ')}
         </p>
       )}
 

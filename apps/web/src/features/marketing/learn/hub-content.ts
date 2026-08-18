@@ -43,7 +43,7 @@ export const ANSWERS_HUB: LearnHubDefinition = {
   heading: 'Answers about Gmail cleanup',
   lead: 'Direct answers to the questions people ask before granting Gmail access — what a cleanup app can see, what each action changes, and where recovery stops. Every answer states its limits instead of rounding them away.',
   description:
-    'Direct answers on Gmail cleanup: whether connecting an app is safe, what metadata-only analysis means, how undo works, and sender-level versus message-level cleanup.',
+    'Direct answers on Gmail cleanup: whether connecting an app is safe, what limited-data analysis means, how undo works, and when to review by sender or email.',
   meta: [`${ANSWER_SLUGS.length} answers`, 'Limits stated, not implied'],
   label: 'Direct answers',
   articles: ANSWER_SLUGS.map((slug) => ANSWER_ARTICLES[slug]),

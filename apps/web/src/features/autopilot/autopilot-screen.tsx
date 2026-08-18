@@ -451,7 +451,10 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         for (const m of matches) next.delete(m.id);
         return next;
       });
-      toast(`Approved ${count.toLocaleString()} suggestion${count === 1 ? '' : 's'}`, 'info');
+      toast(
+        `Approved ${count.toLocaleString('en-US')} suggestion${count === 1 ? '' : 's'}`,
+        'info',
+      );
     };
     const onError = (err: unknown) => {
       captureFeatureException(err, { surface: 'autopilot', reason: 'approve_failed' });
@@ -637,10 +640,9 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         title="How Autopilot works"
         body={
           canActivate
-            ? 'Observe and Active are set per rule. Observe records matches as suggestions and changes no mail until you approve one. Active applies future matches automatically; every result is recorded in Activity. Pause all stops every rule across every inbox at once.'
-            : `Rules run in Observe: they record matches as suggestions and change no mail until you approve a batch. Letting a rule act on future matches without asking each time is part of ${ACT_PLAN_NAME}. Pause all stops every rule across every inbox at once.`
+            ? 'Rules start in Observe so you can review matching email before Gmail changes. Switch a rule to Active when you want it to handle future matches automatically.'
+            : `Rules collect matching email in Observe for you to approve. Active rules that handle future matches automatically are part of ${ACT_PLAN_NAME}.`
         }
-        tip="These are the rules we've built so far. Writing your own is coming."
       />
 
       <ContextualHelp

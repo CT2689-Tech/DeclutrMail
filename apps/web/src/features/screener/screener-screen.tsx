@@ -535,8 +535,11 @@ export function ScreenerScreen({
       <ScreenIntro
         id="screener"
         title="How the Screener works"
-        body="First-time senders are collected here for review — their mail still arrives in your inbox until you decide. One decision per sender: Keep, Archive, Unsubscribe, Later, or Delete. Every destructive action shows a preview before anything changes."
-        tip="Suggestions use sender, subject, Gmail's short preview, dates, and aggregate activity. Full message bodies are never fetched."
+        body="Review first-time senders before deciding what should happen. Their email still arrives in Inbox until you decide, and every destructive action shows a preview first."
+        learnMore={{
+          href: '/methodology#action-method',
+          label: 'How action previews protect you',
+        }}
       />
 
       {/* D230 manual path — after Unsubscribe on a mailto sender. */}

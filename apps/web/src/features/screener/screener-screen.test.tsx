@@ -93,7 +93,9 @@ describe('ScreenerScreen — ready state', () => {
 
   it('states the D72 soft-quarantine truth in the intro (mail still arrives)', () => {
     const html = renderState(state);
-    expect(html).toContain('their mail still arrives in your inbox until you decide');
+    expect(html).toContain('Their email still arrives in Inbox until you decide');
+    expect(html).toContain('How action previews protect you →');
+    expect(html).toContain('href="/methodology#action-method"');
   });
 
   it('never uses the verb "Screen" in rendered copy (§2.2 / D227)', () => {

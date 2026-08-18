@@ -72,10 +72,9 @@ export default function PrivacyPolicyPage() {
 
       <LegalSection id="what-we-store" title="2. What we store — and what we never store">
         <p>
-          Our entire product is built around one boundary: <strong>{PRIVACY_BADGE_HEADLINE}</strong>
-          . We never fetch or store the full body of your messages. The published Gmail
-          message-field disclosure is below; the operational records stored beyond message metadata
-          are listed after it.
+          Our entire product is built around one boundary: <strong>{PRIVACY_BADGE_HEADLINE}</strong>{' '}
+          The Gmail details DeclutrMail stores are listed below. The account and service records
+          stored beyond those Gmail details are listed after it.
         </p>
         <p>
           <strong>{PRIVACY_STORAGE_LABEL}</strong>
@@ -94,16 +93,16 @@ export default function PrivacyPolicyPage() {
           ))}
         </ul>
         <p>
-          The &ldquo;Gmail Preview&rdquo; above is the short snippet Gmail itself computes and shows
-          in your inbox list (roughly 160 characters). We receive it from Gmail&rsquo;s API in
-          metadata form — we never download or parse the full message body to produce it.
+          The Gmail preview snippet above is the short text Gmail itself computes and shows in your
+          inbox list (roughly 160 characters). We receive it directly from Gmail and never download
+          the full email to produce it.
         </p>
         <p>
-          Beyond message metadata, we also store: your Google account email address and display name
-          (from sign-in), your DeclutrMail preferences and per-sender decisions, an activity log of
-          the actions DeclutrMail performed on your behalf, and billing records (handled by our
-          payment providers — see <a href="#subprocessors">Section 8</a>; we never see or store full
-          card numbers).
+          Beyond the Gmail details listed above, we also store: your Google account email address
+          and display name (from sign-in), your DeclutrMail preferences and per-sender decisions, an
+          activity log of the actions DeclutrMail performed on your behalf, and billing records
+          (handled by our payment providers — see <a href="#subprocessors">Section 8</a>; we never
+          see or store full card numbers).
         </p>
       </LegalSection>
 
@@ -116,10 +115,10 @@ export default function PrivacyPolicyPage() {
         </p>
         <ul>
           <li>
-            Message data is fetched in <strong>metadata format only</strong>: sender, subject,
-            Gmail&rsquo;s snippet, dates, labels, read/unread state, recipient addresses on mail you
-            sent, unsubscribe headers (<code>List-Unsubscribe</code>), and Gmail&rsquo;s size
-            estimate. We do not request message bodies or attachments from the API.
+            DeclutrMail requests only the listed Gmail details: sender, subject line, Gmail&rsquo;s
+            preview snippet, dates, labels, read or unread state, recipient addresses on mail you
+            sent, unsubscribe information, and Gmail&rsquo;s size estimate. We do not request full
+            email contents or attachments.
           </li>
           <li>{ACTION_SAFETY_SUMMARY}</li>
           <li>
@@ -184,10 +183,10 @@ export default function PrivacyPolicyPage() {
           <li>
             Show you a per-sender view of your inbox and recommend cleanup decisions — driven by
             volume, your engagement, and rules you set. DeclutrMail does not use machine learning to
-            predict email categories. Deterministic product rules can automatically protect a sender
-            when strong engagement signals, such as your reply history, cross the documented
-            threshold; you can review and change that protection. Mail-changing automation follows
-            rules you explicitly enabled.
+            predict email categories. Fixed product rules can automatically protect a sender when
+            strong engagement signals, such as your reply history, cross the documented threshold;
+            you can review and change that protection. Mail-changing automation follows rules you
+            explicitly enabled.
           </li>
           <li>
             Execute the actions you approve (archive, unsubscribe, delete, label) on your Gmail.
@@ -213,7 +212,7 @@ export default function PrivacyPolicyPage() {
           We use essential cookies for sign-in and billing — these are required for the service to
           function and do not need consent. Optional analytics (PostHog) is initialized only after
           you accept it in the cookie banner; it is off by default. We never use advertising cookies
-          or cross-site trackers. {ANALYTICS_PRIVACY_CLAIM} You can change or withdraw your choice
+          or cross-site trackers. {ANALYTICS_PRIVACY_CLAIM} You can change or withdraw your consent
           at any time on the <a href="/cookies">Cookie preferences</a> page (also in the app under
           Settings); withdrawal takes effect immediately.
         </p>
@@ -228,7 +227,7 @@ export default function PrivacyPolicyPage() {
           </li>
           <li>
             <strong>Delete an inbox&rsquo;s data</strong> — disconnects that inbox and permanently
-            removes its indexed message data and derived product data. Gmail itself is unchanged;
+            removes its saved email details and related DeclutrMail data. Gmail itself is unchanged;
             narrowly scoped pseudonymous security and deletion evidence remains under its stated
             retention policy.
           </li>
@@ -250,7 +249,7 @@ export default function PrivacyPolicyPage() {
         </p>
         <p>
           From Settings → Privacy &amp; Data, you can export mailbox email/status/connection
-          metadata, sender records and standing policies, the message metadata index, and your
+          details, sender records and standing decisions, the listed email details, and your
           decision/activity history as JSON. Dataset-specific CSVs are available for messages,
           senders, and decisions. The export does not include app preferences, billing records,
           message bodies, attachments, or OAuth tokens.
@@ -272,11 +271,11 @@ export default function PrivacyPolicyPage() {
           <tbody>
             <tr>
               <td>Google Cloud</td>
-              <td>API and worker hosting; Gmail API access; push notifications</td>
+              <td>Application hosting, Gmail access, and notifications</td>
             </tr>
             <tr>
               <td>Supabase</td>
-              <td>Postgres database (the metadata listed in Section 2)</td>
+              <td>Postgres database (the data listed in Section 2)</td>
             </tr>
             <tr>
               <td>Vercel</td>
@@ -297,8 +296,8 @@ export default function PrivacyPolicyPage() {
             <tr>
               <td>Anthropic</td>
               <td>
-                Recommendation explanations and Pro Brief narration — bounded metadata; Pro Brief
-                can include subject and Gmail preview snippet; never a full message body
+                Suggestion explanations and Pro Brief summaries. A Pro Brief can include the subject
+                line and Gmail preview snippet, but never full email contents.
               </td>
             </tr>
             <tr>
@@ -347,10 +346,9 @@ export default function PrivacyPolicyPage() {
         <p>
           All data is encrypted in transit (TLS) and at rest. OAuth tokens are additionally
           envelope-encrypted with a managed key service. Access to production systems is limited and
-          logged. Because we never store full message bodies or attachments, that content cannot
-          leak from DeclutrMail. Subjects and Gmail Preview snippets can still contain sensitive
-          information; we store those bounded fields as disclosed in Section 2 and protect them
-          accordingly.
+          logged. Because we never store full email contents or attachments, they cannot leak from
+          DeclutrMail. Subject lines and Gmail preview snippets can still contain sensitive
+          information, so we list and protect them explicitly in Section 2.
         </p>
       </LegalSection>
 

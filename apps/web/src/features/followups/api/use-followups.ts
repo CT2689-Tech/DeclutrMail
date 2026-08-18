@@ -14,16 +14,13 @@
 
 import { useQuery } from '@tanstack/react-query';
 
-import { fetchFollowups, type FollowupRow } from '@/lib/api/followups';
+import { fetchFollowups } from '@/lib/api/followups';
 
-import { followupsKeys } from './query-keys';
+import { followupsQueryOptions } from './query-options';
 
 export function useFollowups() {
   return useQuery({
-    queryKey: followupsKeys.list(),
-    queryFn: ({ signal }) => fetchFollowups(signal),
-    // Surface the envelope's `data` array directly so the screen can
-    // treat the hook result as the row list without an extra unwrap.
-    select: (envelope): FollowupRow[] => envelope.data,
+    ...followupsQueryOptions(fetchFollowups),
+    select: (envelope) => envelope.data,
   });
 }

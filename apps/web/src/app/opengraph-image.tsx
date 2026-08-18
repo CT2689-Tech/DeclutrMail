@@ -106,9 +106,7 @@ export default function OpenGraphImage() {
           color: MUTED,
         }}
       >
-        <span>
-          Full bodies fetched: <span style={{ color: TEAL, marginLeft: 10 }}>0</span>
-        </span>
+        <span>Full email contents stay in Gmail</span>
         <span>Keep · Archive · Unsubscribe · Later · Delete</span>
       </div>
     </div>,

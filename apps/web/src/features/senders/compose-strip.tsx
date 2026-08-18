@@ -119,7 +119,7 @@ export function ComposeStrip({
 }) {
   return (
     <div
-      aria-label="Compose senders scope"
+      aria-label="Senders included in this message"
       style={{
         display: 'flex',
         flexWrap: 'wrap',
@@ -295,7 +295,7 @@ function ActivityChip({
             opacity: isActive || isNegated ? 0.85 : 0.6,
           }}
         >
-          {count.toLocaleString()}
+          {count.toLocaleString('en-US')}
         </span>
       )}
     </button>
@@ -367,7 +367,7 @@ function ToggleChip({
             opacity: active || negated ? 0.85 : 0.6,
           }}
         >
-          {count.toLocaleString()}
+          {count.toLocaleString('en-US')}
         </span>
       )}
     </button>
@@ -426,7 +426,7 @@ function OnOffChip({
             opacity: active ? 0.85 : 0.6,
           }}
         >
-          {count.toLocaleString()}
+          {count.toLocaleString('en-US')}
         </span>
       )}
     </button>

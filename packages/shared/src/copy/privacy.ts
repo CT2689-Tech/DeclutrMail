@@ -7,22 +7,17 @@
 // guard.
 //
 // **Locked strings — do not edit without a new D-decision:**
-// - "Full bodies fetched: 0"       (D228 headline; replaces the
-//                                   pre-D228 "Bodies read: 0 forever"
-//                                   which is BANNED in product UI.)
+// - "We never fetch or store full email contents." (plain-language
+//   replacement for the retired counter-style privacy headlines)
 // - The cumulative storage list is generated from D245's typed registry.
-// - "Gmail Preview" framing for    (D7 — snippet is the preview Gmail
-//   the snippet field              already surfaces in the inbox list;
-//                                   it is never called "summary" or
-//                                   "body" in user-facing copy.)
+// - "Gmail preview snippet" framing (D7 — snippet is the preview Gmail
+//   already surfaces in the inbox list; it is never called a "summary"
+//   or "body" in user-facing copy.)
 
-import {
-  GMAIL_MESSAGE_STORAGE_LABELS,
-  GMAIL_OAUTH_ACCESS,
-} from '../contracts/gmail-data-inventory';
+import { GMAIL_MESSAGE_STORAGE_LABELS } from '../contracts/gmail-data-inventory';
 
 /** The locked headline shown on every trust badge surface (D228). */
-export const PRIVACY_BADGE_HEADLINE = 'Full bodies fetched: 0' as const;
+export const PRIVACY_BADGE_HEADLINE = 'We never fetch or store full email contents.' as const;
 
 /**
  * The cumulative items DeclutrMail stores per message (D245).
@@ -38,43 +33,35 @@ export const PRIVACY_STORAGE_ITEMS = GMAIL_MESSAGE_STORAGE_LABELS;
  * that makes the trust claim defensible.
  */
 export const PRIVACY_NEVER_ITEMS = [
-  'Full message body',
-  'HTML',
+  'Full email contents',
+  'Email HTML',
   'Attachments',
-  'Inline images',
-  'Raw MIME',
-  'Headers other than From, Subject, To, Cc, and List-Unsubscribe fields',
+  'Images embedded in emails',
+  'Raw email source',
+  'Email headers other than From, Subject, To, Cc, and unsubscribe information',
 ] as const;
 
 /** Supporting lead — explains what the headline means in plain words. */
-export const PRIVACY_BADGE_LEAD =
-  'We never fetch or store message bodies. This list is generated from the Gmail fields DeclutrMail actually stores.' as const;
+export const PRIVACY_BADGE_LEAD = 'DeclutrMail uses only the Gmail details listed below.' as const;
 
 /** Sub-label that introduces the storage list. */
-export const PRIVACY_STORAGE_LABEL = 'Message data we store:' as const;
+export const PRIVACY_STORAGE_LABEL = 'Gmail details DeclutrMail stores:' as const;
 
 /** Sub-label that introduces the never-stored list. */
-export const PRIVACY_NEVER_LABEL = 'We never fetch or store:' as const;
+export const PRIVACY_NEVER_LABEL = 'DeclutrMail never fetches or stores:' as const;
 
 /** The user-facing field label for the Gmail snippet (D7 framing). */
-export const GMAIL_PREVIEW_FIELD_LABEL = 'Gmail Preview' as const;
-
-/**
- * Short scope name for the Gmail access DeclutrMail requests, derived from
- * D245's registry so a scope amendment cannot leave stale copy behind.
- * `GMAIL_OAUTH_ACCESS[0]` is the mail scope; `openid email` follows it.
- */
-const GMAIL_MAIL_SCOPE_NAME = GMAIL_OAUTH_ACCESS[0].scope.split('/').at(-1);
+export const GMAIL_PREVIEW_FIELD_LABEL = 'Gmail preview snippet' as const;
 
 /**
  * Pre-consent disclosure rendered beside every CTA that starts Google OAuth.
  *
  * Public CTAs link straight to Google's consent screen, so this is the last
  * DeclutrMail-authored sentence a user reads before granting access — it
- * carries the scope being requested and the D228 boundary headline together.
+ * explains the permission in user language and carries the privacy promise.
  */
 export const OAUTH_SCOPE_DISCLOSURE =
-  `Asks for the ${GMAIL_MAIL_SCOPE_NAME} scope. ${PRIVACY_BADGE_HEADLINE}.` as const;
+  `Google will ask permission for DeclutrMail to organize your Gmail. ${PRIVACY_BADGE_HEADLINE}` as const;
 
 /**
  * The date Google approved DeclutrMail's OAuth verification for the single

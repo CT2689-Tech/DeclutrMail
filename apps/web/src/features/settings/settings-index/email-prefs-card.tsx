@@ -14,7 +14,7 @@ const CATEGORY_ROWS: ReadonlyArray<{
   {
     wire: 'syncComplete',
     label: 'Sync completion alerts',
-    detail: '"Your inbox is ready" when a mailbox finishes indexing.',
+    detail: '"Your inbox is ready" when a mailbox finishes its first scan.',
   },
   {
     wire: 'reminders',

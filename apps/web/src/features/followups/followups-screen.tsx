@@ -98,7 +98,6 @@ export function FollowupsScreen() {
         id="followups"
         title="Followups"
         body="Based on your sent mail: conversations where you wrote last and haven't heard back."
-        tip="This is not live Gmail status. Checks run about every six hours across sent mail from the last 60 days."
       />
 
       <FollowupsScopeDisclosure />
@@ -217,16 +216,16 @@ function FollowupsScopeDisclosure() {
       </summary>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7, paddingTop: 8 }}>
         <p style={{ margin: 0 }}>
-          DeclutrMail uses indexed sender, recipient, subject, thread, and date metadata — not
-          message bodies — to find threads where your latest indexed message is outgoing.
+          DeclutrMail uses saved sender, recipient, subject line, conversation, and date details —
+          not full email contents — to find conversations where your latest saved email is outgoing.
         </p>
         <p style={{ margin: 0 }}>
-          Checks run about every six hours and consider sent mail from the last 60 days, so a recent
-          reply can remain here until the next check.
+          This is not live Gmail status. Checks run about every six hours and consider sent mail
+          from the last 60 days, so a recent reply can remain here until the next check.
         </p>
         <p style={{ margin: 0 }}>
           Already resolved elsewhere or not a useful follow-up? Use <strong>Mark resolved</strong>.
-          It hides the item in DeclutrMail and records the choice in Activity; it does not mark a
+          It hides the item in DeclutrMail and records the decision in Activity; it does not mark a
           recipient reply or change Gmail.
         </p>
       </div>
@@ -335,7 +334,7 @@ export function FollowupListItem({
   const recipient = recipientLine(row);
   const subject = truncate(row.subject, 60);
   const now = useNow();
-  const relative = relativeTime(row.sentAt, now);
+  const relative = now === null ? '' : relativeTime(row.sentAt, now);
   const gmailHref = mailboxEmail
     ? GmailOpenLinkService.buildOpenLink({
         mailboxEmail,

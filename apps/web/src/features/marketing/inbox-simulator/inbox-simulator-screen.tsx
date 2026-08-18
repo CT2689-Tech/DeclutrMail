@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   ACTION_SAFETY_SUMMARY,
@@ -30,7 +30,11 @@ const DEMO_ROWS = TRIAGE_QUEUE;
 const DEMO_ROW_BY_ID = new Map(DEMO_ROWS.map((row) => [row.id, row] as const));
 const DEMO_VERBS: ReadonlySet<string> = new Set(VERB_ORDER);
 const DEMO_DECISION_KEYS = new Set(['rowId', 'verb', 'senderName', 'affectedCount', 'at']);
-const STORAGE_KEY = 'dm.inbox-simulator.decisions.v2';
+const DEMO_STATE_KEYS = new Set(['version', 'mode', 'decisions']);
+const STORAGE_KEY = 'dm.inbox-simulator.state.v3';
+const LEGACY_STORAGE_KEY = 'dm.inbox-simulator.decisions.v2';
+
+type DemoMode = 'guided' | 'explore';
 
 interface DemoDecision {
   rowId: string;
@@ -44,6 +48,54 @@ interface PendingDecision {
   row: TriageDecisionRow;
   verb: ActionVerb;
 }
+
+interface StoredDemoState {
+  version: 3;
+  mode: DemoMode;
+  decisions: DemoDecision[];
+}
+
+interface GuidedScenario {
+  row: TriageDecisionRow;
+  shortLabel: string;
+  title: string;
+  body: string;
+  prompt: string;
+}
+
+function requireDemoRow(rowId: string): TriageDecisionRow {
+  const row = DEMO_ROW_BY_ID.get(rowId);
+  if (!row) throw new Error(`Missing inbox simulator fixture: ${rowId}`);
+  return row;
+}
+
+const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
+  {
+    row: requireDemoRow('t-groupon'),
+    shortLabel: 'Reversible',
+    title: 'Clear the inbox without losing the mail.',
+    body: "Archive moves this sender's existing inbox mail to All Mail. It stays searchable and can be undone from Activity.",
+    prompt: 'Try Archive — the highlighted decision.',
+  },
+  {
+    row: requireDemoRow('t-linkedin'),
+    shortLabel: 'One-way',
+    title: 'Pause before a one-way request.',
+    body: 'Unsubscribe asks this sender to stop future delivery. You see the method first because a delivered request cannot be recalled.',
+    prompt: 'Try Unsubscribe — then inspect the warning.',
+  },
+  {
+    row: requireDemoRow('t-priya'),
+    shortLabel: 'Protected',
+    title: 'See why relationships stay protected.',
+    body: 'Replies keep this sender out of bulk and automatic cleanup. Keep records your decision without moving any mail.',
+    prompt: 'Try Keep — no preview is needed because no mail moves.',
+  },
+] as const;
+
+const GUIDED_ROW_IDS: ReadonlySet<string> = new Set(
+  GUIDED_SCENARIOS.map((scenario) => scenario.row.id),
+);
 
 function syntheticInboxCount(row: TriageDecisionRow): number {
   if (row.last90dMessages === 0) return Math.min(row.totalAllTime, 6);
@@ -61,20 +113,15 @@ function isActionVerb(value: unknown): value is ActionVerb {
  * entry rejects the whole snapshot: a partial restore would silently
  * change which decisions the visitor appears to have completed.
  */
-function parseStoredDecisions(stored: string): DemoDecision[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stored);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(parsed) || parsed.length > DEMO_ROWS.length) return [];
+function parseStoredDecisions(parsed: unknown): DemoDecision[] | null {
+  if (!Array.isArray(parsed) || parsed.length > DEMO_ROWS.length) return null;
 
   const restored: DemoDecision[] = [];
   const seenRows = new Set<string>();
   const seenTimestamps = new Set<number>();
   for (const candidate of parsed) {
-    if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
+    if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate))
+      return null;
 
     const record = candidate as Record<string, unknown>;
     const keys = Object.keys(record);
@@ -82,26 +129,25 @@ function parseStoredDecisions(stored: string): DemoDecision[] {
       keys.length !== DEMO_DECISION_KEYS.size ||
       keys.some((key) => !DEMO_DECISION_KEYS.has(key))
     ) {
-      return [];
+      return null;
     }
-    if (typeof record.rowId !== 'string' || seenRows.has(record.rowId)) return [];
+    if (typeof record.rowId !== 'string' || seenRows.has(record.rowId)) return null;
     const row = DEMO_ROW_BY_ID.get(record.rowId);
-    if (!row || !isActionVerb(record.verb) || record.senderName !== row.senderName) return [];
-    if (row.protectionReason !== null && record.verb !== 'Keep') return [];
-    if (row.unsubscribeMethod === 'none' && record.verb === 'Unsubscribe') return [];
+    if (!row || !isActionVerb(record.verb) || record.senderName !== row.senderName) return null;
+    if (row.unsubscribeMethod === 'none' && record.verb === 'Unsubscribe') return null;
 
     if (
       typeof record.affectedCount !== 'number' ||
       !Number.isSafeInteger(record.affectedCount) ||
       record.affectedCount < 0
     ) {
-      return [];
+      return null;
     }
     const expectedCount =
       record.verb === 'Archive' || record.verb === 'Later' || record.verb === 'Delete'
         ? syntheticInboxCount(row)
         : 0;
-    if (record.affectedCount !== expectedCount) return [];
+    if (record.affectedCount !== expectedCount) return null;
 
     if (
       typeof record.at !== 'number' ||
@@ -109,7 +155,7 @@ function parseStoredDecisions(stored: string): DemoDecision[] {
       record.at <= 0 ||
       seenTimestamps.has(record.at)
     ) {
-      return [];
+      return null;
     }
 
     seenRows.add(record.rowId);
@@ -123,6 +169,55 @@ function parseStoredDecisions(stored: string): DemoDecision[] {
     });
   }
   return restored;
+}
+
+function parseStoredState(stored: string): StoredDemoState | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+
+  const record = parsed as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (
+    keys.length !== DEMO_STATE_KEYS.size ||
+    keys.some((key) => !DEMO_STATE_KEYS.has(key)) ||
+    record.version !== 3 ||
+    (record.mode !== 'guided' && record.mode !== 'explore')
+  ) {
+    return null;
+  }
+
+  const decisions = parseStoredDecisions(record.decisions);
+  if (decisions === null) return null;
+  return { version: 3, mode: record.mode, decisions };
+}
+
+function parseLegacyState(stored: string): StoredDemoState | null {
+  try {
+    const decisions = parseStoredDecisions(JSON.parse(stored));
+    return decisions === null ? null : { version: 3, mode: 'guided', decisions };
+  } catch {
+    return null;
+  }
+}
+
+function hasCompletedGuide(decisions: readonly DemoDecision[]): boolean {
+  const decidedIds = new Set(decisions.map((decision) => decision.rowId));
+  return GUIDED_SCENARIOS.every((scenario) => decidedIds.has(scenario.row.id));
+}
+
+function firstUndecidedRow(
+  mode: DemoMode,
+  decisions: readonly DemoDecision[],
+): TriageDecisionRow | null {
+  const decidedIds = new Set(decisions.map((decision) => decision.rowId));
+  const candidates =
+    mode === 'guided' ? GUIDED_SCENARIOS.map((scenario) => scenario.row) : DEMO_ROWS;
+  return candidates.find((row) => !decidedIds.has(row.id)) ?? null;
 }
 
 function decisionSummary(decision: DemoDecision): string {
@@ -146,14 +241,29 @@ function isActivityUndoable(decision: DemoDecision): boolean {
 
 export function InboxSimulatorScreen() {
   const [decisions, setDecisions] = useState<DemoDecision[]>([]);
-  const [expandedId, setExpandedId] = useState<string | null>(DEMO_ROWS[0]?.id ?? null);
+  const [mode, setMode] = useState<DemoMode>('guided');
+  const [expandedId, setExpandedId] = useState<string | null>(GUIDED_SCENARIOS[0]?.row.id ?? null);
   const [pending, setPending] = useState<PendingDecision | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const guidedCompletionTracked = useRef(false);
+  const decisionLock = useRef<string | null>(null);
 
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) setDecisions(parseStoredDecisions(stored));
+      const legacyStored = stored ? null : localStorage.getItem(LEGACY_STORAGE_KEY);
+      const restored = stored
+        ? parseStoredState(stored)
+        : legacyStored
+          ? parseLegacyState(legacyStored)
+          : null;
+      if (restored) {
+        setDecisions(restored.decisions);
+        setMode(restored.mode);
+        setExpandedId(firstUndecidedRow(restored.mode, restored.decisions)?.id ?? null);
+        guidedCompletionTracked.current = hasCompletedGuide(restored.decisions);
+      }
+      if (legacyStored) localStorage.removeItem(LEGACY_STORAGE_KEY);
     } catch {
       // A corrupt or unavailable local store never blocks the demo.
     }
@@ -163,58 +273,108 @@ export function InboxSimulatorScreen() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(decisions));
+      const stored: StoredDemoState = { version: 3, mode, decisions };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
     } catch {
       // Private browsing and quota errors leave the current session usable.
     }
-  }, [decisions, hydrated]);
+  }, [decisions, hydrated, mode]);
 
   const decidedIds = useMemo(
     () => new Set(decisions.map((decision) => decision.rowId)),
     [decisions],
   );
-  const rows = DEMO_ROWS.filter((row) => !decidedIds.has(row.id));
+  const currentGuideIndex = GUIDED_SCENARIOS.findIndex(
+    (scenario) => !decidedIds.has(scenario.row.id),
+  );
+  const currentScenario =
+    currentGuideIndex === -1 ? null : (GUIDED_SCENARIOS[currentGuideIndex] ?? null);
+  const rows =
+    mode === 'guided'
+      ? currentScenario
+        ? [currentScenario.row]
+        : []
+      : DEMO_ROWS.filter((row) => !decidedIds.has(row.id));
+  const guidedDecisions = decisions.filter((decision) => GUIDED_ROW_IDS.has(decision.rowId));
 
-  const confirm = () => {
-    if (!pending) return;
+  const recordDecision = (row: TriageDecisionRow, verb: ActionVerb) => {
+    if (decisionLock.current === row.id || decidedIds.has(row.id)) return;
+    decisionLock.current = row.id;
+    queueMicrotask(() => {
+      if (decisionLock.current === row.id) decisionLock.current = null;
+    });
+
     const affectedCount =
-      pending.verb === 'Archive' || pending.verb === 'Later' || pending.verb === 'Delete'
-        ? syntheticInboxCount(pending.row)
-        : 0;
+      verb === 'Archive' || verb === 'Later' || verb === 'Delete' ? syntheticInboxCount(row) : 0;
     const at = Math.max(
       Date.now(),
       decisions.reduce((next, decision) => Math.max(next, decision.at + 1), 0),
     );
-    setDecisions((current) => [
-      ...current,
+    const nextDecisions = [
+      ...decisions,
       {
-        rowId: pending.row.id,
-        senderName: pending.row.senderName,
-        verb: pending.verb,
+        rowId: row.id,
+        senderName: row.senderName,
+        verb,
         affectedCount,
         at,
       },
-    ]);
+    ];
+    setDecisions(nextDecisions);
+    setExpandedId(firstUndecidedRow(mode, nextDecisions)?.id ?? null);
+    setPending(null);
+
     void track('demo_decision_confirmed', {
-      verb: pending.verb.toLowerCase() as Lowercase<ActionVerb>,
+      verb: verb.toLowerCase() as Lowercase<ActionVerb>,
       decision_index: decisions.length + 1,
       affected_messages: affectedCount,
     });
-    const next = rows.find((row) => row.id !== pending.row.id);
-    setExpandedId(next?.id ?? null);
-    setPending(null);
+    if (!guidedCompletionTracked.current && hasCompletedGuide(nextDecisions)) {
+      guidedCompletionTracked.current = true;
+      const guidedOutcome = nextDecisions.filter((decision) => GUIDED_ROW_IDS.has(decision.rowId));
+      void track('demo_completed', {
+        decisions_completed: guidedOutcome.length,
+        affected_messages: guidedOutcome.reduce(
+          (total, decision) => total + decision.affectedCount,
+          0,
+        ),
+      });
+    }
+  };
+
+  const confirm = () => {
+    if (!pending) return;
+    recordDecision(pending.row, pending.verb);
+  };
+
+  const chooseAction = (row: TriageDecisionRow, verb: ActionVerb) => {
+    setExpandedId(row.id);
+    if (verb === 'Keep') {
+      // Keep is policy-only in the real product: no mail moves, so there
+      // is no affected-message preview to approve.
+      recordDecision(row, verb);
+      return;
+    }
+    setPending({ row, verb });
+    void track('demo_preview_opened', {
+      verb: verb.toLowerCase() as Lowercase<ActionVerb>,
+      decision_index: decisions.length + 1,
+    });
   };
 
   const undo = (decision: DemoDecision) => {
-    setDecisions((current) => current.filter((item) => item.at !== decision.at));
+    const nextDecisions = decisions.filter((item) => item.at !== decision.at);
+    setDecisions(nextDecisions);
     setExpandedId(decision.rowId);
   };
 
   const reset = () => {
     void track('demo_reset', { decisions_completed: decisions.length });
+    guidedCompletionTracked.current = false;
     setDecisions([]);
+    setMode('guided');
     setPending(null);
-    setExpandedId(DEMO_ROWS[0]?.id ?? null);
+    setExpandedId(GUIDED_SCENARIOS[0]?.row.id ?? null);
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -222,27 +382,31 @@ export function InboxSimulatorScreen() {
     }
   };
 
+  const changeMode = (nextMode: DemoMode) => {
+    setMode(nextMode);
+    setPending(null);
+    setExpandedId(firstUndecidedRow(nextMode, decisions)?.id ?? null);
+  };
+
   return (
     <div className="dm-simulator">
       <section className="dm-simulator-hero">
-        <Eyebrow tone="primary">Interactive demo · Real Triage components</Eyebrow>
-        <h1>Try the sender review before you connect Gmail.</h1>
+        <Eyebrow tone="primary">Interactive demo · No sign-in</Eyebrow>
+        <h1>Make three inbox decisions before you connect Gmail.</h1>
         <p>
-          This walkthrough uses the production Triage row, recommendation, action, and preview
-          components with synthetic sender metadata. Nothing is uploaded, and nothing touches Gmail.
-          The sample recommendations are illustrative—not an analysis of your mail.
+          Follow three made-up examples, then explore freely. Nothing is uploaded or touches Gmail,
+          and the sample suggestions are not an analysis of your mail.
         </p>
         <div className="dm-simulator-trust">
           <span>No signup</span>
           <span>Local to this browser</span>
-          <span>Full bodies fetched: 0</span>
+          <span>No email data is used</span>
         </div>
         <aside className="dm-simulator-tier-note" aria-label="Plan availability">
           <strong>Triage is included on every plan.</strong>
           <span>
             Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month;
-            paid plans are unlimited. Plus adds the Screener and rules you approve per batch; Pro
-            lets a rule you activate run on its own.
+            paid plans are unlimited.
           </span>
           <a href="/pricing">Compare plans</a>
         </aside>
@@ -250,34 +414,40 @@ export function InboxSimulatorScreen() {
 
       <section className="dm-simulator-workspace" aria-label="Inbox simulator">
         <div className="dm-simulator-queue">
+          {mode === 'guided' && currentScenario ? (
+            <GuidedScenarioPanel
+              scenario={currentScenario}
+              currentIndex={currentGuideIndex}
+              decidedIds={decidedIds}
+            />
+          ) : null}
+
           <div className="dm-simulator-queue-head">
             <div>
-              <span>Sample Triage</span>
+              <span>{mode === 'guided' ? 'Guided sender review' : 'Explore sample Triage'}</span>
               <strong>
-                {rows.length} decision{rows.length === 1 ? '' : 's'} remaining
+                {mode === 'guided'
+                  ? `${guidedDecisions.length} of ${GUIDED_SCENARIOS.length} decisions complete`
+                  : `${rows.length} decision${rows.length === 1 ? '' : 's'} remaining`}
               </strong>
             </div>
-            <span>{decisions.length} reviewed</span>
+            <button
+              type="button"
+              className="dm-simulator-mode-button"
+              onClick={() => changeMode(mode === 'guided' ? 'explore' : 'guided')}
+            >
+              {mode === 'guided' ? `Explore all ${DEMO_ROWS.length} senders` : 'Return to guide'}
+            </button>
           </div>
 
-          {rows.length === 0 ? (
-            <div className="dm-simulator-complete">
-              <Eyebrow tone="primary">Sample complete</Eyebrow>
-              <h2>You saw the full loop.</h2>
-              <p>
-                Sender signals led to a decision, the preview made the scope explicit, and the
-                outcome landed in Activity. A real inbox uses live Gmail counts at confirmation.
-              </p>
-              <p>
-                From here the plans change who does the finding: on Plus, the Screener collects new
-                senders (their mail still arrives) and rules queue matching mail for your batch
-                approval; on Pro, a rule you activate runs on its own.
-              </p>
-              <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
-                Run this on your Gmail →
-              </TrackedCta>
-              <p>{OAUTH_SCOPE_DISCLOSURE}</p>
-            </div>
+          {mode === 'guided' && currentScenario === null ? (
+            <DemoCompletion
+              decisions={guidedDecisions}
+              onExplore={() => changeMode('explore')}
+              onReset={reset}
+            />
+          ) : mode === 'explore' && rows.length === 0 ? (
+            <ExploreCompletion decisions={decisions} onReset={reset} />
           ) : (
             <div className="dm-simulator-rows">
               {rows.map((row, index) => (
@@ -290,14 +460,7 @@ export function InboxSimulatorScreen() {
                   onToggleExpand={() =>
                     setExpandedId((current) => (current === row.id ? null : row.id))
                   }
-                  onAction={(verb) => {
-                    setExpandedId(row.id);
-                    setPending({ row, verb });
-                    void track('demo_preview_opened', {
-                      verb: verb.toLowerCase() as Lowercase<ActionVerb>,
-                      decision_index: decisions.length + 1,
-                    });
-                  }}
+                  onAction={(verb) => chooseAction(row, verb)}
                 />
               ))}
             </div>
@@ -312,15 +475,15 @@ export function InboxSimulatorScreen() {
             </div>
             {decisions.length > 0 ? (
               <button type="button" onClick={reset}>
-                Reset
+                Start over
               </button>
             ) : null}
           </div>
 
           {decisions.length === 0 ? (
             <p className="dm-simulator-activity-empty">
-              Choose an action, inspect the preview, then confirm. Outcomes appear here only after
-              confirmation.
+              Choose an action. If mail would move, inspect the preview and confirm it. Outcomes
+              appear here only after the decision is recorded.
             </p>
           ) : (
             <ol>
@@ -345,17 +508,19 @@ export function InboxSimulatorScreen() {
             </ol>
           )}
 
-          <div className="dm-simulator-delete-note">
-            <Eyebrow tone="amber">Delete is always yours to choose</Eyebrow>
-            <p>{ACTION_REGISTRY.delete.copy.description}</p>
-          </div>
+          {mode === 'explore' ? (
+            <div className="dm-simulator-delete-note">
+              <Eyebrow tone="amber">Delete is always yours to choose</Eyebrow>
+              <p>{ACTION_REGISTRY.delete.copy.description}</p>
+            </div>
+          ) : null}
         </aside>
       </section>
 
       <section className="dm-simulator-next">
         <div>
-          <Eyebrow tone="primary">The safety contract</Eyebrow>
-          <h2>A preview is part of the product, not demo theater.</h2>
+          <Eyebrow tone="primary">Before anything changes</Eyebrow>
+          <h2>The preview you saw here is always part of the product.</h2>
           <p>{ACTION_SAFETY_SUMMARY}</p>
         </div>
         <div className="dm-simulator-next-actions">
@@ -367,7 +532,7 @@ export function InboxSimulatorScreen() {
           >
             Connect Gmail →
           </TrackedCta>
-          <a href="/methodology">Read the methodology</a>
+          <a href="/methodology">See privacy and control details</a>
         </div>
         <p>{OAUTH_SCOPE_DISCLOSURE}</p>
       </section>
@@ -379,6 +544,143 @@ export function InboxSimulatorScreen() {
           onConfirm={confirm}
         />
       ) : null}
+    </div>
+  );
+}
+
+function GuidedScenarioPanel({
+  scenario,
+  currentIndex,
+  decidedIds,
+}: {
+  scenario: GuidedScenario;
+  currentIndex: number;
+  decidedIds: ReadonlySet<string>;
+}) {
+  return (
+    <section className="dm-simulator-guide" aria-labelledby="dm-simulator-guide-title">
+      <div className="dm-simulator-guide-copy">
+        <Eyebrow tone="primary">
+          Guided decision {currentIndex + 1} of {GUIDED_SCENARIOS.length}
+        </Eyebrow>
+        <h2 id="dm-simulator-guide-title">{scenario.title}</h2>
+        <p>{scenario.body}</p>
+        <p className="dm-simulator-guide-prompt">
+          <strong>{scenario.prompt}</strong> You can choose differently—the decision stays yours.
+        </p>
+      </div>
+      <ol className="dm-simulator-guide-progress" aria-label="Guided demo progress">
+        {GUIDED_SCENARIOS.map((item, index) => {
+          const completed = decidedIds.has(item.row.id);
+          const current = index === currentIndex;
+          return (
+            <li
+              key={item.row.id}
+              data-state={completed ? 'complete' : current ? 'current' : 'upcoming'}
+              aria-current={current ? 'step' : undefined}
+            >
+              <span aria-hidden="true">{completed ? '✓' : index + 1}</span>
+              <strong>{item.shortLabel}</strong>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+function OutcomeSummary({ decisions }: { decisions: readonly DemoDecision[] }) {
+  const messagesMoved = decisions.reduce((total, decision) => total + decision.affectedCount, 0);
+  const undoable = decisions.filter(isActivityUndoable).length;
+  const oneWay = decisions.filter((decision) => decision.verb === 'Unsubscribe').length;
+
+  return (
+    <dl className="dm-simulator-outcome" aria-label="Sample outcome">
+      <div>
+        <dt>Messages moved</dt>
+        <dd>{messagesMoved.toLocaleString()}</dd>
+      </div>
+      <div>
+        <dt>Undoable actions</dt>
+        <dd>{undoable}</dd>
+      </div>
+      <div>
+        <dt>One-way requests</dt>
+        <dd>{oneWay}</dd>
+      </div>
+    </dl>
+  );
+}
+
+function DemoCompletion({
+  decisions,
+  onExplore,
+  onReset,
+}: {
+  decisions: readonly DemoDecision[];
+  onExplore: () => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="dm-simulator-complete">
+      <Eyebrow tone="primary">Guided demo complete</Eyebrow>
+      <h2>You saw the decision loop.</h2>
+      <p>
+        Suggestions stay suggestions. Mail-changing decisions show their exact effect first, and
+        confirmed outcomes appear in Activity.
+      </p>
+      <OutcomeSummary decisions={decisions} />
+      <div className="dm-simulator-plan-path" aria-label="How the plans extend Triage">
+        <span>
+          <strong>Every plan</strong>
+          Review one sender at a time
+        </span>
+        <span>
+          <strong>Plus</strong>
+          Approve suggested batches
+        </span>
+        <span>
+          <strong>Pro</strong>
+          Activate rules to run alone
+        </span>
+      </div>
+      <div className="dm-simulator-complete-actions">
+        <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
+          Review my Gmail senders →
+        </TrackedCta>
+        <Button tone="default" onClick={onExplore}>
+          Explore all sample senders
+        </Button>
+        <Button tone="ghost" onClick={onReset}>
+          Start again
+        </Button>
+      </div>
+      <p className="dm-simulator-oauth-note">{OAUTH_SCOPE_DISCLOSURE}</p>
+    </div>
+  );
+}
+
+function ExploreCompletion({
+  decisions,
+  onReset,
+}: {
+  decisions: readonly DemoDecision[];
+  onReset: () => void;
+}) {
+  return (
+    <div className="dm-simulator-complete">
+      <Eyebrow tone="primary">All samples reviewed</Eyebrow>
+      <h2>You explored every sender.</h2>
+      <OutcomeSummary decisions={decisions} />
+      <div className="dm-simulator-complete-actions">
+        <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
+          Review my Gmail senders →
+        </TrackedCta>
+        <Button tone="default" onClick={onReset}>
+          Start again
+        </Button>
+      </div>
+      <p className="dm-simulator-oauth-note">{OAUTH_SCOPE_DISCLOSURE}</p>
     </div>
   );
 }
@@ -423,7 +725,7 @@ function DemoPreviewDialog({
           <Eyebrow
             tone={pending.verb === 'Unsubscribe' || pending.verb === 'Delete' ? 'amber' : 'primary'}
           >
-            Preview · synthetic inbox
+            Preview · made-up inbox
           </Eyebrow>
           <h2 id="dm-simulator-dialog-title">Approve the sample action</h2>
         </div>

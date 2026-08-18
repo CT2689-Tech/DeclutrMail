@@ -5,39 +5,39 @@ import { describe, expect, it } from 'vitest';
 import MethodologyPage, { metadata } from './page';
 
 describe('/methodology', () => {
-  it('renders the complete Gmail message-data boundary and defines Preview text', () => {
+  it('renders the complete Gmail data boundary and explains the preview snippet', () => {
     const { container } = render(<MethodologyPage />);
     const copy = container.textContent ?? '';
 
     for (const item of [...PRIVACY_STORAGE_ITEMS, ...PRIVACY_NEVER_ITEMS]) {
       expect(copy).toContain(item);
     }
-    expect(copy).toContain('Gmail Preview is the short snippet Gmail itself computes');
-    expect(copy).toContain('connected account’s identity, preferences, sender decisions');
+    expect(copy).toContain('This is the short text Gmail already shows in your inbox list');
+    expect(copy).toContain('account information, preferences, decisions, Activity history');
   });
 
-  it('documents the deterministic recommendation cascade without category prediction', () => {
+  it('explains suggestions without internal recommendation terminology', () => {
     const { container } = render(<MethodologyPage />);
     const copy = container.textContent ?? '';
 
-    expect(copy).toContain('deterministic rules over metadata facts');
-    expect(copy).toContain('does not use machine learning to predict email categories');
-    expect(copy).toContain('When configured, Anthropic may rewrite');
-    expect(copy).toContain('does not receive a message subject, Gmail Preview, or full body');
-    expect(copy).toContain('deterministic template is the fallback');
+    expect(copy).toContain('Suggestions come from clear rules, not guessed categories');
+    expect(copy).toContain('does not use machine learning to guess email categories');
+    expect(copy).toContain('Anthropic may turn the selected sender facts into a short explanation');
+    expect(copy).toContain(
+      'does not receive subject lines, preview snippets, or full email contents',
+    );
+    expect(copy).toContain('DeclutrMail shows a standard explanation');
   });
 
-  it('states the separate Pro Brief payload boundary without inventing provider terms', () => {
+  it('states what a Pro Brief sends without inventing provider terms', () => {
     const { container } = render(<MethodologyPage />);
     const copy = container.textContent ?? '';
 
+    expect(copy).toContain('send the sender, subject line, and Gmail preview snippet to Anthropic');
     expect(copy).toContain(
-      'send bounded sender identity, subject, and Gmail Preview text to Anthropic',
+      'Full email contents, attachments, embedded images, and raw email source are not sent',
     );
-    expect(copy).toContain(
-      'Full message bodies, attachments, inline images, and raw MIME are not sent',
-    );
-    expect(copy).toContain('makes no claim about Anthropic’s retention or training terms');
+    expect(copy).toContain('Anthropic sets its own retention and training terms');
     expect(copy).not.toMatch(/Anthropic (?:has |offers |uses )?(?:zero|no) retention/i);
     expect(copy).not.toMatch(/Anthropic (?:does not|never) (?:retain|train)/i);
   });
@@ -46,20 +46,33 @@ describe('/methodology', () => {
     const { container } = render(<MethodologyPage />);
     const copy = container.textContent ?? '';
 
-    expect(copy).toContain('preview is the commitment boundary');
-    expect(copy).toContain('result returned by a sender’s unsubscribe endpoint');
-    expect(copy).toContain('delivered unsubscribe request cannot be undone');
-    expect(copy).toContain('Manual cleanup and future automation are separate concepts');
-    expect(copy).toContain('start in Observe');
-    expect(copy).toContain('switching a rule to Active');
+    expect(copy).toContain('If that preview cannot load, the action cannot run');
+    expect(copy).toContain('Activity records the result');
+    expect(copy).toContain('Once a one-click request is delivered, DeclutrMail cannot recall it');
+    expect(copy).toContain('A manual decision does not create an automatic rule');
+    expect(copy).toContain('On Plus, you approve each matching batch');
+    expect(copy).toContain('only rules you deliberately turn on');
     expect(copy).not.toMatch(/every action (?:is |stays |remains )?(?:reversible|undoable)/i);
+  });
+
+  it('does not expose internal product-writing terms', () => {
+    const { container } = render(<MethodologyPage />);
+    const copy = container.textContent ?? '';
+
+    expect(copy).not.toMatch(
+      /\bmethodology\b|deterministic|cascade|allowlist|payload|mutation|lifecycle/i,
+    );
   });
 
   it('uses accessible disclosure and diagram structures', () => {
     const { container } = render(<MethodologyPage />);
     const figures = [...container.querySelectorAll('figure')];
 
-    expect(screen.getAllByText(/For the curious|Where language generation fits/i)).toHaveLength(2);
+    expect(
+      screen.getAllByText(
+        /What the Gmail preview snippet contains|Where language generation fits/i,
+      ),
+    ).toHaveLength(2);
     expect(container.querySelectorAll('details')).toHaveLength(2);
     expect(figures.length).toBeGreaterThanOrEqual(4);
     for (const figure of figures) {

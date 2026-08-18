@@ -72,17 +72,18 @@ export function RulePreviewPanel({
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
-              {state.result.wouldMatchCount.toLocaleString()}
+              {state.result.wouldMatchCount.toLocaleString('en-US')}
             </strong>
             <span style={{ fontSize: 12, color: color.fgSoft }}>
               sender{state.result.wouldMatchCount === 1 ? '' : 's'} would match if this rule were
-              active now · {state.result.evaluatedSenders.toLocaleString()} evaluated
+              active now · {state.result.evaluatedSenders.toLocaleString('en-US')} evaluated
             </span>
           </div>
 
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-            {state.result.actionableSenderCount.toLocaleString()} actionable now ·{' '}
-            {state.result.protectedWouldMatchCount.toLocaleString()} matching Protected sender
+            {state.result.actionableSenderCount.toLocaleString('en-US')} actionable now ·{' '}
+            {state.result.protectedWouldMatchCount.toLocaleString('en-US')} matching Protected
+            sender
             {state.result.protectedWouldMatchCount === 1 ? '' : 's'} skipped
           </span>
 

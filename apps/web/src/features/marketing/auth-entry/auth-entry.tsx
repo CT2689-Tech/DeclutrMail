@@ -14,10 +14,10 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
       <section className="dm-auth-entry-card">
         <div className="dm-auth-entry-copy">
           <p className="dm-auth-entry-eyebrow">Sign in with Google</p>
-          <h1>Connect Gmail with the boundary visible.</h1>
+          <h1>Know what you are sharing before you connect.</h1>
           <p className="dm-auth-entry-lede">
-            Gmail remains where you read, reply, search, and compose. DeclutrMail indexes a narrow
-            set of metadata so you can review and act by sender.
+            Gmail remains where you read, reply, search, and compose. DeclutrMail stores only the
+            Gmail details listed here so you can review and act by sender.
           </p>
 
           {authResult === 'inbox_limit' ? (
@@ -39,14 +39,14 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
               <span>1</span>
               <p>
                 <strong>Google shows the consent screen.</strong>
-                Review the requested <code>gmail.modify</code> scope before approving it.
+                Review the permission that lets DeclutrMail organize your Gmail.
               </p>
             </div>
             <div>
               <span>2</span>
               <p>
-                <strong>DeclutrMail indexes metadata.</strong>
-                Initial sync can take a few minutes for an older mailbox.
+                <strong>DeclutrMail groups your email by sender.</strong>
+                The first scan can take a few minutes for an older mailbox.
               </p>
             </div>
             <div>
@@ -72,10 +72,10 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
           </p>
         </div>
 
-        <aside className="dm-auth-entry-boundary" aria-label="Gmail data boundary">
+        <aside className="dm-auth-entry-boundary" aria-label="Gmail data DeclutrMail stores">
           <PrivacyBadge variant="card" />
           <div>
-            <p>Published Gmail message fields</p>
+            <p>Gmail details DeclutrMail stores</p>
             <ul>
               {PRIVACY_STORAGE_ITEMS.map((item) => (
                 <li key={item}>{item}</li>
@@ -83,7 +83,7 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
             </ul>
           </div>
           <p className="dm-auth-entry-boundary-note">
-            Account, preference, action, processor, and billing records are described in the{' '}
+            Account, preference, action, service-provider, and billing records are described in the{' '}
             <a href="/privacy">privacy policy</a>.
           </p>
           <div>
@@ -101,7 +101,7 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
       <section className="dm-auth-entry-alt">
         <div>
           <p>Not ready to connect?</p>
-          <h2>Use the same decision flow on a synthetic inbox first.</h2>
+          <h2>Try the same steps with made-up senders first.</h2>
         </div>
         <TrackedCta href="/inbox-simulator" cta="try_demo" placement="final">
           Try the demo →

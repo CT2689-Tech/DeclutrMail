@@ -33,7 +33,7 @@ const meta: StoryMeta<typeof PrivacyDataView> = {
     docs: {
       description: {
         component:
-          'Settings → Privacy & Data (D116/D217/D228). The dedicated trust sub-page: the locked D228 PrivacyBadge ("Full bodies fetched: 0" + explicit storage list), indexed mailboxes, undo retention, the DPDP data export (JSON/CSV — allowlisted columns only, never bodies), leave-cleanly pointers, and the CASA evidence row.',
+          'Settings → Privacy & Data (D116/D217/D228). The dedicated trust sub-page: the locked D228 PrivacyBadge with its generated storage list, indexed mailboxes, undo retention, the DPDP data export, account controls, and the CASA evidence row.',
       },
     },
   },

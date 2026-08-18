@@ -37,23 +37,21 @@ import {
 } from '@/lib/api/actions';
 
 import { activityKeys } from './query-keys';
+import { activityInfiniteQueryOptions, activityWeeklyReviewQueryOptions } from './query-options';
 
 export function useActivity(
   filters: ActivityFilters,
   options?: { hasInFlightAction?: boolean; enabled?: boolean },
 ) {
   return useInfiniteQuery({
-    queryKey: activityKeys.list(filters),
-    queryFn: ({ pageParam, signal }) => fetchActivity({ ...filters, cursor: pageParam, signal }),
+    ...activityInfiniteQueryOptions(filters, (queryFilters, cursor, signal) =>
+      fetchActivity({ ...queryFilters, cursor, signal }),
+    ),
     // Raw URL validation happens before this hook. A malformed or reversed
     // date range must not be normalized to null and then fetched as an
     // unfiltered feed; keep the query (and any cached rows) dormant until
     // the user resets or edits the invalid range.
     enabled: options?.enabled ?? true,
-    initialPageParam: undefined as string | undefined,
-    // D202: `nextCursor` is null on the last page; map null → undefined
-    // so TanStack reads "no next page" (hasNextPage=false).
-    getNextPageParam: (lastPage) => lastPage.meta?.pagination.nextCursor ?? undefined,
     // While an action is being polled elsewhere (Senders screen's
     // useActionStatus or a revert poll), refetch /activity every 1.5s
     // so a user who navigates here mid-poll sees the worker's
@@ -79,10 +77,11 @@ export function useActivity(
 
 /** Independent so a review failure never blocks the Activity feed. */
 export function useActivityWeeklyReview() {
-  return useQuery({
-    queryKey: activityKeys.weeklyReview(),
-    queryFn: ({ signal }) => fetchActivityWeeklyReview(signal).then((env) => env.data),
-  });
+  return useQuery(
+    activityWeeklyReviewQueryOptions((signal) =>
+      fetchActivityWeeklyReview(signal).then((env) => env.data),
+    ),
+  );
 }
 
 /**

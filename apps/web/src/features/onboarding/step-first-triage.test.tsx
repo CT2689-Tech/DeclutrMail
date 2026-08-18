@@ -84,7 +84,7 @@ describe('StepFirstTriage', () => {
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
-    expect(screen.getByText(/where one choice can make a noticeable difference/i)).toBeVisible();
+    expect(screen.getByText(/where one decision can make a noticeable difference/i)).toBeVisible();
     expect(screen.queryByText(/real sender decisions/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/practice run|first-triage candidates/i)).not.toBeInTheDocument();
   });

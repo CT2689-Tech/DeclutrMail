@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AppShell, ToastHost } from '@declutrmail/shared';
 import {
@@ -18,11 +18,12 @@ import { UpgradeModal } from '@/features/billing/upgrade-modal';
 import { AccountMenu } from '@/features/mailboxes/account-menu';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 import { useMailboxSyncToasts } from '@/features/mailboxes/use-mailbox-sync-toasts';
+import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { useOnboardingGate } from '@/features/onboarding/use-onboarding-gate';
 import { useScreenerCount } from '@/features/screener/api/use-screener';
 import { ScreenerBadge } from '@/features/screener/screener-badge';
 import { LaterReturnAlert } from '@/features/snoozed/later-return-alert';
-import { useSenders } from '@/features/senders/api/use-senders';
+import { useSendersSummary } from '@/features/senders/api/use-senders-summary';
 import { SyncErrorBanner } from '@/features/sync/sync-error-banner';
 import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
 import { ThemeToggle } from '@/features/theme/theme-toggle';
@@ -71,10 +72,10 @@ import { isFeatureEnabled } from '@/lib/flags';
  *                           user-scoped and must survive zero mailboxes).
  *   7. normal             — AppShell + children.
  *
- * Sender-count chip: derived from the live `useSenders` infinite query
- * (first page) — represents the active mailbox's count + a `+` suffix
- * when there's more data behind the cursor. Hidden until the first
- * page returns so we never flash a stale `0`.
+ * Sender-count chip: derived from the default senders list (same query
+ * `/senders` hydrates) — first-page count + a `+` suffix when there's
+ * more data behind the cursor. Hidden until the first page returns so
+ * we never flash a stale `0`.
  *
  * Screener badge (D74): `ScreenerBadge` fed by `useScreenerCount`,
  * mounted only for tiers with the `screener` capability (D77) — see
@@ -129,6 +130,12 @@ function isUserScopedRoute(pathname: string): boolean {
 function AppChrome({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+
+  useEffect(() => {
+    const refreshServerScope = () => router.refresh();
+    window.addEventListener(MAILBOX_SCOPE_RESET_EVENT, refreshServerScope);
+    return () => window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, refreshServerScope);
+  }, [router]);
   const { me } = useAuth();
   useAnalyticsIdentity(me.user.id);
   // D245: `snoozed` remains the internal capability/nav key, while
@@ -144,16 +151,11 @@ function AppChrome({ children }: { children: ReactNode }) {
   // Returning-user strict onboarding gate (D6/D109/D113) — ladder #4.
   const onboardingGate = useOnboardingGate();
 
-  // First page is enough — the chip is a hint, not an inventory. Gated
-  // off when there's no active mailbox so it can't 409.
-  const senders = useSenders({ limit: 50, enabled: hasActiveMailbox });
-  const firstPage = senders.data?.pages[0];
-  const sendersCount =
-    firstPage === undefined
-      ? undefined
-      : firstPage.meta.pagination.hasMore
-        ? `${firstPage.data.length}+`
-        : firstPage.data.length;
+  // The app boundary owns this mailbox-wide aggregate, so the nav never
+  // races a nested route hydration boundary. It is exact (not a first-page
+  // `50+` approximation) and the Senders screen reuses the same cache entry.
+  const sendersSummary = useSendersSummary({}, { enabled: hasActiveMailbox });
+  const sendersCount = sendersSummary.data?.data.activeSenders;
 
   // Screener badge (D74) — Screener is granted at Plus (D77, reversed
   // by D251), so the count query is gated on the tier capability: a

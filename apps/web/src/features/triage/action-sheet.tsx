@@ -279,7 +279,7 @@ export function ActionSheet({
                   {/* The live count (never a lifetime estimate — D226). */}
                   Also archive the
                   {typeof inboxCount === 'number'
-                    ? ` ${inboxCount.toLocaleString()} email${inboxCount === 1 ? '' : 's'}`
+                    ? ` ${inboxCount.toLocaleString('en-US')} email${inboxCount === 1 ? '' : 's'}`
                     : ' emails'}{' '}
                   already in the inbox
                 </span>

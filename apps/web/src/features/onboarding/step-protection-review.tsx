@@ -273,7 +273,7 @@ export function StepProtectionReview({
 /* ── Copy ──────────────────────────────────────────────────────────── */
 
 function senders(n: number): string {
-  return n === 1 ? '1 sender' : `${n.toLocaleString()} senders`;
+  return n === 1 ? '1 sender' : `${n.toLocaleString('en-US')} senders`;
 }
 
 /**

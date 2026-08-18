@@ -13,13 +13,16 @@ export function ScreenIntro({
   title,
   body,
   tip,
-  learnMoreHref,
+  learnMore,
 }: {
   id: string;
   title: string;
   body: ReactNode;
   tip?: ReactNode;
-  learnMoreHref?: string;
+  learnMore?: {
+    href: string;
+    label: string;
+  };
 }) {
   const [dismissed, setDismissed] = useLocalState<boolean>(`intro.${id}.dismissed`, false);
 
@@ -107,9 +110,9 @@ export function ScreenIntro({
             <strong style={{ color: color.fg, fontWeight: 600 }}>Tip:</strong> {tip}
           </div>
         )}
-        {learnMoreHref != null && (
+        {learnMore != null && (
           <a
-            href={learnMoreHref}
+            href={learnMore.href}
             style={{
               display: 'inline-block',
               marginTop: 6,
@@ -119,7 +122,7 @@ export function ScreenIntro({
               textDecoration: 'none',
             }}
           >
-            Learn more →
+            {learnMore.label} →
           </a>
         )}
       </div>

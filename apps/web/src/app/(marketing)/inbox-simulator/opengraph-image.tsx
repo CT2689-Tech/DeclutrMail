@@ -24,7 +24,7 @@ import { ImageResponse } from 'next/og';
  */
 
 export const alt =
-  'DeclutrMail inbox simulator — an action preview showing the exact message count and Gmail label changes before approval, on synthetic data.';
+  'DeclutrMail inbox simulator — an action preview showing the exact email count and Gmail changes before approval, using made-up data.';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -129,7 +129,7 @@ export default function InboxSimulatorOpenGraphImage() {
           }}
         >
           <span>ARCHIVE · SALE SIGNAL</span>
-          <span>SYNTHETIC DATA</span>
+          <span>MADE-UP DATA</span>
         </div>
         <div
           style={{
@@ -176,9 +176,7 @@ export default function InboxSimulatorOpenGraphImage() {
           color: MUTED,
         }}
       >
-        <span>
-          Full bodies fetched: <span style={{ color: TEAL, marginLeft: 10 }}>0</span>
-        </span>
+        <span>Full email contents stay in Gmail</span>
         <span>Keep · Archive · Unsubscribe · Later · Delete</span>
       </div>
     </div>,

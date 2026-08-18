@@ -424,7 +424,7 @@ export function AccountMenu() {
                     : `${connectedInboxes} of ${inboxLimit} ${inboxLimit === 1 ? 'inbox' : 'inboxes'} connected — your ${tierLabel(tier)} plan's limit.`}
                 </span>
                 <Link
-                  href="/pricing"
+                  href="/billing"
                   onClick={() => setOpen(false)}
                   style={{
                     color: color.primary,
@@ -464,7 +464,7 @@ export function AccountMenu() {
             onSuccess: () => {
               setManagedMailboxId(null);
               toast(
-                `Disconnected ${managedMailbox.email}. Indexed history was kept; Gmail is unchanged.`,
+                `Disconnected ${managedMailbox.email}. DeclutrMail history was kept; Gmail is unchanged.`,
                 'success',
               );
             },
@@ -484,13 +484,13 @@ export function AccountMenu() {
               onSuccess: () => {
                 setManagedMailboxId(null);
                 toast(
-                  `Disconnected ${managedMailbox.email}. Indexed data deletion started; Gmail is unchanged.`,
+                  `Disconnected ${managedMailbox.email}. Saved-data deletion started; Gmail is unchanged.`,
                   'success',
                 );
               },
               onError: () => {
                 setDataControlsError(
-                  `Could not start indexed-data deletion for ${managedMailbox.email}. Nothing was deleted; try again.`,
+                  `Could not start deleting saved data for ${managedMailbox.email}. Nothing was deleted; try again.`,
                 );
               },
             },

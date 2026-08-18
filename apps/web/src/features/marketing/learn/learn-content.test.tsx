@@ -114,11 +114,11 @@ describe('public learning content registry', () => {
     }
   });
 
-  it('labels every visual example as synthetic', () => {
+  it('labels every visual example as made up', () => {
     const examples = ALL_ARTICLES.flatMap((article) => (article.example ? [article.example] : []));
     expect(examples.length).toBeGreaterThan(0);
     for (const example of examples) {
-      expect(example.label).toBe('Illustrative example — synthetic data');
+      expect(example.label).toBe('Made-up example');
     }
   });
 
@@ -130,9 +130,9 @@ describe('public learning content registry', () => {
     );
     expect(copy).toMatch(/manual Archive, Later, and Delete affect current matched mail/i);
     expect(copy).toMatch(/delivered unsubscribe request (?:is|cannot).{0,25}(?:one-way|recalled)/i);
-    expect(copy).toMatch(/full (?:and raw )?message bodies?.{0,80}(?:not fetched|never fetched)/i);
+    expect(copy).toMatch(/never fetches?(?: or stores?)? full email contents/i);
     expect(copy).toMatch(/Gmail(?:’s)? (?:short )?(?:generated )?preview snippet/i);
-    expect(copy).toMatch(/Gmail snippets stored/i);
+    expect(copy).toMatch(/does store Gmail preview snippets/i);
     expect(copy).toMatch(/Daily Brief.{0,140}Anthropic/i);
   });
 });
@@ -144,7 +144,7 @@ describe('shared learning surfaces', () => {
     const { container } = render(<ArticlePage article={article} />);
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(article.title);
-    expect(screen.getByLabelText('Illustrative example — synthetic data')).toBeInTheDocument();
+    expect(screen.getByLabelText('Made-up example')).toBeInTheDocument();
     const jsonLd = JSON.parse(
       container.querySelector('script[type="application/ld+json"]')?.textContent ?? '{}',
     ) as { '@type': string; name: string };
@@ -196,7 +196,7 @@ describe('shared learning surfaces', () => {
     expect(types).toEqual(['Article']);
   });
 
-  it('renders all three real journal posts on the blog index', () => {
+  it('renders all three published posts on the article index', () => {
     render(<BlogIndexPage />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
       /calmer, inspectable email/i,

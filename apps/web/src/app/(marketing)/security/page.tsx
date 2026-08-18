@@ -32,7 +32,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Security — DeclutrMail',
-  description: `Metadata-only storage, full bodies fetched: 0, one narrow OAuth scope, envelope-encrypted tokens, and Google OAuth verification approved in ${CASA_VERIFICATION_APPROVED_MONTH}.`,
+  description: `DeclutrMail never fetches or stores full email contents, encrypts Google access tokens, and received Google OAuth verification approval in ${CASA_VERIFICATION_APPROVED_MONTH}.`,
   path: '/security',
 });
 
@@ -54,9 +54,9 @@ export default function SecurityPage() {
       <PageViewTracker page="security" />
       <LegalSection id="the-boundary" title="The boundary: what we store, what we never store">
         <p>
-          The strongest security control is not holding the data at all. DeclutrMail&rsquo;s
-          boundary is literal: <strong>{PRIVACY_BADGE_HEADLINE}</strong>. Message data is fetched
-          from Gmail&rsquo;s API in metadata form only — never the full or raw message format.
+          The strongest security control is not holding the data at all. DeclutrMail&rsquo;s promise
+          is literal: <strong>{PRIVACY_BADGE_HEADLINE}</strong> DeclutrMail requests only the Gmail
+          details listed below.
         </p>
         <p>
           <strong>{PRIVACY_STORAGE_LABEL}</strong>
@@ -75,10 +75,9 @@ export default function SecurityPage() {
           ))}
         </ul>
         <p>
-          Because full message bodies and attachments are never in our systems, that content cannot
-          leak from DeclutrMail. Subjects and Gmail Preview snippets can still contain sensitive
-          information; we store those bounded fields as disclosed above and protect them
-          accordingly.
+          Because full email contents and attachments are never in our systems, they cannot leak
+          from DeclutrMail. Subject lines and Gmail preview snippets can still contain sensitive
+          information, so we list and protect them explicitly.
         </p>
       </LegalSection>
 
@@ -90,10 +89,9 @@ export default function SecurityPage() {
           <code>gmail.modify</code> is the scope that permits those label changes.
         </p>
         <p>
-          The scope is broader than what we use, and that gap is closed in code: message data is
-          fetched with Gmail&rsquo;s <code>metadata</code> format and an explicit header allowlist,
-          never the <code>full</code> or <code>raw</code> formats that carry bodies and attachments.
-          You can revoke access at any time from Settings or from your{' '}
+          This permission is broader than what DeclutrMail uses. The app requests only the listed
+          fields and never asks Gmail for the full or raw email formats that include complete
+          contents and attachments. You can revoke access at any time from Settings or from your{' '}
           <a href="https://myaccount.google.com/permissions" rel="noopener noreferrer">
             Google account permissions page
           </a>
@@ -127,20 +125,20 @@ export default function SecurityPage() {
       <LegalSection id="no-prediction" title="No ML category prediction">
         <p>
           DeclutrMail does not use machine learning to predict email categories or route senders. It
-          can automatically protect a sender using deterministic product rules when strong
-          engagement signals, such as your reply history, cross the documented threshold; you can
-          review and change that protection. Mail-changing automation follows preset rules you
-          explicitly enable — never a model&rsquo;s guess. We also do not use Gmail data to train
-          generalized AI or machine-learning models.
+          can automatically protect a sender using fixed product rules when strong engagement
+          signals, such as your reply history, cross the documented threshold; you can review and
+          change that protection. Mail-changing automation follows preset rules you explicitly
+          enable — never a model&rsquo;s guess. We also do not use Gmail data to train generalized
+          AI or machine-learning models.
         </p>
       </LegalSection>
 
       <LegalSection id="deletion" title="Leaving cleanly">
         <p>
           You can disconnect an inbox (which revokes our Google access, stops syncing, and preserves
-          its historical DeclutrMail record for reconnection), delete one inbox&rsquo;s indexed
-          data, or schedule deletion of your whole account from Settings. Account deletion has a
-          7-day grace period, and if you have actions still inside a longer undo window, deletion is
+          its historical DeclutrMail record for reconnection), delete one inbox&rsquo;s saved data,
+          or schedule deletion of your whole account from Settings. Account deletion has a 7-day
+          grace period, and if you have actions still inside a longer undo window, deletion is
           scheduled after the latest window expires so undo keeps working for its full window.
           Details are in the <a href="/privacy">Privacy Policy</a>.
         </p>

@@ -273,8 +273,8 @@ build a dashboard.
 
 1. **Attributed signups per week, by channel** (the F1 `signup_attribution` column + the
    optional how-did-you-hear select). The only number that decides where founder-hours go.
-2. **Simulator funnel completion** (existing events: demo view → `demo_preview_opened` →
-   `demo_decision_confirmed` → demo-placement CTA click → signup). Message-market
+2. **Simulator funnel completion** (events: demo view → `demo_preview_opened` →
+   `demo_decision_confirmed` → `demo_completed` → demo-placement CTA click → signup). Message-market
    resonance, readable within launch week.
 3. **Signup → first real preview→confirm within 24h** (activation). The product's aha
    moment on a real mailbox; the number that says whether launch traffic was the right

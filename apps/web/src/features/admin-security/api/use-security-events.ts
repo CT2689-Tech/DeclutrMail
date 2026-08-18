@@ -19,12 +19,11 @@ import {
   type SecurityEventWire,
 } from '@/lib/api/security-events';
 
-import { securityEventsKeys } from './query-keys';
+import { securityEventsQueryOptions } from './query-options';
 
 export function useSecurityEvents(filters: ListSecurityEventsInput) {
   return useInfiniteQuery({
-    queryKey: securityEventsKeys.list(filters),
-    queryFn: ({ pageParam, signal }) =>
+    ...securityEventsQueryOptions(filters, (pageParam, signal) =>
       fetchSecurityEvents(
         {
           ...filters,
@@ -32,8 +31,7 @@ export function useSecurityEvents(filters: ListSecurityEventsInput) {
         },
         signal,
       ),
-    initialPageParam: '',
-    getNextPageParam: (lastPage) => lastPage.meta.pagination.nextCursor ?? undefined,
+    ),
     /**
      * Flattens the per-page row arrays into one list so the screen
      * treats `data.rows` as the visible list and `hasNextPage` as the

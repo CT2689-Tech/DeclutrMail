@@ -30,12 +30,12 @@ const FAQS: ReadonlyArray<{ q: string; a: string; link?: { href: string; label: 
     // The FULL generated list, never a slice. A `slice(0, 3)` plus a
     // hand-written tail shipped here for a while: it published 6 of 11
     // fields under the words "the published disclosure", silently dropped
-    // the Gmail Preview snippet — the field our own /answers pages call
+    // the Gmail preview snippet — the field our own /answers pages call
     // the honesty test — and desynced from the registry the moment its
     // order changed. This answer is also emitted as FAQPage JSON-LD, so
     // answer engines quote it detached from the /privacy link. Same
     // pattern as help/page.tsx:53.
-    a: `The published Gmail message-field disclosure lists: ${PRIVACY_STORAGE_ITEMS.join('; ')}. The headline is literal — ${PRIVACY_BADGE_HEADLINE}. The privacy policy separately covers operational records. Full message bodies, attachments, and raw MIME are never fetched.`,
+    a: `${PRIVACY_BADGE_HEADLINE} DeclutrMail stores these Gmail details: ${PRIVACY_STORAGE_ITEMS.join('; ')}. The privacy policy separately explains the account, preferences, decisions, Activity history, and billing records needed to run the service.`,
     link: { href: '/privacy', label: 'Privacy policy →' },
   },
   {
@@ -48,7 +48,7 @@ const FAQS: ReadonlyArray<{ q: string; a: string; link?: { href: string; label: 
   },
   {
     q: 'How is this different from Gmail filters?',
-    a: 'Filters are rules you write directly in Gmail. DeclutrMail gives you a sender-ranked review, a live count-and-sample preview, and an activity record. DeclutrMail re-checks Gmail at the moment a manual action runs, so the final count can change if the inbox changed in between. Manual Archive, Later, and Delete do not create future-mail rules; Autopilot handles future matches only through presets you explicitly enable — on Plus you approve each batch, and letting a rule act on its own is Pro.',
+    a: 'Filters are rules you write directly in Gmail. DeclutrMail groups email by sender, shows the affected count and a sample before you confirm, and records the result in Activity. The final count can change if new email arrives before the action runs. Archive, Later, and Delete do not create rules for future email. Autopilot is separate: on Plus you approve each matching batch, while Pro can run only the rules you deliberately turn on.',
   },
   {
     q: 'What happens if I disconnect or delete my account?',
@@ -83,7 +83,7 @@ export function Faq() {
   return (
     <section className="dm-mkt-section dm-mkt-shell">
       <JsonLd data={FAQ_JSON_LD} />
-      <p className="dm-mkt-eyebrow">№ 08 — Questions</p>
+      <p className="dm-mkt-eyebrow">№ 06 — Questions</p>
       <h2 className="dm-mkt-h2">Asked, answered.</h2>
       <div className="dm-mkt-faq">
         {FAQS.map(({ q, a, link }) => (

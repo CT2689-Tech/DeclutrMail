@@ -450,7 +450,7 @@ export function ConfirmActionModal({
     (compositePreview?.allMail?.counts.all ?? 0) > 0
       ? `Switch to "Inbox + archived" to reach ${(
           compositePreview?.allMail?.counts.all ?? 0
-        ).toLocaleString()} archived email${
+        ).toLocaleString('en-US')} archived email${
           (compositePreview?.allMail?.counts.all ?? 0) === 1 ? '' : 's'
         }.`
       : null;
@@ -801,7 +801,7 @@ export function ConfirmActionModal({
                   {(() => {
                     const monthly =
                       compositePreview?.sender?.monthly ?? senders[0]!.monthlyVolume ?? null;
-                    return monthly === null ? '—' : monthly.toLocaleString();
+                    return monthly === null ? '—' : monthly.toLocaleString('en-US');
                   })()}
                 </strong>{' '}
                 /mo arriving
@@ -889,7 +889,7 @@ export function ConfirmActionModal({
           )}
           {request.selectedCount !== undefined && (selectedCount > 1 || skippedCount > 0) && (
             <p
-              aria-label="Bulk action scope"
+              aria-label="Senders included in this bulk action"
               style={{
                 fontFamily: font.mono,
                 fontSize: 10.5,
@@ -1040,7 +1040,7 @@ export function ConfirmActionModal({
                                 }}
                               >
                                 {' '}
-                                · {n.toLocaleString()}
+                                · {n.toLocaleString('en-US')}
                               </span>
                             )
                           )}
@@ -1167,7 +1167,7 @@ export function ConfirmActionModal({
                             opacity: active ? 0.85 : 0.7,
                           }}
                         >
-                          {optCount.toLocaleString()}
+                          {optCount.toLocaleString('en-US')}
                         </span>
                       )}
                     </button>
@@ -1250,7 +1250,7 @@ export function ConfirmActionModal({
                             opacity: active ? 0.85 : 0.7,
                           }}
                         >
-                          {bucketCount.toLocaleString()}
+                          {bucketCount.toLocaleString('en-US')}
                         </span>
                       )}
                     </button>
@@ -1371,7 +1371,9 @@ export function ConfirmActionModal({
                   if (primaryActsOnInbox) {
                     return (
                       <>
-                        <strong style={numberStyle}>{compositeCount.toLocaleString()}</strong>
+                        <strong style={numberStyle}>
+                          {compositeCount.toLocaleString('en-US')}
+                        </strong>
                         <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                           email{compositeCount === 1 ? '' : 's'} currently match
                           {activeReach === 'all_mail' ? ' across inbox + archived' : ''}
@@ -1390,7 +1392,9 @@ export function ConfirmActionModal({
                   if (hasSecondaryAction) {
                     return (
                       <>
-                        <strong style={numberStyle}>{compositeCount.toLocaleString()}</strong>
+                        <strong style={numberStyle}>
+                          {compositeCount.toLocaleString('en-US')}
+                        </strong>
                         <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                           email{compositeCount === 1 ? '' : 's'} currently match the backlog{' '}
                           {secondaryVerb === 'delete' ? 'Trash' : 'Archive'} action
@@ -1436,7 +1440,7 @@ export function ConfirmActionModal({
                 if (historic != null) {
                   return (
                     <>
-                      <strong style={numberStyle}>{historic.toLocaleString()}</strong>
+                      <strong style={numberStyle}>{historic.toLocaleString('en-US')}</strong>
                       <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                         email{historic === 1 ? '' : 's'} received from {subject} in total.
                       </span>
@@ -1517,7 +1521,7 @@ export function ConfirmActionModal({
               >
                 {showSubjects
                   ? 'Hide current matches ▴'
-                  : `Show what currently matches (${subjectsPreview.length.toLocaleString()} of ${(compositeCount ?? 0).toLocaleString()}) ▾`}
+                  : `Show what currently matches (${subjectsPreview.length.toLocaleString('en-US')} of ${(compositeCount ?? 0).toLocaleString('en-US')}) ▾`}
               </button>
             )}
             {showSubjects && subjectsPreview.length > 0 && (

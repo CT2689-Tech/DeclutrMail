@@ -24,9 +24,9 @@ describe('lapse-reengagement', () => {
     expect(email.text.split('\n').slice(0, 6)).toEqual([
       '4 senders are waiting on a decision',
       '',
-      'You have not opened DeclutrMail for five days. That is the count',
-      'across your mailboxes of senders the engine has sized up and has',
-      'not heard back on — Triage shows them a mailbox at a time.',
+      'You have not opened DeclutrMail for five days. This is the number',
+      'of senders still waiting for your first decision across all your',
+      'mailboxes. Triage shows one mailbox at a time.',
       '',
     ]);
     expect(email.text).toContain('Open Triage: https://app.declutrmail.com/triage');
@@ -65,8 +65,9 @@ describe('lapse-reengagement', () => {
    */
   it('does not claim the count equals what the Triage screen shows', () => {
     const text = render(4).text;
-    expect(text).toContain('across your mailboxes');
-    expect(text).toContain('Triage shows them a mailbox at a time');
+    const normalized = text.replace(/\s+/g, ' ');
+    expect(normalized).toContain('across all your mailboxes');
+    expect(normalized).toContain('Triage shows one mailbox at a time');
     expect(text).not.toMatch(/waiting in Triage/);
   });
 

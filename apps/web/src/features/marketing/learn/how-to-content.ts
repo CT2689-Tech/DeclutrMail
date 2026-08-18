@@ -23,10 +23,10 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     description:
       'A precise sender-first Gmail cleanup workflow, with native Gmail steps and an honest explanation of what DeclutrMail changes.',
     intro:
-      'An inbox may contain 20,000 messages but only a few dozen recurring sources of noise. Grouping by sender turns an endless message list into a smaller set of decisions you can reason about.',
+      'An inbox may contain 20,000 emails but only a few dozen recurring senders. Grouping by sender turns an endless email list into a smaller set of decisions you can reason about.',
     readingMinutes: 7,
     example: {
-      label: 'Illustrative example — synthetic data',
+      label: 'Made-up example',
       caption:
         'These names and counts are invented to demonstrate the decision model. They are not a screenshot or a claim about your inbox.',
       rows: [
@@ -80,7 +80,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
             text: 'Open several recent results. Confirm the address is not shared across receipts, security alerts, and promotions that deserve different treatment.',
           },
           {
-            name: 'Choose the scope',
+            name: 'Choose which email to change',
             text: 'Select the visible page or use Gmail’s “select all conversations that match this search” option only after checking the query. The second option can affect years of mail.',
           },
           {
@@ -93,13 +93,13 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'declutrmail-workflow',
         title: 'What DeclutrMail changes about the workflow',
         paragraphs: [
-          'DeclutrMail indexes sender, subject, Gmail’s short preview snippet, dates, labels, and read state, then presents senders with aggregate facts such as volume and engagement. Full message bodies and attachments are never fetched. You still open Gmail when you need to read a message.',
-          'On the Senders or Triage surface, choose a sender, inspect the preview of what will move, and apply the decision. Single-sender actions are available before bulk workflows; current plan limits and bulk capabilities are listed on the pricing page.',
+          'DeclutrMail stores the sender, subject line, Gmail preview snippet, dates, labels, and read state, then shows useful totals such as volume and read rate. Full email contents and attachments are never fetched. You still open Gmail when you need to read a message.',
+          'In Senders or Triage, choose a sender, review what will move, and confirm the action. The pricing page lists the plan limits for individual and bulk actions.',
         ],
         steps: [
           {
             name: 'Connect and let the index finish',
-            text: 'DeclutrMail needs the metadata sync to finish before volume and engagement facts are reliable. It remains a companion to Gmail, not a second inbox.',
+            text: 'DeclutrMail needs the first Gmail scan to finish before it can show reliable volume and read-rate information. It remains a companion to Gmail, not a second inbox.',
           },
           {
             name: 'Review the noisiest sender',
@@ -107,7 +107,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Preview the mail-moving action',
-            text: 'Archive, Later, Delete, and Unsubscribe show their scope before commit. Check both what changes and what remains untouched.',
+            text: 'Archive, Later, Delete, and Unsubscribe show what they will affect before you confirm. Check both what changes and what remains untouched.',
           },
           {
             name: 'Verify in Activity and Gmail',
@@ -123,7 +123,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           'Unsubscribe is different: it asks the sender to stop future delivery and leaves existing mail where it is unless you separately approve a cleanup action. Keep records your current sender decision, while Protected is the standing safety control.',
         ],
         callout: {
-          title: 'Undo is verb-specific',
+          title: 'Each action has its own Undo rules',
           body: 'Archive, Later, and Delete can be reversed from Activity while their undo window is open (its length depends on your plan). Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Once an unsubscribe request is delivered, that request is one-way.',
           tone: 'truth',
         },
@@ -147,13 +147,13 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     related: [
       {
         href: '/answers/sender-level-vs-message-level-cleanup',
-        label: 'Sender-level vs message-level',
+        label: 'Sender review vs email-by-email review',
         description: 'When each model is the better tool.',
       },
       {
         href: '/how-to/bulk-delete-emails-from-one-sender',
         label: 'Delete one sender safely',
-        description: 'Scope a Gmail Trash move without guessing.',
+        description: 'Check which email will move to Gmail Trash.',
       },
       {
         href: '/pricing',
@@ -169,7 +169,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-08-13',
     kind: 'How-to guide',
-    eyebrow: 'Gmail cleanup · exact scope',
+    eyebrow: 'Gmail cleanup · exact affected email',
     title: 'How to delete all emails from one sender in Gmail',
     description:
       'Delete all emails from one sender in Gmail using a verified search, with clear Trash and future-mail boundaries.',
@@ -177,8 +177,9 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       'Bulk delete is safe only when the search is precise and the effect is understood. Gmail moves deleted messages to Trash; it does not unsubscribe you or stop the sender from writing again.',
     readingMinutes: 6,
     example: {
-      label: 'Illustrative example — synthetic data',
-      caption: 'A made-up sender demonstrates how current-mail scope differs from future delivery.',
+      label: 'Made-up example',
+      caption:
+        'A made-up sender shows the difference between changing existing email and stopping future delivery.',
       rows: [
         {
           sender: 'Sale Signal',
@@ -218,7 +219,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
             text: 'Check recent and old results. Look for receipts, password resets, or account notices that share the same sender address.',
           },
           {
-            name: 'Select the intended scope',
+            name: 'Select the intended email',
             text: 'Select the current page first. If Gmail offers “select all conversations that match,” use it only when the query and count match your intention.',
           },
           {
@@ -231,7 +232,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'declutrmail-steps',
         title: 'Delete by sender in DeclutrMail',
         paragraphs: [
-          'DeclutrMail groups the current indexed mail by sender. Delete is intentionally placed behind the action menu and a confirmation preview because its recovery model differs from Archive and Later.',
+          'DeclutrMail groups the saved Gmail details by sender. Delete is intentionally placed behind the action menu and a confirmation preview because its recovery model differs from Archive and Later.',
           'The preview names the sender and affected count available from the current index. The action moves matching mail to Gmail Trash and removes it from Inbox. It does not install a future sender rule.',
         ],
         steps: [
@@ -241,11 +242,11 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Choose Delete from the full action menu',
-            text: 'Delete is not promoted as a recommendation. It remains an explicit choice separate from Archive, Later, Keep, and Unsubscribe.',
+            text: 'Delete is not promoted as a recommendation. It remains an explicit decision separate from Archive, Later, Keep, and Unsubscribe.',
           },
           {
             name: 'Read the preview',
-            text: 'Confirm the sender and message scope. The recovery note should say that Gmail Trash, not DeclutrMail, supplies the approximately 30-day window.',
+            text: 'Confirm the sender and affected email. The recovery note should say that Gmail Trash, not DeclutrMail, provides the roughly 30-day window.',
           },
           {
             name: 'Confirm and inspect Activity',
@@ -281,7 +282,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       {
         href: '/answers/how-undo-works-for-gmail-cleanup',
         label: 'How undo actually works',
-        description: 'Different verbs have different recovery boundaries.',
+        description: 'Each action has a different recovery path.',
       },
       {
         href: '/how-to/unsubscribe-from-emails-gmail',
@@ -310,7 +311,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       'A full Gmail is usually not a Gmail problem. Google gives each personal account up to 15 GB shared across Gmail, Drive, and Photos, so the mail is competing with backups and photo libraries for the same quota. That also means most cleanup advice aimed at tidiness — archive, unsubscribe, inbox zero — recovers no space at all.',
     readingMinutes: 8,
     example: {
-      label: 'Illustrative example — synthetic data',
+      label: 'Made-up example',
       caption:
         'Invented senders showing which decisions return storage and which only tidy the inbox. Not a screenshot and not a claim about your mailbox.',
       rows: [
@@ -462,12 +463,12 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       {
         href: '/how-to/bulk-delete-emails-from-one-sender',
         label: 'Delete one sender safely',
-        description: 'Scope a Gmail Trash move without guessing.',
+        description: 'Check which email will move to Gmail Trash.',
       },
       {
         href: '/how-to/clean-gmail-by-sender',
         label: 'Clean by sender',
-        description: 'Turn recurring sources into a short review queue.',
+        description: 'Turn recurring senders into a short review queue.',
       },
       {
         href: '/answers/how-undo-works-for-gmail-cleanup',
@@ -491,8 +492,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       'A one-time Archive removes Inbox from mail that already exists. Future auto-archive requires a separate filter or automation rule. Keeping that distinction visible is the safest way to avoid mail disappearing unexpectedly.',
     readingMinutes: 7,
     example: {
-      label: 'Illustrative example — synthetic data',
-      caption: 'Synthetic rule matches show why Observe should come before Active automation.',
+      label: 'Made-up example',
+      caption: 'Made-up rule matches show why Observe should come before Active automation.',
       rows: [
         {
           sender: 'Product Roundup',
@@ -514,7 +515,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Choose between an exact filter and an observed preset',
         paragraphs: [
           'Gmail filters are best when you can state an exact condition such as one sender address or a stable subject prefix. They are transparent, free, and run entirely in Gmail. A filter can Skip Inbox, apply a label, mark as read, forward, or delete future matches.',
-          'DeclutrMail’s launch automation is preset-based rather than a custom rule builder. Its “Auto-archive low-engagement” preset watches aggregate sender signals. Every preset begins in Observe, where matches are collected but mail is not moved. After the seven-day observation period, you review a dry run before choosing Active.',
+          'DeclutrMail’s launch automation uses presets instead of a custom rule builder. Its “Auto-archive low-engagement” preset watches sender volume and read rate. Every preset begins in Observe, where matches are collected but mail is not moved. After seven days, you review the matching email before choosing Active.',
         ],
       },
       {
@@ -551,7 +552,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Use DeclutrMail Autopilot without blind activation',
         paragraphs: [
           'Autopilot ships five launch presets on Plus and Pro; letting a rule act without per-batch approval is the Pro step. Custom rules are not part of the launch UI, so do not expect to enter an arbitrary sender and create a permanent archive rule there.',
-          'The low-engagement preset evaluates the signals defined by the product and records matches. Observe mode is the evidence-gathering step; Active is a separate choice after reviewing the sample and affected count.',
+          'The low-engagement preset evaluates the signals defined by the product and records matches. Observe mode is the evidence-gathering step; Active is a separate decision after reviewing the sample and affected count.',
         ],
         steps: [
           {
@@ -564,7 +565,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Review names, counts, and exceptions',
-            text: 'Inspect the dry-run sample. Mark important senders Protected when they should never be handled by cleanup automation.',
+            text: 'Review the sample before turning on the rule. Mark important senders Protected so automatic cleanup leaves them alone.',
           },
           {
             name: 'Activate only if the sample is acceptable',
@@ -581,7 +582,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         ],
         callout: {
           title: 'Automation deserves a different standard',
-          body: 'Reviewing one current batch is not consent to an indefinite future rule. Keep the rule, its scope, and its active state visible and independently reversible.',
+          body: 'Reviewing one current batch is not consent to an indefinite future rule. Keep the rule, what it matches, and whether it is active visible and independently reversible.',
           tone: 'truth',
         },
       },
@@ -629,13 +630,13 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     eyebrow: 'Future delivery · sender by sender',
     title: 'How to stop promotional emails in Gmail',
     description:
-      'Use unsubscribe, filters, or spam reporting for the right kind of promotional mail, with sender-level DeclutrMail guidance.',
+      'Use unsubscribe, filters, or spam reporting for the right kind of promotional email, with guidance organized by sender.',
     intro:
       'Promotional mail is not one category of risk. A legitimate newsletter, an unwanted store campaign, and deceptive spam require different actions. Start by identifying the sender and the outcome you actually want.',
     readingMinutes: 6,
     example: {
-      label: 'Illustrative example — synthetic data',
-      caption: 'Synthetic examples show why one “remove promotions” button would be misleading.',
+      label: 'Made-up example',
+      caption: 'Made-up examples show why one “remove promotions” button would be misleading.',
       rows: [
         {
           sender: 'Neighborhood Theatre',
@@ -662,7 +663,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'classify-by-relationship',
         title: 'Classify by your relationship, not by Gmail’s tab',
         paragraphs: [
-          'The Promotions tab is a presentation choice, not a verdict. It may contain a discount you want, a receipt-adjacent campaign from a store you trust, or a list you never knowingly joined. DeclutrMail does not use machine learning to assign semantic categories such as “shopping” or “banking.” It works from sender identity, message metadata, aggregate engagement, and your decisions.',
+          'The Promotions tab is only Gmail’s way of organizing your inbox. It may contain a discount you want, a campaign from a store you trust, or a list you never knowingly joined. DeclutrMail does not use machine learning to assign categories such as “shopping” or “banking.” It uses sender identity, listed email details, volume, read rate, and your decisions.',
           'Ask whether the sender is legitimate, whether you want future mail, and whether current messages should remain searchable. Those questions map to different tools.',
         ],
       },
@@ -682,7 +683,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'declutrmail-flow',
         title: 'Review promotional senders in DeclutrMail',
         paragraphs: [
-          'DeclutrMail’s Senders view makes recurring sources visible without downloading full message bodies. It stores the sender, subject, Gmail preview snippet, dates, labels, read state, and aggregate facts needed for the product.',
+          'DeclutrMail’s Senders view makes recurring senders visible without downloading full email contents. It stores the sender, subject line, Gmail preview snippet, dates, labels, read state, volume, and read rate.',
           'A low read rate is evidence, not proof that mail is promotional or unwanted. Read recent subjects and protect any sender you are uncertain about before performing a bulk action.',
         ],
         steps: [
@@ -692,7 +693,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Check engagement and recent subjects',
-            text: 'Replies and opens can reveal a sender that looks noisy but still matters. Open the actual message in Gmail when metadata is not enough.',
+            text: 'Replies and opens can reveal a sender that looks noisy but still matters. Open the email in Gmail when the listed details are not enough.',
           },
           {
             name: 'Choose Unsubscribe for legitimate unwanted lists',
@@ -700,7 +701,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Choose a separate current-mail action if needed',
-            text: 'Existing mail stays put after unsubscribe unless you separately approve Archive or Delete. That secondary cleanup has its own scope and recovery behavior.',
+            text: 'Existing mail stays put after unsubscribe unless you separately approve Archive or Delete. That second action shows its own affected count and recovery options.',
           },
         ],
       },
@@ -747,7 +748,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       {
         href: '/how-to/clean-gmail-by-sender',
         label: 'Clean by sender',
-        description: 'Turn recurring sources into a review queue.',
+        description: 'Turn recurring senders into a review queue.',
       },
       {
         href: '/answers/is-it-safe-to-connect-gmail-app',
@@ -771,9 +772,9 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       'Unsubscribe controls future delivery. Archive, Later, and Delete control mail already in the mailbox. Combining those ideas without showing both scopes is how cleanup tools create surprises.',
     readingMinutes: 7,
     example: {
-      label: 'Illustrative example — synthetic data',
+      label: 'Made-up example',
       caption:
-        'Synthetic delivery methods demonstrate the two unsubscribe paths DeclutrMail can expose.',
+        'Made-up delivery methods demonstrate the two unsubscribe options DeclutrMail can show.',
       rows: [
         {
           sender: 'Garden Weekly',
@@ -827,13 +828,13 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'declutrmail-method',
         title: 'Unsubscribe by sender in DeclutrMail',
         paragraphs: [
-          'DeclutrMail reads allowlisted list-unsubscribe headers alongside message metadata. When a sender offers the RFC 8058 one-click method, DeclutrMail can submit the request. When it offers only a mailto address, DeclutrMail opens Gmail compose with the address and any supplied subject or body; you remain the person who sends it.',
+          'DeclutrMail reads the sender’s unsubscribe information along with the other listed Gmail details. When a sender offers the standard one-click method, DeclutrMail can submit the request. When it offers only an email address, DeclutrMail opens a Gmail draft with the supplied address and text; you remain the person who sends it.',
           'The confirmation preview states that existing mail will not move. If you also choose to archive or delete old mail, that is a second action with a separately visible count.',
         ],
         steps: [
           {
             name: 'Review the sender facts',
-            text: 'Check the full address, recent subjects, volume, and engagement. Open Gmail if the metadata leaves doubt.',
+            text: 'Check the full address, recent subjects, volume, and read rate. Open Gmail if those details leave doubt.',
           },
           {
             name: 'Open the Unsubscribe preview',
@@ -880,7 +881,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       {
         href: 'https://support.google.com/mail/answer/15621070?hl=en',
         label: 'Google: Manage subscriptions in Gmail',
-        description: 'Official sender-level subscription management behavior and rollout note.',
+        description: 'Official subscription management behavior by sender and rollout note.',
       },
     ],
     related: [

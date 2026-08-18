@@ -357,9 +357,9 @@
   }
 }
 
-/* ── Hero ledger card (D135 adaptation, CSS-only loop) ──────────
-   8s loop. The global reduced-motion override in tokens.css advances
-   the one-shot timeline immediately to its informative final state. */
+/* ── Hero ledger card (D135 adaptation) ─────────────────────────
+   8s one-shot timeline with explicit pause/replay controls. The global
+   reduced-motion override advances it immediately to its final state. */
 
 .dm-mkt-ledger {
   background: var(--mkt-card);
@@ -395,16 +395,6 @@
   background: var(--mkt-accent);
   display: inline-block;
   margin-right: 8px;
-}
-
-.dm-mkt-ledger-demo-label {
-  padding: 3px 7px;
-  border: 1px solid var(--mkt-accent-border);
-  border-radius: 9999px;
-  background: var(--mkt-accent-soft);
-  color: var(--mkt-accent);
-  letter-spacing: 0.08em;
-  white-space: nowrap;
 }
 
 .dm-mkt-ledger-body {
@@ -448,6 +438,7 @@
 }
 
 .dm-mkt-ledger-meta {
+  display: block;
   font-family: var(--dm-font-mono);
   font-size: 11px;
   color: var(--mkt-ink-muted);
@@ -585,6 +576,47 @@
   white-space: nowrap;
 }
 
+.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-row,
+.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-name,
+.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-verb-archive,
+.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-receipt,
+.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-toast {
+  animation-play-state: paused;
+}
+
+.dm-mkt-ledger-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 11px;
+  font-size: 11px;
+}
+
+.dm-mkt-ledger-controls button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--mkt-ink-muted);
+  font: 600 11px/1.4 var(--dm-font-sans);
+  cursor: pointer;
+}
+
+.dm-mkt-ledger-controls a {
+  color: var(--mkt-accent);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.dm-mkt-ledger-controls button:hover,
+.dm-mkt-ledger-controls button:focus-visible,
+.dm-mkt-ledger-controls a:hover,
+.dm-mkt-ledger-controls a:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 /* Caption under the card. */
 .dm-mkt-ledger-caption {
   font-family: var(--dm-font-mono);
@@ -592,7 +624,7 @@
   letter-spacing: 0.05em;
   color: var(--mkt-ink-muted);
   text-align: center;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 /* One-shot timeline (8s, then settles on the confirmed receipt):
@@ -691,115 +723,14 @@
   gap: 12px 28px;
 }
 
-/* ── Product tour + Gmail companion ────────────────────────── */
+/* ── Gmail companion ───────────────────────────────────────── */
 
-.dm-mkt-product-tour {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 30px;
-}
-
-.dm-mkt-product-tour article {
-  min-width: 0;
-  padding: 22px;
-  border: 1px solid var(--mkt-line);
-  border-radius: 12px;
-  background: var(--mkt-card);
-  box-shadow: 0 1px 2px rgba(14, 20, 19, 0.04);
-}
-
-.dm-mkt-product-tier,
 .dm-mkt-companion-grid > div > p {
   color: var(--mkt-accent);
   font-family: var(--dm-font-mono);
   font-size: 10px;
   font-weight: 650;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.dm-mkt-product-tour h3 {
-  margin: 11px 0 7px;
-  font-family: var(--dm-font-display);
-  font-size: 25px;
-  font-weight: 560;
-  letter-spacing: -0.025em;
-}
-
-.dm-mkt-product-tour article > p {
-  min-height: 88px;
-  margin: 0 0 20px;
-  color: var(--mkt-ink-soft);
-  font-size: 12.5px;
-  line-height: 1.6;
-}
-
-.dm-mkt-product-mini,
-.dm-mkt-product-rule,
-.dm-mkt-product-activity {
-  min-height: 72px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px;
-  border: 1px solid var(--mkt-line-soft);
-  border-radius: 9px;
-  background: var(--mkt-paper);
-  font-size: 11px;
-}
-
-.dm-mkt-product-avatar {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  border: 1px solid var(--mkt-accent-border);
-  border-radius: 8px;
-  background: var(--mkt-accent-soft);
-  color: var(--mkt-accent);
-  font-family: var(--dm-font-mono);
-  font-weight: 700;
-}
-
-.dm-mkt-product-mini > span:nth-child(2),
-.dm-mkt-product-activity > span {
-  min-width: 0;
-  display: grid;
-  flex: 1;
-}
-
-.dm-mkt-product-mini small,
-.dm-mkt-product-rule small,
-.dm-mkt-product-activity small {
-  color: var(--mkt-ink-muted);
-  font-family: var(--dm-font-mono);
-  font-size: 9px;
-}
-
-.dm-mkt-product-mini em,
-.dm-mkt-product-activity em {
-  color: var(--mkt-accent);
-  font-family: var(--dm-font-mono);
-  font-size: 9px;
-  font-style: normal;
-  white-space: nowrap;
-}
-
-.dm-mkt-product-rule {
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.dm-mkt-product-rule > span {
-  padding: 3px 6px;
-  border-radius: 999px;
-  background: var(--mkt-accent-soft);
-  color: var(--mkt-accent);
-  font: 650 8.5px/1 var(--dm-font-mono);
-  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -845,41 +776,6 @@
   line-height: 1.5;
 }
 
-.dm-mkt-gmail-map {
-  margin-top: 14px;
-  border-top: 1px solid var(--mkt-line);
-}
-
-.dm-mkt-gmail-map > div {
-  display: grid;
-  grid-template-columns: 130px minmax(0, 1fr);
-  gap: 18px;
-  padding: 12px 4px;
-  border-bottom: 1px solid var(--mkt-line-soft);
-  font-size: 12px;
-}
-
-.dm-mkt-gmail-map b {
-  font-family: var(--dm-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.dm-mkt-gmail-map span {
-  color: var(--mkt-ink-soft);
-}
-
-@media (max-width: 840px) {
-  .dm-mkt-product-tour {
-    grid-template-columns: 1fr;
-  }
-
-  .dm-mkt-product-tour article > p {
-    min-height: 0;
-  }
-}
-
 @media (max-width: 620px) {
   .dm-mkt-companion-grid {
     grid-template-columns: 1fr;
@@ -888,11 +784,6 @@
   .dm-mkt-companion-grid > div + div {
     border-top: 1px solid var(--mkt-line);
     border-left: 0;
-  }
-
-  .dm-mkt-gmail-map > div {
-    grid-template-columns: 1fr;
-    gap: 5px;
   }
 }
 
@@ -1041,8 +932,16 @@ a.dm-mkt-trust-item:focus-visible {
 
 /* ── The ritual (K/A/U/L/D) ─────────────────────────────────── */
 
+.dm-mkt-ritual-title {
+  margin: 44px 0 0;
+  font-family: var(--dm-font-display);
+  font-size: clamp(23px, 3vw, 30px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
 .dm-mkt-ritual {
-  margin-top: 44px;
+  margin-top: 16px;
   border: 1px solid var(--mkt-line);
   border-radius: 14px;
   background: var(--mkt-card);

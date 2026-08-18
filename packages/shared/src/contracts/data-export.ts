@@ -56,20 +56,20 @@ function includedInventoryIds(format: GmailDataExportFormat): readonly string[] 
  */
 export const DATA_EXPORT_FORMAT_MANIFEST = {
   json: {
-    label: 'Account data subset (JSON)',
-    buttonLabel: 'Download JSON subset',
+    label: 'Selected account data (JSON)',
+    buttonLabel: 'Download selected data',
     pendingLabel: 'Preparing JSON…',
     description:
-      'Mailbox addresses and status, sender profiles with selected policy fields, selected message metadata, Activity rows, and bounded product feedback.',
+      'Mailbox addresses and status, sender profiles and decisions, listed email details, Activity history, and product feedback.',
     includedInventoryIds: includedInventoryIds('json'),
     completeAccountExport: false,
   },
   csv: {
-    label: 'Selected message metadata (CSV)',
+    label: 'Selected email details (CSV)',
     buttonLabel: 'Messages CSV',
     pendingLabel: 'Preparing messages CSV…',
     description:
-      'Sender name and address, subject, Gmail Preview, received date, labels, and read state for each exported message.',
+      'Sender name and address, subject line, Gmail preview snippet, date received, labels, and read state for each exported message.',
     includedInventoryIds: includedInventoryIds('csv'),
     completeAccountExport: false,
   },

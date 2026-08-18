@@ -16,20 +16,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AccountDeletionRequest, AccountDeletionStatus } from '@declutrmail/shared/contracts';
 import { apiGet, apiPost } from '@/lib/api/client';
+import { ACCOUNT_DELETION_QUERY_KEY, accountDeletionQueryOptions } from './query-options';
 
-export const ACCOUNT_DELETION_QUERY_KEY = ['account-deletion'] as const;
+export { ACCOUNT_DELETION_QUERY_KEY } from './query-options';
 
 export function useAccountDeletionStatus() {
-  return useQuery({
-    queryKey: ACCOUNT_DELETION_QUERY_KEY,
-    queryFn: async (): Promise<AccountDeletionStatus> => {
+  return useQuery(
+    accountDeletionQueryOptions(async (): Promise<AccountDeletionStatus> => {
       const env = await apiGet<AccountDeletionStatus>('/api/account/deletion');
       return env.data;
-    },
-    // The effective date only moves when undo tokens are issued/expire;
-    // minute-level staleness is fine for a settings surface.
-    staleTime: 60_000,
-  });
+    }),
+  );
 }
 
 export function useRequestAccountDeletion() {

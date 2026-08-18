@@ -22,22 +22,21 @@ import {
 
 import { apiGet, apiPost } from '@/lib/api/client';
 import type { TriageDecisionRow } from '@/features/triage/data';
-import { TRIAGE_QUEUE_KEY } from '@/features/triage/api/use-triage-queue';
+import {
+  ONBOARDING_STATE_KEY,
+  firstTriageQueryOptions,
+  onboardingStateQueryOptions,
+} from './query-options';
 
-export const ONBOARDING_STATE_KEY = ['onboarding', 'state'] as const;
-
-/** Extends the triage-queue prefix on purpose — see module docblock. */
-export const FIRST_TRIAGE_KEY = [...TRIAGE_QUEUE_KEY, 'onboarding-first'] as const;
+export { FIRST_TRIAGE_KEY, ONBOARDING_STATE_KEY } from './query-options';
 
 export function useOnboardingState(opts: { enabled?: boolean } = {}) {
   return useQuery({
-    queryKey: ONBOARDING_STATE_KEY,
-    queryFn: async ({ signal }) => {
+    ...onboardingStateQueryOptions(async (signal) => {
       const envelope = await apiGet<OnboardingState>('/api/onboarding/state', { signal });
       return envelope.data;
-    },
+    }),
     enabled: opts.enabled ?? true,
-    staleTime: 30_000,
   });
 }
 
@@ -48,8 +47,7 @@ export interface FirstTriageRead {
 
 export function useFirstTriage(opts: { enabled?: boolean } = {}) {
   return useQuery({
-    queryKey: FIRST_TRIAGE_KEY,
-    queryFn: async ({ signal }): Promise<FirstTriageRead> => {
+    ...firstTriageQueryOptions(async (signal): Promise<FirstTriageRead> => {
       const envelope = await apiGet<TriageDecisionRow[]>('/api/onboarding/first-triage', {
         signal,
       });
@@ -57,9 +55,8 @@ export function useFirstTriage(opts: { enabled?: boolean } = {}) {
         rows: envelope.data,
         meta: OnboardingFirstTriageMetaSchema.parse(envelope.meta),
       };
-    },
+    }),
     enabled: opts.enabled ?? true,
-    staleTime: 5_000,
   });
 }
 

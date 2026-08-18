@@ -47,11 +47,11 @@ describe('CookiePreferences (D147 withdrawal surface)', () => {
     render(<CookiePreferences />);
     await waitFor(() => expect(essentialRadio()).toBeChecked());
     expect(allRadio()).not.toBeChecked();
-    // Copy states the boundary plainly: essential always on, the choice
+    // Copy states the boundary plainly: essential always on, the preference
     // governs optional analytics only.
     const card = screen.getByTestId('cookie-preferences');
     expect(card).toHaveTextContent('Essential cookies for sign-in and billing are always on');
-    expect(card).toHaveTextContent('This choice governs optional analytics only.');
+    expect(card).toHaveTextContent('This preference governs optional analytics only.');
   });
 
   it('renders the stored choice ("all")', async () => {

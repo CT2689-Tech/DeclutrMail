@@ -27,6 +27,7 @@ import { headers } from 'next/headers';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
+import { ServerAppBoundary } from '@/features/auth/server-app-boundary';
 import { ThemeScript } from '@/features/theme/theme-script';
 import { COUNTRY_HEADER } from '@/middleware';
 
@@ -52,17 +53,15 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const nonce = requestHeaders.get('x-nonce') ?? undefined;
   const regionProvider = defaultProviderForCountry(requestHeaders.get(COUNTRY_HEADER));
   const apiOrigin = crossOriginApi();
+  const cookieHeader = requestHeaders.get('cookie') ?? '';
 
   return (
     <>
-      {/* Warm DNS + TCP + TLS to the API before any of it is needed.
-          EVERY authed screen blocks on `GET /api/auth/me` (AuthProvider
-          renders the skeleton until it lands), and that request cannot
-          even be issued until ~270ms of JS has downloaded, parsed and
-          hydrated — measured on the production build, 2026-08-15. On a
-          cross-origin API that first request then pays a full connection
-          setup on top. Doing it here spends that handshake against the
-          hydration window instead of after it.
+      {/* Warm DNS + TCP + TLS to the API. Authed screens still issue
+          client fetches for anything the server did not seed (today-
+          summary, filtered `/senders`, seed misses). On a
+          cross-origin API those pay a full connection setup; doing it
+          here overlaps that handshake with HTML generation.
 
           `preconnect` and NOT `preload`: a preload would have to match
           the eventual fetch's credentials mode and headers exactly or
@@ -76,7 +75,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       )}
       <ThemeScript nonce={nonce} />
       <BillingCurrencyProvider provider={regionProvider}>
-        <AppChromeLayout>{children}</AppChromeLayout>
+        <ServerAppBoundary cookieHeader={cookieHeader}>
+          <AppChromeLayout>{children}</AppChromeLayout>
+        </ServerAppBoundary>
       </BillingCurrencyProvider>
     </>
   );

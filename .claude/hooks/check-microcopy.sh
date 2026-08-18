@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # check-microcopy.sh — PostToolUse hook for Edit/Write/MultiEdit
 #
-# Enforces D227 canonical verbs (Keep / Archive / Unsubscribe / Later — K/A/U/L)
-# in product UI surfaces. "Screen" is an internal enum only — never user-facing.
+# Enforces the canonical user-facing actions (Keep / Archive / Unsubscribe /
+# Later / Delete). "Screen" is an internal enum only — never user-facing.
 #
-# Also enforces the D228 privacy-badge rule: the pre-D228 trust copy
-# "Bodies read: 0" is banned in product surfaces (CLAUDE.md §2.1) — the
-# locked replacement is "Full bodies fetched: 0" + the explicit storage
+# Also enforces the D228 privacy-badge rule: counter-style trust copy is
+# banned in product surfaces (CLAUDE.md §2.1). The locked replacement is
+# "We never fetch or store full email contents." + the explicit storage
 # list, rendered by PrivacyBadge from packages/shared/src/copy/privacy.ts.
 #
 # Scope: apps/web/** and any *.stories.tsx file (Storybook copy must also
@@ -53,8 +53,8 @@ case "$file_path" in
 esac
 
 # Privacy badge rule (D228 + CLAUDE.md §2.1): the pre-D228 trust copy
-# "Bodies read: 0" is banned in product surfaces. The locked replacement
-# is "Full bodies fetched: 0" + the explicit storage list — render
+# Counter-style privacy claims are banned in product surfaces. The locked
+# replacement is a plain-language sentence + the explicit storage list — render
 # <PrivacyBadge> from @declutrmail/shared; copy literals live ONLY in
 # packages/shared/src/copy/privacy.ts.
 #
@@ -65,11 +65,11 @@ case "$file_path" in
   */packages/shared/src/copy/privacy.ts)
     ;;
   */apps/web/*|*/packages/shared/*|*.stories.tsx|*.stories.ts|*.stories.jsx|*.stories.js|*.stories.mdx)
-    if grep -nF 'Bodies read: 0' "$file_path" >/dev/null 2>&1; then
-      echo "❌ check-microcopy: banned pre-D228 trust copy 'Bodies read: 0' (D228 — use 'Full bodies fetched: 0')" >&2
-      grep -nF 'Bodies read: 0' "$file_path" | sed 's/^/   /' >&2
+    if grep -nE 'Bodies read: 0|Full bodies fetched: 0' "$file_path" >/dev/null 2>&1; then
+      echo "❌ check-microcopy: banned counter-style privacy copy (D228)" >&2
+      grep -nE 'Bodies read: 0|Full bodies fetched: 0' "$file_path" | sed 's/^/   /' >&2
       echo "" >&2
-      echo "   D228: the trust badge says 'Full bodies fetched: 0' + the explicit storage list." >&2
+      echo "   D228: use 'We never fetch or store full email contents.' + the explicit storage list." >&2
       echo "   Render <PrivacyBadge> from @declutrmail/shared — copy lives only in packages/shared/src/copy/privacy.ts." >&2
       exit 1
     fi
@@ -175,8 +175,8 @@ case "$file_path" in
       "every action (is )?(reversible|undoable)|(fully|always|100%) reversible|nothing is permanent|all actions (are )?(reversible|undoable)"
 
     # T5 — privacy copy is the locked generated badge. Forward-looking
-    # absolutes about reading are unfalsifiable AND wrong (metadata IS read).
-    check "forward-looking privacy absolute (T5 — use the locked 'Full bodies fetched: 0' badge)" \
+    # absolutes about reading are unfalsifiable AND wrong (listed Gmail details ARE read).
+    check "forward-looking privacy absolute (T5 — use the locked plain-language privacy badge)" \
       "never reads? your (e-?mail|message|inbox)|we never read your|does ?n[o'’]t read your (e-?mail|message)|never looks? at your (e-?mail|message)"
 
     # T6 — D209 forbidden words. All nine: AI magic, supercharged, nuke,
@@ -209,6 +209,13 @@ case "$file_path" in
     # actually violated — walk straight through the carve-out.
     check "'clean' as a verb on user data (T6/D209 — 'cleanup' the noun is fine)" \
       "[^“‘’[:alnum:]]clean(s|ing|ed)? (up |out )?(your|their|the|my) ([a-z]+ )?(gmail|inbox|mail|e-?mail|mailbox|messages)"
+
+    # Product language — reserve "decision" for what a user wants for a
+    # sender, "action" for execution, and plain scan/storage language for
+    # user-visible Gmail processing. These phrases are implementation or
+    # strategy vocabulary, not labels users should have to interpret.
+    check "internal product language in user copy (use decision/action/first scan/saved data)" \
+      "sender choices?|one choice per sender|your five choices|DeclutrMail choice|manual choice|indexed data|indexed mailboxes|messages indexed|senders indexed|finished indexing|five verbs|quota bands?|product chapters?"
 
     # T3 (Screener framed as blocking) is deliberately NOT enforced here.
     #
@@ -283,7 +290,7 @@ violations=0
 
 # 1) JSX text content: >Screen< or >Screen all< etc.
 if grep -nE '>[[:space:]]*Screen([[:space:]][^<]*)?<' "$file_path" >/dev/null 2>&1; then
-  echo "❌ check-microcopy: 'Screen' as user-facing verb in JSX text (D227 — use K/A/U/L)" >&2
+  echo "❌ check-microcopy: 'Screen' as a user-facing action in JSX text" >&2
   grep -nE '>[[:space:]]*Screen([[:space:]][^<]*)?<' "$file_path" | sed 's/^/   /' >&2
   violations=$((violations + 1))
 fi
@@ -295,7 +302,7 @@ if grep -nE "['\"]Screen([[:space:]]|['\"\$])" "$file_path" >/dev/null 2>&1; the
   # Filter out "Screener" matches — those are allowed
   matches=$(grep -nE "['\"]Screen([[:space:]]|['\"\$])" "$file_path" | grep -v "Screener" || true)
   if [ -n "$matches" ]; then
-    echo "❌ check-microcopy: 'Screen' in UI string literal (D227 — use K/A/U/L)" >&2
+    echo "❌ check-microcopy: 'Screen' as an action in a UI string literal" >&2
     echo "$matches" | sed 's/^/   /' >&2
     violations=$((violations + 1))
   fi
@@ -304,14 +311,14 @@ fi
 # 3) Banned shortcut: the 'S' key was canonical pre-D227; now it's 'L' for Later.
 #    Flag any aria-keyshortcut or hotkey config that binds 'S' to a verb action.
 if grep -nE "(aria-keyshortcuts|hotkey|shortcut)\s*[:=]\s*['\"](S|s)['\"]" "$file_path" >/dev/null 2>&1; then
-  echo "❌ check-microcopy: 'S' as shortcut (D227 reverbed to K/A/U/L — 'S' was old verb)" >&2
+  echo "❌ check-microcopy: 'S' as an action shortcut ('S' was the old Screen shortcut)" >&2
   grep -nE "(aria-keyshortcuts|hotkey|shortcut)\s*[:=]\s*['\"](S|s)['\"]" "$file_path" | sed 's/^/   /' >&2
   violations=$((violations + 1))
 fi
 
 if [ "$violations" -gt 0 ]; then
   echo "" >&2
-  echo "   D227: product UI uses 4 verbs — Keep / Archive / Unsubscribe / Later (K/A/U/L)." >&2
+  echo "   Product UI uses Keep / Archive / Unsubscribe / Later / Delete." >&2
   echo "   'Screen' is an internal enum only (triage_decision.verdict='screen')." >&2
   exit 1
 fi

@@ -38,6 +38,7 @@ import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal'
 import { ReceiptStrip, type ActionReceipt } from './receipt-strip';
 import { KeyboardCheatsheet } from './keyboard-cheatsheet';
 import { isTypingTarget } from './keyboard';
+import { sendersListQueryFromScreen } from './api/query-options';
 import { useSenders } from './api/use-senders';
 import { useSendersSummary } from './api/use-senders-summary';
 
@@ -233,26 +234,19 @@ export function SendersScreen() {
   // 150ms before this state even updates (keystroke-eating fix), so
   // the stacked total keystroke→fetch stays ~300ms.
   const debouncedQuery = useDebouncedValue(query.trim(), 150);
-  // `limit: 50` matches the app-shell's `useSenders({ limit: 50 })` so
-  // the two share ONE infinite-query cache entry per (category, limit,
-  // isProtected, sort, direction, q) — page sizes stay uniform across the
-  // surface as the user pulls more pages here.
+  // Same query the app-shell nav chip reads (`DEFAULT_SENDERS_QUERY`) so
+  // the two share ONE infinite-query cache entry — page sizes stay
+  // uniform and a cold `/senders` load does not refetch the first page.
   // D38 compose state — every axis lives on the URL. Wired to the BE
   // list query below so chips narrow mailbox-wide (not loaded-page).
-  const sendersQuery = useSenders({
-    limit: 50,
-    sort,
-    direction,
-    q: debouncedQuery,
-    activity: compose.activity ?? undefined,
-    activityNegate: compose.activity ? compose.activityNegate : undefined,
-    unsubReady: compose.unsubReady,
-    replied: compose.replied,
-    windowDays: compose.windowDays ?? undefined,
-    domain: compose.domain ?? undefined,
-    isProtected: compose.protectedFlag,
-    unsubIgnored: compose.unsubIgnored || undefined,
-  });
+  const sendersQuery = useSenders(
+    sendersListQueryFromScreen({
+      compose,
+      sort,
+      direction,
+      q: debouncedQuery,
+    }),
+  );
   const allSenders = useMemo<Sender[]>(() => {
     const pages = sendersQuery.data?.pages ?? [];
     return pages.flatMap((p) => p.data.map((row) => enrichSenderRow(row)));
@@ -313,7 +307,7 @@ export function SendersScreen() {
   // above (D38) — drives the hero number + the compose summary line.
 
   if (sendersQuery.isLoading) {
-    return <LoadingState />;
+    return <SendersLoadingState />;
   }
   if (sendersQuery.isError) {
     return <SendersErrorState onRetry={() => sendersQuery.refetch()} />;
@@ -2090,8 +2084,11 @@ function SendersScreenContent({
       <ScreenIntro
         id="senders"
         title="How Senders works"
-        body="Every account, list, person, and service that mails you, grouped by sender and a recommended next step. Manual Archive, Later, and Delete affect only matching inbox mail when they run; future matches change only through Autopilot rules you explicitly enable."
-        tip="Recommendations use sender identity, subject, Gmail's short preview, dates, volume, read and reply history, recency, and protection settings. Full message bodies and attachments are never fetched."
+        body="Review every person, list, and service that emails you, grouped by sender. A manual decision affects current matching email; only an Autopilot rule changes future matches."
+        learnMore={{
+          href: '/methodology#automation-method',
+          label: 'Manual decisions vs automatic rules',
+        }}
       />
 
       <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
@@ -2168,7 +2165,7 @@ function SendersScreenContent({
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {(totalMatching ?? senders.length).toLocaleString()}
+            {(totalMatching ?? senders.length).toLocaleString('en-US')}
           </span>
           <span
             style={{
@@ -2256,7 +2253,7 @@ function SendersScreenContent({
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
-              {(totalMatching ?? senders.length).toLocaleString()}
+              {(totalMatching ?? senders.length).toLocaleString('en-US')}
             </strong>{' '}
             senders match.
           </span>
@@ -2516,7 +2513,7 @@ function SenderResultsFreshness({
           <span aria-hidden="true">·</span>
           <span>
             {totalSenders !== null
-              ? `${totalSenders.toLocaleString()} senders indexed for ${mailboxEmail}`
+              ? `${totalSenders.toLocaleString('en-US')} senders found for ${mailboxEmail}`
               : `Matching count and rows for ${mailboxEmail}`}
           </span>
         </>
@@ -2645,7 +2642,7 @@ function LoadMoreSentinel({ onVisible, busy }: { onVisible: () => void; busy: bo
 }
 
 /** D211 loading branch — skeleton rows for the in-flight initial fetch. */
-function LoadingState() {
+export function SendersLoadingState() {
   return (
     <div
       role="status"

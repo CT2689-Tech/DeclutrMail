@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import { installFetchStub } from '@/test/fetch-stub';
 import LandingPage, { metadata } from './page';
@@ -46,7 +46,9 @@ describe('landing page — D134', () => {
   it('mounts the D228 trust copy via the shared PrivacyBadge (trust strip + privacy section)', async () => {
     const { container } = await renderLanding();
     // Headline appears once per badge mount; the storage list rides along.
-    expect(screen.getAllByText('Full bodies fetched: 0').length).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.getAllByText('We never fetch or store full email contents.').length,
+    ).toBeGreaterThanOrEqual(2);
     expect(container.querySelectorAll('[data-dm-privacy-badge]').length).toBeGreaterThanOrEqual(2);
   });
 
@@ -55,6 +57,9 @@ describe('landing page — D134', () => {
     const text = container.textContent ?? '';
     expect(text.toLowerCase()).not.toContain('bodies read');
     expect(text.toLowerCase()).not.toContain('body read');
+    expect(text.toLowerCase()).not.toContain('full bodies fetched');
+    expect(text).not.toMatch(/\bverbs?\b/i);
+    expect(text).not.toMatch(/product chapters|quota bands|methodology/i);
     // "Screener" (the feature name) is allowed; bare "Screen" is not.
     expect(/Screen(?!er)/.test(text)).toBe(false);
     // Legal terms are founder-confirmed (2026-07-08); no page may still
@@ -74,12 +79,17 @@ describe('landing page — D134', () => {
     expect(link?.textContent).toContain('See the refund policy for full terms');
   });
 
-  it('explains the ritual with all five canonical verbs (D227 + ADR-0019)', async () => {
+  it('explains all five user actions (D227 + ADR-0019)', async () => {
     const { container } = await renderLanding();
+    const workflow = container.querySelector('#how-it-works');
+    expect(workflow).not.toBeNull();
     const ritualVerbs = Array.from(container.querySelectorAll('.dm-mkt-ritual-verb')).map(
       (el) => el.textContent,
     );
     expect(ritualVerbs).toEqual(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete']);
+    expect(workflow?.querySelectorAll('.dm-mkt-ritual-verb')).toHaveLength(5);
+    expect(container.querySelector('.dm-mkt-product-tour')).toBeNull();
+    expect(container.querySelector('.dm-mkt-gmail-map')).toBeNull();
     // The hero demo card carries the same five, from the same registry.
     const demoVerbs = Array.from(container.querySelectorAll('.dm-mkt-ledger-verb kbd')).map(
       (el) => el.textContent,
@@ -98,6 +108,26 @@ describe('landing page — D134', () => {
         name: /412 messages leave Inbox, remain searchable in All Mail, affect existing mail only/i,
       }),
     ).toBeInTheDocument();
+  });
+
+  it('lets a visitor pause, replay, or enter the interactive decision', async () => {
+    const { container } = await renderLanding();
+    const ledger = container.querySelector('.dm-mkt-ledger');
+    expect(ledger).toHaveAttribute('data-run', '0');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause demo' }));
+    expect(screen.getByRole('button', { name: 'Resume demo' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(ledger).toHaveAttribute('data-paused', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Replay' }));
+    expect(container.querySelector('.dm-mkt-ledger')).toHaveAttribute('data-run', '1');
+    expect(screen.getByRole('link', { name: 'Try this decision →' })).toHaveAttribute(
+      'href',
+      '/inbox-simulator',
+    );
   });
 
   it('points the primary CTA at OAuth and exposes demo, pricing, and privacy routes', async () => {

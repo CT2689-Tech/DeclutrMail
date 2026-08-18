@@ -172,11 +172,11 @@ export function foundingProPromo(): { hostTier: TierDefinition; promo: PromoDefi
  * manifest.
  */
 export const TIER_JOBS: Readonly<Record<TierId, string>> = {
-  free: 'See what’s noisy.',
-  plus: 'Handle it yourself, unlimited.',
-  pro: 'Automate recurring noise with explicit rules.',
-  team: 'Do this together, with audit.',
-  enterprise: 'Do this safely at scale.',
+  free: 'Review and act on senders yourself.',
+  plus: 'Remove the monthly limit and approve suggested batches.',
+  pro: 'Let rules you turn on handle recurring mail automatically.',
+  team: 'Review and manage mail together.',
+  enterprise: 'Manage more inboxes with organizational controls.',
 };
 
 /**
@@ -189,7 +189,7 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, string>> = {
   senders: 'Senders overview',
   'sender-detail': 'Sender detail',
   activity: 'Activity history',
-  'cleanup-actions': 'Cleanup verbs — Keep · Archive · Unsubscribe · Later · Delete',
+  'cleanup-actions': 'Cleanup actions — Keep · Archive · Unsubscribe · Later · Delete',
   triage: 'Triage sessions',
   // D251 — one feature name, two behaviours. The ladder reads as an
   // upgrade in kind ("stop approving"), not as a second product.

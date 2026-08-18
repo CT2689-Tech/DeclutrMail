@@ -12,12 +12,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
-import type {
-  ActivityBucket,
-  SenderListDirection,
-  SenderListSort,
-  TriStateFilter,
-} from '@/lib/api/senders';
+import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
+import { parseSendersScope } from './api/senders-scope';
 import { DEFAULT_COMPOSE, EMPTY_COMPOSE, type ComposeState } from './compose-strip';
 import { useSendersStore } from './store';
 
@@ -51,47 +47,6 @@ function useOptionalAppRouter() {
   }
 }
 
-function parseActivity(raw: string | null): {
-  activity: ActivityBucket | null;
-  activityNegate: boolean;
-} {
-  // Absent param = the launch-audit B2 default: active senders only.
-  // `?activity=all` is the explicit no-filter state (what the chip
-  // toggling off / "Clear filters" writes), so the two are distinct
-  // and both round-trip through the URL.
-  if (!raw) return { activity: 'active', activityNegate: false };
-  if (raw === 'all') return { activity: null, activityNegate: false };
-  const negate = raw.startsWith('not-');
-  const value = negate ? raw.slice(4) : raw;
-  if (value === 'active' || value === 'quiet' || value === 'dormant') {
-    return { activity: value, activityNegate: negate };
-  }
-  return { activity: 'active', activityNegate: false };
-}
-
-function parseTri(raw: string | null): TriStateFilter {
-  if (raw === 'true') return true;
-  if (raw === 'not' || raw === 'false') return false;
-  return null;
-}
-
-function parseWindow(raw: string | null): number | null {
-  if (!raw) return null;
-  const aliases: Record<string, number> = {
-    '30': 30,
-    '90': 90,
-    '180': 180,
-    '365': 365,
-    '30d': 30,
-    '90d': 90,
-    '180d': 180,
-    '365d': 365,
-  };
-  if (aliases[raw] !== undefined) return aliases[raw]!;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 3650 ? parsed : null;
-}
-
 function parseSort(raw: string | null): SenderListSort {
   return raw === 'last_seen' ||
     raw === 'first_seen' ||
@@ -102,27 +57,14 @@ function parseSort(raw: string | null): SenderListSort {
     : 'total';
 }
 
-function parseDirection(raw: string | null): SenderListDirection {
-  return raw === 'asc' ? 'asc' : 'desc';
-}
-
 function parseScope(params: URLSearchParams): SenderScope {
-  const { activity, activityNegate } = parseActivity(params.get('activity'));
+  const parsed = parseSendersScope(params);
   return {
-    compose: {
-      activity,
-      activityNegate,
-      unsubReady: parseTri(params.get('unsub_ready')),
-      replied: parseTri(params.get('replied')),
-      protectedFlag: parseTri(params.get('protected')),
-      windowDays: parseWindow(params.get('window')),
-      domain: params.get('domain')?.trim() || null,
-      unsubIgnored: params.get('unsub_ignored') === 'true',
-    },
-    query: params.get('q') ?? '',
-    sort: parseSort(params.get('sort')),
-    direction: parseDirection(params.get('direction')),
-  } satisfies SenderScope;
+    compose: parsed.compose,
+    query: parsed.q,
+    sort: parsed.sort,
+    direction: parsed.direction,
+  };
 }
 
 function writeScope(params: URLSearchParams, scope: SenderScope): void {

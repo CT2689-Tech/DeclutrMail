@@ -18,26 +18,53 @@
 // edit is the founder's. PR #495 had reworded this line differently while
 // D65 was still unbuilt.
 
+import { headers } from 'next/headers';
+import { hasCapability } from '@declutrmail/shared/entitlements';
+
 import { TierGate } from '@/features/billing/tier-gate';
 import { BriefScreen } from '@/features/brief/brief-screen';
+import { briefTodayQueryOptions } from '@/features/brief/api/query-options';
+import { getServerMe } from '@/features/auth/api/server-me';
+import type { BriefWire } from '@/lib/api/brief';
+import { serverGetEnvelope } from '@/lib/api/server';
+import { ServerQueryHydration } from '@/lib/server-query-hydration';
 
 export const metadata = {
   title: 'Daily Brief — DeclutrMail',
 };
 
-export default function BriefPage() {
+export default async function BriefPage() {
+  const cookieHeader = (await headers()).get('cookie') ?? '';
+  const me = await getServerMe(cookieHeader);
+  const enabled = me?.activeMailboxId != null && me !== null && hasCapability(me.tier, 'brief');
+
   return (
-    <TierGate
-      capability="brief"
-      title="Your Morning Brief"
-      pitch="A daily summary of yesterday's email, written in plain English — 8am daily, in-app or by email."
-      bullets={[
-        'REPLY — what actually needs you',
-        'FYI — facts to know',
-        'NOISE — archive the whole pile in one confirmed action',
-      ]}
+    <ServerQueryHydration
+      surface="brief"
+      prefetch={(queryClient) =>
+        enabled
+          ? [
+              queryClient.fetchQuery(
+                briefTodayQueryOptions((signal) =>
+                  serverGetEnvelope<BriefWire>('/api/briefs/today', cookieHeader, signal),
+                ),
+              ),
+            ]
+          : []
+      }
     >
-      <BriefScreen />
-    </TierGate>
+      <TierGate
+        capability="brief"
+        title="Your Morning Brief"
+        pitch="A daily summary of yesterday's email, written in plain English — 8am daily, in-app or by email."
+        bullets={[
+          'REPLY — what actually needs you',
+          'FYI — facts to know',
+          'NOISE — archive the whole pile in one confirmed action',
+        ]}
+      >
+        <BriefScreen />
+      </TierGate>
+    </ServerQueryHydration>
   );
 }

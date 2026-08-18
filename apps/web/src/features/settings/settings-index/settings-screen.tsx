@@ -25,7 +25,7 @@ import {
   useUpdateActionSheetPrefs,
   useUpdateEmailPrefs,
 } from '../api/use-me-settings';
-import { useMailboxesHealth } from '../api/use-mailbox-health';
+import { useMailboxesHealth, type MailboxHealth } from '../api/use-mailbox-health';
 import { VerbTourDialog } from '@/features/tour/verb-tour';
 import { ActionSheetPrefsCard, type ActionSheetPrefsCardState } from './action-sheet-prefs-card';
 import { EmailPrefsCard, type EmailPrefsCardState } from './email-prefs-card';
@@ -173,13 +173,23 @@ const NAV_SECTIONS = [
   { id: 'account', label: 'Account' },
 ] as const;
 
-export function SettingsScreen() {
+export function SettingsScreen({
+  initialMailboxHealth = {},
+}: {
+  initialMailboxHealth?: Record<string, MailboxHealth | undefined>;
+} = {}) {
   const { me } = useAuth();
   const settings = useMeSettings();
   const updateSheetPrefs = useUpdateActionSheetPrefs('settings');
   const updateEmailPrefs = useUpdateEmailPrefs();
   const billing = useBillingSubscription();
-  const healthById = useMailboxesHealth(me.mailboxes);
+  const queriedHealthById = useMailboxesHealth(me.mailboxes);
+  const healthById = Object.fromEntries(
+    me.mailboxes.map((mailbox) => [
+      mailbox.id,
+      queriedHealthById[mailbox.id] ?? initialMailboxHealth[mailbox.id],
+    ]),
+  );
   const searchParams = useSearchParams();
 
   // ?cancelDeletion=1 — scroll + highlight the Account section (D216).

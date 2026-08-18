@@ -24,14 +24,17 @@ import type { ReactNode } from 'react';
 import { headers } from 'next/headers';
 
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
+import { ServerOnboardingBoundary } from '@/features/onboarding/server-onboarding-boundary';
 import { ThemeScript } from '@/features/theme/theme-script';
 
 export default async function OnboardingLayout({ children }: { children: ReactNode }) {
-  const nonce = (await headers()).get('x-nonce') ?? undefined;
+  const requestHeaders = await headers();
+  const nonce = requestHeaders.get('x-nonce') ?? undefined;
+  const cookieHeader = requestHeaders.get('cookie') ?? '';
   return (
     <>
       <ThemeScript nonce={nonce} />
-      {children}
+      <ServerOnboardingBoundary cookieHeader={cookieHeader}>{children}</ServerOnboardingBoundary>
       {/* D147 consent ask — onboarding is a fresh visitor's first app
           surface, so the analytics opt-in must be answerable here too. */}
       <CookieConsentBanner />

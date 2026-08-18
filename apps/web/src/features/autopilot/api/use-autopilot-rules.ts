@@ -8,11 +8,10 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { fetchAutopilotRules } from '@/lib/api/autopilot';
-import { autopilotKeys } from './query-keys';
+import { autopilotRulesQueryOptions } from './query-options';
 
 export function useAutopilotRules() {
-  return useQuery({
-    queryKey: autopilotKeys.rules(),
-    queryFn: ({ signal }) => fetchAutopilotRules(signal).then((env) => env.data),
-  });
+  return useQuery(
+    autopilotRulesQueryOptions((signal) => fetchAutopilotRules(signal).then((env) => env.data)),
+  );
 }

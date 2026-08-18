@@ -22,7 +22,7 @@ describe('RecommendationBanner — D245 optional suggestion', () => {
     const summary = screen.getByText('Optional suggestion · Archive');
     expect(summary.closest('details')).not.toHaveAttribute('open');
     expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
-    expect(screen.getByText('Observed facts')).toBeInTheDocument();
+    expect(screen.getByText('Details used')).toBeInTheDocument();
     expect(screen.getByText('12 messages received in the last 30 days')).toBeInTheDocument();
     expect(screen.getByText(/does not change mail/i)).toBeInTheDocument();
   });

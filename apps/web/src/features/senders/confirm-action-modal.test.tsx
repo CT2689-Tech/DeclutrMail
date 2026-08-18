@@ -345,7 +345,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     // The title is the acted-on count, stated by the caller.
     expect(screen.getByText('Archive mail from 2 senders')).toBeInTheDocument();
     // And the scope line keeps the real selection total intact.
-    expect(screen.getByLabelText('Bulk action scope')).toHaveTextContent(
+    expect(screen.getByLabelText('Senders included in this bulk action')).toHaveTextContent(
       '5 selected · 4 eligible · 1 skipped',
     );
   });

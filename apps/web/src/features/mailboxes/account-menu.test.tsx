@@ -188,6 +188,10 @@ describe('AccountMenu Gmail reconnect health', () => {
     expect(reconnect).toBeDisabled();
     expect(reconnect).toHaveAttribute('aria-describedby', 'account-menu-inbox-limit-gate');
     expect(screen.getByTestId('inbox-limit-gate')).toHaveTextContent(/2 of 2 inboxes connected/i);
+    expect(screen.getByRole('link', { name: 'Upgrade to connect another →' })).toHaveAttribute(
+      'href',
+      '/billing',
+    );
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
     expect(startMailboxReactivationSpy).not.toHaveBeenCalled();
   });

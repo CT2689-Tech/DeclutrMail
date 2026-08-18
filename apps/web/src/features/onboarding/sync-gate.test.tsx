@@ -65,10 +65,11 @@ describe('SyncGate render', () => {
     expect(html).toContain('Reading your inbox');
     expect(html).toContain('aria-valuenow="45"');
     // D228 trust artifact — locked headline + storage list (shared PrivacyBadge).
-    expect(html).toContain('Full bodies fetched: 0');
+    expect(html).toContain('We never fetch or store full email contents.');
     expect(html).toContain('Sender name and email address');
     // Pre-D228 wording is BANNED in product UI (CLAUDE.md §2.1).
     expect(html).not.toContain('Bodies read: 0');
+    expect(html).not.toContain('Full bodies fetched: 0');
     // No time promise (D109 hard rule).
     expect(html).not.toMatch(/\d+\s*(min|minute|hour|sec)/i);
   });
@@ -98,9 +99,10 @@ describe('SyncGate render', () => {
     expect(html).toContain('snag');
     expect(html).toContain('Try again');
     // D228 trust artifact present on the failed state too — banned copy absent.
-    expect(html).toContain('Full bodies fetched: 0');
+    expect(html).toContain('We never fetch or store full email contents.');
     expect(html).toContain('Sender name and email address');
     expect(html).not.toContain('Bodies read: 0');
+    expect(html).not.toContain('Full bodies fetched: 0');
   });
 
   it('never promises an automatic retry it cannot deliver', () => {

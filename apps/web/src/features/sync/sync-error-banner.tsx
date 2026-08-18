@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { Button, tokens } from '@declutrmail/shared';
 
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
+import { useNow } from '@/lib/use-now';
 import { useSyncNow } from './api/use-sync-now';
 
 const { color, font } = tokens;
@@ -51,21 +51,10 @@ export const SYNC_ERROR_WINDOW_MS = 60 * 60_000;
 export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
   const status = useSyncStatus(mailboxId);
   const sync = useSyncNow('app_shell');
-  // Re-render tick so the banner ages OUT of the 60-minute window even
-  // when no query data changes (same pattern as SyncNowButton's
-  // freshness label).
-  const [, setTick] = useState(0);
+  const now = useNow(60_000);
 
   const errorAt = status.data?.last_sync_error_at ?? null;
   const needsReconnect = syncStatusNeedsReconnect(status.data);
-
-  useEffect(() => {
-    // Invalid grants do not age out; only fresh query data proving a
-    // successful reconnect should remove that critical-trust surface.
-    if (errorAt === null || needsReconnect) return undefined;
-    const t = setInterval(() => setTick((n) => n + 1), 60_000);
-    return () => clearInterval(t);
-  }, [errorAt, needsReconnect]);
 
   if (errorAt === null) return null;
 
@@ -77,7 +66,7 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
 
   // Retryable failures are useful while fresh. A revoked grant is a D170
   // critical-trust state and stays surfaced until reconnection succeeds.
-  if (!needsReconnect && Date.now() - errorMs > SYNC_ERROR_WINDOW_MS) return null;
+  if (!needsReconnect && (now === null || now - errorMs > SYNC_ERROR_WINDOW_MS)) return null;
 
   return (
     <div

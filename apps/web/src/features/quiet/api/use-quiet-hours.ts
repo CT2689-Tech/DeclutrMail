@@ -6,14 +6,13 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { fetchQuietHours } from '@/lib/api/quiet-hours';
-import { quietKeys } from './query-keys';
+import { quietHoursQueryOptions } from './query-options';
 
 export function useQuietHours(mailboxId: string) {
-  return useQuery({
-    queryKey: quietKeys.hours(mailboxId),
-    queryFn: async ({ signal }) => {
+  return useQuery(
+    quietHoursQueryOptions(mailboxId, async (signal) => {
       const env = await fetchQuietHours(mailboxId, signal);
       return env.data;
-    },
-  });
+    }),
+  );
 }

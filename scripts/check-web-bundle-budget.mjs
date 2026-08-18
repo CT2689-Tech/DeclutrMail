@@ -83,14 +83,15 @@ const OVERRIDES_KB = {
   '/(app)/senders/page': 210, // 206.5 — grid + table + compose strip + saved views
   '/(app)/triage/page': 200, // 195.9 — action sheet, preview, undo tray
   '/(app)/senders/[id]/page': 195, // 191.3 — detail: timeseries + history + messages
+  '/(app)/billing/page': 185, // 181.3 — checkout + invoices + plan controls + explainer
 
   // Below the authed default, pinned tighter than it so they cannot
   // silently drift up into the cluster.
-  '/(app)/settings/privacy/page': 165, // 162.5
+  '/(app)/settings/privacy/page': 170, // 165.6 — data controls + explainer
   '/(app)/settings/senders/page': 165, // 161.4
-  '/(app)/quiet/page': 160, // 158.9
-  '/(app)/later/page': 145, // 141.9
-  '/(app)/followups/page': 145, // 141.9
+  '/(app)/quiet/page': 165, // 161.7 — schedule controls + explainer
+  '/(app)/later/page': 150, // 145.2 — return queue + explainer
+  '/(app)/followups/page': 150, // 145.2 — follow-up queue + explainer
   '/(app)/admin/security/page': 125, // 120.4
   '/(app)/settings/help/page': 115, // 112.2
 };

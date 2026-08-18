@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -124,10 +124,13 @@ function processingPhaseAt(pending: PendingCheckout, now: number): ProcessingPha
 export function BillingScreen({
   initialIntent = null,
   initialProvider = 'paddle',
+  invoiceHistory,
 }: {
   initialIntent?: BillingIntent | null;
   /** Geo-derived default rail (D117); the radio still overrides it. */
   initialProvider?: BillingProviderId;
+  /** Optional server-streamed invoice section; stories retain the local fallback. */
+  invoiceHistory?: ReactNode;
 }) {
   const { me } = useAuth();
   const { tier: meTier, cleanupRemaining } = useTier();
@@ -694,7 +697,7 @@ export function BillingScreen({
           fetching last year's receipts is the commonest reason to open
           this page after leaving. Billing-dark carries no rows to read
           and never fetches. */}
-      <InvoiceHistory enabled={!billingDark && hasBillingHistory} />
+      {invoiceHistory ?? <InvoiceHistory enabled={!billingDark && hasBillingHistory} />}
 
       <CancelModal
         open={cancelOpen}

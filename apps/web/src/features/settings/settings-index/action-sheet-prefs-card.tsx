@@ -66,7 +66,7 @@ export function ActionSheetPrefsCard({
         </h3>
         <p style={mutedTextStyle}>
           Choose whether each preview opens in a window or appears below the sender. A preview
-          always shows before mail changes. This choice follows you across devices.
+          always shows before email changes. This preference follows you across devices.
         </p>
 
         {state.kind === 'loading' ? (

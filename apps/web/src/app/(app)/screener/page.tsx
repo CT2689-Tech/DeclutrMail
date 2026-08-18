@@ -1,5 +1,3 @@
-'use client';
-
 // /screener — the Screener queue (D71–D77).
 //
 // Soft-quarantine review surface for first-time senders (D72 — Gmail
@@ -10,52 +8,40 @@
 // fire a Screener query (the BE 402s them regardless — defense in
 // depth).
 
+import { headers } from 'next/headers';
 import { hasCapability } from '@declutrmail/shared/entitlements';
 
-import { useTier } from '@/features/auth/api/use-tier';
-import { useScreenerCount, useScreenerQueue } from '@/features/screener/api/use-screener';
-import { composeScreenerState } from '@/features/screener/compose-state';
-import { ScreenerUpsell } from '@/features/screener/upsell';
-import { ScreenerScreen } from '@/features/screener/screener-screen';
+import { getServerMe } from '@/features/auth/api/server-me';
+import { screenerQueueQueryOptions } from '@/features/screener/api/query-options';
+import type { ScreenerQueueRow } from '@/features/screener/data';
+import { ScreenerRoute } from '@/features/screener/screener-route';
+import { serverGet } from '@/lib/api/server';
+import { ServerQueryHydration } from '@/lib/server-query-hydration';
 
-/**
- * Hard navigation to /pricing — it lives in the (marketing) route
- * group, outside the (app) shell (same pattern as the Triage screen's
- * upgrade path).
- */
-function openPricing(): void {
-  window.location.assign('/pricing');
-}
+export default async function ScreenerPage() {
+  const cookieHeader = (await headers()).get('cookie') ?? '';
+  const me = await getServerMe(cookieHeader);
+  const mailboxId = me?.activeMailboxId ?? undefined;
+  const enabled = mailboxId !== undefined && me !== null && hasCapability(me.tier, 'screener');
 
-export default function ScreenerPage() {
-  const { tier } = useTier();
-  const unlocked = hasCapability(tier, 'screener');
-
-  if (!unlocked) {
-    return <ScreenerUpsell onSeePricing={openPricing} />;
-  }
-  return <ScreenerQueueRoute />;
-}
-
-/**
- * Split out so the queue query only mounts for unlocked tiers — a
- * Free/Plus session must never fire a request the server would 402
- * (`useQuery` hooks would otherwise run before the gate).
- */
-function ScreenerQueueRoute() {
-  const queue = useScreenerQueue();
-  // The badge's authoritative pending count (D74) — the queue only
-  // loads a working window, so this is what the heading must state, not
-  // the loaded row count. Same cached query the sidebar badge uses.
-  const count = useScreenerCount();
-  const state = composeScreenerState({
-    rows: queue.data,
-    isLoading: queue.isLoading,
-    isError: queue.isError,
-    error: queue.error,
-    retry: () => {
-      void queue.refetch();
-    },
-  });
-  return <ScreenerScreen state={state} totalPending={count.data?.pending ?? null} />;
+  return (
+    <ServerQueryHydration
+      surface="screener"
+      prefetch={(queryClient) =>
+        enabled
+          ? [
+              queryClient.fetchQuery(
+                screenerQueueQueryOptions((signal) =>
+                  serverGet<ScreenerQueueRow[]>('/api/screener/queue', cookieHeader, signal, {
+                    mailboxId,
+                  }),
+                ),
+              ),
+            ]
+          : []
+      }
+    >
+      <ScreenerRoute />
+    </ServerQueryHydration>
+  );
 }

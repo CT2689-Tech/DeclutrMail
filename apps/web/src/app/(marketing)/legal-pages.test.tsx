@@ -8,8 +8,8 @@
  *      QueryClientProvider in the tree (a clean render proves the
  *      AuthProvider chain isn't imported) and zero fetch calls.
  *   2. D228 — the privacy page carries the locked trust copy from
- *      `@declutrmail/shared` verbatim: the "Full bodies fetched: 0"
- *      headline plus the complete store / never-store lists. The
+ *      `@declutrmail/shared` verbatim: the plain-language full-email
+ *      boundary plus the complete store / never-store lists. The
  *      banned pre-D228 phrase "Bodies read: 0" must not appear.
  *   3. Google Limited Use disclosure links the official policy URL.
  *   4. D159 (D132 batch) — each page emits page_viewed exactly once
@@ -156,11 +156,9 @@ describe('/privacy content — D7 + D228 posture', () => {
     const { container } = render(<PrivacyPolicyPage />);
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
+    expect(text).toContain('full email contents or attachments, they cannot leak from DeclutrMail');
     expect(text).toContain(
-      'full message bodies or attachments, that content cannot leak from DeclutrMail',
-    );
-    expect(text).toContain(
-      'Subjects and Gmail Preview snippets can still contain sensitive information',
+      'Subject lines and Gmail preview snippets can still contain sensitive information',
     );
     expect(text).not.toMatch(/most sensitive content.*not in our systems/i);
   });
@@ -207,8 +205,8 @@ describe('/privacy content — D7 + D228 posture', () => {
     const { container } = render(<PrivacyPolicyPage />);
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
-    expect(text).toContain('mailbox email/status/connection metadata');
-    expect(text).toContain('sender records and standing policies');
+    expect(text).toContain('mailbox email/status/connection details');
+    expect(text).toContain('sender records and standing decisions');
     expect(text).toContain('decision/activity history');
     expect(text).toContain('does not include app preferences');
     expect(text).not.toMatch(/export your data \([^)]*preferences/i);

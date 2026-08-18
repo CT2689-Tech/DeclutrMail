@@ -23,8 +23,8 @@ export function ProductGlossary() {
       <ScreenIntro
         id="product-glossary"
         title="Help & glossary"
-        body="Short definitions for the controls and recovery paths you see in DeclutrMail. Action previews and Activity remain the source of truth for a specific change and its deadline."
-        learnMoreHref="/help"
+        body="Short definitions for the controls and recovery paths you see in DeclutrMail. For a specific change or deadline, check its action preview or Activity."
+        learnMore={{ href: '/help', label: 'Browse Help & FAQ' }}
       />
 
       <div style={{ marginTop: 20 }}>
@@ -48,7 +48,7 @@ export function ProductGlossary() {
           Product glossary
         </h1>
         <p style={{ color: color.fgSoft, fontSize: 13.5, lineHeight: 1.6, margin: 0 }}>
-          Nine terms that explain what DeclutrMail knows, what it can change, and where recovery
+          Twelve terms that explain what DeclutrMail knows, what it can change, and where recovery
           lives.
         </p>
       </div>

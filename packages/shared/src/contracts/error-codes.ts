@@ -417,7 +417,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Indexed data deletion is still in progress. Reconnect after it finishes.',
+    message: "This mailbox's saved data is still being deleted. Reconnect after it finishes.",
   },
 } as const satisfies Record<string, ErrorCodeSpec>;
 

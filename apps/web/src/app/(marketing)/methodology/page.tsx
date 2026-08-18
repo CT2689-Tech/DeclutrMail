@@ -13,38 +13,37 @@ import {
 } from '@/features/marketing/product-story';
 
 export const metadata: Metadata = marketingPageMetadata({
-  title: 'Methodology — DeclutrMail',
+  title: 'Privacy and control — DeclutrMail',
   description:
-    'The inspectable boundaries behind DeclutrMail: a published Gmail field allowlist, deterministic recommendations, mandatory previews and plan-gated automation.',
+    'What DeclutrMail stores from Gmail, how suggestions are made, what changes before you confirm, and when automation can run.',
   path: '/methodology',
 });
 
 export default function MethodologyPage() {
   return (
     <ProductStoryShell
-      eyebrow="Methodology"
-      title="The product boundary, in plain English."
-      lede="DeclutrMail is a Gmail companion built around explicit sender decisions. Gmail remains the reading and reply surface; DeclutrMail narrows the cleanup problem and shows its work before acting."
+      eyebrow="Privacy & control"
+      title="What DeclutrMail can see and change."
+      lede="DeclutrMail uses a limited set of Gmail details, shows you each manual change before it happens, and keeps those decisions separate from automatic rules. Gmail remains where you read and reply."
     >
       <StorySection
         id="walkthrough"
         number="01"
-        title="Store enough to help. Stop before the body."
+        title="We store only the Gmail details we need."
         intro={
           <p>
-            The privacy badge describes Gmail message data specifically. The service also stores the
-            connected account&rsquo;s identity, preferences, sender decisions, Activity records, and
-            billing records needed to operate the account; it does not store full card numbers.
+            The list below covers the Gmail details DeclutrMail stores. We also keep the account
+            information, preferences, decisions, Activity history, and billing records needed to run
+            your account. We do not store full card numbers.
           </p>
         }
       >
         <DataBoundaryFigure />
         <details className="dm-story-deep">
-          <summary>For the curious: what “Gmail Preview” means</summary>
+          <summary>What the Gmail preview snippet contains</summary>
           <p>
-            Gmail Preview is the short snippet Gmail itself computes for an inbox row. DeclutrMail
-            receives that field through Gmail&rsquo;s metadata response. It does not download or
-            parse the full message body to create the preview.
+            This is the short text Gmail already shows in your inbox list. DeclutrMail receives it
+            directly from Gmail and does not download the full email to create it.
           </p>
         </details>
       </StorySection>
@@ -52,13 +51,13 @@ export default function MethodologyPage() {
       <StorySection
         id="recommendations"
         number="02"
-        title="Recommendations are a visible cascade, not a predicted category."
+        title="Suggestions come from clear rules, not guessed categories."
         intro={
           <p>
-            The verdict comes from deterministic rules over metadata facts. Protect and strong
-            engagement take precedence; insufficient evidence becomes Later; otherwise the engine
-            compares Archive and Unsubscribe using inspectable signals. It does not use machine
-            learning to predict email categories.
+            Protected and frequently used senders are handled first. New or low-volume senders are
+            suggested for Later. For the rest, DeclutrMail compares Archive and Unsubscribe using
+            facts such as volume and read rate. It does not use machine learning to guess email
+            categories.
           </p>
         }
       >
@@ -66,11 +65,10 @@ export default function MethodologyPage() {
         <details className="dm-story-deep">
           <summary>Where language generation fits</summary>
           <p>
-            When configured, Anthropic may rewrite the recommendation explanation into one or two
-            plain-English sentences. That explanation path receives bounded metadata facts such as
-            sender identity, the deterministic verdict, confidence, rule label, volume, read rate,
-            and Gmail&rsquo;s own category label. It does not receive a message subject, Gmail
-            Preview, or full body. A deterministic template is the fallback.
+            Anthropic may turn the selected sender facts into a short explanation. It receives the
+            sender, suggested action, volume, read rate, and Gmail&rsquo;s own category label. It
+            does not receive subject lines, preview snippets, or full email contents for this
+            explanation. If Anthropic is unavailable, DeclutrMail shows a standard explanation.
           </p>
         </details>
       </StorySection>
@@ -78,48 +76,47 @@ export default function MethodologyPage() {
       <StorySection
         id="brief-boundary"
         number="03"
-        title="The Pro Brief has a separate, narrower AI path."
+        title="What Anthropic receives for a Pro Brief."
         intro={
           <p>
-            When an AI-generated Brief narrative is available, DeclutrMail can send bounded sender
-            identity, subject, and Gmail Preview text to Anthropic to draft it. Full message bodies,
-            attachments, inline images, and raw MIME are not sent. A deterministic template is the
-            fallback.
+            DeclutrMail can send the sender, subject line, and Gmail preview snippet to Anthropic to
+            draft a Pro Brief. Full email contents, attachments, embedded images, and raw email
+            source are not sent. If Anthropic is unavailable, DeclutrMail uses a standard summary.
           </p>
         }
         tone="ink"
       >
         <div className="dm-story-prose-grid">
           <article className="dm-story-prose-card">
-            <h3>Included in the Brief prompt</h3>
+            <h3>Sent for the Brief</h3>
             <p>
-              Bounded sender identity, subject, Gmail Preview text, and the small set of Brief facts
-              needed to draft the narrative.
+              Sender, subject line, Gmail preview snippet, and the small set of facts needed to
+              draft the summary.
             </p>
           </article>
           <article className="dm-story-prose-card">
-            <h3>Outside the boundary</h3>
+            <h3>Never sent for the Brief</h3>
             <p>
-              Full bodies, HTML, attachments, inline images, raw MIME, and non-allowlisted headers.
+              Full email contents, email HTML, attachments, embedded images, raw email source, and
+              other email headers.
             </p>
           </article>
         </div>
         <p className="dm-story-callout">
-          This methodology makes no claim about Anthropic&rsquo;s retention or training terms. Those
-          are provider-policy questions, distinct from the payload boundary described here.
+          Anthropic sets its own retention and training terms. DeclutrMail&rsquo;s privacy policy
+          links to those terms and explains when Anthropic receives data.
         </p>
       </StorySection>
 
       <StorySection
         id="action-method"
         number="04"
-        title="Intent, preview, confirmation, evidence."
+        title="Nothing changes until the preview loads."
         intro={
           <p>
-            Mailbox changes follow a staged lifecycle. The preview is the commitment boundary: if it
-            cannot load, the action cannot be confirmed. Activity records the confirmed Gmail
-            mutation or the result returned by a sender&rsquo;s unsubscribe endpoint, not an
-            optimistic client guess.
+            Before you confirm, DeclutrMail shows how many emails are affected, a sample when
+            available, and what will change in Gmail. If that preview cannot load, the action cannot
+            run. Activity records the result after Gmail or the sender confirms it.
           </p>
         }
       >
@@ -129,12 +126,12 @@ export default function MethodologyPage() {
       <StorySection
         id="automation-method"
         number="05"
-        title="A current action never smuggles in a future rule."
+        title="A manual decision does not create an automatic rule."
         intro={
           <p>
-            Manual cleanup and future automation are separate concepts. Autopilot uses preset rules
-            that start in Observe. On Plus you approve each batch; switching a rule to Active — part
-            of Pro — is the deliberate step that lets future matches change without asking.
+            Archive, Later, and Delete affect only the email shown before you confirm. Autopilot is
+            separate. On Plus, you approve each matching batch. On Pro, only rules you deliberately
+            turn on can handle future matches automatically.
           </p>
         }
       >
@@ -144,12 +141,13 @@ export default function MethodologyPage() {
       <StorySection
         id="access-and-control"
         number="06"
-        title="Access is broad enough to act, constrained in use."
+        title="Why DeclutrMail asks to organize Gmail."
         intro={
           <p>
-            Google&rsquo;s <code>gmail.modify</code> scope permits the label changes DeclutrMail
-            needs. The implementation constrains message fetching to metadata format and an
-            allowlist. OAuth tokens are encrypted at rest and never sent to the browser.
+            Google names this permission <code>gmail.modify</code>. It lets DeclutrMail move email
+            out of Inbox, add labels, and move email to Trash. DeclutrMail requests only the listed
+            Gmail details, encrypts the Google access token, and never sends that token to your
+            browser.
           </p>
         }
       >
@@ -163,11 +161,11 @@ export default function MethodologyPage() {
             </p>
           </article>
           <article className="dm-story-prose-card">
-            <h3>Read the operational detail</h3>
+            <h3>Read more about security and privacy</h3>
             <p>
               The <a href="/security">Security page</a> explains OAuth and encryption. The{' '}
-              <a href="/privacy">Privacy Policy</a> covers stored account data, subprocessors,
-              access controls, and deletion.
+              <a href="/privacy">Privacy Policy</a> covers stored account data, the other companies
+              that help provide the service, access controls, and deletion.
             </p>
           </article>
         </div>
@@ -176,13 +174,8 @@ export default function MethodologyPage() {
       <StorySection
         id="honest-limits"
         number="07"
-        title="What this method does not promise."
-        intro={
-          <p>
-            Product trust includes visible limits. These are constraints to understand, not details
-            hidden behind a demo.
-          </p>
-        }
+        title="Limits you should know."
+        intro={<p>DeclutrMail is explicit about what it cannot guarantee.</p>}
         tone="ink"
       >
         <div className="dm-story-prose-grid">
@@ -196,8 +189,8 @@ export default function MethodologyPage() {
           <article className="dm-story-prose-card">
             <h3>Sync time varies</h3>
             <p>
-              Mailbox size and Gmail rate limits affect the initial metadata scan. The product shows
-              stage and progress instead of promising a fixed completion time.
+              Mailbox size and Gmail&rsquo;s limits affect the first scan. DeclutrMail shows
+              progress instead of promising a fixed completion time.
             </p>
           </article>
           <article className="dm-story-prose-card">
@@ -208,18 +201,18 @@ export default function MethodologyPage() {
             </p>
           </article>
           <article className="dm-story-prose-card">
-            <h3>The recommendation is advisory</h3>
+            <h3>Suggestions are optional</h3>
             <p>
-              Confidence is evidence, not authority. You can choose a different action, and Protect
-              remains an explicit user-controlled shield.
+              You can always choose a different action. Protect remains a separate control that
+              keeps a sender out of bulk and automatic changes.
             </p>
           </article>
         </div>
       </StorySection>
 
       <FinalStoryCta
-        title="Use the method on a real sender queue."
-        body="Connect Gmail, inspect the metadata boundary, and confirm only the cleanup choices that make sense for your inbox."
+        title="See these safeguards in the product."
+        body="Connect Gmail, review the details DeclutrMail stores, and confirm only the changes that make sense for your inbox."
       />
     </ProductStoryShell>
   );

@@ -306,7 +306,8 @@ export function ScreenerRow({
               >
                 Messages received:
               </span>{' '}
-              {row.messageCount.toLocaleString()} · {row.inboxCount.toLocaleString()} in inbox
+              {row.messageCount.toLocaleString('en-US')} · {row.inboxCount.toLocaleString('en-US')}{' '}
+              in inbox
             </span>
             {row.recommendation != null && (
               <span style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>

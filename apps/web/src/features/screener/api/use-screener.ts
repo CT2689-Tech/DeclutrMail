@@ -17,22 +17,17 @@ import { apiGet, apiPost } from '@/lib/api/client';
 import { defaultLaterWakeAt, newIdempotencyKey, type ActionReach } from '@/lib/api/actions';
 
 import type { ScreenerDecideResult, ScreenerDecideVerb, ScreenerQueueRow } from '../data';
+import { screenerCountQueryOptions, screenerQueueQueryOptions } from './query-options';
 
-export const SCREENER_QUEUE_KEY = ['screener', 'queue'] as const;
-export const SCREENER_COUNT_KEY = ['screener', 'count'] as const;
-
-/** Badge poll cadence (D74) — slow; `Queue.add`-style push isn't a thing here. */
-export const SCREENER_COUNT_POLL_MS = 60_000;
+export { SCREENER_COUNT_KEY, SCREENER_COUNT_POLL_MS, SCREENER_QUEUE_KEY } from './query-options';
 
 export function useScreenerQueue(options: { enabled?: boolean } = {}) {
   return useQuery({
-    queryKey: SCREENER_QUEUE_KEY,
-    queryFn: async ({ signal }) => {
+    ...screenerQueueQueryOptions(async (signal) => {
       const envelope = await apiGet<ScreenerQueueRow[]>('/api/screener/queue', { signal });
       return envelope.data;
-    },
+    }),
     enabled: options.enabled ?? true,
-    staleTime: 30_000,
   });
 }
 
@@ -44,15 +39,11 @@ export function useScreenerQueue(options: { enabled?: boolean } = {}) {
  */
 export function useScreenerCount(options: { enabled?: boolean } = {}) {
   return useQuery({
-    queryKey: SCREENER_COUNT_KEY,
-    queryFn: async ({ signal }) => {
+    ...screenerCountQueryOptions(async (signal) => {
       const envelope = await apiGet<{ pending: number }>('/api/screener/count', { signal });
       return envelope.data;
-    },
+    }),
     enabled: options.enabled ?? true,
-    staleTime: 30_000,
-    refetchInterval: SCREENER_COUNT_POLL_MS,
-    retry: false,
   });
 }
 

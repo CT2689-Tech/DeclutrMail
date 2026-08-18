@@ -481,38 +481,54 @@ export interface SenderListEnvelope {
 }
 
 /** GET /api/senders — paginated sender list (D39, ADR-0014). */
+export function sendersListRequestQuery(
+  params: ListSendersParams = {},
+): Record<string, string | number | boolean | null | undefined> {
+  return {
+    category: params.category,
+    limit: params.limit,
+    cursor: params.cursor,
+    // D38 — tri-state protected: 'true' / 'not' / omitted. The BE
+    // accepts both 'not' and 'false' forms; we send 'not' so the
+    // wire reads as the compose-strip negation primitive.
+    protected:
+      params.isProtected === true ? 'true' : params.isProtected === false ? 'not' : undefined,
+    sort: params.sort,
+    direction: params.direction,
+    // Empty string collapses to omitted so a cleared search keys the
+    // same cache entry as "no search".
+    q: params.q ? params.q : undefined,
+    // D38 compose strip params.
+    activity: params.activity
+      ? params.activityNegate
+        ? `not-${params.activity}`
+        : params.activity
+      : undefined,
+    unsub_ready:
+      params.unsubReady === true ? 'true' : params.unsubReady === false ? 'not' : undefined,
+    replied: params.replied === true ? 'true' : params.replied === false ? 'not' : undefined,
+    window: params.windowDays !== undefined ? String(params.windowDays) : undefined,
+    domain: params.domain ? params.domain : undefined,
+    unsub_ignored: params.unsubIgnored === true ? 'true' : undefined,
+  };
+}
+
+export function sendersListPath(params: ListSendersParams = {}): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(sendersListRequestQuery(params))) {
+    if (value === undefined || value === null || value === '') continue;
+    search.set(key, String(value));
+  }
+  const encoded = search.toString();
+  return encoded.length > 0 ? `/api/senders?${encoded}` : '/api/senders';
+}
+
 export function fetchSenders(
   params: ListSendersParams = {},
   signal?: AbortSignal,
 ): Promise<SenderListEnvelope> {
   return apiGet<SenderListRow[]>('/api/senders', {
-    query: {
-      category: params.category,
-      limit: params.limit,
-      cursor: params.cursor,
-      // D38 — tri-state protected: 'true' / 'not' / omitted. The BE
-      // accepts both 'not' and 'false' forms; we send 'not' so the
-      // wire reads as the compose-strip negation primitive.
-      protected:
-        params.isProtected === true ? 'true' : params.isProtected === false ? 'not' : undefined,
-      sort: params.sort,
-      direction: params.direction,
-      // Empty string collapses to omitted so a cleared search keys the
-      // same cache entry as "no search".
-      q: params.q ? params.q : undefined,
-      // D38 compose strip params.
-      activity: params.activity
-        ? params.activityNegate
-          ? `not-${params.activity}`
-          : params.activity
-        : undefined,
-      unsub_ready:
-        params.unsubReady === true ? 'true' : params.unsubReady === false ? 'not' : undefined,
-      replied: params.replied === true ? 'true' : params.replied === false ? 'not' : undefined,
-      window: params.windowDays !== undefined ? String(params.windowDays) : undefined,
-      domain: params.domain ? params.domain : undefined,
-      unsub_ignored: params.unsubIgnored === true ? 'true' : undefined,
-    },
+    query: sendersListRequestQuery(params),
     signal,
   }) as Promise<SenderListEnvelope>;
 }

@@ -47,10 +47,10 @@ describe('MailboxDataControlsDialog', () => {
       'true',
     );
     expect(
-      screen.getByRole('heading', { name: /disconnect and keep indexed data/i }),
+      screen.getByRole('heading', { name: /disconnect and keep saved data/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: /disconnect & delete indexed data/i }),
+      screen.getByRole('heading', { name: /disconnect & delete saved data/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -75,7 +75,7 @@ describe('MailboxDataControlsDialog', () => {
     expect(screen.getByText(/past Gmail actions stay applied/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Gmail is unchanged/i).length).toBeGreaterThan(0);
     expect(screen.getByText('Which mailbox exit should I choose?')).toBeInTheDocument();
-    expect(screen.getByText(/Keep indexed data if you may reconnect/i)).toBeInTheDocument();
+    expect(screen.getByText(/Keep saved data if you may reconnect/i)).toBeInTheDocument();
   });
 
   it('runs standard disconnect without requiring the destructive phrase', () => {
@@ -88,7 +88,7 @@ describe('MailboxDataControlsDialog', () => {
     const { onDeleteIndexedData } = renderDialog();
     const input = screen.getByLabelText(/type DELETE person@example\.com/i);
     const destructive = screen.getByRole('button', {
-      name: /disconnect & delete indexed data/i,
+      name: /disconnect & delete saved data/i,
     });
 
     expect(destructive).toBeDisabled();
@@ -112,9 +112,9 @@ describe('MailboxDataControlsDialog', () => {
       screen.getByRole('dialog', { name: /manage data for person@example\.com/i }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole('heading', { name: /disconnect and keep indexed data/i }),
+      screen.queryByRole('heading', { name: /disconnect and keep saved data/i }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /^delete indexed data$/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^delete saved data$/i })).toBeInTheDocument();
   });
 
   it('surfaces an error and disables cancellation while a request is in flight', () => {

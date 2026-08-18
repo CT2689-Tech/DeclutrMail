@@ -19,17 +19,13 @@
 
 import { useQuery } from '@tanstack/react-query';
 
-import { fetchBriefToday, type BriefWire } from '@/lib/api/brief';
+import { fetchBriefToday } from '@/lib/api/brief';
 
-import { briefKeys } from './query-keys';
+import { briefTodayQueryOptions } from './query-options';
 
 export function useBriefToday() {
   return useQuery({
-    queryKey: briefKeys.today(),
-    queryFn: ({ signal }) => fetchBriefToday(signal),
-    // Surface the envelope's `data` so the screen reads `query.data`
-    // as the BriefWire directly. 404 still surfaces via `query.error`
-    // (an ApiError instance) per the client contract.
-    select: (envelope): BriefWire => envelope.data,
+    ...briefTodayQueryOptions(fetchBriefToday),
+    select: (envelope) => envelope.data,
   });
 }

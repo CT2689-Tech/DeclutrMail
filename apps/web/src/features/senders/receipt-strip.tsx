@@ -145,10 +145,10 @@ function receiptCountCopy(receipt: ActionReceipt): string {
   const senderCopy = `${receipt.senderCount} sender${receipt.senderCount === 1 ? '' : 's'}`;
   if (receipt.outcome === 'no-op') return `· No matching inbox mail moved · ${senderCopy}`;
   if (receipt.outcome === 'partial') {
-    return `· ${receipt.affectedCount.toLocaleString()} of ${receipt.requestedCount.toLocaleString()} emails changed · ${senderCopy}`;
+    return `· ${receipt.affectedCount.toLocaleString('en-US')} of ${receipt.requestedCount.toLocaleString('en-US')} emails changed · ${senderCopy}`;
   }
   if (receipt.affectedCount > 0) {
-    return `· ${receipt.affectedCount.toLocaleString()} email${receipt.affectedCount === 1 ? '' : 's'} · ${senderCopy}`;
+    return `· ${receipt.affectedCount.toLocaleString('en-US')} email${receipt.affectedCount === 1 ? '' : 's'} · ${senderCopy}`;
   }
   return `· ${senderCopy}`;
 }

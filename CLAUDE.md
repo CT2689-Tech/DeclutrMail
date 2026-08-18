@@ -94,8 +94,8 @@ contract tests in the same change.
 
 Enforced by `privacy-auditor` subagent + `verify-no-body-storage.sh` hook.
 
-The trust badge copy is: **"Full bodies fetched: 0"** + the generated storage list.
-**Never:** "Bodies read: 0 forever."
+The trust badge copy is: **"We never fetch or store full email contents."** + the generated storage list.
+**Never:** counter-style claims such as "Bodies read: 0 forever" or "Full bodies fetched: 0."
 
 ### 2.2 Canonical verbs — K/A/U/L/D (D227)
 

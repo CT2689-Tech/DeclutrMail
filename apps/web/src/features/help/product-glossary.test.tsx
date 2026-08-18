@@ -5,12 +5,12 @@ import { GLOSSARY_TERMS } from './glossary-content';
 import { ProductGlossary } from './product-glossary';
 
 describe('ProductGlossary — D245', () => {
-  it('defines the eight canonical terms in a semantic glossary', () => {
+  it('defines the twelve canonical terms in a semantic glossary', () => {
     const { container } = render(<ProductGlossary />);
 
     expect(screen.getByRole('heading', { name: 'Product glossary' })).toBeInTheDocument();
-    expect(container.querySelectorAll('section dl dt')).toHaveLength(8);
-    expect(container.querySelectorAll('section dl dd')).toHaveLength(8);
+    expect(container.querySelectorAll('section dl dt')).toHaveLength(12);
+    expect(container.querySelectorAll('section dl dd')).toHaveLength(12);
 
     for (const entry of Object.values(GLOSSARY_TERMS)) {
       expect(screen.getAllByText(entry.term).length).toBeGreaterThan(0);
@@ -23,6 +23,8 @@ describe('ProductGlossary — D245', () => {
     const text = container.textContent ?? '';
 
     expect(text).toMatch(/does not change Gmail/);
+    expect(text).toMatch(/A suggestion never changes Gmail on its own/);
+    expect(text).toMatch(/An instruction for future matching email/);
     expect(text).toMatch(/applies its action automatically/);
     expect(text).toMatch(/Activity Undo or Gmail Trash recovery/);
     expect(text).toMatch(/separate recovery path/);
@@ -44,6 +46,10 @@ describe('ProductGlossary — D245', () => {
       '/settings',
     );
     expect(screen.getByRole('link', { name: 'Help & FAQ' })).toHaveAttribute('href', '/help');
+    expect(screen.getByRole('link', { name: 'Browse Help & FAQ →' })).toHaveAttribute(
+      'href',
+      '/help',
+    );
     expect(screen.getByRole('link', { name: 'support@declutrmail.com' })).toHaveAttribute(
       'href',
       'mailto:support@declutrmail.com',

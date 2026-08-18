@@ -188,7 +188,7 @@ check_dns() {
 
   # The apex is the marketing origin the app *claims* in sitemap/OG. If
   # it 200s but isn't ours, crawlers index Squarespace. Guard on content.
-  if body_has "$(fetch "https://${APEX}")" 'Full bodies fetched: 0'; then
+  if body_has "$(fetch "https://${APEX}")" 'We never fetch or store full email contents.'; then
     ok "${APEX} serves the DeclutrMail trust badge"
   else
     bad "${APEX} does not serve DeclutrMail content"
@@ -286,7 +286,7 @@ check_web() {
   if [ -z "$loc" ]; then
     bad 'sitemap.xml emitted no <loc> entries'
   elif [ "${loc%/}" = "${CANONICAL_ORIGIN%/}" ]; then
-    if body_has "$(fetch "$loc")" 'Full bodies fetched: 0'; then
+    if body_has "$(fetch "$loc")" 'We never fetch or store full email contents.'; then
       ok "sitemap canonical host ${loc} resolves to DeclutrMail"
     else
       bad "sitemap canonical host is ${loc}, which is not DeclutrMail" \

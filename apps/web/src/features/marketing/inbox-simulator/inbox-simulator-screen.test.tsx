@@ -13,7 +13,8 @@ vi.mock('@/features/auth/mailbox-action-context', () => {
 import { TRIAGE_QUEUE } from '@/features/triage/data';
 import { InboxSimulatorScreen } from './inbox-simulator-screen';
 
-const STORAGE_KEY = 'dm.inbox-simulator.decisions.v2';
+const STORAGE_KEY = 'dm.inbox-simulator.state.v3';
+const LEGACY_STORAGE_KEY = 'dm.inbox-simulator.decisions.v2';
 const firstRow = TRIAGE_QUEUE[0]!;
 const validDecision = {
   rowId: firstRow.id,
@@ -32,15 +33,19 @@ const nonFiniteTimestamp = JSON.stringify({ ...validDecision, at: '__NON_FINITE_
   '1e309',
 );
 
+function storedState(decisions: unknown, mode: 'guided' | 'explore' = 'guided'): string {
+  return JSON.stringify({ version: 3, mode, decisions });
+}
+
 describe('InboxSimulatorScreen', () => {
   beforeEach(() => {
     window.localStorage.clear();
     track.mockClear();
   });
 
-  it('identifies the sample as synthetic and local-only', () => {
+  it('identifies the sample as made up and local-only', () => {
     render(<InboxSimulatorScreen />);
-    expect(screen.getByText(/synthetic sender metadata/i)).toBeInTheDocument();
+    expect(screen.getByText(/Follow three made-up examples/i)).toBeInTheDocument();
     expect(screen.getByText('Local to this browser')).toBeInTheDocument();
   });
 
@@ -60,7 +65,7 @@ describe('InboxSimulatorScreen', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: /Archive \(A\)/ })[0]!);
     expect(screen.getByRole('dialog', { name: 'Approve the sample action' })).toBeInTheDocument();
-    expect(screen.getByText(/Preview · synthetic inbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/Preview · made-up inbox/i)).toBeInTheDocument();
     expect(
       screen.getByText('What actually happened').parentElement?.parentElement,
     ).not.toHaveTextContent(/moved out of Inbox into All Mail/);
@@ -74,39 +79,97 @@ describe('InboxSimulatorScreen', () => {
   it('states that unsubscribe is one-way', () => {
     render(<InboxSimulatorScreen />);
     expect(
-      screen.getByText(/A delivered unsubscribe request cannot be recalled/i),
+      screen.getByText(/A sent unsubscribe request cannot be taken back/i),
     ).toBeInTheDocument();
   });
 
   it('restores a valid local decision using the canonical sample row', async () => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([validDecision]));
+    window.localStorage.setItem(STORAGE_KEY, storedState([validDecision]));
 
     render(<InboxSimulatorScreen />);
 
-    expect(await screen.findByText('1 reviewed')).toBeInTheDocument();
+    expect(await screen.findByText('1 of 3 decisions complete')).toBeInTheDocument();
     expect(screen.getByText(`${firstRow.senderName} · Archive`)).toBeInTheDocument();
+  });
+
+  it('migrates the previous local decision format into the guided demo', async () => {
+    window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify([validDecision]));
+
+    render(<InboxSimulatorScreen />);
+
+    expect(await screen.findByText('1 of 3 decisions complete')).toBeInTheDocument();
+    expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
+    await waitFor(() =>
+      expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+        version: 3,
+        mode: 'guided',
+        decisions: [validDecision],
+      }),
+    );
   });
 
   it.each([
     ['a non-array root', '{}'],
-    ['a null entry', '[null]'],
-    ['an array entry', '[[]]'],
-    ['an incomplete object', '[{}]'],
-    ['an unexpected field', JSON.stringify([{ ...validDecision, injected: true }])],
-    ['an unknown verb', JSON.stringify([{ ...validDecision, verb: 'Forward' }])],
-    ['an unknown row id', JSON.stringify([{ ...validDecision, rowId: 'not-a-demo-row' }])],
-    ['a forged sender name', JSON.stringify([{ ...validDecision, senderName: 'Injected' }])],
-    ['a non-finite affected count', `[${nonFiniteCount}]`],
-    ['a non-finite timestamp', `[${nonFiniteTimestamp}]`],
-    ['a duplicate row/timestamp', JSON.stringify([validDecision, validDecision])],
+    ['a null entry', storedState([null])],
+    ['an array entry', storedState([[]])],
+    ['an incomplete object', storedState([{}])],
+    ['an unexpected field', storedState([{ ...validDecision, injected: true }])],
+    ['an unknown verb', storedState([{ ...validDecision, verb: 'Forward' }])],
+    ['an unknown row id', storedState([{ ...validDecision, rowId: 'not-a-demo-row' }])],
+    ['a forged sender name', storedState([{ ...validDecision, senderName: 'Injected' }])],
+    [
+      'a non-finite affected count',
+      `{"version":3,"mode":"guided","decisions":[${nonFiniteCount}]}`,
+    ],
+    ['a non-finite timestamp', `{"version":3,"mode":"guided","decisions":[${nonFiniteTimestamp}]}`],
+    ['a duplicate row/timestamp', storedState([validDecision, validDecision])],
   ])('rejects persisted state containing %s without poisoning the demo', async (_case, stored) => {
     window.localStorage.setItem(STORAGE_KEY, stored);
 
     expect(() => render(<InboxSimulatorScreen />)).not.toThrow();
 
-    expect(await screen.findByText('0 reviewed')).toBeInTheDocument();
+    expect(await screen.findByText('0 of 3 decisions complete')).toBeInTheDocument();
     expect(screen.queryByText(/Injected/)).not.toBeInTheDocument();
-    await waitFor(() => expect(window.localStorage.getItem(STORAGE_KEY)).toBe('[]'));
+    await waitFor(() =>
+      expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toEqual({
+        version: 3,
+        mode: 'guided',
+        decisions: [],
+      }),
+    );
+  });
+
+  it('guides three distinct decisions, records Keep without a preview, and summarizes the outcome', () => {
+    render(<InboxSimulatorScreen />);
+
+    expect(
+      screen.getByRole('heading', { name: 'Clear the inbox without losing the mail.' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Groupon')).toBeInTheDocument();
+    expect(screen.queryByText('LinkedIn')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Archive \(A\)/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm sample Archive' }));
+
+    expect(
+      screen.getByRole('heading', { name: 'Pause before a one-way request.' }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm sample Unsubscribe' }));
+
+    expect(
+      screen.getByRole('heading', { name: 'See why relationships stay protected.' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Priya Raman')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Keep \(K\)/ }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('Guided demo complete')).toBeInTheDocument();
+    expect(screen.getByText('Messages moved').parentElement).toHaveTextContent('156');
+    expect(track).toHaveBeenCalledWith('demo_completed', {
+      decisions_completed: 3,
+      affected_messages: 156,
+    });
   });
 
   it('tracks the simulator OAuth exit through the shared public CTA event', () => {
@@ -124,6 +187,7 @@ describe('InboxSimulatorScreen', () => {
     // The slice(0,7) → full-queue change is JUSTIFIED by these rows; a
     // fixture reorder must not silently drop the demo's point.
     render(<InboxSimulatorScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Explore all 9 senders' }));
 
     // Protected sender: present, and its protection is the D245
     // replies signal — never a read-rate claim (§2.6 guardrail).

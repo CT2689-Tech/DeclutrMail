@@ -560,7 +560,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 
     // The Pro explainer sentence must be absent everywhere on plus.
     expect(screen.queryByText(/Active applies future matches automatically/i)).toBeNull();
-    expect(screen.getByText(/Rules run in Observe:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Rules collect matching email in Observe/i)).toBeInTheDocument();
     expect(screen.getByText('What does Observe do?')).toBeInTheDocument();
     expect(screen.queryByText('What changes between Observe and Active?')).toBeNull();
   });
@@ -569,7 +569,9 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     authState.tier = 'pro';
     renderScreen(ready());
 
-    expect(screen.getByText(/Active applies future matches automatically;/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Switch a rule to Active.*future matches automatically/i),
+    ).toBeInTheDocument();
     expect(screen.getByText('What changes between Observe and Active?')).toBeInTheDocument();
   });
 

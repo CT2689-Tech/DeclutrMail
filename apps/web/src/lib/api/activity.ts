@@ -169,6 +169,26 @@ export interface ActivityFilters {
   outcomes?: readonly ActivityReviewOutcomeWire[];
 }
 
+export function activityListPath(args: ActivityFilters & { cursor?: string | undefined }): string {
+  const query = new URLSearchParams();
+  if (args.window) query.set('window', args.window);
+  if (args.source) query.set('source', args.source);
+  if (args.verbs && args.verbs.length > 0) query.set('verb', args.verbs.join(','));
+  if (args.senderQuery) query.set('sender_q', args.senderQuery);
+  if (args.dateFrom) query.set('date_from', args.dateFrom);
+  if (args.dateTo) query.set('date_to', args.dateTo);
+  if (args.outcomes && args.outcomes.length > 0) query.set('outcome', args.outcomes.join(','));
+  if (args.cursor) query.set('cursor', args.cursor);
+  const encoded = query.toString();
+  return encoded ? `/api/activity?${encoded}` : '/api/activity';
+}
+
+export function parseActivityListEnvelope(
+  envelope: Envelope<ActivityRowWire[], unknown>,
+): Envelope<ActivityRowWire[], ActivityListMetaWire> {
+  return { data: envelope.data, meta: ActivityListMetaSchema.parse(envelope.meta) };
+}
+
 /**
  * GET /api/activity — paginated feed for the current mailbox.
  * Defaults: window=30d, source=all, limit=25.
@@ -199,7 +219,7 @@ export async function fetchActivity(
   // back. A cast let a dropped or renamed BE field compile clean and
   // render a confident wrong number; a throw here surfaces it as a
   // query error the screen already has a state for.
-  return { data: envelope.data, meta: ActivityListMetaSchema.parse(envelope.meta) };
+  return parseActivityListEnvelope(envelope);
 }
 
 export function fetchActivityWeeklyReview(

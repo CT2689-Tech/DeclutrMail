@@ -199,7 +199,7 @@ export function SendersPoliciesScreen() {
               {!ordered
                 ? ''
                 : hasNextPage
-                  ? `Most shielded unread mail first, across the ${protectedSenders.length.toLocaleString()} loaded so far.`
+                  ? `Most shielded unread mail first, across the ${protectedSenders.length.toLocaleString('en-US')} loaded so far.`
                   : 'Most shielded unread mail first.'}
             </p>
           </div>
@@ -213,10 +213,10 @@ export function SendersPoliciesScreen() {
             {/* Without a server total, a capped page cannot claim one — say
                 what is on screen instead (the Autopilot "latest N" posture). */}
             {totalMatching !== undefined
-              ? `${totalMatching.toLocaleString()} ${totalMatching === 1 ? 'sender' : 'senders'}`
+              ? `${totalMatching.toLocaleString('en-US')} ${totalMatching === 1 ? 'sender' : 'senders'}`
               : hasNextPage
-                ? `Showing ${protectedSenders.length.toLocaleString()}`
-                : `${protectedSenders.length.toLocaleString()} ${
+                ? `Showing ${protectedSenders.length.toLocaleString('en-US')}`
+                : `${protectedSenders.length.toLocaleString('en-US')} ${
                     protectedSenders.length === 1 ? 'sender' : 'senders'
                   }`}
           </span>
@@ -355,7 +355,9 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
               not know (an API predating the field) or when there is
               nothing in the inbox, rather than printed as a confident
               "shielding 0". */}
-          {shielded != null && shielded > 0 && <> · shielding {shielded.toLocaleString()} unread</>}
+          {shielded != null && shielded > 0 && (
+            <> · shielding {shielded.toLocaleString('en-US')} unread</>
+          )}
         </div>
         <div
           style={{

@@ -156,7 +156,7 @@ export function UnsubBatchReceipt({
           ·{' '}
           {receipt.senderCount === 1
             ? '1 sender'
-            : `${receipt.senderCount.toLocaleString()} senders`}
+            : `${receipt.senderCount.toLocaleString('en-US')} senders`}
         </span>
         <span
           style={{

@@ -84,7 +84,7 @@ export function MailboxesCard({
               // so only the per-row deletion reason is carried here.
               const reconnectBlockedReason = deletionInFlight
                 ? indexedDataState === 'deletion_delayed'
-                  ? 'Indexed-data deletion is delayed and will retry. Reconnect becomes available after deletion completes.'
+                  ? 'Data deletion is delayed and will retry. Reconnect becomes available after deletion completes.'
                   : "You can reconnect once we've finished erasing what we stored."
                 : undefined;
               const reconnectBlockedReasonId = `mailbox-${m.id}-reconnect-blocked`;
@@ -139,10 +139,10 @@ export function MailboxesCard({
                     >
                       {m.email}
                     </span>
-                    {m.status === 'active' && health?.lastSyncedAt && (
+                    {m.status === 'active' && health?.lastSyncedAt && now !== null && (
                       <span
                         style={{ display: 'block', fontSize: 11, color: color.fgMuted }}
-                        title={new Date(health.lastSyncedAt).toLocaleString()}
+                        title={new Date(health.lastSyncedAt).toLocaleString('en-US')}
                       >
                         Synced {relAge(health.lastSyncedAt, now)}
                       </span>

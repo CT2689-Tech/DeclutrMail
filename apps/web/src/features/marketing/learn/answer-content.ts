@@ -23,25 +23,25 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     eyebrow: 'Gmail access · risk checklist',
     title: 'Is it safe to connect a Gmail cleanup app?',
     description:
-      'A practical checklist for evaluating Gmail cleanup apps: OAuth scope, fetched data, token handling, action previews, recovery, and deletion.',
+      'A practical checklist for evaluating Gmail cleanup apps: Gmail permissions, fetched data, access-token handling, action previews, recovery, and deletion.',
     intro:
       'Connecting any third-party app to Gmail creates risk. “Safe” is not a permanent badge; it is a set of technical boundaries you can inspect, permissions you can revoke, and failure modes the product should explain before you authorize it.',
     quickAnswer:
-      'It can be reasonable when the app uses Google OAuth, requests only permissions its features need, clearly states what it fetches and stores, protects tokens, previews mutations, and lets you revoke access and delete data. Never rely on a privacy slogan alone.',
+      'It can be reasonable when the app uses Google OAuth, requests only the permissions its features need, clearly states what it fetches and stores, protects access tokens, previews changes, and lets you revoke access and delete data. Never rely on a privacy slogan alone.',
     readingMinutes: 8,
     sections: [
       {
         id: 'questions',
         title: 'Six questions to ask before connecting',
         paragraphs: [
-          'A useful evaluation separates access from usage. Gmail may expose a broad capability through one OAuth scope; the app’s code and policy determine which parts it actually reads or changes.',
+          'A useful evaluation separates permission from actual use. Gmail may grant a broad capability through one OAuth permission; the app’s code and policy determine what it actually reads or changes.',
         ],
         bullets: [
           'Does sign-in use Google OAuth, so you never give the app your Google password?',
-          'Which Gmail scope is requested, and which product actions require it?',
-          'Does the app fetch full or raw messages, or only a declared metadata set?',
+          'Which Gmail permission is requested, and which product actions require it?',
+          'Does the app fetch full email contents, or only a clearly listed set of Gmail details?',
           'Are OAuth tokens encrypted, excluded from the browser, and revocable?',
-          'Can you see the current scope and planned Gmail changes before mail moves, and which effects cannot be undone?',
+          'Can you see which email is affected and what will change before mail moves, including which effects cannot be undone?',
           'Can you disconnect an inbox, export your data, and delete the stored index?',
         ],
       },
@@ -50,7 +50,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'What DeclutrMail asks Google for',
         paragraphs: [
           'DeclutrMail requests gmail.modify, plus OpenID and the email identity used to connect the correct mailbox. gmail.modify is needed to change labels, archive, move messages to Trash, and support other user-approved mailbox actions. It is a sensitive capability, so treating it as “read-only” would be misleading.',
-          'The product narrows usage inside that scope. Gmail messages are requested in metadata format; full and raw message formats are not used. The stored message allowlist is: ' +
+          'DeclutrMail uses only part of that permission. It asks Gmail for each email in a limited format and never asks for the full or raw format. The Gmail details stored are: ' +
             STORED_FIELDS +
             '. Attachments, inline images, raw MIME, and full message bodies are not fetched or stored.',
         ],
@@ -62,17 +62,17 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
       },
       {
         id: 'processing',
-        title: 'Know where metadata is processed',
+        title: 'Know where your Gmail details are processed',
         paragraphs: [
-          'Most sender scoring uses aggregate facts rather than message content. The reasoning path that explains a sender decision receives precomputed facts and does not receive subject or snippet text.',
-          'Daily Brief is a narrower exception that should be stated plainly: when its narrative provider is configured, it sends sender identity, subject, and Gmail preview snippet to Anthropic within a bounded prompt. It never sends a full message body or attachment, and it falls back to a deterministic template when that provider is unavailable.',
+          'Most sender suggestions use volume, read rate, and other totals rather than email content. The explanation receives those numbers and does not receive subject lines or preview snippets.',
+          'Daily Brief works differently and should be stated plainly: it sends the sender, subject line, and Gmail preview snippet to Anthropic. It never sends full email contents or attachments, and it uses a standard summary when Anthropic is unavailable.',
         ],
       },
       {
         id: 'action-risk',
-        title: 'Evaluate mutation risk separately from data risk',
+        title: 'Evaluate action risk separately from data risk',
         paragraphs: [
-          'An app can minimize stored data and still move the wrong messages. Look for a preview that names the sender, action, and count; an activity record; actions that can be retried safely without doubling up; and verb-specific recovery rather than one universal undo promise.',
+          'An app can minimize stored data and still move the wrong messages. Look for a preview that names the sender, action, and count; a clear activity record; safe retries; and a recovery explanation for each action rather than one universal Undo promise.',
           'In DeclutrMail, Archive, Later, and Delete have Activity Undo while their plan-window token is live. Delete also has separate Gmail Trash recovery. A delivered unsubscribe request is one-way. Manual Archive, Later, and Delete affect current matched mail and do not silently become future sender rules.',
         ],
       },
@@ -89,7 +89,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Make a threat-model decision, not a brand decision',
         paragraphs: [
           'A highly sensitive mailbox used for legal, medical, or financial operations may justify avoiding third-party access even when controls are strong. A separate consumer mailbox may have a different risk tolerance. The same answer does not fit both.',
-          'The responsible product answer is therefore conditional: understand the scope, the stored fields, external processors, the boundaries of what the app may change, and exit path. Connect only if that complete model is acceptable to you.',
+          'The responsible answer is therefore conditional: understand the Gmail permission, stored fields, other companies that process data, exactly what the app may change, and how to leave. Connect only if that complete picture is acceptable to you.',
         ],
       },
     ],
@@ -126,11 +126,11 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     eyebrow: 'Privacy boundary · published fields',
     title: 'What is metadata-only email analysis?',
     description:
-      'Metadata-only email analysis explained precisely, including Gmail snippets, subjects, aggregate facts, external processing, and what is never fetched.',
+      'Metadata-only email analysis explained precisely, including Gmail snippets, subject lines, sender totals, external processing, and what is never fetched.',
     intro:
       'The phrase is useful only when the product lists the fields. A subject line and a Gmail preview snippet are metadata in the API response, but they can reveal more than a timestamp or sender address.',
     quickAnswer:
-      'Metadata-only analysis means the system works from a declared set of message headers, Gmail’s generated preview snippet, labels, dates, and engagement state without fetching the full or raw message body. It is data minimization, not content-free processing.',
+      'Metadata-only analysis means the system works from a listed set of message headers, Gmail’s preview snippet, labels, dates, and read state without fetching the complete or raw email. It reduces data collection; it does not mean the system receives no text.',
     readingMinutes: 7,
     sections: [
       {
@@ -138,7 +138,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Separate headers, preview text, and full content',
         paragraphs: [
           'Email data is not binary. Identity and routing headers sit at one layer. Gmail’s snippet is a short preview generated by Gmail from message content. The full MIME message contains the complete text, HTML, inline assets, and attachments.',
-          'A metadata request can include selected headers and Gmail’s snippet without returning the full MIME parts. That materially reduces collection, but the snippet and subject may still contain a name, purchase, appointment, or other sensitive phrase.',
+          'A limited Gmail request can include selected headers and Gmail’s preview snippet without returning the complete email. That materially reduces collection, but the snippet and subject line may still contain a name, purchase, appointment, or other sensitive phrase.',
         ],
       },
       {
@@ -146,11 +146,11 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'What DeclutrMail stores',
         paragraphs: [
           'DeclutrMail’s published message-field disclosure lists: ' + STORED_FIELDS + '.',
-          'It also stores derived sender aggregates and the user’s own decisions, automation settings, and activity records. Full message bodies, HTML, attachments, inline images, raw MIME, and headers outside the allowlist are not fetched or stored.',
+          'It also stores sender totals, read rates, the user’s decisions, automation settings, and Activity history. Full email contents, HTML, attachments, embedded images, raw email source, and headers outside the published list are not fetched or stored.',
         ],
         callout: {
           title: 'The honest shorthand',
-          body: 'Say “full bodies fetched: 0; Gmail snippets stored,” not “we cannot see any email content.” The second statement erases a meaningful part of the boundary.',
+          body: 'Say “we never fetch or store full email contents, but we do store Gmail preview snippets,” not “we cannot see any email content.” The second statement hides an important part of the privacy decision.',
           tone: 'truth',
         },
       },
@@ -158,16 +158,16 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'analysis',
         title: 'What can be inferred without a body',
         paragraphs: [
-          'Sender frequency, time since last message, read rate, reply history, labels, and whether a sender is protected can support useful sender-level decisions. These facts answer questions such as “how often does this source arrive?” and “do I engage with it?” without parsing a complete email.',
-          'They cannot reliably answer what a specific message means. When a subject or snippet is ambiguous, the correct interface sends you to Gmail rather than pretending the metadata contains the whole story.',
+          'Sender frequency, time since the last email, read rate, reply history, labels, and whether a sender is protected can support useful sender decisions. These facts answer questions such as “how often does this sender email me?” and “do I engage with it?” without parsing a complete email.',
+          'They cannot reliably answer what a specific email means. When a subject line or snippet is ambiguous, the correct interface sends you to Gmail rather than pretending those details contain the whole story.',
         ],
       },
       {
         id: 'external-processing',
         title: 'External processing still belongs in the disclosure',
         paragraphs: [
-          'DeclutrMail’s sender-reasoning adapter receives aggregate facts and no subject or snippet. Daily Brief uses a different bounded input: sender identity, subject, and Gmail snippet may be sent to Anthropic to compose a short narrative when the adapter is configured.',
-          'That input remains body-free, and the stored Brief intentionally omits the snippets used in the prompt. Even so, sending allowlisted metadata to a processor is processing and should not be hidden behind “no full bodies.”',
+          'To explain a suggestion, Anthropic receives sender totals and read rates but no subject line or snippet. Daily Brief works differently: it may send the sender, subject line, and Gmail preview snippet to Anthropic to compose a short summary.',
+          'Full email contents are not sent, and the saved Brief omits the snippets used to create it. Even so, sending any listed Gmail details to another company is processing and should not be hidden behind “no full bodies.”',
         ],
       },
       {
@@ -177,7 +177,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
           'Ask for implementation-level answers rather than accepting the category label.',
         ],
         bullets: [
-          'Which API format and required metadata are requested?',
+          'Which Gmail details are requested?',
           'Is a provider-generated snippet fetched or stored?',
           'Which derived aggregates are retained, and for how long?',
           'Does any feature send subjects or snippets to an external processor?',
@@ -203,7 +203,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
       {
         href: '/answers/is-it-safe-to-connect-gmail-app',
         label: 'Connection risk checklist',
-        description: 'Evaluate scope, processing, actions, and exit paths.',
+        description: 'Evaluate permissions, processing, actions, and how to leave.',
       },
       {
         href: '/blog/metadata-only-is-a-design-constraint',
@@ -222,7 +222,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     eyebrow: 'Recovery · action by action',
     title: 'How does undo work for Gmail cleanup?',
     description:
-      'A verb-specific explanation of Gmail cleanup recovery for Archive, Later, Delete, Keep, and delivered Unsubscribe requests.',
+      'How recovery differs for Archive, Later, Delete, Keep, and sent Unsubscribe requests.',
     intro:
       'There is no honest universal undo for email cleanup. Some actions are reversible label changes, some rely on Gmail Trash, some are standing settings you can change again, and some leave the system entirely.',
     quickAnswer:
@@ -234,7 +234,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Undo records the inverse, not a copy of your email',
         paragraphs: [
           'For a reversible mail-moving action, DeclutrMail records the Gmail message identifiers and the label change needed to reverse the action. It does not copy the message body into an undo store. The token is a capability tied to one mailbox and expires after the plan’s configured window.',
-          'Free and Plus currently use seven-day Activity windows; Pro uses thirty days for journaled actions. Gmail’s own retention rules can still impose an outside limit, especially for Trash.',
+          'Free and Plus currently offer Undo in Activity for seven days; Pro offers thirty days. Gmail’s own retention rules can still impose an outside limit, especially for Trash.',
         ],
       },
       {
@@ -247,7 +247,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
       },
       {
         id: 'delete',
-        title: 'Delete combines an app journal with Gmail Trash',
+        title: 'Delete combines Activity Undo with Gmail Trash',
         paragraphs: [
           'Delete adds Gmail’s Trash state and removes Inbox. Gmail keeps ordinary deleted messages in Trash for up to 30 days unless you permanently delete them or empty Trash earlier. DeclutrMail’s preview names that Gmail recovery boundary.',
           'An Activity token can reverse the label operation while it is active. If the token has expired but Gmail still retains the message, restore it directly from Gmail Trash. Once Gmail permanently deletes it, DeclutrMail cannot recover it because DeclutrMail never stored a full copy.',
@@ -268,9 +268,9 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
       },
       {
         id: 'policies',
-        title: 'Keep and Protected are settings, not journaled mail moves',
+        title: 'Keep and Protected are settings, not email moves',
         paragraphs: [
-          'Keep records your current sender decision. Protected is the standing safety control. Neither moves messages, so they do not create the same undo-journal token as Archive or Later. You reverse their effect by changing the sender policy again.',
+          'Keep records your current decision for a sender. Protected is the standing safety control. Neither moves email, so there is no Undo window like Archive or Later. You reverse their effect by changing the sender setting again.',
           'That distinction matters because a toast saying “undo” can imply a transactional rollback when the real mechanism is simply another settings write.',
         ],
       },
@@ -286,7 +286,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     related: [
       {
         href: '/how-to/bulk-delete-emails-from-one-sender',
-        label: 'Delete with a checked scope',
+        label: 'Delete with a checked preview',
         description: 'Use Gmail search or a sender preview safely.',
       },
       {
@@ -315,7 +315,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     intro:
       'The best method depends on whether you are removing old mail, stopping future mail, preserving important history, or automating a stable pattern. No single bulk action is safest for every job.',
     quickAnswer:
-      'Use Gmail search for a precise one-off cleanup, Gmail filters for exact future routing, unsubscribe for legitimate lists you no longer want, and sender-first review when recurring sources are the real problem. Add automation only after observing its matches.',
+      'Use Gmail search for a precise one-off cleanup, Gmail filters for exact future routing, unsubscribe for legitimate lists you no longer want, and sender-first review when recurring senders are the real problem. Add automation only after observing its matches.',
     readingMinutes: 8,
     sections: [
       {
@@ -328,7 +328,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
           'One exact backlog: Gmail search plus a reviewed selection.',
           'One exact future pattern: Gmail filter with Skip Inbox or a label.',
           'Legitimate recurring list: Gmail or DeclutrMail unsubscribe.',
-          'Many recurring sources: a sender-first inventory and small review batches.',
+          'Many recurring senders: a sender-first list and small review batches.',
           'Stable behavior across senders: observed automation, activated only after reviewing matches.',
         ],
       },
@@ -337,15 +337,15 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Use Gmail’s native tools when the condition is already clear',
         paragraphs: [
           'Gmail search operators are the most transparent way to define one affected set. You see the results before selecting them, and Gmail remains the source of truth. Filters are similarly strong for future rules when the condition is exact and durable.',
-          'The weakness is discovery. Native Gmail does not automatically turn thousands of messages into a ranked sender decision list, so users often clean by date or unread state and leave the recurring source unchanged.',
+          'The weakness is discovery. Native Gmail does not automatically turn thousands of emails into a ranked sender decision list, so users often clean by date or unread state and leave the recurring sender unchanged.',
         ],
       },
       {
         id: 'sender-first',
         title: 'Use sender-first cleanup when recurrence is the problem',
         paragraphs: [
-          'Sender-first cleanup compresses many messages into one review object. Volume, engagement, recent subjects, and replies help you identify which source deserves a decision. This is especially useful when you cannot name the noisiest sources from memory.',
-          'DeclutrMail implements this model as a Gmail companion. It stores allowlisted metadata and Gmail snippets but never fetches full message bodies. You return to Gmail for reading and final verification.',
+          'Sender-first cleanup compresses many emails into one sender review. Volume, read rate, recent subjects, and replies help you identify which sender deserves a decision. This is especially useful when you cannot name the noisiest senders from memory.',
+          'DeclutrMail implements this model as a Gmail companion. It stores the listed Gmail details and preview snippets but never fetches full email contents. You return to Gmail for reading and final verification.',
         ],
       },
       {
@@ -354,7 +354,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         paragraphs: [],
         steps: [
           {
-            name: 'Protect obvious important sources',
+            name: 'Protect obviously important senders',
             text: 'Identify people, account-security mail, financial records, receipts, and anything uncertain before pursuing large counts.',
           },
           {
@@ -363,7 +363,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
           },
           {
             name: 'Clean existing mail separately',
-            text: 'Archive when searchability matters, Later for a temporary queue, and Delete only with a verified scope and Trash plan.',
+            text: 'Archive when searchability matters, Later for a temporary queue, and Delete only after checking the affected email and Trash recovery.',
           },
           {
             name: 'Create exact future routing',
@@ -377,7 +377,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
       },
       {
         id: 'avoid',
-        title: 'Avoid shortcuts that hide scope',
+        title: 'Avoid shortcuts that hide what will change',
         paragraphs: [
           'Be skeptical of “delete everything,” universal undo, and category claims that cannot show their inputs. A large result count is not evidence that the selection is correct. A recommendation should remain inspectable and subordinate to your decision.',
           'Also avoid making inbox zero the only success measure. A small Inbox can still be governed by brittle filters, while a larger mailbox with deliberate sender rules can be calmer and safer.',
@@ -393,7 +393,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Prefer maintenance over another annual purge',
         paragraphs: [
           'A monthly ten-minute review of new recurring senders prevents the next backlog more effectively than another giant deletion. Check whether unsubscribed senders still write, whether filters still match the intended mail, and whether automation produced exceptions.',
-          'Cleanup becomes durable when every recurring source has an explicit reason to stay, route elsewhere, or stop.',
+          'Cleanup becomes durable when every recurring sender has an explicit reason to stay, route elsewhere, or stop.',
         ],
       },
     ],
@@ -423,40 +423,40 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     updatedAt: '2026-07-14',
     kind: 'Direct answer',
     eyebrow: 'Mental model · unit of decision',
-    title: 'Sender-level vs message-level email cleanup',
+    title: 'Sender review vs email-by-email cleanup',
     description:
-      'Compare sender-level and message-level Gmail cleanup, including where each model is strong, where it loses context, and how to combine them.',
+      'Compare reviewing Gmail by sender with reviewing it email by email, including where each approach is strong and how to combine them.',
     intro:
-      'Message-level cleanup asks what to do with this email. Sender-level cleanup asks what relationship you want with this recurring source. Neither question replaces the other.',
+      'Email-by-email cleanup asks what to do with this email. Sender review asks what relationship you want with this recurring sender. Neither question replaces the other.',
     quickAnswer:
-      'Use sender-level cleanup to discover recurring volume and make durable source decisions. Use message-level cleanup when content, thread context, attachments, deadlines, or exceptions determine the outcome. The safest workflow moves between both.',
+      'Review by sender to discover recurring volume and make durable decisions. Review email by email when content, conversation context, attachments, deadlines, or exceptions determine the outcome. The safest workflow moves between both.',
     readingMinutes: 7,
     sections: [
       {
         id: 'message-strength',
-        title: 'Message-level review preserves the most context',
+        title: 'Email-by-email review preserves the most context',
         paragraphs: [
           'Gmail’s inbox, search results, and threads show the actual subject, participants, body, attachments, and conversation history. That context is essential for replies, approvals, receipts, deadlines, and any sender whose messages vary widely in importance.',
-          'The cost is scale. Repeatedly deciding on individual newsletters or automated updates treats each symptom while leaving the source unchanged.',
+          'The cost is scale. Repeatedly deciding on individual newsletters or automated updates treats each symptom while leaving the sender unchanged.',
         ],
       },
       {
         id: 'sender-strength',
-        title: 'Sender-level review exposes recurrence',
+        title: 'Sender review exposes recurrence',
         paragraphs: [
           'Grouping by sender makes volume and engagement visible. Fifty near-identical updates become one review: keep the relationship, stop future delivery, or clean the existing backlog. That compression is useful when the decision is truly about the source.',
-          'DeclutrMail’s sender index uses allowlisted metadata, Gmail snippets, and aggregate facts. It deliberately does not fetch full message bodies, so it cannot replace message reading when content is decisive.',
+          'DeclutrMail’s sender list uses the published Gmail details, preview snippets, volume, and read rate. It deliberately does not fetch full email contents, so it cannot replace message reading when content is decisive.',
         ],
       },
       {
         id: 'failure-modes',
         title: 'Each model has a characteristic failure mode',
         paragraphs: [
-          'Message-level cleanup can become endless triage: the same sender returns tomorrow because the future relationship was never addressed. Sender-level cleanup can overgeneralize: one address may carry promotions, receipts, and security notices that should not share one destructive action.',
+          'Email-by-email cleanup can become endless triage: the same sender returns tomorrow because the future relationship was never addressed. Sender review can overgeneralize: one address may carry promotions, receipts, and security notices that should not share one destructive action.',
           'Display names add another trap. Multiple addresses can represent one brand, and one mailing system can serve many brands. Sender identity must be inspectable rather than inferred from a logo or label alone.',
         ],
         callout: {
-          title: 'A sender is a review unit, not a category verdict',
+          title: 'A sender is something to review, not a category label',
           body: 'Low engagement can justify a closer look. It does not prove that a sender is promotional, safe to delete, or unimportant.',
           tone: 'truth',
         },
@@ -468,7 +468,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         steps: [
           {
             name: 'Discover at sender level',
-            text: 'Rank recurring sources by volume or review a sender queue. Start with obvious, repeated patterns rather than individual unread messages.',
+            text: 'Rank recurring senders by volume or review a sender queue. Start with obvious, repeated patterns rather than individual unread emails.',
           },
           {
             name: 'Inspect representative messages',
@@ -492,7 +492,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'which-to-use',
         title: 'Choose the starting level from the uncertainty',
         paragraphs: [
-          'Start at sender level when the source is repetitive, the messages serve one stable purpose, and aggregate behavior is enough to justify review. Start at message level when the sender is a person, a shared platform, or a source with high-consequence exceptions.',
+          'Start at sender level when the sender is repetitive, the emails serve one stable purpose, and volume and read rate are enough to justify review. Start at message level when the sender is a person, a shared platform, or an address with important exceptions.',
           'For automation, require an even stronger standard: observe multiple matches, protect exceptions, and expose the active rule. Automation turns one mistaken generalization into a recurring mistake.',
         ],
       },

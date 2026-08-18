@@ -1,12 +1,13 @@
-// Unit tests for the D175 CSP builder (`src/middleware.ts`).
+// Unit tests for the D175 CSP builder and request-level invariants
+// (`src/middleware.ts`).
 //
-// The middleware function itself needs the Next.js edge runtime, so the
-// suite targets the exported pure pieces: `buildContentSecurityPolicy`,
-// `cspHeaderName`, and `STATIC_SECURITY_HEADERS`. The full
-// request-level behavior (nonce on framework scripts, report-only flip)
-// is covered by the §8 browser smoke documented in the PR.
+// Most coverage targets exported pure pieces: `buildContentSecurityPolicy`,
+// `cspHeaderName`, and `STATIC_SECURITY_HEADERS`. The session ownership
+// test also invokes middleware through `NextRequest`; full nonce stamping
+// remains covered by the §8 browser smoke documented in the PR.
 
 import { describe, expect, it } from 'vitest';
+import { NextRequest } from 'next/server';
 
 import { AUTHED_APP_PATHS } from './app/robots';
 import {
@@ -14,6 +15,7 @@ import {
   buildContentSecurityPolicy,
   cspHeaderName,
   isAuthedAppPath,
+  middleware,
   type CspEnv,
 } from './middleware';
 
@@ -54,12 +56,15 @@ describe('buildContentSecurityPolicy (D175)', () => {
     expect(directive(csp, 'base-uri')).toBe(`base-uri 'self'`);
     expect(directive(csp, 'object-src')).toBe(`object-src 'none'`);
     expect(directive(csp, 'font-src')).toBe(`font-src 'self'`);
-    // googleusercontent per D175 + the avatar.tsx sender-logo chain
-    // (Clearbit → DuckDuckGo → Google S2), image-only origins. The API
-    // origin rides here too — D254 serves brand logos from it.
+    // googleusercontent per D175 (Google profile photos). Brand logos
+    // are first-party `/api/icons/:domain` (D254) — the retired
+    // Clearbit/DuckDuckGo/Google S2 hosts must not stay on the policy.
     expect(directive(csp, 'img-src')).toBe(
-      `img-src 'self' data: https://api.declutrmail.com https://*.googleusercontent.com https://logo.clearbit.com https://icons.duckduckgo.com https://www.google.com`,
+      `img-src 'self' data: https://api.declutrmail.com https://*.googleusercontent.com`,
     );
+    expect(directive(csp, 'img-src')).not.toContain('logo.clearbit.com');
+    expect(directive(csp, 'img-src')).not.toContain('icons.duckduckgo.com');
+    expect(directive(csp, 'img-src')).not.toContain('https://www.google.com');
   });
 
   // D254 regression. The brand-logo endpoint is a first-party
@@ -82,9 +87,7 @@ describe('buildContentSecurityPolicy (D175)', () => {
     const csp = buildContentSecurityPolicy(NONCE, { ...PROD_ENV, apiUrl: undefined });
     const imgSrc = directive(csp, 'img-src');
 
-    expect(imgSrc).toBe(
-      `img-src 'self' data: https://*.googleusercontent.com https://logo.clearbit.com https://icons.duckduckgo.com https://www.google.com`,
-    );
+    expect(imgSrc).toBe(`img-src 'self' data: https://*.googleusercontent.com`);
     expect(imgSrc).not.toContain('  ');
   });
 
@@ -251,6 +254,21 @@ describe('isAuthedAppPath — which subtree a request belongs to', () => {
     // prerendered.
     expect(isAuthedAppPath('/settings-guide')).toBe(false);
     expect(isAuthedAppPath('/billingx')).toBe(false);
+  });
+});
+
+describe('authed document session handling', () => {
+  it('leaves refresh-token rotation to the browser single-flight path', () => {
+    const request = new NextRequest('https://app.declutrmail.com/senders', {
+      headers: {
+        cookie: 'dm_access=not-a-valid-jwt; dm_refresh=refresh-token',
+      },
+    });
+
+    const response = middleware(request);
+
+    expect(response).not.toBeInstanceOf(Promise);
+    expect(response.headers.get('set-cookie')).toBeNull();
   });
 });
 

@@ -89,7 +89,7 @@ describe('the blog index title — D250 §3.6 row 21', () => {
     // so an appended suffix would drift from the prescribed value unnoticed —
     // which is the failure this assertion exists to catch.
     expect(blog.title).toEqual({
-      absolute: 'DeclutrMail Journal — previews, undo, and the limits of bulk email',
+      absolute: 'DeclutrMail articles — previews, undo, and the limits of bulk email',
     });
   });
 });
@@ -118,9 +118,9 @@ describe('the simulator carries its own share card — playbook G7', () => {
     expect(existsSync(cardPath)).toBe(true);
   });
 
-  it('describes the card as the synthetic preview it renders', () => {
+  it('describes the card as the made-up preview it renders', () => {
     expect(simulatorCardAlt).toMatch(/preview/i);
-    expect(simulatorCardAlt).toMatch(/synthetic/i);
+    expect(simulatorCardAlt).toMatch(/made-up/i);
   });
 
   /**

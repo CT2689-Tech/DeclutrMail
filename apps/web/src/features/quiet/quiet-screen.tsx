@@ -125,6 +125,7 @@ function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
           activeNow={query.data.activeNow}
           heldCount={query.data.heldCount}
           endsAt={query.data.endsAt}
+          timezone={query.data.config?.timezone ?? 'UTC'}
         />
       )}
     </div>
@@ -135,13 +136,15 @@ function QuietQueueSummary({
   activeNow,
   heldCount,
   endsAt,
+  timezone,
 }: {
   activeNow: boolean;
   heldCount: number;
   endsAt: string | null;
+  timezone: string;
 }) {
   const actionLabel = heldCount === 1 ? 'Autopilot action' : 'Autopilot actions';
-  const endLabel = endsAt ? formatQuietEnd(endsAt) : null;
+  const endLabel = endsAt ? formatQuietEnd(endsAt, timezone) : null;
 
   let summary = <>Quiet is off. No Autopilot actions are held.</>;
 
@@ -194,16 +197,17 @@ function QuietQueueSummary({
   );
 }
 
-function formatQuietEnd(value: string): string | null {
+function formatQuietEnd(value: string, timezone: string): string | null {
   const end = new Date(value);
   if (Number.isNaN(end.getTime())) return null;
 
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
     timeZoneName: 'short',
+    timeZone: timezone,
   }).format(end);
 }

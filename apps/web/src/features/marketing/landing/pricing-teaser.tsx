@@ -43,7 +43,7 @@ export function PricingTeaser() {
 
   return (
     <section className="dm-mkt-section dm-mkt-shell">
-      <p className="dm-mkt-eyebrow">№ 07 — Pricing</p>
+      <p className="dm-mkt-eyebrow">№ 05 — Pricing</p>
       <h2 className="dm-mkt-h2">Start free. Pay when it earns it.</h2>
 
       <div className="dm-mkt-tiers">

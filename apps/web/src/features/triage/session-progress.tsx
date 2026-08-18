@@ -54,7 +54,7 @@ export function SessionProgress({
         }}
       >
         {decided} decided · {remaining === 0 ? 'all done' : `${remaining} to go`}
-        {messagesMoved > 0 && <> · {messagesMoved.toLocaleString()} messages moved</>}
+        {messagesMoved > 0 && <> · {messagesMoved.toLocaleString('en-US')} messages moved</>}
       </span>
       <div
         role="progressbar"

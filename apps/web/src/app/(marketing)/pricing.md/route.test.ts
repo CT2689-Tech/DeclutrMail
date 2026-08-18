@@ -86,7 +86,7 @@ describe('/pricing.md — machine-readable pricing', () => {
     expect(markdown).toMatch(/matching count.{0,120}before you\s+approve/is);
     expect(markdown).toMatch(/do not create future-mail\s+rules/is);
     expect(markdown).toMatch(/delivered unsubscribe request cannot be recalled/i);
-    expect(markdown).toContain('Full bodies fetched: 0');
+    expect(markdown).toContain('never fetches or stores full email contents');
     // The universal-undo shorthand this repo bans everywhere else.
     expect(markdown).not.toMatch(/every action (?:is|remains) (?:undoable|reversible)/i);
   });

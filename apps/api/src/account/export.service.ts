@@ -22,7 +22,7 @@ import { csvField } from '../common/csv.js';
  * PRIVACY (D7/D228 — CLAUDE.md §2.1). Every query below is an
  * EXPLICIT-COLUMN select over the storage allowlist:
  *
- *   - sender (name + email), subject, snippet ("Gmail Preview"),
+ *   - sender (name + email), subject, Gmail preview snippet,
  *     dates, Gmail labels, read/unread state
  *   - the user's own standing policies + activity rows (their
  *     decisions ABOUT senders — user-generated, not message content)

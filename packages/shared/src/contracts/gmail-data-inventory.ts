@@ -10,12 +10,12 @@
 
 export const GMAIL_DATA_RETENTION = {
   mailboxIndex:
-    "Until the user deletes this mailbox's indexed data or deletes their DeclutrMail account.",
+    "Until the user deletes this mailbox's saved data or deletes their DeclutrMail account.",
   mailboxIdentity:
     'The disconnected Gmail address and mailbox deletion status remain until the DeclutrMail account is deleted, so the user can identify and reconnect the mailbox.',
   connection: 'Until the Gmail account is disconnected or the DeclutrMail account is deleted.',
   derivedMailboxData:
-    "Until the user deletes this mailbox's indexed data or deletes their DeclutrMail account.",
+    "Until the user deletes this mailbox's saved data or deletes their DeclutrMail account.",
   undoJournal:
     'Until the plan-based Undo window expires, followed by the operational cleanup period.',
 } as const;
@@ -87,12 +87,11 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
   {
     id: 'message-identifiers',
     category: 'message',
-    label: 'Gmail message and thread IDs',
+    label: 'Gmail message and conversation IDs',
     fetchedFrom: ['message.id', 'message.threadId'],
     storageRefs: ['mail_messages.provider_message_id', 'mail_messages.provider_thread_id'],
     derived: false,
-    purpose:
-      'Prevent duplicate indexing, group messages, open the original email, and apply actions.',
+    purpose: 'Avoid duplicate records, group email, open the original email, and apply actions.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -122,7 +121,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
   {
     id: 'subject',
     category: 'message',
-    label: 'Subject',
+    label: 'Subject line',
     fetchedFrom: ['header.Subject'],
     storageRefs: ['mail_messages.subject'],
     derived: false,
@@ -136,7 +135,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
   {
     id: 'gmail-preview',
     category: 'message',
-    label: 'Gmail Preview (the short snippet shown in your inbox list)',
+    label: 'Gmail preview snippet (the short text shown in your inbox list)',
     fetchedFrom: ['message.snippet'],
     storageRefs: ['mail_messages.snippet'],
     derived: false,
@@ -150,7 +149,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
   {
     id: 'received-date',
     category: 'message',
-    label: 'Received date',
+    label: 'Date received',
     fetchedFrom: ['message.internalDate'],
     storageRefs: ['mail_messages.internal_date'],
     derived: false,
@@ -182,7 +181,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     fetchedFrom: ['message.labelIds'],
     storageRefs: ['mail_messages.is_unread'],
     derived: true,
-    purpose: 'Show engagement facts and calculate sender-level read rates.',
+    purpose: 'Show engagement facts and calculate read rates for each sender.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
     removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'csv'],
@@ -238,7 +237,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
   {
     id: 'message-size-estimate',
     category: 'message',
-    label: 'Gmail message size estimate',
+    label: 'Estimated Gmail message size',
     fetchedFrom: ['message.sizeEstimate'],
     storageRefs: ['mail_messages.size_bytes'],
     derived: false,
@@ -287,7 +286,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
   {
     id: 'gmail-sync-state',
     category: 'connection',
-    label: 'Gmail sync cursors, watch expiry, and last-sync status',
+    label: 'Gmail connection progress and last update status',
     fetchedFrom: ['profile.historyId', 'watch.historyId', 'watch.expiration'],
     storageRefs: [
       'mailbox_accounts.quiet_state.gmail_watch',
@@ -296,7 +295,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
       'provider_sync_state.readiness_status',
     ],
     derived: false,
-    purpose: 'Resume incremental sync without rescanning the full mailbox.',
+    purpose: 'Continue updating without scanning the entire mailbox again.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -323,7 +322,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'choices-rules-and-suggestions',
     category: 'derived',
-    label: 'Sender choices, protection settings, rules, and generated suggestions',
+    label: 'Sender decisions, protection settings, rules, and generated suggestions',
     fetchedFrom: ['sender-profile-and-stats'],
     storageRefs: [
       'sender_policies.*',
@@ -333,7 +332,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
       'users.preferences',
     ],
     derived: true,
-    purpose: 'Remember user choices and explain or apply explicitly enabled rules.',
+    purpose: 'Remember user decisions and explain or apply explicitly enabled rules.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'senders-csv', 'decisions-csv'],
@@ -393,7 +392,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'product-feedback',
     category: 'derived',
-    label: 'Your bounded feedback on Activity, Briefs, and Followups',
+    label: 'Feedback you submit about Activity, Briefs, and Follow-ups',
     fetchedFrom: ['choices-rules-and-suggestions'],
     storageRefs: ['product_feedback.*'],
     derived: true,
@@ -411,13 +410,13 @@ export const GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY = [
     id: 'mailbox-security-and-deletion-audit',
     category: 'connection',
     label: 'Minimal mailbox security and deletion audit records',
-    fetchedFrom: ['DeclutrMail connection, security, and deletion lifecycle events'],
+    fetchedFrom: ['DeclutrMail connection, security, and deletion events'],
     storageRefs: ['mailbox_data_deletion_requests.*', 'security_events.*'],
     derived: true,
     purpose:
       'Investigate security incidents and retain narrowly scoped evidence that a requested deletion ran.',
     retention:
-      'These pseudonymous security and compliance records remain after mailbox or account deletion under DeclutrMail operational retention policy; they do not contain message bodies or attachments.',
+      'These pseudonymous security and compliance records remain after mailbox or account deletion under DeclutrMail operational retention policy; they do not contain full email contents or attachments.',
     removalTrigger: 'retention-policy',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],

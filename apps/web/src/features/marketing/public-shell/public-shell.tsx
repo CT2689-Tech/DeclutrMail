@@ -10,7 +10,7 @@ import { PublicNavLinks } from './public-nav-links';
 const PRODUCT_LINKS = [
   { href: '/how-it-works', label: 'How it works' },
   { href: '/inbox-simulator', label: 'Demo' },
-  { href: '/methodology', label: 'Methodology' },
+  { href: '/methodology', label: 'Privacy & control' },
   { href: '/compare', label: 'Compare' },
   { href: '/pricing', label: 'Pricing' },
 ] as const;
@@ -29,11 +29,11 @@ const FOOTER_GROUPS = [
   {
     label: 'Learn',
     links: [
-      { href: '/methodology', label: 'Methodology' },
+      { href: '/methodology', label: 'Privacy & control' },
       { href: '/compare', label: 'Compare' },
       { href: '/how-to', label: 'Guides' },
       { href: '/answers', label: 'Answers' },
-      { href: '/blog', label: 'Journal' },
+      { href: '/blog', label: 'Articles' },
       { href: '/faq', label: 'FAQ' },
     ],
   },
@@ -51,7 +51,7 @@ const FOOTER_GROUPS = [
     links: [
       { href: '/help', label: 'Help' },
       { href: '/contact', label: 'Contact' },
-      { href: '/cookies', label: 'Cookie choices' },
+      { href: '/cookies', label: 'Cookie preferences' },
     ],
   },
 ] as const;

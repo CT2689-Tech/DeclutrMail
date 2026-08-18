@@ -8,7 +8,7 @@ import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Interactive inbox simulator — DeclutrMail',
   description:
-    'Try DeclutrMail’s Triage row and action-preview flow on a synthetic inbox — the same components every plan uses. No signup or Gmail access.',
+    'Try DeclutrMail’s Triage and action previews with a made-up inbox. No signup or Gmail access required.',
   path: '/inbox-simulator',
   // This link gets shared into threads cold, so it unfurls as the preview
   // mechanism rather than the brand headline — see ./opengraph-image.tsx,
