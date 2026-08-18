@@ -281,7 +281,15 @@ describe('dead-letter pipeline (D225)', () => {
       expect(obs.bgCaptures).toHaveLength(2);
       // Sentry context carries identifying tags + a scannable title.
       expect(obs.bgCaptures[0]?.ctx.kind).toBe('dead_letter.parked');
-      expect(obs.bgCaptures[0]?.ctx.tags).toMatchObject({ queue: 'initial-sync', job_id: 'mb-1' });
+      expect(obs.bgCaptures[0]?.ctx.tags).toMatchObject({ queue: 'initial-sync' });
+      // `job_id` is pseudonymised: for incremental-sync it is
+      // `${mailboxAccountId}__${cursor}`, so the raw value leaked a
+      // mailbox id that the `mailbox_account_id` tag hides everywhere else.
+      expect(obs.bgCaptures[0]?.ctx.tags?.job_id).toMatch(/^ref_[0-9a-f]{24}$/);
+      expect(obs.bgCaptures[0]?.ctx.tags?.job_id).not.toBe('mb-1');
+      // A named class so the Sentry issue title is not the bare word
+      // "Error" — `Error.message` never reaches Sentry (D7).
+      expect(obs.bgCaptures[0]?.error.name).toBe('DeadLetterParkedError');
       expect(obs.bgCaptures[0]?.error.message).toContain('initial-sync/mb-1');
       expect(obs.bgCaptures[0]?.error.message).toContain('TransientError: still 503');
       // ...but never the stack's continuation lines (first line only).

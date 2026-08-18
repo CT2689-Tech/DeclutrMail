@@ -3,7 +3,8 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { deadLetterJobs } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 
-import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { BaseDeclutrWorker, telemetryReference } from './base-declutr-worker.js';
+import { DeadLetterParkedError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 import type { WorkerObserver } from './worker-observer.js';
 
@@ -139,11 +140,24 @@ export class DeadLetterWorker extends BaseDeclutrWorker<
         }),
       );
       try {
+        // `Error.message` is stripped before this reaches Sentry (D7), so
+        // the message below survives only in the local console line above
+        // — everything the alert needs to be actionable rides in the
+        // named class and the tags. `job_id` is pseudonymised: it is
+        // `${mailboxAccountId}__${cursor}` for incremental-sync, so the
+        // raw value leaked a mailbox id that the sibling
+        // `mailbox_account_id` tag pseudonymises via the same helper.
         this.deps.observer.captureBackgroundFailure(
-          new Error(`Dead letter parked: ${row.queue}/${row.jobId} — ${errorSummary(row.error)}`),
+          new DeadLetterParkedError(
+            `Dead letter parked: ${row.queue}/${row.jobId} — ${errorSummary(row.error)}`,
+          ),
           {
             kind: 'dead_letter.parked',
-            tags: { dead_letter_id: row.id, queue: row.queue, job_id: row.jobId },
+            tags: {
+              dead_letter_id: row.id,
+              queue: row.queue,
+              job_id: telemetryReference(row.jobId),
+            },
           },
         );
         this.alertedIds.add(row.id);
