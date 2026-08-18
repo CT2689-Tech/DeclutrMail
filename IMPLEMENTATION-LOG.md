@@ -279,7 +279,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D221 | Decision Queue framing copy (locks Codex §8 framing) | ⬜ |  |  |  |
 | D222 | Auto-Protect via category prediction REJECTED at all versions (extends D22) | ⬜ |  |  |  |
 | D223 | Landing page primary headline (locks tentative) | 🔵 | #202 |  |  |
-| D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38, #122, #279, #287, #314, #370, #418, #427, #428, #471 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
+| D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38, #122, #279, #287, #314, #370, #418, #427, #428, #471, #547 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | 🔵 | #194, #208, #209 |  | Truth sweep 2026-07-02 (🟡→🔵): every leg now on disk — policies + cron idempotency (worker-policies.ts:54-101), cron_runs + dead_letter_jobs tables (migration 0030, #194), DeadLetterWorker (worker.ts:1603), WatchRenewalWorker (worker.ts:1239) — 2026-06-11 missing-legs note stale. Pending verify-d |
 | D226 | Action lifecycle ordering (resolves SC-1) | 🔵 | #44, #180, #130, #149, #225, #272, #345, #376, #388, #394, #398, #400, #403, #407, #409, #440, #509, #510, #511, #538 | apps/web/src/features/triage/action-sheet.test.tsx — sheet → preview → confirm lifecycle | Evidence updated 2026-06-11: lifecycle wired to real K/A/U/L mutations + undo tray in #180. Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🟢 | #12, #280, #410, #475, #476, #479 | packages/workers/src/reasoning.test.ts — K/A/U/L verdict labels |  |
