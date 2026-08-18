@@ -1,5 +1,7 @@
 import { ImageResponse } from 'next/og';
 
+import { ogMarkDataUri } from '@/features/marketing/og/brand-mark';
+
 /**
  * Default Open Graph card (D134 SEO, D250 headline — reverses D223,
  * D1/D2 palette).
@@ -61,14 +63,35 @@ export default function OpenGraphImage() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          fontSize: 26,
-          color: MUTED,
-          letterSpacing: 4,
           marginTop: 24,
         }}
       >
-        <span>DECLUTRMAIL</span>
-        <span style={{ color: TEAL }}>FOR INBOXES YOU GAVE UP ON</span>
+        {/* Masthead. The mark leads and the wordmark is set properly cased
+            with Mail accented — ADR-0036 specifies `DeclutrMail`, and the
+            capital M is load-bearing: it is the seam the accent lands on,
+            which an all-caps setting destroys.
+
+            Two sibling spans rather than one string with a nested span:
+            Satori lays element children out as flex items, so this is what
+            keeps the seam tight and the colours on the right halves. */}
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <img src={ogMarkDataUri('ink')} width={46} height={46} alt="" />
+          <div
+            style={{
+              display: 'flex',
+              marginLeft: 14,
+              fontSize: 34,
+              fontWeight: 700,
+              letterSpacing: -1.2,
+            }}
+          >
+            <span style={{ color: INK }}>Declutr</span>
+            <span style={{ color: TEAL }}>Mail</span>
+          </div>
+        </div>
+        <span style={{ fontSize: 26, color: MUTED, letterSpacing: 4 }}>
+          FOR INBOXES YOU GAVE UP ON
+        </span>
       </div>
 
       <div

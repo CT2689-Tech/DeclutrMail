@@ -24,6 +24,36 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-18 — OG cards render in Noto Sans, not Fraunces
+
+**Source:** session — D255 brand rollout
+**Why:** `ImageResponse` registers no fonts, so Satori falls back to its
+bundled Noto Sans. Every word on both share cards — the headline and the
+wordmark — is therefore set in a font the brand does not use, while the
+site itself is Fraunces 800. This is the surface strangers meet the brand
+through, and it currently looks like a different product. Pre-existing,
+not introduced by the D255 work, and out of scope for it: fixing it means
+committing a font binary, which is a decision rather than a correction.
+**How:** Fraunces is SIL OFL, so it is redistributable with its licence.
+Commit a static Fraunces 800 `.ttf` (Satori reads ttf/otf/woff, NOT woff2)
+under `apps/web/src/app/fonts/`, then pass it to both cards:
+
+```ts
+const fraunces = await readFile(join(process.cwd(), 'src/app/fonts/Fraunces-800.ttf'));
+return new ImageResponse(<Card />, {
+  ...size,
+  fonts: [{ name: 'Fraunces', data: fraunces, weight: 800, style: 'normal' }],
+});
+```
+
+Then set `fontFamily: 'Fraunces'` on the headline and the wordmark, and
+`letterSpacing: '-0.03em'` on the wordmark per ADR-0036. Do NOT fetch the
+font over the network at build time — that makes OG generation fail
+whenever Google Fonts is unreachable from CI.
+**Verifies by:** `curl localhost:3000/opengraph-image` and the headline is
+the serif that matches the landing page, not Noto Sans.
+**Status:** Open
+
 ### 2026-08-18 — Wire `pnpm check:icons` into CI
 
 **Source:** session — D255 brand icon generation
