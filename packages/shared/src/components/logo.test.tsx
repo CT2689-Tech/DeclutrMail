@@ -25,7 +25,7 @@ const MINT = '#79E6DC';
 const PAPER = '#FAFAF7';
 
 /** The frame path that only the heavy (<=24px) cut draws. */
-const HEAVY_FRAME = 'M40 18H13';
+const HEAVY_FRAME = 'M7 4H4';
 /** The frame path that only the regular (>24px) cut draws. */
 const REGULAR_FRAME = 'M42 16H11';
 
@@ -35,7 +35,7 @@ describe('Logo — two cuts (ADR-0036)', () => {
       const html = renderToStaticMarkup(<Logo variant="mark" size={size} />);
       expect(html, `size=${size}`).toContain(HEAVY_FRAME);
       expect(html, `size=${size}`).not.toContain(REGULAR_FRAME);
-      expect(html, `size=${size}`).toContain('stroke-width="7"');
+      expect(html, `size=${size}`).toContain('stroke-width="2"');
     }
   });
 
@@ -48,8 +48,17 @@ describe('Logo — two cuts (ADR-0036)', () => {
     }
   });
 
-  it('swaps geometry rather than scaling one drawing — the viewBox is fixed', () => {
-    for (const size of [16, 64]) {
+  it('gives each cut its own grid — the compact one is 1 unit per device pixel', () => {
+    // Not cosmetic. On a 16-unit grid every coordinate in the compact cut is
+    // a whole pixel at favicon size, so a 2px stroke on an integer centreline
+    // covers whole pixels instead of straddling two and greying out. Scaling
+    // the 71-unit drawing down could never land that way.
+    for (const size of [16, 20, 24]) {
+      expect(renderToStaticMarkup(<Logo variant="mark" size={size} />)).toContain(
+        'viewBox="0 0 16 16"',
+      );
+    }
+    for (const size of [25, 28, 64]) {
       expect(renderToStaticMarkup(<Logo variant="mark" size={size} />)).toContain(
         'viewBox="-3 -5 71 71"',
       );
@@ -242,43 +251,65 @@ function distanceToPolyline([px, py]: Point, poly: Point[]): number {
   return best;
 }
 
-/** Renders the mark at `size`, then measures both frame caps against the drawn tail. */
+/**
+ * Renders the mark at `size` and measures both frame caps against the drawn
+ * tail, in DEVICE PIXELS. The two cuts sit on different grids (16-unit and
+ * 71-unit), so raw path units are not comparable between them — and pixels
+ * are the only unit legibility is actually decided in. Below roughly 1px of
+ * paper, antialiasing merges two strokes into a grey smudge.
+ */
 function clearanceAt(size: number) {
   const html = renderToStaticMarkup(<Logo variant="mark" size={size} />);
   const drawn = [...html.matchAll(/\sd="([^"]+)"/g)].map((m) => must(m[1], 'path data'));
   expect(drawn, `size=${size} draws frame + tail`).toHaveLength(2);
 
   const stroke = Number(must(/stroke-width="([\d.]+)"/.exec(html)?.[1], 'stroke-width'));
+  const viewBox = must(/viewBox="([^"]+)"/.exec(html)?.[1], 'viewBox')
+    .split(' ')
+    .map(Number);
+  const perUnit = size / must(viewBox[2], 'viewBox width'); // device px per path unit
   const frame = pathPoints(must(drawn[0], 'frame path'));
   const tail = pathPoints(must(drawn[1], 'tail path'));
 
   return {
     stroke,
-    upper: distanceToPolyline(must(frame[0], 'frame start'), tail) - stroke,
-    lower: distanceToPolyline(must(frame[frame.length - 1], 'frame end'), tail) - stroke,
+    upper: (distanceToPolyline(must(frame[0], 'frame start'), tail) - stroke) * perUnit,
+    lower:
+      (distanceToPolyline(must(frame[frame.length - 1], 'frame end'), tail) - stroke) * perUnit,
   };
 }
 
 describe('Logo — tail/frame clearance (ADR-0036 §Two cuts)', () => {
-  it('holds the compact cut open at both caps', () => {
+  it('opens the compact cut by a whole device pixel at favicon size', () => {
+    // This is the bar the first correction missed. It cleared the overlap
+    // (geometry) but left 0.25px / 0.39px of paper (perception), which
+    // antialiases into a smudge. Redrawn on the 16 grid it clears 2.00px /
+    // 1.80px — the break is actually visible at 16px.
     const { stroke, upper, lower } = clearanceAt(16);
-    expect(stroke).toBe(7);
-    // The sign is the decision; the figures are the spec it was locked at.
-    expect(upper).toBeGreaterThan(0);
-    expect(lower).toBeGreaterThan(0);
-    expect(upper).toBeCloseTo(1.121, 2);
-    expect(lower).toBeCloseTo(1.746, 2);
+    expect(stroke).toBe(2);
+    expect(upper).toBeGreaterThanOrEqual(1);
+    expect(lower).toBeGreaterThanOrEqual(1);
+    expect(upper).toBeCloseTo(2.0, 1);
+    expect(lower).toBeCloseTo(1.8, 1);
+  });
+
+  it('keeps the compact cut open across its whole band', () => {
+    for (const size of [16, 20, 24]) {
+      const { upper, lower } = clearanceAt(size);
+      expect(upper, `size=${size} upper`).toBeGreaterThanOrEqual(1);
+      expect(lower, `size=${size} lower`).toBeGreaterThanOrEqual(1);
+    }
   });
 
   it('holds the regular cut open at both caps', () => {
-    // This cut was welded too (-0.33u at the lower cap) and was briefly
-    // going to ship that way as accepted debt. It was corrected instead:
-    // nothing consumed it yet, and it measures better at every size.
+    // This cut was welded too (-0.33u) and was briefly going to ship that
+    // way as accepted debt. It was corrected instead: nothing consumed it
+    // yet, and it measures better at every size.
     const { stroke, upper, lower } = clearanceAt(64);
     expect(stroke).toBe(5.5);
     expect(upper).toBeGreaterThan(0);
     expect(lower).toBeGreaterThan(0);
-    expect(upper).toBeCloseTo(4.154, 2);
-    expect(lower).toBeCloseTo(2.037, 2);
+    expect(upper).toBeCloseTo(3.74, 1);
+    expect(lower).toBeCloseTo(1.84, 1);
   });
 });

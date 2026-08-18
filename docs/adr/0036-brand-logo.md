@@ -47,14 +47,14 @@ accent stroke inside the mark.
 
 **Specification**
 
-| Property           | Value                                          |
-| ------------------ | ---------------------------------------------- |
-| Mark stroke        | 5.5u, round caps                               |
-| Mark height        | = cap height of the D                          |
-| Gap (mark to word) | 0.3 x mark height                              |
-| Word size          | 0.87 x mark height; 0.52 when stacked          |
-| Small cut          | <= 24px: stroke 7, wider break — see §Two cuts |
-| Clear space        | 16u from the tail — a LAYOUT rule              |
+| Property           | Value                                     |
+| ------------------ | ----------------------------------------- |
+| Mark stroke        | 5.5u, round caps                          |
+| Mark height        | = cap height of the D                     |
+| Gap (mark to word) | 0.3 x mark height                         |
+| Word size          | 0.87 x mark height; 0.52 when stacked     |
+| Small cut          | <= 24px: own 16-unit grid — see §Two cuts |
+| Clear space        | 16u from the tail — a LAYOUT rule         |
 
 Clear space is the one row the component cannot enforce. The viewBox
 pads 3u left and 5u top, which is bleed room for the round caps, not
@@ -132,29 +132,46 @@ two paths into a single closed shape. An overlap does not resolve by
 scaling, so the envelope read closed at _every_ size — this was a
 construction defect in the mark, not a small-size artefact.
 
-Clearance below is the minimum centreline distance from the tail to a
-frame endpoint, minus one stroke width (half a round cap each side).
-Negative means the strokes overlap. Canvas is `viewBox="-3 -5 71 71"`.
+Clearance is the minimum centreline distance from the tail to a frame
+endpoint, minus one stroke width (half a round cap each side). It is
+quoted in **device pixels at the size each cut is actually used** —
+compact at 16px, regular at 64px. Path units are not comparable
+between the cuts, because they no longer share a grid, and pixels are
+the unit legibility is decided in anyway: below roughly 1px of paper,
+antialiasing merges two strokes into a grey smudge.
 
-| Cut                     | Stroke  | Upper cap  | Lower cap  | Frame box  | Separated |
-| ----------------------- | ------- | ---------- | ---------- | ---------- | --------- |
-| compact, as handed off  | 7.5     | −0.03u     | −1.98u     | 46×33u     | no, both  |
-| compact, as first drawn | 7       | +0.47u     | −1.48u     | 46×33u     | no, lower |
-| **compact, adopted**    | **7**   | **+1.12u** | **+1.75u** | **48×32u** | **yes**   |
-| regular, as first drawn | 5.5     | +2.32u     | −0.33u     | 48×34u     | no, lower |
-| **regular, adopted**    | **5.5** | **+4.15u** | **+2.04u** | **48×34u** | **yes**   |
+| Cut                       | Grid | Stroke  | Upper cap   | Lower cap   | Reads open   |
+| ------------------------- | ---- | ------- | ----------- | ----------- | ------------ |
+| compact, as handed off    | 71u  | 7.5     | −0.01px     | −0.45px     | no, fused    |
+| compact, as first drawn   | 71u  | 7       | +0.11px     | −0.33px     | no, fused    |
+| compact, first correction | 71u  | 7       | +0.25px     | +0.39px     | no, a smudge |
+| **compact, adopted**      | 16u  | **2**   | **+2.00px** | **+1.80px** | **yes**      |
+| regular, as first drawn   | 71u  | 5.5     | +2.09px     | −0.30px     | no, fused    |
+| **regular, adopted**      | 71u  | **5.5** | **+3.74px** | **+1.84px** | **yes**      |
 
-**The adopted compact cut** — top edge stops at x=40 (was 44), right
-edge resumes at y=30 (was 28), corner radius 7→9. The frame box moves
-46×33u → 48×32u, a 4% proportion change scoped to the compact cut.
-Stroke, fold, exit angle and both colours are unchanged.
+**The compact cut has its own grid.** It is drawn on `viewBox="0 0 16
+16"`, so one unit is one device pixel at favicon size. Every coordinate
+is a whole pixel and the stroke sits on integer centrelines, so a 2px
+stroke covers whole pixels instead of straddling two and greying out.
+Scaling the 71-unit drawing down can never land that way.
 
-    frame  M40 18H13a9 9 0 0 0-9 9v14a9 9 0 0 0 9 9h30a9 9 0 0 0 9-9V30
-    tail   M8 24L28 38L58 14
-    stroke-width 7   linecap round   linejoin round
+    frame  M7 4H4A2 2 0 0 0 2 6V11A2 2 0 0 0 4 13H10A2 2 0 0 0 12 11V10
+    tail   M1 5L7 9L15 3
+    stroke-width 2   linecap round   linejoin round
 
-**Stroke 7 stands; 7.5 is retired.** This settles the disagreement
-between the handoff exports (7.5) and the component (7) in favour of 7. 7.5 is strictly the worse value — it collides at _both_ caps.
+**A wider break, not a heavier stroke.** This is the correction to the
+correction. The first pass nudged the 71-unit drawing a few units and
+bumped the stroke 5.5→7, which cleared the overlap as geometry but left
+0.25px of paper — invisible. Stroke weight is the wrong lever entirely:
+it grows on the frame cap and on the tail together, so every unit of
+weight spends a unit of clearance from both sides at once. Opening the
+break is the only lever that buys clearance, and on the 16 grid it buys
+8× as much.
+
+**Stroke 7 and 7.5 are both retired**, along with the argument between
+them — that disagreement was over the wrong variable. The tail keeps
+the regular cut's entry and exit angles to within 2°, so the two cuts
+read as one mark at different optical sizes rather than two drawings.
 
 **The regular cut is corrected too.** It carried the same defect
 (−0.33u at the lower cap, a hairline weld at −0.85 device px at 180px)
@@ -274,24 +291,19 @@ asserted, so a silent redraw fails the suite instead of shipping.
   letter-spaced text treatment, not the wordmark. Whether the OG card
   should carry the actual mark is a separate, open question.
 
-## Open — the mark is not yet solved at 16px
+## Resolved — why there are two cuts, not one
 
-Both cuts now clear at both caps as geometry, and that was the right
-fix — it removed a real overlap. It does not yet deliver a legible
-favicon. Sampled from rendered pixels, the break corridor peaks at 180
-(compact) and 209 (regular) out of 250 at 16px: a lighter smudge, not
-an opening. Clean paper needs ~4.44u of clearance at 16px and the
-compact cut has 1.12u, so it is roughly 4× short.
+The two-cut rule was challenged on the theory that a form solved at
+16px first would scale up and make the second cut unnecessary. It was
+tested and the theory is wrong. A cut with a break wide enough to read
+at 16px turns the envelope into a bracket-and-tick at 180px; the
+regular cut, which reads correctly at 180px, smudges at 16px. The two
+requirements are genuinely incompatible, so two cuts are load-bearing
+and the card lockup being a third is defensible rather than a smell.
 
-The cause is the process, not the drawing. The mark was drawn at 64px
-and the small sizes derived afterwards, which is what produced a second
-cut, then a third for the card, then a weld nobody caught. A form
-solved at 16px first and scaled up would likely need **one** cut, and
-would retire the two-cut rule, the clearance tests and the
-compact/regular raster split together.
-
-Until that pass lands, treat the geometry here as correct-but-not-final
-below 24px.
+What was wrong was never the count. It was that the compact cut had
+been _derived_ from the large drawing by nudging coordinates, instead
+of being solved on its own grid. It is now solved on its own grid.
 
 ## Open — the card lockup is not yet specified
 

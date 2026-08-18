@@ -59,20 +59,24 @@ const pair = ([light, dark]: [string, string]) =>
  * The mark is drawn at two cuts, swapped on `size` rather than scaling one
  * drawing down (ADR-0036).
  *
- * The compact cut is not the regular cut thickened. It carries a wider
- * break and a longer corner radius so the tail passes through the opening
- * without touching either frame cap. That clearance is measurable, and
- * `logo.test.tsx` measures it — including the regular cut's known -0.33u
- * * Both cuts clear at both caps. The regular cut was welded too until D255
- * measured it (-0.33u); it is corrected here rather than carried as debt,
- * because nothing had shipped it and it measures better at every size.
+ * Each cut has its own viewBox, and that is the point. The compact cut is
+ * drawn on a 16-unit grid so one unit IS one device pixel at favicon size:
+ * every coordinate below is a whole pixel, so a 2px stroke on an integer
+ * centreline covers whole pixels instead of straddling two and greying out.
+ * The regular cut keeps the 71-unit canvas it was drawn on.
+ *
+ * Both cuts were welded until D255 measured them; both now clear at both
+ * caps. What buys the small-size opening is a WIDER BREAK, not a heavier
+ * stroke — weight grows on the frame cap and on the tail together, so it
+ * spends clearance from both sides at once. `logo.test.tsx` measures that
+ * clearance in device pixels, the only unit the eye actually cares about.
  */
 function Mark({ size, tone }: { size: number; tone: LogoTone }) {
   const c = TONES[tone];
   const heavy = size <= 24;
   return (
     <svg
-      viewBox="-3 -5 71 71"
+      viewBox={heavy ? '0 0 16 16' : '-3 -5 71 71'}
       width={size}
       height={size}
       fill="none"
@@ -83,7 +87,7 @@ function Mark({ size, tone }: { size: number; tone: LogoTone }) {
       <path
         d={
           heavy
-            ? 'M40 18H13a9 9 0 0 0-9 9v14a9 9 0 0 0 9 9h30a9 9 0 0 0 9-9V30'
+            ? 'M7 4H4A2 2 0 0 0 2 6V11A2 2 0 0 0 4 13H10A2 2 0 0 0 12 11V10'
             : 'M42 16H11a7 7 0 0 0-7 7v20a7 7 0 0 0 7 7h34a7 7 0 0 0 7-7V30'
         }
         // The attribute is the fallback: a browser without `light-dark()`
@@ -91,14 +95,14 @@ function Mark({ size, tone }: { size: number; tone: LogoTone }) {
         // than on `none`.
         stroke={c.frame[0]}
         style={{ stroke: pair(c.frame) }}
-        strokeWidth={heavy ? 7 : 5.5}
+        strokeWidth={heavy ? 2 : 5.5}
         strokeLinecap="round"
       />
       <path
-        d={heavy ? 'M8 24L28 38L58 14' : 'M7 21.5L30 37.5L61 13.5'}
+        d={heavy ? 'M1 5L7 9L15 3' : 'M7 21.5L30 37.5L61 13.5'}
         stroke={c.accent[0]}
         style={{ stroke: pair(c.accent) }}
-        strokeWidth={heavy ? 7 : 5.5}
+        strokeWidth={heavy ? 2 : 5.5}
         strokeLinecap="round"
         strokeLinejoin="round"
       />

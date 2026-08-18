@@ -107,9 +107,14 @@ export const DarkMode: Story<typeof Logo> = {
 };
 
 /**
- * Size ladder — the two-cut swap happens between 24 and 25px. Anything
- * at or below 24 uses the heavy geometry (stroke 7, shorter tail,
- * wider gap); above it uses the regular cut (stroke 5.5).
+ * Size ladder — the two-cut swap happens between 24 and 25px. At or below
+ * 24 the mark uses the compact cut, drawn on its own 16-unit grid so one
+ * unit is one device pixel (stroke 2, wide break); above it the regular
+ * cut on the 71-unit canvas (stroke 5.5).
+ *
+ * The two are not the same drawing at two weights. The compact cut opens
+ * its break far wider, because a break narrower than ~1 device pixel
+ * antialiases into a smudge — see ADR-0036 §Two cuts.
  */
 export const SizeLadder: Story<typeof Logo> = {
   args: { variant: 'mark' },
