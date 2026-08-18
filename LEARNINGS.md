@@ -1338,3 +1338,23 @@ event. For draft-related types, that means a `draft` condition must
 exist somewhere first.
 **Distillation trigger:** promote to CLAUDE.md §5 if a third
 retrigger-waste entry lands (this is the second, after `edited`).
+
+## 2026-08-18 — esquery indexed-arg selectors silently match everything
+
+**Context:** adding the `no-restricted-syntax` ban on
+`toLocale*String(undefined|no-arg)` in `apps/web/src/features` (PR #548).
+**Finding:** the selector `[arguments.0.name='undefined']` does not index
+into the arguments array — it matched EVERY call, including correctly
+pinned `toLocaleDateString('en-US', …)`. The blind-case canary (a scratch
+file with both violations and pinned calls, expecting exact hits + exit 1)
+caught it; the working form is the field syntax
+`CallExpression[…] > Identifier.arguments[name='undefined']`. Bonus
+finding: `next build` runs ESLint, so a features-scoped syntax ban is
+also a production build gate — a planted violation fails the build, not
+just `pnpm lint`.
+**Rule (provisional):** never ship a `no-restricted-syntax` selector
+without a canary file proving both halves: it fires on the violation AND
+stays silent on the compliant form.
+**Distillation trigger:** promote to CLAUDE.md §8 (guard blind-case
+testing) if a third selector/guard blind-spot entry lands (UI-truth
+memory already holds the first).

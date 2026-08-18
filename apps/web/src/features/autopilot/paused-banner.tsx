@@ -105,13 +105,21 @@ export function PausedBanner({ rules }: { rules: AutopilotRuleDto[] }) {
   );
 }
 
-/** Compact human-readable date for the banner. Matches the senders Detail "last reviewed" eyebrow. */
-function formatPauseDate(iso: string): string {
+/**
+ * Compact human-readable date for the banner. Matches the senders
+ * Detail "last reviewed" eyebrow. Locale pinned for consistency with
+ * every other label (the line is gated on `now !== null`, so it never
+ * reaches server HTML); the zone stays the browser's, and tests pass
+ * an explicit one for exact-string determinism. Exported for the unit
+ * test.
+ */
+export function formatPauseDate(iso: string, timeZone?: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    timeZone,
   });
 }

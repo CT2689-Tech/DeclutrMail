@@ -4,7 +4,12 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import type { LaterReturnRecoverySummary } from '@declutrmail/shared/contracts';
 import { ApiError } from '@/lib/api/client';
 
-import { LaterReturnAlert } from './later-return-alert';
+import { formatAttempt, LaterReturnAlert } from './later-return-alert';
+
+vi.mock('@/features/auth/api/use-me', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useUserTimeZone: () => 'Asia/Kolkata',
+}));
 
 const state: {
   summary: LaterReturnRecoverySummary | undefined;
@@ -51,7 +56,10 @@ describe('LaterReturnAlert', () => {
     render(<LaterReturnAlert enabled />);
 
     expect(screen.getByRole('alert')).toHaveTextContent(/could not be confirmed/i);
-    expect(screen.getByRole('alert')).toHaveTextContent(/Last tried/i);
+    // Exact string: this banner is server-rendered into hydrated HTML
+    // on every app route, so the label must be identical on the server
+    // and in any browser locale/zone (React #418; e2e hydration-smoke).
+    expect(screen.getByRole('alert')).toHaveTextContent('Last tried Jul 14, 2026, 3:31 PM.');
     fireEvent.click(screen.getByRole('button', { name: 'Try return now' }));
     expect(mutate).toHaveBeenCalledWith({ senderId: 'sender-1' });
   });
@@ -89,5 +97,16 @@ describe('LaterReturnAlert', () => {
     state.wakeError = new ApiError(503, {}, 'unavailable');
     render(<LaterReturnAlert enabled />);
     expect(screen.getByText(/return queue isn't available/i)).toBeInTheDocument();
+  });
+});
+
+describe('formatAttempt', () => {
+  it('renders the exact pinned label in the user zone, never the machine zone', () => {
+    expect(formatAttempt('2026-07-14T10:01:00.000Z', 'Asia/Kolkata')).toBe('Jul 14, 2026, 3:31 PM');
+    expect(formatAttempt('2026-07-14T10:01:00.000Z', 'UTC')).toBe('Jul 14, 2026, 10:01 AM');
+  });
+
+  it('degrades honestly on an unparseable stamp', () => {
+    expect(formatAttempt('not-a-time', 'UTC')).toBe('at an unknown time');
   });
 });

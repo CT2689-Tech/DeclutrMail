@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { tokens } from '@declutrmail/shared';
 
+import { ME_QUERY_KEY, type Me } from '@/features/auth/api/use-me';
 import type {
   ActivityRowWire,
   ActivitySourceFilterWire,
@@ -19,6 +20,30 @@ import type {
 
 import { activityKeys } from './api/query-keys';
 import { ActivityScreen } from './activity-screen';
+
+// Fixtures below use machine-local Date math; seed the me cache with
+// the machine zone so `useUserTimeZone()` labels (undo-expiry tooltip)
+// match what the fixtures depict instead of the 'UTC' fallback (D210).
+const STORY_ME: Me = {
+  user: {
+    id: 'u-story',
+    email: 'story@example.com',
+    workspaceId: 'w-story',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+  },
+  activeMailboxId: 'mb-story',
+  mailboxes: [
+    {
+      id: 'mb-story',
+      email: 'story@example.com',
+      status: 'active',
+      connectedAt: null,
+      readiness: 'ready',
+    },
+  ],
+  tier: 'pro',
+  cleanupRemaining: null,
+};
 
 type StoryMeta<C extends (...args: never) => unknown> = {
   title: string;
@@ -192,6 +217,7 @@ function makeClient(
       queries: { retry: false, retryOnMount: false, staleTime: Infinity, gcTime: Infinity },
     },
   });
+  client.setQueryData(ME_QUERY_KEY, STORY_ME);
   if (rows) {
     // U27 — `useActivity` is an infinite query; the cache entry is
     // InfiniteData ({ pages, pageParams }), one page per envelope.

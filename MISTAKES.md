@@ -3016,3 +3016,24 @@ invisible; bodiless 401 → status visible). `icons.controller.spec.ts`
 asserts both a rejected request and an unexpected failure carry a
 readable status, no JSON content-type and an empty body; both verified to
 fail without the filter.
+
+## 2026-08-18 — Hydration sweep defined the class by one API shape
+
+**PR:** #548
+**Caught by:** design-system-agent gate (local run)
+**What happened:** the D200 hydration-determinism sweep enumerated the
+class as `toLocale*String` call sites and built the lint ban from the
+same regex — so the equivalent `new Intl.DateTimeFormat(undefined, …)`
+constructor form passed both, and one instance (`formatDate` in the
+grace-period banner) renders into server HTML on every authenticated
+route. The e2e smoke could not catch it either: the banner renders
+null unless a deletion is pending, which the smoke account never has.
+**Correct approach:** define a class by its FAILURE MODE (any
+formatter that reads the runtime locale/zone), then enumerate every
+API shape with that failure mode (`toLocale*String`, `Intl.DateTimeFormat`,
+`Intl.NumberFormat`, …) before sweeping or writing the guard.
+**Rule:** a guard built from the grep that found the instances only
+bans the shapes you already found — derive the ban from the failure
+mode, not from the sweep pattern.
+**Enforcement update:** lint rule extended to `Intl.*Format(undefined, …)`
+and its fence widened to `apps/web/src/**` (8bc2966a).

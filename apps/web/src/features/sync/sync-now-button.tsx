@@ -197,7 +197,7 @@ export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } 
           // Collapsed below `sm` so the topbar keeps the account switcher
           // fully on-screen on a phone (the sync button stays as icon-only).
           className="dm-topbar-collapse"
-          title={`Last synced ${new Date(lastSyncedAt).toLocaleString()}`}
+          title={`Last synced ${new Date(lastSyncedAt).toLocaleString('en-US')}`}
           style={{
             fontFamily: font.mono,
             fontSize: 10.5,

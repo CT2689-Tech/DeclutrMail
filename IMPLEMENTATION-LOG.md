@@ -255,7 +255,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D197 | Custom rule builder UI deferred to V2.1, with full architectural readiness at launch (reverses D196, refines D192) | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule returns null for is_preset=false → 404 (UI deferral enforced at API) |  |
 | D198 | Headless hooks for behavior, feature-owned components for rendering (resolves D36/D50/D57 implicit duplication) | 🟢 | #29, #184 | apps/web/src/features/triage/store.test.ts — D198 accordion |  |
 | D199 | Lazy promotion + spec override (component/utility placement rule) | 🔵 | #29 |  |  |
-| D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🟢 | #29, #45, #50, #544 | apps/web/src/features/triage/store.test.ts — Zustand client state |  |
+| D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🟢 | #29, #45, #50, #544, #548 | apps/web/src/features/triage/store.test.ts — Zustand client state |  |
 | D201 | API + Worker architecture: Standard NestJS modules + Adapter pattern at external boundaries | 🟢 | #37 | apps/web/src/lib/api/client.test.ts |  |
 | D202 | API response envelope + cursor pagination | 🟢 | #37, #113, #502, #498 | apps/api/src/senders/senders.controller.spec.ts — D202 envelope |  |
 | D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | 🟢 | #49 | packages/workers/src/base-declutr-worker.test.ts |  |
