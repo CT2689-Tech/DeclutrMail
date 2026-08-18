@@ -388,16 +388,6 @@ const SENTRY_SERVER_TAG_ALLOWLIST = new Set([
   // reached Sentry as a bare class name and took a production database
   // query to identify.
   'error_reason',
-  // Which pipeline died, and which parked row to replay. Both are the
-  // dead-letter alert's only discriminators once `Error.message` is
-  // stripped: `queue` is a closed internal set of BullMQ queue names,
-  // `dead_letter_id` a random row UUID carrying no user data. Added
-  // 2026-08-18 — `dead-letter.worker.ts` had been passing both since it
-  // was written, and both were being dropped here, so 3,095 events
-  // across three unrelated failure kinds shared one issue titled
-  // "Error" with nothing to tell them apart (DECLUTRMAIL-WEB-R).
-  'queue',
-  'dead_letter_id',
 ]);
 const SENTRY_BREADCRUMB_CATEGORIES = new Set([
   'sync',
@@ -418,6 +408,54 @@ const SENTRY_BREADCRUMB_DATA_KEYS = new Set([
 const SENTRY_BREADCRUMB_VERBS = new Set(['keep', 'archive', 'unsubscribe', 'later', 'delete']);
 const SENTRY_LEVELS = new Set(['fatal', 'error', 'warning', 'info', 'debug', 'log']);
 /**
+ * Sentry LOG severities. Deliberately a separate set from
+ * `SENTRY_LEVELS`: the log protocol uses `warn`/`trace`, the event
+ * protocol uses `warning`/`log`. Reusing one set would silently drop
+ * every warn-level log.
+ */
+const SENTRY_LOG_LEVELS = new Set(['trace', 'debug', 'info', 'warn', 'error', 'fatal']);
+/**
+ * The closed set of notices allowed on the Sentry LOGS channel.
+ *
+ * A log is not an error. These are recorded-state notifications —
+ * `dead_letter.parked` announces a row that is already durable in
+ * `dead_letter_jobs`; `email.refused_no_postal_address` is a DESIGNED
+ * refusal (CAN-SPAM §316.5). Neither is a crash, and both were consuming
+ * the errors quota, which is the only Sentry budget that runs out: at the
+ * 2026-08-18 incident errors sat at 4,000/5,000 while logs sat at 0 of
+ * 5 GB.
+ *
+ * Deny-by-default: a log whose `kind` is not here never leaves the
+ * process. Adding a kind is the same kind of decision as adding a tag to
+ * `SENTRY_SERVER_TAG_ALLOWLIST` — it must be a closed enum, never a
+ * caller-supplied string.
+ */
+const SENTRY_LOG_KINDS = new Set(['dead_letter.parked', 'email.refused_no_postal_address']);
+/**
+ * Attributes a log may carry. Same posture and same value gate as
+ * `SENTRY_SERVER_TAG_ALLOWLIST` — ids and closed enums only, never prose.
+ *
+ * `email_kind` and `outcome` are here because the refusal call site has
+ * been passing them (as `emailKind`/`outcome`) since it was written and
+ * the event-tag allowlist never carried them, so they were being dropped
+ * exactly like `queue` was (#546).
+ */
+const SENTRY_LOG_ATTRIBUTE_ALLOWLIST = new Set([
+  'kind',
+  'queue',
+  'dead_letter_id',
+  'job_id',
+  'worker',
+  'policy',
+  'mailbox_account_id',
+  'email_kind',
+  'outcome',
+  'failed_at',
+  // WHICH error class parked the row. With `queue` this is the whole
+  // diagnosis; a bare class name is not prose and cannot carry content.
+  'error_class',
+]);
+/**
  * Server error classes (thrown by workers/API): named so the exception
  * `type` survives the rebuild — the stacktrace identifies the site, the
  * type identifies the class of failure. `value` (Error.message) stays
@@ -431,7 +469,6 @@ const SENTRY_SERVER_EXCEPTION_TYPES = new Set([
   'RateLimitError',
   'InvalidGrantError',
   'EmailRaceLostError',
-  'DeadLetterParkedError',
   'ReplyError',
   'ZodError',
 ]);
@@ -707,6 +744,49 @@ function scrubSentryBreadcrumbData(value: unknown): Record<string, unknown> | un
     if (count !== undefined) data[key] = count;
   }
   return Object.keys(data).length > 0 ? data : undefined;
+}
+
+/**
+ * Deny-by-default scrubber for the Sentry LOGS channel (`beforeSendLog`).
+ *
+ * `beforeSend` does NOT run on logs. Enabling logs without this would
+ * open a second, unscrubbed egress path to Sentry — and a log's
+ * `message` is free text, the exact hazard `Error.message` is stripped
+ * for (it could carry a subject line or an address).
+ *
+ * So the message is never passed through: it is RECONSTRUCTED from an
+ * allowlisted `kind`, the same technique `scrubSentryBreadcrumb` uses for
+ * its category. A log's text can therefore only ever be one of the
+ * strings in `SENTRY_LOG_KINDS` — there is no free-text path at all, no
+ * matter what a caller writes.
+ *
+ * Returns `null` (drop the log) unless it carries a recognised `kind`.
+ */
+export function scrubSentryLog(
+  log: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!log) return null;
+  try {
+    const rawAttributes = isPlainObject(log.attributes) ? log.attributes : {};
+    const kind = typeof rawAttributes.kind === 'string' ? rawAttributes.kind : '';
+    if (!SENTRY_LOG_KINDS.has(kind)) return null;
+
+    const attributes: Record<string, unknown> = {};
+    for (const key of SENTRY_LOG_ATTRIBUTE_ALLOWLIST) {
+      const value = copyString(rawAttributes[key], SAFE_SERVER_TAG, 64);
+      if (value !== undefined) attributes[key] = value;
+    }
+
+    return {
+      // Static label, NOT `log.message`. This is the privacy boundary.
+      message: kind,
+      level:
+        typeof log.level === 'string' && SENTRY_LOG_LEVELS.has(log.level) ? log.level : 'error',
+      attributes,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**

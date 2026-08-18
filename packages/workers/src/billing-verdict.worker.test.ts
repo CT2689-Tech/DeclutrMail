@@ -151,6 +151,7 @@ describe('BillingVerdictWorker', () => {
     const observer: WorkerObserver = {
       captureFailure: () => {},
       captureBackgroundFailure: (error, ctx) => captured.push({ error, kind: ctx.kind }),
+      recordBackgroundNotice: () => {},
     };
     const worker = new BillingVerdictWorker({ db: db as never, ...seams });
     worker.setObserver(observer);

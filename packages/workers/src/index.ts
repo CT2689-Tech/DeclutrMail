@@ -3,12 +3,12 @@ export type { WorkerContext } from './worker-context.js';
 export { NOOP_WORKER_OBSERVER } from './worker-observer.js';
 export type {
   BackgroundFailureContext,
+  BackgroundNoticeContext,
   WorkerFailureContext,
   WorkerObserver,
 } from './worker-observer.js';
 export {
   AuthExpiredError,
-  DeadLetterParkedError,
   InvalidGrantError,
   isNonRetryable,
   PermanentError,
