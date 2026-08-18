@@ -24,6 +24,33 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-18 — Publish the new Google OAuth consent logo
+
+**Source:** session — D255 brand rollout
+**Why:** `docs/brand/oauth-consent-logo-120.png` now carries the real mark
+instead of the D134 placeholder, but the file in the repo changes nothing
+on its own. Until it is uploaded and published, the Google sign-in screen
+— the first thing a new user sees, before they trust you with Gmail
+access — still shows the placeholder.
+**How:** Cloud Console → APIs & Services → OAuth consent screen → Branding
+→ upload `docs/brand/oauth-consent-logo-120.png` → **Verify Branding** →
+**Publish branding**.
+
+Two things to know before starting. This triggers *brand* verification
+only — minutes if automated, 2–3 business days if it goes to manual
+review. It does NOT trigger app/scope verification or CASA, because the
+Gmail restricted scopes are unchanged. The live consent screen keeps
+working throughout; the change sits in Draft Branding and is invisible to
+users until published.
+
+**The trap:** a compliant verification result is valid for **7 days**. If
+you do not click *Publish branding* inside that window, the status reverts
+to "Need to re-verify" and you run it again. So do not click Verify until
+you are ready to publish.
+**Verifies by:** Sign in to DeclutrMail with a fresh Google account; the
+consent screen shows the teal mark, not the two-bars-and-a-check card.
+**Status:** Open
+
 ### 2026-08-18 — OG cards render in Noto Sans, not Fraunces
 
 **Source:** session — D255 brand rollout
