@@ -338,6 +338,101 @@ describe('scrubSentryEvent — server profile (D158)', () => {
   });
 });
 
+/**
+ * Server stack frames (D159, 2026-08-18).
+ *
+ * `sanitizeFrameUrl` only ever matched `/_next/static/**` — a BROWSER
+ * pattern — so every server frame lost its filename, and `function` was
+ * copied in neither profile. Every server stacktrace in Sentry read
+ * `at <unknown> (<unknown>:566:32)`. The old test asserted only that
+ * `stacktrace` was DEFINED, which `{lineno, colno}` alone satisfies — so
+ * it passed while the trace was useless. These assert legibility, and
+ * (mostly) that widening the gate did not widen the leak.
+ */
+describe('scrubSentryEvent — server stack frames', () => {
+  function framesOf(frames: unknown[], profile: 'server' | 'browser' = 'server') {
+    const out = scrubSentryEvent(
+      {
+        event_id: 'a'.repeat(32),
+        exception: { values: [{ type: 'PermanentError', stacktrace: { frames } }] },
+      },
+      profile,
+    );
+    const exc = (out?.exception as { values: Record<string, unknown>[] } | undefined)?.values?.[0];
+    return (exc?.stacktrace as { frames: Record<string, unknown>[] } | undefined)?.frames;
+  }
+
+  it('keeps the filename and function of a server frame', () => {
+    const frames = framesOf([
+      {
+        filename: '/app/dist/worker.js',
+        function: 'DeadLetterWorker.processJob',
+        lineno: 566,
+        colno: 32,
+        in_app: true,
+      },
+    ]);
+    expect(frames?.[0]).toEqual({
+      filename: 'app:///dist/worker.js',
+      function: 'DeadLetterWorker.processJob',
+      lineno: 566,
+      colno: 32,
+      in_app: true,
+    });
+  });
+
+  it('keeps a node_modules frame so the vendor boundary stays visible', () => {
+    const frames = framesOf([
+      { filename: '/app/node_modules/bullmq/dist/classes/worker.js', function: 'Worker.run' },
+    ]);
+    expect(frames?.[0]?.filename).toBe('app:///node_modules/bullmq/dist/classes/worker.js');
+  });
+
+  it('the browser profile does NOT gain server paths', () => {
+    const frames = framesOf([{ filename: '/app/dist/worker.js', lineno: 5 }], 'browser');
+    expect(frames?.[0]).toEqual({ lineno: 5 });
+  });
+
+  // --- the gate, not the feature -------------------------------------
+
+  it('rejects a path carrying an address', () => {
+    const frames = framesOf([{ filename: '/app/dist/someone@example.com.js', lineno: 1 }]);
+    expect(frames?.[0]).toEqual({ lineno: 1 });
+  });
+
+  it('rejects a PERCENT-ENCODED address — decoded before the charset test', () => {
+    const frames = framesOf([{ filename: '/app/dist/someone%40example.com.js', lineno: 1 }]);
+    expect(frames?.[0]).toEqual({ lineno: 1 });
+  });
+
+  it('drops a query string instead of shipping it', () => {
+    const frames = framesOf([
+      { filename: '/app/dist/worker.js?subject=Re%3A%20your%20invoice', lineno: 1 },
+    ]);
+    expect(frames?.[0]?.filename).toBe('app:///dist/worker.js');
+    expect(JSON.stringify(frames)).not.toContain('invoice');
+  });
+
+  it('drops host and userinfo from an absolute URL', () => {
+    const frames = framesOf([{ filename: 'https://user:pw@evil.example/app/x.js', lineno: 1 }]);
+    expect(JSON.stringify(frames)).not.toContain('evil.example');
+    expect(JSON.stringify(frames)).not.toContain('pw');
+  });
+
+  it('rejects a non-code extension', () => {
+    const frames = framesOf([{ filename: '/app/dist/message.eml', lineno: 1 }]);
+    expect(frames?.[0]).toEqual({ lineno: 1 });
+  });
+
+  it('rejects a function name carrying prose or an address', () => {
+    const frames = framesOf([
+      { filename: '/app/dist/worker.js', function: 'sendTo someone@example.com', lineno: 1 },
+    ]);
+    expect(frames?.[0]?.function).toBeUndefined();
+    expect(frames?.[0]?.filename).toBe('app:///dist/worker.js');
+  });
+});
+
 describe('scrubSentryEvent (deny-by-default browser wire policy)', () => {
   const LEAK = 'LEAK-MARKER-private.user@example.com';
   const EVENT_ID = '0123456789abcdef0123456789abcdef';

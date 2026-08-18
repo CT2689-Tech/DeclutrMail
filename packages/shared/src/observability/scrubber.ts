@@ -466,6 +466,37 @@ const SAFE_DIGEST = /^(?:\d{1,20}|[a-f0-9]{8,64})$/;
 const SAFE_RELEASE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:@[A-Za-z0-9][A-Za-z0-9._-]{0,127})?$/;
 const TRUSTED_NEXT_ASSET =
   /^\/_next\/static\/(chunks|css)\/.*(?:-|\.)([a-f0-9]{8,64})\.(js|css)$/iu;
+/**
+ * A server stack frame's source path.
+ *
+ * `sanitizeFrameUrl` only ever matched `/_next/static/**` — a BROWSER
+ * pattern — so every server frame lost its filename and arrived as a bare
+ * `lineno:colno`. Combined with `function` never being copied, every
+ * server stacktrace in Sentry read `at <unknown> (<unknown>:566:32)`: a
+ * line number, in an unknown file, in an unknown function. Triaging the
+ * 2026-08-18 drift-sweep incident took an hour of tag arithmetic for want
+ * of this (D159).
+ *
+ * A source path is a compile-time constant of OUR OWN build output — it
+ * cannot contain an email address, a subject, or any user text, so
+ * keeping it costs nothing against D7. The pattern stays deliberately
+ * narrow anyway: a relative-looking path, a conservative charset, a
+ * JS/TS extension, and NO query string, host, or userinfo (checked via
+ * `URL` in `sanitizeFrameUrl`) so a frame cannot smuggle data in a path.
+ */
+const SAFE_SERVER_FRAME_PATH =
+  /^\/?(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.(?:js|mjs|cjs|ts|mts|cts)$/u;
+/**
+ * A stack frame's function name — `processJob`, `Worker.run`,
+ * `async DeadLetterWorker.processJob`, `Object.<anonymous>`.
+ *
+ * Also a source-level identifier, never user data, and the other half of
+ * why frames were unreadable: it was copied in NEITHER profile. The
+ * charset admits the punctuation V8 puts in a frame name and nothing
+ * else — no quotes, no '@', no whitespace beyond the single space in
+ * `async`/`new` prefixes.
+ */
+const SAFE_FRAME_FUNCTION = /^[A-Za-z0-9_$.<>[\] ]{1,120}$/u;
 
 function copyString(value: unknown, pattern: RegExp, maxLength: number): string | undefined {
   if (typeof value !== 'string' || value.length === 0 || value.length > maxLength) return undefined;
@@ -487,16 +518,28 @@ function copyNonNegativeInteger(value: unknown): number | undefined {
  * user data or capability tokens. Debug IDs preserve source-map resolution, so
  * a frame needs only its asset kind and immutable content hash on the wire.
  */
-function sanitizeFrameUrl(value: unknown): string | undefined {
+function sanitizeFrameUrl(value: unknown, profile: SentryScrubProfile): string | undefined {
   if (typeof value !== 'string' || value.length === 0 || value.length > 4_096) return undefined;
 
   try {
+    // Parsing first is what makes the path safe to keep: anything with a
+    // host, userinfo, query, or fragment is reduced to its pathname here,
+    // so those can never ride along even if the charset would allow them.
     const parsed = new URL(value, 'https://declutrmail.invalid');
     const match = TRUSTED_NEXT_ASSET.exec(parsed.pathname);
-    if (!match) return undefined;
-    const [, kind, hash, extension] = match;
-    if (!kind || !hash || !extension) return undefined;
-    return `app:///_next/static/${kind.toLowerCase()}/${hash.toLowerCase()}.${extension.toLowerCase()}`;
+    if (match) {
+      const [, kind, hash, extension] = match;
+      if (!kind || !hash || !extension) return undefined;
+      return `app:///_next/static/${kind.toLowerCase()}/${hash.toLowerCase()}.${extension.toLowerCase()}`;
+    }
+    if (profile !== 'server') return undefined;
+    // Server build output — `/app/dist/worker.js`, `app:///worker.js`,
+    // `/app/node_modules/bullmq/…`. Normalised to `app:///<path>` so
+    // Sentry treats it as an application path (and so an uploaded source
+    // map can resolve it later).
+    const pathname = decodeURIComponent(parsed.pathname);
+    if (!SAFE_SERVER_FRAME_PATH.test(pathname)) return undefined;
+    return `app:///${pathname.replace(/^\/+/, '').replace(/^app\//, '')}`;
   } catch {
     return undefined;
   }
@@ -522,13 +565,28 @@ function scrubSentryMechanism(value: unknown): Record<string, unknown> | undefin
   return out;
 }
 
-function scrubSentryFrame(value: unknown): Record<string, unknown> | undefined {
+function scrubSentryFrame(
+  value: unknown,
+  profile: SentryScrubProfile,
+): Record<string, unknown> | undefined {
   if (!isPlainObject(value)) return undefined;
 
   const out: Record<string, unknown> = {};
   for (const key of ['filename', 'abs_path'] as const) {
-    const path = sanitizeFrameUrl(value[key]);
+    const path = sanitizeFrameUrl(value[key], profile);
     if (path !== undefined) out[key] = path;
+  }
+  // The frame's function name — the other half of why server frames were
+  // unreadable: without it, even a frame that keeps its filename still
+  // renders `at <unknown>`. A source-level identifier, never user data.
+  //
+  // SERVER ONLY. The browser profile's narrowness is deliberate (it ships
+  // to a wire the user's own page can influence) and browser frame names
+  // are minified to `a`/`Kn` anyway, so widening it would add risk and no
+  // legibility.
+  if (profile === 'server') {
+    const fn = copyString(value.function, SAFE_FRAME_FUNCTION, 120);
+    if (fn !== undefined) out.function = fn;
   }
   for (const key of ['lineno', 'colno'] as const) {
     const coordinate = copyNonNegativeInteger(value[key]);
@@ -542,10 +600,13 @@ function scrubSentryFrame(value: unknown): Record<string, unknown> | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function scrubSentryStacktrace(value: unknown): Record<string, unknown> | undefined {
+function scrubSentryStacktrace(
+  value: unknown,
+  profile: SentryScrubProfile,
+): Record<string, unknown> | undefined {
   if (!isPlainObject(value) || !Array.isArray(value.frames)) return undefined;
   const frames = value.frames
-    .map((frame) => scrubSentryFrame(frame))
+    .map((frame) => scrubSentryFrame(frame, profile))
     .filter((frame): frame is Record<string, unknown> => frame !== undefined);
   return frames.length > 0 ? { frames } : undefined;
 }
@@ -564,7 +625,7 @@ function scrubSentryException(
       ? value.type
       : undefined;
   const mechanism = scrubSentryMechanism(value.mechanism);
-  const stacktrace = scrubSentryStacktrace(value.stacktrace);
+  const stacktrace = scrubSentryStacktrace(value.stacktrace, profile);
   if (type !== undefined) out.type = type;
   if (mechanism !== undefined) out.mechanism = mechanism;
   if (stacktrace !== undefined) out.stacktrace = stacktrace;
@@ -606,14 +667,17 @@ function scrubSentryDigest(value: unknown): Record<string, unknown> | undefined 
   return digest === undefined ? undefined : { digest };
 }
 
-function scrubSentryDebugMeta(value: unknown): Record<string, unknown> | undefined {
+function scrubSentryDebugMeta(
+  value: unknown,
+  profile: SentryScrubProfile,
+): Record<string, unknown> | undefined {
   if (!isPlainObject(value) || !Array.isArray(value.images)) return undefined;
   const images = value.images.flatMap((image) => {
     if (!isPlainObject(image)) return [];
     const type = copyString(image.type, SAFE_TOKEN, 64);
     const debugId = copyString(image.debug_id, SAFE_DEBUG_ID, 64);
     if (!type || !debugId) return [];
-    const codeFile = sanitizeFrameUrl(image.code_file);
+    const codeFile = sanitizeFrameUrl(image.code_file, profile);
     return [
       { type, debug_id: debugId, ...(codeFile === undefined ? {} : { code_file: codeFile }) },
     ];
@@ -718,7 +782,7 @@ export function scrubSentryEvent(
     if (tags !== undefined) out.tags = tags;
     const digest = scrubSentryDigest(event.extra);
     if (digest !== undefined) out.extra = digest;
-    const debugMeta = scrubSentryDebugMeta(event.debug_meta);
+    const debugMeta = scrubSentryDebugMeta(event.debug_meta, profile);
     if (debugMeta !== undefined) out.debug_meta = debugMeta;
 
     if (Array.isArray(event.breadcrumbs)) {
