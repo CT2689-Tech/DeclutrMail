@@ -40,18 +40,6 @@ export class InvalidGrantError extends Error {
   override readonly name = 'InvalidGrantError';
 }
 
-/**
- * Not a job failure — the DeadLetterWorker's alert that a job has parked
- * in `dead_letter_jobs`. A named class so the exception `type` survives
- * the Sentry scrubber: `Error.message` is stripped by design (D7), so a
- * plain `new Error` reaches Sentry as the bare word "Error" and groups
- * with every other unnamed failure. Read it with the `queue` +
- * `dead_letter_id` tags, which carry the detail the message cannot.
- */
-export class DeadLetterParkedError extends Error {
-  override readonly name = 'DeadLetterParkedError';
-}
-
 /** NOT retryable: the job payload is malformed — retrying cannot help. */
 export class ValidationError extends Error {
   override readonly name = 'ValidationError';

@@ -57,6 +57,29 @@ export interface BackgroundFailureContext {
 }
 
 /**
+ * Context for a NOTICE — something worth surfacing that is not a crash.
+ *
+ * The distinction is a budget decision as much as a semantic one. Sentry
+ * bills errors against a quota that runs out (4,000/5,000 at the
+ * 2026-08-18 incident) while logs sat at 0 of 5 GB. A `dead_letter.parked`
+ * alert announces a row that is ALREADY durable in `dead_letter_jobs`, and
+ * a postal-address refusal is a designed CAN-SPAM outcome; neither is an
+ * exception, and neither has a stack trace worth keeping (the frames point
+ * at the announcer, not a fault). They belong on the log channel.
+ *
+ * `kind` must be one of `SENTRY_LOG_KINDS` in the shared scrubber or the
+ * notice is dropped at the wire — deny-by-default, same as tags.
+ */
+export interface BackgroundNoticeContext {
+  /** Stable notice `kind` — must be allowlisted in the scrubber. */
+  kind: string;
+  /** Optional metric-only attributes (no D7-sensitive fields). */
+  tags?: Record<string, string | number>;
+  /** Severity; defaults to `warn`. Notices are never `fatal`. */
+  level?: 'info' | 'warn' | 'error';
+}
+
+/**
  * The seam every failure-capture path routes through. Implementations
  * must NEVER throw — a broken observer must not break the worker.
  */
@@ -65,6 +88,15 @@ export interface WorkerObserver {
   captureFailure(error: Error, ctx: WorkerFailureContext): void;
   /** Capture a failure from outside the BullMQ loop (called by the reconciler). */
   captureBackgroundFailure(error: Error, ctx: BackgroundFailureContext): void;
+  /**
+   * Record a non-exception notice on the LOGS channel.
+   *
+   * Required, not optional: an optional method invoked as `?.()` silently
+   * no-ops when a wiring mistake leaves it unset, which is the exact
+   * silent-failure class this codebase keeps relearning. A no-op
+   * implementation must be written down (see `NOOP_WORKER_OBSERVER`).
+   */
+  recordBackgroundNotice(ctx: BackgroundNoticeContext): void;
 }
 
 /**
@@ -78,4 +110,5 @@ export interface WorkerObserver {
 export const NOOP_WORKER_OBSERVER: WorkerObserver = {
   captureFailure() {},
   captureBackgroundFailure() {},
+  recordBackgroundNotice() {},
 };

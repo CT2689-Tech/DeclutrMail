@@ -1788,6 +1788,7 @@ describe('InitialSyncWorker — sync_runs history (F002)', () => {
     worker.setObserver({
       captureFailure: () => {},
       captureBackgroundFailure: (_err, ctx) => captured.push(ctx.kind),
+      recordBackgroundNotice: () => {},
     });
 
     const boom = new Error('quota exceeded');

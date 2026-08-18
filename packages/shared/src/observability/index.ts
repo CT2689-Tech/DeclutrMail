@@ -8,6 +8,7 @@ export {
   scrubObject,
   scrubSentryBreadcrumb,
   scrubSentryEvent,
+  scrubSentryLog,
   type SentryScrubProfile,
   scrubTelemetryPayload,
   scrubUrlDerived,

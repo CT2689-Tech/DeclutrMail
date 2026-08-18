@@ -317,9 +317,15 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
       // uniform: every known-unsent outcome parks AND reports. Without
       // the direct call, an unwired or failing recorder would leave
       // postal refusals with no Sentry signal at all.
-      this.observer.captureBackgroundFailure(new Error(refusal), {
+      // A NOTICE, not an exception: refusing to send is the DESIGNED
+      // outcome here (CAN-SPAM §316.5), and it is already parked above.
+      // `emailKind` was never in the event-tag allowlist so it had been
+      // silently dropped since this was written; `email_kind` is
+      // allowlisted on the log channel.
+      this.observer.recordBackgroundNotice({
         kind: 'email.refused_no_postal_address',
-        tags: { emailKind: payload.kind, outcome: 'skipped_no_postal_address' },
+        level: 'warn',
+        tags: { email_kind: payload.kind, outcome: 'skipped_no_postal_address' },
       });
       console.warn(
         JSON.stringify({

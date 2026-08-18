@@ -7,6 +7,7 @@ import type { DeadLetterEntry, DeadLetterRecorder } from './dead-letter.recorder
 import { InvalidGrantError, TransientError, ValidationError } from './worker-errors.js';
 import type {
   BackgroundFailureContext,
+  BackgroundNoticeContext,
   WorkerFailureContext,
   WorkerObserver,
 } from './worker-observer.js';
@@ -81,21 +82,27 @@ class TestWorker extends BaseDeclutrWorker<TestPayload, { ok: true }> {
   }
 }
 
-/** Recording observer — every call shows up in `captures` / `bgCaptures`. */
+/** Recording observer — every call shows up in `captures` / `bgCaptures` / `notices`. */
 function recordingObserver(): WorkerObserver & {
   captures: Array<{ error: Error; ctx: WorkerFailureContext }>;
   bgCaptures: Array<{ error: Error; ctx: BackgroundFailureContext }>;
+  notices: BackgroundNoticeContext[];
 } {
   const captures: Array<{ error: Error; ctx: WorkerFailureContext }> = [];
   const bgCaptures: Array<{ error: Error; ctx: BackgroundFailureContext }> = [];
+  const notices: BackgroundNoticeContext[] = [];
   return {
     captures,
     bgCaptures,
+    notices,
     captureFailure(error, ctx) {
       captures.push({ error, ctx });
     },
     captureBackgroundFailure(error, ctx) {
       bgCaptures.push({ error, ctx });
+    },
+    recordBackgroundNotice(ctx) {
+      notices.push(ctx);
     },
   };
 }
@@ -521,6 +528,7 @@ describe('BaseDeclutrWorker', () => {
           throw new Error('Sentry transport down');
         },
         captureBackgroundFailure() {},
+        recordBackgroundNotice() {},
       };
       worker.setObserver(broken);
 
@@ -648,6 +656,9 @@ describe('BaseDeclutrWorker', () => {
           throw new Error('Sentry transport down');
         },
         captureBackgroundFailure() {
+          throw new Error('Sentry transport down');
+        },
+        recordBackgroundNotice() {
           throw new Error('Sentry transport down');
         },
       };

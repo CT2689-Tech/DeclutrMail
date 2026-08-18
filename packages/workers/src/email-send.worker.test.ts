@@ -17,6 +17,7 @@ import {
 } from './email-send.queue.js';
 import { TransientError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
+import type { BackgroundNoticeContext } from './worker-observer.js';
 import { hasPostalAddress } from '@declutrmail/shared/copy';
 import type * as SharedCopy from '@declutrmail/shared/copy';
 
@@ -548,6 +549,7 @@ describe('EmailSendWorker', () => {
     worker.setObserver({
       captureFailure: () => {},
       captureBackgroundFailure: (_err, ctx) => captured.push(ctx),
+      recordBackgroundNotice: () => {},
     });
 
     await worker.processJob(jobData(userId), CTX);
@@ -604,9 +606,11 @@ describe('EmailSendWorker', () => {
         parked.push(entry.error);
       },
     });
+    const notices: BackgroundNoticeContext[] = [];
     worker.setObserver({
       captureFailure: () => {},
       captureBackgroundFailure: (_err, obsCtx) => captured.push(obsCtx),
+      recordBackgroundNotice: (ctx) => notices.push(ctx),
     });
 
     const res = await worker.processJob(
@@ -623,7 +627,19 @@ describe('EmailSendWorker', () => {
     // Uniform rule: every known-unsent outcome parks AND reports. Without
     // the direct call, an unwired or failing recorder would leave postal
     // refusals with no Sentry signal at all.
-    expect(captured.map((c) => c.kind)).toContain('email.refused_no_postal_address');
+    //
+    // It reports on the NOTICE channel: refusing to send is the DESIGNED
+    // outcome (CAN-SPAM §316.5), not a crash. The errors channel staying
+    // empty is the point — it is the quota that runs out.
+    expect(notices.map((n) => n.kind)).toContain('email.refused_no_postal_address');
+    expect(notices[0]?.level).toBe('warn');
+    // `email_kind`, not `emailKind` — the old key was never allowlisted, so
+    // it had been silently dropped at the wire since this was written.
+    expect(notices[0]?.tags).toMatchObject({
+      email_kind: 'sync-reminder-24h',
+      outcome: 'skipped_no_postal_address',
+    });
+    expect(captured.map((c) => c.kind)).not.toContain('email.refused_no_postal_address');
   });
 
   // The park path's own failure contract: a broken recorder must not turn
@@ -645,6 +661,7 @@ describe('EmailSendWorker', () => {
     worker.setObserver({
       captureFailure: () => {},
       captureBackgroundFailure: (_err, obsCtx) => captured.push(obsCtx.kind),
+      recordBackgroundNotice: () => {},
     });
 
     const res = await worker.processJob(jobData(userId), CTX);

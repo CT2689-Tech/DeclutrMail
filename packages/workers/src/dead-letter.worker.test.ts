@@ -21,6 +21,7 @@ import { ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 import type {
   BackgroundFailureContext,
+  BackgroundNoticeContext,
   WorkerFailureContext,
   WorkerObserver,
 } from './worker-observer.js';
@@ -39,21 +40,27 @@ async function freshDb() {
   return freshTestDb();
 }
 
-/** Recording observer — every call shows up in `captures` / `bgCaptures`. */
+/** Recording observer — every call shows up in `captures` / `bgCaptures` / `notices`. */
 function recordingObserver(): WorkerObserver & {
   captures: Array<{ error: Error; ctx: WorkerFailureContext }>;
   bgCaptures: Array<{ error: Error; ctx: BackgroundFailureContext }>;
+  notices: BackgroundNoticeContext[];
 } {
   const captures: Array<{ error: Error; ctx: WorkerFailureContext }> = [];
   const bgCaptures: Array<{ error: Error; ctx: BackgroundFailureContext }> = [];
+  const notices: BackgroundNoticeContext[] = [];
   return {
     captures,
     bgCaptures,
+    notices,
     captureFailure(error, ctx) {
       captures.push({ error, ctx });
     },
     captureBackgroundFailure(error, ctx) {
       bgCaptures.push({ error, ctx });
+    },
+    recordBackgroundNotice(ctx) {
+      notices.push(ctx);
     },
   };
 }
@@ -278,22 +285,27 @@ describe('dead-letter pipeline (D225)', () => {
       const first = await worker.processJob({ scheduledAtMinute: '2026-06-11T10:00' }, FAKE_CTX);
       expect(first.scanned).toBe(2);
       expect(first.alerted).toBe(2);
-      expect(obs.bgCaptures).toHaveLength(2);
-      // Sentry context carries identifying tags + a scannable title.
-      expect(obs.bgCaptures[0]?.ctx.kind).toBe('dead_letter.parked');
-      expect(obs.bgCaptures[0]?.ctx.tags).toMatchObject({ queue: 'initial-sync' });
+      expect(obs.notices).toHaveLength(2);
+      // A parked row is a NOTICE, not an exception: it is already durable
+      // in `dead_letter_jobs`. Keeping the errors channel empty here IS the
+      // budget guarantee — one bad mailbox used to cost hundreds of error
+      // events a day (2026-08-18).
+      expect(obs.bgCaptures).toHaveLength(0);
+      expect(obs.notices[0]?.kind).toBe('dead_letter.parked');
+      expect(obs.notices[0]?.level).toBe('error');
+      expect(obs.notices[0]?.tags).toMatchObject({ queue: 'initial-sync' });
       // `job_id` is pseudonymised: for incremental-sync it is
       // `${mailboxAccountId}__${cursor}`, so the raw value leaked a
       // mailbox id that the `mailbox_account_id` tag hides everywhere else.
-      expect(obs.bgCaptures[0]?.ctx.tags?.job_id).toMatch(/^ref_[0-9a-f]{24}$/);
-      expect(obs.bgCaptures[0]?.ctx.tags?.job_id).not.toBe('mb-1');
-      // A named class so the Sentry issue title is not the bare word
-      // "Error" — `Error.message` never reaches Sentry (D7).
-      expect(obs.bgCaptures[0]?.error.name).toBe('DeadLetterParkedError');
-      expect(obs.bgCaptures[0]?.error.message).toContain('initial-sync/mb-1');
-      expect(obs.bgCaptures[0]?.error.message).toContain('TransientError: still 503');
-      // ...but never the stack's continuation lines (first line only).
-      expect(obs.bgCaptures[0]?.error.message).not.toContain('fetchPage');
+      expect(obs.notices[0]?.tags?.job_id).toMatch(/^ref_[0-9a-f]{24}$/);
+      expect(obs.notices[0]?.tags?.job_id).not.toBe('mb-1');
+      // `queue` + `error_class` IS the diagnosis. The rest of the parked
+      // error's text stays in Cloud Logging: `SAFE_SERVER_TAG` rejects
+      // whitespace, so a message could not cross the wire anyway, and the
+      // message is the part that could carry a subject line.
+      expect(obs.notices[0]?.tags?.error_class).toBe('TransientError');
+      expect(JSON.stringify(obs.notices)).not.toContain('fetchPage');
+      expect(JSON.stringify(obs.notices)).not.toContain('still 503');
       // The structured observability event fires once per row.
       const parkedLines = errorLines().filter((l) => l.kind === 'dead_letter.parked');
       expect(parkedLines).toHaveLength(2);
@@ -303,7 +315,7 @@ describe('dead-letter pipeline (D225)', () => {
       const second = await worker.processJob({ scheduledAtMinute: '2026-06-11T10:01' }, FAKE_CTX);
       expect(second.scanned).toBe(2);
       expect(second.alerted).toBe(0);
-      expect(obs.bgCaptures).toHaveLength(2);
+      expect(obs.notices).toHaveLength(2);
     });
 
     it('a row parked between sweeps alerts on the next sweep only', async () => {
@@ -318,7 +330,7 @@ describe('dead-letter pipeline (D225)', () => {
       const worker = new DeadLetterWorker({ db: db as never, observer: obs });
 
       await worker.processJob({ scheduledAtMinute: '2026-06-11T10:00' }, FAKE_CTX);
-      expect(obs.bgCaptures).toHaveLength(1);
+      expect(obs.notices).toHaveLength(1);
 
       await db.insert(deadLetterJobs).values({
         queue: 'score',
@@ -329,8 +341,8 @@ describe('dead-letter pipeline (D225)', () => {
       const next = await worker.processJob({ scheduledAtMinute: '2026-06-11T10:01' }, FAKE_CTX);
       expect(next.scanned).toBe(2);
       expect(next.alerted).toBe(1);
-      expect(obs.bgCaptures).toHaveLength(2);
-      expect(obs.bgCaptures[1]?.ctx.tags).toMatchObject({ queue: 'score' });
+      expect(obs.notices).toHaveLength(2);
+      expect(obs.notices[1]?.tags).toMatchObject({ queue: 'score' });
     });
 
     it('replayed rows leave the sweep (and the dedup set gets pruned)', async () => {
@@ -343,7 +355,7 @@ describe('dead-letter pipeline (D225)', () => {
       const worker = new DeadLetterWorker({ db: db as never, observer: obs });
 
       await worker.processJob({ scheduledAtMinute: '2026-06-11T10:00' }, FAKE_CTX);
-      expect(obs.bgCaptures).toHaveLength(1);
+      expect(obs.notices).toHaveLength(1);
 
       const replayed = await replayDeadLetterJob(db as never, row!.id, async () => {});
       expect(replayed).toBe('replayed');
@@ -351,7 +363,7 @@ describe('dead-letter pipeline (D225)', () => {
       const after = await worker.processJob({ scheduledAtMinute: '2026-06-11T10:01' }, FAKE_CTX);
       expect(after.scanned).toBe(0);
       expect(after.alerted).toBe(0);
-      expect(obs.bgCaptures).toHaveLength(1);
+      expect(obs.notices).toHaveLength(1);
     });
 
     it('a throwing observer keeps the sweep alive and retries the row next sweep', async () => {
@@ -365,7 +377,10 @@ describe('dead-letter pipeline (D225)', () => {
       let calls = 0;
       const flaky: WorkerObserver = {
         captureFailure() {},
-        captureBackgroundFailure() {
+        captureBackgroundFailure() {},
+        // The parked alert rides the NOTICE seam, so this is the method
+        // whose failure must leave the row un-marked for the next sweep.
+        recordBackgroundNotice() {
           calls += 1;
           if (calls === 1) {
             throw new Error('Sentry transport down');
