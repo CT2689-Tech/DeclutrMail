@@ -2,7 +2,7 @@
   "name": "declutrmail",
   "version": "0.0.0",
   "private": true,
-  "description": "DeclutrMail — Gmail cleanup SaaS. V2 monorepo.",
+  "description": "DeclutrMail \u2014 Gmail cleanup SaaS. V2 monorepo.",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=22.0.0",
@@ -21,6 +21,7 @@
     "build": "pnpm -r --parallel build",
     "check:bundle": "node scripts/check-web-bundle-budget.mjs",
     "check:prerender": "node scripts/check-prerendered-routes.mjs",
+    "check:icons": "node scripts/generate-brand-icons.mjs --check",
     "check:lighthouse": "pnpm --filter @declutrmail/web exec lhci autorun --config=./lighthouserc.cjs",
     "verify-d": "tsx scripts/verify-d.ts",
     "generate-impl-log": "tsx scripts/generate-impl-log.ts",
@@ -47,6 +48,7 @@
     "lint-staged": "^17.0.8",
     "postgres": "^3.4.9",
     "prettier": "^3.4.2",
+    "sharp": "^0.34.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"

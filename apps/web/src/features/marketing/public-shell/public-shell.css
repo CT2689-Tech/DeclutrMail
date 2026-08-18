@@ -44,22 +44,8 @@
   align-items: center;
   gap: 9px;
   color: var(--dm-fg);
-  font: 650 15px/1 var(--dm-font-sans);
-  letter-spacing: -0.02em;
   text-decoration: none;
   white-space: nowrap;
-}
-
-.dm-public-brand-mark {
-  width: 27px;
-  height: 27px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 7px;
-  background: var(--dm-primary);
-  color: var(--dm-fg-inverse);
-  font: 700 12px/1 var(--dm-font-mono);
 }
 
 .dm-public-nav {

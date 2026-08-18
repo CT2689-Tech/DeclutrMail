@@ -1815,6 +1815,97 @@ cloud sessions auto-discover them on startup.
 
 ## Done
 
+### 2026-08-18 — Publish the new Google OAuth consent logo
+
+**Source:** session — D255 brand rollout
+**Why:** the consent screen showed the D134 placeholder — the first thing a
+new user sees, before they trust the app with Gmail access.
+**How:** Cloud Console → Google Auth Platform → Branding → Change logo →
+upload `docs/brand/oauth-consent-logo-120.png` → Save.
+**Verifies by:** Branding page reads "Your branding has been verified and is
+being shown to users" with the new mark rendered; Verification Center shows
+Branding ✅ and Data access ✅.
+**Status:** Done 2026-08-18 — uploaded, re-verified and live the same day.
+
+**Note on the review scope, because this session got it wrong in both
+directions.** A logo swap on this app triggers BRANDING re-verification
+only. Data access stayed verified throughout and was never re-examined,
+and CASA was untouched. It completed within minutes.
+
+Mid-flight, the Verification Center's "Verification progress" panel showed
+a seven-item checklist (homepage, privacy policy, app functionality,
+branding, data access, minimum scopes, additional requirements) and quoted
+"up to 4-6 weeks". That panel is GENERIC copy for the full verification
+form — it is not a statement about what is actually being re-reviewed. The
+reliable signal is the two status cards in the Verification Center: only
+Branding went amber, Data access never left green.
+
+So: a consent-screen logo change is cheap and same-day. Do not read the
+4-6 week panel as your timeline unless the Data access card also leaves
+verified.
+
+### 2026-08-18 — Wire `pnpm check:icons` into CI
+
+**Source:** session — D255 brand icon generation
+**Why:** Nothing in the repo tests the rasterised brand assets. A stale
+favicon or app icon fails no typecheck, no unit test and no gate — the
+exact silent-drift class ADR-0036 flags. `scripts/generate-brand-icons.mjs
+--check` closes it, but a checker nobody runs is a no-op.
+**How:** In `.github/workflows/ci.yml`, alongside the existing
+`pnpm generate-impl-log --check` step (~line 207), add a step to the same
+job:
+
+```yaml
+      - run: pnpm check:icons
+```
+
+Apply it from the MAIN checkout, not a worktree — PRs touching
+`.github/workflows` refuse to merge when the branch was pushed from a
+worktree (the gh token lacks `workflow` scope).
+**Verifies by:** CI shows a `check:icons` step; corrupting any file under
+`apps/web/public/icons/` in a scratch branch turns the job red.
+**Status:** Done 2026-08-18 — wired into the `lint` job in ci.yml (that job
+always runs, unlike the PR-only impl-log job). NOTE: this touches
+`.github/workflows`, so the branch must be pushed from the MAIN checkout,
+not a worktree — a worktree push lacks the `workflow` token scope and the
+PR will refuse to merge.
+
+
+### 2026-08-18 — OG cards render in Noto Sans, not Fraunces
+
+**Source:** session — D255 brand rollout
+**Why:** `ImageResponse` registers no fonts, so Satori falls back to its
+bundled Noto Sans. Every word on both share cards — the headline and the
+wordmark — is therefore set in a font the brand does not use, while the
+site itself is Fraunces 800. This is the surface strangers meet the brand
+through, and it currently looks like a different product. Pre-existing,
+not introduced by the D255 work, and out of scope for it: fixing it means
+committing a font binary, which is a decision rather than a correction.
+**How:** Fraunces is SIL OFL, so it is redistributable with its licence.
+Commit a static Fraunces 800 `.ttf` (Satori reads ttf/otf/woff, NOT woff2)
+under `apps/web/src/app/fonts/`, then pass it to both cards:
+
+```ts
+const fraunces = await readFile(join(process.cwd(), 'src/app/fonts/Fraunces-800.ttf'));
+return new ImageResponse(<Card />, {
+  ...size,
+  fonts: [{ name: 'Fraunces', data: fraunces, weight: 800, style: 'normal' }],
+});
+```
+
+Then set `fontFamily: 'Fraunces'` on the headline and the wordmark, and
+`letterSpacing: '-0.03em'` on the wordmark per ADR-0036. Do NOT fetch the
+font over the network at build time — that makes OG generation fail
+whenever Google Fonts is unreachable from CI.
+**Verifies by:** `curl localhost:3000/opengraph-image` and the headline is
+the serif that matches the landing page, not Noto Sans.
+**Status:** Done 2026-08-18 — Fraunces ExtraBold + Geist Regular/Bold
+vendored under apps/web/src/features/marketing/og/ with their OFL licences,
+registered via ogFonts(). Both families, not just Fraunces: Satori uses the
+first registered font for unstyled text, so shipping the display face alone
+set the body copy in it too.
+
+
 ### 2026-08-15 — Decide the CSP `img-src` fix for D254 brand logos
 **Source:** session — page-load performance investigation, 2026-08-15
 **Why:** D254 (#524) serves sender logos from `${NEXT_PUBLIC_API_URL}/api/icons/:domain`. That is same-origin locally (the var is empty) and a DIFFERENT origin in production, where `middleware.ts` `img-src` does not list `apiOrigin` — so every brand logo is CSP-refused in production while working perfectly on your machine. Verified in a browser against the real production headers: `Refused to load the image 'https://api.declutrmail.com/api/icons/example.com' … "img-src 'self' …"`. It fails safe (the monogram still renders) so it would degrade silently. Not changed in this PR because CSP configuration is a CLAUDE.md §9 stop condition.

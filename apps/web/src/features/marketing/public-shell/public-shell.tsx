@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { PrivacyBadge } from '@declutrmail/shared';
+import { Logo, PrivacyBadge } from '@declutrmail/shared';
 
 import { oauthStartUrl } from '../landing/urls';
 import { TrackedCta } from '../landing/tracked-cta';
@@ -65,10 +65,7 @@ export function PublicHeader() {
       <header className="dm-public-header">
         <div className="dm-public-header-inner">
           <Link href="/" className="dm-public-brand" aria-label="DeclutrMail home">
-            <span className="dm-public-brand-mark" aria-hidden="true">
-              D
-            </span>
-            <span>DeclutrMail</span>
+            <Logo size={27} label={null} />
           </Link>
 
           <nav className="dm-public-nav" aria-label="Primary navigation">
@@ -107,10 +104,7 @@ export function PublicFooter() {
       <div className="dm-public-footer-inner">
         <div className="dm-public-footer-intro">
           <Link href="/" className="dm-public-brand">
-            <span className="dm-public-brand-mark" aria-hidden="true">
-              D
-            </span>
-            <span>DeclutrMail</span>
+            <Logo size={27} />
           </Link>
           <p>Gmail stays your inbox. DeclutrMail helps you control it one sender at a time.</p>
           <PrivacyBadge variant="inline" />

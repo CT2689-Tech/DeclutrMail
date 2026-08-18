@@ -1,5 +1,8 @@
 import { ImageResponse } from 'next/og';
 
+import { ogMarkDataUri } from '@/features/marketing/og/brand-mark';
+import { ogFonts } from '@/features/marketing/og/fonts';
+
 /**
  * Default Open Graph card (D134 SEO, D250 headline — reverses D223,
  * D1/D2 palette).
@@ -19,7 +22,7 @@ const PAPER = '#FAFAF7';
 const TEAL = '#006B5F';
 const MUTED = '#646D69';
 
-export default function OpenGraphImage() {
+export default async function OpenGraphImage() {
   return new ImageResponse(
     <div
       style={{
@@ -61,14 +64,38 @@ export default function OpenGraphImage() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          fontSize: 26,
-          color: MUTED,
-          letterSpacing: 4,
           marginTop: 24,
         }}
       >
-        <span>DECLUTRMAIL</span>
-        <span style={{ color: TEAL }}>FOR INBOXES YOU GAVE UP ON</span>
+        {/* Masthead. The mark leads and the wordmark is set properly cased
+            with Mail accented — ADR-0036 specifies `DeclutrMail`, and the
+            capital M is load-bearing: it is the seam the accent lands on,
+            which an all-caps setting destroys.
+
+            Two sibling spans rather than one string with a nested span:
+            Satori lays element children out as flex items, so this is what
+            keeps the seam tight and the colours on the right halves. */}
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <img src={ogMarkDataUri('ink')} width={46} height={46} alt="" />
+          <div
+            style={{
+              display: 'flex',
+              marginLeft: 14,
+              fontFamily: 'Fraunces',
+              fontSize: 34,
+              fontWeight: 800,
+              // ADR-0036 locks -0.03em; resolved to px because
+              // Satori does not reliably honour em for letterSpacing.
+              letterSpacing: -1.02,
+            }}
+          >
+            <span style={{ color: INK }}>Declutr</span>
+            <span style={{ color: TEAL }}>Mail</span>
+          </div>
+        </div>
+        <span style={{ fontSize: 26, color: MUTED, letterSpacing: 4 }}>
+          FOR INBOXES YOU GAVE UP ON
+        </span>
       </div>
 
       <div
@@ -79,8 +106,9 @@ export default function OpenGraphImage() {
           justifyContent: 'center',
           // 72px fits the locked three-line headline inside 630px with
           // the eyebrow + badge footer (was 92px for the two-line D223).
+          fontFamily: 'Fraunces',
           fontSize: 72,
-          fontWeight: 700,
+          fontWeight: 800,
           color: INK,
           lineHeight: 1.08,
           letterSpacing: -2,
@@ -110,6 +138,6 @@ export default function OpenGraphImage() {
         <span>Keep · Archive · Unsubscribe · Later · Delete</span>
       </div>
     </div>,
-    size,
+    { ...size, fonts: await ogFonts() },
   );
 }
