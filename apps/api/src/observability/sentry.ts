@@ -1,6 +1,7 @@
 import {
   scrubSentryEvent,
   scrubSentryLog,
+  scrubSentryTransaction,
   scrubTelemetryPayload,
 } from '@declutrmail/shared/observability';
 
@@ -43,6 +44,22 @@ let initialized = false;
  */
 const SENTRY_INIT_TIMEOUT_MS = 5_000;
 
+/**
+ * Parse a `0..1` sample rate from the environment, falling back on
+ * anything unparseable.
+ *
+ * Deliberately strict: an unset, malformed, or out-of-range value returns
+ * the DEFAULT rather than clamping toward 1. A typo in a Cloud Run env var
+ * should not silently turn full-rate tracing on — the failure mode of this
+ * knob is a quota bill, and the safe direction is down.
+ */
+function readSampleRate(raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) return fallback;
+  return parsed;
+}
+
 export async function initSentry(): Promise<void> {
   if (initialized) return;
   const dsn = process.env.SENTRY_DSN;
@@ -54,8 +71,23 @@ export async function initSentry(): Promise<void> {
       dsn,
       environment: process.env.NODE_ENV ?? 'development',
       release: process.env.SENTRY_RELEASE,
-      // Exceptions only (D159 + D7) — explicitly disable traces.
-      tracesSampleRate: 0,
+      // Tracing (D159, founder-authorised 2026-08-18). Off since D7 until
+      // now: a span carries more user data by default than any other
+      // signal. It ships behind `beforeSendTransaction` below, which drops
+      // every span description and key-allowlists span data — see
+      // `scrubSentryTransaction`.
+      //
+      // The 2026-06-08 boot hang this file's timeout guards against was an
+      // OTel-init ordering problem, and its documented fix (preload
+      // `@sentry/node/preload` BEFORE `@swc-node/register`) is now live in
+      // the Dockerfile CMD, so tracing no longer rides on that mismatch.
+      //
+      // Rate is env-tunable and deliberately not 1.0: the worker runs cron
+      // jobs on 60s/5min ticks, so full sampling is mostly duplicate shapes.
+      // 0.2 keeps the span quota (5M/month, 0 used at the 2026-08-18
+      // incident) irrelevant while still catching a runaway loop, which
+      // shows up as shape rather than as any single trace.
+      tracesSampleRate: readSampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.2),
       // The LOGS channel (D159, 2026-08-18). Notices that are not crashes
       // — `dead_letter.parked`, the CAN-SPAM postal refusal — belong here,
       // not on the errors quota, which is the only Sentry budget that runs
@@ -105,6 +137,15 @@ export async function initSentry(): Promise<void> {
       // closed set of strings.
       beforeSendLog: (log) =>
         scrubSentryLog(log as unknown as Record<string, unknown>) as unknown as typeof log | null,
+      // `beforeSend` does NOT run on transactions either — this is the
+      // THIRD egress path, and the widest one: a transaction carries a
+      // whole span tree, each span with a free-text description (raw SQL,
+      // full request URLs) and arbitrary `data`. `scrubSentryTransaction`
+      // drops descriptions outright and key-allowlists the rest, keeping
+      // only the tree's shape.
+      beforeSendTransaction: (event) =>
+        scrubSentryTransaction(event as unknown as Record<string, unknown>, 'server') as unknown as
+          typeof event | null,
       beforeBreadcrumb: (breadcrumb) =>
         scrubTelemetryPayload(
           breadcrumb as unknown as Record<string, unknown>,

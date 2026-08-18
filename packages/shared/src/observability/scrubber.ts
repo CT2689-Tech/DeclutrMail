@@ -878,6 +878,210 @@ export function scrubSentryEvent(
   }
 }
 
+/**
+ * Sentry TRANSACTION (tracing) sanitizer — the `beforeSendTransaction` seam.
+ *
+ * Tracing is the one signal that shows a FAILURE IN CONTEXT: which request,
+ * which job, which query, in what order. That is exactly what was missing
+ * on 2026-08-18, when a five-minute retry loop had to be reconstructed by
+ * hand from tag values and arithmetic.
+ *
+ * It is also the signal that carries the most user data by default, which
+ * is why D7/D228 had traces off entirely until now. Three rules make it
+ * safe, and all three are deny-by-default:
+ *
+ *   1. `description` is DROPPED, never sanitized. It is where a span puts
+ *      free text — the literal SQL (`WHERE email = 'a@b.com'`), the full
+ *      request URL, the cache key. There is no pattern that reliably
+ *      separates safe descriptions from unsafe ones, so none is attempted.
+ *      The span tree keeps its SHAPE (op, timing, parent/child, count),
+ *      which is what makes a runaway loop or an N+1 visible.
+ *   2. `op` must be in a closed set. An unrecognised op drops the span
+ *      rather than the field, because an op we do not know is a span whose
+ *      data shape we have not reviewed.
+ *   3. `data` is key-allowlisted with the same `SAFE_SERVER_TAG` value gate
+ *      as tags — ids and closed enums, never prose.
+ *
+ * The transaction NAME is route-shaped or nothing: query strings are cut
+ * (they carry search terms), and anything with an `@` is refused outright.
+ */
+export function scrubSentryTransaction(
+  event: Record<string, unknown> | null | undefined,
+  profile: SentryScrubProfile = 'browser',
+): Record<string, unknown> | null {
+  if (!event) return null;
+  try {
+    // The mirror of `scrubSentryEvent`'s guard: that function refuses typed
+    // envelopes, this one accepts ONLY transactions. Neither can be handed
+    // the other's payload by a mis-wired hook.
+    if (event.type !== 'transaction') return null;
+
+    const out: Record<string, unknown> = { type: 'transaction' };
+
+    const eventId = copyString(event.event_id, SAFE_EVENT_ID, 32);
+    if (eventId !== undefined) out.event_id = eventId;
+    for (const key of ['timestamp', 'start_timestamp'] as const) {
+      const value = copyFiniteNumber(event[key]);
+      if (value !== undefined) out[key] = value;
+    }
+    const release = copyString(event.release, SAFE_RELEASE, 256);
+    if (release !== undefined) out.release = release;
+    if (typeof event.environment === 'string' && SAFE_TOKEN.test(event.environment)) {
+      out.environment = event.environment;
+    }
+
+    const name = sanitizeTransactionName(event.transaction);
+    // No legible name means no useful transaction — and a name we refused is
+    // a name we could not prove safe. Drop the whole envelope.
+    if (name === undefined) return null;
+    out.transaction = name;
+
+    const tags = scrubSentryTags(event.tags, profile);
+    if (tags !== undefined) out.tags = tags;
+
+    const trace = scrubSentryTraceContext(event.contexts);
+    if (trace !== undefined) out.contexts = { trace };
+
+    if (Array.isArray(event.spans)) {
+      const spans = event.spans
+        .map((span) => (isPlainObject(span) ? scrubSentrySpan(span) : null))
+        .filter((span): span is Record<string, unknown> => span !== null)
+        .slice(0, MAX_SPANS_PER_TRANSACTION);
+      if (spans.length > 0) out.spans = spans;
+    }
+
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cap on spans forwarded per transaction. A runaway loop can produce
+ * thousands; the first 500 already show the shape, and an unbounded array
+ * is an unbounded payload.
+ */
+const MAX_SPANS_PER_TRANSACTION = 500;
+
+/**
+ * Route-shaped names only.
+ *
+ * Query strings carry search terms (`?q=...`) and are cut before matching,
+ * not after — a name is judged on what survives, never on what arrived.
+ * An `@` anywhere is an email address until proven otherwise, so it is
+ * refused rather than masked.
+ */
+function sanitizeTransactionName(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 200) return undefined;
+  const withoutQuery = value.split(/[?#]/, 1)[0] ?? '';
+  if (withoutQuery.length === 0 || withoutQuery.includes('@')) return undefined;
+  return SAFE_TRANSACTION_NAME.test(withoutQuery) ? withoutQuery : undefined;
+}
+
+/** `GET /api/v1/senders/:id`, `/triage`, or a bare worker/job label. */
+const SAFE_TRANSACTION_NAME = /^(?:[A-Z]{3,7} )?[A-Za-z0-9/_:.\-{}[\]]{1,160}$/;
+
+/**
+ * Span operations permitted on the wire.
+ *
+ * Closed by design: an op absent here is a span whose `data` shape has not
+ * been reviewed against D7, so the span is dropped rather than partially
+ * copied. Widening this set is the same class of decision as widening
+ * `SENTRY_SERVER_TAG_ALLOWLIST`.
+ */
+const SENTRY_SPAN_OPS = new Set([
+  'http.server',
+  'http.client',
+  'db',
+  'db.query',
+  'db.sql.query',
+  'db.redis',
+  'cache.get',
+  'cache.put',
+  'queue.publish',
+  'queue.process',
+  'function',
+  'middleware.nestjs',
+  'request',
+  'pageload',
+  'navigation',
+  'resource.script',
+  'resource.css',
+  'ui.render',
+  'browser',
+]);
+
+/**
+ * Span `data` keys allowed on the wire — the OpenTelemetry attributes that
+ * are structural (method, status, system) rather than content. Notably
+ * absent: `db.statement`, `http.url`, `http.target`, and every other key
+ * whose value is free text or a full URL.
+ */
+const SENTRY_SPAN_DATA_ALLOWLIST = new Set([
+  'http.request.method',
+  'http.response.status_code',
+  'db.system',
+  'db.operation',
+  'server.address',
+  'queue.name',
+  'worker',
+  'policy',
+  'sentry.origin',
+  'sentry.op',
+]);
+
+/** Copy a span's structure — never its description. */
+function scrubSentrySpan(span: Record<string, unknown>): Record<string, unknown> | null {
+  const op = typeof span.op === 'string' && SENTRY_SPAN_OPS.has(span.op) ? span.op : undefined;
+  if (op === undefined) return null;
+
+  const out: Record<string, unknown> = { op };
+  const spanId = copyString(span.span_id, SAFE_SPAN_ID, 16);
+  if (spanId !== undefined) out.span_id = spanId;
+  const parentSpanId = copyString(span.parent_span_id, SAFE_SPAN_ID, 16);
+  if (parentSpanId !== undefined) out.parent_span_id = parentSpanId;
+  const traceId = copyString(span.trace_id, SAFE_TRACE_ID, 32);
+  if (traceId !== undefined) out.trace_id = traceId;
+  for (const key of ['timestamp', 'start_timestamp'] as const) {
+    const value = copyFiniteNumber(span[key]);
+    if (value !== undefined) out[key] = value;
+  }
+  if (typeof span.status === 'string' && SAFE_TOKEN.test(span.status)) out.status = span.status;
+
+  if (isPlainObject(span.data)) {
+    const data: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(span.data)) {
+      if (!SENTRY_SPAN_DATA_ALLOWLIST.has(key)) continue;
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        data[key] = value;
+        continue;
+      }
+      const safe = copyString(value, SAFE_SERVER_TAG, 64);
+      if (safe !== undefined) data[key] = safe;
+    }
+    if (Object.keys(data).length > 0) out.data = data;
+  }
+
+  return out;
+}
+
+/** The trace context — ids and op only; `description` never travels. */
+function scrubSentryTraceContext(contexts: unknown): Record<string, unknown> | undefined {
+  if (!isPlainObject(contexts) || !isPlainObject(contexts.trace)) return undefined;
+  const trace = contexts.trace;
+  const out: Record<string, unknown> = {};
+  const traceId = copyString(trace.trace_id, SAFE_TRACE_ID, 32);
+  if (traceId !== undefined) out.trace_id = traceId;
+  const spanId = copyString(trace.span_id, SAFE_SPAN_ID, 16);
+  if (spanId !== undefined) out.span_id = spanId;
+  if (typeof trace.op === 'string' && SENTRY_SPAN_OPS.has(trace.op)) out.op = trace.op;
+  if (typeof trace.status === 'string' && SAFE_TOKEN.test(trace.status)) out.status = trace.status;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+const SAFE_SPAN_ID = /^[a-f0-9]{16}$/;
+const SAFE_TRACE_ID = /^[a-f0-9]{32}$/;
+
 /** Exposed for tests. */
 export const __testing = {
   BANNED_KEY_PATTERNS,
