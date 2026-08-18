@@ -255,7 +255,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D197 | Custom rule builder UI deferred to V2.1, with full architectural readiness at launch (reverses D196, refines D192) | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule returns null for is_preset=false → 404 (UI deferral enforced at API) |  |
 | D198 | Headless hooks for behavior, feature-owned components for rendering (resolves D36/D50/D57 implicit duplication) | 🟢 | #29, #184 | apps/web/src/features/triage/store.test.ts — D198 accordion |  |
 | D199 | Lazy promotion + spec override (component/utility placement rule) | 🔵 | #29 |  |  |
-| D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🟢 | #29, #45, #50 | apps/web/src/features/triage/store.test.ts — Zustand client state |  |
+| D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🟢 | #29, #45, #50, #544 | apps/web/src/features/triage/store.test.ts — Zustand client state |  |
 | D201 | API + Worker architecture: Standard NestJS modules + Adapter pattern at external boundaries | 🟢 | #37 | apps/web/src/lib/api/client.test.ts |  |
 | D202 | API response envelope + cursor pagination | 🟢 | #37, #113, #502, #498 | apps/api/src/senders/senders.controller.spec.ts — D202 envelope |  |
 | D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | 🟢 | #49 | packages/workers/src/base-declutr-worker.test.ts |  |
@@ -291,7 +291,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D233 | Offline destructive actions are draft intents, never auto-replay | ⬜ |  |  |  |
 | D234 | Custom-rule production API gated at `is_preset=false` | 🟢 | #107, #109 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule null for is_preset=false → 404 |  |
 | D235 | Partitioning deferred behind measured thresholds | ⬜ |  |  |  |
-| D245 | Unified product clarity and control contract | 🔵 | #332, #333, #335, #336, #368, #393, #394, #400, #403, #409, #438, #483, #485, #491, #492 |  |  |
+| D245 | Unified product clarity and control contract | 🔵 | #332, #333, #335, #336, #368, #393, #394, #400, #403, #409, #438, #483, #485, #491, #492, #544 |  |  |
 | D246 | Finite first relief and evidence-based automation authority | 🔵 | #334 |  |  |
 | D248 | Bulk unsubscribe: one-click subset only, per-channel receipt | 🔵 | #500 |  | Decided 2026-07-28. Batch executes `senders.unsubscribe_method='one_click'` server-side only. The column is nullable, so four states are reported separately: `mailto` (per-sender, D230), `none` (no channel exists), and `NULL` (not yet indexed — unknown, never folded into `none`). No undo — unsubscribe declares no inverse, so the mandatory modal preview is the reversal point. Receipt aggregates the THREE outcomes the worker writes (`unsubscribe_endpoint_accepted` / `unsubscribe_unconfirmed` / `unsubscribe_failed`) and says "request accepted", not "unsubscribed". Extends D9/D32 |
 | D249 | Billing reconciles against provider truth, not customer memory | 🔵 | #436, #441, #466 |  |  |
