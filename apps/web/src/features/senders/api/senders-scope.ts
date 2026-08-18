@@ -100,7 +100,9 @@ export function parseSendersScope(params: Pick<URLSearchParams, 'get'>): Senders
       domain: params.get('domain')?.trim() || null,
       unsubIgnored: params.get('unsub_ignored') === 'true',
     },
-    q: params.get('q') ?? '',
+    // Trimmed to match the screen's `query.trim()` before hashing — an
+    // untrimmed `?q=%20acme` would hydrate a key no observer ever reads.
+    q: (params.get('q') ?? '').trim(),
     sort: parseSort(params.get('sort')),
     direction: parseDirection(params.get('direction')),
   };

@@ -38,6 +38,7 @@ export type EventName =
   | 'plan_change_started'
   // — Page-view + navigation funnel (FOUNDER-FOLLOWUPS 2026-06-06) —
   | 'page_viewed'
+  | 'web_vital_reported'
   | 'sender_detail_opened'
   | 'gmail_deep_link_opened'
   // — Public marketing acquisition funnel (D134) —
@@ -110,6 +111,43 @@ export type OnboardingFunnelStep =
 export type ActivationGoal = 'reduce_newsletters' | 'protect_important' | 'clear_old_promotions';
 
 export type DecisionJourney = 'first_relief' | 'daily';
+
+export type PageSurface =
+  | 'landing'
+  | 'senders'
+  | 'sender_detail'
+  | 'activity'
+  | 'brief'
+  | 'autopilot'
+  | 'triage'
+  | 'onboarding'
+  | 'settings'
+  | 'mailboxes'
+  | 'pricing'
+  | 'snoozed'
+  | 'billing'
+  | 'screener'
+  | 'followups'
+  | 'quiet'
+  | 'privacy'
+  | 'terms'
+  | 'refunds'
+  | 'beta'
+  | 'cookies'
+  | 'help'
+  | 'contact'
+  | 'security'
+  | 'inbox_simulator'
+  | 'how_it_works'
+  | 'methodology'
+  | 'compare'
+  | 'comparison'
+  | 'how_to'
+  | 'answer'
+  | 'blog'
+  | 'changelog'
+  | 'faq'
+  | 'sign_in';
 
 /**
  * Per-event payload shapes. Only includes scalars and small enums —
@@ -284,49 +322,24 @@ export interface EventPayloads {
 
   // — Page-view + navigation funnel —
   page_viewed: {
-    page:
-      | 'landing'
-      | 'senders'
-      | 'sender_detail'
-      | 'activity'
-      | 'brief'
-      | 'autopilot'
-      | 'triage'
-      | 'onboarding'
-      | 'settings'
-      | 'mailboxes'
-      | 'pricing'
-      | 'snoozed'
-      | 'billing'
-      // 2026-07-04 launch audit — remaining app surfaces wired.
-      | 'screener'
-      | 'followups'
-      | 'quiet'
-      // 2026-07-07 SEO batch (D132) — public legal + beta surfaces.
-      | 'privacy'
-      | 'terms'
-      | 'refunds'
-      | 'beta'
-      // D147 consent change/withdrawal surface (GDPR Art. 7(3)).
-      | 'cookies'
-      // 2026-07-07 launch marketing bundle (D219, D137) — support surfaces.
-      | 'help'
-      | 'contact'
-      | 'security'
-      | 'inbox_simulator'
-      // Public product/education families. Dynamic article slugs collapse
-      // into bounded categories so event-cardinality cannot grow with SEO.
-      | 'how_it_works'
-      | 'methodology'
-      | 'compare'
-      | 'comparison'
-      | 'how_to'
-      | 'answer'
-      | 'blog'
-      | 'changelog'
-      | 'faq'
-      | 'sign_in';
+    page: PageSurface;
     mailbox_id: string | null;
+  };
+  web_vital_reported: {
+    /** Bounded route family; raw paths and dynamic identifiers are never sent. */
+    surface: PageSurface | 'admin_security' | 'settings_help' | 'demo' | 'other';
+    metric: 'CLS' | 'FCP' | 'INP' | 'LCP' | 'TTFB';
+    /** Milliseconds except CLS, which is a unitless score. Rounded to 3 decimals. */
+    value: number;
+    rating: 'good' | 'needs_improvement' | 'poor' | 'unknown';
+    navigation_type:
+      | 'navigate'
+      | 'reload'
+      | 'back_forward'
+      | 'back_forward_cache'
+      | 'prerender'
+      | 'restore'
+      | 'unknown';
   };
 
   // — Marketing landing funnel (D134) —

@@ -21,6 +21,10 @@ export function firstTriageQueryOptions(reader: OnboardingReader<FirstTriageRead
   return queryOptions({
     queryKey: FIRST_TRIAGE_KEY,
     queryFn: ({ signal }) => reader(signal),
-    staleTime: 5_000,
+    // Must exceed the server-prefetch-to-observer-mount gap: the
+    // onboarding boundary settles this read up to three serial awaits
+    // before the step-5 hook subscribes, so a 5s budget re-fetched the
+    // just-hydrated payload on slower loads (D200).
+    staleTime: 30_000,
   });
 }

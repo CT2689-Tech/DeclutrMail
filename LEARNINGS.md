@@ -1358,3 +1358,46 @@ stays silent on the compliant form.
 **Distillation trigger:** promote to CLAUDE.md §8 (guard blind-case
 testing) if a third selector/guard blind-spot entry lands (UI-truth
 memory already holds the first).
+
+## 2026-08-18 — Two dead ends moving a slow read off the hydration critical path
+
+**Context:** D200 follow-up. `/api/senders/summary` is 10-40x slower than
+every other app-shell read (158-389ms warm vs 6-13ms; one production
+`server-hydration` timeout on 2026-08-17), and `ServerAppBoundary`
+awaits it, so it set the TTFB floor for all 16 authed routes.
+
+**Finding — attempt 1, relocate to the route boundary: FAILED.** Two
+TanStack v5 behaviors compose into a duplicate fetch. (1) `useQuery`
+CREATES the cache query at observer construction, `enabled: false`
+included. (2) `HydrationBoundary` hydrates only brand-new query hashes
+during render; a hash that ALREADY exists is deferred to a `useEffect`,
+and child effects run before the parent boundary's. So the chrome nav
+badge created the key first, and the screen observer then fetched a
+payload the route boundary was already holding. Any key observed by app
+chrome must be hydrated at or above the chrome, never in a route
+boundary.
+
+**Finding — attempt 2, stream it as a pending dehydrated promise:
+REJECTED, and this is the load-bearing lesson.** Dehydrating the pending
+query (`shouldDehydrateQuery: … || status === 'pending'`) did cut the
+app-shell wave from 703-993ms to 21-113ms with no duplicate fetches, and
+it passed the e2e hydration smoke 11 runs out of 12. It is still wrong:
+diffing the served HTML against main showed `activeSenders` and
+`totalSenders` present on main and ABSENT on the streamed build. SSR
+always renders the pending branch (the wave settles in ~20-110ms, the
+summary needs 160-390ms), so the KPI hero and nav badge lose their
+numbers from first paint, and the client may commit the resolved value
+before hydration finishes — which is exactly the one `/senders` React
+#418 (`args[]=HTML`) that did fire. A fast dev machine hydrates before
+the promise lands, so LOCAL PASSES ARE BIASED EVIDENCE: the exposed
+population is slow devices, i.e. the users the change was meant to help.
+
+**Rule (provisional):** Never dehydrate a pending query whose consumers
+render differently in `pending` vs `success` — streaming moves the data
+out of the server HTML and arms a hydration race that local runs
+under-report. Measure "is the value still in the served HTML?" (diff the
+HTML against the base branch), not just wave duration and a green smoke.
+A slow shared read gets fixed at the query, not by deferring it.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a third
+"green locally, timing-dependent in the field" hydration entry lands.
