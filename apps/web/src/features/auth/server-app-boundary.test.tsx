@@ -27,7 +27,7 @@ describe('ServerAppBoundary', () => {
               id: 'user-1',
               email: 'founder@example.test',
               workspaceId: 'workspace-1',
-              timezone: 'America/Los_Angeles',
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             },
             mailboxes: [
               {
