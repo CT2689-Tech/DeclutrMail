@@ -3,13 +3,13 @@
  *
  * The load-bearing assertions are the D228 trust-copy pins:
  *
- *   - the locked headline "Full bodies fetched: 0" renders (via
+ *   - the locked plain-language full-email boundary renders (via
  *     <PrivacyBadge>, whose copy lives ONLY in
  *     packages/shared/src/copy/privacy.ts)
  *   - the banned pre-D228 phrase "Bodies read: 0" appears NOWHERE
  *   - the explicit storage allowlist renders item-for-item
  *
- * Plus the view wiring: indexed mailboxes, undo-retention copy (tier
+ * Plus the view wiring: saved mailbox data, undo-retention copy (tier
  * vs unknown), export buttons → onExport(format), export-failed alert.
  */
 
@@ -70,7 +70,7 @@ describe('PrivacyDataView', () => {
     expect(screen.getByText(/separates what is fetched.*what stays/i)).toBeInTheDocument();
   });
 
-  it('lists the indexed mailboxes, marking disconnected ones', () => {
+  it('lists mailboxes in DeclutrMail, marking disconnected ones', () => {
     renderView({
       mailboxes: [TWO_MAILBOXES[0]!, { ...TWO_MAILBOXES[1]!, status: 'disconnected' }],
     });
@@ -84,9 +84,9 @@ describe('PrivacyDataView', () => {
     expect(
       screen.getAllByText(/removed when this Gmail account is disconnected/i).length,
     ).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Disconnect & delete indexed data/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Disconnect & delete saved data/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Records we keep to investigate problems/i)).toBeInTheDocument();
-    expect(screen.getByText(/Disconnect & delete one mailbox's indexed data/i)).toBeInTheDocument();
+    expect(screen.getByText(/Disconnect & delete one mailbox's saved data/i)).toBeInTheDocument();
     expect(
       screen.getByText(/other mailboxes.*disconnected Gmail address.*remain/i),
     ).toBeInTheDocument();
@@ -124,8 +124,8 @@ describe('PrivacyDataView', () => {
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
     expect(text).toContain('Mailbox addresses and status');
-    expect(text).toContain('sender profiles with selected policy fields');
-    expect(text).toContain('Activity rows');
+    expect(text).toContain('sender profiles and decisions');
+    expect(text).toContain('Activity history');
     expect(text).toContain('App preferences and billing records are not included');
     expect(text).not.toMatch(/download everything/i);
     expect(text).not.toMatch(/full export/i);
@@ -135,7 +135,7 @@ describe('PrivacyDataView', () => {
     const onExport = vi.fn();
     renderView({ onExport });
 
-    await userEvent.click(screen.getByRole('button', { name: /download json/i }));
+    await userEvent.click(screen.getByRole('button', { name: /download selected data/i }));
     await userEvent.click(screen.getByRole('button', { name: /messages csv/i }));
     await userEvent.click(screen.getByRole('button', { name: /senders csv/i }));
     await userEvent.click(screen.getByRole('button', { name: /decisions csv/i }));

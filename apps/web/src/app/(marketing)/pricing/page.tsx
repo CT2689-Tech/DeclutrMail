@@ -17,7 +17,7 @@ import { COUNTRY_HEADER } from '@/middleware';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Pricing — DeclutrMail',
   description:
-    'Free is the full manual cleanup toolkit, Plus lifts the cap and adds the Screener and rules you approve, Pro adds unattended automation. Full bodies fetched: 0.',
+    'Free includes manual sender cleanup, Plus removes the monthly limit and finds matches for approval, and Pro can run rules you turn on automatically.',
   path: '/pricing',
   markdownAlternate: '/pricing.md',
 });

@@ -21,13 +21,13 @@ const TRIAGE_VERBS = [
 ] as const satisfies readonly VerbId[];
 
 const ACTION_CLARIFIERS: Readonly<Record<VerbId, string>> = {
-  keep: 'Keep records your decision and leaves mail where it is. It is not Protect; Protect is a separate shield against destructive and bulk actions.',
+  keep: 'Keep records your decision and leaves email where it is. Protect is separate: it keeps a sender out of bulk and automatic changes.',
   archive:
-    'A manual Archive applies to the current messages named in the preview. It does not silently become a future-mail rule.',
+    'Archive applies only to the emails shown before you confirm. New mail from the sender is unchanged.',
   unsubscribe:
-    'A delivered one-click unsubscribe cannot be recalled. Existing inbox mail stays put unless you separately choose a backlog action.',
+    'A sent one-click unsubscribe request cannot be taken back. Existing email stays where it is unless you choose another action.',
   later:
-    'Later moves the current messages in the preview into DeclutrMail/Later until the chosen sender-level return time. It does not silently create a future rule.',
+    'Later moves the emails shown in the preview to DeclutrMail/Later until the return time you choose. New mail from the sender is unchanged.',
   delete:
     'Delete is never recommended for you — you pick it yourself, and it always shows a full preview first. It moves the previewed mail to Gmail Trash, where Gmail normally keeps it for 30 days.',
 };
@@ -40,19 +40,19 @@ export function ProductWalkthroughFigure() {
       aria-labelledby="dm-story-walkthrough-title"
     >
       <figcaption id="dm-story-walkthrough-title">
-        Synthetic walkthrough — sample sender and counts, never a real mailbox
+        Made-up walkthrough — sample sender and counts, never a real mailbox
       </figcaption>
       <ol>
         <li className="dm-story-walkthrough-step">
           <span className="dm-story-step-label">1 · Review</span>
           <strong>LinkedIn Updates</strong>
           <span>47 inbox messages · 8% read</span>
-          <small>Suggested Archive from inspectable volume and engagement signals.</small>
+          <small>Archive is suggested because of the volume and low read rate.</small>
         </li>
         <li className="dm-story-walkthrough-step">
           <span className="dm-story-step-label">2 · Preview</span>
           <strong>Archive 47 current messages?</strong>
-          <span>Removes INBOX; keeps the messages searchable in Gmail All Mail.</span>
+          <span>Moves them out of Inbox and keeps them searchable in Gmail All Mail.</span>
           <small>Future LinkedIn mail is unaffected by this manual action.</small>
         </li>
         <li className="dm-story-walkthrough-step">
@@ -113,26 +113,30 @@ export function GmailBridgeTable() {
       aria-labelledby="dm-story-gmail-table-title"
     >
       <table className="dm-story-table">
-        <caption id="dm-story-gmail-table-title">How each DeclutrMail choice maps to Gmail</caption>
+        <caption id="dm-story-gmail-table-title">
+          How each DeclutrMail decision maps to Gmail
+        </caption>
         <thead>
           <tr>
-            <th scope="col">DeclutrMail choice</th>
+            <th scope="col">DeclutrMail decision</th>
             <th scope="col">What changes in Gmail</th>
             <th scope="col">Future mail</th>
-            <th scope="col">Safety boundary</th>
+            <th scope="col">Undo or recovery</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <th scope="row">Keep</th>
-            <td>No Gmail label change; the sender decision is recorded.</td>
-            <td>Keep is a standing decision. Protect remains a separate user-controlled shield.</td>
-            <td>No destructive mutation.</td>
+            <td>No Gmail label changes; your decision is recorded.</td>
+            <td>
+              Keep remains your decision for this sender. Protect is a separate safety control.
+            </td>
+            <td>Nothing in Gmail changes.</td>
           </tr>
           <tr>
             <th scope="row">Archive</th>
-            <td>Removes INBOX from the previewed current messages; they remain in All Mail.</td>
-            <td>Unaffected unless a separate Pro rule is enabled.</td>
+            <td>Moves the previewed emails out of Inbox; they remain in All Mail.</td>
+            <td>New mail is unchanged unless you separately turn on a Pro rule.</td>
             <td>
               Undo: {freeDays} days on Free/Plus, {proDays} on Pro.
             </td>
@@ -144,13 +148,13 @@ export function GmailBridgeTable() {
             </td>
             <td>The sender may stop mailing after accepting the request.</td>
             <td>
-              The delivered request is one-way. Backlog actions have their own preview and undo.
+              A sent request is one-way. Any action on existing email has its own preview and Undo.
             </td>
           </tr>
           <tr>
             <th scope="row">Later</th>
-            <td>Moves previewed current mail out of INBOX and adds DeclutrMail/Later.</td>
-            <td>Unaffected unless a separate Pro rule is enabled.</td>
+            <td>Moves the previewed email out of Inbox and adds DeclutrMail/Later.</td>
+            <td>New mail is unchanged unless you separately turn on a Pro rule.</td>
             <td>
               Undo: {freeDays} days on Free/Plus, {proDays} on Pro.
             </td>
@@ -158,7 +162,7 @@ export function GmailBridgeTable() {
           <tr>
             <th scope="row">Delete</th>
             <td>Moves previewed current mail to Gmail Trash.</td>
-            <td>Unaffected unless a separate Pro rule is enabled.</td>
+            <td>New mail is unchanged unless you separately turn on a Pro rule.</td>
             <td>
               Activity Undo: {freeDays} days on Free/Plus, {proDays} on Pro. Gmail Trash is a
               separate fallback, normally up to 30 days unless emptied sooner.
@@ -173,17 +177,17 @@ export function GmailBridgeTable() {
 export function DataBoundaryFigure() {
   return (
     <figure className="dm-story-figure" aria-labelledby="dm-story-data-title">
-      <figcaption id="dm-story-data-title">The Gmail message-data boundary</figcaption>
+      <figcaption id="dm-story-data-title">What DeclutrMail stores from Gmail</figcaption>
       <div className="dm-story-boundary">
         <div className="dm-story-boundary-node">
-          <span className="dm-story-step-label">Source</span>
+          <span className="dm-story-step-label">Your inbox stays here</span>
           <strong>Gmail</strong>
           <p>
             Gmail remains the system of record and the place where messages are read and replied to.
           </p>
         </div>
         <div className="dm-story-boundary-node dm-story-boundary-allow">
-          <span className="dm-story-step-label">Allowed across</span>
+          <span className="dm-story-step-label">DeclutrMail stores</span>
           <strong>{PRIVACY_STORAGE_LABEL}</strong>
           <ul>
             {PRIVACY_STORAGE_ITEMS.map((item) => (
@@ -192,7 +196,7 @@ export function DataBoundaryFigure() {
           </ul>
         </div>
         <div className="dm-story-boundary-node dm-story-boundary-stop">
-          <span className="dm-story-step-label">Stopped at the boundary</span>
+          <span className="dm-story-step-label">DeclutrMail does not take</span>
           <strong>{PRIVACY_NEVER_LABEL}</strong>
           <ul>
             {PRIVACY_NEVER_ITEMS.map((item) => (
@@ -202,8 +206,8 @@ export function DataBoundaryFigure() {
         </div>
       </div>
       <p className="dm-story-figure-note">
-        <strong>{PRIVACY_BADGE_HEADLINE}.</strong> “Gmail Preview” means Gmail&rsquo;s short preview
-        text, not a full body.
+        <strong>{PRIVACY_BADGE_HEADLINE}</strong> A Gmail preview snippet is the short text Gmail
+        already shows in your inbox list.
       </p>
     </figure>
   );
@@ -211,16 +215,16 @@ export function DataBoundaryFigure() {
 
 export function ActionLifecycleFigure() {
   const steps = [
-    ['Intent', 'You choose a manual action or approve an Observe-mode suggestion.'],
-    ['Sheet', 'The optional preference sheet gathers scope and choices.'],
-    ['Preview', 'A current count and available sample must load before confirmation.'],
-    ['Execute', 'The server dispatches the Gmail mutation or unsubscribe request.'],
-    ['Activity', 'The UI records the result returned by the relevant external boundary.'],
-    ['Undo', 'A reversible Gmail mutation keeps its plan-defined undo path.'],
+    ['Choose', 'You choose an action or approve a suggested batch.'],
+    ['Options', 'Choose a time range or return time when the action needs one.'],
+    ['Preview', 'See the current number of affected emails and a sample when available.'],
+    ['Confirm', 'DeclutrMail makes the confirmed Gmail change or sends the unsubscribe request.'],
+    ['Activity', 'See the result after Gmail or the sender confirms it.'],
+    ['Undo', 'Reverse Archive, Later, or Delete until the deadline shown in Activity.'],
   ] as const;
   return (
     <figure className="dm-story-figure" aria-labelledby="dm-story-lifecycle-title">
-      <figcaption id="dm-story-lifecycle-title">Manual action lifecycle</figcaption>
+      <figcaption id="dm-story-lifecycle-title">What happens when you confirm an action</figcaption>
       <ol className="dm-story-flow">
         {steps.map(([title, body], index) => (
           <li key={title}>
@@ -233,8 +237,8 @@ export function ActionLifecycleFigure() {
       <p className="dm-story-figure-note">
         Gmail confirms each label change. For one-click lists, the sender&rsquo;s system reports
         whether it accepted the request. The delivered unsubscribe request cannot be undone; any
-        paired Archive has its own reversible record. Active Pro Autopilot follows the separate rule
-        path below and does not ask for per-message confirmation.
+        paired Archive has its own Undo record. Pro Autopilot follows the separate rule path below
+        and does not ask for approval on each matching batch once you turn a rule on.
       </p>
     </figure>
   );
@@ -274,28 +278,26 @@ export function AutomationBoundaryFigure() {
 export function RecommendationCascadeFigure() {
   const steps = [
     [
-      'User agency first',
-      'A Protected sender is excluded first. Reply, star, and strong engagement signals can also mark a sender Protected.',
+      'Protected senders first',
+      'A sender you protect is excluded. Replies, stars, and frequent reading can also protect a sender automatically.',
     ],
     [
-      'Enough evidence?',
-      'Very new or low-volume senders become Later instead of forcing a high-confidence choice.',
+      'Enough information?',
+      'Very new or low-volume senders become Later instead of forcing a suggestion.',
     ],
     [
-      'Compare safe options',
-      'Archive and Unsubscribe are scored from metadata facts such as volume, read rate, prior archives, and a sender-declared unsubscribe channel.',
+      'Compare Archive and Unsubscribe',
+      'DeclutrMail uses facts such as volume, read rate, previous archives, and whether the sender offers unsubscribe.',
     ],
     [
-      'Show the reasoning',
-      'The verdict, confidence, and inspectable facts reach the UI. The user makes the decision.',
+      'Show why',
+      'The suggested action and the facts behind it appear together. You make the final decision.',
     ],
   ] as const;
 
   return (
     <figure className="dm-story-figure" aria-labelledby="dm-story-recommendation-title">
-      <figcaption id="dm-story-recommendation-title">
-        Deterministic recommendation cascade
-      </figcaption>
+      <figcaption id="dm-story-recommendation-title">How DeclutrMail suggests an action</figcaption>
       <ol className="dm-story-flow dm-story-flow-four">
         {steps.map(([title, body], index) => (
           <li key={title}>
@@ -307,7 +309,7 @@ export function RecommendationCascadeFigure() {
       </ol>
       <p className="dm-story-figure-note">
         DeclutrMail does not predict email categories. When a Gmail category is present, it is
-        Gmail&rsquo;s own label and only one transparent input to the cascade.
+        Gmail&rsquo;s own label and only one of the facts DeclutrMail considers.
       </p>
     </figure>
   );

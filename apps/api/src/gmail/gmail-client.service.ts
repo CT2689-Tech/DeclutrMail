@@ -35,7 +35,7 @@ import type {
  * `From`, `Subject`, `To`, `Cc`, `List-Unsubscribe`,
  * `List-Unsubscribe-Post`). It NEVER uses `format=full` or
  * `format=raw`, so message bodies, attachments, inline images, and
- * raw MIME are never fetched — the "Full bodies fetched: 0"
+ * raw MIME are never fetched — the "never fetch or store full email contents"
  * guarantee. `messages.list` returns ids only. The mutation methods
  * (`modifyLabels` / `batchModify`) send only label ids + message ids and
  * never read the response body, so they are body-free by construction.

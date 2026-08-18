@@ -42,7 +42,7 @@ const ROUTES = [
 const MOBILE_PROJECT = 'a11y-mobile-reduced-motion';
 
 /**
- * The trust strip ("Full bodies fetched: 0" / "Undo windows") is
+ * The trust strip (plain-language full-email-content promise / "Undo windows") is
  * DESKTOP-ONLY from the B3 fix onward. Below 600px the topbar's fixed
  * chrome — hamburger, theme toggle, Sync now, account pill — leaves it
  * under ~40px, and it clipped `overflow: hidden` MID-WORD, painting a

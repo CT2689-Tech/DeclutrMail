@@ -92,7 +92,7 @@ const foundingAnnual = TIER_MANIFEST.pro.promo ? usd(TIER_MANIFEST.pro.promo.ann
 
 const DECLUTR = {
   focus: {
-    summary: 'A deliberate sender-by-sender cleanup ritual',
+    summary: 'A guided sender-by-sender cleanup',
     detail:
       'Rank senders, inspect the effect, then choose Keep, Archive, Unsubscribe, Later, or Delete.',
     state: 'supported',
@@ -115,7 +115,7 @@ const DECLUTR = {
     state: 'limited',
   },
   unsubscribe: {
-    summary: 'When sender metadata supports it',
+    summary: 'When the sender provides an unsubscribe method',
     detail:
       'RFC one-click requests can run directly. Mailto-based requests require a manual step; unsupported senders stay explicit.',
     state: 'limited',
@@ -127,13 +127,13 @@ const DECLUTR = {
     state: 'supported',
   },
   recovery: {
-    summary: 'Journaled for reversible label actions',
+    summary: 'Recorded in Activity when recovery is available',
     detail:
       'Archive, Later, and Delete use the plan Activity Undo window. Delete also has separate Gmail Trash recovery, normally up to 30 days. Unsubscribe is not a reversible DeclutrMail action.',
     state: 'limited',
   },
   data: {
-    summary: 'Metadata and Gmail’s short preview snippet',
+    summary: 'Listed Gmail details, including the preview snippet',
     detail: 'Full message bodies and attachments are not fetched.',
     state: 'supported',
   },
@@ -170,7 +170,7 @@ const cleanEmail: ComparisonDefinition = {
     points: [
       'You need Outlook, Yahoo, iCloud, or another IMAP mailbox as well as Gmail.',
       'Smart folders, storage cleanup, sender settings, Screener, and Auto Clean belong in one suite.',
-      'You want bulk subscription management and a richer email-management client surface.',
+      'You want bulk subscription management and a fuller email-management app.',
     ],
   },
   chooseDeclutrMail: {
@@ -245,7 +245,7 @@ const cleanEmail: ComparisonDefinition = {
       label: 'Email-data posture',
       declutrMail: DECLUTR.data,
       competitor: {
-        summary: 'Vendor says cleanup analysis uses headers and metadata',
+        summary: 'Vendor says cleanup analysis uses email headers and other listed details',
         detail:
           'Clean Email also publishes in-app open, read, reply, and forward features; consult its privacy policy for the exact processing that applies to features you enable.',
         state: 'limited',
@@ -431,7 +431,7 @@ const sanebox: ComparisonDefinition = {
     headline: 'Choose SaneBox for continuous sorting',
     points: [
       'Your main problem is interruption from incoming mail, not a sender-by-sender backlog.',
-      'You want trainable folders, snooze choices, reminders, no-reply tracking, and do-not-disturb tools.',
+      'You want trainable folders, snooze options, reminders, no-reply tracking, and do-not-disturb tools.',
       'You need a provider other than Gmail or want the same system across several providers.',
     ],
   },
@@ -496,7 +496,7 @@ const sanebox: ComparisonDefinition = {
       competitor: {
         summary: 'Correct by moving and retraining',
         detail:
-          'Fresh SaneBlackHole messages remain reviewable for seven days; a general action-journal undo window is not publicly stated.',
+          'Fresh SaneBlackHole messages remain reviewable for seven days; a general Activity undo window is not publicly stated.',
         state: 'limited',
       },
     },
@@ -572,7 +572,7 @@ const leaveMeAlone: ComparisonDefinition = {
     points: [
       'Your clutter includes notifications, receipts, people, and systems—not only mailing lists.',
       'You want Archive, Later, and Delete decisions with impact previews in addition to unsubscribe.',
-      'You prefer an activity ledger for reversible Gmail label moves.',
+      'You prefer an Activity history for Gmail changes that can be undone.',
     ],
   },
   rows: [
@@ -639,9 +639,9 @@ const leaveMeAlone: ComparisonDefinition = {
       label: 'Email-data posture',
       declutrMail: DECLUTR.data,
       competitor: {
-        summary: 'Subscription metadata; encrypted content for Rollups',
+        summary: 'Subscription details; encrypted email content for Rollups',
         detail:
-          'Inbox Shield stores metadata. Rollups fetch, encrypt, and store the content needed to create the digest.',
+          'Inbox Shield stores subscription details. Rollups fetch, encrypt, and store the email content needed to create the digest.',
         state: 'limited',
       },
     },
@@ -736,7 +736,7 @@ const unrollMe: ComparisonDefinition = {
       competitor: {
         summary: 'Gmail documented; other providers not stated by name',
         detail:
-          'The product page says it supports major email providers without naming them. The privacy notice documents Gmail sign-in, plus a Google App Password route for accounts outside Google’s restricted-scope rules.',
+          'The product page says it supports major email providers without naming them. The privacy notice documents Gmail sign-in, plus a Google App Password option for accounts outside Google’s restricted-permission rules.',
         state: 'unknown',
       },
     },
@@ -856,7 +856,7 @@ const gmailFilters: ComparisonDefinition = {
   verdict:
     'Gmail filters are the flexible, no-extra-vendor choice when you already know the search criteria and desired action. DeclutrMail adds a ranked sender inventory, an opinionated decision workflow, previews, and a separate activity record.',
   indexSummary:
-    'Choose between native rule-building and a guided sender workflow that shows the scope before manual moves.',
+    'Choose between native rule-building and a guided sender workflow that shows the affected email before manual changes.',
   primaryUnit: 'Search criteria and rule action',
   providerScope: 'Gmail and Google Workspace',
   publicEntryPoint: 'Included with the Gmail account or Workspace plan',
@@ -873,7 +873,7 @@ const gmailFilters: ComparisonDefinition = {
     points: [
       'You need Gmail’s noisy senders surfaced and ranked before you know which rules to write.',
       'You want plain-language sender outcomes and an impact preview rather than filter plumbing.',
-      'You value a cleanup activity ledger and plan-based recovery window for reversible label moves.',
+      'You value a cleanup history and a plan-based recovery window for Gmail label changes.',
     ],
   },
   rows: [
@@ -932,7 +932,7 @@ const gmailFilters: ComparisonDefinition = {
       competitor: {
         summary: 'Test criteria; edit or delete the rule later',
         detail:
-          'Google documents previewing matches with Search, but no separate durable cleanup-action journal.',
+          'Google documents previewing matches with Search, but no separate long-term cleanup history.',
         state: 'limited',
       },
     },
@@ -987,9 +987,9 @@ const gmailNative: ComparisonDefinition = {
   verifiedIso: '2026-07-11',
   title: "DeclutrMail vs Gmail's built-in cleanup",
   description:
-    "A source-backed comparison of DeclutrMail and Gmail's own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and sender-level control.",
+    "A source-backed comparison of DeclutrMail and Gmail's own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and control by sender.",
   verdict:
-    "Gmail's built-in cleanup is free, already there, and requires no third-party access — start with it. DeclutrMail exists for what it leaves out: an exact count-and-sample preview before manual moves, a durable per-sender ledger with undo windows, and one decision workflow across every sender.",
+    "Gmail's built-in cleanup is free, already there, and requires no third-party access — start with it. DeclutrMail adds an exact count and sample before manual changes, a per-sender Activity history with undo windows, and one review flow across every sender.",
   indexSummary:
     'Gmail now lists subscription senders natively; the difference is what you can verify before and after a move.',
   primaryUnit: 'Sender (subscriptions) or search results',
@@ -1007,7 +1007,7 @@ const gmailNative: ComparisonDefinition = {
     headline: 'Choose DeclutrMail to see and verify every move',
     points: [
       'You want the per-sender current count, samples, and the exact Gmail label changes before you confirm — Gmail shows a selection count, not the per-sender picture or the planned changes.',
-      'You want a per-sender ledger of what happened, with an undo window for Archive, Later, and Delete.',
+      'You want a per-sender history of what happened, with an undo window for Archive, Later, and Delete.',
       'You want one ranked queue covering every sender — not only detected subscriptions — with Keep, Archive, Unsubscribe, Later, and Delete in one pass.',
     ],
   },
@@ -1065,9 +1065,9 @@ const gmailNative: ComparisonDefinition = {
       label: 'Preview and recovery',
       declutrMail: DECLUTR.recovery,
       competitor: {
-        summary: 'Selection count and brief Undo; no journal',
+        summary: 'Selection count and brief Undo; no long-term action history',
         detail:
-          'Bulk moves show the selected count and a brief Undo; archives stay recoverable in All Mail and deletes in ~30-day Trash. There is no durable per-action journal or multi-day undo window.',
+          'Bulk changes show the selected count and a brief Undo; archives stay recoverable in All Mail and deletes in Trash for about 30 days. There is no long-term record for each action or multi-day undo window.',
         state: 'limited',
       },
     },

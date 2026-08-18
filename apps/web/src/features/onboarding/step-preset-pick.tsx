@@ -117,7 +117,7 @@ export function StepPresetPick({
               ? result.presetKeys.length > 0
                 ? 'Suggestions saved — nothing changes until you approve it.'
                 : 'Saved — you can add rules any time in Autopilot.'
-              : 'Choices saved — your suggestions will appear when setup finishes.',
+              : 'Selections saved — your suggestions will appear when setup finishes.',
             'success',
           );
           onSubmitted();
@@ -224,7 +224,7 @@ export function StepPresetPick({
           in preferences and the seeder applies them; see docblock). */}
       {!rules.isLoading && !rulesSeeded && (
         <p style={{ color: color.fgMuted, fontSize: 12, margin: '0 0 14px', maxWidth: 460 }}>
-          Your suggestions are still being prepared. Choices made now will appear when they are
+          Your suggestions are still being prepared. Selections made now will appear when they are
           ready.
         </p>
       )}

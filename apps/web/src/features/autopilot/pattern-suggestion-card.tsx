@@ -51,8 +51,8 @@ export function PatternSuggestionCard({
       >
         <Fact label="Trigger">DeclutrMail recommends {action} above the rule threshold.</Fact>
         <Fact label="Action">Suggest {action} in Observe mode.</Fact>
-        <Fact label="Scope">This Gmail account only.</Fact>
-        <Fact label="Evidence">{suggestion.evidenceCount} distinct sender decisions.</Fact>
+        <Fact label="Applies to">This Gmail account only.</Fact>
+        <Fact label="Based on">{suggestion.evidenceCount} distinct sender decisions.</Fact>
         <Fact label="Safety">Protected senders are always skipped.</Fact>
         <Fact label="Daily cap">{suggestion.dailyActionCap} actions; extra matches wait.</Fact>
         <Fact label="Recovery">

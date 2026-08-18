@@ -317,8 +317,7 @@ export function ActivityScreen() {
       <ScreenIntro
         id="activity"
         title="Activity"
-        body="Every change made to your mail — by you, by Autopilot, by your rules. Filter by what happened, who sent it, or when. Archive, Later, and Delete can be undone for as long as your plan allows. Delete also sits in Gmail's Trash, which normally keeps it for 30 days."
-        tip="An empty list within a short window is fine — it means nothing changed. Widen the window to see history."
+        body="A record of actions by you, Autopilot, and your rules. Filter by result, sender, or date, and use Undo here when it is available."
       />
 
       <ContextualHelp question="Which Undo or recovery option applies?">
@@ -410,8 +409,8 @@ export function ActivityScreen() {
                 title="No activity in this window."
                 description={
                   <>
-                    Try widening the time range, clearing the verb / sender filter, or switching the
-                    source — the activity log is append-only, so nothing has been removed.
+                    Try widening the time range, clearing the action or sender filter, or switching
+                    the source. Your Activity history has not been removed.
                   </>
                 }
               />

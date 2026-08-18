@@ -6,7 +6,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'what-is-declutrmail',
     question: 'What is DeclutrMail?',
     answer:
-      'DeclutrMail is a companion for Gmail that groups recurring mail by sender, shows aggregate facts such as volume and engagement, and lets you apply explicit Keep, Archive, Unsubscribe, Later, or Delete decisions. Gmail remains the place where you read full messages and verify final mailbox state.',
+      'DeclutrMail is a companion for Gmail that groups recurring email by sender, shows volume and read rate, and lets you choose Keep, Archive, Unsubscribe, Later, or Delete. Gmail remains the place where you read complete emails and check the final result.',
     link: {
       href: '/how-to/clean-gmail-by-sender',
       label: 'See the sender-first workflow',
@@ -17,12 +17,12 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'replacement-inbox',
     question: 'Does DeclutrMail replace the Gmail inbox?',
     answer:
-      'No. DeclutrMail is deliberately not a full email reader or composer. It organizes sender-level review and mail actions, then links back to Gmail for full content, threads, search, Trash, and account-level controls.',
+      'No. DeclutrMail is deliberately not a full email reader or composer. It organizes review by sender and Gmail actions, then links back to Gmail for full content, conversations, search, Trash, and account controls.',
   },
   {
     id: 'stored-data',
     question: 'What Gmail data does DeclutrMail store?',
-    answer: `The message allowlist is: ${PRIVACY_STORAGE_ITEMS.join('; ')}. DeclutrMail also stores derived sender aggregates, your sender decisions, automation settings, action history, and account preferences needed to operate the service.`,
+    answer: `DeclutrMail stores these Gmail details: ${PRIVACY_STORAGE_ITEMS.join('; ')}. It also stores sender totals and read rates, your decisions, automation settings, Activity history, and account preferences needed to run the service.`,
     link: {
       href: '/privacy',
       label: 'Read the complete privacy policy',
@@ -33,24 +33,24 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'full-bodies',
     question: 'Does DeclutrMail fetch full email bodies or attachments?',
     answer:
-      'No. Gmail messages are fetched in metadata format. Full and raw message bodies, HTML, attachments, inline images, and raw MIME are never fetched or stored. Gmail’s short generated preview snippet and the subject are stored, so “metadata-only” does not mean content-free.',
+      'No. DeclutrMail requests only the listed Gmail details. Full email contents, HTML, attachments, embedded images, and raw email source are never fetched or stored. The subject line and Gmail preview snippet are stored, so the app does receive some text even though it never receives the complete email.',
   },
   {
     id: 'anthropic',
-    question: 'Is any Gmail metadata sent to an AI provider?',
+    question: 'Are any Gmail details sent to an AI provider?',
     answer:
-      'The sender-reasoning path sends Anthropic precomputed aggregate facts without subjects or snippets. Daily Brief has a narrower bounded path that may send sender identity, subject, and Gmail preview snippet to Anthropic to compose its narrative. Neither path sends a full message body or attachment, and Brief falls back to a deterministic template when the provider is unavailable.',
+      'To explain a suggestion, Anthropic receives sender totals and read rates without subject lines or snippets. Daily Brief works differently: it may send the sender, subject line, and Gmail preview snippet to Anthropic to compose a short summary. Neither use sends full email contents or attachments, and DeclutrMail uses a standard summary when Anthropic is unavailable.',
     link: {
       href: '/answers/what-is-metadata-only-email-analysis',
-      label: 'Understand the processing boundary',
-      description: 'Fields, inferences, and external processing.',
+      label: 'See exactly what is processed',
+      description: 'Gmail details, conclusions, and external processing.',
     },
   },
   {
     id: 'action-effects',
     question: 'What do Keep, Archive, Later, and Delete do?',
     answer:
-      'Keep records a sender decision. Archive removes Inbox from current matching mail but keeps it in Gmail All Mail. Later removes Inbox and adds DeclutrMail/Later to current matching mail. Delete moves current matching mail to Gmail Trash. Every verb acts on inbox mail by default; Delete alone can be widened to include a sender’s archived mail, which you choose per sender before you confirm. Manual Archive, Later, and Delete do not create standing future-mail rules.',
+      'Keep records your decision for a sender. Archive moves matching email out of Inbox but keeps it in Gmail All Mail. Later moves matching email out of Inbox and adds DeclutrMail/Later. Delete moves matching email to Gmail Trash. Each action starts with inbox email; Delete alone can also include a sender’s archived email when you choose that option before confirming. Manual Archive, Later, and Delete do not create rules for future mail.',
   },
   {
     id: 'future-mail',
@@ -71,14 +71,14 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     link: {
       href: '/answers/how-undo-works-for-gmail-cleanup',
       label: 'See every recovery path',
-      description: 'Undo and recovery, verb by verb.',
+      description: 'Undo and recovery for each action.',
     },
   },
   {
     id: 'where-undo',
     question: 'Where do I find an active undo?',
     answer:
-      'Activity is the dependable audit and recovery surface for journaled actions. Triage also shows a recent-action tray. An undo control is not currently mounted globally across every product screen, so use Activity when you need to inspect the authoritative result.',
+      'Activity is the dependable place to review completed actions and use Undo when it is available. Triage also shows recent actions. Undo does not appear on every screen, so use Activity when you need to check a result or recover email.',
   },
   {
     id: 'unsubscribe',
@@ -102,19 +102,19 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'autopilot',
     question: 'What does Autopilot do at launch?',
     answer:
-      'Plus and Pro include five preset rules. Each rule starts in Observe, collecting would-be matches without moving mail, and you approve or dismiss each batch by hand. On Pro you can also switch a rule to Active after the seven-day observation window — reviewing the sample and dry-run scope first — so it acts on future matches without asking. Custom rule creation is not part of the launch UI, and every rule can be paused.',
+      'Plus and Pro include five preset rules. Each rule starts in Observe, collecting possible matches without moving mail, and you approve or dismiss each batch yourself. On Pro you can turn on a rule after the seven-day review period, after checking a sample of what it would affect, so it can handle future matches automatically. Custom rule creation is not part of the launch product, and every rule can be paused.',
   },
   {
     id: 'later-vs-snooze',
     question: 'Is DeclutrMail Later the same as Gmail Snooze?',
     answer:
-      'No. Gmail Snooze schedules one message. DeclutrMail Later moves the current matching mail for a sender out of Inbox, adds the DeclutrMail/Later label, and requires a sender-level return time. It does not create a rule for future mail.',
+      'No. Gmail Snooze schedules one email. DeclutrMail Later moves the current matching email for a sender out of Inbox, adds the DeclutrMail/Later label, and requires one return time for that sender. It does not create a rule for future email.',
   },
   {
     id: 'plans',
     question: 'What changes between Free, Plus, and Pro?',
     answer:
-      'Free supports one inbox with the full manual cleanup workflow — Senders, Triage, Later, bulk actions, and the activity journal — metered at 50 cleanup actions a month with a seven-day undo window. Plus removes the monthly meter and adds the Screener plus Autopilot rules that find matching mail for your batch approval. Pro adds up to three inboxes, a thirty-day undo window, rules that run without per-batch approval, and the rest of the automation set — Brief, Quiet, and Follow-ups. Use the pricing page as the current source of truth.',
+      'Free supports one inbox with Senders, Triage, Later, bulk actions, and Activity, limited to 50 cleanup actions a month with a seven-day Undo window. Plus removes the monthly limit and adds Screener plus Autopilot rules that find matching email for your approval. Pro supports up to three inboxes, a thirty-day Undo window, rules that can run without approving each batch, and Brief, Quiet, and Follow-ups. Use the pricing page for current plan details.',
     link: {
       href: '/pricing',
       label: 'Compare current plans',

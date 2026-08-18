@@ -42,9 +42,9 @@ export async function syncCompleteEmail(input: SyncCompleteEmailInput): Promise<
   const preferencesUrl = `${input.appUrl}/settings`;
 
   const text = [
-    `DeclutrMail finished indexing ${input.mailboxEmail}.`,
+    `DeclutrMail finished scanning ${input.mailboxEmail}.`,
     '',
-    `${messages} indexed — your senders are grouped and ready to`,
+    `${messages} scanned — your senders are grouped and ready to`,
     'triage. The first pass usually takes a few minutes and clears',
     'the bulk of the noise.',
     '',
@@ -65,7 +65,7 @@ export async function syncCompleteEmail(input: SyncCompleteEmailInput): Promise<
 
   const html = await renderShell(
     <Shell
-      preview={`${messages} indexed and ready to triage`}
+      preview={`${messages} scanned and ready to review`}
       footer={FOOTER}
       optOut={{ unsubscribeUrl: input.unsubscribeUrl, preferencesUrl }}
     >
@@ -75,7 +75,7 @@ export async function syncCompleteEmail(input: SyncCompleteEmailInput): Promise<
           size instead of sitting mid-paragraph. */}
       <Text style={{ ...HERO_NUMERAL, margin: '0 0 4px' }}>{formatNumber(input.messageCount)}</Text>
       <Text style={{ color: SOFT, fontSize: '15px', lineHeight: '22px', margin: '0 0 22px' }}>
-        {input.messageCount === 1 ? 'message' : 'messages'} indexed from{' '}
+        {input.messageCount === 1 ? 'email' : 'emails'} scanned from{' '}
         {/* Rendered as an explicit anchor so Gmail does not autolink the
             bare address into default-blue underlined link text. `mailto:`
             with inherited styling keeps it looking like the prose it is. */}

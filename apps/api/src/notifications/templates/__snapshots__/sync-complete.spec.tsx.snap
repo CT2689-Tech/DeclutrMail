@@ -1,9 +1,9 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`sync-complete > matches the snapshot 1`] = `
-"DeclutrMail finished indexing you@gmail.com.
+"DeclutrMail finished scanning you@gmail.com.
 
-24,310 messages indexed — your senders are grouped and ready to
+24,310 messages scanned — your senders are grouped and ready to
 triage. The first pass usually takes a few minutes and clears
 the bulk of the noise.
 

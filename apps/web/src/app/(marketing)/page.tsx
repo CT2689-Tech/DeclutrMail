@@ -7,8 +7,6 @@ import {
   HowItWorks,
   PrivacyDesk,
   Problem,
-  ProductTour,
-  Ritual,
 } from '@/features/marketing/landing/sections';
 import { PricingTeaser } from '@/features/marketing/landing/pricing-teaser';
 import { Faq } from '@/features/marketing/landing/faq';
@@ -23,8 +21,8 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
  * awareness is intentionally absent; auth CTAs start Google OAuth directly.
  *
  * Section order follows D134, trimmed to the launch surface:
- * hero → trust strip → problem → how-it-works → ritual (K/A/U/L/D)
- * → privacy posture → pricing teaser → FAQ → final CTA → footer.
+ * hero → trust strip → problem → how-it-works + action outcomes
+ * → privacy posture → Gmail companion → pricing teaser → FAQ → final CTA → footer.
  * D136 still ships no testimonials without first-party evidence. Product
  * comparisons live on their source-backed dedicated routes.
  */
@@ -75,9 +73,7 @@ export default function LandingPage() {
       </div>
       <Problem />
       <HowItWorks />
-      <Ritual />
       <PrivacyDesk />
-      <ProductTour />
       <GmailCompanion />
       <PricingTeaser />
       <Faq />

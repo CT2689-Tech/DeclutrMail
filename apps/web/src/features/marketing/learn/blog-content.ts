@@ -23,14 +23,13 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
       'The inbox presents mail in arrival order. That is the right view for reading what arrived next, but a poor view for understanding what keeps creating the backlog.',
     readingMinutes: 9,
     example: {
-      label: 'Illustrative example — synthetic data',
-      caption:
-        'The synthetic inbox below has 111 messages but only three source relationships to decide.',
+      label: 'Made-up example',
+      caption: 'The made-up inbox below has 111 messages but only three senders to decide.',
       rows: [
         {
           sender: 'Release Notes Weekly',
           detail: '47 messages · 2 opened · no replies',
-          action: 'Review source',
+          action: 'Review sender',
           result: 'One sender decision replaces 47 repeated triage moments.',
         },
         {
@@ -61,7 +60,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'compression',
         title: 'Compression changes the shape of the work',
         paragraphs: [
-          'Suppose 500 messages come from 24 recurring sources. Message-first cleanup presents 500 checkboxes. Sender-first cleanup presents 24 hypotheses: this source is useful, this one is noise, this one is ambiguous. The number of final mail operations may still be large, but the number of human judgments is smaller.',
+          'Suppose 500 emails come from 24 recurring senders. Message-first cleanup presents 500 checkboxes. Sender-first cleanup presents 24 questions: is this sender useful, noisy, or uncertain? The number of final Gmail changes may still be large, but the number of human decisions is smaller.',
           'That compression is valuable only when the product keeps the underlying facts available. Volume, recent subjects, opens, replies, and current labels should explain why a sender is in view. A recommendation without facts merely replaces one opaque list with another.',
           'The user should also be able to decline the compression. When the sender is a marketplace, school, healthcare system, or another shared platform, open the messages in Gmail and decide at message level. A sender card is a review unit, not a claim that every message is interchangeable.',
         ],
@@ -70,13 +69,13 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'two-decisions',
         title: 'Current mail and future mail are two decisions',
         paragraphs: [
-          'Cleanup products often blur two questions because a single confirmation feels efficient. What should happen to the messages already here? What should happen when this source writes again? The answers may differ. You may unsubscribe but preserve receipts, archive a backlog but allow new mail, or route future updates while keeping a recent thread in Inbox.',
+          'Cleanup products often blur two questions because a single confirmation feels efficient. What should happen to the email already here? What should happen when this sender emails again? The answers may differ. You may unsubscribe but preserve receipts, archive a backlog but allow new email, or route future updates while keeping a recent conversation in Inbox.',
           'DeclutrMail therefore treats manual Archive, Later, and Delete as actions on current matching mail. They do not install an invisible standing rule. Unsubscribe requests future-delivery change and leaves existing mail untouched unless the user separately approves backlog cleanup.',
           'The distinction costs an extra line of preview copy. It saves the much larger trust cost of discovering that a one-time cleanup quietly became permanent automation.',
         ],
         callout: {
           title: 'A durable decision is not necessarily an automatic rule',
-          body: 'Durability comes from recording why a source was reviewed and making future behavior explicit. It does not require every manual action to repeat forever.',
+          body: 'Durability comes from recording why a sender was reviewed and making future behavior explicit. It does not require every manual action to repeat forever.',
           tone: 'truth',
         },
       },
@@ -93,8 +92,8 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'context',
         title: 'A companion should return context to Gmail',
         paragraphs: [
-          'DeclutrMail is not trying to rebuild the inbox reader. It indexes a bounded metadata set, including subject and Gmail’s preview snippet, to support sender review. It never fetches full message bodies or attachments. When content determines the decision, the correct next step is an “Open in Gmail” link.',
-          'That boundary is both a privacy choice and a product constraint. Sender-level tools should be excellent at recurrence, scope, and action history. Gmail should remain the place for full content, search, thread context, and final verification.',
+          'DeclutrMail is not trying to rebuild the inbox reader. It stores a limited set of Gmail details, including the subject line and Gmail preview snippet, to support sender review. It never fetches full email contents or attachments. When the content determines your decision, the correct next step is “Open in Gmail.”',
+          'That limit is both a privacy decision and a product constraint. Sender tools should be excellent at showing recurring senders, affected email, and action history. Gmail should remain the place for full content, search, conversations, and final verification.',
           'A good companion reduces the number of times you must read the same kind of interruption without pretending that reading itself is obsolete.',
         ],
       },
@@ -103,7 +102,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         title: 'Measure decisions that prevent recurrence',
         paragraphs: [
           '“Messages deleted” is an attractive metric because it can become very large. It also rewards the most destructive action and says nothing about whether the inbox will refill. A more useful measure separates current messages moved from future noise prevented and keeps both tied to auditable sender decisions.',
-          'The sender-first thesis is therefore not “bulk delete faster.” It is “make fewer, better-scoped judgments about recurring sources, preserve exceptions, and keep the consequences visible.” That is a quieter product promise, and a more durable one.',
+          'The sender-first idea is therefore not “bulk delete faster.” It is “make fewer, better-informed decisions about recurring senders, preserve exceptions, and keep the consequences visible.” That is a quieter product promise, and a more durable one.',
         ],
       },
     ],
@@ -144,16 +143,16 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'not-binary',
         title: 'Email data is not body or nothing',
         paragraphs: [
-          'An email API can return sender and recipient headers, subject, dates, labels, read state, a provider-generated snippet, full MIME parts, or raw content. Calling every field outside the full MIME payload “metadata” is technically convenient but insufficient for a user deciding whether the exposure is acceptable.',
-          'DeclutrMail stores sender, subject, Gmail’s short preview snippet, dates, labels, read state, size, and a small allowlist of list-unsubscribe headers. It does not fetch or store full message bodies, HTML, attachments, inline images, or raw MIME. The snippet deserves explicit mention because a short preview can still contain sensitive language.',
-          'The honest statement is narrower and stronger: full bodies fetched, zero; Gmail snippets stored. Precision earns more trust than a broader claim that later requires footnotes.',
+          'An email API can return sender and recipient details, subject lines, dates, labels, read state, a provider-generated snippet, complete email parts, or raw content. Calling everything outside the complete email “metadata” is technically convenient but not useful enough for a person deciding whether the access is acceptable.',
+          'DeclutrMail stores the sender, subject line, Gmail preview snippet, dates, labels, read state, size, and limited unsubscribe information. It does not fetch or store full email contents, HTML, attachments, embedded images, or raw email source. The snippet deserves explicit mention because a short preview can still contain sensitive language.',
+          'The honest statement is narrower and stronger: DeclutrMail never fetches or stores full email contents, but it does store Gmail preview snippets. Precision earns more trust than a broader claim that later requires footnotes.',
         ],
       },
       {
         id: 'capability',
         title: 'The data boundary should limit product capability',
         paragraphs: [
-          'Without complete content, DeclutrMail should not offer full-message search, complete thread summaries, attachment extraction, or semantic guarantees about what a message means. Sender volume, opens, replies, labels, and recency can support source-level review, but they cannot replace reading a contract, medical result, or conversation.',
+          'Without complete content, DeclutrMail should not offer full-email search, complete conversation summaries, attachment extraction, or guarantees about what an email means. Sender volume, opens, replies, labels, and recency can support review by sender, but they cannot replace reading a contract, medical result, or conversation.',
           'This is why the interface returns users to Gmail for message content. A deep link is not an unfinished reader; it is evidence that the companion boundary is being respected.',
           'Constraints also protect future product decisions. A tempting feature that requires raw bodies should trigger a visible privacy decision rather than arriving through an unnoticed expansion of the fetch path.',
         ],
@@ -172,7 +171,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         title: 'External processors are part of the boundary',
         paragraphs: [
           'It is not enough to say what is stored in the primary database. Users also deserve to know what reaches an error service, analytics system, email provider, or language model. The answer may differ by feature.',
-          'DeclutrMail’s sender-reasoning path sends Anthropic precomputed aggregate facts without subjects or snippets. Daily Brief has a different contract: its bounded narrative input can include sender identity, subject, and Gmail preview snippet. Full bodies and attachments are never included, and deterministic templates are the fallback when the adapter fails or is unavailable.',
+          'DeclutrMail can send Anthropic sender totals and read rates without subject lines or snippets to explain a suggestion. Daily Brief works differently: it can send the sender, subject line, and Gmail preview snippet. Full email contents and attachments are never included, and DeclutrMail uses a standard summary when Anthropic is unavailable.',
           'Those two paths should never be compressed into “AI never sees email data” or “AI reads your inbox.” Both slogans are false. Field-level disclosure is the useful middle.',
         ],
         callout: {
@@ -185,8 +184,8 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'proof',
         title: 'Turn privacy copy into executable proof',
         paragraphs: [
-          'The strongest implementation does not rely on developer memory. Schema columns define the allowed stored fields. Gmail clients request metadata format. Prompt types omit body fields. Tests fail when a forbidden property appears. Logging helpers redact known sensitive keys. Data exports enumerate exact columns.',
-          'Copy should be generated from or tested against the same allowlist wherever possible. Otherwise the homepage, privacy policy, onboarding, and settings will slowly describe different products.',
+          'The strongest implementation does not rely on developer memory. Database columns define the stored fields. Gmail clients request only the required format. AI inputs omit body fields. Tests fail when a forbidden field appears. Logging helpers remove known sensitive information. Data exports list exact columns.',
+          'Copy should be generated from or tested against the same field list wherever possible. Otherwise the homepage, privacy policy, onboarding, and settings will slowly describe different products.',
           'This approach cannot prove the absence of every bug. It makes privacy drift reviewable in code and gives future contributors a clear point where a boundary change must be debated.',
         ],
       },
@@ -194,7 +193,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'product-quality',
         title: 'Less data can produce a more legible product',
         paragraphs: [
-          'A bounded data model forces DeclutrMail to be specific about its job: reveal recurring sources, quantify their cost, present current-mail actions, record outcomes, and return full reading to Gmail. It discourages a feature catalogue built from whatever content can be extracted.',
+          'A limited data model forces DeclutrMail to be specific about its job: reveal recurring senders, show their volume, present actions for existing email, record results, and return full reading to Gmail. It discourages features built merely because more content could be extracted.',
           'Privacy and product focus reinforce each other here. The missing body is not only something the security page promises. It is visible in the architecture of the experience.',
         ],
       },
@@ -227,14 +226,14 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
     eyebrow: 'Trust design · previews before recovery',
     title: 'Reversible does not mean risk-free',
     description:
-      'Why Gmail cleanup needs verb-specific recovery, visible previews, small batches, and honest one-way boundaries even when undo exists.',
+      'Why each Gmail cleanup action needs its own recovery explanation, visible previews, small batches, and honest one-way warnings even when Undo exists.',
     intro:
-      'Undo is a safety net. When a product uses it as permission to make scope vague or confirmation effortless, recovery becomes a substitute for informed action.',
+      'Undo is a safety net. When a product uses it as permission to leave the affected email unclear or make confirmation effortless, recovery becomes a substitute for informed action.',
     readingMinutes: 9,
     sections: [
       {
         id: 'different-meanings',
-        title: '“Reversible” means different things for different verbs',
+        title: '“Reversible” means something different for each action',
         paragraphs: [
           'Archive is a label change: remove Inbox, then add it back. Later is two label changes: remove Inbox and add DeclutrMail/Later, then invert both. Delete moves mail to Gmail Trash, where Gmail supplies a temporary recovery period. Keep and Protected are sender settings that can be changed again.',
           'Unsubscribe is categorically different. Once a standards request or a user-sent mailto message reaches another organization, DeclutrMail cannot pull it back. A user may subscribe again later, but that is a new request rather than an inverse operation.',
@@ -246,26 +245,26 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         title: 'A preview answers questions that undo cannot',
         paragraphs: [
           'Undo can reverse a supported operation after it runs. It cannot tell the user beforehand whether the selected sender was correct, whether the count includes years of mail, whether future messages are affected, or whether an external request will be delivered.',
-          'A useful preview states what changes, what does not change, the affected scope, and the recovery path. For Unsubscribe it should say that existing mail stays put and the delivered request is one-way. For manual Archive it should say that future messages may still arrive.',
+          'A useful preview states what changes, what does not change, which email is affected, and how recovery works. For Unsubscribe it should say that existing email stays put and the delivered request is one-way. For manual Archive it should say that future messages may still arrive.',
           'The preview is therefore not decorative friction. It is the place where the product makes its model inspectable before consequences begin.',
         ],
       },
       {
         id: 'journal',
-        title: 'A good undo journal records exact prior state',
+        title: 'A good Activity history supports accurate Undo',
         paragraphs: [
-          'A generic “move back” command is not sufficient. A message may already have labels, may already be outside Inbox, or may be changed again after the cleanup action. The journal should record the exact forward and inverse label deltas, bind them to one mailbox, and execute idempotently so retries do not compound.',
-          'DeclutrMail stores message identifiers and label operations rather than a duplicate message body. Activity exposes active tokens for journaled actions. Triage also shows a recent-action tray, but Activity remains the durable place to audit outcomes and initiate recovery.',
-          'The expiry should be visible. Free and Plus use seven-day journal windows, while Pro uses thirty days. Gmail Trash can end recovery earlier if the user empties it or permanently deletes a message.',
+          'A generic “move back” command is not enough. An email may already have labels, may already be outside Inbox, or may change again after the cleanup action. DeclutrMail must remember the exact Gmail label changes for that mailbox so a retry does not repeat or compound them.',
+          'DeclutrMail stores Gmail message IDs and label changes rather than a duplicate email body. Activity shows Undo while recovery is available. Triage also shows recent actions, but Activity remains the dependable place to review results and start recovery.',
+          'The deadline should be visible. Free and Plus offer Undo for seven days, while Pro offers thirty days. Gmail Trash can end recovery earlier if the user empties it or permanently deletes an email.',
         ],
       },
       {
         id: 'batch',
         title: 'Batch size changes the cost of a mistake',
         paragraphs: [
-          'The same correct action can carry different risk at one sender and one thousand senders. Bulk tools should preview aggregate counts, isolate per-sender failures, preserve one auditable batch identity, and avoid optimistic success before workers finish.',
+          'The same correct action can carry different risk for one sender and one thousand senders. Bulk tools should preview the total count, show failures for each sender, keep the batch together in Activity, and avoid showing success before the work finishes.',
           'A small first batch is still the best operational control. It tests sender identity, Gmail behavior, recovery, and the user’s interpretation of the preview before the largest selection runs.',
-          'Speed should come from eliminating repeated confirmation once the model is understood, not from hiding the scope on the first irreversible decision.',
+          'Speed should come from eliminating repeated confirmation once the workflow is understood, not from hiding the affected email on the first irreversible decision.',
         ],
         callout: {
           title: 'Recovery time is not a reason to maximize the batch',
@@ -278,28 +277,28 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         title: 'Automation needs observation in addition to undo',
         paragraphs: [
           'A manual mistake affects one reviewed set. An active rule can repeat the mistake every time the condition matches. Undoing yesterday’s messages does not correct tomorrow’s rule unless the automation state is also paused or changed.',
-          'DeclutrMail’s presets begin in Observe for seven days. Would-be matches accumulate without moving mail. Activation has its own dry run and explicit state. The safety model is not “the rule is fine because actions can be undone”; it is “the user saw representative matches before the rule began, and can still audit each result.”',
+          'DeclutrMail’s presets begin in Observe for seven days. Matches collect without moving mail. Before activation, you review the matching email and deliberately switch the rule on. The safety model is not “the rule is fine because actions can be undone”; it is “the user saw representative matches before the rule began and can still review each result.”',
           'Unsubscribe automation deserves extra caution because delivered requests have no inverse. Protected senders are excluded before recommendations so known exceptions do not enter the automation path.',
         ],
       },
       {
         id: 'trust',
-        title: 'Trust comes from bounded claims',
+        title: 'Trust comes from specific claims',
         paragraphs: [
           '“Recoverable for seven days from Activity,” “restorable from Gmail Trash for up to thirty days,” and “cannot be undone after delivery” are less elegant than one universal promise. They are also useful when something goes wrong.',
-          'The standard for a cleanup product should be that every action has an explicit scope and an honest recovery statement, including when that statement is no. Reversibility then becomes a real system property instead of a marketing adjective.',
+          'The standard for a cleanup product should be that every action names the affected email and gives an honest recovery statement, including when recovery is unavailable. Reversibility then becomes a real product property instead of a marketing adjective.',
         ],
       },
     ],
     related: [
       {
         href: '/answers/how-undo-works-for-gmail-cleanup',
-        label: 'Undo, verb by verb',
+        label: 'Undo for each action',
         description: 'The operational recovery guide.',
       },
       {
         href: '/how-to/bulk-delete-emails-from-one-sender',
-        label: 'Scope Delete safely',
+        label: 'Delete with a clear preview',
         description: 'A checked workflow for Gmail Trash.',
       },
       {

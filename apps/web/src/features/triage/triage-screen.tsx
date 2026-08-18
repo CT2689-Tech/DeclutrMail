@@ -1208,8 +1208,19 @@ export function TriageScreen({
         <ScreenIntro
           id="triage"
           title="How Triage works"
-          body="Choose what happens for each sender: Keep, Archive, Unsubscribe, Later, or Delete. You’ll see the affected mail before anything changes."
-          tip="We never read message bodies. Triage reasons from sender, subject, Gmail's preview snippet, dates, and aggregate read/volume stats — that's it."
+          body={
+            <>
+              Choose what happens for each sender: Keep, Archive, Unsubscribe, Later, or Delete.
+              You’ll see the affected mail before anything changes.{' '}
+              <a href="/inbox-simulator" style={{ color: color.primary, fontWeight: 600 }}>
+                Practice with sample data.
+              </a>
+            </>
+          }
+          learnMore={{
+            href: '/help#actions-in-gmail-terms',
+            label: 'What each action does',
+          }}
         />
       )}
 

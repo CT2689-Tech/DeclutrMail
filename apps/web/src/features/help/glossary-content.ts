@@ -13,9 +13,29 @@ export const GLOSSARY_TERMS = {
       'A person or service identified by its From address. DeclutrMail groups matching mail by sender so one decision can cover that sender’s mail.',
   },
   gmailPreview: {
-    term: 'Gmail Preview',
+    term: 'Gmail preview snippet',
     definition:
-      'The short snippet Gmail already shows in your inbox list. DeclutrMail stores it to give review context without fetching the full message body.',
+      'The short text Gmail already shows in your inbox list. DeclutrMail stores it to give you context without fetching the full email.',
+  },
+  decision: {
+    term: 'Decision',
+    definition:
+      'What you want for a sender. DeclutrMail records it; Gmail changes only when an action is confirmed or an Active rule applies.',
+  },
+  action: {
+    term: 'Action',
+    definition:
+      'One specific result, such as Archive, Later, Unsubscribe, Delete, or recording Keep. DeclutrMail shows the result in Activity.',
+  },
+  suggestion: {
+    term: 'Suggestion',
+    definition:
+      'A recommended decision based on the sender facts DeclutrMail lists. A suggestion never changes Gmail on its own.',
+  },
+  rule: {
+    term: 'Rule',
+    definition:
+      'An instruction for future matching email. Observe only suggests; Active can perform the rule’s action automatically.',
   },
   protected: {
     term: 'Protected',
@@ -60,6 +80,11 @@ export const GLOSSARY_GROUPS: ReadonlyArray<{
     title: 'Mail and sender context',
     description: 'What DeclutrMail groups and shows while you review.',
     terms: ['sender', 'gmailPreview'],
+  },
+  {
+    title: 'Decisions and actions',
+    description: 'The difference between your intent, advice, and a Gmail change.',
+    terms: ['decision', 'action', 'suggestion', 'rule'],
   },
   {
     title: 'Standing sender controls',

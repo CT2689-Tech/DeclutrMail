@@ -16,7 +16,7 @@ import {
 export const metadata: Metadata = marketingPageMetadata({
   title: 'How DeclutrMail works with Gmail — DeclutrMail',
   description:
-    'How DeclutrMail groups Gmail metadata by sender, previews manual mailbox changes, and keeps one-time cleanup separate from Autopilot rules you enable.',
+    'How DeclutrMail groups email by sender, previews manual Gmail changes, and keeps one-time cleanup separate from Autopilot rules you enable.',
   path: '/how-it-works',
 });
 
@@ -25,7 +25,7 @@ export default function HowItWorksPage() {
     <ProductStoryShell
       eyebrow="How it works"
       title="A sender-control layer for Gmail."
-      lede="Gmail remains where you read, reply, compose, and search. DeclutrMail groups allowlisted Gmail metadata by sender and helps you make a smaller set of decisions. Manual cleanup changes only the preview you confirm; activated Autopilot rules are a separate future-mail path."
+      lede="Gmail remains where you read, reply, compose, and search. DeclutrMail groups a limited set of Gmail details by sender so you can make fewer decisions. Manual actions affect only the email shown before you confirm; Autopilot rules are separate and must be turned on."
     >
       <StorySection
         id="gmail-stays-home"
@@ -34,7 +34,7 @@ export default function HowItWorksPage() {
         intro={
           <p>
             DeclutrMail is a companion to Gmail, not a replacement email client. The split is
-            deliberate: Gmail handles messages; DeclutrMail handles sender-level cleanup.
+            deliberate: Gmail handles individual emails; DeclutrMail helps you decide by sender.
           </p>
         }
       >
@@ -49,8 +49,8 @@ export default function HowItWorksPage() {
           <article className="dm-story-prose-card">
             <h3>Do faster in DeclutrMail</h3>
             <p>
-              Review senders, inspect the metadata behind a recommendation, preview the affected
-              messages, confirm a cleanup action, and audit reversible changes in Activity.
+              Review senders, see why an action is suggested, preview the affected emails, confirm a
+              cleanup action, and use Undo from Activity when it is available.
             </p>
           </article>
         </div>
@@ -66,10 +66,9 @@ export default function HowItWorksPage() {
         title="One sender decision at a time."
         intro={
           <p>
-            After Gmail is connected, a one-time metadata scan builds the sender index. DeclutrMail
-            reports the current sync stage and progress; duration varies with mailbox size and
-            Gmail&rsquo;s rate limits. Every plan reviews the ranked Senders view and the focused
-            Triage queue.
+            After Gmail is connected, a first scan groups email by sender. DeclutrMail shows the
+            current step and progress; the time varies with mailbox size and Gmail&rsquo;s limits.
+            Every plan includes the ranked Senders view and focused Triage queue.
           </p>
         }
         tone="ink"
@@ -83,7 +82,7 @@ export default function HowItWorksPage() {
         title="The actions, in Gmail terms."
         intro={
           <p>
-            Daily Triage offers five choices: Keep, Archive, Unsubscribe, Later, and Delete. The
+            Daily Triage offers five decisions: Keep, Archive, Unsubscribe, Later, and Delete. The
             same five are available from Senders and Sender Detail on every plan. Delete is never
             recommended for you — you choose it, and it always shows a full preview first. Keep is
             not Protect: Keep records a decision; Protect is a separate shield against destructive
@@ -101,10 +100,9 @@ export default function HowItWorksPage() {
         title="Preview before the mailbox changes."
         intro={
           <p>
-            An optional action sheet can collect preferences, but the affected-message preview is
-            mandatory. The interface waits for the relevant boundary: Gmail confirms mailbox
-            mutations, while a sender&rsquo;s list endpoint returns the one-click unsubscribe
-            outcome.
+            Some actions ask for options first, but the affected-email preview always appears before
+            anything changes. Activity updates only after Gmail confirms a mailbox change or the
+            sender reports the result of a one-click unsubscribe request.
           </p>
         }
       >
@@ -142,11 +140,11 @@ export default function HowItWorksPage() {
       >
         <div className="dm-story-prose-grid">
           <article className="dm-story-prose-card">
-            <h3>Metadata, not full messages</h3>
+            <h3>Limited Gmail details, not full emails</h3>
             <p>
-              The Gmail message index is limited to sender, subject, Gmail Preview text, dates,
-              labels, and read/unread state. Full bodies, attachments, inline images, and raw MIME
-              are not fetched or stored.
+              DeclutrMail stores the sender, subject line, Gmail preview snippet, dates, labels, and
+              read or unread state. Full email contents, attachments, embedded images, and raw email
+              source are not fetched or stored.
             </p>
           </article>
           <article className="dm-story-prose-card">
@@ -163,7 +161,7 @@ export default function HowItWorksPage() {
 
       <FinalStoryCta
         title="Bring the sender view to your Gmail."
-        body="Connect Gmail, let the metadata index finish, and make the first decision with the affected messages visible before anything changes."
+        body="Connect Gmail, let the first scan finish, and make your first decision with the affected emails visible before anything changes."
       />
     </ProductStoryShell>
   );

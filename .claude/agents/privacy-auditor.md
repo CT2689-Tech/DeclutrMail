@@ -26,7 +26,7 @@ fixes. The implementing agent will fix; you verify.
 
 ## What DeclutrMail is allowed to store (D7, D228)
 
-Per the trust badge "Full bodies fetched: 0":
+Per the trust promise "We never fetch or store full email contents":
 
 - **Allowed:** sender name + email, subject, Gmail `snippet` (short preview),
   dates (received / internalDate), Gmail labels, read/unread state

@@ -166,7 +166,7 @@ const TOUR_STEPS = [
   },
   {
     kind: 'recommendation',
-    title: 'A highlighted verb is a suggestion',
-    body: 'When one decision stands out, that is what we would pick from this sender’s history. It is never applied for you — the choice stays yours.',
+    title: 'A highlighted action is a suggestion',
+    body: 'When one decision stands out, that is what we would pick from this sender’s history. It is never applied for you — the decision stays yours.',
   },
 ] as const;

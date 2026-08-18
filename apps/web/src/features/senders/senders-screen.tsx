@@ -2084,8 +2084,11 @@ function SendersScreenContent({
       <ScreenIntro
         id="senders"
         title="How Senders works"
-        body="Every account, list, person, and service that mails you, grouped by sender and a recommended next step. Manual Archive, Later, and Delete affect only matching inbox mail when they run; future matches change only through Autopilot rules you explicitly enable."
-        tip="Recommendations use sender identity, subject, Gmail's short preview, dates, volume, read and reply history, recency, and protection settings. Full message bodies and attachments are never fetched."
+        body="Review every person, list, and service that emails you, grouped by sender. A manual decision affects current matching email; only an Autopilot rule changes future matches."
+        learnMore={{
+          href: '/methodology#automation-method',
+          label: 'Manual decisions vs automatic rules',
+        }}
       />
 
       <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
@@ -2510,7 +2513,7 @@ function SenderResultsFreshness({
           <span aria-hidden="true">·</span>
           <span>
             {totalSenders !== null
-              ? `${totalSenders.toLocaleString('en-US')} senders indexed for ${mailboxEmail}`
+              ? `${totalSenders.toLocaleString('en-US')} senders found for ${mailboxEmail}`
               : `Matching count and rows for ${mailboxEmail}`}
           </span>
         </>

@@ -7,7 +7,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Sign in with Google — DeclutrMail',
   description:
-    'Connect Gmail after reviewing DeclutrMail’s metadata boundary, OAuth scope, initial sync, and action-preview flow.',
+    'See what Gmail permission DeclutrMail requests, what data it stores, and what happens before you confirm an action.',
   path: '/sign-in',
 });
 

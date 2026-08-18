@@ -55,7 +55,7 @@ describe('(marketing) layout — D134', () => {
     expect(screen.getByText('public page body')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeInTheDocument();
     expect(screen.getByRole('contentinfo')).toBeInTheDocument();
-    expect(screen.getByText(/Full bodies fetched: 0/)).toBeInTheDocument();
+    expect(screen.getByText('We never fetch or store full email contents.')).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

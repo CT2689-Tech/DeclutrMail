@@ -132,16 +132,16 @@ behaviours, which is the Plus-to-Pro difference rather than a second product.
 
 - Every Archive, Later, Delete, and Unsubscribe action shows the current
   matching count, an available sample, and the exact Gmail changes before you
-  approve it. The worker re-checks Gmail at execution, so the final affected
-  count can change if the mailbox changed in between.
+  approve it. DeclutrMail checks Gmail again when the action runs, so the final
+  number can change if the mailbox changed in between.
 - Manual actions affect current matched mail. They do not create future-mail
   rules; that is what Autopilot presets are for.
 - Archive and Later can be reversed from Activity for the plan's undo window.
 - Delete carries an Activity token for up to 30 days while Gmail retains
   Trash. Emptying Trash ends recovery sooner.
 - A delivered unsubscribe request cannot be recalled.
-- Full bodies fetched: 0. DeclutrMail never fetches or stores a full message
-  body, HTML, attachments, inline images, or raw MIME. The published storage
+- DeclutrMail never fetches or stores full email contents, email HTML,
+  attachments, embedded images, or raw email source. The published storage
   list is at ${origin}/security.
 
 ## Terms

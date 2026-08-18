@@ -32,7 +32,7 @@ import { mailboxAccounts } from './mailbox-accounts';
  * inline images, raw MIME, attachment sizes/filenames, or any header
  * outside the allowlist. The sync worker fetches Gmail messages with
  * `format=metadata` — bodies are never fetched, preserving the
- * "Full bodies fetched: 0" trust artifact.
+ * "We never fetch or store full email contents" trust promise.
  *
  * `provider_message_id` is Gmail's message id — it powers the D41
  * open-in-Gmail deep link and is the dedup key for at-least-once

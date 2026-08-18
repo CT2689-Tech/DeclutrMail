@@ -27,7 +27,7 @@ export interface SyntheticRow {
 
 export interface SyntheticExample {
   /** Must always make the non-production nature of the example explicit. */
-  readonly label: 'Illustrative example — synthetic data';
+  readonly label: 'Made-up example';
   readonly caption: string;
   readonly rows: readonly SyntheticRow[];
 }

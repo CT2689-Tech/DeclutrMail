@@ -103,6 +103,91 @@
   overflow: hidden;
 }
 
+.dm-simulator-guide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  padding: 20px;
+  border-bottom: 1px solid var(--dm-primary-border);
+  background: var(--dm-primary-soft);
+}
+
+.dm-simulator-guide-copy {
+  max-width: 610px;
+}
+
+.dm-simulator-guide h2 {
+  margin: 7px 0 6px;
+  font-family: var(--dm-font-display);
+  font-size: clamp(20px, 3vw, 28px);
+  letter-spacing: -0.025em;
+}
+
+.dm-simulator-guide p {
+  margin: 0;
+  color: var(--dm-fg-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.dm-simulator-guide .dm-simulator-guide-prompt {
+  margin-top: 8px;
+  color: var(--dm-fg-muted);
+  font-size: 12px;
+}
+
+.dm-simulator-guide-prompt strong {
+  color: var(--dm-primary);
+}
+
+.dm-simulator-guide-progress {
+  display: flex;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dm-simulator-guide-progress li {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-width: 66px;
+  color: var(--dm-fg-muted);
+  font: 550 9px/1 var(--dm-font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dm-simulator-guide-progress li > span {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--dm-line);
+  border-radius: 999px;
+  background: var(--dm-card);
+  color: var(--dm-fg-muted);
+  font-size: 10px;
+}
+
+.dm-simulator-guide-progress li[data-state='current'] {
+  color: var(--dm-primary);
+}
+
+.dm-simulator-guide-progress li[data-state='current'] > span {
+  border-color: var(--dm-primary);
+  background: var(--dm-primary);
+  color: var(--dm-fg-inverse);
+}
+
+.dm-simulator-guide-progress li[data-state='complete'] > span {
+  border-color: var(--dm-primary-border);
+  background: var(--dm-card);
+  color: var(--dm-primary);
+}
+
 .dm-simulator-queue-head,
 .dm-simulator-activity-head {
   min-height: 68px;
@@ -141,6 +226,24 @@
   color: var(--dm-primary);
   font: 600 11px/1.3 var(--dm-font-sans);
   cursor: pointer;
+}
+
+.dm-simulator-queue-head .dm-simulator-mode-button {
+  border: 0;
+  background: transparent;
+  color: var(--dm-primary);
+  font: 600 11px/1.3 var(--dm-font-sans);
+  cursor: pointer;
+}
+
+.dm-simulator-queue-head .dm-simulator-mode-button:hover,
+.dm-simulator-queue-head .dm-simulator-mode-button:focus-visible,
+.dm-simulator-activity-head button:hover,
+.dm-simulator-activity-head button:focus-visible,
+.dm-simulator-activity li button:hover,
+.dm-simulator-activity li button:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .dm-simulator-rows {
@@ -220,6 +323,84 @@
   color: var(--dm-fg-inverse);
   font-weight: 650;
   text-decoration: none;
+}
+
+.dm-simulator-outcome {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  max-width: 560px;
+  margin: 24px auto 0;
+}
+
+.dm-simulator-outcome > div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 6px;
+  padding: 14px 10px;
+  border: 1px solid var(--dm-line);
+  border-radius: 9px;
+  background: var(--dm-paper);
+}
+
+.dm-simulator-outcome dt {
+  color: var(--dm-fg-muted);
+  font: 550 9px/1.2 var(--dm-font-mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.dm-simulator-outcome dd {
+  margin: 0;
+  color: var(--dm-fg);
+  font-family: var(--dm-font-display);
+  font-size: 25px;
+  font-weight: 600;
+}
+
+.dm-simulator-plan-path {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  max-width: 680px;
+  margin: 18px auto 0;
+  overflow: hidden;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: 9px;
+  background: var(--dm-line-soft);
+  text-align: left;
+}
+
+.dm-simulator-plan-path span {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  background: var(--dm-paper);
+  color: var(--dm-fg-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.dm-simulator-plan-path strong {
+  color: var(--dm-fg);
+  font-size: 11.5px;
+}
+
+.dm-simulator-complete-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.dm-simulator-complete .dm-simulator-oauth-note {
+  max-width: 620px;
+  margin: 12px auto 0;
+  color: var(--dm-fg-muted);
+  font-size: 10.5px;
+  line-height: 1.5;
 }
 
 .dm-simulator-next {
@@ -326,6 +507,14 @@
     align-items: flex-start;
     flex-direction: column;
   }
+
+  .dm-simulator-guide {
+    grid-template-columns: 1fr;
+  }
+
+  .dm-simulator-guide-progress {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 560px) {
@@ -352,5 +541,31 @@
 
   .dm-simulator-dialog {
     padding: 18px;
+  }
+
+  .dm-simulator-guide {
+    padding: 17px 14px;
+  }
+
+  .dm-simulator-guide-progress {
+    justify-content: space-between;
+  }
+
+  .dm-simulator-guide-progress li {
+    min-width: 0;
+  }
+
+  .dm-simulator-queue-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dm-simulator-outcome,
+  .dm-simulator-plan-path {
+    grid-template-columns: 1fr;
+  }
+
+  .dm-simulator-complete {
+    padding: 38px 18px;
   }
 }

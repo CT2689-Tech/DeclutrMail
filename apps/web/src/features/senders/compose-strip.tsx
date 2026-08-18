@@ -119,7 +119,7 @@ export function ComposeStrip({
 }) {
   return (
     <div
-      aria-label="Compose senders scope"
+      aria-label="Senders included in this message"
       style={{
         display: 'flex',
         flexWrap: 'wrap',

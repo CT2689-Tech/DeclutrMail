@@ -301,6 +301,9 @@ describe('SendersScreen — edge states', () => {
     await waitFor(() => expect(screen.getAllByText(/Sender A/).length).toBeGreaterThan(0));
     expect(attempts).toBe(2);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Manual decisions vs automatic rules →' }),
+    ).toHaveAttribute('href', '/methodology#automation-method');
   });
 
   it('renders the no-ACTIVE-senders state on the default visit, with a show-all escape hatch', async () => {
@@ -386,7 +389,7 @@ describe('SendersScreen — edge states', () => {
     const freshness = screen.getByTestId('sender-results-freshness');
     // Coverage line answers "am I looking at everything?" — indexed
     // total + synced-through time (2026-07-16 founder smoke).
-    expect(freshness).toHaveTextContent(/senders indexed for me@example\.com/i);
+    expect(freshness).toHaveTextContent(/senders found for me@example\.com/i);
     expect(freshness).toHaveTextContent(/synced through/i);
     expect(
       freshness.querySelector('time[datetime="2026-05-29T12:00:00.000Z"]'),
@@ -1646,7 +1649,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     const dialog = await screen.findByRole('dialog');
     await waitFor(() => expect(previewedSenderIds).toEqual(['a']));
     expect(within(dialog).getByText('Archive mail from 1 sender')).toBeInTheDocument();
-    expect(within(dialog).getByLabelText('Bulk action scope')).toHaveTextContent(
+    expect(within(dialog).getByLabelText('Senders included in this bulk action')).toHaveTextContent(
       '3 selected · 2 eligible · 1 skipped',
     );
     expect(
@@ -2154,7 +2157,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(
       screen.getByText(/1 protected sender skipped — unprotect to include it/i),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Bulk action scope')).toHaveTextContent(
+    expect(screen.getByLabelText('Senders included in this bulk action')).toHaveTextContent(
       '2 selected · 1 eligible · 1 skipped',
     );
   });

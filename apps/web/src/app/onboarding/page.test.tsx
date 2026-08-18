@@ -160,9 +160,10 @@ describe('onboarding page — pre-auth boundary (D107/D108)', () => {
     expect(
       await screen.findByText('Clear thousands of emails by sender — and see exactly what moves.'),
     ).toBeInTheDocument();
-    expect(screen.getByText('Full bodies fetched: 0')).toBeInTheDocument();
+    expect(screen.getByText('We never fetch or store full email contents.')).toBeInTheDocument();
     // The banned pre-D228 phrasing must not exist anywhere on step 1.
     expect(screen.queryByText(/Bodies read: 0/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Full bodies fetched: 0/)).not.toBeInTheDocument();
   });
 
   it('promise → connect is a local hop; step 2 explains access and data use', async () => {

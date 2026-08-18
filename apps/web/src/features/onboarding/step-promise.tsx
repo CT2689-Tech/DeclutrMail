@@ -11,7 +11,7 @@ const { color } = tokens;
  *
  * Pre-OAuth, no inputs: the value promise plus the exact privacy
  * boundary BEFORE any Google consent screen. The trust badge is the
- * shared `PrivacyBadge` (locked D228 copy — "Full bodies fetched: 0"
+ * shared `PrivacyBadge` (locked D228 plain-language privacy promise
  * + the explicit storage list; the pre-D228 wording in D107's
  * original body is superseded by the GRILL2 patch on D109).
  *

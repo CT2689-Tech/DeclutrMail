@@ -7,8 +7,8 @@
  *      render with zero fetch calls proves the AuthProvider chain
  *      isn't imported.
  *   2. D228 — /help and /security carry the locked trust copy from
- *      `@declutrmail/shared` verbatim ("Full bodies fetched: 0" plus
- *      the storage allowlist). The banned pre-D228 phrase
+ *      `@declutrmail/shared` verbatim (the plain-language full-email
+ *      boundary plus the stored-data list). The banned pre-D228 phrase
  *      "Bodies read: 0" must not appear.
  *   3. D121 (founder-confirmed 2026-07-08) — /help states the 30-day
  *      money-back guarantee on every paid plan and links /refunds for
@@ -179,10 +179,10 @@ describe('/security content — verified claims only', () => {
     }
   });
 
-  it('names the single Gmail scope and the metadata-only fetch posture', () => {
+  it('names the single Gmail permission and the limited Gmail details used', () => {
     const { container } = render(<SecurityPage />);
     expect(container.textContent).toContain('gmail.modify');
-    expect(container.textContent).toMatch(/metadata/i);
+    expect(container.textContent).toContain('Gmail preview snippet');
   });
 
   it('scopes the non-leak claim to content DeclutrMail never holds', () => {
@@ -190,10 +190,10 @@ describe('/security content — verified claims only', () => {
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
     expect(text).toContain(
-      'full message bodies and attachments are never in our systems, that content cannot leak from DeclutrMail',
+      'full email contents and attachments are never in our systems, they cannot leak from DeclutrMail',
     );
     expect(text).toContain(
-      'Subjects and Gmail Preview snippets can still contain sensitive information',
+      'Subject lines and Gmail preview snippets can still contain sensitive information',
     );
     expect(text).not.toMatch(/most sensitive content.*cannot leak/i);
   });

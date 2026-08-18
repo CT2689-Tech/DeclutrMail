@@ -94,7 +94,7 @@ export function BlogIndexPage() {
         data={{
           '@context': 'https://schema.org',
           '@type': 'Blog',
-          name: 'DeclutrMail Journal',
+          name: 'DeclutrMail articles',
           url: `${siteUrl()}/blog`,
           blogPost: articles.map((article) => ({
             '@type': 'BlogPosting',
@@ -105,10 +105,10 @@ export function BlogIndexPage() {
       />
       <header className="dm-learn-hero dm-learn-hero--solo">
         <div>
-          <LearnEyebrow>DeclutrMail journal</LearnEyebrow>
+          <LearnEyebrow>DeclutrMail articles</LearnEyebrow>
           <h1 className="dm-learn-title">Notes on calmer, inspectable email</h1>
           <p className="dm-learn-lead">
-            First-party essays about sender-level decisions, privacy boundaries, recovery, and the
+            First-party essays about decisions by sender, privacy boundaries, recovery, and the
             design trade-offs behind a Gmail companion.
           </p>
           <div className="dm-learn-meta">
@@ -118,7 +118,7 @@ export function BlogIndexPage() {
           </div>
         </div>
       </header>
-      <ArticleCards articles={articles} label="Journal articles" />
+      <ArticleCards articles={articles} label="DeclutrMail articles" />
       {/* The how-to and answer clusters used to be listed in full here,
           because the footer's "Guides" link landed on /blog and they had
           no hub of their own. They now have one each, so this is two

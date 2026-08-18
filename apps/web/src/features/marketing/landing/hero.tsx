@@ -7,6 +7,7 @@ import {
 } from '@declutrmail/shared';
 import { VERB_REGISTRY } from '@declutrmail/shared/actions';
 
+import { LedgerDemo } from './ledger-demo';
 import { oauthStartUrl } from './urls';
 import { TrackedCta } from './tracked-cta';
 
@@ -24,10 +25,10 @@ import { TrackedCta } from './tracked-cta';
  *     "rules find it for you" claims are Plus-only and live in the
  *     subhead with the tier named.
  *
- * Server component: the demo loop is pure CSS (8s keyframes in
- * landing.css). Base styles are frame 0, so the global
- * `prefers-reduced-motion` override in tokens.css collapses the loop
- * to its informative completed state.
+ * The hero stays a Server Component. Its small `LedgerDemo` client
+ * island owns pause/replay state around the CSS timeline; the global
+ * `prefers-reduced-motion` override collapses that timeline to its
+ * informative completed state.
  */
 export function Hero() {
   return (
@@ -70,84 +71,18 @@ export function Hero() {
             Free · no card · 7-day undo on Archive, Later and Delete
           </p>
           {/* Connect CTAs link straight to Google's consent screen, so the
-              scope + boundary ride with the click (see OAUTH_SCOPE_DISCLOSURE). */}
+              permission explanation stays beside the click. */}
           <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">{OAUTH_SCOPE_DISCLOSURE}</p>
         </div>
         <div className="dm-mkt-reveal-3 dm-mkt-reveal">
-          <LedgerCard />
-          <p className="dm-mkt-ledger-caption">
-            one Archive decision · 412 emails · undoable for 7 days
-          </p>
+          <LedgerDemo
+            verbs={VERB_REGISTRY.map(({ id, label, shortcut }) => ({ id, label, shortcut }))}
+          />
         </div>
       </section>
 
       <TrustStrip />
     </>
-  );
-}
-
-/**
- * The D135 preview card: a sender row meets the five verbs, Archive
- * fires, the undo toast lands. Verb labels + shortcuts come from the
- * canonical registry (D227/ADR-0019) — no hand-rolled verb strings.
- */
-function LedgerCard() {
-  return (
-    <div
-      className="dm-mkt-ledger"
-      role="img"
-      aria-label="Demo: archiving LinkedIn Notifications. 412 messages leave Inbox, remain searchable in All Mail, affect existing mail only, and can be undone in Activity."
-    >
-      <div className="dm-mkt-ledger-head">
-        <span>
-          <span className="dm-mkt-ledger-dot" aria-hidden="true" />
-          Sender review — decision 1 of 14
-        </span>
-        <span>this week</span>
-      </div>
-      <div className="dm-mkt-ledger-body">
-        <div className="dm-mkt-ledger-row">
-          <div className="dm-mkt-ledger-sender">
-            <span className="dm-mkt-ledger-avatar" aria-hidden="true">
-              in
-            </span>
-            <span>
-              <span className="dm-mkt-ledger-name">LinkedIn Notifications</span>
-              <div className="dm-mkt-ledger-meta">47/mo · 0 opened in 90 days</div>
-            </span>
-          </div>
-          <div className="dm-mkt-ledger-verbs">
-            {VERB_REGISTRY.map((verb) => (
-              <span
-                key={verb.id}
-                className={`dm-mkt-ledger-verb${
-                  verb.id === 'archive' ? ' dm-mkt-ledger-verb-archive' : ''
-                }`}
-              >
-                <kbd>{verb.shortcut}</kbd>
-                {verb.label}
-              </span>
-            ))}
-          </div>
-          <div className="dm-mkt-ledger-preview">
-            <b>Preview</b>
-            <span>412 messages → All Mail</span>
-            <span>Existing mail only · Undo in Activity</span>
-          </div>
-        </div>
-        <div className="dm-mkt-ledger-receipt" aria-hidden="true">
-          <span className="dm-mkt-ledger-receipt-mark">✓</span>
-          <b>412 messages archived from Inbox</b>
-          <span>Still searchable in All Mail · existing mail only</span>
-        </div>
-      </div>
-      <div className="dm-mkt-ledger-toast">
-        <span>
-          <b>Archived — LinkedIn Notifications</b> · 412 messages
-        </span>
-        <span className="dm-mkt-undo">Undo in Activity</span>
-      </div>
-    </div>
   );
 }
 
@@ -166,7 +101,7 @@ function TrustStrip() {
       </span>
       <span className="dm-mkt-trust-item">30-day money-back guarantee</span>
       <span className="dm-mkt-trust-item" title={ACTION_PREVIEW_CLAIM}>
-        Live current-scope preview before manual mail moves
+        See which emails will move before you confirm
       </span>
       {/* D138's third trust item, restored. The wording may not exceed
           what /security#verification already states — Google APPROVED

@@ -74,7 +74,7 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
         </ConsentStep>
         <ConsentStep number="3" title="Stored in DeclutrMail">
           The fetched metadata is stored in your mailbox index along with connection records, sender
-          facts, your choices, and records needed to run and reverse eligible actions. Settings →
+          facts, your decisions, and records needed to run and reverse eligible actions. Settings →
           Privacy &amp; Data lists the purpose and retention for every dataset.
           <ConsentDetails
             label="Show stored and derived data"
@@ -87,7 +87,7 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
         <ConsentStep number="4" title="Actions you approve">
           After the scan, every Archive, Unsubscribe, Later, or Delete confirmation identifies the
           affected mail, future-mail behavior, and available recovery before anything changes. Keep
-          records a sender choice without moving mail.
+          records a sender decision without moving email.
         </ConsentStep>
       </ol>
 

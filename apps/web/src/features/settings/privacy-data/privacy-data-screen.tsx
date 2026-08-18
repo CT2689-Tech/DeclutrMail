@@ -115,9 +115,8 @@ export function PrivacyDataView({
         <div style={{ padding: '18px 20px' }}>
           <h3 style={cardTitleStyle}>Complete Gmail data inventory</h3>
           <p style={mutedTextStyle}>
-            Google grants broader account access than DeclutrMail uses. These are the exact access
-            purposes and the fetched, stored, derived, exported, transmitted, and retained data
-            contracts implemented by the product.
+            Google grants broader access than DeclutrMail uses. Expand each group to see what is
+            accessed, saved, created, shared, exported, and deleted.
           </p>
           <div style={{ marginTop: 12 }}>
             <ContextualHelp question="How is Google access different from stored data?">
@@ -161,10 +160,10 @@ export function PrivacyDataView({
       {/* 2 — which mailboxes the storage list applies to. */}
       <Card padding={0}>
         <div style={{ padding: '18px 20px' }}>
-          <h3 style={cardTitleStyle}>Indexed mailboxes</h3>
+          <h3 style={cardTitleStyle}>Mailboxes in DeclutrMail</h3>
           {mailboxes.length === 0 ? (
             <p style={mutedTextStyle}>
-              No mailboxes connected — nothing is being indexed right now.
+              No mailboxes connected — no Gmail data is being saved right now.
             </p>
           ) : (
             <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0 }}>
@@ -182,7 +181,7 @@ export function PrivacyDataView({
                 >
                   <span style={{ flex: 1, fontFamily: font.mono, fontSize: 12.5 }}>{m.email}</span>
                   <span style={{ fontSize: 11, color: color.fgMuted }}>
-                    {m.status === 'disconnected' ? 'disconnected — sync stopped' : 'indexed'}
+                    {m.status === 'disconnected' ? 'disconnected — sync stopped' : 'data saved'}
                   </span>
                 </li>
               ))}
@@ -282,17 +281,19 @@ export function PrivacyDataView({
                 <div style={exitTitleStyle}>Disconnect a mailbox</div>
                 <div style={exitDetailStyle}>
                   Removes DeclutrMail's saved Google credential and stops sync and Gmail actions.
-                  Indexed and derived mailbox data stays so reconnecting can continue its history;
+                  Saved Gmail and DeclutrMail data stays so reconnecting can continue its history;
                   Gmail is unchanged. Choose Manage in the top-bar account menu.
                 </div>
               </div>
             </li>
             <li style={exitRowStyle}>
               <div>
-                <div style={exitTitleStyle}>Disconnect &amp; delete one mailbox's indexed data</div>
+                <div style={exitTitleStyle}>
+                  Disconnect &amp; delete one mailbox&apos;s saved data
+                </div>
                 <div style={exitDetailStyle}>
-                  Also permanently deletes that mailbox's indexed message details, sender data,
-                  choices, rules, Activity, and Undo data. Your DeclutrMail account, other
+                  Also permanently deletes that mailbox&apos;s saved email details, sender data,
+                  decisions, rules, Activity, and Undo data. Your DeclutrMail account, other
                   mailboxes, disconnected Gmail address, and Gmail mail remain. Choose Manage in the
                   top-bar account menu.
                 </div>
@@ -389,9 +390,9 @@ function deletionTriggerDetail(
     case 'disconnect':
       return 'Removed when this Gmail account is disconnected.';
     case 'delete-indexed-data':
-      return 'Deleted when you choose Disconnect & delete indexed data, or when you delete your DeclutrMail account.';
+      return 'Deleted when you choose Disconnect & delete saved data, or when you delete your DeclutrMail account.';
     case 'delete-account':
-      return 'Retained after one mailbox’s indexed data is deleted; deleted with the DeclutrMail account.';
+      return 'Retained after one mailbox’s saved data is deleted; deleted with the DeclutrMail account.';
     case 'retention-policy':
       return 'Retained after mailbox or account deletion only under the stated operational retention policy.';
   }

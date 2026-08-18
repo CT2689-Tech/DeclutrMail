@@ -73,7 +73,7 @@ export default function TermsOfServicePage() {
           mail in Triage or Senders, DeclutrMail shows the current matching count, an available
           sample, and the planned Gmail changes. The worker re-checks Gmail at execution, so the
           final affected count can change if the inbox changes in between. Autopilot rules show a
-          dry run before activation; once enabled, matching future mail can run without a new
+          preview before activation; once enabled, matching future mail can run without a new
           per-message approval. You are responsible for reviewing previews and rule scope before
           approval. {ACTION_SAFETY_SUMMARY}
         </p>

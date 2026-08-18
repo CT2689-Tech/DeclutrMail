@@ -889,7 +889,7 @@ export function ConfirmActionModal({
           )}
           {request.selectedCount !== undefined && (selectedCount > 1 || skippedCount > 0) && (
             <p
-              aria-label="Bulk action scope"
+              aria-label="Senders included in this bulk action"
               style={{
                 fontFamily: font.mono,
                 fontSize: 10.5,

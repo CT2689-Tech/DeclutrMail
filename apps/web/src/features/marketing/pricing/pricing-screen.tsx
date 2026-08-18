@@ -87,7 +87,7 @@ export function PricingScreen() {
             letterSpacing: '-0.015em',
           }}
         >
-          Pick how clean you want to stay.
+          Start free. Add automation when you need it.
         </h1>
         <p
           style={{
@@ -98,10 +98,10 @@ export function PricingScreen() {
             color: color.fgSoft,
           }}
         >
-          Free is the full manual cleanup toolkit with a monthly cap. Plus removes the cap and adds
-          the Screener plus Autopilot rules you approve batch by batch. Pro lets those rules run
-          unattended and adds Brief, Quiet hours, and Follow-ups. Keep, Archive, Unsubscribe, Later,
-          and Delete keep the same meaning on every plan. {ACTION_SAFETY_SUMMARY}
+          Free includes every manual cleanup action, with a monthly limit. Plus removes the limit
+          and finds matching mail for you to approve. Pro can run the rules you turn on
+          automatically and adds Brief, Quiet hours, and Follow-ups. Keep, Archive, Unsubscribe,
+          Later, and Delete work the same way on every plan. {ACTION_SAFETY_SUMMARY}
         </p>
       </header>
 

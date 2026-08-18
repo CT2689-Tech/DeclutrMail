@@ -13,11 +13,11 @@ import { VERB_REGISTRY } from '@declutrmail/shared/actions';
 export function Problem() {
   return (
     <section className="dm-mkt-section dm-mkt-shell">
-      <p className="dm-mkt-eyebrow">№ 01 — The arithmetic</p>
-      <h2 className="dm-mkt-h2">Thousands of emails. A few hundred sender decisions.</h2>
+      <p className="dm-mkt-eyebrow">№ 01 — Why sender cleanup is faster</p>
+      <h2 className="dm-mkt-h2">Thousands of emails. Far fewer senders.</h2>
       <p className="dm-mkt-lede">
-        Your inbox has thousands of emails — but they come from a few hundred senders. Tools that
-        make you process emails leave you with the same N. DeclutrMail makes it N senders.
+        Instead of reviewing every email, review each recurring sender once. One decision can cover
+        the email that sender already added to your inbox.
       </p>
       <div className="dm-mkt-arith">
         <div className="dm-mkt-arith-cell">
@@ -26,18 +26,20 @@ export function Problem() {
           <p className="dm-mkt-arith-note">Years of newsletters, receipts, and notifications.</p>
         </div>
         <div className="dm-mkt-arith-cell">
-          <div className="dm-mkt-arith-label">Handled email by email</div>
+          <div className="dm-mkt-arith-label">Reviewed email by email</div>
           <div className="dm-mkt-arith-value">
             <s>12,418 decisions</s>
           </div>
-          <p className="dm-mkt-arith-note">That is why every “inbox zero” lapses.</p>
+          <p className="dm-mkt-arith-note">The same sender appears again and again.</p>
         </div>
         <div className="dm-mkt-arith-cell">
-          <div className="dm-mkt-arith-label">Handled sender by sender</div>
+          <div className="dm-mkt-arith-label">Reviewed sender by sender</div>
           <div className="dm-mkt-arith-value">
             <em>143 decisions</em>
           </div>
-          <p className="dm-mkt-arith-note">One verdict per sender covers everything they sent.</p>
+          <p className="dm-mkt-arith-note">
+            One decision covers that sender&rsquo;s matching email.
+          </p>
         </div>
       </div>
     </section>
@@ -49,14 +51,14 @@ export function HowItWorks() {
   return (
     <section id="how-it-works" className="dm-mkt-section dm-mkt-shell">
       <p className="dm-mkt-eyebrow">№ 02 — How it works</p>
-      <h2 className="dm-mkt-h2">Find the pattern. See the scope. Make the call.</h2>
+      <h2 className="dm-mkt-h2">Connect Gmail. Review senders. Confirm each change.</h2>
       <div className="dm-mkt-steps">
         <div className="dm-mkt-step">
           <div className="dm-mkt-step-no">STEP 1</div>
           <h3 className="dm-mkt-step-title">Connect</h3>
           <p className="dm-mkt-step-body">
-            One Google sign-in. We index sender, subject, and the short preview line Gmail already
-            shows you — never full message bodies, never attachments.
+            One Google sign-in. We scan the sender, subject, and short preview line Gmail already
+            shows you — never full email contents or attachments.
           </p>
         </div>
         <div className="dm-mkt-step">
@@ -69,43 +71,15 @@ export function HowItWorks() {
         </div>
         <div className="dm-mkt-step">
           <div className="dm-mkt-step-no">STEP 3</div>
-          <h3 className="dm-mkt-step-title">Done</h3>
+          <h3 className="dm-mkt-step-title">Keep control</h3>
           <p className="dm-mkt-step-body">
-            Autopilot preset rules find matching mail for your batch approval on Plus; on Pro an
-            explicitly activated rule applies future matches on its own. Manual decisions stay in
-            the activity ledger, with undo for label-changing actions. A delivered unsubscribe
-            request cannot be recalled; existing mail stays put unless you separately approve
-            another action.
+            Activity shows what happened and when Undo is available. Plus can collect matching mail
+            for your approval. Pro can run only the rules you deliberately turn on. Sent unsubscribe
+            requests cannot be taken back.
           </p>
         </div>
       </div>
-    </section>
-  );
-}
-
-/** One-line explainer per canonical verb, keyed by registry id. */
-const VERB_EXPLAINERS: Record<(typeof VERB_REGISTRY)[number]['id'], string> = {
-  keep: 'Record a Keep decision and leave this sender’s mail in the inbox. Protect is a separate setting.',
-  archive: 'Move matching inbox messages out of Inbox. They remain searchable in All Mail.',
-  unsubscribe:
-    'Request that the sender stop future mail. Existing messages stay put unless you choose another action.',
-  later:
-    'Move matching inbox messages to DeclutrMail/Later until a chosen sender-level return time.',
-  delete:
-    'Move matching inbox messages to Gmail Trash, normally for up to 30 days unless Trash is emptied sooner.',
-};
-
-/** D134 §5 wedge, framed as the five-verb ritual (D227 canonical verbs). */
-export function Ritual() {
-  return (
-    <section className="dm-mkt-section dm-mkt-shell">
-      <p className="dm-mkt-eyebrow">№ 03 — The ritual</p>
-      <h2 className="dm-mkt-h2">Five verbs. See the scope before manual moves.</h2>
-      <p className="dm-mkt-lede">
-        Every sender in your inbox gets one of five verdicts, each on a single key. A live preview
-        shows the current count, an available sample, and the planned Gmail changes. The worker
-        re-checks Gmail at execution, and every final outcome lands in Activity.
-      </p>
+      <h3 className="dm-mkt-ritual-title">Five decisions, one clear result each.</h3>
       <div className="dm-mkt-ritual">
         {VERB_REGISTRY.map((verb) => (
           <div
@@ -118,9 +92,25 @@ export function Ritual() {
           </div>
         ))}
       </div>
+      <div className="dm-mkt-section-link-row">
+        <a href="/inbox-simulator">Try the real interaction →</a>
+        <a href="/how-it-works">See the full product flow →</a>
+      </div>
     </section>
   );
 }
+
+/** One-line explainer per canonical verb, keyed by registry id. */
+const VERB_EXPLAINERS: Record<(typeof VERB_REGISTRY)[number]['id'], string> = {
+  keep: 'Record a Keep decision and leave this sender’s mail in the inbox. Protect is a separate setting.',
+  archive: 'Move matching inbox messages out of Inbox. They remain searchable in All Mail.',
+  unsubscribe:
+    'Request that the sender stop future mail. Existing messages stay put unless you choose another action.',
+  later:
+    'Move matching inbox email to DeclutrMail/Later until the return time you choose for that sender.',
+  delete:
+    'Move matching inbox messages to Gmail Trash, normally for up to 30 days unless Trash is emptied sooner.',
+};
 
 /** Privacy posture — full-bleed ink desk with the D228 badge as paper. */
 export function PrivacyDesk() {
@@ -129,28 +119,25 @@ export function PrivacyDesk() {
       <div className="dm-mkt-shell">
         <div className="dm-mkt-desk-grid">
           <div>
-            <p className="dm-mkt-eyebrow">№ 04 — The fine print, first</p>
-            <h2 className="dm-mkt-h2">Built for the most skeptical person in the room.</h2>
+            <p className="dm-mkt-eyebrow">№ 03 — Your email data</p>
+            <h2 className="dm-mkt-h2">See exactly what DeclutrMail stores.</h2>
             <p className="dm-mkt-lede">
-              A cleanup tool only earns access to your inbox by being boringly specific about what
-              it touches. The badge shows the Gmail message-field boundary; the privacy policy also
-              itemizes account, preference, action, processor, and billing records.
+              DeclutrMail uses a limited set of Gmail details to group and review senders. The list
+              shows what is stored and what never leaves Gmail. The privacy policy covers the other
+              account and billing information needed to run the service.
             </p>
             <ul className="dm-mkt-desk-points">
               <li>
-                We index metadata, not full mail. The badge on the right names the Gmail message
-                fields used by the product.
+                We store only the Gmail details listed here, never the full contents of an email.
               </li>
               <li>
-                Manual mail-moving actions are previewed before they run and journaled after.
-                Autopilot rules collect matches for batch approval on Plus; on Pro an explicitly
-                activated rule applies future matches without per-batch approval, journaled after
-                execution. Delivered unsubscribe requests are one-way and are called out as such
-                before approval.
+                Before a manual action moves email, you see what will change. Activity records the
+                result and shows Undo when it is available. Sent unsubscribe requests are clearly
+                marked as one-way.
               </li>
               <li>
-                Disconnect any time. Deleting your account schedules permanent deletion of the
-                little we kept.
+                Disconnect Gmail at any time. You can also export your data or schedule permanent
+                deletion of your DeclutrMail account.
               </li>
             </ul>
             <a href="/privacy" className="dm-mkt-desk-link">
@@ -166,77 +153,11 @@ export function PrivacyDesk() {
   );
 }
 
-/** D134 §6 — honest product proof, with the tier that unlocks each chapter. */
-export function ProductTour() {
-  return (
-    <section className="dm-mkt-section dm-mkt-shell">
-      <p className="dm-mkt-eyebrow">№ 05 — What you actually get</p>
-      <h2 className="dm-mkt-h2">Three product chapters, not three quota bands.</h2>
-      <p className="dm-mkt-lede">
-        Free is the full manual cleanup workflow with a monthly meter. Plus removes the meter and
-        adds the Screener for new senders plus preset rules that queue matches for your approval.
-        Pro lets those rules run unattended. The same Activity record ties all three together.
-      </p>
-      <div className="dm-mkt-product-tour">
-        <article>
-          <div className="dm-mkt-product-tier">All plans · Decide</div>
-          <h3>Triage</h3>
-          <p>
-            A ranked sender queue with Keep, Archive, Unsubscribe, Later, and Delete. Expand a row,
-            inspect the signals, then approve the current count-and-sample preview.
-          </p>
-          <div className="dm-mkt-product-mini" aria-hidden="true">
-            <span className="dm-mkt-product-avatar">L</span>
-            <span>
-              <b>LinkedIn Notifications</b>
-              <small>47/mo · 8% read</small>
-            </span>
-            <em>Archive · 92%</em>
-          </div>
-        </article>
-        <article>
-          <div className="dm-mkt-product-tier">Plus &amp; Pro · Automate</div>
-          <h3>Autopilot</h3>
-          <p>
-            Preset rules begin in Observe mode. Review what a rule would have matched and approve
-            batches on Plus; on Pro, a rule you switch to Active handles future mail by itself.
-            Pause it whenever you want.
-          </p>
-          <div className="dm-mkt-product-rule" aria-hidden="true">
-            <span>Observe</span>
-            <b>Archive low-engagement promotions</b>
-            <small>18 sample matches · no actions yet</small>
-          </div>
-        </article>
-        <article>
-          <div className="dm-mkt-product-tier">All plans · Audit</div>
-          <h3>Activity</h3>
-          <p>
-            Confirmed outcomes live in one ledger. Undo appears only where the underlying action is
-            reversible; a delivered unsubscribe request is clearly marked one-way.
-          </p>
-          <div className="dm-mkt-product-activity" aria-hidden="true">
-            <span>
-              <b>Archived · GitHub</b>
-              <small>74 messages · All Mail</small>
-            </span>
-            <em>Undo · 7 days</em>
-          </div>
-        </article>
-      </div>
-      <div className="dm-mkt-section-link-row">
-        <a href="/inbox-simulator">Try the real interaction →</a>
-        <a href="/how-it-works">See the full product flow →</a>
-      </div>
-    </section>
-  );
-}
-
 /** Gmail migration bridge — familiar concepts stay anchored to Gmail. */
 export function GmailCompanion() {
   return (
     <section className="dm-mkt-section dm-mkt-shell">
-      <p className="dm-mkt-eyebrow">№ 06 — Gmail stays home</p>
+      <p className="dm-mkt-eyebrow">№ 04 — Gmail stays home</p>
       <h2 className="dm-mkt-h2">A control companion, not a replacement inbox.</h2>
       <p className="dm-mkt-lede">
         Keep using Gmail for messages. Open DeclutrMail when the sender pattern—not one email—is the
@@ -256,41 +177,15 @@ export function GmailCompanion() {
           <p>Use DeclutrMail for this</p>
           <ul>
             <li>Rank recurring senders by volume and attention</li>
-            <li>Preview sender-wide Archive, Later, or Delete scopes</li>
-            <li>Enable explicit preset rules for future matches</li>
-            <li>Audit outcomes and use Activity undo where available</li>
+            <li>See which emails Archive, Later, or Delete will affect</li>
+            <li>Turn on preset rules for future matching mail</li>
+            <li>Review results and use Activity Undo when available</li>
           </ul>
-        </div>
-      </div>
-      <div
-        className="dm-mkt-gmail-map"
-        role="table"
-        aria-label="DeclutrMail actions in Gmail terms"
-      >
-        <div role="row">
-          <b role="cell">Archive</b>
-          <span role="cell">Remove from Inbox · keep in All Mail</span>
-        </div>
-        <div role="row">
-          <b role="cell">Later</b>
-          <span role="cell">
-            Move current sender mail to DeclutrMail/Later · return it at the chosen time
-          </span>
-        </div>
-        <div role="row">
-          <b role="cell">Delete</b>
-          <span role="cell">
-            Move to Gmail Trash · retained for up to 30 days unless emptied sooner
-          </span>
-        </div>
-        <div role="row">
-          <b role="cell">Unsubscribe</b>
-          <span role="cell">Ask the sender to stop future mail · delivered request is one-way</span>
         </div>
       </div>
       <div className="dm-mkt-section-link-row">
         <a href="/vs/gmail-filters">Compare with Gmail filters →</a>
-        <a href="/help#verbs-in-gmail-terms">Read the Gmail terminology guide →</a>
+        <a href="/help#actions-in-gmail-terms">See what each action does in Gmail →</a>
       </div>
     </section>
   );

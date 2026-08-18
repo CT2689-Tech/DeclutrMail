@@ -27,7 +27,7 @@ const COMPARISON_COUNT_WORD =
 
 const STATE_LABEL: Readonly<Record<EvidenceState, string>> = {
   supported: 'Published',
-  limited: 'Scope differs',
+  limited: 'Limited',
   'not-supported': 'Not offered',
   unknown: 'Not publicly stated',
   native: 'Native',
@@ -157,9 +157,8 @@ export function ComparisonIndexScreen() {
         >
           <p className="dm-mkt-eyebrow">Pick the closest alternative</p>
           <h2 id="compare-list-title" className="dm-mkt-h2">
-            Same inbox.{' '}
             {COMPARISON_COUNT_WORD.charAt(0).toUpperCase() + COMPARISON_COUNT_WORD.slice(1)}{' '}
-            different philosophies.
+            different approaches to the same inbox.
           </h2>
           <div className="dm-compare-card-grid">
             {COMPARISONS.map((comparison, index) => (
@@ -172,15 +171,15 @@ export function ComparisonIndexScreen() {
                 <p>{comparison.indexSummary}</p>
                 <dl>
                   <div>
-                    <dt>Primary unit</dt>
+                    <dt>Organizes by</dt>
                     <dd>{comparison.primaryUnit}</dd>
                   </div>
                   <div>
-                    <dt>Mailbox scope</dt>
+                    <dt>Works with</dt>
                     <dd>{comparison.providerScope}</dd>
                   </div>
                   <div>
-                    <dt>Public entry point</dt>
+                    <dt>How to start</dt>
                     <dd>{comparison.publicEntryPoint}</dd>
                   </div>
                 </dl>
@@ -211,15 +210,15 @@ export function ComparisonIndexScreen() {
           >
             <table className="dm-compare-quick-table">
               <caption className="dm-compare-sr-only">
-                Primary job, provider scope, and public entry point for {COMPARISON_COUNT_WORD}{' '}
+                Primary job, supported mailboxes, and starting point for {COMPARISON_COUNT_WORD}{' '}
                 DeclutrMail alternatives
               </caption>
               <thead>
                 <tr>
                   <th scope="col">Alternative</th>
-                  <th scope="col">Best-shaped job</th>
-                  <th scope="col">Mailbox scope</th>
-                  <th scope="col">Public entry point</th>
+                  <th scope="col">Best for</th>
+                  <th scope="col">Works with</th>
+                  <th scope="col">How to start</th>
                 </tr>
               </thead>
               <tbody>

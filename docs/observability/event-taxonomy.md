@@ -363,20 +363,25 @@ vs the matching `page_viewed` family give each public route's conversion
 rate; filtering `page_viewed{page='landing'}` retains the original
 landing-only view. Placement breakdown ranks positions within a page.
 
-### `demo_preview_opened` / `demo_decision_confirmed` / `demo_reset`
+### `demo_preview_opened` / `demo_decision_confirmed` / `demo_completed` / `demo_reset`
 
 **When fired.** The synthetic inbox simulator emits `demo_preview_opened`
-when a visitor chooses a K/A/U/L verb, `demo_decision_confirmed` only after
-the explicit preview confirmation, and `demo_reset` when the local walkthrough
-is cleared. No Gmail data or sender identity is captured.
+when a visitor chooses a decision that requires a preview, `demo_decision_confirmed`
+after a preview is confirmed or a no-mail-change Keep is recorded,
+`demo_completed` once when all three guided decisions are complete, and
+`demo_reset` when the local walkthrough is cleared. No Gmail data or sender
+identity is captured.
 
 **Payload.** Preview/confirm carry the verb and one-based decision index;
 confirm also carries the synthetic affected-message count. Reset carries only
-the number of completed sample decisions.
+the number of completed sample decisions. Completion carries the guided
+decision count and total synthetic affected-message count.
 
 **Retention / aggregation.** PostHog default. The preview→confirm ratio is the
-demo comprehension funnel; join to `page_viewed{page='inbox_simulator'}` for
-demo engagement. Never compare synthetic affected counts to production impact.
+mail-changing decision comprehension funnel; `demo_completed` measures the
+guided walkthrough funnel without requiring an OAuth click. Join to
+`page_viewed{page='inbox_simulator'}` for demo engagement. Never compare
+synthetic affected counts to production impact.
 
 ### `autopilot_paused`
 

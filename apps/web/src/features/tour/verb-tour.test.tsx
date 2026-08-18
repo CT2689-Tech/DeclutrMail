@@ -102,7 +102,7 @@ describe('OnboardingVerbTour', () => {
     expect(screen.getByText('You see what changes before it changes')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    expect(screen.getByText('A highlighted verb is a suggestion')).toBeInTheDocument();
+    expect(screen.getByText('A highlighted action is a suggestion')).toBeInTheDocument();
 
     // Back returns rather than restarting.
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));

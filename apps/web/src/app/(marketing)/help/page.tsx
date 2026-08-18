@@ -50,7 +50,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'what-we-store',
     q: 'What does DeclutrMail store from my Gmail?',
-    a: `The published Gmail message-field disclosure lists: ${PRIVACY_STORAGE_ITEMS.join('; ')}. The trust line is literal — ${PRIVACY_BADGE_HEADLINE}. The privacy policy separately describes account, preference, action, processor, and billing records. Full message bodies, attachments, inline images, and raw MIME are never fetched or stored.`,
+    a: `${PRIVACY_BADGE_HEADLINE} DeclutrMail stores these Gmail details: ${PRIVACY_STORAGE_ITEMS.join('; ')}. The privacy policy separately explains the account, preference, action, service-provider, and billing records needed to run the service.`,
     link: { href: '/privacy', label: 'Privacy policy →' },
   },
   {
@@ -61,11 +61,11 @@ const FAQS: ReadonlyArray<{
   {
     id: 'bulk-unsubscribe',
     q: 'Can I unsubscribe from all my newsletters at once?',
-    a: 'There is no single “unsubscribe from everything” button — DeclutrMail ranks your senders by how much they email you so you can clear the noisiest first. A reviewed multi-sender flow with the same preview is included on every plan; Free counts it against the monthly quota. One-click requests are queued separately; every mailto-only list remains in an on-screen checklist with a prefilled Gmail draft you must open and send. Senders without a published unsubscribe channel are excluded; Archive is the reliable fallback.',
+    a: 'There is no single “unsubscribe from everything” button. DeclutrMail ranks your senders by how much they email you so you can start with the busiest. Every plan lets you review and act on several senders at once; on Free, those actions count toward the monthly limit. One-click requests run separately. When a sender requires an unsubscribe email, DeclutrMail gives you a checklist of prefilled Gmail drafts to open and send. Senders without an unsubscribe option are skipped so you can choose Archive instead.',
     link: { href: '/pricing', label: 'Compare plans →' },
   },
   {
-    id: 'verbs-in-gmail-terms',
+    id: 'actions-in-gmail-terms',
     q: 'What do Archive, Later, and Delete actually do in Gmail?',
     a: 'Archive removes the messages from your inbox — Gmail keeps them in All Mail, searchable as ever. Later moves them out of the inbox into a DeclutrMail/Later label so you can come back to them. Delete moves them to Gmail’s Trash, normally for up to 30 days; permanently deleting a message or emptying Trash can end recovery sooner. Keep leaves everything where it is.',
   },
@@ -95,7 +95,7 @@ const FAQS: ReadonlyArray<{
     q: 'What do the plans include?',
     // Derived from the pricing config (A3) — no plan number is written
     // here, so retuning the ladder cannot strand this answer.
-    a: `Free includes the full cleanup toolkit — Senders, Triage, the Later list and every cleanup verb — with ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions each month. Plus removes the monthly cap and adds the Screener plus Autopilot rules you approve batch by batch. Pro lets rules run unattended and adds ${TIER_MANIFEST.pro.inboxLimit} inboxes and a ${TIER_MANIFEST.pro.undoWindowDays}-day Activity Undo window for Archive, Later, and Delete. Delete also has separate Gmail Trash recovery, normally up to 30 days on every plan. The pricing page has the current comparison.`,
+    a: `Free includes Senders, Triage, Later, and every cleanup action, with ${TIER_MANIFEST.free.cleanupActionsPerMonth} actions each month. Plus removes the monthly limit and adds the Screener and Autopilot rules you approve batch by batch. Pro can run rules you turn on automatically and adds ${TIER_MANIFEST.pro.inboxLimit} inboxes and a ${TIER_MANIFEST.pro.undoWindowDays}-day Activity Undo window for Archive, Later, and Delete. Deleted email also stays in Gmail Trash for up to 30 days unless you empty Trash sooner. The pricing page has the current comparison.`,
     link: { href: '/pricing', label: 'Pricing →' },
   },
   {

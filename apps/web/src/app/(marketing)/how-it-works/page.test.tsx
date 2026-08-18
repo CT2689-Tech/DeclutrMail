@@ -14,8 +14,8 @@ describe('/how-it-works', () => {
     expect(copy).toContain('Gmail remains where you read, reply, compose, and search');
     expect(copy).toContain('companion to Gmail, not a replacement email client');
     expect(copy).toContain('Recent subject links return to Gmail');
-    expect(copy).toContain('Manual cleanup changes only the preview you confirm');
-    expect(copy).toContain('activated Autopilot rules are a separate future-mail path');
+    expect(copy).toContain('Manual actions affect only the email shown before you confirm');
+    expect(copy).toContain('Autopilot rules are separate and must be turned on');
   });
 
   it('maps every action to honest current-mail and future-mail semantics', () => {
@@ -23,7 +23,7 @@ describe('/how-it-works', () => {
     const copy = container.textContent ?? '';
 
     expect(copy).toContain('Keep is not Protect');
-    expect(copy).toContain('chosen sender-level return time');
+    expect(copy).toContain('return time you choose');
     expect(copy).toContain('DeclutrMail/Later');
     expect(copy).toContain('cannot be recalled');
     // Was "Delete is available from Senders and Sender Detail" — true
@@ -38,16 +38,16 @@ describe('/how-it-works', () => {
     expect(copy).toContain('switch it to Active');
   });
 
-  it('labels the walkthrough synthetic and makes each conceptual diagram accessible', () => {
+  it('labels the walkthrough as made up and makes each conceptual diagram accessible', () => {
     const { container } = render(<HowItWorksPage />);
     const figures = [...container.querySelectorAll('figure')];
 
-    expect(screen.getByText(/Synthetic walkthrough/i)).toBeInTheDocument();
+    expect(screen.getByText(/Made-up walkthrough/i)).toBeInTheDocument();
     expect(
-      screen.getByRole('table', { name: 'How each DeclutrMail choice maps to Gmail' }),
+      screen.getByRole('table', { name: 'How each DeclutrMail decision maps to Gmail' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('region', { name: 'How each DeclutrMail choice maps to Gmail' }),
+      screen.getByRole('region', { name: 'How each DeclutrMail decision maps to Gmail' }),
     ).toBeInTheDocument();
     expect(figures.length).toBeGreaterThanOrEqual(3);
     for (const figure of figures) {

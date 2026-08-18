@@ -67,6 +67,19 @@ describe('TriageScreen — populated queue', () => {
     expect(html).toContain(`${TRIAGE_QUEUE.length} decisions, one at a time.`);
   });
 
+  it('offers the sample demo and names the supporting help destination', () => {
+    const html = renderState({
+      kind: 'ready',
+      rows: [...TRIAGE_QUEUE],
+      stats: TRIAGE_SESSION_STATS,
+    });
+    expect(html).toContain('Practice with sample data.');
+    expect(html).toContain('href="/inbox-simulator"');
+    expect(html).toContain('What each action does →');
+    expect(html).toContain('href="/help#actions-in-gmail-terms"');
+    expect(html).not.toContain('Learn more');
+  });
+
   it('renders K, A, U, L, D shortcut chips somewhere in the toolbar (per row)', () => {
     // When the screen renders with rows the toolbars only mount under
     // expanded rows — and the row is collapsed by default. So the
@@ -117,7 +130,7 @@ describe('TriageScreen — empty / loading branches', () => {
   it('surfaces the Pro nudge for Plus users only — single soft link (D33)', () => {
     // Plus user → soft "Pro could do this for you automatically" link.
     const plus = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
-    expect(plus).toContain('Pro could do this for you automatically');
+    expect(plus).toContain('Pro could do this for you automatically. See Pro automation');
 
     // Free user → Plus banner only; NO Pro link (the funnel is
     // Free → Plus → Pro, not Free → Pro).

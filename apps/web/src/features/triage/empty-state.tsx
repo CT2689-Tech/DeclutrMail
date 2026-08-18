@@ -233,7 +233,7 @@ export function TriageEmptyState({
             textDecorationColor: color.lineSoft,
           }}
         >
-          Pro could do this for you automatically. Learn more &rarr;
+          Pro could do this for you automatically. See Pro automation &rarr;
         </button>
       )}
     </div>

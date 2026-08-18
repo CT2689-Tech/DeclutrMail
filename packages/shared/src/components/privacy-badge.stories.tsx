@@ -31,7 +31,7 @@ const meta: StoryMeta<typeof PrivacyBadge> = {
     docs: {
       description: {
         component:
-          'Trust badge locked by D228. Renders the "Full bodies fetched: 0" headline plus the exact storage allowlist and never-stored list. All copy comes from `packages/shared/src/copy/privacy.ts`.',
+          'Trust badge locked by D228. Renders the plain-language privacy promise plus the generated stored and never-stored lists. All copy comes from `packages/shared/src/copy/privacy.ts`.',
       },
     },
   },

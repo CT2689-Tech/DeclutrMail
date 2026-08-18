@@ -52,9 +52,9 @@ export function lapseReengagementEmail(input: LapseReengagementEmailInput): Rend
   const text = [
     subject,
     '',
-    'You have not opened DeclutrMail for five days. That is the count',
-    'across your mailboxes of senders the engine has sized up and has',
-    'not heard back on — Triage shows them a mailbox at a time.',
+    'You have not opened DeclutrMail for five days. This is the number',
+    'of senders still waiting for your first decision across all your',
+    'mailboxes. Triage shows one mailbox at a time.',
     '',
     'One keystroke each: K to keep, A to archive, U to unsubscribe,',
     'L for later, D to delete.',

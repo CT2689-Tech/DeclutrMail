@@ -241,7 +241,7 @@ interface SenderAggregate {
  *
  * Privacy (D7): the only Gmail call is `messages.get?format=metadata`
  * (via `GmailMetadataClient`). Bodies, attachments, and MIME are never
- * fetched — the "Full bodies fetched: 0" guarantee.
+ * fetched — the "never fetch or store full email contents" guarantee.
  *
  * Worker policy: `perMailboxPolicy` (D203/D225). Idempotency key:
  * `mailboxAccountId`.

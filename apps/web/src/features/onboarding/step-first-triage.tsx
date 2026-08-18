@@ -182,8 +182,8 @@ export function StepFirstTriage({
         <div>
           <Eyebrow>Step 5 of 5 · Review senders</Eyebrow>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: color.fgMuted, maxWidth: 560 }}>
-            {GOAL_FRAMING[goal]} We&rsquo;ll start with up to five senders where one choice can make
-            a noticeable difference. Review {Math.min(meta.decided + 1, meta.pinned)} of{' '}
+            {GOAL_FRAMING[goal]} We&rsquo;ll start with up to five senders where one decision can
+            make a noticeable difference. Review {Math.min(meta.decided + 1, meta.pinned)} of{' '}
             {meta.pinned}. Before you confirm, you&rsquo;ll see which messages are affected and what
             can be undone.
           </p>

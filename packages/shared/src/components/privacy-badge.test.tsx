@@ -23,7 +23,7 @@ import {
 
 describe('PrivacyBadge — D7 + D228 copy contract', () => {
   it('exposes the locked headline string verbatim', () => {
-    expect(PRIVACY_BADGE_HEADLINE).toBe('Full bodies fetched: 0');
+    expect(PRIVACY_BADGE_HEADLINE).toBe('We never fetch or store full email contents.');
   });
 
   it('generates the cumulative message-storage list from the D245 registry', () => {
@@ -34,19 +34,19 @@ describe('PrivacyBadge — D7 + D228 copy contract', () => {
     );
     expect(PRIVACY_STORAGE_ITEMS).toEqual(
       expect.arrayContaining([
-        'Gmail message and thread IDs',
+        'Gmail message and conversation IDs',
         'Recipient email addresses from To and Cc on mail you sent',
         'Unsubscribe links and whether one-click unsubscribe is supported',
-        'Gmail message size estimate',
+        'Estimated Gmail message size',
       ]),
     );
   });
 
-  it('uses the "Gmail Preview" framing for the snippet field (D7)', () => {
-    expect(GMAIL_PREVIEW_FIELD_LABEL).toBe('Gmail Preview');
+  it('uses plain language for the Gmail preview snippet field (D7)', () => {
+    expect(GMAIL_PREVIEW_FIELD_LABEL).toBe('Gmail preview snippet');
     // The framing must also appear inside the storage list entry —
     // the label and the bullet text share the same vocabulary.
-    expect(PRIVACY_STORAGE_ITEMS.some((item) => item.includes('Gmail Preview'))).toBe(true);
+    expect(PRIVACY_STORAGE_ITEMS.some((item) => item.includes('Gmail preview snippet'))).toBe(true);
   });
 
   it('never includes the banned "Bodies read" wording in any copy const', () => {
@@ -55,13 +55,14 @@ describe('PrivacyBadge — D7 + D228 copy contract', () => {
       .toLowerCase();
     expect(allCopy).not.toContain('bodies read');
     expect(allCopy).not.toContain('body read');
+    expect(allCopy).not.toContain('full bodies fetched');
   });
 
   describe('card variant', () => {
     const html = renderToStaticMarkup(<PrivacyBadge variant="card" />);
 
     it('renders the locked headline string verbatim', () => {
-      expect(html).toContain('Full bodies fetched: 0');
+      expect(html).toContain('We never fetch or store full email contents.');
     });
 
     it('renders every storage allowlist item', () => {
@@ -85,7 +86,7 @@ describe('PrivacyBadge — D7 + D228 copy contract', () => {
     const html = renderToStaticMarkup(<PrivacyBadge variant="inline" />);
 
     it('renders the locked headline string verbatim', () => {
-      expect(html).toContain('Full bodies fetched: 0');
+      expect(html).toContain('We never fetch or store full email contents.');
     });
 
     it('lists every storage allowlist item inline', () => {

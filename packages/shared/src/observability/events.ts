@@ -44,6 +44,7 @@ export type EventName =
   | 'landing_cta_clicked'
   | 'demo_preview_opened'
   | 'demo_decision_confirmed'
+  | 'demo_completed'
   | 'demo_reset'
   // — Senders V2 surface —
   | 'compose_filter_changed'
@@ -347,6 +348,10 @@ export interface EventPayloads {
   demo_decision_confirmed: {
     verb: Verb;
     decision_index: number;
+    affected_messages: number;
+  };
+  demo_completed: {
+    decisions_completed: number;
     affected_messages: number;
   };
   demo_reset: {
