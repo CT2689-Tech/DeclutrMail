@@ -25,9 +25,9 @@ const MINT = '#79E6DC';
 const PAPER = '#FAFAF7';
 
 /** The frame path that only the heavy (<=24px) cut draws. */
-const HEAVY_FRAME = 'M44 17H12';
+const HEAVY_FRAME = 'M40 18H13';
 /** The frame path that only the regular (>24px) cut draws. */
-const REGULAR_FRAME = 'M45 16H11';
+const REGULAR_FRAME = 'M42 16H11';
 
 describe('Logo — two cuts (ADR-0036)', () => {
   it('draws the heavy cut at and below 24px', () => {
@@ -158,5 +158,127 @@ describe('Logo — wordmark', () => {
   it('scales the word from the mark, tighter when stacked', () => {
     expect(renderToStaticMarkup(<Logo size={100} />)).toContain('font-size:87px');
     expect(renderToStaticMarkup(<Logo size={100} variant="stacked" />)).toContain('font-size:52px');
+  });
+});
+
+// --- Clearance: the defect D255 found, and the one it knowingly ships ---
+//
+// The problem was never "the small cut looks heavy". It was that the teal
+// tail's stroke INTERSECTED the frame's lower-right cap, fusing two paths
+// into one closed shape. An overlap does not resolve by scaling, so until
+// the geometry changed, no size rendered an open envelope.
+//
+// Clearance = minimum centreline distance from the tail to a frame
+// endpoint, minus one stroke width (half a round cap on each side).
+// Negative means the strokes overlap.
+//
+// Measured from the paths the component ACTUALLY renders, pulled back out
+// of the markup. Path literals copied into this file would pass forever
+// while logo.tsx drifted underneath them.
+
+type Point = [number, number];
+
+/** Narrows an indexed read, and names what was missing when a path is malformed. */
+function must<T>(value: T | undefined, what: string): T {
+  if (value === undefined) throw new Error(`logo geometry: expected ${what}`);
+  return value;
+}
+
+/** Endpoint of every command in a subpath, in order. */
+function pathPoints(d: string): Point[] {
+  // Relative arcs need no arc maths: `a rx ry rot laf sf dx dy` ends at
+  // current + (dx, dy). Only endpoints bear on clearance, never the curve
+  // between them.
+  const points: Point[] = [];
+  let x = 0;
+  let y = 0;
+  for (const token of d.match(/[MLHVAmlhva][^MLHVAmlhva]*/g) ?? []) {
+    const n = (token.slice(1).match(/-?\d*\.?\d+/g) ?? []).map(Number);
+    switch (token[0]) {
+      case 'M':
+      case 'L':
+        [x, y] = [must(n[0], 'x'), must(n[1], 'y')];
+        break;
+      case 'm':
+      case 'l':
+        [x, y] = [x + must(n[0], 'dx'), y + must(n[1], 'dy')];
+        break;
+      case 'H':
+        x = must(n[0], 'x');
+        break;
+      case 'h':
+        x += must(n[0], 'dx');
+        break;
+      case 'V':
+        y = must(n[0], 'y');
+        break;
+      case 'v':
+        y += must(n[0], 'dy');
+        break;
+      case 'a':
+        [x, y] = [x + must(n[5], 'arc dx'), y + must(n[6], 'arc dy')];
+        break;
+      case 'A':
+        [x, y] = [must(n[5], 'arc x'), must(n[6], 'arc y')];
+        break;
+    }
+    points.push([x, y]);
+  }
+  return points;
+}
+
+/** Exact point-to-polyline distance — the tail is straight segments. */
+function distanceToPolyline([px, py]: Point, poly: Point[]): number {
+  let best = Infinity;
+  for (let i = 0; i < poly.length - 1; i++) {
+    const [ax, ay] = must(poly[i], `vertex ${i}`);
+    const [bx, by] = must(poly[i + 1], `vertex ${i + 1}`);
+    const vx = bx - ax;
+    const vy = by - ay;
+    const len2 = vx * vx + vy * vy;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / len2));
+    best = Math.min(best, Math.hypot(px - (ax + t * vx), py - (ay + t * vy)));
+  }
+  return best;
+}
+
+/** Renders the mark at `size`, then measures both frame caps against the drawn tail. */
+function clearanceAt(size: number) {
+  const html = renderToStaticMarkup(<Logo variant="mark" size={size} />);
+  const drawn = [...html.matchAll(/\sd="([^"]+)"/g)].map((m) => must(m[1], 'path data'));
+  expect(drawn, `size=${size} draws frame + tail`).toHaveLength(2);
+
+  const stroke = Number(must(/stroke-width="([\d.]+)"/.exec(html)?.[1], 'stroke-width'));
+  const frame = pathPoints(must(drawn[0], 'frame path'));
+  const tail = pathPoints(must(drawn[1], 'tail path'));
+
+  return {
+    stroke,
+    upper: distanceToPolyline(must(frame[0], 'frame start'), tail) - stroke,
+    lower: distanceToPolyline(must(frame[frame.length - 1], 'frame end'), tail) - stroke,
+  };
+}
+
+describe('Logo — tail/frame clearance (ADR-0036 §Two cuts)', () => {
+  it('holds the compact cut open at both caps', () => {
+    const { stroke, upper, lower } = clearanceAt(16);
+    expect(stroke).toBe(7);
+    // The sign is the decision; the figures are the spec it was locked at.
+    expect(upper).toBeGreaterThan(0);
+    expect(lower).toBeGreaterThan(0);
+    expect(upper).toBeCloseTo(1.121, 2);
+    expect(lower).toBeCloseTo(1.746, 2);
+  });
+
+  it('holds the regular cut open at both caps', () => {
+    // This cut was welded too (-0.33u at the lower cap) and was briefly
+    // going to ship that way as accepted debt. It was corrected instead:
+    // nothing consumed it yet, and it measures better at every size.
+    const { stroke, upper, lower } = clearanceAt(64);
+    expect(stroke).toBe(5.5);
+    expect(upper).toBeGreaterThan(0);
+    expect(lower).toBeGreaterThan(0);
+    expect(upper).toBeCloseTo(4.154, 2);
+    expect(lower).toBeCloseTo(2.037, 2);
   });
 });

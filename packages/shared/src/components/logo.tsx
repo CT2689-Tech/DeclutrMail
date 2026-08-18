@@ -56,9 +56,16 @@ const pair = ([light, dark]: [string, string]) =>
   light === dark ? light : `light-dark(${light}, ${dark})`;
 
 /**
- * The mark is drawn at two cuts. Below 24px the regular cut's frame gap
- * closes up and the tail disappears into the stroke join, so we swap
- * geometry rather than scaling the 64px drawing down (ADR-0036).
+ * The mark is drawn at two cuts, swapped on `size` rather than scaling one
+ * drawing down (ADR-0036).
+ *
+ * The compact cut is not the regular cut thickened. It carries a wider
+ * break and a longer corner radius so the tail passes through the opening
+ * without touching either frame cap. That clearance is measurable, and
+ * `logo.test.tsx` measures it — including the regular cut's known -0.33u
+ * * Both cuts clear at both caps. The regular cut was welded too until D255
+ * measured it (-0.33u); it is corrected here rather than carried as debt,
+ * because nothing had shipped it and it measures better at every size.
  */
 function Mark({ size, tone }: { size: number; tone: LogoTone }) {
   const c = TONES[tone];
@@ -76,8 +83,8 @@ function Mark({ size, tone }: { size: number; tone: LogoTone }) {
       <path
         d={
           heavy
-            ? 'M44 17H12a7 7 0 0 0-7 7v19a7 7 0 0 0 7 7h32a7 7 0 0 0 7-7V28'
-            : 'M45 16H11a7 7 0 0 0-7 7v20a7 7 0 0 0 7 7h34a7 7 0 0 0 7-7V27'
+            ? 'M40 18H13a9 9 0 0 0-9 9v14a9 9 0 0 0 9 9h30a9 9 0 0 0 9-9V30'
+            : 'M42 16H11a7 7 0 0 0-7 7v20a7 7 0 0 0 7 7h34a7 7 0 0 0 7-7V30'
         }
         // The attribute is the fallback: a browser without `light-dark()`
         // drops the style declaration and lands on the light pair rather
@@ -88,7 +95,7 @@ function Mark({ size, tone }: { size: number; tone: LogoTone }) {
         strokeLinecap="round"
       />
       <path
-        d={heavy ? 'M9 23L30 37L59 15' : 'M7 21.5L30 37.5L61 13.5'}
+        d={heavy ? 'M8 24L28 38L58 14' : 'M7 21.5L30 37.5L61 13.5'}
         stroke={c.accent[0]}
         style={{ stroke: pair(c.accent) }}
         strokeWidth={heavy ? 7 : 5.5}

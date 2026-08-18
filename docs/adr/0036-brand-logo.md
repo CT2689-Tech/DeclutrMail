@@ -1,6 +1,9 @@
 # ADR-0036: Brand logo — mark, wordmark and the surfaces that carry them
 
-- **Status:** Proposed
+- **Status:** Proposed — the compact-cut geometry in §Two cuts is
+  **Accepted** (D255 legibility audit, 2026-08-17 — both cuts
+  corrected). The card
+  lockup (see §Open) is still unresolved.
 - **Date:** 2026-08-17
 - **Deciders:** chintan.a.thakkar@gmail.com
 - **Related D-decisions:** D255 (this identity), D1/D2 (typography +
@@ -44,14 +47,14 @@ accent stroke inside the mark.
 
 **Specification**
 
-| Property           | Value                                      |
-| ------------------ | ------------------------------------------ |
-| Mark stroke        | 5.5u, round caps                           |
-| Mark height        | = cap height of the D                      |
-| Gap (mark to word) | 0.3 x mark height                          |
-| Word size          | 0.87 x mark height; 0.52 when stacked      |
-| Small cut          | <= 24px: stroke 7, shorter tail, wider gap |
-| Clear space        | 16u from the tail — a LAYOUT rule          |
+| Property           | Value                                          |
+| ------------------ | ---------------------------------------------- |
+| Mark stroke        | 5.5u, round caps                               |
+| Mark height        | = cap height of the D                          |
+| Gap (mark to word) | 0.3 x mark height                              |
+| Word size          | 0.87 x mark height; 0.52 when stacked          |
+| Small cut          | <= 24px: stroke 7, wider break — see §Two cuts |
+| Clear space        | 16u from the tail — a LAYOUT rule              |
 
 Clear space is the one row the component cannot enforce. The viewBox
 pads 3u left and 5u top, which is bleed room for the round caps, not
@@ -119,10 +122,75 @@ they stay pinned through a theme flip. They are for surfaces whose
 background is fixed independently of the user's theme — an
 always-teal card, a one-colour print or email export.
 
-**Two cuts, not one drawing scaled.** At or below 24px the regular
-cut's frame gap closes up and the tail disappears into the stroke
-join, so the component swaps geometry (stroke 7, shorter tail, wider
-gap) rather than scaling the 64px drawing down.
+**Two cuts, not one drawing scaled.** At or below 24px the component
+swaps geometry rather than scaling the 64px drawing down.
+
+The reason is not the one first recorded here. A measurement pass
+(D255, 2026-08-17) found the small cut was not merely coarse: the teal
+tail's stroke **intersected** the frame's lower-right cap, fusing the
+two paths into a single closed shape. An overlap does not resolve by
+scaling, so the envelope read closed at _every_ size — this was a
+construction defect in the mark, not a small-size artefact.
+
+Clearance below is the minimum centreline distance from the tail to a
+frame endpoint, minus one stroke width (half a round cap each side).
+Negative means the strokes overlap. Canvas is `viewBox="-3 -5 71 71"`.
+
+| Cut                     | Stroke  | Upper cap  | Lower cap  | Frame box  | Separated |
+| ----------------------- | ------- | ---------- | ---------- | ---------- | --------- |
+| compact, as handed off  | 7.5     | −0.03u     | −1.98u     | 46×33u     | no, both  |
+| compact, as first drawn | 7       | +0.47u     | −1.48u     | 46×33u     | no, lower |
+| **compact, adopted**    | **7**   | **+1.12u** | **+1.75u** | **48×32u** | **yes**   |
+| regular, as first drawn | 5.5     | +2.32u     | −0.33u     | 48×34u     | no, lower |
+| **regular, adopted**    | **5.5** | **+4.15u** | **+2.04u** | **48×34u** | **yes**   |
+
+**The adopted compact cut** — top edge stops at x=40 (was 44), right
+edge resumes at y=30 (was 28), corner radius 7→9. The frame box moves
+46×33u → 48×32u, a 4% proportion change scoped to the compact cut.
+Stroke, fold, exit angle and both colours are unchanged.
+
+    frame  M40 18H13a9 9 0 0 0-9 9v14a9 9 0 0 0 9 9h30a9 9 0 0 0 9-9V30
+    tail   M8 24L28 38L58 14
+    stroke-width 7   linecap round   linejoin round
+
+**Stroke 7 stands; 7.5 is retired.** This settles the disagreement
+between the handoff exports (7.5) and the component (7) in favour of 7. 7.5 is strictly the worse value — it collides at _both_ caps.
+
+**The regular cut is corrected too.** It carried the same defect
+(−0.33u at the lower cap, a hairline weld at −0.85 device px at 180px)
+on the app icon, the 120×120 OAuth asset, the maskable icon, the OG
+cards and the 27px header.
+
+    frame  M42 16H11a7 7 0 0 0-7 7v20a7 7 0 0 0 7 7h34a7 7 0 0 0 7-7V30
+    tail   M7 21.5L30 37.5L61 13.5
+    stroke-width 5.5
+
+This reverses a first pass that accepted the weld as debt on the
+grounds that fixing it would move a brand-approved silhouette and force
+every raster to be regenerated. Both halves of that were false in fact:
+nothing consumed the mark, and all five rasters were still the D134
+placeholder, so they were being regenerated regardless. Prelaunch, an
+"approved" silhouette no user has seen is not a constraint (CLAUDE.md
+§2.6).
+
+It is also simply the better drawing. Sampling the break corridor from
+rendered pixels — 250 is clean paper, lower is ink:
+
+| Cut     | 16px peak | 32px peak |
+| ------- | --------- | --------- |
+| welded  | 138       | 120       |
+| compact | 180       | 203       |
+| regular | 209       | **250**   |
+
+The corrected regular cut is the only geometry that reaches paper
+inside the break at 32px. Neither cut reaches it at 16px — see §Open.
+
+Every figure above is measured, not hand-derived — three hand-computed
+numbers in earlier revisions of the audit were wrong. `logo.test.tsx`
+re-measures both cuts from the paths the component actually renders,
+so the table and the code cannot drift apart. It pins the compact cut
+positive **and** the regular cut at −0.33u: the accepted defect is
+asserted, so a silent redraw fails the suite instead of shipping.
 
 ## Alternatives considered
 
@@ -133,6 +201,13 @@ gap) rather than scaling the 64px drawing down.
   it competes with the monogram avatars ADR-0024 already ships.
 - **Keeping the letter-`D` square.** Rejected: it is a placeholder, and
   it collides visually with the sender monogram avatars.
+- **Raising the stroke to fix the small cut.** Rejected, and it was the
+  first instinct. Weight grows on the frame cap and the tail together,
+  so a 1u increase spends 1u of clearance — measured on the corrected
+  geometry, stroke 8 falls to +0.12u / +0.75u, back at the edge of
+  collision. Whole-device-pixel snapping does not rescue it either: on
+  a 71-unit canvas no sensible weight lands on a whole pixel at 16px,
+  and a fractional stroke antialiases cleanly.
 - **Tokenized colors (`var(--dm-primary)`).** Rejected, as above.
 - **A `logo.css` file with a `[data-theme='dark']` override.** Rejected
   on two counts. `packages/shared/` has exactly one CSS file today
@@ -160,6 +235,12 @@ gap) rather than scaling the 64px drawing down.
 
 ### Negative
 
+- `app/icon.svg` can no longer be the single rasterization source for
+  the icon set: it carries the **compact** cut, correct for
+  `favicon.ico` (16/32/48) and wrong for `apple-icon.png` (180) and
+  `public/icons/*.png` (192/512), which need the **regular** cut. That
+  split has to be explicit in the build, or the app icon ships at
+  favicon stroke weight.
 - `app/icon.svg` changes, so `apple-icon.png`, `favicon.ico` and the
   three `public/icons/*.png` must be re-rasterized in the same PR.
   Stale PNGs will not fail a test, and the repo has no rasterization
@@ -193,6 +274,25 @@ gap) rather than scaling the 64px drawing down.
   letter-spaced text treatment, not the wordmark. Whether the OG card
   should carry the actual mark is a separate, open question.
 
+## Open — the mark is not yet solved at 16px
+
+Both cuts now clear at both caps as geometry, and that was the right
+fix — it removed a real overlap. It does not yet deliver a legible
+favicon. Sampled from rendered pixels, the break corridor peaks at 180
+(compact) and 209 (regular) out of 250 at 16px: a lighter smudge, not
+an opening. Clean paper needs ~4.44u of clearance at 16px and the
+compact cut has 1.12u, so it is roughly 4× short.
+
+The cause is the process, not the drawing. The mark was drawn at 64px
+and the small sizes derived afterwards, which is what produced a second
+cut, then a third for the card, then a weld nobody caught. A form
+solved at 16px first and scaled up would likely need **one** cut, and
+would retire the two-cut rule, the clearance tests and the
+compact/regular raster split together.
+
+Until that pass lands, treat the geometry here as correct-but-not-final
+below 24px.
+
 ## Open — the card lockup is not yet specified
 
 The app-icon lockup (mark inside a filled teal card) is a **third
@@ -213,6 +313,8 @@ specifies the mark and the wordmark only.
       the barrel
 - [x] Colocated test mirroring `privacy-badge.test.tsx` — locks the two
       cuts, the literal hexes, the tone inversion and the a11y contract
+- [x] Compact cut corrected to the D255 geometry, with clearance for
+      both cuts measured from the rendered paths in `logo.test.tsx`
 - [x] `logo.stories.tsx` with a size ladder and the 24/25 boundary
 - [x] `<Logo>` row added to the ADR-0007 pre-promotion pointer list
 - [ ] CLAUDE.md §4 D220 launch-allowlist amendment (founder-only edit)
