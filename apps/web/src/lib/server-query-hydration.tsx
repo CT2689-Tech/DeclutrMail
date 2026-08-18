@@ -3,7 +3,11 @@ import 'server-only';
 import { dehydrate, HydrationBoundary, type QueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
-import { makeServerQueryClient, settleServerQueries } from './server-query-client';
+import {
+  makeServerQueryClient,
+  settleServerQueries,
+  type ServerHydrationSurface,
+} from './server-query-client';
 
 export type ServerQueryPrefetch = (queryClient: QueryClient) => Array<Promise<unknown>>;
 export type ServerQueryChildren = ReactNode | ((queryClient: QueryClient) => ReactNode);
@@ -21,7 +25,7 @@ export async function ServerQueryHydration({
   prefetch,
   children,
 }: {
-  surface: string;
+  surface: ServerHydrationSurface;
   prefetch: ServerQueryPrefetch;
   children: ServerQueryChildren;
 }) {

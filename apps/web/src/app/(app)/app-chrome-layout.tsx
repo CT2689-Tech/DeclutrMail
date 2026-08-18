@@ -24,6 +24,7 @@ import { useScreenerCount } from '@/features/screener/api/use-screener';
 import { ScreenerBadge } from '@/features/screener/screener-badge';
 import { LaterReturnAlert } from '@/features/snoozed/later-return-alert';
 import { useSendersSummary } from '@/features/senders/api/use-senders-summary';
+import { MailboxReconnectBanner } from '@/features/mailboxes/mailbox-reconnect-banner';
 import { SyncErrorBanner } from '@/features/sync/sync-error-banner';
 import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
 import { ThemeToggle } from '@/features/theme/theme-toggle';
@@ -236,6 +237,11 @@ function AppChrome({ children }: { children: ReactNode }) {
             it stays off on the user-scoped-route fallback (settings/billing
             rendered with no active mailbox). */}
         {me.activeMailboxId !== null && <SyncErrorBanner mailboxId={me.activeMailboxId} />}
+        {/* The same gate for every OTHER broken mailbox (D224). Reads no
+            endpoint — `me.mailboxes[].needsReconnect` is server-computed —
+            so it is safe on the user-scoped fallback above and costs no
+            per-mailbox status observers. */}
+        <MailboxReconnectBanner />
         {/* Return recovery is an all-tier safety guarantee. Successful
             returns stay silent; only missed/failed timers surface. */}
         <LaterReturnAlert enabled={hasActiveMailbox} />

@@ -344,6 +344,39 @@ surfaces emit after their own screen mounts.
 **Retention / aggregation.** PostHog default. Top of the
 landing → OAuth → onboarding funnel insight.
 
+### `web_vital_reported`
+
+**When fired.** Once per supported Web Vital per document load, via Next.js'
+`useReportWebVitals`: CLS, FCP, INP, LCP, and TTFB. Metrics observed before a
+visitor accepts optional analytics are held only in memory for that page and
+emitted if consent is granted before navigation. Essential-only visitors emit
+nothing. Duplicate callbacks are collapsed by the browser metric ID (the ID is
+never sent), while back-forward-cache restorations remain independently measurable.
+
+**Payload.**
+
+| Field             | Type                                                                                                        | Notes                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `surface`         | Closed enum in `EventPayloads['web_vital_reported']`                                                        | Bounded route family only; dynamic IDs, raw paths, and query strings are never sent |
+| `metric`          | `'CLS' \| 'FCP' \| 'INP' \| 'LCP' \| 'TTFB'`                                                                | Browser-measured Web Vital                                                          |
+| `value`           | `number`                                                                                                    | Milliseconds except unitless CLS; rounded to three decimals                         |
+| `rating`          | `'good' \| 'needs_improvement' \| 'poor' \| 'unknown'`                                                      | Normalized Web Vitals threshold rating                                              |
+| `navigation_type` | `'navigate' \| 'reload' \| 'back_forward' \| 'back_forward_cache' \| 'prerender' \| 'restore' \| 'unknown'` | Bounded navigation category                                                         |
+
+**Retention / aggregation.** PostHog default. Monitor p75 `value` by
+`surface` + `metric`, and alert on an increasing `poor` share. Core targets are
+LCP < 2.5s, INP < 200ms, CLS < 0.1, FCP < 1.8s, and TTFB < 800ms. This is
+real-user monitoring and complements, rather than replaces, the production
+Lighthouse gate.
+
+The server-hydration half of the same page load is operational telemetry, not
+a PostHog event. Every non-empty `settleServerQueries` boundary writes one
+structured `server_hydration.prefetch` runtime log with its allowlisted `surface`,
+`duration_ms`, `query_count`, `designed_failure_count`, and
+`unexpected_failure_count`. It contains no URL, user, mailbox, sender, or
+message data. Use p50/p95 duration by surface and any non-zero unexpected
+failure count as the server-side dashboard and alert inputs.
+
 ### `landing_cta_clicked`
 
 **When fired.** On click of any acquisition CTA across the public site

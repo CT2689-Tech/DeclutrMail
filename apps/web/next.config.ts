@@ -9,11 +9,11 @@ const nextConfig: NextConfig = {
   /**
    * `@declutrmail/shared` is imported through its root barrel from ~25
    * marketing files, and that barrel re-exports the whole design system
-   * — AppShell, Sidebar, ToastHost, the Zustand ui store. The package
-   * declares no `sideEffects`, so nothing lets the bundler prove those
-   * are droppable. This rewrites barrel imports to their concrete
-   * modules at build time, which is the supported fix and needs no
-   * change to the package's own manifest.
+   * — AppShell, Sidebar, ToastHost, the Zustand ui store. This rewrites
+   * barrel imports to their concrete modules at build time. The package
+   * now also declares `sideEffects` (D160, 2026-08-18), which lets the
+   * bundler prove unreferenced modules are droppable; the two are
+   * complementary, and removing either regresses the budget.
    *
    * Measured with `node scripts/check-web-bundle-budget.mjs` either side
    * of the change; keep it only while it earns its place.

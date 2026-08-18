@@ -7,7 +7,7 @@
  * count copy.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -15,7 +15,16 @@ import { installFetchStub, resetFetchStub, type FetchStubHandler } from '@/test/
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';
 
-import { SnoozedScreen } from './snoozed-screen';
+import { formatLastAttempt, SnoozedScreen } from './snoozed-screen';
+
+// This suite builds its fixtures with LOCAL Date math (laterToday()),
+// so the screen must bucket in the machine zone for the grouping
+// assertions to stay meaningful wherever the suite runs. Exact
+// pinned-zone strings are asserted in snooze-times.test.ts instead.
+vi.mock('@/features/auth/api/use-me', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useUserTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+}));
 
 /**
  * A wake time in the 'today' bucket — guaranteed FUTURE and BEFORE
@@ -281,5 +290,18 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Change wake time ▾' }));
     expect(screen.queryByRole('button', { name: /clear wake time/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('formatLastAttempt', () => {
+  it('renders the exact pinned label in the user zone, never the machine zone', () => {
+    expect(formatLastAttempt('2026-07-14T10:01:00.000Z', 'Asia/Kolkata')).toBe(
+      'Jul 14, 2026, 3:31 PM',
+    );
+    expect(formatLastAttempt('2026-07-14T10:01:00.000Z', 'UTC')).toBe('Jul 14, 2026, 10:01 AM');
+  });
+
+  it('degrades honestly on an unparseable stamp', () => {
+    expect(formatLastAttempt('not-a-time', 'UTC')).toBe('at an unknown time');
   });
 });

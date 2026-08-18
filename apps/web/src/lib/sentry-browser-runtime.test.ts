@@ -34,7 +34,7 @@ describe('heavy Sentry browser runtime', () => {
     expect(sdk.init).toHaveBeenCalledWith(
       expect.objectContaining({
         dsn: 'https://stub@sentry.io/123',
-        tracesSampleRate: 0,
+        tracesSampleRate: 0.2,
         traceLifecycle: 'static',
         streamGenAiSpans: false,
         replaysSessionSampleRate: 0,
@@ -89,6 +89,9 @@ describe('heavy Sentry browser runtime', () => {
       'GlobalHandlers',
       'LinkedErrors',
       'Dedupe',
+      // Tracing is fail-closed by NAME here, so this assertion is what
+      // proves the sample rate is not a silent no-op (D159, 2026-08-18).
+      'BrowserTracing',
       'NextjsClientStackFrameNormalization',
     ]);
 

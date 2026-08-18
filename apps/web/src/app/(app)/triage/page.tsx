@@ -45,20 +45,7 @@ export default function TriagePage() {
 function TriageRoute() {
   useConnectResultToast();
 
-  return (
-    <TierGate
-      capability="triage"
-      title="Triage"
-      pitch="Work through a focused sender queue with recommendations, previews, and a durable Activity receipt."
-      bullets={[
-        'Review one sender at a time',
-        'Preview every manual mail-moving action',
-        'Keep Gmail as the place you read and reply',
-      ]}
-    >
-      <TriageExperience />
-    </TierGate>
-  );
+  return <TriageExperience />;
 }
 
 function TriageExperience() {

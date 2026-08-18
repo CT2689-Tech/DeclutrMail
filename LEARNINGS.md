@@ -20,6 +20,26 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-18 — An allowlist silently dropped the tag it was meant to carry
+
+**Context:** triaging DECLUTRMAIL-WEB-R — 3,095 Sentry events titled "Error",
+spanning three unrelated failure kinds with nothing to tell them apart.
+**Finding:** `dead-letter.worker.ts` had been passing `queue` and
+`dead_letter_id` as tags since it was written. Neither was in
+`SENTRY_SERVER_TAG_ALLOWLIST`, so the scrubber discarded both. Nothing failed:
+the call site looked correct, the scrubber looked correct, tests on each side
+passed. The loss was only visible from the far end — querying Sentry and
+getting `queue: ""` back for every one of 2,529 events.
+**Rule (provisional):** an allowlist is a contract with two sides. A tag added
+at a call site without a matching allowlist entry is not a no-op, it is a
+silent drop — so a test that asserts the call site passes a tag proves nothing
+about whether the tag arrives. Assert survival THROUGH the scrubber, not
+emission into it.
+**Distillation trigger:** promote to CLAUDE.md §2 if a third
+allowlist/denylist pair is found silently dropping its payload — this is the
+same shape as the BLIND-GUARD class already logged (a guard that reports
+success having verified nothing).
+
 ## 2026-08-16 — A subpath barrel is invisible to `optimizePackageImports`
 **Context:** Cutting the JS on `/senders` + `/triage` (D160). `next.config.ts` already listed `optimizePackageImports: ['@declutrmail/shared']`, so barrel bloat looked like solved ground.
 **Finding:** The option matches the **import specifier**, not the package. Listing `@declutrmail/shared` optimises `from '@declutrmail/shared'` and leaves every `from '@declutrmail/shared/contracts'` — 86 import sites — untouched. That barrel re-exports ~20 Zod schema modules, so one `import type { Envelope }` was dragging billing, onboarding, autopilot, account-deletion, quiet-hours, snoozed and the rest onto every authed route. Adding the seven subpaths the package's `exports` map declares: `/senders` 221.5 → 206.5 kB, `/triage` 211.4 → 195.9 kB, `/senders/[id]` 207.8 → 191.3 kB, and 13–18 kB off every other authed route — **zero source changes**. Attribution came from a throwaway build with `productionBrowserSourceMaps: true` into a scratch `distDir`, mapping each chunk's segments back to sources; `zod` alone was 19.9 kB gz on both routes before the change.
@@ -1318,3 +1338,66 @@ event. For draft-related types, that means a `draft` condition must
 exist somewhere first.
 **Distillation trigger:** promote to CLAUDE.md §5 if a third
 retrigger-waste entry lands (this is the second, after `edited`).
+
+## 2026-08-18 — esquery indexed-arg selectors silently match everything
+
+**Context:** adding the `no-restricted-syntax` ban on
+`toLocale*String(undefined|no-arg)` in `apps/web/src/features` (PR #548).
+**Finding:** the selector `[arguments.0.name='undefined']` does not index
+into the arguments array — it matched EVERY call, including correctly
+pinned `toLocaleDateString('en-US', …)`. The blind-case canary (a scratch
+file with both violations and pinned calls, expecting exact hits + exit 1)
+caught it; the working form is the field syntax
+`CallExpression[…] > Identifier.arguments[name='undefined']`. Bonus
+finding: `next build` runs ESLint, so a features-scoped syntax ban is
+also a production build gate — a planted violation fails the build, not
+just `pnpm lint`.
+**Rule (provisional):** never ship a `no-restricted-syntax` selector
+without a canary file proving both halves: it fires on the violation AND
+stays silent on the compliant form.
+**Distillation trigger:** promote to CLAUDE.md §8 (guard blind-case
+testing) if a third selector/guard blind-spot entry lands (UI-truth
+memory already holds the first).
+
+## 2026-08-18 — Two dead ends moving a slow read off the hydration critical path
+
+**Context:** D200 follow-up. `/api/senders/summary` is 10-40x slower than
+every other app-shell read (158-389ms warm vs 6-13ms; one production
+`server-hydration` timeout on 2026-08-17), and `ServerAppBoundary`
+awaits it, so it set the TTFB floor for all 16 authed routes.
+
+**Finding — attempt 1, relocate to the route boundary: FAILED.** Two
+TanStack v5 behaviors compose into a duplicate fetch. (1) `useQuery`
+CREATES the cache query at observer construction, `enabled: false`
+included. (2) `HydrationBoundary` hydrates only brand-new query hashes
+during render; a hash that ALREADY exists is deferred to a `useEffect`,
+and child effects run before the parent boundary's. So the chrome nav
+badge created the key first, and the screen observer then fetched a
+payload the route boundary was already holding. Any key observed by app
+chrome must be hydrated at or above the chrome, never in a route
+boundary.
+
+**Finding — attempt 2, stream it as a pending dehydrated promise:
+REJECTED, and this is the load-bearing lesson.** Dehydrating the pending
+query (`shouldDehydrateQuery: … || status === 'pending'`) did cut the
+app-shell wave from 703-993ms to 21-113ms with no duplicate fetches, and
+it passed the e2e hydration smoke 11 runs out of 12. It is still wrong:
+diffing the served HTML against main showed `activeSenders` and
+`totalSenders` present on main and ABSENT on the streamed build. SSR
+always renders the pending branch (the wave settles in ~20-110ms, the
+summary needs 160-390ms), so the KPI hero and nav badge lose their
+numbers from first paint, and the client may commit the resolved value
+before hydration finishes — which is exactly the one `/senders` React
+#418 (`args[]=HTML`) that did fire. A fast dev machine hydrates before
+the promise lands, so LOCAL PASSES ARE BIASED EVIDENCE: the exposed
+population is slow devices, i.e. the users the change was meant to help.
+
+**Rule (provisional):** Never dehydrate a pending query whose consumers
+render differently in `pending` vs `success` — streaming moves the data
+out of the server HTML and arms a hydration race that local runs
+under-report. Measure "is the value still in the served HTML?" (diff the
+HTML against the base branch), not just wave duration and a green smoke.
+A slow shared read gets fixed at the query, not by deferring it.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a third
+"green locally, timing-dependent in the field" hydration entry lands.

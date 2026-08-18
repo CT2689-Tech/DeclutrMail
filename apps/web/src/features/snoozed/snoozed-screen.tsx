@@ -13,6 +13,7 @@ import {
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import type { EventPayloads } from '@declutrmail/shared/observability';
 
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import { ApiError } from '@/lib/api/client';
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';
@@ -88,7 +89,10 @@ export function SnoozedScreen() {
     }
   }, [rows, wakingIds]);
 
-  const grouped = useMemo(() => groupByWakeTime(rows, new Date()), [rows]);
+  // The zone comes from the hydration-safe `me` cache so the grouping
+  // is identical on the server and in the first client render.
+  const timeZone = useUserTimeZone();
+  const grouped = useMemo(() => groupByWakeTime(rows, new Date(), timeZone), [rows, timeZone]);
   const returnIssues = rows.filter(
     (row) => row.returnStatus === 'retrying' || row.returnStatus === 'missed',
   );
@@ -270,6 +274,7 @@ export function SnoozedRow({
 }) {
   const [panel, setPanel] = useState<RowPanel>('closed');
   const wake = useWakeNow();
+  const timeZone = useUserTimeZone();
 
   const name = row.displayName.trim().length > 0 ? row.displayName : row.email;
   const countLabel = row.laterCount === null ? 'count syncing…' : `${row.laterCount} in Later`;
@@ -355,14 +360,14 @@ export function SnoozedRow({
                   ? 'Return overdue'
                   : row.returnStatus === 'returning'
                     ? 'Returning now…'
-                    : `Wakes ${formatWakeTime(row.snoozedUntil, new Date())}`}
+                    : `Wakes ${formatWakeTime(row.snoozedUntil, new Date(), timeZone)}`}
           </div>
           {returnIssue ? (
             <div style={{ fontSize: 11.5, color: color.danger }}>{returnIssue}</div>
           ) : null}
           {row.returnStatus === 'retrying' && row.lastReturnAttemptAt ? (
             <div style={{ fontSize: 11.5, color: color.fgMuted }}>
-              Last tried {formatLastAttempt(row.lastReturnAttemptAt)}
+              Last tried {formatLastAttempt(row.lastReturnAttemptAt, timeZone)}
             </div>
           ) : null}
           {row.reason ? (
@@ -416,10 +421,15 @@ export function SnoozedRow({
   );
 }
 
-function formatLastAttempt(iso: string): string {
+/**
+ * Locale + zone pinned: the row is server-rendered into hydrated HTML
+ * on /later, so both halves must be deterministic (React #418; e2e
+ * hydration-smoke). Exported for the exact-string unit test.
+ */
+export function formatLastAttempt(iso: string, timeZone: string): string {
   const attemptedAt = new Date(iso);
   if (Number.isNaN(attemptedAt.getTime())) return 'at an unknown time';
-  return attemptedAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  return attemptedAt.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone });
 }
 
 function returnIssueCopy(row: SnoozedSenderRow): string | null {
@@ -509,7 +519,10 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
   const setSnooze = useSetSnooze();
   const [reason, setReason] = useState(row.reason ?? '');
   const [custom, setCustom] = useState('');
-  const presets = useMemo(() => snoozePresets(new Date()), []);
+  // Presets resolve in the user zone — the zone the rows display in —
+  // so the saved instant reads back as the wall time that was picked.
+  const timeZone = useUserTimeZone();
+  const presets = useMemo(() => snoozePresets(new Date(), timeZone), [timeZone]);
 
   const submit = (until: string, presetId: SnoozePresetEventId) => {
     const trimmed = reason.trim();

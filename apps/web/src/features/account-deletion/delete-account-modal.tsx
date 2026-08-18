@@ -8,6 +8,8 @@ import {
   type AccountDeletionProjection,
 } from '@declutrmail/shared/contracts';
 
+import { useUserTimeZone } from '@/features/auth/api/use-me';
+
 const { color, font } = tokens;
 
 /**
@@ -51,6 +53,7 @@ export function DeleteAccountModal({
   const [acknowledged, setAcknowledged] = useState(false);
   const [mode, setMode] = useState<'scheduled' | 'immediate'>('scheduled');
   const [typed, setTyped] = useState('');
+  const timeZone = useUserTimeZone();
 
   // Reset on every open so an abandoned attempt never leaves a
   // half-acknowledged state behind.
@@ -202,13 +205,13 @@ export function DeleteAccountModal({
                 }}
                 title={
                   projection
-                    ? `Schedule deletion for ${formatDate(projection.projectedEffectiveAt)}`
+                    ? `Schedule deletion for ${formatDate(projection.projectedEffectiveAt, timeZone)}`
                     : 'Schedule deletion'
                 }
                 detail={
                   undoExtends
                     ? 'Your deletion is delayed past the 7-day grace period because an undo ' +
-                      `window stays open until ${formatDate(projection!.latestUndoExpiresAt!)}. ` +
+                      `window stays open until ${formatDate(projection!.latestUndoExpiresAt!, timeZone)}. ` +
                       'Undo keeps working for its full window; you can cancel any time before then.'
                     : '7-day grace period. You can cancel any time before then.'
                 }
@@ -387,12 +390,19 @@ const listStyle = {
   lineHeight: 1.6,
 };
 
-/** "June 18, 2026" in the user's locale. */
-export function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+/**
+ * "June 18, 2026". Locale + zone pinned: the grace-period banner
+ * renders this into server-hydrated HTML on every app route (the
+ * deletion status is prefetched by the ServerAppBoundary), so both
+ * halves must be deterministic (React #418; e2e hydration-smoke). The
+ * user zone decides the calendar day.
+ */
+export function formatDate(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
+    timeZone,
   }).format(new Date(iso));
 }
 

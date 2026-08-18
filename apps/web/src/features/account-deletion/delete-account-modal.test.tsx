@@ -1,16 +1,20 @@
 /**
  * DeleteAccountModal tests (D216 + D232).
  *
- * Prop-driven — no query client needed. Covers the 2-step gate
- * (checkbox before Continue), the typed-confirm phrase per mode, the
- * D232 undo-window copy, and the exact phrase handoff to onConfirm.
+ * Covers the 2-step gate (checkbox before Continue), the typed-confirm
+ * phrase per mode, the D232 undo-window copy, and the exact phrase
+ * handoff to onConfirm. A query client wraps the render because
+ * `formatDate` reads the hydration-safe user zone via
+ * `useUserTimeZone()` (D200) — the empty test cache yields 'UTC',
+ * keeping the date copy deterministic on any machine.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import type { AccountDeletionProjection } from '@declutrmail/shared/contracts';
-import { DeleteAccountModal } from './delete-account-modal';
+import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { DeleteAccountModal, formatDate } from './delete-account-modal';
 
 const FLAT_PROJECTION: AccountDeletionProjection = {
   flatGraceAt: '2026-06-18T00:00:00.000Z',
@@ -33,15 +37,17 @@ function renderModal(
 ): ReturnType<typeof vi.fn> {
   const onConfirm = vi.fn();
   render(
-    <DeleteAccountModal
-      open
-      projection={FLAT_PROJECTION}
-      onCancel={vi.fn()}
-      onConfirm={onConfirm}
-      isSubmitting={false}
-      submitError={null}
-      {...overrides}
-    />,
+    <QueryWrapper client={createTestQueryClient()}>
+      <DeleteAccountModal
+        open
+        projection={FLAT_PROJECTION}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+        isSubmitting={false}
+        submitError={null}
+        {...overrides}
+      />
+    </QueryWrapper>,
   );
   return onConfirm;
 }
@@ -119,15 +125,28 @@ describe('DeleteAccountModal', () => {
 
   it('renders nothing when closed', () => {
     render(
-      <DeleteAccountModal
-        open={false}
-        projection={FLAT_PROJECTION}
-        onCancel={vi.fn()}
-        onConfirm={vi.fn()}
-        isSubmitting={false}
-        submitError={null}
-      />,
+      <QueryWrapper client={createTestQueryClient()}>
+        <DeleteAccountModal
+          open={false}
+          projection={FLAT_PROJECTION}
+          onCancel={vi.fn()}
+          onConfirm={vi.fn()}
+          isSubmitting={false}
+          submitError={null}
+        />
+      </QueryWrapper>,
     );
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
+describe('formatDate', () => {
+  it('renders the exact pinned label in the user zone, never the machine zone', () => {
+    // 20:00 UTC is already the NEXT day in IST — the user zone decides
+    // the calendar day. The grace-period banner renders this into
+    // server-hydrated HTML on every app route (React #418; e2e
+    // hydration-smoke).
+    expect(formatDate('2026-06-18T20:00:00.000Z', 'Asia/Kolkata')).toBe('June 19, 2026');
+    expect(formatDate('2026-06-18T20:00:00.000Z', 'UTC')).toBe('June 18, 2026');
   });
 });

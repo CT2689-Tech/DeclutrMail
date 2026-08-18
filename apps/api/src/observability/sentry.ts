@@ -1,4 +1,9 @@
-import { scrubSentryEvent, scrubTelemetryPayload } from '@declutrmail/shared/observability';
+import {
+  scrubSentryEvent,
+  scrubSentryLog,
+  scrubSentryTransaction,
+  scrubTelemetryPayload,
+} from '@declutrmail/shared/observability';
 
 /**
  * Sentry server bootstrap (D159).
@@ -39,6 +44,22 @@ let initialized = false;
  */
 const SENTRY_INIT_TIMEOUT_MS = 5_000;
 
+/**
+ * Parse a `0..1` sample rate from the environment, falling back on
+ * anything unparseable.
+ *
+ * Deliberately strict: an unset, malformed, or out-of-range value returns
+ * the DEFAULT rather than clamping toward 1. A typo in a Cloud Run env var
+ * should not silently turn full-rate tracing on — the failure mode of this
+ * knob is a quota bill, and the safe direction is down.
+ */
+function readSampleRate(raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) return fallback;
+  return parsed;
+}
+
 export async function initSentry(): Promise<void> {
   if (initialized) return;
   const dsn = process.env.SENTRY_DSN;
@@ -50,8 +71,33 @@ export async function initSentry(): Promise<void> {
       dsn,
       environment: process.env.NODE_ENV ?? 'development',
       release: process.env.SENTRY_RELEASE,
-      // Exceptions only (D159 + D7) — explicitly disable traces.
-      tracesSampleRate: 0,
+      // Tracing (D159, founder-authorised 2026-08-18). Off since D7 until
+      // now: a span carries more user data by default than any other
+      // signal. It ships behind `beforeSendTransaction` below, which drops
+      // every span description and key-allowlists span data — see
+      // `scrubSentryTransaction`.
+      //
+      // The 2026-06-08 boot hang this file's timeout guards against was an
+      // OTel-init ordering problem, and its documented fix (preload
+      // `@sentry/node/preload` BEFORE `@swc-node/register`) is now live in
+      // the Dockerfile CMD, so tracing no longer rides on that mismatch.
+      //
+      // Rate is env-tunable and deliberately not 1.0: the worker runs cron
+      // jobs on 60s/5min ticks, so full sampling is mostly duplicate shapes.
+      // 0.2 keeps the span quota (5M/month, 0 used at the 2026-08-18
+      // incident) irrelevant while still catching a runaway loop, which
+      // shows up as shape rather than as any single trace.
+      tracesSampleRate: readSampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.2),
+      // The LOGS channel (D159, 2026-08-18). Notices that are not crashes
+      // — `dead_letter.parked`, the CAN-SPAM postal refusal — belong here,
+      // not on the errors quota, which is the only Sentry budget that runs
+      // out: errors sat at 4,000/5,000 while logs sat at 0 of 5 GB.
+      //
+      // This does NOT re-enable auto-instrumentation. Logs use their own
+      // transport; `defaultIntegrations: false` below still stands, which
+      // is what keeps the worker bootstrap from hanging (see the comment
+      // on `integrations`).
+      enableLogs: true,
       profilesSampleRate: 0,
       // Never auto-collect IP, user-agent, cookies, request bodies, etc.
       sendDefaultPii: false,
@@ -82,6 +128,23 @@ export async function initSentry(): Promise<void> {
       // tags the D159 workflow depends on.
       beforeSend: (event) =>
         scrubSentryEvent(event as unknown as Record<string, unknown>, 'server') as unknown as
+          typeof event | null,
+      // `beforeSend` does NOT run on logs. Without this hook the logs
+      // channel would be a SECOND, unscrubbed egress path to Sentry — and
+      // a log's `message` is free text, the same hazard `Error.message` is
+      // stripped for. `scrubSentryLog` reconstructs the message from an
+      // allowlisted `kind`, so a log's text can only ever be one of a
+      // closed set of strings.
+      beforeSendLog: (log) =>
+        scrubSentryLog(log as unknown as Record<string, unknown>) as unknown as typeof log | null,
+      // `beforeSend` does NOT run on transactions either — this is the
+      // THIRD egress path, and the widest one: a transaction carries a
+      // whole span tree, each span with a free-text description (raw SQL,
+      // full request URLs) and arbitrary `data`. `scrubSentryTransaction`
+      // drops descriptions outright and key-allowlists the rest, keeping
+      // only the tree's shape.
+      beforeSendTransaction: (event) =>
+        scrubSentryTransaction(event as unknown as Record<string, unknown>, 'server') as unknown as
           typeof event | null,
       beforeBreadcrumb: (breadcrumb) =>
         scrubTelemetryPayload(

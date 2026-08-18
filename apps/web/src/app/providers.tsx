@@ -31,7 +31,13 @@
 
 import { useState, type ReactNode } from 'react';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
+import dynamic from 'next/dynamic';
 import { makeQueryClient } from '@/lib/query-client';
+
+const PageLoadObservability = dynamic(
+  () => import('@/lib/page-load-observability').then((module) => module.PageLoadObservability),
+  { ssr: false },
+);
 
 let browserQueryClient: QueryClient | undefined;
 
@@ -48,5 +54,10 @@ function getQueryClient(): QueryClient {
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(getQueryClient);
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+      <PageLoadObservability />
+    </QueryClientProvider>
+  );
 }

@@ -63,7 +63,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | 🔵 | #22, #471, #472 | workers/rate-limiter.test.ts (all green) + ADR 0005 | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🟡 | #21, #28, #204, #315 | initial-sync.worker.test.ts: D6 sync gate stage-sequence + monotonic progress + terminal-ready | Truth sweep 2026-07-02: gate, sync-complete email + 24h reminder (apps/api/src/notifications/sync-ready-email.trigger.ts, worker.ts:593,1841) and push delivery (users.watch via gmail-watch.service.ts:87 + WatchRenewalWorker worker.ts:1239) ALL built — 2026-06-11 note stale. Remaining leg: onboarding funnel events audit |
 | D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🔵 | #26, #373, #455 | ADR 0004 + shared/copy/privacy.ts frame=Gmail Preview | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
-| D8 | Inbound Pub/Sub idempotency (no user input needed) | 🟢 | #31, #370, #527 | apps/api/src/webhooks/__tests__/gmail-webhook.service.spec.ts |  |
+| D8 | Inbound Pub/Sub idempotency (no user input needed) | 🟢 | #31, #370, #527, #545 | apps/api/src/webhooks/__tests__/gmail-webhook.service.spec.ts |  |
 | D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🔵 | #23, #185, #198, #512, #513 | initial-sync.worker.test.ts (5 unsub cases) + ADR 0006 | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | 🔵 | #295 |  |  |
 | D11 | Backend ORM: **Drizzle | 🔵 | #5 | manual | Evidence audit 2026-07-29 (🟢→🔵): no executable or observed evidence was ever recorded; re-verify via `pnpm verify-d` |
@@ -214,8 +214,8 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🟢 | #35, #48, #113, #188, #211, #337, #378, #380, #382, #383, #384, #456, #502, #498 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425, #496, #506, #508 |  |  |
-| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473, #474, #502, #498 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
-| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526, #529, #534, #536 | gh run 26327595271 ci.yml green on main |  |
+| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473, #474, #502, #498, #546, #549, #550, #551, #554 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
+| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526, #529, #534, #536, #556 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
@@ -255,7 +255,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D197 | Custom rule builder UI deferred to V2.1, with full architectural readiness at launch (reverses D196, refines D192) | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule returns null for is_preset=false → 404 (UI deferral enforced at API) |  |
 | D198 | Headless hooks for behavior, feature-owned components for rendering (resolves D36/D50/D57 implicit duplication) | 🟢 | #29, #184 | apps/web/src/features/triage/store.test.ts — D198 accordion |  |
 | D199 | Lazy promotion + spec override (component/utility placement rule) | 🔵 | #29 |  |  |
-| D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🟢 | #29, #45, #50, #544 | apps/web/src/features/triage/store.test.ts — Zustand client state |  |
+| D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🟢 | #29, #45, #50, #544, #548, #555 | apps/web/src/features/triage/store.test.ts — Zustand client state |  |
 | D201 | API + Worker architecture: Standard NestJS modules + Adapter pattern at external boundaries | 🟢 | #37 | apps/web/src/lib/api/client.test.ts |  |
 | D202 | API response envelope + cursor pagination | 🟢 | #37, #113, #502, #498 | apps/api/src/senders/senders.controller.spec.ts — D202 envelope |  |
 | D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | 🟢 | #49 | packages/workers/src/base-declutr-worker.test.ts |  |
@@ -279,7 +279,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D221 | Decision Queue framing copy (locks Codex §8 framing) | ⬜ |  |  |  |
 | D222 | Auto-Protect via category prediction REJECTED at all versions (extends D22) | ⬜ |  |  |  |
 | D223 | Landing page primary headline (locks tentative) | 🔵 | #202 |  |  |
-| D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38, #122, #279, #287, #314, #370, #418, #427, #428, #471 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
+| D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38, #122, #279, #287, #314, #370, #418, #427, #428, #471, #547 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | 🔵 | #194, #208, #209 |  | Truth sweep 2026-07-02 (🟡→🔵): every leg now on disk — policies + cron idempotency (worker-policies.ts:54-101), cron_runs + dead_letter_jobs tables (migration 0030, #194), DeadLetterWorker (worker.ts:1603), WatchRenewalWorker (worker.ts:1239) — 2026-06-11 missing-legs note stale. Pending verify-d |
 | D226 | Action lifecycle ordering (resolves SC-1) | 🔵 | #44, #180, #130, #149, #225, #272, #345, #376, #388, #394, #398, #400, #403, #407, #409, #440, #509, #510, #511, #538 | apps/web/src/features/triage/action-sheet.test.tsx — sheet → preview → confirm lifecycle | Evidence updated 2026-06-11: lifecycle wired to real K/A/U/L mutations + undo tray in #180. Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🟢 | #12, #280, #410, #475, #476, #479 | packages/workers/src/reasoning.test.ts — K/A/U/L verdict labels |  |

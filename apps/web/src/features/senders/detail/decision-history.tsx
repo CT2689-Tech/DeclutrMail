@@ -1,6 +1,7 @@
 'use client';
 
 import { Eyebrow, EmptyState, Pill, tokens } from '@declutrmail/shared';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { relTimeFromIso } from './data';
 import type { DecisionAction, DecisionHistoryRow } from './types';
 
@@ -26,11 +27,19 @@ function toneFor(
   }
 }
 
-function dateLabel(iso: string, now: Date = new Date()): string {
+/**
+ * Locale + zone pinned to close the D200 hydration-determinism class
+ * (React #418; e2e hydration-smoke). NOTE: this component is currently
+ * unmounted — /senders/[id] replaced it with DecisionTimeline and its
+ * deletion is deferred (see sender-detail-page.tsx) — the pin keeps the
+ * retained file compliant with the features-wide lint ban. Exported for
+ * the exact-string unit test.
+ */
+export function dateLabel(iso: string, now: Date, timeZone: string): string {
   const then = new Date(iso);
   const ageDays = (now.getTime() - then.getTime()) / (1000 * 60 * 60 * 24);
   if (ageDays <= 7) return relTimeFromIso(iso, now);
-  return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone });
 }
 
 /**
@@ -56,6 +65,7 @@ export function DecisionHistory({
   onUndo?: (row: DecisionHistoryRow) => void;
 }) {
   const now = new Date();
+  const timeZone = useUserTimeZone();
   return (
     <section
       aria-label="Decision history"
@@ -132,7 +142,7 @@ export function DecisionHistory({
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {dateLabel(row.at, now)}
+                  {dateLabel(row.at, now, timeZone)}
                 </span>
                 <span
                   style={{

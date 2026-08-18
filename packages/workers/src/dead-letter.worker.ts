@@ -3,7 +3,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { deadLetterJobs } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 
-import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { BaseDeclutrWorker, telemetryReference } from './base-declutr-worker.js';
 import type { WorkerContext } from './worker-context.js';
 import type { WorkerObserver } from './worker-observer.js';
 
@@ -139,13 +139,30 @@ export class DeadLetterWorker extends BaseDeclutrWorker<
         }),
       );
       try {
-        this.deps.observer.captureBackgroundFailure(
-          new Error(`Dead letter parked: ${row.queue}/${row.jobId} — ${errorSummary(row.error)}`),
-          {
-            kind: 'dead_letter.parked',
-            tags: { dead_letter_id: row.id, queue: row.queue, job_id: row.jobId },
+        // A NOTICE, not an exception: by the time this fires the failure is
+        // already durable in `dead_letter_jobs`, and the stack would point
+        // at this sweep rather than at any fault. It also fires once per
+        // parked row per process lifetime, so on the errors quota one bad
+        // mailbox costs hundreds of events a day (2026-08-18). The logs
+        // channel is the right one and is effectively unused.
+        //
+        // Everything actionable rides in the attributes — `Error.message`
+        // never reaches Sentry (D7) and a log's message is replaced by its
+        // `kind` at the wire. `job_id` is pseudonymised: it is
+        // `${mailboxAccountId}__${cursor}` for incremental-sync, so the raw
+        // value leaked a mailbox id that the sibling `mailbox_account_id`
+        // tag pseudonymises via the same helper.
+        this.deps.observer.recordBackgroundNotice({
+          kind: 'dead_letter.parked',
+          level: 'error',
+          tags: {
+            dead_letter_id: row.id,
+            queue: row.queue,
+            job_id: telemetryReference(row.jobId),
+            failed_at: row.failedAt.toISOString(),
+            ...(errorClass(row.error) === undefined ? {} : { error_class: errorClass(row.error)! }),
           },
-        );
+        });
         this.alertedIds.add(row.id);
         alerted += 1;
       } catch (observerErr) {
@@ -167,10 +184,26 @@ export class DeadLetterWorker extends BaseDeclutrWorker<
   }
 }
 
-/** First line of the parked error, capped — keeps Sentry titles scannable. */
-function errorSummary(error: string): string {
-  const firstLine = error.split('\n', 1)[0] ?? '';
-  return firstLine.length > 200 ? `${firstLine.slice(0, 200)}…` : firstLine;
+/**
+ * The error CLASS that parked the row — `InvalidGrantError`,
+ * `PermanentError`.
+ *
+ * Was `errorSummary`, the error's whole first line, interpolated into an
+ * `Error.message` that the scrubber then discarded (D7) — so it only ever
+ * reached Cloud Logging. On the log channel the class travels as an
+ * attribute instead, which is the half that actually discriminates:
+ * `queue=incremental-sync` + `error_class=InvalidGrantError` is the
+ * diagnosis that took an hour of tag arithmetic on 2026-08-18.
+ *
+ * Just the leading identifier, deliberately. `SAFE_SERVER_TAG` rejects
+ * whitespace, so a full message could not survive the wire regardless —
+ * and the message text is the part that could carry a subject line.
+ * Returns undefined when the text does not start with a class name, so a
+ * malformed record contributes no attribute rather than a junk one.
+ */
+function errorClass(error: string): string | undefined {
+  const match = /^([A-Za-z][A-Za-z0-9_$]{0,63})(?=:|$)/m.exec(error.trimStart());
+  return match?.[1];
 }
 
 /** What the operator's enqueue callback receives — the parked job verbatim. */

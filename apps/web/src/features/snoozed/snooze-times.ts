@@ -1,10 +1,18 @@
 /**
  * Pure date helpers for the Snoozed surface (D80 grouping + D82
- * presets). All functions take an explicit `now` so tests are
- * deterministic; callers pass `new Date()`.
+ * presets). All functions take an explicit `now` — and, for the
+ * bucket/label helpers, an explicit IANA `timeZone` — so tests are
+ * deterministic; callers pass `new Date()` and `useUserTimeZone()`.
  *
- * Times are computed in the user's LOCAL timezone (D82 — "5:00 PM
- * local", "9:00 AM local") and serialized to ISO on the wire.
+ * Times are computed in the user's timezone (D82 — "5:00 PM local",
+ * "9:00 AM local") and serialized to ISO on the wire. The zone must be
+ * an explicit argument because these labels are server-rendered into
+ * hydrated HTML (/later): the server's process zone is not the user's,
+ * and locale/zone drift between the server string and the first client
+ * render makes React discard the server tree (error #418; e2e
+ * hydration-smoke). The `now` clock itself still differs by the
+ * hydration delay — a midnight crossing inside that window can flip a
+ * bucket (rare, accepted; React falls back to a client render).
  */
 
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';
@@ -21,55 +29,101 @@ export const WAKE_BUCKET_LABELS: Record<WakeBucket, string> = {
   eventually: 'Eventually',
 };
 
-function startOfDay(d: Date): Date {
-  const out = new Date(d);
-  out.setHours(0, 0, 0, 0);
-  return out;
+/** Calendar fields (1-based month) of an instant in an IANA zone. */
+function zonedYmd(d: Date, timeZone: string): { y: number; m: number; d: number } {
+  const ymd = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+  return { y: Number(ymd.slice(0, 4)), m: Number(ymd.slice(5, 7)), d: Number(ymd.slice(8, 10)) };
 }
 
-function addDays(d: Date, days: number): Date {
-  const out = new Date(d);
-  out.setDate(out.getDate() + days);
-  return out;
+/**
+ * Calendar-day ordinal of an instant in an IANA zone. Converting the
+ * zone's calendar fields to a UTC day count makes integer differences
+ * calendar-day differences in that zone.
+ */
+function calendarDayOrdinal(d: Date, timeZone: string): number {
+  const { y, m, d: day } = zonedYmd(d, timeZone);
+  return Date.UTC(y, m - 1, day) / 86_400_000;
 }
 
-/** D80 — bucket a wake time relative to `now` (local calendar days). */
-export function wakeBucket(snoozedUntil: string, now: Date): WakeBucket {
+/** The instant's wall clock in `timeZone`, re-read as a UTC timestamp. */
+function wallClockAsUtcMs(ts: number, timeZone: string): number {
+  const s = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).format(ts);
+  const match = s.match(/^(\d{4})-(\d{2})-(\d{2}),? (\d{2}):(\d{2}):(\d{2})$/);
+  if (!match) throw new RangeError(`Unexpected zoned format: ${s}`);
+  const [, y, mo, d, h, mi, se] = match;
+  return Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(se));
+}
+
+/**
+ * The instant whose wall clock in `timeZone` reads (y, m0, d, hour:00).
+ * Overflowing fields (day > month length, m0 = 12) normalize the way
+ * `Date.UTC` does. Two offset-correction passes converge across any
+ * DST step between the naive guess and the target.
+ */
+function zonedInstant(y: number, m0: number, d: number, hour: number, timeZone: string): Date {
+  const targetWall = Date.UTC(y, m0, d, hour, 0, 0, 0);
+  let ts = targetWall;
+  for (let i = 0; i < 2; i++) {
+    ts += targetWall - wallClockAsUtcMs(ts, timeZone);
+  }
+  return new Date(ts);
+}
+
+/** D80 — bucket a wake time relative to `now` (calendar days in `timeZone`). */
+export function wakeBucket(snoozedUntil: string, now: Date, timeZone: string): WakeBucket {
   const wake = new Date(snoozedUntil);
   if (Number.isNaN(wake.getTime())) {
     throw new RangeError('Invalid Later wake time.');
   }
-  const tomorrowStart = startOfDay(addDays(now, 1));
-  if (wake < tomorrowStart) return 'today';
-  if (wake < startOfDay(addDays(now, 2))) return 'tomorrow';
-  if (wake < startOfDay(addDays(now, 7))) return 'week';
+  const dayDiff = calendarDayOrdinal(wake, timeZone) - calendarDayOrdinal(now, timeZone);
+  if (dayDiff <= 0) return 'today';
+  if (dayDiff === 1) return 'tomorrow';
+  if (dayDiff < 7) return 'week';
   return 'eventually';
 }
 
 export type GroupedSnoozed = Record<WakeBucket, SnoozedSenderRow[]>;
 
-export function groupByWakeTime(rows: readonly SnoozedSenderRow[], now: Date): GroupedSnoozed {
+export function groupByWakeTime(
+  rows: readonly SnoozedSenderRow[],
+  now: Date,
+  timeZone: string,
+): GroupedSnoozed {
   const grouped: GroupedSnoozed = { today: [], tomorrow: [], week: [], eventually: [] };
   for (const row of rows) {
-    grouped[wakeBucket(row.snoozedUntil, now)].push(row);
+    grouped[wakeBucket(row.snoozedUntil, now, timeZone)].push(row);
   }
   return grouped;
 }
 
 /** "Tomorrow 9:00 AM" / "Fri 7:00 AM" / "May 23" — D80 row format. */
-export function formatWakeTime(iso: string, now: Date): string {
+export function formatWakeTime(iso: string, now: Date, timeZone: string): string {
   const wake = new Date(iso);
   if (Number.isNaN(wake.getTime())) {
     throw new RangeError('Invalid Later wake time.');
   }
-  const time = wake.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  const bucket = wakeBucket(iso, now);
+  const time = wake.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone });
+  const bucket = wakeBucket(iso, now, timeZone);
   if (bucket === 'today') return `Today ${time}`;
   if (bucket === 'tomorrow') return `Tomorrow ${time}`;
   if (bucket === 'week') {
-    return `${wake.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`;
+    return `${wake.toLocaleDateString('en-US', { weekday: 'short', timeZone })} ${time}`;
   }
-  return wake.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return wake.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone });
 }
 
 // ── D82 presets ───────────────────────────────────────────────────────
@@ -81,45 +135,48 @@ export interface SnoozePreset {
   at: Date;
 }
 
-function at(d: Date, hours: number): Date {
-  const out = new Date(d);
-  out.setHours(hours, 0, 0, 0);
-  return out;
-}
-
 /**
- * The D82 preset list, resolved against `now`. "Later today" (5 PM) is
- * omitted once it would be in the past — a preset must always yield a
- * future wake time (the contract rejects past values).
+ * The D82 preset list, resolved against `now` in the user's zone —
+ * the SAME zone the /later rows display in, so "Later today (5:00 PM)"
+ * always saves the instant the row will render back as "Today 5:00 PM".
+ * "Later today" is omitted once it would be in the past — a preset
+ * must always yield a future wake time (the contract rejects past
+ * values).
  */
-export function snoozePresets(now: Date): SnoozePreset[] {
+export function snoozePresets(now: Date, timeZone: string): SnoozePreset[] {
   const presets: SnoozePreset[] = [];
+  const { y, m, d } = zonedYmd(now, timeZone);
+  const at = (dayOffset: number, hour: number) =>
+    zonedInstant(y, m - 1, d + dayOffset, hour, timeZone);
 
-  const laterToday = at(now, 17);
+  const laterToday = at(0, 17);
   if (laterToday > now) {
     presets.push({ id: 'later_today', label: 'Later today (5:00 PM)', at: laterToday });
   }
 
-  presets.push({ id: 'tomorrow', label: 'Tomorrow (9:00 AM)', at: at(addDays(now, 1), 9) });
+  presets.push({ id: 'tomorrow', label: 'Tomorrow (9:00 AM)', at: at(1, 9) });
 
   // Next Saturday — when today IS Saturday (or Sunday), the coming one.
-  const day = now.getDay(); // 0 = Sunday … 6 = Saturday
+  const day = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sunday … 6 = Saturday
   const daysToSaturday = (6 - day + 7) % 7 || 7;
   presets.push({
     id: 'weekend',
     label: 'This weekend (Sat 9:00 AM)',
-    at: at(addDays(now, daysToSaturday), 9),
+    at: at(daysToSaturday, 9),
   });
 
   const daysToMonday = (1 - day + 7) % 7 || 7;
   presets.push({
     id: 'next_week',
     label: 'Next week (Mon 9:00 AM)',
-    at: at(addDays(now, daysToMonday), 9),
+    at: at(daysToMonday, 9),
   });
 
-  const firstOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1, 9, 0, 0, 0);
-  presets.push({ id: 'next_month', label: 'Next month (1st, 9:00 AM)', at: firstOfNextMonth });
+  presets.push({
+    id: 'next_month',
+    label: 'Next month (1st, 9:00 AM)',
+    at: zonedInstant(y, m, 1, 9, timeZone),
+  });
 
   return presets;
 }

@@ -3,6 +3,7 @@ export type { WorkerContext } from './worker-context.js';
 export { NOOP_WORKER_OBSERVER } from './worker-observer.js';
 export type {
   BackgroundFailureContext,
+  BackgroundNoticeContext,
   WorkerFailureContext,
   WorkerObserver,
 } from './worker-observer.js';
@@ -16,6 +17,7 @@ export {
   ValidationError,
 } from './worker-errors.js';
 export type { NonRetryableError } from './worker-errors.js';
+export { INVALID_GRANT_ERROR, notNeedingReconnect } from './mailbox-reconnect.js';
 export { WORKER_POLICIES } from './worker-policies.js';
 export type { ConcurrencyScope, WorkerPolicy, WorkerPolicyConfig } from './worker-policies.js';
 export {
@@ -117,8 +119,15 @@ export { RateLimiter } from './rate-limiter.js';
 export type { RateLimiterClock } from './rate-limiter.js';
 export { InitialSyncWorker } from './initial-sync.worker.js';
 export type { InitialSyncDeps, InitialSyncResult } from './initial-sync.worker.js';
-export { IncrementalSyncWorker } from './incremental-sync.worker.js';
-export type { IncrementalSyncDeps, IncrementalSyncResult } from './incremental-sync.worker.js';
+export {
+  IncrementalSyncWorker,
+  selectIncrementalDriftCandidates,
+} from './incremental-sync.worker.js';
+export type {
+  IncrementalDriftCandidate,
+  IncrementalSyncDeps,
+  IncrementalSyncResult,
+} from './incremental-sync.worker.js';
 export {
   createLimiter,
   DEFAULT_EXPLAIN_TIMEOUT_MS,

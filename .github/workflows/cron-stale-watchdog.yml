@@ -1,0 +1,58 @@
+# Cron-stale watchdog (D159, D225).
+#
+# Answers the one question nothing else asks: "did a background job STOP
+# running?" Uptime checks cover "is the API up". Sentry covers "did
+# something throw". A cron that silently stops throws nothing and keeps
+# the API healthy, so it is invisible — which is exactly how prod Redis
+# stayed suspended for 46 days and how the incremental drift sweep ran
+# 288 times a day for weeks before a Sentry BILLING email surfaced it.
+#
+# `cron_runs` has recorded every tick since D225 and nothing ever read it
+# back. `scripts/check-cron-stale.ts` does, deriving each threshold from
+# the SAME interval constant the scheduler uses so the two cannot drift.
+#
+# A failed run = email to the founder via GH's "Send notifications for
+# failed workflows" setting — the same alert channel as the sync-stuck and
+# vendor-limits watchdogs, deliberately, so there is one place alerts land.
+#
+# Privacy (D7): the script reads worker names and timestamps only. No
+# mailbox ids and no user data reach the logs, so a failed run is safe to
+# read in a GitHub notification email.
+
+name: Cron-stale watchdog
+
+on:
+  schedule:
+    # Every 15 min. The tightest watched cron runs every 5 min with a
+    # 30-min tolerance, so this detects a stop well inside an hour even
+    # when GitHub delays the schedule under platform load.
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cron-stale-watchdog-${{ github.ref }}
+  # NEVER cancel an in-flight check — that masks a real stopped cron.
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check for stopped or hung cron workers
+        env:
+          # Same secret the sync-stuck watchdog and the Atlas migration
+          # workflow use. Absent => the script exits 2 (loudly), never 0.
+          SUPABASE_SESSION_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
+        run: pnpm tsx scripts/check-cron-stale.ts
