@@ -88,6 +88,18 @@ const OPEN_AS_ENGAGEMENT: readonly RegExp[] = [
   /\bopens\s+and\s+(replies|reads?|labels?)\b/i,
   // "open rate", "open tracking", "open count" as a stated capability.
   /\bopen[- ](rate|rates|tracking|count|counts)\b/i,
+  // A COUNT of replies, or their absence, presented as an observed fact
+  // about a sender. Gmail exposes no causal reply signal — only who a
+  // message was addressed to — which is why the product now says "you
+  // wrote to them N times". "8 replies" in a demo ledger is the same
+  // unfalsifiable claim as "rarely opened", one metric over.
+  //
+  // The bare word survives: "essential for replies" describes what Gmail
+  // is for, and a sender you never wrote back to is a fact we can state.
+  // What cannot stand is a number attached to it.
+  /\b\d+\s+replies\b/i,
+  /\bno replies\b/i,
+  /\breceived no replies\b/i,
 ];
 
 /** The engagement-sense phrases found in a passage, if any. */
@@ -136,6 +148,11 @@ describe('public copy never claims a message was opened', () => {
     expect(isOffending('Replies and opens can reveal a sender that looks noisy.')).toBe(true);
     expect(isOffending('We measure your open rate over 90 days.')).toBe(true);
     expect(isOffending('DeclutrMail does open tracking.')).toBe(true);
+    expect(isOffending('19 messages · 17 marked read · 8 replies')).toBe(true);
+    expect(isOffending('47 messages · 2 marked read · no replies')).toBe(true);
+    expect(isOffending('arrived often, was rarely marked read, and received no replies')).toBe(
+      true,
+    );
   });
 
   it('leaves the legitimate uses of "open" alone', () => {
@@ -166,15 +183,22 @@ describe('public copy never claims a message was opened', () => {
     expect(isOffending('You still open Gmail when you need to read a message.')).toBe(false);
   });
 
-  it('accepts the replacement vocabulary #566 shipped', () => {
+  it('accepts the replacement vocabulary', () => {
     expect(
-      isOffending('The sender arrived often, was rarely marked read, and received no replies.'),
+      isOffending(
+        'The sender arrived often, was rarely marked read, and was never written back to.',
+      ),
     ).toBe(false);
-    expect(isOffending('47 messages · 2 marked read · no replies')).toBe(false);
-    expect(isOffending('Volume, recent subjects, read state, replies, and current labels.')).toBe(
+    expect(isOffending('Volume, recent subjects, read state, and current labels.')).toBe(false);
+    expect(isOffending('Marked read regularly · excluded by the observed pattern')).toBe(false);
+    expect(isOffending('19 messages · 17 marked read · you wrote back 8×')).toBe(false);
+    expect(isOffending('47 messages · 2 marked read · you never wrote back')).toBe(false);
+    expect(isOffending('Volume, read rate, whether you write back, and recent subjects.')).toBe(
       false,
     );
-    expect(isOffending('Marked read regularly · excluded by the observed pattern')).toBe(false);
+    // Still allowed: the word itself, where it is not a count we claim
+    // to have measured.
+    expect(isOffending('That context is essential for replies and approvals.')).toBe(false);
   });
 
   it.each(SURFACES)('%s copy never claims a message was opened', (_name, surface) => {

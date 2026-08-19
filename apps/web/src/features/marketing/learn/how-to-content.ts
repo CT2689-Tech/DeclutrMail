@@ -103,7 +103,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Review the noisiest sender',
-            text: 'Use sender volume, read rate, replies, and recent subjects as evidence. Recommendations are guidance; the decision remains yours.',
+            text: 'Use sender volume, read rate, whether you write back, and recent subjects as evidence. Recommendations are guidance; the decision remains yours.',
           },
           {
             name: 'Preview the mail-moving action',
@@ -693,7 +693,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Check engagement and recent subjects',
-            text: 'Replies and read state can reveal a sender that looks noisy but still matters. Open the email in Gmail when the listed details are not enough.',
+            text: 'Whether you write back, and read state, can reveal a sender that looks noisy but still matters. Open the email in Gmail when the listed details are not enough.',
           },
           {
             name: 'Choose Unsubscribe for legitimate unwanted lists',
