@@ -27,6 +27,7 @@ import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
+import { syncMailboxLabels } from './mailbox-label-sync.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
@@ -429,7 +430,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
 
     // Stage 2 — building_sender_index (aggregates from mail_messages).
     await this.upsertSyncState(mailboxAccountId, 'building_sender_index', 80, 'syncing');
-    const sendersIndexed = await this.buildSenderIndex(mailboxAccountId);
+    const sendersIndexed = await this.buildSenderIndex(mailboxAccountId, client);
     lap('building_sender_index');
 
     // Stage 3 — computing_recommendations. The sender index is built,
@@ -878,7 +879,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * (not an in-memory pass), so a resumed sync aggregates the full
    * mailbox, including messages fetched by an earlier attempt.
    */
-  private async buildSenderIndex(mailboxAccountId: string): Promise<number> {
+  private async buildSenderIndex(
+    mailboxAccountId: string,
+    client: GmailMetadataClient,
+  ): Promise<number> {
     // Sender identity (email/name/domain) was written during fetch.
     const identityRows = await this.deps.db
       .select({
@@ -1138,6 +1142,23 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         WHERE s.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
           AND s.${sql.identifier('sender_key')} = sub.sender_key
       `);
+
+      // Label names BEFORE the counter reconcile: the read-rate
+      // numerator excludes messages carrying a known sweeper's label
+      // (mig 0064, F012), so a stale label set would reconcile the
+      // counters against the wrong exclusion. `null` = the client could
+      // not list; the existing rows stand rather than being emptied.
+      const labelSync = await syncMailboxLabels(tx, mailboxAccountId, client);
+      if (labelSync) {
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            kind: 'sync.mailbox_labels',
+            mailboxAccountId,
+            ...labelSync,
+          }),
+        );
+      }
 
       // Same derived-not-accumulated reconcile the incremental worker
       // runs. Near-noop on a fresh backfill (the insert-time counters are

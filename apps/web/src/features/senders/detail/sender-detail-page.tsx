@@ -1193,6 +1193,27 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                       pronoun tied the percentage to the wrong one. Name
                       the window instead of implying a denominator. */}
                   of the last 30 days&rsquo; mail was marked read.
+                  {/* THE SPLIT (F012). A third-party sweeper can mark
+                      mail read through the API, and on the mailbox this
+                      was measured against one did so 20,819 times — 27.5%
+                      of everything we counted as read. Those are already
+                      out of the percentage above; saying so is what lets
+                      the product EXPLAIN a number that looks lower than
+                      the user expects, instead of silently compensating
+                      and leaving them to wonder. Rendered only when there
+                      is something to disclose. */}
+                  {(stats.readRateSweeperMarked ?? 0) > 0 && (
+                    <>
+                      {' '}
+                      A further{' '}
+                      <span style={{ color: color.fg, fontWeight: 600 }}>
+                        {stats.readRateSweeperMarked!.toLocaleString('en-US')}
+                      </span>{' '}
+                      {stats.readRateSweeperMarked === 1 ? 'was' : 'were'} marked read by another
+                      tool, so {stats.readRateSweeperMarked === 1 ? 'it is' : 'they are'} not
+                      counted here.
+                    </>
+                  )}
                 </>
               )}
             </>

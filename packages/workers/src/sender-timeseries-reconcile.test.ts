@@ -1,6 +1,7 @@
 import {
   mailMessages,
   mailboxAccounts,
+  mailboxLabels,
   senderTimeseries,
   senders,
   users,
@@ -76,6 +77,8 @@ async function seedMessage(opts: {
   internalDate: string;
   isUnread: boolean;
   isOutbound?: boolean;
+  /** Extra Gmail label ids on the message (e.g. a sweeper's label). */
+  extraLabels?: string[];
 }): Promise<void> {
   await db.insert(mailMessages).values({
     mailboxAccountId: mailboxId,
@@ -85,7 +88,7 @@ async function seedMessage(opts: {
     subject: 'Subject',
     snippet: 'Snippet',
     internalDate: new Date(opts.internalDate),
-    labelIds: opts.isUnread ? ['UNREAD', 'INBOX'] : ['INBOX'],
+    labelIds: [...(opts.isUnread ? ['UNREAD', 'INBOX'] : ['INBOX']), ...(opts.extraLabels ?? [])],
     isUnread: opts.isUnread,
     isOutbound: opts.isOutbound ?? false,
     unsubscribeOneClick: false,
@@ -126,7 +129,89 @@ beforeEach(async () => {
   await seedSender(SENDER_KEY, 'sender@example.com');
 });
 
+async function seedSweeperLabel(labelId: string, name = 'Unroll.me/Unsubscribed'): Promise<void> {
+  await db.insert(mailboxLabels).values({
+    mailboxAccountId: mailboxId,
+    labelId,
+    name,
+    sweeperVendor: 'unroll_me',
+  });
+}
+
 describe('reconcileSenderTimeseries', () => {
+  it('keeps sweeper-marked mail out of read_count but inside volume (F012)', async () => {
+    // Gmail exposes one engagement bit and any tool can write it. On the
+    // founder's mailbox one sweeper's label carries 27.5% of everything
+    // we count as read. Those messages DID arrive, so they stay in the
+    // denominator — removing them there would shrink the sender instead
+    // of correcting the rate.
+    await seedSweeperLabel('Label_117');
+    await seedTimeseries('2026-08-01', 0, 0);
+    await seedMessage({ id: 'm1', internalDate: '2026-08-05T00:00:00Z', isUnread: false });
+    await seedMessage({
+      id: 'm2',
+      internalDate: '2026-08-06T00:00:00Z',
+      isUnread: false,
+      extraLabels: ['Label_117'],
+    });
+    await seedMessage({
+      id: 'm3',
+      internalDate: '2026-08-07T00:00:00Z',
+      isUnread: false,
+      extraLabels: ['Label_117'],
+    });
+
+    await reconcileSenderTimeseries(asTx(), mailboxId);
+
+    const row = await rowFor('2026-08-01');
+    expect(row!.volume).toBe(3);
+    expect(row!.readCount).toBe(1);
+  });
+
+  it('counts a label the user owns, even one whose name starts like a sweeper', async () => {
+    // The expensive direction: discounting read state the USER produced
+    // makes a sender they genuinely read look ignored, and pushes it
+    // toward Unsubscribe. Only a row flagged `sweeper_vendor` counts.
+    await db.insert(mailboxLabels).values({
+      mailboxAccountId: mailboxId,
+      labelId: 'Label_200',
+      name: 'Unroll.me notes to self',
+      sweeperVendor: null,
+    });
+    await seedTimeseries('2026-08-01', 0, 0);
+    await seedMessage({
+      id: 'm1',
+      internalDate: '2026-08-05T00:00:00Z',
+      isUnread: false,
+      extraLabels: ['Label_200'],
+    });
+
+    await reconcileSenderTimeseries(asTx(), mailboxId);
+
+    const row = await rowFor('2026-08-01');
+    expect(row!.volume).toBe(1);
+    expect(row!.readCount).toBe(1);
+  });
+
+  it('counts everything when no labels are known at all', async () => {
+    // The blind case at the consuming end: a mailbox whose labels were
+    // never listed has no sweeper rows, so the exclusion must be exactly
+    // a no-op rather than excluding everything or nothing measurable.
+    await seedTimeseries('2026-08-01', 0, 0);
+    await seedMessage({
+      id: 'm1',
+      internalDate: '2026-08-05T00:00:00Z',
+      isUnread: false,
+      extraLabels: ['Label_117'],
+    });
+
+    await reconcileSenderTimeseries(asTx(), mailboxId);
+
+    const row = await rowFor('2026-08-01');
+    expect(row!.volume).toBe(1);
+    expect(row!.readCount).toBe(1);
+  });
+
   it('corrects a read_count frozen at insert time — the F009 defect', async () => {
     // Nine messages arrived unread and one was read afterwards. The
     // insert-time counter never saw the label flip.

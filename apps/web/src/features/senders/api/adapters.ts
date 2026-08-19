@@ -100,6 +100,13 @@ export function adaptSenderDetail(args: {
     // never render as "0% read".
     monthlyVolume: args.detail.monthlyVolume ?? 0,
     readRate: args.detail.readRate,
+    // Passed through UNDEFINED when the wire omits it. Defaulting to 0
+    // here would turn "this build cannot tell you" into "no tool marked
+    // any of these read" — a confident claim on a field whose whole
+    // point is disclosure.
+    ...(args.detail.readRateSweeperMarked === undefined
+      ? {}
+      : { readRateSweeperMarked: args.detail.readRateSweeperMarked }),
     relationshipMonths: monthsSince(args.detail.firstSeenAt, now),
     lastSeenDays: daysSince(args.detail.lastSeenAt, now),
     volumeTrend: args.detail.volumeTrend,

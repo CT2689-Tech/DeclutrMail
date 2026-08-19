@@ -11,6 +11,7 @@ import {
   followupTracker,
   mailboxAccounts,
   mailboxDataDeletionRequests,
+  mailboxLabels,
   mailMessages,
   outboxEvents,
   providerSyncState,
@@ -267,6 +268,12 @@ async function seedMailboxGraph(
     snippet: `Snippet ${tag}`,
     internalDate: now,
     isUnread: true,
+  });
+  await db.insert(mailboxLabels).values({
+    mailboxAccountId: mailboxId,
+    labelId: `Label-${tag}`,
+    name: `Unroll.me/${tag}`,
+    sweeperVendor: 'unroll_me',
   });
   await db.insert(senders).values({
     mailboxAccountId: mailboxId,

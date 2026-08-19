@@ -158,6 +158,14 @@ export interface SenderStats {
    * has no timeseries yet — renders as "—", never a fabricated 0%.
    */
   readRate: number | null;
+  /**
+   * How many of the last 30 days' messages were marked read by a known
+   * third-party inbox tool rather than by the user (F012). Already
+   * excluded from `readRate` — surfaced so the page can explain the
+   * number rather than silently compensate. Optional: `undefined` is an
+   * API predating the field, which is "no claim", not zero.
+   */
+  readRateSweeperMarked?: number;
   /** Relationship age in months. */
   relationshipMonths: number;
   /** Days since the most recent message. */

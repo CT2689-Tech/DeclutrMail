@@ -138,3 +138,62 @@ export function senderInboxActionWhere(scope: SenderInboxActionScope): SQL {
 function allMailExcludedArrayLiteral(): string {
   return `ARRAY[${ALL_MAIL_EXCLUDED_LABELS.map((l) => `'${l}'`).join(',')}]::text[]`;
 }
+
+/**
+ * SQL predicate: this message's READ state was not produced by a known
+ * third-party sweeper (mig 0064, F012).
+ *
+ * Gmail exposes exactly one engagement bit — the absence of `UNREAD` —
+ * and any tool with API access can write it. On the founder's mailbox one
+ * sweeper's label carries 20,819 of the 75,689 messages we count as read:
+ * 27.5% of the entire read signal, manufactured by a tool the user is not
+ * currently using.
+ *
+ * APPLIED TO THE NUMERATOR ONLY. The message still counts toward volume —
+ * it did arrive, and removing it from the denominator would shrink the
+ * sender instead of correcting the rate, which is a different (and
+ * invisible) lie.
+ *
+ * Lives here, beside `senderInboxActionWhere`, for the same reason that
+ * one does: the live senders query and the `sender_timeseries` counter
+ * reconcile must apply the IDENTICAL exclusion. The two disagreeing is
+ * precisely the defect class F009 recorded, and a copied predicate is how
+ * it comes back.
+ *
+ * `NOT EXISTS` against `mailbox_labels`, not an array overlap against a
+ * pre-fetched id list, so the expression is self-contained and can be
+ * dropped into either query verbatim. On a mailbox with no sweeper labels
+ * the partial index has no rows, so this costs nothing.
+ *
+ * @param messageAlias - the `mail_messages` alias in the enclosing query
+ *   (raw SQL, so a correlated subquery can reference an outer alias).
+ */
+export function readStateNotSweeperMarked(messageAlias: SQL | string = 'mail_messages'): SQL {
+  const alias = typeof messageAlias === 'string' ? sql.raw(messageAlias) : messageAlias;
+  return sql`NOT EXISTS (
+    SELECT 1
+    FROM mailbox_labels AS sweeper_label
+    WHERE sweeper_label.mailbox_account_id = ${alias}.mailbox_account_id
+      AND sweeper_label.sweeper_vendor IS NOT NULL
+      AND sweeper_label.label_id = ANY(${alias}.label_ids)
+  )`;
+}
+
+/**
+ * The mirror image: this message's read state WAS produced by a sweeper.
+ *
+ * Powers the disclosure — "324 of 350 marked by Unroll.me" — so the
+ * product can explain an odd-looking number instead of silently
+ * compensating for it. Kept beside its complement so the two cannot
+ * drift apart into describing different sets.
+ */
+export function readStateSweeperMarked(messageAlias: SQL | string = 'mail_messages'): SQL {
+  const alias = typeof messageAlias === 'string' ? sql.raw(messageAlias) : messageAlias;
+  return sql`EXISTS (
+    SELECT 1
+    FROM mailbox_labels AS sweeper_label
+    WHERE sweeper_label.mailbox_account_id = ${alias}.mailbox_account_id
+      AND sweeper_label.sweeper_vendor IS NOT NULL
+      AND sweeper_label.label_id = ANY(${alias}.label_ids)
+  )`;
+}

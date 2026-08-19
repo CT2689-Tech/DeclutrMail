@@ -4,6 +4,7 @@ import {
   activityLog,
   mailMessages,
   mailboxAccounts,
+  mailboxLabels,
   schema,
   senderPolicies,
   senderTimeseries,
@@ -1705,6 +1706,102 @@ describe('SendersReadService', () => {
         });
       }
     }
+
+    it('excludes sweeper-marked mail from readRate and discloses the split (F012)', async () => {
+      // Gmail exposes one engagement bit and any tool with API access can
+      // write it. On the founder's mailbox one sweeper's label carries
+      // 27.5% of everything we count as read. The swept message still
+      // counts toward VOLUME — it did arrive — so only the numerator
+      // moves; removing it from the denominator would shrink the sender
+      // instead of correcting the rate.
+      await db.insert(mailboxLabels).values([
+        {
+          mailboxAccountId: mailboxId,
+          labelId: 'Label_117',
+          name: 'Unroll.me/Unsubscribed',
+          sweeperVendor: 'unroll_me',
+        },
+        // A lookalike the USER owns. Discounting this would make a sender
+        // they genuinely read look ignored — the expensive direction.
+        {
+          mailboxAccountId: mailboxId,
+          labelId: 'Label_200',
+          name: 'Unroll.me notes to self',
+          sweeperVendor: null,
+        },
+      ]);
+      const sender = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'swept@x.com',
+        lastSeenAt: new Date(Date.now() - 1 * 86400_000),
+      });
+      const recently = () => new Date(Date.now() - 5 * 86400_000);
+      // 1 read by the user, 1 read under a label the user owns,
+      // 2 read by the sweeper, 1 unread → 5 volume, 2 genuine reads.
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: sender.senderKey,
+        internalDate: recently(),
+        isUnread: false,
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: sender.senderKey,
+        internalDate: recently(),
+        isUnread: false,
+        labelIds: ['Label_200'],
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: sender.senderKey,
+        internalDate: recently(),
+        isUnread: false,
+        labelIds: ['Label_117'],
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: sender.senderKey,
+        internalDate: recently(),
+        isUnread: false,
+        labelIds: ['Label_117', 'INBOX'],
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: sender.senderKey,
+        internalDate: recently(),
+        isUnread: true,
+      });
+
+      const detail = await svc.getSenderDetail(mailboxId, sender.id);
+
+      expect(detail!.monthlyVolume).toBe(5);
+      expect(detail!.readRate).toBe(0.4);
+      expect(detail!.readRateSweeperMarked).toBe(2);
+    });
+
+    it('is exactly a no-op on a mailbox with no sweeper labels', async () => {
+      // The blind case at the consuming end. A mailbox whose labels were
+      // never listed has no rows to match, and the exclusion must then
+      // change nothing — not exclude everything, not exclude nothing
+      // measurable.
+      const sender = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'plain@x.com',
+        lastSeenAt: new Date(Date.now() - 1 * 86400_000),
+      });
+      await seedRollingMessages({
+        mailboxAccountId: mailboxId,
+        senderKey: sender.senderKey,
+        count: 4,
+        daysAgo: 5,
+        readCount: 3,
+      });
+
+      const detail = await svc.getSenderDetail(mailboxId, sender.id);
+
+      expect(detail!.readRate).toBe(0.75);
+      expect(detail!.readRateSweeperMarked).toBe(0);
+    });
 
     // Regression — MISTAKES.md 2026-05-23. Mirror of the `listSenders`
     // regression: `getSenderDetail` runs the same correlated subquery,

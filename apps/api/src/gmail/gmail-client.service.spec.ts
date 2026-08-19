@@ -273,6 +273,59 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
   });
 
   describe('ensureLabelId', () => {
+    it('listLabels returns every id → name pair through one read call', async () => {
+      // The mapping that lets a manufactured read signal be NAMED: we
+      // store `label_ids`, so a sweeper's label is `Label_117` and looks
+      // like any other until this call says what it is (F012).
+      fetchMock.mockResolvedValueOnce(
+        jsonOk({
+          labels: [
+            { id: 'INBOX', name: 'INBOX' },
+            { id: 'Label_117', name: 'Unroll.me/Unsubscribed' },
+            { id: 'Label_9', name: 'Receipts' },
+          ],
+        }),
+      );
+      const client = new GmailClientService(oauth, limiter);
+
+      const labels = await client.listLabels();
+
+      expect(labels).toEqual([
+        { id: 'INBOX', name: 'INBOX' },
+        { id: 'Label_117', name: 'Unroll.me/Unsubscribed' },
+        { id: 'Label_9', name: 'Receipts' },
+      ]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe(`${API}/labels`);
+      // Read-only: this must never create or modify a label.
+      expect(init?.method).not.toBe('POST');
+      expect(acquireSpy).toHaveBeenCalledWith(5);
+    });
+
+    it('listLabels drops a half-formed entry rather than storing a blank name', async () => {
+      // A label with no name cannot be classified, and a row carrying an
+      // empty name would be permanently unmatched against the sweeper
+      // list while looking like a considered "not a sweeper" verdict.
+      fetchMock.mockResolvedValueOnce(
+        jsonOk({
+          labels: [{ id: 'Label_1' }, { name: 'Nameless' }, { id: 'Label_2', name: 'Ok' }],
+        }),
+      );
+      const client = new GmailClientService(oauth, limiter);
+
+      expect(await client.listLabels()).toEqual([{ id: 'Label_2', name: 'Ok' }]);
+    });
+
+    it('listLabels returns empty rather than throwing on a malformed body', async () => {
+      // Empty is the signal `syncMailboxLabels` treats as "we learned
+      // nothing" and leaves stored rows alone — never as "no labels".
+      fetchMock.mockResolvedValueOnce(jsonOk({}));
+      const client = new GmailClientService(oauth, limiter);
+
+      expect(await client.listLabels()).toEqual([]);
+    });
+
     it('findLabelId returns null without creating a missing label', async () => {
       fetchMock.mockResolvedValueOnce(jsonOk({ labels: [{ id: 'INBOX', name: 'INBOX' }] }));
       const client = new GmailClientService(oauth, limiter);

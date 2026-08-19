@@ -149,6 +149,16 @@ export interface GmailMetadataClient {
    */
   findLabelId?(name: string): Promise<string | null>;
   /**
+   * Every label in the mailbox, id → name (`users.labels.list`).
+   *
+   * Optional so existing test doubles need not implement it — and a sync
+   * whose client cannot list labels leaves `mailbox_labels` alone rather
+   * than emptying it, because "we did not ask" is not "there are none".
+   * An emptied table would silently un-exclude a sweeper's marks and
+   * push its senders back toward looking engaged.
+   */
+  listLabels?(): Promise<{ id: string; name: string }[]>;
+  /**
    * Snapshot the mailbox's user-level `historyId` at sync start so the
    * incremental sync (PR-D) can `history.list?startHistoryId=...` from
    * that point. Capturing BEFORE the fetch starts means any change

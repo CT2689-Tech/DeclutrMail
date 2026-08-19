@@ -14,6 +14,7 @@ export * from './domain-icons';
 export * from './followup-tracker';
 export * from './mail-messages';
 export * from './mailbox-accounts';
+export * from './mailbox-labels';
 export * from './mailbox-data-deletion-requests';
 export * from './outbox-events';
 export * from './provider-sync-state';

@@ -587,6 +587,28 @@ export class GmailClientService
   }
 
   /**
+   * Every label in the mailbox, id → name (`users.labels.list`).
+   *
+   * WHY WE NEED THE NAMES. We store `label_ids`, so a third-party
+   * sweeper's label reads as `Label_117` — indistinguishable from any
+   * other. On the founder's mailbox that one label carries 27.5% of the
+   * messages we count as read (F012). Naming it is what lets the read
+   * rate exclude a manufactured signal, and what lets the product SAY
+   * why a number looks odd instead of silently compensating.
+   *
+   * D7 / D228: ids and names only, one call per mailbox per sync (5
+   * quota units). Registered in the Gmail-data inventory as
+   * `gmail-label-names`. Labels with no id or name are dropped rather
+   * than half-stored.
+   */
+  async listLabels(): Promise<{ id: string; name: string }[]> {
+    const listed = await this.get<GmailLabelsListResponse>('/labels', false);
+    return (listed?.labels ?? []).flatMap((label) =>
+      label.id && label.name ? [{ id: label.id, name: label.name }] : [],
+    );
+  }
+
+  /**
    * Resolve an existing USER label without creating it. This is the
    * read-only sibling of `ensureLabelId`, used by consequence previews.
    */

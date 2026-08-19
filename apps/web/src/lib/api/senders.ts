@@ -145,6 +145,16 @@ export interface SenderListRow {
    * "opened", to avoid overclaiming.
    */
   readRate: number | null;
+  /**
+   * How many of the last 30 days' messages were marked read by a known
+   * third-party inbox tool rather than by the user (F012).
+   *
+   * Already EXCLUDED from `readRate`. Present so a surface can explain a
+   * number that looks lower than expected instead of silently
+   * compensating. Optional because an API pod predating the field omits
+   * it — and `undefined` means "no claim", never 0-with-confidence.
+   */
+  readRateSweeperMarked?: number;
   /** Bucketed MoM trend. `null` when there's no timeseries history. */
   volumeTrend: VolumeTrendBucket | null;
   /**

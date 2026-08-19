@@ -1,4 +1,4 @@
-import { mailMessages, senderTimeseries } from '@declutrmail/db';
+import { mailMessages, readStateNotSweeperMarked, senderTimeseries } from '@declutrmail/db';
 import { sql } from 'drizzle-orm';
 
 import type { OutboxTx } from './outbox-publisher.js';
@@ -83,8 +83,21 @@ import type { OutboxTx } from './outbox-publisher.js';
  * precedent by putting its correction counts on `worker.succeeded`.
  * Counts carry no PII.
  *
- * Privacy (D7 / D228): reads `sender_key`, `internal_date`, `is_unread`
- * and `is_outbound` only. No body, no snippet, no header.
+ * ## The numerator excludes sweeper-marked mail
+ *
+ * `read_count` counts messages WITHOUT the `UNREAD` label — a bit any
+ * tool with API access can write, and on the founder's mailbox one
+ * third-party sweeper wrote it 20,819 times (27.5% of the read signal,
+ * F012). `readStateNotSweeperMarked` removes those from the numerator
+ * only; the message still counts toward `volume`, because it did arrive.
+ *
+ * The predicate is IMPORTED, not repeated: the live senders query applies
+ * the identical one, and this module exists because those two disagreeing
+ * is what made a read rate mean two different things at once.
+ *
+ * Privacy (D7 / D228): reads `sender_key`, `internal_date`, `is_unread`,
+ * `is_outbound` and `label_ids`, plus label names from `mailbox_labels`.
+ * No body, no snippet, no header.
  */
 export interface SenderTimeseriesReconcileResult {
   /** Months whose stored counters disagreed with `mail_messages`. */
@@ -109,7 +122,10 @@ export async function reconcileSenderTimeseries(
         m.${sql.identifier('sender_key')} AS sender_key,
         date_trunc('month', m.${sql.identifier('internal_date')} AT TIME ZONE 'UTC')::date AS year_month,
         COUNT(*)::integer AS total,
-        COUNT(*) FILTER (WHERE m.${sql.identifier('is_unread')} = false)::integer AS read_total
+        COUNT(*) FILTER (
+          WHERE m.${sql.identifier('is_unread')} = false
+            AND ${readStateNotSweeperMarked('m')}
+        )::integer AS read_total
       FROM ${mailMessages} AS m
       WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
         AND m.${sql.identifier('is_outbound')} = false

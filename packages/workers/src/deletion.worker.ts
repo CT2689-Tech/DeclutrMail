@@ -14,6 +14,7 @@ import {
   followupTracker,
   mailboxAccounts,
   mailboxDataDeletionRequests,
+  mailboxLabels,
   mailMessages,
   outboxEvents,
   providerSyncState,
@@ -141,6 +142,7 @@ export const MAILBOX_PURGE_DIRECT_CHILD_TABLES = [
   'brief_runs',
   'followup_tracker',
   'mail_messages',
+  'mailbox_labels',
   'product_feedback',
   'provider_sync_state',
   'rule_match_log',
@@ -540,6 +542,13 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
         await tx
           .delete(senderTimeseries)
           .where(eq(senderTimeseries.mailboxAccountId, request.mailboxAccountId));
+        // Gmail label names (mig 0064). Registered in the D245 inventory
+        // with `removalTrigger: 'delete-indexed-data'`, and that entry is
+        // a promise to the user — the FK cascade only fires when the
+        // MAILBOX goes, which is a different request from this one.
+        await tx
+          .delete(mailboxLabels)
+          .where(eq(mailboxLabels.mailboxAccountId, request.mailboxAccountId));
         await tx.delete(senders).where(eq(senders.mailboxAccountId, request.mailboxAccountId));
         await tx
           .delete(webhookDedup)
