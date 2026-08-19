@@ -5,6 +5,7 @@
 // Consumers:
 //   - apps/web/src/features/marketing/public-shell/public-shell.tsx (header + footer)
 //   - apps/web/src/features/marketing/legal-layout.tsx
+//   - packages/shared/src/shell/sidebar.tsx (app rail + mobile drawer)
 //
 // Shape locked at promotion. The geometry, stroke weights and colors
 // below are the brand specification — changing any of them requires an

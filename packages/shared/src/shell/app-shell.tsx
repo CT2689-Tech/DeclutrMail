@@ -147,9 +147,13 @@ export function AppShell({
               onClick={() => setDrawerOpen(false)}
               aria-label="Close navigation menu"
               style={{
+                // Sits on the scrim, clear of the 220px rail, rather
+                // than on top of it: the rail's top row is the brand
+                // lockup, and a button pinned inside `right: 12` lands
+                // on the tail of the wordmark (ADR-0036).
                 position: 'absolute',
                 top: 12,
-                right: 12,
+                left: 232,
                 zIndex: 1,
                 width: 44,
                 height: 44,
