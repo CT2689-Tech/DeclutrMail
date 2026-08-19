@@ -335,11 +335,12 @@ export function fetchSendersSummary(
  * Row shape on `GET /api/senders/:id/history` — one action that was
  * actually taken on this sender, from `activity_log`.
  *
- * NOT the engine's suggestion. That arrives as
- * `SenderDetailDto.recommendation` and is labelled as a suggestion; a
- * previous version of this endpoint served `triage_decisions` rows,
- * which made every scored-but-untouched sender claim a decision the
- * user never made.
+ * NOT the engine's suggestion. A previous version of this endpoint
+ * served `triage_decisions` rows, which made every scored-but-untouched
+ * sender claim a decision the user never made. The suggestion has no
+ * field on this wire contract today — when it gets one it renders
+ * through `RecommendationBanner`, labelled as a suggestion, never as a
+ * row in this list.
  */
 export interface DecisionHistoryRowDto {
   /** `activity_log.id` — the operation id shown on the row. */

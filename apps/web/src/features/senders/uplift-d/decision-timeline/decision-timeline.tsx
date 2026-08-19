@@ -13,8 +13,9 @@
 //
 // The component is presentation-only. The consumer assembles the items
 // from `activity_log` — what actually happened to the sender. The
-// engine's recommendation is NOT a timeline item; it has its own
-// surface (`RecommendationBanner`) where it is labelled a suggestion.
+// engine's recommendation is NOT a timeline item: a suggestion renders
+// through `RecommendationBanner` (present tense, labelled), which the
+// detail page mounts only when the wire carries a recommendation.
 
 import type { ReactNode } from 'react';
 import { tokens } from '@declutrmail/shared';

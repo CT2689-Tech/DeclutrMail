@@ -560,8 +560,13 @@ export type DecisionHistorySource = 'triage' | 'manual' | 'autopilot' | 'screene
  * and rendering it here made every unscored-but-untouched sender claim
  * a decision it never received (founder screenshot 2026-08-19 — Sender
  * Detail said "Triage Kept", Activity for the same sender said nothing
- * had happened; Activity was right). The engine's opinion has its own
- * surface: `SenderDetail.recommendation`, labelled as a suggestion.
+ * had happened; Activity was right).
+ *
+ * The engine's verdict is a suggestion and belongs on a surface that
+ * says so. Today it appears in Triage (the queue's proposed verdict)
+ * and behind the Senders-list review chip; the detail wire carries no
+ * recommendation field, so Sender Detail shows no suggestion at all —
+ * a product gap, not something this history endpoint may paper over.
  */
 export interface DecisionHistoryRow {
   /** `activity_log.id` — the operation id Sender Detail displays. */
