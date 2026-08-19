@@ -246,6 +246,72 @@ describe('SenderDetailRoute', () => {
     expect(screen.queryByText(/^op /)).not.toBeInTheDocument();
   });
 
+  /**
+   * D39 + D245: the engine's read is disclosed BESIDE the fact-derived
+   * highlight, never in place of it. Before this landed, the detail wire
+   * carried no recommendation at all, so the banner rendered only for
+   * mock fixtures and a connected account saw nothing.
+   */
+  it('discloses the engine suggestion, collapsed, with its age', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              ...DETAIL,
+              recommendation: {
+                verdict: 'keep',
+                confidence: 0.88,
+                reasoning: 'You read every message from this sender.',
+                generatedBy: 'llm_haiku',
+                scoredAt: '2026-05-20T10:00:00.000Z',
+              },
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [MESSAGE],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: TIMESERIES }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/history$/,
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+    ]);
+    renderDetail();
+
+    const summary = await screen.findByText(/Optional suggestion · Keep/);
+    expect(summary).toHaveTextContent(/scored/);
+    expect(summary.closest('details')).not.toHaveAttribute('open');
+    // The suggestion never claims the user did anything.
+    expect(screen.queryByText(/^op /)).not.toBeInTheDocument();
+  });
+
+  it('shows no suggestion for a sender the engine has never scored', async () => {
+    installHappyPath();
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+    expect(screen.queryByText(/Optional suggestion/i)).not.toBeInTheDocument();
+  });
+
   it('renders the not-found UI when the detail endpoint returns 404', async () => {
     installFetchStub([
       {
