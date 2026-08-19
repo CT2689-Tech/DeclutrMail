@@ -111,6 +111,20 @@ describe('buildContentSecurityPolicy (D175)', () => {
     expect(directive(csp, 'connect-src')).toContain('https://*.sentry.io');
   });
 
+  // Regression for the production console report on /senders: Vercel
+  // injected its toolbar frame and CSP blocked it, because frame-src
+  // named only the two checkout vendors. The grant must stay exactly
+  // this narrow — a wildcard, or a script/connect entry, would widen
+  // the allowlist well past the one blocked iframe.
+  it('allows the Vercel Toolbar frame origin and nothing wider', () => {
+    const csp = buildContentSecurityPolicy(NONCE, PROD_ENV);
+
+    expect(directive(csp, 'frame-src')).toContain('https://vercel.live');
+    expect(directive(csp, 'frame-src')).not.toContain('https://*.vercel.live');
+    expect(directive(csp, 'script-src')).not.toContain('vercel.live');
+    expect(directive(csp, 'connect-src')).not.toContain('vercel.live');
+  });
+
   it('derives connect-src origins from the env URLs (API + Sentry DSN)', () => {
     const csp = buildContentSecurityPolicy(NONCE, {
       ...PROD_ENV,
