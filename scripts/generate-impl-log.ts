@@ -266,12 +266,25 @@ function main(): void {
       process.exit(1);
     }
 
+    // A summary that disagrees with rows that agree can only mean the
+    // block was hand-edited — the counts are computed FROM the rows. It
+    // can never be another PR's fault, so both modes fail on it.
+    const summaryTampered = drifted.length === 0;
     const mine = strict ? drifted : drifted.filter((num) => owned.has(num));
 
     for (const num of drifted) {
       console.error(
         `  D${num}: drifted (${owned.has(num) ? 'this PR owns it' : 'another PR owns it'})`,
       );
+    }
+
+    if (summaryTampered) {
+      console.error(
+        '✗ The summary block disagrees with rows that are themselves current.',
+        'The counts are derived FROM the rows, so this means the block was',
+        'hand-edited. Run `pnpm generate-impl-log` and commit.',
+      );
+      process.exit(1);
     }
 
     if (mine.length === 0) {
