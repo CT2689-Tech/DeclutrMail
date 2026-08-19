@@ -149,7 +149,7 @@ export const TrendNew: Story<typeof SenderListRow> = {
   render: (args: RowArgs) => frame(args),
 };
 
-/** Read-state: "Almost never marked read" — strong unsubscribe candidate. */
+/** Read-state: "Rarely marked read in the last 30d" — strong unsubscribe candidate. */
 export const ReadStateLow: Story<typeof SenderListRow> = {
   args: {
     ...baseArgs,

@@ -26,6 +26,7 @@ import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
+import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
@@ -1157,6 +1158,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           AND st.${sql.identifier('sender_key')} = sub.sender_key
           AND st.${sql.identifier('year_month')} = sub.year_month
       `);
+
+      // Same derived-not-accumulated reconcile the incremental worker
+      // runs. Near-noop on a fresh backfill (the insert-time counters are
+      // already correct there); load-bearing on a re-sync that recovers a
+      // mailbox whose read state drifted while the cursor was stale.
+      await reconcileSenderTimeseries(tx, mailboxAccountId);
 
       await applyAutomaticProtection(tx, mailboxAccountId);
     });

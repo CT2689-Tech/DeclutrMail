@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar, Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import { type DecisionId, type ReviewKind, type Sender } from './data';
+import { formatReadRatePct } from './fact-language';
 
 const { color, font } = tokens;
 
@@ -49,7 +50,11 @@ const KIND_CONFIG: Record<ReviewKind, KindConfig> = {
     eyebrow: 'Promotional sweep · plan-based Activity Undo',
     tag: 'warn',
     headline: 'Unsubscribe these marketers?',
-    sub: "These senders rarely get opened. The default is Unsubscribe — downgrade any row to Later or Keep if you'd rather hang on to it.",
+    // "marked read", not "opened" — Gmail exposes no open event, only the
+    // absence of UNREAD, which a filter or a third-party sweeper can strip
+    // without a human ever seeing the message. Saying "opened" here would
+    // justify a destructive DEFAULT with a fact we do not have.
+    sub: "These senders are rarely marked read. The default is Unsubscribe — downgrade any row to Later or Keep if you'd rather hang on to it.",
     defaultAction: 'unsub',
     options: [KEEP, LATER, UNSUB],
     ctaTone: 'warn',
@@ -526,7 +531,10 @@ function ReviewRow({
 }) {
   const why = [
     // `null` readRate = no timeseries yet — omit rather than claim 0%.
-    s.readRate !== null ? `${Math.round(s.readRate * 100)}% read` : null,
+    // Same formatter + window as every other read-rate surface: a
+    // sender at 0.004 must not read '0% read' here and '<1%' on the
+    // row-detail card minutes apart.
+    s.readRate !== null ? `${formatReadRatePct(s.readRate)}% read in 30d` : null,
     `${s.monthlyVolume ?? 0}/mo`,
     s.lastDays > 14 ? `last open ${Math.round(s.lastDays / 7)}w ago` : null,
   ]

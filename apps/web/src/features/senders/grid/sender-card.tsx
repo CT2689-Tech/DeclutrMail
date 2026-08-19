@@ -444,7 +444,7 @@ export function SenderCard({
               AND used "Opened", which Gmail metadata can't support
               ("marked read" is the honest fact). Same words + tones as
               the table's Read column. */}
-          <Stat label="Read" value={<ReadBucketText rate={sender.readRate} />} />
+          <Stat label="Read 30d" value={<ReadBucketText rate={sender.readRate} />} />
           {/* Grid↔table parity (2026-07-16): the table's Trend column,
               same fact-language chip. */}
           <Stat label="Trend" value={<TrendChip bucket={sender.volumeTrend} />} />

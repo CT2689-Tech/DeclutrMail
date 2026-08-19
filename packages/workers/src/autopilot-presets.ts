@@ -59,8 +59,18 @@ export interface PresetSignals {
   firstSeenDaysAgo: number;
   /** D101 #3: total messages ever seen. `< 3` matches. */
   totalMessages: number;
-  /** D101 #4, #5: read rate over the last 90 days, `[0, 1]`. */
-  readRate90d: number;
+  /**
+   * D101 #4, #5: read rate over the last 90 days, `[0, 1]`.
+   *
+   * `null` = unmeasurable (no mail in the window), NEVER "never read".
+   * A preset must not match on it: both dormancy presets below require
+   * `lastSeenDaysAgo > 90`, which guarantees zero 90-day volume, so
+   * while this was a fabricated `0` the accompanying
+   * `readRate90d < 0.05` test could not fail. It filtered nothing and
+   * every dormant sender read as "Read rate 0%" — including the 95% the
+   * user opens almost every message from.
+   */
+  readRate90d: number | null;
   /** D101 #4 (`> 90`), #5 (`> 180`): days since `last_seen_at`. */
   lastSeenDaysAgo: number;
 }
@@ -218,6 +228,15 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
     defaultActionPayload: {},
     dailyActionCap: 25,
     match: ({ signals }) => {
+      // Abstain on an unmeasurable rate. This preset currently CANNOT
+      // match as a result: its own `lastSeenDaysAgo > 90` predicate
+      // guarantees no 90-day mail, hence a null rate. That is the honest
+      // outcome — the alternative was matching every dormant sender on a
+      // fabricated 0%. Re-arming it needs a read rate measured over a
+      // window that actually contains the sender's mail (see FINDINGS
+      // F009); that is a product decision about a destructive verb, not
+      // a refactor.
+      if (signals.readRate90d === null) return { matched: false, reason: '' };
       if (signals.readRate90d >= 0.05) return { matched: false, reason: '' };
       if (signals.lastSeenDaysAgo <= 90) return { matched: false, reason: '' };
       if (signals.lastSeenDaysAgo > 180) return { matched: false, reason: '' };
@@ -238,6 +257,10 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
     defaultActionPayload: {},
     dailyActionCap: 25,
     match: ({ signals }) => {
+      // Same abstain as `newsletter_graveyard`, and the same consequence:
+      // `lastSeenDaysAgo > 180` implies a null rate, so this preset stops
+      // matching rather than firing on manufactured disengagement.
+      if (signals.readRate90d === null) return { matched: false, reason: '' };
       if (signals.readRate90d >= 0.05) return { matched: false, reason: '' };
       if (signals.lastSeenDaysAgo <= 180) return { matched: false, reason: '' };
       return {

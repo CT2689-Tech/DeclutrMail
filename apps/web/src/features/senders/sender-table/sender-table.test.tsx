@@ -279,9 +279,13 @@ describe('SenderTable', () => {
   });
 
   it('renders the shared fact vocabulary — read bucket + monthly cadence cell', () => {
-    // readRate 0 → "Never" (amber, no pill); monthlyVolume 61 → "61/mo".
+    // readRate 0 → "None" (amber, no pill); monthlyVolume 61 → "61/mo".
+    // NOT "Never": `readRate` is a rolling 30-day ratio, so an absolute
+    // lifetime claim from it is false — etherscan read 0/9 in 30d and
+    // 96.5% lifetime still rendered "Never" (FINDINGS F008). The aria
+    // names the window so a screen reader gets the qualifier too.
     render(<Harness {...{}} />);
-    expect(screen.getByLabelText(/read rate: never marked read/i)).toHaveTextContent('Never');
+    expect(screen.getByLabelText(/read rate: none in the last 30 days/i)).toHaveTextContent('None');
     expect(screen.getByText('61/mo')).toBeTruthy();
     // Monthly is nullable — no-timeseries rows render an em-dash.
     // (Covered separately to keep this case single-row.)

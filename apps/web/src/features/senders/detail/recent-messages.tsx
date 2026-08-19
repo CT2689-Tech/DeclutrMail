@@ -1,11 +1,12 @@
 'use client';
 
 import { Eyebrow, EmptyState, tokens } from '@declutrmail/shared';
-import { fmtSize, relTimeFromIso } from './data';
+import { absoluteFromIso, fmtSize, relTimeFromIso } from './data';
 import type { RecentMessage } from './types';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
+import { useNow } from '@/lib/use-now';
 
 const { color, font, radius } = tokens;
 
@@ -118,6 +119,16 @@ function MessageRow({
   mailboxEmail: string | null;
   senderEmail: string;
 }) {
+  // `useNow()` rather than a bare `new Date()` in the render body: this
+  // route is server-prefetched, so a render-time clock hands the server
+  // and the client different values and arms a hydration mismatch (D200).
+  // Null on the server and the first client render; the real clock lands
+  // as an ordinary post-mount state update — the same contract the
+  // Activity feed's timestamps already use.
+  const now = useNow();
+  const relative = now === null ? '' : relTimeFromIso(message.receivedAt, new Date(now));
+  const absolute = now === null ? '' : absoluteFromIso(message.receivedAt);
+
   const gmailHref = mailboxEmail
     ? GmailOpenLinkService.buildOpenLink({
         mailboxEmail,
@@ -216,7 +227,15 @@ function MessageRow({
           {message.snippet}
         </span>
       </div>
-      <span
+      {/* D41 keeps the RELATIVE label visible; the exact instant rides
+          along in `title` + a machine-readable `dateTime`, so nothing
+          about the scan-ability changes and the value becomes checkable
+          against Gmail. Additive — no D41 amendment needed. */}
+      <time
+        dateTime={message.receivedAt}
+        // Omit `title` until the clock exists rather than emitting
+        // `title=""` on the server render.
+        {...(absolute ? { title: absolute } : {})}
         style={{
           fontFamily: font.mono,
           fontSize: 11,
@@ -225,8 +244,8 @@ function MessageRow({
           fontVariantNumeric: 'tabular-nums',
         }}
       >
-        {relTimeFromIso(message.receivedAt)}
-      </span>
+        {relative}
+      </time>
       <span
         style={{
           display: 'inline-flex',

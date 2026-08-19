@@ -86,7 +86,7 @@ function messagesEnvelope(rows: ReturnType<typeof messageRow>[]) {
 
 const READY_SUBJECTS: RowDetailSubjects = {
   status: 'ready',
-  subjects: MESSAGES.slice(0, 3).map((m) => m.subject),
+  subjects: MESSAGES.slice(0, 3).map((m) => ({ subject: m.subject, date: m.internalDate })),
 };
 
 function renderDetail(

@@ -39,3 +39,27 @@ export function relTimeFromIso(iso: string, now: Date = new Date()): string {
   const days = Math.max(0, Math.floor((now.getTime() - then) / (1000 * 60 * 60 * 24)));
   return relTime(days);
 }
+
+/**
+ * Exact received-at for a message row's tooltip.
+ *
+ * "5mo ago" is fine for scanning and useless for checking. When someone
+ * is verifying a claim against Gmail — which is exactly what a privacy
+ * product asks them to be able to do — a relative label gives them
+ * nothing to match on (founder, 2026-08-18: "this would fill the trust
+ * gap if user is trying to verify something. I was doing exactly same").
+ * The instant is already on the wire as `RecentMessage.receivedAt`; it
+ * was simply never rendered.
+ *
+ * Locale is pinned per the D200 hydration rule (`eslint.config.mjs`
+ * `no-restricted-syntax` bans an unpinned `toLocaleString`). The zone
+ * stays the browser's — callers gate this behind `useNow()` so it is
+ * computed after mount and never reaches server HTML; tests pass an
+ * explicit zone for exact-string determinism. Same contract as
+ * `absoluteTime` in the Activity feed, which is the pattern this copies.
+ */
+export function absoluteFromIso(iso: string, timeZone?: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '';
+  return d.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone });
+}

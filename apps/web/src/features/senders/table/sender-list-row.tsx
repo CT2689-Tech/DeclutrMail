@@ -63,12 +63,16 @@ function buildEvidenceTokens(s: Sender): string[] {
   // decision. A `null` readRate means "no timeseries yet" — that is
   // never evidence, so the line stays silent rather than claiming
   // "never read" from missing data.
+  // Both phrases name the 30-day window. Unqualified, "Almost never
+  // marked read" was a lifetime-sounding claim built from 30 days —
+  // etherscan (0 read of 9 in 30d, 96.5% read lifetime) hit this exact
+  // branch. See FINDINGS F008.
   if (s.readRate !== null) {
     const read = Math.round(s.readRate * 100);
     if (read <= 5 && monthly >= 8) {
-      tokens.push('Almost never marked read');
+      tokens.push('Rarely marked read in the last 30d');
     } else if (read >= 70) {
-      tokens.push(`${read}% marked read`);
+      tokens.push(`${read}% marked read in the last 30d`);
     }
   }
 
