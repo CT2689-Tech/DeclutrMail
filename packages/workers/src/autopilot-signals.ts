@@ -188,7 +188,10 @@ export async function materializeAutopilotSignals(
       firstSeenDaysAgo: Math.floor((now.getTime() - s.firstSeenAt.getTime()) / dayMs),
       lastSeenDaysAgo: Math.floor((now.getTime() - s.lastSeenAt.getTime()) / dayMs),
       totalMessages: counts.total,
-      readRate90d: ts.volume > 0 ? ts.reads / ts.volume : 0,
+      // `null`, not 0 — see `PresetSignals.readRate90d`. Every sender a
+      // dormancy preset can reach has zero 90-day volume, so a `0` here
+      // made those presets' read-rate predicate a tautology.
+      readRate90d: ts.volume > 0 ? ts.reads / ts.volume : null,
     };
     return {
       senderKey: s.senderKey,

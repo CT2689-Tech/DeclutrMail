@@ -135,8 +135,19 @@ export interface SenderSignals {
   gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
   /** D21 rule 4 — user has starred ≥ 1 message in the past year. */
   starredInLastYear: boolean;
-  /** D21 rule 5 — `read_rate` over the last 90 days, `[0, 1]`. */
-  readRate90d: number;
+  /**
+   * D21 rule 5 — `read_rate` over the last 90 days, `[0, 1]`.
+   *
+   * `null` means UNMEASURABLE, not zero: the sender has no mail inside
+   * the 90-day window, so there is nothing to have read. Every consumer
+   * must abstain rather than treat it as disengagement — a sender last
+   * seen 200 days ago has a null read rate by construction, and reading
+   * that as "never opened" is a claim about the user that no data
+   * supports. (2026-08-18: it read as `0` and that made both dormant
+   * unsubscribe presets tautological — 7,072 of 7,072 candidates
+   * matched, 95% of them senders the user opens ≥90% of the time.)
+   */
+  readRate90d: number | null;
   /** Months since `first_seen_at`. D21 rule 6 uses ≥ 60. */
   firstSeenMonthsAgo: number;
   /** Days since `first_seen_at`. D21 rule 7 (Phase B) uses < 7. */
@@ -182,7 +193,8 @@ export interface CascadeResult {
    */
   facts: {
     monthlyVolume: number;
-    readRatePct: number;
+    /** `null` when `readRate90d` was unmeasurable — never rendered as 0%. */
+    readRatePct: number | null;
   };
   /** Component scores when Phase C ran; undefined for Phase A/B. */
   scores?: {
@@ -227,7 +239,7 @@ function round2(x: number): number {
 export function runCascade(s: SenderSignals): CascadeResult {
   const facts = {
     monthlyVolume: s.monthlyVolume,
-    readRatePct: Math.round(s.readRate90d * 100),
+    readRatePct: s.readRate90d === null ? null : Math.round(s.readRate90d * 100),
   };
 
   // ─── Phase A — protection / engagement (Keep, exit) ────────────────────
@@ -284,7 +296,7 @@ export function runCascade(s: SenderSignals): CascadeResult {
   }
 
   // Rule 5 — read_rate ≥ 50% over 90 days. "Engaged reader."
-  if (s.readRate90d >= 0.5) {
+  if (s.readRate90d !== null && s.readRate90d >= 0.5) {
     return {
       verdict: 'keep',
       confidence: 0.85,
@@ -295,7 +307,7 @@ export function runCascade(s: SenderSignals): CascadeResult {
   }
 
   // Rule 6 — long relationship still engaged.
-  if (s.firstSeenMonthsAgo >= 60 && s.readRate90d >= 0.3) {
+  if (s.firstSeenMonthsAgo >= 60 && s.readRate90d !== null && s.readRate90d >= 0.3) {
     return {
       verdict: 'keep',
       confidence: 0.8,
@@ -354,8 +366,14 @@ export function runCascade(s: SenderSignals): CascadeResult {
     // Disengagement CORROBORATES (max +0.25) but can never carry the
     // verdict alone — the pre-fix 0.40/0.30 read-rate weights were the
     // over-recommendation bug.
-    if (s.readRate90d < 0.2) unsubscribe += 0.15;
-    if (s.readRate90d < 0.05) unsubscribe += 0.1;
+    // Unmeasurable read rate corroborates nothing. In practice the
+    // stream gate above already implies a non-null rate (a sender with
+    // ≥ MIN_UNSUB_STREAM_VOLUME msgs/mo over 90d has 90-day mail by
+    // definition), so this guard is belt-and-braces — but it is the
+    // guard that stops a future gate change from silently reinstating
+    // "no data" as evidence for a destructive verb.
+    if (s.readRate90d !== null && s.readRate90d < 0.2) unsubscribe += 0.15;
+    if (s.readRate90d !== null && s.readRate90d < 0.05) unsubscribe += 0.1;
     // Gmail's OWN category label (not predicted — D222).
     if (
       s.gmailCategory === 'promotions' ||

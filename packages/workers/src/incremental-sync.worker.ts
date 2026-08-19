@@ -11,6 +11,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
+import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { notNeedingReconnect } from './mailbox-reconnect.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
@@ -899,6 +900,10 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           AND st.${sql.identifier('sender_key')} = sub.sender_key
           AND st.${sql.identifier('year_month')} = sub.year_month
       `);
+      // `volume` / `read_count` are derived, not accumulated — a message
+      // read after it was indexed arrives here as a label change, never
+      // as an insert, so the insert-time counters go permanently stale.
+      await reconcileSenderTimeseries(tx, mailboxAccountId);
       await applyAutomaticProtection(tx, mailboxAccountId);
     });
   }

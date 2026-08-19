@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createLimiter,
+  renderTemplate,
   DEFAULT_REASONING_RATE_PER_MIN,
   MAX_REASONING_RATE_PER_MIN,
   resolveReasoningRatePerMin,
@@ -142,5 +143,32 @@ describe('VERDICT_LABEL exhaustiveness (D20, D227)', () => {
     for (const v of triageVerdict.enumValues) {
       expect(VERDICT_LABEL[v]).toMatch(/.+/);
     }
+  });
+});
+
+describe('renderTemplate — unmeasurable read rate (F009)', () => {
+  const base = {
+    verdict: 'unsubscribe' as const,
+    confidence: 0.7,
+    phase: 'C' as const,
+    ruleId: 'score_unsubscribe' as const,
+  };
+
+  it('drops the "You open N%." clause entirely when readRatePct is null', () => {
+    const out = renderTemplate('Etherscan', {
+      ...base,
+      facts: { monthlyVolume: 9, readRatePct: null },
+    });
+    expect(out).not.toContain('You open');
+    expect(out).not.toContain('0%');
+    expect(out).toContain('Etherscan sends 9/mo.');
+  });
+
+  it('still renders the clause when the rate IS measured — including a real 0%', () => {
+    const out = renderTemplate('Etherscan', {
+      ...base,
+      facts: { monthlyVolume: 9, readRatePct: 0 },
+    });
+    expect(out).toContain('You open 0%.');
   });
 });

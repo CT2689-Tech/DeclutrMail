@@ -146,7 +146,11 @@ export function renderUserPrompt(input: ReasoningInput): string {
     `Domain: ${input.domain || '(unknown)'}`,
     `Gmail category: ${input.gmailCategory}`,
     `Monthly volume: ${input.facts.monthlyVolume} messages`,
-    `Read rate: ${input.facts.readRatePct}%`,
+    // Never "0%" for unmeasurable — the model would faithfully explain a
+    // disengagement that was never observed.
+    input.facts.readRatePct === null
+      ? 'Read rate: not measurable (no mail in the last 90 days)'
+      : `Read rate: ${input.facts.readRatePct}%`,
     `Engine rule: ${input.ruleLabel}`,
     `Recommendation: ${verdictLabel} (confidence ${confidencePct}%)`,
     '',

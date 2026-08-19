@@ -93,6 +93,14 @@ export function renderTemplate(displayName: string, result: CascadeResult): stri
   // For Phase A "Keep" rules the read% / monthly volume aren't the point
   // — the audit phrase is. The two-clause shape keeps the template
   // recognisable across verdicts ("{name} sends {N}/mo. {phrase}").
+  //
+  // A null read rate DROPS the clause rather than printing 0%. The
+  // sentence is addressed to the user about their own behaviour, so
+  // "You open 0%." on a sender with no mail in the window is not a
+  // rounding artefact — it is a false statement about them.
+  if (readPct === null) {
+    return `${name} sends ${monthlyVol}/mo. ${phrase}`;
+  }
   return `${name} sends ${monthlyVol}/mo. You open ${readPct}%. ${phrase}`;
 }
 

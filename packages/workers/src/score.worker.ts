@@ -582,7 +582,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     // Average over 3 months. Math.max(1, …) prevents divide-by-zero
     // for senders with no recent activity.
     const monthlyVolume = volume90 / 3;
-    const readRate90d = volume90 > 0 ? reads90 / volume90 : 0;
+    // `null`, not 0 — no mail in the window means the rate is
+    // unmeasurable. See `SenderSignals.readRate90d`.
+    const readRate90d = volume90 > 0 ? reads90 / volume90 : null;
 
     // `mail_messages` metadata aggregates — total + per-flag counts.
     // Bodies are NEVER touched; only sender_key, label_ids, is_unread,
