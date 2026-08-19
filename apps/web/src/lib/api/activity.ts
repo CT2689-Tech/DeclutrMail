@@ -223,9 +223,16 @@ export async function fetchActivity(
 }
 
 export function fetchActivityWeeklyReview(
+  senderQuery = '',
   signal?: AbortSignal,
 ): Promise<Envelope<ActivityWeeklyReviewWire, unknown>> {
-  return apiGet<ActivityWeeklyReviewWire>('/api/activity/weekly-review', { signal });
+  return apiGet<ActivityWeeklyReviewWire>('/api/activity/weekly-review', {
+    // The card narrows with the rest of the screen. No other filter is
+    // sent: it is a fixed 7-day factual review, and its count links
+    // navigate to that window.
+    query: senderQuery ? { sender_q: senderQuery } : {},
+    signal,
+  });
 }
 
 /**

@@ -497,6 +497,70 @@ describe('ActivityScreen — weekly review (D246)', () => {
     );
   });
 
+  /**
+   * Founder decision 2026-08-19: on a sender-filtered page every number
+   * narrows, including this card. Before that its counts were
+   * mailbox-wide and its links dropped `sender_q` on click, so a count
+   * you saw for "one sender" opened the whole mailbox.
+   */
+  it('asks for, and links with, the active sender filter', async () => {
+    currentSearch = 'sender_q=news%40brand.com';
+    const weeklyUrls: string[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              stats: STATS_BASE,
+              allTimeStats: STATS_BASE,
+              window: '30d',
+              source: 'all',
+              verbs: [],
+              senderQuery: 'news@brand.com',
+              dateFrom: null,
+              dateTo: null,
+              outcomes: [],
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: (req: Request, url: URL) => {
+          void req;
+          weeklyUrls.push(url.search);
+          return jsonOk({
+            data: {
+              window: '7d',
+              from: '2026-05-18T08:00:00.000Z',
+              to: '2026-05-25T08:00:00.000Z',
+              completed: 1,
+              skipped: 0,
+              failed: 0,
+              recovered: 0,
+              protected: 0,
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const card = await screen.findByRole('region', { name: /your last 7 days/i });
+    await waitFor(() => expect(weeklyUrls.length).toBeGreaterThan(0));
+    expect(weeklyUrls[0]).toContain('sender_q=news%40brand.com');
+    // The card says which scope it answered for.
+    expect(within(card).getByText(/for this sender/i)).toBeInTheDocument();
+    // …and a count keeps that scope when clicked.
+    const completed = within(card).getByRole('link', { name: /1 completed/i });
+    expect(completed).toHaveAttribute('href', expect.stringContaining('sender_q=news%40brand.com'));
+    expect(completed).toHaveAttribute('href', expect.stringContaining('outcome=completed'));
+  });
+
   it('passes the outcome evidence filter to the Activity API', async () => {
     currentSearch = 'window=7d&outcome=protected';
     let requested = '';

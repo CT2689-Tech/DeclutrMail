@@ -42,5 +42,7 @@ export const activityKeys = {
   all: ['activity'] as const,
   list: (filters: ActivityFilters) => ['activity', 'list', normalizeFilters(filters)] as const,
   recoveryPreview: (previewId: string) => ['activity', 'recovery-preview', previewId] as const,
-  weeklyReview: () => ['activity', 'weekly-review'] as const,
+  // Partitioned by the sender filter: the card's counts are scoped, so
+  // an unpartitioned key would serve one sender's week for another.
+  weeklyReview: (senderQuery = '') => ['activity', 'weekly-review', senderQuery] as const,
 };
