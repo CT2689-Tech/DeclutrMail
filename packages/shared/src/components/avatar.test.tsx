@@ -169,6 +169,47 @@ describe('Avatar brand logos (ADR-0034)', () => {
     expect(markup).not.toMatch(/clearbit|duckduckgo|google\.com|brandfetch|logo\.dev/i);
   });
 
+  // THE FAN-OUT GUARANTEE. This layer is a CSS background-image: a
+  // browser subresource with no code around it, so it cannot check
+  // first and cannot retry. Emitting it is therefore identical to
+  // making the request. A page of 213 senders that emits one per row
+  // makes ~90 concurrent requests to be told 204, which is what took
+  // /senders to an 11.8s pageload in production (2026-08-19). The list
+  // read now says which domains have marks, and `hasMark={false}` must
+  // produce NO url at all — not a hidden layer, not an empty one.
+  it('emits no request at all when the server says there is no mark', async () => {
+    const { Avatar: Logos } = await withLogosEnabled();
+    const markup = renderToStaticMarkup(
+      <Logos name="Chase" domain="chase.com" size={40} hasMark={false} />,
+    );
+
+    expect(markup).not.toContain('background-image');
+    expect(markup).not.toContain('/api/icons/');
+    // The monogram is the floor, so the avatar still renders fully.
+    expect(markup).toContain('C');
+  });
+
+  it('emits the logo layer when the server says the mark is cached', async () => {
+    const { Avatar: Logos } = await withLogosEnabled();
+    const markup = renderToStaticMarkup(
+      <Logos name="Chase" domain="chase.com" size={40} hasMark />,
+    );
+
+    expect(markup).toContain(
+      'background-image:url(&quot;https://api.declutrmail.test/api/icons/chase.com&quot;)',
+    );
+  });
+
+  // Callers with no availability data (screens not yet wired to a list
+  // read that reports it) keep the old behaviour rather than silently
+  // losing every logo.
+  it('falls back to requesting when availability is unknown', async () => {
+    const { Avatar: Logos } = await withLogosEnabled();
+    const markup = renderToStaticMarkup(<Logos name="Chase" domain="chase.com" size={40} />);
+
+    expect(markup).toContain('/api/icons/chase.com');
+  });
+
   it('keeps the monogram as the base layer under the logo', async () => {
     const { Avatar: Logos } = await withLogosEnabled();
     const markup = renderToStaticMarkup(<Logos name="Chase" domain="chase.com" size={40} />);

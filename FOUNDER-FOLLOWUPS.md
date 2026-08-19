@@ -45,7 +45,26 @@ Then redeploy so the browser bundle is rebuilt with the real SHA.
 **Verifies by:** a new browser error in Sentry shows a 40-char commit SHA
 as its release instead of `local-dev`, and its stack frames resolve to
 `.tsx` source lines rather than `chunks/<hash>.js`.
-**Status:** Open
+
+### 2026-08-19 — Brand marks are cacheable but nothing shared caches them
+
+**Source:** session — the /senders fan-out work
+**Why:** `GET /api/icons/:domain` now answers `public` instead of
+`private`, because a response is a function of the domain alone and the
+`domain_icons` table carries no user or mailbox linkage. Browser caches
+are per-profile, so that header changes nothing on its own — it exists
+so a shared cache CAN hold a mark. Nothing currently fronts
+`api.declutrmail.com`: it is Cloud Run direct, so every first view of
+every mark still costs an origin request against a service capped at 3
+instances of 1 vCPU.
+**How:** put a CDN in front of the API origin (GCP external HTTPS load
+balancer + Cloud CDN, or route the icon path through a CDN that already
+exists). Only the icon route needs it — the rest of the API is
+per-user and correctly uncacheable.
+**Verifies by:** a repeat `curl -I https://api.declutrmail.com/api/icons/chase.com`
+from a cold client returns a CDN hit header (e.g. `age:` > 0), and
+Cloud Run request counts for `/api/icons/*` drop against unchanged page
+views.**Status:** Open
 
 ### 2026-08-18 — `scripts/` is not typechecked in CI
 **Source:** PR adding `scripts/check-cron-stale.ts` (D159 observability push)

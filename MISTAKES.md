@@ -43,6 +43,93 @@ exactly that narrow.
 `https://vercel.live` is present and that no `*.vercel.live` wildcard,
 `script-src`, or `connect-src` grant came with it.
 
+## 2026-08-19 — Asserted on real randomness and called it a regression test
+
+**PR:** #TBD
+**Caught by:** Codex stop-time review (pre-merge)
+**What happened:** the test proving the icon scheduler no longer starves
+later domains ran against live `Math.random` and asserted that one
+specific tail domain had been scheduled at least once across 25 reads.
+That is a probability, not a proof: the domain is missed with p ~ 2e-4
+per run — rare enough to look stable in review, frequent enough to fail
+CI eventually for no reason. A test that flakes gets muted, and muting
+this one would have silently removed the only guard on a starvation bug.
+**Correct approach:** pin the RNG (`vi.spyOn(Math, 'random')` with a
+deterministic well-spread sequence) and assert PROPERTIES of an unbiased
+pick — "more distinct domains than the cap" and "at least one beyond the
+head" — rather than a fixed expected set. Deterministic, and still green
+if the sampler's call pattern changes.
+**Rule:** never assert on live randomness. Pin the source, then assert
+the property the randomness is there to produce.
+**Enforcement update:** the test now stubs `Math.random` and restores it
+in `afterEach`; verified deterministic over 6 consecutive runs and still
+failing (`expected 12 to be greater than 12`) when the head-biased
+`slice` is put back.
+
+**Follow-on (same review, second pass):** de-flaking traded away the
+assertion's strength. Swapping "the LAST domain was scheduled" for
+"more than the cap, and something past the head" left a test a starving
+sampler could pass — one drawing only from the first 13 rows scores 13
+distinct domains and reaches index 12, satisfying both, while 27 of 40
+are never scheduled. Fixing a flaky test is not just making it stop
+failing: the property it proves has to survive the rewrite. Now asserts
+TOTAL coverage (`scheduled.size === domains.length`), which the pinned
+RNG makes exact — and which catches both the head-biased slice
+(`expected 12 to be 40`) and the first-13 sampler that passed the
+weakened version (`expected 13 to be 40`).
+
+## 2026-08-19 — Awaited a queue write on a client that retries forever
+
+**PR:** #TBD
+**Caught by:** Codex stop-time review (pre-merge)
+**What happened:** moving icon-resolution scheduling into the senders
+list read put `await queue.add(...)` on the critical path of
+`GET /api/senders`. `createRedisConnection` sets
+`maxRetriesPerRequest: null`, so a command issued while Redis is
+unreachable retries forever instead of rejecting — the promise simply
+never settles. The existing `try/catch` around the enqueue looked like
+it handled the outage and handled nothing: there is no rejection to
+catch. A Redis outage would not have failed the senders list, it would
+have hung it.
+**Correct approach:** an await on an infinitely-retrying client is a
+HANG, not a failure. Best-effort background work reached from a request
+path needs a deadline, not just a catch.
+**Rule:** never `await` a queue/network write on a read path without a
+bound; a `try/catch` proves nothing about a client configured to retry
+forever.
+**Enforcement update:** `schedule()` now runs under
+`ENQUEUE_DEADLINE_MS` so both callers are covered, and the regression
+test wedges the queue on a never-settling promise — without the
+deadline it hangs to a 30s vitest timeout.
+
+**Follow-on (same review, second pass):** the deadline stopped the
+WAIT but not the WRITE. The abandoned command stayed in ioredis's
+offline buffer, so an outage still accumulated one never-settling
+command per request in memory and would have flushed the whole backlog
+at Redis on reconnect. A timeout bounds latency, never resource. The
+icon queue now uses `createRedisProducerConnection`
+(`enableOfflineQueue: false`), so an enqueue during an outage rejects
+at once — verified against a real stopped Redis: the senders list
+answered 200 in 31–93ms and logged `domain_icon.enqueue_failed`
+("Stream isn't writeable"), and enqueues resumed on restart with no
+further failures.
+
+**Follow-on (same review, third pass):** disabling the offline buffer
+covered only commands issued while Redis was ALREADY down. A command
+already IN FLIGHT when the connection broke was still retained, because
+ioredis flushes its command queue only when `maxRetriesPerRequest` is a
+number — `null` retries across every reconnect, so a caller that timed
+out had not stopped the write from landing later. The producer now uses
+`maxRetriesPerRequest: 0`. Verified end to end: 5 reads during a stopped
+Redis rejected in 28-129ms, and on restart — with no new requests — the
+worker saw ZERO new jobs, so nothing had been retained to replay.
+
+**The through-line across all three passes:** each fix addressed the
+symptom one layer out from the cause. Stopped waiting, but the write
+was still pending; stopped the write from being buffered, but an
+in-flight one was still retained. "I no longer wait for it" is not the
+same claim as "it will not happen later", and only the second one is
+safe to put on a request path.
 ## 2026-08-18 — Fixed one sweep that retried a revoked Gmail grant, left its sibling running
 
 **PR:** #TBD (follows #527)

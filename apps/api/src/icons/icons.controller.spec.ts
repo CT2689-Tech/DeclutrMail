@@ -139,14 +139,22 @@ describe('IconsController', () => {
     expect(res.status).toBe(200);
   });
 
-  it('lets the browser cache but never a shared proxy', async () => {
+  it('lets ANY cache hold a mark — the bytes are the same for everyone', async () => {
     app = await appFor({ kind: 'hit', image: SVG, mime: 'image/svg+xml', etag: ETAG });
 
     const res = await fetch(`${await app.getUrl()}/icons/chase.com`);
 
-    // `private` because the route is authenticated; revalidating daily
-    // rather than `immutable` so a rebrand lands within a day.
-    expect(res.headers.get('cache-control')).toContain('private');
+    // `private` here was an artifact of the route's first design, when
+    // it sat behind `JwtGuard`. Since #537 it reads anonymously, and a
+    // response is a function of the DOMAIN alone: a session changes
+    // only whether a miss may SCHEDULE resolution, never the bytes. So
+    // `private` was asserting a per-user variance that does not exist,
+    // and its only effect was to forbid a shared cache from holding
+    // artwork that is identical for every caller.
+    expect(res.headers.get('cache-control')).toContain('public');
+    expect(res.headers.get('cache-control')).not.toContain('private');
+    // Revalidate daily rather than `immutable` so a rebrand lands
+    // within a day.
     expect(res.headers.get('cache-control')).toContain('max-age=86400');
   });
 
@@ -161,7 +169,7 @@ describe('IconsController', () => {
     // logo" for a day — and since EVERY domain starts as a miss, one
     // page view made the whole feature look dead no matter what the
     // worker resolved afterwards (incident 2026-08-16).
-    expect(res.headers.get('cache-control')).toBe('private, max-age=60');
+    expect(res.headers.get('cache-control')).toBe('public, max-age=60');
     // No stale-while-revalidate either: that is what fired the
     // initiator-less background revalidations which show up as
     // `(failed) net::ERR_ABORTED` and read like a broken endpoint.

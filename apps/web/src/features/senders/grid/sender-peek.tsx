@@ -98,7 +98,7 @@ export function SenderPeek({
             zIndex: 1,
           }}
         >
-          <Avatar name={sender.name} domain={sender.domain} size={32} />
+          <Avatar name={sender.name} domain={sender.domain} size={32} hasMark={sender.brandMark} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
