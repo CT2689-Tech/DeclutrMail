@@ -27,24 +27,22 @@ section to the Done section. Do not delete entries — the trail matters.
 ### 2026-08-18 — Production browser errors are tagged `release: local-dev`
 
 **Source:** session — Sentry cross-check of the `/senders` console report
-**Why:** `apps/web/next.config.ts:64` sets
-`NEXT_PUBLIC_SENTRY_RELEASE: process.env.VERCEL_GIT_COMMIT_SHA ?? 'local-dev'`,
-and `apps/web/src/lib/sentry-browser-runtime.ts:104` sends that as the
-release. Production browser events in Sentry carry `environment:
-production` with `release: local-dev` (still arriving 2026-08-18
-19:46–19:56 UTC), which means `VERCEL_GIT_COMMIT_SHA` is empty at build
-time. Sourcemaps are uploaded against the real release, so they never
-match: every client-side error in production arrives minified with an
-empty message (`DECLUTRMAIL-WEB-16`, `DECLUTRMAIL-WEB-13` — culprit
-`_next/static/chunks/1a03f377556a8d1c.js in ?`). There is a real,
-recurring client error in production that currently cannot be read.
-**How:** Vercel dashboard → the web project → Settings → Environment
-Variables → enable **Automatically expose System Environment Variables**
-(that toggle is what injects `VERCEL_GIT_COMMIT_SHA` into the build).
-Then redeploy so the browser bundle is rebuilt with the real SHA.
-**Verifies by:** a new browser error in Sentry shows a 40-char commit SHA
-as its release instead of `local-dev`, and its stack frames resolve to
-`.tsx` source lines rather than `chunks/<hash>.js`.
+**Why:** WITHDRAWN 2026-08-19, the diagnosis was wrong. This entry asked
+the founder to enable "Automatically expose System Environment
+Variables". It was already enabled, and production events carry real
+40-character commit SHAs — `05398739…` with 539 events, `2f07b632…`
+with 172, across the last 7 days; `local-dev` is not in the top 15
+releases at all. Production errors were readable the whole time.
+**What was actually true:** a handful of events wore `release:
+local-dev` inside the `production` environment. Those come from a
+production build run LOCALLY — `next build` sets `NODE_ENV=production`,
+so `environment` resolves to `production` while `VERCEL_GIT_COMMIT_SHA`
+is absent and the old fallback invented a release. Sentry
+DECLUTRMAIL-WEB-13/16 are those, not deployed-site errors.
+**Resolved by:** the code no longer invents a release, so a local build
+cannot manufacture a bucket that reads as production. No founder action
+required.
+**Status:** Done 2026-08-19 — withdrawn, fixed in code
 
 ### 2026-08-19 — Brand marks are cacheable but nothing shared caches them
 
