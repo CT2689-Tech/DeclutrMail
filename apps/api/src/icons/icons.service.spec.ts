@@ -411,6 +411,32 @@ describe('IconsService', () => {
       expect(added).toHaveLength(MAX_SCHEDULED_PER_READ);
     });
 
+    // NO PERMANENT STARVATION. The budget is spent on domains with no
+    // cached row, and a domain that cannot resolve right now does not
+    // GET one — a provider quota writes nothing on purpose. Taking the
+    // head of that set every read would mean the page's first rows win
+    // the whole budget forever while later rows are never attempted.
+    it('gives every unresolved domain a turn rather than always the first few', async () => {
+      const db = await freshTestDb();
+      const domains = Array.from({ length: 40 }, (_, i) => `d${i}.example`);
+      const scheduled = new Set<string>();
+
+      // Nothing ever resolves, so every read faces the same 40 rowless
+      // domains — the exact condition an exhausted provider produces.
+      for (let read = 0; read < 25; read += 1) {
+        const { queue, added } = fakeQueue();
+        await new IconsService(db as never, queue).marksFor(domains, { mayEnqueue: true });
+        for (const job of added) scheduled.add((job.data as { domain: string }).domain);
+      }
+
+      // A head-biased pick reaches exactly MAX_SCHEDULED_PER_READ of
+      // them no matter how many reads happen.
+      expect(scheduled.size).toBeGreaterThan(MAX_SCHEDULED_PER_READ);
+      // And the tail is reachable at all: P(miss) is (28/40)^25 ~ 2e-4
+      // per domain, so this is not a flaky assertion.
+      expect(scheduled.has('d39.example')).toBe(true);
+    });
+
     it('never causes outbound work without a session', async () => {
       const db = await freshTestDb();
       const { queue, added } = fakeQueue();

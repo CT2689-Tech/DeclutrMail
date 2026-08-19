@@ -63,6 +63,34 @@ export type IconLookup =
 export const MAX_SCHEDULED_PER_READ = 12;
 
 /**
+ * Pick `count` items at random, without replacement.
+ *
+ * WHY NOT JUST TAKE THE FIRST `count`. The scheduling budget is spent
+ * on domains that have no cached row, and a domain that cannot resolve
+ * right now does not GET a row — a provider quota deliberately writes
+ * nothing, because a 429 is not proof the domain has no logo. Take the
+ * head of that set every time and the same leading rows win the whole
+ * budget on every read, forever, while everything behind them is never
+ * attempted. The page's first rows would be permanently retried and
+ * its later rows permanently starved.
+ *
+ * Sampling makes the budget unbiased instead: over repeated reads every
+ * unresolved domain on a page gets its turn, whatever the ones above it
+ * are doing.
+ */
+function sampleAtMost<T>(items: T[], count: number): T[] {
+  if (items.length <= count) return items;
+  const pool = [...items];
+  const picked: T[] = [];
+  while (picked.length < count) {
+    const index = Math.floor(Math.random() * pool.length);
+    picked.push(pool[index]!);
+    pool.splice(index, 1);
+  }
+  return picked;
+}
+
+/**
  * How long a read may wait on the queue before giving up on scheduling.
  *
  * `createRedisConnection` builds its client with
@@ -385,9 +413,9 @@ export class IconsService {
       // a resolved domain stops being scheduled once the worker writes
       // its row — including the `none` row for a domain with no mark.
       await Promise.all(
-        [...toSchedule]
-          .slice(0, MAX_SCHEDULED_PER_READ)
-          .map(([canonical, discovery]) => this.schedule(canonical, discovery)),
+        sampleAtMost([...toSchedule], MAX_SCHEDULED_PER_READ).map(([canonical, discovery]) =>
+          this.schedule(canonical, discovery),
+        ),
       );
     }
 
