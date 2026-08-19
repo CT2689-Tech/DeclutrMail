@@ -21,6 +21,48 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-19 — A suggestion rendered as history, and the cross-link proved it
+
+**PR:** #571 (https://github.com/CT2689-Tech/DeclutrMail/pull/571)
+**Caught by:** founder smoke — Sender Detail said "Triage Kept · yesterday",
+Activity filtered to the same sender said nothing had ever happened
+
+**What happened.** Sender Detail's decision timeline was fed by
+`listDecisionHistory`, which read `triage_decisions` — the scoring
+worker's suggestion, one upserted row per sender, written by
+`score.worker.ts` and by nothing else. The FE adapter then rendered it
+as completed history: `keep → "Kept"`, `generated_by='llm_haiku' →
+"Triage"`, row id → `op <uuid>`. So the card asserted a decision, an
+actor, and an operation id for senders nobody had touched — 8,466 of
+them on the dev mailbox, 232 claiming an unsubscribe request that was
+never sent. The FE type's own doc comment said the row came "from
+`activity_log`", which is where it should have come from all along.
+
+The same screenshot carried the sibling: the Activity metrics strip
+ignored the sender filter, so mailbox-wide counts sat directly above a
+sender-scoped empty list. Both surfaces were individually "correct" and
+jointly a contradiction.
+
+**Correct approach.** A surface whose heading is a past-tense noun
+("Decision timeline", "history", "what happened") may only read the
+table that records events. An engine opinion gets a present-tense
+surface of its own, and the two never share a list. When one screen
+deep-links to another with a filter, both must answer the same
+question over the same scope.
+
+**Rule:** Before rendering a row in the past tense, name the table it
+came from and the write path that produced it — if the only writer is a
+worker computing a suggestion, it is not history. And when a filter
+narrows a list, every number above that list narrows with it.
+
+**Enforcement update:** ADR-0008 §3 exception table updated (the
+senders→`triage_decisions` read no longer covers history; a
+senders→`activity_log` row replaces it). Regression tests pin the
+suggestion-only sender to an empty history and the sender filter to a
+scoped strip. The rows path and the stats path now share ONE sender
+predicate (`matchesSenderNeedle`) so they cannot drift apart again —
+they already had, silently, in `needsAttention`.
+
 ## 2026-08-18 — The Vercel Toolbar frame was never in the production CSP
 
 **PR:** #TBD
