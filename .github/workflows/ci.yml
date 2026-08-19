@@ -604,8 +604,37 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # RETRIED, because the failure it guards against is not ours and
+      # not detectable from the result. `--with-deps` runs apt-get, and
+      # an Ubuntu mirror that stalls mid-fetch does not fail — it hangs
+      # until the job's 25-minute timeout kills it. That burned 25
+      # minutes and redded an unrelated PR four times in one session,
+      # each time reading as "the e2e lane failed" when nothing in the
+      # diff was involved.
+      #
+      # Three attempts with a widening pause. Playwright's install is
+      # idempotent, so a retry re-fetches only what is missing. The inner
+      # `timeout` is the load-bearing part: without it the first attempt
+      # consumes the whole job budget and there is never a second one.
+      #
+      # 4 minutes is ~2x the observed healthy install, and the budget is
+      # what makes three attempts safe rather than reckless: this job is
+      # capped at 25 minutes and finishes in ~6-7 when healthy, so the
+      # worst case here is 12 minutes of install plus ~5 of actual work.
+      # A longer per-attempt cap would spend the retries and then run out
+      # of job before the specs, which is the failure it is meant to
+      # prevent wearing a different hat.
       - name: Install Chromium
-        run: pnpm --filter @declutrmail/e2e exec playwright install --with-deps chromium
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 4m pnpm --filter @declutrmail/e2e exec playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "::warning::playwright install attempt $attempt failed or timed out"
+            sleep $((attempt * 15))
+          done
+          echo "::error::playwright install failed after 3 attempts — likely an apt/CDN outage, not this change"
+          exit 1
       # Deliberately BEFORE the stack boots: these specs serve their own
       # page and stub endpoint, so needing nothing is a property worth
       # proving, and a paint regression fails in seconds rather than

@@ -1427,6 +1427,127 @@ describe('SendersReadService', () => {
   });
 
   describe('getSenderDetail', () => {
+    describe('engine suggestion (D39, D245)', () => {
+      it('is null when the engine has never scored the sender', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'unscored@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        const detail = await svc.getSenderDetail(mailboxId, a.id);
+        expect(detail!.recommendation).toBeNull();
+      });
+
+      it('carries the verdict, its one-sentence reason, and when it was scored', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'scored@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        const producedAt = new Date('2026-05-20T10:00:00Z');
+        await db.insert(triageDecisions).values({
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          verdict: 'keep',
+          confidence: '0.88',
+          reasoning: 'You read every message from this sender.',
+          generatedBy: 'llm_haiku',
+          producedAt,
+          expiresAt: new Date('2026-05-27T10:00:00Z'),
+        });
+
+        const detail = await svc.getSenderDetail(mailboxId, a.id, {
+          now: new Date('2026-05-21T00:00:00Z'),
+        });
+        expect(detail!.recommendation).toEqual({
+          verdict: 'keep',
+          confidence: 0.88,
+          reasoning: 'You read every message from this sender.',
+          generatedBy: 'llm_haiku',
+          scoredAt: producedAt.toISOString(),
+          stale: false,
+        });
+      });
+
+      /**
+       * Re-scoring is trigger-driven against a 7-day TTL, so nearly every
+       * stored decision is past `expires_at` on a real mailbox. Dropping
+       * those would blank the disclosure on ~99% of senders; the FE says
+       * how old the read is instead.
+       */
+      it('still reports a decision whose expiry has passed', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'stale@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await db.insert(triageDecisions).values({
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          verdict: 'unsubscribe',
+          confidence: '0.71',
+          reasoning: 'High volume, never read.',
+          generatedBy: 'template',
+          producedAt: new Date('2026-01-02T00:00:00Z'),
+          expiresAt: new Date('2026-01-09T00:00:00Z'),
+        });
+
+        const detail = await svc.getSenderDetail(mailboxId, a.id, {
+          now: new Date('2026-05-21T00:00:00Z'),
+        });
+        // Still reported — with the flag that lets the page ask for a
+        // fresh one rather than hide the old one.
+        expect(detail!.recommendation).toMatchObject({
+          verdict: 'unsubscribe',
+          scoredAt: new Date('2026-01-02T00:00:00Z').toISOString(),
+          stale: true,
+        });
+      });
+
+      it('says nothing rather than showing a verdict with no reason', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'reasonless@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await db.insert(triageDecisions).values({
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          verdict: 'archive',
+          confidence: '0.60',
+          reasoning: '   ',
+          generatedBy: 'template',
+          producedAt: new Date('2026-05-20T10:00:00Z'),
+          expiresAt: new Date('2026-05-27T10:00:00Z'),
+        });
+
+        const detail = await svc.getSenderDetail(mailboxId, a.id);
+        expect(detail!.recommendation).toBeNull();
+      });
+
+      it('never reads another mailbox decision for the same address', async () => {
+        const other = await seedMailbox(db, 'suggestion-tenant');
+        const mine = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'shared-scored@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await db.insert(triageDecisions).values({
+          mailboxAccountId: other,
+          senderKey: mine.senderKey,
+          verdict: 'unsubscribe',
+          confidence: '0.95',
+          reasoning: 'Belongs to the other mailbox.',
+          generatedBy: 'llm_haiku',
+          producedAt: new Date('2026-05-20T10:00:00Z'),
+          expiresAt: new Date('2026-05-27T10:00:00Z'),
+        });
+
+        const detail = await svc.getSenderDetail(mailboxId, mine.id);
+        expect(detail!.recommendation).toBeNull();
+      });
+    });
+
     it('normalizes legacy unsubscribe statuses on list and detail wire shapes', async () => {
       const a = await seedSender(db, {
         mailboxAccountId: mailboxId,

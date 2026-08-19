@@ -25,7 +25,7 @@ import type {
   PaginatedEnvelope,
   UnsubscribeLifecycleStatus,
 } from '@declutrmail/shared/contracts';
-import { apiGet, apiPatch } from './client';
+import { apiGet, apiPatch, apiPost } from './client';
 
 // ── BE contract types (mirrors the WT-B PR) ─────────────────────────
 
@@ -211,6 +211,29 @@ export interface SenderDetailDto extends SenderListRow {
    * `unsubscribeMethod === 'mailto'`. Optional for fixture compat.
    */
   unsubscribeMailtoUrl?: string | null;
+  /**
+   * The engine's current read on this sender — rendered as the optional
+   * suggestion disclosure below the action toolbar (D39, D245).
+   *
+   * It is NOT what highlights a verb: `derivePrimaryVerbId` picks that
+   * from observed facts alone, and the two are allowed to disagree. The
+   * disclosure exists so a user can see the engine's read when they do.
+   *
+   * `scoredAt` is shown because re-scoring is trigger-driven against a
+   * 7-day TTL — most stored verdicts are older than that, and a
+   * suggestion that hides its age would be the same class of untruth
+   * this surface just shed. Optional for fixture compat.
+   */
+  recommendation?: {
+    verdict: 'keep' | 'archive' | 'unsubscribe' | 'later';
+    confidence: number;
+    reasoning: string;
+    generatedBy: 'llm_haiku' | 'template';
+    /** ISO-8601 — when the engine last looked at this sender. */
+    scoredAt: string;
+    /** Past its TTL. The page asks for a fresh read; it still shows this one. */
+    stale: boolean;
+  } | null;
 }
 
 /** Row shape on `GET /api/senders/:id/messages` — the recent-messages list. */
@@ -653,4 +676,27 @@ export function fetchSenderHistory(
     query: { limit: params.limit, cursor: params.cursor },
     signal,
   }) as Promise<PaginatedEnvelope<DecisionHistoryRowDto>>;
+}
+
+/**
+ * POST /api/triage/score-sender — ask the engine to take a fresh look.
+ *
+ * `reason: 'stale'` is the page refreshing a read that had aged past its
+ * TTL when it was opened (D25 `stale_refresh`), NOT someone pressing a
+ * control. The distinction is recorded so trigger telemetry never
+ * claims an intent the user did not have.
+ *
+ * Sends the sender's row id: the senders wire carries no `sender_key`,
+ * and the API resolves the id inside the mailbox scope.
+ */
+export function requestSenderRescore(
+  senderId: string,
+  reason: 'user' | 'stale',
+  signal?: AbortSignal,
+): Promise<Envelope<{ idempotencyKey: string }, unknown>> {
+  return apiPost<{ idempotencyKey: string }>(
+    '/api/triage/score-sender',
+    { senderId, reason },
+    { signal },
+  );
 }

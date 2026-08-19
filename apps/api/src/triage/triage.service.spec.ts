@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   mailboxAccounts,
   schema,
+  senders,
   triageDecisions,
   users,
   workspaces,
@@ -187,6 +188,84 @@ describe('computeQueueSize — D30 adaptive sizing (pure)', () => {
 // ──────────────────────────────────────────────────────────────────────
 // Integration tests — service + PGlite + real schema
 // ──────────────────────────────────────────────────────────────────────
+
+describe('TriageService.scoreSender — trigger provenance (D25)', () => {
+  let db: Db;
+  let added: Array<{ payload: Record<string, unknown>; opts: Record<string, unknown> }>;
+  let service: TriageService;
+  let mailboxA: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    added = [];
+    const spyQueue = {
+      add: async (
+        _name: string,
+        payload: Record<string, unknown>,
+        opts: Record<string, unknown>,
+      ) => {
+        added.push({ payload, opts });
+      },
+    } as never;
+    service = new TriageService(db as never, spyQueue);
+    mailboxA = await seedMailbox(db, 'a@example.com');
+  });
+
+  /**
+   * A page refreshing a read that aged out is not the user pressing a
+   * button. Recording both as `manual_rescore` would make the trigger
+   * telemetry claim an intent nobody had — the same class of untruth as
+   * a suggestion rendered as a decision.
+   */
+  it('records an opened-page refresh as stale_refresh, not manual_rescore', async () => {
+    await service.scoreSender({
+      mailboxAccountId: mailboxA,
+      senderKey: 'key-1',
+      reason: 'stale',
+      producedAtMs: 1_000,
+    });
+    expect(added[0]?.payload).toMatchObject({ trigger: 'stale_refresh' });
+  });
+
+  it('still records a user-pressed re-score as manual_rescore', async () => {
+    await service.scoreSender({
+      mailboxAccountId: mailboxA,
+      senderKey: 'key-1',
+      reason: 'user',
+      producedAtMs: 1_000,
+    });
+    expect(added[0]?.payload).toMatchObject({ trigger: 'manual_rescore' });
+
+    await service.scoreSender({
+      mailboxAccountId: mailboxA,
+      senderKey: 'key-2',
+      producedAtMs: 1_000,
+    });
+    expect(added[1]?.payload).toMatchObject({ trigger: 'manual_rescore' });
+  });
+
+  it('resolves a sender id only inside its own mailbox', async () => {
+    const mailboxB = await seedMailbox(db, 'b@example.com');
+    const [row] = await db
+      .insert(senders)
+      .values({
+        mailboxAccountId: mailboxA,
+        senderKey: 'resolvable-key',
+        email: 'resolve@example.com',
+        displayName: 'Resolve Me',
+        domain: 'example.com',
+        gmailCategory: 'promotions',
+        firstSeenAt: new Date('2026-01-01T00:00:00Z'),
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      })
+      .returning({ id: senders.id });
+
+    expect(await service.resolveSenderKey(mailboxA, row!.id)).toBe('resolvable-key');
+    // Same id, wrong mailbox — a guessed id must not reach another
+    // tenant's sender.
+    expect(await service.resolveSenderKey(mailboxB, row!.id)).toBeNull();
+  });
+});
 
 describe('TriageService.getQueueSize — D30 integration', () => {
   let db: Db;

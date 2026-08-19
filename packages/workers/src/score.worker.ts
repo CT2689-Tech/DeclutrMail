@@ -26,7 +26,12 @@ import {
   type ReasoningLlmPort,
 } from './reasoning.js';
 import { RateLimiter } from './rate-limiter.js';
-import { isGovernmentDomain, runCascade, type SenderSignals } from './score-cascade.js';
+import {
+  CASCADE_RULE_PHRASE,
+  isGovernmentDomain,
+  runCascade,
+  type SenderSignals,
+} from './score-cascade.js';
 import { ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -48,7 +53,19 @@ const RESCORE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
  * key per-trigger rather than per-mailbox-per-sender — different events
  * for the same sender get distinct keys and re-run.
  */
-export type ScoreTrigger = 'sync_complete' | 'signal_change' | 'manual_rescore' | 'cron_sweep';
+export type ScoreTrigger =
+  | 'sync_complete'
+  | 'signal_change'
+  | 'manual_rescore'
+  /**
+   * A user opened a sender whose read had aged past its TTL, so the
+   * page asked for a fresh one (founder decision 2026-08-19). Distinct
+   * from `manual_rescore` — nobody pressed a re-score button — and
+   * conflating them would make the trigger telemetry claim an intent
+   * the user never had.
+   */
+  | 'stale_refresh'
+  | 'cron_sweep';
 
 /**
  * One score job. Either runs for a single `senderKey` (signal-change
@@ -177,6 +194,34 @@ export interface ScoreWorkerDeps {
  * `apps/api` is read-only — it produces score-trigger events that this
  * worker consumes, and never mutates `triage_decisions` itself.
  */
+/**
+ * The first identifier-shaped token in a user-facing sentence that does
+ * NOT come from the sender's own name, or `null`.
+ *
+ * The first version of this check matched a known list of cascade rule
+ * ids. Measuring the live data showed that is too narrow: shown one id
+ * in its prompt, the model coined siblings that exist nowhere in the
+ * codebase — `protect_engagement_based` is in 100+ stored explanations
+ * and in zero lines of source. A list can only ever catch the leaks we
+ * already know about.
+ *
+ * A bare snake_case regex is too wide in the other direction: senders
+ * are named `ife_insurance_india` and `nse_alerts`, and rejecting an
+ * explanation for quoting the user's own data would be the worse bug.
+ *
+ * So the rule is neither list nor pattern alone: an identifier-shaped
+ * token is fine if it appears in the sender's identity, and ours if it
+ * doesn't. On the founder's 8,531 rows that separates 439 leaks from 10
+ * legitimate quotes of a sender's own name.
+ */
+export function foreignIdentifierToken(reasoning: string, senderIdentity: string): string | null {
+  const own = senderIdentity.toLowerCase();
+  for (const match of reasoning.matchAll(/[A-Za-z]+_[A-Za-z_]+/g)) {
+    if (!own.includes(match[0].toLowerCase())) return match[0];
+  }
+  return null;
+}
+
 export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult> {
   override readonly workerName = 'ScoreWorker';
   override readonly policy = 'perMailboxPolicy' as const;
@@ -384,14 +429,36 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
               domain: signals.domain,
               verdict: result.verdict,
               confidence: result.confidence,
-              ruleLabel: result.ruleId,
+              // The PHRASE, never the id. Handing the model
+              // `high_read_rate` is how "the high_read_rate engine rule"
+              // ended up in user-facing copy.
+              ruleLabel: CASCADE_RULE_PHRASE[result.ruleId],
               facts: result.facts,
               gmailCategory: signals.signals.gmailCategory,
             }),
           this.explainTimeoutMs,
         );
-        if (raced.kind === 'ok') {
+        const identity = `${signals.displayName} ${signals.domain} ${signals.email}`;
+        const leaked =
+          raced.kind === 'ok' && raced.value ? foreignIdentifierToken(raced.value, identity) : null;
+        if (raced.kind === 'ok' && leaked === null) {
           reasoning = raced.value;
+        } else if (raced.kind === 'ok') {
+          // The prompt no longer contains an id, but the model can still
+          // reach one via few-shot drift or a future prompt edit. A
+          // sentence naming internal vocabulary is not shippable copy —
+          // fall back to the template rather than explain the user's
+          // mail to them in our jargon.
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'reasoning.rejected_internal_vocabulary',
+              worker: this.workerName,
+              mailboxAccountId,
+              senderKey,
+              token: leaked,
+            }),
+          );
         } else {
           // Either way the sender falls back to its template explanation —
           // an explanation is an enhancement, never a reason to fail the
@@ -528,11 +595,20 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   private async loadSignals(
     mailboxAccountId: string,
     senderKey: string,
-  ): Promise<{ signals: SenderSignals; displayName: string; domain: string } | null> {
+  ): Promise<{
+    signals: SenderSignals;
+    displayName: string;
+    domain: string;
+    email: string;
+  } | null> {
     const [sender] = await this.deps.db
       .select({
         displayName: senders.displayName,
         domain: senders.domain,
+        // Identity for the explanation check — the local part is where a
+        // sender's own underscores live (`ife_insurance_india@…`), and
+        // the model is allowed to quote them.
+        email: senders.email,
         gmailCategory: senders.gmailCategory,
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
@@ -652,6 +728,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     return {
       displayName: sender.displayName,
       domain: sender.domain,
+      email: sender.email,
       signals: {
         isProtected: Boolean(policy?.isProtected),
         ...(policy?.protectionReason ? { protectionReason: policy.protectionReason } : {}),

@@ -82,8 +82,20 @@ export interface Recommendation {
   confidence: number;
   /** One-sentence factual basis shown only inside the optional disclosure. */
   reasoning: string;
-  /** Supporting signals — bullet list in the popover. */
+  /** Supporting signals — bullet list in the popover. May be empty. */
   signals: string[];
+  /**
+   * ISO-8601 — when the engine produced this read. Rendered as an age
+   * ("scored 12 weeks ago") so a stale suggestion says so instead of
+   * passing as current.
+   */
+  scoredAt?: string;
+  /**
+   * Whether the engine's read is past its TTL. Server-computed — the
+   * BE owns the TTL. Drives the on-open refresh (D25 `stale_refresh`),
+   * never whether the read is shown.
+   */
+  stale?: boolean;
 }
 
 /**

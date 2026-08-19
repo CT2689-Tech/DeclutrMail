@@ -105,6 +105,55 @@ describe('adaptDecisionHistoryRow — actions that actually happened', () => {
   });
 });
 
+describe('adaptSenderDetail — the engine suggestion', () => {
+  const DETAIL_REC = {
+    verdict: 'keep' as const,
+    confidence: 0.88,
+    reasoning: 'You read every message from this sender.',
+    generatedBy: 'llm_haiku' as const,
+    scoredAt: '2026-05-20T10:00:00.000Z',
+    stale: false,
+  };
+
+  it('passes the engine read through, including when it was scored', () => {
+    const detail = adaptSenderDetail({
+      detail: { ...makeSenderRow(), recommendation: DETAIL_REC },
+      messages: [],
+      timeseries: [],
+      history: [],
+    });
+    expect(detail.recommendation).toEqual({
+      verdict: 'keep',
+      confidence: 0.88,
+      reasoning: 'You read every message from this sender.',
+      scoredAt: '2026-05-20T10:00:00.000Z',
+      stale: false,
+      signals: [],
+    });
+  });
+
+  it('stays silent when the engine has never scored the sender', () => {
+    // Explicit null on the wire…
+    const withNull = adaptSenderDetail({
+      detail: { ...makeSenderRow(), recommendation: null },
+      messages: [],
+      timeseries: [],
+      history: [],
+    });
+    expect(withNull.recommendation).toBeNull();
+
+    // …and a payload that omits the key entirely (older fixtures, and
+    // any response predating the field).
+    const withoutKey = adaptSenderDetail({
+      detail: makeSenderRow(),
+      messages: [],
+      timeseries: [],
+      history: [],
+    });
+    expect(withoutKey.recommendation).toBeNull();
+  });
+});
+
 describe('adaptMailMessageRow — recent-message projection', () => {
   it('maps the wire fields onto the FE row (thread id, unread flag, received-at)', () => {
     const row = adaptMailMessageRow(messageRow());
@@ -173,10 +222,12 @@ describe('adaptProtectionReason — explainable automatic protection', () => {
 describe('adaptSenderDetail — honest wire composition', () => {
   const NOW = Date.parse('2026-06-01T00:00:00.000Z');
 
-  it('maps the real wire category and withholds recommendations absent from the contract', () => {
+  it('maps the real wire category and never synthesizes a recommendation', () => {
     // These facts would make the old fixture builder synthesize a
-    // recommendation. The live DTO does not carry one, so the adapter
-    // must return null rather than presenting invented product data.
+    // recommendation. The DTO carries `recommendation` now, but only
+    // when the engine actually scored the sender — absent means
+    // unscored, and the adapter must return null rather than inventing
+    // product data from the facts it can see.
     const detail = adaptSenderDetail({
       detail: makeSenderRow({ gmailCategory: 'social', monthlyVolume: 40, readRate: 0 }),
       messages: [],

@@ -22,6 +22,7 @@ import { RecentMessages } from './recent-messages';
 import type { DecisionHistoryRow, SenderDetail, SenderDetailState } from './types';
 import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
 import { useSenderDetail } from '../api/use-sender-detail';
+import { useRefreshStaleRead } from '../api/use-refresh-stale-read';
 import { useSenderMessages } from '../api/use-sender-messages';
 import { useSenderTimeseries } from '../api/use-sender-timeseries';
 import { useSenderHistory } from '../api/use-sender-history';
@@ -149,6 +150,11 @@ function parseSenderDetailSource(raw: string | null): SenderDetailSource {
 
 export function SenderDetailRoute({ id }: { id: string }) {
   const detail = useSenderDetail(id);
+  // Opening a sender whose read has aged out asks for a fresh one
+  // (D25 `stale_refresh`, founder decision 2026-08-19). Nothing on
+  // screen waits for it: the old read stays, with its age, until a
+  // fresher row exists.
+  useRefreshStaleRead(id, detail.data?.data.recommendation ?? undefined);
   const messages = useSenderMessages(id);
   const timeseries = useSenderTimeseries(id);
   const history = useSenderHistory(id);

@@ -126,9 +126,24 @@ export function adaptSenderDetail(args: {
     unsubStatus: args.detail.unsubStatus ?? null,
     unsubscribeMethod: args.detail.unsubscribeMethod ?? null,
     unsubscribeMailtoUrl: args.detail.unsubscribeMailtoUrl ?? null,
-    // The detail wire contract has no recommendation field. Do not
-    // manufacture one from fixture heuristics for connected accounts.
-    recommendation: null,
+    // The engine's read, when it has one. Never manufactured from
+    // fixture heuristics for a connected account: absent on the wire
+    // means the engine has not scored this sender, and the page says
+    // nothing rather than inventing a suggestion.
+    //
+    // `signals: []` is deliberate — the wire carries the one-sentence
+    // reason, not a bullet list, and the banner omits the "Details used"
+    // block when there is nothing to put in it.
+    recommendation: args.detail.recommendation
+      ? {
+          verdict: args.detail.recommendation.verdict,
+          confidence: args.detail.recommendation.confidence,
+          reasoning: args.detail.recommendation.reasoning,
+          scoredAt: args.detail.recommendation.scoredAt,
+          stale: args.detail.recommendation.stale,
+          signals: [],
+        }
+      : null,
     recentMessages: args.messages.map(adaptMailMessageRow),
     stats,
     timeseries: args.timeseries.map(adaptTimeseriesPoint),
