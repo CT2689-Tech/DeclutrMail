@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
+  activityLog,
   mailMessages,
   mailboxAccounts,
   schema,
@@ -2001,23 +2002,55 @@ describe('SendersReadService', () => {
   });
 
   describe('listDecisionHistory', () => {
-    it('returns the current decision row ordered by produced_at DESC', async () => {
+    /**
+     * Seed one REAL Activity row — the only thing this history is
+     * allowed to report. `occurredAt` is explicit so ordering and
+     * cursor assertions are deterministic.
+     */
+    async function seedActivity(args: {
+      senderKey: string;
+      action: (typeof activityLog.$inferInsert)['action'];
+      occurredAt: Date;
+      source?: (typeof activityLog.$inferInsert)['source'];
+      affectedCount?: number;
+      mailboxAccountId?: string;
+    }): Promise<string> {
+      const [row] = await db
+        .insert(activityLog)
+        .values({
+          mailboxAccountId: args.mailboxAccountId ?? mailboxId,
+          senderKey: args.senderKey,
+          source: args.source ?? 'manual',
+          action: args.action,
+          affectedCount: args.affectedCount ?? 0,
+          occurredAt: args.occurredAt,
+        })
+        .returning({ id: activityLog.id });
+      return row!.id;
+    }
+
+    /**
+     * The defect this endpoint shipped with (founder screenshot,
+     * 2026-08-19): the history read `triage_decisions` — the scoring
+     * worker's SUGGESTION table, which no user action ever writes —
+     * and the FE rendered it in the past tense ("Triage Kept · op
+     * <uuid>"). A sender the user had never touched claimed a decision,
+     * while Activity, reading `activity_log`, correctly showed nothing.
+     */
+    it('reports nothing for a sender that only has an engine suggestion', async () => {
       const a = await seedSender(db, {
         mailboxAccountId: mailboxId,
-        email: 'history@x.com',
+        email: 'suggested-only@x.com',
         lastSeenAt: new Date('2026-05-01T00:00:00Z'),
       });
-      // Schema enforces ONE row per (mailbox, sender), so only one
-      // decision lives at a time — pagination is forward-compat.
-      const producedAt = new Date('2026-05-15T12:00:00Z');
       await db.insert(triageDecisions).values({
         mailboxAccountId: mailboxId,
         senderKey: a.senderKey,
-        verdict: 'archive',
-        confidence: '0.92',
-        reasoning: 'High volume, near-zero read rate.',
-        generatedBy: 'template',
-        producedAt,
+        verdict: 'keep',
+        confidence: '0.91',
+        reasoning: 'You read everything this sender sends.',
+        generatedBy: 'llm_haiku',
+        producedAt: new Date('2026-05-15T12:00:00Z'),
         expiresAt: new Date('2026-06-01T00:00:00Z'),
       });
 
@@ -2027,13 +2060,159 @@ describe('SendersReadService', () => {
         cursor: null,
         limit: 10,
       });
+      expect(rows).toEqual([]);
+    });
+
+    it('returns the actions the user took, newest first', async () => {
+      const a = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'history@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      await seedActivity({
+        senderKey: a.senderKey,
+        action: 'archive',
+        occurredAt: new Date('2026-05-10T09:00:00Z'),
+        affectedCount: 47,
+      });
+      const protectId = await seedActivity({
+        senderKey: a.senderKey,
+        action: 'marked_protected',
+        occurredAt: new Date('2026-05-12T09:00:00Z'),
+      });
+
+      const rows = await svc.listDecisionHistory({
+        mailboxAccountId: mailboxId,
+        senderId: a.id,
+        cursor: null,
+        limit: 10,
+      });
       expect(rows).not.toBeNull();
+      expect(rows!.map((r) => r.action)).toEqual(['marked_protected', 'archive']);
+      expect(rows![0]!.id).toBe(protectId);
+      expect(rows![0]!.occurredAt).toBe(new Date('2026-05-12T09:00:00Z').toISOString());
+      expect(rows![0]!.source).toBe('manual');
+      expect(rows![0]!.affectedCount).toBe(0);
+      expect(rows![1]!.affectedCount).toBe(47);
+    });
+
+    it('carries the automation that acted, not a generic label', async () => {
+      const a = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'autopilot@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      await seedActivity({
+        senderKey: a.senderKey,
+        action: 'later',
+        source: 'autopilot',
+        occurredAt: new Date('2026-05-10T09:00:00Z'),
+        affectedCount: 3,
+      });
+
+      const rows = await svc.listDecisionHistory({
+        mailboxAccountId: mailboxId,
+        senderId: a.id,
+        cursor: null,
+        limit: 10,
+      });
       expect(rows!.length).toBe(1);
-      expect(rows![0]!.verdict).toBe('archive');
-      expect(rows![0]!.confidence).toBe(0.92);
-      expect(rows![0]!.producedAt).toBe(producedAt.toISOString());
-      expect(rows![0]!.generatedBy).toBe('template');
-      expect(rows![0]!.reasoning).toContain('volume');
+      expect(rows![0]!.source).toBe('autopilot');
+    });
+
+    /**
+     * Outcome/progress rows (D245 unsubscribe lifecycle, followup
+     * dismissals) belong to Activity, which renders them as their own
+     * records. The sender timeline is the DECISION list — and the
+     * decision row is always written alongside the outcome row, so
+     * nothing the user did becomes invisible by this narrowing.
+     */
+    it('lists the decision but not the lifecycle rows that follow it', async () => {
+      const a = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'lifecycle@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      await seedActivity({
+        senderKey: a.senderKey,
+        action: 'unsubscribe',
+        occurredAt: new Date('2026-05-10T09:00:00Z'),
+      });
+      await seedActivity({
+        senderKey: a.senderKey,
+        action: 'unsubscribe_action_required',
+        occurredAt: new Date('2026-05-10T09:00:01Z'),
+      });
+      await seedActivity({
+        senderKey: a.senderKey,
+        action: 'unsubscribe_failed',
+        occurredAt: new Date('2026-05-11T09:00:00Z'),
+      });
+
+      const rows = await svc.listDecisionHistory({
+        mailboxAccountId: mailboxId,
+        senderId: a.id,
+        cursor: null,
+        limit: 10,
+      });
+      expect(rows!.map((r) => r.action)).toEqual(['unsubscribe']);
+    });
+
+    it('pages by (occurred_at, id) without repeating or dropping a row', async () => {
+      const a = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'paged@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      for (const day of [10, 11, 12]) {
+        await seedActivity({
+          senderKey: a.senderKey,
+          action: 'archive',
+          occurredAt: new Date(`2026-05-${day}T09:00:00Z`),
+        });
+      }
+
+      const first = await svc.listDecisionHistory({
+        mailboxAccountId: mailboxId,
+        senderId: a.id,
+        cursor: null,
+        limit: 2,
+      });
+      // limit + 1 sentinel, same contract every paginated read uses.
+      expect(first!.length).toBe(3);
+      const last = first![1]!;
+      const next = await svc.listDecisionHistory({
+        mailboxAccountId: mailboxId,
+        senderId: a.id,
+        cursor: { occurredAt: new Date(last.occurredAt), id: last.id },
+        limit: 2,
+      });
+      expect(next!.map((r) => r.occurredAt)).toEqual([
+        new Date('2026-05-10T09:00:00Z').toISOString(),
+      ]);
+    });
+
+    it('never returns another mailbox rows for the same sender address', async () => {
+      const other = await seedMailbox(db, 'history-tenant');
+      const mine = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'shared@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      await seedActivity({
+        senderKey: mine.senderKey,
+        action: 'archive',
+        occurredAt: new Date('2026-05-10T09:00:00Z'),
+        mailboxAccountId: other,
+      });
+
+      const rows = await svc.listDecisionHistory({
+        mailboxAccountId: mailboxId,
+        senderId: mine.id,
+        cursor: null,
+        limit: 10,
+      });
+      expect(rows).toEqual([]);
     });
 
     it('returns null when the sender belongs to a different mailbox', async () => {
@@ -2052,7 +2231,7 @@ describe('SendersReadService', () => {
       expect(rows).toBeNull();
     });
 
-    it('returns an empty array (not null) when no decision row exists yet', async () => {
+    it('returns an empty array (not null) when the user has done nothing yet', async () => {
       const a = await seedSender(db, {
         mailboxAccountId: mailboxId,
         email: 'no-history@x.com',

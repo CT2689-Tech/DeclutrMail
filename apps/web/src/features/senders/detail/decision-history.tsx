@@ -17,6 +17,8 @@ function toneFor(
       return 'default';
     case 'Unsubscribe requested':
       return 'amber';
+    case 'Deleted':
+      return 'red';
     case 'Kept':
       return 'primary';
     case 'Protected':

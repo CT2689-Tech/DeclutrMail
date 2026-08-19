@@ -89,6 +89,33 @@ export const SingleItem: StoryFn = () => (
 );
 SingleItem.storyName = 'Single item (new sender, no history)';
 
+export const Empty: StoryFn = () => (
+  <div style={{ padding: 24, background: '#FAFAF7', maxWidth: 720 }}>
+    <DecisionTimeline
+      heading="Decision timeline"
+      items={[]}
+      empty={
+        <div
+          style={{
+            border: '1px dashed #D6DAD8',
+            borderRadius: 12,
+            padding: '20px 24px',
+            color: '#4B5552',
+            fontSize: 13,
+          }}
+        >
+          <strong style={{ display: 'block', marginBottom: 4 }}>
+            No actions on this sender yet
+          </strong>
+          Keep, Archive, Unsubscribe, Later and Delete all land here — and in Activity — the moment
+          you use one.
+        </div>
+      }
+    />
+  </div>
+);
+Empty.storyName = 'Empty (nobody has acted on this sender)';
+
 export const NoHeading: StoryFn = () => (
   <div style={{ padding: 24, background: '#FAFAF7', maxWidth: 720 }}>
     <DecisionTimeline

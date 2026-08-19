@@ -20,6 +20,54 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-19 — Two screens showing one fact from two tables is a bug detector
+
+**Context:** Triaging a founder screenshot where Sender Detail said
+"Triage Kept · yesterday" and Activity, filtered to that same sender,
+said nothing had ever happened.
+
+**Finding:** The contradiction WAS the diagnosis. Each surface was
+individually plausible; only the cross-link made the disagreement
+visible. Root cause was a source mismatch — one screen read
+`triage_decisions` (the scorer's suggestion), the other `activity_log`
+(events) — which every structural gate, the full API suite and the full
+web suite passed cleanly, because each side is internally consistent.
+The scale was invisible until queried: 8,466 senders were claiming
+decisions nobody made.
+
+**Rule (provisional):** When one screen deep-links to another with a
+filter, diff them on real data before believing either. And for any
+past-tense surface, name the table AND its write path — if the only
+writer is a worker computing a suggestion, it is not history.
+
+**Distillation trigger:** promote to CLAUDE.md §8 (flow completeness) if
+a third cross-surface disagreement ships green.
+
+## 2026-08-19 — The preview pane loads pages hidden, so client-fallback screens never render
+
+**Context:** Browser-smoking the Activity screen on a second dev stack
+(`:3001`) while another worktree held `:3000`.
+
+**Finding:** `document.visibilityState` is `'hidden'` in the pane even
+after `tabs_select`, and patching the getter + dispatching
+`visibilitychange` does not unstick TanStack. It only matters when the
+route's server-side prefetch FAILS — the first request after a cold
+`next dev` compile blew the 3s budget, logged "activity prefetch failed;
+falling back to the client query", and the page then sat on its loading
+skeleton forever. Sender Detail, whose prefetch succeeded, rendered
+fine in the same hidden tab. Reading the SERVED HTML instead
+(`curl -b <cookie-jar> <url>` + strip tags) showed the real render,
+including the metric tiles and row copy, and was how both fixes were
+finally verified.
+
+**Rule (provisional):** In pane smokes, treat "stuck on skeleton" as a
+prefetch-fallback artifact first, not a product bug: check the web dev
+log for `unexpected_failure_count`, then verify by grepping the served
+HTML. Warm the route once before judging it.
+
+**Distillation trigger:** promote to CLAUDE.md §8 (smoke table) if a
+third session loses time to a hidden-pane render stall.
+
 ## 2026-08-18 — An allowlist silently dropped the tag it was meant to carry
 
 **Context:** triaging DECLUTRMAIL-WEB-R — 3,095 Sentry events titled "Error",

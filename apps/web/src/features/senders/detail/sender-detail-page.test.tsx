@@ -116,11 +116,10 @@ const TIMESERIES = Array.from({ length: 12 }, (_, i) => ({
 
 const HISTORY_ROW = {
   id: 'h-1',
-  verdict: 'archive' as const,
-  confidence: 0.9,
-  producedAt: '2026-05-20T00:00:00.000Z',
-  reasoning: 'High volume, low read rate.',
-  generatedBy: 'template' as const,
+  action: 'archive' as const,
+  source: 'manual' as const,
+  occurredAt: '2026-05-20T00:00:00.000Z',
+  affectedCount: 12,
 };
 
 function installHappyPath(message = MESSAGE) {
@@ -187,6 +186,64 @@ describe('SenderDetailRoute', () => {
     expect(screen.getByText(/top notifications this week/i)).toBeInTheDocument();
     expect(screen.queryByText(/Optional suggestion/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/confidence \d+%/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the action it has, with the real message count', async () => {
+    installHappyPath();
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByText('Archived')).toBeInTheDocument());
+    expect(screen.getByText('You')).toBeInTheDocument();
+    expect(screen.getByText(/12 messages/)).toBeInTheDocument();
+  });
+
+  /**
+   * The defect this page shipped with (founder screenshot 2026-08-19):
+   * the timeline was built from `triage_decisions`, so a sender the user
+   * had never acted on rendered "Triage Kept · op <uuid>" while Activity
+   * showed nothing had happened. History now comes from `activity_log`,
+   * so an untouched sender says exactly that.
+   */
+  it('claims no decision for a sender nobody has acted on', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: () => jsonOk({ data: DETAIL }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [MESSAGE],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: TIMESERIES }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/history$/,
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+    ]);
+    renderDetail();
+
+    await waitFor(() =>
+      expect(screen.getByText(/No actions on this sender yet/i)).toBeInTheDocument(),
+    );
+    for (const claim of ['Kept', 'Archived', 'Unsubscribe requested', 'Moved to Later']) {
+      expect(screen.queryByText(claim)).not.toBeInTheDocument();
+    }
+    expect(screen.queryByText(/^op /)).not.toBeInTheDocument();
   });
 
   it('renders the not-found UI when the detail endpoint returns 404', async () => {

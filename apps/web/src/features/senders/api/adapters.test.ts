@@ -24,11 +24,10 @@ import {
 function historyRow(overrides: Partial<DecisionHistoryRowDto> = {}): DecisionHistoryRowDto {
   return {
     id: 'd1',
-    verdict: 'unsubscribe',
-    confidence: 0.92,
-    producedAt: '2026-05-01T00:00:00.000Z',
-    reasoning: 'High volume, low read rate.',
-    generatedBy: 'llm_haiku',
+    action: 'unsubscribe',
+    source: 'manual',
+    occurredAt: '2026-05-01T00:00:00.000Z',
+    affectedCount: 0,
     ...overrides,
   };
 }
@@ -47,32 +46,61 @@ function messageRow(overrides: Partial<MailMessageRow> = {}): MailMessageRow {
   };
 }
 
-describe('adaptDecisionHistoryRow — provenance label (generatedBy)', () => {
-  it('maps llm_haiku → "Triage" (the BE enum value, not "llm")', () => {
-    // Regression: the wire type once said `'llm'` while the BE sends
-    // `'llm_haiku'`, so the source label rendered blank for every
-    // LLM-generated decision on the Sender Detail timeline.
-    const row = adaptDecisionHistoryRow(historyRow({ generatedBy: 'llm_haiku' }));
-    expect(row.source).toBe('Triage');
+describe('adaptDecisionHistoryRow — actions that actually happened', () => {
+  it('names the person who acted, not the engine that scored', () => {
+    // Regression (founder screenshot 2026-08-19): this row used to be
+    // built from `triage_decisions`, so a sender the user had never
+    // touched rendered "Triage Kept · op <uuid>" while Activity — the
+    // same facts, read from `activity_log` — showed nothing at all.
+    expect(adaptDecisionHistoryRow(historyRow({ source: 'manual' }))?.source).toBe('You');
+    expect(adaptDecisionHistoryRow(historyRow({ source: 'autopilot' }))?.source).toBe('Autopilot');
   });
 
-  it('maps template → "System"', () => {
-    const row = adaptDecisionHistoryRow(historyRow({ generatedBy: 'template' }));
-    expect(row.source).toBe('System');
+  it('maps every wire action to its past-tense label', () => {
+    const cases: Array<[DecisionHistoryRowDto['action'], string]> = [
+      ['keep', 'Kept'],
+      ['archive', 'Archived'],
+      ['unsubscribe', 'Unsubscribe requested'],
+      ['later', 'Moved to Later'],
+      ['delete', 'Deleted'],
+      ['marked_protected', 'Protected'],
+      ['unmarked_protected', 'Unprotected'],
+    ];
+    for (const [action, label] of cases) {
+      expect(adaptDecisionHistoryRow(historyRow({ action }))?.action).toBe(label);
+    }
   });
 
-  it('maps every verdict to its past-tense action label', () => {
-    expect(adaptDecisionHistoryRow(historyRow({ verdict: 'keep' })).action).toBe('Kept');
-    expect(adaptDecisionHistoryRow(historyRow({ verdict: 'archive' })).action).toBe('Archived');
-    expect(adaptDecisionHistoryRow(historyRow({ verdict: 'unsubscribe' })).action).toBe(
-      'Unsubscribe requested',
-    );
-    expect(adaptDecisionHistoryRow(historyRow({ verdict: 'later' })).action).toBe('Moved to Later');
+  it('carries the real affected count and omits it when nothing moved', () => {
+    expect(adaptDecisionHistoryRow(historyRow({ affectedCount: 47 }))?.count).toBe(47);
+    // A Keep or a Protect moves no mail — the row must not claim
+    // "0 messages", it must say nothing about a count at all.
+    expect(adaptDecisionHistoryRow(historyRow({ action: 'keep' }))?.count).toBeUndefined();
+  });
+
+  it('uses the occurrence time, not an engine compute time', () => {
+    const row = adaptDecisionHistoryRow(historyRow({ occurredAt: '2026-08-18T09:30:00.000Z' }));
+    expect(row?.at).toBe('2026-08-18T09:30:00.000Z');
+  });
+
+  it('drops a row it cannot describe instead of rendering a blank verb', () => {
+    // Reachable while the API runs a version ahead of the web app — the
+    // two deploy separately. A half-known row would render an empty verb
+    // and an "NaN yr ago" timestamp, asserting an event it can say
+    // nothing true about.
+    const unknownAction = { ...historyRow(), action: 'teleported' } as unknown as Parameters<
+      typeof adaptDecisionHistoryRow
+    >[0];
+    expect(adaptDecisionHistoryRow(unknownAction)).toBeNull();
+    const unknownSource = { ...historyRow(), source: 'poltergeist' } as unknown as Parameters<
+      typeof adaptDecisionHistoryRow
+    >[0];
+    expect(adaptDecisionHistoryRow(unknownSource)).toBeNull();
   });
 
   it('never produces an undefined source', () => {
-    for (const generatedBy of ['llm_haiku', 'template'] as const) {
-      expect(adaptDecisionHistoryRow(historyRow({ generatedBy })).source).toBeDefined();
+    for (const source of ['manual', 'triage', 'autopilot', 'screener'] as const) {
+      expect(adaptDecisionHistoryRow(historyRow({ source }))?.source).toBeDefined();
     }
   });
 });

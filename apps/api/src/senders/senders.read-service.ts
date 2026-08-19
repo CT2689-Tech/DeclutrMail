@@ -35,12 +35,14 @@ import {
   gt,
   gte,
   ilike,
+  inArray,
   lt,
   or,
   sql,
   type SQL,
 } from 'drizzle-orm';
 import {
+  activityLog,
   mailMessages,
   senderPolicies,
   senderTimeseries,
@@ -63,6 +65,7 @@ import {
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   ActivityFilter,
+  DecisionHistoryAction,
   DecisionHistoryRow,
   GmailCategory,
   LastReview,
@@ -91,6 +94,27 @@ const SUPPORTED_SORTS: ReadonlySet<SenderListSort> = new Set([
   'first_seen',
   'name',
 ]);
+
+/**
+ * `activity_log.action` values the D46 decision history reports — the
+ * K/A/U/L/D verbs plus the Protect toggles. Outcome rows (the D245
+ * unsubscribe lifecycle) and `followup-dismiss` stay in the Activity
+ * feed that owns them; each is written next to the decision row that
+ * caused it, so this narrowing hides no user action.
+ */
+const DECISION_HISTORY_ACTIONS = Object.keys({
+  keep: true,
+  archive: true,
+  unsubscribe: true,
+  later: true,
+  delete: true,
+  marked_protected: true,
+  unmarked_protected: true,
+  // `satisfies Record<…>` makes the set exhaustive BY CONSTRUCTION: add a
+  // verb to `DecisionHistoryAction` and this object stops typechecking
+  // until the verb is listed, so a new K/A/U/L/D action can never be
+  // silently missing from a user's own decision history.
+} satisfies Record<DecisionHistoryAction, true>) as DecisionHistoryAction[];
 
 /** Default direction per sort when the caller omits `direction`. */
 const DEFAULT_DIRECTION_BY_SORT: Record<SenderListSort, SenderListDirection> = {
@@ -312,9 +336,9 @@ export interface MessagesCursor {
 }
 
 export interface HistoryCursor {
-  /** ISO-8601 boundary `produced_at` of the last item on the prior page. */
-  producedAt: Date;
-  /** Tie-breaker — decision id of that same boundary row. */
+  /** ISO-8601 boundary `occurred_at` of the last item on the prior page. */
+  occurredAt: Date;
+  /** Tie-breaker — `activity_log` id of that same boundary row. */
   id: string;
 }
 
@@ -1555,20 +1579,20 @@ export class SendersReadService {
   }
 
   /**
-   * Decision history for one sender — most recent first, keyset-
-   * paginated by `produced_at` DESC + `id` DESC.
+   * Decision history for one sender — what actually HAPPENED to this
+   * sender, most recent first, keyset-paginated by `occurred_at` DESC +
+   * `id` DESC.
    *
-   * The current `triage_decisions` schema enforces ONE row per
-   * (mailbox, sender) via a unique index; pagination here is
-   * future-proofing for when a `triage_decision_history` table lands
-   * (referenced in the schema header). The contract stays uniform so
-   * the FE doesn't need to special-case "history of one".
+   * Reads `activity_log`. That is not a new cross-feature crossing:
+   * this feature already WRITES to the same table for its Protect
+   * toggles (`SendersPolicyService` D43 audit rows), and every K/A/U/L/D
+   * verb lands there too, so one sender-keyed read returns the whole
+   * decision trail regardless of which feature recorded it.
    *
-   * See ADR-0008 §3 — this is the launch-pragmatic exception that
-   * lets the senders read service touch a triage-owned table
-   * directly. The migration path (emit event → project into a
-   * senders-owned `sender_decision_history` projection) is flagged
-   * for ratification when triage outgrows its single-table footprint.
+   * It replaces a read of `triage_decisions` — the scoring worker's
+   * suggestion, which no user action writes — that made untouched
+   * senders claim decisions they never received. See the
+   * `DecisionHistoryRow` doc comment and ADR-0008 §3.
    */
   async listDecisionHistory(args: {
     mailboxAccountId: string;
@@ -1582,55 +1606,49 @@ export class SendersReadService {
       return null;
     }
 
-    // ADR-0008 §3 ratification: direct triage_decisions read in the
-    // senders read service (one of several sites — grep this marker
-    // to find them all when ratifying the ADR).
+    // ADR-0008 §3 exception: senders → activity_log (read). Grep this
+    // marker to find every crossing when ratifying the ADR.
+    //
+    // Index path: `activity_log_account_sender_occurred_idx`
+    // (mailbox_account_id, sender_key, occurred_at) — named
+    // `senderHistoryIdx` in the schema, leading columns match this
+    // predicate exactly and carry the ORDER BY.
     const conditions = [
-      eq(triageDecisions.mailboxAccountId, mailboxAccountId),
-      eq(triageDecisions.senderKey, senderKey),
+      eq(activityLog.mailboxAccountId, mailboxAccountId),
+      eq(activityLog.senderKey, senderKey),
+      inArray(activityLog.action, DECISION_HISTORY_ACTIONS),
     ];
     if (cursor) {
       conditions.push(
         or(
-          lt(triageDecisions.producedAt, cursor.producedAt),
-          and(eq(triageDecisions.producedAt, cursor.producedAt), lt(triageDecisions.id, cursor.id)),
+          lt(activityLog.occurredAt, cursor.occurredAt),
+          and(eq(activityLog.occurredAt, cursor.occurredAt), lt(activityLog.id, cursor.id)),
         )!,
       );
     }
 
     const rows = await this.db
       .select({
-        id: triageDecisions.id,
-        verdict: triageDecisions.verdict,
-        confidence: triageDecisions.confidence,
-        producedAt: triageDecisions.producedAt,
-        reasoning: triageDecisions.reasoning,
-        generatedBy: triageDecisions.generatedBy,
+        id: activityLog.id,
+        action: activityLog.action,
+        source: activityLog.source,
+        occurredAt: activityLog.occurredAt,
+        affectedCount: activityLog.affectedCount,
       })
-      .from(triageDecisions)
+      .from(activityLog)
       .where(and(...conditions))
-      .orderBy(desc(triageDecisions.producedAt), desc(triageDecisions.id))
+      .orderBy(desc(activityLog.occurredAt), desc(activityLog.id))
       .limit(limit + 1);
 
     return rows.map((row) => ({
       id: row.id,
-      verdict: row.verdict,
-      // Drizzle's numeric column returns a string to preserve
-      // precision (postgres-js + PGlite both); convert at the
-      // boundary so the wire is a plain number with 2-decimal
-      // precision matching the column's `numeric(3,2)` storage.
-      confidence: (() => {
-        const n = Number.parseFloat(row.confidence);
-        if (!Number.isFinite(n)) {
-          throw new InternalServerErrorException(
-            `Triage decision ${row.id} has invalid confidence value: ${row.confidence}`,
-          );
-        }
-        return n;
-      })(),
-      producedAt: row.producedAt.toISOString(),
-      reasoning: row.reasoning,
-      generatedBy: row.generatedBy,
+      // The `inArray` filter above is what narrows the enum; the column
+      // type stays as wide as the DB enum, so the cast is the assertion
+      // that filter already enforces.
+      action: row.action as DecisionHistoryAction,
+      source: row.source,
+      occurredAt: row.occurredAt.toISOString(),
+      affectedCount: row.affectedCount,
     }));
   }
 

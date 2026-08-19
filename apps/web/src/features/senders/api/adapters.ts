@@ -34,7 +34,6 @@ import type {
   SenderDetail,
   SenderStats,
   TimeseriesPoint,
-  Verdict,
 } from '../detail/types';
 
 /** Display labels derived directly from the Gmail category on the wire. */
@@ -133,7 +132,16 @@ export function adaptSenderDetail(args: {
     recentMessages: args.messages.map(adaptMailMessageRow),
     stats,
     timeseries: args.timeseries.map(adaptTimeseriesPoint),
-    history: args.history.map(adaptDecisionHistoryRow),
+    history: args.history.flatMap((row) => {
+      const adapted = adaptDecisionHistoryRow(row);
+      // A row whose action or source this build doesn't know is a row we
+      // cannot describe. Dropping it renders the honest empty state; the
+      // alternative is a timeline entry with a blank verb and an
+      // "NaN yr ago" timestamp, which asserts an event without saying
+      // anything true about it. Reachable whenever the API is a version
+      // ahead of the web app — the two deploy separately.
+      return adapted ? [adapted] : [];
+    }),
   };
 }
 
@@ -184,39 +192,47 @@ export function adaptTimeseriesPoint(p: TimeseriesPointDto): TimeseriesPoint {
   };
 }
 
-const VERDICT_TO_ACTION: Record<DecisionHistoryRowDto['verdict'], DecisionAction> = {
+const ACTION_LABEL: Record<DecisionHistoryRowDto['action'], DecisionAction> = {
   keep: 'Kept',
   archive: 'Archived',
   unsubscribe: 'Unsubscribe requested',
   later: 'Moved to Later',
-};
-
-const GENERATED_BY_TO_SOURCE: Record<DecisionHistoryRowDto['generatedBy'], DecisionSource> = {
-  llm_haiku: 'Triage',
-  template: 'System',
+  delete: 'Deleted',
+  marked_protected: 'Protected',
+  unmarked_protected: 'Unprotected',
 };
 
 /**
- * Wire history row → FE history row. The wire schema is narrower (just
- * the engine's recorded decisions) than the FE component supports (the
- * component renders any `activity_log` row, including protection and
- * Restore actions). The component handles a degenerate `count` of 0 by
- * omitting the email-count span, so we leave it unset.
+ * `activity_log.source` → who the row names. Only `manual` and
+ * `autopilot` are written today; the other two mirror the DB enum so a
+ * new producer can't silently render a blank source.
  */
-export function adaptDecisionHistoryRow(row: DecisionHistoryRowDto): DecisionHistoryRow {
+const SOURCE_LABEL: Record<DecisionHistoryRowDto['source'], DecisionSource> = {
+  manual: 'You',
+  triage: 'Triage',
+  autopilot: 'Autopilot',
+  screener: 'Screener',
+};
+
+/**
+ * Wire history row → FE history row. Every field is a fact about
+ * something that happened: who acted, what they did, when, and how many
+ * messages moved. `count` is left unset for the policy-only verbs so
+ * the row doesn't render "· 0 messages" for a Keep or a Protect.
+ */
+export function adaptDecisionHistoryRow(row: DecisionHistoryRowDto): DecisionHistoryRow | null {
+  const action = ACTION_LABEL[row.action];
+  const source = SOURCE_LABEL[row.source];
+  // Both maps are exhaustive over the wire union, so `undefined` here
+  // means the API sent a value this build predates. Say nothing rather
+  // than render a row with a blank verb.
+  if (!action || !source || !row.occurredAt) return null;
   return {
     id: row.id,
-    at: row.producedAt,
-    source: GENERATED_BY_TO_SOURCE[row.generatedBy],
-    action: VERDICT_TO_ACTION[row.verdict],
+    at: row.occurredAt,
+    source,
+    action,
+    ...(row.affectedCount > 0 ? { count: row.affectedCount } : {}),
     opId: row.id,
   };
 }
-
-/** Verdict mapping is not used by the page directly — re-exported for tests. */
-export const _internalVerdictMap: Record<DecisionHistoryRowDto['verdict'], Verdict> = {
-  keep: 'keep',
-  archive: 'archive',
-  unsubscribe: 'unsubscribe',
-  later: 'later',
-};

@@ -101,7 +101,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D43 | **SUPERSEDED by D245: one Protect control | 🔵 | #181, #30, #129, #210 |  | Evidence updated 2026-06-11: header policy icons + write path landed in #181; prior #30 cite was stale |
 | D44 | Stats strip: **5 stats, single reflow row | 🟢 | #30, #52, #566 | apps/api/src/senders/senders.read-service.spec.ts |  |
 | D45 | Charts: **Volume + open-rate over 12 months, side-by-side | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts |  |
-| D46 | Decision history: **10 most recent inline, all V2 actions, link to full | 🟢 | #30 | apps/api/src/senders/senders.controller.spec.ts — D46 default limit |  |
+| D46 | Decision history: **10 most recent inline, all V2 actions, link to full | 🟢 | #30, #571 | apps/api/src/senders/senders.controller.spec.ts — D46 default limit |  |
 | D47 | Senders shape: **Weekly Hero (Mondays) + grid/table below + Review Session overlay | 🚫 | #115, #346 |  | Retired 2026-07-17 by #346: the Weekly Hero was removed with the editorial-hero era (spec v1.2 D4) and its dead stack deleted per D245 prelaunch. Was 🟢 citing senders.controller.spec.ts — a spec #346 deleted, so the evidence no longer existed |
 | D48 | Weekly Hero slices: **3 — High-confidence cleanups / Volume spikes / Long-quiet senders | 🚫 | #115, #346 |  | Retired 2026-07-17 by #346 with D47 — slices died with the hero |
 | D49 | Senders default view: **Always grid; table is per-session toggle | 🔵 | #115, #260, #262, #266, #268, #270, #271, #275, #278, #280, #300, #341, #409, #569 |  |  |

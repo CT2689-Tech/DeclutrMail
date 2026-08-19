@@ -530,32 +530,55 @@ export interface TimeseriesPoint {
 }
 
 /**
- * One row in `GET /api/senders/:id/history` (D46 — decision history
- * popover on Sender Detail).
+ * The set of `activity_log.action` values that are DECISIONS — the
+ * K/A/U/L/D verbs plus the Protect toggles. Deliberately narrower than
+ * the DB enum: the unsubscribe lifecycle rows (`unsubscribe_failed`,
+ * `unsubscribe_action_required`, …) and `followup-dismiss` are outcome
+ * and feature records that Activity renders in its own feed. Every one
+ * of them is written alongside the decision row that caused it, so
+ * nothing the user did is hidden by this narrowing.
+ */
+export type DecisionHistoryAction =
+  | 'keep'
+  | 'archive'
+  | 'unsubscribe'
+  | 'later'
+  | 'delete'
+  | 'marked_protected'
+  | 'unmarked_protected';
+
+/** Mirrors the `activity_source` enum — who performed the action. */
+export type DecisionHistorySource = 'triage' | 'manual' | 'autopilot' | 'screener';
+
+/**
+ * One row in `GET /api/senders/:id/history` (D46 — decision history on
+ * Sender Detail).
  *
- * Sourced from `triage_decisions`. Per ADR-0008, the senders read
- * service reads `triage_decisions` directly at launch (pragmatic
- * exception flagged for ratification once triage feature grows past
- * its single-table footprint).
+ * Sourced from `activity_log` — things that HAPPENED. It deliberately
+ * does NOT read `triage_decisions`: that table holds the scoring
+ * worker's suggestion for a sender, which no user action ever writes,
+ * and rendering it here made every unscored-but-untouched sender claim
+ * a decision it never received (founder screenshot 2026-08-19 — Sender
+ * Detail said "Triage Kept", Activity for the same sender said nothing
+ * had happened; Activity was right).
  *
- * The current schema enforces ONE row per (mailbox, sender) — the
- * cursor is therefore future-proofing for when the engine retains
- * decision history (a planned `triage_decision_history` table; see
- * `triage-decisions.ts` schema header). Pagination today returns at
- * most one row but the contract stays uniform with the rest of the
- * list endpoints.
+ * The engine's verdict is a suggestion and belongs on a surface that
+ * says so. Today the only such surface is Triage — the highlighted verb
+ * above 0.85 confidence (D31) plus the verdict pill. The Senders list
+ * carries `lastReview` on the wire but renders nothing from it, and the
+ * detail wire has no recommendation field at all, so Sender Detail shows
+ * no suggestion — a product gap, not something this history endpoint may
+ * paper over.
  */
 export interface DecisionHistoryRow {
+  /** `activity_log.id` — the operation id Sender Detail displays. */
   id: string;
-  verdict: TriageVerdict;
-  /** 0..1, 2-decimal precision (mirrors `numeric(3,2)` storage). */
-  confidence: number;
-  /** ISO-8601 — engine compute time. */
-  producedAt: string;
-  /** Human-readable explanation (LLM or template — see `generatedBy`). */
-  reasoning: string;
-  /** Provenance of `reasoning` — LLM call vs template fallback. */
-  generatedBy: TriageReasoningSource;
+  action: DecisionHistoryAction;
+  source: DecisionHistorySource;
+  /** ISO-8601 — when the action happened. */
+  occurredAt: string;
+  /** Messages moved. 0 for policy-only verbs (Keep, Protect toggles). */
+  affectedCount: number;
 }
 
 /**
