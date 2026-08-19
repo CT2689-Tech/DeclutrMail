@@ -145,7 +145,12 @@ export {
   VERDICT_RUNTIME_VALUES,
 } from './reasoning.js';
 export type { ConcurrencyLimiter, ReasoningInput, ReasoningLlmPort } from './reasoning.js';
-export { isGovernmentDomain, runCascade } from './score-cascade.js';
+export {
+  CASCADE_RULE_IDS,
+  CASCADE_RULE_PHRASE,
+  isGovernmentDomain,
+  runCascade,
+} from './score-cascade.js';
 export type {
   CascadePhase,
   CascadeResult,

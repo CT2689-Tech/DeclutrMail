@@ -70,6 +70,45 @@ export type CascadeRuleId =
   | 'score_no_unsub_channel'
   | 'score_quiet_stream';
 
+/**
+ * Plain-English phrase per cascade rule, for anything a USER may read.
+ *
+ * The rule ids are internal vocabulary. They reached users through the
+ * LLM: the explanation prompt carried `Engine rule: high_read_rate`, and
+ * Haiku faithfully wrote it back — "The high_read_rate engine rule
+ * confirms this sender deserves inbox placement" was live copy on 440+
+ * of the founder's 8,531 scored senders. The model was not wrong to
+ * echo what it was handed; the input was wrong.
+ *
+ * `Record<CascadeRuleId, string>` is what keeps this honest: add a rule
+ * without a phrase and the build fails, rather than the id leaking into
+ * prose again.
+ */
+export const CASCADE_RULE_PHRASE: Record<CascadeRuleId, string> = {
+  protect_user_defined: 'the user marked this sender protected',
+  protect_replied: 'the user has replied to this sender several times',
+  protect_starred: 'the user starred a message from this sender in the past year',
+  protect_gmail_important: 'Gmail marked several recent messages from this sender important',
+  replied_at_least_once: 'the user has replied to this sender',
+  gmail_primary: 'Gmail files this sender in Primary, where real correspondence lands',
+  starred_recently: 'the user starred a message from this sender recently',
+  high_read_rate: 'the user reads most of what this sender sends',
+  long_relationship_engaged: 'this is a long relationship the user still engages with',
+  insufficient_signal: 'there is not enough mail yet to judge this sender',
+  score_archive: 'the volume and read rate point at archiving',
+  score_unsubscribe: 'the volume and read rate point at unsubscribing',
+  score_inconclusive: 'the signals point in different directions',
+  score_no_unsub_channel: 'this sender offers no unsubscribe channel to use',
+  score_quiet_stream: 'this sender is too quiet to be worth unsubscribing from',
+};
+
+/**
+ * Every internal rule id as a flat list — the vocabulary a user-facing
+ * sentence must never contain. Derived from the phrase map so it cannot
+ * fall behind the union.
+ */
+export const CASCADE_RULE_IDS = Object.keys(CASCADE_RULE_PHRASE) as CascadeRuleId[];
+
 /** Closed union of cascade phases — used by the template + telemetry. */
 export type CascadePhase = 'A' | 'B' | 'C';
 
