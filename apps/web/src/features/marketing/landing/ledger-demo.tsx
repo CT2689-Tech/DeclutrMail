@@ -51,7 +51,7 @@ export function LedgerDemo({ verbs }: { verbs: readonly LedgerVerb[] }) {
               </span>
               <span>
                 <span className="dm-mkt-ledger-name">LinkedIn Notifications</span>
-                <span className="dm-mkt-ledger-meta">47/mo · 0 opened in 90 days</span>
+                <span className="dm-mkt-ledger-meta">47/mo · 0 marked read in 90 days</span>
               </span>
             </div>
             <div className="dm-mkt-ledger-verbs">
