@@ -344,7 +344,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'sender-first',
         title: 'Use sender-first cleanup when recurrence is the problem',
         paragraphs: [
-          'Sender-first cleanup compresses many emails into one sender review. Volume, read rate, recent subjects, and replies help you identify which sender deserves a decision. This is especially useful when you cannot name the noisiest senders from memory.',
+          'Sender-first cleanup compresses many emails into one sender review. Volume, read rate, recent subjects, and whether you write back help you identify which sender deserves a decision. This is especially useful when you cannot name the noisiest senders from memory.',
           'DeclutrMail implements this model as a Gmail companion. It stores the listed Gmail details and preview snippets but never fetches full email contents. You return to Gmail for reading and final verification.',
         ],
       },
