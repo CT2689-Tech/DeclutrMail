@@ -53,24 +53,25 @@ const nextConfig: NextConfig = {
    * Inject the release tag into the PUBLIC env at build time so the
    * browser runtime can read `process.env.NEXT_PUBLIC_SENTRY_RELEASE`.
    *
-   * EMPTY, NOT `'local-dev'`, WHEN THERE IS NO COMMIT SHA. The old
-   * fallback looked harmless and silently broke production error
-   * reporting: `VERCEL_GIT_COMMIT_SHA` only exists when a project has
-   * "Automatically expose System Environment Variables" enabled, and
-   * without it every production build stamped its browser bundle
-   * `local-dev`. `withSentryConfig` meanwhile uploads source maps under
-   * the release IT derives, so the two never matched — and an event
-   * whose release does not match the uploaded artifacts cannot be
-   * symbolicated. Production errors arrived as minified frames with no
-   * message, which is how a real recurring client error sat unreadable
-   * (Sentry DECLUTRMAIL-WEB-13/16, 2026-08-18).
+   * EMPTY, NOT `'local-dev'`, WHEN THERE IS NO COMMIT SHA.
    *
-   * Empty means the init below omits `release` entirely, which lets the
-   * Sentry build plugin's own injected release apply — the one its
-   * uploaded artifacts are filed under, so they match by construction
-   * rather than by two env lookups agreeing. A wrong release is worse
-   * than no release: no release still symbolicates, a wrong one never
-   * does.
+   * Deployed builds are fine and always were — `VERCEL_GIT_COMMIT_SHA`
+   * is present, and production events carry real 40-character SHAs. The
+   * fallback only fires where that variable is absent, which in
+   * practice means a PRODUCTION BUILD RUN LOCALLY (`next build` sets
+   * `NODE_ENV=production`, so `environment` resolves to `production`
+   * too). Those events then land in the production environment wearing
+   * an invented release, indistinguishable at a glance from real
+   * deployed errors — that is where Sentry DECLUTRMAIL-WEB-13/16 came
+   * from, and chasing them as production bugs cost real time.
+   *
+   * Empty means the init below omits `release` entirely, so the Sentry
+   * build plugin's own injected release applies — the one its uploaded
+   * artifacts are filed under, matching by construction rather than by
+   * two env lookups agreeing. A wrong release is worse than none: no
+   * release still symbolicates, a wrong one never does. And a local
+   * build no longer manufactures a release bucket that looks like
+   * production.
    */
   env: {
     NEXT_PUBLIC_SENTRY_RELEASE: process.env.VERCEL_GIT_COMMIT_SHA ?? '',
