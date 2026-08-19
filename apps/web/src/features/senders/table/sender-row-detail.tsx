@@ -33,10 +33,11 @@ export type RowDetailSubjects =
 
 /**
  * One recent-subject row. Carries the received-at instant, not just the
- * text: a bare subject list is unverifiable — the reader cannot tell
- * whether "A home for you at 47112 Warm Springs Blvd" arrived yesterday
- * or last year, which is exactly the check a privacy product invites
- * them to make (FINDINGS F006). `date` is ISO-8601.
+ * text: a bare subject list is unverifiable — a recurring sender's
+ * subjects are near-identical month to month, so without a date the
+ * reader cannot tell whether the one they are looking at arrived
+ * yesterday or last year, which is exactly the check a privacy product
+ * invites them to make (FINDINGS F006). `date` is ISO-8601.
  *
  * This mirrors the widening the D226 confirm-action preview already made
  * for the same reason — "the date is how the reader checks it respects
