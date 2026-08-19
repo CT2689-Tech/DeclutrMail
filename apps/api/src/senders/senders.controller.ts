@@ -148,7 +148,7 @@ export class SendersController {
     @Query('q') rawQ: string | undefined,
     @Query('activity') rawActivity: string | undefined,
     @Query('unsub_ready') rawUnsubReady: string | undefined,
-    @Query('replied') rawReplied: string | undefined,
+    @Query('wrote-to') rawWroteTo: string | undefined,
     @Query('window') rawWindow: string | undefined,
     @Query('domain') rawDomain: string | undefined,
     @Query('unsub_ignored') rawUnsubIgnored: string | undefined,
@@ -163,7 +163,7 @@ export class SendersController {
     // D38 compose strip params.
     const activity = parseActivity(rawActivity);
     const unsubReady = parseTriState(rawUnsubReady);
-    const repliedTo = parseTriState(rawReplied);
+    const wroteTo = parseTriState(rawWroteTo);
     const quietForDays = parseWindow(rawWindow);
     const domain = parseSearch(rawDomain); // share the search trimmer
     // D51 — "unsub'd, still emailing". `true`-only (no negated surface),
@@ -195,7 +195,7 @@ export class SendersController {
         q,
         activity,
         unsubReady,
-        repliedTo,
+        wroteTo,
         quietForDays,
         domain,
         unsubIgnored,
@@ -207,7 +207,7 @@ export class SendersController {
         q,
         activity,
         unsubReady,
-        repliedTo,
+        wroteTo,
         quietForDays,
         domain,
         unsubIgnored,

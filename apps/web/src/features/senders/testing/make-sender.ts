@@ -31,7 +31,7 @@ export function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderLis
     lastSeenAt: '2026-06-29T00:00:00.000Z',
     firstSeenAt: '2025-07-06T00:00:00.000Z',
     totalReceived: 144,
-    repliedCount: 0,
+    wroteToCount: 0,
     monthlyVolume: 12,
     readRate: 0.2,
     volumeTrend: 'steady',

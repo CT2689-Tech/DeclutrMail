@@ -994,14 +994,14 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // PG rolls back if any insert throws → last known-good state
     // preserved, never a partial teardown.
     //
-    // Reply attribution post-pass (spec v1.3 + mig 0022).
-    // After the rebuild's INSERTs, recompute `senders.replied_count` +
-    // `sender_timeseries.reply_count` from `mail_messages` via the SAME
-    // SQL as 0022's backfill — the migration IS the formula, single
-    // source of truth. Then upsert `sender_policies` for any sender
-    // whose `replied_count` crossed the auto-protect threshold (≥3,
-    // spec L488). Both run inside the rebuild tx so a partial reply
-    // pass rolls back with the rest.
+    // Wrote-to attribution post-pass (mig 0063).
+    // After the rebuild's INSERTs, recompute `senders.wrote_to_count`
+    // from `mail_messages` via the SAME SQL as 0063's backfill — the
+    // migration IS the formula, single source of truth. Then upsert
+    // `sender_policies` for any sender that crossed the auto-protect
+    // threshold (two-way: >=3 addressed outbound AND >=1 inbound).
+    // Both run inside the rebuild tx so a partial pass rolls back
+    // with the rest.
     await this.deps.db.transaction(async (tx) => {
       // Exclude the Autopilot writers for the whole teardown+rebuild.
       // Without it an apply sweep that read signals a moment ago can
@@ -1100,63 +1100,43 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           AND s.${sql.identifier('sender_key')} = sub.sender_key
       `);
 
-      // Reply-attribution post-pass. The aggregate counts DISTINCT
-      // outbound `mail_messages.id` per `(sender_key)` whose thread
-      // contains ≥1 inbound from that sender. Matches mig 0022's
-      // backfill semantic exactly — drift-free across migration apply
-      // + every initial-sync run.
+      // Wrote-to attribution post-pass (mig 0063, F010). Counts DISTINCT
+      // outbound `mail_messages.id` ADDRESSED to each sender —
+      // `recipient_emails` (To + Cc) matched against `senders.email` on
+      // the D12 normalized form. Same statement as 0063's backfill, so
+      // the migration, the initial sync and the incremental sync all
+      // converge on one derived state.
+      //
+      // Zero FIRST. The rule credits strictly fewer senders than the
+      // thread-membership join it replaces, so a sender that loses all
+      // its evidence must fall to 0; an `UPDATE ... FROM` alone never
+      // reaches a row with no matching group and would leave the stale
+      // count standing forever.
       await tx.execute(sql`
         UPDATE ${senders} AS s
-        SET ${sql.identifier('replied_count')} = sub.cnt
+        SET ${sql.identifier('wrote_to_count')} = 0
+        WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+          AND s.${sql.identifier('wrote_to_count')} <> 0
+      `);
+      await tx.execute(sql`
+        UPDATE ${senders} AS s
+        SET ${sql.identifier('wrote_to_count')} = sub.cnt
         FROM (
           SELECT
-            m1.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
-            m1.${sql.identifier('sender_key')} AS sender_key,
-            COUNT(DISTINCT m2.${sql.identifier('id')})::integer AS cnt
-          FROM ${mailMessages} AS m1
-          JOIN ${mailMessages} AS m2
-            ON m2.${sql.identifier('mailbox_account_id')} = m1.${sql.identifier('mailbox_account_id')}
-           AND m2.${sql.identifier('provider_thread_id')} = m1.${sql.identifier('provider_thread_id')}
-           AND m2.${sql.identifier('is_outbound')} = true
-          WHERE m1.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-            AND m1.${sql.identifier('is_outbound')} = false
-          GROUP BY m1.${sql.identifier('mailbox_account_id')}, m1.${sql.identifier('sender_key')}
+            m.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
+            s2.${sql.identifier('sender_key')} AS sender_key,
+            COUNT(DISTINCT m.${sql.identifier('id')})::integer AS cnt
+          FROM ${mailMessages} AS m
+          CROSS JOIN LATERAL unnest(m.${sql.identifier('recipient_emails')}) AS r(addr)
+          JOIN ${senders} AS s2
+            ON s2.${sql.identifier('mailbox_account_id')} = m.${sql.identifier('mailbox_account_id')}
+           AND dm_normalize_email(s2.${sql.identifier('email')}::text) = dm_normalize_email(r.addr)
+          WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+            AND m.${sql.identifier('is_outbound')} = true
+          GROUP BY m.${sql.identifier('mailbox_account_id')}, s2.${sql.identifier('sender_key')}
         ) AS sub
         WHERE s.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
           AND s.${sql.identifier('sender_key')} = sub.sender_key
-      `);
-
-      // Per-month reply attribution into `sender_timeseries.reply_count`
-      // (column existed since schema; populator was the missing piece
-      // per the schema doc on sender-timeseries.ts L26-27). Same
-      // distinct-outbound-id semantic as above, but bucketed by
-      // `date_trunc('month', m2.internal_date)` so the row keyed by
-      // `(mailbox_account_id, sender_key, year_month)` already exists
-      // from the timeseries insert above — UPDATE in place.
-      await tx.execute(sql`
-        UPDATE ${senderTimeseries} AS st
-        SET ${sql.identifier('reply_count')} = sub.cnt
-        FROM (
-          SELECT
-            m1.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
-            m1.${sql.identifier('sender_key')} AS sender_key,
-            date_trunc('month', m2.${sql.identifier('internal_date')})::date AS year_month,
-            COUNT(DISTINCT m2.${sql.identifier('id')})::integer AS cnt
-          FROM ${mailMessages} AS m1
-          JOIN ${mailMessages} AS m2
-            ON m2.${sql.identifier('mailbox_account_id')} = m1.${sql.identifier('mailbox_account_id')}
-           AND m2.${sql.identifier('provider_thread_id')} = m1.${sql.identifier('provider_thread_id')}
-           AND m2.${sql.identifier('is_outbound')} = true
-          WHERE m1.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-            AND m1.${sql.identifier('is_outbound')} = false
-          GROUP BY
-            m1.${sql.identifier('mailbox_account_id')},
-            m1.${sql.identifier('sender_key')},
-            date_trunc('month', m2.${sql.identifier('internal_date')})
-        ) AS sub
-        WHERE st.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
-          AND st.${sql.identifier('sender_key')} = sub.sender_key
-          AND st.${sql.identifier('year_month')} = sub.year_month
       `);
 
       // Same derived-not-accumulated reconcile the incremental worker

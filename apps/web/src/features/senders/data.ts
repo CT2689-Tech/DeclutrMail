@@ -9,7 +9,7 @@
  * spread, so every field the BE sends rides through by construction —
  * a new wire field can never be silently dropped, and a nullable wire
  * field can never be coerced into a fake fact on its way to a card.
- * (The previous hand-mapped adapter did both: `repliedCount` vanished,
+ * (The previous hand-mapped adapter did both: `wroteToCount` vanished,
  * `readRate: null` rendered as "Never read".)
  *
  * Derived fields are additive-only: the `DerivedSenderFields` keys are

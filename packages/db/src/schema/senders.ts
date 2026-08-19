@@ -123,14 +123,20 @@ export const senders = pgTable(
      */
     totalReceived: bigint('total_received', { mode: 'number' }).notNull().default(0),
     /**
-     * Denormalised count of OUTBOUND messages whose thread contains
-     * ≥1 inbound message from this sender — the "user replied to this
-     * sender" signal materialised for hot-path reads (Senders V2 spec
-     * v1.3 §"Trust-canary CI fixture", compose-strip `you replied` axis,
-     * score-cascade Rule 2 future fast path). Counts DISTINCT outbound
-     * `mail_messages.id` per sender; equals
-     * `SUM(sender_timeseries.reply_count)` across months so the two
-     * denorms reconcile arithmetically.
+     * Denormalised count of OUTBOUND messages ADDRESSED to this sender —
+     * this sender's address in `recipient_emails` (To + Cc), matched on
+     * the D12 normalized form via `dm_normalize_email`. Materialised for
+     * hot-path reads (compose-strip "you wrote to them" axis,
+     * score-cascade Rule 2 fast path).
+     *
+     * NOT a reply count, and deliberately not called one (mig 0063).
+     * It previously counted every outbound message in a THREAD the
+     * sender appeared in, with no predicate tying the outbound to the
+     * sender it credited — so a bounce notifier scored 14 "replies"
+     * while a real correspondent with 529 messages addressed to them
+     * scored 94. Gmail gives us no causal reply signal; who a message
+     * was addressed to is a fact, and one no third-party tool can
+     * manufacture.
      *
      * Maintained on two write paths (mirrors `totalReceived`):
      *   A. authoritatively on `InitialSyncWorker.buildSenderIndex`
@@ -139,8 +145,11 @@ export const senders = pgTable(
      *      `IncrementalSyncWorker` (per-job upsert deltas).
      *
      * Automatic protection uses conservative, explainable evidence:
-     * `replied_count >= 3`, a recent starred message, or at least three
-     * recent Gmail-important messages. The exact basis is stored in
+     * two-way correspondence (`wrote_to_count >= 3` AND at least one
+     * message received FROM the sender), a recent starred message, or
+     * at least three recent Gmail-important messages. The two-way test
+     * is what a bounce notifier fails: it has inbound but nothing was
+     * ever addressed to it. The exact basis is stored in
      * `sender_policies.protection_reason`. The flip is sticky — later
      * signal changes do NOT unprotect.
      *
@@ -156,7 +165,7 @@ export const senders = pgTable(
      * the wire shape per the senders list contract is a JSON number,
      * not a `bigint` string.
      */
-    repliedCount: integer('replied_count').notNull().default(0),
+    wroteToCount: integer('wrote_to_count').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),

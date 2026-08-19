@@ -51,7 +51,7 @@ const LIST_KEY = sendersKeys.list({
   activity: undefined,
   activityNegate: undefined,
   unsubReady: undefined,
-  replied: undefined,
+  wroteTo: undefined,
   windowDays: undefined,
   domain: undefined,
   unsubIgnored: undefined,

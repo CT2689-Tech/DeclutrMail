@@ -69,7 +69,7 @@ interface SeedSenderInput {
   senderKey: string;
   displayName?: string;
   gmailCategory?: 'primary' | 'promotions';
-  repliedCount?: number;
+  wroteToCount?: number;
   verdict?: 'keep' | 'archive' | 'unsubscribe' | 'later';
 }
 
@@ -81,7 +81,7 @@ async function seedSender(db: Db, mailboxAccountId: string, input: SeedSenderInp
     email: input.email,
     domain: input.email.split('@')[1] ?? '',
     gmailCategory: input.gmailCategory ?? 'promotions',
-    repliedCount: input.repliedCount ?? 0,
+    wroteToCount: input.wroteToCount ?? 0,
     firstSeenAt: new Date('2024-01-01T00:00:00Z'),
     lastSeenAt: NOW,
   });
@@ -363,7 +363,7 @@ describe('BriefSnapshotWorker', () => {
         senderKey: key,
         displayName: i < 2 ? `Priority${i}` : `Normal${i}`,
         gmailCategory: i === 0 ? 'primary' : 'promotions',
-        repliedCount: i === 1 ? 3 : 0,
+        wroteToCount: i === 1 ? 3 : 0,
         verdict: 'keep',
       });
       await seedMessage(db, {

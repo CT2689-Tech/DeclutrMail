@@ -31,7 +31,8 @@ const onboarding = vi.hoisted(() => ({
       meta: {
         pinned: 0,
         decided: 0,
-        protection: undefined as { strong: number; weak: number; manual: number } | undefined,
+        protection: undefined as
+          { strong: number; unsupported?: number; weak: number; manual: number } | undefined,
       },
     },
     refetch: vi.fn(),
@@ -107,6 +108,45 @@ describe('StepProtectionReview — the review', () => {
     // The ordering is stated, because otherwise the row order is
     // arbitrary to the reader.
     expect(screen.getByText(/shielding the most unread mail/)).toBeInTheDocument();
+  });
+
+  it('names the stale shields, and says they are still protected (F010)', () => {
+    // The real shape after mig 0063 on the founder's mailbox: 361
+    // correspondence shields still hold, 99 rest on a count that
+    // credited any mail in a shared thread.
+    onboarding.firstTriage.data = {
+      rows: PENDING_ROWS,
+      meta: {
+        pinned: 2,
+        decided: 0,
+        protection: { strong: 361, unsupported: 99, weak: 45, manual: 0 },
+      },
+    };
+
+    renderReview();
+
+    expect(screen.getByText(/99 senders/)).toBeInTheDocument();
+    // The reassurance comes BEFORE the correction: the alarming reading
+    // of "we can no longer confirm this" is that we already acted on it.
+    expect(
+      screen.getByText(/They are still protected; we have not changed anything/),
+    ).toBeInTheDocument();
+  });
+
+  it('never claims a check ran when the field is absent from the wire', () => {
+    // `unsupported` is optional — an API pod predating it omits the key.
+    // Absent reads as 0, which is the honest default for a COUNT, but no
+    // sentence may then assert that we looked and found none.
+    onboarding.firstTriage.data = {
+      rows: PENDING_ROWS,
+      meta: { pinned: 2, decided: 0, protection: { strong: 460, weak: 55, manual: 0 } },
+    };
+
+    renderReview();
+
+    expect(screen.queryByText(/no longer confirm/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/we have not changed anything/)).not.toBeInTheDocument();
+    expect(screen.getByText(/We protected 460 senders you write back to/)).toBeInTheDocument();
   });
 
   it('renders the real triage rows with all five verbs and a direct Unprotect', () => {
@@ -258,7 +298,9 @@ describe('StepProtectionReview — the edges', () => {
     renderReview();
 
     expect(screen.queryByText(/Nothing else is protected on a weaker signal/)).toBeNull();
-    expect(screen.getByText(/55 senders are still protected by one star/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/55 senders are still protected on a signal worth a look/),
+    ).toBeInTheDocument();
   });
 
   it('never claims nothing is protected when only the rows are missing', () => {
@@ -306,7 +348,9 @@ describe('StepProtectionReview — the edges', () => {
     expect(screen.getByText(/Nothing is protected yet\./)).toBeInTheDocument();
     // The reason protection is absent, so an empty result is not read as
     // a broken scan.
-    expect(screen.getByText(/three replies, a starred message/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/writing to a sender at least three times and hearing back/),
+    ).toBeInTheDocument();
   });
 
   it('reports what is still protected after the reviewed set is done', () => {
@@ -318,7 +362,9 @@ describe('StepProtectionReview — the edges', () => {
     renderReview();
 
     expect(screen.getByText(/Protection reviewed\./)).toBeInTheDocument();
-    expect(screen.getByText(/50 senders are still protected by one star/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/50 senders are still protected on a signal worth a look/),
+    ).toBeInTheDocument();
   });
 
   it('claims no counts when the server did not compute them', () => {

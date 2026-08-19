@@ -19,7 +19,7 @@ export interface SendersScreenScope {
     activity: ActivityBucket | null;
     activityNegate: boolean;
     unsubReady: TriStateFilter;
-    replied: TriStateFilter;
+    wroteTo: TriStateFilter;
     protectedFlag: TriStateFilter;
     windowDays: number | null;
     domain: string | null;
@@ -94,7 +94,7 @@ export function parseSendersScope(params: Pick<URLSearchParams, 'get'>): Senders
       activity,
       activityNegate,
       unsubReady: parseTri(params.get('unsub_ready')),
-      replied: parseTri(params.get('replied')),
+      wroteTo: parseTri(params.get('wrote-to')),
       protectedFlag: parseTri(params.get('protected')),
       windowDays: parseWindow(params.get('window')),
       domain: params.get('domain')?.trim() || null,

@@ -40,7 +40,7 @@ function row(overrides: Partial<SenderListRow> = {}): SenderListRow {
     firstSeenAt: overrides.firstSeenAt ?? '2013-08-11T20:18:16.000Z',
     lastSeenAt: overrides.lastSeenAt ?? '2026-05-28T13:01:34.000Z',
     totalReceived: overrides.totalReceived ?? 6471,
-    repliedCount: overrides.repliedCount ?? 0,
+    wroteToCount: overrides.wroteToCount ?? 0,
     // `in`-check (not `??`) so tests can override these to null — the
     // wire fields are nullable when the sender has no timeseries rows.
     monthlyVolume: 'monthlyVolume' in overrides ? overrides.monthlyVolume! : 61,
@@ -305,14 +305,14 @@ describe('SenderTable', () => {
     // so a dash here would collapse "you never replied" and "we don't
     // know" into the same glyph on the same row. Grid cards render 0×;
     // the table must agree.
-    render(<Harness rows={[row({ repliedCount: 0, readRate: null })]} />);
+    render(<Harness rows={[row({ wroteToCount: 0, readRate: null })]} />);
     expect(screen.getByText('0×')).toBeTruthy();
     // The Read cell keeps its em-dash — the two facts stay distinct.
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders a non-zero reply count verbatim', () => {
-    render(<Harness rows={[row({ repliedCount: 94 })]} />);
+    render(<Harness rows={[row({ wroteToCount: 94 })]} />);
     expect(screen.getByText('94×')).toBeTruthy();
   });
 

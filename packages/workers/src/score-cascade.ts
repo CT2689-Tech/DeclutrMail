@@ -49,7 +49,7 @@ export type CascadeRuleId =
   | 'protect_replied'
   | 'protect_starred'
   | 'protect_gmail_important'
-  | 'replied_at_least_once'
+  | 'wrote_to_at_least_once'
   | 'gmail_primary'
   | 'starred_recently'
   | 'high_read_rate'
@@ -86,10 +86,10 @@ export type CascadeRuleId =
  */
 export const CASCADE_RULE_PHRASE: Record<CascadeRuleId, string> = {
   protect_user_defined: 'the user marked this sender protected',
-  protect_replied: 'the user has replied to this sender several times',
+  protect_replied: 'the user has written to this sender several times and heard back',
   protect_starred: 'the user starred a message from this sender in the past year',
   protect_gmail_important: 'Gmail marked several recent messages from this sender important',
-  replied_at_least_once: 'the user has replied to this sender',
+  wrote_to_at_least_once: 'the user has written to this sender',
   gmail_primary: 'Gmail files this sender in Primary, where real correspondence lands',
   starred_recently: 'the user starred a message from this sender recently',
   high_read_rate: 'the user reads most of what this sender sends',
@@ -165,8 +165,17 @@ export interface SenderSignals {
    * when `isProtected = false`.
    */
   protectionReason?: ProtectionReason;
-  /** D21 rule 2 — user has replied to this sender at least once. */
-  hasReplied: boolean;
+  /**
+   * D21 rule 2 — the user has sent at least one message ADDRESSED to
+   * this sender in the last 90 days (their address in To/Cc).
+   *
+   * Not "has replied": Gmail exposes no causal reply signal, and the
+   * thread-membership proxy that stood in for one credited every
+   * outbound message in a thread to every inbound sender in it (F010).
+   * Who a message was addressed to is a fact, and unlike read state no
+   * third-party tool can manufacture it.
+   */
+  hasWrittenTo: boolean;
   /**
    * Gmail's own `CATEGORY_PERSONAL` (mapped to `'primary'` in our enum).
    * D222: this is GMAIL's classification, not DeclutrMail's prediction.
@@ -301,13 +310,14 @@ export function runCascade(s: SenderSignals): CascadeResult {
     };
   }
 
-  // Rule 2 — user replied. Strongest positive engagement.
-  if (s.hasReplied) {
+  // Rule 2 — the user writes to them. Strongest positive engagement we
+  // can actually observe.
+  if (s.hasWrittenTo) {
     return {
       verdict: 'keep',
       confidence: 0.98,
       phase: 'A',
-      ruleId: 'replied_at_least_once',
+      ruleId: 'wrote_to_at_least_once',
       facts,
     };
   }

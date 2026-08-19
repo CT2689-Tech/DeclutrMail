@@ -184,7 +184,6 @@ describe('ScoreWorker — happy path', () => {
         yearMonth: '2026-03-01',
         volume: 30,
         readCount: 0,
-        replyCount: 0,
       },
       {
         mailboxAccountId,
@@ -192,7 +191,6 @@ describe('ScoreWorker — happy path', () => {
         yearMonth: '2026-04-01',
         volume: 30,
         readCount: 0,
-        replyCount: 0,
       },
       {
         mailboxAccountId,
@@ -200,7 +198,6 @@ describe('ScoreWorker — happy path', () => {
         yearMonth: '2026-05-01',
         volume: 30,
         readCount: 0,
-        replyCount: 0,
       },
     ]);
     // Seed enough mail_messages so totalMessages ≥ 3 (otherwise Phase B
@@ -265,7 +262,6 @@ describe('ScoreWorker — happy path', () => {
         yearMonth: `2026-0${3 + m}-01`,
         volume: 30,
         readCount: 9,
-        replyCount: 0,
       });
     }
     for (let i = 0; i < 5; i += 1) {
@@ -345,7 +341,6 @@ describe('ScoreWorker — idempotency + upsert', () => {
         yearMonth: `2026-0${3 + m}-01`,
         volume: 30,
         readCount: 0,
-        replyCount: 0,
       });
     }
     for (let i = 0; i < 5; i += 1) {
@@ -422,7 +417,6 @@ describe('ScoreWorker — idempotency + upsert', () => {
         yearMonth: `2026-0${3 + m}-01`,
         volume: 30,
         readCount: 0,
-        replyCount: 0,
       });
     }
     for (let i = 0; i < 5; i += 1) {

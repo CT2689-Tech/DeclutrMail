@@ -42,9 +42,11 @@ export const PROTECTION_REASON_IDS = [
 export type ProtectionReasonId = (typeof PROTECTION_REASON_IDS)[number];
 
 /**
- * The two reasons that rest on a ONE-WAY signal (D245). A reply is a
- * two-way relationship and needs no second-guessing; a star or an
- * importance flag marks a message, not a correspondent.
+ * The two reasons that rest on a ONE-WAY signal (D245). `replied` is
+ * two-way by construction — it needs at least three messages ADDRESSED
+ * to the sender AND at least one received from them — so it needs no
+ * second-guessing; a star or an importance flag marks a message, not a
+ * correspondent.
  *
  * `user_defined` is in neither camp: the user said so.
  */
@@ -101,8 +103,12 @@ export function protectionReasonClause(reason: ProtectionReasonId | null): strin
   switch (reason) {
     case 'user_defined':
       return 'you marked it Protected';
+    // "wrote to", not "replied". The enum value is an internal
+    // identifier; what we can actually prove is that at least three
+    // messages were addressed to this sender and at least one came back
+    // from them. Gmail exposes no causal reply signal (F010).
     case 'replied':
-      return 'you replied at least 3 times';
+      return 'you wrote to them at least 3 times';
     case 'starred':
       return 'you starred a message';
     case 'gmail_important':

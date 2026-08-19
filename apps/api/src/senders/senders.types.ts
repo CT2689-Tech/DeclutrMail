@@ -163,18 +163,26 @@ export interface SenderListRow {
    */
   unreadInboxCount: number;
   /**
-   * Per-sender "you replied N×" count (Senders V2 spec v1.3 + mig 0022).
-   * Distinct outbound messages whose thread contains ≥1 inbound from
-   * this sender; reconciles arithmetically with
-   * `SUM(sender_timeseries.reply_count)`. Drives the per-row "you
-   * replied N" copy on Sender Detail + the future card badge. `0` is
-   * the engine default (no replies seen); never `null` because
-   * `senders.replied_count` is `NOT NULL DEFAULT 0`.
+   * Per-sender "you wrote to them N×" count (mig 0063). Distinct
+   * outbound messages ADDRESSED to this sender — their address in
+   * `recipient_emails` (To + Cc), matched on the D12 normalized form.
    *
-   * Replies are one conservative automatic-protection signal; starred
-   * and Gmail-important messages are evaluated from message labels.
+   * NOT a reply count. The column it replaces counted every outbound
+   * message in a THREAD the sender appeared in, which credited a bounce
+   * notifier with 14 "replies" and missed 449 of one real
+   * correspondent's 529 (F010). Gmail exposes no causal reply signal;
+   * who a message was addressed to is a fact the user can verify in
+   * Gmail with `to:their@address`, and one no third-party tool can
+   * manufacture.
+   *
+   * `0` is the engine default (nothing addressed to them); never `null`
+   * because `senders.wrote_to_count` is `NOT NULL DEFAULT 0`.
+   *
+   * Automatic protection needs TWO-WAY traffic — this >= 3 AND at least
+   * one message received from them; starred and Gmail-important
+   * messages are evaluated from message labels.
    */
-  repliedCount: number;
+  wroteToCount: number;
   monthlyVolume: number | null;
   readRate: number | null;
   /**
@@ -243,6 +251,35 @@ export interface ProtectionFlags {
   protectionReason: ProtectionReason | null;
   /** ISO-8601 — when `is_protected` last flipped true; null otherwise. */
   protectionSetAt: string | null;
+  /**
+   * Does the recorded `protectionReason` still hold against today's
+   * evidence?
+   *
+   * Only `replied` can go stale, and only because mig 0063 corrected
+   * what it measures: protections granted under the old
+   * thread-membership count were sometimes granted on outbound mail
+   * that was never addressed to the sender at all (F010 — a bounce
+   * notifier scored 14). 99 shields on the founder's mailbox are in
+   * that position.
+   *
+   * NOTHING IS WITHDRAWN ON THIS FIELD. The sweep never unprotects a
+   * `replied` row, so a `false` here means "surface this for the user
+   * to keep or unprotect", never "we already removed it". Withdrawing a
+   * shield silently is the failure mode this exists to prevent.
+   *
+   *   `true`  — checked and holds, or there is nothing to check
+   *             (`user_defined` is the user's own decision; `starred`
+   *             and `gmail_important` are evaluated from labels we
+   *             still hold; an unprotected sender has no claim to
+   *             recheck)
+   *   `false` — checked, and today's evidence does not support it
+   *   `null`  — NOT CHECKABLE. The mailbox has no outbound mail indexed
+   *             at all, so "you wrote to them" is unmeasurable rather
+   *             than absent. Consumers must render `null` exactly as
+   *             `true`; coercing unknown to "unsupported" would indict
+   *             every shield on such a mailbox at once.
+   */
+  protectionEvidenceCurrent: boolean | null;
 }
 
 /**
@@ -489,7 +526,7 @@ export interface SenderListQueryMeta {
     quiet: number;
     dormant: number;
     unsubReady: number;
-    repliedTo: number;
+    wroteTo: number;
     protected: number;
     /**
      * "Unsub'd, still emailing" (D51 fact filter) — senders with

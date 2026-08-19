@@ -54,7 +54,7 @@ export const sendersKeys = {
       activity?: ActivityBucket | undefined;
       activityNegate?: boolean | undefined;
       unsubReady?: TriStateFilter | undefined;
-      replied?: TriStateFilter | undefined;
+      wroteTo?: TriStateFilter | undefined;
       windowDays?: number | undefined;
       domain?: string | undefined;
       /** D51 — "unsub'd, still emailing" axis. */

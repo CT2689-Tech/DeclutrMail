@@ -45,10 +45,10 @@ export interface SenderFixture {
   /**
    * Count of outbound messages from the user to this sender, derived
    * from Gmail's Sent label match. Pure fact (no inference). Surfaced
-   * on Sender Card stat strip as "You replied". Optional — absent ⇒
+   * on Sender Card stat strip as "You wrote". Optional — absent ⇒
    * the wire projection defaults to the engine default `0`.
    */
-  repliedCount?: number;
+  wroteToCount?: number;
   /** Months since first seen — rough relationship age. */
   firstSeenMo: number;
   /** Auto-protected (receipts / statements) — never bulk-acted. */

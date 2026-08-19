@@ -238,8 +238,8 @@ export interface IncrementalSyncResult {
  * The consumer of `INCREMENTAL_SYNC_JOB` — runs after every verified
  * Gmail Pub/Sub push (`gmail-webhook.service.ts:151` enqueue site).
  * Pages `users.history.list` from `startHistoryId`, reconciles
- * `mail_messages` for the delta, then re-applies the reply-attribution
- * + auto-protect post-pass so `senders.replied_count` +
+ * `mail_messages` for the delta, then re-applies the wrote-to
+ * attribution + auto-protect post-pass so `senders.wrote_to_count` +
  * `sender_policies.is_protected` stay in lockstep with the mailbox
  * without waiting for the next initial-sync (closes the stale-counter
  * gap the handoff documents).
@@ -498,7 +498,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // self-heals on the next sync.
     let timeseriesReconcile: SenderTimeseriesReconcileResult | null = null;
     if (events.length > 0) {
-      timeseriesReconcile = await this.runReplyAttributionPostPass(mailboxAccountId, {
+      timeseriesReconcile = await this.runWroteToAttributionPostPass(mailboxAccountId, {
         reconcileTimeseries: labelChanges > 0 || deleted > 0,
       });
     }
@@ -882,67 +882,61 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
   }
 
   /**
-   * Reply-attribution + auto-protect post-pass — same SQL as
+   * Wrote-to attribution + auto-protect post-pass — same SQL as
    * `InitialSyncWorker.buildSenderIndex`, mailbox-scoped + idempotent.
    * Reusing the same statements means the migration's backfill, the
    * initial sync, and the incremental sync all converge on the same
    * derived state — single source of truth, no drift surface.
    *
-   * Wrapped in a transaction so the three statements land atomically
-   * — a partial reply-count update with no auto-protect flip would
-   * leave the FE compose strip momentarily inconsistent.
+   * Wrapped in a transaction so the statements land atomically — a
+   * partial count update with no auto-protect flip would leave the FE
+   * compose strip momentarily inconsistent.
    */
-  private async runReplyAttributionPostPass(
+  private async runWroteToAttributionPostPass(
     mailboxAccountId: string,
     opts: { reconcileTimeseries: boolean } = { reconcileTimeseries: true },
   ): Promise<SenderTimeseriesReconcileResult | null> {
     let reconciled: SenderTimeseriesReconcileResult | null = null;
     await this.deps.db.transaction(async (tx) => {
+      // Wrote-to attribution post-pass (mig 0063, F010). Counts DISTINCT
+      // outbound `mail_messages.id` ADDRESSED to each sender —
+      // `recipient_emails` (To + Cc) matched against `senders.email` on
+      // the D12 normalized form. Same statement as 0063's backfill, so
+      // the migration, the initial sync and the incremental sync all
+      // converge on one derived state.
+      //
+      // Zero FIRST. The rule credits strictly fewer senders than the
+      // thread-membership join it replaces, so a sender that loses all
+      // its evidence must fall to 0; an `UPDATE ... FROM` alone never
+      // reaches a row with no matching group and would leave the stale
+      // count standing forever.
       await tx.execute(sql`
         UPDATE ${senders} AS s
-        SET ${sql.identifier('replied_count')} = sub.cnt
+        SET ${sql.identifier('wrote_to_count')} = 0
+        WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+          AND s.${sql.identifier('wrote_to_count')} <> 0
+      `);
+      await tx.execute(sql`
+        UPDATE ${senders} AS s
+        SET ${sql.identifier('wrote_to_count')} = sub.cnt
         FROM (
           SELECT
-            m1.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
-            m1.${sql.identifier('sender_key')} AS sender_key,
-            COUNT(DISTINCT m2.${sql.identifier('id')})::integer AS cnt
-          FROM ${mailMessages} AS m1
-          JOIN ${mailMessages} AS m2
-            ON m2.${sql.identifier('mailbox_account_id')} = m1.${sql.identifier('mailbox_account_id')}
-           AND m2.${sql.identifier('provider_thread_id')} = m1.${sql.identifier('provider_thread_id')}
-           AND m2.${sql.identifier('is_outbound')} = true
-          WHERE m1.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-            AND m1.${sql.identifier('is_outbound')} = false
-          GROUP BY m1.${sql.identifier('mailbox_account_id')}, m1.${sql.identifier('sender_key')}
+            m.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
+            s2.${sql.identifier('sender_key')} AS sender_key,
+            COUNT(DISTINCT m.${sql.identifier('id')})::integer AS cnt
+          FROM ${mailMessages} AS m
+          CROSS JOIN LATERAL unnest(m.${sql.identifier('recipient_emails')}) AS r(addr)
+          JOIN ${senders} AS s2
+            ON s2.${sql.identifier('mailbox_account_id')} = m.${sql.identifier('mailbox_account_id')}
+           AND dm_normalize_email(s2.${sql.identifier('email')}::text) = dm_normalize_email(r.addr)
+          WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+            AND m.${sql.identifier('is_outbound')} = true
+          GROUP BY m.${sql.identifier('mailbox_account_id')}, s2.${sql.identifier('sender_key')}
         ) AS sub
         WHERE s.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
           AND s.${sql.identifier('sender_key')} = sub.sender_key
       `);
-      await tx.execute(sql`
-        UPDATE ${senderTimeseries} AS st
-        SET ${sql.identifier('reply_count')} = sub.cnt
-        FROM (
-          SELECT
-            m1.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
-            m1.${sql.identifier('sender_key')} AS sender_key,
-            date_trunc('month', m2.${sql.identifier('internal_date')})::date AS year_month,
-            COUNT(DISTINCT m2.${sql.identifier('id')})::integer AS cnt
-          FROM ${mailMessages} AS m1
-          JOIN ${mailMessages} AS m2
-            ON m2.${sql.identifier('mailbox_account_id')} = m1.${sql.identifier('mailbox_account_id')}
-           AND m2.${sql.identifier('provider_thread_id')} = m1.${sql.identifier('provider_thread_id')}
-           AND m2.${sql.identifier('is_outbound')} = true
-          WHERE m1.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-            AND m1.${sql.identifier('is_outbound')} = false
-          GROUP BY
-            m1.${sql.identifier('mailbox_account_id')},
-            m1.${sql.identifier('sender_key')},
-            date_trunc('month', m2.${sql.identifier('internal_date')})
-        ) AS sub
-        WHERE st.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
-          AND st.${sql.identifier('sender_key')} = sub.sender_key
-          AND st.${sql.identifier('year_month')} = sub.year_month
-      `);
+
       // `volume` / `read_count` are derived, not accumulated — a message
       // read after it was indexed arrives here as a label change, never
       // as an insert, so the insert-time counters go permanently stale.

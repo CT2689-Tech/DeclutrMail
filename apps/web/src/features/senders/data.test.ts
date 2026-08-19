@@ -1,7 +1,7 @@
 // Pins the 2026-07-16 wire-unification contract: `enrichSenderRow` is a
 // SPREAD over the wire row plus three derived fields — every wire field
 // rides through verbatim (no silent drops like the old adapter's
-// `repliedCount`, no null-coercions like `readRate: null` → 0).
+// `wroteToCount`, no null-coercions like `readRate: null` → 0).
 
 import { describe, expect, it } from 'vitest';
 import type { SenderListRow } from '@/lib/api/senders';
@@ -17,7 +17,7 @@ describe('enrichSenderRow — spread totality', () => {
     const row = makeSenderRow({
       readRate: 0.42,
       monthlyVolume: 17,
-      repliedCount: 5,
+      wroteToCount: 5,
       sparkline: [1, 2, 3, 4],
       volumeTrend: 'up',
       unsubscribeMethod: 'one_click',

@@ -779,7 +779,7 @@ export function ConfirmActionModal({
             {title}
           </h2>
           {/* Sender context strip (spec v1.2 Decision 15) — facts only:
-              domain · monthly volume · last seen · you replied. */}
+              domain · monthly volume · last seen · you wrote. */}
           {senders.length === 1 && (
             <div
               style={{
@@ -823,13 +823,13 @@ export function ConfirmActionModal({
                 </strong>
               </span>
               {(() => {
-                const r = compositePreview?.sender?.repliedCount ?? senders[0]!.repliedCount;
+                const r = compositePreview?.sender?.wroteToCount ?? senders[0]!.wroteToCount;
                 if (r === undefined || r === null || r === 0) return null;
                 return (
                   <>
                     <span>·</span>
                     <span>
-                      you replied{' '}
+                      you wrote{' '}
                       <strong style={{ color: color.fg, fontFamily: font.sans, fontWeight: 600 }}>
                         {r}×
                       </strong>
