@@ -278,6 +278,49 @@ export interface SenderDetail extends SenderListRow {
    * Detail-only: the list grid never renders the compose affordance.
    */
   unsubscribeMailtoUrl: string | null;
+  /**
+   * The engine's current read on this sender, for the optional
+   * suggestion disclosure below the action toolbar (D39 layout order,
+   * D245 disclosure rule). Detail-only: the list already carries the
+   * compact `lastReview`, and a per-sender sentence would bloat a
+   * 7k-row page.
+   *
+   * D245 is what shapes this field: observed facts pick the highlighted
+   * verb (`derivePrimaryVerbId`), and this suggestion is disclosed
+   * BESIDE that choice — it may never select or restyle an action. The
+   * two can and do disagree (a promotions sender with a one-click
+   * header leads with Unsubscribe while the engine says Keep because
+   * the user reads every message), which is precisely when disclosing
+   * it is worth the space.
+   *
+   * `scoredAt` is not decoration. `triage_decisions` rows carry a 7-day
+   * `expires_at`, and re-scoring is trigger-driven, so a verdict can be
+   * months old (8,448 of 8,531 rows expired on the founder's dev
+   * mailbox, 2026-08-19). Rather than hide a stale read — which would
+   * blank the disclosure on ~99% of senders — the wire ships the
+   * produced-at timestamp and the FE says how old the read is.
+   *
+   * `null` when the engine has never scored this sender.
+   */
+  recommendation: SenderRecommendation | null;
+}
+
+/**
+ * The engine's suggestion for one sender — a projection of that
+ * sender's `triage_decisions` row. Never an instruction: the user's
+ * available actions are identical whether this is present or absent.
+ */
+export interface SenderRecommendation {
+  /** The verb the engine would pick. `triage_verdict` has no 'screen'. */
+  verdict: TriageVerdict;
+  /** 0..1, 2-decimal (mirrors `numeric(3,2)`). Shown as words, not a bar. */
+  confidence: number;
+  /** One sentence, LLM-written or templated — see `generatedBy`. */
+  reasoning: string;
+  /** Provenance of `reasoning`. */
+  generatedBy: TriageReasoningSource;
+  /** ISO-8601 `produced_at` — when the engine last looked. */
+  scoredAt: string;
 }
 
 /**

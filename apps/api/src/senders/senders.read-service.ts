@@ -73,6 +73,7 @@ import type {
   ProtectionFlags,
   SenderDetailFacts,
   SenderFacts,
+  SenderRecommendation,
   SenderListDirection,
   SenderListQueryMeta,
   SenderListSort,
@@ -1331,6 +1332,17 @@ export class SendersReadService {
       ORDER BY ${triageDecisions.producedAt} DESC
       LIMIT 1
     )`;
+    // Detail-only: the one-sentence explanation behind the verdict. The
+    // list path deliberately does NOT select this — 7k rows × a sentence
+    // is payload the grid never renders.
+    const lastDecisionReasoningSql = sql<string | null>`(
+      SELECT ${triageDecisions.reasoning}
+      FROM ${triageDecisions}
+      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+        AND ${triageDecisions.senderKey} = ${outerSenderKey}
+      ORDER BY ${triageDecisions.producedAt} DESC
+      LIMIT 1
+    )`;
 
     const [row] = await this.db
       .select({
@@ -1365,6 +1377,7 @@ export class SendersReadService {
         lastDecisionVerdict: lastDecisionVerdictSql,
         lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
         lastDecisionConfidence: lastDecisionConfidenceSql,
+        lastDecisionReasoning: lastDecisionReasoningSql,
         // Policy fields nullable — a sender without an explicit
         // policy row is "engine default" (D42).
         isProtected: senderPolicies.isProtected,
@@ -1445,6 +1458,13 @@ export class SendersReadService {
         row.lastDecisionVerdict,
         row.lastDecisionGeneratedBy,
         row.lastDecisionConfidence,
+      ),
+      recommendation: buildRecommendation(
+        row.lastDecisionAt,
+        row.lastDecisionVerdict,
+        row.lastDecisionGeneratedBy,
+        row.lastDecisionConfidence,
+        row.lastDecisionReasoning,
       ),
       protectionFlags,
       policyType: row.policyType ?? null,
@@ -1789,6 +1809,50 @@ function computeRollingTrendBucket(args: {
  * violation surfaced as null rather than a partial object so the FE
  * never has to defensive-check intermediate fields.
  */
+/**
+ * Project the sender's `triage_decisions` row into the optional
+ * suggestion the detail page discloses (D39, D245).
+ *
+ * Deliberately NOT gated on `expires_at`. Re-scoring is trigger-driven
+ * against a 7-day TTL, so on a real mailbox almost every row is past it
+ * (8,448 of 8,531 on the founder's dev workspace, 2026-08-19); gating
+ * would blank the disclosure on ~99% of senders while telling the user
+ * nothing. Instead the projection carries `scoredAt` and the FE says how
+ * old the read is — a visibly stale suggestion is honest, an absent one
+ * is just missing.
+ */
+function buildRecommendation(
+  at: Date | string | null,
+  verdict: TriageVerdict | null,
+  generatedBy: TriageReasoningSource | null,
+  confidence: number | string | null,
+  reasoning: string | null,
+): SenderRecommendation | null {
+  if (
+    at === null ||
+    verdict === null ||
+    generatedBy === null ||
+    confidence === null ||
+    reasoning === null ||
+    reasoning.trim().length === 0
+  ) {
+    return null;
+  }
+  // Same driver-shape normalisation `buildLastReview` documents: scalar
+  // correlated subqueries hand back strings for timestamptz + numeric.
+  const confidenceNum = typeof confidence === 'number' ? confidence : Number.parseFloat(confidence);
+  if (!Number.isFinite(confidenceNum)) {
+    return null;
+  }
+  return {
+    verdict,
+    confidence: confidenceNum,
+    reasoning,
+    generatedBy,
+    scoredAt: (at instanceof Date ? at : new Date(at)).toISOString(),
+  };
+}
+
 function buildLastReview(
   at: Date | string | null,
   verdict: TriageVerdict | null,

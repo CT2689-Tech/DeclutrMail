@@ -553,6 +553,7 @@ describe('SendersController', () => {
     it('returns the envelope when the read service finds the sender', async () => {
       const detail: SenderDetailFacts = {
         ...makeSenderRow(),
+        recommendation: null,
         protectionFlags: {
           isProtected: false,
           protectionReason: null,
