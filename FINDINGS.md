@@ -156,6 +156,118 @@ the point.
 
 ## P0 — launch blockers
 
+### F011 — Search says "no senders match" when the sender exists and the app's own dropdown just showed it
+
+**Found:** 2026-08-19 · founder, production `/senders`
+**Observed:** Searching a sender by its exact name returns "No senders match
+"TechGig Latest News"" while the typeahead directly above it lists
+`TechGig Late… techgig.com · 350 emails`.
+
+**Verdict — search works; the default filter silently excludes the hit, and
+the empty state blames the search.** Reproduced against the API:
+
+| request                                                   | rows     |
+| --------------------------------------------------------- | -------- |
+| `?q=TechGig+Latest+News&activity=active` (the UI default) | **0**    |
+| `?q=TechGig+Latest+News` (no activity filter)             | **1**    |
+| `/senders/suggest?q=TechGig+Latest+News`                  | finds it |
+
+The sender last mailed 158 days ago, so it is `dormant`. `DEFAULT_COMPOSE`
+sets `activity: 'active'`, the list query ANDs the filter with the search, and
+the suggest endpoint ignores filters entirely — so the two surfaces disagree
+by construction, and the one that disagrees is the one the user typed into.
+
+**Why this is the UI-truth class, not a filter nit.** The copy is
+`No senders match "<query>"` — a statement about the QUERY. The true statement
+is "no ACTIVE senders match"; the app is holding the matching row in the same
+render. A user reasonably concludes the sender is not in DeclutrMail at all.
+`Clear search & filters` is the only escape and it conflates the two, so
+recovering means discarding the query as well.
+
+This is also how a user would try to verify a claim the product makes about a
+sender — the exact trust path F006 exists to protect.
+
+**Options.** (a) A search query bypasses the activity filter — search means
+search. (b) Keep the filter and fix the empty state: "No active senders match
+X · 1 match in dormant" with a one-click widen that PRESERVES the query.
+(c) Auto-clear activity on search.
+
+**Recommendation:** (b). The filters are meaningful and silently dropping them
+would surprise a user who set them deliberately; the defect is that the empty
+state asserts something false and offers no path that keeps the query. (b)
+fixes the lie and the dead end without changing what a filter means.
+
+**Priority:** P0 — the primary way a user looks anything up, on the surface
+the founder was using to verify the product's own numbers.
+**Status:** Open
+
+---
+
+### F012 — A third-party sweeper marked 27.5% of the mailbox read; "read" is not evidence of a human
+
+**Found:** 2026-08-19 · founder raised it from experience, then proved it
+**Observed (founder):** _"In the past I have used unroll.me which helps
+unsubscribe from senders and might be marking as email read although I have
+never opened."_ Screenshot shows Gmail rows labelled `Unroll.me/Unsubscribed`.
+
+**Verdict — correct, measured, and larger than expected.** Gmail exposes only
+the absence of the `UNREAD` label and no open event, so any actor with API
+access can manufacture our "read" signal. On the founder's mailbox
+`Unroll.me/Unsubscribed` holds **20,822 messages, 8 unread** — and **20,812 of
+the 75,682 messages we count as read (27.5%) carry it.**
+
+Per sender the distortion is near-total:
+
+| sender              | we say read | read with the sweeper label removed |
+| ------------------- | ----------- | ----------------------------------- |
+| CNCF Events         | 32          | **0**                               |
+| Messari Newsletter  | 32          | **0**                               |
+| Pluto TV            | 27          | **1**                               |
+| TechGig Latest News | 350         | **26**                              |
+| Skyscanner          | 67          | **11**                              |
+
+**Direction of harm, stated honestly.** A sweeper only ever marks read, so it
+INFLATES read rate, which SUPPRESSES unsubscribe suggestions. That fails safe
+— we under-recommend cleanup on senders the user actually ignores. It does not
+push anyone toward a destructive verb. D245 already forbids auto-protecting on
+read rate, so the safety path was never exposed to this.
+
+**Two thirds of the fix already shipped.** The vocabulary change earlier today
+("marked read", never "opened") is exactly right here and is now literally
+true — Unroll.me DID mark them read. And read rate is already excluded from
+automatic protection.
+
+**What remains is ranking and disclosure.** Cleanup ordering still treats a
+sweeper-inflated sender as engaged, so the mail the user most wants gone ranks
+last. Approaches, cheapest first:
+
+1. **Name the sweeper.** We store `label_ids` but not label names, so
+   `Label_117` is opaque to us. One `labels.list` call per mailbox maps ids to
+   names; a message carrying a known sweeper label (`Unroll.me*`, Leave Me
+   Alone, Cleanfox) is flagged and excluded from the read-rate numerator.
+   Precise and explainable — "324 of 350 were marked by Unroll.me". Needs a
+   maintained list and a D7 note (label NAMES are new metadata).
+2. **Prefer unfakeable engagement.** A sweeper cannot reply or star. Lean
+   ranking on replies and stars where present and treat read rate as weak
+   evidence. No new data, no vendor list, degrades gracefully for sweepers we
+   have never heard of.
+3. **Disclose without deciding.** Show the split on the sender surface and let
+   the user judge.
+
+**Recommendation:** (2) as the durable answer, (1) as the visible one — (2)
+protects against every sweeper including future ones, while (1) is what lets
+the product SAY why a number looks wrong instead of quietly compensating.
+(3) rides along with (1) for free.
+
+**Not built.** Ranking changes what the product recommends and (1) touches the
+Gmail data inventory, so both need ratification.
+
+**Priority:** P0 — the engagement signal underneath the cleanup ranking is
+27.5% manufactured on a real mailbox.
+**Status:** Open
+
+---
+
 ### F010 — "You replied N×" counts thread membership, not replies; 57 senders are Protected on replies that never happened
 
 **Found:** 2026-08-19 · founder question while reviewing the senders surface
