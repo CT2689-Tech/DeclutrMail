@@ -148,9 +148,13 @@ export function renderUserPrompt(input: ReasoningInput): string {
     `Monthly volume: ${input.facts.monthlyVolume} messages`,
     // Never "0%" for unmeasurable — the model would faithfully explain a
     // disengagement that was never observed.
+    // The window is stated so the model's PROSE inherits it. Without it
+    // Haiku wrote "sends approximately 76 messages monthly with a 2%
+    // read rate" — an unqualified lifetime-sounding claim generated from
+    // a 90-day ratio, i.e. the F008 defect laundered through the LLM.
     input.facts.readRatePct === null
       ? 'Read rate: not measurable (no mail in the last 90 days)'
-      : `Read rate: ${input.facts.readRatePct}%`,
+      : `Read rate over the last 90 days: ${input.facts.readRatePct}%`,
     `Engine rule: ${input.ruleLabel}`,
     `Recommendation: ${verdictLabel} (confidence ${confidencePct}%)`,
     '',

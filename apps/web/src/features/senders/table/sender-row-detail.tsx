@@ -596,18 +596,24 @@ function RecentSubjectsCard({ subjects }: { subjects: RowDetailSubjects }) {
                   client-only and a local-calendar date cannot desync a
                   server render. Same reasoning as the confirm-action
                   preview's `shortDate`. */}
-              <time
-                dateTime={row.date}
-                style={{
-                  flexShrink: 0,
-                  fontFamily: font.mono,
-                  fontSize: 11,
-                  color: color.fgSoft,
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                {shortDate(row.date)}
-              </time>
+              {/* An unparseable date renders NOTHING, not an empty
+                  `<time>` carrying an invalid machine-readable
+                  `dateTime` — an element that asserts a value it does
+                  not have is the defect this whole change is about. */}
+              {shortDate(row.date) && (
+                <time
+                  dateTime={row.date}
+                  style={{
+                    flexShrink: 0,
+                    fontFamily: font.mono,
+                    fontSize: 11,
+                    color: color.fgSoft,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {shortDate(row.date)}
+                </time>
+              )}
             </div>
           ))}
         </div>

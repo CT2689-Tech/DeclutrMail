@@ -498,6 +498,8 @@ const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'source',
   'stageTimings',
   'templateExplanations',
+  'timeseriesCorrected',
+  'timeseriesZeroed',
   'totalSenders',
   'unenforced',
   'unreadable',

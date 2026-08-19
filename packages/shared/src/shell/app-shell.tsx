@@ -63,6 +63,27 @@ export function AppShell({
     setDrawerOpen(false);
   }, [active]);
 
+  // Close it when the viewport crosses INTO desktop. Responsive
+  // behaviour here is CSS-only by design, which means `drawerOpen` has
+  // no idea the breakpoint moved: open the drawer at 800px, then widen
+  // or rotate past 900px, and the hamburger disappears while the dialog
+  // stays mounted — a second <Sidebar> in an aria-modal dialog pinned
+  // over the now-visible desktop one, focus trap and duplicate nav
+  // landmarks included. That is precisely the state the inline-`display`
+  // fix removed, reachable by a different door. The listener is the
+  // narrow exception to "no JS breakpoints": it never decides layout,
+  // it only retires a state the layout can no longer host.
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const desktop = window.matchMedia('(min-width: 901px)');
+    const closeIfDesktop = () => {
+      if (desktop.matches) setDrawerOpen(false);
+    };
+    closeIfDesktop();
+    desktop.addEventListener('change', closeIfDesktop);
+    return () => desktop.removeEventListener('change', closeIfDesktop);
+  }, []);
+
   useEffect(() => {
     if (!drawerOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {

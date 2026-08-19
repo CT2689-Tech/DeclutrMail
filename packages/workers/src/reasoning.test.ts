@@ -169,6 +169,6 @@ describe('renderTemplate — unmeasurable read rate (F009)', () => {
       ...base,
       facts: { monthlyVolume: 9, readRatePct: 0 },
     });
-    expect(out).toContain('You open 0%.');
+    expect(out).toContain('You open 0% over 90d.');
   });
 });

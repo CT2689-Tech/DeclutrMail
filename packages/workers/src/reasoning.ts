@@ -101,7 +101,10 @@ export function renderTemplate(displayName: string, result: CascadeResult): stri
   if (readPct === null) {
     return `${name} sends ${monthlyVol}/mo. ${phrase}`;
   }
-  return `${name} sends ${monthlyVol}/mo. You open ${readPct}%. ${phrase}`;
+  // "over 90d" for the same reason the LLM prompt names it: the rate IS
+  // a 90-day ratio, and "You open 2%." reads as a standing fact about
+  // the reader rather than a measurement of one quarter.
+  return `${name} sends ${monthlyVol}/mo. You open ${readPct}% over 90d. ${phrase}`;
 }
 
 /**

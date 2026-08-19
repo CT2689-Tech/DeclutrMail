@@ -211,7 +211,7 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     expect(row.readRate).toBeNull();
     renderRow(row, { expanded: true });
 
-    const stats = screen.getByText('read rate').parentElement!;
+    const stats = screen.getByText('read rate 90d').parentElement!;
     expect(stats.textContent).toContain('—');
     expect(stats.textContent).not.toContain('0%');
   });
@@ -222,8 +222,35 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     expect(row.readRate).toBe(0);
     renderRow(row, { expanded: true });
 
-    const stats = screen.getByText('read rate').parentElement!;
+    const stats = screen.getByText('read rate 90d').parentElement!;
     expect(stats.textContent).toContain('0%');
+  });
+
+  // `readRate` here is `last90Read / last90Total` (triage.read-service).
+  // The why-line said "Never opened", an absolute lifetime claim built
+  // from a 90-day window, on the product's core ritual — the stronger
+  // twin of the "Never" the Senders surface carried. A sender read for
+  // years reads as never opened after one quiet quarter.
+  it('never makes a lifetime claim from the 90-day window', () => {
+    const row = rowById('t-groupon'); // readRate 0 over 156 messages
+    const { container } = renderRow(row);
+    expect(container.textContent).not.toContain('Never opened');
+    expect(container.textContent).toContain('None opened in 90d');
+  });
+
+  it('never renders an unqualified read-rate percentage', () => {
+    // The invariant is conditional, not universal: a protected sender
+    // exits the why-line early on its protection evidence and shows no
+    // rate at all. What must never happen is a percentage WITHOUT its
+    // window — that is the F008 shape.
+    for (const id of ['t-groupon', 't-sarah', 't-shipping']) {
+      const { unmount, container } = renderRow(rowById(id));
+      const text = container.textContent ?? '';
+      if (text.includes('% read')) {
+        expect(text).toContain('% read in 90d');
+      }
+      unmount();
+    }
   });
 });
 

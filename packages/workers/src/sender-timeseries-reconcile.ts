@@ -76,16 +76,30 @@ import type { OutboxTx } from './outbox-publisher.js';
  * key mismatch silently skips rather than destroys — but it is the same
  * latent inconsistency and worth its own pass.
  *
+ * Returns row counts so the drift is CHARTABLE. The premise of this
+ * module is that 753 sender-months were wrong for months with nobody
+ * noticing; shipping a silent fix would leave the next drift just as
+ * invisible. `SendersCounterReconciliationWorker` already sets this
+ * precedent by putting its correction counts on `worker.succeeded`.
+ * Counts carry no PII.
+ *
  * Privacy (D7 / D228): reads `sender_key`, `internal_date`, `is_unread`
  * and `is_outbound` only. No body, no snippet, no header.
  */
+export interface SenderTimeseriesReconcileResult {
+  /** Months whose stored counters disagreed with `mail_messages`. */
+  corrected: number;
+  /** Months whose messages are all gone, zeroed rather than deleted. */
+  zeroed: number;
+}
+
 export async function reconcileSenderTimeseries(
   tx: OutboxTx,
   mailboxAccountId: string,
-): Promise<void> {
+): Promise<SenderTimeseriesReconcileResult> {
   // 1. Months we still hold messages for — both columns from one scan, so
   //    `read_count <= volume` cannot be violated.
-  await tx.execute(sql`
+  const corrected = await tx.execute(sql`
     UPDATE ${senderTimeseries} AS st
     SET ${sql.identifier('volume')} = sub.total,
         ${sql.identifier('read_count')} = sub.read_total
@@ -111,6 +125,7 @@ export async function reconcileSenderTimeseries(
         st.${sql.identifier('volume')} IS DISTINCT FROM sub.total
         OR st.${sql.identifier('read_count')} IS DISTINCT FROM sub.read_total
       )
+    RETURNING 1
   `);
 
   // 2. Months whose messages are all gone (Gmail tombstones). The join
@@ -118,7 +133,7 @@ export async function reconcileSenderTimeseries(
   //    without this they keep a stale non-zero volume forever. Zeroed
   //    rather than deleted: the row is the sender's history for that
   //    month, and "we hold nothing" is a fact worth keeping addressable.
-  await tx.execute(sql`
+  const zeroed = await tx.execute(sql`
     UPDATE ${senderTimeseries} AS st
     SET ${sql.identifier('volume')} = 0,
         ${sql.identifier('read_count')} = 0
@@ -133,5 +148,30 @@ export async function reconcileSenderTimeseries(
           AND date_trunc('month', m.${sql.identifier('internal_date')} AT TIME ZONE 'UTC')::date
               = st.${sql.identifier('year_month')}
       )
+    RETURNING 1
   `);
+
+  return { corrected: rowCount(corrected), zeroed: rowCount(zeroed) };
+}
+
+/**
+ * Row count from a Drizzle `execute` result, which is array-like for
+ * postgres.js. Defensive rather than cast: a shape change here would
+ * otherwise turn into a fabricated `0` on a telemetry field, which is
+ * the exact defect class this module exists to fix.
+ */
+function rowCount(result: unknown): number {
+  // postgres.js returns an array-like; PGlite (the test driver) returns
+  // `{ rows }`. Both shapes are handled because a driver-shape mismatch
+  // would otherwise report a confident `0` corrected on a run that
+  // corrected hundreds — a fabricated telemetry value, which is the
+  // defect class this module exists to fix.
+  if (Array.isArray(result)) return result.length;
+  if (result && typeof result === 'object') {
+    const rows = (result as { rows?: unknown }).rows;
+    if (Array.isArray(rows)) return rows.length;
+    const len = (result as { length?: unknown }).length;
+    if (typeof len === 'number') return len;
+  }
+  return 0;
 }

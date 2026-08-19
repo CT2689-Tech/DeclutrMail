@@ -40,7 +40,12 @@ COPY (
       EXTRACT(DAY FROM NOW() - last_seen_at)::int AS last_seen_days,
       ROUND(msgs_90d::numeric / 3, 1) AS monthly_volume,
       CASE WHEN msgs_30_90d > 0 THEN ROUND(msgs_30d::numeric / (msgs_30_90d::numeric / 2), 2) ELSE 1.0 END AS spike_ratio,
-      CASE WHEN msgs_90d > 0 THEN ROUND(read_90d::numeric / msgs_90d, 3) ELSE 0 END AS read_rate_90d,
+      -- NULL, not 0: no mail in the window means the rate is
+      -- unmeasurable, and `SenderSignals.readRate90d` is now nullable so
+      -- the cascade can abstain. Regenerating with 0 would score a
+      -- null-abstaining cascade against a corpus that still asserts
+      -- disengagement it never measured.
+      CASE WHEN msgs_90d > 0 THEN ROUND(read_90d::numeric / msgs_90d, 3) END AS read_rate_90d,
       CASE WHEN total_messages > 0 THEN ROUND(read_all_time::numeric / total_messages, 3) ELSE 0 END AS read_rate_all
     FROM msg_agg
   ),

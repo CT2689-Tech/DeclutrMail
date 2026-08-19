@@ -11,7 +11,10 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
-import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
+import {
+  reconcileSenderTimeseries,
+  type SenderTimeseriesReconcileResult,
+} from './sender-timeseries-reconcile.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { notNeedingReconnect } from './mailbox-reconnect.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
@@ -175,6 +178,24 @@ export interface IncrementalSyncResult {
   deleted: number;
   /** Label-mutation events applied to existing rows. */
   labelChanges: number;
+  /**
+   * Timeseries months whose stored counters disagreed with
+   * `mail_messages` and were corrected on this run. Present only when
+   * the reconcile actually ran (a label flip or a tombstone; an add-only
+   * push skips it).
+   *
+   * FLAT numbers, not a nested object: `sanitizeWorkerResult` emits only
+   * allowlisted primitive keys, so a nested `{ corrected, zeroed }`
+   * would be silently dropped and this telemetry would report nothing
+   * while looking implemented.
+   *
+   * Surfaced because the drift this fixes went unnoticed for months — a
+   * silent fix would leave the next one just as invisible. Counts only,
+   * no PII.
+   */
+  timeseriesCorrected?: number;
+  /** Timeseries months whose messages are all gone, zeroed this run. */
+  timeseriesZeroed?: number;
   /**
    * Cursor-too-old recovery signal — `true` when Gmail's history list
    * returned 404 (`startHistoryId` older than D5's 7-day retention
@@ -464,10 +485,22 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
 
     // After the message-level deltas land, re-run the reply-attribution
     // + auto-protect post-pass — same SQL as `buildSenderIndex`.
-    // Mailbox-scoped + idempotent, so it costs ~1 indexed seek per
-    // affected sender; cheap on a small delta.
+    // Mailbox-scoped + idempotent.
+    //
+    // The timeseries reconcile inside it is gated SEPARATELY. It is two
+    // full-mailbox passes (aggregate every inbound row, then anti-join
+    // that set against every timeseries row), which is real work per
+    // Pub/Sub push on a 100k-message mailbox. The counters can only go
+    // stale two ways — a label flip or a tombstone — because an ADD is
+    // already counted correctly at insert time, which is this whole
+    // module's premise. So an add-only push skips it entirely and pays
+    // nothing, while every path that can actually cause drift still
+    // self-heals on the next sync.
+    let timeseriesReconcile: SenderTimeseriesReconcileResult | null = null;
     if (events.length > 0) {
-      await this.runReplyAttributionPostPass(mailboxAccountId);
+      timeseriesReconcile = await this.runReplyAttributionPostPass(mailboxAccountId, {
+        reconcileTimeseries: labelChanges > 0 || deleted > 0,
+      });
     }
 
     // Advance the durable cursor to Gmail's reported historyId. Only
@@ -556,6 +589,12 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       labelChanges,
       cursorTooOld: false,
       advancedToHistoryId: lastPageHistoryId,
+      ...(timeseriesReconcile !== null
+        ? {
+            timeseriesCorrected: timeseriesReconcile.corrected,
+            timeseriesZeroed: timeseriesReconcile.zeroed,
+          }
+        : {}),
       // Only when non-zero: a skip below the systemic floor still advances
       // the cursor, so the message is gone from the index for good. The run
       // says so rather than reporting a clean delta it did not achieve.
@@ -853,7 +892,11 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
    * — a partial reply-count update with no auto-protect flip would
    * leave the FE compose strip momentarily inconsistent.
    */
-  private async runReplyAttributionPostPass(mailboxAccountId: string): Promise<void> {
+  private async runReplyAttributionPostPass(
+    mailboxAccountId: string,
+    opts: { reconcileTimeseries: boolean } = { reconcileTimeseries: true },
+  ): Promise<SenderTimeseriesReconcileResult | null> {
+    let reconciled: SenderTimeseriesReconcileResult | null = null;
     await this.deps.db.transaction(async (tx) => {
       await tx.execute(sql`
         UPDATE ${senders} AS s
@@ -903,9 +946,12 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       // `volume` / `read_count` are derived, not accumulated — a message
       // read after it was indexed arrives here as a label change, never
       // as an insert, so the insert-time counters go permanently stale.
-      await reconcileSenderTimeseries(tx, mailboxAccountId);
+      if (opts.reconcileTimeseries) {
+        reconciled = await reconcileSenderTimeseries(tx, mailboxAccountId);
+      }
       await applyAutomaticProtection(tx, mailboxAccountId);
     });
+    return reconciled;
   }
 }
 

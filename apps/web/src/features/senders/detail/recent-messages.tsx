@@ -233,7 +233,9 @@ function MessageRow({
           against Gmail. Additive — no D41 amendment needed. */}
       <time
         dateTime={message.receivedAt}
-        title={absolute}
+        // Omit `title` until the clock exists rather than emitting
+        // `title=""` on the server render.
+        {...(absolute ? { title: absolute } : {})}
         style={{
           fontFamily: font.mono,
           fontSize: 11,
