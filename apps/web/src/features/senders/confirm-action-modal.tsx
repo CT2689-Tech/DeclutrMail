@@ -25,7 +25,13 @@ import type {
   CompositePreviewMessage,
 } from '@/lib/api/use-action';
 import type { ActionReach } from '@/lib/api/actions';
-import { isStandingProtected, verbDisplay, type ActionRequest, type ActionVerb } from './data';
+import {
+  isStandingProtected,
+  shortDate,
+  verbDisplay,
+  type ActionRequest,
+  type ActionVerb,
+} from './data';
 
 const { color, font } = tokens;
 
@@ -1729,14 +1735,6 @@ function newestInboxDays(preview: CompositeActionPreviewResult | undefined): num
  * subject instead of "Invalid Date" (the BE already drops dateless rows;
  * this is the render-side guard).
  */
-function shortDate(iso: string): string {
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return '';
-  const date = new Date(ms);
-  const two = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}`;
-}
-
 function toLocalDateTimeInput(iso: string): string {
   const date = new Date(iso);
   const two = (value: number) => String(value).padStart(2, '0');

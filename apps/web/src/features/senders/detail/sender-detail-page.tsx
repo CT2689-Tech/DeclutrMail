@@ -44,6 +44,7 @@ import { unsubscribeStatusCopy } from '../grid/sender-card';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
+import { formatReadRatePct } from '../fact-language';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 
@@ -1173,9 +1174,15 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                 <>
                   {' '}
                   <span style={{ color: color.fg, fontWeight: 600 }}>
-                    {Math.round(stats.readRate * 100)}%
+                    {formatReadRatePct(stats.readRate)}%
                   </span>{' '}
-                  of their messages were marked read.
+                  {/* "of their messages" used to read as the count just
+                      named — but that count is a CALENDAR month from the
+                      timeseries, while readRate is a ROLLING 30 days from
+                      `mail_messages`. Two windows, one sentence, and the
+                      pronoun tied the percentage to the wrong one. Name
+                      the window instead of implying a denominator. */}
+                  of the last 30 days&rsquo; mail was marked read.
                 </>
               )}
             </>
@@ -1231,14 +1238,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           // Volume cell's honesty rule above (never a fabricated 0%).
           {
             label: 'Read rate',
-            value: stats.readRate !== null ? Math.round(stats.readRate * 100) : '—',
+            value: stats.readRate !== null ? formatReadRatePct(stats.readRate) : '—',
             unit: stats.readRate !== null ? '%' : null,
-            micro:
-              stats.readRate === null
-                ? 'no data yet'
-                : stats.readRate < 0.2
-                  ? 'below 20%'
-                  : `${Math.round(stats.readRate * 100)}% marked read`,
+            // The micro line carries the window — this cell sits beside
+            // lifetime cells, so an unqualified rate reads as lifetime.
+            micro: stats.readRate === null ? 'no data yet' : 'of the last 30 days',
           },
           {
             label: 'Relationship',
