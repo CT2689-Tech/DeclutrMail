@@ -266,9 +266,17 @@ PR sequence is locked:
 4. **PR 4** — Onboarding + sync
 5. **PR 5** — First feature slice (Triage)
 
-After PR 3 merges, `require-pr-template.sh` enforces a `redesign` label
-for any visual change. Design tokens become immutable; Storybook stories
-become the source of truth for component appearance.
+After PR 3 merges the design freeze is in force: design tokens are
+immutable and Storybook stories are the source of truth for component
+appearance. A visual change to a frozen screen carries the `redesign`
+label — applied by the PR author, **not enforced by any check**. The
+freeze's actual teeth are the `design-system-agent` gate and story
+coverage; the label is a signal for the founder's review queue.
+
+(This paragraph used to claim `require-pr-template.sh` enforced the
+label. That hook contains no mention of `redesign`, and neither does any
+workflow — it was a guardrail that read as automated and did nothing.
+Founder decision 2026-08-19: keep the convention, drop the false claim.)
 
 **D227 prerequisite:** canonical verbs (K/A/U/L) must land in CLAUDE.md
 BEFORE Storybook seeding so stories encode the right verbs from day 1.
