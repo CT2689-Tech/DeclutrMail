@@ -83,7 +83,15 @@ describe('IconsService', () => {
 
   it('misses WITHOUT scheduling for a cached negative', async () => {
     const db = await freshTestDb();
-    await db.insert(domainIcons).values({ domain: 'nobody.example', status: 'none' });
+    // Written by the CURRENT cascade. The column's own default trails
+    // the constant (each bump ships an `ALTER COLUMN … SET DEFAULT`),
+    // and a negative from an older cascade is deliberately stale — so
+    // omitting this would test the retry path, not the cache path.
+    await db.insert(domainIcons).values({
+      domain: 'nobody.example',
+      status: 'none',
+      resolverVersion: DOMAIN_ICON_RESOLVER_VERSION,
+    });
     const { queue, added } = fakeQueue();
 
     const result = await new IconsService(db as never, queue).lookup('nobody.example', {
