@@ -9,6 +9,14 @@ on:
   # `gh workflow run subagent-gate.yml --ref <branch>`.
   pull_request:
     types: [opened, synchronize, reopened]
+  # MERGE QUEUE. "Gate scope report" is REQUIRED, so the queue waits on
+  # it and a workflow that never fires on `merge_group` hangs the entry.
+  #
+  # The report names which review gates a HUMAN should run for this
+  # change — it is advice to a reviewer, not a verdict on the code, and
+  # there is no reviewer at the front of a merge queue. It fires, says
+  # so, and passes; the advice was already posted on the pull request.
+  merge_group:
 
   # Manual trigger fallback — PR #178 hit a case on 2026-06-10 where
   # pull_request silently did not dispatch despite base + branch matching
@@ -38,8 +46,13 @@ jobs:
       design: ${{ steps.filter.outputs.design }}
       webhooks: ${{ steps.filter.outputs.webhooks }}
     steps:
+      - name: Nothing to report in a merge queue
+        if: github.event_name == 'merge_group'
+        run: echo "✓ Gate scope was reported on the pull request before it queued."
       - uses: actions/checkout@v7
+        if: github.event_name != 'merge_group'
       - uses: dorny/paths-filter@v3
+        if: github.event_name != 'merge_group'
         id: filter
         with:
           filters: |
@@ -75,7 +88,11 @@ jobs:
     needs: scope
     runs-on: ubuntu-latest
     steps:
+      - name: Nothing to report in a merge queue
+        if: github.event_name == 'merge_group'
+        run: echo "✓ Gate scope was reported on the pull request before it queued."
       - name: Summarize gates that would run
+        if: github.event_name != 'merge_group'
         run: |
           echo "::group::Gate scope for this PR"
           [ "${{ needs.scope.outputs.privacy }}"      = "true" ] && echo "🔒 privacy-auditor"           || true
