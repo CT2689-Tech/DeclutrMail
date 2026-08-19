@@ -94,7 +94,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🔵 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | 🔵 | #293 |  |  |
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #501 |  | Reclaimed 2026-07-28 (D158): the tour has never been built. Prior D38 trailers were umbrella mis-tags, now rewritten in the source PR bodies; the senders wire-model work lives at ADR-0029 |
-| D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30, #43, #47, #52, #63, #71, #129, #569 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
+| D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30, #43, #47, #52, #63, #71, #129, #569, #574 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
 | D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🟢 | #30, #47, #181, #342, #394 | apps/api/src/senders/senders.read-service.spec.ts |  |
 | D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | 🔵 | #30, #566 |  |  |
 | D42 | **SUPERSEDED by D245: Protected is the sole visible safety state | 🔵 | #181, #30, #129, #393 |  | Evidence updated 2026-06-11: VIP/Protect policy write path landed in #181; prior #30 cite was stale |
@@ -215,7 +215,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425, #496, #506, #508 |  |  |
 | D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473, #474, #502, #498, #546, #549, #550, #551, #554, #561 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
-| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526, #529, #534, #536, #556, #558 | gh run 26327595271 ci.yml green on main |  |
+| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526, #529, #534, #536, #556, #558, #575 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
