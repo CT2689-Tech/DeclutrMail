@@ -57,6 +57,23 @@ answered 200 in 31–93ms and logged `domain_icon.enqueue_failed`
 ("Stream isn't writeable"), and enqueues resumed on restart with no
 further failures.
 
+**Follow-on (same review, third pass):** disabling the offline buffer
+covered only commands issued while Redis was ALREADY down. A command
+already IN FLIGHT when the connection broke was still retained, because
+ioredis flushes its command queue only when `maxRetriesPerRequest` is a
+number — `null` retries across every reconnect, so a caller that timed
+out had not stopped the write from landing later. The producer now uses
+`maxRetriesPerRequest: 0`. Verified end to end: 5 reads during a stopped
+Redis rejected in 28-129ms, and on restart — with no new requests — the
+worker saw ZERO new jobs, so nothing had been retained to replay.
+
+**The through-line across all three passes:** each fix addressed the
+symptom one layer out from the cause. Stopped waiting, but the write
+was still pending; stopped the write from being buffered, but an
+in-flight one was still retained. "I no longer wait for it" is not the
+same claim as "it will not happen later", and only the second one is
+safe to put on a request path.
+
 ## 2026-08-18 — Fixed one sweep that retried a revoked Gmail grant, left its sibling running
 
 **PR:** #TBD (follows #527)

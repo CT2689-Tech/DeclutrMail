@@ -325,4 +325,29 @@ describe('redis connection factories', () => {
       client.disconnect();
     }
   });
+
+  // The other half of the same outage: a command already IN FLIGHT when
+  // the connection breaks. ioredis only flushes its command queue when
+  // this option is a number, so `null` retains and REPLAYS it on
+  // reconnect — meaning a caller that timed out has not actually
+  // stopped the write from landing later.
+  it('does not retain an in-flight producer command across reconnects', () => {
+    const client = createRedisProducerConnection('redis://127.0.0.1:6399');
+    try {
+      expect(typeof client.options.maxRetriesPerRequest).toBe('number');
+      expect(client.options.maxRetriesPerRequest).toBe(0);
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  // The worker keeps the retaining behaviour, deliberately.
+  it('keeps retrying forever on a worker connection', () => {
+    const client = createRedisConnection('redis://127.0.0.1:6399');
+    try {
+      expect(client.options.maxRetriesPerRequest).toBeNull();
+    } finally {
+      client.disconnect();
+    }
+  });
 });
