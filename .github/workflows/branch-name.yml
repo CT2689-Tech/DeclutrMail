@@ -9,6 +9,24 @@ on:
   # had already passed.
   pull_request:
     types: [opened, edited, reopened, synchronize]
+  # MERGE QUEUE. All three checks here are REQUIRED, so the queue waits
+  # on them — and a workflow that never fires on `merge_group` hangs
+  # every entry silently, with no failure to read.
+  #
+  # They are also the three that cannot meaningfully RUN there: each
+  # reads pull-request metadata (head ref, title, body), and a merge
+  # group has no pull request. So they fire, say they have nothing to
+  # check, and pass.
+  #
+  # That is not a hole. Every one was enforced on the PR before it was
+  # allowed to queue, and none describes the merged RESULT — a branch
+  # name cannot become invalid by sitting behind another entry. The
+  # steps are gated individually rather than the jobs being skipped:
+  # a skipped required check is *treated* as a pass by branch
+  # protection, but that is a rule about GitHub's behaviour rather than
+  # about ours, and a queue that hangs on a wrong guess about it is
+  # exactly the failure this trigger exists to prevent.
+  merge_group:
 
 permissions:
   pull-requests: read
@@ -28,7 +46,11 @@ jobs:
     # `github.actor`, but the branch is still bot-named.
     if: github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'dependabot/')
     steps:
+      - name: Nothing to check in a merge queue
+        if: github.event_name == 'merge_group'
+        run: echo "✓ No pull request in a merge group — enforced before queueing."
       - name: Validate branch name
+        if: github.event_name != 'merge_group'
         env:
           HEAD_REF: ${{ github.head_ref }}
         run: |
@@ -63,11 +85,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - name: Nothing to check in a merge queue
+        if: github.event_name == 'merge_group'
+        run: echo "✓ No pull request in a merge group — enforced before queueing."
       # Aligned with commitlint.config.cjs subject-case rule (never pascal-case
       # or upper-case). No subjectPattern — allows leading proper nouns
       # ("OAuth", "TypeScript") and abbreviations ("PR", "CI", "API") which
       # the previous `^(?![A-Z]).+$` rule incorrectly rejected.
       - uses: amannn/action-semantic-pull-request@v6
+        if: github.event_name != 'merge_group'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -92,7 +118,11 @@ jobs:
     # exemption when a human pushes follow-up commits to the bot branch).
     if: github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'dependabot/')
     steps:
+      - name: Nothing to check in a merge queue
+        if: github.event_name == 'merge_group'
+        run: echo "✓ No pull request in a merge group — enforced before queueing."
       - name: Check body
+        if: github.event_name != 'merge_group'
         env:
           HEAD_REF: ${{ github.head_ref }}
           PR_BODY: ${{ github.event.pull_request.body }}

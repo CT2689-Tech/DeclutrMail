@@ -28,6 +28,13 @@ on:
     types: [opened, synchronize, reopened]
   push:
     branches: [main]
+  # MERGE QUEUE. Inert until the queue is enabled in branch protection —
+  # but it has to exist FIRST. GitHub blocks a queued PR until every
+  # required check reports, and a workflow that does not listen for
+  # `merge_group` never reports at all: the entry sits there until it
+  # times out, with no failure to read. Wiring the trigger ahead of the
+  # switch means the day it is flipped is not the day that is discovered.
+  merge_group:
 
   # Manual trigger fallback — PR #178 hit a case on 2026-06-10 where
   # pull_request silently did not dispatch despite base + branch matching
@@ -65,13 +72,26 @@ jobs:
     name: Detect changed paths
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # In the MERGE QUEUE, every shard runs — no path filtering.
+    #
+    # The queue tests a state no PR was ever green against: main plus the
+    # entries ahead of it. That combination is the only thing the queue
+    # exists to check, and a semantic conflict does not respect path
+    # boundaries — a rename in `packages/` breaks a caller in `apps/api/`
+    # while the API PR's own diff touches neither. Filtering there would
+    # skip the shard that catches it.
+    #
+    # It also sidesteps `dorny/paths-filter` needing an explicit base on
+    # an event it does not infer one for. Getting that subtly wrong fails
+    # OPEN — an empty diff reads as "nothing changed, skip everything",
+    # which is a green that verified nothing.
     outputs:
-      api: ${{ steps.filter.outputs.api }}
-      workers: ${{ steps.filter.outputs.workers }}
-      db: ${{ steps.filter.outputs.db }}
-      web: ${{ steps.filter.outputs.web }}
-      units: ${{ steps.filter.outputs.units }}
-      a11y: ${{ steps.filter.outputs.a11y }}
+      api: ${{ steps.filter.outputs.api || github.event_name == 'merge_group' }}
+      workers: ${{ steps.filter.outputs.workers || github.event_name == 'merge_group' }}
+      db: ${{ steps.filter.outputs.db || github.event_name == 'merge_group' }}
+      web: ${{ steps.filter.outputs.web || github.event_name == 'merge_group' }}
+      units: ${{ steps.filter.outputs.units || github.event_name == 'merge_group' }}
+      a11y: ${{ steps.filter.outputs.a11y || github.event_name == 'merge_group' }}
     steps:
       - uses: actions/checkout@v7
       # A `!` pattern here does not subtract — it makes the rule ALWAYS
@@ -89,6 +109,8 @@ jobs:
           echo "✓ No negation patterns in the path filters."
       - uses: dorny/paths-filter@v3
         id: filter
+        # Skipped in the queue; the outputs above hard-code `true` there.
+        if: github.event_name != 'merge_group'
         with:
           filters: |
             infra: &infra
