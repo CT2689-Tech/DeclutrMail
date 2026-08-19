@@ -1,9 +1,9 @@
 import { brandDomainAliases, DOMAIN_ICON_RESOLVER_VERSION, domainIcons } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import type { Queue } from 'bullmq';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { IconsService } from './icons.service.js';
+import { IconsService, MAX_SCHEDULED_PER_READ } from './icons.service.js';
 
 /**
  * IconsService integration tests (ADR-0034).
@@ -83,7 +83,15 @@ describe('IconsService', () => {
 
   it('misses WITHOUT scheduling for a cached negative', async () => {
     const db = await freshTestDb();
-    await db.insert(domainIcons).values({ domain: 'nobody.example', status: 'none' });
+    // Written by the CURRENT cascade. The column's own default trails
+    // the constant (each bump ships an `ALTER COLUMN … SET DEFAULT`),
+    // and a negative from an older cascade is deliberately stale — so
+    // omitting this would test the retry path, not the cache path.
+    await db.insert(domainIcons).values({
+      domain: 'nobody.example',
+      status: 'none',
+      resolverVersion: DOMAIN_ICON_RESOLVER_VERSION,
+    });
     const { queue, added } = fakeQueue();
 
     const result = await new IconsService(db as never, queue).lookup('nobody.example', {
@@ -310,6 +318,204 @@ describe('IconsService', () => {
       new IconsService(db as never, broken).lookup('unknown.example', { mayEnqueue: true }),
     ).resolves.toEqual({
       kind: 'miss',
+    });
+  });
+
+  describe('marksFor', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("reports availability for a page in one pass, keyed by the caller's strings", async () => {
+      const db = await freshTestDb();
+      await seedIcon(db, { domain: 'brand.example' });
+      // Looked, found nothing — a cached miss is NOT availability.
+      await seedIcon(db, {
+        domain: 'nothing.example',
+        status: 'none',
+        image: null,
+        mime: null,
+        source: null,
+        contentHash: null,
+        byteSize: null,
+      });
+      const { queue } = fakeQueue();
+
+      const marks = await new IconsService(db as never, queue).marksFor(
+        ['brand.example', 'nothing.example', 'never-seen.example'],
+        { mayEnqueue: false },
+      );
+
+      expect(marks).toEqual(new Set(['brand.example']));
+    });
+
+    // THE DRIFT GUARD. `marksFor` answers the same question as `lookup`
+    // without reading the image bytes, so the two must never disagree
+    // — a page that says "no mark" for a domain the route would happily
+    // serve is a silently missing logo, and the opposite is the 204
+    // request this whole change exists to remove.
+    it('agrees with lookup on every domain shape', async () => {
+      const db = await freshTestDb();
+      await seedIcon(db, { domain: 'brand.example' });
+      await seedIcon(db, {
+        domain: 'stale-provider.example',
+        source: 'brandfetch',
+        fetchedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+      });
+      await seedIcon(db, {
+        domain: 'nothing.example',
+        status: 'none',
+        image: null,
+        mime: null,
+        source: null,
+        contentHash: null,
+        byteSize: null,
+      });
+      const domains = [
+        'brand.example',
+        'stale-provider.example',
+        'nothing.example',
+        'never-seen.example',
+        'not a domain',
+      ];
+      const { queue } = fakeQueue();
+      const svc = new IconsService(db as never, queue);
+
+      const marks = await svc.marksFor(domains, { mayEnqueue: false });
+      for (const domain of domains) {
+        const viaLookup = (await svc.lookup(domain, { mayEnqueue: false })).kind === 'hit';
+        expect({ domain, marked: marks.has(domain) }).toEqual({ domain, marked: viaLookup });
+      }
+    });
+
+    // The reason enqueueing moved here: an image subresource cannot
+    // refresh an expired token, so scheduling from the authenticated
+    // list read is the path that actually grows the cache.
+    it('schedules resolution for what it does not have, once per domain', async () => {
+      const db = await freshTestDb();
+      const { queue, added } = fakeQueue();
+
+      await new IconsService(db as never, queue).marksFor(
+        ['first.example', 'second.example', 'first.example'],
+        { mayEnqueue: true },
+      );
+
+      expect(added.map((job) => job.data)).toEqual([
+        { domain: 'first.example' },
+        { domain: 'second.example' },
+      ]);
+      // Deterministic job id per domain + resolver version, so a
+      // re-listed page collapses onto the same job.
+      expect(added[0]?.opts).toMatchObject({
+        jobId: `DomainIconWorker-v${DOMAIN_ICON_RESOLVER_VERSION}-first.example`,
+      });
+    });
+
+    it('bounds how much background work one read can schedule', async () => {
+      const db = await freshTestDb();
+      const { queue, added } = fakeQueue();
+      const domains = Array.from({ length: 40 }, (_, i) => `d${i}.example`);
+
+      await new IconsService(db as never, queue).marksFor(domains, { mayEnqueue: true });
+
+      // A read that schedules a job per uncached domain turns one page
+      // view into a page-sized burst on the resolver.
+      expect(added).toHaveLength(MAX_SCHEDULED_PER_READ);
+    });
+
+    // NO PERMANENT STARVATION. The budget is spent on domains with no
+    // cached row, and a domain that cannot resolve right now does not
+    // GET one — a provider quota writes nothing on purpose. Taking the
+    // head of that set every read would mean the page's first rows win
+    // the whole budget forever while later rows are never attempted.
+    //
+    // The RNG is PINNED rather than left live. Asserting on real
+    // randomness would make this pass with a probability instead of a
+    // proof — a tail domain is missed with p ~ 2e-4 per run, which is
+    // rare enough to look stable and frequent enough to eventually fail
+    // CI for no reason, and a test that flakes gets disabled. The
+    // assertions below are properties of an unbiased pick, not a fixed
+    // expected set, so they hold for any well-spread sequence and do
+    // not break if the sampler's call pattern changes.
+    it('gives every unresolved domain a turn rather than always the first few', async () => {
+      const db = await freshTestDb();
+      const domains = Array.from({ length: 40 }, (_, i) => `d${i}.example`);
+      const scheduled = new Set<string>();
+      // Golden-ratio increments: deterministic, and spread across [0,1)
+      // rather than clustering the way a fixed constant would.
+      let tick = 0;
+      vi.spyOn(Math, 'random').mockImplementation(() => {
+        tick += 1;
+        return (tick * 0.6180339887) % 1;
+      });
+
+      // Nothing ever resolves, so every read faces the same 40 rowless
+      // domains — the exact condition an exhausted provider produces.
+      for (let read = 0; read < 40; read += 1) {
+        const { queue, added } = fakeQueue();
+        await new IconsService(db as never, queue).marksFor(domains, { mayEnqueue: true });
+        for (const job of added) scheduled.add((job.data as { domain: string }).domain);
+      }
+
+      // EVERY domain, not "more than the cap" and not "something past
+      // the head". Both of those are satisfied by a sampler that still
+      // starves: one drawing only from the first 13 rows scores 13
+      // distinct domains and reaches index 12, passing both, while 27
+      // of 40 are never scheduled once. The property that actually
+      // rules out starvation is total coverage, and with the RNG pinned
+      // it can be asserted exactly rather than approximated.
+      expect(scheduled.size).toBe(domains.length);
+      expect(scheduled.has('d0.example')).toBe(true);
+      expect(scheduled.has('d39.example')).toBe(true);
+    });
+
+    it('never causes outbound work without a session', async () => {
+      const db = await freshTestDb();
+      const { queue, added } = fakeQueue();
+
+      await new IconsService(db as never, queue).marksFor(['unknown.example'], {
+        mayEnqueue: false,
+      });
+
+      expect(added).toEqual([]);
+    });
+
+    // REDIS OUTAGE MUST NOT HANG A READ. `createRedisConnection` sets
+    // `maxRetriesPerRequest: null`, so a command issued while Redis is
+    // unreachable retries forever instead of failing — `queue.add()`
+    // never settles. A try/catch cannot see that; only a deadline can.
+    // Without one, a Redis outage would leave GET /api/senders spinning
+    // rather than degrading to monograms.
+    it('does not hang when the queue never answers', async () => {
+      const db = await freshTestDb();
+      const wedged = {
+        add: () => new Promise<never>(() => {}),
+      } as unknown as Queue<{ domain: string }>;
+
+      const marks = await new IconsService(db as never, wedged).marksFor(['unknown.example'], {
+        mayEnqueue: true,
+      });
+
+      // The read still answers, on time, with the truth it has.
+      expect(marks).toEqual(new Set());
+    });
+
+    it('resolves a page through the alias registry', async () => {
+      const db = await freshTestDb();
+      await seedIcon(db, { domain: 'canonical.example' });
+      await db.insert(brandDomainAliases).values({
+        aliasDomain: 'alias.example',
+        canonicalDomain: 'canonical.example',
+        source: 'manual_review',
+        confidence: 100,
+      });
+      const { queue } = fakeQueue();
+
+      const marks = await new IconsService(db as never, queue).marksFor(['alias.example'], {
+        mayEnqueue: false,
+      });
+
+      expect(marks).toEqual(new Set(['alias.example']));
     });
   });
 });

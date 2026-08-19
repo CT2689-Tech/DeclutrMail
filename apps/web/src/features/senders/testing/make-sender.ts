@@ -23,6 +23,9 @@ export function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderLis
     displayName: 'Acme Newsletter',
     email: 'news@acme.com',
     domain: 'acme.com',
+    // Default to the uncached state — what every domain looks like
+    // until the icon worker resolves it.
+    brandMark: false,
     gmailCategory: 'promotions',
     // 2 days / ~12 months before FIXTURE_NOW.
     lastSeenAt: '2026-06-29T00:00:00.000Z',

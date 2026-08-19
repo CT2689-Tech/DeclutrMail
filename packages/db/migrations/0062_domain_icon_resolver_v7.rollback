@@ -1,0 +1,12 @@
+ALTER TABLE "domain_icons"
+  ALTER COLUMN "resolver_version" SET DEFAULT 6;
+--> statement-breakpoint
+-- Demote negatives stamped by the v7 cascade, matching 0061's rollback.
+-- Without this the rollback is one-way: `isStale` only retries a miss
+-- whose version is BELOW the current constant, so rows left at 7 would
+-- read as fresh to v6 code and never be re-resolved — the v7 verdicts
+-- would outlive the v7 resolver. Marks are untouched, exactly as in the
+-- forward migration: only `status = 'none'` carries the version rule.
+UPDATE "domain_icons"
+SET "resolver_version" = 6
+WHERE "status" = 'none' AND "resolver_version" >= 7;

@@ -148,6 +148,49 @@ export function createRedisConnection(redisUrl: string): Redis {
 }
 
 /**
+ * A Redis connection for a producer that ENQUEUES FROM A REQUEST PATH.
+ *
+ * `createRedisConnection` above is built for workers, and its defaults
+ * are the opposite of what a request needs. Two of them, and BOTH have
+ * to go — they cover different halves of the same outage.
+ *
+ * `enableOfflineQueue` covers commands issued while the connection is
+ * ALREADY down: ioredis buffers them in memory and flushes them on
+ * reconnect. Right for a worker, which must not drop a job because
+ * Redis blinked. On a request path it is a leak with a delayed
+ * detonation — every request adds another never-settling command to a
+ * queue nobody is draining, so an outage grows memory for as long as
+ * it lasts and recovery replays the whole backlog in one burst.
+ *
+ * `maxRetriesPerRequest: null` covers the other half: commands already
+ * IN FLIGHT when the connection breaks. ioredis only flushes its
+ * command queue when this is a number (`event_handler`: the flush is
+ * guarded by `typeof maxRetriesPerRequest === 'number'`), so `null`
+ * means an in-flight command is retained and retried across every
+ * reconnect — and a caller that gave up waiting has not stopped it
+ * from eventually being replayed. `0` flushes on the first reconnect
+ * attempt (`retryAttempts % (0 + 1)` is always 0), which is what makes
+ * "we stopped waiting" and "it will not happen later" the same thing.
+ *
+ * Together they convert silence into an immediate rejection a caller
+ * can handle. The trade is explicit: an enqueue attempted during an
+ * outage is LOST rather than deferred. Only use this for work that is
+ * genuinely best-effort and self-healing — the icon queue qualifies,
+ * because the next list read schedules the same domain again and an
+ * unresolved domain renders the monogram that ADR-0034 defines as the
+ * floor. Anything whose loss a user would notice belongs on
+ * `createRedisConnection`.
+ *
+ * Safe with BullMQ: it forces `maxRetriesPerRequest: null` only for
+ * BLOCKING connections, and only when it constructs the client itself
+ * — a raw instance like this one is passed through untouched
+ * (`redis-connection.js`).
+ */
+export function createRedisProducerConnection(redisUrl: string): Redis {
+  return new Redis(redisUrl, { maxRetriesPerRequest: 0, enableOfflineQueue: false });
+}
+
+/**
  * Idle-poll ceiling for user-facing queues — env tuning can lower the
  * re-poll below this but never raise it past this many seconds, so a
  * fat-fingered env can't strand pickup. Set to 60s: job pickup is

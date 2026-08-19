@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { Queue } from 'bullmq';
 
-import { createRedisConnection, DOMAIN_ICON_QUEUE } from '@declutrmail/workers';
+import { createRedisProducerConnection, DOMAIN_ICON_QUEUE } from '@declutrmail/workers';
 import type { DomainIconJobData } from '@declutrmail/workers';
 
 import { AuthModule } from '../auth/auth.module.js';
@@ -38,10 +38,20 @@ import { OptionalJwtGuard } from './optional-jwt.guard.js';
           return null;
         }
         return new Queue<DomainIconJobData>(DOMAIN_ICON_QUEUE, {
-          connection: createRedisConnection(url),
+          // Producer connection: this queue is written to from a
+          // REQUEST path (the senders list schedules resolution for the
+          // domains on the page), so a Redis outage must reject the
+          // enqueue immediately rather than buffer it forever. Icon
+          // resolution is best-effort and self-healing — the next list
+          // read schedules the same domain again — so losing an enqueue
+          // costs a monogram until then, which is the documented floor.
+          connection: createRedisProducerConnection(url),
         });
       },
     },
   ],
+  // `SendersModule` resolves brand-mark availability for a whole page
+  // in one read instead of letting the browser ask per avatar.
+  exports: [IconsService],
 })
 export class IconsModule {}

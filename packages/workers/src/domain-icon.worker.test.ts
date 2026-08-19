@@ -310,6 +310,45 @@ describe('DomainIconWorker', () => {
     expect(result).toMatchObject({ outcome: 'stored', source: 'brandfetch' });
   });
 
+  // A PROVIDER QUOTA MUST NOT DEAD-LETTER, AND MUST NOT BECOME A `none`.
+  //
+  // Brandfetch answers 429 once its quota is spent. That used to escape
+  // the job, burn all 3 attempts and park the domain in the dead-letter
+  // queue — before `store` ran, so the domain never recorded that we
+  // looked, the next demand re-enqueued it, and it dead-lettered again.
+  // That loop is why production resolution stalled at 115 of ~3,344
+  // domains.
+  //
+  // Writing `none` instead would be worse: a quota response is no more
+  // proof this domain lacks a logo than an unreachable website is, and
+  // `none` is cached for 30 days.
+  it('defers on a provider quota instead of failing or caching a false miss', async () => {
+    const db = await freshTestDb();
+    const http: BrandfetchIconHttpPort = {
+      get: async () => ({ status: 429, contentType: 'application/json', body: Buffer.from('{}') }),
+    };
+    const dnsNotFound = Object.assign(new Error('not found'), { code: 'ENOTFOUND' });
+    const worker = new DomainIconWorker({
+      db: db as never,
+      bimi: { resolveTxt: async () => [['v=spf1 -all']] },
+      website: {
+        resolveHost: async () => {
+          throw dnsNotFound;
+        },
+      },
+      brandfetch: { apiKey: 'server-secret', resolveHost: async () => ['93.184.216.34'], http },
+    });
+
+    // Completes rather than throwing — nothing to retry, nothing to park.
+    const result = await worker.processJob({ domain: 'retailmenot.com' }, CTX);
+    expect(result).toMatchObject({ outcome: 'provider_exhausted', source: null });
+
+    // And leaves no row, so the domain is neither claimed logo-less nor
+    // suppressed for 30 days — the next list read tries it again.
+    const rows = await db.select().from(domainIcons);
+    expect(rows).toEqual([]);
+  });
+
   it('normalizes bulk-mail subdomains to the brand root', async () => {
     const db = await freshTestDb();
     const worker = new DomainIconWorker({ db: db as never, bimi: bimiDeps() });
@@ -646,6 +685,51 @@ describe('isStale', () => {
         now,
       ),
     ).toBe(true);
+  });
+
+  // THE SAFETY PROPERTY OF A VERSION BUMP. Raising the resolver version
+  // is how a new source retires the negatives reached without it — a
+  // `none` written before Brandfetch existed in production is not
+  // evidence a domain has no logo. Without this, binding the key would
+  // change nothing for 30 days, because a fresh `none` is authoritative
+  // for its whole TTL.
+  //
+  // The other half matters just as much: a bump must NOT discard marks
+  // we already have. Re-resolving a working logo would spend quota to
+  // re-learn what we knew, and briefly regress a real logo to a
+  // monogram.
+  it('retires a negative from an older resolver without discarding its marks', () => {
+    const previous = DOMAIN_ICON_RESOLVER_VERSION - 1;
+
+    // A miss recorded a day ago by the previous cascade: retried now.
+    expect(
+      isStale(
+        { status: 'none', source: null, fetchedAt: daysAgo(1), resolverVersion: previous },
+        now,
+      ),
+    ).toBe(true);
+
+    // A mark recorded by that same older cascade: still good.
+    expect(
+      isStale(
+        { status: 'ok', source: 'bimi', fetchedAt: daysAgo(1), resolverVersion: previous },
+        now,
+      ),
+    ).toBe(false);
+
+    // And a miss from the CURRENT cascade keeps its full TTL, so a bump
+    // retires exactly one generation rather than disabling the cache.
+    expect(
+      isStale(
+        {
+          status: 'none',
+          source: null,
+          fetchedAt: daysAgo(1),
+          resolverVersion: DOMAIN_ICON_RESOLVER_VERSION,
+        },
+        now,
+      ),
+    ).toBe(false);
   });
 
   it('refreshes Brandfetch artwork at its 30-day cache limit', () => {

@@ -22,6 +22,7 @@ export { WORKER_POLICIES } from './worker-policies.js';
 export type { ConcurrencyScope, WorkerPolicy, WorkerPolicyConfig } from './worker-policies.js';
 export {
   createRedisConnection,
+  createRedisProducerConnection,
   ensureIncrementalSyncJob,
   ensureInitialSyncJob,
   INCREMENTAL_SYNC_JOB,
@@ -226,7 +227,10 @@ export type {
   BrandfetchIconHttpPort,
   BrandfetchIconResolution,
 } from './brandfetch-icon-resolver.js';
-export { resolveWebsiteIcon } from './website-icon-resolver.js';
+// `normalizeSquareIcon` is the acceptance gate itself, not a helper: it
+// decides size, aspect and decodability for every tier. Exported so a
+// checker can ask the real question instead of reimplementing it.
+export { normalizeSquareIcon, resolveWebsiteIcon } from './website-icon-resolver.js';
 export type {
   WebsiteIconDeps,
   WebsiteIconHttpPort,

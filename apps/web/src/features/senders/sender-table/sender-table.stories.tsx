@@ -54,6 +54,7 @@ function row(overrides: Partial<SenderListRow> = {}): SenderListRow {
     displayName: overrides.displayName ?? 'Bank of America',
     email: overrides.email ?? 'onlinebanking@ealerts.bankofamerica.com',
     domain: overrides.domain ?? 'ealerts.bankofamerica.com',
+    brandMark: overrides.brandMark ?? false,
     gmailCategory: overrides.gmailCategory ?? 'updates',
     firstSeenAt: overrides.firstSeenAt ?? '2013-08-11T20:18:16.000Z',
     lastSeenAt: overrides.lastSeenAt ?? '2026-05-28T13:01:34.000Z',

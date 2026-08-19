@@ -3,7 +3,9 @@
 - **Status:** Accepted
 - **Date:** 2026-08-14
 - **Amended:** 2026-08-17 (official-site + Brandfetch cached fallback;
-  organizational-domain and verified-alias canonicalization)
+  organizational-domain and verified-alias canonicalization);
+  2026-08-19 (third-party logo CDNs reconsidered and rejected — see
+  §Alternatives reconsidered)
 - **Deciders:** chintan.a.thakkar@gmail.com
 - **Related D-decisions:** D7/D228 (privacy posture — the trust wedge),
   D1/D2 (Geist + cool/editorial palette), D156 (rate limiting),
@@ -512,3 +514,80 @@ one until the caching agreement and budget gate above are satisfied.
   surface. Markup-level only — see the spec above for paint.
 - Schema check: `domain_icons` has no column referencing a user or
   mailbox (asserted in the schema test).
+
+## Alternatives reconsidered — hotlinked logo CDNs (2026-08-19)
+
+Production coverage sat at 115 marks for 4,347 sender domains, which
+sent us looking at vendors again: LogoKit (5,000 logos/day free) and
+Brandfetch's **Logo API** — a different product from the Brand API this
+ADR already uses, offering 500,000 requests/month free with no
+attribution. Both were rejected. Recording why, because the next person
+to find a logo CDN will ask again, and the reasons are not obvious from
+the pricing pages.
+
+**Both are hotlink-only by design.** LogoKit answers `403 Programmatic
+access is not allowed` to any server-side fetch and documents that
+"caching or storing the logo images locally is not supported".
+Brandfetch's Logo API states "we require logo links to be directly
+embedded in your applications", in an `<img>` tag carrying a `Referer`
+header. Neither supports the shape this ADR is built on: fetch once
+server-side, store the bytes, serve them from our own origin.
+
+**Privacy — the ADR-0024 reason, unchanged.** Embedding means the
+user's browser requests each sender's domain from a vendor, with the
+user's IP attached. That is precisely the metadata leak ADR-0024
+removed and this ADR was written to keep closed.
+
+**Scaling — a second, independent reason this ADR did not previously
+state.** It is the one that decides the question even for a reader who
+does not weigh the privacy argument. The distinction is what each
+design's traffic is proportional TO:
+
+> Hotlinking scales with **users × page views × senders**.
+> Caching scales with **distinct domains × refresh rate** — and is
+> independent of how many users there are.
+
+Note what this claim is NOT. It is not "fetch once, forever": this ADR
+deliberately expires its own rows, and the numbers matter here.
+`DOMAIN_ICON_TTL_DAYS` holds a mark for 90 days so a rebrand lands,
+caps Brandfetch-sourced artwork at 30 to stay inside that provider's
+terms, and retries a miss after 30. Refresh is demand-driven, so a
+domain nobody looks at costs nothing, and a resolver-version bump
+retires negatives early on purpose. The steady state is therefore a
+refresh cycle, not a single fetch.
+
+That still settles the comparison, because only the LEFT side of each
+product grows. Our 4,347 domains bound the work at roughly one refresh
+per domain per TTL — and only the Brandfetch-sourced subset touches
+that vendor at all, since BIMI and website marks refresh first-party on
+the 90-day clock. Whatever that monthly figure is, it does not move
+when the tenth user signs up, or the ten-thousandth. Hotlinked, the
+same catalogue is re-fetched per user, per device, per browser cache
+expiry, and Brandfetch's published throughput ceiling is 2,400 requests
+per 5 minutes **per customer** across all of them. One Senders page view issues roughly 50 logo
+requests and up to 368 while scrolling, so on the order of twenty
+concurrent users browsing senders exhausts it and the vendor returns 429. The failure is graceful — a 429 paints the monogram floor — but
+logos would become unreliable exactly as the product grows, which is
+the worst possible time for the identity anchor to start flickering.
+
+**Why scraping cannot close the gap either**, and why the Brandfetch
+tier is load-bearing rather than a nicety: the brands users see most
+are the hardest to scrape. Measured 2026-08-19 — `redfin.com` answers
+429 to automated fetches; `linkedin.com` and `amazon.com` serve 200 but
+publish no `apple-touch-icon` in server HTML, and Amazon's mark is a
+CSS sprite sheet cropped by background-position, so even finding it
+yields a sheet of unrelated icons rather than a logo. A site being
+well-known correlates with being unscrapable.
+
+**Where that leaves the tiers.** Unchanged. Tiers 1 and 2 stay
+first-party. Tier 3 stays the Brandfetch **Brand API**, which permits
+server-side fetch and the 30-day cached artwork this ADR already
+encodes. If its free quota proves insufficient, the answer is a paid
+Brand API plan — buying quota while keeping the architecture — not a
+hotlinked CDN, which would trade a cost bounded by the catalogue for
+one bounded by the user base.
+
+**Manual curation remains the backstop** for domains no tier can reach,
+and it is the only path that is both first-party and unlimited: a
+human-supplied URL, fetched once through the same gates, stored like
+any other mark.

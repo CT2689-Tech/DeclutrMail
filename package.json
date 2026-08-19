@@ -2,7 +2,7 @@
   "name": "declutrmail",
   "version": "0.0.0",
   "private": true,
-  "description": "DeclutrMail \u2014 Gmail cleanup SaaS. V2 monorepo.",
+  "description": "DeclutrMail — Gmail cleanup SaaS. V2 monorepo.",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=22.0.0",
@@ -32,7 +32,8 @@
     "dev:up": "./scripts/dev-up.sh",
     "dev:down": "./scripts/dev-up.sh --stop",
     "dev:auth": "./scripts/dev-auth.sh",
-    "prepare": "husky"
+    "prepare": "husky",
+    "check-logo": "tsx scripts/check-logo-url.ts"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.1",

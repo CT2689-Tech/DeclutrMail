@@ -166,7 +166,7 @@ export function SenderListRow({
           />
         </div>
 
-        <Avatar name={s.name} domain={s.domain} size={28} />
+        <Avatar name={s.name} domain={s.domain} size={28} hasMark={s.brandMark} />
 
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>

@@ -119,13 +119,35 @@ export function Avatar({
   name,
   domain,
   size = 28,
+  hasMark,
 }: {
   name: string;
   domain?: string;
   size?: number;
+  /**
+   * Whether a mark for `domain` is known to be cached server-side.
+   *
+   * ASK-BEFORE-REQUESTING, because this layer cannot ask. A CSS
+   * `background-image` is a browser subresource with no code around
+   * it: it has no failure callback, no retry, and no way to check
+   * first. So a page that renders N avatars requests N icons, and
+   * until a domain has been resolved every one of those requests
+   * spends a full round trip to be answered 204. On the Senders page
+   * that was ~90 concurrent requests against an API with 3 instances
+   * and a 10-connection pool, and the page's own data queued behind
+   * its own avatars.
+   *
+   * The list read already knows which domains have marks, so it says
+   * so, and this layer is emitted only when the bytes exist.
+   *
+   * `undefined` means the caller has no availability data and keeps
+   * the old behaviour — request and let a miss paint nothing. Passing
+   * `false` is what actually removes the request.
+   */
+  hasMark?: boolean;
 }) {
   const initial = (name.trim()[0] ?? '?').toUpperCase();
-  const iconUrl = brandIconUrl(domain, size);
+  const iconUrl = hasMark === false ? null : brandIconUrl(domain, size);
 
   const radius = Math.max(6, Math.round(size * 0.28));
 

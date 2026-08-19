@@ -24,7 +24,7 @@ import {
   type WebsiteIconDeps,
   type WebsiteIconResolution,
 } from './website-icon-resolver.js';
-import { TransientError, ValidationError } from './worker-errors.js';
+import { RateLimitError, TransientError, ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 import type { WorkerPolicy } from './worker-policies.js';
 
@@ -45,7 +45,13 @@ export interface DomainIconJobData {
 /** Metric-only result (logged on `worker.succeeded`). */
 export interface DomainIconResult {
   /** What was written: a mark, a cached miss, or nothing at all. */
-  outcome: 'stored' | 'cached_miss' | 'preserved_stale' | 'unchanged' | 'still_fresh';
+  outcome:
+    | 'stored'
+    | 'cached_miss'
+    | 'preserved_stale'
+    | 'unchanged'
+    | 'still_fresh'
+    | 'provider_exhausted';
   /** Resolution tier for coverage metrics; null when no resolution succeeded. */
   source: 'bimi' | 'website' | 'brandfetch' | null;
   /** Bytes stored; 0 for a miss. */
@@ -151,9 +157,47 @@ export class DomainIconWorker extends BaseDeclutrWorker<DomainIconJobData, Domai
     }
 
     if (!resolution && this.deps.brandfetch) {
-      const brandfetch = await resolveBrandfetchIcon(domain, this.deps.brandfetch);
-      if (brandfetch.status === 'ok') resolution = { ...brandfetch, source: 'brandfetch' };
-      else missReasons.push(`brandfetch: ${brandfetch.reason}`);
+      try {
+        const brandfetch = await resolveBrandfetchIcon(domain, this.deps.brandfetch);
+        if (brandfetch.status === 'ok') resolution = { ...brandfetch, source: 'brandfetch' };
+        else missReasons.push(`brandfetch: ${brandfetch.reason}`);
+      } catch (err) {
+        // A PROVIDER QUOTA IS NOT A FAILURE TO RETRY — it is a reason
+        // to stop, and the difference decides whether this domain ever
+        // gets a logo.
+        //
+        // Retrying is right for a website that is briefly unreachable:
+        // it recovers well inside the 3-attempt backoff window. A quota
+        // resets on the provider's clock, hours or a month away, so
+        // every attempt is spent to fail and the job dead-letters. And
+        // because the throw happens BEFORE `store`, the domain does not
+        // even record that we looked — so the next demand re-enqueues
+        // it and it dead-letters again, forever. That loop is why
+        // resolution stalled at 115 of ~3,344 domains in production.
+        //
+        // Deferring instead: write NOTHING and end the job cleanly. The
+        // invariant above still holds — a quota response is no more
+        // proof that this domain has no logo than an unreachable site
+        // is — so it must not become a cached `none`. Demand brings the
+        // domain back when the list is next read, by which time the
+        // quota may have reset.
+        if (!(err instanceof RateLimitError)) throw err;
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'domain_icon.provider_exhausted',
+            domain,
+            provider: 'brandfetch',
+            message: err.message,
+          }),
+        );
+        return {
+          outcome: 'provider_exhausted',
+          source: null,
+          byteSize: 0,
+          durationMs: Date.now() - startedAt,
+        };
+      }
     }
 
     // Never turn an official-site outage into a month-long negative.

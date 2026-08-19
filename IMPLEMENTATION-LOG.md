@@ -299,6 +299,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D251 | Autopilot splits on behaviour, not access | 🔵 | #465 |  |  |
 | D252 | Unsubscribe degrades honestly | 🔵 | #514 |  |  |
 | D253 | A refunded customer can buy again | 🔵 | #518, #519, #520 |  |  |
-| D254 | Brand logos on sender avatars | 🔵 | #524, #528, #530, #533, #535, #537, #542, #560, #562, #563, #564 |  |  |
+| D254 | Brand logos on sender avatars | 🔵 | #524, #528, #530, #533, #535, #537, #542, #560, #563, #562, #564 |  |  |
 
 <!-- AUTO:DECISIONS:END -->

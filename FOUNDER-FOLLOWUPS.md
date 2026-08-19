@@ -24,6 +24,46 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-18 — Production browser errors are tagged `release: local-dev`
+
+**Source:** session — Sentry cross-check of the `/senders` console report
+**Why:** WITHDRAWN 2026-08-19, the diagnosis was wrong. This entry asked
+the founder to enable "Automatically expose System Environment
+Variables". It was already enabled, and production events carry real
+40-character commit SHAs — `05398739…` with 539 events, `2f07b632…`
+with 172, across the last 7 days; `local-dev` is not in the top 15
+releases at all. Production errors were readable the whole time.
+**What was actually true:** a handful of events wore `release:
+local-dev` inside the `production` environment. Those come from a
+production build run LOCALLY — `next build` sets `NODE_ENV=production`,
+so `environment` resolves to `production` while `VERCEL_GIT_COMMIT_SHA`
+is absent and the old fallback invented a release. Sentry
+DECLUTRMAIL-WEB-13/16 are those, not deployed-site errors.
+**Resolved by:** the code no longer invents a release, so a local build
+cannot manufacture a bucket that reads as production. No founder action
+required.
+**Status:** Done 2026-08-19 — withdrawn, fixed in code
+
+### 2026-08-19 — Brand marks are cacheable but nothing shared caches them
+
+**Source:** session — the /senders fan-out work
+**Why:** `GET /api/icons/:domain` now answers `public` instead of
+`private`, because a response is a function of the domain alone and the
+`domain_icons` table carries no user or mailbox linkage. Browser caches
+are per-profile, so that header changes nothing on its own — it exists
+so a shared cache CAN hold a mark. Nothing currently fronts
+`api.declutrmail.com`: it is Cloud Run direct, so every first view of
+every mark still costs an origin request against a service capped at 3
+instances of 1 vCPU.
+**How:** put a CDN in front of the API origin (GCP external HTTPS load
+balancer + Cloud CDN, or route the icon path through a CDN that already
+exists). Only the icon route needs it — the rest of the API is
+per-user and correctly uncacheable.
+**Verifies by:** a repeat `curl -I https://api.declutrmail.com/api/icons/chase.com`
+from a cold client returns a CDN hit header (e.g. `age:` > 0), and
+Cloud Run request counts for `/api/icons/*` drop against unchanged page
+views.**Status:** Open
+
 ### 2026-08-18 — `scripts/` is not typechecked in CI
 **Source:** PR adding `scripts/check-cron-stale.ts` (D159 observability push)
 **Why:** `pnpm typecheck` is `pnpm -r --parallel typecheck`, which runs each

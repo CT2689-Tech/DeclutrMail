@@ -68,10 +68,10 @@ import type {
   LastReview,
   MailMessageRow,
   ProtectionFlags,
-  SenderDetail,
+  SenderDetailFacts,
+  SenderFacts,
   SenderListDirection,
   SenderListQueryMeta,
-  SenderListRow,
   SenderListSort,
   SenderSummary,
   TimeseriesPoint,
@@ -421,7 +421,7 @@ export class SendersReadService {
      * controllers don't have to thread the clock through.
      */
     now?: Date;
-  }): Promise<SenderListRow[]> {
+  }): Promise<SenderFacts[]> {
     const { mailboxAccountId, category, isProtected, cursor, limit } = args;
     const sort: SenderListSort = args.sort ?? 'total';
     if (!SUPPORTED_SORTS.has(sort)) {
@@ -1243,7 +1243,7 @@ export class SendersReadService {
     mailboxAccountId: string,
     senderId: string,
     args: { now?: Date } = {},
-  ): Promise<SenderDetail | null> {
+  ): Promise<SenderDetailFacts | null> {
     // Same correlated subqueries as the list to keep the read shape
     // consistent. A LATERAL join would be more efficient at very high
     // scale but is overkill at the per-row single-fetch path; the

@@ -54,8 +54,23 @@ export const DOMAIN_ICON_TTL_DAYS = {
  * Increment when a new source or acceptance rule can turn an old
  * negative into a mark. Hits remain valid across resolver upgrades;
  * only older misses are retried immediately.
+ *
+ * 7 — Brandfetch was bound to the production worker. The tier had never
+ * run there: the worker builds its deps as
+ * `...(brandfetchApiKey ? { brandfetch } : {})`, and the key was absent
+ * from the deploy, so every v6 negative verdict in production was
+ * reached by BIMI and website scraping alone. Those verdicts are
+ * therefore not evidence that a domain has no logo — they are evidence
+ * that two of three sources missed it, which is why amazon.com,
+ * linkedin.com, google.com and usps.com all sat at `status = 'none'`.
+ *
+ * Without this bump, binding the key changes nothing for a month:
+ * `none` rows carry a 30-day TTL and these were written 2026-08-17/18
+ * AT v6, so `isStale` would keep answering false and the new tier would
+ * never be asked. The bump is what makes the key take effect — and it
+ * is exactly what this constant is for.
  */
-export const DOMAIN_ICON_RESOLVER_VERSION = 6;
+export const DOMAIN_ICON_RESOLVER_VERSION = 7;
 
 export const domainIcons = pgTable(
   'domain_icons',

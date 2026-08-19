@@ -70,6 +70,13 @@
 //     is intentionally NOT allowlisted — verify checkout still completes
 //     (it should; telemetry is fire-and-forget) and widen connect-src
 //     only if the overlay actually breaks.
+//   Vercel Toolbar   — Vercel injects its comment/feedback toolbar on
+//     deployments that have it enabled and renders it in an iframe from
+//     `https://vercel.live` (frame-src). It is not user-facing — only a
+//     signed-in Vercel team member ever loads it — but the blocked frame
+//     is reported in every production console, which buries real errors.
+//     Exact origin only: no `*.vercel.live` wildcard, and no script-src
+//     or connect-src grant, neither of which the blocked frame needs.
 //   Google avatars   — sender/account avatars come from
 //     `https://*.googleusercontent.com` (lh3…lh6) per D175 (img-src).
 //   Sender identity  — avatars are monogram-only per ADR-0024; sender
@@ -206,6 +213,7 @@ export function buildContentSecurityPolicy(nonce: string | null, env: CspEnv): s
       'https://*.paddle.com',
       'https://checkout.razorpay.com',
       'https://api.razorpay.com',
+      'https://vercel.live',
     )}`,
     `frame-ancestors 'none'`,
     `base-uri 'self'`,
