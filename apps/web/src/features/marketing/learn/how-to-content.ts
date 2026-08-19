@@ -38,7 +38,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         },
         {
           sender: 'Project Digest',
-          detail: '12 inbox messages · opened often',
+          detail: '12 inbox messages · marked read often',
           action: 'Later',
           result: 'Current mail moves to DeclutrMail/Later.',
         },
@@ -329,7 +329,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         },
         {
           sender: 'Photo Share Digest',
-          detail: 'Large inline images · rarely opened',
+          detail: 'Large inline images · rarely marked read',
           action: 'Archive',
           result: 'Leaves the inbox and frees no storage whatsoever.',
         },
@@ -503,7 +503,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         },
         {
           sender: 'Billing Alerts',
-          detail: 'Opened regularly · excluded by the observed pattern',
+          detail: 'Marked read regularly · excluded by the observed pattern',
           action: 'Keep',
           result: 'Review catches a source that should remain visible.',
         },
@@ -640,7 +640,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       rows: [
         {
           sender: 'Neighborhood Theatre',
-          detail: 'Wanted announcements · opened monthly',
+          detail: 'Wanted announcements · marked read monthly',
           action: 'Keep',
           result: 'No cleanup; this sender still earns attention.',
         },
@@ -693,7 +693,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Check engagement and recent subjects',
-            text: 'Replies and opens can reveal a sender that looks noisy but still matters. Open the email in Gmail when the listed details are not enough.',
+            text: 'Replies and read state can reveal a sender that looks noisy but still matters. Open the email in Gmail when the listed details are not enough.',
           },
           {
             name: 'Choose Unsubscribe for legitimate unwanted lists',
