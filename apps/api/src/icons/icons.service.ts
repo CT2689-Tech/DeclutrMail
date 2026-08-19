@@ -63,6 +63,50 @@ export type IconLookup =
 export const MAX_SCHEDULED_PER_READ = 12;
 
 /**
+ * How long a read may wait on the queue before giving up on scheduling.
+ *
+ * `createRedisConnection` builds its client with
+ * `maxRetriesPerRequest: null`, which is correct for a worker — a job
+ * must not be dropped because Redis blinked — but it means a command
+ * issued while Redis is unreachable RETRIES FOREVER instead of
+ * failing. `queue.add()` then never settles, and an `await` on it
+ * never returns. A try/catch cannot help: there is no rejection, only
+ * a promise that stays pending.
+ *
+ * That hazard used to be invisible, because the only caller was an
+ * `<img>` subresource and a stalled image costs nothing. It stopped
+ * being invisible when the senders list started scheduling
+ * resolution: without this bound, a Redis outage would hang
+ * `GET /api/senders` itself — the page would not fail, it would spin.
+ *
+ * So scheduling gets a deadline. Losing the race is not an error
+ * worth failing a read over: the mark stays uncached and the next
+ * list read tries again, which is the same degradation as no Redis at
+ * all (monogram until it recovers).
+ */
+export const ENQUEUE_DEADLINE_MS = 500;
+
+/**
+ * Resolve `work`, or reject once `ms` has passed — whichever happens
+ * first. The loser is explicitly neutralised so a late rejection
+ * cannot surface as an unhandled rejection after the race is decided.
+ */
+async function withDeadline<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  work.catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms}ms`)), ms);
+    // Never hold the process open just to enforce a best-effort bound.
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([work, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * The two domains a raw request maps onto, or null when the input can
  * never become a resolution: `discoveryDomain` is what the caller
  * asked for, `organizational` is the registrable domain we look the
@@ -358,7 +402,13 @@ export class IconsService {
   private async schedule(domain: string, discoveryDomain: string): Promise<void> {
     if (!this.queue) return;
     try {
-      await enqueueDomainIcon(this.queue, domain, discoveryDomain);
+      // Bounded: an unreachable Redis stalls this call forever rather
+      // than rejecting it — see `ENQUEUE_DEADLINE_MS`.
+      await withDeadline(
+        enqueueDomainIcon(this.queue, domain, discoveryDomain),
+        ENQUEUE_DEADLINE_MS,
+        'domain icon enqueue',
+      );
     } catch (err) {
       console.error(
         JSON.stringify({

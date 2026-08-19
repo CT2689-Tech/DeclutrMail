@@ -422,6 +422,26 @@ describe('IconsService', () => {
       expect(added).toEqual([]);
     });
 
+    // REDIS OUTAGE MUST NOT HANG A READ. `createRedisConnection` sets
+    // `maxRetriesPerRequest: null`, so a command issued while Redis is
+    // unreachable retries forever instead of failing — `queue.add()`
+    // never settles. A try/catch cannot see that; only a deadline can.
+    // Without one, a Redis outage would leave GET /api/senders spinning
+    // rather than degrading to monograms.
+    it('does not hang when the queue never answers', async () => {
+      const db = await freshTestDb();
+      const wedged = {
+        add: () => new Promise<never>(() => {}),
+      } as unknown as Queue<{ domain: string }>;
+
+      const marks = await new IconsService(db as never, wedged).marksFor(['unknown.example'], {
+        mayEnqueue: true,
+      });
+
+      // The read still answers, on time, with the truth it has.
+      expect(marks).toEqual(new Set());
+    });
+
     it('resolves a page through the alias registry', async () => {
       const db = await freshTestDb();
       await seedIcon(db, { domain: 'canonical.example' });
