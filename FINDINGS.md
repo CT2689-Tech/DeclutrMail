@@ -156,13 +156,309 @@ the point.
 
 ## P0 — launch blockers
 
-_None open._
+### F008 — "Marked read" is a 30-day rate wearing a lifetime label; the grid escalates it to "Never"
+
+**Found:** 2026-08-18 · `/senders` sender preview modal + grid card
+**Observed (founder, verbatim):** _"marked read seems buggy as well. Check my
+gmail for etherscan. It shows marked read as 0% although I can see one email
+has been read."_
+
+**Verdict — the observation is right, the named cause is not. The tile is
+arithmetically correct and semantically false.**
+
+`Marked read` is a **rolling 30-day** ratio, not a lifetime one:
+`last30dReadCount / last30dMsgs`, both live correlated subqueries over
+`mail_messages`
+([senders.read-service.ts:184-202](apps/api/src/senders/senders.read-service.ts:184)),
+divided by `computeReadRate`
+([senders.read-service.ts:1669](apps/api/src/senders/senders.read-service.ts:1669)),
+window constant `WINDOWS.VOLUME_DAYS = 30`
+([thresholds.ts:46](packages/shared/src/senders/thresholds.ts:46)). The FE
+renders it at
+[sender-row-detail.tsx:139-152](apps/web/src/features/senders/table/sender-row-detail.tsx:139).
+
+Measured on the founder's own synced mailbox:
+
+| noreply@etherscan.io | messages | read  | rate                         |
+| -------------------- | -------- | ----- | ---------------------------- |
+| lifetime             | 1,872    | 1,806 | **96.5%**                    |
+| last 90d             | 50       | 0     | 0%                           |
+| last 30d             | 9        | 0     | **0% ← what the tile shows** |
+
+So the product tells the user it has never seen them read a sender whose mail
+they have read 96.5% of since 2017.
+
+**Why it reads as a lie rather than a shorthand.** The five stat cards are
+`Received` (lifetime) · `In inbox` (now) · `Last received` · `Marked read`
+(**silently 30d**) · `Last 30 days` (**explicitly** 30d). The only card whose
+window is unstated is the only windowed one, and it sits directly beneath a
+lifetime `Received 1,872`. Every surrounding cue says lifetime.
+
+**The grid copy is worse — it makes an absolute claim a suffix cannot repair.**
+`readBucket(0)` renders the label **"Never"** with aria "Read rate: never
+marked read" ([fact-language.tsx:82](apps/web/src/features/senders/fact-language.tsx:82)),
+and when `read <= 5 && monthly >= 8` the row pushes **"Almost never marked
+read"** ([sender-list-row.tsx:67](apps/web/src/features/senders/table/sender-list-row.tsx:67)).
+Etherscan (read 0, monthly 9) hits that branch exactly. A percentage can be
+qualified by adding "in 30d"; "Never" cannot — the wording has to change.
+
+**Blast radius, same mailbox:** 615 senders have mail in the last 30 days;
+**332 of them render 0%**, and **46 of those have a lifetime read rate ≥ 50%** —
+i.e. 46 flat self-contradictions, not 1. (An independent 90-day cut: 115 of 387
+active senders at 0%, 12 contradicting lifetime.)
+
+**Ruled out, with the evidence.** These were each tested rather than assumed:
+
+- **Not a `null → 0` coercion.** `readRate: number | null`
+  ([senders.ts:129](apps/web/src/lib/api/senders.ts:129)) is passed through
+  deliberately — `monthlyVolume ?? 0` is coerced on the adjacent line and
+  `readRate` is not
+  ([adapters.ts:100-103](apps/web/src/features/senders/api/adapters.ts:100)) —
+  and `null` renders `—`. This path is clean.
+- **Not broken label sync.** `users.history.list` is called with no
+  `historyTypes` filter, so `labelsAdded` / `labelsRemoved` come back and are
+  dispatched into `handleLabelChange`
+  ([incremental-sync.worker.ts:787-840](packages/workers/src/incremental-sync.worker.ts:787)),
+  which keeps `is_unread` in lockstep with `label_ids`. A cursor older than
+  Gmail's 7-day retention returns `cursorTooOld` and re-enqueues a full sync
+  rather than advancing
+  ([incremental-sync.worker.ts:371-382](packages/workers/src/incremental-sync.worker.ts:371)),
+  and that re-sync refreshes `isUnread` on upsert
+  ([initial-sync.worker.ts:1432](packages/workers/src/initial-sync.worker.ts:1432)).
+  The design is sound.
+- **Not rounding — but rounding is a real latent sibling.** `computeReadRate`
+  rounds to 2 decimals _before_ the FE multiplies by 100, so any true rate below
+  0.005 collapses to a measured `0%` (and to "Never"). It needs >200 messages in
+  30 days for one read; no sender currently hits it. Fix it in the same change.
+
+**Sub-claim raised and then disproved — recorded so it is not re-raised.** Two
+messages Gmail reported as read were still `is_unread = t` with
+`updated_at == created_at`, which looked like frozen read state. The local
+worker was down at the time. **Re-tested with the worker up: `1a00acef48761965`
+flipped to `is_unread = f` at 22:49:47, within seconds of boot.** Label sync is
+correct; that divergence was worker downtime, not a defect. (`19e6d24cb7266503`,
+indexed 2026-05-27, remains stale — a history-gap casualty from 83 days of
+intermittent local worker, recoverable only by the `cursorTooOld` full re-sync.
+A dev-environment artifact, not a production defect.)
+
+**Post-fix reality check.** After that catch-up the tile reads **11%** against a
+lifetime **96.5%**. The number moved; the false impression did not. This
+confirms the defect is the window/label mismatch and not the underlying data.
+
+**Recommendation.** Rename to the window it actually measures, and make the
+grid stop asserting lifetime facts from a 30-day sample. `Read rate · 30d`
+(or show `1,806 / 1,872 lifetime` and drop the window entirely — the tile row
+is otherwise all-lifetime). `readBucket(0)` must not say "Never" when lifetime
+disagrees. Fix the pre-multiply rounding in the same PR.
+
+**Priority:** P0 — the trust wedge asserting a falsehood about the user's own
+mail, on the primary surface, found by the founder inside five minutes of real
+use. Same defect class as the documented UI-truth bug, in its _label_ form
+rather than its `null → 0` form.
+**Status:** Open
+
+---
+
+### F009 — `sender_timeseries.read_count` is frozen at index time and feeds Unsubscribe recommendations through a `null → 0` coercion
+
+**Found:** 2026-08-18 · while triaging F008 (not observed by the founder)
+**Observed:** The recommendation scorer does not use F008's live
+`mail_messages` path. It sums `sender_timeseries.read_count` over 90 days
+([score.worker.ts:567-585](packages/workers/src/score.worker.ts:567),
+[autopilot-signals.ts:137-191](packages/workers/src/autopilot-signals.ts:137)).
+
+**Verdict — two defects compounding, and this one moves mail.**
+
+1. **The counter is write-once.** `read_count` is incremented only at
+   message-insert time
+   ([initial-sync.worker.ts:1370-1379](packages/workers/src/initial-sync.worker.ts:1370),
+   [incremental-sync.worker.ts:709-725](packages/workers/src/incremental-sync.worker.ts:709)).
+   `handleLabelChange` never touches it, and the incremental post-pass
+   reconciles `reply_count` only ([incremental-sync.worker.ts:877-900](packages/workers/src/incremental-sync.worker.ts:877)).
+   A message read _after_ it was indexed is never counted as read here.
+   **Measured:** over a 90-day window, 2,005 sender-months compared against a
+   live recount of `mail_messages` — **242 (12%) disagree**, undercounting reads
+   by 76. Unlike F008's tile, this cannot self-heal from a live query.
+
+   **Reproduced live, 2026-08-18 22:49.** A single etherscan message was read in
+   Gmail; the incremental worker applied the label change and flipped
+   `mail_messages.is_unread` within seconds. In the same instant the live 30-day
+   aggregate moved `0/9 → 1/9`, while `sender_timeseries` for `2026-08` stayed at
+   `volume 9, read_count 0`. One state change, two readers, one of them wrong —
+   and the wrong one is the reader that feeds the Unsubscribe cascade.
+
+2. **Unknown is coerced to a measured zero.** Both call sites do
+   `volume > 0 ? reads / volume : 0`
+   ([score.worker.ts:585](packages/workers/src/score.worker.ts:585),
+   [autopilot-signals.ts:191](packages/workers/src/autopilot-signals.ts:191)),
+   which feeds `readRate90d < 0.2 → +0.15` and `< 0.05 → +0.10` toward
+   Unsubscribe ([score-cascade.ts:357-358](packages/workers/src/score-cascade.ts:357)).
+   A sender with no timeseries row scores as "never read" and gets pushed
+   toward Unsubscribe on evidence that was never gathered.
+
+This is the textbook `null → 0` form of the UI-truth class — the exact one
+F008's display path correctly avoids — except here it does not merely display a
+wrong number, it **recommends a destructive verb from one**.
+
+**Recommendation.** Make the 90-day read rate `number | null` end to end and
+let a null abstain from the cascade rather than score as zero. Separately,
+either reconcile `read_count` in `handleLabelChange` or drop the counter and
+read the same live `mail_messages` aggregate the tile already uses — a stored
+counter that no code path can correct is not worth its drift.
+
+**Priority:** P0 — a destructive recommendation derived from a fabricated
+signal. Higher real severity than F008, which only misreports.
+**Status:** Open
 
 ---
 
 ## P1 — launch week
 
-_None open._
+### F006 — Sender surfaces show only relative time; the absolute instant is already on the wire and thrown away
+
+**Found:** 2026-08-18 · sender detail "Recent messages" + `/senders` preview modal
+**Observed (founder, verbatim):** _"instead of x month ago, we should give
+concrete timestamp. Even in recent subjects, there is no timestamp at all.
+This would fill the trust gap if user is trying to verify something. I was
+doing exactly same and felt like this."_
+
+**Verdict — correct, and cheaper to fix than it looks: this is a render-layer
+omission, not a data gap.**
+
+The full ISO instant survives the entire chain untouched — Gmail
+`internalDate` → `mail_messages.internal_date` (timestamptz, NOT NULL,
+[mail-messages.ts:94](packages/db/src/schema/mail-messages.ts:94)) →
+`internalDate: row.internalDate.toISOString()`
+([senders.read-service.ts:1494](apps/api/src/senders/senders.read-service.ts:1494))
+→ `receivedAt: row.internalDate`
+([adapters.ts:161](apps/web/src/features/senders/api/adapters.ts:161)). No
+serializer or adapter drops it.
+
+Where it dies:
+
+| Surface                      | Has the ISO?               | Renders it?                                                                                                                                                             |
+| ---------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Recent messages row          | yes (`message.receivedAt`) | no — `relTimeFromIso` at [recent-messages.tsx:228](apps/web/src/features/senders/detail/recent-messages.tsx:228), no `title`, no `<time>`                               |
+| Recent subjects (peek modal) | yes, then **discarded**    | no — `.slice(0,3).map(m => m.subject)` at [sender-row-detail.tsx:68-70](apps/web/src/features/senders/table/sender-row-detail.tsx:68); the type is `subjects: string[]` |
+| "Last received" tile         | yes (`s.lastSeenAt`)       | no — `relTimeLabel(s.lastDays)` at [sender-row-detail.tsx:138](apps/web/src/features/senders/table/sender-row-detail.tsx:138)                                           |
+| Confirm-action preview       | yes                        | **yes** — `<time dateTime>` at [confirm-action-modal.tsx:1543](apps/web/src/features/senders/confirm-action-modal.tsx:1543)                                             |
+| Activity feed                | yes                        | **yes** — relative label + `title={absolute}` at [activity-screen.tsx:2284](apps/web/src/features/activity/activity-screen.tsx:2284)                                    |
+
+**The precedent is already ours, decided for this exact reason.** The
+confirm-action preview's subject sample was deliberately widened from
+`string[]` to `{subject, date}[]` because "the date is how the reader checks it
+respects the window they picked" (MISTAKES.md 2026-07-27). Recent subjects is
+the same component pattern that never got the same treatment.
+
+**A live spec violation surfaced alongside it.** D46 mandates for decision
+history: _"Date (relative for ≤7d, absolute for older)"_
+([Implementation-Plan.md:1679](docs/execution/Implementation-Plan.md:1679)).
+The component that implements it correctly (`decision-history.tsx:38`) is
+**unmounted**; the shipped `DecisionTimeline` calls an unconditional
+`formatRelative` with no absolute branch and no `title`
+([sender-detail-page.tsx:1368](apps/web/src/features/senders/detail/sender-detail-page.tsx:1368)).
+That is drift, not a new decision.
+
+**Constraints any fix must respect.**
+
+- **D41 specifies the relative label** for the recent-message row
+  ([Implementation-Plan.md:1592-1610](docs/execution/Implementation-Plan.md:1592)).
+  Adding `title=` / `<time dateTime=>` is additive and needs no amendment;
+  changing the _visible_ string does.
+- **Hydration determinism (D200).** `eslint.config.mjs:66-102` bans unpinned
+  `toLocale*String()` / `Intl.*Format(undefined, …)` across `apps/web`. Any
+  absolute label must pin `'en-US'` **and** pass an explicit `timeZone` from
+  `useUserTimeZone()` ([use-me.ts:96](apps/web/src/features/auth/api/use-me.ts:96)),
+  or sit behind `useNow()` ([use-now.ts:18](apps/web/src/lib/use-now.ts:18)).
+  Note `relTimeFromIso` already defaults `now = new Date()` **in a render body**
+  on a server-prefetched route — pre-existing hazard in the file being touched.
+- **No privacy work required.** The timestamp is already a declared, stored,
+  user-disclosed field — `received-date` in the D7 registry
+  ([gmail-data-inventory.ts:149-162](packages/shared/src/contracts/gmail-data-inventory.ts:149)),
+  on the same footing as the snippet beside it. Same row, same query, zero new
+  Gmail calls, no registry amendment.
+
+**Recommendation.** Additive and small: `<time dateTime={iso} title={absolute}>`
+on the recent-message rows, widen `RowDetailSubjects` to carry the date and
+render it like the confirm-action preview already does, and put the absolute
+value on the "Last received" tile. Close the D46 drift in the same PR. There is
+no shared date utility in `packages/shared` — five per-feature relative
+formatters have been duplicated instead; promoting one is optional here and
+should not be smuggled into this change.
+
+**Priority:** P1
+**Status:** Open
+
+---
+
+### F007 — The hamburger's inline `display` outranks its media query, so every desktop session can open a duplicate sidebar over the real one
+
+**Found:** 2026-08-18 · app shell top bar, every authed route
+**Observed (founder, verbatim):** _"hamburger menu seems like buggy"_
+
+**Verdict — real, one line, and shipped since 2026-07-14.**
+
+`tokens.css` hides the hamburger above the 900px breakpoint and shows it below
+— correctly:
+
+```
+.dm-topbar-hamburger { display: none; }                       /* tokens.css:367 */
+@media (max-width: 900px) { .dm-topbar-hamburger { display: inline-flex; } }  /* :380 */
+```
+
+But the button carries `display: 'inline-flex'` as an **inline style**
+([app-shell.tsx:185](packages/shared/src/shell/app-shell.tsx:185)). A style
+attribute outranks any non-`!important` author rule, so the `display: none`
+never applies and **the hamburger renders at every width**, including the
+~2000px viewport in the screenshot.
+
+**What clicking it does — and why it looks like nothing happened.** There are
+two separate sidebar instances. The desktop one
+([app-shell.tsx:99-101](packages/shared/src/shell/app-shell.tsx:99)) does not
+read `drawerOpen` at all. The mobile one
+([app-shell.tsx:105-147](packages/shared/src/shell/app-shell.tsx:105)) mounts a
+**second `<Sidebar>`** in a `role="dialog" aria-modal="true"` fixed at
+`left: 0`, same 220px width. On desktop it lands pixel-aligned on top of the
+sidebar that was already there — identical nav, identical position. The only
+visible deltas are the ✕ and a 34% scrim. That is exactly screenshot 3; the ✕
+is not leaking into the sidebar, it belongs to the duplicate sitting on it.
+
+**It is also a live a11y defect.** `useFocusTrap`
+([app-shell.tsx:59](packages/shared/src/shell/app-shell.tsx:59)) is active, over
+a background that is never `inert`/`aria-hidden`, and while open the page
+carries two `<nav aria-label="Product navigation">` landmarks plus duplicated
+element ids referenced by `aria-labelledby`
+([sidebar.tsx:130-133](packages/shared/src/shell/sidebar.tsx:130)).
+
+**Regression, precisely located.** `git log -L 170,195` on the shell shows two
+touches. The original had no `display`. Commit `e0295e38` ("feat: launch public
+product experience", #325, 2026-07-14) replaced `padding` with a 44px
+touch-target block and brought `display: 'inline-flex'` along to centre the SVG.
+Live for 35 days. The file documents this exact trap 25 lines lower, for the
+trust strip: _"`display` lives in tokens.css, not here: an inline style would
+outrank the phone-width media query"_
+([app-shell.tsx:210-212](packages/shared/src/shell/app-shell.tsx:210)) — the
+hamburger was simply missed.
+
+**Why nothing caught it.** No Storybook story exists for `AppShell` or
+`Sidebar`. [app-shell.test.tsx:14-27](apps/web/src/features/shell/app-shell.test.tsx:14)
+opens the drawer and asserts the trap in **jsdom, where `tokens.css` never
+loads**, so it passes identically either way — and it asserts the 44px size that
+motivated the bad line. Playwright runs desktop and mobile projects and asserts
+the trust strip in both directions, but never asserts anything about the
+hamburger.
+
+**Recommendation.** Delete `display: 'inline-flex'` from
+[app-shell.tsx:185](packages/shared/src/shell/app-shell.tsx:185) and let
+`tokens.css` own it; `alignItems` / `justifyContent` can stay inline (inert when
+the box is not flex). Then add the both-directions assertion to
+`packages/e2e/specs/a11y-smoke.spec.ts` beside the existing trust-strip check —
+the jsdom test structurally cannot catch this class, so without the e2e pin it
+will regress again.
+
+**Priority:** P1 — a visibly broken control in the chrome of every authed
+desktop page, plus an active focus trap, against a one-line fix.
+**Status:** Open
 
 ---
 
