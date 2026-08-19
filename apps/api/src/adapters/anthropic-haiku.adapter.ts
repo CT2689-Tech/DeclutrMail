@@ -155,7 +155,12 @@ export function renderUserPrompt(input: ReasoningInput): string {
     input.facts.readRatePct === null
       ? 'Read rate: not measurable (no mail in the last 90 days)'
       : `Read rate over the last 90 days: ${input.facts.readRatePct}%`,
-    `Engine rule: ${input.ruleLabel}`,
+    // Phrased as a fact about the sender, not as a named internal
+    // artifact. "Engine rule: high_read_rate" produced "the
+    // high_read_rate engine rule confirms…" in live copy; the label is
+    // now a plain-English phrase and the line no longer invites the
+    // model to name a rule at all.
+    `Why this fits: ${input.ruleLabel}`,
     `Recommendation: ${verdictLabel} (confidence ${confidencePct}%)`,
     '',
     'Explain in 1-2 sentences why this recommendation fits.',

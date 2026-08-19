@@ -150,7 +150,14 @@ export interface ReasoningInput {
   domain: string;
   verdict: TriageVerdict;
   confidence: number;
-  ruleLabel: CascadeResult['ruleId'];
+  /**
+   * Plain-English phrase for the rule that decided the verdict —
+   * `CASCADE_RULE_PHRASE[ruleId]`, never the id itself. This field is
+   * read by a model whose output users read: when it carried the raw id
+   * the explanation came back as "the high_read_rate engine rule
+   * confirms…", which shipped to 440+ senders.
+   */
+  ruleLabel: string;
   facts: CascadeResult['facts'];
   gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
 }

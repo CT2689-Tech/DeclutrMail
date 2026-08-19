@@ -26,7 +26,13 @@ import {
   type ReasoningLlmPort,
 } from './reasoning.js';
 import { RateLimiter } from './rate-limiter.js';
-import { isGovernmentDomain, runCascade, type SenderSignals } from './score-cascade.js';
+import {
+  CASCADE_RULE_IDS,
+  CASCADE_RULE_PHRASE,
+  isGovernmentDomain,
+  runCascade,
+  type SenderSignals,
+} from './score-cascade.js';
 import { ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -177,6 +183,20 @@ export interface ScoreWorkerDeps {
  * `apps/api` is read-only — it produces score-trigger events that this
  * worker consumes, and never mutates `triage_decisions` itself.
  */
+/**
+ * The first internal rule id a user-facing sentence names, or `null`.
+ *
+ * Matches against the KNOWN vocabulary rather than a snake_case regex:
+ * user data is full of underscores too (a sender literally named
+ * `ife_insurance_india` sits in the founder's mailbox), and rejecting a
+ * good explanation because it quoted the sender's own name would be a
+ * worse bug than the one this closes.
+ */
+export function leakedRuleId(reasoning: string): string | null {
+  const haystack = reasoning.toLowerCase();
+  return CASCADE_RULE_IDS.find((id) => haystack.includes(id)) ?? null;
+}
+
 export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult> {
   override readonly workerName = 'ScoreWorker';
   override readonly policy = 'perMailboxPolicy' as const;
@@ -384,14 +404,34 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
               domain: signals.domain,
               verdict: result.verdict,
               confidence: result.confidence,
-              ruleLabel: result.ruleId,
+              // The PHRASE, never the id. Handing the model
+              // `high_read_rate` is how "the high_read_rate engine rule"
+              // ended up in user-facing copy.
+              ruleLabel: CASCADE_RULE_PHRASE[result.ruleId],
               facts: result.facts,
               gmailCategory: signals.signals.gmailCategory,
             }),
           this.explainTimeoutMs,
         );
-        if (raced.kind === 'ok') {
+        const leaked = raced.kind === 'ok' && raced.value ? leakedRuleId(raced.value) : null;
+        if (raced.kind === 'ok' && leaked === null) {
           reasoning = raced.value;
+        } else if (raced.kind === 'ok') {
+          // The prompt no longer contains an id, but the model can still
+          // reach one via few-shot drift or a future prompt edit. A
+          // sentence naming internal vocabulary is not shippable copy —
+          // fall back to the template rather than explain the user's
+          // mail to them in our jargon.
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'reasoning.rejected_internal_vocabulary',
+              worker: this.workerName,
+              mailboxAccountId,
+              senderKey,
+              token: leaked,
+            }),
+          );
         } else {
           // Either way the sender falls back to its template explanation —
           // an explanation is an enhancement, never a reason to fail the

@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { ReasoningInput } from '@declutrmail/workers';
+import { CASCADE_RULE_IDS, type ReasoningInput } from '@declutrmail/workers';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -27,7 +27,7 @@ const SAMPLE_INPUT: ReasoningInput = {
   domain: 'acme.example',
   verdict: 'archive',
   confidence: 0.87,
-  ruleLabel: 'score_archive',
+  ruleLabel: 'the volume and read rate point at archiving',
   facts: { monthlyVolume: 12, readRatePct: 3 },
   gmailCategory: 'promotions',
 };
@@ -50,7 +50,7 @@ describe('renderUserPrompt', () => {
     expect(out).toContain('promotions');
     expect(out).toContain('12 messages');
     expect(out).toContain('3%');
-    expect(out).toContain('score_archive');
+    expect(out).toContain('the volume and read rate point at archiving');
     expect(out).toContain('Archive');
     expect(out).toContain('87%');
   });
@@ -68,6 +68,20 @@ describe('renderUserPrompt', () => {
     // Domain row still rendered — defensively shows "(unknown)" so the
     // model can't confuse a blank field with a missing one.
     expect(out).toContain('Domain: (unknown)');
+  });
+
+  /**
+   * The prompt used to say `Engine rule: score_archive`, and Haiku wrote
+   * it straight back out: "The high_read_rate engine rule confirms this
+   * sender deserves inbox placement" was live copy on 440+ senders. The
+   * model reads what we hand it — so we hand it a sentence, not an id.
+   */
+  it('names no internal rule id and does not invite the model to cite one', () => {
+    const out = renderUserPrompt(SAMPLE_INPUT);
+    for (const id of CASCADE_RULE_IDS) {
+      expect(out).not.toContain(id);
+    }
+    expect(out).not.toMatch(/engine rule/i);
   });
 
   it('does NOT reference any body / subject / snippet field', () => {
