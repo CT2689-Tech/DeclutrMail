@@ -102,5 +102,5 @@ better; if you are recommending a 4, say why the 9 is worse.
 
 ## Argument
 
-Optional. Bare `/decide` lists everything open. An argument narrows to one
-topic (e.g. `/decide autopilot`).
+Optional. Bare `/ct-decide` lists everything open. An argument narrows to one
+topic (e.g. `/ct-decide autopilot`).

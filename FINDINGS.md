@@ -15,14 +15,14 @@ a followup (founder's hands), or a documented no.
 
 ## How to use this
 
-**Founder:** say `/finding <what you saw>` in any session. Nothing to format,
+**Founder:** say `/ct-finding <what you saw>` in any session. Nothing to format,
 nothing to open. A screenshot plus a sentence is enough.
 
-**Agent:** on `/finding`, append the item to **Inbox** immediately — date,
+**Agent:** on `/ct-finding`, append the item to **Inbox** immediately — date,
 surface, the founder's words. Do not triage in the same breath and do not
 interrupt whatever else is in flight; capture is cheap, triage is not.
 
-On `/finding triage` (or any explicit ask), work the Inbox: go read the
+On `/ct-finding triage` (or any explicit ask), work the Inbox: go read the
 actual code, form a real verdict rather than a restatement, assign a
 priority, move it into the right section with an `F###` id. Never triage
 from intuition — if the verdict rests on a file, cite `path:line`.

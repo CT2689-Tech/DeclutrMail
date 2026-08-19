@@ -57,8 +57,8 @@ you are describing implementation, not product. Cut.
 
 ## Argument
 
-Optional. A bare `/status` covers the whole session. An argument narrows the
-scope to that topic (e.g. `/status billing`) — summarise only that thread,
+Optional. A bare `/ct-status` covers the whole session. An argument narrows the
+scope to that topic (e.g. `/ct-status billing`) — summarise only that thread,
 same rules.
 
 ## What NOT to do
