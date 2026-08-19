@@ -150,30 +150,38 @@ export function fixtureToTimeseries(s: SenderFixture): TimeseriesPointDto[] {
   }));
 }
 
-/** Project the fixture's per-sender history to the wire shape (narrowed). */
+/** Project the fixture's per-sender history to the wire shape. */
 export function fixtureToDecisionHistoryRows(s: SenderFixture): DecisionHistoryRowDto[] {
   const detail = buildSenderDetail(s);
-  // The wire schema only carries `keep | archive | unsubscribe | later`.
-  // Fixture rows include richer actions (Restored, Protected,
-  // etc.) — those don't map to a verdict so we drop them. The remaining
-  // rows project cleanly.
-  const verdictMap: Record<string, DecisionHistoryRowDto['verdict']> = {
+  // The wire carries the DECISION subset of `activity_log.action`.
+  // Fixture rows include 'Restored', which no producer writes yet — it
+  // has no wire action, so those rows drop.
+  const actionMap: Record<string, DecisionHistoryRowDto['action']> = {
     Kept: 'keep',
     Archived: 'archive',
-    Unsubscribed: 'unsubscribe',
+    'Unsubscribe requested': 'unsubscribe',
     'Moved to Later': 'later',
+    Deleted: 'delete',
+    Protected: 'marked_protected',
+    Unprotected: 'unmarked_protected',
+  };
+  const sourceMap: Record<string, DecisionHistoryRowDto['source']> = {
+    You: 'manual',
+    Triage: 'triage',
+    Autopilot: 'autopilot',
+    Screener: 'screener',
   };
   return detail.history.flatMap((row) => {
-    const verdict = verdictMap[row.action];
-    if (!verdict) return [];
+    const action = actionMap[row.action];
+    const source = sourceMap[row.source];
+    if (!action || !source) return [];
     return [
       {
         id: row.id,
-        verdict,
-        confidence: 0.8,
-        producedAt: row.at,
-        reasoning: 'Projected from fixture for FE wire-up tests.',
-        generatedBy: 'template' as const,
+        action,
+        source,
+        occurredAt: row.at,
+        affectedCount: row.count ?? 0,
       },
     ];
   });

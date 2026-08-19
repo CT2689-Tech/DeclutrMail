@@ -485,14 +485,13 @@ export class SendersController {
   }
 
   /**
-   * GET /api/senders/:id/history — decision history for this sender
-   * (D46). Default page 10; max 50.
+   * GET /api/senders/:id/history — the actions actually taken on this
+   * sender (D46). Default page 10; max 50.
    *
-   * Today's `triage_decisions` schema enforces ONE current row per
-   * sender so the page is at most one entry — pagination is forward-
-   * compatible for the planned `triage_decision_history` table. See
-   * ADR-0008 §3 for the pragmatic exception that lets this service
-   * read the triage-owned table directly at launch.
+   * Backed by `activity_log`, so this feed and the Activity screen
+   * answer "what happened to this sender" from the same rows. The
+   * engine's suggestion is NOT history and is not served here; it
+   * reaches the page as `SenderDetail.recommendation`.
    */
   @Get(':id/history')
   @RateLimit('triage-load')
@@ -512,8 +511,8 @@ export class SendersController {
     if (rawCursor && cursorRaw === null) {
       throw new BadRequestException('Invalid cursor.');
     }
-    const cursor = cursorRaw ? { producedAt: new Date(cursorRaw.key), id: cursorRaw.id } : null;
-    if (cursor && Number.isNaN(cursor.producedAt.getTime())) {
+    const cursor = cursorRaw ? { occurredAt: new Date(cursorRaw.key), id: cursorRaw.id } : null;
+    if (cursor && Number.isNaN(cursor.occurredAt.getTime())) {
       throw new BadRequestException('Invalid cursor.');
     }
 
@@ -528,7 +527,7 @@ export class SendersController {
     }
 
     const { page, nextCursor } = takePage(rows, limit, (row) =>
-      encodeCursor({ key: row.producedAt, id: row.id }),
+      encodeCursor({ key: row.occurredAt, id: row.id }),
     );
     return paginated({ items: page, limit, nextCursor });
   }

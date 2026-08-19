@@ -40,7 +40,7 @@ export type ProtectionReason =
  * literal in a fixture fails to typecheck rather than silently
  * widening the union.
  */
-export type DecisionSource = 'You' | 'Triage' | 'Manual' | 'Autopilot' | 'Screener' | 'System';
+export type DecisionSource = 'You' | 'Triage' | 'Autopilot' | 'Screener';
 
 /**
  * Past-tense action labels surfaced in the decision-history list.
@@ -50,13 +50,17 @@ export type DecisionSource = 'You' | 'Triage' | 'Manual' | 'Autopilot' | 'Screen
 export type DecisionAction =
   | 'Archived'
   | 'Kept'
+  | 'Deleted'
   | 'Unsubscribe requested'
   | 'Moved to Later'
   | 'Protected'
   | 'Unprotected'
   | 'Restored';
 
-/** A single decision-history row from `activity_log`. */
+/**
+ * A single action taken on this sender, from `activity_log`. Never the
+ * engine's suggestion — that is `SenderDetail.recommendation`.
+ */
 export interface DecisionHistoryRow {
   id: string;
   /** ISO-8601 — relative-formatted in the UI for ≤7d, absolute beyond. */

@@ -23,6 +23,28 @@ describe('<DecisionTimeline /> — Variant D', () => {
     expect(html).not.toContain('Decision timeline');
   });
 
+  it('renders the empty slot instead of a bare rail when nothing happened', () => {
+    const html = renderToStaticMarkup(
+      <DecisionTimeline
+        heading="Decision timeline"
+        items={[]}
+        empty={<p>No actions on this sender yet</p>}
+      />,
+    );
+    expect(html).toContain('No actions on this sender yet');
+  });
+
+  it('hides the empty slot as soon as there is a real action to show', () => {
+    const html = renderToStaticMarkup(
+      <DecisionTimeline
+        items={[{ id: '1', when: 'today', what: 'You Kept' }]}
+        empty={<p>No actions on this sender yet</p>}
+      />,
+    );
+    expect(html).not.toContain('No actions on this sender yet');
+    expect(html).toContain('You Kept');
+  });
+
   it('renders each item with its when label and what body', () => {
     const html = renderToStaticMarkup(
       <DecisionTimeline

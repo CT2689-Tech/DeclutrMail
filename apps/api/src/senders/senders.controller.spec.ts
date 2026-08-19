@@ -79,11 +79,10 @@ function makeMessageRow(overrides: Partial<MailMessageRow> = {}): MailMessageRow
 function makeHistoryRow(overrides: Partial<DecisionHistoryRow> = {}): DecisionHistoryRow {
   return {
     id: '44444444-4444-4444-4444-444444444444',
-    verdict: 'archive',
-    confidence: 0.85,
-    producedAt: '2026-05-01T00:00:00.000Z',
-    reasoning: 'High volume, low read rate.',
-    generatedBy: 'template',
+    action: 'archive',
+    source: 'manual',
+    occurredAt: '2026-05-01T00:00:00.000Z',
+    affectedCount: 47,
     ...overrides,
   };
 }
@@ -688,7 +687,8 @@ describe('SendersController', () => {
       reads.listDecisionHistory.mockResolvedValue([makeHistoryRow()]);
       const res = await ctrl.history(MAILBOX, SENDER_ID, undefined, undefined);
       expect(res.data).toHaveLength(1);
-      expect(res.data[0]!.verdict).toBe('archive');
+      expect(res.data[0]!.action).toBe('archive');
+      expect(res.data[0]!.affectedCount).toBe(47);
     });
   });
 

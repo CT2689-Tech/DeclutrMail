@@ -331,30 +331,38 @@ export function fetchSendersSummary(
   });
 }
 
-/** Row shape on `GET /api/senders/:id/history` — decision-history rows. */
+/**
+ * Row shape on `GET /api/senders/:id/history` — one action that was
+ * actually taken on this sender, from `activity_log`.
+ *
+ * NOT the engine's suggestion. That arrives as
+ * `SenderDetailDto.recommendation` and is labelled as a suggestion; a
+ * previous version of this endpoint served `triage_decisions` rows,
+ * which made every scored-but-untouched sender claim a decision the
+ * user never made.
+ */
 export interface DecisionHistoryRowDto {
+  /** `activity_log.id` — the operation id shown on the row. */
   id: string;
   /**
-   * Closed enum mirroring `triage_decision.verdict`. "screen" is an
-   * INTERNAL enum (D227); the BE filters those out so the FE never
-   * sees them — but the wire type lists only the four user-facing
-   * verdicts to keep the contract narrow.
+   * Closed enum mirroring the DECISION subset of `activity_log.action`:
+   * the K/A/U/L/D verbs plus the Protect toggles. Unsubscribe lifecycle
+   * outcomes and followup dismissals stay in the Activity feed.
    */
-  verdict: 'keep' | 'archive' | 'unsubscribe' | 'later';
-  /** Engine confidence, 0..1. */
-  confidence: number;
-  /** ISO-8601. */
-  producedAt: string;
-  /** One-sentence rationale. */
-  reasoning: string;
-  /**
-   * How the decision was produced — LLM (Haiku) vs deterministic
-   * template. Mirrors the BE `triage_reasoning_source` enum: the value
-   * is `'llm_haiku'`, NOT `'llm'`. (An earlier `'llm'` literal here
-   * never matched the wire — the decision-timeline source label rendered
-   * blank for every LLM-generated decision.)
-   */
-  generatedBy: 'llm_haiku' | 'template';
+  action:
+    | 'keep'
+    | 'archive'
+    | 'unsubscribe'
+    | 'later'
+    | 'delete'
+    | 'marked_protected'
+    | 'unmarked_protected';
+  /** Mirrors `activity_source` — who acted. */
+  source: 'triage' | 'manual' | 'autopilot' | 'screener';
+  /** ISO-8601 — when it happened. */
+  occurredAt: string;
+  /** Messages moved. 0 for policy-only verbs (Keep, Protect toggles). */
+  affectedCount: number;
 }
 
 // ── Fetchers ────────────────────────────────────────────────────────

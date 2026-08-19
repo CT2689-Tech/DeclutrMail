@@ -279,9 +279,9 @@ function buildHistory(s: SenderFixture): DecisionHistoryRow[] {
     { source: 'Triage', action: 'Kept' },
     { source: 'Autopilot', action: 'Moved to Later', count: s.monthly },
     { source: 'Screener', action: 'Kept' },
-    { source: 'Manual', action: 'Restored' },
-    { source: 'System', action: 'Protected' },
-    { source: 'Manual', action: 'Unprotected' },
+    { source: 'You', action: 'Restored' },
+    { source: 'You', action: 'Protected' },
+    { source: 'You', action: 'Unprotected' },
     { source: 'Triage', action: 'Archived', count: Math.round(s.monthly * 3) },
   ];
   for (const c of olderPool) candidates.push(c);

@@ -419,6 +419,54 @@ describe('ActivityReadService', () => {
       expect(resolved.stats.needsAttention).toBe(0);
     });
 
+    it("counts only the filtered sender's failures as needing attention", async () => {
+      const senderKey = 'needs-attention-scoped';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'broken@example.com',
+        'Broken Sender',
+      );
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'failed',
+        errorCode: 'InvalidGrantError',
+        requestedCount: 4,
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+      });
+      const otherKey = 'needs-attention-other';
+      await seedSender(db, mailboxA.mailboxAccountId, otherKey, 'fine@example.com', 'Fine Sender');
+
+      const scoped = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        senderQuery: 'Fine Sender',
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      // The failure belongs to a DIFFERENT sender — the strip above a
+      // "Fine Sender" list must not say anything needs attention.
+      expect(scoped.rows).toHaveLength(0);
+      expect(scoped.stats.needsAttention).toBe(0);
+      expect(scoped.allTimeStats.needsAttention).toBe(0);
+
+      const onTarget = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        senderQuery: 'broken@example.com',
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(onTarget.stats.needsAttention).toBe(1);
+    });
+
     it('counts each failed lineage once and derives its recovery resolution from the latest error', async () => {
       const senderKey = 'execution-failed';
       const senderId = await seedSender(
@@ -1449,6 +1497,44 @@ describe('ActivityReadService', () => {
         nowMs: NOW_MS,
       });
       expect(rows.map((r) => r.sender?.displayName)).toEqual(['DKNY']);
+    });
+
+    /**
+     * The founder screenshot (2026-08-19) that opened this: the metrics
+     * strip read "KEPT 1" directly above a sender-filtered list that
+     * said nothing had ever happened. Both numbers were true of
+     * different scopes. The sender filter is a SCOPE — everything on
+     * the screen has to answer for the same sender.
+     */
+    it('scopes the metrics strip to the filtered sender', async () => {
+      const { rows, stats, allTimeStats } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        senderQuery: 'aber',
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows).toHaveLength(1);
+      expect(stats.deleted).toBe(1);
+      expect(allTimeStats.deleted).toBe(1);
+    });
+
+    it('reports zero for a sender the user has never acted on', async () => {
+      await seedSender(db, mailboxA.mailboxAccountId, 'sender-quiet', 'hi@quiet.com', 'Quiet Co');
+      const { rows, stats, allTimeStats } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: 'all',
+        source: null,
+        senderQuery: 'quiet.com',
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows).toHaveLength(0);
+      expect(stats.deleted).toBe(0);
+      expect(allTimeStats.deleted).toBe(0);
     });
 
     it('escapes ILIKE wildcards so % is a literal match', async () => {

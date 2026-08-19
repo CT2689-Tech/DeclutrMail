@@ -35,6 +35,7 @@ import {
   notExists,
   or,
   sql,
+  type SQL,
   sum,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -221,11 +222,17 @@ export class ActivityReadService {
     const executionLineages = await this.loadExecutionLineages(mailboxAccountId);
     const rows = await this.loadActivityRows(params, executionLineages);
 
-    // Stats follow the same window/date bound as the rows query, but
-    // IGNORE source/verb/sender so the line stays stable as chips toggle
-    // (the chip group narrows the rows; the stats line answers
-    // "in this window/date range, what HAPPENED?"). All-time stats
-    // ignore EVERY filter and provide a stable running total.
+    // Stats follow the same window/date bound as the rows query and
+    // IGNORE the source/verb chips, so the line stays stable as chips
+    // toggle (the chip group narrows the rows; the stats line answers
+    // "in this window/date range, what HAPPENED?"). All-time stats drop
+    // the window too, for a stable running total.
+    //
+    // The SENDER filter is different in kind and is NOT ignored: it
+    // changes the scope every number on the screen is about. Left
+    // unscoped it printed mailbox-wide counts above a sender-filtered
+    // empty list — two true numbers about different things, which read
+    // as a contradiction (founder screenshot 2026-08-19).
     const statsLowerBound = useCustomRange ? dateFrom : windowStart;
     const statsUpperBound = useCustomRange ? dateTo : null;
     const [stats, allTimeStats] = await Promise.all([
@@ -233,12 +240,14 @@ export class ActivityReadService {
         mailboxAccountId,
         lowerBound: statsLowerBound,
         upperBound: statsUpperBound,
+        senderQuery: params.senderQuery ?? '',
         executionLineages,
       }),
       this.aggregateStats({
         mailboxAccountId,
         lowerBound: null,
         upperBound: null,
+        senderQuery: params.senderQuery ?? '',
         executionLineages,
       }),
     ]);
@@ -931,6 +940,29 @@ export class ActivityReadService {
   }
 
   /**
+   * `activity_log.sender_key IN (senders matching the search)` — the
+   * same name/email substring match the rows query applies, expressed
+   * as a scope predicate the aggregate queries can carry without a
+   * join. Returns `null` when no sender filter is active.
+   */
+  private senderScopeFilter(mailboxAccountId: string, senderQuery: string): SQL | null {
+    if (senderQuery.length === 0) return null;
+    const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
+    return inArray(
+      activityLog.senderKey,
+      this.db
+        .select({ senderKey: senders.senderKey })
+        .from(senders)
+        .where(
+          and(
+            eq(senders.mailboxAccountId, mailboxAccountId),
+            or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!,
+          ),
+        ),
+    );
+  }
+
+  /**
    * Verb-aggregated counts within the window. Independent of the source
    * filter so the stats line stays stable as the user toggles source
    * chips — it represents the bucket the rows are drawn from, not the
@@ -943,11 +975,18 @@ export class ActivityReadService {
     mailboxAccountId: string;
     lowerBound: Date | null;
     upperBound: Date | null;
+    senderQuery: string;
     executionLineages: ExecutionLineage[];
   }): Promise<ActivityStats> {
+    // Non-correlated subquery, deliberately not a join: the counts are
+    // GROUP BY-ed over activity_log alone, and a correlated `sql`
+    // template would emit bare column names that resolve against the
+    // inner table (see [[drizzle-correlated-subquery-pitfall]]).
+    const senderScope = this.senderScopeFilter(args.mailboxAccountId, args.senderQuery);
     const whereParts = [eq(activityLog.mailboxAccountId, args.mailboxAccountId)];
     if (args.lowerBound) whereParts.push(gte(activityLog.occurredAt, args.lowerBound));
     if (args.upperBound) whereParts.push(lt(activityLog.occurredAt, args.upperBound));
+    if (senderScope) whereParts.push(senderScope);
 
     const rows = await this.db
       .select({
@@ -968,6 +1007,7 @@ export class ActivityReadService {
     ];
     if (args.lowerBound) deflectWhere.push(gte(activityLog.occurredAt, args.lowerBound));
     if (args.upperBound) deflectWhere.push(lt(activityLog.occurredAt, args.upperBound));
+    if (senderScope) deflectWhere.push(senderScope);
     const [impact] = await this.db
       .select({
         deflectedSenders: sql<number>`COUNT(DISTINCT ${activityLog.senderKey})`,
@@ -1001,7 +1041,12 @@ export class ActivityReadService {
       needsAttention:
         (byVerb.get('unsubscribe_failed') ?? 0) +
         (byVerb.get('unsubscribe_unconfirmed') ?? 0) +
-        countFailedExecutionLineages(args.executionLineages, args.lowerBound, args.upperBound),
+        countFailedExecutionLineages(
+          args.executionLineages,
+          args.lowerBound,
+          args.upperBound,
+          args.senderQuery,
+        ),
       noisePreventedPerMonth,
     };
   }
@@ -1118,13 +1163,7 @@ function projectExecutionRows(
     if (filters.verbs.length > 0 && !filters.verbs.includes(action)) return [];
     if (filters.lowerBound && outcomeTime < filters.lowerBound) return [];
     if (filters.upperBound && outcomeTime >= filters.upperBound) return [];
-    if (senderNeedle.length > 0) {
-      if (!sender) return [];
-      const matchesSender =
-        sender.displayName.toLocaleLowerCase().includes(senderNeedle) ||
-        sender.email.toLocaleLowerCase().includes(senderNeedle);
-      if (!matchesSender) return [];
-    }
+    if (!matchesSenderNeedle(sender, senderNeedle)) return [];
     if (
       filters.cursor &&
       !isStrictlyAfterCursor({ id: current.id, createdAt: outcomeTime }, filters.cursor)
@@ -1244,16 +1283,35 @@ function failureResolution(errorCode: string | null): 'review' | 'support' {
   return 'review';
 }
 
+/**
+ * The sender-substring test the rows and the stats MUST share. When
+ * only the rows applied it, the metrics strip counted another sender's
+ * failed lineage as "needs attention" on a sender-filtered screen.
+ */
+function matchesSenderNeedle(
+  sender: { displayName: string; email: string } | null,
+  needle: string,
+): boolean {
+  if (needle.length === 0) return true;
+  if (!sender) return false;
+  return (
+    sender.displayName.toLocaleLowerCase().includes(needle) ||
+    sender.email.toLocaleLowerCase().includes(needle)
+  );
+}
+
 function countFailedExecutionLineages(
   lineages: ExecutionLineage[],
   lowerBound: Date | null,
   upperBound: Date | null,
+  senderQuery: string,
 ): number {
-  return lineages.filter(({ current }) => {
+  const needle = senderQuery.toLocaleLowerCase();
+  return lineages.filter(({ current, sender }) => {
     if (current.status !== 'failed') return false;
     if (lowerBound && current.updatedAt < lowerBound) return false;
     if (upperBound && current.updatedAt >= upperBound) return false;
-    return true;
+    return matchesSenderNeedle(sender, needle);
   }).length;
 }
 

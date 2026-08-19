@@ -1268,9 +1268,17 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         senderEmail={detail.email}
       />
 
-      {/* 4. Decision timeline — replaces D46 table-style history */}
+      {/* 4. Decision timeline — replaces D46 table-style history.
+          Rows are actions taken on this sender (`activity_log`), so this
+          card and the Activity feed can never disagree. */}
       <DecisionTimeline
         heading="Decision timeline"
+        empty={
+          <EmptyState
+            title="No actions on this sender yet"
+            description="Keep, Archive, Unsubscribe, Later and Delete all land here — and in Activity — the moment you use one."
+          />
+        }
         // Cross-link into the Activity feed pre-filtered to this sender.
         // `sender_q` is Activity's substring filter over name/email —
         // the full address is the collision-safe query.

@@ -12,9 +12,9 @@
 // Connector line drawn from the second item down through the last.
 //
 // The component is presentation-only. The consumer assembles the items
-// from the existing triage_decisions + activity_log query results — no
-// new schema, no new wire field. Per ADR-0012, the most-recent engine
-// recommendation appears at the top; the rest is action history.
+// from `activity_log` — what actually happened to the sender. The
+// engine's recommendation is NOT a timeline item; it has its own
+// surface (`RecommendationBanner`) where it is labelled a suggestion.
 
 import type { ReactNode } from 'react';
 import { tokens } from '@declutrmail/shared';
@@ -60,6 +60,12 @@ export interface DecisionTimelineProps {
   action?: ReactNode;
   /** Items rendered top → bottom (newest first by convention). */
   items: TimelineItem[];
+  /**
+   * Rendered in place of the list when `items` is empty (D212). A
+   * sender nobody has acted on yet is the ordinary case, not a failure
+   * — the card says so instead of drawing an empty rail.
+   */
+  empty?: ReactNode;
 }
 
 /**
@@ -67,7 +73,7 @@ export interface DecisionTimelineProps {
  * ADR-0012. Renders a connector line between items via an absolutely-
  * positioned ::after on each non-last row.
  */
-export function DecisionTimeline({ heading, action, items }: DecisionTimelineProps) {
+export function DecisionTimeline({ heading, action, items, empty }: DecisionTimelineProps) {
   return (
     <section
       style={{
@@ -107,6 +113,7 @@ export function DecisionTimeline({ heading, action, items }: DecisionTimelinePro
           {action}
         </div>
       )}
+      {items.length === 0 && empty}
       <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {items.map((item, i) => {
           const isLast = i === items.length - 1;

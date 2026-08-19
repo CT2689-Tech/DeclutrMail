@@ -238,11 +238,10 @@ describe('fetchSenderHistory', () => {
             data: [
               {
                 id: 'h-1',
-                verdict: 'archive',
-                confidence: 0.92,
-                producedAt: '2026-05-20T12:00:00.000Z',
-                reasoning: 'Daily promo, never opened.',
-                generatedBy: 'template',
+                action: 'archive',
+                source: 'manual',
+                occurredAt: '2026-05-20T12:00:00.000Z',
+                affectedCount: 12,
               },
             ],
             meta: { pagination: { nextCursor: 'next', hasMore: true, limit: 10 } },
@@ -251,7 +250,7 @@ describe('fetchSenderHistory', () => {
     ]);
 
     const env = await fetchSenderHistory('s-1');
-    expect(env.data[0]?.verdict).toBe('archive');
+    expect(env.data[0]?.action).toBe('archive');
     expect(env.meta.pagination.hasMore).toBe(true);
   });
 });
