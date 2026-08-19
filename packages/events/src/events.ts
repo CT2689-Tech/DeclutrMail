@@ -54,7 +54,13 @@ export const TriageScoreRunCompletedPayloadSchema = z
   .object({
     mailboxAccountId: UuidSchema,
     /** Trigger source that started the score run — observability + dedup. */
-    trigger: z.enum(['sync_complete', 'cron_sweep', 'manual_rescore', 'signal_change']),
+    trigger: z.enum([
+      'sync_complete',
+      'cron_sweep',
+      'manual_rescore',
+      'stale_refresh',
+      'signal_change',
+    ]),
     /** Run wall clock (ms since epoch) — matches the score worker's `producedAtMs`. */
     producedAtMs: z.number().int().nonnegative(),
     /** How many senders the run scored (metric). */

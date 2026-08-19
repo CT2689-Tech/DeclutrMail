@@ -25,7 +25,7 @@ import type {
   PaginatedEnvelope,
   UnsubscribeLifecycleStatus,
 } from '@declutrmail/shared/contracts';
-import { apiGet, apiPatch } from './client';
+import { apiGet, apiPatch, apiPost } from './client';
 
 // ── BE contract types (mirrors the WT-B PR) ─────────────────────────
 
@@ -231,6 +231,8 @@ export interface SenderDetailDto extends SenderListRow {
     generatedBy: 'llm_haiku' | 'template';
     /** ISO-8601 — when the engine last looked at this sender. */
     scoredAt: string;
+    /** Past its TTL. The page asks for a fresh read; it still shows this one. */
+    stale: boolean;
   } | null;
 }
 
@@ -674,4 +676,27 @@ export function fetchSenderHistory(
     query: { limit: params.limit, cursor: params.cursor },
     signal,
   }) as Promise<PaginatedEnvelope<DecisionHistoryRowDto>>;
+}
+
+/**
+ * POST /api/triage/score-sender — ask the engine to take a fresh look.
+ *
+ * `reason: 'stale'` is the page refreshing a read that had aged past its
+ * TTL when it was opened (D25 `stale_refresh`), NOT someone pressing a
+ * control. The distinction is recorded so trigger telemetry never
+ * claims an intent the user did not have.
+ *
+ * Sends the sender's row id: the senders wire carries no `sender_key`,
+ * and the API resolves the id inside the mailbox scope.
+ */
+export function requestSenderRescore(
+  senderId: string,
+  reason: 'user' | 'stale',
+  signal?: AbortSignal,
+): Promise<Envelope<{ idempotencyKey: string }, unknown>> {
+  return apiPost<{ idempotencyKey: string }>(
+    '/api/triage/score-sender',
+    { senderId, reason },
+    { signal },
+  );
 }

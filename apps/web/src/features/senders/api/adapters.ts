@@ -140,6 +140,7 @@ export function adaptSenderDetail(args: {
           confidence: args.detail.recommendation.confidence,
           reasoning: args.detail.recommendation.reasoning,
           scoredAt: args.detail.recommendation.scoredAt,
+          stale: args.detail.recommendation.stale,
           signals: [],
         }
       : null,

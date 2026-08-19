@@ -1335,6 +1335,14 @@ export class SendersReadService {
     // Detail-only: the one-sentence explanation behind the verdict. The
     // list path deliberately does NOT select this — 7k rows × a sentence
     // is payload the grid never renders.
+    const lastDecisionExpiresAtSql = sql<Date | string | null>`(
+      SELECT ${triageDecisions.expiresAt}
+      FROM ${triageDecisions}
+      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+        AND ${triageDecisions.senderKey} = ${outerSenderKey}
+      ORDER BY ${triageDecisions.producedAt} DESC
+      LIMIT 1
+    )`;
     const lastDecisionReasoningSql = sql<string | null>`(
       SELECT ${triageDecisions.reasoning}
       FROM ${triageDecisions}
@@ -1378,6 +1386,7 @@ export class SendersReadService {
         lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
         lastDecisionConfidence: lastDecisionConfidenceSql,
         lastDecisionReasoning: lastDecisionReasoningSql,
+        lastDecisionExpiresAt: lastDecisionExpiresAtSql,
         // Policy fields nullable — a sender without an explicit
         // policy row is "engine default" (D42).
         isProtected: senderPolicies.isProtected,
@@ -1465,6 +1474,8 @@ export class SendersReadService {
         row.lastDecisionGeneratedBy,
         row.lastDecisionConfidence,
         row.lastDecisionReasoning,
+        row.lastDecisionExpiresAt,
+        now,
       ),
       protectionFlags,
       policyType: row.policyType ?? null,
@@ -1827,6 +1838,8 @@ function buildRecommendation(
   generatedBy: TriageReasoningSource | null,
   confidence: number | string | null,
   reasoning: string | null,
+  expiresAt: Date | string | null,
+  now: Date,
 ): SenderRecommendation | null {
   if (
     at === null ||
@@ -1844,12 +1857,18 @@ function buildRecommendation(
   if (!Number.isFinite(confidenceNum)) {
     return null;
   }
+  const expiry =
+    expiresAt === null ? null : expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
   return {
     verdict,
     confidence: confidenceNum,
     reasoning,
     generatedBy,
     scoredAt: (at instanceof Date ? at : new Date(at)).toISOString(),
+    // A row with no expiry cannot be proven stale, so it isn't called
+    // stale — the flag drives a re-score request, and requesting one on
+    // a fact we don't have would be guessing.
+    stale: expiry !== null && expiry.getTime() <= now.getTime(),
   };
 }
 

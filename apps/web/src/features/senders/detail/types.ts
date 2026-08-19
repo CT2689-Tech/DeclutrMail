@@ -90,6 +90,12 @@ export interface Recommendation {
    * passing as current.
    */
   scoredAt?: string;
+  /**
+   * Whether the engine's read is past its TTL. Server-computed — the
+   * BE owns the TTL. Drives the on-open refresh (D25 `stale_refresh`),
+   * never whether the read is shown.
+   */
+  stale?: boolean;
 }
 
 /**

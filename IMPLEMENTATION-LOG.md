@@ -79,7 +79,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🟢 | #32, #118, #566 | packages/workers/src/score-cascade.test.ts |  |
 | D22 | Protection model: **Sender-layer-only, engagement-respect + user-defined | 🟢 | #32 | packages/workers/src/score.worker.test.ts |  |
 | D23 | New sender default: **Screen | 🔵 | #32 |  |  |
-| D24 | LLM role: **Haiku for explanation only, template fallback | 🟢 | #32, #77 | apps/api/src/adapters/anthropic-haiku.adapter.spec.ts |  |
+| D24 | LLM role: **Haiku for explanation only, template fallback | 🟢 | #32, #77, #577 | apps/api/src/adapters/anthropic-haiku.adapter.spec.ts |  |
 | D25 | Re-score cadence: **Trigger-based (sync + signal change) | 🟢 | #32, #118, #125 | packages/workers/src/score.worker.test.ts |  |
 | D26 | Reasoning UX: **Mixed (inline on Triage hero, popover elsewhere) | 🔵 | #319, #313 |  |  |
 | D27 | Triage cadence: **Daily ritual | ⬜ |  |  |  |
