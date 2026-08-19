@@ -23,11 +23,29 @@
 -- (`to:their@address`) and, unlike read state, no third-party tool can
 -- manufacture it.
 --
--- `senders.replied_count` is RENAMED rather than reinterpreted in place.
--- It no longer counts replies — we cannot identify a causal reply, only
--- who was written to — and a column whose name outlives its meaning is
--- how the next reader re-derives the old defect.
--- `sender_timeseries.reply_count` is dropped outright; see below.
+-- ADDITIVE ONLY — nothing is renamed and nothing is dropped here.
+--
+-- This is not squeamishness about the data; the old counts are derived
+-- and recomputable. It is about WHEN this runs. `migration-apply.yml`
+-- fires on push to main with no CI gate, while `deploy-cloud-run.yml`
+-- waits for CI to go green before it builds. So the schema changes
+-- 10-20 minutes BEFORE the code that understands it is live, and in
+-- that window the running API and workers are old code on a new schema.
+-- Renaming `senders.replied_count` there would 500 every senders
+-- request until the deploy caught up.
+--
+-- So: add `wrote_to_count` beside the old column and backfill it. Old
+-- code keeps reading `replied_count` and sees exactly what it sees
+-- today; new code reads the new column. Neither breaks, in either
+-- order, and a rollback drops a column nobody read rather than
+-- recomputing one everybody did.
+--
+-- The old columns are then dead weight, and dead weight is what
+-- CLAUDE.md tells us to delete — so a follow-up migration drops
+-- `senders.replied_count` and `sender_timeseries.reply_count` once this
+-- code is live in production. That is the contract half of an
+-- expand/contract, deliberately NOT bundled here: bundling it is what
+-- creates the outage window this comment exists to describe.
 --
 -- WHY A NORMALIZE FUNCTION AND NOT A HASH. `sender_key` is
 -- sha256("v1|" || normalized_email), so comparing NORMALIZED ADDRESSES
@@ -91,37 +109,18 @@ $$;
 CREATE INDEX "senders_account_normalized_email_idx"
   ON "senders" ("mailbox_account_id", dm_normalize_email("email"::text));
 --> statement-breakpoint
-ALTER TABLE "senders" RENAME COLUMN "replied_count" TO "wrote_to_count";
+ALTER TABLE "senders"
+  ADD COLUMN "wrote_to_count" integer DEFAULT 0 NOT NULL;
 --> statement-breakpoint
--- `sender_timeseries.reply_count` is DROPPED, not renamed.
+-- `sender_timeseries.reply_count` is left in place for the same reason,
+-- and stops being written from here on. Its one reader moves to a direct
+-- `mail_messages` read in this same commit, so the column goes stale
+-- rather than missing — stale is what old code already shows; missing is
+-- an error page. The follow-up contract migration removes it.
 --
--- Its one reader was `score.worker.ts`, which summed 90 days of it into
--- `hasReplied`. A timeseries row exists only for a month the sender sent
--- INBOUND mail, so a month in which you wrote to someone who sent you
--- nothing has no row to write to — measured here, 1,283 of 6,126
--- credited messages (21%) across 223 senders fall in such months and
--- would be invisible to any window read off this column. The total on
--- `senders.wrote_to_count` has no such hole, so keeping both would mean
--- two numbers for one fact that cannot be reconciled by construction —
--- the defect class this whole change exists to remove. The 90-day figure
--- moves to a direct `mail_messages` read in the same commit.
---
--- DS103 is suppressed deliberately, and only because the dropped values
--- are DERIVED. Every one of them is recomputable from `mail_messages`,
--- which this migration does not touch — the accompanying `.rollback`
--- recreates the column and reconstructs it with the same statement that
--- produced it, verified by a forward+rollback round-trip that reproduced
--- every original value (0 mismatches). Dropping a column of user-entered
--- data would not qualify for this directive.
--- atlas:nolint destructive
-ALTER TABLE "sender_timeseries" DROP COLUMN "reply_count";
---> statement-breakpoint
--- Backfill. Zero FIRST: the recipient rule credits strictly fewer
--- senders than thread membership did, so senders that lose all their
--- evidence must fall to 0 rather than keep a stale count that no UPDATE
--- ... FROM would ever reach.
-UPDATE "senders" SET "wrote_to_count" = 0 WHERE "wrote_to_count" <> 0;
---> statement-breakpoint
+-- Backfill. The new column defaults to 0, so a sender the recipient rule
+-- credits with nothing simply stays there — no zeroing pass is needed,
+-- unlike the in-place rewrite this replaces.
 UPDATE "senders" AS s
 SET "wrote_to_count" = sub.cnt
 FROM (
