@@ -485,6 +485,102 @@ describe('ScoreWorker — LLM port', () => {
     expect(row?.generatedBy).toBe('llm_haiku');
   });
 
+  /**
+   * Live copy on 440+ of the founder's 8,531 scored senders read "The
+   * high_read_rate engine rule confirms this sender deserves inbox
+   * placement". The prompt handed the model the raw cascade id; the
+   * model echoed it. The id is gone from the prompt now, and a sentence
+   * that still names one is refused rather than shipped.
+   */
+  it('refuses LLM copy that names an internal rule id', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'leaky@test.test', {
+      gmailCategory: 'primary',
+    });
+
+    const leakyLlm: ReasoningLlmPort = {
+      explain: async () => 'The high_read_rate engine rule confirms this sender belongs here.',
+    };
+    const worker = new ScoreWorker({
+      db,
+      llm: leakyLlm,
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: 30_000 },
+      FAKE_CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.reasoning).not.toContain('high_read_rate');
+    expect(row?.generatedBy).toBe('template');
+  });
+
+  it('hands the model a phrase, never the internal rule id', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'phrase@test.test', {
+      gmailCategory: 'primary',
+    });
+
+    const seen: string[] = [];
+    const spyLlm: ReasoningLlmPort = {
+      explain: async (input) => {
+        seen.push(input.ruleLabel);
+        return 'A sentence a person would write.';
+      },
+    };
+    const worker = new ScoreWorker({
+      db,
+      llm: spyLlm,
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: 30_000 },
+      FAKE_CTX,
+    );
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).not.toMatch(/_/);
+    expect(seen[0]!.length).toBeGreaterThan(10);
+  });
+
+  it('keeps a sentence that merely quotes an underscored sender name', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'ife_insurance_india@test.test', {
+      gmailCategory: 'primary',
+    });
+
+    // A real sender in the founder's mailbox is named `ife_insurance_india`.
+    // Rejecting on a snake_case regex would have thrown away good copy for
+    // quoting the user's own data — the match is against the known rule
+    // vocabulary only.
+    const quotingLlm: ReasoningLlmPort = {
+      explain: async () => 'ife_insurance_india writes often and you read all of it.',
+    };
+    const worker = new ScoreWorker({
+      db,
+      llm: quotingLlm,
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: 30_000 },
+      FAKE_CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.generatedBy).toBe('llm_haiku');
+    expect(row?.reasoning).toContain('ife_insurance_india');
+  });
+
   it('reuses unexpired same-verdict LLM reasoning without calling explain() (2026-07-10 re-bill fix)', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);
