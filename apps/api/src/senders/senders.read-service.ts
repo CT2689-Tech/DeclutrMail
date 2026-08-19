@@ -1602,6 +1602,13 @@ export class SendersReadService {
       return null;
     }
 
+    // ADR-0008 §3 exception: senders → activity_log (read). Grep this
+    // marker to find every crossing when ratifying the ADR.
+    //
+    // Index path: `activity_log_account_sender_occurred_idx`
+    // (mailbox_account_id, sender_key, occurred_at) — named
+    // `senderHistoryIdx` in the schema, leading columns match this
+    // predicate exactly and carry the ORDER BY.
     const conditions = [
       eq(activityLog.mailboxAccountId, mailboxAccountId),
       eq(activityLog.senderKey, senderKey),
