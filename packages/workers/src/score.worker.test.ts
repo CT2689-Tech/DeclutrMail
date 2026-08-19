@@ -492,6 +492,38 @@ describe('ScoreWorker — LLM port', () => {
    * model echoed it. The id is gone from the prompt now, and a sentence
    * that still names one is refused rather than shipped.
    */
+  it('refuses a token the model invented in our house style', async () => {
+    // `protect_engagement_based` appears in 100+ stored explanations and
+    // in zero lines of source: shown one id, the model coined siblings.
+    // A known-vocabulary list cannot catch those; "not the sender's own
+    // name" can.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'invented@test.test', {
+      gmailCategory: 'primary',
+    });
+
+    const inventiveLlm: ReasoningLlmPort = {
+      explain: async () => 'The protect_engagement_based rule applies to this sender.',
+    };
+    const worker = new ScoreWorker({
+      db,
+      llm: inventiveLlm,
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: 30_000 },
+      FAKE_CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.reasoning).not.toContain('protect_engagement_based');
+    expect(row?.generatedBy).toBe('template');
+  });
+
   it('refuses LLM copy that names an internal rule id', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);

@@ -79,7 +79,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🟢 | #32, #118, #566 | packages/workers/src/score-cascade.test.ts |  |
 | D22 | Protection model: **Sender-layer-only, engagement-respect + user-defined | 🟢 | #32 | packages/workers/src/score.worker.test.ts |  |
 | D23 | New sender default: **Screen | 🔵 | #32 |  |  |
-| D24 | LLM role: **Haiku for explanation only, template fallback | 🟢 | #32, #77, #577 | apps/api/src/adapters/anthropic-haiku.adapter.spec.ts |  |
+| D24 | LLM role: **Haiku for explanation only, template fallback | 🟢 | #32, #77, #577, #580 | apps/api/src/adapters/anthropic-haiku.adapter.spec.ts |  |
 | D25 | Re-score cadence: **Trigger-based (sync + signal change) | 🟢 | #32, #118, #125 | packages/workers/src/score.worker.test.ts |  |
 | D26 | Reasoning UX: **Mixed (inline on Triage hero, popover elsewhere) | 🔵 | #319, #313 |  |  |
 | D27 | Triage cadence: **Daily ritual | ⬜ |  |  |  |
@@ -215,7 +215,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425, #496, #506, #508 |  |  |
 | D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473, #474, #502, #498, #546, #549, #550, #551, #554, #561 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
-| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526, #529, #534, #536, #556, #558, #573, #575 | gh run 26327595271 ci.yml green on main |  |
+| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526, #529, #534, #536, #556, #558, #575, #573 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
