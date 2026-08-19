@@ -125,7 +125,7 @@ export function ActivityScreen() {
     hasInFlightAction: inFlightActionPolls > 0,
     enabled: !dateFilters.isInvalid && !outcomeFilters.isInvalid,
   });
-  const weeklyQuery = useActivityWeeklyReview();
+  const weeklyQuery = useActivityWeeklyReview(filters.senderQuery ?? '');
   const weeklyTrackedKey = useRef<string | null>(null);
 
   useEffect(() => {
@@ -334,6 +334,7 @@ export function ActivityScreen() {
         error={weeklyQuery.isError}
         onRetry={() => void weeklyQuery.refetch()}
         activeOutcome={filters.outcomes?.[0] ?? null}
+        senderQuery={filters.senderQuery ?? ''}
       />
 
       {!invalidActiveFilters && (

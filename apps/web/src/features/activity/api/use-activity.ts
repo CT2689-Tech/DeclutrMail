@@ -76,10 +76,11 @@ export function useActivity(
 }
 
 /** Independent so a review failure never blocks the Activity feed. */
-export function useActivityWeeklyReview() {
+export function useActivityWeeklyReview(senderQuery = '') {
   return useQuery(
-    activityWeeklyReviewQueryOptions((signal) =>
-      fetchActivityWeeklyReview(signal).then((env) => env.data),
+    activityWeeklyReviewQueryOptions(
+      (signal) => fetchActivityWeeklyReview(senderQuery, signal).then((env) => env.data),
+      senderQuery,
     ),
   );
 }

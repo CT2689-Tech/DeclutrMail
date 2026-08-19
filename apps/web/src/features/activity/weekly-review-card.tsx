@@ -10,18 +10,42 @@ const OUTCOMES: Array<{ key: ActivityReviewOutcomeWire; label: string }> = [
   { key: 'protected', label: 'Protected' },
 ];
 
+/**
+ * Destination for one count. Carries the active sender filter so a
+ * click narrows the same way the numbers were counted — without it the
+ * card silently dropped the filter and answered for the whole mailbox
+ * (founder decision, 2026-08-19).
+ */
+export function outcomeHref(
+  key: ActivityReviewOutcomeWire,
+  review: Pick<ActivityWeeklyReviewWire, 'from' | 'to'>,
+  senderQuery: string,
+): string {
+  const params = new URLSearchParams({
+    window: '7d',
+    outcome: key,
+    date_from: review.from,
+    date_to: review.to,
+  });
+  if (senderQuery) params.set('sender_q', senderQuery);
+  return `/activity?${params.toString()}`;
+}
+
 export function WeeklyReviewCard({
   review,
   loading,
   error,
   onRetry,
   activeOutcome,
+  senderQuery = '',
 }: {
   review: ActivityWeeklyReviewWire | null;
   loading: boolean;
   error: boolean;
   onRetry: () => void;
   activeOutcome: ActivityReviewOutcomeWire | null;
+  /** The sender filter these counts were computed under. */
+  senderQuery?: string;
 }) {
   return (
     <section
@@ -39,7 +63,8 @@ export function WeeklyReviewCard({
             Your last 7 days
           </h2>
           <p style={{ margin: '4px 0 0', color: color.fgSoft, fontSize: 12.5 }}>
-            Exact outcomes from Activity. Select a count to see its records.
+            Exact outcomes from Activity{senderQuery ? ' for this sender' : ''}. Select a count to
+            see its records.
           </p>
         </div>
         {activeOutcome && (
@@ -70,7 +95,7 @@ export function WeeklyReviewCard({
             {OUTCOMES.map(({ key, label }) => (
               <a
                 key={key}
-                href={`/activity?window=7d&outcome=${key}&date_from=${encodeURIComponent(review.from)}&date_to=${encodeURIComponent(review.to)}`}
+                href={outcomeHref(key, review, senderQuery)}
                 aria-current={activeOutcome === key ? 'page' : undefined}
                 style={{
                   padding: '10px 12px',

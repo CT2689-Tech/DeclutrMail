@@ -27,9 +27,9 @@ export function activityInfiniteQueryOptions(filters: ActivityFilters, reader: A
 
 type WeeklyReviewReader = (signal: AbortSignal) => Promise<ActivityWeeklyReviewWire>;
 
-export function activityWeeklyReviewQueryOptions(reader: WeeklyReviewReader) {
+export function activityWeeklyReviewQueryOptions(reader: WeeklyReviewReader, senderQuery = '') {
   return queryOptions({
-    queryKey: activityKeys.weeklyReview(),
+    queryKey: activityKeys.weeklyReview(senderQuery),
     queryFn: ({ signal }) => reader(signal),
   });
 }
