@@ -105,6 +105,15 @@ ALTER TABLE "senders" RENAME COLUMN "replied_count" TO "wrote_to_count";
 -- two numbers for one fact that cannot be reconciled by construction —
 -- the defect class this whole change exists to remove. The 90-day figure
 -- moves to a direct `mail_messages` read in the same commit.
+--
+-- DS103 is suppressed deliberately, and only because the dropped values
+-- are DERIVED. Every one of them is recomputable from `mail_messages`,
+-- which this migration does not touch — the accompanying `.rollback`
+-- recreates the column and reconstructs it with the same statement that
+-- produced it, verified by a forward+rollback round-trip that reproduced
+-- every original value (0 mismatches). Dropping a column of user-entered
+-- data would not qualify for this directive.
+-- atlas:nolint destructive
 ALTER TABLE "sender_timeseries" DROP COLUMN "reply_count";
 --> statement-breakpoint
 -- Backfill. Zero FIRST: the recipient rule credits strictly fewer
