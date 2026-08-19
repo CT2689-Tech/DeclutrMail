@@ -62,13 +62,21 @@ export default async function ActivityPage({
       prefetch={(queryClient) => {
         if (!eligible) return [];
         const queries: Array<Promise<unknown>> = [
+          // The sender filter has to be threaded here as well as into the
+          // fetch: the client's query key is partitioned by it, so a
+          // prefetch under the bare key hydrates nothing and the card
+          // renders "Loading weekly outcomes…" on every filtered load.
           queryClient.fetchQuery(
-            activityWeeklyReviewQueryOptions((signal) =>
-              serverGet<ActivityWeeklyReviewWire>(
-                '/api/activity/weekly-review',
-                cookieHeader,
-                signal,
-              ),
+            activityWeeklyReviewQueryOptions(
+              (signal) =>
+                serverGet<ActivityWeeklyReviewWire>(
+                  filters.senderQuery
+                    ? `/api/activity/weekly-review?sender_q=${encodeURIComponent(filters.senderQuery)}`
+                    : '/api/activity/weekly-review',
+                  cookieHeader,
+                  signal,
+                ),
+              filters.senderQuery,
             ),
           ),
         ];

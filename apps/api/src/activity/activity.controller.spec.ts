@@ -56,10 +56,18 @@ describe('ActivityController weekly review', () => {
       recovered: 4,
       protected: 5,
     });
-    await expect(controller.weeklyReview({ id: 'mailbox-1' })).resolves.toMatchObject({
+    await expect(controller.weeklyReview({ id: 'mailbox-1' }, undefined)).resolves.toMatchObject({
       data: { completed: 1, protected: 5 },
     });
-    expect(reads.getWeeklyReview).toHaveBeenCalledWith('mailbox-1', expect.any(Number));
+    expect(reads.getWeeklyReview).toHaveBeenCalledWith('mailbox-1', expect.any(Number), '');
+
+    // The card narrows with the rest of the screen.
+    await controller.weeklyReview({ id: 'mailbox-1' }, '  news@brand.com  ');
+    expect(reads.getWeeklyReview).toHaveBeenLastCalledWith(
+      'mailbox-1',
+      expect.any(Number),
+      'news@brand.com',
+    );
   });
 });
 

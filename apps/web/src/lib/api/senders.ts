@@ -211,6 +211,27 @@ export interface SenderDetailDto extends SenderListRow {
    * `unsubscribeMethod === 'mailto'`. Optional for fixture compat.
    */
   unsubscribeMailtoUrl?: string | null;
+  /**
+   * The engine's current read on this sender — rendered as the optional
+   * suggestion disclosure below the action toolbar (D39, D245).
+   *
+   * It is NOT what highlights a verb: `derivePrimaryVerbId` picks that
+   * from observed facts alone, and the two are allowed to disagree. The
+   * disclosure exists so a user can see the engine's read when they do.
+   *
+   * `scoredAt` is shown because re-scoring is trigger-driven against a
+   * 7-day TTL — most stored verdicts are older than that, and a
+   * suggestion that hides its age would be the same class of untruth
+   * this surface just shed. Optional for fixture compat.
+   */
+  recommendation?: {
+    verdict: 'keep' | 'archive' | 'unsubscribe' | 'later';
+    confidence: number;
+    reasoning: string;
+    generatedBy: 'llm_haiku' | 'template';
+    /** ISO-8601 — when the engine last looked at this sender. */
+    scoredAt: string;
+  } | null;
 }
 
 /** Row shape on `GET /api/senders/:id/messages` — the recent-messages list. */

@@ -36,6 +36,7 @@ import {
   or,
   sql,
   type SQL,
+  type SQLWrapper,
   sum,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -747,13 +748,36 @@ export class ActivityReadService {
     }));
   }
 
-  /** Exact factual counts for the seven-day in-app review. */
-  async getWeeklyReview(mailboxAccountId: string, nowMs: number): Promise<ActivityWeeklyReview> {
+  /**
+   * Exact factual counts for the seven-day in-app review.
+   *
+   * Honours the sender filter (D246 + the 2026-08-19 founder decision):
+   * every other number on the Activity screen narrows to the filtered
+   * sender, and the card's own count links carry the filter through, so
+   * a mailbox-wide card would report other senders' outcomes above a
+   * one-sender feed and then drop the filter when clicked.
+   *
+   * The three sources carry the sender differently — `activity_log` and
+   * `rule_match_log` have a `sender_key` column; `action_jobs` keeps it
+   * inside the resolved JSON selector.
+   */
+  async getWeeklyReview(
+    mailboxAccountId: string,
+    nowMs: number,
+    senderQuery = '',
+  ): Promise<ActivityWeeklyReview> {
     const cutoff = new Date(nowMs - 7 * 86_400_000);
     const upperBound = new Date(nowMs);
     const reviewOutcome = persistedReviewOutcomeExpression();
     const failedCurrent = alias(actionJobs, 'weekly_failed_current');
     const failedLater = alias(actionJobs, 'weekly_failed_later');
+    const activityScope = this.senderScopeFilter(mailboxAccountId, senderQuery);
+    const ruleScope = this.senderScopeFilter(mailboxAccountId, senderQuery, ruleMatchLog.senderKey);
+    const jobScope = this.senderScopeFilter(
+      mailboxAccountId,
+      senderQuery,
+      sql`${failedCurrent.selector}->>'senderKey'`,
+    );
     const [persisted, dismissed, unresolved] = await Promise.all([
       this.db
         .select({
@@ -767,6 +791,7 @@ export class ActivityReadService {
             eq(activityLog.mailboxAccountId, mailboxAccountId),
             gte(activityLog.occurredAt, cutoff),
             lt(activityLog.occurredAt, upperBound),
+            ...(activityScope ? [activityScope] : []),
           ),
         ),
       this.db
@@ -780,6 +805,7 @@ export class ActivityReadService {
             isNotNull(ruleMatchLog.resolvedAt),
             gte(ruleMatchLog.resolvedAt, cutoff),
             lt(ruleMatchLog.resolvedAt, upperBound),
+            ...(ruleScope ? [ruleScope] : []),
           ),
         )
         .groupBy(ruleMatchLog.dismissReason),
@@ -794,6 +820,7 @@ export class ActivityReadService {
             eq(failedCurrent.status, 'failed'),
             gte(failedCurrent.updatedAt, cutoff),
             lt(failedCurrent.updatedAt, upperBound),
+            ...(jobScope ? [jobScope] : []),
             notExists(
               this.db
                 .select({ id: failedLater.id })
@@ -940,16 +967,25 @@ export class ActivityReadService {
   }
 
   /**
-   * `activity_log.sender_key IN (senders matching the search)` — the
-   * same name/email substring match the rows query applies, expressed
-   * as a scope predicate the aggregate queries can carry without a
-   * join. Returns `null` when no sender filter is active.
+   * `<sender key> IN (senders matching the search)` — the same
+   * name/email substring match the rows query applies, expressed as a
+   * scope predicate the aggregate queries can carry without a join.
+   * Returns `null` when no sender filter is active.
+   *
+   * `senderKeyColumn` defaults to `activity_log`'s, and is passed
+   * explicitly for the other two tables the weekly review counts:
+   * `rule_match_log.sender_key`, and `action_jobs`' key inside its JSON
+   * selector (that table stores no sender column — ids/keys only, D7).
    */
-  private senderScopeFilter(mailboxAccountId: string, senderQuery: string): SQL | null {
+  private senderScopeFilter(
+    mailboxAccountId: string,
+    senderQuery: string,
+    senderKeyColumn: SQLWrapper = activityLog.senderKey,
+  ): SQL | null {
     if (senderQuery.length === 0) return null;
     const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
     return inArray(
-      activityLog.senderKey,
+      senderKeyColumn,
       this.db
         .select({ senderKey: senders.senderKey })
         .from(senders)
