@@ -126,7 +126,6 @@ async function seedSender(
       yearMonth: '2026-05-01',
       volume: input.timeseries.volume,
       readCount: input.timeseries.readCount,
-      replyCount: 0,
     });
   }
   if ((input.totalMessages ?? 0) > 0) {

@@ -467,7 +467,7 @@ export function SenderCard({
                   : 'today'
             }
           />
-          <Stat label="You replied" value={`${sender.repliedCount}×`} />
+          <Stat label="You wrote" value={`${sender.wroteToCount}×`} />
         </div>
       </div>
 

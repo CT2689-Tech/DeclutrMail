@@ -315,10 +315,16 @@ export class OnboardingService {
       senderKeys: lookupKeys,
     });
     // "Showable" is the only honest basis for both the pin and the
-    // render: still weakly protected, and the queue will actually
-    // return it.
+    // render: still worth reviewing, and the queue will actually return
+    // it. Two kinds qualify — a one-way signal (star / Gmail
+    // importance), and a correspondence shield whose evidence no longer
+    // holds. The second reads as `replied`, so a weak-reason filter
+    // alone silently dropped every one of them.
+    const unsupportedKeys = new Set(review.unsupportedSenderKeys);
     const showable = new Map(
-      pool.filter(isWeaklyProtected).map((row) => [row.senderKey, row] as const),
+      pool
+        .filter((row) => isWeaklyProtected(row) || unsupportedKeys.has(row.senderKey))
+        .map((row) => [row.senderKey, row] as const),
     );
 
     const pinnedKeys = await this.readOrCreatePin(
@@ -344,6 +350,10 @@ export class OnboardingService {
       })
       .sort(
         (a, b) =>
+          // Unsupported first as a GROUP — same rule the read applies,
+          // repeated here because this re-sort would otherwise merge the
+          // two groups back together by shielded mail alone.
+          Number(unsupportedKeys.has(b.senderKey)) - Number(unsupportedKeys.has(a.senderKey)) ||
           b.unreadInboxCount - a.unreadInboxCount ||
           b.inboxCount - a.inboxCount ||
           a.senderKey.localeCompare(b.senderKey),
@@ -354,7 +364,12 @@ export class OnboardingService {
       meta: {
         pinned: pinnedKeys.length,
         decided: pinnedKeys.length - remaining.length,
-        protection: { strong: review.strong, weak: review.weak, manual: review.manual },
+        protection: {
+          strong: review.strong,
+          unsupported: review.unsupported,
+          weak: review.weak,
+          manual: review.manual,
+        },
       },
     };
   }

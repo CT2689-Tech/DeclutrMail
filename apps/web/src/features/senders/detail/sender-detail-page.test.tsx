@@ -648,7 +648,7 @@ describe('SenderDetailRoute', () => {
                 name: 'LinkedIn',
                 domain: 'linkedin.com',
                 lastSeenDays: 2,
-                repliedCount: 0,
+                wroteToCount: 0,
                 monthly: 64,
               },
               counts: {

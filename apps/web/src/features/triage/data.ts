@@ -103,6 +103,15 @@ export interface TriageDecisionRow {
    * user's explicit row actions remain available with confirmation.
    */
   protectionReason: ProtectionReason | null;
+  /**
+   * Does the recorded `protectionReason` still hold?
+   *
+   * `false` means the evidence is gone and this row is being surfaced
+   * for the user to keep or unprotect — NOT that anything was
+   * withdrawn. `null` (unmeasurable) and `undefined` (an API predating
+   * the field) both mean "no claim", and render exactly as `true`.
+   */
+  protectionEvidenceCurrent?: boolean | null;
 
   /** Volume signal — messages/month, recent cadence (4-week average). */
   monthlyVolume: number;
@@ -406,7 +415,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     signals: [
       'Read rate: 95% over the last 90 days',
       'Volume: 6 messages/month',
-      'Protected — automatic and bulk cleanup stays off because you replied at least 3 times',
+      'Protected — automatic and bulk cleanup stays off because you wrote to them at least 3 times',
     ],
     protectionReason: 'replied',
     monthlyVolume: 6,

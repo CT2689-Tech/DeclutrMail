@@ -50,7 +50,7 @@ describe('protectionReasonClause', () => {
 
   it('names the exact evidence for every reason (D245 / CLAUDE.md §2.6)', () => {
     expect(protectionReasonClause('user_defined')).toBe('you marked it Protected');
-    expect(protectionReasonClause('replied')).toBe('you replied at least 3 times');
+    expect(protectionReasonClause('replied')).toBe('you wrote to them at least 3 times');
     expect(protectionReasonClause('starred')).toBe('you starred a message');
     expect(protectionReasonClause('gmail_important')).toBe('Gmail marks it important');
   });

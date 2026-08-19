@@ -126,11 +126,15 @@ export interface SenderListRow {
    */
   unreadInboxCount?: number | null;
   /**
-   * "You replied N×" count (Senders V2 spec v1.3 + mig 0022) — distinct
-   * outbound messages whose thread contains ≥1 inbound from this sender.
-   * Auto-protect threshold is ≥3. Engine default `0` (never null).
+   * "You wrote to them N×" count (mig 0063) — distinct outbound
+   * messages ADDRESSED to this sender (their address in To or Cc).
+   * Not a reply count: Gmail exposes no causal reply signal, and the
+   * thread-membership proxy that stood in for one credited a bounce
+   * notifier with 14 replies (F010). Automatic protection needs this
+   * >= 3 AND at least one message received from them. Engine default
+   * `0` (never null).
    */
-  repliedCount: number;
+  wroteToCount: number;
   /** Recent monthly cadence — most recent month's `sender_timeseries.volume`. */
   monthlyVolume: number | null;
   /**
@@ -157,6 +161,19 @@ export interface SenderListRow {
     isProtected: boolean;
     protectionReason: ProtectionReasonWire | null;
     protectionSetAt: string | null;
+    /**
+     * Does the recorded reason still hold against today's evidence?
+     *
+     * Only `replied` can go stale (mig 0063 corrected what it counts).
+     * `false` means SURFACE IT — nothing has been unprotected; the sweep
+     * never withdraws a correspondence shield. `null` means the mailbox
+     * has no outbound mail indexed, so the rule is unmeasurable rather
+     * than failed, and MUST render exactly as `true`.
+     *
+     * Optional because an API pod predating the field omits it, and
+     * `undefined` is likewise "no claim" — never "unsupported".
+     */
+    protectionEvidenceCurrent?: boolean | null;
   };
   /**
    * Standing policy verb (`keep | archive | unsubscribe | later`).
@@ -203,6 +220,19 @@ export interface SenderDetailDto extends SenderListRow {
     protectionReason: ProtectionReasonWire | null;
     /** ISO-8601 — when protection was last set. Null when not protected. */
     protectionSetAt: string | null;
+    /**
+     * Does the recorded reason still hold against today's evidence?
+     *
+     * Only `replied` can go stale (mig 0063 corrected what it counts).
+     * `false` means SURFACE IT — nothing has been unprotected; the sweep
+     * never withdraws a correspondence shield. `null` means the mailbox
+     * has no outbound mail indexed, so the rule is unmeasurable rather
+     * than failed, and MUST render exactly as `true`.
+     *
+     * Optional because an API pod predating the field omits it, and
+     * `undefined` is likewise "no claim" — never "unsupported".
+     */
+    protectionEvidenceCurrent?: boolean | null;
   };
   /**
    * Raw `mailto:` URL from the sender's List-Unsubscribe header —
@@ -436,11 +466,11 @@ export interface ListSendersParams {
    */
   unsubReady?: TriStateFilter | undefined;
   /**
-   * D38 "you replied" tri-state. `true` = only senders the user has
-   * replied to; `false` = exclude; omit = no constraint. Maps to wire
-   * `?replied=true` / `?replied=not`.
+   * D38 "you wrote to them" tri-state. `true` = only senders the user
+   * has written to; `false` = exclude; omit = no constraint. Maps to
+   * wire `?wrote-to=true` / `?wrote-to=not`.
    */
-  replied?: TriStateFilter | undefined;
+  wroteTo?: TriStateFilter | undefined;
   /** D38 — "quiet for N days+" filter. 30 / 90 / 180 / 365 + raw number. */
   windowDays?: number | undefined;
   /** D38 — case-insensitive domain substring (mailbox-wide). */
@@ -483,7 +513,7 @@ export interface SenderListQueryMeta {
     quiet: number;
     dormant: number;
     unsubReady: number;
-    repliedTo: number;
+    wroteTo: number;
     protected: number;
     /** D51 — "unsub'd, still emailing" axis count (mailbox-wide). */
     unsubIgnored: number;
@@ -545,7 +575,7 @@ export function sendersListRequestQuery(
       : undefined,
     unsub_ready:
       params.unsubReady === true ? 'true' : params.unsubReady === false ? 'not' : undefined,
-    replied: params.replied === true ? 'true' : params.replied === false ? 'not' : undefined,
+    'wrote-to': params.wroteTo === true ? 'true' : params.wroteTo === false ? 'not' : undefined,
     window: params.windowDays !== undefined ? String(params.windowDays) : undefined,
     domain: params.domain ? params.domain : undefined,
     unsub_ignored: params.unsubIgnored === true ? 'true' : undefined,

@@ -26,7 +26,7 @@ const livePreview: CompositeActionPreviewResult = {
     name: sender.name,
     domain: sender.domain,
     lastSeenDays: sender.lastDays,
-    repliedCount: sender.repliedCount,
+    wroteToCount: sender.wroteToCount,
     monthly: sender.monthlyVolume ?? 0,
   },
   counts: buckets,

@@ -277,15 +277,51 @@ function senders(n: number): string {
 }
 
 /**
+ * Senders in the review pool — the ones the user is being asked about.
+ *
+ * `unsupported` is optional on the wire (an older API pod omits it), and
+ * absent is read as 0 here. That is the honest default for a COUNT, but
+ * every sentence built on it must stay true when it is missing: none of
+ * the copy below says "we checked and found none".
+ */
+function reviewable(split: OnboardingProtectionSplit): number {
+  return (split.unsupported ?? 0) + split.weak;
+}
+
+/**
  * The headline is the reassurance when there IS one. On a mailbox with
- * no replies protected (a real case — one connected account is 0 strong
- * / 2 weak) a "we protected 0" sentence would read as failure, so the
- * headline states the fact that actually exists instead.
+ * no correspondence protected (a real case — one connected account is 0
+ * strong / 2 weak) a "we protected 0" sentence would read as failure, so
+ * the headline states the fact that actually exists instead.
  */
 function reviewHeadline(split: OnboardingProtectionSplit | null): string {
   if (split === null) return 'Senders we protected for you';
   if (split.strong > 0) return `We protected ${senders(split.strong)} you write back to.`;
+  const stale = split.unsupported ?? 0;
+  if (stale > 0) {
+    return `${senders(stale)} ${stale === 1 ? 'is' : 'are'} protected on evidence we can no longer confirm.`;
+  }
   return `${senders(split.weak)} ${split.weak === 1 ? 'is' : 'are'} protected by a single signal.`;
+}
+
+/**
+ * The sentence that explains the stale-evidence rows, or '' when there
+ * are none.
+ *
+ * It says the shield is INTACT before it says anything is wrong, because
+ * the alarming reading of "we can no longer confirm this" is that we
+ * already acted on it. We did not, and never do: the sweep escalates
+ * protection and never withdraws a correspondence shield.
+ */
+function unsupportedClause(split: OnboardingProtectionSplit): string {
+  const stale = split.unsupported ?? 0;
+  if (stale === 0) return '';
+  const they = stale === 1 ? 'It is' : 'They are';
+  return (
+    `${senders(stale)} ${stale === 1 ? 'was' : 'were'} protected because we counted messages you ` +
+    `sent — but we were counting any mail in a shared conversation, not mail addressed to them. ` +
+    `${they} still protected; we have not changed anything. Keep or unprotect each one here.`
+  );
 }
 
 function reviewBody(
@@ -308,18 +344,34 @@ function reviewBody(
   if (split === null) {
     return `Protected senders stay out of bulk and automatic cleanup. ${ordering}`;
   }
+  const stale = unsupportedClause(split);
+  const weakClause =
+    split.weak > 0
+      ? `${senders(split.weak)} ${split.weak === 1 ? 'is' : 'are'} protected by one star or a ` +
+        `Gmail importance flag — one-way signals, and worth a look.`
+      : '';
   if (split.strong > 0) {
-    return (
-      `Replying is a two-way relationship, so those stay out of bulk and automatic cleanup ` +
-      `without you doing anything. ${senders(split.weak)} ` +
-      `${split.weak === 1 ? 'is' : 'are'} protected by one star or a Gmail importance flag — ` +
-      `one-way signals, and worth a look. ${ordering}`
-    );
+    return [
+      `Writing to someone who writes back is a two-way relationship, so those stay out of bulk ` +
+        `and automatic cleanup without you doing anything.`,
+      stale,
+      weakClause,
+      ordering,
+    ]
+      .filter(Boolean)
+      .join(' ');
   }
-  return (
-    `None of them came from a reply — a star or a Gmail importance flag marks a message, ` +
-    `not a correspondent. Protected senders stay out of bulk and automatic cleanup. ${ordering}`
-  );
+  return [
+    stale,
+    stale
+      ? weakClause
+      : `None of them came from a two-way exchange — a star or a Gmail importance flag marks a ` +
+        `message, not a correspondent.`,
+    'Protected senders stay out of bulk and automatic cleanup.',
+    ordering,
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
 
 /**
@@ -352,11 +404,13 @@ function donePanel(
   // of them were protected. It now shows the exact reason, what each
   // protection is shielding, and Unprotect in place — so the review
   // hands the remaining N somewhere real instead of dropping them.
+  const remaining = split === null ? 0 : reviewable(split);
   const stillWeak =
-    split !== null && split.weak > 0
-      ? `${senders(split.weak)} ${split.weak === 1 ? 'is' : 'are'} still protected by one star ` +
-        `or a Gmail importance flag. Settings → Protected senders shows every protected sender ` +
-        `with its reason, so you can find them there whenever you want.`
+    remaining > 0
+      ? `${senders(remaining)} ${remaining === 1 ? 'is' : 'are'} still protected on a signal ` +
+        `worth a look — one star, a Gmail importance flag, or an old reply count we can no ` +
+        `longer confirm. Settings → Protected senders shows every protected sender with its ` +
+        `reason, so you can find them there whenever you want.`
       : '';
 
   if (split === null) {
@@ -375,13 +429,13 @@ function donePanel(
     };
   }
 
-  // Nothing was shown. Which of the two facts that is depends on `weak`.
-  if (split.weak > 0) {
+  // Nothing was shown. Which of the two facts that is depends on the
+  // reviewable pool, not on `weak` alone — a mailbox whose only
+  // reviewable rows are stale-evidence ones has `weak === 0` and still
+  // has something to say.
+  if (remaining > 0) {
     return {
-      headline:
-        split.strong > 0
-          ? `We protected ${senders(split.strong)} you write back to.`
-          : `${senders(split.weak)} ${split.weak === 1 ? 'is' : 'are'} protected by a single signal.`,
+      headline: reviewHeadline(split),
       body: `We didn't have a review to line up here, but ${stillWeak}`,
     };
   }
@@ -405,17 +459,18 @@ function donePanel(
       headline: `You’ve protected ${senders(split.manual)} yourself.`,
       body:
         `They stay out of bulk and automatic cleanup, and they are yours to change whenever ` +
-        `you like. Nothing has been protected automatically yet — that takes three replies, a ` +
-        `starred message, or repeated Gmail importance — so there is nothing here to review.`,
+        `you like. Nothing has been protected automatically yet — that takes writing to a ` +
+        `sender at least three times and hearing back, a starred message, or repeated Gmail ` +
+        `importance — so there is nothing here to review.`,
     };
   }
 
   return {
     headline: 'Nothing is protected yet.',
     body:
-      `Protection turns itself on only for strong evidence — three replies, a starred message, ` +
-      `or repeated Gmail importance. Nothing in this mailbox has reached that yet, so nothing ` +
-      `is being held back from cleanup.`,
+      `Protection turns itself on only for strong evidence — writing to a sender at least three ` +
+      `times and hearing back, a starred message, or repeated Gmail importance. Nothing in this ` +
+      `mailbox has reached that yet, so nothing is being held back from cleanup.`,
   };
 }
 

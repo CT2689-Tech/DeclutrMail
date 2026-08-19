@@ -29,7 +29,7 @@ export type Verdict = 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
  */
 export type ProtectionReason =
   | 'user-marked' // user toggled Protect on
-  | 'replied' // user replied at least three times
+  | 'replied' // >=3 messages addressed to them, >=1 received from them
   | 'starred' // user starred a message in the past year
   | 'gmail-important'; // Gmail marked ≥3 recent messages important, sender in Primary
 

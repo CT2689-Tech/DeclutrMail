@@ -105,6 +105,12 @@ async function seedDecision(
     unreadMessages?: number;
     /** Protect the sender with this reason (D245 automatic protection). */
     protection?: 'replied' | 'starred' | 'gmail_important' | 'user_defined';
+    /**
+     * `senders.wrote_to_count` — outbound messages addressed to them.
+     * Defaults to the auto-protect threshold so an existing `replied`
+     * seed keeps holding; drop it below 3 to seed a stale shield.
+     */
+    wroteToCount?: number;
   },
 ): Promise<void> {
   const now = new Date();
@@ -119,6 +125,11 @@ async function seedDecision(
     gmailCategory: 'promotions',
     firstSeenAt: now,
     lastSeenAt: now,
+    // `total_received` is the "at least one message FROM them" half of
+    // the two-way rule; every sender row implies it by construction
+    // (the index is built from inbound mail).
+    totalReceived: opts.inboxMessages ?? 3,
+    wroteToCount: opts.wroteToCount ?? 3,
   });
   await db.insert(triageDecisions).values({
     mailboxAccountId,
@@ -583,8 +594,115 @@ describe('OnboardingService', () => {
 
       // A reply is a two-way relationship, so it needs no review — it is
       // the reassurance. A star marks a message, not a correspondent.
-      expect(read.meta.protection).toEqual({ strong: 1, weak: 1, manual: 0 });
+      expect(read.meta.protection).toEqual({ strong: 1, unsupported: 0, weak: 1, manual: 0 });
       expect(read.rows.map((r) => r.senderKey)).toEqual(['starred-once']);
+    });
+
+    /**
+     * One outbound row, so the mailbox has SOMETHING addressed
+     * somewhere and the wrote-to rule becomes measurable at all. Without
+     * it every `replied` shield is `null` (unmeasurable), which is the
+     * blind case the last spec in this block pins down.
+     */
+    async function seedOutboundMail(): Promise<void> {
+      await db.insert(mailMessages).values({
+        mailboxAccountId: mailboxId,
+        providerMessageId: 'outbound-0',
+        providerThreadId: 'outbound-thread-0',
+        senderKey: '',
+        internalDate: new Date(),
+        isUnread: false,
+        isOutbound: true,
+        recipientEmails: ['someone.else@example.org'],
+      });
+    }
+
+    it('surfaces a correspondence shield whose evidence no longer holds (F010)', async () => {
+      // The mailer-daemon shape. It was protected on a count that
+      // credited any outbound message sharing a thread; the corrected
+      // count is 0, so the claim behind the shield is gone.
+      await seedOutboundMail();
+      await seedDecision(db, mailboxId, {
+        senderKey: 'bounce-notifier',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'replied',
+        wroteToCount: 0,
+      });
+      await seedDecision(db, mailboxId, {
+        senderKey: 'real-colleague',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'replied',
+        wroteToCount: 12,
+      });
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+
+      expect(read.meta.protection).toEqual({ strong: 1, unsupported: 1, weak: 0, manual: 0 });
+      // It surfaces for review — and it is STILL PROTECTED. Nothing is
+      // withdrawn on this signal; the review is the whole mechanism.
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['bounce-notifier']);
+      const [policy] = await db
+        .select({ isProtected: senderPolicies.isProtected })
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxId),
+            eq(senderPolicies.senderKey, 'bounce-notifier'),
+          ),
+        );
+      expect(policy!.isProtected).toBe(true);
+    });
+
+    it('ranks a stale shield ahead of a weak one shielding far more mail', async () => {
+      // Grouped, not merged and re-sorted. An absent justification
+      // outranks a real-but-one-way one however much either shields —
+      // otherwise a single heavily-shielding star pushes every stale
+      // shield off a five-row review.
+      await seedOutboundMail();
+      await seedDecision(db, mailboxId, {
+        senderKey: 'stale-shield',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'replied',
+        wroteToCount: 0,
+        inboxMessages: 2,
+        unreadMessages: 1,
+      });
+      await seedDecision(db, mailboxId, {
+        senderKey: 'starred-hoarder',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'starred',
+        inboxMessages: 160,
+        unreadMessages: 150,
+      });
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      expect(read.meta.protection).toEqual({ strong: 0, unsupported: 1, weak: 1, manual: 0 });
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['stale-shield', 'starred-hoarder']);
+    });
+
+    it('does not indict a single shield on a mailbox with no outbound indexed', async () => {
+      // THE BLIND CASE. With no Sent mail indexed, "you wrote to them"
+      // is unmeasurable, not absent — every `replied` shield would
+      // otherwise surface at once on a mailbox we simply cannot judge.
+      // Same seed as the first spec, minus the outbound row.
+      await seedDecision(db, mailboxId, {
+        senderKey: 'bounce-notifier',
+        verdict: 'keep',
+        confidence: 0.9,
+        protection: 'replied',
+        wroteToCount: 0,
+      });
+      await chooseProtectionGoal();
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      expect(read.meta.protection).toEqual({ strong: 1, unsupported: 0, weak: 0, manual: 0 });
+      expect(read.rows).toEqual([]);
     });
 
     it('leads with the protection shielding the most unread inbox mail', async () => {
@@ -673,7 +791,7 @@ describe('OnboardingService', () => {
       await chooseProtectionGoal();
 
       const read = await service.getFirstTriage(userId, mailboxId);
-      expect(read.meta.protection).toEqual({ strong: 0, weak: 0, manual: 2 });
+      expect(read.meta.protection).toEqual({ strong: 0, unsupported: 0, weak: 0, manual: 2 });
       expect(read.rows).toEqual([]);
     });
 
@@ -692,7 +810,7 @@ describe('OnboardingService', () => {
       // "you write back to them" would be a claim we cannot support. It
       // IS counted as manual, so the screen cannot go on to call the
       // mailbox unprotected.
-      expect(read.meta.protection).toEqual({ strong: 0, weak: 0, manual: 1 });
+      expect(read.meta.protection).toEqual({ strong: 0, unsupported: 0, weak: 0, manual: 1 });
       expect(read.rows).toEqual([]);
     });
 
@@ -709,7 +827,7 @@ describe('OnboardingService', () => {
       expect(read.meta).toEqual({
         pinned: 0,
         decided: 0,
-        protection: { strong: 1, weak: 0, manual: 0 },
+        protection: { strong: 1, unsupported: 0, weak: 0, manual: 0 },
       });
       expect(read.rows).toEqual([]);
     });
@@ -733,7 +851,7 @@ describe('OnboardingService', () => {
       await chooseProtectionGoal();
 
       const read = await service.getFirstTriage(userId, mailboxId);
-      expect(read.meta.protection).toEqual({ strong: 0, weak: 2, manual: 0 });
+      expect(read.meta.protection).toEqual({ strong: 0, unsupported: 0, weak: 2, manual: 0 });
       expect(read.rows).toHaveLength(2);
     });
 
@@ -761,7 +879,7 @@ describe('OnboardingService', () => {
       expect(read.meta).toEqual({
         pinned: 1,
         decided: 1,
-        protection: { strong: 0, weak: 1, manual: 0 },
+        protection: { strong: 0, unsupported: 0, weak: 1, manual: 0 },
       });
       expect(read.rows).toEqual([]);
     });
@@ -788,7 +906,7 @@ describe('OnboardingService', () => {
       expect(read.meta).toEqual({
         pinned: 1,
         decided: 1,
-        protection: { strong: 0, weak: 0, manual: 0 },
+        protection: { strong: 0, unsupported: 0, weak: 0, manual: 0 },
       });
       expect(read.rows).toEqual([]);
     });
@@ -854,7 +972,7 @@ describe('OnboardingService', () => {
       expect(read.meta).toEqual({
         pinned: 1,
         decided: 0,
-        protection: { strong: 0, weak: 1, manual: 0 },
+        protection: { strong: 0, unsupported: 0, weak: 1, manual: 0 },
       });
       expect(read.rows.map((r) => r.senderKey)).toEqual(['weak-b']);
     });
@@ -896,7 +1014,7 @@ describe('OnboardingService', () => {
       expect(read.meta).toEqual({
         pinned: 1,
         decided: 0,
-        protection: { strong: 0, weak: 1, manual: 0 },
+        protection: { strong: 0, unsupported: 0, weak: 1, manual: 0 },
       });
       expect(read.rows.map((r) => r.senderKey)).toEqual(['weak-only']);
     });
@@ -954,7 +1072,7 @@ describe('OnboardingService', () => {
       expect(read.rows.map((r) => r.senderKey)).toEqual(['showable']);
       // The COUNT still tells the truth: both are protected on a weak
       // signal, whether or not we can put a row on the screen.
-      expect(read.meta.protection).toEqual({ strong: 0, weak: 2, manual: 0 });
+      expect(read.meta.protection).toEqual({ strong: 0, unsupported: 0, weak: 2, manual: 0 });
     });
 
     it('never pins a sender already decided inside the queue window', async () => {
@@ -1017,7 +1135,7 @@ describe('OnboardingService', () => {
       expect(blocked.meta).toEqual({
         pinned: 0,
         decided: 0,
-        protection: { strong: 0, weak: 1, manual: 0 },
+        protection: { strong: 0, unsupported: 0, weak: 1, manual: 0 },
       });
 
       // The decision ages out of the window; the sender is reviewable again.
@@ -1107,7 +1225,7 @@ describe('OnboardingService', () => {
       const second = await service.getFirstTriage(userId, mailboxId);
       expect(second.rows.map((r) => r.senderKey)).toEqual(first.rows.map((r) => r.senderKey));
       // The COUNT is live, though — it is a fact about the mailbox now.
-      expect(second.meta.protection).toEqual({ strong: 0, weak: 8, manual: 0 });
+      expect(second.meta.protection).toEqual({ strong: 0, unsupported: 0, weak: 8, manual: 0 });
     });
   });
 });
@@ -1131,6 +1249,7 @@ describe('pickFirstTriageCandidates', () => {
     reasoning: 'r',
     signals: [],
     protectionReason: null,
+    protectionEvidenceCurrent: true,
     monthlyVolume: 0,
     last90dMessages: 0,
     readRate: 0,

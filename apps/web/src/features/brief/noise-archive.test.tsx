@@ -370,7 +370,7 @@ describe('Brief Noise bulk archive (D65)', () => {
                 name: 'Newsletter Daily',
                 domain: 'news.example',
                 lastSeenDays: 1,
-                repliedCount: 0,
+                wroteToCount: 0,
                 monthly: 30,
               },
               counts: {

@@ -49,7 +49,7 @@ import type { AutopilotActionKind, AutopilotPresetKey, TriageVerdict } from '@de
  * The signal subset Autopilot presets read. A minimal projection of
  * `SenderSignals` — the worker materializes only these fields rather
  * than the full cascade signal set, since presets do not need the
- * engagement-cascade fields (`hasReplied`, `gmailCategory`,
+ * engagement-cascade fields (`hasWrittenTo`, `gmailCategory`,
  * `starredInLastYear`, `spikeRatio`, ...).
  */
 export interface PresetSignals {

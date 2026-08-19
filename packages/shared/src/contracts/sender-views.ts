@@ -25,7 +25,7 @@ const SenderViewComposeSchema = z
     activityNegate: z.boolean(),
     /** Tri-state: `true` require / `false` negate / `null` off. */
     unsubReady: z.boolean().nullable(),
-    replied: z.boolean().nullable(),
+    wroteTo: z.boolean().nullable(),
     protectedFlag: z.boolean().nullable(),
     windowDays: z.number().int().min(1).max(3650).nullable(),
     domain: z.string().max(120).nullable(),

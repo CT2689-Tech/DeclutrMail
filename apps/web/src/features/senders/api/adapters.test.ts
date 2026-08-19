@@ -255,15 +255,15 @@ describe('adaptSenderDetail — honest wire composition', () => {
     expect(detail.sender.readRate).toBeNull();
   });
 
-  it('rides repliedCount through to the sender model (the old adapter dropped it)', () => {
+  it('rides wroteToCount through to the sender model (the old adapter dropped it)', () => {
     const detail = adaptSenderDetail({
-      detail: makeSenderRow({ repliedCount: 7 }),
+      detail: makeSenderRow({ wroteToCount: 7 }),
       messages: [],
       timeseries: [],
       history: [],
       now: NOW,
     });
-    expect(detail.sender.repliedCount).toBe(7);
+    expect(detail.sender.wroteToCount).toBe(7);
   });
 
   it('surfaces the protection flags through the reason mapping', () => {

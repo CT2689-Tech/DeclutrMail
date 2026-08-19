@@ -54,6 +54,7 @@ import { normalizeUnsubscribeLifecycleStatus } from '@declutrmail/shared/contrac
 import { normalizeProtectionReason } from '@declutrmail/shared/copy';
 import {
   CONFIDENCE,
+  evaluateProtectionEvidence,
   FREE_MAIL_DOMAINS,
   PATTERNS,
   SCORE,
@@ -421,11 +422,11 @@ export class SendersReadService {
      */
     domain?: string | null;
     /**
-     * "You replied" filter (D38 + spec v1.3). `true` requires
-     * `replied_count > 0`; `false` requires `replied_count = 0`;
+     * "You wrote to them" filter (D38 + mig 0063). `true` requires
+     * `wrote_to_count > 0`; `false` requires `wrote_to_count = 0`;
      * `null` = no constraint. Mirrors `unsubReady` tri-state shape.
      */
-    repliedTo?: TriStateFilter;
+    wroteTo?: TriStateFilter;
     /**
      * "Unsub'd, still emailing" fact filter (D51). `true` requires
      * `sender_policies.policy_type = 'unsubscribe'` AND `last_seen_at`
@@ -590,10 +591,10 @@ export class SendersReadService {
         sql`(${senders.unsubscribeMethod} IS NULL OR ${senders.unsubscribeMethod} = 'none')`,
       );
     }
-    if (args.repliedTo === true) {
-      conditions.push(sql`${senders.repliedCount} > 0`);
-    } else if (args.repliedTo === false) {
-      conditions.push(sql`${senders.repliedCount} = 0`);
+    if (args.wroteTo === true) {
+      conditions.push(sql`${senders.wroteToCount} > 0`);
+    } else if (args.wroteTo === false) {
+      conditions.push(sql`${senders.wroteToCount} = 0`);
     }
     if (args.unsubIgnored === true) {
       // "Unsub'd, still emailing" (D51) — rides the existing
@@ -630,7 +631,7 @@ export class SendersReadService {
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
-        repliedCount: senders.repliedCount,
+        wroteToCount: senders.wroteToCount,
         unsubscribeMethod: senders.unsubscribeMethod,
         last30dMsgs: last30dMsgsSql,
         last30dReadCount: last30dReadCountSql,
@@ -675,6 +676,12 @@ export class SendersReadService {
       // `hasMore` without a count query.
       .limit(limit + 1);
 
+    // Mailbox-level, so it is read once per request rather than per row.
+    // Without outbound mail indexed, "you wrote to them" is unmeasurable
+    // and every `replied` protection would otherwise read as
+    // unsupported — see `evaluateProtectionEvidence`.
+    const mailboxHasOutbound = await this.mailboxHasOutboundIndexed(args.mailboxAccountId);
+
     return rows.map((row) => {
       // Scalar `sql<number | string>` subqueries (last30dMsgs,
       // last30dReadCount, baselineMsgs) come back from postgres-js +
@@ -703,7 +710,7 @@ export class SendersReadService {
         totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
         // `replied_count` — mig 0022 integer column, NOT NULL DEFAULT 0.
         // Drives the Sender Detail "you replied N×" copy.
-        repliedCount: ensureSafeIntegerNumber(row.repliedCount, 'senders.replied_count'),
+        wroteToCount: ensureSafeIntegerNumber(row.wroteToCount, 'senders.wrote_to_count'),
         // `monthlyVolume` wire field now carries last-30-days msg count
         // (rolling). Replaces the per-sender-latest-year_month sum that
         // varied across decades. FE renders as "47 in last 30d".
@@ -735,6 +742,13 @@ export class SendersReadService {
           isProtected: row.isProtected ?? false,
           protectionReason: normalizeProtectionReason(row.protectionReason),
           protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
+          protectionEvidenceCurrent: evaluateProtectionEvidence({
+            isProtected: row.isProtected ?? false,
+            reason: normalizeProtectionReason(row.protectionReason),
+            wroteToCount: ensureSafeIntegerNumber(row.wroteToCount, 'senders.wrote_to_count'),
+            receivedCount: Number(row.totalReceived ?? 0),
+            mailboxHasOutbound,
+          }),
         },
         policyType: row.policyType ?? null,
         unsubStatus: normalizeUnsubscribeLifecycleStatus(row.unsubStatus),
@@ -829,7 +843,7 @@ export class SendersReadService {
     quietForDays?: number | null;
     domain?: string | null;
     /** D38 + spec v1.3 — `you replied N` filter (tri-state). */
-    repliedTo?: TriStateFilter;
+    wroteTo?: TriStateFilter;
     /** D51 — "unsub'd, still emailing" (see `listSenders` doc). */
     unsubIgnored?: boolean | null;
   }): Promise<SenderListQueryMeta> {
@@ -858,10 +872,10 @@ export class SendersReadService {
         sql`(${senders.unsubscribeMethod} IS NULL OR ${senders.unsubscribeMethod} = 'none')`,
       );
     }
-    if (args.repliedTo === true) {
-      totalMatchingConditions.push(sql`${senders.repliedCount} > 0`);
-    } else if (args.repliedTo === false) {
-      totalMatchingConditions.push(sql`${senders.repliedCount} = 0`);
+    if (args.wroteTo === true) {
+      totalMatchingConditions.push(sql`${senders.wroteToCount} > 0`);
+    } else if (args.wroteTo === false) {
+      totalMatchingConditions.push(sql`${senders.wroteToCount} = 0`);
     }
     if (args.unsubIgnored === true) {
       totalMatchingConditions.push(
@@ -927,13 +941,14 @@ export class SendersReadService {
         unsubReady: sql<
           string | number
         >`COUNT(*) FILTER (WHERE ${senders.unsubscribeMethod} IS NOT NULL AND ${senders.unsubscribeMethod} <> 'none')::bigint`,
-        // D38 + Senders V2 spec v1.3 — `you replied N` compose chip count.
-        // Backed by `senders.replied_count` (mig 0022) which materialises
-        // `COUNT(DISTINCT outbound m.id WHERE m.thread has inbound from
-        // sender)` so the predicate stays index-friendly + O(1) per row.
-        repliedToCount: sql<
+        // D38 — `you wrote to them N` compose chip count. Backed by
+        // `senders.wrote_to_count` (mig 0063), which materialises
+        // `COUNT(DISTINCT outbound m.id WHERE sender's address is in
+        // m.recipient_emails)` so the predicate stays index-friendly +
+        // O(1) per row.
+        wroteToCount: sql<
           string | number
-        >`COUNT(*) FILTER (WHERE ${senders.repliedCount} > 0)::bigint`,
+        >`COUNT(*) FILTER (WHERE ${senders.wroteToCount} > 0)::bigint`,
         protectedCount: sql<
           string | number
         >`COUNT(*) FILTER (WHERE ${senderPolicies.isProtected} = true)::bigint`,
@@ -970,7 +985,7 @@ export class SendersReadService {
           unsubReady: ensureSafeIntegerNumber(counts.unsubReady ?? 0, 'filterCounts.unsubReady'),
           // D38 honest count — `senders.replied_count > 0` (mig 0022 +
           // buildSenderIndex/IncrementalSyncWorker write paths).
-          repliedTo: ensureSafeIntegerNumber(counts.repliedToCount ?? 0, 'filterCounts.repliedTo'),
+          wroteTo: ensureSafeIntegerNumber(counts.wroteToCount ?? 0, 'filterCounts.wroteTo'),
           protected: ensureSafeIntegerNumber(counts.protectedCount ?? 0, 'filterCounts.protected'),
           unsubIgnored: ensureSafeIntegerNumber(
             counts.unsubIgnoredCount ?? 0,
@@ -1264,6 +1279,26 @@ export class SendersReadService {
    * guardian rule, mailbox isolation is enforced by the WHERE clause
    * here, not by a guard above us.
    */
+  /**
+   * Does this mailbox have ANY outbound mail indexed?
+   *
+   * The gate on `protectionEvidenceCurrent`. A mailbox whose Sent mail
+   * has not been indexed (or that genuinely has none) can produce no
+   * evidence for "you wrote to them", and treating that absence as
+   * disproof would surface every `replied` shield on the mailbox as
+   * unsupported in one go. `EXISTS` so it stops at the first row.
+   */
+  private async mailboxHasOutboundIndexed(mailboxAccountId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: mailMessages.id })
+      .from(mailMessages)
+      .where(
+        and(eq(mailMessages.mailboxAccountId, mailboxAccountId), eq(mailMessages.isOutbound, true)),
+      )
+      .limit(1);
+    return row !== undefined;
+  }
+
   async getSenderDetail(
     mailboxAccountId: string,
     senderId: string,
@@ -1363,7 +1398,7 @@ export class SendersReadService {
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
-        repliedCount: senders.repliedCount,
+        wroteToCount: senders.wroteToCount,
         unsubscribeMethod: senders.unsubscribeMethod,
         // The mailto: channel for D230's manual compose deep link —
         // only surfaced on the wire when `unsubscribe_method='mailto'`
@@ -1415,10 +1450,18 @@ export class SendersReadService {
       return null;
     }
 
+    const mailboxHasOutbound = await this.mailboxHasOutboundIndexed(mailboxAccountId);
     const protectionFlags: ProtectionFlags = {
       isProtected: row.isProtected ?? false,
       protectionReason: normalizeProtectionReason(row.protectionReason),
       protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
+      protectionEvidenceCurrent: evaluateProtectionEvidence({
+        isProtected: row.isProtected ?? false,
+        reason: normalizeProtectionReason(row.protectionReason),
+        wroteToCount: ensureSafeIntegerNumber(row.wroteToCount, 'senders.wrote_to_count'),
+        receivedCount: Number(row.totalReceived ?? 0),
+        mailboxHasOutbound,
+      }),
     };
 
     // Coerce the scalar subquery columns at the map boundary — see the
@@ -1440,7 +1483,7 @@ export class SendersReadService {
       firstSeenAt: row.firstSeenAt.toISOString(),
       lastSeenAt: row.lastSeenAt.toISOString(),
       totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
-      repliedCount: ensureSafeIntegerNumber(row.repliedCount, 'senders.replied_count'),
+      wroteToCount: ensureSafeIntegerNumber(row.wroteToCount, 'senders.wrote_to_count'),
       // Identical rolling-30d semantics to the list path — the same
       // sender reports the same volume / read rate / trend on both.
       monthlyVolume: last30dMsgs,

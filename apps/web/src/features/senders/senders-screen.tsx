@@ -186,7 +186,7 @@ function isDefaultCompose(c: ComposeState): boolean {
     c.activity === DEFAULT_COMPOSE.activity &&
     c.activityNegate === DEFAULT_COMPOSE.activityNegate &&
     c.unsubReady === DEFAULT_COMPOSE.unsubReady &&
-    c.replied === DEFAULT_COMPOSE.replied &&
+    c.wroteTo === DEFAULT_COMPOSE.wroteTo &&
     c.protectedFlag === DEFAULT_COMPOSE.protectedFlag &&
     c.windowDays === DEFAULT_COMPOSE.windowDays &&
     c.domain === DEFAULT_COMPOSE.domain &&
@@ -398,7 +398,7 @@ function SendersScreenContent({
         quiet: number;
         dormant: number;
         unsubReady: number;
-        repliedTo: number;
+        wroteTo: number;
         protected: number;
         unsubIgnored: number;
       }
@@ -2205,7 +2205,7 @@ function SendersScreenContent({
                   quiet: filterCounts.quiet,
                   dormant: filterCounts.dormant,
                   unsubReady: filterCounts.unsubReady,
-                  repliedTo: filterCounts.repliedTo,
+                  wroteTo: filterCounts.wroteTo,
                   protected: filterCounts.protected,
                   unsubIgnored: filterCounts.unsubIgnored,
                 }

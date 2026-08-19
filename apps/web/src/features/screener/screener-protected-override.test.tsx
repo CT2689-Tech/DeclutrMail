@@ -129,7 +129,7 @@ function previewHandler(row: (typeof SCREENER_QUEUE)[number], all: number) {
             name: row.senderName,
             domain: row.senderDomain,
             lastSeenDays: 0,
-            repliedCount: 0,
+            wroteToCount: 0,
             monthly: row.messageCount,
           },
           counts: {

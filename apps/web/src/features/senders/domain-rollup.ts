@@ -151,7 +151,7 @@ export function rollupByDomain(senders: readonly Sender[], minGroupSize = 3): Ro
     // consumer providers (the domain isn't a brand), and senders the
     // user has replied to (a relationship is never rollup inventory,
     // whatever domain it mails from).
-    if (CONSUMER_MAIL_PROVIDERS.has(key) || s.repliedCount > 0) continue;
+    if (CONSUMER_MAIL_PROVIDERS.has(key) || s.wroteToCount > 0) continue;
     const arr = byDomain.get(key);
     if (arr) arr.push(s);
     else byDomain.set(key, [s]);

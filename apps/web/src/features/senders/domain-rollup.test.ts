@@ -126,7 +126,7 @@ describe('rollupByDomain', () => {
 
   it('excludes replied-to senders from groups without swallowing their row', () => {
     const list = [
-      sender({ id: 'r1', domain: 'brand.com', repliedCount: 4 }),
+      sender({ id: 'r1', domain: 'brand.com', wroteToCount: 4 }),
       sender({ id: 'b1', domain: 'brand.com' }),
       sender({ id: 'b2', domain: 'mail.brand.com' }),
       sender({ id: 'b3', domain: 'news.brand.com' }),
@@ -143,7 +143,7 @@ describe('rollupByDomain', () => {
 
   it('drops the group entirely when replied-to exclusions push it under minGroupSize', () => {
     const list = [
-      sender({ id: 'r1', domain: 'brand.com', repliedCount: 1 }),
+      sender({ id: 'r1', domain: 'brand.com', wroteToCount: 1 }),
       sender({ id: 'b1', domain: 'brand.com' }),
       sender({ id: 'b2', domain: 'brand.com' }),
     ];

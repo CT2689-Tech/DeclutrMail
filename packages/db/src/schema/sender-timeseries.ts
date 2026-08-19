@@ -21,9 +21,14 @@ import { mailboxAccounts } from './mailbox-accounts';
  * WITHOUT the UNREAD label — a read proxy, not open tracking. The
  * rename is flagged in the PR body as a D-candidate for ratification.
  *
- * `reply_count` is the number of replies the user sent to this sender
- * that month (Sent-folder derived). The column exists now; it is
- * populated once Sent sync lands — defaults to 0 until then.
+ * There is deliberately NO per-month outbound column. `reply_count` was
+ * dropped in mig 0063: a row here exists only for a month the sender sent
+ * INBOUND mail, so a month in which the user wrote to someone who sent
+ * them nothing has no row to carry the count (21% of credited messages on
+ * the mailbox this was measured against). Any window read off such a
+ * column silently under-reports, and it could never reconcile with the
+ * hole-free total on `senders.wrote_to_count`. The 90-day figure is read
+ * from `mail_messages` directly instead.
  */
 
 export const senderTimeseries = pgTable(
@@ -40,8 +45,6 @@ export const senderTimeseries = pgTable(
     volume: integer('volume').notNull().default(0),
     /** Messages received in the month WITHOUT the UNREAD label (read proxy). */
     readCount: integer('read_count').notNull().default(0),
-    /** Replies the user sent to this sender in the month (Sent-derived). */
-    replyCount: integer('reply_count').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),

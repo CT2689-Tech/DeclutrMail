@@ -632,7 +632,7 @@ export interface CompositeActionPreviewResult {
     /** `senders.replied_count` (mig 0022) — `null` only when sender
      *  row pre-dates the backfill. The sender-context strip renders
      *  `you replied N×` from this value. */
-    repliedCount: number | null;
+    wroteToCount: number | null;
     monthly: number | null;
   };
   counts: {

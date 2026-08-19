@@ -605,9 +605,12 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       .select({
         displayName: senders.displayName,
         domain: senders.domain,
+<<<<<<< HEAD
         // Identity for the explanation check — the local part is where a
         // sender's own underscores live (`ife_insurance_india@…`), and
         // the model is allowed to quote them.
+=======
+>>>>>>> c375f17c (fix(senders,workers,db): count who you wrote to, not thread membership (D245, D7))
         email: senders.email,
         gmailCategory: senders.gmailCategory,
         firstSeenAt: senders.firstSeenAt,
@@ -641,7 +644,6 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       .select({
         volume: senderTimeseries.volume,
         readCount: senderTimeseries.readCount,
-        replyCount: senderTimeseries.replyCount,
       })
       .from(senderTimeseries)
       .where(
@@ -654,7 +656,30 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
 
     const volume90 = tsRows.reduce((sum, r) => sum + r.volume, 0);
     const reads90 = tsRows.reduce((sum, r) => sum + r.readCount, 0);
-    const replies90 = tsRows.reduce((sum, r) => sum + r.replyCount, 0);
+
+    // Outbound mail ADDRESSED to this sender in the same window, read
+    // from `mail_messages` rather than a per-month counter (mig 0063).
+    //
+    // The counter this replaces lived on `sender_timeseries`, whose rows
+    // exist only for months the sender sent INBOUND mail — so a month in
+    // which the user wrote to someone who sent them nothing had no row,
+    // and 21% of credited messages on the mailbox this was measured
+    // against were invisible to exactly this window. Under-reporting here
+    // costs a Keep (rule 2 below), which is the destructive direction.
+    //
+    // Raw SQL: the `LATERAL unnest(recipient_emails)` this needs has no
+    // Drizzle query-builder form, and hand-rolling one would drift from
+    // the identical predicate in mig 0063 and both sync workers.
+    const wroteToRows = await this.deps.db.execute(sql`
+      SELECT COUNT(DISTINCT m.${sql.identifier('id')})::int AS n
+      FROM ${mailMessages} AS m
+      CROSS JOIN LATERAL unnest(m.${sql.identifier('recipient_emails')}) AS r(addr)
+      WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+        AND m.${sql.identifier('is_outbound')} = true
+        AND m.${sql.identifier('internal_date')} >= ${ninetyDaysAgo.toISOString()}::timestamptz
+        AND dm_normalize_email(r.addr) = dm_normalize_email(${sender.email})
+    `);
+    const wroteTo90 = Number(firstRow<{ n: number }>(wroteToRows)?.n ?? 0);
     // Average over 3 months. Math.max(1, …) prevents divide-by-zero
     // for senders with no recent activity.
     const monthlyVolume = volume90 / 3;
@@ -732,7 +757,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       signals: {
         isProtected: Boolean(policy?.isProtected),
         ...(policy?.protectionReason ? { protectionReason: policy.protectionReason } : {}),
-        hasReplied: replies90 > 0,
+        hasWrittenTo: wroteTo90 > 0,
         gmailCategory: sender.gmailCategory,
         starredInLastYear,
         readRate90d,
@@ -755,3 +780,21 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
 /** Queue name + job name for the score worker (matches initial-sync pattern). */
 export const SCORE_QUEUE = 'score';
 export const SCORE_JOB = 'score';
+
+/**
+ * First row of a Drizzle `execute` result, whatever the driver returns.
+ *
+ * postgres.js hands back an array-like; PGlite (the test driver) hands
+ * back `{ rows }`. Defensive rather than cast, for the same reason
+ * `sender-timeseries-reconcile.ts` guards its row count: a shape
+ * mismatch here would turn into a confident `0` on `wroteTo90`, which
+ * silently withdraws cascade rule 2's Keep — the destructive direction.
+ */
+function firstRow<T>(result: unknown): T | undefined {
+  if (Array.isArray(result)) return result[0] as T | undefined;
+  if (result && typeof result === 'object') {
+    const rows = (result as { rows?: unknown }).rows;
+    if (Array.isArray(rows)) return rows[0] as T | undefined;
+  }
+  return undefined;
+}

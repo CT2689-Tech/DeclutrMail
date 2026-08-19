@@ -29,8 +29,16 @@ const VERDICT_TONE: Record<TriageVerdict, PillTone> = {
  * Sender Detail and the Settings policies list — this used to be four
  * hand-written copies that had already drifted.
  */
-function protectionEvidence(reason: NonNullable<TriageDecisionRow['protectionReason']>): string {
-  return protectionReasonLabel(normalizeProtectionReason(reason));
+function protectionEvidence(row: TriageDecisionRow): string {
+  // A shield whose evidence no longer holds must not keep asserting it
+  // — the D245 review names those rows in its own header, so repeating
+  // the old reason here makes the screen contradict itself. Only an
+  // explicit `false` does this: `null`/`undefined` mean unmeasurable,
+  // which is not a contradiction.
+  if (row.protectionEvidenceCurrent === false) {
+    return 'Protected · we can no longer confirm you wrote to them';
+  }
+  return protectionReasonLabel(normalizeProtectionReason(row.protectionReason));
 }
 
 /**
@@ -45,7 +53,7 @@ function protectionEvidence(reason: NonNullable<TriageDecisionRow['protectionRea
  */
 function whyLine(row: TriageDecisionRow): string {
   if (row.protectionReason !== null) {
-    const evidence = protectionEvidence(row.protectionReason);
+    const evidence = protectionEvidence(row);
     // What the protection is holding back. On the D245 review this is
     // the ranking key, so it has to be visible on the collapsed row —
     // otherwise the order looks arbitrary. Omitted at zero rather than

@@ -47,7 +47,7 @@ function livePreviewHandler(all: number, allMailTotal?: number) {
             name: firstRow.senderName,
             domain: firstRow.senderDomain,
             lastSeenDays: 0,
-            repliedCount: 0,
+            wroteToCount: 0,
             monthly: 1,
           },
           counts: {

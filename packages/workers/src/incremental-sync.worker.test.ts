@@ -38,7 +38,7 @@ import type { WorkerContext } from './worker-context.js';
  *   - message-added → mail_messages insert + sender materialise
  *   - message-deleted → hard-delete (idempotent on redelivery)
  *   - labels_added / labels_removed → array union/diff in place
- *   - reply-attribution post-pass → replied_count + auto-protect
+ *   - wrote-to attribution post-pass → wrote_to_count + auto-protect
  *   - cursor advance → provider_sync_state.last_history_id updated
  *   - cursor-too-old → null page returned, cursor NOT advanced
  */
@@ -549,10 +549,10 @@ describe('IncrementalSyncWorker', () => {
     expect(row!.isUnread).toBe(false);
   });
 
-  it('runs the reply-attribution + auto-protect post-pass after a batch', async () => {
-    // Set up a sender that already has 2 prior outbound replies on the
-    // same thread (below the auto-protect threshold). The incoming
-    // history adds a third — the post-pass flips the auto-protect flag.
+  it('runs the wrote-to attribution + auto-protect post-pass after a batch', async () => {
+    // Set up a sender the user has already written to twice (below the
+    // auto-protect threshold). The incoming history adds a third — the
+    // post-pass flips the auto-protect flag.
     const senderEmail = 'persona@example.com';
     const senderKey = deriveSenderKey(senderEmail);
     const threadId = 'thread-chat';
@@ -567,7 +567,9 @@ describe('IncrementalSyncWorker', () => {
       internalDate: new Date(base),
       isUnread: false,
     });
-    // 2 prior outbound replies on the thread (pre-existing).
+    // 2 prior outbound messages ADDRESSED to the sender (pre-existing).
+    // `recipientEmails` is what credits them (mig 0063). Sharing a
+    // thread is no longer enough — that was the defect.
     await db.insert(mailMessages).values([
       {
         mailboxAccountId,
@@ -577,6 +579,7 @@ describe('IncrementalSyncWorker', () => {
         internalDate: new Date(base + 60_000),
         isUnread: false,
         isOutbound: true,
+        recipientEmails: [senderEmail],
       },
       {
         mailboxAccountId,
@@ -586,6 +589,7 @@ describe('IncrementalSyncWorker', () => {
         internalDate: new Date(base + 120_000),
         isUnread: false,
         isOutbound: true,
+        recipientEmails: [senderEmail],
       },
     ]);
     // Sender row exists (created previously by sync).
@@ -599,7 +603,7 @@ describe('IncrementalSyncWorker', () => {
       firstSeenAt: new Date(base),
       lastSeenAt: new Date(base),
       totalReceived: 1,
-      repliedCount: 2,
+      wroteToCount: 2,
     });
 
     // The history records ADD the third outbound reply.
@@ -624,9 +628,9 @@ describe('IncrementalSyncWorker', () => {
       CTX,
     );
 
-    // replied_count flipped to 3 — post-pass ran.
+    // wrote_to_count flipped to 3 — post-pass ran.
     const [updated] = await db.select().from(senders).where(eq(senders.senderKey, senderKey));
-    expect(updated!.repliedCount).toBe(3);
+    expect(updated!.wroteToCount).toBe(3);
 
     // Auto-protect engaged.
     const [policy] = await db
@@ -644,7 +648,7 @@ describe('IncrementalSyncWorker', () => {
 
   it('auto-protect post-pass honors a manually demoted user_defined row (D40/D42 unprotect)', async () => {
     // Same engagement fixture as the post-pass test above (2 prior
-    // replies + 1 incoming → replied_count=3), but the sender carries
+    // outbound + 1 incoming → wrote_to_count=3), but the sender carries
     // the D40/D42 manual-Unprotect memory pin: `is_protected=false`
     // with `protection_reason='user_defined'` preserved
     // (senders-policy.service.ts). The webhook pass MUST NOT silently
@@ -672,6 +676,7 @@ describe('IncrementalSyncWorker', () => {
         internalDate: new Date(base + 60_000),
         isUnread: false,
         isOutbound: true,
+        recipientEmails: [senderEmail],
       },
       {
         mailboxAccountId,
@@ -681,6 +686,7 @@ describe('IncrementalSyncWorker', () => {
         internalDate: new Date(base + 120_000),
         isUnread: false,
         isOutbound: true,
+        recipientEmails: [senderEmail],
       },
     ]);
     await db.insert(senders).values({
@@ -693,7 +699,7 @@ describe('IncrementalSyncWorker', () => {
       firstSeenAt: new Date(base),
       lastSeenAt: new Date(base),
       totalReceived: 1,
-      repliedCount: 2,
+      wroteToCount: 2,
     });
     // The memory-pin state the manual Unprotect leaves behind.
     await db.insert(senderPolicies).values({
@@ -727,7 +733,7 @@ describe('IncrementalSyncWorker', () => {
 
     // Signal crossed the threshold…
     const [updated] = await db.select().from(senders).where(eq(senders.senderKey, senderKey));
-    expect(updated!.repliedCount).toBe(3);
+    expect(updated!.wroteToCount).toBe(3);
 
     // …but the user's explicit demote is honored.
     const [policy] = await db

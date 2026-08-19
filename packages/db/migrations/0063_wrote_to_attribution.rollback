@@ -1,0 +1,57 @@
+-- Reverse 0063. Restores the column names AND the thread-membership
+-- counts they held, so a rollback leaves no column carrying values from
+-- a formula its name does not describe.
+ALTER TABLE "senders" RENAME COLUMN "wrote_to_count" TO "replied_count";
+--> statement-breakpoint
+ALTER TABLE "sender_timeseries"
+  ADD COLUMN "reply_count" integer DEFAULT 0 NOT NULL;
+--> statement-breakpoint
+UPDATE "senders" SET "replied_count" = 0 WHERE "replied_count" <> 0;
+--> statement-breakpoint
+UPDATE "senders" AS s
+SET "replied_count" = sub.cnt
+FROM (
+  SELECT
+    m1."mailbox_account_id" AS mailbox_account_id,
+    m1."sender_key" AS sender_key,
+    COUNT(DISTINCT m2."id")::integer AS cnt
+  FROM "mail_messages" AS m1
+  JOIN "mail_messages" AS m2
+    ON m2."mailbox_account_id" = m1."mailbox_account_id"
+   AND m2."provider_thread_id" = m1."provider_thread_id"
+   AND m2."is_outbound" = true
+  WHERE m1."is_outbound" = false
+  GROUP BY m1."mailbox_account_id", m1."sender_key"
+) AS sub
+WHERE s."mailbox_account_id" = sub.mailbox_account_id
+  AND s."sender_key" = sub.sender_key;
+--> statement-breakpoint
+-- Session-zone `date_trunc`, matching the statement this restores. It is
+-- the pre-0063 behaviour, month-key bug included; a rollback that "fixed"
+-- it would not be the state the forward migration left.
+UPDATE "sender_timeseries" AS st
+SET "reply_count" = sub.cnt
+FROM (
+  SELECT
+    m1."mailbox_account_id" AS mailbox_account_id,
+    m1."sender_key" AS sender_key,
+    date_trunc('month', m2."internal_date")::date AS year_month,
+    COUNT(DISTINCT m2."id")::integer AS cnt
+  FROM "mail_messages" AS m1
+  JOIN "mail_messages" AS m2
+    ON m2."mailbox_account_id" = m1."mailbox_account_id"
+   AND m2."provider_thread_id" = m1."provider_thread_id"
+   AND m2."is_outbound" = true
+  WHERE m1."is_outbound" = false
+  GROUP BY
+    m1."mailbox_account_id",
+    m1."sender_key",
+    date_trunc('month', m2."internal_date")
+) AS sub
+WHERE st."mailbox_account_id" = sub.mailbox_account_id
+  AND st."sender_key" = sub.sender_key
+  AND st."year_month" = sub.year_month;
+--> statement-breakpoint
+DROP INDEX IF EXISTS "senders_account_normalized_email_idx";
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS dm_normalize_email(text);
