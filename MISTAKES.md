@@ -44,6 +44,18 @@ in `afterEach`; verified deterministic over 6 consecutive runs and still
 failing (`expected 12 to be greater than 12`) when the head-biased
 `slice` is put back.
 
+**Follow-on (same review, second pass):** de-flaking traded away the
+assertion's strength. Swapping "the LAST domain was scheduled" for
+"more than the cap, and something past the head" left a test a starving
+sampler could pass — one drawing only from the first 13 rows scores 13
+distinct domains and reaches index 12, satisfying both, while 27 of 40
+are never scheduled. Fixing a flaky test is not just making it stop
+failing: the property it proves has to survive the rewrite. Now asserts
+TOTAL coverage (`scheduled.size === domains.length`), which the pinned
+RNG makes exact — and which catches both the head-biased slice
+(`expected 12 to be 40`) and the first-13 sampler that passed the
+weakened version (`expected 13 to be 40`).
+
 ## 2026-08-19 — Awaited a queue write on a client that retries forever
 
 **PR:** #TBD

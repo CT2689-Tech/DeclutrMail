@@ -443,20 +443,22 @@ describe('IconsService', () => {
 
       // Nothing ever resolves, so every read faces the same 40 rowless
       // domains — the exact condition an exhausted provider produces.
-      for (let read = 0; read < 25; read += 1) {
+      for (let read = 0; read < 40; read += 1) {
         const { queue, added } = fakeQueue();
         await new IconsService(db as never, queue).marksFor(domains, { mayEnqueue: true });
         for (const job of added) scheduled.add((job.data as { domain: string }).domain);
       }
 
-      // A head-biased pick reaches exactly MAX_SCHEDULED_PER_READ of
-      // them no matter how many reads happen.
-      expect(scheduled.size).toBeGreaterThan(MAX_SCHEDULED_PER_READ);
-      // And the tail is reachable at all — not just the leading rows.
-      const tailScheduled = [...scheduled].filter(
-        (domain) => Number(domain.replace(/^d|\.example$/g, '')) >= MAX_SCHEDULED_PER_READ,
-      );
-      expect(tailScheduled.length).toBeGreaterThan(0);
+      // EVERY domain, not "more than the cap" and not "something past
+      // the head". Both of those are satisfied by a sampler that still
+      // starves: one drawing only from the first 13 rows scores 13
+      // distinct domains and reaches index 12, passing both, while 27
+      // of 40 are never scheduled once. The property that actually
+      // rules out starvation is total coverage, and with the RNG pinned
+      // it can be asserted exactly rather than approximated.
+      expect(scheduled.size).toBe(domains.length);
+      expect(scheduled.has('d0.example')).toBe(true);
+      expect(scheduled.has('d39.example')).toBe(true);
     });
 
     it('never causes outbound work without a session', async () => {
