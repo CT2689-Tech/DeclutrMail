@@ -86,10 +86,10 @@ export type CascadeRuleId =
  */
 export const CASCADE_RULE_PHRASE: Record<CascadeRuleId, string> = {
   protect_user_defined: 'the user marked this sender protected',
-  protect_replied: 'the user has replied to this sender several times',
+  protect_replied: 'the user has written to this sender several times and heard back',
   protect_starred: 'the user starred a message from this sender in the past year',
   protect_gmail_important: 'Gmail marked several recent messages from this sender important',
-  replied_at_least_once: 'the user has replied to this sender',
+  wrote_to_at_least_once: 'the user has written to this sender',
   gmail_primary: 'Gmail files this sender in Primary, where real correspondence lands',
   starred_recently: 'the user starred a message from this sender recently',
   high_read_rate: 'the user reads most of what this sender sends',

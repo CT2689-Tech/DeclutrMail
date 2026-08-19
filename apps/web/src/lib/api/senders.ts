@@ -197,7 +197,7 @@ export interface SenderListRow {
  * Why a sender is protected. Mirrors the BE `protection_reason` enum
  * (see `apps/api/src/senders/senders.types.ts`):
  *   - `user_defined` — the user toggled Protect on
- *   - `replied` — the user replied at least three times
+ *   - `replied` — two-way correspondence: >=3 messages addressed to them and >=1 from them
  *   - `starred` — the user starred a message in the past year
  *   - `gmail_important` — Gmail marked at least three recent messages important and the sender is in Primary
  *   - `null` — not protected
