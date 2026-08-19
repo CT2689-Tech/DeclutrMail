@@ -156,6 +156,94 @@ the point.
 
 ## P0 — launch blockers
 
+### F010 — "You replied N×" counts thread membership, not replies; 57 senders are Protected on replies that never happened
+
+**Found:** 2026-08-19 · founder question while reviewing the senders surface
+**Observed (founder):** _"Can you check for the calculations of Replied as
+well? Is that correct?"_ — the stat renders as `0×` / `5×` / `11×` across the
+grid card, the table column and the row detail.
+
+**Verdict — the format is right and the number is wrong.**
+
+Reply attribution joins `mail_messages` to itself on `provider_thread_id` and
+counts `COUNT(DISTINCT m2.id)` where `m2.is_outbound`
+([initial-sync.worker.ts](packages/workers/src/initial-sync.worker.ts) and the
+identical statement in
+[incremental-sync.worker.ts](packages/workers/src/incremental-sync.worker.ts)).
+There is no predicate tying the outbound message to the sender it is credited
+to. So **every outbound message in a thread counts as a reply to every inbound
+sender in that thread.**
+
+`mail_messages.recipient_emails` already holds To + Cc
+(`[...parseRecipients(meta.to), ...parseRecipients(meta.cc)]`) and is populated
+on 5,535 of 5,539 outbound rows, which makes a stricter definition — "an
+outbound message addressed to this sender" — directly measurable. Measured on
+the founder's mailbox:
+
+|                                                      | senders       |
+| ---------------------------------------------------- | ------------- |
+| have `replied_count > 0`                             | 1,041         |
+| stored count exceeds mail actually addressed to them | **390 (37%)** |
+| show replies while never being addressed at all      | **238**       |
+| …of those, crossed the ≥3 auto-protect threshold     | **57**        |
+
+Concrete rows the product currently asserts:
+
+| Sender                                                   | Claim                                |
+| -------------------------------------------------------- | ------------------------------------ |
+| `mailer-daemon@googlemail.com` (Mail Delivery Subsystem) | you replied **14×**                  |
+| `camden-addison-no-reply@realpage.com`                   | **11×**                              |
+| `calendar-notification@google.com`                       | **11×**                              |
+| `mehuln@google.com`                                      | **40×**, from **1** received message |
+
+You cannot reply to mailer-daemon. The bounce lands in a thread that already
+contains outbound mail, and the join credits it.
+
+**Why this is P0 rather than a display nit.** `replied_count ≥ 3` is a D245
+automatic-protection trigger, and Protected senders are excluded from bulk and
+automatic mail-changing actions. Of 460 senders protected with
+`protection_reason = 'replied'`, **57 have no outbound mail addressed to them
+at all** — permanently shielded junk, on evidence of a relationship that does
+not exist. D245's own wording is "at least three replies… a reply is a two-way
+relationship"; a bounce notification is not one.
+
+This is the mirror image of F008/F009: same class (asserting what we do not
+know), opposite direction — over-protecting instead of over-unsubscribing.
+`hasReplied` also feeds a Keep verdict in the cascade.
+
+**The fix is not a one-liner, which is why it is not bundled here.** Switching
+to a pure recipient predicate kills every phantom above, but risks
+false NEGATIVES where the reply legitimately went somewhere else — a
+`Reply-To` address, or a mailing list where the reply goes to the list rather
+than the original sender. Losing a reply attribution UN-protects a sender,
+which is the dangerous direction. The candidate rules, in the order worth
+measuring:
+
+1. **Recipient-based** — outbound is a reply to S iff S's address is in its
+   To/Cc. Kills all 238 phantoms. Needs the `Reply-To` false-negative measured
+   before it can be trusted.
+2. **Recipient-based with a `Reply-To` fallback** — also credit S when the
+   outbound is addressed to the `Reply-To` S advertised. Requires storing
+   `Reply-To`, which is a D7 allowlist amendment and its own decision.
+3. **Keep thread attribution for the DISPLAY, gate only the PROTECTION on the
+   stricter rule.** Smallest blast radius: nothing loses a shield except the
+   57 that never earned one, and the visible count stops being the thing that
+   grants protection.
+
+**Recommendation:** (3) first — it removes the safety defect without risking a
+single legitimate protection — then measure (1) before changing what the card
+shows.
+
+**Not changed in PR #566.** Auto-protection is a CLAUDE.md §9 stop condition
+and this un-protects real senders; it needs founder ratification and its own
+change.
+
+**Priority:** P0 — a safety mechanism firing on fabricated evidence, on the
+same surface as F008.
+**Status:** Open
+
+---
+
 ### F008 — "Marked read" is a 30-day rate wearing a lifetime label; the grid escalates it to "Never"
 
 **Found:** 2026-08-18 · `/senders` sender preview modal + grid card
