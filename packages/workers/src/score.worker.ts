@@ -53,7 +53,19 @@ const RESCORE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
  * key per-trigger rather than per-mailbox-per-sender — different events
  * for the same sender get distinct keys and re-run.
  */
-export type ScoreTrigger = 'sync_complete' | 'signal_change' | 'manual_rescore' | 'cron_sweep';
+export type ScoreTrigger =
+  | 'sync_complete'
+  | 'signal_change'
+  | 'manual_rescore'
+  /**
+   * A user opened a sender whose read had aged past its TTL, so the
+   * page asked for a fresh one (founder decision 2026-08-19). Distinct
+   * from `manual_rescore` — nobody pressed a re-score button — and
+   * conflating them would make the trigger telemetry claim an intent
+   * the user never had.
+   */
+  | 'stale_refresh'
+  | 'cron_sweep';
 
 /**
  * One score job. Either runs for a single `senderKey` (signal-change

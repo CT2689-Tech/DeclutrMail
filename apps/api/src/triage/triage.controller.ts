@@ -1,4 +1,14 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ok, type Envelope } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
@@ -49,15 +59,32 @@ export class TriageController {
   @Post('score-sender')
   async scoreSender(
     @CurrentMailbox() mailbox: { id: string },
-    @Body() body: { senderKey?: unknown },
+    @Body() body: { senderKey?: unknown; senderId?: unknown; reason?: unknown },
   ): Promise<Envelope<{ idempotencyKey: string }>> {
-    const senderKey = typeof body?.senderKey === 'string' ? body.senderKey : null;
-    if (!senderKey) {
-      throw new BadRequestException('senderKey is required.');
+    // `senderId` is the shape a page has: the senders wire carries the
+    // row id, never the `sender_key` hash. Resolving it here keeps the
+    // key server-side instead of publishing it so the FE can hand it
+    // back, and the mailbox-scoped lookup means a guessed id 404s
+    // rather than enqueueing work against another mailbox.
+    const senderId = typeof body?.senderId === 'string' ? body.senderId : null;
+    const senderKey = senderId
+      ? await this.triage.resolveSenderKey(mailbox.id, senderId)
+      : typeof body?.senderKey === 'string'
+        ? body.senderKey
+        : null;
+    if (senderId && !senderKey) {
+      throw notFound('Sender not found.');
     }
+    if (!senderKey) {
+      throw new BadRequestException('senderKey or senderId is required.');
+    }
+    // Unknown values fail closed to `user` rather than 400: the reason is
+    // telemetry, and a typo in it is no reason to refuse a re-score.
+    const reason = body?.reason === 'stale' ? 'stale' : 'user';
     const result = await this.triage.scoreSender({
       mailboxAccountId: mailbox.id,
       senderKey,
+      reason,
     });
     return ok(result);
   }
@@ -109,4 +136,12 @@ export class TriageController {
     const summary = await this.reads.getTodaySummary({ mailboxAccountId: mailbox.id });
     return ok(summary);
   }
+}
+
+/**
+ * NOT_FOUND with the D202 error code on the envelope — same helper the
+ * senders / followups / autopilot controllers carry.
+ */
+function notFound(message: string): HttpException {
+  return new HttpException({ message }, HttpStatus.NOT_FOUND);
 }

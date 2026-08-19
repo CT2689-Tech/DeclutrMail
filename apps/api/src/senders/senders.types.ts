@@ -321,6 +321,16 @@ export interface SenderRecommendation {
   generatedBy: TriageReasoningSource;
   /** ISO-8601 `produced_at` — when the engine last looked. */
   scoredAt: string;
+  /**
+   * Whether the read is past its `expires_at` TTL. The BE owns this
+   * because the BE owns the TTL — a duplicated 7-day constant in the FE
+   * would drift the first time D25 changes.
+   *
+   * A stale read is still SENT and still shown, with its age. The flag
+   * exists so the page can ask for a fresh one (D25 `stale_refresh`),
+   * not so it can hide the old one.
+   */
+  stale: boolean;
 }
 
 /**

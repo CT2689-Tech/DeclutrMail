@@ -112,6 +112,7 @@ describe('adaptSenderDetail — the engine suggestion', () => {
     reasoning: 'You read every message from this sender.',
     generatedBy: 'llm_haiku' as const,
     scoredAt: '2026-05-20T10:00:00.000Z',
+    stale: false,
   };
 
   it('passes the engine read through, including when it was scored', () => {
@@ -126,6 +127,7 @@ describe('adaptSenderDetail — the engine suggestion', () => {
       confidence: 0.88,
       reasoning: 'You read every message from this sender.',
       scoredAt: '2026-05-20T10:00:00.000Z',
+      stale: false,
       signals: [],
     });
   });

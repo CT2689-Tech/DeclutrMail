@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { and, eq, ne, lt, count } from 'drizzle-orm';
 
-import { triageDecisions } from '@declutrmail/db';
+import { senders, triageDecisions } from '@declutrmail/db';
 import type { TriageDecision } from '@declutrmail/db';
 import type { ScoreJobData } from '@declutrmail/workers';
 import { SCORE_JOB } from '@declutrmail/workers';
@@ -109,6 +109,26 @@ export class TriageService {
   }
 
   /**
+   * Resolve a sender row id to its `sender_key` within a mailbox.
+   * Returns `null` when the sender does not exist OR belongs to another
+   * mailbox — the caller turns that into a 404, so a guessed id can
+   * never enqueue work against someone else's data.
+   *
+   * ADR-0008 §3 exception: triage reads the senders-owned table. Grep
+   * this marker to find every crossing when ratifying the ADR. The
+   * alternative was publishing the hash on the senders wire purely so
+   * the FE could hand it back.
+   */
+  async resolveSenderKey(mailboxAccountId: string, senderId: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ senderKey: senders.senderKey })
+      .from(senders)
+      .where(and(eq(senders.id, senderId), eq(senders.mailboxAccountId, mailboxAccountId)))
+      .limit(1);
+    return row?.senderKey ?? null;
+  }
+
+  /**
    * Enqueue a re-score (D25 — manual_rescore trigger). Best-effort
    * BullMQ add; per D204 the read-only service does not write
    * `triage_decisions` directly. The worker owns the upsert.
@@ -124,6 +144,13 @@ export class TriageService {
     mailboxAccountId: string;
     senderKey: string;
     producedAtMs?: number;
+    /**
+     * Why the re-score was asked for. `user` is someone pressing a
+     * control; `stale` is a page refreshing a read that aged past its
+     * TTL when it was opened. Recorded distinctly so the trigger
+     * telemetry never claims an intent the user did not have.
+     */
+    reason?: 'user' | 'stale';
   }): Promise<{ idempotencyKey: string }> {
     if (!this.scoreQueue) {
       throw new Error(
@@ -135,7 +162,7 @@ export class TriageService {
     const payload: ScoreJobData = {
       mailboxAccountId: input.mailboxAccountId,
       senderKey: input.senderKey,
-      trigger: 'manual_rescore',
+      trigger: input.reason === 'stale' ? 'stale_refresh' : 'manual_rescore',
       producedAtMs,
     };
     await this.scoreQueue.add(SCORE_JOB, payload, { jobId: idempotencyKey });

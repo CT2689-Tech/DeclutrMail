@@ -1456,13 +1456,16 @@ describe('SendersReadService', () => {
           expiresAt: new Date('2026-05-27T10:00:00Z'),
         });
 
-        const detail = await svc.getSenderDetail(mailboxId, a.id);
+        const detail = await svc.getSenderDetail(mailboxId, a.id, {
+          now: new Date('2026-05-21T00:00:00Z'),
+        });
         expect(detail!.recommendation).toEqual({
           verdict: 'keep',
           confidence: 0.88,
           reasoning: 'You read every message from this sender.',
           generatedBy: 'llm_haiku',
           scoredAt: producedAt.toISOString(),
+          stale: false,
         });
       });
 
@@ -1489,10 +1492,15 @@ describe('SendersReadService', () => {
           expiresAt: new Date('2026-01-09T00:00:00Z'),
         });
 
-        const detail = await svc.getSenderDetail(mailboxId, a.id);
+        const detail = await svc.getSenderDetail(mailboxId, a.id, {
+          now: new Date('2026-05-21T00:00:00Z'),
+        });
+        // Still reported — with the flag that lets the page ask for a
+        // fresh one rather than hide the old one.
         expect(detail!.recommendation).toMatchObject({
           verdict: 'unsubscribe',
           scoredAt: new Date('2026-01-02T00:00:00Z').toISOString(),
+          stale: true,
         });
       });
 
