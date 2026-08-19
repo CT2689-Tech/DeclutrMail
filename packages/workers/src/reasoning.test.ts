@@ -154,12 +154,14 @@ describe('renderTemplate — unmeasurable read rate (F009)', () => {
     ruleId: 'score_unsubscribe' as const,
   };
 
-  it('drops the "You open N%." clause entirely when readRatePct is null', () => {
+  it('drops the read-rate clause entirely when readRatePct is null', () => {
     const out = renderTemplate('Etherscan', {
       ...base,
       facts: { monthlyVolume: 9, readRatePct: null },
     });
-    expect(out).not.toContain('You open');
+    expect(out).not.toContain('marked read');
+    // Never the banned verb either — Gmail exposes no open event.
+    expect(out).not.toContain('open');
     expect(out).not.toContain('0%');
     expect(out).toContain('Etherscan sends 9/mo.');
   });
@@ -169,6 +171,8 @@ describe('renderTemplate — unmeasurable read rate (F009)', () => {
       ...base,
       facts: { monthlyVolume: 9, readRatePct: 0 },
     });
-    expect(out).toContain('You open 0% over 90d.');
+    expect(out).toContain('0% marked read over 90d.');
+    // "open" is unobservable via Gmail metadata — see D45.
+    expect(out).not.toContain('You open');
   });
 });

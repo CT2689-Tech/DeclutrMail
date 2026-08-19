@@ -27,7 +27,7 @@ const PAD_X = 10;
 export function Charts({ timeseries }: { timeseries: TimeseriesPoint[] }) {
   return (
     <section
-      aria-label="Volume and open rate"
+      aria-label="Volume and read rate"
       style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',

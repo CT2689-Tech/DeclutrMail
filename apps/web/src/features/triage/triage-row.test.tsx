@@ -235,7 +235,12 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     const row = rowById('t-groupon'); // readRate 0 over 156 messages
     const { container } = renderRow(row);
     expect(container.textContent).not.toContain('Never opened');
-    expect(container.textContent).toContain('None opened in 90d');
+    expect(container.textContent).toContain('None marked read in 90d');
+    // "opened" is unobservable: Gmail exposes only the absence of UNREAD,
+    // which a filter or a third-party sweeper can strip with no human
+    // ever seeing the message (D45). The first pass at this fix corrected
+    // the window and kept the banned verb.
+    expect(container.textContent).not.toContain('opened');
   });
 
   it('never renders an unqualified read-rate percentage', () => {

@@ -20,7 +20,7 @@ import type { CascadeResult, CascadeRuleId } from './score-cascade.js';
  *
  * The template copy follows D24's spec verbatim:
  *
- *     "{name} sends {N}/mo. You open {pct}%. Recommended: {verdict}."
+ *     "{name} sends {N}/mo. {pct}% marked read over 90d. Recommended: {verdict}."
  *
  * For Phase A and Phase B (no scoring) the template degrades gracefully —
  * "{name} sends {N}/mo." is kept and the second clause swaps to the
@@ -101,10 +101,20 @@ export function renderTemplate(displayName: string, result: CascadeResult): stri
   if (readPct === null) {
     return `${name} sends ${monthlyVol}/mo. ${phrase}`;
   }
-  // "over 90d" for the same reason the LLM prompt names it: the rate IS
-  // a 90-day ratio, and "You open 2%." reads as a standing fact about
-  // the reader rather than a measurement of one quarter.
-  return `${name} sends ${monthlyVol}/mo. You open ${readPct}% over 90d. ${phrase}`;
+  // Two constraints, both learned the hard way.
+  //
+  // WINDOW: "over 90d", because the rate IS a 90-day ratio and "You open
+  // 2%." reads as a standing fact about the reader rather than a
+  // measurement of one quarter.
+  //
+  // VERB: "marked read", never "open". Gmail exposes no open event — only
+  // the absence of the UNREAD label, which a filter, a bulk mark-as-read,
+  // or a third-party sweeper (unroll.me, SaneBox) can strip without a
+  // human ever seeing the message. D45 settled this: the column is
+  // UNREAD-derived and could "never be populated honestly" as opens. This
+  // sentence is the engine's justification for a recommendation, so
+  // claiming an open we cannot observe is the worst place to do it.
+  return `${name} sends ${monthlyVol}/mo. ${readPct}% marked read over 90d. ${phrase}`;
 }
 
 /**
