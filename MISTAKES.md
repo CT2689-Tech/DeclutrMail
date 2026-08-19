@@ -21,6 +21,30 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-19 — Awaited a queue write on a client that retries forever
+
+**PR:** #TBD
+**Caught by:** Codex stop-time review (pre-merge)
+**What happened:** moving icon-resolution scheduling into the senders
+list read put `await queue.add(...)` on the critical path of
+`GET /api/senders`. `createRedisConnection` sets
+`maxRetriesPerRequest: null`, so a command issued while Redis is
+unreachable retries forever instead of rejecting — the promise simply
+never settles. The existing `try/catch` around the enqueue looked like
+it handled the outage and handled nothing: there is no rejection to
+catch. A Redis outage would not have failed the senders list, it would
+have hung it.
+**Correct approach:** an await on an infinitely-retrying client is a
+HANG, not a failure. Best-effort background work reached from a request
+path needs a deadline, not just a catch.
+**Rule:** never `await` a queue/network write on a read path without a
+bound; a `try/catch` proves nothing about a client configured to retry
+forever.
+**Enforcement update:** `schedule()` now runs under
+`ENQUEUE_DEADLINE_MS` so both callers are covered, and the regression
+test wedges the queue on a never-settling promise — without the
+deadline it hangs to a 30s vitest timeout.
+
 ## 2026-08-18 — Fixed one sweep that retried a revoked Gmail grant, left its sibling running
 
 **PR:** #TBD (follows #527)
