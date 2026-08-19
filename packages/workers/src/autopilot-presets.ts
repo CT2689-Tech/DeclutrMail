@@ -46,6 +46,15 @@ import type { AutopilotActionKind, AutopilotPresetKey, TriageVerdict } from '@de
  */
 
 /**
+ * Minimum lifetime messages before a dormancy preset will act.
+ *
+ * A read rate over one or two messages is noise, and both presets that
+ * read it end in an unsubscribe. Five is the floor the 59-sender
+ * qualifier was measured against on the founder's mailbox.
+ */
+export const DORMANCY_MIN_MESSAGES = 5;
+
+/**
  * The signal subset Autopilot presets read. A minimal projection of
  * `SenderSignals` — the worker materializes only these fields rather
  * than the full cascade signal set, since presets do not need the
@@ -60,17 +69,30 @@ export interface PresetSignals {
   /** D101 #3: total messages ever seen. `< 3` matches. */
   totalMessages: number;
   /**
-   * D101 #4, #5: read rate over the last 90 days, `[0, 1]`.
+   * Read rate over ALL of this sender's mail, `[0, 1]`.
    *
-   * `null` = unmeasurable (no mail in the window), NEVER "never read".
-   * A preset must not match on it: both dormancy presets below require
-   * `lastSeenDaysAgo > 90`, which guarantees zero 90-day volume, so
-   * while this was a fabricated `0` the accompanying
-   * `readRate90d < 0.05` test could not fail. It filtered nothing and
-   * every dormant sender read as "Read rate 0%" — including the 95% the
-   * user opens almost every message from.
+   * LIFETIME, not a rolling window, and that is the whole point. The
+   * dormancy presets below require `lastSeenDaysAgo > 90`, which
+   * guarantees a sender has no mail inside a 90-day window — so a
+   * 90-day rate was structurally unmeasurable for exactly the senders
+   * that needed it. While it was fabricated as `0` the accompanying
+   * `< 0.05` test could not fail: it filtered nothing, and 6,531 dormant
+   * senders read as "Read rate 0%", including ones the user reads almost
+   * every message from. Abstaining on `null` fixed the lie and left both
+   * presets matching nothing; measuring over the sender's OWN mail is
+   * what re-arms them.
+   *
+   * DECONTAMINATED (mig 0064, F012). The numerator excludes messages a
+   * third-party sweeper marked read, because a sweeper only ever marks
+   * READ — it inflates the rate and would suppress exactly the matches
+   * these presets exist to find. Measured on the founder's mailbox:
+   * 59 matches decontaminated vs 24 without. The gap is 35 genuinely
+   * ignored senders that sweeper marks were disguising as engaged.
+   *
+   * `null` = unmeasurable (we hold no mail from this sender), NEVER
+   * "never read".
    */
-  readRate90d: number | null;
+  readRateLifetime: number | null;
   /** D101 #4 (`> 90`), #5 (`> 180`): days since `last_seen_at`. */
   lastSeenDaysAgo: number;
 }
@@ -228,21 +250,28 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
     defaultActionPayload: {},
     dailyActionCap: 25,
     match: ({ signals }) => {
-      // Abstain on an unmeasurable rate. This preset currently CANNOT
-      // match as a result: its own `lastSeenDaysAgo > 90` predicate
-      // guarantees no 90-day mail, hence a null rate. That is the honest
-      // outcome — the alternative was matching every dormant sender on a
-      // fabricated 0%. Re-arming it needs a read rate measured over a
-      // window that actually contains the sender's mail (see FINDINGS
-      // F009); that is a product decision about a destructive verb, not
-      // a refactor.
-      if (signals.readRate90d === null) return { matched: false, reason: '' };
-      if (signals.readRate90d >= 0.05) return { matched: false, reason: '' };
+      // Re-armed on a LIFETIME rate (F009/F012). The 90-day rate this
+      // replaces could not be measured for any sender this preset can
+      // reach — `lastSeenDaysAgo > 90` guarantees no mail in the window
+      // — so its `< 0.05` test could never fail, and the abstain that
+      // fixed the lie left the preset matching nothing at all.
+      //
+      // Still abstains on `null`: we hold no mail from this sender, and
+      // "unmeasurable" must never become "never read" on a preset whose
+      // action is an unsubscribe.
+      if (signals.readRateLifetime === null) return { matched: false, reason: '' };
+      // A rate over one or two messages is noise, and this ends in a
+      // destructive verb. Five is the floor the qualifier was measured
+      // against.
+      if (signals.totalMessages < DORMANCY_MIN_MESSAGES) return { matched: false, reason: '' };
+      if (signals.readRateLifetime >= 0.05) return { matched: false, reason: '' };
       if (signals.lastSeenDaysAgo <= 90) return { matched: false, reason: '' };
       if (signals.lastSeenDaysAgo > 180) return { matched: false, reason: '' };
       return {
         matched: true,
-        reason: `Read rate ${pctOf(signals.readRate90d)}%, last seen ${signals.lastSeenDaysAgo}d ago`,
+        reason:
+          `Read rate ${pctOf(signals.readRateLifetime)}% across all ` +
+          `${signals.totalMessages} messages, last seen ${signals.lastSeenDaysAgo}d ago`,
       };
     },
   },
@@ -257,15 +286,17 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
     defaultActionPayload: {},
     dailyActionCap: 25,
     match: ({ signals }) => {
-      // Same abstain as `newsletter_graveyard`, and the same consequence:
-      // `lastSeenDaysAgo > 180` implies a null rate, so this preset stops
-      // matching rather than firing on manufactured disengagement.
-      if (signals.readRate90d === null) return { matched: false, reason: '' };
-      if (signals.readRate90d >= 0.05) return { matched: false, reason: '' };
+      // Same lifetime rate and the same floors as `newsletter_graveyard`
+      // — the two presets differ only in the dormancy tier they cover.
+      if (signals.readRateLifetime === null) return { matched: false, reason: '' };
+      if (signals.totalMessages < DORMANCY_MIN_MESSAGES) return { matched: false, reason: '' };
+      if (signals.readRateLifetime >= 0.05) return { matched: false, reason: '' };
       if (signals.lastSeenDaysAgo <= 180) return { matched: false, reason: '' };
       return {
         matched: true,
-        reason: `Read rate ${pctOf(signals.readRate90d)}%, last seen ${signals.lastSeenDaysAgo}d ago`,
+        reason:
+          `Read rate ${pctOf(signals.readRateLifetime)}% across all ` +
+          `${signals.totalMessages} messages, last seen ${signals.lastSeenDaysAgo}d ago`,
       };
     },
   },

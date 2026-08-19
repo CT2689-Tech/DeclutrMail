@@ -6,7 +6,7 @@ const SIGNALS_ZERO: PresetSignals = {
   isProtected: false,
   firstSeenDaysAgo: 365,
   totalMessages: 100,
-  readRate90d: 0.5,
+  readRateLifetime: 0.5,
   lastSeenDaysAgo: 7,
 };
 
@@ -126,23 +126,78 @@ describe('AUTOPILOT_PRESETS', () => {
     const p = AUTOPILOT_PRESETS.newsletter_graveyard;
 
     it('matches read<5% AND last_seen>90d', () => {
-      const r = p.match(input({ readRate90d: 0.02, lastSeenDaysAgo: 120 }, null), null);
+      const r = p.match(input({ readRateLifetime: 0.02, lastSeenDaysAgo: 120 }, null), null);
       expect(r.matched).toBe(true);
-      expect(r.reason).toBe('Read rate 2%, last seen 120d ago');
+      expect(r.reason).toBe('Read rate 2% across all 100 messages, last seen 120d ago');
     });
 
     it('does NOT match if read_rate is exactly 5%', () => {
-      const r = p.match(input({ readRate90d: 0.05, lastSeenDaysAgo: 120 }, null), null);
+      const r = p.match(input({ readRateLifetime: 0.05, lastSeenDaysAgo: 120 }, null), null);
       expect(r.matched).toBe(false);
     });
 
     it('does NOT match if last_seen is exactly 90 (strict >)', () => {
-      const r = p.match(input({ readRate90d: 0.02, lastSeenDaysAgo: 90 }, null), null);
+      const r = p.match(input({ readRateLifetime: 0.02, lastSeenDaysAgo: 90 }, null), null);
       expect(r.matched).toBe(false);
     });
 
+    it('matches on a LIFETIME rate a 90-day window could never measure (F009)', () => {
+      // The re-arm. `lastSeenDaysAgo > 90` guarantees a dormant sender
+      // has no mail inside a 90-day window, so the old signal was
+      // unmeasurable for every sender this preset can reach — its
+      // `< 0.05` test could not fail, and 6,531 dormant senders matched
+      // on a fabricated 0%. Measured over the sender's OWN mail, the
+      // test discriminates again.
+      const ignored = p.match(
+        input({ readRateLifetime: 0.01, totalMessages: 40, lastSeenDaysAgo: 120 }, null),
+        null,
+      );
+      expect(ignored.matched).toBe(true);
+
+      // Same dormancy, same window — but the user read almost all of it.
+      // Under the tautology this sender matched too.
+      const read = p.match(
+        input({ readRateLifetime: 0.95, totalMessages: 40, lastSeenDaysAgo: 120 }, null),
+        null,
+      );
+      expect(read.matched).toBe(false);
+    });
+
+    it('still abstains when we hold no mail from the sender', () => {
+      // `null` is unmeasurable, never "never read" — and this preset
+      // ends in an unsubscribe.
+      const r = p.match(
+        input({ readRateLifetime: null, totalMessages: 40, lastSeenDaysAgo: 120 }, null),
+        null,
+      );
+      expect(r.matched).toBe(false);
+    });
+
+    it('will not act on a handful of messages', () => {
+      // A rate over one or two messages is noise. 0/4 is a perfect 0%
+      // and still not evidence enough for a destructive verb.
+      expect(
+        p.match(input({ readRateLifetime: 0, totalMessages: 4, lastSeenDaysAgo: 120 }, null), null)
+          .matched,
+      ).toBe(false);
+      expect(
+        p.match(input({ readRateLifetime: 0, totalMessages: 5, lastSeenDaysAgo: 120 }, null), null)
+          .matched,
+      ).toBe(true);
+    });
+
+    it('names the evidence, including the denominator', () => {
+      // "Read rate 0%" over 5 messages and over 500 are different
+      // claims; the reason has to say which one it is.
+      const r = p.match(
+        input({ readRateLifetime: 0, totalMessages: 137, lastSeenDaysAgo: 120 }, null),
+        null,
+      );
+      expect(r.reason).toBe('Read rate 0% across all 137 messages, last seen 120d ago');
+    });
+
     it('does NOT match active newsletter', () => {
-      const r = p.match(input({ readRate90d: 0.4, lastSeenDaysAgo: 120 }, null), null);
+      const r = p.match(input({ readRateLifetime: 0.4, lastSeenDaysAgo: 120 }, null), null);
       expect(r.matched).toBe(false);
     });
   });
@@ -151,20 +206,20 @@ describe('AUTOPILOT_PRESETS', () => {
     const p = AUTOPILOT_PRESETS.long_dormant_unsubscribe;
 
     it('matches read<5% AND last_seen>180d', () => {
-      const r = p.match(input({ readRate90d: 0.01, lastSeenDaysAgo: 200 }, null), null);
+      const r = p.match(input({ readRateLifetime: 0.01, lastSeenDaysAgo: 200 }, null), null);
       expect(r.matched).toBe(true);
-      expect(r.reason).toBe('Read rate 1%, last seen 200d ago');
+      expect(r.reason).toBe('Read rate 1% across all 100 messages, last seen 200d ago');
     });
 
     it('does NOT match if last_seen ≤ 180', () => {
-      const r = p.match(input({ readRate90d: 0.01, lastSeenDaysAgo: 180 }, null), null);
+      const r = p.match(input({ readRateLifetime: 0.01, lastSeenDaysAgo: 180 }, null), null);
       expect(r.matched).toBe(false);
     });
 
     it('newsletter_graveyard fires before long_dormant for 91-179d range', () => {
       // Both presets are active; the worker runs each independently. Just
       // confirming neither matcher claims the wrong window.
-      const signals = { readRate90d: 0.01, lastSeenDaysAgo: 120 };
+      const signals = { readRateLifetime: 0.01, lastSeenDaysAgo: 120 };
       expect(AUTOPILOT_PRESETS.newsletter_graveyard.match(input(signals, null), null).matched).toBe(
         true,
       );
@@ -179,7 +234,7 @@ describe('AUTOPILOT_PRESETS', () => {
       // `> 180d`, so at 200d both fired → two unsubscribe-match rows for
       // the same sender. The (90, 180] bound on newsletter_graveyard makes
       // the two windows disjoint by construction.
-      const signals = { readRate90d: 0.01, lastSeenDaysAgo: 200 };
+      const signals = { readRateLifetime: 0.01, lastSeenDaysAgo: 200 };
       expect(AUTOPILOT_PRESETS.newsletter_graveyard.match(input(signals, null), null).matched).toBe(
         false,
       );
@@ -190,14 +245,14 @@ describe('AUTOPILOT_PRESETS', () => {
 
     it('newsletter_graveyard upper bound — does NOT match at lastSeenDaysAgo=181', () => {
       // Boundary test: 180 inclusive (matches), 181 exclusive (no match).
-      const signals = { readRate90d: 0.02, lastSeenDaysAgo: 181 };
+      const signals = { readRateLifetime: 0.02, lastSeenDaysAgo: 181 };
       expect(AUTOPILOT_PRESETS.newsletter_graveyard.match(input(signals, null), null).matched).toBe(
         false,
       );
     });
 
     it('newsletter_graveyard upper bound — DOES match at lastSeenDaysAgo=180 (inclusive)', () => {
-      const signals = { readRate90d: 0.02, lastSeenDaysAgo: 180 };
+      const signals = { readRateLifetime: 0.02, lastSeenDaysAgo: 180 };
       expect(AUTOPILOT_PRESETS.newsletter_graveyard.match(input(signals, null), null).matched).toBe(
         true,
       );
@@ -213,7 +268,7 @@ describe('AUTOPILOT_PRESETS', () => {
     // candidates matching, 95% of them senders read ≥90% of the time.
     it('newsletter_graveyard does NOT match on a null read rate', () => {
       const r = AUTOPILOT_PRESETS.newsletter_graveyard.match(
-        input({ readRate90d: null, lastSeenDaysAgo: 120 }, null),
+        input({ readRateLifetime: null, lastSeenDaysAgo: 120 }, null),
         null,
       );
       expect(r.matched).toBe(false);
@@ -221,7 +276,7 @@ describe('AUTOPILOT_PRESETS', () => {
 
     it('long_dormant_unsubscribe does NOT match on a null read rate', () => {
       const r = AUTOPILOT_PRESETS.long_dormant_unsubscribe.match(
-        input({ readRate90d: null, lastSeenDaysAgo: 200 }, null),
+        input({ readRateLifetime: null, lastSeenDaysAgo: 200 }, null),
         null,
       );
       expect(r.matched).toBe(false);
@@ -231,7 +286,7 @@ describe('AUTOPILOT_PRESETS', () => {
       for (const days of [120, 200]) {
         for (const key of ['newsletter_graveyard', 'long_dormant_unsubscribe'] as const) {
           const r = AUTOPILOT_PRESETS[key].match(
-            input({ readRate90d: null, lastSeenDaysAgo: days }, null),
+            input({ readRateLifetime: null, lastSeenDaysAgo: days }, null),
             null,
           );
           expect(r.reason).not.toContain('Read rate');
