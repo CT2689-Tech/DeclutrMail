@@ -605,12 +605,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       .select({
         displayName: senders.displayName,
         domain: senders.domain,
-<<<<<<< HEAD
         // Identity for the explanation check — the local part is where a
-        // sender's own underscores live (`ife_insurance_india@…`), and
-        // the model is allowed to quote them.
-=======
->>>>>>> c375f17c (fix(senders,workers,db): count who you wrote to, not thread membership (D245, D7))
+        // sender's own underscores live, and the model is allowed to
+        // quote them. Also the join key for the wrote-to count below.
         email: senders.email,
         gmailCategory: senders.gmailCategory,
         firstSeenAt: senders.firstSeenAt,
