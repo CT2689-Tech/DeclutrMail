@@ -1739,6 +1739,111 @@ describe('ActivityReadService', () => {
   // ── DQ16 — summary aggregate (share receipt) ─────────────────────────
 
   describe('weekly review outcomes (D246)', () => {
+    /**
+     * The card sits on a page whose every other number follows the
+     * sender filter. Left unscoped it reported other senders' outcomes
+     * above a one-sender feed, and its count links dropped the filter
+     * on click.
+     */
+    it('counts only the filtered sender when a sender filter is active', async () => {
+      const mine = 'weekly-scope-mine';
+      const other = 'weekly-scope-other';
+      await seedSender(db, mailboxA.mailboxAccountId, mine, 'mine@scope.com', 'Scope Mine');
+      await seedSender(db, mailboxA.mailboxAccountId, other, 'other@scope.com', 'Scope Other');
+
+      for (const senderKey of [mine, other]) {
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+          source: 'manual',
+          action: 'archive',
+          senderKey,
+        });
+      }
+      const ruleId = await seedRule(db, mailboxA.mailboxAccountId, 'Scope rule');
+      await db.insert(ruleMatchLog).values([
+        {
+          ruleId,
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          senderKey: mine,
+          modeAtMatch: 'observe' as const,
+          confidence: '0.90',
+          reason: 'user skipped',
+          resolution: 'dismissed' as const,
+          resolvedAt: new Date(NOW_MS - ONE_DAY_MS),
+          dismissReason: 'user' as const,
+        },
+        {
+          ruleId,
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          senderKey: other,
+          modeAtMatch: 'active' as const,
+          confidence: '0.90',
+          reason: 'became protected',
+          resolution: 'dismissed' as const,
+          resolvedAt: new Date(NOW_MS - ONE_DAY_MS),
+          dismissReason: 'protected' as const,
+        },
+      ]);
+
+      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
+        completed: 2,
+        skipped: 1,
+        protected: 1,
+      });
+      expect(
+        await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS, 'mine@scope.com'),
+      ).toMatchObject({
+        completed: 1,
+        skipped: 1,
+        protected: 0,
+      });
+      expect(
+        await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS, 'Scope Other'),
+      ).toMatchObject({
+        completed: 1,
+        skipped: 0,
+        protected: 1,
+      });
+    });
+
+    it('reports an all-zero week for a sender nobody has acted on', async () => {
+      await seedSender(db, mailboxA.mailboxAccountId, 'weekly-quiet', 'quiet@scope.com', 'Quiet');
+      expect(
+        await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS, 'quiet@scope.com'),
+      ).toMatchObject({ completed: 0, skipped: 0, failed: 0, recovered: 0, protected: 0 });
+    });
+
+    it('scopes an in-flight failure to the sender whose action failed', async () => {
+      const senderKey = 'weekly-failed-scope';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'broke@scope.com',
+        'Broke Scope',
+      );
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'failed',
+        errorCode: 'InvalidGrantError',
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+      });
+      await seedSender(db, mailboxA.mailboxAccountId, 'weekly-fine', 'fine@scope.com', 'Fine');
+
+      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
+        failed: 1,
+      });
+      expect(
+        await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS, 'broke@scope.com'),
+      ).toMatchObject({ failed: 1 });
+      expect(
+        await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS, 'fine@scope.com'),
+      ).toMatchObject({ failed: 0 });
+    });
+
     it('counts only terminal factual outcomes and substantiates skip/protection links', async () => {
       const senderKey = 'weekly-sender';
       await seedSender(

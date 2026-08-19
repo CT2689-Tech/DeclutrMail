@@ -255,13 +255,28 @@ export class ActivityController {
     };
   }
 
-  /** Exact seven-day factual review counts; no estimates or content. */
+  /**
+   * Exact seven-day factual review counts; no estimates or content.
+   *
+   * Takes `sender_q` so the card narrows with the rest of the screen —
+   * the same substring match the feed and the metric tiles apply. Any
+   * other filter (window, source, verb, outcome) is deliberately NOT
+   * accepted: this card is a fixed 7-day factual review, and its own
+   * count links navigate to that window.
+   */
   @Get('weekly-review')
   @RateLimit('triage-load')
   async weeklyReview(
     @CurrentMailbox() mailbox: { id: string },
+    @Query('sender_q') rawSenderQuery: string | undefined,
   ): Promise<Envelope<ActivityWeeklyReview>> {
-    return { data: await this.reads.getWeeklyReview(mailbox.id, Date.now()) };
+    return {
+      data: await this.reads.getWeeklyReview(
+        mailbox.id,
+        Date.now(),
+        resolveSenderQuery(rawSenderQuery),
+      ),
+    };
   }
 
   /**
