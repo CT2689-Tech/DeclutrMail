@@ -49,6 +49,7 @@ import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { SendersPolicyService } from './senders-policy.service.js';
+import { IconsService } from '../icons/icons.service.js';
 import { SendersReadService } from './senders.read-service.js';
 import { senderPolicyPatchSchema } from './senders.types.js';
 import type {
@@ -57,6 +58,7 @@ import type {
   DecisionHistoryRow,
   MailMessageRow,
   SenderDetail,
+  SenderFacts,
   SenderListDirection,
   SenderListQueryMeta,
   SenderListRow,
@@ -107,6 +109,7 @@ export class SendersController {
   constructor(
     private readonly reads: SendersReadService,
     private readonly policies: SendersPolicyService,
+    private readonly icons: IconsService,
   ) {}
 
   /**
@@ -219,7 +222,44 @@ export class SendersController {
       hasMore: nextCursor !== null,
       limit,
     };
-    return { data: page, meta: { pagination, query } };
+    const marks = await this.brandMarksFor(page.map((row) => row.domain));
+    const data = page.map((row) => ({ ...row, brandMark: marks.has(row.domain) }));
+    return { data, meta: { pagination, query } };
+  }
+
+  /**
+   * Decorate a page with brand-mark availability so `Avatar` emits a
+   * logo URL only for domains that will actually return bytes.
+   *
+   * The alternative is what shipped before: every avatar emitted a URL
+   * unconditionally, and because a CSS `background-image` cannot ask
+   * first, a 213-sender page fired ~90 requests to be told 204. One
+   * batched read here replaces all of them (see `IconsService.marksFor`
+   * for the production measurements).
+   *
+   * A FAILURE HERE MUST NOT FAIL THE LIST. Availability is decoration
+   * on a page of senders, so a cache read that throws degrades to the
+   * monogram — which ADR-0034 already defines as the floor rather than
+   * a fallback, identical to a 204, a decode error, or the flag being
+   * off. Logged, never swallowed silently.
+   */
+  private async brandMarksFor(domains: string[]): Promise<Set<string>> {
+    try {
+      // Authenticated, mailbox-scoped read — a session is guaranteed by
+      // `CurrentMailboxGuard`, so this is the path that may schedule
+      // resolution for domains we have never seen.
+      return await this.icons.marksFor(domains, { mayEnqueue: true });
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'senders.brand_marks_failed',
+          count: domains.length,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      return new Set();
+    }
   }
 
   /**
@@ -318,7 +358,8 @@ export class SendersController {
     if (!detail) {
       throw notFound('Sender not found.');
     }
-    return ok(detail);
+    const marks = await this.brandMarksFor([detail.domain]);
+    return ok({ ...detail, brandMark: marks.has(detail.domain) });
   }
 
   /**
@@ -568,7 +609,7 @@ function parseDirection(raw: string | undefined): SenderListDirection | null {
  * The service's `buildCursorPredicate` decodes the same per-sort shape
  * on the next request — keep both in lockstep when adding new sorts.
  */
-function encodeCursorKey(sort: SenderListSort, row: SenderListRow): string {
+function encodeCursorKey(sort: SenderListSort, row: SenderFacts): string {
   switch (sort) {
     case 'total':
       return String(row.totalReceived);

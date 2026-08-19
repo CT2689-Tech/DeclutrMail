@@ -89,6 +89,13 @@ export interface SenderListRow {
   displayName: string;
   email: string;
   domain: string;
+  /**
+   * Whether a brand mark for this domain is cached server-side right
+   * now (ADR-0034). Drives `Avatar`'s `hasMark` — the logo layer is a
+   * CSS `background-image`, so this is the page's only chance to avoid
+   * a request that would come back 204.
+   */
+  brandMark: boolean;
   gmailCategory: GmailCategory;
   /** ISO-8601 — last message received. */
   lastSeenAt: string;

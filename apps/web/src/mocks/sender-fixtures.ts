@@ -68,6 +68,9 @@ export function fixtureToSenderListRow(s: SenderFixture, now: number = Date.now(
   const firstSeenAt = new Date(now - s.firstSeenMo * monthMs).toISOString();
   return {
     id: s.id,
+    // Fixtures render monograms — availability is a live property of
+    // the server-side icon cache, not something a fixture can know.
+    brandMark: false,
     displayName: s.name,
     email: s.email ?? `noreply@${s.domain}`,
     domain: s.domain,

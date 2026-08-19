@@ -2,14 +2,15 @@ import { HttpException } from '@nestjs/common';
 import { decodeCursor, encodeCursor } from '@declutrmail/shared/contracts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { IconsService } from '../icons/icons.service.js';
 import type { SendersPolicyService } from './senders-policy.service.js';
 import { SendersController } from './senders.controller.js';
 import type { SendersReadService } from './senders.read-service.js';
 import type {
   DecisionHistoryRow,
   MailMessageRow,
-  SenderDetail,
-  SenderListRow,
+  SenderDetailFacts,
+  SenderFacts,
   SenderPolicyResult,
   TimeseriesPoint,
 } from './senders.types.js';
@@ -31,7 +32,7 @@ const SENDER_ID = '22222222-2222-2222-2222-222222222222';
 /** Stand-in for the `@CurrentMailbox()`-resolved value the guard injects. */
 const MAILBOX = { id: MAILBOX_ID } as const;
 
-function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
+function makeSenderRow(overrides: Partial<SenderFacts> = {}): SenderFacts {
   return {
     id: SENDER_ID,
     displayName: 'Sender Name',
@@ -113,10 +114,15 @@ interface MockPolicyService {
   setPolicy: ReturnType<typeof vi.fn>;
 }
 
+interface MockIconsService {
+  marksFor: ReturnType<typeof vi.fn>;
+}
+
 function buildController(): {
   ctrl: SendersController;
   reads: MockReadService;
   policies: MockPolicyService;
+  icons: MockIconsService;
 } {
   // Direct construction bypasses NestJS DI — `swc-node` does not
   // reliably emit `design:paramtypes` metadata that `Test.createTesting
@@ -134,11 +140,18 @@ function buildController(): {
   const policies: MockPolicyService = {
     setPolicy: vi.fn(),
   };
+  // Availability defaults to "nothing cached" — the shape every domain
+  // is in until the worker resolves it, and the shape that must NOT
+  // make a row disappear from the list.
+  const icons: MockIconsService = {
+    marksFor: vi.fn().mockResolvedValue(new Set<string>()),
+  };
   const ctrl = new SendersController(
     reads as unknown as SendersReadService,
     policies as unknown as SendersPolicyService,
+    icons as unknown as IconsService,
   );
-  return { ctrl, reads, policies };
+  return { ctrl, reads, policies, icons };
 }
 
 describe('SendersController', () => {
@@ -193,7 +206,7 @@ describe('SendersController', () => {
       // Default sort is `total` (ADR-0014). Service returns limit+1
       // rows — the controller pops the sentinel and derives the
       // cursor from the LAST returned row (page[limit-1]).
-      const rows: SenderListRow[] = [
+      const rows: SenderFacts[] = [
         makeSenderRow({
           id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
           totalReceived: 300,
@@ -238,7 +251,7 @@ describe('SendersController', () => {
     });
 
     it('emits a last_seen cursor when ?sort=last_seen is passed', async () => {
-      const rows: SenderListRow[] = [
+      const rows: SenderFacts[] = [
         makeSenderRow({
           id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
           lastSeenAt: '2026-05-03T00:00:00.000Z',
@@ -539,7 +552,7 @@ describe('SendersController', () => {
 
   describe('detail', () => {
     it('returns the envelope when the read service finds the sender', async () => {
-      const detail: SenderDetail = {
+      const detail: SenderDetailFacts = {
         ...makeSenderRow(),
         protectionFlags: {
           isProtected: false,
@@ -550,7 +563,10 @@ describe('SendersController', () => {
       };
       reads.getSenderDetail.mockResolvedValue(detail);
       const res = await ctrl.detail(MAILBOX, SENDER_ID);
-      expect(res.data).toEqual(detail);
+      // The detail page draws a 72px avatar, so it carries the same
+      // availability decoration as a list row — false here because the
+      // icons stub reports nothing cached.
+      expect(res.data).toEqual({ ...detail, brandMark: false });
     });
 
     it('returns 404 when the read service returns null (cross-mailbox or missing)', async () => {

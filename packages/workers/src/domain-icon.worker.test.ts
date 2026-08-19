@@ -310,6 +310,45 @@ describe('DomainIconWorker', () => {
     expect(result).toMatchObject({ outcome: 'stored', source: 'brandfetch' });
   });
 
+  // A PROVIDER QUOTA MUST NOT DEAD-LETTER, AND MUST NOT BECOME A `none`.
+  //
+  // Brandfetch answers 429 once its quota is spent. That used to escape
+  // the job, burn all 3 attempts and park the domain in the dead-letter
+  // queue — before `store` ran, so the domain never recorded that we
+  // looked, the next demand re-enqueued it, and it dead-lettered again.
+  // That loop is why production resolution stalled at 115 of ~3,344
+  // domains.
+  //
+  // Writing `none` instead would be worse: a quota response is no more
+  // proof this domain lacks a logo than an unreachable website is, and
+  // `none` is cached for 30 days.
+  it('defers on a provider quota instead of failing or caching a false miss', async () => {
+    const db = await freshTestDb();
+    const http: BrandfetchIconHttpPort = {
+      get: async () => ({ status: 429, contentType: 'application/json', body: Buffer.from('{}') }),
+    };
+    const dnsNotFound = Object.assign(new Error('not found'), { code: 'ENOTFOUND' });
+    const worker = new DomainIconWorker({
+      db: db as never,
+      bimi: { resolveTxt: async () => [['v=spf1 -all']] },
+      website: {
+        resolveHost: async () => {
+          throw dnsNotFound;
+        },
+      },
+      brandfetch: { apiKey: 'server-secret', resolveHost: async () => ['93.184.216.34'], http },
+    });
+
+    // Completes rather than throwing — nothing to retry, nothing to park.
+    const result = await worker.processJob({ domain: 'retailmenot.com' }, CTX);
+    expect(result).toMatchObject({ outcome: 'provider_exhausted', source: null });
+
+    // And leaves no row, so the domain is neither claimed logo-less nor
+    // suppressed for 30 days — the next list read tries it again.
+    const rows = await db.select().from(domainIcons);
+    expect(rows).toEqual([]);
+  });
+
   it('normalizes bulk-mail subdomains to the brand root', async () => {
     const db = await freshTestDb();
     const worker = new DomainIconWorker({ db: db as never, bimi: bimiDeps() });

@@ -1014,7 +1014,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             position: 'relative',
           }}
         >
-          <Avatar name={sender.name} domain={sender.domain} size={72} />
+          <Avatar name={sender.name} domain={sender.domain} size={72} hasMark={sender.brandMark} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
             <span
               style={{

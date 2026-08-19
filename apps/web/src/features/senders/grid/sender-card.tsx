@@ -193,7 +193,7 @@ export function SenderCard({
             flex: '0 0 auto',
           }}
         >
-          <Avatar name={sender.name} domain={sender.domain} size={40} />
+          <Avatar name={sender.name} domain={sender.domain} size={40} hasMark={sender.brandMark} />
           {protectedNow && (
             <span
               aria-label="Protected sender"
