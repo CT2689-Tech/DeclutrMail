@@ -24,6 +24,24 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-19 — Decide whether the `redesign` label should actually gate
+
+**Source:** session 2026-08-19 — writing PR #574 (a visual change to a
+frozen screen) surfaced that CLAUDE.md §5 claimed an enforcement that
+does not exist.
+**Why:** `require-pr-template.sh` contains no mention of `redesign`, and
+no workflow does either. The paragraph read as automated and was a no-op
+— the same shape as the three "automated" guardrails found on 2026-07-28
+that had never fired. The claim is now corrected in CLAUDE.md (founder
+decision 3B); what remains open is whether you want the gate.
+**How:** either (a) leave it as a manual convention — nothing to do, the
+docs now say so; or (b) add a job to `ci.yml` failing a PR that touches
+`apps/web/src/{components,features,app}/**` or `packages/shared/**`
+without the `redesign` label.
+**Verifies by:** (a) nothing; (b) open a UI PR without the label and see
+the check go red.
+**Status:** Open
+
 ### 2026-08-18 — Production browser errors are tagged `release: local-dev`
 
 **Source:** session — Sentry cross-check of the `/senders` console report
