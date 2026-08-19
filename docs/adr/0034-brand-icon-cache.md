@@ -540,17 +540,31 @@ removed and this ADR was written to keep closed.
 
 **Scaling — a second, independent reason this ADR did not previously
 state.** It is the one that decides the question even for a reader who
-does not weigh the privacy argument:
+does not weigh the privacy argument. The distinction is what each
+design's traffic is proportional TO:
 
-> Hotlinking couples logo traffic to **users × page views × senders**.
-> Caching couples it to **distinct domains, once, forever**.
+> Hotlinking scales with **users × page views × senders**.
+> Caching scales with **distinct domains × refresh rate** — and is
+> independent of how many users there are.
 
-We have 4,347 distinct domains — fixed, small, and shared across every
-user. Under the current design that is 4,347 lifetime fetches no matter
-how many people sign up. Hotlinked, the same catalogue is re-fetched
-per user, per device, per cache expiry, and Brandfetch's published
-throughput ceiling is 2,400 requests per 5 minutes **per customer**
-across all of them. One Senders page view issues roughly 50 logo
+Note what this claim is NOT. It is not "fetch once, forever": this ADR
+deliberately expires its own rows, and the numbers matter here.
+`DOMAIN_ICON_TTL_DAYS` holds a mark for 90 days so a rebrand lands,
+caps Brandfetch-sourced artwork at 30 to stay inside that provider's
+terms, and retries a miss after 30. Refresh is demand-driven, so a
+domain nobody looks at costs nothing, and a resolver-version bump
+retires negatives early on purpose. The steady state is therefore a
+refresh cycle, not a single fetch.
+
+That still settles the comparison, because only the LEFT side of each
+product grows. Our 4,347 domains bound the work at roughly one refresh
+per domain per TTL — and only the Brandfetch-sourced subset touches
+that vendor at all, since BIMI and website marks refresh first-party on
+the 90-day clock. Whatever that monthly figure is, it does not move
+when the tenth user signs up, or the ten-thousandth. Hotlinked, the
+same catalogue is re-fetched per user, per device, per browser cache
+expiry, and Brandfetch's published throughput ceiling is 2,400 requests
+per 5 minutes **per customer** across all of them. One Senders page view issues roughly 50 logo
 requests and up to 368 while scrolling, so on the order of twenty
 concurrent users browsing senders exhausts it and the vendor returns 429. The failure is graceful — a 429 paints the monogram floor — but
 logos would become unreliable exactly as the product grows, which is
@@ -570,8 +584,8 @@ first-party. Tier 3 stays the Brandfetch **Brand API**, which permits
 server-side fetch and the 30-day cached artwork this ADR already
 encodes. If its free quota proves insufficient, the answer is a paid
 Brand API plan — buying quota while keeping the architecture — not a
-hotlinked CDN, which would trade a fixed cost for one that scales with
-the user base.
+hotlinked CDN, which would trade a cost bounded by the catalogue for
+one bounded by the user base.
 
 **Manual curation remains the backstop** for domains no tier can reach,
 and it is the only path that is both first-party and unlimited: a
