@@ -312,4 +312,120 @@ describe('IconsService', () => {
       kind: 'miss',
     });
   });
+
+  describe('marksFor', () => {
+    it("reports availability for a page in one pass, keyed by the caller's strings", async () => {
+      const db = await freshTestDb();
+      await seedIcon(db, { domain: 'brand.example' });
+      // Looked, found nothing — a cached miss is NOT availability.
+      await seedIcon(db, {
+        domain: 'nothing.example',
+        status: 'none',
+        image: null,
+        mime: null,
+        source: null,
+        contentHash: null,
+        byteSize: null,
+      });
+      const { queue } = fakeQueue();
+
+      const marks = await new IconsService(db as never, queue).marksFor(
+        ['brand.example', 'nothing.example', 'never-seen.example'],
+        { mayEnqueue: false },
+      );
+
+      expect(marks).toEqual(new Set(['brand.example']));
+    });
+
+    // THE DRIFT GUARD. `marksFor` answers the same question as `lookup`
+    // without reading the image bytes, so the two must never disagree
+    // — a page that says "no mark" for a domain the route would happily
+    // serve is a silently missing logo, and the opposite is the 204
+    // request this whole change exists to remove.
+    it('agrees with lookup on every domain shape', async () => {
+      const db = await freshTestDb();
+      await seedIcon(db, { domain: 'brand.example' });
+      await seedIcon(db, {
+        domain: 'stale-provider.example',
+        source: 'brandfetch',
+        fetchedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+      });
+      await seedIcon(db, {
+        domain: 'nothing.example',
+        status: 'none',
+        image: null,
+        mime: null,
+        source: null,
+        contentHash: null,
+        byteSize: null,
+      });
+      const domains = [
+        'brand.example',
+        'stale-provider.example',
+        'nothing.example',
+        'never-seen.example',
+        'not a domain',
+      ];
+      const { queue } = fakeQueue();
+      const svc = new IconsService(db as never, queue);
+
+      const marks = await svc.marksFor(domains, { mayEnqueue: false });
+      for (const domain of domains) {
+        const viaLookup = (await svc.lookup(domain, { mayEnqueue: false })).kind === 'hit';
+        expect({ domain, marked: marks.has(domain) }).toEqual({ domain, marked: viaLookup });
+      }
+    });
+
+    // The reason enqueueing moved here: an image subresource cannot
+    // refresh an expired token, so scheduling from the authenticated
+    // list read is the path that actually grows the cache.
+    it('schedules resolution for what it does not have, once per domain', async () => {
+      const db = await freshTestDb();
+      const { queue, added } = fakeQueue();
+
+      await new IconsService(db as never, queue).marksFor(
+        ['first.example', 'second.example', 'first.example'],
+        { mayEnqueue: true },
+      );
+
+      expect(added.map((job) => job.data)).toEqual([
+        { domain: 'first.example' },
+        { domain: 'second.example' },
+      ]);
+      // Deterministic job id per domain + resolver version, so a
+      // re-listed page collapses onto the same job.
+      expect(added[0]?.opts).toMatchObject({
+        jobId: `DomainIconWorker-v${DOMAIN_ICON_RESOLVER_VERSION}-first.example`,
+      });
+    });
+
+    it('never causes outbound work without a session', async () => {
+      const db = await freshTestDb();
+      const { queue, added } = fakeQueue();
+
+      await new IconsService(db as never, queue).marksFor(['unknown.example'], {
+        mayEnqueue: false,
+      });
+
+      expect(added).toEqual([]);
+    });
+
+    it('resolves a page through the alias registry', async () => {
+      const db = await freshTestDb();
+      await seedIcon(db, { domain: 'canonical.example' });
+      await db.insert(brandDomainAliases).values({
+        aliasDomain: 'alias.example',
+        canonicalDomain: 'canonical.example',
+        source: 'manual_review',
+        confidence: 100,
+      });
+      const { queue } = fakeQueue();
+
+      const marks = await new IconsService(db as never, queue).marksFor(['alias.example'], {
+        mayEnqueue: false,
+      });
+
+      expect(marks).toEqual(new Set(['alias.example']));
+    });
+  });
 });

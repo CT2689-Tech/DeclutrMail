@@ -110,6 +110,18 @@ export interface SenderListRow {
   displayName: string;
   email: string;
   domain: string;
+  /**
+   * Whether this sender's domain has a brand mark cached RIGHT NOW
+   * (ADR-0034). Decoration, not sender state: it changes as the icon
+   * worker resolves domains, and it carries no user linkage — the
+   * `domain_icons` cache is global.
+   *
+   * `Avatar` emits its CSS `background-image` layer only when this is
+   * true. That is the entire point: the layer is a browser subresource
+   * with no code around it, so without being told, every avatar on a
+   * page requested an icon and almost all of them were told 204.
+   */
+  brandMark: boolean;
   gmailCategory: GmailCategory;
   /** ISO-8601 — earliest `internal_date` we've seen for this sender. */
   firstSeenAt: string;
@@ -242,6 +254,20 @@ export interface ProtectionFlags {
  * so a slow sender (e.g. one with thousands of messages) doesn't
  * tax the header render path.
  */
+/**
+ * A list row as the READ SERVICE produces it — every fact about the
+ * sender, minus the brand-mark decoration.
+ *
+ * `brandMark` is not sender state. It is a property of the GLOBAL icon
+ * cache at the instant of the response, and it lives on a table the
+ * senders feature does not own (D204). The controller resolves it for
+ * a whole page in one batched read and decorates the rows on the way
+ * out, so the read service keeps selecting only senders-owned tables —
+ * and it stays a type error to serve a row that never answered the
+ * question.
+ */
+export type SenderFacts = Omit<SenderListRow, 'brandMark'>;
+
 export interface SenderDetail extends SenderListRow {
   protectionFlags: ProtectionFlags;
   /**
@@ -545,3 +571,6 @@ const _GMAIL_CATEGORY_API_EXTENDS_SHARED: GmailCategory extends SharedGmailCateg
 
 const _GMAIL_CATEGORY_SHARED_EXTENDS_API: SharedGmailCategory extends GmailCategory ? true : false =
   true;
+
+/** A sender detail as the read service produces it — see `SenderFacts`. */
+export type SenderDetailFacts = Omit<SenderDetail, 'brandMark'>;

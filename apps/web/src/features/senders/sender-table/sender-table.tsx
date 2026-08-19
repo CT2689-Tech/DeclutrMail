@@ -461,7 +461,12 @@ function SenderRow({
             {/* Identity anchor (ADR-0024) — the same monogram the grid
                 card and detail header render, so the Grid↔Table toggle
                 keeps the sender's visual identity. */}
-            <Avatar name={displayLabel(sender)} domain={sender.domain} size={24} />
+            <Avatar
+              name={displayLabel(sender)}
+              domain={sender.domain}
+              size={24}
+              hasMark={sender.brandMark}
+            />
             <div
               style={{
                 display: 'flex',

@@ -35,6 +35,7 @@ function row(overrides: Partial<SenderListRow> = {}): SenderListRow {
     displayName: overrides.displayName ?? 'Bank of America',
     email: overrides.email ?? 'onlinebanking@ealerts.bankofamerica.com',
     domain: overrides.domain ?? 'ealerts.bankofamerica.com',
+    brandMark: overrides.brandMark ?? false,
     gmailCategory: overrides.gmailCategory ?? 'updates',
     firstSeenAt: overrides.firstSeenAt ?? '2013-08-11T20:18:16.000Z',
     lastSeenAt: overrides.lastSeenAt ?? '2026-05-28T13:01:34.000Z',
@@ -172,12 +173,26 @@ describe('SenderTable', () => {
   });
 
   it('keeps the first-party brand-logo layer available in table view', () => {
-    const { container } = render(<Harness {...{}} />);
+    // The row must SAY it has a mark: the layer is a CSS background
+    // and the list read is what knows whether bytes exist, so a row
+    // reporting no mark correctly renders no layer (asserted below).
+    const { container } = render(<Harness rows={[row({ brandMark: true })]} />);
     const senderCell = container.querySelector('tr[data-dm-sender-id] td:nth-child(2)');
 
     // Grid↔Table is a layout choice, not an identity-fidelity choice:
     // a cached mark must remain eligible when the user switches views.
     expect(senderCell?.querySelector('[style*="background-image"]')).toBeTruthy();
+  });
+
+  it('renders no logo layer for a sender with no cached mark', () => {
+    // The fan-out fix, asserted at the screen: an uncached domain must
+    // emit no background-image, because emitting one IS the request —
+    // ~90 of them per page is what queued /senders behind its own
+    // avatars in production.
+    const { container } = render(<Harness rows={[row({ brandMark: false })]} />);
+    const senderCell = container.querySelector('tr[data-dm-sender-id] td:nth-child(2)');
+
+    expect(senderCell?.querySelector('[style*="background-image"]')).toBeNull();
   });
 
   it('primary verb button calls onAction with the derived verb (no mutation)', () => {

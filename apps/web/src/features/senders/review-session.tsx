@@ -547,7 +547,7 @@ function ReviewRow({
         transition: 'background 0.12s',
       }}
     >
-      <Avatar name={s.name} domain={s.domain} size={28} />
+      <Avatar name={s.name} domain={s.domain} size={28} hasMark={s.brandMark} />
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}>
         <span
           style={{

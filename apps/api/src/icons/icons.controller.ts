@@ -7,11 +7,38 @@ import { OptionalJwtGuard } from './optional-jwt.guard.js';
 import { IconsService } from './icons.service.js';
 
 /**
+ * `public`, NOT `private` — and that is a deliberate statement about
+ * what these bytes are, not a tuning knob.
+ *
+ * A response here is a function of the DOMAIN and nothing else. It
+ * does not vary by user, mailbox, session, or entitlement: an
+ * anonymous caller and a signed-in one get byte-identical answers,
+ * because the only thing a session changes is whether a MISS may
+ * schedule outbound resolution — a side effect, never the body. The
+ * cache table itself is global and deliberately carries no user or
+ * mailbox linkage (see `domain_icons`), and the payload is public
+ * brand artwork.
+ *
+ * `private` was therefore claiming a per-user variance that does not
+ * exist, and its only real effect was to forbid every shared cache
+ * from holding a logo that is identical for everyone.
+ *
+ * WHAT THIS DOES AND DOES NOT BUY. Browser caches are per-profile, so
+ * `public` changes nothing for a single repeat visitor — it is what
+ * lets a CDN or any shared proxy in front of this origin serve the
+ * mark without touching Cloud Run. There is no CDN in front of
+ * `api.declutrmail.com` today, so this is the prerequisite landing
+ * ahead of that, not a speed-up on its own.
+ *
+ * Privacy (D7, D228): nothing user-scoped is cacheable here because
+ * nothing user-scoped is served here.
+ */
+/**
  * A resolved mark is stable, so revalidate daily rather than pinning
  * `immutable` — a rebrand lands within a day and the strong ETag makes
  * the revalidation a 304.
  */
-export const HIT_CACHE_CONTROL = 'private, max-age=86400, stale-while-revalidate=604800';
+export const HIT_CACHE_CONTROL = 'public, max-age=86400, stale-while-revalidate=604800';
 
 /**
  * A MISS IS PROVISIONAL AND MUST NOT CARRY THE HIT'S LIFETIME.
@@ -40,7 +67,7 @@ export const HIT_CACHE_CONTROL = 'private, max-age=86400, stale-while-revalidate
  * No `stale-while-revalidate` — a provisional answer should be asked
  * again, not served stale in the background.
  */
-export const MISS_CACHE_CONTROL = 'private, max-age=60';
+export const MISS_CACHE_CONTROL = 'public, max-age=60';
 
 /**
  * Brand icon route (ADR-0034).

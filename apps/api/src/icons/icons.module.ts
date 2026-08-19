@@ -43,5 +43,8 @@ import { OptionalJwtGuard } from './optional-jwt.guard.js';
       },
     },
   ],
+  // `SendersModule` resolves brand-mark availability for a whole page
+  // in one read instead of letting the browser ask per avatar.
+  exports: [IconsService],
 })
 export class IconsModule {}
