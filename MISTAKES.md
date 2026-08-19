@@ -21,6 +21,28 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-18 — The Vercel Toolbar frame was never in the production CSP
+
+**PR:** #TBD
+**Caught by:** production — founder's browser console on `/senders`
+**What happened:** `frame-src` listed the Paddle and Razorpay checkout
+origins and nothing else, so the toolbar Vercel injects on
+toolbar-enabled deployments was blocked on every production page view:
+`Framing 'https://vercel.live/' violates the following Content Security
+Policy directive: "frame-src …"`. Nothing user-facing broke — only a
+signed-in Vercel team member ever loads that frame — but the violation
+was logged on every page load, in the one place a real client-side
+error would have shown up.
+**Correct approach:** when a platform is allowed to inject a frame into
+our pages, its exact documented origin belongs in `frame-src` at the
+time the platform is adopted, not after a console report.
+**Rule:** every platform-injected iframe needs an explicit,
+origin-scoped `frame-src` entry plus a test asserting the grant is
+exactly that narrow.
+**Enforcement update:** `apps/web/src/middleware.test.ts` now asserts
+`https://vercel.live` is present and that no `*.vercel.live` wildcard,
+`script-src`, or `connect-src` grant came with it.
+
 ## 2026-08-18 — Fixed one sweep that retried a revoked Gmail grant, left its sibling running
 
 **PR:** #TBD (follows #527)
