@@ -21,6 +21,29 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-19 — Asserted on real randomness and called it a regression test
+
+**PR:** #TBD
+**Caught by:** Codex stop-time review (pre-merge)
+**What happened:** the test proving the icon scheduler no longer starves
+later domains ran against live `Math.random` and asserted that one
+specific tail domain had been scheduled at least once across 25 reads.
+That is a probability, not a proof: the domain is missed with p ~ 2e-4
+per run — rare enough to look stable in review, frequent enough to fail
+CI eventually for no reason. A test that flakes gets muted, and muting
+this one would have silently removed the only guard on a starvation bug.
+**Correct approach:** pin the RNG (`vi.spyOn(Math, 'random')` with a
+deterministic well-spread sequence) and assert PROPERTIES of an unbiased
+pick — "more distinct domains than the cap" and "at least one beyond the
+head" — rather than a fixed expected set. Deterministic, and still green
+if the sampler's call pattern changes.
+**Rule:** never assert on live randomness. Pin the source, then assert
+the property the randomness is there to produce.
+**Enforcement update:** the test now stubs `Math.random` and restores it
+in `afterEach`; verified deterministic over 6 consecutive runs and still
+failing (`expected 12 to be greater than 12`) when the head-biased
+`slice` is put back.
+
 ## 2026-08-19 — Awaited a queue write on a client that retries forever
 
 **PR:** #TBD

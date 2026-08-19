@@ -1,7 +1,7 @@
 import { brandDomainAliases, DOMAIN_ICON_RESOLVER_VERSION, domainIcons } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import type { Queue } from 'bullmq';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { IconsService, MAX_SCHEDULED_PER_READ } from './icons.service.js';
 
@@ -314,6 +314,10 @@ describe('IconsService', () => {
   });
 
   describe('marksFor', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it("reports availability for a page in one pass, keyed by the caller's strings", async () => {
       const db = await freshTestDb();
       await seedIcon(db, { domain: 'brand.example' });
@@ -416,10 +420,26 @@ describe('IconsService', () => {
     // GET one — a provider quota writes nothing on purpose. Taking the
     // head of that set every read would mean the page's first rows win
     // the whole budget forever while later rows are never attempted.
+    //
+    // The RNG is PINNED rather than left live. Asserting on real
+    // randomness would make this pass with a probability instead of a
+    // proof — a tail domain is missed with p ~ 2e-4 per run, which is
+    // rare enough to look stable and frequent enough to eventually fail
+    // CI for no reason, and a test that flakes gets disabled. The
+    // assertions below are properties of an unbiased pick, not a fixed
+    // expected set, so they hold for any well-spread sequence and do
+    // not break if the sampler's call pattern changes.
     it('gives every unresolved domain a turn rather than always the first few', async () => {
       const db = await freshTestDb();
       const domains = Array.from({ length: 40 }, (_, i) => `d${i}.example`);
       const scheduled = new Set<string>();
+      // Golden-ratio increments: deterministic, and spread across [0,1)
+      // rather than clustering the way a fixed constant would.
+      let tick = 0;
+      vi.spyOn(Math, 'random').mockImplementation(() => {
+        tick += 1;
+        return (tick * 0.6180339887) % 1;
+      });
 
       // Nothing ever resolves, so every read faces the same 40 rowless
       // domains — the exact condition an exhausted provider produces.
@@ -432,9 +452,11 @@ describe('IconsService', () => {
       // A head-biased pick reaches exactly MAX_SCHEDULED_PER_READ of
       // them no matter how many reads happen.
       expect(scheduled.size).toBeGreaterThan(MAX_SCHEDULED_PER_READ);
-      // And the tail is reachable at all: P(miss) is (28/40)^25 ~ 2e-4
-      // per domain, so this is not a flaky assertion.
-      expect(scheduled.has('d39.example')).toBe(true);
+      // And the tail is reachable at all — not just the leading rows.
+      const tailScheduled = [...scheduled].filter(
+        (domain) => Number(domain.replace(/^d|\.example$/g, '')) >= MAX_SCHEDULED_PER_READ,
+      );
+      expect(tailScheduled.length).toBeGreaterThan(0);
     });
 
     it('never causes outbound work without a session', async () => {
