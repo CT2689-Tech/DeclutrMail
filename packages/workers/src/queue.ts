@@ -148,6 +148,32 @@ export function createRedisConnection(redisUrl: string): Redis {
 }
 
 /**
+ * A Redis connection for a producer that ENQUEUES FROM A REQUEST PATH.
+ *
+ * `createRedisConnection` above is built for workers, and its defaults
+ * are the opposite of what a request needs. ioredis buffers commands
+ * issued while the connection is down in an in-memory offline queue and
+ * flushes them on reconnect — exactly right for a worker, which must
+ * not drop a job because Redis blinked. On a request path it is a leak
+ * with a delayed detonation: every request adds another never-settling
+ * command to a queue nobody is draining, so an outage grows memory on a
+ * 512Mi instance for as long as it lasts, and recovery flushes the
+ * whole backlog at Redis in one burst.
+ *
+ * Disabling it converts that silence into an immediate rejection, which
+ * a caller can actually handle. The trade is explicit: an enqueue
+ * attempted during an outage is LOST rather than deferred. Only use
+ * this for work that is genuinely best-effort and self-healing — the
+ * icon queue qualifies, because the next list read schedules the same
+ * domain again and an unresolved domain renders the monogram that
+ * ADR-0034 defines as the floor. Anything whose loss a user would
+ * notice belongs on `createRedisConnection`.
+ */
+export function createRedisProducerConnection(redisUrl: string): Redis {
+  return new Redis(redisUrl, { maxRetriesPerRequest: null, enableOfflineQueue: false });
+}
+
+/**
  * Idle-poll ceiling for user-facing queues — env tuning can lower the
  * re-poll below this but never raise it past this many seconds, so a
  * fat-fingered env can't strand pickup. Set to 60s: job pickup is

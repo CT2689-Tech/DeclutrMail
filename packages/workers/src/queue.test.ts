@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { ensureIncrementalSyncJob, ensureInitialSyncJob, workerTuningOptions } from './queue.js';
+import {
+  createRedisConnection,
+  createRedisProducerConnection,
+  ensureIncrementalSyncJob,
+  ensureInitialSyncJob,
+  workerTuningOptions,
+} from './queue.js';
 
 /**
  * `ensureInitialSyncJob` tests (Codex iter 5, 2026-05-22).
@@ -291,5 +297,32 @@ describe('ensureIncrementalSyncJob', () => {
     const outcome = await ensureIncrementalSyncJob(q as any, DATA);
     expect(outcome).toBe('noop');
     expect(q.addCalls).toBe(0);
+  });
+});
+
+describe('redis connection factories', () => {
+  // A worker must not drop a job because Redis blinked, so its
+  // connection keeps ioredis's offline buffer.
+  it('buffers commands for a worker connection', () => {
+    const client = createRedisConnection('redis://127.0.0.1:6399');
+    try {
+      expect(client.options.enableOfflineQueue).not.toBe(false);
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  // A producer written to FROM A REQUEST must not buffer: ioredis would
+  // hold every command issued during an outage in memory and flush the
+  // backlog at Redis on reconnect. Rejecting immediately is what lets
+  // the caller log and move on — and the senders list read is the
+  // caller that made this load-bearing.
+  it('refuses to buffer for a request-path producer connection', () => {
+    const client = createRedisProducerConnection('redis://127.0.0.1:6399');
+    try {
+      expect(client.options.enableOfflineQueue).toBe(false);
+    } finally {
+      client.disconnect();
+    }
   });
 });

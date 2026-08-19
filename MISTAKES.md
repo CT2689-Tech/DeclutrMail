@@ -45,6 +45,18 @@ forever.
 test wedges the queue on a never-settling promise — without the
 deadline it hangs to a 30s vitest timeout.
 
+**Follow-on (same review, second pass):** the deadline stopped the
+WAIT but not the WRITE. The abandoned command stayed in ioredis's
+offline buffer, so an outage still accumulated one never-settling
+command per request in memory and would have flushed the whole backlog
+at Redis on reconnect. A timeout bounds latency, never resource. The
+icon queue now uses `createRedisProducerConnection`
+(`enableOfflineQueue: false`), so an enqueue during an outage rejects
+at once — verified against a real stopped Redis: the senders list
+answered 200 in 31–93ms and logged `domain_icon.enqueue_failed`
+("Stream isn't writeable"), and enqueues resumed on restart with no
+further failures.
+
 ## 2026-08-18 — Fixed one sweep that retried a revoked Gmail grant, left its sibling running
 
 **PR:** #TBD (follows #527)
