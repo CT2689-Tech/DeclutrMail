@@ -477,3 +477,52 @@ describe('SenderTable / __internals', () => {
     ).toBe('Acme');
   });
 });
+
+/**
+ * Identity line (2026-08-19 founder smoke — "why 2 redfin results?").
+ *
+ * Grid↔Table parity: the table row carries the same address line the
+ * card does, so the view toggle never changes which sender you think
+ * you are looking at.
+ */
+describe('SenderTable — identity line renders the address', () => {
+  it('shows the full address, not just the domain', () => {
+    render(
+      <Harness
+        rows={[row({ displayName: 'Redfin', email: 'listings@redfin.com', domain: 'redfin.com' })]}
+      />,
+    );
+    expect(screen.getByText('listings@redfin.com')).toBeInTheDocument();
+  });
+
+  it('distinguishes two rows sharing a display name and domain', () => {
+    render(
+      <Harness
+        rows={[
+          row({
+            id: 'r-1',
+            displayName: 'Redfin',
+            email: 'listings@redfin.com',
+            domain: 'redfin.com',
+          }),
+          row({
+            id: 'r-2',
+            displayName: 'Redfin',
+            email: 'no-reply@redfin.com',
+            domain: 'redfin.com',
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByText('listings@redfin.com')).toBeInTheDocument();
+    expect(screen.getByText('no-reply@redfin.com')).toBeInTheDocument();
+  });
+
+  it('falls back to the domain when there is no display name — never the address twice', () => {
+    render(
+      <Harness rows={[row({ displayName: '', email: 'bare@redfin.com', domain: 'redfin.com' })]} />,
+    );
+    expect(screen.getAllByText('bare@redfin.com')).toHaveLength(1);
+    expect(screen.getByText('redfin.com')).toBeInTheDocument();
+  });
+});

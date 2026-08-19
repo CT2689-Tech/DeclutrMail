@@ -15,7 +15,7 @@
  * engine intent/confidence never drives card presentation (D245).
  *
  * Privacy (D7, D228). Renders only allowlisted fields: sender name,
- * domain, monthly volume, read rate, last-seen days. Never body
+ * address, domain, monthly volume, read rate, last-seen days. Never body
  * content, attachments, or non-allowlisted headers.
  */
 
@@ -30,7 +30,7 @@ import {
 } from '@declutrmail/shared';
 import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
 import { ReadBucketText, TrendChip } from '../fact-language';
-import { EPOCH_GUARD_DAYS, isStandingProtected, type Sender } from '../data';
+import { EPOCH_GUARD_DAYS, isStandingProtected, senderAddressLine, type Sender } from '../data';
 import type { ActionRequest } from '../data';
 import { isFeatureEnabled } from '@/lib/flags';
 import { SenderPeek } from './sender-peek';
@@ -126,6 +126,7 @@ export function SenderCard({
 }: SenderCardProps) {
   const primaryVerb = derivePrimaryVerbId(sender);
   const protectedNow = isStandingProtected(sender);
+  const addressLine = senderAddressLine(sender);
   // Quick-peek dialog (grid↔table parity) — renders the same
   // `SenderRowDetailLive` panel the table's expand-row shows. Opened
   // from the identity block below; closes on Escape / backdrop / a
@@ -243,9 +244,9 @@ export function SenderCard({
             }}
           >
             <span
-              // Full identity on hover — duplicate display names are
-              // only distinguishable by the underlying address
-              // (2026-07-07 founder smoke feedback).
+              // Full identity on hover, for names too long to fit.
+              // The address itself is rendered outright on the line
+              // below (2026-08-19), not left to hover.
               title={sender.email ? `${sender.name} <${sender.email}>` : sender.name}
               data-dm-peek-name={peekEnabled ? '' : undefined}
               style={{
@@ -301,6 +302,11 @@ export function SenderCard({
               })()}
           </div>
           <div
+            // The full address, not the domain — senders are keyed by
+            // address, so one brand can own several rows and the domain
+            // alone renders them identical (see `senderAddressLine`).
+            // `title` covers the narrow-card truncation case.
+            title={addressLine}
             style={{
               fontFamily: font.mono,
               fontSize: 10.5,
@@ -311,7 +317,7 @@ export function SenderCard({
               marginTop: 1,
             }}
           >
-            {sender.domain}
+            {addressLine}
           </div>
         </button>
         {sender.sparkline && sender.sparkline.length > 0 && (

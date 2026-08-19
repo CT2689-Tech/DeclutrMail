@@ -13,7 +13,7 @@ import {
   toast,
 } from '@declutrmail/shared';
 import { buildActionReceiptResult, getActionSemantics } from '@declutrmail/shared/actions';
-import { type ActionRequest, type ActionVerb, type Sender } from '../data';
+import { senderAddressLine, type ActionRequest, type ActionVerb, type Sender } from '../data';
 import { ConfirmActionModal, type ConfirmOptions } from '../confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from '../receipt-strip';
 import { RecommendationBanner } from './recommendation-banner';
@@ -1038,13 +1038,17 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               <NumericDisplay value={sender.name} variant="display" />
             </h1>
             <span
+              // Address, not domain — the header has to name WHICH
+              // sender this page is about; a brand can own several rows
+              // that share a domain (`senderAddressLine`).
               style={{
                 fontFamily: font.mono,
                 fontSize: 12.5,
                 color: color.fgMuted,
+                overflowWrap: 'anywhere',
               }}
             >
-              {sender.domain}
+              {senderAddressLine(sender)}
             </span>
           </div>
           <div

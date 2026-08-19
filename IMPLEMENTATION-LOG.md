@@ -94,7 +94,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🔵 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | 🔵 | #293 |  |  |
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #501 |  | Reclaimed 2026-07-28 (D158): the tour has never been built. Prior D38 trailers were umbrella mis-tags, now rewritten in the source PR bodies; the senders wire-model work lives at ADR-0029 |
-| D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30, #43, #47, #52, #63, #71, #129 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
+| D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30, #43, #47, #52, #63, #71, #129, #569 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
 | D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🟢 | #30, #47, #181, #342, #394 | apps/api/src/senders/senders.read-service.spec.ts |  |
 | D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | 🔵 | #30, #566 |  |  |
 | D42 | **SUPERSEDED by D245: Protected is the sole visible safety state | 🔵 | #181, #30, #129, #393 |  | Evidence updated 2026-06-11: VIP/Protect policy write path landed in #181; prior #30 cite was stale |
@@ -104,7 +104,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D46 | Decision history: **10 most recent inline, all V2 actions, link to full | 🟢 | #30 | apps/api/src/senders/senders.controller.spec.ts — D46 default limit |  |
 | D47 | Senders shape: **Weekly Hero (Mondays) + grid/table below + Review Session overlay | 🚫 | #115, #346 |  | Retired 2026-07-17 by #346: the Weekly Hero was removed with the editorial-hero era (spec v1.2 D4) and its dead stack deleted per D245 prelaunch. Was 🟢 citing senders.controller.spec.ts — a spec #346 deleted, so the evidence no longer existed |
 | D48 | Weekly Hero slices: **3 — High-confidence cleanups / Volume spikes / Long-quiet senders | 🚫 | #115, #346 |  | Retired 2026-07-17 by #346 with D47 — slices died with the hero |
-| D49 | Senders default view: **Always grid; table is per-session toggle | 🔵 | #115, #260, #262, #266, #268, #270, #271, #275, #278, #280, #300, #341, #409 |  |  |
+| D49 | Senders default view: **Always grid; table is per-session toggle | 🔵 | #115, #260, #262, #266, #268, #270, #271, #275, #278, #280, #300, #341, #409, #569 |  |  |
 | D50 | Per-row interaction: **Collapse/expand pattern matching Triage D36 | ⬜ |  |  |  |
 | D51 | Filter UI: **Hybrid — 4 quick-filter chips + "More filters" drawer | ⬜ |  |  | Reclaimed 2026-07-28 (D158): #294/#340/#341 were rollup/parity work, trailers rewritten at source — the chips+drawer this row describes is unbuilt |
 | D52 | Bulk operations: **Shift-click range + Ctrl/Cmd-click individual + sticky bottom action bar | 🔵 | #183, #198 |  | Evidence note 2026-06-11: multi-select + sticky bulk bar shipped in #183; shift-click range select shipped in #198 |

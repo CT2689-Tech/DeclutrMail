@@ -32,7 +32,7 @@ const meta: StoryMeta<typeof SenderCard> = {
     docs: {
       description: {
         component:
-          'One sender card on the grid view (D49). Renders avatar + name + domain + single-line stats + K/A/U/L verbs (D227). Per-card width is min(100%, 280px) inside the auto-fit grid.',
+          'One sender card on the grid view (D49). Renders avatar + name + address + single-line stats + K/A/U/L verbs (D227). Per-card width is min(100%, 280px) inside the auto-fit grid.',
       },
     },
   },
@@ -107,6 +107,78 @@ export const Protected: Story<typeof SenderCard> = {
         protectionReason: 'user_defined',
         protectionSetAt: '2026-06-01T00:00:00.000Z',
       },
+    }),
+    selected: false,
+    onToggleSelect: noop,
+    onAction: noop,
+    globalMaxTotal: 1000,
+  },
+  render: frame,
+};
+
+/**
+ * Same brand, two addresses — the case that reads as a duplicate when
+ * the card shows only the domain (founder smoke 2026-08-19). Senders
+ * are keyed by address (D12 / ADR-0011), so both rows are real; the
+ * address line is what tells them apart.
+ */
+export const SameBrandTwoAddresses: Story<typeof SenderCard> = {
+  args: {
+    sender: sender(),
+    selected: false,
+    onToggleSelect: noop,
+    onAction: noop,
+    globalMaxTotal: 4000,
+  },
+  render: (args) => (
+    <div
+      style={{
+        background: color.bg,
+        padding: 24,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))',
+        gap: 12,
+        maxWidth: 1180,
+      }}
+    >
+      <SenderCard
+        {...args}
+        sender={sender({
+          id: 'story-redfin-listings',
+          displayName: 'Redfin',
+          email: 'listings@redfin.com',
+          domain: 'redfin.com',
+          totalReceived: 3474,
+          monthlyVolume: 18,
+        })}
+      />
+      <SenderCard
+        {...args}
+        sender={sender({
+          id: 'story-redfin-noreply',
+          displayName: 'Redfin',
+          email: 'no-reply@redfin.com',
+          domain: 'redfin.com',
+          totalReceived: 367,
+          monthlyVolume: 4,
+        })}
+      />
+    </div>
+  ),
+};
+
+/**
+ * No From-header display name — the name line already IS the address,
+ * so the line below falls back to the domain rather than printing the
+ * same string twice.
+ */
+export const NoDisplayName: Story<typeof SenderCard> = {
+  args: {
+    sender: sender({
+      id: 'story-bare-address',
+      displayName: '',
+      email: 'bounce-472@mail.redfin.com',
+      domain: 'mail.redfin.com',
     }),
     selected: false,
     onToggleSelect: noop,

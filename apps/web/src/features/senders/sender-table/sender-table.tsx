@@ -60,7 +60,7 @@ import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
 import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
-import { enrichSenderRow, EPOCH_GUARD_DAYS, isStandingProtected } from '../data';
+import { enrichSenderRow, EPOCH_GUARD_DAYS, isStandingProtected, senderAddressLine } from '../data';
 import type { ActionVerb, Sender } from '../data';
 import { ReadBucketText, TrendChip } from '../fact-language';
 import { unsubscribeStatusCopy } from '../grid/sender-card';
@@ -482,10 +482,9 @@ function SenderRow({
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
                 <ProtectIndicator flags={sender.protectionFlags} />
                 <span
-                  // Full identity on hover — duplicate display names
-                  // ("Amazon.com" ×5) are only distinguishable by the
-                  // underlying address, which the row otherwise never
-                  // renders (2026-07-07 founder smoke feedback).
+                  // Full identity on hover, for names too long to
+                  // fit. The address itself is rendered outright on the
+                  // line below (2026-08-19), not left to hover.
                   title={`${displayLabel(sender)} <${sender.email}>`}
                   style={{
                     fontWeight: 600,
@@ -529,14 +528,23 @@ function SenderRow({
                   })()}
               </span>
               <span
+                // Full address, not the domain — one brand can own
+                // several rows and the domain alone renders them
+                // identical (see `senderAddressLine`). Addresses are
+                // longer than domains, so this line now needs the
+                // truncation the domain never did.
+                title={senderAddressLine(sender)}
                 style={{
                   color: color.fgMuted,
                   fontSize: text.sm,
                   fontFamily: font.mono,
                   letterSpacing: '0.005em',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}
               >
-                {sender.domain}
+                {senderAddressLine(sender)}
               </span>
             </div>
           </div>
