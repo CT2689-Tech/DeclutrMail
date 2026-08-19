@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { isValidElement } from 'react';
 
+import { Logo } from '../components/logo';
 import { color, font, radius } from '../tokens/tokens';
 import { useLabels, type LabelKey } from '../hooks/use-labels';
 
@@ -91,35 +92,14 @@ export function Sidebar({
         fontFamily: font.sans,
       }}
     >
-      {/* Brand */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 9,
-          padding: '4px 6px',
-        }}
-      >
-        <span
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: 7,
-            background: `linear-gradient(135deg, ${color.primary}, ${color.mint})`,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: color.fgInverse,
-            fontSize: 13,
-            fontWeight: 700,
-          }}
-        >
-          D
-        </span>
-        <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em' }}>
-          DeclutrMail
-          <span style={{ color: color.primary }}>.com</span>
-        </span>
+      {/* Brand. ADR-0036 is the whole specification: the mark, the
+          wordmark, the ratio between them and the tone belong to the
+          component, not to this consumer. `size` is the only lever, and
+          24 selects the compact cut (ADR-0036 §Two cuts) — the correct
+          geometry at this size, and narrow enough that the lockup fits
+          the 220px rail. */}
+      <div style={{ display: 'flex', alignItems: 'center', padding: '4px 6px' }}>
+        <Logo size={24} />
       </div>
 
       <nav
