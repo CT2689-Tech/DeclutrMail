@@ -1,42 +1,53 @@
 #!/usr/bin/env tsx
 /**
- * generate-impl-log.ts — the DERIVED implementation log (D158, 2026-07-28).
+ * generate-impl-log.ts — the DERIVED implementation log (D158, 2026-07-28;
+ * reshaped 2026-08-19).
  *
- * History: the previous design had a GitHub Action (`pr-merged.yml`) push
- * status flips straight to `main`. Branch protection rejected that push on
- * every single run — the workflow NEVER once wrote a flip, and its green
- * runs were the ones that exited early with nothing to do. This script
- * replaces maintenance with derivation:
+ * History: a GitHub Action (`pr-merged.yml`) used to push status flips
+ * straight to `main`. Branch protection rejected that push on every run —
+ * it NEVER once wrote a flip. Derivation replaced maintenance:
  *
- *   ⬜ / 🔵  are DERIVED — recomputed from the plan (which D-numbers exist)
- *            and from `Closes D###` trailers on merged PRs PLUS the open
- *            PR this run is for, if any (see `readOpenPr` for why the
- *            open one counts).
- *   🟢 🚫 🟡 🔴 ⏸️  are RECORDED — human/scripted events this generator
- *            preserves from the existing file (the "overlay") and audits.
+ *   ⬜ / 🔵 and the shipping PR are DERIVED — recomputed from the plan
+ *          and from `Closes D###` trailers on merged PRs plus the PR this
+ *          run is for.
+ *   🟢 🚫 🟡 🔴 ⏸️, evidence and notes are RECORDED — human knowledge that
+ *          exists nowhere else. It lives in `.impl-log/D###.md`, ONE FILE
+ *          PER DECISION.
+ *
+ * Why one file per decision (2026-08-19): the recorded half used to live
+ * inside the rendered table, so every PR that flipped a row rewrote the
+ * same file and collided with every other PR in flight. One PR spent
+ * four rounds resolving that conflict in a single afternoon. Fragments
+ * make the collision structurally impossible — two PRs recording
+ * different decisions never touch the same path.
+ *
+ * And the citation column holds the PR that SHIPPED a decision, not
+ * every PR that has since touched it. `D49` had collected fourteen
+ * references; each merge appending one was a rewrite of that row. The
+ * rest of the history is `Closes D49` in GitHub search.
  *
  * Docs-only PRs RECORD a decision, they do not implement it: a merged PR
- * counts as implementing only if it touches at least one non-`.md` file.
- * (That distinction is load-bearing — the PR that *adds* D248 to the plan
- * says `Closes D248`, and flipping D248 to Shipped on it would assert a
- * feature that does not exist. The old workflow tried exactly that flip
- * and only branch protection kept the log honest.)
+ * counts as implementing only if it touches a non-`.md` file. (The PR
+ * that ADDS D248 to the plan says `Closes D248`; flipping D248 on it
+ * would assert a feature that does not exist.)
  *
- * 🟢 audit (D158 call 4): a Verified row must carry evidence. On every
- * run, a 🟢 row with an empty evidence cell, a literal `manual`, or a
- * cited file that no longer exists is demoted to 🔵 with a note. Use
- * `pnpm verify-d` (evidence-gated) to re-earn 🟢.
+ * 🟢 audit (D158 call 4): a Verified row must carry evidence. A 🟢 with an
+ * empty evidence field, a literal `manual`, or a cited file that no
+ * longer exists is demoted to 🔵 with a note. Re-earn it with
+ * `pnpm verify-d`.
  *
  * Modes:
- *   pnpm generate-impl-log            regenerate IMPLEMENTATION-LOG.md
- *   pnpm generate-impl-log --check    exit 1 if the committed file differs
- *                                     from the derived one (CI PR gate)
+ *   pnpm generate-impl-log             regenerate IMPLEMENTATION-LOG.md
+ *   pnpm generate-impl-log --check     fail only on rows THIS PR owns
+ *   pnpm generate-impl-log --check --strict
+ *                                      fail on any drift (merge queue:
+ *                                      the candidate is what becomes main)
  *
  * Requires `gh` (authenticated locally; GH_TOKEN in CI). If the merged-PR
  * set cannot be read this script FAILS LOUDLY — it never treats an
  * unreadable list as empty, because "no data" rendered as "no PRs" is the
- * exact blindness that let stale state accumulate before (see the
- * infra-snapshot incident, MISTAKES.md 2026-07-26).
+ * exact blindness that let stale state accumulate before (MISTAKES.md
+ * 2026-07-26).
  *
  * Exit codes:
  *   0 — log written (or --check passed)
@@ -46,44 +57,33 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import {
+  DECISIONS_END,
+  DECISIONS_START,
+  composeRow,
+  decisionsOwnedBy,
+  deriveShippedBy,
+  driftedDecisions,
+  fragmentNumber,
+  parseFragment,
+  renderLog,
+  type ComposedRow,
+  type Decision,
+  type Fragment,
+  type PrRef,
+} from '@declutrmail/config/impl-log';
+
 const REPO_ROOT = join(import.meta.dirname ?? __dirname, '..');
 const LOG_PATH = join(REPO_ROOT, 'IMPLEMENTATION-LOG.md');
+const FRAGMENT_DIR = join(REPO_ROOT, '.impl-log');
 const MIRROR_PATH = join(REPO_ROOT, 'docs/execution/Implementation-Plan.md');
 const LOCAL_PATH = join(homedir(), '.claude/plans/i-want-you-to-smooth-kahn.md');
 
-const DECISIONS_START = '<!-- AUTO:DECISIONS:START -->';
-const DECISIONS_END = '<!-- AUTO:DECISIONS:END -->';
-const SUMMARY_START = '<!-- AUTO:SUMMARY:START -->';
-const SUMMARY_END = '<!-- AUTO:SUMMARY:END -->';
-
 const AUDIT_DATE = new Date().toISOString().slice(0, 10);
-
-/** Recorded (non-derivable) states the generator preserves. */
-const RECORDED = ['🟢', '🚫', '🟡', '🔴', '⏸️'] as const;
-const ALL_STATES = ['⬜', '🔵', ...RECORDED] as const;
-type State = (typeof ALL_STATES)[number];
-
-interface Decision {
-  num: number;
-  title: string;
-}
-
-interface OverlayRow {
-  status: State;
-  pr: string;
-  verifiedBy: string;
-  notes: string;
-}
-
-interface MergedPr {
-  number: number;
-  body: string;
-  files: { path: string }[];
-}
 
 function resolvePlanPath(): string | null {
   if (existsSync(MIRROR_PATH)) return MIRROR_PATH;
@@ -109,39 +109,20 @@ function parseDecisions(plan: string): Decision[] {
   return decisions;
 }
 
-/**
- * Parse an existing table row. Titles may contain raw `|` (D12's does) —
- * the historical flip-regex bug class ([FOUNDER-FOLLOWUPS 2026-05-27]).
- * Strategy: cells right of the FIRST status-symbol cell are positional
- * (PR, Verified by, Notes…); everything between the D-number and the
- * status symbol is the title, pipes and all.
- */
-function parseOverlay(block: string): Map<number, OverlayRow> {
-  const overlay = new Map<number, OverlayRow>();
-  for (const line of block.split('\n')) {
-    if (!line.startsWith('| D')) continue;
-    const cells = line.split('|').map((c) => c.trim());
-    // cells[0] is '' (leading pipe); last is '' (trailing pipe)
-    const dMatch = /^D(\d{1,3})$/.exec(cells[1] ?? '');
-    if (!dMatch) continue;
-    const statusIdx = cells.findIndex((c) => (ALL_STATES as readonly string[]).includes(c));
-    if (statusIdx < 2) continue;
-    const num = Number(dMatch[1]);
-    overlay.set(num, {
-      status: cells[statusIdx] as State,
-      pr: cells[statusIdx + 1] ?? '',
-      verifiedBy: cells[statusIdx + 2] ?? '',
-      notes: cells
-        .slice(statusIdx + 3, cells.length - 1)
-        .join(' | ')
-        .trim(),
-    });
+/** Read every `.impl-log/D###.md`. A missing directory means none recorded. */
+function readFragments(): Map<number, Fragment> {
+  const fragments = new Map<number, Fragment>();
+  if (!existsSync(FRAGMENT_DIR)) return fragments;
+  for (const filename of readdirSync(FRAGMENT_DIR)) {
+    const num = fragmentNumber(filename);
+    if (num === null) continue;
+    fragments.set(num, parseFragment(num, readFileSync(join(FRAGMENT_DIR, filename), 'utf8')));
   }
-  return overlay;
+  return fragments;
 }
 
 /** Fail-loud merged-PR read. Never returns a silently-empty list. */
-function readMergedPrs(): MergedPr[] {
+function readMergedPrs(): PrRef[] {
   let raw: string;
   try {
     raw = execFileSync(
@@ -149,57 +130,44 @@ function readMergedPrs(): MergedPr[] {
       ['pr', 'list', '--state', 'merged', '--limit', '1000', '--json', 'number,body,files'],
       { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
     );
-  } catch (err) {
-    console.error(
-      '✗ Could not read the merged-PR set via `gh pr list`. The derived log',
-      'cannot be computed without it, and treating the list as empty would',
-      'silently demote every derived row. Authenticate gh (or set GH_TOKEN)',
-      'and re-run.',
-    );
-    console.error(String(err));
+  } catch (error) {
+    console.error('✗ Could not read merged PRs via `gh`. Refusing to treat that as "none".');
+    console.error(String(error));
     process.exit(3);
   }
-  const prs = JSON.parse(raw) as MergedPr[];
-  if (!Array.isArray(prs) || prs.length === 0) {
-    console.error('✗ `gh pr list` returned zero merged PRs — refusing to derive from that.');
-    process.exit(3);
-  }
-  return prs;
+  return JSON.parse(raw) as PrRef[];
 }
 
 /**
- * The OPEN pull request this run is for, if there is one.
+ * The PR this run is for — an open PR, or the one riding in a merge-queue
+ * candidate.
  *
- * Deriving from merged PRs alone made every open branch pay for every
- * other branch's merge. A PR cannot cite its own `Closes D###` while it
- * is unmerged, so it had to commit a log WITHOUT its own rows; the
- * moment it merged, `main` was stale by exactly those rows, and the
- * next PR opened — innocent of the change — inherited a red must-pass
- * check it had to absorb by hand. Five PRs in flight on 2026-08-11 meant
- * five rounds of laundering each other's drift.
- *
- * Counting the open PR closes the loop: the PR that cites the D carries
- * the flip, so `main` is never behind and nobody else absorbs anything.
- * The cost is one regeneration AFTER opening the PR rather than before
- * — `--check` says so when it fires.
- *
- * Read order matters: `readMergedPrs` runs first and already proves `gh`
- * works, so a failure HERE means "this branch has no PR yet", not "gh is
- * broken". That is why this one returns null instead of exiting 3.
+ * Both matter for the same reason: the run has to count the PR's own
+ * `Closes` trailers, or the derivation says ⬜ while the committed file
+ * says 🔵 and the gate fails the PR for being right. In a `merge_group`
+ * event there is no `pull_request` payload, but the queue ref carries the
+ * number (`gh-readonly-queue/main/pr-579-<sha>`).
  */
-function readOpenPr(): MergedPr | null {
-  const args = ['pr', 'view', '--json', 'number,body,files,state'];
-  // In Actions the checkout is detached at the merge ref, so `gh pr view`
-  // cannot infer the PR from the branch — take it from the event payload.
+function readCurrentPr(): PrRef | null {
   const eventPath = process.env.GITHUB_EVENT_PATH;
+  let number: number | null = null;
+
   if (eventPath && existsSync(eventPath)) {
     const event = JSON.parse(readFileSync(eventPath, 'utf8')) as {
       pull_request?: { number?: number };
+      merge_group?: { head_ref?: string };
     };
-    const number = event.pull_request?.number;
-    if (typeof number !== 'number') return null;
-    args.splice(2, 0, String(number));
+    if (typeof event.pull_request?.number === 'number') {
+      number = event.pull_request.number;
+    } else if (typeof event.merge_group?.head_ref === 'string') {
+      const match = /\/pr-(\d+)-/.exec(event.merge_group.head_ref);
+      if (match) number = Number(match[1]);
+    }
+    if (number === null) return null;
   }
+
+  const args = ['pr', 'view', '--json', 'number,body,files,state'];
+  if (number !== null) args.splice(2, 0, String(number));
   let raw: string;
   try {
     raw = execFileSync('gh', args, {
@@ -212,167 +180,42 @@ function readOpenPr(): MergedPr | null {
   } catch {
     return null;
   }
-  const pr = JSON.parse(raw) as MergedPr & { state?: string };
-  return pr.state === 'OPEN' ? pr : null;
+  const pr = JSON.parse(raw) as PrRef & { state?: string };
+  // In the queue the PR reads as MERGED or OPEN depending on timing; both
+  // are the PR this candidate carries.
+  return pr.state === 'CLOSED' ? null : pr;
 }
 
-// A trailer is a LINE that closes a D — optionally list-marked — not any
-// prose that happens to contain the words. The first post-merge run of
-// this generator flagged its own PR: the body QUOTED `Closes D248` while
-// explaining why docs-only PRs must not flip, and the loose regex read
-// the quotation as a trailer. Line-anchoring excludes quoted/inline
-// mentions (they sit mid-line or behind a backtick) while every real
-// trailer in all 343 merged PRs starts its line.
-const CLOSES_RE = /^(?:[-*]\s+)?Closes\s+D(\d{1,3})\b/gim;
-
-/** A PR implements (vs merely records) iff it touches any non-md file. */
-function isImplementing(pr: MergedPr): boolean {
-  return pr.files.some((f) => !f.path.toLowerCase().endsWith('.md'));
-}
-
-function deriveImplementedBy(prs: MergedPr[]): Map<number, number[]> {
-  const byD = new Map<number, number[]>();
-  for (const pr of prs) {
-    if (!isImplementing(pr)) continue;
-    const body = pr.body ?? '';
-    let m: RegExpExecArray | null;
-    CLOSES_RE.lastIndex = 0;
-    while ((m = CLOSES_RE.exec(body)) !== null) {
-      const num = Number(m[1]);
-      const list = byD.get(num) ?? [];
-      if (!list.includes(pr.number)) list.push(pr.number);
-      byD.set(num, list);
-    }
-  }
-  for (const list of byD.values()) list.sort((a, b) => a - b);
-  return byD;
-}
-
-/** Does the evidence cell cite a repo file path, and does it exist? */
+/** Does the evidence cite a repo file, and does that file still exist? */
 function evidenceFileStatus(evidence: string): 'no-path' | 'exists' | 'missing' {
   const m = /([\w@./-]+\.(?:ts|tsx|sql|sh|md))/.exec(evidence);
   if (!m) return 'no-path';
   return existsSync(join(REPO_ROOT, m[1])) ? 'exists' : 'missing';
 }
 
-interface ComposedRow extends OverlayRow {
-  num: number;
-  title: string;
-}
-
-function composeRow(
-  d: Decision,
-  overlay: OverlayRow | undefined,
-  implPrs: number[],
-  demotions: string[],
-): ComposedRow {
-  const base: ComposedRow = {
-    num: d.num,
-    title: d.title,
-    status: '⬜',
-    pr: overlay?.pr ?? '',
-    verifiedBy: overlay?.verifiedBy ?? '',
-    notes: overlay?.notes ?? '',
-  };
-
-  // Merge derived PR refs into the PR cell without losing recorded prose.
-  const derivedRefs = implPrs.map((n) => `#${n}`).filter((r) => !base.pr.includes(r));
-  if (derivedRefs.length > 0) {
-    base.pr = base.pr ? `${base.pr}, ${derivedRefs.join(', ')}` : derivedRefs.join(', ');
-  }
-
-  const recorded = overlay?.status;
-
-  // Recorded terminal/manual states win outright.
-  if (recorded === '🚫' || recorded === '⏸️' || recorded === '🔴' || recorded === '🟡') {
-    base.status = recorded;
-    return base;
-  }
-
-  if (recorded === '🟢') {
-    const evidence = base.verifiedBy.trim();
-    const bare = evidence === '' || /^manual$/i.test(evidence);
-    const fileStatus = evidenceFileStatus(evidence);
-    if (bare || fileStatus === 'missing') {
-      const reason = bare
-        ? 'no executable or observed evidence was ever recorded'
-        : 'the cited evidence file no longer exists';
-      base.status = '🔵';
-      base.notes = [
-        base.notes,
-        `Evidence audit ${AUDIT_DATE} (🟢→🔵): ${reason}; re-verify via \`pnpm verify-d\``,
-      ]
-        .filter(Boolean)
-        .join('. ');
-      demotions.push(`D${d.num}: ${reason}`);
-    } else {
-      base.status = '🟢';
-    }
-    return base;
-  }
-
-  if (implPrs.length > 0) {
-    base.status = '🔵';
-    return base;
-  }
-
-  // A recorded 🔵 with a PR reference predates trailer discipline — trust it.
-  if (recorded === '🔵' && base.pr.trim() !== '') {
-    base.status = '🔵';
-    return base;
-  }
-
-  base.status = '⬜';
-  return base;
-}
-
-/** Escape raw pipes so a title can never break the table again. */
-function cell(text: string): string {
-  return text.replace(/\\\|/g, '|').replace(/\|/g, '\\|');
-}
-
-function renderRows(rows: ComposedRow[]): string {
-  const lines = ['| D# | Title | Status | PR | Verified by | Notes |', '|---|---|---|---|---|---|'];
-  for (const r of rows) {
-    lines.push(
-      `| D${r.num} | ${cell(r.title)} | ${r.status} | ${cell(r.pr)} | ${cell(r.verifiedBy)} | ${cell(r.notes)} |`,
-    );
-  }
-  return lines.join('\n');
-}
-
-function renderSummary(rows: ComposedRow[]): string {
-  const labels: [State, string][] = [
-    ['⬜', 'Not started'],
-    ['🟡', 'In progress'],
-    ['🔵', 'Shipped'],
-    ['🟢', 'Verified'],
-    ['🚫', 'Retired'],
-    ['🔴', 'Blocked'],
-    ['⏸️', 'Deferred'],
-  ];
-  const lines = [SUMMARY_START, ''];
-  for (const [symbol, label] of labels) {
-    lines.push(`- ${symbol} ${label}: ${rows.filter((r) => r.status === symbol).length}`);
-  }
-  lines.push(`- **Total: ${rows.length} D-decisions**`);
-  lines.push('');
-  lines.push(SUMMARY_END);
-  return lines.join('\n');
-}
-
-function spliceBlock(src: string, start: string, end: string, replacement: string): string {
-  const s = src.indexOf(start);
-  const e = src.indexOf(end);
-  if (s === -1 || e === -1 || e < s) {
-    console.error(`✗ ${LOG_PATH} missing markers ${start} ... ${end}`);
-    process.exit(2);
-  }
-  return src.slice(0, s) + replacement + src.slice(e + end.length);
+function compose(
+  decisions: Decision[],
+  prs: PrRef[],
+): { rows: ComposedRow[]; demotions: string[] } {
+  const fragments = readFragments();
+  const shippedBy = deriveShippedBy(prs);
+  const demotions: string[] = [];
+  const rows = decisions.map((d) =>
+    composeRow(
+      d,
+      fragments.get(d.num),
+      shippedBy.get(d.num),
+      evidenceFileStatus,
+      AUDIT_DATE,
+      demotions,
+    ),
+  );
+  return { rows, demotions };
 }
 
 function main(): void {
   const checkMode = process.argv.includes('--check');
+  const strict = process.argv.includes('--strict');
 
   const planPath = resolvePlanPath();
   if (!planPath) {
@@ -387,54 +230,70 @@ function main(): void {
   }
 
   const current = readFileSync(LOG_PATH, 'utf8');
-  const blockStart = current.indexOf(DECISIONS_START);
-  const blockEnd = current.indexOf(DECISIONS_END);
-  if (blockStart === -1 || blockEnd === -1) {
+  if (current.indexOf(DECISIONS_START) === -1 || current.indexOf(DECISIONS_END) === -1) {
     console.error(`✗ ${LOG_PATH} missing markers ${DECISIONS_START} ... ${DECISIONS_END}`);
     process.exit(2);
   }
-  const overlay = parseOverlay(current.slice(blockStart, blockEnd));
 
   const merged = readMergedPrs();
-  const open = readOpenPr();
-  const implementedBy = deriveImplementedBy(open ? [...merged, open] : merged);
-
-  const demotions: string[] = [];
-  const rows = decisions.map((d) =>
-    composeRow(d, overlay.get(d.num), implementedBy.get(d.num) ?? [], demotions),
-  );
-
-  let next = spliceBlock(
-    current,
-    DECISIONS_START,
-    DECISIONS_END,
-    `${DECISIONS_START}\n\n${renderRows(rows)}\n\n${DECISIONS_END}`,
-  );
-  next = spliceBlock(next, SUMMARY_START, SUMMARY_END, renderSummary(rows));
+  const currentPr = readCurrentPr();
+  const { rows, demotions } = compose(decisions, currentPr ? [...merged, currentPr] : merged);
+  const next = renderLog(current, rows);
 
   if (checkMode) {
     if (next === current) {
       console.log(`✓ IMPLEMENTATION-LOG.md is current (${rows.length} D-rows).`);
       return;
     }
-    console.error('✗ IMPLEMENTATION-LOG.md is stale. Run `pnpm generate-impl-log` and commit.');
-    if (open !== null) {
+
+    const drifted = driftedDecisions(current, next);
+    const owned = currentPr
+      ? decisionsOwnedBy(
+          currentPr.body ?? '',
+          currentPr.files.map((f) => f.path),
+        )
+      : new Set<number>();
+
+    // A narrowed gate that cannot identify the PR would pass everything
+    // — a guard whose input is starved reports ✓ having checked nothing,
+    // which is the shape this repo keeps rediscovering. In CI that is a
+    // failure, not a pass.
+    if (!strict && currentPr === null && process.env.GITHUB_ACTIONS === 'true') {
       console.error(
-        `  (This run counted open PR #${open.number}'s own \`Closes\` trailers, so`,
-        'regenerate AFTER opening the PR — generating before it exists misses them.)',
+        '✗ Could not identify the PR this run is for, so "only my rows" cannot be decided.',
+        'Refusing to pass a check that examined nothing.',
+      );
+      process.exit(1);
+    }
+
+    const mine = strict ? drifted : drifted.filter((num) => owned.has(num));
+
+    for (const num of drifted) {
+      console.error(
+        `  D${num}: drifted (${owned.has(num) ? 'this PR owns it' : 'another PR owns it'})`,
       );
     }
-    const currentRows = new Map(
-      [...parseOverlay(current.slice(blockStart, blockEnd)).entries()].map(([k, v]) => [
-        k,
-        `${v.status}|${v.pr}`,
-      ]),
+
+    if (mine.length === 0) {
+      // Drift exists, but none of it is this PR's claim. Failing here is
+      // how five PRs on 2026-08-11 ended up laundering each other's rows
+      // by hand; the PR that owns each row will bring it along.
+      console.log(
+        `✓ No drift on the ${owned.size} decision(s) this PR owns. ` +
+          `${drifted.length} other row(s) are stale and belong to other PRs.`,
+      );
+      return;
+    }
+
+    console.error(
+      `✗ IMPLEMENTATION-LOG.md is stale on ${mine.length} row(s)` +
+        `${strict ? '' : ' this PR owns'}. Run \`pnpm generate-impl-log\` and commit.`,
     );
-    for (const r of rows) {
-      const now = `${r.status}|${r.pr}`;
-      if (currentRows.get(r.num) !== now) {
-        console.error(`  D${r.num}: ${currentRows.get(r.num) ?? '(no row)'} → ${now}`);
-      }
+    if (currentPr !== null) {
+      console.error(
+        `  (This run counted PR #${currentPr.number}'s own \`Closes\` trailers, so`,
+        'regenerate AFTER opening the PR — generating before it exists misses them.)',
+      );
     }
     process.exit(1);
   }
@@ -445,6 +304,11 @@ function main(): void {
     console.log(`  Evidence audit demoted ${demotions.length} row(s) 🟢→🔵:`);
     for (const d of demotions) console.log(`    - ${d}`);
   }
+}
+
+/** Ensure `.impl-log/` exists before something tries to write into it. */
+export function ensureFragmentDir(): void {
+  if (!existsSync(FRAGMENT_DIR)) mkdirSync(FRAGMENT_DIR, { recursive: true });
 }
 
 main();

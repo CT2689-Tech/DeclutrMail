@@ -27,3 +27,9 @@ IMPLEMENTATION-LOG.md
 README.md
 .github/pull_request_template.md
 .claude/agents/**/*.md
+
+# Recorded implementation-log state. Machine-written, and markdown
+# emphasis rules would eat identifiers in evidence paths — prettier
+# turned `__tests__` into `**tests**` here on 2026-08-19, which failed
+# the evidence-file audit and demoted a Verified row.
+.impl-log/

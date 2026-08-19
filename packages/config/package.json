@@ -7,7 +7,15 @@
   "types": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "echo 'no tests yet'",
+    "test": "vitest run",
     "build": "echo 'no build yet'"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./impl-log": "./src/impl-log/index.ts"
+  },
+  "devDependencies": {
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10"
   }
 }

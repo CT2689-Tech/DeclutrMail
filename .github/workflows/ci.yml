@@ -199,17 +199,19 @@ jobs:
 
   impl-log:
     name: Implementation log is derived and current
-    # PR-only BY DESIGN, and now honestly so. The generator used to derive
-    # from merged PRs alone, which left main stale by exactly the rows of
-    # whichever PR had just merged — and the NEXT PR, innocent of the
-    # change, inherited the red and absorbed it by hand. Five PRs in
-    # flight on 2026-08-11 meant five rounds of laundering each other's
-    # drift. The generator now also counts the open PR it is running for,
-    # so a `Closes`-bearing PR carries its own flip and main is never
-    # behind. Running this on push-to-main as well would add nothing but
-    # a window of red nobody can act on — the permanently-red-guardrail
-    # class this repo keeps relearning.
-    if: ${{ github.event_name == 'pull_request' }}
+    # Two modes, because the question differs by event (2026-08-19).
+    #
+    # On a PR the gate asks "is YOUR claim right?" — it fails only on rows
+    # this PR closes or whose `.impl-log/` fragment it edits. Comparing
+    # the whole file failed PRs for rows they had never heard of: five in
+    # flight on 2026-08-11 spent their reviews laundering each other's
+    # drift by hand.
+    #
+    # In the merge queue the candidate IS what becomes main, so the gate
+    # goes strict — any drift there is drift about to land. Running on
+    # push-to-main instead would only produce red nobody can act on, the
+    # permanently-red-guardrail class this repo keeps relearning.
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -226,7 +228,9 @@ jobs:
       # protection rejected on EVERY run — it never once wrote a flip
       # (D158, 2026-07-28). Fix a failure here with:
       #   pnpm generate-impl-log && git add IMPLEMENTATION-LOG.md
-      - run: pnpm generate-impl-log --check
+      - run: >-
+          pnpm generate-impl-log --check
+          ${{ github.event_name == 'merge_group' && '--strict' || '' }}
         env:
           GH_TOKEN: ${{ github.token }}
 
