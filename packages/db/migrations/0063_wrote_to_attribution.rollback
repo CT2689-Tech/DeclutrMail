@@ -1,0 +1,15 @@
+-- Reverse 0063. Purely additive forward, so purely subtractive back:
+-- drop what was added and nothing else.
+--
+-- Note what this does NOT have to do. The earlier draft renamed
+-- `senders.replied_count` and dropped `sender_timeseries.reply_count`,
+-- so its rollback had to RECONSTRUCT both by re-running the old
+-- thread-membership aggregate — correct, verified, and still a
+-- computation standing between a bad deploy and a working database.
+-- Leaving the old columns in place removes that step entirely: the
+-- values were never touched, so there is nothing to rebuild.
+DROP INDEX IF EXISTS "senders_account_normalized_email_idx";
+--> statement-breakpoint
+ALTER TABLE "senders" DROP COLUMN IF EXISTS "wrote_to_count";
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS dm_normalize_email(text);

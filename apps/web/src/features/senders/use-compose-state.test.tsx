@@ -53,7 +53,7 @@ describe('useComposeState — shareable Senders scope', () => {
 
   it('restores search, temporary filters, and sorting from the URL', () => {
     navigation.params = new URLSearchParams(
-      'q=renewals&activity=not-quiet&replied=true&domain=example.com&sort=name&direction=asc',
+      'q=renewals&activity=not-quiet&wrote-to=true&domain=example.com&sort=name&direction=asc',
     );
 
     const { result } = renderHook(() => useComposeState());
@@ -62,7 +62,7 @@ describe('useComposeState — shareable Senders scope', () => {
     expect(result.current.compose).toMatchObject({
       activity: 'quiet',
       activityNegate: true,
-      replied: true,
+      wroteTo: true,
       domain: 'example.com',
     });
     expect(result.current.sort).toBe('name');

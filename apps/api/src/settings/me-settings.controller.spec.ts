@@ -110,7 +110,7 @@ const VIEW = {
     activity: 'quiet' as const,
     activityNegate: false,
     unsubReady: true,
-    replied: null,
+    wroteTo: null,
     protectedFlag: null,
     windowDays: null,
     domain: null,

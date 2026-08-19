@@ -179,13 +179,46 @@ describe('TriageRow — every protection reason names its evidence', () => {
   // the type's spelling instead of the wire's, so nothing caught it.
   it.each([
     ['manual', /you marked it Protected/],
-    ['replied', /you replied at least 3 times/],
+    ['replied', /you wrote to them at least 3 times/],
     ['starred', /you starred a message/],
     ['gmail-important', /Gmail marks it important/],
   ] as const)('renders the exact evidence for %s', (reason, expected) => {
     const row: TriageDecisionRow = { ...rowById('t-sarah'), protectionReason: reason };
     renderRow(row);
     expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  it('says the evidence is gone rather than repeating the old claim (F010)', () => {
+    // The defect the smoke caught: the D245 review's header named 99
+    // stale shields while every row under it still read "you wrote to
+    // them at least 3 times" — the screen contradicting itself on the
+    // rows it exists to surface.
+    const row: TriageDecisionRow = {
+      ...rowById('t-sarah'),
+      protectionReason: 'replied',
+      protectionEvidenceCurrent: false,
+    };
+    renderRow(row);
+    expect(screen.getByText(/we can no longer confirm you wrote to them/)).toBeInTheDocument();
+    expect(screen.queryByText(/you wrote to them at least 3 times/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['null — unmeasurable on this mailbox', null],
+    ['undefined — an API predating the field', undefined],
+    ['true — checked and holding', true],
+  ] as const)('keeps the recorded reason when evidence is %s', (_label, evidence) => {
+    // Only an explicit `false` may contradict a recorded reason.
+    // Coercing unknown would indict every correspondence shield on a
+    // mailbox whose Sent mail simply was not indexed.
+    const row: TriageDecisionRow = {
+      ...rowById('t-sarah'),
+      protectionReason: 'replied',
+      ...(evidence === undefined ? {} : { protectionEvidenceCurrent: evidence }),
+    };
+    renderRow(row);
+    expect(screen.getByText(/you wrote to them at least 3 times/)).toBeInTheDocument();
+    expect(screen.queryByText(/we can no longer confirm/)).not.toBeInTheDocument();
   });
 
   it('never renders the tautology', () => {

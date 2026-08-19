@@ -79,7 +79,7 @@ const PREVIEW_BODY = {
     name: GROUPON.senderName,
     domain: GROUPON.senderDomain,
     lastSeenDays: 0,
-    repliedCount: 0,
+    wroteToCount: 0,
     monthly: 52,
   },
   counts: { all: 47, olderThan30d: 30, olderThan90d: 12, olderThan180d: 5, olderThan365d: 1 },

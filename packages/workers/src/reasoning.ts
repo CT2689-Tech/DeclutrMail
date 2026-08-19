@@ -24,7 +24,7 @@ import type { CascadeResult, CascadeRuleId } from './score-cascade.js';
  *
  * For Phase A and Phase B (no scoring) the template degrades gracefully —
  * "{name} sends {N}/mo." is kept and the second clause swaps to the
- * cascade's audit phrase (e.g. "Kept because you've replied to them.").
+ * cascade's audit phrase (e.g. "Kept because you've written to them.").
  */
 
 /**
@@ -36,11 +36,12 @@ import type { CascadeResult, CascadeRuleId } from './score-cascade.js';
  */
 const RULE_PHRASE = {
   protect_user_defined: "Kept because you've marked them as protected.",
-  protect_replied: "Protected because you've replied to this sender at least three times.",
+  protect_replied:
+    "Protected because you've written to this sender at least three times and heard back.",
   protect_starred: "Protected because you've starred a message from this sender this year.",
   protect_gmail_important:
     'Protected because Gmail marked at least three messages from this Primary-inbox sender important this year.',
-  replied_at_least_once: "Kept because you've replied to them.",
+  wrote_to_at_least_once: "Kept because you've written to them.",
   gmail_primary: 'Kept because Gmail puts them in your Primary inbox.',
   starred_recently: "Kept because you've starred a message from them this year.",
   high_read_rate: 'Kept because you open more than half of their messages.',

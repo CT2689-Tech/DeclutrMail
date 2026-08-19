@@ -203,7 +203,7 @@ function oneSenderHandler() {
               quiet: 0,
               dormant: 0,
               unsubReady: 0,
-              repliedTo: 0,
+              wroteTo: 0,
               protected: 0,
               unsubIgnored: 0,
             },
@@ -226,7 +226,7 @@ function compositePreviewHandler(all: number) {
             name: 'Sender A',
             domain: 'example.com',
             lastSeenDays: 2,
-            repliedCount: 0,
+            wroteToCount: 0,
             monthly: 30,
           },
           counts: {
@@ -485,10 +485,10 @@ describe('SendersScreen — edge states', () => {
     ).toBeInTheDocument();
   });
 
-  it('narrows the list server-side when the "you replied" chip is toggled (D38)', async () => {
-    // Regression: the chip wrote URL state and the BE accepted ?replied=,
+  it('narrows the list server-side when the "you wrote to them" chip is toggled (D38)', async () => {
+    // Regression: the chip wrote URL state and the BE accepted ?wrote-to=,
     // but the FE never sent it — a silent no-op. The stub returns the
-    // replied-to sender ONLY when ?replied=true, so its appearance proves
+    // written-to sender ONLY when ?wrote-to=true, so its appearance proves
     // the param reached the server (and the row set actually narrowed).
     const REPLIED_ROW = {
       ...ROW,
@@ -503,7 +503,7 @@ describe('SendersScreen — edge states', () => {
         method: 'GET',
         path: '/api/senders',
         respond: (_req, url) => {
-          lastReplied = url.searchParams.get('replied');
+          lastReplied = url.searchParams.get('wrote-to');
           const match = lastReplied === 'true';
           return jsonOk({
             data: match ? [REPLIED_ROW] : [ROW, REPLIED_ROW],
@@ -525,9 +525,9 @@ describe('SendersScreen — edge states', () => {
     await screen.findAllByText(/Sender A/);
     expect(screen.getAllByText(/Replied Sender/).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('button', { name: /you replied/i }));
+    fireEvent.click(screen.getByRole('button', { name: /you wrote to them/i }));
 
-    // The refetch carries replied=true and the non-replied sender drops out.
+    // The refetch carries wrote-to=true and the never-written-to sender drops out.
     await waitFor(() => expect(screen.queryByText(/Sender A/)).toBeNull(), { timeout: 2000 });
     expect(screen.getAllByText(/Replied Sender/).length).toBeGreaterThan(0);
     expect(lastReplied).toBe('true');
@@ -674,7 +674,7 @@ describe('SendersScreen — edge states', () => {
                 name: 'Sender A',
                 domain: 'example.com',
                 lastSeenDays: 2,
-                repliedCount: 0,
+                wroteToCount: 0,
                 monthly: 30,
               },
               counts: {
@@ -1045,7 +1045,7 @@ describe('SendersScreen — edge states', () => {
                 name: 'Sender A',
                 domain: 'example.com',
                 lastSeenDays: 2,
-                repliedCount: 0,
+                wroteToCount: 0,
                 monthly: 3,
               },
               counts: {
@@ -1524,7 +1524,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
                 name: 'Sender A',
                 domain: 'example.com',
                 lastSeenDays: 2,
-                repliedCount: 0,
+                wroteToCount: 0,
                 monthly: 30,
               },
               counts: {
@@ -1614,7 +1614,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
                 name: 'Sender A',
                 domain: 'example.com',
                 lastSeenDays: 2,
-                repliedCount: 0,
+                wroteToCount: 0,
                 monthly: 30,
               },
               counts: {

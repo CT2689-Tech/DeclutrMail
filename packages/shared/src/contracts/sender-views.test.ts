@@ -13,7 +13,7 @@ const VIEW: SavedSenderView = {
     activity: 'quiet',
     activityNegate: false,
     unsubReady: true,
-    replied: null,
+    wroteTo: null,
     protectedFlag: null,
     windowDays: 90,
     domain: null,

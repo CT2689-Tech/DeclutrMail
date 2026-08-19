@@ -58,8 +58,8 @@ export interface UseSendersOptions {
   activityNegate?: boolean | undefined;
   /** D38 compose strip — unsub-readiness tri-state. */
   unsubReady?: TriStateFilter | undefined;
-  /** D38 compose strip — "you replied" tri-state. */
-  replied?: TriStateFilter | undefined;
+  /** D38 compose strip — "you wrote to them" tri-state. */
+  wroteTo?: TriStateFilter | undefined;
   /** D38 compose strip — "quiet for N days+" filter. */
   windowDays?: number | undefined;
   /** D38 compose strip — domain substring. */

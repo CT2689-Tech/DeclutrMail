@@ -71,7 +71,7 @@ function writeScope(params: URLSearchParams, scope: SenderScope): void {
   for (const key of [
     'activity',
     'unsub_ready',
-    'replied',
+    'wrote-to',
     'protected',
     'window',
     'domain',
@@ -94,8 +94,8 @@ function writeScope(params: URLSearchParams, scope: SenderScope): void {
   }
   if (compose.unsubReady === true) params.set('unsub_ready', 'true');
   else if (compose.unsubReady === false) params.set('unsub_ready', 'not');
-  if (compose.replied === true) params.set('replied', 'true');
-  else if (compose.replied === false) params.set('replied', 'not');
+  if (compose.wroteTo === true) params.set('wrote-to', 'true');
+  else if (compose.wroteTo === false) params.set('wrote-to', 'not');
   if (compose.protectedFlag === true) params.set('protected', 'true');
   else if (compose.protectedFlag === false) params.set('protected', 'not');
   if (compose.windowDays !== null) params.set('window', String(compose.windowDays));

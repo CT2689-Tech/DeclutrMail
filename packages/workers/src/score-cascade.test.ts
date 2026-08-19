@@ -29,7 +29,7 @@ import {
 function baseSignals(): SenderSignals {
   return {
     isProtected: false,
-    hasReplied: false,
+    hasWrittenTo: false,
     gmailCategory: 'promotions',
     starredInLastYear: false,
     readRate90d: 0.1,
@@ -89,12 +89,12 @@ describe('runCascade — Phase A (protection / engagement)', () => {
   it('replied at least once → keep at 0.98, even with low read rate', () => {
     const result = runCascade({
       ...baseSignals(),
-      hasReplied: true,
+      hasWrittenTo: true,
       readRate90d: 0.01,
     });
     expect(result.verdict).toBe('keep');
     expect(result.confidence).toBe(0.98);
-    expect(result.ruleId).toBe('replied_at_least_once');
+    expect(result.ruleId).toBe('wrote_to_at_least_once');
   });
 
   it('Gmail Primary category → keep at 0.95 (when not replied)', () => {
@@ -145,7 +145,7 @@ describe('runCascade — Phase A cascade ordering (earlier rules win)', () => {
       ...baseSignals(),
       isProtected: true,
       protectionReason: 'user_defined',
-      hasReplied: true,
+      hasWrittenTo: true,
       gmailCategory: 'primary',
       starredInLastYear: true,
     });
@@ -156,10 +156,10 @@ describe('runCascade — Phase A cascade ordering (earlier rules win)', () => {
   it('replied wins over gmail_primary', () => {
     const result = runCascade({
       ...baseSignals(),
-      hasReplied: true,
+      hasWrittenTo: true,
       gmailCategory: 'primary',
     });
-    expect(result.ruleId).toBe('replied_at_least_once');
+    expect(result.ruleId).toBe('wrote_to_at_least_once');
     expect(result.confidence).toBe(0.98);
   });
 

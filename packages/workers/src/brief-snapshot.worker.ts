@@ -509,7 +509,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
           displayName: senders.displayName,
           email: senders.email,
           gmailCategory: senders.gmailCategory,
-          repliedCount: senders.repliedCount,
+          wroteToCount: senders.wroteToCount,
         })
         .from(senders)
         .where(
@@ -558,7 +558,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
         bucket.senderKey,
         (bucket.hasImportant ? 8 : 0) +
           (bucket.hasStarred ? 4 : 0) +
-          ((identity?.repliedCount ?? 0) > 0 ? 2 : 0) +
+          ((identity?.wroteToCount ?? 0) > 0 ? 2 : 0) +
           (identity?.gmailCategory === 'primary' ? 1 : 0),
       );
 

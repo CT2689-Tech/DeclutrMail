@@ -166,7 +166,7 @@ function buildSignals(s: SenderFixture): string[] {
       ? 'Last message received today'
       : `Last message received ${s.lastDays} days ago`,
   ];
-  if (s.repliedCount !== undefined) out.push(`You replied ${s.repliedCount} times`);
+  if (s.wroteToCount !== undefined) out.push(`You wrote to them ${s.wroteToCount} times`);
   return out;
 }
 

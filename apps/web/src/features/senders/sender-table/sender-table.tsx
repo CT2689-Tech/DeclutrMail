@@ -157,14 +157,14 @@ const COLUMNS: ReadonlyArray<{
   { key: null, label: 'Monthly', alignRight: true },
   { key: null, label: 'Trend' },
   // 'Read 30d', not 'Read': the bucket is a rolling 30-day ratio and
-  // this column sits between 'Total' (lifetime) and 'Replied'. Without
+  // this column sits between 'Total' (lifetime) and 'You wrote'. Without
   // the qualifier a sighted user reads 'None' as lifetime — the window
   // was reaching screen readers via aria and nobody else.
   { key: null, label: 'Read 30d' },
   // Reply count — ≥3 replies is the D245 auto-protect trigger, the
   // strongest "don't touch this" fact; the analytical view must show it
   // (grid↔table parity, 2026-07-16).
-  { key: null, label: 'Replied', alignRight: true },
+  { key: null, label: 'You wrote', alignRight: true },
   { key: 'last_seen', label: 'Last seen', alignRight: true },
   { key: null, label: 'Unsub' },
   { key: null, label: '' }, // verbs
@@ -585,18 +585,19 @@ function SenderRow({
             ...cellStyle,
             textAlign: 'right',
             width: 74,
-            color: sender.repliedCount > 0 ? color.fg : color.fgMuted,
+            color: sender.wroteToCount > 0 ? color.fg : color.fgMuted,
             fontFamily: font.mono,
             fontSize: text.sm,
             fontVariantNumeric: 'tabular-nums',
           }}
         >
-          {/* ≥3 replies auto-protects (D245) — the strongest keep signal.
+          {/* Outbound messages ADDRESSED to this sender. >=3 of these
+              plus at least one message FROM them auto-protects (D245).
               Zero renders "0×", never an em-dash: the adjacent Read cell
               uses "—" for "no timeseries / unknown", so a dash here would
-              make "you never replied" and "we don't know" the same glyph
-              on the same row. Matches the grid card. */}
-          {`${sender.repliedCount}×`}
+              make "you never wrote to them" and "we don't know" the same
+              glyph on the same row. Matches the grid card. */}
+          {`${sender.wroteToCount}×`}
         </td>
 
         <td

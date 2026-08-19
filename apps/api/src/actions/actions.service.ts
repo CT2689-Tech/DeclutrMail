@@ -182,7 +182,7 @@ export class ActionsService {
         domain: senders.domain,
         lastSeenAt: senders.lastSeenAt,
         unsubscribeMethod: senders.unsubscribeMethod,
-        repliedCount: senders.repliedCount,
+        wroteToCount: senders.wroteToCount,
       })
       .from(senders)
       .where(and(eq(senders.id, senderId), eq(senders.mailboxAccountId, mailboxAccountId)))
@@ -249,7 +249,7 @@ export class ActionsService {
         // authoritatively by `InitialSyncWorker.buildSenderIndex` and
         // incrementally by `IncrementalSyncWorker`. The number IS the
         // sender-context-strip "you replied N×" copy.
-        repliedCount: sender.repliedCount,
+        wroteToCount: sender.wroteToCount,
         monthly: toCount(monthlyRow?.monthly),
       },
       counts: inbox.counts,

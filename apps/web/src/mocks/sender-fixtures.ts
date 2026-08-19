@@ -85,7 +85,7 @@ export function fixtureToSenderListRow(s: SenderFixture, now: number = Date.now(
     totalReceived: s.totalReceived ?? Math.max(s.monthly * Math.max(s.firstSeenMo, 1), 0),
     // Engine default is 0 — a fixture can pin an explicit value (e.g.
     // an auto-protected engagement-based row).
-    repliedCount: s.repliedCount ?? 0,
+    wroteToCount: s.wroteToCount ?? 0,
     monthlyVolume: s.monthly,
     readRate: s.read,
     // Fixtures don't carry a real trend signal; default to `steady` so

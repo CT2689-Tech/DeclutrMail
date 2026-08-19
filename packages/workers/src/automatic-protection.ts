@@ -9,7 +9,14 @@ import type { OutboxTx } from './outbox-publisher.js';
  * The ordering is intentional: when more than one signal is present we
  * retain the clearest evidence for the user-facing explanation.
  *
- * - replied: at least three outbound replies to this sender
+ * - replied: TWO-WAY correspondence — at least three outbound messages
+ *   ADDRESSED to this sender (their address in To/Cc) AND at least one
+ *   message received FROM them. Both halves are load-bearing (F010): a
+ *   bounce notifier has inbound but nothing addressed to it, and a
+ *   sender you were merely CC'd alongside has neither. The enum value
+ *   stays `replied` — it is an internal identifier, like the `screen`
+ *   verdict, and never user-facing; the user-facing clause lives in
+ *   `@declutrmail/shared/copy/protection` and says what we can prove.
  * - starred: at least one inbound message starred in the past year
  * - gmail_important: at least three inbound messages carrying Gmail's
  *   IMPORTANT label in the past year, AND the sender lives in Gmail's
@@ -58,8 +65,13 @@ export async function applyAutomaticProtection(
         s.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
         s.${sql.identifier('sender_key')} AS sender_key,
         CASE
-          WHEN s.${sql.identifier('replied_count')} >= 3
-            THEN 'replied'::protection_reason
+          WHEN s.${sql.identifier('wrote_to_count')} >= 3 AND EXISTS (
+            SELECT 1
+            FROM ${mailMessages} AS inbound_message
+            WHERE inbound_message.${sql.identifier('mailbox_account_id')} = s.${sql.identifier('mailbox_account_id')}
+              AND inbound_message.${sql.identifier('sender_key')} = s.${sql.identifier('sender_key')}
+              AND inbound_message.${sql.identifier('is_outbound')} = false
+          ) THEN 'replied'::protection_reason
           WHEN EXISTS (
             SELECT 1
             FROM ${mailMessages} AS starred_message

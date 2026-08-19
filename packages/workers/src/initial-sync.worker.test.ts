@@ -1065,14 +1065,15 @@ describe('InitialSyncWorker', () => {
   //     is GE 3, not GT 2; documented at L488)
   describe('trust-canary (spec v1.3 L488-494) — auto-protect on replied ≥ 3', () => {
     /**
-     * Build a fixture where `senderIndex` has `replyCount` outbound
-     * messages on threads they originated. The inbound seed message
-     * shares its `threadId` with the user's outbound replies so the
-     * thread-attribution self-join finds them.
+     * Build a fixture where the user sent `wroteToCount` outbound messages
+     * ADDRESSED to `senderIndex` (`to: senderEmail`). The shared
+     * `threadId` is incidental since mig 0063 — the recipient is what
+     * credits the count. `makeThreadOnlyReplier` below is the same
+     * fixture with the address removed, and must credit nothing.
      */
     function makeRepliedSender(
       senderIndex: number,
-      replyCount: number,
+      wroteToCount: number,
       hasUnsub: boolean,
     ): GmailMessageMetadata[] {
       const base = Date.UTC(2026, 0, 1) + senderIndex * 86_400_000;
@@ -1092,7 +1093,7 @@ describe('InitialSyncWorker', () => {
         listUnsubscribePost: hasUnsub ? 'List-Unsubscribe=One-Click' : null,
       };
       // User's outbound replies on the same thread.
-      const replies: GmailMessageMetadata[] = Array.from({ length: replyCount }, (_, i) => ({
+      const replies: GmailMessageMetadata[] = Array.from({ length: wroteToCount }, (_, i) => ({
         id: `reply-${senderIndex}-${i}`,
         threadId: `thread-${senderIndex}`,
         labelIds: ['SENT'],
@@ -1126,6 +1127,120 @@ describe('InitialSyncWorker', () => {
       }));
     }
 
+    /**
+     * The mailer-daemon shape: a sender whose mail lands in a thread
+     * already full of outbound the user addressed to SOMEONE ELSE.
+     * Thread attribution credited every one of those to this sender —
+     * that is how a mail-delivery subsystem scored 14 "replies" and got
+     * a permanent shield (F010).
+     */
+    function makeThreadOnlyReplier(senderIndex: number, count: number): GmailMessageMetadata[] {
+      const base = Date.UTC(2026, 0, 1) + senderIndex * 86_400_000;
+      const senderEmail = `sender${senderIndex}@example.com`;
+      const inbound: GmailMessageMetadata = {
+        id: `bounce-${senderIndex}`,
+        threadId: `thread-${senderIndex}`,
+        labelIds: ['INBOX'],
+        snippet: `bounce for sender ${senderIndex}`,
+        internalDate: String(base),
+        from: `Sender ${senderIndex} <${senderEmail}>`,
+        subject: `Subject ${senderIndex}`,
+        to: null,
+        cc: null,
+        listUnsubscribe: null,
+        listUnsubscribePost: null,
+      };
+      const outbound: GmailMessageMetadata[] = Array.from({ length: count }, (_, i) => ({
+        id: `elsewhere-${senderIndex}-${i}`,
+        threadId: `thread-${senderIndex}`,
+        labelIds: ['SENT'],
+        snippet: `note ${i}`,
+        internalDate: String(base + (i + 1) * 60_000),
+        from: 'Owner <owner@declutrmail.ai>',
+        subject: `Re: Subject ${senderIndex}`,
+        // Addressed to a THIRD PARTY, never to the sender above.
+        to: 'someone.else@example.org',
+        cc: null,
+        listUnsubscribe: null,
+        listUnsubscribePost: null,
+      }));
+      return [inbound, ...outbound];
+    }
+
+    it('outbound sharing a thread but addressed elsewhere credits nothing (F010)', async () => {
+      // Five outbound messages in the sender's thread, none addressed to
+      // them. Under thread attribution this was 5 and crossed the
+      // auto-protect threshold; the correct answer is 0 and unprotected.
+      const client = new FakeGmailClient(makeThreadOnlyReplier(7, 5));
+      await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+        { mailboxAccountId },
+        CTX,
+      );
+
+      const key = deriveSenderKey('sender7@example.com');
+      const [row] = await db
+        .select({ wroteToCount: senders.wroteToCount })
+        .from(senders)
+        .where(eq(senders.senderKey, key));
+      expect(row!.wroteToCount).toBe(0);
+
+      const policies = await db
+        .select({
+          senderKey: schema.senderPolicies.senderKey,
+          isProtected: schema.senderPolicies.isProtected,
+        })
+        .from(schema.senderPolicies);
+      expect(policies.find((p) => p.senderKey === key)?.isProtected ?? false).toBe(false);
+    });
+
+    it('credits a `+suffix` alias of the sender address (D12 normalization)', async () => {
+      // A recipient of `sender8+news@example.com` IS the sender
+      // `sender8@example.com` — same `sender_key` by construction. A raw
+      // address comparison misses this, and on the founder's mailbox it
+      // missed 5 senders with 3-7 messages each, which would have
+      // withdrawn evidence from shields that deserve to stand.
+      const base = Date.UTC(2026, 0, 1) + 8 * 86_400_000;
+      const inbound: GmailMessageMetadata = {
+        id: 'inbound-8',
+        threadId: 'thread-8',
+        labelIds: ['INBOX'],
+        snippet: 'from sender 8',
+        internalDate: String(base),
+        from: 'Sender 8 <sender8@example.com>',
+        subject: 'Subject 8',
+        to: null,
+        cc: null,
+        listUnsubscribe: null,
+        listUnsubscribePost: null,
+      };
+      const outbound: GmailMessageMetadata[] = Array.from({ length: 3 }, (_, i) => ({
+        id: `alias-8-${i}`,
+        threadId: `unrelated-thread-${i}`,
+        labelIds: ['SENT'],
+        snippet: `note ${i}`,
+        internalDate: String(base + (i + 1) * 60_000),
+        from: 'Owner <owner@declutrmail.ai>',
+        subject: 'Hello',
+        // Different case AND a `+suffix` alias — both normalize away.
+        to: 'Sender8+News@Example.com',
+        cc: null,
+        listUnsubscribe: null,
+        listUnsubscribePost: null,
+      }));
+      const client = new FakeGmailClient([inbound, ...outbound]);
+      await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+        { mailboxAccountId },
+        CTX,
+      );
+
+      const key = deriveSenderKey('sender8@example.com');
+      const [row] = await db
+        .select({ wroteToCount: senders.wroteToCount })
+        .from(senders)
+        .where(eq(senders.senderKey, key));
+      expect(row!.wroteToCount).toBe(3);
+    });
+
     it('replied ≥ 3 → sender is protected with replied provenance', async () => {
       // Sender 0 has 5 replies (above threshold), sender 1 has exactly 2
       // (at boundary — still below), sender 2 has 0 (no engagement).
@@ -1141,9 +1256,9 @@ describe('InitialSyncWorker', () => {
       );
 
       const senderRows = await db
-        .select({ senderKey: senders.senderKey, repliedCount: senders.repliedCount })
+        .select({ senderKey: senders.senderKey, wroteToCount: senders.wroteToCount })
         .from(senders);
-      const bySender = new Map(senderRows.map((r) => [r.senderKey, r.repliedCount]));
+      const bySender = new Map(senderRows.map((r) => [r.senderKey, r.wroteToCount]));
       expect(bySender.get(deriveSenderKey('sender0@example.com'))).toBe(5);
       expect(bySender.get(deriveSenderKey('sender1@example.com'))).toBe(2);
       expect(bySender.get(deriveSenderKey('sender2@example.com'))).toBe(0);

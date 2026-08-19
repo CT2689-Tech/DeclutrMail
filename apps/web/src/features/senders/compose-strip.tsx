@@ -9,7 +9,7 @@
  *
  *   • Activity bucket (radio across active / quiet / dormant)
  *   • Has-unsub toggle (tri-state: required / negated / absent)
- *   • You-replied toggle (tri-state)
+ *   • You-wrote-to-them toggle (tri-state)
  *   • Protected toggle (tri-state)
  *   • Quiet-for window (popover: any / 30d / 90d / 6mo / 1yr)
  *   • Domain substring (popover with free-text + suggestions)
@@ -40,7 +40,7 @@ export interface ComposeState {
   /** When true, the activity bucket is NEGATED (NOT-active, etc.). */
   activityNegate: boolean;
   unsubReady: TriStateFilter;
-  replied: TriStateFilter;
+  wroteTo: TriStateFilter;
   protectedFlag: TriStateFilter;
   windowDays: number | null;
   domain: string | null;
@@ -56,7 +56,7 @@ export const EMPTY_COMPOSE: ComposeState = {
   activity: null,
   activityNegate: false,
   unsubReady: null,
-  replied: null,
+  wroteTo: null,
   protectedFlag: null,
   windowDays: null,
   domain: null,
@@ -81,7 +81,7 @@ export interface ComposeCounts {
   quiet: number;
   dormant: number;
   unsubReady: number;
-  repliedTo: number;
+  wroteTo: number;
   protected: number;
   /** D51 — "unsub'd, still emailing" axis count. May be undefined on
    *  older wire payloads; the chip then renders without a count. */
@@ -144,10 +144,10 @@ export function ComposeStrip({
         onChange={(unsubReady) => onChange({ ...state, unsubReady })}
       />
       <ToggleChip
-        label="you replied"
-        count={counts?.repliedTo}
-        value={state.replied}
-        onChange={(replied) => onChange({ ...state, replied })}
+        label="you wrote to them"
+        count={counts?.wroteTo}
+        value={state.wroteTo}
+        onChange={(wroteTo) => onChange({ ...state, wroteTo })}
       />
       <ToggleChip
         label="protected"
@@ -213,7 +213,7 @@ export function hasAnyFilter(s: ComposeState): boolean {
   return (
     s.activity !== null ||
     s.unsubReady !== null ||
-    s.replied !== null ||
+    s.wroteTo !== null ||
     s.protectedFlag !== null ||
     s.windowDays !== null ||
     s.domain !== null ||

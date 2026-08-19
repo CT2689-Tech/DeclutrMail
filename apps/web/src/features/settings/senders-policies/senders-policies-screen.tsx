@@ -144,10 +144,10 @@ export function SendersPoliciesScreen() {
               Describe the guard, not an outcome we do not control. */}
           DeclutrMail&apos;s bulk and automatic actions skip these senders — it won&apos;t archive,
           delete, or unsubscribe them on its own. An action you take on one sender yourself still
-          applies. You can protect a sender, and DeclutrMail also protects one when you reply
-          repeatedly, star their mail, or Gmail keeps marking it important. Each row shows which of
-          those applies, and Unprotect removes it — automatic protection won&apos;t re-apply
-          afterwards.
+          applies. You can protect a sender, and DeclutrMail also protects one when you write to
+          them repeatedly and hear back, star their mail, or Gmail keeps marking it important. Each
+          row shows which of those applies, and Unprotect removes it — automatic protection
+          won&apos;t re-apply afterwards.
         </p>
       </div>
 
@@ -231,7 +231,7 @@ export function SendersPoliciesScreen() {
                  same claim the page's intro paragraph was already fixed
                  for. Naming the automatic triggers also stops an empty
                  result reading as a broken scan. */
-              description="Nothing here is protected yet. DeclutrMail protects a sender on its own once you've replied at least three times, starred one of their messages, or Gmail keeps marking them important — and you can protect one yourself from its detail page. Protected senders are skipped by bulk and automatic actions."
+              description="Nothing here is protected yet. DeclutrMail protects a sender on its own once you've written to them at least three times and heard back, starred one of their messages, or Gmail keeps marking them important — and you can protect one yourself from its detail page. Protected senders are skipped by bulk and automatic actions."
               action={
                 <Link href="/senders" style={{ textDecoration: 'none' }}>
                   <Button size="sm">Browse senders</Button>
@@ -315,6 +315,7 @@ function compareKnownDesc(left: number | null | undefined, right: number | null 
 function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
   const setPolicy = useSetSenderPolicy();
   const reason = normalizeProtectionReason(sender.protectionFlags.protectionReason);
+  const evidenceStale = sender.protectionFlags.protectionEvidenceCurrent === false;
   const shielded = sender.unreadInboxCount;
 
   return (
@@ -350,7 +351,17 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
             Wording comes from the one shared source, so it reads the
             same here, in Triage, in the Screener and on Sender Detail. */}
         <div style={{ fontSize: 12, color: color.fgSoft, marginTop: 2 }}>
-          {protectionReasonLabel(reason)}
+          {/* A `replied` shield whose evidence no longer holds says so
+              instead of repeating the old claim. ONLY an explicit
+              `false` triggers this: `undefined` (older API) and `null`
+              (mailbox with no outbound indexed) both mean "no claim to
+              contradict", and treating either as unsupported would
+              indict every correspondence shield at once. Nothing has
+              been unprotected — the sweep never withdraws one — so the
+              line says what to do, not what happened. */}
+          {evidenceStale
+            ? 'Protected · we can no longer confirm you wrote to them'
+            : protectionReasonLabel(reason)}
           {/* What the protection is holding back — omitted when we do
               not know (an API predating the field) or when there is
               nothing in the inbox, rather than printed as a confident

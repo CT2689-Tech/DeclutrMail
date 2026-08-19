@@ -179,8 +179,19 @@ export type OnboardingCompleteRequest = z.infer<typeof OnboardingCompleteRequest
 // never succeed. Unknown keys are stripped instead. Request schemas
 // keep `.strict()` — rejecting unknown INPUT is the server's job.
 export const OnboardingProtectionSplitSchema = z.object({
-  /** Protected because the user replied at least 3 times. */
+  /** Protected by two-way correspondence, and still supported by it. */
   strong: z.number().int().min(0),
+  /**
+   * Protected by two-way correspondence whose evidence no longer holds
+   * (mig 0063 / F010). The shield is NOT withdrawn — these surface so
+   * the user keeps or removes each one deliberately.
+   *
+   * Optional on the wire: an older API pod cannot send it, and treating
+   * its absence as `0` is the honest default (that build shows no stale
+   * shields rather than inventing a count). The FE must not present a
+   * missing value as "none found" in copy that implies a check ran.
+   */
+  unsupported: z.number().int().min(0).optional(),
   /** Protected by one star, or by repeated Gmail importance. */
   weak: z.number().int().min(0),
   /**

@@ -4,7 +4,7 @@
  * The list-row adaptation is GONE (2026-07-16 wire unification): the
  * `Sender` model IS the wire row plus derived fields, built by
  * `enrichSenderRow` in `../data`. The hand-mapped adapter this file
- * used to carry dropped `repliedCount` and coerced `readRate: null`
+ * used to carry dropped `wroteToCount` and coerced `readRate: null`
  * into a fake "never read" — a class of bug the spread-based enrich
  * makes structurally impossible.
  *

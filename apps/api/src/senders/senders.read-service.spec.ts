@@ -1268,6 +1268,7 @@ describe('SendersReadService', () => {
           isProtected: true,
           protectionReason: 'user_defined',
           protectionSetAt: protectedAt.toISOString(),
+          protectionEvidenceCurrent: true,
         });
       });
 
@@ -1287,6 +1288,7 @@ describe('SendersReadService', () => {
           isProtected: false,
           protectionReason: null,
           protectionSetAt: null,
+          protectionEvidenceCurrent: true,
         });
       });
 
@@ -1322,6 +1324,7 @@ describe('SendersReadService', () => {
           isProtected: false,
           protectionReason: null,
           protectionSetAt: null,
+          protectionEvidenceCurrent: true,
         });
       });
     });
@@ -1610,6 +1613,7 @@ describe('SendersReadService', () => {
         isProtected: true,
         protectionReason: 'user_defined',
         protectionSetAt: protectedAt.toISOString(),
+        protectionEvidenceCurrent: true,
       });
     });
 
@@ -1624,6 +1628,7 @@ describe('SendersReadService', () => {
         isProtected: false,
         protectionReason: null,
         protectionSetAt: null,
+        protectionEvidenceCurrent: true,
       });
     });
 

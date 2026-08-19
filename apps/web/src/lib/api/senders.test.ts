@@ -60,8 +60,8 @@ describe('fetchSenders', () => {
     expect(env.meta.pagination.hasMore).toBe(true);
   });
 
-  it('encodes the replied tri-state as ?replied=true / not / omitted (D38)', async () => {
-    // Regression: the "you replied" chip wrote URL state but the fetcher
+  it('encodes the wrote-to tri-state as ?wrote-to=true / not / omitted (D38)', async () => {
+    // Regression: the "you wrote to them" chip wrote URL state but the fetcher
     // never mapped it to the wire, so the chip was a silent no-op.
     const observed: Array<string | null> = [];
     installFetchStub([
@@ -69,7 +69,7 @@ describe('fetchSenders', () => {
         method: 'GET',
         path: '/api/senders',
         respond: (_req, url) => {
-          observed.push(url.searchParams.get('replied'));
+          observed.push(url.searchParams.get('wrote-to'));
           return jsonOk({
             data: [],
             meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
@@ -78,9 +78,9 @@ describe('fetchSenders', () => {
       },
     ]);
 
-    await fetchSenders({ replied: true });
-    await fetchSenders({ replied: false });
-    await fetchSenders({ replied: null });
+    await fetchSenders({ wroteTo: true });
+    await fetchSenders({ wroteTo: false });
+    await fetchSenders({ wroteTo: null });
     await fetchSenders();
 
     expect(observed).toEqual(['true', 'not', null, null]);

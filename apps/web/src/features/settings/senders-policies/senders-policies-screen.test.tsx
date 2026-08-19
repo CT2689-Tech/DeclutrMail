@@ -409,9 +409,63 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     ]);
     renderScreen();
 
-    expect(await screen.findByText(/you replied at least 3 times/)).toBeInTheDocument();
+    expect(await screen.findByText(/you wrote to them at least 3 times/)).toBeInTheDocument();
     expect(screen.getByText(/you starred a message/)).toBeInTheDocument();
     expect(screen.getByText(/Gmail marks it important/)).toBeInTheDocument();
+  });
+
+  it('says so when a correspondence shield can no longer be confirmed (F010)', async () => {
+    // mig 0063 corrected what the count behind `replied` measures, so
+    // some shields rest on evidence that never existed. The row must not
+    // keep repeating the old claim — and must not imply the shield was
+    // removed, because it was not.
+    stubProtectedPage([
+      {
+        ...BASE_ROW,
+        id: 'a',
+        displayName: 'Bounce Notifier',
+        protectionFlags: {
+          ...PROTECTION_FLAGS_ON,
+          protectionReason: 'replied',
+          protectionEvidenceCurrent: false,
+        },
+      },
+    ]);
+    renderScreen();
+
+    expect(
+      await screen.findByText(/we can no longer confirm you wrote to them/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/you wrote to them at least 3 times/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['null — mailbox has no outbound indexed', null],
+    ['undefined — an API predating the field', undefined],
+    ['true — checked and holding', true],
+  ])('keeps the recorded reason when evidence is %s', async (_label, evidence) => {
+    // THE BLIND CASE, from the display side. Only an explicit `false`
+    // may contradict a recorded reason; anything else is "no claim", and
+    // coercing it would tell the user their shields are unfounded on
+    // every mailbox we simply cannot measure.
+    stubProtectedPage([
+      {
+        ...BASE_ROW,
+        id: 'a',
+        displayName: 'Colleague',
+        protectionFlags: {
+          ...PROTECTION_FLAGS_ON,
+          protectionReason: 'replied',
+          ...(evidence === undefined ? {} : { protectionEvidenceCurrent: evidence }),
+        },
+      },
+    ]);
+    renderScreen();
+
+    expect(await screen.findByText(/you wrote to them at least 3 times/)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/we can no longer confirm you wrote to them/),
+    ).not.toBeInTheDocument();
   });
 
   it('leads with the protection shielding the most unread mail', async () => {

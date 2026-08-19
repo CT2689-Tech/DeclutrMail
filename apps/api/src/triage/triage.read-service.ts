@@ -14,6 +14,10 @@ import {
   type TriageVerdict,
 } from '@declutrmail/db';
 import { cleanupActionsPerMonthFor } from '@declutrmail/shared/entitlements';
+import {
+  evaluateProtectionEvidence,
+  PROTECTION_WROTE_TO_THRESHOLD,
+} from '@declutrmail/shared/senders';
 // The weak/strong split is product vocabulary, not a query detail —
 // shared so the API, the review copy and every surface that names a
 // protection reason cannot drift apart (D245 / CLAUDE.md §2.6).
@@ -56,6 +60,16 @@ export interface TriageQueueRow {
   reasoning: string;
   signals: string[];
   protectionReason: 'manual' | 'replied' | 'starred' | 'gmail-important' | null;
+  /**
+   * Does the recorded `protectionReason` still hold? See
+   * `ProtectionFlags.protectionEvidenceCurrent` — same rule, same
+   * `null`-means-unmeasurable contract.
+   *
+   * Load-bearing on the D245 protection review: the header names the
+   * stale shields, so a row that keeps asserting the old reason
+   * contradicts the screen it sits on.
+   */
+  protectionEvidenceCurrent: boolean | null;
   monthlyVolume: number;
   /**
    * Raw last-90-day message count. Used by the FE to render an honest
@@ -97,8 +111,27 @@ export interface TriageQueueRow {
 
 /** Result of {@link TriageReadService.readProtectionReview}. */
 export interface ProtectionReviewRead {
-  /** Senders protected because the user replied ≥3 times. */
+  /**
+   * Senders protected by two-way correspondence whose evidence STILL
+   * holds — at least three messages addressed to them, at least one
+   * received back. The reassurance count.
+   */
   strong: number;
+  /**
+   * Senders protected by two-way correspondence whose evidence no longer
+   * holds (mig 0063 / F010).
+   *
+   * They were shielded on a count that credited every outbound message
+   * in a thread to every inbound sender in it, so some were granted on
+   * mail that was never addressed to them at all. THE SHIELD IS NOT
+   * WITHDRAWN — the sweep never unprotects a `replied` row. They surface
+   * here so the user keeps or removes each one deliberately, because a
+   * shield that disappears without being mentioned is the worse failure.
+   *
+   * Zero on a mailbox with no outbound mail indexed: the rule is then
+   * unmeasurable, not failed.
+   */
+  unsupported: number;
   /** Senders protected by one star or repeated Gmail importance. */
   weak: number;
   /**
@@ -108,12 +141,25 @@ export interface ProtectionReviewRead {
    */
   manual: number;
   /**
-   * Up to `limit` weakly-protected sender keys, most shielded UNREAD
-   * inbox mail first. Senders shielding nothing are still returned (a
-   * wrong protection with an empty inbox is still wrong) — they simply
-   * rank last.
+   * Up to `limit` sender keys worth reviewing: the `unsupported` ones
+   * FIRST, then the weakly-protected ones, each group ordered by the
+   * UNREAD inbox mail its protection is shielding.
+   *
+   * Unsupported leads because its evidence is ABSENT, while a weak
+   * protection's evidence is real but one-way — a star did happen. Within
+   * each group, senders shielding nothing are still returned (a wrong
+   * protection over an empty inbox is still wrong); they rank last.
    */
   senderKeys: string[];
+  /**
+   * The subset of `senderKeys` whose protection is `unsupported`.
+   *
+   * Returned separately because the caller has to treat them
+   * differently in two places a merged list cannot express: they are
+   * `replied` rows, so a weak-reason filter drops them, and they lead
+   * the review as a GROUP rather than by shielded mail.
+   */
+  unsupportedSenderKeys: string[];
 }
 
 /** Optional presentation ordering applied before the queue limit. */
@@ -353,6 +399,8 @@ export class TriageReadService {
         lastSeenAt: senders.lastSeenAt,
         protectionReason: senderPolicies.protectionReason,
         isProtected: senderPolicies.isProtected,
+        wroteToCount: senders.wroteToCount,
+        totalReceived: senders.totalReceived,
       })
       .from(triageDecisions)
       .innerJoin(
@@ -401,6 +449,11 @@ export class TriageReadService {
     if (rows.length === 0) {
       return [];
     }
+
+    // Mailbox-level, read once per call rather than per row: without
+    // outbound mail indexed, "you wrote to them" is unmeasurable and
+    // every correspondence shield would otherwise read as unsupported.
+    const mailboxHasOutbound = await this.mailboxHasOutboundIndexed(input.mailboxAccountId);
 
     // Aggregate per-sender message stats in a single follow-up query
     // (cheaper than a correlated subquery per row).
@@ -497,6 +550,13 @@ export class TriageReadService {
       // is annotated in the reasoning so the user sees why.
       const protectionReason = mapProtectionReason(r.isProtected, r.protectionReason);
       const isProtected = protectionReason !== null;
+      const protectionEvidenceCurrent = evaluateProtectionEvidence({
+        isProtected: r.isProtected ?? false,
+        reason: normalizeProtectionReason(r.protectionReason),
+        wroteToCount: Number(r.wroteToCount ?? 0),
+        receivedCount: Number(r.totalReceived ?? 0),
+        mailboxHasOutbound,
+      });
 
       return {
         id: r.decisionId,
@@ -519,6 +579,7 @@ export class TriageReadService {
           unsubscribeMethod: r.unsubscribeMethod,
         }),
         protectionReason,
+        protectionEvidenceCurrent,
         monthlyVolume,
         /**
          * Raw last-90-day count — the underlying signal `monthlyVolume`
@@ -562,6 +623,22 @@ export class TriageReadService {
    * about protection. The keys feed a queue read, which applies the
    * queue's own exclusions.
    */
+  /**
+   * Does this mailbox have ANY outbound mail indexed? Gates the
+   * unsupported-evidence split — see `evaluateProtectionEvidence`.
+   * `LIMIT 1` so it stops at the first row.
+   */
+  private async mailboxHasOutboundIndexed(mailboxAccountId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: mailMessages.id })
+      .from(mailMessages)
+      .where(
+        and(eq(mailMessages.mailboxAccountId, mailboxAccountId), eq(mailMessages.isOutbound, true)),
+      )
+      .limit(1);
+    return row !== undefined;
+  }
+
   async readProtectionReview(input: {
     mailboxAccountId: string;
     limit: number;
@@ -577,24 +654,58 @@ export class TriageReadService {
     // `normalizeProtectionReason` / `isWeakProtectionReason` keeps one
     // source, and an unrecognized reason is LOGGED and excluded rather
     // than silently absorbed — never guessed into a bucket.
+    //
+    // `replied` rows additionally split on whether their evidence still
+    // holds (mig 0063). The join to `senders` carries `wrote_to_count`
+    // and `total_received`; the mailbox-level "is this measurable at
+    // all" gate is read separately below, because a mailbox with no
+    // indexed outbound would otherwise report every shield unsupported.
     const reasonRows = await this.db
-      .select({ reason: senderPolicies.protectionReason, n: count() })
+      .select({
+        reason: senderPolicies.protectionReason,
+        wroteToCount: senders.wroteToCount,
+        receivedCount: senders.totalReceived,
+        n: count(),
+      })
       .from(senderPolicies)
+      .leftJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, senderPolicies.mailboxAccountId),
+          eq(senders.senderKey, senderPolicies.senderKey),
+        ),
+      )
       .where(
         and(
           eq(senderPolicies.mailboxAccountId, input.mailboxAccountId),
           eq(senderPolicies.isProtected, true),
         ),
       )
-      .groupBy(senderPolicies.protectionReason);
+      .groupBy(senderPolicies.protectionReason, senders.wroteToCount, senders.totalReceived);
+
+    const mailboxHasOutbound = await this.mailboxHasOutboundIndexed(input.mailboxAccountId);
+
     let strong = 0;
+    let unsupported = 0;
     let weak = 0;
     let manual = 0;
     for (const row of reasonRows) {
       const id = normalizeProtectionReason(row.reason);
       const n = Number(row.n);
-      if (id === 'replied') strong += n;
-      else if (id !== null && isWeakProtectionReason(id)) weak += n;
+      if (id === 'replied') {
+        const holds = evaluateProtectionEvidence({
+          isProtected: true,
+          reason: 'replied',
+          wroteToCount: Number(row.wroteToCount ?? 0),
+          receivedCount: Number(row.receivedCount ?? 0),
+          mailboxHasOutbound,
+        });
+        // `false` is the ONLY value that surfaces a shield. `null` means
+        // unmeasurable and rides with the reassurance — see
+        // `evaluateProtectionEvidence`.
+        if (holds === false) unsupported += n;
+        else strong += n;
+      } else if (id !== null && isWeakProtectionReason(id)) weak += n;
       else if (id === 'user_defined') manual += n;
       else {
         this.logger.warn(
@@ -604,8 +715,8 @@ export class TriageReadService {
       }
     }
 
-    if (weak === 0) {
-      return { strong, weak, manual, senderKeys: [] };
+    if (weak === 0 && unsupported === 0) {
+      return { strong, unsupported, weak, manual, senderKeys: [], unsupportedSenderKeys: [] };
     }
 
     // ADR-0008 §3 exception: see the marker above.
@@ -620,6 +731,32 @@ export class TriageReadService {
         ),
       );
     const weakKeys = weakRows.map((r) => r.senderKey);
+
+    // The `replied` shields whose evidence no longer holds. Same
+    // predicate as the bucketing above, expressed in SQL so the row set
+    // and the count cannot drift; `mailboxHasOutbound` gates it entirely,
+    // matching `evaluateProtectionEvidence`'s `null` branch.
+    const unsupportedRows = mailboxHasOutbound
+      ? await this.db
+          .select({ senderKey: senderPolicies.senderKey })
+          .from(senderPolicies)
+          .innerJoin(
+            senders,
+            and(
+              eq(senders.mailboxAccountId, senderPolicies.mailboxAccountId),
+              eq(senders.senderKey, senderPolicies.senderKey),
+            ),
+          )
+          .where(
+            and(
+              eq(senderPolicies.mailboxAccountId, input.mailboxAccountId),
+              eq(senderPolicies.isProtected, true),
+              eq(senderPolicies.protectionReason, 'replied'),
+              sql`(${senders.wroteToCount} < ${PROTECTION_WROTE_TO_THRESHOLD} OR ${senders.totalReceived} = 0)`,
+            ),
+          )
+      : [];
+    const unsupportedKeys = unsupportedRows.map((r) => r.senderKey);
 
     // Ranked by shielded unread mail. LEFT-side aggregation only covers
     // senders that HAVE inbox mail, so the ranked list is padded from
@@ -636,7 +773,7 @@ export class TriageReadService {
       .where(
         senderInboxActionWhere({
           mailboxAccountId: input.mailboxAccountId,
-          senderKeys: weakKeys,
+          senderKeys: [...unsupportedKeys, ...weakKeys],
         }),
       )
       .groupBy(mailMessages.senderKey);
@@ -644,11 +781,19 @@ export class TriageReadService {
     const byKey = new Map(
       shielded.map((r) => [r.senderKey, { unread: Number(r.unread), inbox: Number(r.inbox) }]),
     );
-    const ranked = [...weakKeys].sort((a, b) => {
+    const byShieldedMail = (a: string, b: string) => {
       const left = byKey.get(a) ?? { unread: 0, inbox: 0 };
       const right = byKey.get(b) ?? { unread: 0, inbox: 0 };
       return right.unread - left.unread || right.inbox - left.inbox || a.localeCompare(b);
-    });
+    };
+    // Unsupported first as a GROUP, not merged and re-sorted: an absent
+    // justification outranks a real-but-one-way one regardless of how
+    // much mail either shields, and interleaving them would let a single
+    // heavily-shielding star push every stale shield off a 5-row review.
+    const ranked = [
+      ...[...unsupportedKeys].sort(byShieldedMail),
+      ...[...weakKeys].sort(byShieldedMail),
+    ];
 
     // No silent caps. Truncating the ranked pool is legitimate — the
     // review shows five rows — but a caller that never hears about the
@@ -662,7 +807,16 @@ export class TriageReadService {
       );
     }
 
-    return { strong, weak, manual, senderKeys: ranked.slice(0, input.limit) };
+    const kept = ranked.slice(0, input.limit);
+    const keptSet = new Set(kept);
+    return {
+      strong,
+      unsupported,
+      weak,
+      manual,
+      senderKeys: kept,
+      unsupportedSenderKeys: unsupportedKeys.filter((key) => keptSet.has(key)),
+    };
   }
 
   /**
