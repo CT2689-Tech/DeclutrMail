@@ -130,8 +130,8 @@ export interface TriageDecisionRow {
   totalAllTime: number;
   /**
    * Unread inbound messages sitting in the INBOX right now — the subset
-   * of what an Archive / Later / Delete would move that the user has
-   * never opened.
+   * of what an Archive / Later / Delete would move that Gmail has
+   * never marked read.
    *
    * For a Protected sender this is what the protection is SHIELDING
    * from bulk and automatic cleanup, which is what makes a wrong
@@ -210,7 +210,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     unsubscribeMethod: 'one_click',
     verdict: 'archive',
     confidence: 0.94,
-    reasoning: "You open 0% of Groupon's 52/mo. Volume is high and they send most days.",
+    reasoning: "0% of Groupon's 52/mo is marked read. Volume is high and they send most days.",
     signals: [
       'Read rate: 0% over the last 90 days',
       'Volume: 52 messages/month (4-week trailing average)',
@@ -238,7 +238,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     unsubscribeMethod: 'one_click',
     verdict: 'unsubscribe',
     confidence: 0.91,
-    reasoning: 'Volume spiked 2× while you almost never opened (0% read).',
+    reasoning: 'Volume spiked 2× while almost nothing was marked read (0%).',
     signals: [
       'Read rate: 0% over the last 90 days',
       'Volume: 64 messages/month (4-week trailing average)',
@@ -267,7 +267,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     unsubscribeMethod: 'one_click',
     verdict: 'archive',
     confidence: 0.88,
-    reasoning: "You open 0% of Old Navy's 48/mo. They send most days.",
+    reasoning: "0% of Old Navy's 48/mo is marked read. They send most days.",
     signals: [
       'Read rate: 0% over the last 90 days',
       'Volume: 48 messages/month',

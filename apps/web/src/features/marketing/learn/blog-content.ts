@@ -28,13 +28,13 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
       rows: [
         {
           sender: 'Release Notes Weekly',
-          detail: '47 messages · 2 opened · no replies',
+          detail: '47 messages · 2 marked read · no replies',
           action: 'Review sender',
           result: 'One sender decision replaces 47 repeated triage moments.',
         },
         {
           sender: 'Design Partner',
-          detail: '19 messages · 17 opened · 8 replies',
+          detail: '19 messages · 17 marked read · 8 replies',
           action: 'Protect',
           result: 'High-value correspondence stays out of automation.',
         },
@@ -61,7 +61,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         title: 'Compression changes the shape of the work',
         paragraphs: [
           'Suppose 500 emails come from 24 recurring senders. Message-first cleanup presents 500 checkboxes. Sender-first cleanup presents 24 questions: is this sender useful, noisy, or uncertain? The number of final Gmail changes may still be large, but the number of human decisions is smaller.',
-          'That compression is valuable only when the product keeps the underlying facts available. Volume, recent subjects, opens, replies, and current labels should explain why a sender is in view. A recommendation without facts merely replaces one opaque list with another.',
+          'That compression is valuable only when the product keeps the underlying facts available. Volume, recent subjects, read state, replies, and current labels should explain why a sender is in view. A recommendation without facts merely replaces one opaque list with another.',
           'The user should also be able to decline the compression. When the sender is a marketplace, school, healthcare system, or another shared platform, open the messages in Gmail and decide at message level. A sender card is a review unit, not a claim that every message is interchangeable.',
         ],
       },
@@ -84,7 +84,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         title: 'Recommendations should narrow attention, not claim certainty',
         paragraphs: [
           'Sender volume and engagement are falsifiable facts. Category labels such as “promotional,” “financial,” or “security-sensitive” are model judgments that can sound more certain than their evidence. DeclutrMail deliberately avoids machine-learning category prediction and auto-protection based on guessed content classes.',
-          'The recommendation system can say that a sender arrived often, was rarely opened, and received no replies. It cannot conclude that the sender is safe to delete. The product can propose Archive or Unsubscribe while keeping the user’s Protected decisions above the recommendation.',
+          'The recommendation system can say that a sender arrived often, was rarely marked read, and received no replies. It cannot conclude that the sender is safe to delete. The product can propose Archive or Unsubscribe while keeping the user’s Protected decisions above the recommendation.',
           'This hierarchy matters most in automation. One mistaken suggestion is inconvenient; one mistaken recurring rule compounds. Observe mode exists so a user can see multiple would-be matches before an Autopilot preset becomes Active.',
         ],
       },
@@ -152,7 +152,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'capability',
         title: 'The data boundary should limit product capability',
         paragraphs: [
-          'Without complete content, DeclutrMail should not offer full-email search, complete conversation summaries, attachment extraction, or guarantees about what an email means. Sender volume, opens, replies, labels, and recency can support review by sender, but they cannot replace reading a contract, medical result, or conversation.',
+          'Without complete content, DeclutrMail should not offer full-email search, complete conversation summaries, attachment extraction, or guarantees about what an email means. Sender volume, read state, replies, labels, and recency can support review by sender, but they cannot replace reading a contract, medical result, or conversation.',
           'This is why the interface returns users to Gmail for message content. A deep link is not an unfinished reader; it is evidence that the companion boundary is being respected.',
           'Constraints also protect future product decisions. A tempting feature that requires raw bodies should trigger a visible privacy decision rather than arriving through an unnoticed expansion of the fetch path.',
         ],
