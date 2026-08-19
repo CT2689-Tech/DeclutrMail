@@ -563,10 +563,12 @@ export type DecisionHistorySource = 'triage' | 'manual' | 'autopilot' | 'screene
  * had happened; Activity was right).
  *
  * The engine's verdict is a suggestion and belongs on a surface that
- * says so. Today it appears in Triage (the queue's proposed verdict)
- * and behind the Senders-list review chip; the detail wire carries no
- * recommendation field, so Sender Detail shows no suggestion at all —
- * a product gap, not something this history endpoint may paper over.
+ * says so. Today the only such surface is Triage — the highlighted verb
+ * above 0.85 confidence (D31) plus the verdict pill. The Senders list
+ * carries `lastReview` on the wire but renders nothing from it, and the
+ * detail wire has no recommendation field at all, so Sender Detail shows
+ * no suggestion — a product gap, not something this history endpoint may
+ * paper over.
  */
 export interface DecisionHistoryRow {
   /** `activity_log.id` — the operation id Sender Detail displays. */
