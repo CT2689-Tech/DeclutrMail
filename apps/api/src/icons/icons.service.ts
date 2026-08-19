@@ -46,6 +46,23 @@ export type IconLookup =
  * intentionally carry no user or mailbox linkage.
  */
 /**
+ * How many unresolved domains a single list read may schedule.
+ *
+ * A read must never schedule UNBOUNDED background work. A first pass
+ * over a large mailbox has a row for almost nothing, so an uncapped
+ * enqueue turns one page view into a page-sized burst against whatever
+ * the resolver talks to — and that burst is only as safe as the
+ * weakest link downstream. It is not currently safe: a provider
+ * quota response aborts the whole job (`DomainIconWorker` does not
+ * catch it), so the domain dead-letters without even recording that
+ * we looked, and the next page view enqueues it again.
+ *
+ * Capped, a page view contributes a bounded amount of catch-up and
+ * paging through a mailbox still walks the whole set over time.
+ */
+export const MAX_SCHEDULED_PER_READ = 12;
+
+/**
  * The two domains a raw request maps onto, or null when the input can
  * never become a resolution: `discoveryDomain` is what the caller
  * asked for, `organizational` is the registrable domain we look the
@@ -324,7 +341,9 @@ export class IconsService {
       // a resolved domain stops being scheduled once the worker writes
       // its row — including the `none` row for a domain with no mark.
       await Promise.all(
-        [...toSchedule].map(([canonical, discovery]) => this.schedule(canonical, discovery)),
+        [...toSchedule]
+          .slice(0, MAX_SCHEDULED_PER_READ)
+          .map(([canonical, discovery]) => this.schedule(canonical, discovery)),
       );
     }
 

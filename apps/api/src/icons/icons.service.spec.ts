@@ -3,7 +3,7 @@ import { freshTestDb } from '@declutrmail/db/testing';
 import type { Queue } from 'bullmq';
 import { describe, expect, it } from 'vitest';
 
-import { IconsService } from './icons.service.js';
+import { IconsService, MAX_SCHEDULED_PER_READ } from './icons.service.js';
 
 /**
  * IconsService integration tests (ADR-0034).
@@ -397,6 +397,18 @@ describe('IconsService', () => {
       expect(added[0]?.opts).toMatchObject({
         jobId: `DomainIconWorker-v${DOMAIN_ICON_RESOLVER_VERSION}-first.example`,
       });
+    });
+
+    it('bounds how much background work one read can schedule', async () => {
+      const db = await freshTestDb();
+      const { queue, added } = fakeQueue();
+      const domains = Array.from({ length: 40 }, (_, i) => `d${i}.example`);
+
+      await new IconsService(db as never, queue).marksFor(domains, { mayEnqueue: true });
+
+      // A read that schedules a job per uncached domain turns one page
+      // view into a page-sized burst on the resolver.
+      expect(added).toHaveLength(MAX_SCHEDULED_PER_READ);
     });
 
     it('never causes outbound work without a session', async () => {
