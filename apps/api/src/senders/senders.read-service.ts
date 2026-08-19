@@ -102,15 +102,19 @@ const SUPPORTED_SORTS: ReadonlySet<SenderListSort> = new Set([
  * feed that owns them; each is written next to the decision row that
  * caused it, so this narrowing hides no user action.
  */
-const DECISION_HISTORY_ACTIONS = [
-  'keep',
-  'archive',
-  'unsubscribe',
-  'later',
-  'delete',
-  'marked_protected',
-  'unmarked_protected',
-] as const satisfies readonly DecisionHistoryAction[];
+const DECISION_HISTORY_ACTIONS = Object.keys({
+  keep: true,
+  archive: true,
+  unsubscribe: true,
+  later: true,
+  delete: true,
+  marked_protected: true,
+  unmarked_protected: true,
+  // `satisfies Record<…>` makes the set exhaustive BY CONSTRUCTION: add a
+  // verb to `DecisionHistoryAction` and this object stops typechecking
+  // until the verb is listed, so a new K/A/U/L/D action can never be
+  // silently missing from a user's own decision history.
+} satisfies Record<DecisionHistoryAction, true>) as DecisionHistoryAction[];
 
 /** Default direction per sort when the caller omits `direction`. */
 const DEFAULT_DIRECTION_BY_SORT: Record<SenderListSort, SenderListDirection> = {
