@@ -90,3 +90,8 @@ storybook-static/
 
 # Lighthouse CI reports (D160 gate) — regenerated per run, kept as CI artifacts.
 .lighthouseci/
+
+# Curation worklists are derived from real mailboxes (sender domains and
+# volumes). This repo is PUBLIC — that data never belongs in it.
+docs/data/
+*-worklist.csv
