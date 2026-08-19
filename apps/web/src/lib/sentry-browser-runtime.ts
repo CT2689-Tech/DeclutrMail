@@ -101,7 +101,13 @@ export function initSentryBrowserRuntime(dsn: string): BrowserSentryRuntime {
     Sentry.init({
       dsn,
       environment: process.env.NEXT_PUBLIC_VERCEL_ENV ?? process.env.NODE_ENV ?? 'development',
-      release: process.env.NEXT_PUBLIC_SENTRY_RELEASE,
+      // Omitted rather than passed empty: an explicit `release` beats
+      // the one the Sentry build plugin injects, so stamping a value we
+      // invented would override the release the uploaded source maps
+      // are actually filed under.
+      ...(process.env.NEXT_PUBLIC_SENTRY_RELEASE
+        ? { release: process.env.NEXT_PUBLIC_SENTRY_RELEASE }
+        : {}),
       // Browser traces show the pageload → navigation → fetch chain behind
       // an error. Shipped behind `beforeSendTransaction` below, which drops
       // every span description (full request URLs live there) and

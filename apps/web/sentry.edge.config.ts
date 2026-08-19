@@ -18,7 +18,11 @@ if (dsn) {
   Sentry.init({
     dsn,
     environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? 'development',
-    release: process.env.SENTRY_RELEASE ?? process.env.NEXT_PUBLIC_SENTRY_RELEASE,
+    // See `next.config.ts`: omitted when unknown so the build plugin's
+    // own release applies instead of one we invented.
+    ...((process.env.SENTRY_RELEASE ?? process.env.NEXT_PUBLIC_SENTRY_RELEASE)
+      ? { release: process.env.SENTRY_RELEASE ?? process.env.NEXT_PUBLIC_SENTRY_RELEASE }
+      : {}),
     tracesSampleRate: 0,
     sendDefaultPii: false,
     integrations: [],
