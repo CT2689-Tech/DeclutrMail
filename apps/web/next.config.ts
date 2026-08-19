@@ -50,18 +50,30 @@ const nextConfig: NextConfig = {
   redirects: async () => [...wwwApexRedirects(), ...legacyDomainRedirects()],
 
   /**
-   * Inject release tag into the PUBLIC env at build time so
-   * `sentry.client.config.ts` can read it via
-   * `process.env.NEXT_PUBLIC_SENTRY_RELEASE`. `VERCEL_GIT_COMMIT_SHA`
-   * is a Vercel-system env var auto-injected at build (do NOT set it
-   * manually); fallback `'local-dev'` keeps local builds deterministic
-   * AND keeps any local-build errors in their own Sentry release
-   * bucket. The server runtime uses `SENTRY_RELEASE` (also auto-set
-   * by `withSentryConfig` below — this `env` block only matters for
-   * the browser bundle).
+   * Inject the release tag into the PUBLIC env at build time so the
+   * browser runtime can read `process.env.NEXT_PUBLIC_SENTRY_RELEASE`.
+   *
+   * EMPTY, NOT `'local-dev'`, WHEN THERE IS NO COMMIT SHA. The old
+   * fallback looked harmless and silently broke production error
+   * reporting: `VERCEL_GIT_COMMIT_SHA` only exists when a project has
+   * "Automatically expose System Environment Variables" enabled, and
+   * without it every production build stamped its browser bundle
+   * `local-dev`. `withSentryConfig` meanwhile uploads source maps under
+   * the release IT derives, so the two never matched — and an event
+   * whose release does not match the uploaded artifacts cannot be
+   * symbolicated. Production errors arrived as minified frames with no
+   * message, which is how a real recurring client error sat unreadable
+   * (Sentry DECLUTRMAIL-WEB-13/16, 2026-08-18).
+   *
+   * Empty means the init below omits `release` entirely, which lets the
+   * Sentry build plugin's own injected release apply — the one its
+   * uploaded artifacts are filed under, so they match by construction
+   * rather than by two env lookups agreeing. A wrong release is worse
+   * than no release: no release still symbolicates, a wrong one never
+   * does.
    */
   env: {
-    NEXT_PUBLIC_SENTRY_RELEASE: process.env.VERCEL_GIT_COMMIT_SHA ?? 'local-dev',
+    NEXT_PUBLIC_SENTRY_RELEASE: process.env.VERCEL_GIT_COMMIT_SHA ?? '',
   },
 
   /**
