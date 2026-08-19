@@ -6,7 +6,8 @@ import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-pro
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { useSenderMessages } from '../api/use-sender-messages';
 import { useSenderTimeseries } from '../api/use-sender-timeseries';
-import { relTimeLabel, type ActionRequest, type Sender } from '../data';
+import { relTimeLabel, shortDate, type ActionRequest, type Sender } from '../data';
+import { formatReadRatePct } from '../fact-language';
 import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
 
 const { color, font } = tokens;
@@ -28,7 +29,26 @@ export type RowDetailTimeseries =
 export type RowDetailSubjects =
   | { status: 'loading' }
   | { status: 'error'; retry: () => void }
-  | { status: 'ready'; subjects: string[] };
+  | { status: 'ready'; subjects: RowDetailSubject[] };
+
+/**
+ * One recent-subject row. Carries the received-at instant, not just the
+ * text: a bare subject list is unverifiable — a recurring sender's
+ * subjects are near-identical month to month, so without a date the
+ * reader cannot tell whether the one they are looking at arrived
+ * yesterday or last year, which is exactly the check a privacy product
+ * invites them to make (FINDINGS F006). `date` is ISO-8601.
+ *
+ * This mirrors the widening the D226 confirm-action preview already made
+ * for the same reason — "the date is how the reader checks it respects
+ * the window they picked" (MISTAKES.md 2026-07-27). The API has always
+ * returned `internalDate` on these rows; only this type dropped it.
+ */
+export interface RowDetailSubject {
+  subject: string;
+  /** ISO-8601 received-at. */
+  date: string;
+}
 
 /** Panel shows at most this many recent subjects — no pagination here. */
 const SUBJECT_PREVIEW_COUNT = 3;
@@ -67,7 +87,7 @@ export function SenderRowDetailLive({
           status: 'ready',
           subjects: (messages.data.pages[0]?.data ?? [])
             .slice(0, SUBJECT_PREVIEW_COUNT)
-            .map((m) => m.subject),
+            .map((m) => ({ subject: m.subject, date: m.internalDate })),
         };
 
   return (
@@ -139,8 +159,15 @@ export function SenderRowDetail({
     {
       // `null` readRate = no timeseries yet — "—" is the honest render,
       // never a fabricated 0%.
+      //
+      // The window is NAMED because this is the only windowed card in a
+      // row that is otherwise all-lifetime ("Received 1,872"), and the
+      // unqualified label read as lifetime: etherscan showed "0%" for a
+      // sender the founder has read 96.5% of since 2017 (FINDINGS F008).
+      // 332 of 615 active senders on that mailbox rendered 0% this way.
       k: 'Marked read',
-      v: s.readRate !== null ? `${Math.round(s.readRate * 100)}%` : '—',
+      v: s.readRate !== null ? `${formatReadRatePct(s.readRate)}%` : '—',
+      ...(s.readRate !== null ? { small: 'of last 30d' } : {}),
       valueColor:
         s.readRate === null
           ? color.fgMuted
@@ -539,21 +566,54 @@ function RecentSubjectsCard({ subjects }: { subjects: RowDetailSubjects }) {
 
       {subjects.status === 'ready' && subjects.subjects.length > 0 && (
         <div>
-          {subjects.subjects.map((subj, i) => (
+          {subjects.subjects.map((row, i) => (
             <div
               key={i}
               style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: 10,
                 padding: '6px 0',
                 borderBottom:
                   i === subjects.subjects.length - 1 ? 'none' : `1px solid ${color.lineSoft}`,
                 fontSize: 12.5,
                 color: color.fg,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
               }}
             >
-              {subj}
+              <span
+                style={{
+                  minWidth: 0,
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {row.subject}
+              </span>
+              {/* This card only ever renders inside the peek modal /
+                  expanded row — both interaction-opened, so it is
+                  client-only and a local-calendar date cannot desync a
+                  server render. Same reasoning as the confirm-action
+                  preview's `shortDate`. */}
+              {/* An unparseable date renders NOTHING, not an empty
+                  `<time>` carrying an invalid machine-readable
+                  `dateTime` — an element that asserts a value it does
+                  not have is the defect this whole change is about. */}
+              {shortDate(row.date) && (
+                <time
+                  dateTime={row.date}
+                  style={{
+                    flexShrink: 0,
+                    fontFamily: font.mono,
+                    fontSize: 11,
+                    color: color.fgSoft,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {shortDate(row.date)}
+                </time>
+              )}
             </div>
           ))}
         </div>

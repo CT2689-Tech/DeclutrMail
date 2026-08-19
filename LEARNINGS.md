@@ -1401,3 +1401,33 @@ A slow shared read gets fixed at the query, not by deferring it.
 
 **Distillation trigger:** promote to CLAUDE.md §8 if a third
 "green locally, timing-dependent in the field" hydration entry lands.
+
+## 2026-08-19 — An ADR's Context section is not a consumer inventory
+
+**Context:** The signed-in app rail still showed the letter-`D` gradient
+square and `DeclutrMail.com`, two months after ADR-0036 retired that
+placeholder and PR #557 shipped "the brand logo across every surface."
+
+**Finding:** #557 was not careless — it replaced every placeholder
+ADR-0036's Context section named. The Context named two
+(`.dm-public-brand-mark` in the marketing shell, and `app/icon.svg`).
+There were three. `shell/sidebar.tsx` had rolled its own brand block in
+`packages/shared`, so it matched neither placeholder's name nor its
+selector, and the ADR author never grepped for a third. Every gate,
+test and typecheck stayed green: nothing asserts that a placeholder is
+gone, only that the replacement renders where it was wired.
+
+The `.com` suffix rode along invisibly for the same reason. It appears
+in exactly one place in the product, and no test or lint rule has an
+opinion about the wordmark's text.
+
+**Rule (provisional):** When a change claims "every surface," derive the
+surface list by grepping the CODE for the thing being replaced — the
+old markup, the old string, the old selector — not by reading the ADR's
+own Context section. The Context is the author's mental model at
+authoring time and is exactly as complete as their first grep was. Then
+add the found consumers back to the ADR, so the next sweep starts from
+a list that was verified rather than remembered.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a second "the
+sweep PR missed a surface the ADR never listed" entry lands.

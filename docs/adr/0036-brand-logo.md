@@ -91,6 +91,17 @@ it is a brand-locked surface and has consumers on day 1
 (`public-shell.tsx` header and footer, `legal-layout.tsx`). It is added
 to the D220 promoted-component allowlist as a brand-locked entry.
 
+The app rail carries it too. `shell/sidebar.tsx` held a **third**
+placeholder the Context above missed — a teal-gradient rounded square
+holding the letter `D`, beside `DeclutrMail` with a `.com` suffix set
+in the accent. Both halves are retired: the square is the letter-`D`
+placeholder rejected under §Alternatives, and the suffix is a domain,
+not the name — nothing else in the product or on the marketing site
+appends it. The drawer's close button moved off the rail's top-right
+corner in the same change, because the specified lockup is wider than
+the placeholder it replaced and the button sat on the tail of the
+wordmark.
+
 **Colors are literal, never tokenized.** Every other component in
 `packages/shared/` styles itself from `tokens/tokens.ts`, whose values
 are `var(--dm-*)` references, so it re-themes when the palette moves.

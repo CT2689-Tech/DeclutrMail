@@ -516,3 +516,46 @@ describe('isGovernmentDomain — deterministic public-suffix rule (D222-safe)', 
     },
   );
 });
+
+describe('runCascade — unmeasurable read rate (F009)', () => {
+  // `readRate90d: null` means "the sender has no mail in the 90-day
+  // window", never "the user reads nothing". Before this, the producers
+  // fabricated a `0`, which both suppressed the engaged-reader Keep rules
+  // and rendered "You open 0%." to the user as fact.
+  it('facts.readRatePct is null, not 0', () => {
+    const result = runCascade({ ...baseSignals(), readRate90d: null });
+    expect(result.facts.readRatePct).toBeNull();
+  });
+
+  it('does NOT fire the engaged-reader Keep rule on null', () => {
+    const result = runCascade({ ...baseSignals(), readRate90d: null });
+    expect(result.ruleId).not.toBe('high_read_rate');
+  });
+
+  it('does NOT fire the long-relationship-engaged Keep rule on null', () => {
+    const result = runCascade({
+      ...baseSignals(),
+      readRate90d: null,
+      firstSeenMonthsAgo: 72,
+    });
+    expect(result.ruleId).not.toBe('long_relationship_engaged');
+  });
+
+  it('null adds NO disengagement corroboration to the unsubscribe score', () => {
+    // Same sender twice, differing only in whether the rate is a measured
+    // 0 or an unmeasured null. The measured-0 run earns the +0.15/+0.10
+    // corroboration; the null run must not.
+    const streaming: Partial<SenderSignals> = {
+      unsubscribeChannel: 'one_click',
+      monthlyVolume: 40,
+      gmailCategory: 'promotions',
+    };
+    const measured = runCascade({ ...baseSignals(), ...streaming, readRate90d: 0 });
+    const unknown = runCascade({ ...baseSignals(), ...streaming, readRate90d: null });
+
+    expect(measured.scores?.unsubscribe).toBeDefined();
+    expect(unknown.scores?.unsubscribe).toBeDefined();
+    expect(unknown.scores!.unsubscribe).toBeLessThan(measured.scores!.unsubscribe);
+    expect(measured.scores!.unsubscribe - unknown.scores!.unsubscribe).toBeCloseTo(0.25, 5);
+  });
+});

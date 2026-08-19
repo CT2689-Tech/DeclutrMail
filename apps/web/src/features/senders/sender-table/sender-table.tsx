@@ -156,7 +156,11 @@ const COLUMNS: ReadonlyArray<{
   // has no volume axis yet.
   { key: null, label: 'Monthly', alignRight: true },
   { key: null, label: 'Trend' },
-  { key: null, label: 'Read' },
+  // 'Read 30d', not 'Read': the bucket is a rolling 30-day ratio and
+  // this column sits between 'Total' (lifetime) and 'Replied'. Without
+  // the qualifier a sighted user reads 'None' as lifetime — the window
+  // was reaching screen readers via aria and nobody else.
+  { key: null, label: 'Read 30d' },
   // Reply count — ≥3 replies is the D245 auto-protect trigger, the
   // strongest "don't touch this" fact; the analytical view must show it
   // (grid↔table parity, 2026-07-16).

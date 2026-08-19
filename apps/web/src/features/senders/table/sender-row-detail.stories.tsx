@@ -84,9 +84,9 @@ const READY: RowDetailTimeseries = {
 const SUBJECTS: RowDetailSubjects = {
   status: 'ready',
   subjects: [
-    'Your July statement is ready',
-    'Security alert: new sign-in on Chrome',
-    'Weekly digest — 12 new updates',
+    { subject: 'Your July statement is ready', date: '2026-08-14T09:12:00.000Z' },
+    { subject: 'Security alert: new sign-in on Chrome', date: '2026-08-02T18:45:00.000Z' },
+    { subject: 'Weekly digest — 12 new updates', date: '2026-07-21T06:30:00.000Z' },
   ],
 };
 

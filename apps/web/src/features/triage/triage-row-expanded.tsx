@@ -48,7 +48,9 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
       >
         <Stat label="per month" value={row.monthlyVolume.toLocaleString('en-US')} />
         <Stat
-          label="read rate"
+          // Names the window: this cell sits in a grid beside
+          // lifetime figures, so a bare rate reads as lifetime.
+          label="read rate 90d"
           value={readPct === null ? '—' : `${readPct}%`}
           valueColor={
             row.readRate === null

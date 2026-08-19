@@ -1663,15 +1663,19 @@ export class SendersReadService {
  * null (no timeseries yet) or zero (cannot divide), so the FE
  * renders an explicit "—" instead of a misleading "0%".
  *
- * Rounded to 2 decimal places — matches the `numeric(3,2)` rounding
- * on the engine's confidence column for visual consistency.
+ * NOT rounded. It used to round to 2 decimals here "to match the
+ * `numeric(3,2)` rounding on the engine's confidence column", but this
+ * value is consumed as a RATIO that every caller multiplies by 100 — so
+ * rounding first quantised the displayed percentage to whole numbers
+ * twice, and anything below 0.005 collapsed to exactly `0`. A sender with
+ * 1 read message in 250 then rendered a confident, measured "0%" (and
+ * "Never" on the list surfaces) when the honest answer is "<1%". Callers
+ * round for display; the wire keeps the precision.
  */
 function computeReadRate(volume: number | null, readCount: number | null): number | null {
   if (volume === null || volume === 0) return null;
   const readSafe = readCount ?? 0;
-  const raw = readSafe / volume;
-  // Round to 2 decimals — matches `Math.round(x * 100) / 100` idiom.
-  return Math.round(raw * 100) / 100;
+  return readSafe / volume;
 }
 
 /**

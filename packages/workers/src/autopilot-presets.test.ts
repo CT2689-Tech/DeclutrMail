@@ -204,6 +204,42 @@ describe('AUTOPILOT_PRESETS', () => {
     });
   });
 
+  describe('unmeasurable read rate abstains (F009)', () => {
+    // `readRate90d` used to be fabricated as `0` when the sender had no
+    // mail in the 90-day window. Both dormancy presets require
+    // `lastSeenDaysAgo > 90`, which GUARANTEES no 90-day mail — so the
+    // `readRate90d < 0.05` predicate could never fail and filtered
+    // nothing. On the founder's mailbox that was 7,072 of 7,072
+    // candidates matching, 95% of them senders read ≥90% of the time.
+    it('newsletter_graveyard does NOT match on a null read rate', () => {
+      const r = AUTOPILOT_PRESETS.newsletter_graveyard.match(
+        input({ readRate90d: null, lastSeenDaysAgo: 120 }, null),
+        null,
+      );
+      expect(r.matched).toBe(false);
+    });
+
+    it('long_dormant_unsubscribe does NOT match on a null read rate', () => {
+      const r = AUTOPILOT_PRESETS.long_dormant_unsubscribe.match(
+        input({ readRate90d: null, lastSeenDaysAgo: 200 }, null),
+        null,
+      );
+      expect(r.matched).toBe(false);
+    });
+
+    it('null never reaches the reason string as "Read rate 0%"', () => {
+      for (const days of [120, 200]) {
+        for (const key of ['newsletter_graveyard', 'long_dormant_unsubscribe'] as const) {
+          const r = AUTOPILOT_PRESETS[key].match(
+            input({ readRate90d: null, lastSeenDaysAgo: days }, null),
+            null,
+          );
+          expect(r.reason).not.toContain('Read rate');
+        }
+      }
+    });
+  });
+
   describe('preset metadata', () => {
     it('all 5 D101 preset keys present', () => {
       const keys = Object.keys(AUTOPILOT_PRESETS).sort();

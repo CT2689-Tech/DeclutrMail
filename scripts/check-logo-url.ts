@@ -6,29 +6,53 @@
  * be rejected by the pipeline for a reason the browser never shows you —
  * a press-kit wordmark is 6:1 and our tile is square, a favicon is
  * `.ico` and we never decode ICO, an SVG carries a script tag and the
- * safety gate drops it. This applies the SAME rules the resolver does,
- * against the real bytes, so a "PASS" here means the ingest will keep it.
+ * safety gate drops it.
  *
  *   pnpm check-logo <url> [<url> ...]
  *
- * Rules mirrored from `website-icon-resolver.ts`. If that file's limits
- * move, move them here in the same change — a checker that disagrees
- * with the thing it checks is worse than no checker.
+ * IT CALLS THE REAL GATES, IT DOES NOT REIMPLEMENT THEM. The first cut
+ * of this script copied the resolver's limits as local constants and
+ * argued that was fine because importing "pulls the whole chain in for
+ * four numbers". It was not fine: the copy skipped
+ * `normalizeSquareIcon` for SVG, so a wide SVG wordmark scored PASS
+ * here and was rejected by the pipeline — the exact mistake the script
+ * exists to prevent, shipped inside the script itself. A checker is
+ * only worth running if a PASS is a promise, and the only way to
+ * promise is to run the same code:
+ *
+ *   - `validateBimiSvg`     — the SVG safety gate (BIMI Tiny PS rules)
+ *   - `normalizeSquareIcon` — size, aspect, decode and re-encode; the
+ *                             single acceptance gate every tier passes
+ *                             artwork through, SVG included
  */
 
+import { normalizeSquareIcon, validateBimiSvg } from '@declutrmail/workers';
 import sharp from 'sharp';
 
-/** A 32px source stays crisp at the 24-40px sizes the avatar uses. */
-const MIN_SOURCE_SIZE = 32;
-/** The tile is square; anything longer than 2:1 either crops or shrinks to nothing. */
-const MIN_ASPECT_RATIO = 1 / 2;
-const MAX_ASPECT_RATIO = 2;
+/**
+ * Mirrors the resolver's accepted set. This one IS a local copy, and
+ * deliberately: it exists only to turn "unsupported type" into a useful
+ * sentence before the real gates run. Getting it wrong costs a worse
+ * error message, never a wrong verdict — every PASS still has to clear
+ * `normalizeSquareIcon` below.
+ */
 const SVG_MIME = 'image/svg+xml';
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp', SVG_MIME]);
-/** Same ceiling as the resolver: a decompression bomb is not artwork. */
-const MAX_SOURCE_PIXELS = 16 * 1024 * 1024;
 
 type Verdict = { ok: true; detail: string } | { ok: false; reason: string; hint?: string };
+
+/** Best-effort shape, for the message only — never for the verdict. */
+async function describe(body: Buffer): Promise<string> {
+  try {
+    const meta = await sharp(body).metadata();
+    const width = meta.width ?? 0;
+    const height = meta.height ?? 0;
+    if (width === 0 || height === 0) return '';
+    return `${width}x${height}, ${(width / height).toFixed(2)}:1`;
+  } catch {
+    return '';
+  }
+}
 
 async function check(url: string): Promise<Verdict> {
   let res: Response;
@@ -65,44 +89,32 @@ async function check(url: string): Promise<Verdict> {
   const body = Buffer.from(await res.arrayBuffer());
 
   if (mime === SVG_MIME) {
-    const text = body.toString('utf8');
-    // Cheap stand-in for the BIMI Tiny PS gate the worker applies. It is
-    // deliberately stricter to flag rather than to bless: better a false
-    // warning here than a surprise rejection during ingest.
-    const unsafe = /<script|xlink:href\s*=\s*["']https?:|<image[^>]+href\s*=\s*["']https?:/i.test(
-      text,
-    );
-    if (unsafe) {
+    const validation = validateBimiSvg(body);
+    if (!validation.ok) {
       return {
         ok: false,
-        reason: 'SVG references scripts or remote assets',
-        hint: 'the safety gate drops these — prefer a PNG of the same mark',
+        reason: `SVG failed the safety gate: ${validation.reason}`,
+        hint: 'prefer a PNG of the same mark',
       };
     }
-    return { ok: true, detail: `SVG, ${(body.byteLength / 1024).toFixed(1)}kB` };
   }
 
-  let meta: sharp.Metadata;
-  try {
-    meta = await sharp(body, { limitInputPixels: MAX_SOURCE_PIXELS }).metadata();
-  } catch (err) {
-    return { ok: false, reason: `not decodable: ${err instanceof Error ? err.message : err}` };
-  }
-
-  const width = meta.width ?? 0;
-  const height = meta.height ?? 0;
-  if (width < MIN_SOURCE_SIZE || height < MIN_SOURCE_SIZE) {
-    return { ok: false, reason: `${width}x${height} — smaller than ${MIN_SOURCE_SIZE}px` };
-  }
-  const ratio = width / height;
-  if (ratio < MIN_ASPECT_RATIO || ratio > MAX_ASPECT_RATIO) {
+  // The verdict. Same call the worker makes, so a PASS here is the
+  // pipeline's own answer rather than an imitation of it.
+  const normalized = await normalizeSquareIcon(body);
+  const shape = await describe(body);
+  if (!normalized) {
     return {
       ok: false,
-      reason: `${width}x${height} is ${ratio.toFixed(1)}:1 — outside 1:2 to 2:1`,
-      hint: 'this is a wordmark; look for the square app-icon or glyph version',
+      reason: `failed the quality gate${shape ? ` (${shape})` : ''}`,
+      hint: 'must be at least 32px and between 1:2 and 2:1 — a wordmark is too wide, look for the square glyph',
     };
   }
-  return { ok: true, detail: `${width}x${height}, ${ratio.toFixed(2)}:1, ${mime}` };
+
+  return {
+    ok: true,
+    detail: `${shape ? `${shape}, ` : ''}${mime} → ${(normalized.byteLength / 1024).toFixed(1)}kB avatar`,
+  };
 }
 
 // Wrapped rather than top-level await: this file is transpiled to CJS.

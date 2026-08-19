@@ -400,3 +400,26 @@ export type ReviewKind = 'promo' | 'quiet' | 'protect';
 
 /** The closed set of per-row decisions a review session can record. */
 export type DecisionId = 'keep' | 'later' | 'unsub' | 'lock' | 'skip';
+
+/**
+ * `YYYY-MM-DD` for a message row's received-at.
+ *
+ * Ordered year-first rather than a locale format so it cannot be misread
+ * as D/M vs M/D — the point of showing it is that the reader can match it
+ * against Gmail, and an ambiguous date defeats that.
+ *
+ * Built from LOCAL calendar parts, deliberately: `toISOString().slice(0,10)`
+ * is UTC and lands a day off from what Gmail shows anyone west of it.
+ * Callers must therefore be client-only (interaction-opened surfaces) or
+ * gate on `useNow()`, or the local zone can desync a server render.
+ *
+ * Returns '' for an unparseable value so the row still renders its
+ * subject instead of "Invalid Date".
+ */
+export function shortDate(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return '';
+  const date = new Date(ms);
+  const two = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}`;
+}

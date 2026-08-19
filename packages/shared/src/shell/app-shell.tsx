@@ -63,6 +63,27 @@ export function AppShell({
     setDrawerOpen(false);
   }, [active]);
 
+  // Close it when the viewport crosses INTO desktop. Responsive
+  // behaviour here is CSS-only by design, which means `drawerOpen` has
+  // no idea the breakpoint moved: open the drawer at 800px, then widen
+  // or rotate past 900px, and the hamburger disappears while the dialog
+  // stays mounted — a second <Sidebar> in an aria-modal dialog pinned
+  // over the now-visible desktop one, focus trap and duplicate nav
+  // landmarks included. That is precisely the state the inline-`display`
+  // fix removed, reachable by a different door. The listener is the
+  // narrow exception to "no JS breakpoints": it never decides layout,
+  // it only retires a state the layout can no longer host.
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const desktop = window.matchMedia('(min-width: 901px)');
+    const closeIfDesktop = () => {
+      if (desktop.matches) setDrawerOpen(false);
+    };
+    closeIfDesktop();
+    desktop.addEventListener('change', closeIfDesktop);
+    return () => desktop.removeEventListener('change', closeIfDesktop);
+  }, []);
+
   useEffect(() => {
     if (!drawerOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -126,9 +147,13 @@ export function AppShell({
               onClick={() => setDrawerOpen(false)}
               aria-label="Close navigation menu"
               style={{
+                // Sits on the scrim, clear of the 220px rail, rather
+                // than on top of it: the rail's top row is the brand
+                // lockup, and a button pinned inside `right: 12` lands
+                // on the tail of the wordmark (ADR-0036).
                 position: 'absolute',
                 top: 12,
-                right: 12,
+                left: 232,
                 zIndex: 1,
                 width: 44,
                 height: 44,
@@ -182,7 +207,19 @@ export function AppShell({
               width: 44,
               height: 44,
               padding: 0,
-              display: 'inline-flex',
+              // NO `display` here — it lives in tokens.css, same rule as
+              // the trust strip below. An inline `display: inline-flex`
+              // outranks `.dm-topbar-hamburger { display: none }` and the
+              // ≤900px media query that re-enables it, so the button
+              // rendered at EVERY width. On desktop that let a click
+              // mount the mobile drawer — a second <Sidebar> in an
+              // aria-modal dialog pinned left:0, landing pixel-aligned on
+              // top of the always-visible desktop sidebar, with a live
+              // focus trap and duplicate nav landmarks. `alignItems` /
+              // `justifyContent` stay: they are inert until the class
+              // makes the box flex. (Regressed in #325 by a 44px
+              // touch-target change that brought `display` along to
+              // centre the SVG; live 2026-07-14 → 2026-08-18.)
               alignItems: 'center',
               justifyContent: 'center',
               background: 'transparent',

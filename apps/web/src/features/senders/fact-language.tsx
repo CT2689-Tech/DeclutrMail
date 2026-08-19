@@ -72,20 +72,41 @@ export function TrendChip({ bucket }: { bucket: VolumeTrendBucket | null }) {
 }
 
 /**
+ * Read rate as a display percentage, never rounding a real signal down
+ * to a flat `0`. A sender with 1 read in 250 is `<1`, not `0` — the
+ * difference between "we measured almost none" and "we measured none" is
+ * the whole point of the number.
+ */
+export function formatReadRatePct(rate: number): string {
+  const pct = rate * 100;
+  if (pct > 0 && pct < 1) return '<1';
+  return String(Math.round(pct));
+}
+
+/**
  * Read-state bucket for LIST surfaces. Thresholds follow the
  * tightening-brief vocabulary the table shipped with:
- *   0 → Never · (0, .30) → Low · [.30, .70) → Mid · [.70, 1] → High
+ *   0 → None · (0, .30) → Low · [.30, .70) → Mid · [.70, 1] → High
  *
- * `Never` is amber (unread bulk = the action-available signal, A3);
+ * `None` is amber (unread bulk = the action-available signal, A3);
  * `High` is solid `fg` (quietly healthy); Low/Mid muted. No pills.
+ *
+ * Every label describes a ROLLING 30-DAY window (the API's `readRate` is
+ * `last30dReadCount / last30dMsgs`), which is why the top bucket says
+ * "None" and the aria names the window. It said **"Never"** with an aria
+ * of "never marked read" — an absolute, lifetime claim drawn from 30 days
+ * of data. On the founder's mailbox that labelled 332 of 615 active
+ * senders, including one read 96.5% of the time since 2017 (FINDINGS
+ * F008). A percentage can be repaired with a window suffix; the word
+ * "Never" could not, so the word had to go.
  */
 export function readBucket(rate: number): { label: string; fg: string; aria: string } {
   if (rate === 0) {
-    return { label: 'Never', fg: color.amber, aria: 'Read rate: never marked read' };
+    return { label: 'None', fg: color.amber, aria: 'Read rate: none in the last 30 days' };
   }
-  if (rate < 0.3) return { label: 'Low', fg: color.fgMuted, aria: 'Read rate: low' };
-  if (rate < 0.7) return { label: 'Mid', fg: color.fgMuted, aria: 'Read rate: mid' };
-  return { label: 'High', fg: color.fg, aria: 'Read rate: high' };
+  if (rate < 0.3) return { label: 'Low', fg: color.fgMuted, aria: 'Read rate: low, last 30 days' };
+  if (rate < 0.7) return { label: 'Mid', fg: color.fgMuted, aria: 'Read rate: mid, last 30 days' };
+  return { label: 'High', fg: color.fg, aria: 'Read rate: high, last 30 days' };
 }
 
 /** Read bucket as plain mono text; `null` = no timeseries yet. */

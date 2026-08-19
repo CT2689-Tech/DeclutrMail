@@ -76,7 +76,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D18 | Legal/DPA review trigger: **Add to Human-Approval-Gates | ⬜ |  |  |  |
 | D19 | Pricing/tier structure (resolves gaps #8 + #9) | 🔵 | #193, #401, #404, #411, #412, #438 |  |  |
 | D20 | Verdict set: **4 verdicts (Keep / Archive / Unsubscribe / Screen) | 🟢 | #32 | packages/workers/src/reasoning.test.ts — VERDICT_LABEL exhaustiveness |  |
-| D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🟢 | #32, #118 | packages/workers/src/score-cascade.test.ts |  |
+| D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🟢 | #32, #118, #566 | packages/workers/src/score-cascade.test.ts |  |
 | D22 | Protection model: **Sender-layer-only, engagement-respect + user-defined | 🟢 | #32 | packages/workers/src/score.worker.test.ts |  |
 | D23 | New sender default: **Screen | 🔵 | #32 |  |  |
 | D24 | LLM role: **Haiku for explanation only, template fallback | 🟢 | #32, #77 | apps/api/src/adapters/anthropic-haiku.adapter.spec.ts |  |
@@ -96,10 +96,10 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #501 |  | Reclaimed 2026-07-28 (D158): the tour has never been built. Prior D38 trailers were umbrella mis-tags, now rewritten in the source PR bodies; the senders wire-model work lives at ADR-0029 |
 | D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30, #43, #47, #52, #63, #71, #129, #569 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
 | D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🟢 | #30, #47, #181, #342, #394 | apps/api/src/senders/senders.read-service.spec.ts |  |
-| D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | 🔵 | #30 |  |  |
+| D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | 🔵 | #30, #566 |  |  |
 | D42 | **SUPERSEDED by D245: Protected is the sole visible safety state | 🔵 | #181, #30, #129, #393 |  | Evidence updated 2026-06-11: VIP/Protect policy write path landed in #181; prior #30 cite was stale |
 | D43 | **SUPERSEDED by D245: one Protect control | 🔵 | #181, #30, #129, #210 |  | Evidence updated 2026-06-11: header policy icons + write path landed in #181; prior #30 cite was stale |
-| D44 | Stats strip: **5 stats, single reflow row | 🟢 | #30, #52 | apps/api/src/senders/senders.read-service.spec.ts |  |
+| D44 | Stats strip: **5 stats, single reflow row | 🟢 | #30, #52, #566 | apps/api/src/senders/senders.read-service.spec.ts |  |
 | D45 | Charts: **Volume + open-rate over 12 months, side-by-side | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts |  |
 | D46 | Decision history: **10 most recent inline, all V2 actions, link to full | 🟢 | #30 | apps/api/src/senders/senders.controller.spec.ts — D46 default limit |  |
 | D47 | Senders shape: **Weekly Hero (Mondays) + grid/table below + Review Session overlay | 🚫 | #115, #346 |  | Retired 2026-07-17 by #346: the Weekly Hero was removed with the editorial-hero era (spec v1.2 D4) and its dead stack deleted per D245 prelaunch. Was 🟢 citing senders.controller.spec.ts — a spec #346 deleted, so the evidence no longer existed |
@@ -262,7 +262,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D204 | Read-only services per feature + events for cross-feature writes (refines D201) | 🟢 | #37, #78, #113 | apps/api/src/triage/triage.service.spec.ts — D204 read-only |  |
 | D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | 🔵 | #121, #123, #218, #372 |  |  |
 | D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | 🔵 | #127, #558 |  |  |
-| D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | 🟢 | #113, #226, #388 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
+| D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | 🟢 | #113, #226, #388, #566 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
 | D208 | "What happens next" preview mandatory before every automation or destructive action | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — preview mandatory before mutation | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D209 | Trust-first microcopy hard rule (extends D194) | 🔵 | #410, #419 |  |  |
 | D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12, #494 |  |  |

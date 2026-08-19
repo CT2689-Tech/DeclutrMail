@@ -72,12 +72,28 @@ function whyLine(row: TriageDecisionRow): string {
     return `${row.last90dMessages} in last 90d`;
   }
   const pct = Math.round(row.readRate * 100);
+  // Two separate honesty constraints on this phrase.
+  //
+  // WINDOW: every phrase below names 90 days, because `readRate` IS a
+  // 90-day ratio (`triage.read-service.ts` — `last90Read / last90Total`).
+  // This said "Never opened", an absolute lifetime claim built from 90
+  // days, on the product's core ritual. A sender the user has read for
+  // years reads as never opened after one quiet quarter.
+  //
+  // VERB: "marked read", never "opened". Gmail exposes only the absence
+  // of the UNREAD label and no open event at all, so we cannot tell a
+  // human reading a message from a Gmail filter, a bulk mark-as-read, or
+  // a third-party sweeper (unroll.me, SaneBox) stripping UNREAD over the
+  // API. D45 settled this — the column is UNREAD-derived and "could
+  // never be populated honestly" as opens — and `sender-card.tsx` states
+  // the rule outright. The first pass at this fix corrected the window
+  // and kept the banned verb.
   if (row.readRate === 0 && row.last90dMessages >= 8) {
-    return `Never opened · ${row.last90dMessages} in last 90d`;
+    return `None marked read in 90d · ${row.last90dMessages} messages`;
   }
-  if (row.readRate < 0.2) return `${pct}% read · ${row.last90dMessages} in last 90d`;
-  if (row.readRate >= 0.7) return `${pct}% read · keep close`;
-  return `${pct}% read · ${row.last90dMessages} in last 90d`;
+  if (row.readRate < 0.2) return `${pct}% read in 90d · ${row.last90dMessages} messages`;
+  if (row.readRate >= 0.7) return `${pct}% read in 90d · keep close`;
+  return `${pct}% read in 90d · ${row.last90dMessages} messages`;
 }
 
 /**

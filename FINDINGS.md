@@ -15,14 +15,14 @@ a followup (founder's hands), or a documented no.
 
 ## How to use this
 
-**Founder:** say `/finding <what you saw>` in any session. Nothing to format,
+**Founder:** say `/ct-finding <what you saw>` in any session. Nothing to format,
 nothing to open. A screenshot plus a sentence is enough.
 
-**Agent:** on `/finding`, append the item to **Inbox** immediately — date,
+**Agent:** on `/ct-finding`, append the item to **Inbox** immediately — date,
 surface, the founder's words. Do not triage in the same breath and do not
 interrupt whatever else is in flight; capture is cheap, triage is not.
 
-On `/finding triage` (or any explicit ask), work the Inbox: go read the
+On `/ct-finding triage` (or any explicit ask), work the Inbox: go read the
 actual code, form a real verdict rather than a restatement, assign a
 priority, move it into the right section with an `F###` id. Never triage
 from intuition — if the verdict rests on a file, cite `path:line`.
@@ -156,13 +156,509 @@ the point.
 
 ## P0 — launch blockers
 
-_None open._
+### F011 — Search says "no senders match" when the sender exists and the app's own dropdown just showed it
+
+**Found:** 2026-08-19 · founder, production `/senders`
+**Observed:** Searching a sender by its exact name returns "No senders match
+"TechGig Latest News"" while the typeahead directly above it lists
+`TechGig Late… techgig.com · 350 emails`.
+
+**Verdict — search works; the default filter silently excludes the hit, and
+the empty state blames the search.** Reproduced against the API:
+
+| request                                                   | rows     |
+| --------------------------------------------------------- | -------- |
+| `?q=TechGig+Latest+News&activity=active` (the UI default) | **0**    |
+| `?q=TechGig+Latest+News` (no activity filter)             | **1**    |
+| `/senders/suggest?q=TechGig+Latest+News`                  | finds it |
+
+The sender last mailed 158 days ago, so it is `dormant`. `DEFAULT_COMPOSE`
+sets `activity: 'active'`, the list query ANDs the filter with the search, and
+the suggest endpoint ignores filters entirely — so the two surfaces disagree
+by construction, and the one that disagrees is the one the user typed into.
+
+**Why this is the UI-truth class, not a filter nit.** The copy is
+`No senders match "<query>"` — a statement about the QUERY. The true statement
+is "no ACTIVE senders match"; the app is holding the matching row in the same
+render. A user reasonably concludes the sender is not in DeclutrMail at all.
+`Clear search & filters` is the only escape and it conflates the two, so
+recovering means discarding the query as well.
+
+This is also how a user would try to verify a claim the product makes about a
+sender — the exact trust path F006 exists to protect.
+
+**Options.** (a) A search query bypasses the activity filter — search means
+search. (b) Keep the filter and fix the empty state: "No active senders match
+X · 1 match in dormant" with a one-click widen that PRESERVES the query.
+(c) Auto-clear activity on search.
+
+**Recommendation:** (b). The filters are meaningful and silently dropping them
+would surprise a user who set them deliberately; the defect is that the empty
+state asserts something false and offers no path that keeps the query. (b)
+fixes the lie and the dead end without changing what a filter means.
+
+**Priority:** P0 — the primary way a user looks anything up, on the surface
+the founder was using to verify the product's own numbers.
+**Status:** Open
+
+---
+
+### F012 — A third-party sweeper marked 27.5% of the mailbox read; "read" is not evidence of a human
+
+**Found:** 2026-08-19 · founder raised it from experience, then proved it
+**Observed (founder):** _"In the past I have used unroll.me which helps
+unsubscribe from senders and might be marking as email read although I have
+never opened."_ Screenshot shows Gmail rows labelled `Unroll.me/Unsubscribed`.
+
+**Verdict — correct, measured, and larger than expected.** Gmail exposes only
+the absence of the `UNREAD` label and no open event, so any actor with API
+access can manufacture our "read" signal. On the founder's mailbox
+`Unroll.me/Unsubscribed` holds **20,822 messages, 8 unread** — and **20,812 of
+the 75,682 messages we count as read (27.5%) carry it.**
+
+Per sender the distortion is near-total:
+
+| sender              | we say read | read with the sweeper label removed |
+| ------------------- | ----------- | ----------------------------------- |
+| CNCF Events         | 32          | **0**                               |
+| Messari Newsletter  | 32          | **0**                               |
+| Pluto TV            | 27          | **1**                               |
+| TechGig Latest News | 350         | **26**                              |
+| Skyscanner          | 67          | **11**                              |
+
+**Direction of harm, stated honestly.** A sweeper only ever marks read, so it
+INFLATES read rate, which SUPPRESSES unsubscribe suggestions. That fails safe
+— we under-recommend cleanup on senders the user actually ignores. It does not
+push anyone toward a destructive verb. D245 already forbids auto-protecting on
+read rate, so the safety path was never exposed to this.
+
+**Two thirds of the fix already shipped.** The vocabulary change earlier today
+("marked read", never "opened") is exactly right here and is now literally
+true — Unroll.me DID mark them read. And read rate is already excluded from
+automatic protection.
+
+**What remains is ranking and disclosure.** Cleanup ordering still treats a
+sweeper-inflated sender as engaged, so the mail the user most wants gone ranks
+last. Approaches, cheapest first:
+
+1. **Name the sweeper.** We store `label_ids` but not label names, so
+   `Label_117` is opaque to us. One `labels.list` call per mailbox maps ids to
+   names; a message carrying a known sweeper label (`Unroll.me*`, Leave Me
+   Alone, Cleanfox) is flagged and excluded from the read-rate numerator.
+   Precise and explainable — "324 of 350 were marked by Unroll.me". Needs a
+   maintained list and a D7 note (label NAMES are new metadata).
+2. **Prefer unfakeable engagement.** A sweeper cannot reply or star. Lean
+   ranking on replies and stars where present and treat read rate as weak
+   evidence. No new data, no vendor list, degrades gracefully for sweepers we
+   have never heard of.
+3. **Disclose without deciding.** Show the split on the sender surface and let
+   the user judge.
+
+**Recommendation:** (2) as the durable answer, (1) as the visible one — (2)
+protects against every sweeper including future ones, while (1) is what lets
+the product SAY why a number looks wrong instead of quietly compensating.
+(3) rides along with (1) for free.
+
+**Not built.** Ranking changes what the product recommends and (1) touches the
+Gmail data inventory, so both need ratification.
+
+**Priority:** P0 — the engagement signal underneath the cleanup ranking is
+27.5% manufactured on a real mailbox.
+**Status:** Open
+
+---
+
+### F010 — "You replied N×" counts thread membership, not replies; 57 senders are Protected on replies that never happened
+
+**Found:** 2026-08-19 · founder question while reviewing the senders surface
+**Observed (founder):** _"Can you check for the calculations of Replied as
+well? Is that correct?"_ — the stat renders as `0×` / `5×` / `11×` across the
+grid card, the table column and the row detail.
+
+**Verdict — the format is right and the number is wrong.**
+
+Reply attribution joins `mail_messages` to itself on `provider_thread_id` and
+counts `COUNT(DISTINCT m2.id)` where `m2.is_outbound`
+([initial-sync.worker.ts](packages/workers/src/initial-sync.worker.ts) and the
+identical statement in
+[incremental-sync.worker.ts](packages/workers/src/incremental-sync.worker.ts)).
+There is no predicate tying the outbound message to the sender it is credited
+to. So **every outbound message in a thread counts as a reply to every inbound
+sender in that thread.**
+
+`mail_messages.recipient_emails` already holds To + Cc
+(`[...parseRecipients(meta.to), ...parseRecipients(meta.cc)]`) and is populated
+on 5,535 of 5,539 outbound rows, which makes a stricter definition — "an
+outbound message addressed to this sender" — directly measurable. Measured on
+the founder's mailbox:
+
+|                                                      | senders       |
+| ---------------------------------------------------- | ------------- |
+| have `replied_count > 0`                             | 1,041         |
+| stored count exceeds mail actually addressed to them | **390 (37%)** |
+| show replies while never being addressed at all      | **238**       |
+| …of those, crossed the ≥3 auto-protect threshold     | **57**        |
+
+Concrete rows the product currently asserts:
+
+| Sender                                                   | Claim                                |
+| -------------------------------------------------------- | ------------------------------------ |
+| `mailer-daemon@googlemail.com` (Mail Delivery Subsystem) | you replied **14×**                  |
+| `camden-addison-no-reply@realpage.com`                   | **11×**                              |
+| `calendar-notification@google.com`                       | **11×**                              |
+| `mehuln@google.com`                                      | **40×**, from **1** received message |
+
+You cannot reply to mailer-daemon. The bounce lands in a thread that already
+contains outbound mail, and the join credits it.
+
+**Why this is P0 rather than a display nit.** `replied_count ≥ 3` is a D245
+automatic-protection trigger, and Protected senders are excluded from bulk and
+automatic mail-changing actions. Of 460 senders protected with
+`protection_reason = 'replied'`, **57 have no outbound mail addressed to them
+at all** — permanently shielded junk, on evidence of a relationship that does
+not exist. D245's own wording is "at least three replies… a reply is a two-way
+relationship"; a bounce notification is not one.
+
+This is the mirror image of F008/F009: same class (asserting what we do not
+know), opposite direction — over-protecting instead of over-unsubscribing.
+`hasReplied` also feeds a Keep verdict in the cascade.
+
+**The fix is not a one-liner, which is why it is not bundled here.** Switching
+to a pure recipient predicate kills every phantom above, but risks
+false NEGATIVES where the reply legitimately went somewhere else — a
+`Reply-To` address, or a mailing list where the reply goes to the list rather
+than the original sender. Losing a reply attribution UN-protects a sender,
+which is the dangerous direction. The candidate rules, in the order worth
+measuring:
+
+1. **Recipient-based** — outbound is a reply to S iff S's address is in its
+   To/Cc. Kills all 238 phantoms. Needs the `Reply-To` false-negative measured
+   before it can be trusted.
+2. **Recipient-based with a `Reply-To` fallback** — also credit S when the
+   outbound is addressed to the `Reply-To` S advertised. Requires storing
+   `Reply-To`, which is a D7 allowlist amendment and its own decision.
+3. **Keep thread attribution for the DISPLAY, gate only the PROTECTION on the
+   stricter rule.** Smallest blast radius: nothing loses a shield except the
+   57 that never earned one, and the visible count stops being the thing that
+   grants protection.
+
+**Recommendation:** (3) first — it removes the safety defect without risking a
+single legitimate protection — then measure (1) before changing what the card
+shows.
+
+**Not changed in PR #566.** Auto-protection is a CLAUDE.md §9 stop condition
+and this un-protects real senders; it needs founder ratification and its own
+change.
+
+**Priority:** P0 — a safety mechanism firing on fabricated evidence, on the
+same surface as F008.
+**Status:** Open
+
+---
+
+### F008 — "Marked read" is a 30-day rate wearing a lifetime label; the grid escalates it to "Never"
+
+**Found:** 2026-08-18 · `/senders` sender preview modal + grid card
+**Observed (founder, verbatim):** _"marked read seems buggy as well. Check my
+gmail for etherscan. It shows marked read as 0% although I can see one email
+has been read."_
+
+**Verdict — the observation is right, the named cause is not. The tile is
+arithmetically correct and semantically false.**
+
+`Marked read` is a **rolling 30-day** ratio, not a lifetime one:
+`last30dReadCount / last30dMsgs`, both live correlated subqueries over
+`mail_messages`
+([senders.read-service.ts:184-202](apps/api/src/senders/senders.read-service.ts:184)),
+divided by `computeReadRate`
+([senders.read-service.ts:1669](apps/api/src/senders/senders.read-service.ts:1669)),
+window constant `WINDOWS.VOLUME_DAYS = 30`
+([thresholds.ts:46](packages/shared/src/senders/thresholds.ts:46)). The FE
+renders it at
+[sender-row-detail.tsx:139-152](apps/web/src/features/senders/table/sender-row-detail.tsx:139).
+
+Measured on the founder's own synced mailbox:
+
+| noreply@etherscan.io | messages | read  | rate                         |
+| -------------------- | -------- | ----- | ---------------------------- |
+| lifetime             | 1,872    | 1,806 | **96.5%**                    |
+| last 90d             | 50       | 0     | 0%                           |
+| last 30d             | 9        | 0     | **0% ← what the tile shows** |
+
+So the product tells the user it has never seen them read a sender whose mail
+they have read 96.5% of since 2017.
+
+**Why it reads as a lie rather than a shorthand.** The five stat cards are
+`Received` (lifetime) · `In inbox` (now) · `Last received` · `Marked read`
+(**silently 30d**) · `Last 30 days` (**explicitly** 30d). The only card whose
+window is unstated is the only windowed one, and it sits directly beneath a
+lifetime `Received 1,872`. Every surrounding cue says lifetime.
+
+**The grid copy is worse — it makes an absolute claim a suffix cannot repair.**
+`readBucket(0)` renders the label **"Never"** with aria "Read rate: never
+marked read" ([fact-language.tsx:82](apps/web/src/features/senders/fact-language.tsx:82)),
+and when `read <= 5 && monthly >= 8` the row pushes **"Almost never marked
+read"** ([sender-list-row.tsx:67](apps/web/src/features/senders/table/sender-list-row.tsx:67)).
+Etherscan (read 0, monthly 9) hits that branch exactly. A percentage can be
+qualified by adding "in 30d"; "Never" cannot — the wording has to change.
+
+**Blast radius, same mailbox:** 615 senders have mail in the last 30 days;
+**332 of them render 0%**, and **46 of those have a lifetime read rate ≥ 50%** —
+i.e. 46 flat self-contradictions, not 1. (An independent 90-day cut: 115 of 387
+active senders at 0%, 12 contradicting lifetime.)
+
+**Ruled out, with the evidence.** These were each tested rather than assumed:
+
+- **Not a `null → 0` coercion.** `readRate: number | null`
+  ([senders.ts:129](apps/web/src/lib/api/senders.ts:129)) is passed through
+  deliberately — `monthlyVolume ?? 0` is coerced on the adjacent line and
+  `readRate` is not
+  ([adapters.ts:100-103](apps/web/src/features/senders/api/adapters.ts:100)) —
+  and `null` renders `—`. This path is clean.
+- **Not broken label sync.** `users.history.list` is called with no
+  `historyTypes` filter, so `labelsAdded` / `labelsRemoved` come back and are
+  dispatched into `handleLabelChange`
+  ([incremental-sync.worker.ts:787-840](packages/workers/src/incremental-sync.worker.ts:787)),
+  which keeps `is_unread` in lockstep with `label_ids`. A cursor older than
+  Gmail's 7-day retention returns `cursorTooOld` and re-enqueues a full sync
+  rather than advancing
+  ([incremental-sync.worker.ts:371-382](packages/workers/src/incremental-sync.worker.ts:371)),
+  and that re-sync refreshes `isUnread` on upsert
+  ([initial-sync.worker.ts:1432](packages/workers/src/initial-sync.worker.ts:1432)).
+  The design is sound.
+- **Not rounding — but rounding is a real latent sibling.** `computeReadRate`
+  rounds to 2 decimals _before_ the FE multiplies by 100, so any true rate below
+  0.005 collapses to a measured `0%` (and to "Never"). It needs >200 messages in
+  30 days for one read; no sender currently hits it. Fix it in the same change.
+
+**Sub-claim raised and then disproved — recorded so it is not re-raised.** Two
+messages Gmail reported as read were still `is_unread = t` with
+`updated_at == created_at`, which looked like frozen read state. The local
+worker was down at the time. **Re-tested with the worker up: `1a00acef48761965`
+flipped to `is_unread = f` at 22:49:47, within seconds of boot.** Label sync is
+correct; that divergence was worker downtime, not a defect. (`19e6d24cb7266503`,
+indexed 2026-05-27, remains stale — a history-gap casualty from 83 days of
+intermittent local worker, recoverable only by the `cursorTooOld` full re-sync.
+A dev-environment artifact, not a production defect.)
+
+**Post-fix reality check.** After that catch-up the tile reads **11%** against a
+lifetime **96.5%**. The number moved; the false impression did not. This
+confirms the defect is the window/label mismatch and not the underlying data.
+
+**Recommendation.** Rename to the window it actually measures, and make the
+grid stop asserting lifetime facts from a 30-day sample. `Read rate · 30d`
+(or show `1,806 / 1,872 lifetime` and drop the window entirely — the tile row
+is otherwise all-lifetime). `readBucket(0)` must not say "Never" when lifetime
+disagrees. Fix the pre-multiply rounding in the same PR.
+
+**Priority:** P0 — the trust wedge asserting a falsehood about the user's own
+mail, on the primary surface, found by the founder inside five minutes of real
+use. Same defect class as the documented UI-truth bug, in its _label_ form
+rather than its `null → 0` form.
+**Status:** Open
+
+---
+
+### F009 — `sender_timeseries.read_count` is frozen at index time and feeds Unsubscribe recommendations through a `null → 0` coercion
+
+**Found:** 2026-08-18 · while triaging F008 (not observed by the founder)
+**Observed:** The recommendation scorer does not use F008's live
+`mail_messages` path. It sums `sender_timeseries.read_count` over 90 days
+([score.worker.ts:567-585](packages/workers/src/score.worker.ts:567),
+[autopilot-signals.ts:137-191](packages/workers/src/autopilot-signals.ts:137)).
+
+**Verdict — two defects compounding, and this one moves mail.**
+
+1. **The counter is write-once.** `read_count` is incremented only at
+   message-insert time
+   ([initial-sync.worker.ts:1370-1379](packages/workers/src/initial-sync.worker.ts:1370),
+   [incremental-sync.worker.ts:709-725](packages/workers/src/incremental-sync.worker.ts:709)).
+   `handleLabelChange` never touches it, and the incremental post-pass
+   reconciles `reply_count` only ([incremental-sync.worker.ts:877-900](packages/workers/src/incremental-sync.worker.ts:877)).
+   A message read _after_ it was indexed is never counted as read here.
+   **Measured:** over a 90-day window, 2,005 sender-months compared against a
+   live recount of `mail_messages` — **242 (12%) disagree**, undercounting reads
+   by 76. Unlike F008's tile, this cannot self-heal from a live query.
+
+   **Reproduced live, 2026-08-18 22:49.** A single etherscan message was read in
+   Gmail; the incremental worker applied the label change and flipped
+   `mail_messages.is_unread` within seconds. In the same instant the live 30-day
+   aggregate moved `0/9 → 1/9`, while `sender_timeseries` for `2026-08` stayed at
+   `volume 9, read_count 0`. One state change, two readers, one of them wrong —
+   and the wrong one is the reader that feeds the Unsubscribe cascade.
+
+2. **Unknown is coerced to a measured zero.** Both call sites do
+   `volume > 0 ? reads / volume : 0`
+   ([score.worker.ts:585](packages/workers/src/score.worker.ts:585),
+   [autopilot-signals.ts:191](packages/workers/src/autopilot-signals.ts:191)),
+   which feeds `readRate90d < 0.2 → +0.15` and `< 0.05 → +0.10` toward
+   Unsubscribe ([score-cascade.ts:357-358](packages/workers/src/score-cascade.ts:357)).
+   A sender with no timeseries row scores as "never read" and gets pushed
+   toward Unsubscribe on evidence that was never gathered.
+
+This is the textbook `null → 0` form of the UI-truth class — the exact one
+F008's display path correctly avoids — except here it does not merely display a
+wrong number, it **recommends a destructive verb from one**.
+
+**Recommendation.** Make the 90-day read rate `number | null` end to end and
+let a null abstain from the cascade rather than score as zero. Separately,
+either reconcile `read_count` in `handleLabelChange` or drop the counter and
+read the same live `mail_messages` aggregate the tile already uses — a stored
+counter that no code path can correct is not worth its drift.
+
+**Priority:** P0 — a destructive recommendation derived from a fabricated
+signal. Higher real severity than F008, which only misreports.
+**Status:** Open
 
 ---
 
 ## P1 — launch week
 
-_None open._
+### F006 — Sender surfaces show only relative time; the absolute instant is already on the wire and thrown away
+
+**Found:** 2026-08-18 · sender detail "Recent messages" + `/senders` preview modal
+**Observed (founder, verbatim):** _"instead of x month ago, we should give
+concrete timestamp. Even in recent subjects, there is no timestamp at all.
+This would fill the trust gap if user is trying to verify something. I was
+doing exactly same and felt like this."_
+
+**Verdict — correct, and cheaper to fix than it looks: this is a render-layer
+omission, not a data gap.**
+
+The full ISO instant survives the entire chain untouched — Gmail
+`internalDate` → `mail_messages.internal_date` (timestamptz, NOT NULL,
+[mail-messages.ts:94](packages/db/src/schema/mail-messages.ts:94)) →
+`internalDate: row.internalDate.toISOString()`
+([senders.read-service.ts:1494](apps/api/src/senders/senders.read-service.ts:1494))
+→ `receivedAt: row.internalDate`
+([adapters.ts:161](apps/web/src/features/senders/api/adapters.ts:161)). No
+serializer or adapter drops it.
+
+Where it dies:
+
+| Surface                      | Has the ISO?               | Renders it?                                                                                                                                                             |
+| ---------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Recent messages row          | yes (`message.receivedAt`) | no — `relTimeFromIso` at [recent-messages.tsx:228](apps/web/src/features/senders/detail/recent-messages.tsx:228), no `title`, no `<time>`                               |
+| Recent subjects (peek modal) | yes, then **discarded**    | no — `.slice(0,3).map(m => m.subject)` at [sender-row-detail.tsx:68-70](apps/web/src/features/senders/table/sender-row-detail.tsx:68); the type is `subjects: string[]` |
+| "Last received" tile         | yes (`s.lastSeenAt`)       | no — `relTimeLabel(s.lastDays)` at [sender-row-detail.tsx:138](apps/web/src/features/senders/table/sender-row-detail.tsx:138)                                           |
+| Confirm-action preview       | yes                        | **yes** — `<time dateTime>` at [confirm-action-modal.tsx:1543](apps/web/src/features/senders/confirm-action-modal.tsx:1543)                                             |
+| Activity feed                | yes                        | **yes** — relative label + `title={absolute}` at [activity-screen.tsx:2284](apps/web/src/features/activity/activity-screen.tsx:2284)                                    |
+
+**The precedent is already ours, decided for this exact reason.** The
+confirm-action preview's subject sample was deliberately widened from
+`string[]` to `{subject, date}[]` because "the date is how the reader checks it
+respects the window they picked" (MISTAKES.md 2026-07-27). Recent subjects is
+the same component pattern that never got the same treatment.
+
+**A live spec violation surfaced alongside it.** D46 mandates for decision
+history: _"Date (relative for ≤7d, absolute for older)"_
+([Implementation-Plan.md:1679](docs/execution/Implementation-Plan.md:1679)).
+The component that implements it correctly (`decision-history.tsx:38`) is
+**unmounted**; the shipped `DecisionTimeline` calls an unconditional
+`formatRelative` with no absolute branch and no `title`
+([sender-detail-page.tsx:1368](apps/web/src/features/senders/detail/sender-detail-page.tsx:1368)).
+That is drift, not a new decision.
+
+**Constraints any fix must respect.**
+
+- **D41 specifies the relative label** for the recent-message row
+  ([Implementation-Plan.md:1592-1610](docs/execution/Implementation-Plan.md:1592)).
+  Adding `title=` / `<time dateTime=>` is additive and needs no amendment;
+  changing the _visible_ string does.
+- **Hydration determinism (D200).** `eslint.config.mjs:66-102` bans unpinned
+  `toLocale*String()` / `Intl.*Format(undefined, …)` across `apps/web`. Any
+  absolute label must pin `'en-US'` **and** pass an explicit `timeZone` from
+  `useUserTimeZone()` ([use-me.ts:96](apps/web/src/features/auth/api/use-me.ts:96)),
+  or sit behind `useNow()` ([use-now.ts:18](apps/web/src/lib/use-now.ts:18)).
+  Note `relTimeFromIso` already defaults `now = new Date()` **in a render body**
+  on a server-prefetched route — pre-existing hazard in the file being touched.
+- **No privacy work required.** The timestamp is already a declared, stored,
+  user-disclosed field — `received-date` in the D7 registry
+  ([gmail-data-inventory.ts:149-162](packages/shared/src/contracts/gmail-data-inventory.ts:149)),
+  on the same footing as the snippet beside it. Same row, same query, zero new
+  Gmail calls, no registry amendment.
+
+**Recommendation.** Additive and small: `<time dateTime={iso} title={absolute}>`
+on the recent-message rows, widen `RowDetailSubjects` to carry the date and
+render it like the confirm-action preview already does, and put the absolute
+value on the "Last received" tile. Close the D46 drift in the same PR. There is
+no shared date utility in `packages/shared` — five per-feature relative
+formatters have been duplicated instead; promoting one is optional here and
+should not be smuggled into this change.
+
+**Priority:** P1
+**Status:** Open
+
+---
+
+### F007 — The hamburger's inline `display` outranks its media query, so every desktop session can open a duplicate sidebar over the real one
+
+**Found:** 2026-08-18 · app shell top bar, every authed route
+**Observed (founder, verbatim):** _"hamburger menu seems like buggy"_
+
+**Verdict — real, one line, and shipped since 2026-07-14.**
+
+`tokens.css` hides the hamburger above the 900px breakpoint and shows it below
+— correctly:
+
+```
+.dm-topbar-hamburger { display: none; }                       /* tokens.css:367 */
+@media (max-width: 900px) { .dm-topbar-hamburger { display: inline-flex; } }  /* :380 */
+```
+
+But the button carries `display: 'inline-flex'` as an **inline style**
+([app-shell.tsx:185](packages/shared/src/shell/app-shell.tsx:185)). A style
+attribute outranks any non-`!important` author rule, so the `display: none`
+never applies and **the hamburger renders at every width**, including the
+~2000px viewport in the screenshot.
+
+**What clicking it does — and why it looks like nothing happened.** There are
+two separate sidebar instances. The desktop one
+([app-shell.tsx:99-101](packages/shared/src/shell/app-shell.tsx:99)) does not
+read `drawerOpen` at all. The mobile one
+([app-shell.tsx:105-147](packages/shared/src/shell/app-shell.tsx:105)) mounts a
+**second `<Sidebar>`** in a `role="dialog" aria-modal="true"` fixed at
+`left: 0`, same 220px width. On desktop it lands pixel-aligned on top of the
+sidebar that was already there — identical nav, identical position. The only
+visible deltas are the ✕ and a 34% scrim. That is exactly screenshot 3; the ✕
+is not leaking into the sidebar, it belongs to the duplicate sitting on it.
+
+**It is also a live a11y defect.** `useFocusTrap`
+([app-shell.tsx:59](packages/shared/src/shell/app-shell.tsx:59)) is active, over
+a background that is never `inert`/`aria-hidden`, and while open the page
+carries two `<nav aria-label="Product navigation">` landmarks plus duplicated
+element ids referenced by `aria-labelledby`
+([sidebar.tsx:130-133](packages/shared/src/shell/sidebar.tsx:130)).
+
+**Regression, precisely located.** `git log -L 170,195` on the shell shows two
+touches. The original had no `display`. Commit `e0295e38` ("feat: launch public
+product experience", #325, 2026-07-14) replaced `padding` with a 44px
+touch-target block and brought `display: 'inline-flex'` along to centre the SVG.
+Live for 35 days. The file documents this exact trap 25 lines lower, for the
+trust strip: _"`display` lives in tokens.css, not here: an inline style would
+outrank the phone-width media query"_
+([app-shell.tsx:210-212](packages/shared/src/shell/app-shell.tsx:210)) — the
+hamburger was simply missed.
+
+**Why nothing caught it.** No Storybook story exists for `AppShell` or
+`Sidebar`. [app-shell.test.tsx:14-27](apps/web/src/features/shell/app-shell.test.tsx:14)
+opens the drawer and asserts the trap in **jsdom, where `tokens.css` never
+loads**, so it passes identically either way — and it asserts the 44px size that
+motivated the bad line. Playwright runs desktop and mobile projects and asserts
+the trust strip in both directions, but never asserts anything about the
+hamburger.
+
+**Recommendation.** Delete `display: 'inline-flex'` from
+[app-shell.tsx:185](packages/shared/src/shell/app-shell.tsx:185) and let
+`tokens.css` own it; `alignItems` / `justifyContent` can stay inline (inert when
+the box is not flex). Then add the both-directions assertion to
+`packages/e2e/specs/a11y-smoke.spec.ts` beside the existing trust-strip check —
+the jsdom test structurally cannot catch this class, so without the e2e pin it
+will regress again.
+
+**Priority:** P1 — a visibly broken control in the chrome of every authed
+desktop page, plus an active focus trap, against a one-line fix.
+**Status:** Open
 
 ---
 

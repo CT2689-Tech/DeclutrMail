@@ -110,7 +110,9 @@ function rowToSignals(row: Record<string, string>): SenderSignals {
     hasReplied: Number(row.replies_sent) > 0,
     gmailCategory: row.gmail_category as SenderSignals['gmailCategory'],
     starredInLastYear: Number(row.starred_year) > 0,
-    readRate90d: Number(row.read_rate_90d),
+    // Preserve unmeasurable as null — `Number(null)` is 0, which would
+    // silently reinstate the fabricated zero this corpus exists to test.
+    readRate90d: row.read_rate_90d == null ? null : Number(row.read_rate_90d),
     firstSeenMonthsAgo: Number(row.first_seen_months),
     firstSeenDaysAgo: Number(row.first_seen_days),
     lastSeenDaysAgo: Number(row.last_seen_days),
@@ -272,7 +274,7 @@ function main(): number {
       console.log(`    you say:    ${m.desired}${m.reason ? `  — ${m.reason}` : ''}`);
       console.log(`    cascade:    ${m.got}  (ruleId=${m.ruleId}, conf=${m.confidence})`);
       console.log(
-        `    signals:    msg=${m.signals.totalMessages}  vol/mo=${m.signals.monthlyVolume}  read90d=${(m.signals.readRate90d * 100).toFixed(0)}%  replied=${m.signals.hasReplied}  starred=${m.signals.starredInLastYear}  cat=${m.signals.gmailCategory}  last_seen=${m.signals.lastSeenDaysAgo}d`,
+        `    signals:    msg=${m.signals.totalMessages}  vol/mo=${m.signals.monthlyVolume}  read90d=${m.signals.readRate90d === null ? 'n/a' : `${(m.signals.readRate90d * 100).toFixed(0)}%`}  replied=${m.signals.hasReplied}  starred=${m.signals.starredInLastYear}  cat=${m.signals.gmailCategory}  last_seen=${m.signals.lastSeenDaysAgo}d`,
       );
     }
     console.log('');
