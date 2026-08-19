@@ -132,7 +132,16 @@ export function adaptSenderDetail(args: {
     recentMessages: args.messages.map(adaptMailMessageRow),
     stats,
     timeseries: args.timeseries.map(adaptTimeseriesPoint),
-    history: args.history.map(adaptDecisionHistoryRow),
+    history: args.history.flatMap((row) => {
+      const adapted = adaptDecisionHistoryRow(row);
+      // A row whose action or source this build doesn't know is a row we
+      // cannot describe. Dropping it renders the honest empty state; the
+      // alternative is a timeline entry with a blank verb and an
+      // "NaN yr ago" timestamp, which asserts an event without saying
+      // anything true about it. Reachable whenever the API is a version
+      // ahead of the web app — the two deploy separately.
+      return adapted ? [adapted] : [];
+    }),
   };
 }
 
@@ -211,12 +220,18 @@ const SOURCE_LABEL: Record<DecisionHistoryRowDto['source'], DecisionSource> = {
  * messages moved. `count` is left unset for the policy-only verbs so
  * the row doesn't render "· 0 messages" for a Keep or a Protect.
  */
-export function adaptDecisionHistoryRow(row: DecisionHistoryRowDto): DecisionHistoryRow {
+export function adaptDecisionHistoryRow(row: DecisionHistoryRowDto): DecisionHistoryRow | null {
+  const action = ACTION_LABEL[row.action];
+  const source = SOURCE_LABEL[row.source];
+  // Both maps are exhaustive over the wire union, so `undefined` here
+  // means the API sent a value this build predates. Say nothing rather
+  // than render a row with a blank verb.
+  if (!action || !source || !row.occurredAt) return null;
   return {
     id: row.id,
     at: row.occurredAt,
-    source: SOURCE_LABEL[row.source],
-    action: ACTION_LABEL[row.action],
+    source,
+    action,
     ...(row.affectedCount > 0 ? { count: row.affectedCount } : {}),
     opId: row.id,
   };
