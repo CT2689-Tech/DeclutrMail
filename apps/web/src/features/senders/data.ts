@@ -97,6 +97,28 @@ export function enrichSenderRow(row: SenderListRow, now: number = Date.now()): S
   };
 }
 
+/**
+ * The secondary identity line under a sender's name — the full address.
+ *
+ * Senders are keyed by ADDRESS, not domain (`sender_key =
+ * sha256("v1|" + normalized_email)`, D12 / ADR-0011), so one brand can
+ * legitimately own several rows. Rendering only the domain made those
+ * rows visually identical — two `Redfin` / `redfin.com` cards read as a
+ * duplicate bug (founder smoke 2026-08-19, recurrence of the 2026-07-07
+ * hover-only fix). The address is what actually distinguishes them, so
+ * it is shown outright rather than hidden in a `title` tooltip that
+ * touch can never reach.
+ *
+ * Falls back to the domain when there is no From-header display name:
+ * `name` is already the address in that case (see `enrichSenderRow`),
+ * and printing it twice tells the reader nothing new.
+ */
+export function senderAddressLine(
+  sender: Pick<SenderListRow, 'displayName' | 'email' | 'domain'>,
+): string {
+  return sender.displayName.trim() === '' ? sender.domain : sender.email;
+}
+
 export interface GroupMeta {
   key: SenderGroup;
   label: string;

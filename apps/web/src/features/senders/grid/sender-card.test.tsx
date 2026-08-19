@@ -93,7 +93,9 @@ describe('SenderCard — peek reachability (grid↔table parity)', () => {
 
   it('still opens from the identity button (the accessible opener)', () => {
     renderCard();
-    fireEvent.click(screen.getByRole('button', { name: /acme newsletter acme\.com/i }));
+    // Accessible name = display name + the address line (2026-08-19);
+    // it was name + domain before the card started rendering addresses.
+    fireEvent.click(screen.getByRole('button', { name: /acme newsletter news@acme\.com/i }));
     expect(screen.getByRole('dialog', { name: 'peek-stub' })).toBeInTheDocument();
   });
 });
@@ -114,5 +116,34 @@ describe('SenderCard — in-inbox fact on the card face', () => {
     renderCard();
     expect(screen.getByText(/144 received/)).toBeInTheDocument();
     expect(screen.queryByText(/in inbox/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Identity line (2026-08-19 founder smoke — "why 2 redfin results?").
+ *
+ * Senders are keyed by ADDRESS, so one brand legitimately owns several
+ * rows. The card used to render only the domain, which made those rows
+ * pixel-identical and read as a duplicate bug.
+ */
+describe('SenderCard — identity line renders the address', () => {
+  it('shows the full address, not just the domain', () => {
+    renderCard({ displayName: 'Redfin', email: 'listings@redfin.com', domain: 'redfin.com' });
+    expect(screen.getByText('listings@redfin.com')).toBeInTheDocument();
+  });
+
+  it('distinguishes two senders sharing a display name and domain', () => {
+    const shared = { displayName: 'Redfin', domain: 'redfin.com' };
+    renderCard({ ...shared, id: 'sender-1', email: 'listings@redfin.com' });
+    renderCard({ ...shared, id: 'sender-2', email: 'no-reply@redfin.com' });
+    expect(screen.getByText('listings@redfin.com')).toBeInTheDocument();
+    expect(screen.getByText('no-reply@redfin.com')).toBeInTheDocument();
+  });
+
+  it('falls back to the domain when there is no display name — never the address twice', () => {
+    renderCard({ displayName: '', email: 'bare@redfin.com', domain: 'redfin.com' });
+    // The name line already IS the address; the line below must not repeat it.
+    expect(screen.getAllByText('bare@redfin.com')).toHaveLength(1);
+    expect(screen.getByText('redfin.com')).toBeInTheDocument();
   });
 });

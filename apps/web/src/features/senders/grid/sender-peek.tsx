@@ -28,6 +28,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { Avatar, tokens, useFocusTrap, useIsAtMost } from '@declutrmail/shared';
 import { SenderRowDetailLive } from '../table/sender-row-detail';
+import { senderAddressLine } from '../data';
 import type { ActionRequest, Sender } from '../data';
 
 const { color, font, radius } = tokens;
@@ -114,6 +115,10 @@ export function SenderPeek({
               {sender.name}
             </div>
             <div
+              // Address, not domain — same identity line the card and
+              // table row render, so the peek confirms WHICH sender you
+              // opened when a brand owns several (`senderAddressLine`).
+              title={senderAddressLine(sender)}
               style={{
                 fontFamily: font.mono,
                 fontSize: 10.5,
@@ -123,7 +128,7 @@ export function SenderPeek({
                 whiteSpace: 'nowrap',
               }}
             >
-              {sender.domain}
+              {senderAddressLine(sender)}
             </div>
           </div>
           <Link
