@@ -182,7 +182,19 @@ export function AppShell({
               width: 44,
               height: 44,
               padding: 0,
-              display: 'inline-flex',
+              // NO `display` here — it lives in tokens.css, same rule as
+              // the trust strip below. An inline `display: inline-flex`
+              // outranks `.dm-topbar-hamburger { display: none }` and the
+              // ≤900px media query that re-enables it, so the button
+              // rendered at EVERY width. On desktop that let a click
+              // mount the mobile drawer — a second <Sidebar> in an
+              // aria-modal dialog pinned left:0, landing pixel-aligned on
+              // top of the always-visible desktop sidebar, with a live
+              // focus trap and duplicate nav landmarks. `alignItems` /
+              // `justifyContent` stay: they are inert until the class
+              // makes the box flex. (Regressed in #325 by a 44px
+              // touch-target change that brought `display` along to
+              // centre the SVG; live 2026-07-14 → 2026-08-18.)
               alignItems: 'center',
               justifyContent: 'center',
               background: 'transparent',

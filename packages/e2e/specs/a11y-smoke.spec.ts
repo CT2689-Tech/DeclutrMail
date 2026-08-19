@@ -63,6 +63,24 @@ async function expectCriticalControlsHaveNames(page: Page, isMobile: boolean): P
   } else {
     await expect(trustClaim).toHaveAccessibleName('Undo windows');
   }
+
+  // The hamburger is the mirror image of the trust strip: present ONLY at
+  // phone widths. It needs the same both-directions assertion for the same
+  // reason, and it has the receipts — an inline `display: inline-flex`
+  // outranked `.dm-topbar-hamburger { display: none }` for 35 days, so the
+  // button rendered on desktop and opened a duplicate sidebar in an
+  // aria-modal dialog over the real one. The jsdom unit test could not see
+  // it (tokens.css never loads there); only a real browser at a real
+  // viewport can, which is why the pin belongs here.
+  const drawerOpener = page.getByRole('button', { name: 'Open navigation menu' });
+  if (isMobile) {
+    await expect(drawerOpener).toHaveAccessibleName('Open navigation menu');
+  } else {
+    await expect(
+      drawerOpener,
+      'hamburger must not render above the 900px breakpoint — the desktop sidebar is already visible',
+    ).toHaveCount(0);
+  }
   await expect(
     page.getByRole('button', { name: 'chintan.e2e.billing@synthetic.test', exact: true }),
   ).toHaveAccessibleName('chintan.e2e.billing@synthetic.test');
