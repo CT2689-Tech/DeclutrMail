@@ -27,7 +27,6 @@ import {
 } from './reasoning.js';
 import { RateLimiter } from './rate-limiter.js';
 import {
-  CASCADE_RULE_IDS,
   CASCADE_RULE_PHRASE,
   isGovernmentDomain,
   runCascade,
@@ -196,17 +195,31 @@ export interface ScoreWorkerDeps {
  * worker consumes, and never mutates `triage_decisions` itself.
  */
 /**
- * The first internal rule id a user-facing sentence names, or `null`.
+ * The first identifier-shaped token in a user-facing sentence that does
+ * NOT come from the sender's own name, or `null`.
  *
- * Matches against the KNOWN vocabulary rather than a snake_case regex:
- * user data is full of underscores too (a sender literally named
- * `ife_insurance_india` sits in the founder's mailbox), and rejecting a
- * good explanation because it quoted the sender's own name would be a
- * worse bug than the one this closes.
+ * The first version of this check matched a known list of cascade rule
+ * ids. Measuring the live data showed that is too narrow: shown one id
+ * in its prompt, the model coined siblings that exist nowhere in the
+ * codebase — `protect_engagement_based` is in 100+ stored explanations
+ * and in zero lines of source. A list can only ever catch the leaks we
+ * already know about.
+ *
+ * A bare snake_case regex is too wide in the other direction: senders
+ * are named `ife_insurance_india` and `nse_alerts`, and rejecting an
+ * explanation for quoting the user's own data would be the worse bug.
+ *
+ * So the rule is neither list nor pattern alone: an identifier-shaped
+ * token is fine if it appears in the sender's identity, and ours if it
+ * doesn't. On the founder's 8,531 rows that separates 439 leaks from 10
+ * legitimate quotes of a sender's own name.
  */
-export function leakedRuleId(reasoning: string): string | null {
-  const haystack = reasoning.toLowerCase();
-  return CASCADE_RULE_IDS.find((id) => haystack.includes(id)) ?? null;
+export function foreignIdentifierToken(reasoning: string, senderIdentity: string): string | null {
+  const own = senderIdentity.toLowerCase();
+  for (const match of reasoning.matchAll(/[A-Za-z]+_[A-Za-z_]+/g)) {
+    if (!own.includes(match[0].toLowerCase())) return match[0];
+  }
+  return null;
 }
 
 export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult> {
@@ -425,7 +438,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
             }),
           this.explainTimeoutMs,
         );
-        const leaked = raced.kind === 'ok' && raced.value ? leakedRuleId(raced.value) : null;
+        const identity = `${signals.displayName} ${signals.domain} ${signals.email}`;
+        const leaked =
+          raced.kind === 'ok' && raced.value ? foreignIdentifierToken(raced.value, identity) : null;
         if (raced.kind === 'ok' && leaked === null) {
           reasoning = raced.value;
         } else if (raced.kind === 'ok') {
@@ -580,11 +595,20 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   private async loadSignals(
     mailboxAccountId: string,
     senderKey: string,
-  ): Promise<{ signals: SenderSignals; displayName: string; domain: string } | null> {
+  ): Promise<{
+    signals: SenderSignals;
+    displayName: string;
+    domain: string;
+    email: string;
+  } | null> {
     const [sender] = await this.deps.db
       .select({
         displayName: senders.displayName,
         domain: senders.domain,
+        // Identity for the explanation check — the local part is where a
+        // sender's own underscores live (`ife_insurance_india@…`), and
+        // the model is allowed to quote them.
+        email: senders.email,
         gmailCategory: senders.gmailCategory,
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
@@ -704,6 +728,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     return {
       displayName: sender.displayName,
       domain: sender.domain,
+      email: sender.email,
       signals: {
         isProtected: Boolean(policy?.isProtected),
         ...(policy?.protectionReason ? { protectionReason: policy.protectionReason } : {}),
