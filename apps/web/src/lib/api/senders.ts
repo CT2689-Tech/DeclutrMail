@@ -315,6 +315,19 @@ export interface SenderSuggestionDto {
   email: string;
   domain: string;
   totalReceived: number;
+  /**
+   * Which activity bucket the sender is in (F011).
+   *
+   * Suggest ignores the compose filters — a typeahead that hid what you
+   * were typing would be useless — but the LIST honours them, so the
+   * dropdown could offer a dormant sender while the list beneath it read
+   * "No senders match". Labelling the bucket makes that difference
+   * legible instead of contradictory.
+   *
+   * Optional: an API pod predating the field omits it, and an unlabelled
+   * row is better than a guessed label.
+   */
+  activity?: 'active' | 'quiet' | 'dormant';
 }
 
 /**

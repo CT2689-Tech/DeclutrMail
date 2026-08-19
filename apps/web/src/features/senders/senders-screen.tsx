@@ -31,7 +31,13 @@ import {
 } from './data';
 import { SenderSearch } from './sender-search';
 import { isFeatureEnabled } from '@/lib/flags';
-import { ComposeStrip, DEFAULT_COMPOSE, hasAnyFilter, type ComposeState } from './compose-strip';
+import {
+  ComposeStrip,
+  DEFAULT_COMPOSE,
+  EMPTY_COMPOSE,
+  hasAnyFilter,
+  type ComposeState,
+} from './compose-strip';
 import { useComposeState } from './use-compose-state';
 import { SelectionBar } from './selection-bar';
 import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal';
@@ -247,23 +253,64 @@ export function SendersScreen() {
       q: debouncedQuery,
     }),
   );
+  // F011 — a filtered search that starves.
+  //
+  // The default compose is `activity: 'active'`, so searching a sender
+  // who last mailed 158 days ago returned "No senders match" while the
+  // typeahead above it listed that exact sender. The filter was doing
+  // its job; the empty state blamed the QUERY for it, and the only exit
+  // ("Clear search & filters") threw the query away too.
+  //
+  // So: when a search finds nothing under the active filters, ask
+  // whether it finds anything WITHOUT them, and show that instead —
+  // announced, and reversible. The user's filter chips are NOT mutated.
+  // Silently rewriting a filter someone set deliberately trades one
+  // surprise for another, and it would make the URL disagree with the
+  // controls; widening the RESULT and saying so keeps both honest.
+  const filteredIsEmpty =
+    !sendersQuery.isPlaceholderData && (sendersQuery.data?.pages[0]?.data.length ?? 0) === 0;
+  const searchNarrowedToNothing =
+    debouncedQuery.length > 0 && filteredIsEmpty && hasAnyFilter(compose);
+  // Reset per query: "keep my filter" is an answer about THIS search, and
+  // carrying it to the next one would silently re-arm the dead end.
+  const [keepNarrow, setKeepNarrow] = useState(false);
+  useEffect(() => {
+    setKeepNarrow(false);
+  }, [debouncedQuery]);
+  const widenProbe = useSenders({
+    ...sendersListQueryFromScreen({
+      compose: EMPTY_COMPOSE,
+      sort,
+      direction,
+      q: debouncedQuery,
+    }),
+    enabled: searchNarrowedToNothing,
+  });
+  const widenedCount = widenProbe.data?.pages[0]?.meta.query.totalMatching ?? 0;
+  const showingWidened = searchNarrowedToNothing && !keepNarrow && widenedCount > 0;
+
   const allSenders = useMemo<Sender[]>(() => {
-    const pages = sendersQuery.data?.pages ?? [];
+    const pages = (showingWidened ? widenProbe.data?.pages : sendersQuery.data?.pages) ?? [];
     return pages.flatMap((p) => p.data.map((row) => enrichSenderRow(row)));
-  }, [sendersQuery.data]);
+  }, [sendersQuery.data, widenProbe.data, showingWidened]);
   // Carry the wire rows through verbatim for the flat-table view — the
   // SenderTable consumes the wire `SenderListRow` directly. Grid mode
   // reads the enriched `senders` (same rows + derived fields).
   const allWireRows = useMemo<SenderListRow[]>(() => {
-    const pages = sendersQuery.data?.pages ?? [];
+    const pages = (showingWidened ? widenProbe.data?.pages : sendersQuery.data?.pages) ?? [];
     return pages.flatMap((p) => p.data);
-  }, [sendersQuery.data]);
+  }, [sendersQuery.data, widenProbe.data, showingWidened]);
   // Page-1 meta.query.globalMaxTotal — the magnitude-bar denominator
   // (ADR-0014 + senders list contract). Page-1's value is
   // authoritative for the duration of a scroll: subsequent pages
   // recompute server-side but the client preserves the page-1 number
   // so bars do not animate / replace counts as the user pages.
-  const queryMeta = sendersQuery.data?.pages[0]?.meta.query;
+  // When the widened rows are on screen, every derived count must come
+  // from the SAME response they did. Reading `totalMatching` off the
+  // filtered query while rendering unfiltered rows reproduces the exact
+  // defect this fixes one line lower down — the screen said "0 senders
+  // match" above a sender card.
+  const queryMeta = (showingWidened ? widenProbe.data : sendersQuery.data)?.pages[0]?.meta.query;
   const globalMaxTotal = queryMeta?.globalMaxTotal ?? 0;
   // D38 — mailbox-wide absolute counts per compose axis. Page-1 wins
   // and is preserved across the scroll (subsequent pages recompute on
@@ -317,9 +364,18 @@ export function SendersScreen() {
       senders={allSenders}
       wireRows={allWireRows}
       globalMaxTotal={globalMaxTotal}
-      hasNextPage={sendersQuery.hasNextPage}
-      isFetchingNextPage={sendersQuery.isFetchingNextPage}
-      onLoadMore={() => void sendersQuery.fetchNextPage()}
+      hasNextPage={showingWidened ? widenProbe.hasNextPage : sendersQuery.hasNextPage}
+      isFetchingNextPage={
+        showingWidened ? widenProbe.isFetchingNextPage : sendersQuery.isFetchingNextPage
+      }
+      onLoadMore={() =>
+        void (showingWidened ? widenProbe.fetchNextPage() : sendersQuery.fetchNextPage())
+      }
+      widenedFrom={showingWidened ? describeNarrowedFilters(compose) : null}
+      widenedCount={widenedCount}
+      onKeepNarrow={() => setKeepNarrow(true)}
+      matchesOutsideFilters={searchNarrowedToNothing && !widenProbe.isPending ? widenedCount : null}
+      onWiden={() => setKeepNarrow(false)}
       query={query}
       onQueryChange={setQuery}
       summaryFailed={summaryFailed}
@@ -343,11 +399,32 @@ export function SendersScreen() {
 // per-sender-latest-year_month sum. Restore when the analytics team
 // produces a per-user calibration — track in FOUNDER-FOLLOWUPS.
 
+/**
+ * Name the filters a search was widened past, for the F011 notice.
+ *
+ * Activity leads because it is the one the DEFAULT compose sets, and so
+ * the one that starves a search without the user having touched
+ * anything — "No active senders match X" is the sentence that was
+ * missing. Anything else reads generically rather than enumerating
+ * chips: the notice has to fit on one line beside its own escape hatch,
+ * and "no unsub-ready, written-to, protected senders match" is not a
+ * sentence anyone parses.
+ */
+function describeNarrowedFilters(compose: ComposeState): string {
+  if (compose.activity && !compose.activityNegate) return compose.activity;
+  return 'matching';
+}
+
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({
   senders,
   wireRows,
   globalMaxTotal,
+  widenedFrom,
+  widenedCount,
+  onKeepNarrow,
+  matchesOutsideFilters,
+  onWiden,
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,
@@ -370,6 +447,26 @@ function SendersScreenContent({
    *  reads the adapted `senders`; Table mode consumes these directly. */
   wireRows: SenderListRow[];
   globalMaxTotal: number;
+  /**
+   * F011 — set when the active filters starved a search and the results
+   * shown are the UNFILTERED ones. Reads as the filter that was set
+   * aside ("active"), for the notice. `null` when nothing was widened.
+   */
+  widenedFrom: string | null;
+  /** Mailbox-wide matches for the query with the filters set aside. */
+  widenedCount: number;
+  /** Honour the filter after all — restores the (empty) filtered view. */
+  onKeepNarrow: () => void;
+  /**
+   * How many senders the query matches with the filters set aside.
+   *
+   * `null` while unknown (the probe has not answered, or no search is
+   * narrowed) — and unknown must never render as "we looked and found
+   * nothing", which is a claim about a search that did not happen.
+   */
+  matchesOutsideFilters: number | null;
+  /** Widen again after choosing to keep the filter. */
+  onWiden: () => void;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   onLoadMore: () => void;
@@ -2275,6 +2372,43 @@ function SendersScreenContent({
         </div>
       )}
 
+      {/* F011 — the widened-search notice.
+          Announced, never silent: the rows below are NOT what the
+          filters ask for, and a user who set those filters deliberately
+          is owed both that fact and a way back. "Keep <filter> only"
+          returns the honest empty result rather than clearing anything,
+          so the query survives either choice — the dead end the old
+          "Clear search & filters" created was that it threw away the
+          search along with the filter. */}
+      {widenedFrom !== null && (
+        <div
+          role="status"
+          data-testid="senders-widened-notice"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 8,
+            margin: '0 0 12px',
+            padding: '8px 12px',
+            border: `1px solid ${color.lineSoft}`,
+            borderRadius: 8,
+            background: color.paper,
+            fontSize: 13,
+            color: color.fgMuted,
+          }}
+        >
+          <span>
+            No {widenedFrom} senders match &ldquo;{query}&rdquo; — showing all{' '}
+            {widenedCount.toLocaleString('en-US')}.
+          </span>
+          <Button tone="ghost" onClick={onKeepNarrow}>
+            Keep {widenedFrom} only
+          </Button>
+        </div>
+      )}
+
       {/* List body. Search + compose narrow SERVER-side, so an empty
           loaded set with an active query/filter means "no matches" —
           not "not synced yet". (The no-match branch was unreachable
@@ -2315,16 +2449,47 @@ function SendersScreenContent({
           />
         ) : senders.length === 0 && (query || hasAnyFilter(compose)) ? (
           <EmptyState
-            title={query ? `No senders match "${query}"` : 'No senders match these filters'}
-            body="Try a different search or clear the filters."
+            // F011 — say WHICH thing found nothing. `No senders match
+            // "X"` is a claim about the QUERY, and it was false: the
+            // sender existed and the app was listing it in the typeahead
+            // one row above. When filters are on and the search found
+            // nothing anywhere, the honest sentence names both.
+            title={
+              query && hasAnyFilter(compose)
+                ? `No senders match "${query}" under these filters`
+                : query
+                  ? `No senders match "${query}"`
+                  : 'No senders match these filters'
+            }
+            body={
+              // Three different facts, and only one of them was ever
+              // said. `matchesOutsideFilters` is `null` while the
+              // widening probe has not answered — unknown must not read
+              // as "we looked and found nothing", which is a claim about
+              // a search that did not happen. (The reversal path found
+              // this: after "Keep active only" the screen asserted
+              // nothing existed outside the filter while holding the one
+              // sender that did.)
+              query && matchesOutsideFilters !== null && matchesOutsideFilters > 0
+                ? `${matchesOutsideFilters.toLocaleString('en-US')} ${matchesOutsideFilters === 1 ? 'sender matches' : 'senders match'} outside these filters.`
+                : query && hasAnyFilter(compose) && matchesOutsideFilters === 0
+                  ? 'We also looked outside the filters and found nothing, so this is the whole answer.'
+                  : 'Try a different search or clear the filters.'
+            }
             action={
-              <Button
-                onClick={() => {
-                  clearSearchAndFilters();
-                }}
-              >
-                Clear search & filters
-              </Button>
+              query && matchesOutsideFilters !== null && matchesOutsideFilters > 0 ? (
+                // Widening keeps the query; clearing throws it away. Lead
+                // with the one that answers what the user asked.
+                <Button onClick={onWiden}>Show them</Button>
+              ) : (
+                <Button
+                  onClick={() => {
+                    clearSearchAndFilters();
+                  }}
+                >
+                  Clear search &amp; filters
+                </Button>
+              )
             }
           />
         ) : senders.length === 0 ? (

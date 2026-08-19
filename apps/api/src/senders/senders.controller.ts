@@ -321,6 +321,8 @@ export class SendersController {
         email: string;
         domain: string;
         totalReceived: number;
+        /** Which activity bucket the row is in — F011 typeahead label. */
+        activity: 'active' | 'quiet' | 'dormant';
       }>;
     }>
   > {

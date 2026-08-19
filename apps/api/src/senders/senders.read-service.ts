@@ -798,12 +798,15 @@ export class SendersReadService {
    *
    * PRIVACY (D7): every returned column is on the storage allowlist.
    */
-  async suggestSenders(args: {
-    mailboxAccountId: string;
-    q: string;
-    limit: number;
-  }): Promise<
-    Array<{ id: string; name: string; email: string; domain: string; totalReceived: number }>
+  async suggestSenders(args: { mailboxAccountId: string; q: string; limit: number }): Promise<
+    Array<{
+      id: string;
+      name: string;
+      email: string;
+      domain: string;
+      totalReceived: number;
+      activity: 'active' | 'quiet' | 'dormant';
+    }>
   > {
     const trimmed = args.q.trim();
     if (trimmed.length === 0) return [];
@@ -815,6 +818,20 @@ export class SendersReadService {
         email: senders.email,
         domain: senders.domain,
         totalReceived: senders.totalReceived,
+        // F011 — which activity bucket the row is in.
+        //
+        // Suggest deliberately ignores the compose filters: a typeahead
+        // that hid what you were typing would be useless. But the LIST
+        // honours them, so the two surfaces disagreed by construction —
+        // the dropdown offered a dormant sender and the list underneath
+        // said "No senders match". Saying which bucket each suggestion
+        // is in is what makes that difference legible instead of
+        // contradictory.
+        activity: sql<string>`CASE
+          WHEN ${senders.lastSeenAt} >= now() - (${WINDOWS.ACTIVE_DAYS} || ' days')::interval THEN 'active'
+          WHEN ${senders.lastSeenAt} >= now() - (${WINDOWS.DORMANT_DAYS} || ' days')::interval THEN 'quiet'
+          ELSE 'dormant'
+        END`,
       })
       .from(senders)
       .where(
@@ -835,6 +852,13 @@ export class SendersReadService {
       email: r.email,
       domain: r.domain,
       totalReceived: Number(r.totalReceived ?? 0),
+      // Narrowed at the boundary rather than cast: the CASE above is
+      // exhaustive, but a bucket the FE has never heard of should read
+      // as "we are not saying" instead of mislabelling the row.
+      activity:
+        r.activity === 'active' || r.activity === 'quiet' || r.activity === 'dormant'
+          ? r.activity
+          : 'dormant',
     }));
   }
 
