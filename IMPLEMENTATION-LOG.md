@@ -215,7 +215,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425, #496, #506, #508 |  |  |
 | D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473, #474, #502, #498, #546, #549, #550, #551, #554, #561 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
-| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526, #529, #534, #536, #556, #558 | gh run 26327595271 ci.yml green on main |  |
+| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526, #529, #534, #536, #556, #558, #575 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
@@ -292,7 +292,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D234 | Custom-rule production API gated at `is_preset=false` | 🟢 | #107, #109 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule null for is_preset=false → 404 |  |
 | D235 | Partitioning deferred behind measured thresholds | ⬜ |  |  |  |
 | D245 | Unified product clarity and control contract | 🔵 | #332, #333, #335, #336, #368, #393, #394, #400, #403, #409, #438, #483, #485, #491, #492, #544 |  |  |
-| D246 | Finite first relief and evidence-based automation authority | 🔵 | #334 |  |  |
+| D246 | Finite first relief and evidence-based automation authority | 🔵 | #334, #576 |  |  |
 | D248 | Bulk unsubscribe: one-click subset only, per-channel receipt | 🔵 | #500 |  | Decided 2026-07-28. Batch executes `senders.unsubscribe_method='one_click'` server-side only. The column is nullable, so four states are reported separately: `mailto` (per-sender, D230), `none` (no channel exists), and `NULL` (not yet indexed — unknown, never folded into `none`). No undo — unsubscribe declares no inverse, so the mandatory modal preview is the reversal point. Receipt aggregates the THREE outcomes the worker writes (`unsubscribe_endpoint_accepted` / `unsubscribe_unconfirmed` / `unsubscribe_failed`) and says "request accepted", not "unsubscribed". Extends D9/D32 |
 | D249 | Billing reconciles against provider truth, not customer memory | 🔵 | #436, #441, #466 |  |  |
 | D250 | Landing page primary headline (reverses D223) | 🔵 | #468, #470 |  |  |
