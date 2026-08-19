@@ -687,6 +687,51 @@ describe('isStale', () => {
     ).toBe(true);
   });
 
+  // THE SAFETY PROPERTY OF A VERSION BUMP. Raising the resolver version
+  // is how a new source retires the negatives reached without it — a
+  // `none` written before Brandfetch existed in production is not
+  // evidence a domain has no logo. Without this, binding the key would
+  // change nothing for 30 days, because a fresh `none` is authoritative
+  // for its whole TTL.
+  //
+  // The other half matters just as much: a bump must NOT discard marks
+  // we already have. Re-resolving a working logo would spend quota to
+  // re-learn what we knew, and briefly regress a real logo to a
+  // monogram.
+  it('retires a negative from an older resolver without discarding its marks', () => {
+    const previous = DOMAIN_ICON_RESOLVER_VERSION - 1;
+
+    // A miss recorded a day ago by the previous cascade: retried now.
+    expect(
+      isStale(
+        { status: 'none', source: null, fetchedAt: daysAgo(1), resolverVersion: previous },
+        now,
+      ),
+    ).toBe(true);
+
+    // A mark recorded by that same older cascade: still good.
+    expect(
+      isStale(
+        { status: 'ok', source: 'bimi', fetchedAt: daysAgo(1), resolverVersion: previous },
+        now,
+      ),
+    ).toBe(false);
+
+    // And a miss from the CURRENT cascade keeps its full TTL, so a bump
+    // retires exactly one generation rather than disabling the cache.
+    expect(
+      isStale(
+        {
+          status: 'none',
+          source: null,
+          fetchedAt: daysAgo(1),
+          resolverVersion: DOMAIN_ICON_RESOLVER_VERSION,
+        },
+        now,
+      ),
+    ).toBe(false);
+  });
+
   it('refreshes Brandfetch artwork at its 30-day cache limit', () => {
     expect(
       isStale(
