@@ -37,11 +37,14 @@
  */
 
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+import { fragmentPath, parseFragment, renderFragment } from '@declutrmail/config/impl-log';
 
 const REPO_ROOT = join(import.meta.dirname ?? __dirname, '..');
 const LOG_PATH = join(REPO_ROOT, 'IMPLEMENTATION-LOG.md');
+const FRAGMENT_DIR = join(REPO_ROOT, '.impl-log');
 
 interface Args {
   d: string;
@@ -106,11 +109,6 @@ function shortSha(): string {
   }
 }
 
-/** Escape pipes so evidence can never break the table. */
-function cell(text: string): string {
-  return text.replace(/\|/g, '\\|');
-}
-
 const STATES = ['⬜', '🟡', '🔵', '🟢', '🚫', '🔴', '⏸️'];
 
 function main(): void {
@@ -166,14 +164,24 @@ function main(): void {
     evidence = `smoke: ${observed!.trim()} @ ${shortSha()} ${date}`;
   }
 
-  rawCells[statusIdx] = ' 🟢 ';
-  rawCells[statusIdx + 2] = ` ${cell(evidence)} `;
-  lines[rowIdx] = rawCells.join('|');
+  // The 🟢 and its evidence are RECORDED state, so they go in the
+  // decision's own fragment — not into the rendered table, which is
+  // regenerated from the fragments. Writing the row directly used to put
+  // every parallel PR in conflict on one file (2026-08-19).
+  const num = Number(d.slice(1));
+  if (!existsSync(FRAGMENT_DIR)) mkdirSync(FRAGMENT_DIR, { recursive: true });
+  const fragmentFile = join(REPO_ROOT, fragmentPath(num));
+  const existing = existsSync(fragmentFile)
+    ? parseFragment(num, readFileSync(fragmentFile, 'utf8'))
+    : { num };
+  writeFileSync(
+    fragmentFile,
+    renderFragment({ ...existing, num, status: '🟢', verifiedBy: evidence }),
+  );
 
-  writeFileSync(LOG_PATH, lines.join('\n'));
-  console.log(`✓ ${d} 🔵 → 🟢`);
+  console.log(`✓ ${d} 🔵 → 🟢 (recorded in ${fragmentPath(num)})`);
   console.log(`  evidence: ${evidence}`);
-  console.log('  Run `pnpm generate-impl-log` to recompute the summary block.');
+  console.log('  Run `pnpm generate-impl-log` to rebuild the table.');
 }
 
 main();

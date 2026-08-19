@@ -32,14 +32,7 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-- ⬜ Not started: 76
-- 🟡 In progress: 1
-- 🔵 Shipped: 110
-- 🟢 Verified: 55
-- 🚫 Retired: 2
-- 🔴 Blocked: 0
-- ⏸️ Deferred: 0
-- **Total: 244 D-decisions**
+244 decisions — ⬜ Not started 76 · 🔵 Shipped 110 · 🟢 Verified 55 · 🟡 In progress 1 · 🚫 Retired 2
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -54,17 +47,17 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 
 <!-- AUTO:DECISIONS:START -->
 
-| D# | Title | Status | PR | Verified by | Notes |
+| D# | Title | Status | Shipped by | Verified by | Notes |
 |---|---|---|---|---|---|
 | D1 | Typography stack: **Geist Sans + Geist Mono** (Doc 05 canonical) | 🔵 | #12 |  |  |
-| D2 | Color palette: **Cool/Vercel-style everywhere | 🔵 | #12, #264 |  |  |
+| D2 | Color palette: **Cool/Vercel-style everywhere | 🔵 | #12 |  |  |
 | D3 | Screen scope at V2 launch: **Bundle-loyal (ship everything) | ⬜ |  |  |  |
 | D4 | OAuth verification: **Already approved (from V1) | ⬜ |  |  |  |
-| D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | 🔵 | #22, #471, #472 | workers/rate-limiter.test.ts (all green) + ADR 0005 | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
-| D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🟡 | #21, #28, #204, #315 | initial-sync.worker.test.ts: D6 sync gate stage-sequence + monotonic progress + terminal-ready | Truth sweep 2026-07-02: gate, sync-complete email + 24h reminder (apps/api/src/notifications/sync-ready-email.trigger.ts, worker.ts:593,1841) and push delivery (users.watch via gmail-watch.service.ts:87 + WatchRenewalWorker worker.ts:1239) ALL built — 2026-06-11 note stale. Remaining leg: onboarding funnel events audit |
-| D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🔵 | #26, #373, #455 | ADR 0004 + shared/copy/privacy.ts frame=Gmail Preview | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
-| D8 | Inbound Pub/Sub idempotency (no user input needed) | 🟢 | #31, #370, #527, #545 | apps/api/src/webhooks/__tests__/gmail-webhook.service.spec.ts |  |
-| D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🔵 | #23, #185, #198, #512, #513 | initial-sync.worker.test.ts (5 unsub cases) + ADR 0006 | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | 🔵 | #22 | workers/rate-limiter.test.ts (all green) + ADR 0005 | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🟡 | #21 | initial-sync.worker.test.ts: D6 sync gate stage-sequence + monotonic progress + terminal-ready | Truth sweep 2026-07-02: gate, sync-complete email + 24h reminder (apps/api/src/notifications/sync-ready-email.trigger.ts, worker.ts:593,1841) and push delivery (users.watch via gmail-watch.service.ts:87 + WatchRenewalWorker worker.ts:1239) ALL built — 2026-06-11 note stale. Remaining leg: onboarding funnel events audit |
+| D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🔵 | #26 | ADR 0004 + shared/copy/privacy.ts frame=Gmail Preview | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D8 | Inbound Pub/Sub idempotency (no user input needed) | 🟢 | #31 | apps/api/src/webhooks/__tests__/gmail-webhook.service.spec.ts |  |
+| D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🔵 | #23 | initial-sync.worker.test.ts (5 unsub cases) + ADR 0006 | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | 🔵 | #295 |  |  |
 | D11 | Backend ORM: **Drizzle | 🔵 | #5 | manual | Evidence audit 2026-07-29 (🟢→🔵): no executable or observed evidence was ever recorded; re-verify via `pnpm verify-d` |
 | D12 | sender_key formula: **sha256("v1\|" + normalized_email) | 🟢 | #48 | packages/workers/src/sender-key.test.ts (all green) |  |
@@ -72,124 +65,124 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D14 | Encryption keys: **Google Cloud KMS envelope (per-record DEK ← KEK) | 🟢 | #16 | apps/api/src/auth/token-crypto.service.spec.ts (4/4 incl tamper + uniqueness) |  |
 | D15 | Runway: **Side-income funded, no monetization-driven phasing | ⬜ |  |  |  |
 | D16 | Doc location: **Move 14 Drive docs into `/docs/` in the repo | ⬜ |  |  |  |
-| D17 | ADR system: **`/docs/adr/` with template; backfill from this grill | 🟢 | #25, #205 | docs/adr/ has template + 6 ADRs |  |
+| D17 | ADR system: **`/docs/adr/` with template; backfill from this grill | 🟢 | #205 | docs/adr/ has template + 6 ADRs |  |
 | D18 | Legal/DPA review trigger: **Add to Human-Approval-Gates | ⬜ |  |  |  |
-| D19 | Pricing/tier structure (resolves gaps #8 + #9) | 🔵 | #193, #401, #404, #411, #412, #438 |  |  |
+| D19 | Pricing/tier structure (resolves gaps #8 + #9) | 🔵 | #193 |  |  |
 | D20 | Verdict set: **4 verdicts (Keep / Archive / Unsubscribe / Screen) | 🟢 | #32 | packages/workers/src/reasoning.test.ts — VERDICT_LABEL exhaustiveness |  |
-| D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🟢 | #32, #118, #566 | packages/workers/src/score-cascade.test.ts |  |
+| D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🟢 | #32 | packages/workers/src/score-cascade.test.ts |  |
 | D22 | Protection model: **Sender-layer-only, engagement-respect + user-defined | 🟢 | #32 | packages/workers/src/score.worker.test.ts |  |
 | D23 | New sender default: **Screen | 🔵 | #32 |  |  |
-| D24 | LLM role: **Haiku for explanation only, template fallback | 🟢 | #32, #77, #577, #580 | apps/api/src/adapters/anthropic-haiku.adapter.spec.ts |  |
-| D25 | Re-score cadence: **Trigger-based (sync + signal change) | 🟢 | #32, #118, #125, #579 | packages/workers/src/score.worker.test.ts |  |
-| D26 | Reasoning UX: **Mixed (inline on Triage hero, popover elsewhere) | 🔵 | #319, #313 |  |  |
+| D24 | LLM role: **Haiku for explanation only, template fallback | 🟢 | #32 | apps/api/src/adapters/anthropic-haiku.adapter.spec.ts |  |
+| D25 | Re-score cadence: **Trigger-based (sync + signal change) | 🟢 | #32 | packages/workers/src/score.worker.test.ts |  |
+| D26 | Reasoning UX: **Mixed (inline on Triage hero, popover elsewhere) | 🔵 | #313 |  |  |
 | D27 | Triage cadence: **Daily ritual | ⬜ |  |  |  |
 | D28 | Queue ranking: **Hybrid (confidence-first first 30 days, noise-impact after) | 🔵 | #32 |  |  |
-| D29 | Screen as the 4th verb (S key) | 🔵 | #44, #248 |  |  |
+| D29 | Screen as the 4th verb (S key) | 🔵 | #44 |  |  |
 | D30 | Queue size: **Adaptive 5–12 based on inbox activity | 🟢 | #112 | apps/api/src/triage/triage.service.spec.ts — D30 adaptive queue sizing |  |
-| D31 | Recommended verb emphasis: **Highlight only when confidence > 0.85 | 🔵 | #44, #112 | apps/web/src/features/triage/action-toolbar.test.tsx — confidence>0.85 emphasis | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
-| D32 | No bulk operations in Triage | 🔵 | #44, #183, #321 | apps/web/src/features/triage/triage-screen.test.tsx — no bulk-select UI asserted | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
-| D33 | Empty state: **Stats summary + come back tomorrow + subtle upgrade nudge | 🔵 | #44, #112, #318, #322 | apps/web/src/features/triage/triage-screen.test.tsx — empty-state stats+nudge | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
-| D34 | Action sheet on Archive/Unsubscribe: **Always show + remember-preference toggle in Settings | 🔵 | #44, #224, #344, #427 | apps/web/src/features/triage/action-sheet.test.tsx — remember-preference + always-show | Truth sweep 2026-07-02 (🟡→🔵): server-side persistence under users.preferences.actionSheetPrefs (store.ts:32 documents it) + per-verb ActionSheetPrefsCard in Settings shipped via #224 — 2026-06-11 in-memory-only note stale. Pending verify-d |
-| D35 | Undo via persistent action tray (Doc 05 §11) | 🟢 | #33, #180, #182, #435, #444 | apps/api/src/undo/undo.service.spec.ts | Evidence updated 2026-06-11: tray wired to triage in #180; tray requires injected dataSource in #182 |
+| D31 | Recommended verb emphasis: **Highlight only when confidence > 0.85 | 🔵 | #44 | apps/web/src/features/triage/action-toolbar.test.tsx — confidence>0.85 emphasis | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D32 | No bulk operations in Triage | 🔵 | #44 | apps/web/src/features/triage/triage-screen.test.tsx — no bulk-select UI asserted | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D33 | Empty state: **Stats summary + come back tomorrow + subtle upgrade nudge | 🔵 | #44 | apps/web/src/features/triage/triage-screen.test.tsx — empty-state stats+nudge | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D34 | Action sheet on Archive/Unsubscribe: **Always show + remember-preference toggle in Settings | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — remember-preference + always-show | Truth sweep 2026-07-02 (🟡→🔵): server-side persistence under users.preferences.actionSheetPrefs (store.ts:32 documents it) + per-verb ActionSheetPrefsCard in Settings shipped via #224 — 2026-06-11 in-memory-only note stale. Pending verify-d |
+| D35 | Undo via persistent action tray (Doc 05 §11) | 🟢 | #33 | apps/api/src/undo/undo.service.spec.ts | Evidence updated 2026-06-11: tray wired to triage in #180; tray requires injected dataSource in #182 |
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🔵 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | 🔵 | #293 |  |  |
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #501 |  | Reclaimed 2026-07-28 (D158): the tour has never been built. Prior D38 trailers were umbrella mis-tags, now rewritten in the source PR bodies; the senders wire-model work lives at ADR-0029 |
-| D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30, #43, #47, #52, #63, #71, #129, #569, #574 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
-| D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🟢 | #30, #47, #181, #342, #394 | apps/api/src/senders/senders.read-service.spec.ts |  |
-| D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | 🔵 | #30, #566 |  |  |
-| D42 | **SUPERSEDED by D245: Protected is the sole visible safety state | 🔵 | #181, #30, #129, #393 |  | Evidence updated 2026-06-11: VIP/Protect policy write path landed in #181; prior #30 cite was stale |
-| D43 | **SUPERSEDED by D245: one Protect control | 🔵 | #181, #30, #129, #210 |  | Evidence updated 2026-06-11: header policy icons + write path landed in #181; prior #30 cite was stale |
-| D44 | Stats strip: **5 stats, single reflow row | 🟢 | #30, #52, #566 | apps/api/src/senders/senders.read-service.spec.ts |  |
+| D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
+| D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts |  |
+| D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | 🔵 | #30 |  |  |
+| D42 | **SUPERSEDED by D245: Protected is the sole visible safety state | 🔵 | #30 |  | Evidence updated 2026-06-11: VIP/Protect policy write path landed in #181; prior #30 cite was stale |
+| D43 | **SUPERSEDED by D245: one Protect control | 🔵 | #30 |  | Evidence updated 2026-06-11: header policy icons + write path landed in #181; prior #30 cite was stale |
+| D44 | Stats strip: **5 stats, single reflow row | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts |  |
 | D45 | Charts: **Volume + open-rate over 12 months, side-by-side | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts |  |
-| D46 | Decision history: **10 most recent inline, all V2 actions, link to full | 🟢 | #30, #571 | apps/api/src/senders/senders.controller.spec.ts — D46 default limit |  |
-| D47 | Senders shape: **Weekly Hero (Mondays) + grid/table below + Review Session overlay | 🚫 | #115, #346 |  | Retired 2026-07-17 by #346: the Weekly Hero was removed with the editorial-hero era (spec v1.2 D4) and its dead stack deleted per D245 prelaunch. Was 🟢 citing senders.controller.spec.ts — a spec #346 deleted, so the evidence no longer existed |
-| D48 | Weekly Hero slices: **3 — High-confidence cleanups / Volume spikes / Long-quiet senders | 🚫 | #115, #346 |  | Retired 2026-07-17 by #346 with D47 — slices died with the hero |
-| D49 | Senders default view: **Always grid; table is per-session toggle | 🔵 | #115, #260, #262, #266, #268, #270, #271, #275, #278, #280, #300, #341, #409, #569 |  |  |
+| D46 | Decision history: **10 most recent inline, all V2 actions, link to full | 🟢 | #30 | apps/api/src/senders/senders.controller.spec.ts — D46 default limit |  |
+| D47 | Senders shape: **Weekly Hero (Mondays) + grid/table below + Review Session overlay | 🚫 | #115 |  | Retired 2026-07-17 by #346: the Weekly Hero was removed with the editorial-hero era (spec v1.2 D4) and its dead stack deleted per D245 prelaunch. Was 🟢 citing senders.controller.spec.ts — a spec #346 deleted, so the evidence no longer existed |
+| D48 | Weekly Hero slices: **3 — High-confidence cleanups / Volume spikes / Long-quiet senders | 🚫 | #115 |  | Retired 2026-07-17 by #346 with D47 — slices died with the hero |
+| D49 | Senders default view: **Always grid; table is per-session toggle | 🔵 | #115 |  |  |
 | D50 | Per-row interaction: **Collapse/expand pattern matching Triage D36 | ⬜ |  |  |  |
 | D51 | Filter UI: **Hybrid — 4 quick-filter chips + "More filters" drawer | ⬜ |  |  | Reclaimed 2026-07-28 (D158): #294/#340/#341 were rollup/parity work, trailers rewritten at source — the chips+drawer this row describes is unbuilt |
-| D52 | Bulk operations: **Shift-click range + Ctrl/Cmd-click individual + sticky bottom action bar | 🔵 | #183, #198 |  | Evidence note 2026-06-11: multi-select + sticky bulk bar shipped in #183; shift-click range select shipped in #198 |
+| D52 | Bulk operations: **Shift-click range + Ctrl/Cmd-click individual + sticky bottom action bar | 🔵 | #183 |  | Evidence note 2026-06-11: multi-select + sticky bulk bar shipped in #183; shift-click range select shipped in #198 |
 | D53 | Search: **Live by name + domain (metadata only) | ⬜ |  |  |  |
 | D54 | Mobile: **Vertical card list + bottom-sheet drawer + horizontal-scroll chips | ⬜ |  |  |  |
 | D55 | Time window default: **Last 30 days; picker for All time / 7d / 90d | 🔵 | #138 |  |  |
-| D56 | Filter set: **Bundle's 5 (source) + Doc 06's additions (action, sender, status, undo-available) | 🔵 | #292, #301 |  |  |
+| D56 | Filter set: **Bundle's 5 (source) + Doc 06's additions (action, sender, status, undo-available) | 🔵 | #292 |  |  |
 | D57 | Row expansion: **Accordion pattern matching Triage/Senders | 🔵 | #214 |  |  |
 | D58 | Undo affordance: **Inline "Undo" when in window; greyed "Undo expired" tooltip when out | 🟢 | #33 | apps/api/src/undo/undo.service.spec.ts |  |
 | D59 | Stats header: **Minimalist single-line summary | ⬜ |  |  |  |
 | D60 | Mobile Activity: **Vertical card list + bottom-sheet filter drawer | 🔵 | #303 |  |  |
-| D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | 🟢 | #102, #103, #137, #296, #305 | apps/api/src/briefs/brief.read-service.spec.ts |  |
-| D62 | Brief AI: **Haiku LLM with deterministic template fallback | 🟢 | #77, #102, #116 | packages/workers/src/brief-snapshot.worker.test.ts D62 cases (LLM happy/null/throw/timeout/empty/whitespace) + apps/api/src/adapters/brief-llm-anthropic.adapter.spec.ts |  |
-| D63 | Brief categories: **3 sections (Reply / FYI / Noise) | 🟢 | #102, #116 | packages/workers/src/brief-snapshot.worker.test.ts D63 cases (3 sections + caps) |  |
+| D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | 🟢 | #102 | apps/api/src/briefs/brief.read-service.spec.ts |  |
+| D62 | Brief AI: **Haiku LLM with deterministic template fallback | 🟢 | #77 | packages/workers/src/brief-snapshot.worker.test.ts D62 cases (LLM happy/null/throw/timeout/empty/whitespace) + apps/api/src/adapters/brief-llm-anthropic.adapter.spec.ts |  |
+| D63 | Brief categories: **3 sections (Reply / FYI / Noise) | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D63 cases (3 sections + caps) |  |
 | D64 | Brief timing: **Default 8am local; user-configurable | 🔵 | #194 |  |  |
 | D65 | Noise bulk archive: **Per-sender checkboxes always visible, default-all checked | ⬜ |  |  |  |
 | D66 | Brief schedule: **Default Mon-Fri only; weekends opt-in | ⬜ |  |  |  |
 | D67 | **SUPERSEDED by D245: Brief priority uses observed facts | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D67 — VIP elevation to Reply |  |
-| D68 | Free/Plus tier preview: **Placeholder + upgrade CTA | 🔵 | #219, #317, #495 |  |  |
-| D69 | Brief snapshot behavior: **Static 8am snapshot, no recomputation | 🟢 | #74, #102, #103, #279 | apps/api/src/briefs/brief.read-service.spec.ts |  |
-| D70 | Brief empty state: **Calm message when no email yesterday | 🟢 | #102, #116 | packages/workers/src/brief-snapshot.worker.test.ts D70 — empty-day no-LLM + calm template |  |
+| D68 | Free/Plus tier preview: **Placeholder + upgrade CTA | 🔵 | #219 |  |  |
+| D69 | Brief snapshot behavior: **Static 8am snapshot, no recomputation | 🟢 | #74 | apps/api/src/briefs/brief.read-service.spec.ts |  |
+| D70 | Brief empty state: **Calm message when no email yesterday | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D70 — empty-day no-LLM + calm template |  |
 | D71 | Classification: **Drop bundle's category labels; show only engine recommendation | ⬜ |  |  |  |
 | D72 | Quarantine mode: **Soft (DB-flag only; Gmail untouched until user decides) | 🔵 | #220 |  |  |
 | D73 | Review UX: **Accordion list (matching Triage D36 / Senders D50) | 🔵 | #220 |  |  |
-| D74 | Notification: **Sidebar badge with count + subtle pulse on first arrival | 🔵 | #244, #350 |  |  |
+| D74 | Notification: **Sidebar badge with count + subtle pulse on first arrival | 🔵 | #244 |  |  |
 | D75 | Onboarding handling: **Compute at sync; surface count if > 0 after Step 5 | 🔵 | #298 |  |  |
 | D76 | Empty state: **Calm single-line message | 🔵 | #220 |  |  |
-| D77 | Pro gating: **Screener is Pro-only; Free/Plus get basic deferred-decision queue | 🔵 | #206, #220 |  |  |
-| D78 | Snooze scope: **Sender-level only at launch; message-level deferred | 🔵 | #194, #215 |  |  |
+| D77 | Pro gating: **Screener is Pro-only; Free/Plus get basic deferred-decision queue | 🔵 | #206 |  |  |
+| D78 | Snooze scope: **Sender-level only at launch; message-level deferred | 🔵 | #194 |  |  |
 | D79 | Snooze mechanic: **Future-only by default; opt-in to also archive existing | 🔵 | #215 |  |  |
-| D80 | Snoozed screen layout: **Grouped by wake-time with actions per row | 🔵 | #215, #305 |  |  |
+| D80 | Snoozed screen layout: **Grouped by wake-time with actions per row | 🔵 | #215 |  |  |
 | D81 | Snooze trigger surfaces | 🔵 | #206 |  |  |
 | D82 | Snooze presets | ⬜ |  |  |  |
 | D83 | Pro gating | ⬜ |  |  |  |
 | D84 | Scope: **Followups-Lite (list only) at launch; Nudge as fast-follow with new scope | 🟢 | #105 | apps/api/src/followups/followup.read-service.spec.ts |  |
-| D85 | Priority: **Thread age only | 🟢 | #105, #111 | apps/api/src/followups/followup.read-service.spec.ts — D85 priority-bucket boundary cases (high/medium/low/fresh) |  |
-| D86 | Exclusion rules: **Filter out non-followup-worthy threads | 🟢 | #105, #111, #117 | packages/workers/src/followup-check.worker.test.ts — exclusion rules (bulk recipients/mailing-lists/noreply@) |  |
+| D85 | Priority: **Thread age only | 🟢 | #105 | apps/api/src/followups/followup.read-service.spec.ts — D85 priority-bucket boundary cases (high/medium/low/fresh) |  |
+| D86 | Exclusion rules: **Filter out non-followup-worthy threads | 🟢 | #105 | packages/workers/src/followup-check.worker.test.ts — exclusion rules (bulk recipients/mailing-lists/noreply@) |  |
 | D87 | Schema: **followup_tracker denormalized table | 🟢 | #104 | packages/db/tests/followup-tracker.test.ts — D87 defaults |  |
-| D88 | User dismissal: **"Mark resolved" affordance per row | 🟢 | #106, #105, #200 | apps/api/src/followups/followup.read-service.spec.ts |  |
+| D88 | User dismissal: **"Mark resolved" affordance per row | 🟢 | #105 | apps/api/src/followups/followup.read-service.spec.ts |  |
 | D89 | Pro gating | 🔵 | #245 |  |  |
-| D90 | Followups screen layout | 🔵 | #111, #305 |  |  |
+| D90 | Followups screen layout | 🔵 | #111 |  |  |
 | D91 | Followups empty state | 🟢 | #111 | apps/api/src/followups/followup.read-service.spec.ts |  |
-| D92 | Trigger: **Both manual toggle + scheduled recurring windows | 🔵 | #216, #286 |  |  |
+| D92 | Trigger: **Both manual toggle + scheduled recurring windows | 🔵 | #216 |  |  |
 | D93 | **AMENDED by D245: active correspondents pass through | ⬜ |  |  |  |
 | D94 | Restoration: **Trickle over 10 minutes when quiet ends | ⬜ |  |  |  |
 | D95 | Per-inbox scope | ⬜ |  |  |  |
 | D96 | Held messages screen content | ⬜ |  |  |  |
 | D97 | Brief and Quiet interaction | ⬜ |  |  |  |
 | D98 | Pro gating | ⬜ |  |  |  |
-| D99 | Rule format: **Preset rules + custom rule builder, both at launch | 🟢 | #107, #108, #109, #213 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
-| D100 | Condition vocabulary (sender-layer only per D22) | 🔵 | #284, #286 |  |  |
-| D101 | Preset library at launch (5 rules) | 🔵 | #107, #108, #213, #222 | packages/workers/src/autopilot-presets.test.ts — 5 preset library locked | Truth sweep 2026-07-02 (🟡→🔵): seedAutopilotPresets called on connect (outbox-consumer-router.ts:87); autopilot apply + action workers registered (worker.ts:1493-1533); rules UI shipped — 2026-06-11 note stale. NOTE plan says 8 launch presets, code ships 5 (open decision DQ13). Pending verify-d |
+| D99 | Rule format: **Preset rules + custom rule builder, both at launch | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
+| D100 | Condition vocabulary (sender-layer only per D22) | 🔵 | #284 |  |  |
+| D101 | Preset library at launch (5 rules) | 🔵 | #107 | packages/workers/src/autopilot-presets.test.ts — 5 preset library locked | Truth sweep 2026-07-02 (🟡→🔵): seedAutopilotPresets called on connect (outbox-consumer-router.ts:87); autopilot apply + action workers registered (worker.ts:1493-1533); rules UI shipped — 2026-06-11 note stale. NOTE plan says 8 launch presets, code ships 5 (open decision DQ13). Pending verify-d |
 | D102 | Rule scope: **Per-inbox default; "Apply to all inboxes" toggle per rule | 🟢 | #108 | packages/db/tests/autopilot-rules.test.ts — scope default + UNIQUE(mailbox, preset_key) |  |
 | D103 | Custom rule builder UI | ⬜ |  |  |  |
-| D104 | Observe mode UI (per D10) | 🟢 | #108, #109, #114, #213, #217 | apps/api/src/autopilot/autopilot.read-service.spec.ts — listPendingSuggestions + dismissMatch (observe-mode surface) |  |
-| D105 | Autopilot pause | 🟢 | #108, #109, #114, #213, #217 | apps/api/src/autopilot/autopilot.read-service.spec.ts — pauseAll flips + idempotent second call |  |
+| D104 | Observe mode UI (per D10) | 🟢 | #108 | apps/api/src/autopilot/autopilot.read-service.spec.ts — listPendingSuggestions + dismissMatch (observe-mode surface) |  |
+| D105 | Autopilot pause | 🟢 | #108 | apps/api/src/autopilot/autopilot.read-service.spec.ts — pauseAll flips + idempotent second call |  |
 | D106 | Onboarding 5-step structure | ⬜ |  |  |  |
 | D107 | Step 1: Promise screen content | 🔵 | #212 |  |  |
 | D108 | Step 2: Connect (OAuth) | ⬜ |  |  |  |
 | D109 | Step 3: Sync (strict gate, no time promise, no live counters) | 🔵 | #122 |  |  |
 | D110 | Step 4: Style preset selection | 🔵 | #212 |  |  |
 | D111 | devPreference layer (new concept) | ⬜ |  |  |  |
-| D112 | Step 5: First Triage with real senders | 🔵 | #212, #316, #477, #481, #483 |  |  |
-| D113 | Onboarding completion side effects | 🔵 | #194, #212, #484 |  |  |
+| D112 | Step 5: First Triage with real senders | 🔵 | #212 |  |  |
+| D113 | Onboarding completion side effects | 🔵 | #194 |  |  |
 | D114 | Settings structure: **9 sections, left-nav (Linear/Notion-style) | 🔵 | #297 |  |  |
 | D115 | Inboxes management: **Settings → Inboxes section + top-bar Account Switcher | 🔵 | #126 |  |  |
-| D116 | Privacy & Data section: **Rich with 3 deletion actions + data export + CASA evidence | 🔵 | #224, #308 |  |  |
-| D117 | Billing providers: **Paddle (international) + Razorpay (India) | 🔵 | #194, #207, #362, #364, #365, #366, #367, #370, #374, #375, #376, #379, #417, #430, #432, #433, #434, #435 |  |  |
-| D118 | Cancellation: **Respectful flow with optional reason + pause-30-days offer | 🔵 | #207, #364, #374, #447, #448, #452 |  |  |
-| D119 | Plan comparison: **Current plan card + condensed 3-tier strip + link to /pricing | 🔵 | #219, #351, #402, #435, #532 |  |  |
-| D120 | Plan-change flows | 🔵 | #219, #367, #430, #445 |  |  |
-| D121 | No trial mechanic; 30-day Money-Back Guarantee on Pro | 🔵 | #219, #291, #308, #449, #452 |  |  |
+| D116 | Privacy & Data section: **Rich with 3 deletion actions + data export + CASA evidence | 🔵 | #224 |  |  |
+| D117 | Billing providers: **Paddle (international) + Razorpay (India) | 🔵 | #194 |  |  |
+| D118 | Cancellation: **Respectful flow with optional reason + pause-30-days offer | 🔵 | #207 |  |  |
+| D119 | Plan comparison: **Current plan card + condensed 3-tier strip + link to /pricing | 🔵 | #219 |  |  |
+| D120 | Plan-change flows | 🔵 | #219 |  |  |
+| D121 | No trial mechanic; 30-day Money-Back Guarantee on Pro | 🔵 | #219 |  |  |
 | D122 | Triage S key renamed: **"Decide later" (keyboard L key) | ⬜ |  |  |  |
 | D123 | Tier-specific Triage empty-state copy | 🔵 | #219 |  |  |
 | D124 | **PARTIALLY SUPERSEDED by D245; preset #5 replacement retained | ⬜ |  |  |  |
 | D125 | Snoozed + Followups stay at V2 launch with usage-tracking exit clause | ⬜ |  |  |  |
-| D126 | Retention investment package (5-part) | 🔵 | #497, #531 |  |  |
+| D126 | Retention investment package (5-part) | 🔵 | #497 |  |  |
 | D127 | Brand name: **DeclutrMail** (locked from V1) | ⬜ |  |  |  |
-| D128 | Primary domain: **DeclutrMail.com | 🔵 | #369, #517 |  |  |
+| D128 | Primary domain: **DeclutrMail.com | 🔵 | #369 |  |  |
 | D129 | Hero tagline: *"Clean Gmail by controlling senders, not individual emails."* | ⬜ |  |  |  |
 | D130 | Brand voice principles (locked, summarizing Phase 1) | ⬜ |  |  |  |
 | D131 | Top nav: **6-item flat | ⬜ |  |  |  |
-| D132 | 28-page launch IA (scaled with Claude SEO agent maintenance) | 🔵 | #283, #307, #325, #517, #521 |  |  |
+| D132 | 28-page launch IA (scaled with Claude SEO agent maintenance) | 🔵 | #283 |  |  |
 | D133 | Inbox Simulator: **Claude Code React build with real engine | ⬜ |  |  |  |
-| D134 | Landing page 10-section structure | 🔵 | #202, #196, #307, #471 |  |  |
+| D134 | Landing page 10-section structure | 🔵 | #196 |  |  |
 | D135 | Hero animated preview card | ⬜ |  |  |  |
 | D136 | Social proof strategy: beta quotes post-launch (no testimonials at launch) | ⬜ |  |  |  |
 | D137 | FAQ content (10 questions) | 🔵 | #290 |  |  |
@@ -202,27 +195,27 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D144 | Honest "Choose competitor if..." callouts | ⬜ |  |  |  |
 | D145 | `/compare` index page | ⬜ |  |  |  |
 | D146 | Privacy + Terms generation: **Claude-drafted from CASA/methodology + lawyer review at user-threshold | 🔵 | #199 |  |  |
-| D147 | Cookie consent banner: **Minimal (essential always-on + optional analytics) | 🔵 | #282, #289, #320, #474 |  |  |
+| D147 | Cookie consent banner: **Minimal (essential always-on + optional analytics) | 🔵 | #282 |  |  |
 | D148 | Localization: **English only + DPDP Act compliance clause | 🔵 | #291 |  |  |
 | D149 | Launch strategy: **Strategy A (full V2 as designed) at 25-35 hrs/week + heavy Phase 4 Claude OS investment | ⬜ |  |  |  |
-| D150 | Indexing strategy: **12 indexes at launch (9 composite + 1 trigram + 2 partial) | 🟢 | #13, #194, #529 | packages/db/tests/migration-roundtrip.test.ts (3/3) |  |
+| D150 | Indexing strategy: **12 indexes at launch (9 composite + 1 trigram + 2 partial) | 🟢 | #13 | packages/db/tests/migration-roundtrip.test.ts (3/3) |  |
 | D151 | Partitioning: **Hybrid (hash mail_messages, range activity_log) | ⬜ |  |  |  |
 | D152 | Migration tooling: **Drizzle Kit + Atlas hybrid | 🟢 | #5 | atlas migrate status OK, 5 executed; drizzle-kit + atlas hybrid |  |
 | D153 | API style: **REST + Zod schemas + Swagger/OpenAPI auto-gen | ⬜ |  |  |  |
 | D154 | API versioning: **URL prefix (`/api/v1/`) | ⬜ |  |  |  |
-| D155 | Auth: **HttpOnly cookies + CSRF + rotating refresh + active_sessions table | 🔵 | #121, #467 |  |  |
-| D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🟢 | #35, #48, #113, #188, #211, #337, #378, #380, #382, #383, #384, #456, #502, #498 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
-| D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17, #338 | packages/workers/src/queue.test.ts (within full suite green) |  |
-| D158 | Hosting stack | 🔵 | #189, #385, #423, #424, #425, #496, #506, #508 |  |  |
-| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34, #49, #259, #269, #277, #370, #377, #454, #455, #471, #473, #474, #502, #498, #546, #549, #550, #551, #554, #561 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
-| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7, #521, #526, #529, #534, #536, #556, #558, #575, #573 | gh run 26327595271 ci.yml green on main |  |
+| D155 | Auth: **HttpOnly cookies + CSRF + rotating refresh + active_sessions table | 🔵 | #121 |  |  |
+| D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🟢 | #35 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
+| D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17 | packages/workers/src/queue.test.ts (within full suite green) |  |
+| D158 | Hosting stack | 🔵 | #385 |  |  |
+| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
+| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
-| D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204, #223, #310, #405, #406, #428, #435 |  |  |
+| D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204 |  |  |
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
 | D164 | Mobile push: **Deferred to V2.1+ | ⬜ |  |  |  |
-| D165 | Notification preferences: **Per-category toggles in Settings | 🔵 | #405, #415 |  |  |
+| D165 | Notification preferences: **Per-category toggles in Settings | 🔵 | #405 |  |  |
 | D166 | Loading patterns: **Skeleton-first with inline action progress | 🔵 | #50 |  |  |
-| D167 | 404 / 500 pages: **Custom calm branded + auto-Sentry log | 🟢 | #51, #302 | packages/shared/src/edge-states/inventory.test.ts |  |
+| D167 | 404 / 500 pages: **Custom calm branded + auto-Sentry log | 🟢 | #51 | packages/shared/src/edge-states/inventory.test.ts |  |
 | D168 | API error envelope: **Standardized structured format | 🔵 | #131 |  |  |
 | D169 | Three severity tiers | 🔵 | #131 |  |  |
 | D170 | Three named critical-trust scenarios | ⬜ |  |  |  |
@@ -230,15 +223,15 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D172 | Monorepo with pnpm + Turborepo; 3 apps + 3 packages | ⬜ |  |  |  |
 | D173 | Mobile architecture stance: **Refactor-when-ready (Option A + C discipline) | 🔵 | #11 |  |  |
 | D174 | `.worktreeinclude` content (Claude subagent worktree setup) | ⬜ |  |  |  |
-| D175 | Content Security Policy (CSP): **Strict from day 1, nonce-based | 🔵 | #201, #525, #559 |  |  |
+| D175 | Content Security Policy (CSP): **Strict from day 1, nonce-based | 🔵 | #201 |  |  |
 | D176 | Bot protection: **Cloudflare Turnstile on signup/OAuth init | ⬜ |  |  |  |
 | D177 | Secret management: **GCP Secret Manager + env var refs | ⬜ |  |  |  |
 | D178 | Dependency scanning: **Dependabot + Snyk free tier | ⬜ |  |  |  |
 | D179 | CORS configuration (derived) | 🔵 | #46 |  |  |
 | D180 | Webhook signature verification (derived) | 🔵 | #362 |  |  |
-| D181 | Security events log (distinct from Activity log) | 🔵 | #131, #134, #136 |  |  |
+| D181 | Security events log (distinct from Activity log) | 🔵 | #131 |  |  |
 | D182 | Test framework stack: **Vitest + testcontainers + Playwright | ⬜ |  |  |  |
-| D183 | Gmail mock strategy: **MockGmailProvider + recorded fixtures + staging real Gmail | 🔵 | #197, #247, #413, #493 |  |  |
+| D183 | Gmail mock strategy: **MockGmailProvider + recorded fixtures + staging real Gmail | 🔵 | #197 |  |  |
 | D184 | Coverage strategy: **Risk-weighted with 70% floor on `packages/shared` + `packages/db` | ⬜ |  |  |  |
 | D185 | Visual regression: **Skip at launch | ⬜ |  |  |  |
 | D186 | CLAUDE.md content: **DEFERRED pending community references | ⬜ |  |  |  |
@@ -248,30 +241,30 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D190 | Quiet Mode Preview Mode (updates D92, D93) | ⬜ |  |  |  |
 | D191 | Sync gate kill metric (updates D6) | ⬜ |  |  |  |
 | D192 | Custom Autopilot rule builder deferred to V2.1 (updates D99, D103) | ⬜ |  |  |  |
-| D193 | API service min_instances=1 from launch (updates D158, D161) | 🔵 | #221, #312, #371 |  |  |
+| D193 | API service min_instances=1 from launch (updates D158, D161) | 🔵 | #221 |  |  |
 | D194 | Screener marketing-copy hard rule (lifts D72 rationale into enforceable rule) | ⬜ |  |  |  |
 | D195 | Worker scaling decoupled from billing webhook (updates D161) | ⬜ |  |  |  |
 | D196 | Custom Autopilot rule builder: build at launch, ship flag-disabled (reverses D192) | 🟢 | #107 | packages/db/tests/autopilot-rules.test.ts — CHECK gates (is_preset/preset_key) lock custom-rule schema readiness |  |
 | D197 | Custom rule builder UI deferred to V2.1, with full architectural readiness at launch (reverses D196, refines D192) | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule returns null for is_preset=false → 404 (UI deferral enforced at API) |  |
-| D198 | Headless hooks for behavior, feature-owned components for rendering (resolves D36/D50/D57 implicit duplication) | 🟢 | #29, #184 | apps/web/src/features/triage/store.test.ts — D198 accordion |  |
+| D198 | Headless hooks for behavior, feature-owned components for rendering (resolves D36/D50/D57 implicit duplication) | 🟢 | #29 | apps/web/src/features/triage/store.test.ts — D198 accordion |  |
 | D199 | Lazy promotion + spec override (component/utility placement rule) | 🔵 | #29 |  |  |
-| D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🟢 | #29, #45, #50, #544, #548, #555 | apps/web/src/features/triage/store.test.ts — Zustand client state |  |
+| D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🟢 | #29 | apps/web/src/features/triage/store.test.ts — Zustand client state |  |
 | D201 | API + Worker architecture: Standard NestJS modules + Adapter pattern at external boundaries | 🟢 | #37 | apps/web/src/lib/api/client.test.ts |  |
-| D202 | API response envelope + cursor pagination | 🟢 | #37, #113, #502, #498 | apps/api/src/senders/senders.controller.spec.ts — D202 envelope |  |
+| D202 | API response envelope + cursor pagination | 🟢 | #37 | apps/api/src/senders/senders.controller.spec.ts — D202 envelope |  |
 | D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | 🟢 | #49 | packages/workers/src/base-declutr-worker.test.ts |  |
-| D204 | Read-only services per feature + events for cross-feature writes (refines D201) | 🟢 | #37, #78, #113 | apps/api/src/triage/triage.service.spec.ts — D204 read-only |  |
-| D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | 🔵 | #121, #123, #218, #372 |  |  |
-| D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | 🔵 | #127, #558 |  |  |
-| D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | 🟢 | #113, #226, #388, #566 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
+| D204 | Read-only services per feature + events for cross-feature writes (refines D201) | 🟢 | #37 | apps/api/src/triage/triage.service.spec.ts — D204 read-only |  |
+| D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | 🔵 | #121 |  |  |
+| D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | 🔵 | #127 |  |  |
+| D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | 🟢 | #113 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
 | D208 | "What happens next" preview mandatory before every automation or destructive action | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — preview mandatory before mutation | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
-| D209 | Trust-first microcopy hard rule (extends D194) | 🔵 | #410, #419, #570, #578 |  |  |
-| D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12, #494 |  |  |
-| D211 | Edge-state screen inventory at launch (extends D166-D171) | 🔵 | #195, #51, #119, #258, #276 | packages/shared/src/edge-states/inventory.test.ts (9 contract tests incl. route-dir parity guard) | Drift fix 2026-06-11: prior 🟢 covered only 6 screens; #195 refreshed to all 17 surfaces + parity guard — pending verify-d |
-| D212 | Empty states as first-class | 🔵 | #51, #119, #258 |  |  |
+| D209 | Trust-first microcopy hard rule (extends D194) | 🔵 | #410 |  |  |
+| D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12 |  |  |
+| D211 | Edge-state screen inventory at launch (extends D166-D171) | 🔵 | #51 | packages/shared/src/edge-states/inventory.test.ts (9 contract tests incl. route-dir parity guard) | Drift fix 2026-06-11: prior 🟢 covered only 6 screens; #195 refreshed to all 17 surfaces + parity guard — pending verify-d |
+| D212 | Empty states as first-class | 🔵 | #51 |  |  |
 | D213 | Motion design discipline | ⬜ |  |  |  |
 | D214 | Home strip atop Triage (not a separate Home screen) | ⬜ |  |  |  |
 | D215 | Senders list owns Search and Protected filter (no separate screens) | ⬜ |  |  |  |
-| D216 | Account deletion UI flow at launch (Settings → Account) | 🔵 | #218, #224, #308 |  |  |
+| D216 | Account deletion UI flow at launch (Settings → Account) | 🔵 | #218 |  |  |
 | D217 | Privacy & Data settings sub-page at launch | 🔵 | #308 |  |  |
 | D218 | Public `/changelog` at launch | 🔵 | #435 |  |  |
 | D219 | Single-page FAQ `/help` at launch; full Help Center deferred to V2.1 | 🔵 | #290 |  |  |
@@ -279,26 +272,26 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D221 | Decision Queue framing copy (locks Codex §8 framing) | ⬜ |  |  |  |
 | D222 | Auto-Protect via category prediction REJECTED at all versions (extends D22) | ⬜ |  |  |  |
 | D223 | Landing page primary headline (locks tentative) | 🔵 | #202 |  |  |
-| D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38, #122, #279, #287, #314, #370, #418, #427, #428, #471, #547 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
-| D225 | Worker policy expansion + named exceptions (resolves HC-3) | 🔵 | #194, #208, #209 |  | Truth sweep 2026-07-02 (🟡→🔵): every leg now on disk — policies + cron idempotency (worker-policies.ts:54-101), cron_runs + dead_letter_jobs tables (migration 0030, #194), DeadLetterWorker (worker.ts:1603), WatchRenewalWorker (worker.ts:1239) — 2026-06-11 missing-legs note stale. Pending verify-d |
-| D226 | Action lifecycle ordering (resolves SC-1) | 🔵 | #44, #180, #130, #149, #225, #272, #345, #376, #388, #394, #398, #400, #403, #407, #409, #440, #509, #510, #511, #538 | apps/web/src/features/triage/action-sheet.test.tsx — sheet → preview → confirm lifecycle | Evidence updated 2026-06-11: lifecycle wired to real K/A/U/L mutations + undo tray in #180. Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
-| D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🟢 | #12, #280, #410, #475, #476, #479 | packages/workers/src/reasoning.test.ts — K/A/U/L verdict labels |  |
-| D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🟢 | #192, #26 | 2026-07-02 audit: PrivacyBadge mounted sync-gate/landing/pricing/settings; banned-phrase negative tests; live content check app.declutrmail.com/privacy | Drift fix 2026-06-11: prior 🟢 predated mounts; #192 replaced banned sync-gate copy with PrivacyBadge + microcopy hook rule; settings/landing mounts ride those surfaces — pending verify-d |
-| D229 | Pub/Sub OIDC verification contract | 🟢 | #31, #311, #416 | apps/api/src/webhooks/__tests__/oidc-verifier.spec.ts — full OIDC verification |  |
+| D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
+| D225 | Worker policy expansion + named exceptions (resolves HC-3) | 🔵 | #194 |  | Truth sweep 2026-07-02 (🟡→🔵): every leg now on disk — policies + cron idempotency (worker-policies.ts:54-101), cron_runs + dead_letter_jobs tables (migration 0030, #194), DeadLetterWorker (worker.ts:1603), WatchRenewalWorker (worker.ts:1239) — 2026-06-11 missing-legs note stale. Pending verify-d |
+| D226 | Action lifecycle ordering (resolves SC-1) | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — sheet → preview → confirm lifecycle | Evidence updated 2026-06-11: lifecycle wired to real K/A/U/L mutations + undo tray in #180. Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🟢 | #12 | packages/workers/src/reasoning.test.ts — K/A/U/L verdict labels |  |
+| D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🟢 | #26 | 2026-07-02 audit: PrivacyBadge mounted sync-gate/landing/pricing/settings; banned-phrase negative tests; live content check app.declutrmail.com/privacy | Drift fix 2026-06-11: prior 🟢 predated mounts; #192 replaced banned sync-gate copy with PrivacyBadge + microcopy hook rule; settings/landing mounts ride those surfaces — pending verify-d |
+| D229 | Pub/Sub OIDC verification contract | 🟢 | #31 | apps/api/src/webhooks/__tests__/oidc-verifier.spec.ts — full OIDC verification |  |
 | D230 | Mailto unsubscribe deferred to manual-only at launch | 🔵 | #185 |  |  |
 | D231 | `GmailOpenLinkService` with tested fallback strategies | ⬜ |  |  |  |
-| D232 | Account deletion respects undo windows (max-of, or typed waiver) | 🔵 | #33, #194, #218, #372 | apps/api/src/account/deletion.service.spec.ts — D232 default window | Truth sweep 2026-07-02 (🟡→🔵): persisted intent + AccountController GET/POST/cancel (account.controller.ts:44-73) + AccountDeletionPurgeWorker 5-min sweep (worker.ts:1665-1706) + typed-confirm UI, grace banner and deletion emails shipped — 2026-06-11 schedule-only note stale. Pending verify-d |
+| D232 | Account deletion respects undo windows (max-of, or typed waiver) | 🔵 | #33 | apps/api/src/account/deletion.service.spec.ts — D232 default window | Truth sweep 2026-07-02 (🟡→🔵): persisted intent + AccountController GET/POST/cancel (account.controller.ts:44-73) + AccountDeletionPurgeWorker 5-min sweep (worker.ts:1665-1706) + typed-confirm UI, grace banner and deletion emails shipped — 2026-06-11 schedule-only note stale. Pending verify-d |
 | D233 | Offline destructive actions are draft intents, never auto-replay | ⬜ |  |  |  |
-| D234 | Custom-rule production API gated at `is_preset=false` | 🟢 | #107, #109 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule null for is_preset=false → 404 |  |
+| D234 | Custom-rule production API gated at `is_preset=false` | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule null for is_preset=false → 404 |  |
 | D235 | Partitioning deferred behind measured thresholds | ⬜ |  |  |  |
-| D245 | Unified product clarity and control contract | 🔵 | #332, #333, #335, #336, #368, #393, #394, #400, #403, #409, #438, #483, #485, #491, #492, #544, #572 |  |  |
-| D246 | Finite first relief and evidence-based automation authority | 🔵 | #334, #576 |  |  |
+| D245 | Unified product clarity and control contract | 🔵 | #332 |  |  |
+| D246 | Finite first relief and evidence-based automation authority | 🔵 | #334 |  |  |
 | D248 | Bulk unsubscribe: one-click subset only, per-channel receipt | 🔵 | #500 |  | Decided 2026-07-28. Batch executes `senders.unsubscribe_method='one_click'` server-side only. The column is nullable, so four states are reported separately: `mailto` (per-sender, D230), `none` (no channel exists), and `NULL` (not yet indexed — unknown, never folded into `none`). No undo — unsubscribe declares no inverse, so the mandatory modal preview is the reversal point. Receipt aggregates the THREE outcomes the worker writes (`unsubscribe_endpoint_accepted` / `unsubscribe_unconfirmed` / `unsubscribe_failed`) and says "request accepted", not "unsubscribed". Extends D9/D32 |
-| D249 | Billing reconciles against provider truth, not customer memory | 🔵 | #436, #441, #466 |  |  |
-| D250 | Landing page primary headline (reverses D223) | 🔵 | #468, #470 |  |  |
+| D249 | Billing reconciles against provider truth, not customer memory | 🔵 | #436 |  |  |
+| D250 | Landing page primary headline (reverses D223) | 🔵 | #468 |  |  |
 | D251 | Autopilot splits on behaviour, not access | 🔵 | #465 |  |  |
 | D252 | Unsubscribe degrades honestly | 🔵 | #514 |  |  |
-| D253 | A refunded customer can buy again | 🔵 | #518, #519, #520 |  |  |
-| D254 | Brand logos on sender avatars | 🔵 | #524, #528, #530, #533, #535, #537, #542, #560, #563, #562, #564 |  |  |
+| D253 | A refunded customer can buy again | 🔵 | #518 |  |  |
+| D254 | Brand logos on sender avatars | 🔵 | #524 |  |  |
 
 <!-- AUTO:DECISIONS:END -->
