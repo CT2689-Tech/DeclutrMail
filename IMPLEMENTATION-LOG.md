@@ -94,7 +94,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🔵 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | 🔵 | #293 |  |  |
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #501 |  | Reclaimed 2026-07-28 (D158): the tour has never been built. Prior D38 trailers were umbrella mis-tags, now rewritten in the source PR bodies; the senders wire-model work lives at ADR-0029 |
-| D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30, #43, #47, #52, #63, #71, #129, #569 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
+| D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30, #43, #47, #52, #63, #71, #129, #569, #574 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
 | D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🟢 | #30, #47, #181, #342, #394 | apps/api/src/senders/senders.read-service.spec.ts |  |
 | D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | 🔵 | #30, #566 |  |  |
 | D42 | **SUPERSEDED by D245: Protected is the sole visible safety state | 🔵 | #181, #30, #129, #393 |  | Evidence updated 2026-06-11: VIP/Protect policy write path landed in #181; prior #30 cite was stale |
@@ -264,7 +264,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | 🔵 | #127, #558 |  |  |
 | D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | 🟢 | #113, #226, #388, #566 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
 | D208 | "What happens next" preview mandatory before every automation or destructive action | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — preview mandatory before mutation | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
-| D209 | Trust-first microcopy hard rule (extends D194) | 🔵 | #410, #419, #570 |  |  |
+| D209 | Trust-first microcopy hard rule (extends D194) | 🔵 | #410, #419, #570, #578 |  |  |
 | D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12, #494 |  |  |
 | D211 | Edge-state screen inventory at launch (extends D166-D171) | 🔵 | #195, #51, #119, #258, #276 | packages/shared/src/edge-states/inventory.test.ts (9 contract tests incl. route-dir parity guard) | Drift fix 2026-06-11: prior 🟢 covered only 6 screens; #195 refreshed to all 17 surfaces + parity guard — pending verify-d |
 | D212 | Empty states as first-class | 🔵 | #51, #119, #258 |  |  |
