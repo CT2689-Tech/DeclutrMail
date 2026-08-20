@@ -1479,3 +1479,44 @@ a list that was verified rather than remembered.
 
 **Distillation trigger:** promote to CLAUDE.md §8 if a second "the
 sweep PR missed a surface the ADR never listed" entry lands.
+
+## 2026-08-19 — A required check you don't own is a veto you can't see
+
+**Context:** The merge queue was enabled on `main`. The first PR through
+it (#584, docs-only) sat for 63 minutes and was kicked without merging.
+Nothing failed; nothing was red.
+
+**Finding:** `Analyze (javascript-typescript)` was a required check, and
+CodeQL ran here as GitHub's managed default setup — the
+`dynamic/github-code-scanning/codeql` workflow, which has no file in the
+repo and no trigger list to edit. Default setup fires on `push` to the
+default branch and on `refs/pull/N/head`. It does not fire on
+`merge_group`, and GitHub's docs for default setup do not mention merge
+queues at all.
+
+A required check that never reports does not fail an entry, it HANGS
+it, until the check-response timeout (60 min here) evicts it. Combined
+with `enforce_admins: true`, that froze `main` for every author
+including the founder, with no error message anywhere and no bypass.
+
+The queue's own diagnostics never say "waiting on X" — the entry just
+sits in `AWAITING_CHECKS`. The way to see it was to diff the required
+contexts against the check-runs actually present on the merge-group SHA.
+
+Two things this surfaced for free, because the queue disables CI path
+filtering and runs every shard: the full test matrix passed on the
+merge-group ref (real coverage a docs PR never gets), and
+`hydration-smoke.spec.ts` failed — the same test has failed three times
+in recent `main` history, always at exactly the 120s per-test timeout,
+because one test walks 16 authenticated routes serially.
+
+**Rule (provisional):** Before enabling a merge queue, list the required
+contexts and, for each, name the file that produces it. Any context
+without a file in this repo is produced by something whose triggers you
+cannot edit — resolve it before flipping the switch, not after. After
+enabling, verify by comparing required contexts against the check-runs
+present on the merge-group SHA; a passing PR proves nothing about the
+queue.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a second
+"required check reports on PRs but not on `merge_group`" entry lands.
