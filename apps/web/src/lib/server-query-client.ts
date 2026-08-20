@@ -85,10 +85,25 @@ class PrefetchTimeoutError extends Error {
  * event loop alive, which in a serverless render is a leaked handle
  * per request, not a cosmetic detail.
  */
-function withDeadline<T>(surface: ServerHydrationSurface, query: Promise<T>): Promise<T> {
+function withDeadline<T>(
+  surface: ServerHydrationSurface,
+  query: Promise<T>,
+  onTimeout: () => void,
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new PrefetchTimeoutError(surface)), PREFETCH_DEADLINE_MS);
+    timer = setTimeout(() => {
+      // ABORT, DON'T JUST STOP WAITING. `Promise.race` abandons the
+      // query; it does not stop it. `serverGet` composes its own
+      // `AbortSignal.timeout(3_000)`, so an abandoned read keeps running
+      // for up to a further second while the browser has already been
+      // handed a cache miss and refetches it — the server does the
+      // expensive read twice, and it does so precisely when it is
+      // already slow enough to have missed a 2s deadline. Cancelling
+      // makes the fallback cost one read instead of two.
+      onTimeout();
+      reject(new PrefetchTimeoutError(surface));
+    }, PREFETCH_DEADLINE_MS);
   });
   return Promise.race([query, deadline]).finally(() => {
     if (timer !== undefined) clearTimeout(timer);
@@ -98,10 +113,34 @@ function withDeadline<T>(surface: ServerHydrationSurface, query: Promise<T>): Pr
 export async function settleServerQueries(
   surface: ServerHydrationSurface,
   queries: Array<Promise<unknown>>,
+  /**
+   * The client the queries were started on, so a timeout can CANCEL the
+   * in-flight read rather than merely stop awaiting it.
+   *
+   * Optional so a caller with no client still type-checks, but every
+   * caller in this repo passes one — without it the deadline reverts to
+   * abandoning work, which is the defect this argument exists to fix.
+   *
+   * Cancelling ALL queries on the first timeout is deliberate and is not
+   * as broad as it reads: every query in the batch carries the SAME
+   * deadline, so by the moment one fires, the others have either already
+   * settled (cancel is a no-op) or are at the same deadline themselves.
+   */
+  queryClient?: QueryClient,
 ): Promise<void> {
   if (queries.length === 0) return;
   const startedAt = performance.now();
-  const results = await Promise.allSettled(queries.map((q) => withDeadline(surface, q)));
+  let cancelled = false;
+  const cancelInFlight = () => {
+    if (cancelled || queryClient === undefined) return;
+    cancelled = true;
+    // Fire-and-forget: `cancelQueries` resolves once the abort has been
+    // signalled, and the render must not wait on teardown.
+    void queryClient.cancelQueries();
+  };
+  const results = await Promise.allSettled(
+    queries.map((q) => withDeadline(surface, q, cancelInFlight)),
+  );
   let designedFailureCount = 0;
   let unexpectedFailureCount = 0;
   let timedOutCount = 0;

@@ -8,7 +8,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('@sentry/nextjs', () => sentry);
 
 import { ServerApiError } from '@/lib/api/server';
-import { settleServerQueries } from './server-query-client';
+import { makeServerQueryClient, settleServerQueries } from './server-query-client';
 
 describe('settleServerQueries', () => {
   afterEach(() => {
@@ -110,6 +110,70 @@ describe('settleServerQueries', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('deadline'));
     // A hang is a capacity signal, not a per-render exception.
     expect(sentry.captureException).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('CANCELS the in-flight query when the deadline fires, not just stops awaiting it', async () => {
+    // The defect this exists for: `Promise.race` abandons a query, it
+    // does not stop it. `serverGet` carries its own 3s abort, so an
+    // abandoned read kept running for a further second while the browser
+    // — handed a cache miss — refetched the same thing. The server paid
+    // for the expensive read twice, and did so exactly when it was
+    // already slow enough to miss a 2s deadline.
+    //
+    // Asserting the wrapper resolves proves nothing about that. This
+    // asserts the query client was told to cancel.
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    const queryClient = makeServerQueryClient();
+    const cancelQueries = vi.spyOn(queryClient, 'cancelQueries').mockResolvedValue();
+
+    const hung = new Promise<unknown>(() => {});
+    const settled = settleServerQueries('app-shell', [hung], queryClient);
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(settled).resolves.toBeUndefined();
+
+    expect(cancelQueries).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('does NOT cancel when every prefetch settles inside the deadline', async () => {
+    // Blind case for the guard above. Cancelling on a healthy render
+    // would abort work that was about to succeed and downgrade a good
+    // server render into a client fetch — the opposite of the point.
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const queryClient = makeServerQueryClient();
+    const cancelQueries = vi.spyOn(queryClient, 'cancelQueries').mockResolvedValue();
+
+    await settleServerQueries('app-shell', [Promise.resolve('quick')], queryClient);
+
+    expect(cancelQueries).not.toHaveBeenCalled();
+  });
+
+  it('cancels once, not once per timed-out query in the batch', async () => {
+    // Every query in a batch carries the same deadline, so a hung batch
+    // fires N timers at the same tick. `cancelQueries()` cancels all
+    // in-flight queries on the client, so calling it per query would be
+    // N-1 redundant teardowns on the render path.
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    const queryClient = makeServerQueryClient();
+    const cancelQueries = vi.spyOn(queryClient, 'cancelQueries').mockResolvedValue();
+
+    const settled = settleServerQueries(
+      'app-shell',
+      [new Promise(() => {}), new Promise(() => {}), new Promise(() => {})],
+      queryClient,
+    );
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(settled).resolves.toBeUndefined();
+
+    expect(cancelQueries).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
 

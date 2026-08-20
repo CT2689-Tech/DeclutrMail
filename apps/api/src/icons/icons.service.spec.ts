@@ -3,7 +3,7 @@ import { freshTestDb } from '@declutrmail/db/testing';
 import type { Queue } from 'bullmq';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { IconsService, MAX_SCHEDULED_PER_READ } from './icons.service.js';
+import { ENQUEUE_DEADLINE_MS, IconsService, MAX_SCHEDULED_PER_READ } from './icons.service.js';
 
 /**
  * IconsService integration tests (ADR-0034).
@@ -400,15 +400,47 @@ describe('IconsService', () => {
         { mayEnqueue: true },
       );
 
-      expect(added.map((job) => job.data)).toEqual([
-        { domain: 'first.example' },
-        { domain: 'second.example' },
-      ]);
+      // Scheduling is detached from the response now, so wait for the
+      // effect rather than assuming the await covered it.
+      await vi.waitFor(() =>
+        expect(added.map((job) => job.data)).toEqual([
+          { domain: 'first.example' },
+          { domain: 'second.example' },
+        ]),
+      );
       // Deterministic job id per domain + resolver version, so a
       // re-listed page collapses onto the same job.
       expect(added[0]?.opts).toMatchObject({
         jobId: `DomainIconWorker-v${DOMAIN_ICON_RESOLVER_VERSION}-first.example`,
       });
+    });
+
+    it('answers immediately when the queue never settles (wedged Redis)', async () => {
+      // THE FAILURE MODE THAT INVERTS THE OPTIMISATION. `marksFor` exists
+      // to remove per-row network round trips from Triage, Activity,
+      // Screener and Senders. While scheduling was awaited, a wedged
+      // Redis made that same call ADD up to ENQUEUE_DEADLINE_MS to every
+      // one of those reads — the degraded path was slower than not
+      // having the feature at all.
+      //
+      // A never-settling queue is the honest simulation: not an error
+      // (which resolves fast), but a hang.
+      const db = await freshTestDb();
+      const svc = new IconsService(
+        db as never,
+        {
+          add: () => new Promise(() => {}),
+        } as never,
+      );
+
+      const startedAt = Date.now();
+      const marks = await svc.marksFor(['wedged.example'], { mayEnqueue: true });
+      const elapsed = Date.now() - startedAt;
+
+      // The read answers on cache state alone. Asserted well under the
+      // enqueue deadline so this fails loudly if the await ever returns.
+      expect(elapsed).toBeLessThan(ENQUEUE_DEADLINE_MS);
+      expect(marks.size).toBe(0);
     });
 
     it('bounds how much background work one read can schedule', async () => {
@@ -420,7 +452,7 @@ describe('IconsService', () => {
 
       // A read that schedules a job per uncached domain turns one page
       // view into a page-sized burst on the resolver.
-      expect(added).toHaveLength(MAX_SCHEDULED_PER_READ);
+      await vi.waitFor(() => expect(added).toHaveLength(MAX_SCHEDULED_PER_READ));
     });
 
     // NO PERMANENT STARVATION. The budget is spent on domains with no

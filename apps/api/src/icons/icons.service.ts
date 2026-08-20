@@ -412,7 +412,22 @@ export class IconsService {
       // collapses onto the same job rather than queuing it again, and
       // a resolved domain stops being scheduled once the worker writes
       // its row — including the `none` row for a domain with no mark.
-      await Promise.all(
+      // NOT AWAITED. Scheduling is decoration on a read: it makes the
+      // NEXT page view better and contributes nothing to this response.
+      // Awaiting it put a Redis round trip on the critical path of the
+      // very read this method exists to make fast, and made the failure
+      // mode perverse — with Redis wedged, the optimisation that removes
+      // network round trips would instead ADD up to ENQUEUE_DEADLINE_MS
+      // to Triage, Activity, Screener and Senders. An optimisation whose
+      // degraded path is slower than not having it is not an optimisation.
+      //
+      // Safe to drop on the floor. `schedule` swallows and logs its own
+      // failures, so this cannot reject; and a lost enqueue costs one
+      // monogram, because the next read re-schedules the same domain
+      // under the same deterministic jobId. That is the identical
+      // degradation as Redis being down, which this code already treats
+      // as normal.
+      void Promise.all(
         sampleAtMost([...toSchedule], MAX_SCHEDULED_PER_READ).map(([canonical, discovery]) =>
           this.schedule(canonical, discovery),
         ),
