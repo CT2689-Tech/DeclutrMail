@@ -3,7 +3,7 @@ import { freshTestDb } from '@declutrmail/db/testing';
 import type { Queue } from 'bullmq';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { IconsService, MAX_SCHEDULED_PER_READ } from './icons.service.js';
+import { ENQUEUE_DEADLINE_MS, IconsService, MAX_SCHEDULED_PER_READ } from './icons.service.js';
 
 /**
  * IconsService integration tests (ADR-0034).
@@ -400,10 +400,14 @@ describe('IconsService', () => {
         { mayEnqueue: true },
       );
 
-      expect(added.map((job) => job.data)).toEqual([
-        { domain: 'first.example' },
-        { domain: 'second.example' },
-      ]);
+      // Scheduling is detached from the response now, so wait for the
+      // effect rather than assuming the await covered it.
+      await vi.waitFor(() =>
+        expect(added.map((job) => job.data)).toEqual([
+          { domain: 'first.example' },
+          { domain: 'second.example' },
+        ]),
+      );
       // Deterministic job id per domain + resolver version, so a
       // re-listed page collapses onto the same job.
       expect(added[0]?.opts).toMatchObject({
@@ -420,7 +424,7 @@ describe('IconsService', () => {
 
       // A read that schedules a job per uncached domain turns one page
       // view into a page-sized burst on the resolver.
-      expect(added).toHaveLength(MAX_SCHEDULED_PER_READ);
+      await vi.waitFor(() => expect(added).toHaveLength(MAX_SCHEDULED_PER_READ));
     });
 
     // NO PERMANENT STARVATION. The budget is spent on domains with no
@@ -480,24 +484,48 @@ describe('IconsService', () => {
       expect(added).toEqual([]);
     });
 
-    // REDIS OUTAGE MUST NOT HANG A READ. `createRedisConnection` sets
-    // `maxRetriesPerRequest: null`, so a command issued while Redis is
-    // unreachable retries forever instead of failing — `queue.add()`
-    // never settles. A try/catch cannot see that; only a deadline can.
-    // Without one, a Redis outage would leave GET /api/senders spinning
-    // rather than degrading to monograms.
-    it('does not hang when the queue never answers', async () => {
+    // REDIS MUST NOT HANG *OR* SLOW A READ.
+    //
+    // This queue uses `createRedisProducerConnection`
+    // (`maxRetriesPerRequest: 0`, `enableOfflineQueue: false`), so a
+    // DISCONNECTED Redis rejects immediately. (An earlier version of this
+    // comment named `createRedisConnection` / `maxRetriesPerRequest:
+    // null`, which is a different connection and made the hazard sound
+    // broader than it is.) The real case is a connected-but-unresponsive
+    // Redis: a TCP blackhole emits no `close`, the command queue is never
+    // flushed, and `add` never settles.
+    //
+    // The read must therefore both ANSWER and answer PROMPTLY. Scheduling
+    // is detached, so a wedged queue may add no latency of its own.
+    //
+    // MEASURED AS A DELTA, NOT AN ABSOLUTE. An absolute bound here would
+    // time the whole call — PGlite setup and two cache reads included —
+    // and so would really be testing how fast the runner is; a first
+    // draft of exactly that failed CI at 851ms while passing locally. The
+    // warm-up matters for the same reason: without it the first call
+    // absorbs setup cost, which lands in the baseline and can mask a
+    // regression behind it.
+    it('does not hang OR slow a read when the queue never answers', async () => {
       const db = await freshTestDb();
       const wedged = {
         add: () => new Promise<never>(() => {}),
       } as unknown as Queue<{ domain: string }>;
+      const svc = new IconsService(db as never, wedged);
 
-      const marks = await new IconsService(db as never, wedged).marksFor(['unknown.example'], {
-        mayEnqueue: true,
-      });
+      await svc.marksFor(['warmup.example'], { mayEnqueue: false });
+
+      const baselineAt = Date.now();
+      await svc.marksFor(['baseline.example'], { mayEnqueue: false });
+      const baseline = Date.now() - baselineAt;
+
+      const scheduledAt = Date.now();
+      const marks = await svc.marksFor(['unknown.example'], { mayEnqueue: true });
+      const scheduled = Date.now() - scheduledAt;
 
       // The read still answers, on time, with the truth it has.
       expect(marks).toEqual(new Set());
+      // ...and re-attaching the await would put a full deadline here.
+      expect(scheduled - baseline).toBeLessThan(ENQUEUE_DEADLINE_MS / 2);
     });
 
     it('resolves a page through the alias registry', async () => {

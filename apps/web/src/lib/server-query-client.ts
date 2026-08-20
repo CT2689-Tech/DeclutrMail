@@ -1,7 +1,7 @@
 import 'server-only';
 
 import * as Sentry from '@sentry/nextjs';
-import { QueryClient } from '@tanstack/react-query';
+import { isCancelledError, QueryClient } from '@tanstack/react-query';
 
 import { ServerApiError } from '@/lib/api/server';
 
@@ -85,10 +85,25 @@ class PrefetchTimeoutError extends Error {
  * event loop alive, which in a serverless render is a leaked handle
  * per request, not a cosmetic detail.
  */
-function withDeadline<T>(surface: ServerHydrationSurface, query: Promise<T>): Promise<T> {
+function withDeadline<T>(
+  surface: ServerHydrationSurface,
+  query: Promise<T>,
+  onTimeout: () => void,
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new PrefetchTimeoutError(surface)), PREFETCH_DEADLINE_MS);
+    timer = setTimeout(() => {
+      // ABORT, DON'T JUST STOP WAITING. `Promise.race` abandons the
+      // query; it does not stop it. `serverGet` composes its own
+      // `AbortSignal.timeout(3_000)`, so an abandoned read keeps running
+      // for up to a further second while the browser has already been
+      // handed a cache miss and refetches it — the server does the
+      // expensive read twice, and it does so precisely when it is
+      // already slow enough to have missed a 2s deadline. Cancelling
+      // makes the fallback cost one read instead of two.
+      onTimeout();
+      reject(new PrefetchTimeoutError(surface));
+    }, PREFETCH_DEADLINE_MS);
   });
   return Promise.race([query, deadline]).finally(() => {
     if (timer !== undefined) clearTimeout(timer);
@@ -98,10 +113,37 @@ function withDeadline<T>(surface: ServerHydrationSurface, query: Promise<T>): Pr
 export async function settleServerQueries(
   surface: ServerHydrationSurface,
   queries: Array<Promise<unknown>>,
+  /**
+   * The client the queries were started on, so a timeout can CANCEL the
+   * in-flight read rather than merely stop awaiting it.
+   *
+   * REQUIRED, not optional. It was optional in the first draft purely to
+   * spare the existing tests, and a reviewer pointed out that the type
+   * then permits a call which silently loses the behaviour this argument
+   * exists to add — tsc cannot flag a caller that simply forgets it.
+   * Required makes that regression impossible to write rather than
+   * merely discouraged.
+   *
+   * Cancelling ALL queries on the first timeout is deliberate and is not
+   * as broad as it reads: every query in the batch carries the SAME
+   * deadline, so by the moment one fires, the others have either already
+   * settled (cancel is a no-op) or are at the same deadline themselves.
+   */
+  queryClient: QueryClient,
 ): Promise<void> {
   if (queries.length === 0) return;
   const startedAt = performance.now();
-  const results = await Promise.allSettled(queries.map((q) => withDeadline(surface, q)));
+  let cancelled = false;
+  const cancelInFlight = () => {
+    if (cancelled) return;
+    cancelled = true;
+    // Fire-and-forget: `cancelQueries` resolves once the abort has been
+    // signalled, and the render must not wait on teardown.
+    void queryClient.cancelQueries();
+  };
+  const results = await Promise.allSettled(
+    queries.map((q) => withDeadline(surface, q, cancelInFlight)),
+  );
   let designedFailureCount = 0;
   let unexpectedFailureCount = 0;
   let timedOutCount = 0;
@@ -112,9 +154,25 @@ export async function settleServerQueries(
       designedFailureCount += 1;
       continue;
     }
-    if (result.reason instanceof PrefetchTimeoutError) {
+    if (result.reason instanceof PrefetchTimeoutError || isCancelledError(result.reason)) {
       // A hang is not an error to report to Sentry per-render — it is a
       // capacity signal, and the count below is what makes it visible.
+      //
+      // `isCancelledError` IS THE SAME EVENT, SEEN FROM A SIBLING.
+      // Cancelling on the first timeout rejects every other in-flight
+      // query in the batch with `CancelledError` (query-core rethrows it
+      // when `state.data === undefined`, which is always true on a fresh
+      // server client). Those are not failures — this code cancelled
+      // them on purpose, one tick before their own identical deadlines
+      // would have fired anyway.
+      //
+      // Counting them as unexpected failures corrupted BOTH signals at
+      // once, in opposite directions, during exactly the saturation this
+      // deadline exists for: on the 7-query app-shell batch one hung
+      // dependency reported `timed_out_count: 1` while emitting 6 Sentry
+      // events and tripping the unexpected-failure alert
+      // (docs/observability/event-taxonomy.md designates any non-zero
+      // unexpected count as the alert input).
       timedOutCount += 1;
       console.warn(
         `[server-hydration] ${surface} prefetch hit the ${PREFETCH_DEADLINE_MS}ms deadline; falling back to the client query.`,

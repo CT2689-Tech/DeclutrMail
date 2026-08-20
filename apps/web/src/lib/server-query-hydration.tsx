@@ -30,7 +30,7 @@ export async function ServerQueryHydration({
   children: ServerQueryChildren;
 }) {
   const queryClient = makeServerQueryClient();
-  await settleServerQueries(surface, prefetch(queryClient));
+  await settleServerQueries(surface, prefetch(queryClient), queryClient);
   const content = typeof children === 'function' ? children(queryClient) : children;
 
   return <HydrationBoundary state={dehydrate(queryClient)}>{content}</HydrationBoundary>;

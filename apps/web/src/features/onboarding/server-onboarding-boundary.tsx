@@ -54,7 +54,7 @@ export async function ServerOnboardingBoundary({
         ),
       );
     }
-    await settleServerQueries('onboarding', queries);
+    await settleServerQueries('onboarding', queries, queryClient);
 
     const state = queryClient.getQueryData<OnboardingState>(ONBOARDING_STATE_KEY);
     const activeMailboxId = me.activeMailboxId;
@@ -63,32 +63,40 @@ export async function ServerOnboardingBoundary({
       : undefined;
     if (state?.onboardedAt === null && activeMailboxId !== null && sync?.is_ready_for_triage) {
       if (state.goal === null || state.presetPicks === null) {
-        await settleServerQueries('onboarding-step', [
-          queryClient.fetchQuery(
-            autopilotRulesQueryOptions((signal) =>
-              serverGet<AutopilotRuleDto[]>('/api/autopilot/rules', cookieHeader, signal, {
-                mailboxId: activeMailboxId,
+        await settleServerQueries(
+          'onboarding-step',
+          [
+            queryClient.fetchQuery(
+              autopilotRulesQueryOptions((signal) =>
+                serverGet<AutopilotRuleDto[]>('/api/autopilot/rules', cookieHeader, signal, {
+                  mailboxId: activeMailboxId,
+                }),
+              ),
+            ),
+          ],
+          queryClient,
+        );
+      } else if (queryClient.getQueryData(FIRST_TRIAGE_KEY) === undefined) {
+        await settleServerQueries(
+          'onboarding-step',
+          [
+            queryClient.fetchQuery(
+              firstTriageQueryOptions(async (signal): Promise<FirstTriageRead> => {
+                const envelope = await serverGetEnvelope<TriageDecisionRow[]>(
+                  '/api/onboarding/first-triage',
+                  cookieHeader,
+                  signal,
+                  { mailboxId: activeMailboxId },
+                );
+                return {
+                  rows: envelope.data,
+                  meta: OnboardingFirstTriageMetaSchema.parse(envelope.meta),
+                };
               }),
             ),
-          ),
-        ]);
-      } else if (queryClient.getQueryData(FIRST_TRIAGE_KEY) === undefined) {
-        await settleServerQueries('onboarding-step', [
-          queryClient.fetchQuery(
-            firstTriageQueryOptions(async (signal): Promise<FirstTriageRead> => {
-              const envelope = await serverGetEnvelope<TriageDecisionRow[]>(
-                '/api/onboarding/first-triage',
-                cookieHeader,
-                signal,
-                { mailboxId: activeMailboxId },
-              );
-              return {
-                rows: envelope.data,
-                meta: OnboardingFirstTriageMetaSchema.parse(envelope.meta),
-              };
-            }),
-          ),
-        ]);
+          ],
+          queryClient,
+        );
       }
     }
   }
