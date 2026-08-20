@@ -177,7 +177,7 @@ export function SenderRowDetail({
               ? color.fg
               : color.amber,
     },
-    { k: 'Last 30 days', v: (s.monthlyVolume ?? 0).toLocaleString('en-US'), small: 'messages' },
+    { k: 'Last 90 days', v: (s.monthlyVolume ?? 0).toLocaleString('en-US'), small: 'messages' },
   ];
 
   return (

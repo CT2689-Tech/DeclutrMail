@@ -177,7 +177,16 @@ export async function materializeAutopilotSignals(
   const totalRows = await db
     .select({
       senderKey: mailMessages.senderKey,
-      total: sql<number>`count(*)::int`,
+      // INBOUND only, like the `inbox` sibling below and like the score
+      // worker's `totalMessages`. This counted the user's own sent mail
+      // toward the sender's message count, and two presets gate a
+      // DESTRUCTIVE unsubscribe on `totalMessages < DORMANCY_MIN_MESSAGES`
+      // — so a sender with 3 inbound and 2 replies from the user cleared
+      // a floor that exists precisely to stop unsubscribing on senders
+      // with too little signal to judge. The cascade counts the same
+      // fact inbound-only (ADR-0037); this made the two workers disagree
+      // about what "total messages" means.
+      total: sql<number>`count(*) FILTER (WHERE ${mailMessages.isOutbound} = false)::int`,
       inbox: sql<number>`count(*) FILTER (WHERE ${mailMessages.isOutbound} = false AND 'INBOX' = ANY(${mailMessages.labelIds}))::int`,
     })
     .from(mailMessages)

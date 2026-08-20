@@ -19,7 +19,12 @@ import { defaultLaterWakeAt, newIdempotencyKey, type ActionReach } from '@/lib/a
 import type { ScreenerDecideResult, ScreenerDecideVerb, ScreenerQueueRow } from '../data';
 import { screenerCountQueryOptions, screenerQueueQueryOptions } from './query-options';
 
-export { SCREENER_COUNT_KEY, SCREENER_COUNT_POLL_MS, SCREENER_QUEUE_KEY } from './query-options';
+export {
+  SCREENER_ALL_KEY,
+  SCREENER_COUNT_KEY,
+  SCREENER_COUNT_POLL_MS,
+  SCREENER_QUEUE_KEY,
+} from './query-options';
 
 export function useScreenerQueue(options: { enabled?: boolean } = {}) {
   return useQuery({

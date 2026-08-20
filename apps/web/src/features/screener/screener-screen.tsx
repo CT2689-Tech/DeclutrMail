@@ -20,7 +20,12 @@ import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
 
-import { SCREENER_COUNT_KEY, SCREENER_QUEUE_KEY, useScreenerDecide } from './api/use-screener';
+import {
+  SCREENER_ALL_KEY,
+  SCREENER_COUNT_KEY,
+  SCREENER_QUEUE_KEY,
+  useScreenerDecide,
+} from './api/use-screener';
 import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
 import {
   SCREENER_QUEUE,
@@ -126,7 +131,14 @@ export function ScreenerScreen({
     expandedScreenerRow === null ? { stale: false } : (expandedScreenerRow.recommendation ?? null),
     {
       enabled: expandedScreenerRow !== null,
-      invalidate: SCREENER_QUEUE_KEY,
+      // The QUEUE prefix alone is not enough. `['screener','queue']` and
+      // `['screener','count']` are siblings, so invalidating the former
+      // never reaches the latter — and a re-score that graduates a
+      // sender removes it from BOTH server reads. The badge would hold
+      // the pre-graduation number until its 60s poll, re-opening on the
+      // client exactly the count-vs-list gap `screenerPendingWhere`
+      // closes on the server. The shared parent prefix reaches both.
+      invalidate: SCREENER_ALL_KEY,
     },
   );
 

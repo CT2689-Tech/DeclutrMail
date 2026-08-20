@@ -2,6 +2,7 @@
 
 import { Eyebrow, tokens } from '@declutrmail/shared';
 import { scoredAge } from '@declutrmail/shared/copy';
+import { useNow } from '@/lib/use-now';
 import type { Recommendation, Verdict } from './types';
 
 const { color, font, radius } = tokens;
@@ -48,7 +49,15 @@ export function RecommendationBanner({
 
   const { verdict, reasoning, signals, scoredAt } = recommendation;
   const verbLabel = VERDICT_LABEL[verdict];
-  const age = scoredAt ? scoredAge(scoredAt) : null;
+  // Hydration-safe clock. `/senders/[id]` server-renders and hydrates
+  // this component, so a bare `new Date()` in the render body gives the
+  // server and the browser two different clocks — across a day boundary
+  // the label flips from "today" to "yesterday" and React logs a
+  // mismatch (D200). `useNow()` returns null until mount; the age is
+  // decoration and can wait one tick. Same guard the triage and
+  // screener rows use; this was the last surface without it.
+  const now = useNow();
+  const age = scoredAt && now !== null ? scoredAge(scoredAt, new Date(now)) : null;
 
   return (
     <details

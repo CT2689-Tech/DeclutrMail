@@ -129,7 +129,13 @@ describe('SenderRowDetail — D245 fact-first actions', () => {
     expect(screen.queryByText(/recommended/i)).not.toBeInTheDocument();
     expect(screen.getByText('Last received')).toBeInTheDocument();
     expect(screen.getByText('Marked read')).toBeInTheDocument();
-    expect(screen.getByText('Last 30 days')).toBeInTheDocument();
+    // The window, not just the number: `monthlyVolume` is a 90-day
+    // inbound count (ADR-0037), so a "Last 30 days" heading over it
+    // overstated by 3x. This assertion held the stale label in place
+    // while the label was wrong, so it now pins the correct one AND
+    // rejects the old.
+    expect(screen.getByText('Last 90 days')).toBeInTheDocument();
+    expect(screen.queryByText('Last 30 days')).not.toBeInTheDocument();
   });
 
   it('offers factual one-click Unsubscribe and the FULL canonical verb set (ADR-0019)', () => {

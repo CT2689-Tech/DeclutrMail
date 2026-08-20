@@ -79,6 +79,8 @@ interface SeedSenderInput {
   timeseries?: { volume: number; readCount: number };
   /** Optional total messages — drives mailMessages count. */
   totalMessages?: number;
+  /** Optional OUTBOUND messages to this sender — mail the user sent. */
+  outboundMessages?: number;
 }
 
 async function seedSender(
@@ -140,6 +142,22 @@ async function seedSender(
         internalDate: NOW,
         labelIds: ['INBOX'],
         isUnread: true,
+      });
+    }
+  }
+  if ((input.outboundMessages ?? 0) > 0) {
+    for (let i = 0; i < (input.outboundMessages ?? 0); i += 1) {
+      await db.insert(mailMessages).values({
+        mailboxAccountId,
+        providerMessageId: `${senderKey.slice(0, 8)}-out-${i}`,
+        providerThreadId: `t-${senderKey.slice(0, 8)}-out-${i}`,
+        senderKey,
+        subject: '',
+        snippet: '',
+        internalDate: NOW,
+        labelIds: ['SENT'],
+        isUnread: false,
+        isOutbound: true,
       });
     }
   }
@@ -695,5 +713,42 @@ describe('AutopilotApplyWorker', () => {
     expect(result.rulesFailed).toBe(1);
     // The surviving rule wrote its match (1 match), not the failing one.
     expect(result.matchesWritten).toBe(1);
+  });
+});
+
+/**
+ * `DORMANCY_MIN_MESSAGES` (5) exists to stop the dormancy presets
+ * suggesting an unsubscribe on a sender with too little signal to judge.
+ * Both presets that read it emit a DESTRUCTIVE verb, so a floor cleared
+ * by the wrong mail is the expensive direction.
+ *
+ * The materializer counted the user's OWN sent mail toward
+ * `totalMessages` while the cascade (ADR-0037) counted inbound only, so
+ * a sender with 3 inbound and 2 replies from the user read as 5 to
+ * Autopilot and 3 to the engine. Caught by review, not by this file.
+ */
+describe('AutopilotApplyWorker — the dormancy floor counts the sender, not the user', () => {
+  it('does not clear DORMANCY_MIN_MESSAGES on the user’s own replies', async () => {
+    const db = await freshDb();
+    const mbId = await seedMailbox(db);
+    await seedAutopilotPresets(db as never, mbId);
+    await enablePreset(db, mbId, 'newsletter_graveyard', { enabled: true, mode: 'observe' });
+
+    // 3 inbound — under the 5-message floor. 4 outbound replies from the
+    // user would carry the total to 7 if they were counted.
+    await seedSender(db, mbId, {
+      email: 'thin@news.test',
+      lastSeenAt: new Date(NOW.getTime() - 120 * 24 * 60 * 60 * 1000),
+      timeseries: { volume: 3, readCount: 0 },
+      totalMessages: 3,
+      outboundMessages: 4,
+    });
+
+    const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+      FAKE_CTX,
+    );
+    expect(result.matchesWritten).toBe(0);
   });
 });
