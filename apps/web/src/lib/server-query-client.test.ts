@@ -193,6 +193,33 @@ describe('settleServerQueries', () => {
     vi.useRealTimers();
   });
 
+  it('still rejects the deadline if cancellation throws', async () => {
+    // ORDERING GUARD. `cancelQueries()` walks every query's `onCancel`
+    // and aborts its controller. If it ever threw synchronously and the
+    // throw came BEFORE `reject`, the deadline promise would stay
+    // pending forever and hang the render — the exact failure the
+    // deadline exists to prevent. It cannot throw today; this makes the
+    // ordering that guarantees it can never matter into a tested
+    // property rather than a comment.
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    const queryClient = makeServerQueryClient();
+    vi.spyOn(queryClient, 'cancelQueries').mockImplementation(() => {
+      throw new Error('teardown blew up');
+    });
+
+    const settled = settleServerQueries('app-shell', [new Promise(() => {})], queryClient);
+    await vi.advanceTimersByTimeAsync(2_000);
+    // The render proceeds. Without reject-before-cancel this never settles.
+    await expect(settled).resolves.toBeUndefined();
+
+    const logged = JSON.parse((info.mock.calls[0]?.[0] as string) ?? '{}');
+    expect(logged.timed_out_count).toBe(1);
+    vi.useRealTimers();
+  });
+
   it('does not report cancelled siblings as unexpected failures', async () => {
     // THE TEST THE OTHER THREE COULD NOT BE. Those mock `cancelQueries`
     // and pass bare promises never registered in the cache, so they
