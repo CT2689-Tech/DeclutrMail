@@ -1,0 +1,2 @@
+-- atlas:txmode none
+DROP INDEX CONCURRENTLY IF EXISTS "blindcase_probe_idx";
