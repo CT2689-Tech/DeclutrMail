@@ -414,24 +414,53 @@ export class IconsService {
       // its row — including the `none` row for a domain with no mark.
       // NOT AWAITED. Scheduling is decoration on a read: it makes the
       // NEXT page view better and contributes nothing to this response.
-      // Awaiting it put a Redis round trip on the critical path of the
-      // very read this method exists to make fast, and made the failure
-      // mode perverse — with Redis wedged, the optimisation that removes
-      // network round trips would instead ADD up to ENQUEUE_DEADLINE_MS
-      // to Triage, Activity, Screener and Senders. An optimisation whose
-      // degraded path is slower than not having it is not an optimisation.
+      //
+      // THE HEALTHY PATH IS THE HONEST ARGUMENT. Awaiting put an Upstash
+      // round trip on the critical path of every Triage, Activity,
+      // Screener and Senders read — on every render, not just during an
+      // incident. That alone is worth removing.
+      //
+      // The outage argument is narrower than it first appears, and an
+      // earlier version of this comment overstated it. This queue is
+      // built on `createRedisProducerConnection`
+      // (`maxRetriesPerRequest: 0`, `enableOfflineQueue: false`), so a
+      // DISCONNECTED Redis rejects immediately and the await cost was
+      // ~0. The residual hazard is a connected-but-unresponsive Redis —
+      // a TCP blackhole emits no `close`, so the command queue is never
+      // flushed and `add` simply never settles. That case is real, and
+      // it is what `ENQUEUE_DEADLINE_MS` bounds; it is not "every read
+      // pays the deadline whenever Redis is down".
       //
       // Safe to drop on the floor. `schedule` swallows and logs its own
       // failures, so this cannot reject; and a lost enqueue costs one
-      // monogram, because the next read re-schedules the same domain
-      // under the same deterministic jobId. That is the identical
-      // degradation as Redis being down, which this code already treats
-      // as normal.
-      void Promise.all(
-        sampleAtMost([...toSchedule], MAX_SCHEDULED_PER_READ).map(([canonical, discovery]) =>
-          this.schedule(canonical, discovery),
-        ),
+      // monogram, because `toSchedule` is re-derived from DB state on
+      // every read — the ROW is the durable dedup, not the job — so the
+      // next read re-schedules the same domain under the same
+      // deterministic jobId.
+      //
+      // ONE COST THIS DOES ADD: the API runs request-only CPU (no
+      // `--no-cpu-throttling`, see deploy-cloud-run.yml), so detached
+      // work is throttled after the response and is lost outright if the
+      // instance is reclaimed on scale-down. That is a convergence-rate
+      // cost, not a correctness one — but it is a NEW drop source, which
+      // is why the attempt is counted on the request path below rather
+      // than being visible only from `schedule`'s post-response log.
+      const batch = sampleAtMost([...toSchedule], MAX_SCHEDULED_PER_READ);
+      console.info(
+        JSON.stringify({
+          level: 'info',
+          kind: 'domain_icon.scheduling_detached',
+          count: batch.length,
+        }),
       );
+      // `.catch` is belt-and-braces: `schedule` is total today, but
+      // `Promise.all` rejects on the first rejection and an unhandled
+      // rejection takes the API process down under Node's default
+      // `--unhandled-rejections=throw`. The file's own `withDeadline`
+      // already neutralises its loser the same way.
+      void Promise.all(
+        batch.map(([canonical, discovery]) => this.schedule(canonical, discovery)),
+      ).catch(() => {});
     }
 
     return marked;

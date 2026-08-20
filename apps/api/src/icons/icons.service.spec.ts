@@ -415,48 +415,6 @@ describe('IconsService', () => {
       });
     });
 
-    it('adds no latency of its own when the queue never settles (wedged Redis)', async () => {
-      // THE FAILURE MODE THAT INVERTS THE OPTIMISATION. `marksFor` exists
-      // to remove per-row network round trips from Triage, Activity,
-      // Screener and Senders. While scheduling was awaited, a wedged
-      // Redis made that same call ADD up to ENQUEUE_DEADLINE_MS to every
-      // one of those reads — the degraded path was slower than its own
-      // absence.
-      //
-      // MEASURED AS A DELTA, NOT AN ABSOLUTE. Two earlier versions of
-      // this test were wrong in instructive ways:
-      //   - An absolute bound (`elapsed < ENQUEUE_DEADLINE_MS`) passed
-      //     locally and failed CI at 851ms. It timed the whole call —
-      //     PGlite setup and the cache read included — so it was really
-      //     testing how fast the runner is.
-      //   - A gate promise that is never resolved proved nothing either:
-      //     `schedule` wraps each enqueue in its own deadline, so a
-      //     regressed `await` still finishes, just late.
-      // The honest signal is the DIFFERENCE between the same read with
-      // and without scheduling. A slow machine makes both slow and the
-      // delta stays near zero; a regressed await puts a full deadline
-      // between them on any machine.
-      const db = await freshTestDb();
-      const wedged = { add: () => new Promise(() => {}) } as never;
-      const svc = new IconsService(db as never, wedged);
-
-      // Warm-up: the FIRST call absorbs PGlite/statement setup, which
-      // would otherwise land in `baseline` and mask a regressed await
-      // behind it (the delta could even go negative).
-      await svc.marksFor(['warmup.example'], { mayEnqueue: false });
-
-      const baselineAt = Date.now();
-      await svc.marksFor(['baseline.example'], { mayEnqueue: false });
-      const baseline = Date.now() - baselineAt;
-
-      const scheduledAt = Date.now();
-      const marks = await svc.marksFor(['wedged.example'], { mayEnqueue: true });
-      const scheduled = Date.now() - scheduledAt;
-
-      expect(marks.size).toBe(0);
-      expect(scheduled - baseline).toBeLessThan(ENQUEUE_DEADLINE_MS / 2);
-    });
-
     it('bounds how much background work one read can schedule', async () => {
       const db = await freshTestDb();
       const { queue, added } = fakeQueue();
@@ -526,24 +484,48 @@ describe('IconsService', () => {
       expect(added).toEqual([]);
     });
 
-    // REDIS OUTAGE MUST NOT HANG A READ. `createRedisConnection` sets
-    // `maxRetriesPerRequest: null`, so a command issued while Redis is
-    // unreachable retries forever instead of failing — `queue.add()`
-    // never settles. A try/catch cannot see that; only a deadline can.
-    // Without one, a Redis outage would leave GET /api/senders spinning
-    // rather than degrading to monograms.
-    it('does not hang when the queue never answers', async () => {
+    // REDIS MUST NOT HANG *OR* SLOW A READ.
+    //
+    // This queue uses `createRedisProducerConnection`
+    // (`maxRetriesPerRequest: 0`, `enableOfflineQueue: false`), so a
+    // DISCONNECTED Redis rejects immediately. (An earlier version of this
+    // comment named `createRedisConnection` / `maxRetriesPerRequest:
+    // null`, which is a different connection and made the hazard sound
+    // broader than it is.) The real case is a connected-but-unresponsive
+    // Redis: a TCP blackhole emits no `close`, the command queue is never
+    // flushed, and `add` never settles.
+    //
+    // The read must therefore both ANSWER and answer PROMPTLY. Scheduling
+    // is detached, so a wedged queue may add no latency of its own.
+    //
+    // MEASURED AS A DELTA, NOT AN ABSOLUTE. An absolute bound here would
+    // time the whole call — PGlite setup and two cache reads included —
+    // and so would really be testing how fast the runner is; a first
+    // draft of exactly that failed CI at 851ms while passing locally. The
+    // warm-up matters for the same reason: without it the first call
+    // absorbs setup cost, which lands in the baseline and can mask a
+    // regression behind it.
+    it('does not hang OR slow a read when the queue never answers', async () => {
       const db = await freshTestDb();
       const wedged = {
         add: () => new Promise<never>(() => {}),
       } as unknown as Queue<{ domain: string }>;
+      const svc = new IconsService(db as never, wedged);
 
-      const marks = await new IconsService(db as never, wedged).marksFor(['unknown.example'], {
-        mayEnqueue: true,
-      });
+      await svc.marksFor(['warmup.example'], { mayEnqueue: false });
+
+      const baselineAt = Date.now();
+      await svc.marksFor(['baseline.example'], { mayEnqueue: false });
+      const baseline = Date.now() - baselineAt;
+
+      const scheduledAt = Date.now();
+      const marks = await svc.marksFor(['unknown.example'], { mayEnqueue: true });
+      const scheduled = Date.now() - scheduledAt;
 
       // The read still answers, on time, with the truth it has.
       expect(marks).toEqual(new Set());
+      // ...and re-attaching the await would put a full deadline here.
+      expect(scheduled - baseline).toBeLessThan(ENQUEUE_DEADLINE_MS / 2);
     });
 
     it('resolves a page through the alias registry', async () => {

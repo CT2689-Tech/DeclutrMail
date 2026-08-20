@@ -117,22 +117,25 @@ export async function settleServerQueries(
    * The client the queries were started on, so a timeout can CANCEL the
    * in-flight read rather than merely stop awaiting it.
    *
-   * Optional so a caller with no client still type-checks, but every
-   * caller in this repo passes one — without it the deadline reverts to
-   * abandoning work, which is the defect this argument exists to fix.
+   * REQUIRED, not optional. It was optional in the first draft purely to
+   * spare the existing tests, and a reviewer pointed out that the type
+   * then permits a call which silently loses the behaviour this argument
+   * exists to add — tsc cannot flag a caller that simply forgets it.
+   * Required makes that regression impossible to write rather than
+   * merely discouraged.
    *
    * Cancelling ALL queries on the first timeout is deliberate and is not
    * as broad as it reads: every query in the batch carries the SAME
    * deadline, so by the moment one fires, the others have either already
    * settled (cancel is a no-op) or are at the same deadline themselves.
    */
-  queryClient?: QueryClient,
+  queryClient: QueryClient,
 ): Promise<void> {
   if (queries.length === 0) return;
   const startedAt = performance.now();
   let cancelled = false;
   const cancelInFlight = () => {
-    if (cancelled || queryClient === undefined) return;
+    if (cancelled) return;
     cancelled = true;
     // Fire-and-forget: `cancelQueries` resolves once the abort has been
     // signalled, and the render must not wait on teardown.

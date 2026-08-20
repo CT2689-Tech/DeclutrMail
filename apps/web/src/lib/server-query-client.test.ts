@@ -18,9 +18,15 @@ describe('settleServerQueries', () => {
 
   it('stays quiet on designed 4xx prefetch failures', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    await settleServerQueries('senders', [
-      Promise.reject(new ServerApiError(409, { error: { code: 'NO_ACTIVE_MAILBOX' } }, 'conflict')),
-    ]);
+    await settleServerQueries(
+      'senders',
+      [
+        Promise.reject(
+          new ServerApiError(409, { error: { code: 'NO_ACTIVE_MAILBOX' } }, 'conflict'),
+        ),
+      ],
+      makeServerQueryClient(),
+    );
     expect(warn).not.toHaveBeenCalled();
     expect(sentry.captureException).not.toHaveBeenCalled();
   });
@@ -29,7 +35,7 @@ describe('settleServerQueries', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     vi.spyOn(performance, 'now').mockReturnValueOnce(100).mockReturnValueOnce(145.6784);
 
-    await settleServerQueries('senders', [Promise.resolve({ ok: true })]);
+    await settleServerQueries('senders', [Promise.resolve({ ok: true })], makeServerQueryClient());
 
     expect(info).toHaveBeenCalledTimes(1);
     expect(JSON.parse(String(info.mock.calls[0]?.[0]))).toEqual({
@@ -47,7 +53,7 @@ describe('settleServerQueries', () => {
   it('does not pollute latency percentiles when a boundary has no queries to run', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
 
-    await settleServerQueries('senders', []);
+    await settleServerQueries('senders', [], makeServerQueryClient());
 
     expect(info).not.toHaveBeenCalled();
   });
@@ -55,7 +61,7 @@ describe('settleServerQueries', () => {
   it('reports 5xx prefetch failures to Sentry and keeps the page renderable', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const error = new ServerApiError(503, {}, 'GET /api/senders failed: 503');
-    await settleServerQueries('senders', [Promise.reject(error)]);
+    await settleServerQueries('senders', [Promise.reject(error)], makeServerQueryClient());
     expect(warn).toHaveBeenCalledTimes(1);
     expect(sentry.captureException).toHaveBeenCalledWith(error, {
       tags: { surface: 'server-hydration', hydration_surface: 'senders' },
@@ -70,19 +76,25 @@ describe('settleServerQueries', () => {
     });
 
     await expect(
-      settleServerQueries('senders', [
-        Promise.reject(new ServerApiError(503, {}, 'GET /api/senders failed: 503')),
-      ]),
+      settleServerQueries(
+        'senders',
+        [Promise.reject(new ServerApiError(503, {}, 'GET /api/senders failed: 503'))],
+        makeServerQueryClient(),
+      ),
     ).resolves.toBeUndefined();
   });
 
   it('stays quiet when billing is intentionally disabled', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    await settleServerQueries('billing', [
-      Promise.reject(
-        new ServerApiError(503, { error: { code: 'BILLING_DISABLED' } }, 'billing disabled'),
-      ),
-    ]);
+    await settleServerQueries(
+      'billing',
+      [
+        Promise.reject(
+          new ServerApiError(503, { error: { code: 'BILLING_DISABLED' } }, 'billing disabled'),
+        ),
+      ],
+      makeServerQueryClient(),
+    );
     expect(warn).not.toHaveBeenCalled();
     expect(sentry.captureException).not.toHaveBeenCalled();
   });
@@ -97,7 +109,11 @@ describe('settleServerQueries', () => {
 
     // A promise that NEVER settles — the case the deadline exists for.
     const hung = new Promise<unknown>(() => {});
-    const settled = settleServerQueries('app-shell', [hung, Promise.resolve('fine')]);
+    const settled = settleServerQueries(
+      'app-shell',
+      [hung, Promise.resolve('fine')],
+      makeServerQueryClient(),
+    );
 
     await vi.advanceTimersByTimeAsync(2_000);
     await expect(settled).resolves.toBeUndefined();
@@ -224,7 +240,7 @@ describe('settleServerQueries', () => {
     // renders into client fetches — worse for exactly the slow
     // connections it is meant to protect.
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
-    await settleServerQueries('app-shell', [Promise.resolve('quick')]);
+    await settleServerQueries('app-shell', [Promise.resolve('quick')], makeServerQueryClient());
     const logged = JSON.parse((info.mock.calls[0]?.[0] as string) ?? '{}');
     expect(logged.timed_out_count).toBe(0);
     expect(logged.query_count).toBe(1);
