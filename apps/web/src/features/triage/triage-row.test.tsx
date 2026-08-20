@@ -284,9 +284,13 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     for (const id of ['t-groupon', 't-sarah', 't-shipping']) {
       const { unmount, container } = renderRow(rowById(id));
       const text = container.textContent ?? '';
-      if (text.includes('% read')) {
-        expect(text).toContain('% read in 90d');
+      // The VERB matters as much as the window (D45): Gmail exposes only
+      // the absence of the UNREAD label, so "% read" claims a human that
+      // a filter or a sweeper could have been. Assert the full phrase.
+      if (text.includes('% marked read')) {
+        expect(text).toContain('% marked read in 90d');
       }
+      expect(text).not.toMatch(/\d% read in 90d/);
       unmount();
     }
   });

@@ -26,7 +26,7 @@ import {
   TOPICS,
 } from '@declutrmail/events';
 import { defaultLaterWakeAtIso, unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
-import { hasCapability } from '@declutrmail/shared/entitlements';
+import { hasCapability, undoWindowDaysFor } from '@declutrmail/shared/entitlements';
 
 import { AUTOPILOT_PRESETS } from './autopilot-presets.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
@@ -218,8 +218,8 @@ const CLAIM_LOOKUP_CHUNK = 500;
 /** Rolling window for the per-rule daily action cap. */
 const DAILY_CAP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** D81 — Pro+ undo window (mirrors LabelActionWorker). */
-const PRO_UNDO_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+/** One day in ms — the manifest states the window in DAYS. */
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * One Autopilot action sweep over a mailbox. `triggeredAtMs` forms the
@@ -1512,18 +1512,21 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
    * via `undefined`. Mirrors `LabelActionWorker.undoExpiresAt` for the
    * archive/later verbs (autopilot never emits `delete`).
    */
-  private async undoExpiresAt(mailboxAccountId: string): Promise<Date | undefined> {
+  private async undoExpiresAt(mailboxAccountId: string): Promise<Date> {
     const [row] = await this.deps.db
       .select({ tier: workspaces.tier })
       .from(mailboxAccounts)
       .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
       .where(eq(mailboxAccounts.id, mailboxAccountId))
       .limit(1);
-    const tier = row?.tier;
-    if (tier === 'pro' || tier === 'team' || tier === 'enterprise') {
-      return new Date(Date.now() + PRO_UNDO_WINDOW_MS);
-    }
-    return undefined;
+    // Reads the TIER MANIFEST, like `LabelActionWorker.undoExpiresAt`
+    // does. This used to hard-code `['pro','team','enterprise'] -> 30d`
+    // and otherwise return `undefined`, leaning on the column default
+    // for everyone else — three places encoding one policy, agreeing
+    // only by coincidence. They agree today (free/plus 7, pro+ 30); the
+    // first manifest change would have made a manual undo and an
+    // autopilot undo differ with nothing to catch it.
+    return new Date(Date.now() + undoWindowDaysFor(row?.tier ?? 'free') * DAY_MS);
   }
 }
 

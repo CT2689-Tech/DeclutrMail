@@ -406,6 +406,12 @@ export class AutopilotReadService {
         and(
           eq(mailMessages.mailboxAccountId, ruleMatchLog.mailboxAccountId),
           eq(mailMessages.senderKey, ruleMatchLog.senderKey),
+          // `is_outbound = false` — this preview counts what an observe-
+          // mode rule WOULD move, and the executor resolves that set
+          // through `senderInboxActionWhere`, which excludes the user's
+          // own sent mail. Without it the number promised more than the
+          // action could deliver.
+          eq(mailMessages.isOutbound, false),
           sql`'INBOX' = ANY(${mailMessages.labelIds})`,
         ),
       )

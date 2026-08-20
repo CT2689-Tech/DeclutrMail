@@ -104,9 +104,14 @@ function whyLine(row: TriageDecisionRow): string {
   if (row.readRate === 0 && row.last90dMessages >= 8) {
     return `None marked read in 90d · ${row.last90dMessages} messages`;
   }
-  if (row.readRate < 0.2) return `${pct}% read in 90d · ${row.last90dMessages} messages`;
-  if (row.readRate >= 0.7) return `${pct}% read in 90d · keep close`;
-  return `${pct}% read in 90d · ${row.last90dMessages} messages`;
+  // "marked read", not "read" — the same rule the zero branch above
+  // already followed and these three did not. Gmail exposes only the
+  // absence of the UNREAD label, which a filter, a bulk mark-as-read or
+  // a third-party sweeper can strip without a human seeing anything
+  // (D45). "% read" claims the human; "% marked read" claims the label.
+  if (row.readRate < 0.2) return `${pct}% marked read in 90d · ${row.last90dMessages} messages`;
+  if (row.readRate >= 0.7) return `${pct}% marked read in 90d · keep close`;
+  return `${pct}% marked read in 90d · ${row.last90dMessages} messages`;
 }
 
 /**
