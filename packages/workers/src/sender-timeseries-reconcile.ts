@@ -124,7 +124,7 @@ export async function reconcileSenderTimeseries(
         COUNT(*)::integer AS total,
         COUNT(*) FILTER (
           WHERE m.${sql.identifier('is_unread')} = false
-            AND ${readStateNotSweeperMarked('m')}
+            AND ${readStateNotSweeperMarked(mailboxAccountId, 'm')}
         )::integer AS read_total
       FROM ${mailMessages} AS m
       WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}

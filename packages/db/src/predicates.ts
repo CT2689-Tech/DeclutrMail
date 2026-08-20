@@ -160,22 +160,59 @@ function allMailExcludedArrayLiteral(): string {
  * precisely the defect class F009 recorded, and a copied predicate is how
  * it comes back.
  *
- * `NOT EXISTS` against `mailbox_labels`, not an array overlap against a
- * pre-fetched id list, so the expression is self-contained and can be
- * dropped into either query verbatim. On a mailbox with no sweeper labels
- * the partial index has no rows, so this costs nothing.
+ * WHY `mailboxScope` IS A REQUIRED ARGUMENT. This was a correlated
+ * `NOT EXISTS` that read `mailbox_account_id` off the message row, and
+ * the docstring claimed that "on a mailbox with no sweeper labels the
+ * partial index has no rows, so this costs nothing". Measured on
+ * production 2026-08-20, that is false: correlation forces one index
+ * descent PER MESSAGE ROW whether or not it can match. In the
+ * `sender_timeseries` reconcile it ran 75,761 times, returned zero rows
+ * every single time, and accounted for 75,625 of the query's 156,529
+ * shared buffers — 48% of the work, to answer a question whose answer
+ * was a two-element array.
  *
- * @param messageAlias - the `mail_messages` alias in the enclosing query
- *   (raw SQL, so a correlated subquery can reference an outer alias).
+ * Taking the mailbox as an explicit argument makes the subquery
+ * UNCORRELATED, so Postgres evaluates it once as an InitPlan and tests
+ * each row with an array overlap. Same reconcile query: 156,529 → 80,906
+ * buffers, 7,378ms → 1,307ms, and the label lookup itself 75,625 → 2
+ * buffers.
+ *
+ * PASS A CONSTANT, NOT A COLUMN REFERENCE. Handing this a column (e.g.
+ * `senders.mailbox_account_id` from an enclosing row) re-correlates the
+ * subquery and gives the old behaviour back, silently. Callers inside a
+ * mailbox-scoped query already hold the id as a value — pass that.
+ *
+ * `coalesce(label_ids, '{}')` preserves the original NULL semantics:
+ * `NOT EXISTS` was true for a NULL array (no rows can match), whereas a
+ * bare `NULL && …` is NULL, which a `FILTER`/`WHERE` would drop. Prod
+ * currently holds no NULL `label_ids`, so this guards a shape the column
+ * still permits rather than one it exhibits.
+ *
+ * @param mailboxScope - the mailbox the enclosing query is scoped to, as
+ *   a bound value. NOT a column reference — see above.
+ * @param messageAlias - the `mail_messages` alias in the enclosing query.
  */
-export function readStateNotSweeperMarked(messageAlias: SQL | string = 'mail_messages'): SQL {
+export function readStateNotSweeperMarked(
+  mailboxScope: SQL | string,
+  messageAlias: SQL | string = 'mail_messages',
+): SQL {
   const alias = typeof messageAlias === 'string' ? sql.raw(messageAlias) : messageAlias;
-  return sql`NOT EXISTS (
-    SELECT 1
+  return sql`NOT (COALESCE(${alias}.label_ids, '{}') && ${sweeperLabelIds(mailboxScope)})`;
+}
+
+/**
+ * The sweeper-owned label ids for one mailbox, as a single array.
+ *
+ * Uncorrelated by construction: it reads `mailboxScope` and nothing from
+ * the outer row, so it is evaluated once per statement. Served by
+ * `mailbox_labels_sweeper_idx`.
+ */
+function sweeperLabelIds(mailboxScope: SQL | string): SQL {
+  return sql`(
+    SELECT COALESCE(array_agg(sweeper_label.label_id), '{}')::text[]
     FROM mailbox_labels AS sweeper_label
-    WHERE sweeper_label.mailbox_account_id = ${alias}.mailbox_account_id
+    WHERE sweeper_label.mailbox_account_id = ${mailboxScope}
       AND sweeper_label.sweeper_vendor IS NOT NULL
-      AND sweeper_label.label_id = ANY(${alias}.label_ids)
   )`;
 }
 
@@ -185,15 +222,13 @@ export function readStateNotSweeperMarked(messageAlias: SQL | string = 'mail_mes
  * Powers the disclosure — "324 of 350 marked by Unroll.me" — so the
  * product can explain an odd-looking number instead of silently
  * compensating for it. Kept beside its complement so the two cannot
- * drift apart into describing different sets.
+ * drift apart into describing different sets, and it takes the same
+ * `mailboxScope` argument for the same reason.
  */
-export function readStateSweeperMarked(messageAlias: SQL | string = 'mail_messages'): SQL {
+export function readStateSweeperMarked(
+  mailboxScope: SQL | string,
+  messageAlias: SQL | string = 'mail_messages',
+): SQL {
   const alias = typeof messageAlias === 'string' ? sql.raw(messageAlias) : messageAlias;
-  return sql`EXISTS (
-    SELECT 1
-    FROM mailbox_labels AS sweeper_label
-    WHERE sweeper_label.mailbox_account_id = ${alias}.mailbox_account_id
-      AND sweeper_label.sweeper_vendor IS NOT NULL
-      AND sweeper_label.label_id = ANY(${alias}.label_ids)
-  )`;
+  return sql`COALESCE(${alias}.label_ids, '{}') && ${sweeperLabelIds(mailboxScope)}`;
 }

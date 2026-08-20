@@ -18,7 +18,7 @@ import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { SendersReadService } from './senders.read-service.js';
+import { NEEDS_REVIEW_VERDICTS, SendersReadService } from './senders.read-service.js';
 
 /**
  * SendersReadService integration tests (D39, D40, D44, D45, D46).
@@ -2940,6 +2940,37 @@ describe('SendersReadService', () => {
       // so this catches any leak from those into the response body.
       const EMAIL_SHAPE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
       expect(serialised).not.toMatch(EMAIL_SHAPE);
+    });
+
+    it('keeps the partial index aligned with the verdicts the join filters on', async () => {
+      // Migration 0066 adds a PARTIAL index on triage_decisions whose
+      // predicate is exactly NEEDS_REVIEW_VERDICTS, and the summary's
+      // join carries the same list so the planner can use it.
+      //
+      // Widening the constant without widening the index does not fail
+      // loudly: the join keeps working, the planner just stops using the
+      // index (or, worse, uses it and misses rows carrying the new
+      // verdict). Either way the summary quietly under-reports
+      // needs_review. This asserts the shipped index covers every verdict
+      // the query asks for.
+      const rows = await db.execute<{ indexdef: string }>(
+        sql`SELECT indexdef FROM pg_indexes
+            WHERE tablename = 'triage_decisions'
+              AND indexname = 'triage_decisions_actionable_idx'`,
+      );
+      const def = rows.rows[0]?.indexdef;
+      expect(
+        def,
+        'triage_decisions_actionable_idx is missing — migration 0066 did not apply',
+      ).toBeDefined();
+      for (const verdict of NEEDS_REVIEW_VERDICTS) {
+        expect(
+          def,
+          `NEEDS_REVIEW_VERDICTS contains '${verdict}' but the index predicate does not. ` +
+            'Widen triage_decisions_actionable_idx in a new migration, or the summary will ' +
+            'silently under-report needs_review senders.',
+        ).toContain(verdict);
+      }
     });
 
     it('keeps the UNIQUE constraint that makes the triage_decisions join safe', async () => {

@@ -530,7 +530,7 @@ export class TriageReadService {
         // reconcile and stopped there, so Triage and Senders reported
         // DIFFERENT read rates for the same sender on the same day.
         // Numerator only: the message still arrived.
-        last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz AND NOT ${mailMessages.isUnread} AND ${readStateNotSweeperMarked(getTableName(mailMessages))} THEN 1 ELSE 0 END)`,
+        last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz AND NOT ${mailMessages.isUnread} AND ${readStateNotSweeperMarked(input.mailboxAccountId, getTableName(mailMessages))} THEN 1 ELSE 0 END)`,
         lastInternalDate: sql<Date | null>`MAX(${mailMessages.internalDate})`,
       })
       .from(mailMessages)

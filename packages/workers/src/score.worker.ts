@@ -709,7 +709,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         // timeseries reconcile already do this; the engine did not, so
         // the engine scored on the contaminated rate that suppresses
         // exactly the unsubscribe suggestions it exists to make.
-        reads90: sql<number>`count(*) filter (where ${inWindow} AND ${mailMessages.isUnread} = false AND ${readStateNotSweeperMarked(getTableName(mailMessages))})::int`,
+        reads90: sql<number>`count(*) filter (where ${inWindow} AND ${mailMessages.isUnread} = false AND ${readStateNotSweeperMarked(mailboxAccountId, getTableName(mailMessages))})::int`,
         // Spike ratio inputs — a per-day rate over the last 30 days
         // against the 30-90 day period before it. This replaces a
         // calendar-month ratio (current month / average of prior
