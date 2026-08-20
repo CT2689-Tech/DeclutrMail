@@ -554,10 +554,10 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     ]);
   });
 
-  it('never renders an unknown cadence as "0/mo"', async () => {
-    // On this screen a confident "0/mo" reads as "this sender stopped
-    // mailing you" — an argument for unprotecting that the data never
-    // made. `null` means no timeseries row, not zero.
+  it('never renders an unknown cadence as a confident zero', async () => {
+    // On this screen a confident "0 in last 90d" reads as "this sender
+    // stopped mailing you" — an argument for unprotecting that the data
+    // never made. `null` means nothing indexed, not zero.
     stubProtectedPage([
       { ...BASE_ROW, id: 'a', displayName: 'Unknown cadence', monthlyVolume: null },
       { ...BASE_ROW, id: 'b', displayName: 'Real zero', monthlyVolume: 0 },
@@ -565,8 +565,8 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     renderScreen();
 
     await screen.findByText('Unknown cadence');
-    // Exactly one row may say 0/mo — the one that measured zero.
-    expect(screen.getAllByText(/0\/mo/)).toHaveLength(1);
+    // Exactly one row may claim zero — the one that measured zero.
+    expect(screen.getAllByText(/0 in last 90d/)).toHaveLength(1);
   });
 
   it('claims the ordering when the data supports it', async () => {

@@ -1201,7 +1201,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                       `mail_messages`. Two windows, one sentence, and the
                       pronoun tied the percentage to the wrong one. Name
                       the window instead of implying a denominator. */}
-                  of the last 30 days&rsquo; mail was marked read.
+                  of the last 90 days&rsquo; mail was marked read.
                   {/* THE SPLIT (F012). A third-party sweeper can mark
                       mail read through the API, and on the mailbox this
                       was measured against one did so 20,819 times — 27.5%
@@ -1282,7 +1282,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             unit: stats.readRate !== null ? '%' : null,
             // The micro line carries the window — this cell sits beside
             // lifetime cells, so an unqualified rate reads as lifetime.
-            micro: stats.readRate === null ? 'no data yet' : 'of the last 30 days',
+            micro: stats.readRate === null ? 'no data yet' : 'of the last 90 days',
           },
           {
             label: 'Relationship',

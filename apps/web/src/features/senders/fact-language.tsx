@@ -102,11 +102,11 @@ export function formatReadRatePct(rate: number): string {
  */
 export function readBucket(rate: number): { label: string; fg: string; aria: string } {
   if (rate === 0) {
-    return { label: 'None', fg: color.amber, aria: 'Read rate: none in the last 30 days' };
+    return { label: 'None', fg: color.amber, aria: 'Read rate: none in the last 90 days' };
   }
-  if (rate < 0.3) return { label: 'Low', fg: color.fgMuted, aria: 'Read rate: low, last 30 days' };
-  if (rate < 0.7) return { label: 'Mid', fg: color.fgMuted, aria: 'Read rate: mid, last 30 days' };
-  return { label: 'High', fg: color.fg, aria: 'Read rate: high, last 30 days' };
+  if (rate < 0.3) return { label: 'Low', fg: color.fgMuted, aria: 'Read rate: low, last 90 days' };
+  if (rate < 0.7) return { label: 'Mid', fg: color.fgMuted, aria: 'Read rate: mid, last 90 days' };
+  return { label: 'High', fg: color.fg, aria: 'Read rate: high, last 90 days' };
 }
 
 /** Read bucket as plain mono text; `null` = no timeseries yet. */

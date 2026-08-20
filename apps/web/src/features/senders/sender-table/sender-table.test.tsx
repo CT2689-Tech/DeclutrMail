@@ -278,15 +278,18 @@ describe('SenderTable', () => {
     expect(screen.getByRole('img', { name: /^protected$/i })).toBeTruthy();
   });
 
-  it('renders the shared fact vocabulary — read bucket + monthly cadence cell', () => {
-    // readRate 0 → "None" (amber, no pill); monthlyVolume 61 → "61/mo".
-    // NOT "Never": `readRate` is a rolling 30-day ratio, so an absolute
-    // lifetime claim from it is false — etherscan read 0/9 in 30d and
-    // 96.5% lifetime still rendered "Never" (FINDINGS F008). The aria
-    // names the window so a screen reader gets the qualifier too.
+  it('renders the shared fact vocabulary — read bucket + volume cell', () => {
+    // readRate 0 → "None" (amber, no pill); monthlyVolume 61 → "61".
+    // NOT "Never": `readRate` is a rolling 90-day ratio, so an absolute
+    // lifetime claim from it is false — etherscan read 0/9 in the window
+    // and 96.5% lifetime still rendered "Never" (FINDINGS F008). The
+    // aria names the window so a screen reader gets the qualifier too.
+    //
+    // The cell prints a COUNT, not "61/mo": `monthlyVolume` carries a
+    // 90-day count, so the old `/mo` suffix overstated it threefold.
     render(<Harness {...{}} />);
-    expect(screen.getByLabelText(/read rate: none in the last 30 days/i)).toHaveTextContent('None');
-    expect(screen.getByText('61/mo')).toBeTruthy();
+    expect(screen.getByLabelText(/read rate: none in the last 90 days/i)).toHaveTextContent('None');
+    expect(screen.getByText('61')).toBeTruthy();
     // Monthly is nullable — no-timeseries rows render an em-dash.
     // (Covered separately to keep this case single-row.)
   });

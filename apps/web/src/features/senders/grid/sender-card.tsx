@@ -356,7 +356,7 @@ export function SenderCard({
         >
           <NumericDisplay
             value={sender.monthlyVolume ?? '—'}
-            suffix="in last 30d"
+            suffix="in last 90d"
             variant="display"
             // Never compress the primary numeral — the received line
             // (now carrying "· N in inbox") yields instead.

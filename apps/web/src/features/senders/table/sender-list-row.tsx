@@ -70,9 +70,9 @@ function buildEvidenceTokens(s: Sender): string[] {
   if (s.readRate !== null) {
     const read = Math.round(s.readRate * 100);
     if (read <= 5 && monthly >= 8) {
-      tokens.push('Rarely marked read in the last 30d');
+      tokens.push('Rarely marked read in the last 90d');
     } else if (read >= 70) {
-      tokens.push(`${read}% marked read in the last 30d`);
+      tokens.push(`${read}% marked read in the last 90d`);
     }
   }
 

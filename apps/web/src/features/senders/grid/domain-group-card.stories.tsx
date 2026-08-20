@@ -34,7 +34,7 @@ const meta: StoryMeta<typeof DomainGroupCard> = {
     docs: {
       description: {
         component:
-          'Brand-rollup group header row (D51 — eTLD+1 grouping). Shows the shared registrable domain + aggregate counts (senders · 30d volume · lifetime total) and an expand control. Group-level actions are deliberately absent in v1 — expansion + per-sender actions only, so every mutation keeps its per-sender D226 preview.',
+          'Brand-rollup group header row (D51 — eTLD+1 grouping). Shows the shared registrable domain + aggregate counts (senders · 90d volume · lifetime total) and an expand control. Group-level actions are deliberately absent in v1 — expansion + per-sender actions only, so every mutation keeps its per-sender D226 preview.',
       },
     },
   },
@@ -69,7 +69,7 @@ export const Collapsed: Story<typeof DomainGroupCard> = {
   args: {
     domain: 'amazon.com',
     senderCount: 12,
-    volume30d: 148,
+    volume90d: 148,
     totalReceived: 4820,
     expanded: false,
     onToggleExpand: noop,
@@ -82,7 +82,7 @@ export const Expanded: Story<typeof DomainGroupCard> = {
   args: {
     domain: 'google.com',
     senderCount: 7,
-    volume30d: 63,
+    volume90d: 63,
     totalReceived: 1290,
     expanded: true,
     onToggleExpand: noop,
@@ -95,7 +95,7 @@ export const LargeBrand: Story<typeof DomainGroupCard> = {
   args: {
     domain: 'linkedin.com',
     senderCount: 34,
-    volume30d: 512,
+    volume90d: 512,
     totalReceived: 12480,
     expanded: false,
     onToggleExpand: noop,
@@ -108,7 +108,7 @@ export const MinimumGroup: Story<typeof DomainGroupCard> = {
   args: {
     domain: 'bbc.co.uk',
     senderCount: 3,
-    volume30d: 4,
+    volume90d: 4,
     totalReceived: 96,
     expanded: false,
     onToggleExpand: noop,

@@ -42,7 +42,28 @@ export const WINDOWS = {
    *  (looser than ACTIVE so a quiet personal contact still qualifies). */
   PEOPLE_ACTIVITY_DAYS: 90,
 
-  /** Volume window for per-row "last 30d" display + KPI totalMonthly. */
+  /**
+   * The window the ENGINE scores on, and therefore the window every
+   * figure printed beside a recommendation is measured over (ADR-0037).
+   *
+   * The engine's cascade reads a 90-day volume and read rate. Senders
+   * and Sender Detail used to print 30-day figures directly above the
+   * verdict those 90-day facts produced — on the founder's mailbox one
+   * sender read "0 in last 30d" on Senders and "157 messages" on
+   * Triage, on the same day, both correct. A number that did not feed
+   * the recommendation is not evidence for it.
+   */
+  ENGINE_WINDOW_DAYS: 90,
+
+  /**
+   * Volume window for the TREND comparison's recent half.
+   *
+   * Deliberately still 30 while display moved to `ENGINE_WINDOW_DAYS`:
+   * "is this sender rising or falling" is a different question from
+   * "what did the engine score", and answering it needs a recent slice
+   * to compare against the `TREND_BASELINE_*` period behind it. Both
+   * windows are named wherever they are shown.
+   */
   VOLUME_DAYS: 30,
 
   /** Velocity comparison — recent N days. */

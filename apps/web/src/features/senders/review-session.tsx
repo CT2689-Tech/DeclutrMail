@@ -535,7 +535,7 @@ function ReviewRow({
     // sender at 0.004 must not read '0% read' here and '<1%' on the
     // row-detail card minutes apart.
     s.readRate !== null ? `${formatReadRatePct(s.readRate)}% read in 30d` : null,
-    `${s.monthlyVolume ?? 0}/mo`,
+    `${s.monthlyVolume ?? 0} in last 90d`,
     s.lastDays > 14 ? `last open ${Math.round(s.lastDays / 7)}w ago` : null,
   ]
     .filter((b): b is string => b != null)

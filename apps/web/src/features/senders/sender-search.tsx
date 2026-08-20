@@ -157,7 +157,7 @@ export function SenderSearch({
       id: s.id,
       name: s.name,
       domain: s.domain,
-      secondary: s.monthly + ' in last 30d',
+      secondary: s.monthly + ' in last 90d',
     }));
   }, [trimmed, remote.suggestions, remote.loading, remote.error, fallbackMatches]);
 
