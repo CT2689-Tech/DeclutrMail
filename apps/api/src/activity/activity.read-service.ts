@@ -56,7 +56,7 @@ import {
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
-  ActivityRow,
+  ActivityRowFacts,
   ActivityExecutionState,
   ActivityReviewOutcome,
   ActivityStats,
@@ -112,7 +112,7 @@ type ExecutionAttempt = Pick<
 interface ExecutionLineage {
   root: ExecutionAttempt;
   current: ExecutionAttempt;
-  sender: ActivityRow['sender'];
+  sender: ActivityRowFacts['sender'];
 }
 
 export interface SummarizeActivityParams {
@@ -171,7 +171,7 @@ export interface ListActivityResult {
    * `limit + 1` rows (the +1 sentinel powers cursor pagination — the
    * controller slices it off and turns it into `nextCursor`).
    */
-  rows: ActivityRow[];
+  rows: ActivityRowFacts[];
   stats: ActivityStats;
   /**
    * All-time stats — ignores the window / verb / sender / date filters.
@@ -265,7 +265,7 @@ export class ActivityReadService {
     params: IterateActivityParams,
     batchSize = 500,
     snapshot?: ActivityIterationSnapshot,
-  ): AsyncGenerator<ActivityRow> {
+  ): AsyncGenerator<ActivityRowFacts> {
     const activeSnapshot =
       snapshot ?? (await this.captureIterationSnapshot(params.mailboxAccountId));
     const persisted = this.iteratePersistedActivity(params, batchSize, activeSnapshot.createdAt);
@@ -291,7 +291,7 @@ export class ActivityReadService {
     params: IterateActivityParams,
     batchSize: number,
     snapshotCreatedAt: Date,
-  ): AsyncGenerator<ActivityRow> {
+  ): AsyncGenerator<ActivityRowFacts> {
     let cursor: ListActivityParams['cursor'] = null;
     for (;;) {
       const rows = await this.loadActivityRows(
@@ -311,7 +311,7 @@ export class ActivityReadService {
     params: IterateActivityParams,
     batchSize: number,
     snapshotCreatedAt: Date,
-  ): AsyncGenerator<ActivityRow> {
+  ): AsyncGenerator<ActivityRowFacts> {
     if (params.source !== null && params.source !== 'manual') return;
     const useCustomRange = params.dateFrom !== null && params.dateFrom !== undefined;
     const hasCustomUpperBound = params.dateTo !== null && params.dateTo !== undefined;
@@ -496,7 +496,7 @@ export class ActivityReadService {
     params: ListActivityParams,
     executionLineages: readonly ExecutionLineage[],
     snapshotCreatedAt: Date | null = null,
-  ): Promise<ActivityRow[]> {
+  ): Promise<ActivityRowFacts[]> {
     const {
       mailboxAccountId,
       userId = null,
@@ -585,7 +585,7 @@ export class ActivityReadService {
       .orderBy(desc(activityLog.occurredAt), desc(activityLog.id))
       .limit(limit + 1);
 
-    const projected = rows.map((row): ActivityRow => {
+    const projected = rows.map((row): ActivityRowFacts => {
       const sender =
         row.senderKey && row.senderEmail
           ? {
@@ -634,7 +634,7 @@ export class ActivityReadService {
   }
 
   /** Project resolved Observe skips/protection blocks as factual Activity evidence. */
-  private async loadRuleReviewRows(params: ListActivityParams): Promise<ActivityRow[]> {
+  private async loadRuleReviewRows(params: ListActivityParams): Promise<ActivityRowFacts[]> {
     const {
       mailboxAccountId,
       window,
@@ -1187,11 +1187,11 @@ function projectExecutionRows(
     cursor: { occurredAt: Date; id: string } | null;
     outcomes?: ActivityReviewOutcome[];
   },
-): ActivityRow[] {
+): ActivityRowFacts[] {
   if (filters.source !== null && filters.source !== 'manual') return [];
   const senderNeedle = filters.senderQuery.toLocaleLowerCase();
 
-  return lineages.flatMap((lineage): ActivityRow[] => {
+  return lineages.flatMap((lineage): ActivityRowFacts[] => {
     const { root, current, sender } = lineage;
     const outcomeTime = current.status === 'failed' ? current.updatedAt : current.createdAt;
     if (!EXECUTION_VERBS.includes(root.verb as ExecutionVerb)) return [];
@@ -1375,7 +1375,7 @@ function isStrictlyAfterCursor(
   return attemptTime < cursorTime || (attemptTime === cursorTime && attempt.id < cursor.id);
 }
 
-function compareActivityRowsNewestFirst(left: ActivityRow, right: ActivityRow): number {
+function compareActivityRowsNewestFirst(left: ActivityRowFacts, right: ActivityRowFacts): number {
   const timeDelta = Date.parse(right.occurredAt) - Date.parse(left.occurredAt);
   if (timeDelta !== 0) return timeDelta;
   return left.id < right.id ? 1 : left.id > right.id ? -1 : 0;

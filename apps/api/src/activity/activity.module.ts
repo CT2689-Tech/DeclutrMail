@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { IconsModule } from '../icons/icons.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { ActivityController } from './activity.controller.js';
@@ -21,7 +22,7 @@ import { ActivitySupportBundleService } from './activity-support-bundle.service.
  * via DbModule).
  */
 @Module({
-  imports: [AuthModule, MailboxAccountsModule],
+  imports: [AuthModule, MailboxAccountsModule, IconsModule],
   controllers: [ActivityController],
   providers: [ActivityReadService, ActivitySupportBundleService],
   exports: [ActivityReadService],

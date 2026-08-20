@@ -40,6 +40,7 @@ describe('settleServerQueries', () => {
       query_count: 1,
       designed_failure_count: 0,
       unexpected_failure_count: 0,
+      timed_out_count: 0,
     });
   });
 
@@ -84,5 +85,43 @@ describe('settleServerQueries', () => {
     ]);
     expect(warn).not.toHaveBeenCalled();
     expect(sentry.captureException).not.toHaveBeenCalled();
+  });
+  it('bounds a hung prefetch so it cannot hold the whole page hostage', async () => {
+    // Every authed route awaits its prefetch set before the first byte
+    // of HTML. A query that never settles used to hang that render
+    // forever — `Promise.allSettled` waits for all of them and never
+    // rejects, so nothing here could observe it.
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    // A promise that NEVER settles — the case the deadline exists for.
+    const hung = new Promise<unknown>(() => {});
+    const settled = settleServerQueries('app-shell', [hung, Promise.resolve('fine')]);
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(settled).resolves.toBeUndefined();
+
+    const logged = JSON.parse((info.mock.calls[0]?.[0] as string) ?? '{}');
+    expect(logged.timed_out_count).toBe(1);
+    // A timeout is NOT an unexpected failure — it must not inflate the
+    // metric that pages on real prefetch errors.
+    expect(logged.unexpected_failure_count).toBe(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('deadline'));
+    // A hang is a capacity signal, not a per-render exception.
+    expect(sentry.captureException).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('does not time out a prefetch that settles inside the deadline', async () => {
+    // The blind case for the guard above: if the deadline fired on
+    // ordinary latency it would silently downgrade working server
+    // renders into client fetches — worse for exactly the slow
+    // connections it is meant to protect.
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    await settleServerQueries('app-shell', [Promise.resolve('quick')]);
+    const logged = JSON.parse((info.mock.calls[0]?.[0] as string) ?? '{}');
+    expect(logged.timed_out_count).toBe(0);
+    expect(logged.query_count).toBe(1);
   });
 });

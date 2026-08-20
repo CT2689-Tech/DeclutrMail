@@ -18,7 +18,7 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import {
   TriageReadService,
   type TriageQueueOrdering,
-  type TriageQueueRow,
+  type TriageQueueFacts,
 } from '../triage/triage.read-service.js';
 import { ONBOARDING_PRESET_CATALOG } from './onboarding.types.js';
 
@@ -107,7 +107,7 @@ const FIRST_TRIAGE_POOL_LIMIT = 200;
 const PROTECTION_REVIEW_POOL_LIMIT = 50;
 
 export interface FirstTriageRead {
-  rows: TriageQueueRow[];
+  rows: TriageQueueFacts[];
   meta: OnboardingFirstTriageMeta;
 }
 
@@ -488,7 +488,7 @@ export class OnboardingService {
  * wire's kebab spellings inline — that hand-rolled comparison is how a
  * third dialect (`manual`) went unnoticed on the display side.
  */
-function isWeaklyProtected(row: TriageQueueRow): boolean {
+function isWeaklyProtected(row: TriageQueueFacts): boolean {
   return isWeakProtectionReason(normalizeProtectionReason(row.protectionReason));
 }
 
@@ -581,9 +581,9 @@ function registrableDomain(domain: string): string {
  * archived "Zerodha" would sweep login codes in with statements.
  * Merging what we DISPLAY is safe; merging what we ACT ON is not.
  */
-function pickTopDistinctBrands(ranked: TriageQueueRow[]): TriageQueueRow[] {
+function pickTopDistinctBrands(ranked: TriageQueueFacts[]): TriageQueueFacts[] {
   const seen = new Set<string>();
-  const picked: TriageQueueRow[] = [];
+  const picked: TriageQueueFacts[] = [];
   for (const row of ranked) {
     if (picked.length >= FIRST_TRIAGE_PINNED_COUNT) break;
     const brand = registrableDomain(row.senderDomain);
@@ -595,9 +595,9 @@ function pickTopDistinctBrands(ranked: TriageQueueRow[]): TriageQueueRow[] {
 }
 
 export function pickFirstTriageCandidates(
-  queue: TriageQueueRow[],
+  queue: TriageQueueFacts[],
   goal: OnboardingCleanupGoal | null = null,
-): TriageQueueRow[] {
+): TriageQueueFacts[] {
   const eligible = queue.filter((r) => r.verdict !== 'keep' && r.protectionReason === null);
   const candidates = eligible.filter(worthOneDecision);
 
@@ -663,7 +663,7 @@ export function pickFirstTriageCandidates(
  * them is how the previous `>= 10 received or >= 3 recent` cutoffs got
  * invented, and neither number was derived from anything.
  */
-function worthOneDecision(row: TriageQueueRow): boolean {
+function worthOneDecision(row: TriageQueueFacts): boolean {
   return row.inboxCount > 0 && row.verdict !== 'later';
 }
 
@@ -673,15 +673,15 @@ function worthOneDecision(row: TriageQueueRow): boolean {
  * 0.00 makes silence indistinguishable from "sends constantly, never
  * opened" — the best possible score under this ordering.
  */
-function leastReadFirst(row: TriageQueueRow): number {
+function leastReadFirst(row: TriageQueueFacts): number {
   return row.readRate ?? 2;
 }
 
 type SortValue = number | string;
 
 function compareBy(
-  ...selectors: Array<(row: TriageQueueRow) => SortValue>
-): (a: TriageQueueRow, b: TriageQueueRow) => number {
+  ...selectors: Array<(row: TriageQueueFacts) => SortValue>
+): (a: TriageQueueFacts, b: TriageQueueFacts) => number {
   return (a, b) => {
     for (const select of selectors) {
       const left = select(a);

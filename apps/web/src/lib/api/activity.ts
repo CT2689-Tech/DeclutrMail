@@ -68,6 +68,14 @@ export interface ActivitySenderWire {
   displayName: string;
   email: string;
   domain: string;
+  /**
+   * Whether the server already holds a brand mark for `domain`
+   * (ADR-0034). `false` means `Avatar` renders the monogram and makes NO
+   * request — the point of the field, since the feed otherwise fires one
+   * `/api/icons/:domain` per distinct sender and every unresolved domain
+   * burns a round trip to be answered 204.
+   */
+  brandMark: boolean;
 }
 
 /**

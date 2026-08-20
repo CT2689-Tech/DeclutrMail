@@ -127,7 +127,12 @@ export function DomainBatchCard({
                 borderRadius: 8,
               }}
             >
-              <Avatar name={row.senderName} domain={row.senderDomain} size={24} />
+              <Avatar
+                name={row.senderName}
+                domain={row.senderDomain}
+                size={24}
+                hasMark={row.brandMark}
+              />
               <span
                 style={{
                   fontSize: 12.5,

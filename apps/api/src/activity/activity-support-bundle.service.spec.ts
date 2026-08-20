@@ -14,11 +14,11 @@ import {
   ActivitySupportBundleService,
   type CreateActivitySupportBundleParams,
 } from './activity-support-bundle.service.js';
-import type { ActivityRow } from './activity.types.js';
+import type { ActivityRowFacts } from './activity.types.js';
 
 const GENERATED_AT = new Date('2026-07-15T06:00:00.000Z');
 
-const ROWS: ActivityRow[] = [
+const ROWS: ActivityRowFacts[] = [
   {
     id: '11111111-1111-1111-1111-111111111111',
     occurredAt: '2026-07-14T05:00:00.000Z',
@@ -71,7 +71,7 @@ function makeService(
       status: 'active',
     },
   ],
-  rows: readonly ActivityRow[] = ROWS,
+  rows: readonly ActivityRowFacts[] = ROWS,
 ) {
   const limit = vi.fn(() => Promise.resolve(mailboxes));
   const db = {
@@ -137,7 +137,7 @@ describe('ActivitySupportBundleService', () => {
   });
 
   it('labels skipped/protected review rows without claiming execution', async () => {
-    const reviewRows: ActivityRow[] = [
+    const reviewRows: ActivityRowFacts[] = [
       {
         id: '44444444-4444-4444-4444-444444444444',
         occurredAt: '2026-07-14T05:00:00.000Z',
@@ -234,7 +234,7 @@ describe('ActivitySupportBundleService', () => {
   });
 
   it('masks a sender address that the read model used as its display-name fallback', async () => {
-    const fallbackRow: ActivityRow = {
+    const fallbackRow: ActivityRowFacts = {
       ...ROWS[0]!,
       sender: { ...ROWS[0]!.sender!, displayName: 'John <john@example.com>' },
     };

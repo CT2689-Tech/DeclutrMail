@@ -49,6 +49,23 @@ export interface TriageQueueRow {
   senderName: string;
   senderEmail: string;
   senderDomain: string;
+  /**
+   * Whether a brand mark for `senderDomain` is already cached server-side
+   * (ADR-0034).
+   *
+   * ASK-BEFORE-REQUESTING. `Avatar` paints the mark as a CSS
+   * `background-image`, which has no failure callback and no way to check
+   * first, so a queue of N rows fires N `/api/icons/:domain` requests and
+   * every domain without a mark burns a round trip to be answered 204.
+   * The cost is worst on a COLD cache — i.e. a new user's first triage
+   * session, when no domain has been resolved yet and every request is
+   * wasted.
+   *
+   * Not triage state — a property of the GLOBAL icon cache at the instant
+   * of the response, on a table this feature does not own (D204). The
+   * controller resolves it for the whole page in one batched read.
+   */
+  brandMark: boolean;
   gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
   /**
    * Sender unsubscribe capability. NULLABLE — null means the sender
@@ -131,6 +148,14 @@ export interface TriageQueueRow {
    */
   unreadInboxCount: number;
 }
+
+/**
+ * A queue row as the READ SERVICE produces it — every triage fact, minus
+ * the brand-mark decoration the controller adds. Keeps the read service
+ * selecting only triage-owned tables (D204), and makes it a type error to
+ * serve a row that never answered the question.
+ */
+export type TriageQueueFacts = Omit<TriageQueueRow, 'brandMark'>;
 
 /** Result of {@link TriageReadService.readProtectionReview}. */
 export interface ProtectionReviewRead {
@@ -350,7 +375,7 @@ export class TriageReadService {
      * narrowed query silently returns the whole mailbox.
      */
     senderKeys?: readonly string[];
-  }): Promise<TriageQueueRow[]> {
+  }): Promise<TriageQueueFacts[]> {
     if (input.senderKeys?.length === 0) {
       return [];
     }

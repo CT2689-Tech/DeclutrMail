@@ -82,6 +82,14 @@ export interface TriageDecisionRow {
   senderName: string;
   senderEmail: string;
   senderDomain: string;
+  /**
+   * Whether the server already holds a brand mark for `senderDomain`
+   * (ADR-0034). `false` means `Avatar` renders the monogram and makes NO
+   * request — the point of the field, since a triage queue of unresolved
+   * domains otherwise burns one 204 round trip per row on the coldest
+   * cache in the product.
+   */
+  brandMark: boolean;
   gmailCategory: GmailCategory;
   /** Best unsubscribe method seen across the sender's messages, or
    *  null when the sender index has not derived one yet (D248). */
@@ -231,6 +239,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     senderName: 'Groupon',
     senderEmail: 'noreply@groupon.com',
     senderDomain: 'groupon.com',
+    brandMark: false,
     gmailCategory: 'promotions',
     unsubscribeMethod: 'one_click',
     verdict: 'archive',
@@ -259,6 +268,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     senderName: 'LinkedIn',
     senderEmail: 'notifications-noreply@linkedin.com',
     senderDomain: 'linkedin.com',
+    brandMark: false,
     gmailCategory: 'social',
     unsubscribeMethod: 'one_click',
     verdict: 'unsubscribe',
@@ -288,6 +298,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     senderName: 'Old Navy',
     senderEmail: 'help@oldnavy.com',
     senderDomain: 'oldnavy.com',
+    brandMark: false,
     gmailCategory: 'promotions',
     unsubscribeMethod: 'one_click',
     verdict: 'archive',
@@ -315,6 +326,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     senderName: 'django-users',
     senderEmail: 'django-users@googlegroups.com',
     senderDomain: 'googlegroups.com',
+    brandMark: false,
     gmailCategory: 'forums',
     unsubscribeMethod: 'mailto',
     verdict: 'unsubscribe',
@@ -344,6 +356,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     senderName: 'Nextdoor',
     senderEmail: 'notifications@nextdoor.com',
     senderDomain: 'nextdoor.com',
+    brandMark: false,
     gmailCategory: 'social',
     unsubscribeMethod: 'one_click',
     verdict: 'archive',
@@ -367,6 +380,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     senderName: 'Letters of Note',
     senderEmail: 'lon@substack.com',
     senderDomain: 'substack.com',
+    brandMark: false,
     gmailCategory: 'promotions',
     unsubscribeMethod: 'one_click',
     verdict: 'later',
@@ -395,6 +409,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     senderName: 'Sarah Chen',
     senderEmail: 'sarah.chen@google.com',
     senderDomain: 'google.com',
+    brandMark: false,
     gmailCategory: 'primary',
     unsubscribeMethod: 'none',
     verdict: 'keep',
@@ -423,6 +438,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     senderName: 'Priya Raman',
     senderEmail: 'priya@hey.com',
     senderDomain: 'hey.com',
+    brandMark: false,
     gmailCategory: 'primary',
     unsubscribeMethod: 'none',
     verdict: 'keep',
@@ -457,6 +473,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     senderName: 'Shipment Tracking',
     senderEmail: 'shipment-tracking@bigstore.example',
     senderDomain: 'bigstore.example',
+    brandMark: false,
     gmailCategory: 'updates',
     unsubscribeMethod: 'none',
     verdict: 'unsubscribe',

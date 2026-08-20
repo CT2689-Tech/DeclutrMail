@@ -1217,8 +1217,27 @@ export class SendersReadService {
         GROUP BY sender_key
       ),
       -- CTE 3: enrich every in-scope sender with signals + score +
-      -- bucket. Single pass — every downstream aggregate scans this.
-      bucketed AS (
+      -- bucket.
+      --
+      -- AS MATERIALIZED, FOR THE SAME REASON AS replied ABOVE, AND THE
+      -- COMMENT HERE USED TO BE WRONG IN THE SAME WAY. It read "single
+      -- pass — every downstream aggregate scans this", which is what we
+      -- WANTED and not what ran. This CTE is non-recursive and, being
+      -- referenced once, was INLINED into the outer SELECT — so the
+      -- bucket CASE was re-evaluated inside every one of the twelve
+      -- aggregates below, each re-running the two ~* regexes and the
+      -- replied hash probe for all 8,016 senders.
+      --
+      -- Measured 2026-08-20 on the dev mailbox: dropping from twelve
+      -- aggregates to four cut execution 122ms -> 30ms, which is the
+      -- signature of per-aggregate re-evaluation rather than per-row
+      -- work. Adding this keyword with all twelve restored: 122ms ->
+      -- 31.5ms. The outer aggregates now scan one materialised result.
+      --
+      -- EXPLAIN must show a "CTE bucketed" node. If it shows the senders
+      -- scan repeated under the Aggregate instead, the keyword is gone
+      -- and the cost is back.
+      bucketed AS MATERIALIZED (
         SELECT
           s.sender_key,
           s.last_seen_at,
@@ -1261,14 +1280,29 @@ export class SendersReadService {
         -- ADR-0008 §3 ratification: direct triage_decisions read in
         -- the senders read service (one of several sites — grep this
         -- marker to find them all when ratifying the ADR).
-        LEFT JOIN LATERAL (
-          SELECT verdict, confidence
-          FROM ${triageDecisions}
-          WHERE mailbox_account_id = s.mailbox_account_id
-            AND sender_key = s.sender_key
-          ORDER BY produced_at DESC
-          LIMIT 1
-        ) ltd ON true
+        --
+        -- A PLAIN JOIN, AND THE UNIQUE CONSTRAINT IS WHAT MAKES IT ONE.
+        -- triage_decisions_account_sender_uniq is UNIQUE on
+        -- (mailbox_account_id, sender_key), so this join can match at
+        -- most one row per sender and cannot fan the row set out. The
+        -- ORDER BY produced_at DESC LIMIT 1 this replaces was picking
+        -- the single row that already existed.
+        --
+        -- It was not free. As a LATERAL the planner ran one correlated
+        -- index scan PER SENDER — 8,016 loops wrapped in a Memoize that
+        -- scored Hits: 0  Misses: 8016, because its cache key is
+        -- exactly the pair the unique index already covers. Measured
+        -- 2026-08-20 on the 8,016-sender dev mailbox: 32,067 of the
+        -- query's 47,761 shared buffers, i.e. 67% of all the work, for
+        -- a lookup a single hash join does once.
+        --
+        -- IF THAT UNIQUE INDEX IS EVER DROPPED, THIS JOIN BECOMES WRONG
+        -- (duplicate decisions would multiply the bucket counts), not
+        -- merely slow. senders.read-service.spec.ts asserts the
+        -- constraint still exists for that reason.
+        LEFT JOIN ${triageDecisions} ltd
+          ON ltd.mailbox_account_id = s.mailbox_account_id
+         AND ltd.sender_key = s.sender_key
         LEFT JOIN last30 l30 ON l30.sender_key = s.sender_key
         WHERE s.mailbox_account_id = ${mailboxAccountId}${oneTimeClause}${searchClause}
       )

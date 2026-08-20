@@ -95,6 +95,54 @@ writer is a worker computing a suggestion, it is not history.
 **Distillation trigger:** promote to CLAUDE.md §8 (flow completeness) if
 a third cross-surface disagreement ships green.
 
+## 2026-08-20 — The CTE-inlining bug had a second copy one level up
+
+**Context:** Re-running the page-load audit after #587. The 2026-08-15
+entry fixed `replied AS MATERIALIZED` in `getSenderSummary` and moved
+on. `/api/senders/summary` was still 130ms, and it sets the TTFB floor
+for all 16 authed routes because `ServerAppBoundary` awaits it.
+
+**Finding:** The SAME bug was sitting one CTE above the one that got
+fixed, and the fix for the first had made it *look* handled. `bucketed`
+computes the per-sender bucket in a `CASE` carrying two `~*` regexes and
+a hash probe into `replied`. It is non-recursive and referenced once, so
+Postgres inlined it — into all TWELVE aggregates of the outer SELECT.
+Every `COUNT(*) FILTER (WHERE bucket = 'x')` re-ran the whole CASE for
+all 8,016 senders. Bisecting the reconstruction proved it: dropping from
+twelve aggregates to four took execution 122ms → 30ms with no other
+change. `bucketed AS MATERIALIZED` restored all twelve at 31.5ms.
+
+Its comment read "Single pass — every downstream aggregate scans this."
+That is word-for-word the same false claim the `replied` comment made
+before 2026-08-15, on the same page, about the same mechanism. The first
+fix corrected one comment and left its twin.
+
+**Two more, found the same session, both on that one query:** a
+`LEFT JOIN LATERAL ... ORDER BY produced_at DESC LIMIT 1` on
+`triage_decisions` ran 8,016 correlated scans (32,067 of 47,761 shared
+buffers, 67%) for a row a plain join finds once — the ORDER BY was
+picking from a set a UNIQUE constraint caps at one. And no index covered
+`is_outbound`, so the `replied` CTE seq-scanned 125,175 rows to keep
+5,539. All three together: 136ms → 31.5ms, 38,228 → 6,718 buffers, and
+authed TTFB 190ms → 25-60ms across every route.
+
+**Rule (provisional):** When a CTE is found inlined where a comment
+claimed it was materialised, check EVERY other CTE in that query the
+same day — the mistake is a habit of the author, not a property of the
+one CTE. And measure the whole statement's cost distribution (buffers
+per plan node) before declaring the slow query fixed: the 2026-08-15
+session fixed the CTE it measured and never asked what the remaining
+67% was.
+
+**Second rule, on measurement:** the honest signal for "is this query's
+cost per row or per output column" is to delete output columns and
+re-time. Per-row work is flat in the number of aggregates; inlined-CTE
+work is linear in it.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a third query ships
+whose stated plan and actual plan disagree — this is now two, both in
+the same 40 lines of SQL.
+
 ## 2026-08-19 — The preview pane loads pages hidden, so client-fallback screens never render
 
 **Context:** Browser-smoking the Activity screen on a second dev stack

@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import { createRedisConnection, SCORE_QUEUE } from '@declutrmail/workers';
 import type { ScoreJobData } from '@declutrmail/workers';
 
+import { IconsModule } from '../icons/icons.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
@@ -32,7 +33,7 @@ import { SCORE_QUEUE_TOKEN, TriageService } from './triage.service.js';
  * the module without the queue.
  */
 @Module({
-  imports: [AuthModule, MailboxAccountsModule, EntitlementsModule],
+  imports: [AuthModule, MailboxAccountsModule, EntitlementsModule, IconsModule],
   controllers: [TriageController],
   providers: [
     {
